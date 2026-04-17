@@ -6,6 +6,7 @@ declare function s(pattern: string): any;
 declare function stack(...patterns: any[]): any;
 declare function cat(...patterns: any[]): any;
 declare function hush(): void;
+declare function getDestination(): AudioNode;
 declare function setcps(cps: number): void;
 declare function silence(): any;
 

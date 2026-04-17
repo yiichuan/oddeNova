@@ -44,8 +44,8 @@ export function useStrudel() {
     }
   }, [currentCode]);
 
-  const stop = useCallback(() => {
-    stopPlayback();
+  const stop = useCallback(async () => {
+    await stopPlayback();
     setIsPlaying(false);
     setError(null);
   }, []);
@@ -60,7 +60,7 @@ export function useStrudel() {
         setError(null);
       }
     } else {
-      stopPlayback();
+      await stopPlayback();
       setCurrentCode('');
       setIsPlaying(false);
     }

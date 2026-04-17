@@ -13,13 +13,33 @@ export default function App() {
   const strudel = useStrudel();
   const chat = useChat();
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [editableCode, setEditableCode] = useState('');
 
-  // DeepSeek API Key 已写死在 llm.ts 中，无需检查
+  // Sync editableCode when AI generates new code
+  useEffect(() => {
+    setEditableCode(strudel.currentCode);
+  }, [strudel.currentCode]);
+
+  // Auto-init engine on first user interaction (browser requires a gesture for AudioContext)
+  useEffect(() => {
+    if (strudel.engineReady) return;
+    const initOnce = () => {
+      strudel.init();
+      window.removeEventListener('click', initOnce);
+      window.removeEventListener('keydown', initOnce);
+    };
+    window.addEventListener('click', initOnce);
+    window.addEventListener('keydown', initOnce);
+    return () => {
+      window.removeEventListener('click', initOnce);
+      window.removeEventListener('keydown', initOnce);
+    };
+  }, [strudel.engineReady]);
 
   const handleInstruction = useCallback(
     async (text: string) => {
       if (!strudel.engineReady) {
-        strudel.setError('请先点击底部按钮启动音频引擎');
+        strudel.setError('音频引擎启动中，请稍后再试');
         return;
       }
 
@@ -65,10 +85,10 @@ export default function App() {
   }, [speech]);
 
   const handleReplay = useCallback(() => {
-    if (strudel.currentCode) {
-      strudel.play(strudel.currentCode);
+    if (editableCode) {
+      strudel.play(editableCode);
     }
-  }, [strudel]);
+  }, [strudel, editableCode]);
 
   return (
     <div className="flex flex-col h-screen bg-bg-primary">
@@ -113,7 +133,12 @@ export default function App() {
 
         <div className="flex-1 flex flex-col">
           <div className="flex-1 overflow-auto">
-            <CodePanel code={strudel.currentCode} error={strudel.error} />
+            <CodePanel
+                code={editableCode}
+                error={strudel.error}
+                isPlaying={strudel.isPlaying}
+                onCodeChange={setEditableCode}
+              />
           </div>
           <div className="h-[200px] border-t border-border">
             <Visualizer isPlaying={strudel.isPlaying} />
@@ -128,7 +153,6 @@ export default function App() {
         onPlay={handleReplay}
         onStop={strudel.stop}
         onUndo={strudel.undo}
-        onInit={strudel.init}
       />
     </div>
   );

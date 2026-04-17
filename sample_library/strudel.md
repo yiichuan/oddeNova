@@ -1,0 +1,4667 @@
+# Strudel Samples
+
+## _base
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+"https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/"
+```
+
+</details>
+
+## _808
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808/CB.WAV",
+  "808/CH.WAV",
+  "808/CL.WAV",
+  "808/CP.WAV",
+  "808/MA.WAV",
+  "808/RS.WAV"
+]
+```
+
+</details>
+
+## _909
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "909/BT0A0A7.WAV"
+]
+```
+
+</details>
+
+## 808bd
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808bd/BD0000.WAV",
+  "808bd/BD0010.WAV",
+  "808bd/BD0025.WAV",
+  "808bd/BD0050.WAV",
+  "808bd/BD0075.WAV",
+  "808bd/BD1000.WAV",
+  "808bd/BD1010.WAV",
+  "808bd/BD1025.WAV",
+  "808bd/BD1050.WAV",
+  "808bd/BD1075.WAV",
+  "808bd/BD2500.WAV",
+  "808bd/BD2510.WAV",
+  "808bd/BD2525.WAV",
+  "808bd/BD2550.WAV",
+  "808bd/BD2575.WAV",
+  "808bd/BD5000.WAV",
+  "808bd/BD5010.WAV",
+  "808bd/BD5025.WAV",
+  "808bd/BD5050.WAV",
+  "808bd/BD5075.WAV",
+  "808bd/BD7500.WAV",
+  "808bd/BD7510.WAV",
+  "808bd/BD7525.WAV",
+  "808bd/BD7550.WAV",
+  "808bd/BD7575.WAV"
+]
+```
+
+</details>
+
+## 808cy
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808cy/CY0000.WAV",
+  "808cy/CY0010.WAV",
+  "808cy/CY0025.WAV",
+  "808cy/CY0050.WAV",
+  "808cy/CY0075.WAV",
+  "808cy/CY1000.WAV",
+  "808cy/CY1010.WAV",
+  "808cy/CY1025.WAV",
+  "808cy/CY1050.WAV",
+  "808cy/CY1075.WAV",
+  "808cy/CY2500.WAV",
+  "808cy/CY2510.WAV",
+  "808cy/CY2525.WAV",
+  "808cy/CY2550.WAV",
+  "808cy/CY2575.WAV",
+  "808cy/CY5000.WAV",
+  "808cy/CY5010.WAV",
+  "808cy/CY5025.WAV",
+  "808cy/CY5050.WAV",
+  "808cy/CY5075.WAV",
+  "808cy/CY7500.WAV",
+  "808cy/CY7510.WAV",
+  "808cy/CY7525.WAV",
+  "808cy/CY7550.WAV",
+  "808cy/CY7575.WAV"
+]
+```
+
+</details>
+
+## 808hc
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808hc/HC00.WAV",
+  "808hc/HC10.WAV",
+  "808hc/HC25.WAV",
+  "808hc/HC50.WAV",
+  "808hc/HC75.WAV"
+]
+```
+
+</details>
+
+## 808ht
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808ht/HT00.WAV",
+  "808ht/HT10.WAV",
+  "808ht/HT25.WAV",
+  "808ht/HT50.WAV",
+  "808ht/HT75.WAV"
+]
+```
+
+</details>
+
+## 808lc
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808lc/LC00.WAV",
+  "808lc/LC10.WAV",
+  "808lc/LC25.WAV",
+  "808lc/LC50.WAV",
+  "808lc/LC75.WAV"
+]
+```
+
+</details>
+
+## 808lt
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808lt/LT00.WAV",
+  "808lt/LT10.WAV",
+  "808lt/LT25.WAV",
+  "808lt/LT50.WAV",
+  "808lt/LT75.WAV"
+]
+```
+
+</details>
+
+## 808mc
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808mc/MC00.WAV",
+  "808mc/MC10.WAV",
+  "808mc/MC25.WAV",
+  "808mc/MC50.WAV",
+  "808mc/MC75.WAV"
+]
+```
+
+</details>
+
+## 808mt
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808mt/MT00.WAV",
+  "808mt/MT10.WAV",
+  "808mt/MT25.WAV",
+  "808mt/MT50.WAV",
+  "808mt/MT75.WAV"
+]
+```
+
+</details>
+
+## 808oh
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808oh/OH00.WAV",
+  "808oh/OH10.WAV",
+  "808oh/OH25.WAV",
+  "808oh/OH50.WAV",
+  "808oh/OH75.WAV"
+]
+```
+
+</details>
+
+## 808sd
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "808sd/SD0000.WAV",
+  "808sd/SD0010.WAV",
+  "808sd/SD0025.WAV",
+  "808sd/SD0050.WAV",
+  "808sd/SD0075.WAV",
+  "808sd/SD1000.WAV",
+  "808sd/SD1010.WAV",
+  "808sd/SD1025.WAV",
+  "808sd/SD1050.WAV",
+  "808sd/SD1075.WAV",
+  "808sd/SD2500.WAV",
+  "808sd/SD2510.WAV",
+  "808sd/SD2525.WAV",
+  "808sd/SD2550.WAV",
+  "808sd/SD2575.WAV",
+  "808sd/SD5000.WAV",
+  "808sd/SD5010.WAV",
+  "808sd/SD5025.WAV",
+  "808sd/SD5050.WAV",
+  "808sd/SD5075.WAV",
+  "808sd/SD7500.WAV",
+  "808sd/SD7510.WAV",
+  "808sd/SD7525.WAV",
+  "808sd/SD7550.WAV",
+  "808sd/SD7575.WAV"
+]
+```
+
+</details>
+
+## ab
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ab/000_ab2closedhh.wav",
+  "ab/001_ab2crash.wav",
+  "ab/002_ab2hit1.wav",
+  "ab/003_ab2hit2.wav",
+  "ab/004_ab2kick1.wav",
+  "ab/005_ab2kick2.wav",
+  "ab/006_ab2openhh.wav",
+  "ab/007_ab2perc1.wav",
+  "ab/008_ab2perc2.wav",
+  "ab/009_ab2ride.wav",
+  "ab/010_ab2snare1.wav",
+  "ab/011_ab2snare2.wav"
+]
+```
+
+</details>
+
+## ade
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ade/000_011112-bassline.wav",
+  "ade/001_011112-melody.wav",
+  "ade/002_20020506-01.wav",
+  "ade/003_abt.wav",
+  "ade/004_fan.wav",
+  "ade/005_fanbass.wav",
+  "ade/006_glass.wav",
+  "ade/007_microsound.wav",
+  "ade/008_rhythm.wav",
+  "ade/009_rise.wav"
+]
+```
+
+</details>
+
+## ades2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ades2/000_01.wav",
+  "ades2/001_02.wav",
+  "ades2/002_03.wav",
+  "ades2/003_04.wav",
+  "ades2/004_05.wav",
+  "ades2/005_06.wav",
+  "ades2/006_07.wav",
+  "ades2/007_08.wav",
+  "ades2/008_09.wav"
+]
+```
+
+</details>
+
+## ades3
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ades3/01.wav",
+  "ades3/02.wav",
+  "ades3/03.wav",
+  "ades3/04.wav",
+  "ades3/05.wav",
+  "ades3/06.wav",
+  "ades3/07.wav"
+]
+```
+
+</details>
+
+## ades4
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ades4/01.wav",
+  "ades4/02.wav",
+  "ades4/03.wav",
+  "ades4/04.wav",
+  "ades4/05.wav",
+  "ades4/06.wav"
+]
+```
+
+</details>
+
+## alex
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "alex/000_drumx1.wav",
+  "alex/001_drumx2.wav"
+]
+```
+
+</details>
+
+## alphabet
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "alphabet/a.wav",
+  "alphabet/b.wav",
+  "alphabet/c.wav",
+  "alphabet/d.wav",
+  "alphabet/e.wav",
+  "alphabet/f.wav",
+  "alphabet/g.wav",
+  "alphabet/h.wav",
+  "alphabet/i.wav",
+  "alphabet/j.wav",
+  "alphabet/k.wav",
+  "alphabet/l.wav",
+  "alphabet/m.wav",
+  "alphabet/n.wav",
+  "alphabet/o.wav",
+  "alphabet/p.wav",
+  "alphabet/q.wav",
+  "alphabet/r.wav",
+  "alphabet/s.wav",
+  "alphabet/t.wav",
+  "alphabet/u.wav",
+  "alphabet/v.wav",
+  "alphabet/w.wav",
+  "alphabet/x.wav",
+  "alphabet/y.wav",
+  "alphabet/z.wav"
+]
+```
+
+</details>
+
+## amencutup
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "amencutup/000_AMENCUT_001.wav",
+  "amencutup/001_AMENCUT_002.wav",
+  "amencutup/002_AMENCUT_003.wav",
+  "amencutup/003_AMENCUT_004.wav",
+  "amencutup/004_AMENCUT_005.wav",
+  "amencutup/005_AMENCUT_006.wav",
+  "amencutup/006_AMENCUT_007.wav",
+  "amencutup/007_AMENCUT_008.wav",
+  "amencutup/008_AMENCUT_009.wav",
+  "amencutup/009_AMENCUT_010.wav",
+  "amencutup/010_AMENCUT_011.wav",
+  "amencutup/011_AMENCUT_012.wav",
+  "amencutup/012_AMENCUT_013.wav",
+  "amencutup/013_AMENCUT_014.wav",
+  "amencutup/014_AMENCUT_015.wav",
+  "amencutup/015_AMENCUT_016.wav",
+  "amencutup/016_AMENCUT_017.wav",
+  "amencutup/017_AMENCUT_018.wav",
+  "amencutup/018_AMENCUT_019.wav",
+  "amencutup/019_AMENCUT_020.wav",
+  "amencutup/020_AMENCUT_021.wav",
+  "amencutup/021_AMENCUT_022.wav",
+  "amencutup/022_AMENCUT_023.wav",
+  "amencutup/023_AMENCUT_024.wav",
+  "amencutup/024_AMENCUT_025.wav",
+  "amencutup/025_AMENCUT_026.wav",
+  "amencutup/026_AMENCUT_027.wav",
+  "amencutup/027_AMENCUT_028.wav",
+  "amencutup/028_AMENCUT_029.wav",
+  "amencutup/029_AMENCUT_030.wav",
+  "amencutup/030_AMENCUT_031.wav",
+  "amencutup/031_AMENCUT_032.wav"
+]
+```
+
+</details>
+
+## armora
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "armora/000_beep.wav",
+  "armora/001_chopper.wav",
+  "armora/002_hiexp.wav",
+  "armora/003_jeepfire.wav",
+  "armora/004_loexp.wav",
+  "armora/005_tankeng.wav",
+  "armora/006_tankfire.wav"
+]
+```
+
+</details>
+
+## arp
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "arp/000_arp2.wav",
+  "arp/001_arp.wav"
+]
+```
+
+</details>
+
+## arpy
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "arpy/arpy01.wav",
+  "arpy/arpy02.wav",
+  "arpy/arpy03.wav",
+  "arpy/arpy04.wav",
+  "arpy/arpy05.wav",
+  "arpy/arpy06.wav",
+  "arpy/arpy07.wav",
+  "arpy/arpy08.wav",
+  "arpy/arpy09.wav",
+  "arpy/arpy10.wav",
+  "arpy/arpy11.wav"
+]
+```
+
+</details>
+
+## auto
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "auto/000_break-kick.wav",
+  "auto/001_break-ride.wav",
+  "auto/002_break-sd.wav",
+  "auto/003_cymrev.wav",
+  "auto/004_kick.wav",
+  "auto/005_kick-ambient.wav",
+  "auto/006_sd.wav",
+  "auto/007_sd-ambient.wav",
+  "auto/008_shake1.wav",
+  "auto/009_shake2.wav",
+  "auto/010_shake3.wav"
+]
+```
+
+</details>
+
+## baa
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "baa/1.wav",
+  "baa/2.wav",
+  "baa/3.wav",
+  "baa/4.wav",
+  "baa/5.wav",
+  "baa/6.wav",
+  "baa/7.wav"
+]
+```
+
+</details>
+
+## baa2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "baa2/1.wav",
+  "baa2/2.wav",
+  "baa2/3.wav",
+  "baa2/4.wav",
+  "baa2/5.wav",
+  "baa2/6.wav",
+  "baa2/7.wav"
+]
+```
+
+</details>
+
+## bass
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bass/000_bass1.wav",
+  "bass/001_bass2.wav",
+  "bass/002_bass3.wav",
+  "bass/003_bass4.wav"
+]
+```
+
+</details>
+
+## bass0
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bass0/000_0.wav",
+  "bass0/001_1.wav",
+  "bass0/002_2.wav"
+]
+```
+
+</details>
+
+## bass1
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bass1/18076__daven__01-sb-bass-hit-c.wav",
+  "bass1/18077__daven__02-sb-bass-hit-c.wav",
+  "bass1/18078__daven__03-sb-bass-hit-c.wav",
+  "bass1/18079__daven__04-sb-bass-hit-c.wav",
+  "bass1/18080__daven__05-sb-bass-hit-c.wav",
+  "bass1/18081__daven__06-sb-bass-hit-c.wav",
+  "bass1/18082__daven__07-sb-bass-hit-c.wav",
+  "bass1/18083__daven__08-sb-bass-hit-c.wav",
+  "bass1/18084__daven__09-sb-bass-hit-c.wav",
+  "bass1/18085__daven__10-sb-bass-hit-c.wav",
+  "bass1/18086__daven__11-sb-bass-hit-c.wav",
+  "bass1/18087__daven__12-sb-bass-hit-c.wav",
+  "bass1/18088__daven__13-sb-bass-hit-c.wav",
+  "bass1/18089__daven__14-sb-bass-hit-c.wav",
+  "bass1/18090__daven__15-sb-bass-hit-c.wav",
+  "bass1/18091__daven__16-sb-bass-hit-c.wav",
+  "bass1/18092__daven__17-sb-bass-hit-c.wav",
+  "bass1/18093__daven__18-sb-bass-hit-c.wav",
+  "bass1/18094__daven__19-sb-bass-hit-f.wav",
+  "bass1/18095__daven__20-sb-bass-hit-f.wav",
+  "bass1/18096__daven__21-sb-bass-hit-f.wav",
+  "bass1/18097__daven__22-sb-bass-hit-f.wav",
+  "bass1/18098__daven__23-sb-bass-hit-f.wav",
+  "bass1/18099__daven__24-sb-bass-hit-f.wav",
+  "bass1/18100__daven__25-sb-bass-hit-f.wav",
+  "bass1/18101__daven__26-sb-bass-hit-f.wav",
+  "bass1/18102__daven__27-sb-bass-hit-f.wav",
+  "bass1/18103__daven__28-sb-bass-hit-f.wav",
+  "bass1/18104__daven__29-sb-bass-hit-f.wav",
+  "bass1/18105__daven__30-sb-bass-hit-f.wav"
+]
+```
+
+</details>
+
+## bass2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bass2/69988__noizemassacre__hardcore-bass-1.wav",
+  "bass2/69989__noizemassacre__hardcore-bass-2.wav",
+  "bass2/69990__noizemassacre__hardcore-bass-3.wav",
+  "bass2/69991__noizemassacre__hardcore-bass-4.wav",
+  "bass2/69992__noizemassacre__hardcore-bass-5.wav"
+]
+```
+
+</details>
+
+## bass3
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bass3/83245__zgump__bass-0201.wav",
+  "bass3/83246__zgump__bass-0202.wav",
+  "bass3/83247__zgump__bass-0203.wav",
+  "bass3/83248__zgump__bass-0204.wav",
+  "bass3/83249__zgump__bass-0205.wav",
+  "bass3/83250__zgump__bass-0206.wav",
+  "bass3/83251__zgump__bass-0207.wav",
+  "bass3/83252__zgump__bass-0208.wav",
+  "bass3/83253__zgump__bass-0209.wav",
+  "bass3/85056__zgump__reverse-bass-01.wav",
+  "bass3/85057__zgump__reverse-bass-02.wav"
+]
+```
+
+</details>
+
+## bassdm
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bassdm/001_BT0A0A7.WAV",
+  "bassdm/002_BT0A0D0.WAV",
+  "bassdm/003_BT0A0D3.WAV",
+  "bassdm/004_BT0A0DA.WAV",
+  "bassdm/005_BT0AAD0.WAV",
+  "bassdm/006_BT0AADA.WAV",
+  "bassdm/007_BT3A0D0.WAV",
+  "bassdm/008_BT3A0D3.WAV",
+  "bassdm/009_BT3A0D7.WAV",
+  "bassdm/010_BT3A0DA.WAV",
+  "bassdm/011_BT3AAD0.WAV",
+  "bassdm/012_BT3AADA.WAV",
+  "bassdm/013_BT7A0D0.WAV",
+  "bassdm/014_BT7A0D3.WAV",
+  "bassdm/015_BT7A0D7.WAV",
+  "bassdm/016_BT7A0DA.WAV",
+  "bassdm/017_BT7AAD0.WAV",
+  "bassdm/018_BT7AADA.WAV",
+  "bassdm/019_BTAA0D0.WAV",
+  "bassdm/020_BTAA0D3.WAV",
+  "bassdm/021_BTAA0D7.WAV",
+  "bassdm/022_BTAA0DA.WAV",
+  "bassdm/023_BTAAAD0.WAV",
+  "bassdm/024_BTAAADA.WAV"
+]
+```
+
+</details>
+
+## bassfoo
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bassfoo/000_0.wav",
+  "bassfoo/001_1.wav",
+  "bassfoo/002_2.wav"
+]
+```
+
+</details>
+
+## battles
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "battles/000_explo1.wav",
+  "battles/001_explo2.wav"
+]
+```
+
+</details>
+
+## bd
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bd/BT0A0A7.wav",
+  "bd/BT0A0D0.wav",
+  "bd/BT0A0D3.wav",
+  "bd/BT0A0DA.wav",
+  "bd/BT0AAD0.wav",
+  "bd/BT0AADA.wav",
+  "bd/BT3A0D0.wav",
+  "bd/BT3A0D3.wav",
+  "bd/BT3A0D7.wav",
+  "bd/BT3A0DA.wav",
+  "bd/BT3AAD0.wav",
+  "bd/BT3AADA.wav",
+  "bd/BT7A0D0.wav",
+  "bd/BT7A0D3.wav",
+  "bd/BT7A0D7.wav",
+  "bd/BT7A0DA.wav",
+  "bd/BT7AAD0.wav",
+  "bd/BT7AADA.wav",
+  "bd/BTAA0D0.wav",
+  "bd/BTAA0D3.wav",
+  "bd/BTAA0D7.wav",
+  "bd/BTAA0DA.wav",
+  "bd/BTAAAD0.wav",
+  "bd/BTAAADA.wav"
+]
+```
+
+</details>
+
+## bend
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bend/000_2.wav",
+  "bend/001_5.wav",
+  "bend/002_6.wav",
+  "bend/003_8.wav"
+]
+```
+
+</details>
+
+## bev
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bev/00-mono.wav",
+  "bev/01-stereo.wav"
+]
+```
+
+</details>
+
+## bin
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bin/000_bin1.wav",
+  "bin/001_0.wav"
+]
+```
+
+</details>
+
+## birds
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "birds/000_1.wav",
+  "birds/001_10.wav",
+  "birds/002_2.wav",
+  "birds/003_3.wav",
+  "birds/004_4.wav",
+  "birds/005_5.wav",
+  "birds/006_6.wav",
+  "birds/007_7.wav",
+  "birds/008_8.wav",
+  "birds/009_9.wav"
+]
+```
+
+</details>
+
+## birds3
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "birds3/000_1.wav",
+  "birds3/001_10.wav",
+  "birds3/002_11.wav",
+  "birds3/003_12.wav",
+  "birds3/004_13.wav",
+  "birds3/005_14.wav",
+  "birds3/006_15.wav",
+  "birds3/007_16.wav",
+  "birds3/008_17.wav",
+  "birds3/009_18.wav",
+  "birds3/010_19.wav",
+  "birds3/011_2.wav",
+  "birds3/012_3.wav",
+  "birds3/013_4.wav",
+  "birds3/014_5.wav",
+  "birds3/015_6.wav",
+  "birds3/016_7.wav",
+  "birds3/017_8.wav",
+  "birds3/018_9.wav"
+]
+```
+
+</details>
+
+## bleep
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bleep/boip.wav",
+  "bleep/checkpoint-hit.wav",
+  "bleep/echo-blip-thing.wav",
+  "bleep/harsh-whippleszoot.wav",
+  "bleep/pc_beep.wav",
+  "bleep/shortsaxish.wav",
+  "bleep/simpletone.wav",
+  "bleep/stereo-star-trek-pager.wav",
+  "bleep/tiniest.wav",
+  "bleep/tinynote.wav",
+  "bleep/vidgame-bleep1.wav",
+  "bleep/vidgame-bleep2.wav",
+  "bleep/watch_beep.wav"
+]
+```
+
+</details>
+
+## blip
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "blip/000_blipp01.wav",
+  "blip/001_blipp02.wav"
+]
+```
+
+</details>
+
+## blue
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "blue/aya.wav",
+  "blue/howdoesitfeel.wav"
+]
+```
+
+</details>
+
+## bottle
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bottle/000_1.wav",
+  "bottle/001_10.wav",
+  "bottle/002_11.wav",
+  "bottle/003_12.wav",
+  "bottle/004_13.wav",
+  "bottle/005_2.wav",
+  "bottle/006_3.wav",
+  "bottle/007_4.wav",
+  "bottle/008_5.wav",
+  "bottle/009_6.wav",
+  "bottle/010_7.wav",
+  "bottle/011_8.wav",
+  "bottle/012_9.wav"
+]
+```
+
+</details>
+
+## breaks125
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "breaks125/015_sdstckbr.wav",
+  "breaks125/016_bllstmp.wav"
+]
+```
+
+</details>
+
+## breaks152
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "breaks152/000_AMEN.WAV"
+]
+```
+
+</details>
+
+## breaks157
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "breaks157/000_PLEAD.WAV"
+]
+```
+
+</details>
+
+## breaks165
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "breaks165/000_RAWCLN.WAV"
+]
+```
+
+</details>
+
+## breath
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "breath/000_breath.wav"
+]
+```
+
+</details>
+
+## bubble
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "bubble/000_bub0.wav",
+  "bubble/001_bub1.wav",
+  "bubble/002_bub2.wav",
+  "bubble/003_bub3.wav",
+  "bubble/004_bub4.wav",
+  "bubble/005_bub5.wav",
+  "bubble/006_bub6.wav",
+  "bubble/007_bub7.wav"
+]
+```
+
+</details>
+
+## can
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "can/000_1.wav",
+  "can/001_10.wav",
+  "can/002_11.wav",
+  "can/003_12.wav",
+  "can/004_13.wav",
+  "can/005_14.wav",
+  "can/006_2.wav",
+  "can/007_3.wav",
+  "can/008_4.wav",
+  "can/009_5.wav",
+  "can/010_6.wav",
+  "can/011_7.wav",
+  "can/012_8.wav",
+  "can/013_9.wav"
+]
+```
+
+</details>
+
+## casio
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "casio/high.wav",
+  "casio/low.wav",
+  "casio/noise.wav"
+]
+```
+
+</details>
+
+## cb
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "cb/rytm-cb.wav"
+]
+```
+
+</details>
+
+## cc
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "cc/CSHD0.wav",
+  "cc/CSHD2.wav",
+  "cc/CSHD4.wav",
+  "cc/CSHD6.wav",
+  "cc/CSHD8.wav",
+  "cc/CSHDA.wav"
+]
+```
+
+</details>
+
+## chin
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "chin/000_tik1.wav",
+  "chin/001_tik2.wav",
+  "chin/002_tik3.wav",
+  "chin/003_tik4.wav"
+]
+```
+
+</details>
+
+## circus
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "circus/000_bounce.wav",
+  "circus/001_miss.wav",
+  "circus/002_pop.wav"
+]
+```
+
+</details>
+
+## clak
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "clak/000_clak1.wav",
+  "clak/001_clak2.wav"
+]
+```
+
+</details>
+
+## click
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "click/000_click0.wav",
+  "click/001_click1.wav",
+  "click/002_click2.wav",
+  "click/003_click3.wav"
+]
+```
+
+</details>
+
+## clubkick
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "clubkick/1.wav",
+  "clubkick/2.wav",
+  "clubkick/3.wav",
+  "clubkick/4.wav",
+  "clubkick/5.wav"
+]
+```
+
+</details>
+
+## co
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "co/CLOP1.wav",
+  "co/CLOP2.wav",
+  "co/CLOP3.wav",
+  "co/CLOP4.wav"
+]
+```
+
+</details>
+
+## coins
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "coins/coins.wav"
+]
+```
+
+</details>
+
+## control
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "control/1.wav",
+  "control/2.wav"
+]
+```
+
+</details>
+
+## cosmicg
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "cosmicg/000_cg_att.wav",
+  "cosmicg/001_cg_chnc.wav",
+  "cosmicg/002_cg_dest.wav",
+  "cosmicg/003_cg_ext.wav",
+  "cosmicg/004_cg_gotb.wav",
+  "cosmicg/005_cg_gotm.wav",
+  "cosmicg/006_cg_gun.wav",
+  "cosmicg/007_cg_m0.wav",
+  "cosmicg/008_cg_m1.wav",
+  "cosmicg/009_cg_m2.wav",
+  "cosmicg/010_cg_m3.wav",
+  "cosmicg/011_cg_m4.wav",
+  "cosmicg/012_cg_m5.wav",
+  "cosmicg/013_cg_m6.wav",
+  "cosmicg/014_cg_m7.wav"
+]
+```
+
+</details>
+
+## cp
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "cp/HANDCLP0.wav",
+  "cp/HANDCLPA.wav"
+]
+```
+
+</details>
+
+## cr
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "cr/RIDED0.wav",
+  "cr/RIDED2.wav",
+  "cr/RIDED4.wav",
+  "cr/RIDED6.wav",
+  "cr/RIDED8.wav",
+  "cr/RIDEDA.wav"
+]
+```
+
+</details>
+
+## crow
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "crow/000_crow.wav",
+  "crow/001_crow2.wav",
+  "crow/002_crow3.wav",
+  "crow/003_crow4.wav"
+]
+```
+
+</details>
+
+## d
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "d/000_d1.wav",
+  "d/001_d2.wav",
+  "d/002_d3.wav",
+  "d/003_d4.wav"
+]
+```
+
+</details>
+
+## db
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "db/dbs12closedhh.wav",
+  "db/dbs12crash.wav",
+  "db/dbs12hit1.wav",
+  "db/dbs12hit2.wav",
+  "db/dbs12hit3.wav",
+  "db/dbs12kick1.wav",
+  "db/dbs12kick2.wav",
+  "db/dbs12openhh.wav",
+  "db/dbs12perc1.wav",
+  "db/dbs12perc2.wav",
+  "db/dbs12ride.wav",
+  "db/dbs12snare1.wav",
+  "db/dbs12snare2.wav"
+]
+```
+
+</details>
+
+## diphone
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "diphone/000_kd1_002.wav",
+  "diphone/001_kd1_003.wav",
+  "diphone/002_kd1_004.wav",
+  "diphone/003_kd1_005.wav",
+  "diphone/004_kd1_006.wav",
+  "diphone/005_kd1_007.wav",
+  "diphone/006_kd1_008.wav",
+  "diphone/007_kd1_009.wav",
+  "diphone/008_kd1_010.wav",
+  "diphone/009_kd1_011.wav",
+  "diphone/010_kd1_012.wav",
+  "diphone/011_kd1_013.wav",
+  "diphone/012_kd1_014.wav",
+  "diphone/013_kd1_015.wav",
+  "diphone/014_kd1_016.wav",
+  "diphone/015_kd1_017.wav",
+  "diphone/016_kd1_018.wav",
+  "diphone/017_kd1_019.wav",
+  "diphone/018_kd1_020.wav",
+  "diphone/019_kd1_021.wav",
+  "diphone/020_kd1_022.wav",
+  "diphone/021_kd1_023.wav",
+  "diphone/022_kd1_024.wav",
+  "diphone/023_kd1_025.wav",
+  "diphone/024_kd1_026.wav",
+  "diphone/025_kd1_027.wav",
+  "diphone/026_kd1_028.wav",
+  "diphone/027_kd1_029.wav",
+  "diphone/028_kd1_030.wav",
+  "diphone/029_kd1_031.wav",
+  "diphone/030_kd1_032.wav",
+  "diphone/031_kd1_033.wav",
+  "diphone/032_kd1_034.wav",
+  "diphone/033_kd1_035.wav",
+  "diphone/034_kd1_036.wav",
+  "diphone/035_kd1_037.wav",
+  "diphone/036_kd1_038.wav",
+  "diphone/037_kd1_039.wav"
+]
+```
+
+</details>
+
+## diphone2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "diphone2/000_kd1_399.wav",
+  "diphone2/001_kd1_400.wav",
+  "diphone2/002_kd1_401.wav",
+  "diphone2/003_kd1_402.wav",
+  "diphone2/004_kd1_403.wav",
+  "diphone2/005_kd1_404.wav",
+  "diphone2/006_kd1_405.wav",
+  "diphone2/007_kd1_406.wav",
+  "diphone2/008_kd3_010.wav",
+  "diphone2/009_kd3_011.wav",
+  "diphone2/010_kd3_012.wav",
+  "diphone2/011_kd3_013.wav"
+]
+```
+
+</details>
+
+## dist
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "dist/000_inddistb1.wav",
+  "dist/001_inddistb2.wav",
+  "dist/002_inddistb1ride.wav",
+  "dist/003_inddistb2ride.wav",
+  "dist/004_inddistb3.wav",
+  "dist/005_inddistb3ride.wav",
+  "dist/006_inddistb4.wav",
+  "dist/007_inddistb4ride.wav",
+  "dist/008_inddistb5.wav",
+  "dist/009_inddistb5ride.wav",
+  "dist/010_inddistb6.wav",
+  "dist/011_inddistb6ride.wav",
+  "dist/012_inddistb7.wav",
+  "dist/013_inddistb7ride.wav",
+  "dist/014_inddistb8.wav",
+  "dist/015_inddistb8ride.wav"
+]
+```
+
+</details>
+
+## dork2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "dork2/0.wav",
+  "dork2/1.wav",
+  "dork2/2.wav",
+  "dork2/4.wav"
+]
+```
+
+</details>
+
+## dorkbot
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "dorkbot/1.wav",
+  "dorkbot/2.wav"
+]
+```
+
+</details>
+
+## dr
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "dr/000_002.WAV",
+  "dr/001_003.WAV",
+  "dr/002_004.WAV",
+  "dr/003_005.WAV",
+  "dr/004_006.WAV",
+  "dr/005_008.WAV",
+  "dr/006_009.WAV",
+  "dr/007_010.WAV",
+  "dr/008_011.WAV",
+  "dr/009_014.WAV",
+  "dr/010_015.WAV",
+  "dr/011_016.WAV",
+  "dr/012_017.WAV",
+  "dr/013_019.WAV",
+  "dr/014_023.WAV",
+  "dr/015_024.WAV",
+  "dr/016_025.WAV",
+  "dr/017_026.WAV",
+  "dr/018_027.WAV",
+  "dr/019_028.WAV",
+  "dr/020_029.WAV",
+  "dr/021_030.WAV",
+  "dr/022_031.WAV",
+  "dr/023_032.WAV",
+  "dr/024_033.WAV",
+  "dr/025_034.WAV",
+  "dr/026_035.WAV",
+  "dr/027_036.WAV",
+  "dr/028_037.WAV",
+  "dr/029_038.WAV",
+  "dr/030_039.WAV",
+  "dr/031_040.WAV",
+  "dr/032_041.WAV",
+  "dr/033_042.WAV",
+  "dr/034_043.WAV",
+  "dr/035_044.WAV",
+  "dr/036_045.WAV",
+  "dr/037_046.WAV",
+  "dr/038_047.WAV",
+  "dr/039_048.WAV",
+  "dr/040_049.WAV",
+  "dr/041_050.WAV"
+]
+```
+
+</details>
+
+## dr2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "dr2/000_DR110CHT.WAV",
+  "dr2/001_DR110CLP.WAV",
+  "dr2/002_DR110CYM.WAV",
+  "dr2/003_DR110KIK.WAV",
+  "dr2/004_DR110OHT.WAV",
+  "dr2/005_DR110SNR.WAV"
+]
+```
+
+</details>
+
+## dr55
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "dr55/000_DR55 hi hat.wav",
+  "dr55/001_DR55 kick.wav",
+  "dr55/002_DR55 rimshot.wav",
+  "dr55/003_DR55 snare.wav"
+]
+```
+
+</details>
+
+## dr_few
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "dr_few/000_001.WAV",
+  "dr_few/001_007.WAV",
+  "dr_few/002_012.WAV",
+  "dr_few/003_013.WAV",
+  "dr_few/004_018.WAV",
+  "dr_few/005_020.WAV",
+  "dr_few/006_021.WAV",
+  "dr_few/007_022.WAV"
+]
+```
+
+</details>
+
+## drum
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "drum/000_drum1.wav",
+  "drum/001_drum2.wav",
+  "drum/002_drum3.wav",
+  "drum/003_drum4.wav",
+  "drum/004_drum5.wav",
+  "drum/005_drum6.wav"
+]
+```
+
+</details>
+
+## drumtraks
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "drumtraks/000_DT Cabasa.wav",
+  "drumtraks/001_DT Claps.wav",
+  "drumtraks/002_DT Cowbell.wav",
+  "drumtraks/003_DT Crash.wav",
+  "drumtraks/004_DT Hat Closed.wav",
+  "drumtraks/005_DT Hat Open.wav",
+  "drumtraks/006_DT Kick.wav",
+  "drumtraks/007_DT Ride.wav",
+  "drumtraks/008_DT Rimshot.wav",
+  "drumtraks/009_DT Snare.wav",
+  "drumtraks/010_DT Tambourine.wav",
+  "drumtraks/011_DT Tom1.wav",
+  "drumtraks/012_DT Tom2.wav"
+]
+```
+
+</details>
+
+## e
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "e/000_e1.wav",
+  "e/001_e2.wav",
+  "e/002_e3.wav",
+  "e/003_e4.wav",
+  "e/004_e5.wav",
+  "e/005_e6.wav",
+  "e/006_e7.wav",
+  "e/007_e8.wav"
+]
+```
+
+</details>
+
+## east
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "east/000_nipon_wood_block.wav",
+  "east/001_ohkawa_mute.wav",
+  "east/002_ohkawa_open.wav",
+  "east/003_shime_hi.wav",
+  "east/004_shime_hi_2.wav",
+  "east/005_shime_mute.wav",
+  "east/006_taiko_1.wav",
+  "east/007_taiko_2.wav",
+  "east/008_taiko_3.wav"
+]
+```
+
+</details>
+
+## electro1
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "electro1/000_et1closedhh.wav",
+  "electro1/001_et1crash.wav",
+  "electro1/002_et1hit1.wav",
+  "electro1/003_et1hit2.wav",
+  "electro1/004_et1hit3.wav",
+  "electro1/005_et1kick1.wav",
+  "electro1/006_et1kick2.wav",
+  "electro1/007_et1openhh.wav",
+  "electro1/008_et1perc1.wav",
+  "electro1/009_et1perc2.wav",
+  "electro1/010_et1ride.wav",
+  "electro1/011_et1snare1.wav",
+  "electro1/012_et1snare2.wav"
+]
+```
+
+</details>
+
+## em2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "em2/0.wav",
+  "em2/1.wav",
+  "em2/2.wav",
+  "em2/3.wav",
+  "em2/4.wav",
+  "em2/5.wav"
+]
+```
+
+</details>
+
+## erk
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "erk/000_123.wav"
+]
+```
+
+</details>
+
+## f
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "f/000_f.wav"
+]
+```
+
+</details>
+
+## feel
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "feel/BD 04 d.wav",
+  "feel/HH 003b.wav",
+  "feel/hihat029a.wav",
+  "feel/Sd 139.wav",
+  "feel/Sd 180.wav",
+  "feel/Sd 223.wav",
+  "feel/sub.wav"
+]
+```
+
+</details>
+
+## feelfx
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "feelfx/blnk.wav",
+  "feelfx/boschwitz.wav",
+  "feelfx/bwawp.wav",
+  "feelfx/doing.wav",
+  "feelfx/laser-buzz.wav",
+  "feelfx/machine.wav",
+  "feelfx/silent.wav",
+  "feelfx/surfactant_15_xilo.wav"
+]
+```
+
+</details>
+
+## fest
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "fest/000_foo.wav"
+]
+```
+
+</details>
+
+## fire
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "fire/fire.wav"
+]
+```
+
+</details>
+
+## flick
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "flick/000_square-p.wav",
+  "flick/001_1.wav",
+  "flick/002_10.wav",
+  "flick/003_11.wav",
+  "flick/004_12.wav",
+  "flick/005_13.wav",
+  "flick/006_14.wav",
+  "flick/007_2.wav",
+  "flick/008_3.wav",
+  "flick/009_4.wav",
+  "flick/010_5.wav",
+  "flick/011_6.wav",
+  "flick/012_7.wav",
+  "flick/013_8.wav",
+  "flick/014_9.wav",
+  "flick/015_hi.wav",
+  "flick/016_square.wav"
+]
+```
+
+</details>
+
+## fm
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "fm/31seconds.wav",
+  "fm/808909stabs.wav",
+  "fm/badboy.wav",
+  "fm/bambaataa.wav",
+  "fm/break1.wav",
+  "fm/break2.wav",
+  "fm/break3.wav",
+  "fm/charly.wav",
+  "fm/electro1.wav",
+  "fm/electro2.wav",
+  "fm/femalevocal1.wav",
+  "fm/femalevocal2.wav",
+  "fm/femalevocal3.wav",
+  "fm/heyhey.wav",
+  "fm/pad.wav",
+  "fm/shakedown.wav",
+  "fm/stabs.wav"
+]
+```
+
+</details>
+
+## foo
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "foo/000_samthfdbrk.wav",
+  "foo/001_frtwbrak.wav",
+  "foo/002_fullbrk.wav",
+  "foo/003_drydrmmr.wav",
+  "foo/004_brtalhat.wav",
+  "foo/005_nicedrop.wav",
+  "foo/006_fastfaze.wav",
+  "foo/007_lkfnkybr.wav",
+  "foo/008_clnkrbrk.wav",
+  "foo/009_hrdlvbrk.wav",
+  "foo/010_dngrsbrk.wav",
+  "foo/011_eyebreak.wav",
+  "foo/012_vctrybrk.wav",
+  "foo/013_mrestick.wav",
+  "foo/014_thumpnbr.wav",
+  "foo/015_sdstckbr.wav",
+  "foo/016_bllstmp.wav",
+  "foo/017_gattabrk.wav",
+  "foo/018_nlzdelit.wav",
+  "foo/019_crshstmp.wav",
+  "foo/020_fststick.wav",
+  "foo/021_sqezdbrk.wav",
+  "foo/022_cnfssbrk.wav",
+  "foo/023_btstmpbr.wav",
+  "foo/024_rlltnbrk.wav",
+  "foo/025_pssbreak.wav",
+  "foo/026_vintage.wav"
+]
+```
+
+</details>
+
+## future
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "future/000_808KICK4.wav",
+  "future/001_808KICK9.wav",
+  "future/002_Bd1_w.wav",
+  "future/003_Bd2_w.wav",
+  "future/004_Bd3_w.wav",
+  "future/005_Johnson.wav",
+  "future/006_Kick9.wav",
+  "future/007_MKD03.wav",
+  "future/008_MKD60601.wav",
+  "future/009_MKDRCK05.wav",
+  "future/010_MKDRCK06.wav",
+  "future/011_MKDRCK07.wav",
+  "future/012_Mhhcf3.wav",
+  "future/013_Shake2.wav",
+  "future/014_Shake4.wav",
+  "future/015_lockett_conga_mute2.wav",
+  "future/016_lockett_conga_open1.wav"
+]
+```
+
+</details>
+
+## gab
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "gab/gab01.wav",
+  "gab/gab02.wav",
+  "gab/gab03.wav",
+  "gab/gab04.wav",
+  "gab/gab05.wav",
+  "gab/gab06.wav",
+  "gab/gab07.wav",
+  "gab/gab08.wav",
+  "gab/gab09.wav",
+  "gab/gab10.wav"
+]
+```
+
+</details>
+
+## gabba
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "gabba/000_0.wav",
+  "gabba/001_1.wav",
+  "gabba/002_2.wav",
+  "gabba/003_3.wav"
+]
+```
+
+</details>
+
+## gabbaloud
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "gabbaloud/000_0.wav",
+  "gabbaloud/001_1.wav",
+  "gabbaloud/002_2.wav",
+  "gabbaloud/003_3.wav"
+]
+```
+
+</details>
+
+## gabbalouder
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "gabbalouder/000_0.wav",
+  "gabbalouder/001_1.wav",
+  "gabbalouder/002_2.wav",
+  "gabbalouder/003_3.wav"
+]
+```
+
+</details>
+
+## glasstap
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "glasstap/000_0.wav",
+  "glasstap/001_1.wav",
+  "glasstap/002_2.wav"
+]
+```
+
+</details>
+
+## glitch
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "glitch/000_BD.wav",
+  "glitch/001_CB.wav",
+  "glitch/002_FX.wav",
+  "glitch/003_HH.wav",
+  "glitch/004_OH.wav",
+  "glitch/005_P1.wav",
+  "glitch/006_P2.wav",
+  "glitch/007_SN.wav"
+]
+```
+
+</details>
+
+## glitch2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "glitch2/000_BD.wav",
+  "glitch2/001_CB.wav",
+  "glitch2/002_FX.wav",
+  "glitch2/003_HH.wav",
+  "glitch2/004_OH.wav",
+  "glitch2/005_P1.wav",
+  "glitch2/006_P2.wav",
+  "glitch2/007_SN.wav"
+]
+```
+
+</details>
+
+## gretsch
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "gretsch/000_brushhitom.wav",
+  "gretsch/001_brushlotom.wav",
+  "gretsch/002_brushsnare.wav",
+  "gretsch/003_brushsnareghost.wav",
+  "gretsch/004_closedhat.wav",
+  "gretsch/005_closedhathard.wav",
+  "gretsch/006_cowbell.wav",
+  "gretsch/007_cymbalgrab.wav",
+  "gretsch/008_cymbalrub.wav",
+  "gretsch/009_flam.wav",
+  "gretsch/010_foothat.wav",
+  "gretsch/011_foothat2.wav",
+  "gretsch/012_hitom.wav",
+  "gretsch/013_kick.wav",
+  "gretsch/014_kicksnare.wav",
+  "gretsch/015_lotom.wav",
+  "gretsch/016_openclosedhat.wav",
+  "gretsch/017_openhat.wav",
+  "gretsch/018_ridebell.wav",
+  "gretsch/019_ridecymbal.wav",
+  "gretsch/020_snare.wav",
+  "gretsch/021_snareghost.wav",
+  "gretsch/022_snarehard.wav",
+  "gretsch/023_snareslack.wav"
+]
+```
+
+</details>
+
+## gtr
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "gtr/0001_cleanC.wav",
+  "gtr/0002_ovrdC.wav",
+  "gtr/0003_distC.wav"
+]
+```
+
+</details>
+
+## h
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "h/000_0_da0.wav",
+  "h/001_0_da0-200%_1000_0_R.wav",
+  "h/002_0_da0-50%_1000_0_R.wav",
+  "h/003_1_da1.wav",
+  "h/004_2_da2.wav",
+  "h/005_3_tick.wav",
+  "h/006_4_tock.wav"
+]
+```
+
+</details>
+
+## hand
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hand/hand11-mono.wav",
+  "hand/hand12-mono.wav",
+  "hand/hand13-mono.wav",
+  "hand/hand14-mono.wav",
+  "hand/hand15-mono.wav",
+  "hand/hand16-mono.wav",
+  "hand/hand17.wav",
+  "hand/hand1-mono.wav",
+  "hand/hand20.wav",
+  "hand/hand21-mono.wav",
+  "hand/hand22-mono.wav",
+  "hand/hand2-mono.wav",
+  "hand/hand3-mono.wav",
+  "hand/hand4-mono.wav",
+  "hand/hand7-mono.wav",
+  "hand/hand8-mono.wav",
+  "hand/hand9-mono.wav"
+]
+```
+
+</details>
+
+## hardcore
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hardcore/000_hcclosedhh.wav",
+  "hardcore/001_hchit1.wav",
+  "hardcore/002_hccrash.wav",
+  "hardcore/003_hchit2.wav",
+  "hardcore/004_hckick1.wav",
+  "hardcore/005_hckick2.wav",
+  "hardcore/006_hcopenhh.wav",
+  "hardcore/007_hcperc1.wav",
+  "hardcore/008_hcperc2.wav",
+  "hardcore/009_hcride.wav",
+  "hardcore/010_hcsnare1.wav",
+  "hardcore/011_hcsnare2.wav"
+]
+```
+
+</details>
+
+## hardkick
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hardkick/VEC1 BD Distortion 06.wav",
+  "hardkick/VEC1 BD Distortion 37.wav",
+  "hardkick/VEC1 BD Distortion 39.wav",
+  "hardkick/VEC1 BD Distortion 41.wav",
+  "hardkick/VEC1 BD Distortion 52.wav",
+  "hardkick/VEC1 BD Distortion 53.wav"
+]
+```
+
+</details>
+
+## haw
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "haw/hawaiian-hh.wav",
+  "haw/hawaiian-kick.wav",
+  "haw/hawaiian-pop.wav",
+  "haw/hawaiian-sd.wav",
+  "haw/hawaiian-short1.wav",
+  "haw/hawaiian-short2.wav"
+]
+```
+
+</details>
+
+## hc
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hc/HHCD0.wav",
+  "hc/HHCD2.wav",
+  "hc/HHCD4.wav",
+  "hc/HHCD6.wav",
+  "hc/HHCD8.wav",
+  "hc/HHCDA.wav"
+]
+```
+
+</details>
+
+## hh
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hh/000_hh3closedhh.wav",
+  "hh/001_hh3crash.wav",
+  "hh/002_hh3hit1.wav",
+  "hh/003_hh3hit2.wav",
+  "hh/004_hh3hit3.wav",
+  "hh/005_hh3kick1.wav",
+  "hh/006_hh3kick2.wav",
+  "hh/007_hh3openhh.wav",
+  "hh/008_hh3rerc1.wav",
+  "hh/009_hh3rerc2.wav",
+  "hh/010_hh3ride.wav",
+  "hh/011_hh3snare1.wav",
+  "hh/012_hh3snare2.wav"
+]
+```
+
+</details>
+
+## hh27
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hh27/000_hh27closedhh.wav",
+  "hh27/001_hh27crash.wav",
+  "hh27/002_hh27hit1.wav",
+  "hh27/003_hh27hit2.wav",
+  "hh27/004_hh27hit3.wav",
+  "hh27/005_hh27kick1.wav",
+  "hh27/006_hh27kick2.wav",
+  "hh27/007_hh27opendhh.wav",
+  "hh27/008_hh27perc1.wav",
+  "hh27/009_hh27perc2.wav",
+  "hh27/010_hh27ride.wav",
+  "hh27/011_hh27snare1.wav",
+  "hh27/012_hh27snare2.wav"
+]
+```
+
+</details>
+
+## hit
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hit/bandpass-blart.wav",
+  "hit/electro-pling1.wav",
+  "hit/laser-powered-sword.wav",
+  "hit/robot-fart.wav",
+  "hit/ufo-take-me-away.wav",
+  "hit/zap-to-crack.wav"
+]
+```
+
+</details>
+
+## hmm
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hmm/hmm.wav"
+]
+```
+
+</details>
+
+## ho
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ho/HHOD0.wav",
+  "ho/HHOD2.wav",
+  "ho/HHOD4.wav",
+  "ho/HHOD6.wav",
+  "ho/HHOD8.wav",
+  "ho/HHODA.wav"
+]
+```
+
+</details>
+
+## hoover
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "hoover/1.wav",
+  "hoover/2.wav",
+  "hoover/3.wav",
+  "hoover/4.wav",
+  "hoover/5.wav",
+  "hoover/6.wav"
+]
+```
+
+</details>
+
+## house
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "house/000_BD.wav",
+  "house/001_CB.wav",
+  "house/002_FX.wav",
+  "house/003_HH.wav",
+  "house/004_OH.wav",
+  "house/005_P1.wav",
+  "house/006_P2.wav",
+  "house/007_SN.wav"
+]
+```
+
+</details>
+
+## ht
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ht/HT0D0.wav",
+  "ht/HT0D3.wav",
+  "ht/HT0D7.wav",
+  "ht/HT0DA.wav",
+  "ht/HT3D0.wav",
+  "ht/HT3D3.wav",
+  "ht/HT3D7.wav",
+  "ht/HT3DA.wav",
+  "ht/HT7D0.wav",
+  "ht/HT7D3.wav",
+  "ht/HT7D7.wav",
+  "ht/HT7DA.wav",
+  "ht/HTAD0.wav",
+  "ht/HTAD3.wav",
+  "ht/HTAD7.wav",
+  "ht/HTADA.wav"
+]
+```
+
+</details>
+
+## if
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "if/000_gab.wav",
+  "if/001_gab2.wav",
+  "if/002_snarl1b.wav",
+  "if/003_snarl2b.wav",
+  "if/004_snarl3b.wav"
+]
+```
+
+</details>
+
+## ifdrums
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ifdrums/ignorebd.wav",
+  "ifdrums/ignorehh.wav",
+  "ifdrums/ignoresd.wav"
+]
+```
+
+</details>
+
+## incoming
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "incoming/000_Mattel  Snare.wav",
+  "incoming/001_Mattel  Tom VHigh.wav",
+  "incoming/002_Mattel Cymbal.wav",
+  "incoming/003_Mattel Hi-Hat.wav",
+  "incoming/004_Mattel Kick.wav",
+  "incoming/005_Mattel Tom High.wav",
+  "incoming/006_Mattel Tom Low.wav",
+  "incoming/007_Mattel Tom VLow.wav"
+]
+```
+
+</details>
+
+## industrial
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "industrial/000_01.wav",
+  "industrial/001_02.wav",
+  "industrial/002_03.wav",
+  "industrial/003_04.wav",
+  "industrial/004_05.wav",
+  "industrial/005_06.wav",
+  "industrial/006_07.wav",
+  "industrial/007_08.wav",
+  "industrial/008_09.wav",
+  "industrial/009_10.wav",
+  "industrial/010_11.wav",
+  "industrial/011_12.wav",
+  "industrial/012_13.wav",
+  "industrial/013_14.wav",
+  "industrial/014_15.wav",
+  "industrial/015_16.wav",
+  "industrial/016_17.wav",
+  "industrial/017_18.wav",
+  "industrial/018_19.wav",
+  "industrial/019_20.wav",
+  "industrial/020_21.wav",
+  "industrial/021_22.wav",
+  "industrial/022_23.wav",
+  "industrial/023_24.wav",
+  "industrial/024_25.wav",
+  "industrial/025_26.wav",
+  "industrial/026_27.wav",
+  "industrial/027_28.wav",
+  "industrial/028_29.wav",
+  "industrial/029_30.wav",
+  "industrial/030_31.wav",
+  "industrial/031_32.wav"
+]
+```
+
+</details>
+
+## insect
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "insect/000_everglades_conehead.wav",
+  "insect/001_robust_shieldback.wav",
+  "insect/002_seashore_meadow_katydid.wav"
+]
+```
+
+</details>
+
+## invaders
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "invaders/000_0.wav",
+  "invaders/001_1.wav",
+  "invaders/002_11.wav",
+  "invaders/003_12.wav",
+  "invaders/004_13.wav",
+  "invaders/005_14.wav",
+  "invaders/006_15.wav",
+  "invaders/007_16.wav",
+  "invaders/008_17.wav",
+  "invaders/009_18.wav",
+  "invaders/010_2.wav",
+  "invaders/011_3.wav",
+  "invaders/012_4.wav",
+  "invaders/013_5.wav",
+  "invaders/014_6.wav",
+  "invaders/015_7.wav",
+  "invaders/016_8.wav",
+  "invaders/017_9.wav"
+]
+```
+
+</details>
+
+## jazz
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "jazz/000_BD.wav",
+  "jazz/001_CB.wav",
+  "jazz/002_FX.wav",
+  "jazz/003_HH.wav",
+  "jazz/004_OH.wav",
+  "jazz/005_P1.wav",
+  "jazz/006_P2.wav",
+  "jazz/007_SN.wav"
+]
+```
+
+</details>
+
+## jungbass
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "jungbass/000_deeep_n_low.wav",
+  "jungbass/001_fat_808_sub.wav",
+  "jungbass/002_fukubass2.wav",
+  "jungbass/003_glide_up_down_sub.wav",
+  "jungbass/004_gliding_808_sub.wav",
+  "jungbass/005_jungasubdown.wav",
+  "jungbass/006_junglerevbass.wav",
+  "jungbass/007_junglesine.wav",
+  "jungbass/008_junglesine2.wav",
+  "jungbass/009_junglesine3.wav",
+  "jungbass/010_mega_jungasubdown.wav",
+  "jungbass/011_shiphorn_tekstep_bass.wav",
+  "jungbass/012_short.wav",
+  "jungbass/013_sub_to_open_wah.wav",
+  "jungbass/014_sustained_2_octave.wav",
+  "jungbass/015_sustained_3_octave.wav",
+  "jungbass/016_sustained_deep_low.wav",
+  "jungbass/017_sweep_me_low_bass.wav",
+  "jungbass/018_synthy_round.wav",
+  "jungbass/019_thin_808_sub.wav"
+]
+```
+
+</details>
+
+## jungle
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "jungle/jungle4closedhh.wav",
+  "jungle/jungle4crash.wav",
+  "jungle/jungle4hit1.wav",
+  "jungle/jungle4hit2.wav",
+  "jungle/jungle4hit3.wav",
+  "jungle/jungle4kick1.wav",
+  "jungle/jungle4kick2.wav",
+  "jungle/jungle4openhh.wav",
+  "jungle/jungle4perc1.wav",
+  "jungle/jungle4perc2.wav",
+  "jungle/jungle4ride.wav",
+  "jungle/jungle4snare1.wav",
+  "jungle/jungle4snare2.wav"
+]
+```
+
+</details>
+
+## juno
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "juno/00_juno_raw_low.wav",
+  "juno/01_juno_raw_mid.wav",
+  "juno/02_juno_raw_high.wav",
+  "juno/03_juno_chorus_low.wav",
+  "juno/04_juno_chorus_mid.wav",
+  "juno/05_juno_chorus_high.wav",
+  "juno/06_juno_release_low.wav",
+  "juno/07_juno_release_mid.wav",
+  "juno/08_juno_release_high.wav",
+  "juno/09_juno_pad_c_minor_filter.wav",
+  "juno/10_juno_pad_c_minor_no_filter.wav",
+  "juno/11_juno_pad_c_minor_noise.wav"
+]
+```
+
+</details>
+
+## jvbass
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "jvbass/000_01.wav",
+  "jvbass/001_02.wav",
+  "jvbass/002_03.wav",
+  "jvbass/003_04.wav",
+  "jvbass/004_05.wav",
+  "jvbass/005_06.wav",
+  "jvbass/006_07.wav",
+  "jvbass/007_08.wav",
+  "jvbass/008_09.wav",
+  "jvbass/009_10.wav",
+  "jvbass/010_11.wav",
+  "jvbass/011_12.wav",
+  "jvbass/012_13.wav"
+]
+```
+
+</details>
+
+## kicklinn
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "kicklinn/Linn Kick 1.wav"
+]
+```
+
+</details>
+
+## koy
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "koy/01_left.wav",
+  "koy/02_right.wav"
+]
+```
+
+</details>
+
+## kurt
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "kurt/000_kurt01.wav",
+  "kurt/001_kurt02.wav",
+  "kurt/002_kurt03.wav",
+  "kurt/003_kurt04.wav",
+  "kurt/004_kurt05.wav",
+  "kurt/005_kurt06.wav",
+  "kurt/006_kurt07.wav"
+]
+```
+
+</details>
+
+## latibro
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "latibro/000_Sound2.wav",
+  "latibro/001_Sound3.wav",
+  "latibro/002_Sound4.wav",
+  "latibro/003_Sound5.wav",
+  "latibro/004_Sound6.wav",
+  "latibro/005_Sound7.wav",
+  "latibro/006_Sound8.wav",
+  "latibro/007_Sound9.wav"
+]
+```
+
+</details>
+
+## led
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "led/000_foo.wav"
+]
+```
+
+</details>
+
+## less
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "less/bass2.wav",
+  "less/hhxx.wav",
+  "less/kicklesshuman.wav",
+  "less/snare.wav"
+]
+```
+
+</details>
+
+## lighter
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "lighter/000_0.wav",
+  "lighter/001_1.wav",
+  "lighter/002_2.wav",
+  "lighter/003_3.wav",
+  "lighter/004_4.wav",
+  "lighter/005_5.wav",
+  "lighter/006_6.wav",
+  "lighter/007_7.wav",
+  "lighter/008_8.wav",
+  "lighter/009_9.wav",
+  "lighter/010_10.wav",
+  "lighter/011_11.wav",
+  "lighter/012_12.wav",
+  "lighter/013_13.wav",
+  "lighter/014_14.wav",
+  "lighter/015_15.wav",
+  "lighter/016_16.wav",
+  "lighter/017_17.wav",
+  "lighter/018_18.wav",
+  "lighter/019_19.wav",
+  "lighter/020_20.wav",
+  "lighter/021_21.wav",
+  "lighter/022_22.wav",
+  "lighter/023_23.wav",
+  "lighter/024_24.wav",
+  "lighter/025_25.wav",
+  "lighter/026_26.wav",
+  "lighter/027_27.wav",
+  "lighter/028_28.wav",
+  "lighter/029_29.wav",
+  "lighter/030_30.wav",
+  "lighter/031_31.wav",
+  "lighter/032_32.wav"
+]
+```
+
+</details>
+
+## linnhats
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "linnhats/1.wav",
+  "linnhats/2.wav",
+  "linnhats/3.wav",
+  "linnhats/4.wav",
+  "linnhats/5.wav",
+  "linnhats/6.wav"
+]
+```
+
+</details>
+
+## lt
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "lt/LT0D0.wav",
+  "lt/LT0D3.wav",
+  "lt/LT0D7.wav",
+  "lt/LT0DA.wav",
+  "lt/LT3D0.wav",
+  "lt/LT3D3.wav",
+  "lt/LT3D7.wav",
+  "lt/LT3DA.wav",
+  "lt/LT7D0.wav",
+  "lt/LT7D3.wav",
+  "lt/LT7D7.wav",
+  "lt/LT7DA.wav",
+  "lt/LTAD0.wav",
+  "lt/LTAD3.wav",
+  "lt/LTAD7.wav",
+  "lt/LTADA.wav"
+]
+```
+
+</details>
+
+## made
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "made/0.wav",
+  "made/1.wav",
+  "made/2.wav",
+  "made/3.wav",
+  "made/4.wav",
+  "made/5.wav",
+  "made/6.wav"
+]
+```
+
+</details>
+
+## made2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "made2/output.wav"
+]
+```
+
+</details>
+
+## mash
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "mash/0.wav",
+  "mash/1.wav"
+]
+```
+
+</details>
+
+## mash2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "mash2/000_output.wav",
+  "mash2/001_output2.wav",
+  "mash2/002_output3.wav",
+  "mash2/003_output4.wav"
+]
+```
+
+</details>
+
+## metal
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "metal/000_0.wav",
+  "metal/001_1.wav",
+  "metal/002_2.wav",
+  "metal/003_3.wav",
+  "metal/004_4.wav",
+  "metal/005_5.wav",
+  "metal/006_6.wav",
+  "metal/007_7.wav",
+  "metal/008_8.wav",
+  "metal/009_9.wav"
+]
+```
+
+</details>
+
+## miniyeah
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "miniyeah/000_Sound0.wav",
+  "miniyeah/001_Sound11.wav",
+  "miniyeah/002_Sound23.wav",
+  "miniyeah/003_Sound36.wav"
+]
+```
+
+</details>
+
+## monsterb
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "monsterb/000_jumpdown.wav",
+  "monsterb/001_laughter.wav",
+  "monsterb/002_tongue.wav",
+  "monsterb/003_warping.wav",
+  "monsterb/004_wolfman.wav",
+  "monsterb/005_zap.wav"
+]
+```
+
+</details>
+
+## moog
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "moog/000_Mighty Moog C2.wav",
+  "moog/001_Mighty Moog C3.wav",
+  "moog/002_Mighty Moog C4.wav",
+  "moog/003_Mighty Moog G1.wav",
+  "moog/004_Mighty Moog G2.wav",
+  "moog/005_Mighty Moog G3.wav",
+  "moog/006_Mighty Moog G4.wav"
+]
+```
+
+</details>
+
+## mouth
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "mouth/000_1.wav",
+  "mouth/001_10.wav",
+  "mouth/002_11.wav",
+  "mouth/003_12.wav",
+  "mouth/004_13.wav",
+  "mouth/005_14.wav",
+  "mouth/006_15.wav",
+  "mouth/007_2.wav",
+  "mouth/008_3.wav",
+  "mouth/009_4.wav",
+  "mouth/010_5.wav",
+  "mouth/011_6.wav",
+  "mouth/012_7.wav",
+  "mouth/013_8.wav",
+  "mouth/014_9.wav"
+]
+```
+
+</details>
+
+## mp3
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "mp3/000_mp30.wav",
+  "mp3/001_mp31.wav",
+  "mp3/002_mp32.wav",
+  "mp3/003_mp33.wav"
+]
+```
+
+</details>
+
+## msg
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "msg/000_msg0.wav",
+  "msg/001_msg1.wav",
+  "msg/002_msg2.wav",
+  "msg/003_msg3.wav",
+  "msg/004_msg4.wav",
+  "msg/005_msg5.wav",
+  "msg/006_msg6.wav",
+  "msg/007_msg7.wav",
+  "msg/008_msg8.wav"
+]
+```
+
+</details>
+
+## mt
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "mt/MT0D0.wav",
+  "mt/MT0D3.wav",
+  "mt/MT0D7.wav",
+  "mt/MT0DA.wav",
+  "mt/MT3D0.wav",
+  "mt/MT3D3.wav",
+  "mt/MT3D7.wav",
+  "mt/MT3DA.wav",
+  "mt/MT7D0.wav",
+  "mt/MT7D3.wav",
+  "mt/MT7D7.wav",
+  "mt/MT7DA.wav",
+  "mt/MTAD0.wav",
+  "mt/MTAD3.wav",
+  "mt/MTAD7.wav",
+  "mt/MTADA.wav"
+]
+```
+
+</details>
+
+## mute
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "mute/000_FH A#2 SCF.wav",
+  "mute/001_FH A3 SCF.wav",
+  "mute/002_FH B3 SCF.wav",
+  "mute/003_FH B4 SC.wav",
+  "mute/004_FH B4 SCF.wav",
+  "mute/005_FH C#3 SC.wav",
+  "mute/006_FH C#3 SCF.wav",
+  "mute/007_FH C#5 SCF.wav",
+  "mute/008_FH C4 SCF.wav",
+  "mute/009_FH D#4 SCF.wav",
+  "mute/010_FH D#5 SCF.wav",
+  "mute/011_FH D3 SC.wav",
+  "mute/012_FH D3 SCF.wav",
+  "mute/013_FH E3 SC.wav",
+  "mute/014_FH E3 SCF.wav",
+  "mute/015_FH F#4 SC.wav",
+  "mute/016_FH F#4 SCF.wav",
+  "mute/017_FH F3 SC.wav",
+  "mute/018_FH F3 SCF.wav",
+  "mute/019_FH F5 SCF.wav",
+  "mute/020_FH G#2 SC.wav",
+  "mute/021_FH G#2 SCF.wav",
+  "mute/022_FH G#3 SC.wav",
+  "mute/023_FH G#3 SCF.wav",
+  "mute/024_FH G#4 SC.wav",
+  "mute/025_FH G#4 SCF.wav",
+  "mute/026_FH G2 SC.wav",
+  "mute/027_FH G2 SCF.wav"
+]
+```
+
+</details>
+
+## newnotes
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "newnotes/000_0.wav",
+  "newnotes/001_1.wav",
+  "newnotes/002_10.wav",
+  "newnotes/003_11.wav",
+  "newnotes/004_12.wav",
+  "newnotes/005_13.wav",
+  "newnotes/006_14.wav",
+  "newnotes/007_2.wav",
+  "newnotes/008_3.wav",
+  "newnotes/009_4.wav",
+  "newnotes/010_5.wav",
+  "newnotes/011_6.wav",
+  "newnotes/012_7.wav",
+  "newnotes/013_8.wav",
+  "newnotes/014_9.wav"
+]
+```
+
+</details>
+
+## noise
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "noise/000_noise.wav"
+]
+```
+
+</details>
+
+## noise2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "noise2/000_0.wav",
+  "noise2/001_1.wav",
+  "noise2/002_2.wav",
+  "noise2/003_3.wav",
+  "noise2/004_4.wav",
+  "noise2/005_5.wav",
+  "noise2/006_6.wav",
+  "noise2/007_7.wav"
+]
+```
+
+</details>
+
+## notes
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "notes/000_0.wav",
+  "notes/001_1.wav",
+  "notes/002_10.wav",
+  "notes/003_11.wav",
+  "notes/004_12.wav",
+  "notes/005_13.wav",
+  "notes/006_14.wav",
+  "notes/007_2.wav",
+  "notes/008_3.wav",
+  "notes/009_4.wav",
+  "notes/010_5.wav",
+  "notes/011_6.wav",
+  "notes/012_7.wav",
+  "notes/013_8.wav",
+  "notes/014_9.wav"
+]
+```
+
+</details>
+
+## numbers
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "numbers/0.wav",
+  "numbers/1.wav",
+  "numbers/2.wav",
+  "numbers/3.wav",
+  "numbers/4.wav",
+  "numbers/5.wav",
+  "numbers/6.wav",
+  "numbers/7.wav",
+  "numbers/8.wav"
+]
+```
+
+</details>
+
+## num
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "num/00.wav",
+  "num/01.wav",
+  "num/02.wav",
+  "num/03.wav",
+  "num/04.wav",
+  "num/05.wav",
+  "num/06.wav",
+  "num/07.wav",
+  "num/08.wav",
+  "num/09.wav",
+  "num/10.wav",
+  "num/11.wav",
+  "num/12.wav",
+  "num/13.wav",
+  "num/14.wav",
+  "num/15.wav",
+  "num/16.wav",
+  "num/17.wav",
+  "num/18.wav",
+  "num/19.wav",
+  "num/20.wav"
+]
+```
+
+</details>
+
+## oc
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "oc/OPCL1.wav",
+  "oc/OPCL2.wav",
+  "oc/OPCL3.wav",
+  "oc/OPCL4.wav"
+]
+```
+
+</details>
+
+## odx
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "odx/000_Kick_1.wav",
+  "odx/001_DX_Snare_1.wav",
+  "odx/002_DXShaker.wav",
+  "odx/003_DXRimshot.wav",
+  "odx/004_DXRide.wav",
+  "odx/005_DX_Open_Hat.wav",
+  "odx/006_DX_Mid_Tom.wav",
+  "odx/007_DX_Med_Crash.wav",
+  "odx/008_DX_Low_Tom.wav",
+  "odx/009_DX_Lo_Crash.wav",
+  "odx/010_DX_Hi_Tom.wav",
+  "odx/011_DX_High_Crash.wav",
+  "odx/012_DX_Cl_Hat.wav",
+  "odx/013_DXClap.wav",
+  "odx/014_DX_Ax_Hat.wav"
+]
+```
+
+</details>
+
+## off
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "off/000_01.wav"
+]
+```
+
+</details>
+
+## outdoor
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "outdoor/1.wav",
+  "outdoor/2.wav",
+  "outdoor/3.wav",
+  "outdoor/4.wav",
+  "outdoor/5.wav",
+  "outdoor/6.wav"
+]
+```
+
+</details>
+
+## pad
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "pad/alien-monolith-pad.wav",
+  "pad/angelpads.wav",
+  "pad/bellpad-harmonics.wav"
+]
+```
+
+</details>
+
+## padlong
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "padlong/atmospheric-abduction.wav"
+]
+```
+
+</details>
+
+## pebbles
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "pebbles/90788__kmoon__pebbles-scrape-drag-foot.wav"
+]
+```
+
+</details>
+
+## perc
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "perc/000_perc0.wav",
+  "perc/001_perc1.wav",
+  "perc/002_perc2.wav",
+  "perc/003_perc3.wav",
+  "perc/004_perc4.wav",
+  "perc/005_perc5.wav"
+]
+```
+
+</details>
+
+## peri
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "peri/000_bd.wav",
+  "peri/001_bd-rev.wav",
+  "peri/002_hh2.wav",
+  "peri/003_hhx.wav",
+  "peri/004_ksh.wav",
+  "peri/005_sd.wav",
+  "peri/006_sd-rev.wav",
+  "peri/007_xbigclang.wav",
+  "peri/008_xbong.wav",
+  "peri/009_xbusket.wav",
+  "peri/010_xchinga.wav",
+  "peri/011_xfx1.wav",
+  "peri/012_xfx2.wav",
+  "peri/013_xfx3.wav",
+  "peri/014_xgillclank.wav"
+]
+```
+
+</details>
+
+## pluck
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "pluck/BS A1 PI.wav",
+  "pluck/BS A#2 PI.wav",
+  "pluck/BS A3 PI.wav",
+  "pluck/BS B1 PI.wav",
+  "pluck/BS B3 PI.wav",
+  "pluck/BS C3 PI.wav",
+  "pluck/BS D2 PI.wav",
+  "pluck/BS D#3 PI.wav",
+  "pluck/BS D4 PI.wav",
+  "pluck/BS E1 PI.wav",
+  "pluck/BS E2 PI.wav",
+  "pluck/BS F1 PI.wav",
+  "pluck/BS F3 PI.wav",
+  "pluck/BS G1 PI.wav",
+  "pluck/BS G#2 PI.wav",
+  "pluck/BS G2 PI.wav",
+  "pluck/BS G3 PI.wav"
+]
+```
+
+</details>
+
+## popkick
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "popkick/000_1.wav",
+  "popkick/001_10.wav",
+  "popkick/002_2.wav",
+  "popkick/003_3.wav",
+  "popkick/004_4.wav",
+  "popkick/005_5.wav",
+  "popkick/006_6.wav",
+  "popkick/007_7.wav",
+  "popkick/008_8.wav",
+  "popkick/009_9.wav"
+]
+```
+
+</details>
+
+## print
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "print/000_0.wav",
+  "print/001_1.wav",
+  "print/002_10.wav",
+  "print/003_2.wav",
+  "print/004_3.wav",
+  "print/005_4.wav",
+  "print/006_5.wav",
+  "print/007_6.wav",
+  "print/008_7.wav",
+  "print/009_8.wav",
+  "print/010_9.wav"
+]
+```
+
+</details>
+
+## proc
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "proc/000_2.wav",
+  "proc/001_3.wav"
+]
+```
+
+</details>
+
+## procshort
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "procshort/000_1.wav",
+  "procshort/001_10.wav",
+  "procshort/002_11.wav",
+  "procshort/003_4.wav",
+  "procshort/004_5.wav",
+  "procshort/005_7.wav",
+  "procshort/006_8.wav",
+  "procshort/007_9.wav"
+]
+```
+
+</details>
+
+## psr
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "psr/000_01.wav",
+  "psr/001_02.wav",
+  "psr/002_03.wav",
+  "psr/003_04.wav",
+  "psr/004_05.wav",
+  "psr/005_06.wav",
+  "psr/006_07.wav",
+  "psr/007_08.wav",
+  "psr/008_09.wav",
+  "psr/009_10.wav",
+  "psr/010_11.wav",
+  "psr/011_12.wav",
+  "psr/012_13.wav",
+  "psr/013_14.wav",
+  "psr/014_15.wav",
+  "psr/015_16.wav",
+  "psr/016_17.wav",
+  "psr/017_18.wav",
+  "psr/018_19.wav",
+  "psr/019_20.wav",
+  "psr/020_21.wav",
+  "psr/021_22.wav",
+  "psr/022_23.wav",
+  "psr/023_24.wav",
+  "psr/024_25.wav",
+  "psr/025_26.wav",
+  "psr/026_27.wav",
+  "psr/027_28.wav",
+  "psr/028_29.wav",
+  "psr/029_30.wav"
+]
+```
+
+</details>
+
+## rave
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "rave/AREUREADY.wav",
+  "rave/Babylon.wav",
+  "rave/cut.wav",
+  "rave/doh.wav",
+  "rave/giveit.wav",
+  "rave/ourcrew.wav",
+  "rave/prodigyloop.wav",
+  "rave/stabah.wav"
+]
+```
+
+</details>
+
+## rave2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "rave2/rave_bass01.wav",
+  "rave2/rave_bass02.wav",
+  "rave2/rave_bass03.wav",
+  "rave2/rave_bass04.wav"
+]
+```
+
+</details>
+
+## ravemono
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ravemono/Babylon.wav",
+  "ravemono/prodigyloop.wav"
+]
+```
+
+</details>
+
+## realclaps
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "realclaps/1.wav",
+  "realclaps/2.wav",
+  "realclaps/3.wav",
+  "realclaps/4.wav"
+]
+```
+
+</details>
+
+## reverbkick
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "reverbkick/1.wav"
+]
+```
+
+</details>
+
+## rm
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "rm/RIM0.wav",
+  "rm/RIMA.wav"
+]
+```
+
+</details>
+
+## rs
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "rs/rytm-rs.wav"
+]
+```
+
+</details>
+
+## sax
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sax/000_notes121a.wav",
+  "sax/001_notes121a2.wav",
+  "sax/002_notes121b.wav",
+  "sax/003_notes121bflat.wav",
+  "sax/004_notes121bflat2.wav",
+  "sax/005_notes121c.wav",
+  "sax/006_notes121c2.wav",
+  "sax/007_notes121csharp.wav",
+  "sax/008_notes121csharp2.wav",
+  "sax/009_notes121d.wav",
+  "sax/010_notes121e.wav",
+  "sax/011_notes121e2.wav",
+  "sax/012_notes121eflat.wav",
+  "sax/013_notes121eflat2.wav",
+  "sax/014_notes121f.wav",
+  "sax/015_notes121f2.wav",
+  "sax/016_notes121fsharp.wav",
+  "sax/017_notes121fsharp2.wav",
+  "sax/018_notes121g.wav",
+  "sax/019_notes121g2.wav",
+  "sax/020_notes121gsharp.wav",
+  "sax/021_notes121gsharp2.wav"
+]
+```
+
+</details>
+
+## sd
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sd/rytm-00-hard.wav",
+  "sd/rytm-01-classic.wav"
+]
+```
+
+</details>
+
+## seawolf
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "seawolf/000_minehit.wav",
+  "seawolf/001_shiphit.wav",
+  "seawolf/002_torpedo.wav"
+]
+```
+
+</details>
+
+## sequential
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sequential/000_Tom Clap.wav",
+  "sequential/001_Tom Crash.wav",
+  "sequential/002_Tom Hat Closed.wav",
+  "sequential/003_Tom Kick.wav",
+  "sequential/004_Tom Openhat.wav",
+  "sequential/005_Tom Snare.wav",
+  "sequential/006_Tom Tom1.wav",
+  "sequential/007_Tom Tom2.wav"
+]
+```
+
+</details>
+
+## sf
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sf/000_bass.wav",
+  "sf/001_1.wav",
+  "sf/002_10.wav",
+  "sf/003_11.wav",
+  "sf/004_12.wav",
+  "sf/005_13.wav",
+  "sf/006_14.wav",
+  "sf/007_15.wav",
+  "sf/008_16.wav",
+  "sf/009_17.wav",
+  "sf/010_2.wav",
+  "sf/011_3.wav",
+  "sf/012_4.wav",
+  "sf/013_5.wav",
+  "sf/014_6.wav",
+  "sf/015_7.wav",
+  "sf/016_8.wav",
+  "sf/017_9.wav"
+]
+```
+
+</details>
+
+## sheffield
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sheffield/jakeinsects.wav"
+]
+```
+
+</details>
+
+## short
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "short/sampleoftheday-gtt-fx-synth-009.wav",
+  "short/sampleoftheday-gtt-snare-drum-010.wav",
+  "short/sampleoftheday-gtt-snare-drum-012.wav",
+  "short/sampleoftheday-gtt-snare-drum-020.wav",
+  "short/sampleoftheday-gtt-snare-drum-021.wav"
+]
+```
+
+</details>
+
+## sid
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sid/000_bas2.wav",
+  "sid/001_bas.wav",
+  "sid/002_basd.wav",
+  "sid/003_blipp01.wav",
+  "sid/004_blipp02.wav",
+  "sid/005_high.wav",
+  "sid/006_high2.wav",
+  "sid/007_hihat01.wav",
+  "sid/008_hihat02.wav",
+  "sid/009_lofidrums.wav",
+  "sid/010_sidsnares.wav",
+  "sid/011_tdrum.wav"
+]
+```
+
+</details>
+
+## simplesine
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "simplesine/000_sine.wav",
+  "simplesine/001_sine2.wav",
+  "simplesine/002_sine3.wav",
+  "simplesine/003_sine4.wav",
+  "simplesine/004_sine5.wav",
+  "simplesine/005_sine6.wav"
+]
+```
+
+</details>
+
+## sitar
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sitar/000_d_maj_sitar_chorda.wav",
+  "sitar/001_d_maj_sitar_chordb.wav",
+  "sitar/002_d_maj_sitar_chordc.wav",
+  "sitar/003_d_maj_sitar_chordd.wav",
+  "sitar/004_d_maj_sitar_chorde.wav",
+  "sitar/005_d_minor_sitar_chorda.wav",
+  "sitar/006_d_minor_sitar_chordb.wav",
+  "sitar/007_d_minor_sitar_chordc.wav"
+]
+```
+
+</details>
+
+## sn
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sn/ST0T0S0.wav",
+  "sn/ST0T0S3.wav",
+  "sn/ST0T0S7.wav",
+  "sn/ST0T0SA.wav",
+  "sn/ST0T3S3.wav",
+  "sn/ST0T3S7.wav",
+  "sn/ST0T3SA.wav",
+  "sn/ST0T7S3.wav",
+  "sn/ST0T7S7.wav",
+  "sn/ST0T7SA.wav",
+  "sn/ST0TAS3.wav",
+  "sn/ST0TAS7.wav",
+  "sn/ST0TASA.wav",
+  "sn/ST3T0S0.wav",
+  "sn/ST3T0S3.wav",
+  "sn/ST3T0S7.wav",
+  "sn/ST3T0SA.wav",
+  "sn/ST3T3S3.wav",
+  "sn/ST3T3S7.wav",
+  "sn/ST3T3SA.wav",
+  "sn/ST3T7S3.wav",
+  "sn/ST3T7S7.wav",
+  "sn/ST3T7SA.wav",
+  "sn/ST3TAS3.wav",
+  "sn/ST3TAS7.wav",
+  "sn/ST3TASA.wav",
+  "sn/ST7T0S0.wav",
+  "sn/ST7T0S3.wav",
+  "sn/ST7T0S7.wav",
+  "sn/ST7T0SA.wav",
+  "sn/ST7T3S3.wav",
+  "sn/ST7T3S7.wav",
+  "sn/ST7T3SA.wav",
+  "sn/ST7T7S3.wav",
+  "sn/ST7T7S7.wav",
+  "sn/ST7T7SA.wav",
+  "sn/ST7TAS3.wav",
+  "sn/ST7TAS7.wav",
+  "sn/ST7TASA.wav",
+  "sn/STAT0S0.wav",
+  "sn/STAT0S3.wav",
+  "sn/STAT0S7.wav",
+  "sn/STAT0SA.wav",
+  "sn/STAT3S3.wav",
+  "sn/STAT3S7.wav",
+  "sn/STAT3SA.wav",
+  "sn/STAT7S3.wav",
+  "sn/STAT7S7.wav",
+  "sn/STAT7SA.wav",
+  "sn/STATAS3.wav",
+  "sn/STATAS7.wav",
+  "sn/STATASA.wav"
+]
+```
+
+</details>
+
+## space
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "space/000_0.wav",
+  "space/001_1.wav",
+  "space/002_11.wav",
+  "space/003_12.wav",
+  "space/004_13.wav",
+  "space/005_14.wav",
+  "space/006_15.wav",
+  "space/007_16.wav",
+  "space/008_17.wav",
+  "space/009_18.wav",
+  "space/010_2.wav",
+  "space/011_3.wav",
+  "space/012_4.wav",
+  "space/013_5.wav",
+  "space/014_6.wav",
+  "space/015_7.wav",
+  "space/016_8.wav",
+  "space/017_9.wav"
+]
+```
+
+</details>
+
+## speakspell
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "speakspell/000_1.wav",
+  "speakspell/001_10.wav",
+  "speakspell/002_11.wav",
+  "speakspell/003_12.wav",
+  "speakspell/004_2.wav",
+  "speakspell/005_3.wav",
+  "speakspell/006_4.wav",
+  "speakspell/007_5.wav",
+  "speakspell/008_6.wav",
+  "speakspell/009_7.wav",
+  "speakspell/010_8.wav",
+  "speakspell/011_9.wav"
+]
+```
+
+</details>
+
+## speech
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "speech/000_Sound10.wav",
+  "speech/001_Sound4.wav",
+  "speech/002_Sound5.wav",
+  "speech/003_Sound6.wav",
+  "speech/004_Sound7.wav",
+  "speech/005_Sound8.wav",
+  "speech/006_Sound9.wav"
+]
+```
+
+</details>
+
+## speechless
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "speechless/000_a.wav",
+  "speechless/001_pe.wav",
+  "speechless/002_pepepe.wav",
+  "speechless/003_pepepepepe.wav",
+  "speechless/004_pepper.wav",
+  "speechless/005_pepperpot.wav",
+  "speechless/006_pick.wav",
+  "speechless/007_pickle.wav",
+  "speechless/008_po.wav",
+  "speechless/009_te.wav"
+]
+```
+
+</details>
+
+## speedupdown
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "speedupdown/000_Sound20.wav",
+  "speedupdown/001_Sound21.wav",
+  "speedupdown/002_Sound22.wav",
+  "speedupdown/003_Sound23.wav",
+  "speedupdown/004_Sound24.wav",
+  "speedupdown/005_Sound25.wav",
+  "speedupdown/006_Sound26.wav",
+  "speedupdown/007_Sound27.wav",
+  "speedupdown/008_Sound28.wav"
+]
+```
+
+</details>
+
+## stab
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "stab/000_stab1.wav",
+  "stab/001_stab10.wav",
+  "stab/002_stab11.wav",
+  "stab/003_stab12.wav",
+  "stab/004_stab13.wav",
+  "stab/005_stab14.wav",
+  "stab/006_stab15.wav",
+  "stab/007_stab16.wav",
+  "stab/008_stab17.wav",
+  "stab/009_stab18.wav",
+  "stab/010_stab19.wav",
+  "stab/011_stab2.wav",
+  "stab/012_stab20.wav",
+  "stab/013_stab21.wav",
+  "stab/014_stab22.wav",
+  "stab/015_stab23.wav",
+  "stab/016_stab3.wav",
+  "stab/017_stab4.wav",
+  "stab/018_stab5.wav",
+  "stab/019_stab6.wav",
+  "stab/020_stab7.wav",
+  "stab/021_stab8.wav",
+  "stab/022_stab9.wav"
+]
+```
+
+</details>
+
+## stomp
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "stomp/000_0.wav",
+  "stomp/001_0_2.wav",
+  "stomp/002_1.wav",
+  "stomp/003_2.wav",
+  "stomp/004_3.wav",
+  "stomp/005_5.wav",
+  "stomp/006_6.wav",
+  "stomp/007_7.wav",
+  "stomp/008_8.wav",
+  "stomp/009_9.wav"
+]
+```
+
+</details>
+
+## subroc3d
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "subroc3d/000_01.wav",
+  "subroc3d/001_02.wav",
+  "subroc3d/002_03.wav",
+  "subroc3d/003_04.wav",
+  "subroc3d/004_05.wav",
+  "subroc3d/005_06.wav",
+  "subroc3d/006_07.wav",
+  "subroc3d/007_08.wav",
+  "subroc3d/008_09.wav",
+  "subroc3d/009_11.wav",
+  "subroc3d/010_12.wav"
+]
+```
+
+</details>
+
+## sugar
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sugar/000_bark.wav",
+  "sugar/001_crab.wav"
+]
+```
+
+</details>
+
+## sundance
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "sundance/000_bong.wav",
+  "sundance/001_explsion.wav",
+  "sundance/002_hatch.wav",
+  "sundance/003_ping1.wav",
+  "sundance/004_ping2.wav",
+  "sundance/005_whoosh.wav"
+]
+```
+
+</details>
+
+## tabla
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "tabla/000_bass_flick1.wav",
+  "tabla/001_bass_flick2.wav",
+  "tabla/002_bass_lick1.wav",
+  "tabla/003_dead_hit1.wav",
+  "tabla/004_dead_hit2.wav",
+  "tabla/005_dead_hit3.wav",
+  "tabla/006_d_sharp_hit.wav",
+  "tabla/007_hi_flick1.wav",
+  "tabla/008_hi_flick2.wav",
+  "tabla/009_hi_hit1.wav",
+  "tabla/010_hi_hit10.wav",
+  "tabla/011_hi_hit2.wav",
+  "tabla/012_hi_hit3.wav",
+  "tabla/013_hi_hit4.wav",
+  "tabla/014_hi_hit5.wav",
+  "tabla/015_hi_hit6.wav",
+  "tabla/016_hi_hit7.wav",
+  "tabla/017_hi_hit8.wav",
+  "tabla/018_hi_hit9.wav",
+  "tabla/019_lower1_hit.wav",
+  "tabla/020_lower2_hit.wav",
+  "tabla/021_lower3_hit.wav",
+  "tabla/022_lower4_hit.wav",
+  "tabla/023_lower5_hit.wav",
+  "tabla/024_lower6_hit.wav",
+  "tabla/025_lower_hits_descending.wav"
+]
+```
+
+</details>
+
+## tabla2
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "tabla2/23645_loofa_A_001.wav",
+  "tabla2/23646_loofa_A_002.wav",
+  "tabla2/23647_loofa_A_003.wav",
+  "tabla2/23648_loofa_A_004.wav",
+  "tabla2/23649_loofa_A_005.wav",
+  "tabla2/23650_loofa_A_006.wav",
+  "tabla2/23651_loofa_A_007.wav",
+  "tabla2/23652_loofa_A_008.wav",
+  "tabla2/23653_loofa_A_009.wav",
+  "tabla2/23654_loofa_A_010.wav",
+  "tabla2/23655_loofa_A_011.wav",
+  "tabla2/23656_loofa_A_012.wav",
+  "tabla2/23657_loofa_A_013.wav",
+  "tabla2/23658_loofa_A_014.wav",
+  "tabla2/23659_loofa_A_015.wav",
+  "tabla2/23660_loofa_A_016.wav",
+  "tabla2/23661_loofa_A_017.wav",
+  "tabla2/23662_loofa_A_018.wav",
+  "tabla2/23663_loofa_A_019.wav",
+  "tabla2/23664_loofa_A_020.wav",
+  "tabla2/23665_loofa_A_021.wav",
+  "tabla2/23666_loofa_A_022.wav",
+  "tabla2/23667_loofa_A_023.wav",
+  "tabla2/23668_loofa_A_024.wav",
+  "tabla2/23669_loofa_A_025.wav",
+  "tabla2/23670_loofa_A_026.wav",
+  "tabla2/23671_loofa_A_027.wav",
+  "tabla2/23672_loofa_A_028.wav",
+  "tabla2/23673_loofa_bahia001.wav",
+  "tabla2/23674_loofa_bahia002.wav",
+  "tabla2/23675_loofa_bahia003.wav",
+  "tabla2/23676_loofa_bahia004.wav",
+  "tabla2/23677_loofa_bahia005.wav",
+  "tabla2/23678_loofa_bahia006.wav",
+  "tabla2/23679_loofa_bahia007.wav",
+  "tabla2/23680_loofa_bahia008.wav",
+  "tabla2/23681_loofa_bahia009.wav",
+  "tabla2/23682_loofa_bahia010.wav",
+  "tabla2/23683_loofa_bahia011.wav",
+  "tabla2/23684_loofa_bahia012.wav",
+  "tabla2/23685_loofa_bahia013.wav",
+  "tabla2/23686_loofa_bahia014.wav",
+  "tabla2/23687_loofa_bahia015.wav",
+  "tabla2/23688_loofa_bahia016.wav",
+  "tabla2/23689_loofa_bahia017.wav",
+  "tabla2/23690_loofa_bahia018.wav"
+]
+```
+
+</details>
+
+## tablex
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "tablex/0.wav",
+  "tablex/1.wav",
+  "tablex/fuckable.wav"
+]
+```
+
+</details>
+
+## tacscan
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "tacscan/000_01.wav",
+  "tacscan/001_02.wav",
+  "tacscan/002_03.wav",
+  "tacscan/003_1up.wav",
+  "tacscan/004_credit.wav",
+  "tacscan/005_eexpl.wav",
+  "tacscan/006_eshot.wav",
+  "tacscan/007_flight1.wav",
+  "tacscan/008_flight2.wav",
+  "tacscan/009_flight3.wav",
+  "tacscan/010_flight4.wav",
+  "tacscan/011_flight5.wav",
+  "tacscan/012_formatn.wav",
+  "tacscan/013_pexpl.wav",
+  "tacscan/014_plaser.wav",
+  "tacscan/015_pship.wav",
+  "tacscan/016_sexpl.wav",
+  "tacscan/017_slaser.wav",
+  "tacscan/018_sthrust.wav",
+  "tacscan/019_tunnelh.wav",
+  "tacscan/020_tunnelw.wav",
+  "tacscan/021_warp.wav"
+]
+```
+
+</details>
+
+## tech
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "tech/tn1closedhh.wav",
+  "tech/tn1crash.wav",
+  "tech/tn1hit1.wav",
+  "tech/tn1hit2.wav",
+  "tech/tn1hit3.wav",
+  "tech/tn1kick1.wav",
+  "tech/tn1kick2.wav",
+  "tech/tn1openhh.wav",
+  "tech/tn1perc1.wav",
+  "tech/tn1perc2.wav",
+  "tech/tn1ride.wav",
+  "tech/tn1snare1.wav",
+  "tech/tn1snare2.wav"
+]
+```
+
+</details>
+
+## techno
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "techno/000_0.wav",
+  "techno/001_1.wav",
+  "techno/002_3.wav",
+  "techno/003_4.wav",
+  "techno/004_5.wav",
+  "techno/005_6.wav",
+  "techno/006_7.wav"
+]
+```
+
+</details>
+
+## tink
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "tink/000_tink1.wav",
+  "tink/001_tink2.wav",
+  "tink/002_tink3.wav",
+  "tink/003_tink4.wav",
+  "tink/004_tink5.wav"
+]
+```
+
+</details>
+
+## tok
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "tok/000_0.wav",
+  "tok/001_1.wav",
+  "tok/002_2.wav",
+  "tok/003_3.wav"
+]
+```
+
+</details>
+
+## toys
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "toys/000_ClassicalMusic.wav",
+  "toys/001_ClassicalMusic-Notes.wav",
+  "toys/002_ClassicalMusic-Words.wav",
+  "toys/003_Colors.wav",
+  "toys/004_Colors-Notes.wav",
+  "toys/005_Colors-Words.wav",
+  "toys/006_MusicalMedley.wav",
+  "toys/007_MusicalMedley-Notes.wav",
+  "toys/008_MusicalMedley-Words.wav",
+  "toys/009_Numbers.wav",
+  "toys/010_Numbers-Notes.wav",
+  "toys/011_Numbers-Words.wav",
+  "toys/012_ToyNotes.wav"
+]
+```
+
+</details>
+
+## trump
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "trump/000_tightstabb.wav",
+  "trump/001_tightstabblowoct.wav",
+  "trump/002_tightstabe.wav",
+  "trump/003_tightstabg.wav",
+  "trump/004_trumpfunk107a.wav",
+  "trump/005_trumpstabb.wav",
+  "trump/006_trumpstabblowoct.wav",
+  "trump/007_trumpstabe.wav",
+  "trump/008_trumpstabg.wav",
+  "trump/009_trumpstabschord.wav",
+  "trump/010_trumptightstabschord.wav"
+]
+```
+
+</details>
+
+## ul
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ul/000_beep.wav",
+  "ul/001_little-whip.wav",
+  "ul/002_ulhh.wav",
+  "ul/003_ulkick.wav",
+  "ul/004_ulnoisey-kick.wav",
+  "ul/005_ulnoisey-run.wav",
+  "ul/006_ulnoisey-snare.wav",
+  "ul/007_ulsnare.wav",
+  "ul/008_ulsnare-reverb.wav",
+  "ul/009_ulsnare-reverse.wav"
+]
+```
+
+</details>
+
+## ulgab
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "ulgab/gab1.wav",
+  "ulgab/gab2.wav",
+  "ulgab/gab3.wav",
+  "ulgab/gab4.wav",
+  "ulgab/gab5.wav"
+]
+```
+
+</details>
+
+## uxay
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "uxay/000_bar.wav",
+  "uxay/001_erk.wav",
+  "uxay/002_foo.wav"
+]
+```
+
+</details>
+
+## v
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "v/000_b_blipp01.wav",
+  "v/001_v_blipp02.wav",
+  "v/002_v_perc3.wav",
+  "v/003_v_perc5.wav",
+  "v/004_v_snare01.wav",
+  "v/005_v_snare02.wav"
+]
+```
+
+</details>
+
+## voodoo
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "voodoo/000_VoodooBass.wav",
+  "voodoo/001_VoodooHihat.wav",
+  "voodoo/002_VoodooRim.wav",
+  "voodoo/003_VoodooSnare.wav",
+  "voodoo/004_VoodooTom.wav"
+]
+```
+
+</details>
+
+## wind
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "wind/000_wind1.wav",
+  "wind/001_wind10.wav",
+  "wind/002_wind2.wav",
+  "wind/003_wind3.wav",
+  "wind/004_wind4.wav",
+  "wind/005_wind5.wav",
+  "wind/006_wind6.wav",
+  "wind/007_wind7.wav",
+  "wind/008_wind8.wav",
+  "wind/009_wind9.wav"
+]
+```
+
+</details>
+
+## wobble
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "wobble/000_0.wav"
+]
+```
+
+</details>
+
+## world
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "world/bd.wav",
+  "world/gabbakick.wav",
+  "world/sn.wav"
+]
+```
+
+</details>
+
+## xmas
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "xmas/170535__cognito-perceptu__merry-christmas.wav"
+]
+```
+
+</details>
+
+## yeah
+
+<details>
+<summary>展开 JSON</summary>
+
+```json
+[
+  "yeah/000_Sound0.wav",
+  "yeah/001_Sound10.wav",
+  "yeah/002_Sound11.wav",
+  "yeah/003_Sound13.wav",
+  "yeah/004_Sound14.wav",
+  "yeah/005_Sound15.wav",
+  "yeah/006_Sound17.wav",
+  "yeah/007_Sound18.wav",
+  "yeah/008_Sound19.wav",
+  "yeah/009_Sound20.wav",
+  "yeah/010_Sound21.wav",
+  "yeah/011_Sound22.wav",
+  "yeah/012_Sound23.wav",
+  "yeah/013_Sound24.wav",
+  "yeah/014_Sound25.wav",
+  "yeah/015_Sound26.wav",
+  "yeah/016_Sound27.wav",
+  "yeah/017_Sound28.wav",
+  "yeah/018_Sound29.wav",
+  "yeah/019_Sound3.wav",
+  "yeah/020_Sound32.wav",
+  "yeah/021_Sound33.wav",
+  "yeah/022_Sound34.wav",
+  "yeah/023_Sound35.wav",
+  "yeah/024_Sound36.wav",
+  "yeah/025_Sound4.wav",
+  "yeah/026_Sound5.wav",
+  "yeah/027_Sound6.wav",
+  "yeah/028_Sound7.wav",
+  "yeah/029_Sound8.wav",
+  "yeah/030_Sound9.wav"
+]
+```
+
+</details>
+

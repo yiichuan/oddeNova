@@ -5,7 +5,6 @@ interface ControlBarProps {
   onPlay: () => void;
   onStop: () => void;
   onUndo: () => void;
-  onInit: () => void;
 }
 
 export default function ControlBar({
@@ -15,33 +14,25 @@ export default function ControlBar({
   onPlay,
   onStop,
   onUndo,
-  onInit,
 }: ControlBarProps) {
   return (
     <div className="px-6 py-3 border-t border-border flex items-center justify-between bg-bg-secondary/80 backdrop-blur-sm">
       <div className="flex items-center gap-3">
-        {!engineReady ? (
-          <button
-            onClick={onInit}
-            className="px-5 py-2.5 bg-gradient-to-r from-accent to-accent-light text-white text-sm rounded-lg hover:opacity-90 transition-opacity font-medium shadow-lg shadow-accent/20"
-          >
-            ▶ 点击启动音频引擎
-          </button>
-        ) : (
           <>
             {isPlaying ? (
               <button
                 onClick={onStop}
                 className="w-10 h-10 rounded-lg bg-error/20 text-error flex items-center justify-center hover:bg-error/30 transition-colors"
-                title="停止 (Esc)"
+                title="停止"
               >
                 <StopIcon />
               </button>
             ) : (
               <button
                 onClick={onPlay}
-                className="w-10 h-10 rounded-lg bg-success/20 text-success flex items-center justify-center hover:bg-success/30 transition-colors"
-                title="重新播放"
+                disabled={!engineReady}
+                className="w-10 h-10 rounded-lg bg-success/20 text-success flex items-center justify-center hover:bg-success/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="播放"
               >
                 <PlayIcon />
               </button>
@@ -65,7 +56,6 @@ export default function ControlBar({
               </div>
             </div>
           </>
-        )}
       </div>
 
       <div className="flex items-center gap-4 text-xs text-text-muted">
