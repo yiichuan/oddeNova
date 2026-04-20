@@ -76,27 +76,43 @@ export default function ChatPanel({
           </div>
         )}
 
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex animate-fade-in-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+        {messages.map((msg) => {
+          if (msg.role === 'progress') {
+            const icon = progressIcon(msg);
+            const tone = progressTone(msg);
+            return (
+              <div key={msg.id} className="flex justify-start animate-fade-in-up">
+                <div
+                  className={`text-xs font-mono px-3 py-1 rounded-md border flex items-center gap-2 ${tone}`}
+                >
+                  <span className="opacity-80">{icon}</span>
+                  <span className="opacity-90">{msg.content}</span>
+                </div>
+              </div>
+            );
+          }
+          return (
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-accent text-white rounded-br-md'
-                  : 'bg-bg-tertiary text-text-primary rounded-bl-md'
-              }`}
+              key={msg.id}
+              className={`flex animate-fade-in-up ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <p>{msg.content}</p>
-              {msg.code && (
-                <pre className="mt-2 p-2.5 bg-bg-primary/60 rounded-lg text-xs text-warning font-mono overflow-x-auto whitespace-pre-wrap border border-warning/10">
-                  {msg.code}
-                </pre>
-              )}
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
+                  msg.role === 'user'
+                    ? 'bg-accent text-white rounded-br-md'
+                    : 'bg-bg-tertiary text-text-primary rounded-bl-md'
+                }`}
+              >
+                <p>{msg.content}</p>
+                {msg.code && (
+                  <pre className="mt-2 p-2.5 bg-bg-primary/60 rounded-lg text-xs text-warning font-mono overflow-x-auto whitespace-pre-wrap border border-warning/10">
+                    {msg.code}
+                  </pre>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {isLoading && (
           <div className="flex justify-start animate-fade-in-up">
@@ -138,4 +154,34 @@ export default function ChatPanel({
       </form>
     </div>
   );
+}
+
+function progressIcon(msg: ChatMessage): string {
+  switch (msg.progressKind) {
+    case 'tool_call':
+      return '⚙';
+    case 'tool_result':
+      return msg.ok === false ? '✗' : '✓';
+    case 'commit':
+      return '▶';
+    case 'warn':
+      return '⚠';
+    case 'iteration':
+      return '·';
+    default:
+      return '·';
+  }
+}
+
+function progressTone(msg: ChatMessage): string {
+  if (msg.progressKind === 'commit') {
+    return 'bg-accent/15 text-accent-light border-accent/30';
+  }
+  if (msg.progressKind === 'warn' || msg.ok === false) {
+    return 'bg-red-500/10 text-red-400 border-red-500/20';
+  }
+  if (msg.progressKind === 'tool_result' && msg.ok) {
+    return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+  }
+  return 'bg-bg-tertiary/60 text-text-muted border-border';
 }

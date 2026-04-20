@@ -68,6 +68,27 @@ export async function evaluateCode(code: string): Promise<{ success: boolean; er
   }
 }
 
+// Syntax-level validation. Does NOT touch the audio engine — runs the code
+// through `new Function()` purely to catch JS-level syntax errors (unbalanced
+// parens / quotes / etc). Strudel runtime errors (unknown samples, bad
+// patterns) are not caught here; they would surface only at evaluateCode time.
+// For the agent's MVP weak-feedback loop this is enough to verify "the code
+// is parseable" before commit, without disturbing the currently playing
+// pattern.
+export function validateCode(code: string): { ok: boolean; error?: string } {
+  if (!code || !code.trim()) {
+    return { ok: false, error: '代码为空' };
+  }
+  const cleanCode = code.replace(/\._scope\(\)/g, '');
+  try {
+    new Function(cleanCode);
+    return { ok: true };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg };
+  }
+}
+
 export async function stopPlayback(): Promise<void> {
   try {
     await evaluate('hush()');
