@@ -7,17 +7,14 @@ import ApiKeyModal from './components/ApiKeyModal';
 import { useStrudel } from './hooks/useStrudel';
 import { useChat } from './hooks/useChat';
 import { useSpeech } from './hooks/useSpeech';
-import { generateMusic, runAgent } from './services/llm';
+import { runAgent } from './services/llm';
 import type { ProgressEvent } from './services/llm';
-
-type Mode = 'classic' | 'agent';
 
 export default function App() {
   const strudel = useStrudel();
   const chat = useChat();
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [editableCode, setEditableCode] = useState('');
-  const [mode, setMode] = useState<Mode>('agent');
 
   // Sync editableCode when AI generates new code
   useEffect(() => {
@@ -51,68 +48,59 @@ export default function App() {
       chat.setIsLoading(true);
 
       try {
-        if (mode === 'classic') {
-          const response = await generateMusic(text, strudel.currentCode);
-          const success = await strudel.play(response.code);
+        // Agent loop — stream progress to ChatPanel, hot-reload only at commit.
+        const onProgress = (e: ProgressEvent) => {
+          if (e.kind === 'iteration') return; // too noisy
+          if (e.kind === 'tool_call') {
+            chat.addProgress('tool_call', formatToolCall(e.name, e.args), {
+              toolName: e.name,
+            });
+            return;
+          }
+          if (e.kind === 'tool_result') {
+            if (e.ok) {
+              // Only surface successes for validate to keep noise low.
+              if (e.name === 'validate') {
+                chat.addProgress('tool_result', '语法校验通过', {
+                  toolName: e.name,
+                  ok: true,
+                });
+              }
+              return;
+            }
+            // Intermediate tool failures are part of the agent's
+            // self-correction loop — surfacing them scares the user and
+            // doesn't help them act. Log to console for debugging and move
+            // on; if the whole run still fails, App.tsx surfaces a single
+            // user-facing error at the end instead.
+            console.warn(
+              `[agent] tool ${e.name} failed: ${e.error || 'unknown error'}`
+            );
+            return;
+          }
+          if (e.kind === 'commit') {
+            chat.addProgress('commit', '准备播放…');
+            return;
+          }
+          if (e.kind === 'warn') {
+            chat.addProgress('warn', e.message);
+            return;
+          }
+        };
+
+        const result = await runAgent(text, strudel.currentCode, onProgress);
+        if (result.code) {
+          const success = await strudel.play(result.code);
           if (success) {
-            chat.addAssistantMessage(response.explanation, response.code);
+            chat.addAssistantMessage(result.explanation, result.code);
           } else {
             chat.addAssistantMessage(
-              `生成的代码有误，音乐保持不变: ${strudel.error || '未知错误'}`
+              `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+              result.code
             );
           }
         } else {
-          // Agent mode — stream progress to ChatPanel, hot-reload only at commit.
-          const onProgress = (e: ProgressEvent) => {
-            if (e.kind === 'iteration') return; // too noisy
-            if (e.kind === 'tool_call') {
-              chat.addProgress('tool_call', formatToolCall(e.name, e.args), {
-                toolName: e.name,
-              });
-              return;
-            }
-            if (e.kind === 'tool_result') {
-              if (e.ok) {
-                // Only surface successes for validate / commit to keep noise low
-                if (e.name === 'validate') {
-                  chat.addProgress('tool_result', '语法校验通过', {
-                    toolName: e.name,
-                    ok: true,
-                  });
-                }
-                return;
-              }
-              chat.addProgress(
-                'tool_result',
-                `${e.name} 失败: ${e.error || '未知错误'}`,
-                { toolName: e.name, ok: false }
-              );
-              return;
-            }
-            if (e.kind === 'commit') {
-              chat.addProgress('commit', '准备播放…');
-              return;
-            }
-            if (e.kind === 'warn') {
-              chat.addProgress('warn', e.message);
-              return;
-            }
-          };
-
-          const result = await runAgent(text, strudel.currentCode, onProgress);
-          if (result.code) {
-            const success = await strudel.play(result.code);
-            if (success) {
-              chat.addAssistantMessage(result.explanation, result.code);
-            } else {
-              chat.addAssistantMessage(
-                `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
-                result.code
-              );
-            }
-          } else {
-            chat.addAssistantMessage(result.explanation || 'agent 没有产出代码');
-          }
+          chat.addAssistantMessage(result.explanation || 'agent 没有产出代码');
         }
       } catch (e: unknown) {
         const errMsg = e instanceof Error ? e.message : '请求失败';
@@ -122,7 +110,7 @@ export default function App() {
         chat.setIsLoading(false);
       }
     },
-    [strudel, chat, mode]
+    [strudel, chat]
   );
 
   const speech = useSpeech(handleInstruction);
@@ -163,7 +151,6 @@ export default function App() {
           <span className="text-text-muted text-sm">Live Music</span>
         </div>
         <div className="flex items-center gap-4">
-          <ModeToggle mode={mode} onChange={setMode} />
           <span className="text-sm text-text-secondary hidden sm:block">
             说话创作电子乐
           </span>
@@ -213,35 +200,6 @@ export default function App() {
         onStop={strudel.stop}
         onUndo={strudel.undo}
       />
-    </div>
-  );
-}
-
-function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
-  return (
-    <div className="flex items-center bg-bg-tertiary rounded-full p-0.5 text-xs">
-      <button
-        onClick={() => onChange('classic')}
-        className={`px-3 py-1 rounded-full transition-colors ${
-          mode === 'classic'
-            ? 'bg-accent text-white'
-            : 'text-text-muted hover:text-text-secondary'
-        }`}
-        title="单轮模式：一次 LLM 调用直接生成代码"
-      >
-        经典
-      </button>
-      <button
-        onClick={() => onChange('agent')}
-        className={`px-3 py-1 rounded-full transition-colors ${
-          mode === 'agent'
-            ? 'bg-accent text-white'
-            : 'text-text-muted hover:text-text-secondary'
-        }`}
-        title="Agent 模式：通过工具多步装配，过程在对话中可见"
-      >
-        Agent
-      </button>
     </div>
   );
 }

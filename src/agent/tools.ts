@@ -4,7 +4,7 @@
 // terminal — it throws CommitSignal which the loop catches.
 
 import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
-import { validateCode } from '../services/strudel';
+import { validateCode, validateCodeRuntime } from '../services/strudel';
 
 export interface AgentState {
   code: string;
@@ -52,12 +52,23 @@ interface LayerLite {
   source: string;
 }
 
+// `silence` (no parens) is a Pattern *value* in @strudel/core, not a function.
+// Earlier versions emitted `silence()` here, which throws `TypeError: silence
+// is not a function` at evaluate-time and silently kills audio because Strudel's
+// repl.evaluate swallows runtime errors.
 function rebuildStack(layers: LayerLite[]): string {
-  if (layers.length === 0) return 'silence()';
+  if (layers.length === 0) return 'silence';
   const inner = layers
     .map((l) => `  /* @layer ${l.name} */ ${l.source}`)
     .join(',\n');
   return `stack(\n${inner}\n)`;
+}
+
+// Treat both `silence` and the legacy-buggy `silence()` as the empty-body
+// sentinel so older codepaths don't leak a fake "main" layer into rebuilt stacks.
+function isSilencePlaceholder(src: string): boolean {
+  const s = src.trim();
+  return s === 'silence' || s === 'silence()';
 }
 
 function rebuildCode(
@@ -78,13 +89,21 @@ function layersOf(score: ParsedScore): LayerLite[] {
 // (e.g. just `s("bd*4")`), wrap it as a default layer so layer-ops work.
 function ensureStack(code: string): { score: ParsedScore; layers: LayerLite[] } {
   const score = parseScore(code);
-  if (score.hasStack) return { score, layers: layersOf(score) };
-  // No stack — treat any non-setcps body as one layer named "main".
+  if (score.hasStack) {
+    // Drop any placeholder-`silence` layers that older rebuilds may have left
+    // behind so they never get re-serialised into a real stack.
+    return {
+      score,
+      layers: layersOf(score).filter((l) => !isSilencePlaceholder(l.source)),
+    };
+  }
+  // No stack — treat any non-setcps body as one layer named "main", except
+  // when the body is just the empty-stack sentinel (`silence` / `silence()`).
   const body = score.setcpsMatch
     ? (code.slice(0, score.setcpsMatch.start) + code.slice(score.setcpsMatch.end))
     : code;
   const trimmed = body.trim().replace(/;$/, '').trim();
-  if (!trimmed) return { score, layers: [] };
+  if (!trimmed || isSilencePlaceholder(trimmed)) return { score, layers: [] };
   return { score, layers: [{ name: 'main', source: trimmed }] };
 }
 
@@ -257,7 +276,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'validate',
     description:
-      '对一段 strudel 代码做语法校验（不会播放）。在 commit 前应该至少 validate 一次最终代码。',
+      '对一段 strudel 代码做校验（不会播放）：先做 JS 语法检查，再在沙箱里 dry-run 一次以捕捉未定义函数（如 by/sometimesBy 等幻觉 API）和类型错误。在 commit 前应该至少 validate 一次最终代码；若失败请按错误信息修代码后再 validate 一次。',
     parameters: {
       type: 'object',
       properties: {
@@ -270,10 +289,14 @@ export const TOOLS: ToolDef[] = [
     },
     handler: (args, ctx) => {
       const code = typeof args.code === 'string' && args.code.trim() ? args.code : ctx.state.code;
-      const result = validateCode(code);
-      return result.ok
+      const synOnly = validateCode(code);
+      if (!synOnly.ok) {
+        return { ok: false, error: `语法错误: ${synOnly.error}` };
+      }
+      const runtime = validateCodeRuntime(code);
+      return runtime.ok
         ? { ok: true, data: { valid: true } }
-        : { ok: false, error: `语法错误: ${result.error}` };
+        : { ok: false, error: `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）` };
     },
   },
 

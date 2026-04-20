@@ -69,7 +69,7 @@ flowchart TD
 - `src/agent/parser.ts` — 状态机扫描代码，识别 `setcps` / `stack(...)` / 顶层逗号分割 / `/* @layer */` 标记
 - `src/agent/tools.ts` — 9 个 tool 的 JSON Schema + handler；`CommitSignal` 终止信号；`getOpenAIToolSchemas()` 导出给 loop
 - `src/agent/executor.ts` — 单个 tool_call 的 dispatch + 错误重试（最多 2 次）
-- `src/agent/loop.ts` — agent 循环主体，`max_iter=8` / `timeout=45s` 安全网，`onProgress` 事件流
+- `src/agent/loop.ts` — agent 循环主体，`max_iter=8` / `timeout=120s` 安全网，`onProgress` 事件流
 
 ### 改造
 
@@ -124,7 +124,7 @@ runAgentLoop(opts):
 ### 安全网
 
 - `max_iter = 8`：防止 LLM 死循环
-- `timeout = 45s`：防止 tool 卡死
+- `timeout = 120s`：防止 tool 卡死；要覆盖含 `improvise` 嵌套 LLM 的多层编曲请求
 - 单个 tool 报错最多重试 2 次
 - LLM 不调用 commit 就退出时：使用最后一次编辑的 `state.code`，对用户提示 ⚠ 警告
 - LLM 一次都没产生有效代码时：保留原 `currentCode`

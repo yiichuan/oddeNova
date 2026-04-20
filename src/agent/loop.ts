@@ -14,6 +14,7 @@ import {
   type AgentState,
   type ToolContext,
 } from './tools';
+import { validateCode } from '../services/strudel';
 
 // OpenAI ChatCompletion message shape (only the bits we use).
 export interface ChatMsg {
@@ -64,8 +65,12 @@ export interface RunAgentResult {
   committed: boolean;
 }
 
-const DEFAULT_MAX_ITER = 8;
-const DEFAULT_TIMEOUT = 45_000;
+const DEFAULT_MAX_ITER = 30;
+// 120s covers ~10 tool-calls worth of latency (including nested `improvise`
+// sub-LLM calls). 45s was too tight — a typical multi-layer request
+// (read → setTempo → improvise drums → addLayer → improvise bass → addLayer
+// → validate → commit) easily overruns it before the model reaches `commit`.
+const DEFAULT_TIMEOUT = 300_000;
 
 export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResult> {
   const {
@@ -207,16 +212,50 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     }
   }
 
+  // ----- implicit commit fallback -------------------------------------------
+  // DeepSeek frequently stops without invoking `commit` (returns no tool_calls
+  // after the last edit, or just runs out of iterations). If the agent did
+  // mutate `state.code` AND the result still parses as valid JS, treat it as
+  // a committed turn so the UI doesn't show a misleading "未生成新代码" while
+  // the player is in fact about to hot-reload that very code. If validation
+  // fails we keep `committed=false` so App.tsx can surface the runtime error.
   if (!committed) {
-    onProgress?.({
-      kind: 'warn',
-      message: 'agent 未调用 commit，使用最后一次编辑的代码',
-    });
-    finalCode = state.code || initialCode;
+    const codeChanged = !!state.code && state.code !== initialCode;
+    if (codeChanged) {
+      const v = validateCode(state.code);
+      if (v.ok) {
+        committed = true;
+        finalCode = state.code;
+        state.finalCode = state.code;
+        onProgress?.({
+          kind: 'warn',
+          message: 'agent 未显式调用 commit，已自动收尾并播放',
+        });
+        onProgress?.({ kind: 'commit', code: state.code });
+      } else {
+        onProgress?.({
+          kind: 'warn',
+          message: `agent 未调用 commit 且最后代码语法错误: ${v.error || '未知'}`,
+        });
+        finalCode = state.code;
+      }
+    } else {
+      onProgress?.({
+        kind: 'warn',
+        message: 'agent 未产出任何代码改动',
+      });
+      finalCode = initialCode;
+    }
   }
 
   if (!explanation) {
-    explanation = committed ? '已更新' : '未生成新代码';
+    if (committed) {
+      explanation = '已更新';
+    } else if (finalCode && finalCode !== initialCode) {
+      explanation = '已生成新代码，但语法校验未通过，请检查';
+    } else {
+      explanation = '未生成新代码';
+    }
   }
 
   return {
