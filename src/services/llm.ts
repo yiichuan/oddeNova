@@ -1,74 +1,340 @@
-import OpenAI from 'openai';
-import { SYSTEM_PROMPT, buildUserMessage } from '../prompts/system-prompt';
+import Anthropic from '@anthropic-ai/sdk';
+import {
+  AGENT_SYSTEM_PROMPT,
+  IMPROVISE_SYSTEM_PROMPT,
+} from '../prompts/system-prompt';
+import {
+  runAgentLoop,
+  type ChatMsg,
+  type LLMCaller,
+  type ProgressEvent,
+  type RunAgentResult,
+} from '../agent/loop';
+import { getOpenAIToolSchemas } from '../agent/tools';
 
-export interface LLMResponse {
-  code: string;
-  explanation: string;
-}
+// ===========================================================================
+// Anthropic client — the upstream proxy at timesniper.club speaks BOTH the
+// OpenAI and Anthropic protocols. We went back to the native Anthropic
+// Messages protocol because json_object / tool-calling behaviour via the
+// OpenAI-compat shim was unreliable on claude-sonnet-4-6.
+// ===========================================================================
 
-let client: OpenAI | null = null;
+const ANTHROPIC_API_KEY = 'sk-bQJ3QzB4h6b3u5aRGuvd8XTXG0jD1KDsWMtJgtLGcQjGArvR';
+const ANTHROPIC_BASE_URL = 'https://timesniper.club';
+const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 
-const DEEPSEEK_API_KEY = 'sk-b68931774d1a4c11a95559735a8e9306';
-const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
-const DEEPSEEK_MODEL = 'deepseek-chat';
+let client: Anthropic | null = null;
 
-function getClient(): OpenAI {
+function getClient(): Anthropic {
   if (!client) {
-    client = new OpenAI({
-      apiKey: DEEPSEEK_API_KEY,
-      baseURL: DEEPSEEK_BASE_URL,
+    client = new Anthropic({
+      apiKey: ANTHROPIC_API_KEY,
+      baseURL: ANTHROPIC_BASE_URL,
       dangerouslyAllowBrowser: true,
+      // Some OpenAI-compat proxies only read `Authorization: Bearer`. Adding
+      // it as a default header is a no-op for a real Anthropic endpoint
+      // (which ignores the Authorization header in favour of `x-api-key`),
+      // but it lets the same proxy URL work for both protocols.
+      defaultHeaders: {
+        Authorization: `Bearer ${ANTHROPIC_API_KEY}`,
+      },
     });
   }
   return client;
 }
 
 function getModel(): string {
-  return DEEPSEEK_MODEL;
+  return ANTHROPIC_MODEL;
 }
 
-export async function generateMusic(
-  instruction: string,
-  currentCode: string
-): Promise<LLMResponse> {
-  const openai = getClient();
-  const userMessage = buildUserMessage(instruction, currentCode);
+// ---------------------------------------------------------------------------
+// Helpers: collapse the response.content[] blocks into plain text, and the
+// reverse — convert our ChatMsg[] history (OpenAI-shaped, used by the agent
+// loop) into Anthropic's messages + system pair.
+// ---------------------------------------------------------------------------
 
-  const response = await openai.chat.completions.create({
-    model: getModel(),
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userMessage },
-    ],
-    temperature: 0.7,
-    max_tokens: 1024,
-    response_format: { type: 'json_object' },
-  });
+function extractText(response: Anthropic.Message): string {
+  return response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+}
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('LLM 返回为空');
-  }
+interface ConvertedHistory {
+  system: string;
+  messages: Anthropic.MessageParam[];
+}
 
-  let parsed: any;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    // Try to extract JSON from markdown code blocks
-    const match = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (match) {
-      parsed = JSON.parse(match[1]);
-    } else {
-      throw new Error('无法解析 LLM 返回的 JSON');
+// ChatMsg[] → Anthropic (system, messages). The agent loop keeps its history
+// in OpenAI shape (separate `tool` role, `tool_calls` array on assistant).
+// Anthropic expects:
+//   - `system` as a top-level string (NOT a message)
+//   - only `user` / `assistant` roles
+//   - tool calls appear as `tool_use` content blocks on the assistant turn
+//   - tool results appear as `tool_result` blocks on a user turn, and
+//     multiple consecutive tool replies MUST collapse into ONE user message.
+function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
+  let system = '';
+  const out: Anthropic.MessageParam[] = [];
+
+  for (const msg of msgs) {
+    const content = typeof msg.content === 'string' ? msg.content : '';
+
+    if (msg.role === 'system') {
+      // Concatenate so we don't silently drop a mid-conversation system nudge.
+      system = system ? `${system}\n\n${content}` : content;
+      continue;
+    }
+
+    if (msg.role === 'user') {
+      out.push({ role: 'user', content });
+      continue;
+    }
+
+    if (msg.role === 'assistant') {
+      const blocks: Anthropic.ContentBlockParam[] = [];
+      if (content.trim()) {
+        blocks.push({ type: 'text', text: content });
+      }
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        for (const tc of msg.tool_calls) {
+          let input: Record<string, unknown> = {};
+          try {
+            const parsed = JSON.parse(tc.function.arguments || '{}');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              input = parsed as Record<string, unknown>;
+            }
+          } catch {
+            /* keep input = {} */
+          }
+          blocks.push({
+            type: 'tool_use',
+            id: tc.id,
+            name: tc.function.name,
+            input,
+          });
+        }
+      }
+      if (blocks.length === 0) {
+        // Anthropic rejects empty assistant content. Skip the message —
+        // losing an empty assistant turn doesn't affect the conversation.
+        continue;
+      }
+      out.push({ role: 'assistant', content: blocks });
+      continue;
+    }
+
+    if (msg.role === 'tool') {
+      const block: Anthropic.ToolResultBlockParam = {
+        type: 'tool_result',
+        tool_use_id: msg.tool_call_id || '',
+        content,
+      };
+      // Fold consecutive tool replies into the previous user message so each
+      // assistant `tool_use` gets paired inside the same user turn.
+      const prev = out[out.length - 1];
+      if (prev && prev.role === 'user' && Array.isArray(prev.content)) {
+        (prev.content as Anthropic.ContentBlockParam[]).push(block);
+      } else {
+        out.push({ role: 'user', content: [block] });
+      }
+      continue;
     }
   }
 
-  if (!parsed.code || typeof parsed.code !== 'string') {
-    throw new Error('LLM 返回格式错误：缺少 code 字段');
+  return { system, messages: out };
+}
+
+// OpenAI tool schemas → Anthropic tool schemas. The JSON Schema payload itself
+// is identical; only the outer envelope differs.
+function convertTools(
+  oaiTools: ReturnType<typeof getOpenAIToolSchemas>
+): Anthropic.Tool[] {
+  return oaiTools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters as Anthropic.Tool.InputSchema,
+  }));
+}
+
+// ===========================================================================
+// Agent mode entry point. Wraps the Anthropic client in the loop's LLMCaller
+// interface and exposes a streaming-progress runAgent() to the UI.
+// ===========================================================================
+
+const llmCaller: LLMCaller = {
+  async chatWithTools(messages: ChatMsg[], tools) {
+    const anthropic = getClient();
+    const { system, messages: amsgs } = convertChatHistory(messages);
+
+    const response = await anthropic.messages.create({
+      model: getModel(),
+      system,
+      messages: amsgs,
+      tools: convertTools(tools),
+      temperature: 0.7,
+      max_tokens: 1024,
+    });
+
+    let text = '';
+    const toolCalls: { id: string; name: string; arguments: string }[] = [];
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        text += block.text;
+      } else if (block.type === 'tool_use') {
+        toolCalls.push({
+          id: block.id,
+          name: block.name,
+          arguments: JSON.stringify(block.input ?? {}),
+        });
+      }
+    }
+
+    return {
+      content: text.trim() ? text : null,
+      toolCalls,
+    };
+  },
+};
+
+// Role-indexed canned snippets — used as the last-resort fallback so a flaky
+// sub-LLM response never breaks the agent loop. Each must be a single chained
+// Strudel expression (no stack wrap, no setcps, no semicolons).
+const IMPROVISE_FALLBACKS: Record<string, string> = {
+  drums: 's("bd ~ sd ~").bank("RolandTR808").gain(0.8)',
+  hh: 's("hh*8").gain(0.5)',
+  bass: 'note("c2 c2 eb2 f2").s("sawtooth").lpf(500).gain(0.7)',
+  pad: 'n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).gain(0.4)',
+  lead: 'n("<0 2 4 7 5 4>").scale("C4:minor").s("triangle").gain(0.5)',
+  fx: 's("~ ~ ~ cp").room(0.5).gain(0.5)',
+};
+
+// Pull a Strudel snippet out of whatever shape the sub-LLM decided to return.
+// Claude is relatively well-behaved with structured prompts but still varies,
+// so we keep the same tolerant parser we used under the OpenAI-compat path:
+//   1. strict JSON  `{"code": "..."}`
+//   2. markdown-fenced JSON    ```json { "code": "..." } ```
+//   3. unterminated JSON with a `"code": "..."` field we can regex out
+//   4. bare code fence  ```js s("bd") ```
+//   5. raw text that looks like a strudel expression (s(... / note(... / n(...)
+function extractStrudelSnippet(text: string): string | null {
+  if (!text) return null;
+
+  // 1) pure JSON
+  try {
+    const p = JSON.parse(text) as { code?: unknown };
+    if (typeof p?.code === 'string' && p.code.trim()) return p.code.trim();
+  } catch {
+    /* fallthrough */
   }
 
-  return {
-    code: parsed.code,
-    explanation: parsed.explanation || '已更新音乐',
-  };
+  // 2) ```json {...} ```  or  ``` {...} ```
+  const jsonBlock = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  if (jsonBlock) {
+    try {
+      const p = JSON.parse(jsonBlock[1]) as { code?: unknown };
+      if (typeof p?.code === 'string' && p.code.trim()) return p.code.trim();
+    } catch {
+      /* fallthrough */
+    }
+  }
+
+  // 3) regex the `"code": "..."` field out (survives truncated JSON)
+  const field = text.match(/"code"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  if (field) {
+    try {
+      return JSON.parse(`"${field[1]}"`);
+    } catch {
+      return field[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+    }
+  }
+
+  // 4) non-JSON code fence — treat body as the snippet
+  const codeBlock = text.match(/```(?:js|javascript|strudel)?\s*([\s\S]*?)```/);
+  if (codeBlock && codeBlock[1].trim()) {
+    return codeBlock[1].trim();
+  }
+
+  // 5) raw text that already looks like a strudel expression
+  const trimmed = text.trim();
+  if (trimmed && /(^|[^a-zA-Z_])(s|n|note|stack|chord)\s*\(/.test(trimmed)) {
+    // Take everything up to the first line that clearly isn't expression-like
+    // (e.g. trailing prose). A single-expression snippet typically has no blank
+    // lines mid-way, so split on the first blank line.
+    const firstChunk = trimmed.split(/\n\s*\n/)[0].trim();
+    return firstChunk || trimmed;
+  }
+
+  return null;
 }
+
+async function improviseLLM(
+  role: string,
+  hints: string,
+  currentCode: string
+): Promise<string> {
+  const anthropic = getClient();
+  const userPrompt = [
+    `role: ${role}`,
+    hints ? `hint: ${hints}` : '',
+    currentCode ? `current code (for context):\n${currentCode}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const tryCall = async (systemPrompt: string, tokens: number): Promise<string | null> => {
+    try {
+      const resp = await anthropic.messages.create({
+        model: getModel(),
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.9,
+        max_tokens: tokens,
+      });
+      return extractStrudelSnippet(extractText(resp));
+    } catch (e) {
+      console.warn('[improvise] upstream call errored', e);
+      return null;
+    }
+  };
+
+  const first = await tryCall(IMPROVISE_SYSTEM_PROMPT, 512);
+  if (first) return first;
+
+  // Retry with a looser prompt: ask for a raw expression, no JSON at all.
+  const retryPrompt = [
+    'You are a Strudel snippet generator.',
+    'Output ONLY one single chained Strudel expression — no JSON, no markdown fences, no comments, no prose.',
+    'Example output: s("bd ~ sd ~").bank("RolandTR808").gain(0.8)',
+    'Rules: no stack wrapping, no setcps, no semicolons, no var/let/const.',
+  ].join('\n');
+  const second = await tryCall(retryPrompt, 512);
+  if (second) return second;
+
+  // Last resort — a safe canned snippet so the agent loop can keep progressing
+  // instead of surfacing an "improvise 失败" error the user doesn't need to see.
+  console.warn(`[improvise] falling back to canned snippet for role=${role}`);
+  return IMPROVISE_FALLBACKS[role] ?? IMPROVISE_FALLBACKS.drums;
+}
+
+export async function runAgent(
+  instruction: string,
+  currentCode: string,
+  onProgress?: (e: ProgressEvent) => void
+): Promise<RunAgentResult> {
+  return runAgentLoop({
+    instruction,
+    initialCode: currentCode,
+    systemPrompt: AGENT_SYSTEM_PROMPT,
+    llm: llmCaller,
+    improviseLLM,
+    onProgress,
+  });
+}
+
+// Re-exported so callers don't need to reach into ../agent/loop directly.
+export type { ProgressEvent, RunAgentResult } from '../agent/loop';
+
+// Suppress the "unused import" warning if TS strips schema imports.
+// (Schema is imported transitively but listed here for visibility.)
+void getOpenAIToolSchemas;

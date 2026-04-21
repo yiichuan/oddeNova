@@ -1,11 +1,16 @@
 import { useMemo, useRef } from 'react';
 import Scope from './Scope';
+import MiniWaveform from './MiniWaveform';
+import { PlayIcon, StopIcon } from './icons';
 
 interface CodePanelProps {
   code: string;
   error: string | null;
   isPlaying: boolean;
+  engineReady: boolean;
   onCodeChange?: (code: string) => void;
+  onPlay: () => void;
+  onStop: () => void;
 }
 
 const KEYWORDS = [
@@ -31,7 +36,6 @@ function highlightLine(line: string): string {
   const atWordBoundary = () => i === 0 || !isWordChar(line[i - 1]);
 
   while (i < len) {
-    // String literal "..."
     if (line[i] === '"') {
       let j = i + 1;
       while (j < len && line[j] !== '"') j++;
@@ -41,7 +45,6 @@ function highlightLine(line: string): string {
       continue;
     }
 
-    // .method(
     if (line[i] === '.') {
       let matched = false;
       for (const m of METHODS) {
@@ -58,7 +61,6 @@ function highlightLine(line: string): string {
       continue;
     }
 
-    // keyword( or s( / n( at word boundary
     if (atWordBoundary() && isWordChar(line[i])) {
       let matched = false;
       for (const kw of [...KEYWORDS, 's', 'n']) {
@@ -72,7 +74,6 @@ function highlightLine(line: string): string {
       if (matched) continue;
     }
 
-    // Number at word boundary
     if (atWordBoundary() && /\d/.test(line[i])) {
       let j = i;
       while (j < len && /[\d.]/.test(line[j])) j++;
@@ -95,7 +96,15 @@ function escapeHtml(t: string): string {
 const FONT = '13px/1.6 "JetBrains Mono", "Fira Code", ui-monospace, monospace';
 const PAD  = '12px 16px';
 
-export default function CodePanel({ code, error, isPlaying, onCodeChange }: CodePanelProps) {
+export default function CodePanel({
+  code,
+  error,
+  isPlaying,
+  engineReady,
+  onCodeChange,
+  onPlay,
+  onStop,
+}: CodePanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef      = useRef<HTMLPreElement>(null);
   const lineNumRef  = useRef<HTMLDivElement>(null);
@@ -103,7 +112,6 @@ export default function CodePanel({ code, error, isPlaying, onCodeChange }: Code
   const highlightedHtml = useMemo(() => {
     if (!code) return '<div> </div>';
     return code.split('\n').map(l => {
-      // ._scope() is rendered inside the canvas widget — hide the code line
       if (l.trimStart() === '._scope()') return '<div style="opacity:0"> </div>';
       return `<div>${highlightLine(l) || ' '}</div>`;
     }).join('');
@@ -111,7 +119,6 @@ export default function CodePanel({ code, error, isPlaying, onCodeChange }: Code
 
   const lineCount = useMemo(() => Math.max(code.split('\n').length, 1), [code]);
 
-  // textarea is the single scroll host — sync pre position and line-numbers
   const handleScroll = () => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -124,27 +131,22 @@ export default function CodePanel({ code, error, isPlaying, onCodeChange }: Code
     }
   };
 
-  return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
-        <span className="text-sm text-text-secondary font-medium">Strudel 代码</span>
-        {code && (
-          <span className="text-xs text-success flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-            运行中
-          </span>
-        )}
-      </div>
+  const handlePlayClick = () => {
+    if (isPlaying) {
+      onStop();
+    } else if (engineReady) {
+      onPlay();
+    }
+  };
 
+  return (
+    <div className="h-full flex flex-col border border-border rounded-lg overflow-hidden bg-bg-secondary/30">
       {/* Body */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         <div className="flex flex-1 min-h-0">
-
-            {/* Line numbers — scrolls vertically with textarea (hidden scrollbar) */}
             <div
               ref={lineNumRef}
-              className="shrink-0 select-none text-right border-r border-border/50 bg-bg-secondary"
+              className="shrink-0 select-none text-right border-r border-border/50 bg-bg-secondary/40"
               style={{
                 font: FONT,
                 padding: PAD,
@@ -160,12 +162,7 @@ export default function CodePanel({ code, error, isPlaying, onCodeChange }: Code
               ))}
             </div>
 
-            {/*
-             * Editor area: textarea is the scroll host (overflow: auto → both scrollbars).
-             * pre sits absolutely at top-left and is shifted via transform to follow scroll.
-             */}
             <div className="relative flex-1 min-w-0">
-              {/* Highlight layer */}
               <pre
                 ref={preRef}
                 aria-hidden
@@ -176,13 +173,11 @@ export default function CodePanel({ code, error, isPlaying, onCodeChange }: Code
                   whiteSpace: 'pre',
                   background: 'transparent',
                   transformOrigin: 'top left',
-                  // width unconstrained so highlights match textarea content
                   minWidth: '100%',
                 }}
                 dangerouslySetInnerHTML={{ __html: highlightedHtml }}
               />
 
-              {/* Edit + scroll host */}
               <textarea
                 ref={textareaRef}
                 value={code}
@@ -201,16 +196,15 @@ export default function CodePanel({ code, error, isPlaying, onCodeChange }: Code
                   caretColor: '#e2e8f0',
                   whiteSpace: 'pre',
                   overflowWrap: 'normal',
-                  overflow: 'auto',       // ← both scrollbars appear as needed
+                  overflow: 'auto',
                   wordBreak: 'normal',
                 }}
               />
             </div>
-
         </div>
 
         {error && (
-          <div className="m-3 p-3 bg-error/10 border border-error/30 rounded-lg text-error text-xs font-mono shrink-0">
+          <div className="mx-3 mb-2 p-2.5 bg-error/10 border border-error/30 rounded-md text-error text-xs font-mono shrink-0">
             {error}
           </div>
         )}
@@ -220,6 +214,25 @@ export default function CodePanel({ code, error, isPlaying, onCodeChange }: Code
             <Scope isPlaying={isPlaying} />
           </div>
         )}
+      </div>
+
+      {/* Inline play + waveform footer */}
+      <div className="shrink-0 flex items-center gap-3 px-3 py-2 border-t border-border/40 bg-bg-secondary/60">
+        <button
+          onClick={handlePlayClick}
+          disabled={!engineReady && !isPlaying}
+          className={`w-9 h-9 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+            isPlaying
+              ? 'bg-error/20 text-error hover:bg-error/30'
+              : 'bg-error/15 text-error hover:bg-error/25 disabled:opacity-30 disabled:cursor-not-allowed'
+          }`}
+          title={isPlaying ? '停止' : '播放'}
+        >
+          {isPlaying ? <StopIcon size={14} /> : <PlayIcon size={14} />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <MiniWaveform isPlaying={isPlaying} />
+        </div>
       </div>
     </div>
   );

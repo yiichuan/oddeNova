@@ -1,0 +1,63 @@
+import type { Session } from '../hooks/useSessions';
+
+interface HistoryPanelProps {
+  sessions: Session[];
+  currentId: string | null;
+  onSwitch: (id: string) => void;
+  onDelete: (id: string) => void;
+}
+
+export default function HistoryPanel({
+  sessions,
+  currentId,
+  onSwitch,
+  onDelete,
+}: HistoryPanelProps) {
+  // Newest first.
+  const ordered = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  return (
+    <div className="h-full flex flex-col bg-bg-secondary/40 border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-border/60 shrink-0">
+        <h3 className="text-base font-semibold text-text-primary">历史</h3>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {ordered.length === 0 ? (
+          <div className="p-4 text-xs text-text-muted">暂无会话</div>
+        ) : (
+          <ul className="py-1">
+            {ordered.map((s) => {
+              const active = s.id === currentId;
+              return (
+                <li key={s.id}>
+                  <div
+                    className={`group flex items-center gap-2 px-4 py-1.5 cursor-pointer transition-colors ${
+                      active
+                        ? 'bg-accent/15 text-text-primary'
+                        : 'text-text-secondary hover:bg-bg-tertiary/50'
+                    }`}
+                    onClick={() => onSwitch(s.id)}
+                  >
+                    <span className="flex-1 text-sm truncate" title={s.title}>
+                      {s.title || '新会话'}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(s.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error text-xs transition-opacity shrink-0"
+                      title="删除"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
