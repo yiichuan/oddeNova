@@ -94,6 +94,10 @@ export default function App() {
             sessions.addProgress('warn', e.message);
             return;
           }
+          if (e.kind === 'assistant_text') {
+            sessions.addProgress('thinking', e.text);
+            return;
+          }
         };
 
         const result = await runAgent(text, currentCode, onProgress);
