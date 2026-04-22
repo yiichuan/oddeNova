@@ -2,13 +2,14 @@ interface VizPlaceholderProps {
   isPlaying: boolean;
 }
 
-export default function VizPlaceholder({ isPlaying }: VizPlaceholderProps) {
+export default function VizPlaceholder({ isPlaying: _isPlaying }: VizPlaceholderProps) {
   return (
-    <div className="h-full bg-bg-secondary/40 border border-border rounded-lg flex items-center justify-center relative overflow-hidden">
-      <span
-        className={`w-2 h-2 rounded-full ${
-          isPlaying ? 'bg-success animate-pulse' : 'bg-success/50'
-        }`}
+    <div className="h-full rounded-lg overflow-hidden border border-border">
+      <iframe
+        src="/animation/galaxy.html"
+        title="galaxy visualizer"
+        style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+        allow="autoplay"
       />
     </div>
   );

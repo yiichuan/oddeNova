@@ -1,14 +1,23 @@
 #!/bin/bash
 
-# 切换到项目目录
 cd "$(dirname "$0")"
 
-# 检查依赖是否完整
 if [ ! -d "node_modules" ] || [ ! -d "node_modules/@anthropic-ai/sdk" ]; then
   echo "正在安装依赖..."
   npm install
 fi
 
-# 启动开发服务器并自动打开浏览器
 echo "正在启动 Vibe Live Music..."
-npm run dev -- --open
+npm run dev &
+DEV_PID=$!
+
+# 等待服务器就绪（最多 30 秒）
+for i in $(seq 1 30); do
+  if curl -s http://localhost:5173 > /dev/null 2>&1; then
+    open http://localhost:5173
+    break
+  fi
+  sleep 1
+done
+
+wait $DEV_PID
