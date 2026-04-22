@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
   AGENT_SYSTEM_PROMPT,
-  CRITIC_SYSTEM_PROMPT,
   IMPROVISE_SYSTEM_PROMPT,
 } from '../prompts/system-prompt';
 import {
@@ -13,7 +12,6 @@ import {
 } from '../agent/loop';
 import {
   getOpenAIToolSchemas,
-  type CritiqueResult,
   type ImproviseRequest,
 } from '../agent/tools';
 import { getRoleHint } from '../prompts/styles';
@@ -326,88 +324,6 @@ async function improviseLLM(req: ImproviseRequest): Promise<string> {
   return IMPROVISE_FALLBACKS[role] ?? IMPROVISE_FALLBACKS.drums;
 }
 
-// ===========================================================================
-// Critique sub-LLM. Runs ONCE per agent session (gated by AgentState.critiqued
-// in tools.ts) to score the final stack on musicality. Returns a strict JSON
-// shape; if the model produces garbage we fall back to a neutral verdict so
-// the agent loop never gets blocked by a flaky critic.
-// ===========================================================================
-
-const NEUTRAL_CRITIQUE: CritiqueResult = {
-  score: 7,
-  suggestion: null,
-  must_fix: false,
-};
-
-function extractCritiqueJson(text: string): CritiqueResult | null {
-  if (!text) return null;
-  // 1) Direct parse.
-  const tryParse = (raw: string): CritiqueResult | null => {
-    try {
-      const p = JSON.parse(raw) as Record<string, unknown>;
-      if (
-        typeof p?.score === 'number' &&
-        (typeof p?.suggestion === 'string' || p?.suggestion === null) &&
-        typeof p?.must_fix === 'boolean'
-      ) {
-        return {
-          score: Math.max(0, Math.min(10, Math.round(p.score))),
-          suggestion: (p.suggestion as string) || null,
-          must_fix: p.must_fix,
-        };
-      }
-    } catch {
-      /* fall through */
-    }
-    return null;
-  };
-
-  const direct = tryParse(text.trim());
-  if (direct) return direct;
-
-  // 2) ```json {...} ``` code fence.
-  const fenced = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-  if (fenced) {
-    const parsed = tryParse(fenced[1]);
-    if (parsed) return parsed;
-  }
-
-  // 3) First {...} block in the body.
-  const block = text.match(/\{[\s\S]*?\}/);
-  if (block) {
-    const parsed = tryParse(block[0]);
-    if (parsed) return parsed;
-  }
-
-  return null;
-}
-
-async function critiqueLLM(currentCode: string): Promise<CritiqueResult> {
-  const anthropic = getClient();
-  try {
-    const resp = await anthropic.messages.create({
-      model: getModel(),
-      system: CRITIC_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: `Stack to review:\n\`\`\`\n${currentCode}\n\`\`\``,
-        },
-      ],
-      temperature: 0.4,
-      max_tokens: 256,
-    });
-    const text = extractText(resp);
-    const parsed = extractCritiqueJson(text);
-    if (parsed) return parsed;
-    console.warn('[critique] could not parse JSON, returning neutral verdict', text);
-    return NEUTRAL_CRITIQUE;
-  } catch (e) {
-    console.warn('[critique] upstream call errored', e);
-    return NEUTRAL_CRITIQUE;
-  }
-}
-
 export async function runAgent(
   instruction: string,
   currentCode: string,
@@ -419,7 +335,6 @@ export async function runAgent(
     systemPrompt: AGENT_SYSTEM_PROMPT,
     llm: llmCaller,
     improviseLLM,
-    critiqueLLM,
     onProgress,
   });
 }

@@ -9,8 +9,6 @@ import { validateCode, validateCodeRuntime } from '../services/strudel';
 export interface AgentState {
   code: string;
   finalCode: string | null;
-  /** Set to true after the first `critique` call so the tool can refuse a 2nd. */
-  critiqued: boolean;
 }
 
 export interface ImproviseRequest {
@@ -23,16 +21,9 @@ export interface ImproviseRequest {
   complementTask?: string;
 }
 
-export interface CritiqueResult {
-  score: number;
-  suggestion: string | null;
-  must_fix: boolean;
-}
-
 export interface ToolContext {
   state: AgentState;
   improviseLLM: (req: ImproviseRequest) => Promise<string>;
-  critiqueLLM: (currentCode: string) => Promise<CritiqueResult>;
 }
 
 export interface ToolResult {
@@ -369,37 +360,6 @@ export const TOOLS: ToolDef[] = [
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         return { ok: false, error: `improvise 失败: ${msg}` };
-      }
-    },
-  },
-
-  {
-    name: 'critique',
-    description:
-      '请一个"音乐评审"小模型对当前完整 stack 做一次音乐性评分（不是语法检查——validate 已经覆盖）。返回 { score: 0-10, suggestion: 中文一句话或 null, must_fix: bool }。must_fix=true 时建议你按 suggestion 做最后一轮编辑再 commit；为 false 时可直接 commit。一次会话最多调用一次。',
-    parameters: { type: 'object', properties: {}, required: [] },
-    handler: async (_args, ctx) => {
-      if (ctx.state.critiqued) {
-        return {
-          ok: false,
-          error: 'critique 已经调用过一次了，本次会话不可再调用，请直接 commit。',
-        };
-      }
-      if (!ctx.state.code || !ctx.state.code.trim()) {
-        return { ok: false, error: '当前还没有代码可以评审，先 addLayer 几层再来。' };
-      }
-      ctx.state.critiqued = true;
-      try {
-        const result = await ctx.critiqueLLM(ctx.state.code);
-        return { ok: true, data: result };
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        // Soft-fail: a critique failure should not block commit. Return ok with
-        // a neutral verdict so the agent moves on.
-        return {
-          ok: true,
-          data: { score: 7, suggestion: null, must_fix: false, _warning: msg },
-        };
       }
     },
   },

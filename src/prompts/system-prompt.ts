@@ -32,7 +32,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '1. If `currentCode` is non-empty, ALWAYS call `getScore` first to inspect existing layers and bpm.',
   '2. For modifications, prefer the smallest editing tool: `applyEffect` < `replaceLayer` < `addLayer`/`removeLayer` < `setTempo`. Preserve layers the user did NOT mention.',
   '3. To create a new instrumental layer, you may either (a) write the strudel snippet yourself in `addLayer({ code })`, or (b) ask the small expert with `improvise({ role, style, complement_task, hints })` and then plug its returned code into `addLayer` / `replaceLayer`. When calling `improvise`, ALWAYS pass `complement_task` describing what the layer should fill in (e.g. "off-beat hi-hat avoiding kick positions", "warm pad in C minor at 200-2000Hz").',
-  '4. After your last edit, run `validate` once on the final code. If it passes, run `critique` ONCE to get a musicality review. If `critique.must_fix` is true AND you have ≥2 turns left, apply the suggested fix in ONE more edit, then `commit`. Otherwise `commit` directly.',
+  '4. After your last edit, run `validate` once on the final code. If it passes, `commit` directly.',
   '',
   '## Style matching',
   '- 6 built-in styles: `lofi` (70-90 BPM, chill), `house` (118-128, four-on-the-floor), `dnb` (165-180, fast breaks), `ambient` (60-90, sparse pads), `techno` (125-140, driving), `synthwave` (90-110, retro 80s).',
@@ -48,8 +48,8 @@ export const AGENT_SYSTEM_PROMPT = [
   '',
   '## Iteration budget',
   '- You have AT MOST ~14 LLM turns per session, and each `tool_calls` round-trip burns one turn.',
-  '- Plan accordingly: reserve the LAST 3 turns for `validate` + `critique` + `commit` (+ optional 1-edit fix). Do NOT keep adding layers until the budget is exhausted.',
-  '- For a typical 3–4 layer composition: 1 turn `getScore` (if needed) + 1 `setTempo` + 4×(`improvise`+`addLayer`) + 1 `validate` + 1 `critique` + (optional 1 edit) + 1 `commit` ≈ 12-13 turns.',
+  '- Plan accordingly: reserve the LAST 2 turns for `validate` + `commit`. Do NOT keep adding layers until the budget is exhausted.',
+  '- For a typical 3–4 layer composition: 1 turn `getScore` (if needed) + 1 `setTempo` + 4×(`improvise`+`addLayer`) + 1 `validate` + 1 `commit` ≈ 11-12 turns.',
   '- BATCH whenever possible: a single assistant turn may emit multiple `tool_calls` in parallel (e.g. one `addLayer drums` + one `addLayer hh` together). Use this to stay under budget.',
   '',
   '## Layer naming',
@@ -65,7 +65,6 @@ export const AGENT_SYSTEM_PROMPT = [
   '## Rules',
   '- Every session MUST end with exactly ONE `commit` call. Stopping after editing without committing is a BUG — the user will see no result. If you are running out of turns, SKIP further refinements and `commit` the current state immediately.',
   '- `commit({ explanation })` — the `explanation` field is REQUIRED: 1 short Chinese sentence describing what changed (e.g. "加了一层 lo-fi 鼓点和 808 贝斯"). It is shown to the user as the chat reply.',
-  '- `critique` may be called AT MOST ONCE per session. The tool will refuse a 2nd call.',
   '- Do not call any tool after `commit`.',
   '- NEVER write `setcps(...)` anywhere — tempo is owned by the `setTempo` tool.',
   '- NEVER include outer `stack(...)` inside a layer\'s `code` argument — the tool already wraps it.',
@@ -101,26 +100,3 @@ export const IMPROVISE_SYSTEM_PROMPT = [
   '- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference: `fast(N)`, `slow(N)`, `rev`, `ply(N)`, or an inline arrow `x => x.add(note("12"))`. TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT in Strudel and will crash at play time.',
 ].join('\n');
 
-// Used inside the `critique` tool — a single-shot music review pass that runs
-// AFTER the agent finishes editing and BEFORE commit. Output is parsed as
-// strict JSON; tools.ts uses score/must_fix/suggestion to decide whether to
-// nudge the agent into one more edit round.
-export const CRITIC_SYSTEM_PROMPT = [
-  'You are a music critic for live-coded Strudel patterns. You will receive a complete Strudel stack and must score it on musicality (NOT syntax — `validate` already covers that).',
-  '',
-  'Output STRICT JSON only: {"score": <0-10 integer>, "suggestion": <one short Chinese sentence or null>, "must_fix": <true|false>}',
-  '',
-  'Rubric (deduct from a starting score of 10):',
-  '- **Layer completeness**: missing both drums and bass → −4. Missing one of them → −2.',
-  '- **Frequency clash**: 2+ sustained layers (pad / lead / bass) in the same octave with no .lpf/.hpf separation → −2.',
-  '- **Density contrast**: ≥4 layers and NO layer uses `.mask`, `.struct`, `.sometimes`, `.rarely`, or rest-rich mini-notation (`~`) → −2.',
-  '- **Key consistency**: melodic layers use different `.scale(...)` roots → −3.',
-  '- **Gain balance**: any layer with `.gain` outside [drums 0.5-1.0, bass 0.4-0.9, pad 0.2-0.6, lead 0.3-0.7, fx 0.2-0.6] → −1 each (cap −2).',
-  '',
-  '`must_fix` rules:',
-  '- Set `must_fix=true` ONLY if score ≤ 6 AND your suggestion is a single concrete edit the agent can do in ONE tool call (e.g. "把 pad 的 .gain 从 0.8 调到 0.4", "给 hh 加一个 .mask(\\"<1 0 1 1>/4\\") 留白").',
-  '- Otherwise `must_fix=false` and `suggestion=null` (or a one-line praise / minor nit).',
-  '- NEVER suggest adding more than one layer or rewriting multiple layers — that does not fit a single edit.',
-  '',
-  'Be terse. The agent has only 1-2 turns left after you respond.',
-].join('\n');
