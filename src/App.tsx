@@ -13,46 +13,20 @@ import type { ProgressEvent } from './services/llm';
 export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
-  const [editableCode, setEditableCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
+  // Session code = last committed/played code (used as agent context)
   const currentCode = current?.code ?? '';
 
-  // Sync editable code when:
-  // 1. Strudel hot-reloads new generated code (onProgress commit)
-  // 2. Session switch — restore from session.code
-  useEffect(() => {
-    setEditableCode(strudel.currentCode);
-  }, [strudel.currentCode]);
-
+  // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
     if (!current) return;
-    // When the session changes, swap to its code (without auto-playing it),
-    // and stop any playback that belonged to the previous session so the two
-    // don't bleed into each other.
-    setEditableCode(current.code);
+    strudel.setCode(current.code);
     strudel.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
   }, [current?.id]);
-
-  // Auto-init engine on first user interaction (browser requires a gesture for AudioContext)
-  useEffect(() => {
-    if (strudel.engineReady) return;
-    const initOnce = () => {
-      strudel.init();
-      window.removeEventListener('click', initOnce);
-      window.removeEventListener('keydown', initOnce);
-    };
-    window.addEventListener('click', initOnce);
-    window.addEventListener('keydown', initOnce);
-    return () => {
-      window.removeEventListener('click', initOnce);
-      window.removeEventListener('keydown', initOnce);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: strudel is a stable hook reference
-  }, [strudel.engineReady]);
 
   const handleInstruction = useCallback(
     async (text: string) => {
@@ -145,12 +119,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [speech]);
 
-  const handlePlay = useCallback(() => {
-    if (editableCode) {
-      strudel.play(editableCode);
-    }
-  }, [strudel, editableCode]);
-
   const handleNewSession = useCallback(() => {
     strudel.stop();
     sessions.newSession();
@@ -181,12 +149,11 @@ export default function App() {
       <main className="flex-1 flex flex-col gap-3 p-3 min-w-0">
         <div className="flex-1 min-h-0">
           <CodePanel
-            code={editableCode}
             error={strudel.error}
             isPlaying={strudel.isPlaying}
             engineReady={strudel.engineReady}
-            onCodeChange={setEditableCode}
-            onPlay={handlePlay}
+            onMount={strudel.setRoot}
+            onPlay={() => strudel.play()}
             onStop={strudel.stop}
           />
         </div>

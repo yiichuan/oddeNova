@@ -69,3 +69,78 @@ body {
 .animate-slide-in {
   animation: slideIn 0.2s ease-out;
 }
+
+/* =============================================
+   CodeMirror / StrudelMirror editor
+   ============================================= */
+
+.cm-editor {
+  --background: var(--color-bg-secondary) !important;
+  --foreground: var(--color-text-primary) !important;
+  --caret: var(--color-accent-light) !important;
+  --selection: rgba(108, 92, 231, 0.25) !important;
+  --selectionMatch: rgba(108, 92, 231, 0.15) !important;
+  --lineHighlight: rgba(108, 92, 231, 0.08) !important;
+  --gutterBackground: transparent !important;
+  --gutterForeground: var(--color-text-muted) !important;
+  background-color: var(--color-bg-secondary) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.cm-editor .cm-content {
+  caret-color: var(--color-accent-light) !important;
+}
+
+.cm-editor .cm-cursor {
+  border-left-color: var(--color-accent-light) !important;
+}
+
+.cm-editor .cm-gutters {
+  background-color: transparent !important;
+  border-right: 1px solid var(--color-border) !important;
+}
+
+.cm-editor .cm-lineNumbers .cm-gutterElement {
+  color: var(--color-text-muted) !important;
+  opacity: 0.5;
+}
+
+.cm-editor .cm-selectionBackground,
+.cm-editor.cm-focused .cm-selectionBackground {
+  background-color: rgba(108, 92, 231, 0.25) !important;
+}
+
+.cm-editor .cm-activeLine {
+  background-color: rgba(108, 92, 231, 0.06) !important;
+}
+
+/* Scrollbar styling inside the editor */
+.cm-editor .cm-scroller::-webkit-scrollbar { width: 6px; height: 6px; }
+.cm-editor .cm-scroller::-webkit-scrollbar-track { background: transparent; }
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 3px;
+}
+
+/* =============================================
+   Strudel widget canvases (_scope, _pianoroll …)
+
+   CRITICAL: display:block so CodeMirror correctly
+   measures the block widget height. Without this,
+   inline canvas elements report 0 or wrong height,
+   causing line numbers to overlap.
+   ============================================= */
+
+canvas[id*="_widget__scope_"],
+canvas[id*="_widget__pianoroll_"],
+canvas[id*="_widget__spiral_"],
+canvas[id*="_widget__punchcard_"],
+canvas[id*="_widget__pitchwheel_"],
+canvas[id*="_widget__spectrum_"] {
+  display: block;
+  max-width: 100%;
+  background: var(--color-bg-primary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  margin: 3px 0;
+}

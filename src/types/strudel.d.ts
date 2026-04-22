@@ -1,14 +1,14 @@
-declare function initStrudel(options?: { prebake?: () => unknown }): void;
-declare function samples(path: string): unknown;
-declare function evaluate(code: string): Promise<unknown>;
+// Global audio context helpers registered via evalScope at runtime
+declare function getAudioContext(): AudioContext;
+declare function getSuperdoughAudioController(): { output: { destinationGain: AudioNode } } | null;
+
+// Common strudel pattern functions (registered via evalScope at runtime)
 declare function note(pattern: string): unknown;
 declare function s(pattern: string): unknown;
 declare function stack(...patterns: unknown[]): unknown;
 declare function cat(...patterns: unknown[]): unknown;
-declare function hush(): void;
-declare function getDestination(): AudioNode;
 declare function setcps(cps: number): void;
-declare function silence(): unknown;
+declare const silence: unknown;
 
 interface Window {
   __strudelInitialized?: boolean;
