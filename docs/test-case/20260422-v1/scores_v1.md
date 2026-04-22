@@ -5,24 +5,26 @@
 
 ## 目录
 
-- [TC-001 — 自然表达-Lofi House](#tc-001)
-- [TC-002 — 极简触发-Coastline](#tc-002)
-- [TC-003 — 定制变体-Downtempo](#tc-003)
-- [TC-004 — 风格-深夜开车 Ambient Techno](#tc-004)
-- [TC-005 — 风格-日式咖啡厅 Jazz](#tc-005)
-- [TC-006 — 风格-赛博朋克 Dark Synth](#tc-006)
-- [TC-007 — 风格-森林冥想 Ambient](#tc-007)
-- [TC-008 — 风格-80s 迪斯科 Disco](#tc-008)
-- [TC-009 — 场景-千与千寻开场](#tc-009)
-- [TC-010 — 场景-游戏 Boss 配乐](#tc-010)
-- [TC-011 — 场景-早晨咖啡时刻](#tc-011)
-- [TC-012 — 场景-Burial 风格 UK Garage](#tc-012)
-- [TC-013 — 技术-Minimal Techno](#tc-013)
-- [TC-014 — 技术-Trip-hop](#tc-014)
-- [TC-015 — 技术-Nu-jazz 四拍循环](#tc-015)
-- [TC-016 — 极简-开放式请求 v1](#tc-016)
-- [TC-017 — 极简-开放式请求 v2](#tc-017)
-- [TC-018 — 极简-风格标签](#tc-018)
+- [Vibe 测试用例乐谱 — 2026-04-22](#vibe-测试用例乐谱--2026-04-22)
+  - [目录](#目录)
+  - [TC-001 — 自然表达-Lofi House](#tc-001--自然表达-lofi-house)
+  - [TC-002 — 极简触发-Coastline](#tc-002--极简触发-coastline)
+  - [TC-003 — 定制变体-Downtempo](#tc-003--定制变体-downtempo)
+  - [TC-004 — 风格-深夜开车 Ambient Techno](#tc-004--风格-深夜开车-ambient-techno)
+  - [TC-005 — 风格-日式咖啡厅 Jazz](#tc-005--风格-日式咖啡厅-jazz)
+  - [TC-006 — 风格-赛博朋克 Dark Synth](#tc-006--风格-赛博朋克-dark-synth)
+  - [TC-007 — 风格-森林冥想 Ambient](#tc-007--风格-森林冥想-ambient)
+  - [TC-008 — 风格-80s 迪斯科 Disco](#tc-008--风格-80s-迪斯科-disco)
+  - [TC-009 — 场景-千与千寻开场](#tc-009--场景-千与千寻开场)
+  - [TC-010 — 场景-游戏 Boss 配乐](#tc-010--场景-游戏-boss-配乐)
+  - [TC-011 — 场景-早晨咖啡时刻](#tc-011--场景-早晨咖啡时刻)
+  - [TC-012 — 场景-Burial 风格 UK Garage](#tc-012--场景-burial-风格-uk-garage)
+  - [TC-013 — 技术-Minimal Techno](#tc-013--技术-minimal-techno)
+  - [TC-014 — 技术-Trip-hop](#tc-014--技术-trip-hop)
+  - [TC-015 — 技术-Nu-jazz 四拍循环](#tc-015--技术-nu-jazz-四拍循环)
+  - [TC-016 — 极简-开放式请求 v1](#tc-016--极简-开放式请求-v1)
+  - [TC-017 — 极简-开放式请求 v2](#tc-017--极简-开放式请求-v2)
+  - [TC-018 — 极简-风格标签](#tc-018--极简-风格标签)
 
 ---
 
@@ -164,9 +166,9 @@ stack(
 setcps(0.5)
 stack(
   /* @layer drums */ s("bd bd bd bd").stack(s("~ sd ~ sd")).stack(s("hh*16").gain(0.55)).bank("RolandTR909").gain(0.85),
-  /* @layer bass */ note("a2 a2 d3 e3 g3 e3 a2 a3").s("sawtooth").lpf("800 1200 900 1100 1000 950 800 1400").lpfq(3).attack(0.01).decay(0.15).sustain(0.6).release(0.1).gain(0.85).shape(0.3),
+  /* @layer bass */ note("a2 a2 d3 e3 g3 e3 a2 a3").s("sawtooth").lpf("800 1200 900 1100 1000 950 800 1400").lpq(3).attack(0.01).decay(0.15).sustain(0.6).release(0.1).gain(0.85).shape(0.3),
   /* @layer pad */ note("<[a3,c4,e4,g4] [d3,f3,a3,c4]>").s("sawtooth").cutoff(1800).resonance(0.3).attack(0.6).decay(0.2).sustain(0.8).release(1.8).gain(0.55).room(0.4).pan(sine.range(0.3,0.7).slow(8)),
-  /* @layer lead */ note("a4 c5 e5 a4 g4 e4 c5 e5").s("sawtooth").lpf(2800).lpfq(3).attack(0.01).decay(0.12).sustain(0.2).release(0.08).gain(0.55).delay(0.15).delayfeedback(0.25).delaytime(0.125)
+  /* @layer lead */ note("a4 c5 e5 a4 g4 e4 c5 e5").s("sawtooth").lpf(2800).lpq(3).attack(0.01).decay(0.12).sustain(0.2).release(0.08).gain(0.55).delay(0.15).delayfeedback(0.25).delaytime(0.125)
 )
 ```
 
@@ -200,9 +202,9 @@ stack(
 setcps(0.5833333333333334)
 stack(
   /* @layer drums */ s("bd bd sd bd bd bd sd bd").fast(2).stack(s("hh*16").gain(0.5)).stack(s("~ ~ ~ oh ~ ~ ~ oh").gain(0.7)).stack(s("cp ~ cp ~").gain(0.6)).gain(0.9).distort(0.3),
-  /* @layer bass */ note("e1 e1 g1 e1 b0 e1 d1 e1").s("sawtooth").lpf(400).lpfq(3).gain(0.85).distort(0.4).attack(0.01).release(0.18).room(0.1),
+  /* @layer bass */ note("e1 e1 g1 e1 b0 e1 d1 e1").s("sawtooth").lpf(400).lpq(3).gain(0.85).distort(0.4).attack(0.01).release(0.18).room(0.1),
   /* @layer pad */ note("e3 f3 e3 d#3 b2 c3 b2 a#2").s("strings").slow(8).attack(2).release(4).gain(0.45).lpf(sine.range(600,1800).slow(16)).room(0.8).size(0.9).pan(sine.range(0.3,0.7).slow(20)),
-  /* @layer lead */ note("e4 g4 b4 e5 d5 b3 g4 e4").s("sawtooth").lpf(2200).lpfq(8).gain(0.72).attack(0.01).release(0.18).distort(0.55).delay(0.18).delaytime(0.125).delayfeedback(0.35).room(0.2).fast(2).every(4, jux(rev)),
+  /* @layer lead */ note("e4 g4 b4 e5 d5 b3 g4 e4").s("sawtooth").lpf(2200).lpq(8).gain(0.72).attack(0.01).release(0.18).distort(0.55).delay(0.18).delaytime(0.125).delayfeedback(0.35).room(0.2).fast(2).every(4, jux(rev)),
   /* @layer fx */ s("metal*2 ~ [metal:2 ~] ~, ~ ~ [rim ~] ~, bd*<1 2 4 8>").speed("<0.5 1 2 0.25>/8").room(0.9).size(0.95).gain("<0.6 0.7 0.8 0.5>/3").hpf("<200 400 800>/5").distort(0.7).pan(rand).delay(0.4).delaytime("<0.125 0.25 0.0625>/4").delayfeedback(0.6).every(3,rev).every(5,jux(rev))
 )
 ```
@@ -273,7 +275,7 @@ setcps(0.2916666666666667)
 stack(
   /* @layer drums */ s("bd ~ ~ ~ ~ ~ sd ~ bd ~ bd ~ ~ ~ sd ~").bank("RolandTR808").speed("1 1 1 1 1 1 1 1 1 1 0.98 1 1 1 1 1").gain("0.95 1 1 1 1 1 0.9 1 0.92 1 0.88 1 1 1 0.88 1").shape(0.3).room(0.18).sometimes(x=>x.speed(0.97)).layer(x=>x.s("hh ~ hh:2 ~ ~ hh ~ ~ hh:1 ~ ~ ~ hh ~ ~ ~").gain("0.38 1 0.28 1 1 0.42 1 1 0.32 1 1 1 0.45 1 1 1").delay(0.08).delaytime(0.22).delayfeedback(0.2).shape(0.18)),
   /* @layer piano */ note("<[c3,eb3,g3,bb3] [f3,ab3,c4,eb4] [bb2,d3,f3,ab3] [eb3,g3,bb3,db4]>/2").s("gm_acoustic_grand_piano").gain(perlin.range(0.5,0.75)).room(0.7).size(0.85).delay(0.35).delaytime(0.375).delayfeedback(0.4).attack(0.02).release(2.5).pan(sine.range(0.35,0.65).slow(12)),
-  /* @layer pad */ n("<0 5 3 7> <2 0 5 3>").scale("C3:minor").s("supersaw").attack(2).decay(1).sustain(0.7).release(3).lpf("<600 800 500 700>").lpfq(2).room(0.8).size(0.9).gain(0.35).pan(sine.range(0.3,0.7).slow(16)),
+  /* @layer pad */ n("<0 5 3 7> <2 0 5 3>").scale("C3:minor").s("supersaw").attack(2).decay(1).sustain(0.7).release(3).lpf("<600 800 500 700>").lpq(2).room(0.8).size(0.9).gain(0.35).pan(sine.range(0.3,0.7).slow(16)),
   /* @layer bass */ note("<c2 ~ eb2 ~ f2 ~ bb1 ~>/2").s("gm_acoustic_bass").gain(0.82).lpf(320).attack(0.05).release(1.8).room(0.3)
 )
 ```

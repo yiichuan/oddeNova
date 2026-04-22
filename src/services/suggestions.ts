@@ -1,9 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { getActiveModelConfig } from './llm-config';
 
-// Reuse the same upstream proxy + key as services/llm.ts.
-const ANTHROPIC_API_KEY = 'sk-bQJ3QzB4h6b3u5aRGuvd8XTXG0jD1KDsWMtJgtLGcQjGArvR';
-const ANTHROPIC_BASE_URL = 'https://timesniper.club';
-const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+// 模型/凭据复用 services/llm-config.ts 中的统一配置，方便切换 sonnet / opus。
 
 export const STATIC_SUGGESTIONS = [
   '来一段 lo-fi 鼓点',
@@ -18,12 +16,13 @@ let client: Anthropic | null = null;
 
 function getClient(): Anthropic {
   if (!client) {
+    const cfg = getActiveModelConfig();
     client = new Anthropic({
-      apiKey: ANTHROPIC_API_KEY,
-      baseURL: ANTHROPIC_BASE_URL,
+      apiKey: cfg.apiKey,
+      baseURL: cfg.baseURL,
       dangerouslyAllowBrowser: true,
       defaultHeaders: {
-        Authorization: `Bearer ${ANTHROPIC_API_KEY}`,
+        Authorization: `Bearer ${cfg.apiKey}`,
       },
     });
   }
@@ -83,7 +82,7 @@ export async function buildSuggestions(currentCode: string): Promise<string[]> {
   try {
     const anthropic = getClient();
     const resp = await anthropic.messages.create({
-      model: ANTHROPIC_MODEL,
+      model: getActiveModelConfig().model,
       system: SUGGEST_SYSTEM,
       messages: [
         {

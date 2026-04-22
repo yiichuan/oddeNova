@@ -158,7 +158,7 @@ function summariseScore(score: ParsedScore) {
 // ============================================================================
 
 interface AgentState { code: string; finalCode: string | null; }
-interface ToolContext { state: AgentState; improviseLLM: (role: string, hints: string, currentCode: string) => Promise<string>; }
+interface ToolContext { state: AgentState; improviseLLM: (role: string, style: string, complementTask: string, hints: string, currentCode: string) => Promise<string>; }
 interface ToolResult { ok: boolean; data?: unknown; error?: string; }
 class CommitSignal extends Error {
   code: string;
@@ -280,13 +280,15 @@ const TOOLS = [
   },
   {
     name: 'improvise', description: '请一个"小专家"模型为指定角色即兴生成一个单层 strudel 表达式。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。',
-    parameters: { type: 'object', properties: { role: { type: 'string', enum: ['drums', 'bass', 'pad', 'lead', 'fx'], description: '要生成的乐器角色' }, hints: { type: 'string', description: '风格、调性、密度等提示（中英文皆可）' } }, required: ['role'] },
+    parameters: { type: 'object', properties: { role: { type: 'string', enum: ['drums', 'hh', 'bass', 'pad', 'lead', 'fx'], description: '要生成的乐器角色' }, style: { type: 'string', enum: ['lofi', 'house', 'dnb', 'ambient', 'techno', 'synthwave'], description: '音乐风格（可选），与 AGENT_SYSTEM_PROMPT 中的 6 种内置风格对应' }, complement_task: { type: 'string', description: '该层要填补的音乐空缺（如 "off-beat hi-hat avoiding kick positions"、"warm pad in C minor at 200-2000Hz"）' }, hints: { type: 'string', description: '额外的风格、调性、密度等提示（中英文皆可）' } }, required: ['role'] },
     handler: async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
       const role = String(args.role || '').trim();
+      const style = String(args.style || '').trim();
+      const complementTask = String(args.complement_task || '').trim();
       const hints = String(args.hints || '').trim();
       if (!role) return { ok: false, error: 'role 不能为空' };
       try {
-        const snippet = await ctx.improviseLLM(role, hints, ctx.state.code);
+        const snippet = await ctx.improviseLLM(role, style, complementTask, hints, ctx.state.code);
         return { ok: true, data: { role, code: snippet.trim() } };
       } catch (e: unknown) {
         return { ok: false, error: `improvise 失败: ${e instanceof Error ? e.message : String(e)}` };
@@ -322,7 +324,7 @@ const STRUDEL_CHEATSHEET = [
   '- Pattern mods: `.fast(N)`, `.slow(N)`, `.rev()`, `.jux(rev)`, `.ply(N)`, `.struct("x ~ x x")`, `.mask("<0 1 1 0>/16")`, `.every(N, fast(2))`, `.sometimes(fast(2))`, `.rarely(fn)`, `.often(fn)`, `.chunk(N, fast(2))`, `.off(0.125, x => x.add(note("7")))`.',
   '- Signals: `sine`, `cosine`, `saw`, `tri`, `rand`, `perlin` — combine with `.range(a,b).slow(N)` / `.segment(N)`. Example: `.lpf(sine.range(500,1000).slow(8))`, `.gain(perlin.range(.6,.9))`.',
   '- Harmony: `chord("<Cm9 Fm9>/4").dict("ireal").voicing()`, `.mode("root:g2")`, `.anchor("D5")`. Use `n("0 1").set(chords)` to map scale degrees onto chord tones.',
-  '- For `every`/`sometimes`/`off`/`chunk`, the function arg must be a real Strudel function (`fast(N)`, `rev`, `ply(N)`, or `x => x.something(...)`). NEVER call `by(x)`, `sometimesBy(x, fn)`, `someCyclesBy(x, fn)`, `within(...)` — these are TidalCycles-only.',
+  '- For `every`/`sometimes`/`off`/`chunk`, the callback must be a real Strudel function (`fast(N)`, `rev`, `ply(N)`, or `x => x.something(...)`). TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT available in Strudel — `validate` will catch them.',
   '- Scales: `n("0 1 2 3").scale("C4:minor")`. Common: major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic.',
 ].join('\n');
 
@@ -332,45 +334,70 @@ const AGENT_SYSTEM_PROMPT = [
   '## Working style',
   '1. If `currentCode` is non-empty, ALWAYS call `getScore` first to inspect existing layers and bpm.',
   '2. For modifications, prefer the smallest editing tool: `applyEffect` < `replaceLayer` < `addLayer`/`removeLayer` < `setTempo`. Preserve layers the user did NOT mention.',
-  '3. To create a new instrumental layer, you may either (a) write the strudel snippet yourself in `addLayer({ code })`, or (b) ask the small expert with `improvise({ role, hints })` and then plug its returned code into `addLayer` / `replaceLayer`.',
-  '4. Before `commit`, call `validate` once on the final code to make sure it is syntactically clean.',
+  '3. To create a new instrumental layer, you may either (a) write the strudel snippet yourself in `addLayer({ code })`, or (b) ask the small expert with `improvise({ role, style, complement_task, hints })` and then plug its returned code into `addLayer` / `replaceLayer`. When calling `improvise`, ALWAYS pass `complement_task` describing what the layer should fill in (e.g. "off-beat hi-hat avoiding kick positions", "warm pad in C minor at 200-2000Hz").',
+  '4. After your last edit, run `validate` once on the final code. If it passes, `commit` directly.',
+  '',
+  '## Style matching',
+  '- 6 built-in styles: `lofi` (70-90 BPM, chill), `house` (118-128, four-on-the-floor), `dnb` (165-180, fast breaks), `ambient` (60-90, sparse pads), `techno` (125-140, driving), `synthwave` (90-110, retro 80s).',
+  '- Match the user description to ONE of these by keyword (e.g. "学习/lo-fi/夜晚" → `lofi`, "快节奏/drum and bass" → `dnb`). Use the matched style\'s BPM range as starting tempo and pass `style` to every `improvise` call so the sub-model picks coherent timbres.',
+  '- If no style matches, fall back to your own judgment — `style` is optional.',
+  '',
+  '## Musicality principles (read every time you decide what layer to add next)',
+  '1. **Layer order**: drums → bass → pad/lead → fx. Do NOT start with all-harmonic layers (3 pads + no rhythm = no song). Drums + bass form the skeleton; everything else is colour.',
+  '2. **Frequency lanes**: kick <100Hz, bass c2-g2 (≈65-200Hz), pad/lead c4+ (≈260Hz+), hh + fx >2kHz. Two sustained layers in the same octave = mud. Use `.lpf` / `.hpf` to enforce lanes when in doubt.',
+  '3. **Density contrast**: with ≥4 layers, AT LEAST one layer must use `.mask("<1 0 1 1>/4")`, `.struct("x ~ x x")`, or `.sometimes(...)` to leave space. Everything-on-every-beat is a wall of noise, not music.',
+  '4. **Key consistency**: the FIRST melodic layer (bass/pad/lead) sets the key. Every subsequent melodic layer MUST use the same `.scale(...)` (e.g. all `C4:minor`). Do not mix `C:minor` and `D:major` in one stack.',
+  '5. **Gain balance**: drums 0.7-0.9, bass 0.6-0.8, pad 0.3-0.5, lead 0.4-0.6, fx 0.3-0.5. Keep the loudest element rhythmic, not harmonic.',
   '',
   '## Iteration budget',
-  '- You have AT MOST ~12 LLM turns per session.',
-  '- Plan accordingly: reserve the LAST 2 turns for `validate` + `commit`.',
-  '- BATCH whenever possible: a single assistant turn may emit multiple `tool_calls` in parallel.',
+  '- You have AT MOST ~14 LLM turns per session, and each `tool_calls` round-trip burns one turn.',
+  '- Plan accordingly: reserve the LAST 2 turns for `validate` + `commit`. Do NOT keep adding layers until the budget is exhausted.',
+  '- For a typical 3–4 layer composition: 1 turn `getScore` (if needed) + 1 `setTempo` + 4×(`improvise`+`addLayer`) + 1 `validate` + 1 `commit` ≈ 11-12 turns.',
+  '- BATCH whenever possible: a single assistant turn may emit multiple `tool_calls` in parallel (e.g. one `addLayer drums` + one `addLayer hh` together). Use this to stay under budget.',
   '',
   '## Layer naming',
-  '- Use semantic names: `drums`, `hh`, `bass`, `pad`, `lead`, `fx`.',
+  '- Use semantic names: `drums`, `hh`, `bass`, `pad`, `lead`, `fx`. The codebase preserves these via `/* @layer NAME */` comments — never hand-write that comment yourself, the tools do it.',
   '',
   STRUDEL_CHEATSHEET,
   '',
   '## Communication style',
-  '- 每一轮调用工具之前，先用 1-2 句中文简述你的意图和思考。',
+  '- 每一轮调用工具之前，先用 1-2 句中文简述你的意图和思考（例如：你为何选择这个工具、这一步在整体构思中处于什么位置）。',
   '- 语气自然，像一位音乐人在构思，不要使用"步骤 N："这类模板语言。',
+  '- 示例："先铺一层温暖的 pad 做底色，用慢速弦乐感觉，再往上叠旋律。" / "低音层用 sine 合成，律动缓一点，不要抢主角。"',
   '',
   '## Rules',
-  '- Every session MUST end with exactly ONE `commit` call.',
+  '- Every session MUST end with exactly ONE `commit` call. Stopping after editing without committing is a BUG — the user will see no result. If you are running out of turns, SKIP further refinements and `commit` the current state immediately.',
+  '- `commit({ explanation })` — the `explanation` field is REQUIRED: 1 short Chinese sentence describing what changed (e.g. "加了一层 lo-fi 鼓点和 808 贝斯"). It is shown to the user as the chat reply.',
   '- Do not call any tool after `commit`.',
   '- NEVER write `setcps(...)` anywhere — tempo is owned by the `setTempo` tool.',
-  '- NEVER include outer `stack(...)` inside a layer\'s `code` argument.',
-  '- Default to ~120 BPM when starting from scratch.',
+  '- NEVER include outer `stack(...)` inside a layer\'s `code` argument — the tool already wraps it.',
+  '- Default to ~120 BPM (`setTempo({ bpm: 120 })`) when starting from scratch with no matching style.',
   '- Keep each layer\'s expression a single chained call, no semicolons, no `var/let/const`.',
 ].join('\n');
 
 const IMPROVISE_SYSTEM_PROMPT = [
-  'You are a Strudel snippet generator. Given a role (drums/bass/pad/lead/fx), an optional style hint, and the current full code for context, return ONE single Strudel expression (no stack wrapping, no setcps, no semicolons) suitable for plugging into a stack as a layer.',
+  'You are a Strudel snippet generator producing ONE complementary layer for a live-coding stack.',
+  '',
+  'You will be given:',
+  '- `role`: drums / hh / bass / pad / lead / fx',
+  '- `style` (optional): one of lofi / house / dnb / ambient / techno / synthwave',
+  '- `complement_task` (optional): a free-text instruction about what gap this layer should fill (e.g. "off-beat hi-hat avoiding kick positions", "warm pad in C minor")',
+  '- `hint` (optional): extra style/density words',
+  '- `current code` (optional): the full Strudel code already on stage',
+  '',
+  'CRITICAL: when `current code` is provided, you MUST first read it to detect (a) the BPM (look for setcps; bpm = cps*240), (b) the key/scale already used by any melodic layer, (c) the existing rhythm density. Your output MUST be MUSICALLY COMPLEMENTARY: same key/scale, complementary frequency band (kick<100Hz, bass c2-g2, pad/lead c4+, hh+fx >2kHz), and complementary density (if existing layers are dense, leave space; if sparse, you can be active).',
   '',
   'Output STRICT JSON only: {"code": "..."}',
   '',
-  'Examples:',
-  `- input: \`role: drums\\nhint: lo-fi 低密度\` → ${JSON.stringify({ code: 's("bd ~ sd ~").gain(0.8)' })}`,
-  `- input: \`role: bass\\nhint: C minor 抒情\` → ${JSON.stringify({ code: 'note("c2 c2 eb2 g2").s("sawtooth").lpf(500).gain(0.7)' })}`,
-  `- input: \`role: pad\\nhint: ambient\` → ${JSON.stringify({ code: 'n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).gain(0.4)' })}`,
+  'Examples (illustrative — adapt to actual context):',
+  `- input: \`role: drums\\nstyle: lofi\\nhint: 低密度\` → ${JSON.stringify({ code: 's("bd ~ sd ~").bank("RolandTR808").gain(0.8)' })}`,
+  `- input: \`role: bass\\ncomplement_task: walking bass in C minor, sparse\` → ${JSON.stringify({ code: 'note("c2 c2 eb2 g2").s("sawtooth").lpf(500).gain(0.7)' })}`,
+  `- input: \`role: pad\\nstyle: ambient\` → ${JSON.stringify({ code: 'n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).gain(0.4)' })}`,
   '',
   'Rules:',
-  '- code must be ONE chained expression, no var declarations, no $: prefix, no setcps, no stack wrapping.',
-  '- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference.',
+  '- code must be ONE chained expression, no var declarations, no $: prefix, no setcps, no stack wrapping, no semicolons.',
+  '- Pick a `.gain(...)` consistent with the role: drums 0.7-0.9, bass 0.6-0.8, pad 0.3-0.5, lead 0.4-0.6, fx 0.3-0.5.',
+  '- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference: `fast(N)`, `slow(N)`, `rev`, `ply(N)`, or an inline arrow `x => x.add(note("12"))`. TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT in Strudel and will crash at play time.',
 ].join('\n');
 
 // ============================================================================
@@ -444,8 +471,8 @@ const IMPROVISE_FALLBACKS: Record<string, string> = {
   fx: 's("~ ~ ~ cp").room(0.5).gain(0.5)',
 };
 
-async function improviseLLM(role: string, hints: string, currentCode: string): Promise<string> {
-  const userPrompt = [`role: ${role}`, hints ? `hint: ${hints}` : '', currentCode ? `current code:\n${currentCode}` : ''].filter(Boolean).join('\n');
+async function improviseLLM(role: string, style: string, complementTask: string, hints: string, currentCode: string): Promise<string> {
+  const userPrompt = [`role: ${role}`, style ? `style: ${style}` : '', complementTask ? `complement_task: ${complementTask}` : '', hints ? `hint: ${hints}` : '', currentCode ? `current code:\n${currentCode}` : ''].filter(Boolean).join('\n');
   try {
     const resp = await client.messages.create({
       model: ANTHROPIC_MODEL, system: IMPROVISE_SYSTEM_PROMPT,
@@ -608,7 +635,7 @@ async function main() {
     lines.push('');
   }
 
-  const outDir = path.join(ROOT, 'docs', '20260422-v1');
+  const outDir = path.join(ROOT, 'docs', 'test-case', '20260422-v2');
   fs.mkdirSync(outDir, { recursive: true });
   const outFile = path.join(outDir, 'scores.md');
   fs.writeFileSync(outFile, lines.join('\n'), 'utf-8');

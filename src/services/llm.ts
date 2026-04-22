@@ -10,33 +10,37 @@ import {
   type ProgressEvent,
   type RunAgentResult,
 } from '../agent/loop';
-import { getOpenAIToolSchemas } from '../agent/tools';
+import {
+  getOpenAIToolSchemas,
+  type ImproviseRequest,
+} from '../agent/tools';
+import { getRoleHint } from '../prompts/styles';
+import { getActiveModelConfig } from './llm-config';
 
 // ===========================================================================
 // Anthropic client — the upstream proxy at timesniper.club speaks BOTH the
 // OpenAI and Anthropic protocols. We went back to the native Anthropic
 // Messages protocol because json_object / tool-calling behaviour via the
 // OpenAI-compat shim was unreliable on claude-sonnet-4-6.
+//
+// 模型/凭据配置统一放在 ./llm-config.ts，方便在 sonnet / opus 之间切换。
 // ===========================================================================
-
-const ANTHROPIC_API_KEY = 'sk-bQJ3QzB4h6b3u5aRGuvd8XTXG0jD1KDsWMtJgtLGcQjGArvR';
-const ANTHROPIC_BASE_URL = 'https://timesniper.club';
-const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 
 let client: Anthropic | null = null;
 
 function getClient(): Anthropic {
   if (!client) {
+    const cfg = getActiveModelConfig();
     client = new Anthropic({
-      apiKey: ANTHROPIC_API_KEY,
-      baseURL: ANTHROPIC_BASE_URL,
+      apiKey: cfg.apiKey,
+      baseURL: cfg.baseURL,
       dangerouslyAllowBrowser: true,
       // Some OpenAI-compat proxies only read `Authorization: Bearer`. Adding
       // it as a default header is a no-op for a real Anthropic endpoint
       // (which ignores the Authorization header in favour of `x-api-key`),
       // but it lets the same proxy URL work for both protocols.
       defaultHeaders: {
-        Authorization: `Bearer ${ANTHROPIC_API_KEY}`,
+        Authorization: `Bearer ${cfg.apiKey}`,
       },
     });
   }
@@ -44,7 +48,7 @@ function getClient(): Anthropic {
 }
 
 function getModel(): string {
-  return ANTHROPIC_MODEL;
+  return getActiveModelConfig().model;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,14 +272,17 @@ function extractStrudelSnippet(text: string): string | null {
   return null;
 }
 
-async function improviseLLM(
-  role: string,
-  hints: string,
-  currentCode: string
-): Promise<string> {
+async function improviseLLM(req: ImproviseRequest): Promise<string> {
+  const { role, hints, currentCode, style, complementTask } = req;
   const anthropic = getClient();
+  // Look up the per-role style hint from styles.ts so the sub-model gets
+  // concrete guidance instead of just a bare style id.
+  const styleHint = style ? getRoleHint(style, role) : '';
   const userPrompt = [
     `role: ${role}`,
+    style ? `style: ${style}` : '',
+    complementTask ? `complement_task: ${complementTask}` : '',
+    styleHint ? `style_hint: ${styleHint}` : '',
     hints ? `hint: ${hints}` : '',
     currentCode ? `current code (for context):\n${currentCode}` : '',
   ]

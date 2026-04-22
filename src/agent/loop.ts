@@ -84,7 +84,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     onProgress,
   } = opts;
 
-  const state: AgentState = { code: initialCode || '', finalCode: null };
+  const state: AgentState = {
+    code: initialCode || '',
+    finalCode: null,
+  };
   const ctx: ToolContext = { state, improviseLLM };
 
   const userTurn = initialCode
