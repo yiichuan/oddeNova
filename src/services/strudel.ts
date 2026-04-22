@@ -1,132 +1,211 @@
-let initialized = false;
-let _scopeAnalyser: AnalyserNode | null = null;
-// Strudel's `repl.evaluate` catches runtime errors internally and only surfaces
-// them via the `onEvalError` callback / repl state — it does NOT throw to the
-// caller. Without capturing them here, `evaluateCode` would falsely report
-// success and the UI would show "playing" while audio is actually silent.
-let _lastEvalError: string | null = null;
+import type { StrudelMirror as StrudelMirrorType, StrudelReplState } from '@strudel/codemirror';
 
-export function getScopeAnalyser(): AnalyserNode | null {
-  if (_scopeAnalyser) return _scopeAnalyser;
+export type StrudelState = {
+  code: string;
+  isPlaying: boolean;
+  error: string | null;
+  engineReady: boolean;
+};
+
+type StateCallback = (state: StrudelState) => void;
+
+class StrudelService {
+  private static _instance: StrudelService | null = null;
+
+  private editorInstance: StrudelMirrorType | null = null;
+  private containerElement: HTMLElement | null = null;
+  private isAudioInitialized = false;
+  private isInitializing = false;
+
+  private _state: StrudelState = {
+    code: '',
+    isPlaying: false,
+    error: null,
+    engineReady: false,
+  };
+
+  private stateCallbacks: StateCallback[] = [];
+
+  static instance(): StrudelService {
+    if (!StrudelService._instance) {
+      StrudelService._instance = new StrudelService();
+    }
+    return StrudelService._instance;
+  }
+
+  private constructor() {}
+
+  onStateChange(cb: StateCallback): () => void {
+    this.stateCallbacks.push(cb);
+    cb(this._state);
+    return () => {
+      this.stateCallbacks = this.stateCallbacks.filter(c => c !== cb);
+    };
+  }
+
+  private notify(partial: Partial<StrudelState>): void {
+    this._state = { ...this._state, ...partial };
+    this.stateCallbacks.forEach(cb => cb(this._state));
+  }
+
+  get isReady(): boolean {
+    return this.isAudioInitialized && !!this.editorInstance;
+  }
+
+  get code(): string {
+    return this._state.code;
+  }
+
+  private prebake = async (): Promise<void> => {
+    const { evalScope } = await import('@strudel/core');
+    const { initAudioOnFirstClick, registerSynthSounds, samples } = await import('superdough');
+
+    initAudioOnFirstClick();
+
+    const loadModules = evalScope(
+      import('@strudel/core'),
+      import('@strudel/codemirror'),
+      import('@strudel/draw'),
+      import('@strudel/mini'),
+      import('@strudel/tonal'),
+      import('@strudel/webaudio'),
+    );
+
+    await Promise.all([
+      loadModules,
+      registerSynthSounds(),
+      samples('github:tidalcycles/dirt-samples'),
+      samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
+      samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
+    ]);
+
+    this.isAudioInitialized = true;
+    // Set engineReady after all modules and samples are loaded
+    this.notify({ engineReady: true });
+  };
+
+  attach = async (container: HTMLElement): Promise<void> => {
+    if (this.containerElement === container && this.editorInstance) return;
+    if (this.isInitializing) return;
+
+    this.isInitializing = true;
+    try {
+      const { StrudelMirror } = await import('@strudel/codemirror');
+      const { transpiler } = await import('@strudel/transpiler');
+      const { webaudioOutput } = await import('@strudel/webaudio');
+      const { getAudioContext } = await import('superdough');
+      const { getDrawContext } = await import('@strudel/draw');
+
+      const currentCode = this._state.code;
+
+      if (this.editorInstance) {
+        this.editorInstance.dispose?.();
+        this.editorInstance = null;
+      }
+
+      this.containerElement = container;
+      this.containerElement.innerHTML = '';
+
+      this.editorInstance = new StrudelMirror({
+        root: this.containerElement,
+        initialCode: currentCode,
+        transpiler,
+        defaultOutput: webaudioOutput,
+        getTime: () => getAudioContext().currentTime,
+        drawTime: [0, -2],
+        drawContext: getDrawContext(),
+        onUpdateState: (state: StrudelReplState) => {
+          const evalError = state.evalError;
+          const error = evalError
+            ? (evalError instanceof Error ? evalError.message : String(evalError))
+            : null;
+          this.notify({
+            code: state.code ?? this._state.code,
+            isPlaying: state.started ?? false,
+            error,
+          });
+        },
+        onError: (error: Error) => {
+          this.notify({ error: error.message });
+        },
+        prebake: this.prebake,
+      });
+
+      // Sync REPL internal state with initial code
+      this.editorInstance.repl.setCode(currentCode);
+
+    } finally {
+      this.isInitializing = false;
+    }
+    // engineReady is set by prebake() after all modules load
+  };
+
+  setCode = (code: string): void => {
+    this._state = { ...this._state, code };
+    if (this.editorInstance) {
+      this.editorInstance.setCode(code);
+    }
+  };
+
+  play = async (): Promise<void> => {
+    if (!this.editorInstance) throw new Error('Engine not initialized');
+    this.notify({ error: null });
+    await this.editorInstance.evaluate();
+  };
+
+  stop = (): void => {
+    this.editorInstance?.repl.stop();
+  };
+
+  clearError = (): void => {
+    this.notify({ error: null });
+  };
+}
+
+export const strudelService = StrudelService.instance();
+
+// Compatibility shim for MiniWaveform — getAudioContext registered on globalThis by evalScope
+export function getAudioCtx(): AudioContext | null {
   try {
-    const ctx = getAudioCtx();
-    if (!ctx) return null;
-
-    // getSuperdoughAudioController() is globally exported by @strudel/web.
-    // Its .output.destinationGain is the final GainNode before the speakers —
-    // tapping it gives us all audio output without disrupting the signal chain.
-    // @ts-expect-error — getSuperdoughAudioController is a Strudel global, not typed
-    const controller = typeof getSuperdoughAudioController === 'function'
-      // @ts-expect-error — calling the untyped global
-      ? getSuperdoughAudioController()
-      : null;
-    const tapNode: AudioNode | null = controller?.output?.destinationGain ?? null;
-    if (!tapNode) return null;
-
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.6;
-    tapNode.connect(analyser);
-    _scopeAnalyser = analyser;
-    return analyser;
+    // @ts-expect-error — getAudioContext registered globally via evalScope at runtime
+    return typeof getAudioContext === 'function' ? getAudioContext() : null;
   } catch {
     return null;
   }
 }
 
-export async function initEngine(): Promise<void> {
-  if (initialized) return;
-  try {
-    initStrudel({
-      prebake: () => Promise.all([
-        samples('github:tidalcycles/dirt-samples'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
-      ]),
-      // @ts-expect-error — `onEvalError` is supported by @strudel/web's repl
-      // at runtime but missing from the public type declarations.
-      onEvalError: (err: unknown) => {
-        _lastEvalError = err instanceof Error ? err.message : String(err);
-      },
-    });
-    initialized = true;
-    // Always override _scope — Strudel's built-in tries to render into the
-    // REPL DOM which doesn't exist here. We strip ._scope() before evaluation
-    // anyway, but this is a safety net.
-    try {
-      await evaluate(
-        'if(typeof Pattern!=="undefined")' +
-        '{Pattern.prototype._scope=function(){return this;}}'
-      );
-    } catch { /* ignore */ }
-  } catch (e) {
-    console.error('Failed to init Strudel:', e);
-    throw e;
-  }
+// Kept for Scope.tsx compatibility (StrudelMirror handles ._scope() natively)
+export function getScopeAnalyser(): AnalyserNode | null {
+  return null;
 }
 
-export async function evaluateCode(code: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    // Strip ._scope() before evaluation — it's handled visually by our canvas widget
-    const cleanCode = code.replace(/\._scope\(\)/g, '');
-    // `repl.evaluate` already calls hush() internally (shouldHush defaults to
-    // true), so an extra `evaluate('hush()')` here was redundant — and worse,
-    // briefly left the scheduler holding a `silence` pattern.
-    _lastEvalError = null;
-    await evaluate(cleanCode);
-    if (_lastEvalError) {
-      const err = _lastEvalError;
-      console.error('Strudel runtime error (caught via onEvalError):', err);
-      return { success: false, error: err };
-    }
-    return { success: true };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('Strudel eval error:', e);
-    return { success: false, error: msg };
-  }
-}
+// --- Code validation (no audio engine needed) ---
 
-// Syntax-level validation. Does NOT touch the audio engine — runs the code
-// through `new Function()` purely to catch JS-level syntax errors (unbalanced
-// parens / quotes / etc). Strudel runtime errors (unknown samples, bad
-// patterns) are not caught here; they would surface only at evaluateCode time.
-// For the agent's MVP weak-feedback loop this is enough to verify "the code
-// is parseable" before commit, without disturbing the currently playing
-// pattern.
 export function validateCode(code: string): { ok: boolean; error?: string } {
-  if (!code || !code.trim()) {
-    return { ok: false, error: '代码为空' };
-  }
-  const cleanCode = code.replace(/\._scope\(\)/g, '');
+  if (!code?.trim()) return { ok: false, error: '代码为空' };
+  const clean = code
+    .replace(/\._scope\(\)/g, '')
+    .replace(/\._pianoroll\(\{[^}]*\}\)/g, '')
+    .replace(/\._pianoroll\(\)/g, '');
   try {
-    new Function(cleanCode);
+    new Function(clean);
     return { ok: true };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: msg };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-// Stronger validation that also catches `ReferenceError` (e.g. agent
-// hallucinations like `by(0.5)`, `sometimesBy(...)`) and `TypeError` from
-// missing methods on Pattern. Strategy: wrap the code in `with(proxy) { ... }`
-// where `proxy` forwards reads to `globalThis` (so all strudel globals — `s`,
-// `note`, `stack`, `rev`, `fast`, ... — resolve) but THROWS when an identifier
-// is unknown. Pattern constructors (`s()`, `stack()`, `.gain()`, ...) are pure
-// builders with no audio side effects, so executing them is safe. The only
-// scheduler-mutating call is `setcps()` — we strip those lines before the run
-// to keep the currently playing tempo intact.
 export function validateCodeRuntime(code: string): { ok: boolean; error?: string } {
   const syn = validateCode(code);
   if (!syn.ok) return syn;
-  if (!initialized) return { ok: true };
+  if (!strudelService.isReady) return { ok: true };
 
   const stripped = code
     .replace(/\._scope\(\)/g, '')
+    .replace(/\._pianoroll\(\{[^}]*\}\)/g, '')
+    .replace(/\._pianoroll\(\)/g, '')
     .replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');
 
-  // Identifiers that are JS-builtin or harmless to read but might be `undefined`.
   const PASS_THROUGH = new Set([
     'undefined', 'NaN', 'Infinity', 'globalThis', 'window', 'self',
     'console', 'Math', 'Number', 'String', 'Array', 'Object', 'JSON',
@@ -147,32 +226,14 @@ export function validateCodeRuntime(code: string): { ok: boolean; error?: string
   });
 
   try {
-    // `with` is allowed inside `new Function` bodies (non-strict by default).
-    new Function('__strudel__', `with (__strudel__) { ${stripped} }`)(proxy);
+    new Function('__s__', `with (__s__) { ${stripped} }`)(proxy);
     return { ok: true };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: msg };
-  }
-}
-
-export async function stopPlayback(): Promise<void> {
-  try {
-    await evaluate('hush()');
   } catch (e) {
-    console.error('Failed to stop:', e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
+// Legacy export for agent tools compatibility
 export function isInitialized(): boolean {
-  return initialized;
-}
-
-export function getAudioCtx(): AudioContext | null {
-  try {
-    // @ts-expect-error — getAudioContext is a Strudel global, not typed
-    return typeof getAudioContext === 'function' ? getAudioContext() : null;
-  } catch {
-    return null;
-  }
+  return strudelService.isReady;
 }

@@ -1,86 +1,90 @@
-import { useState, useCallback, useRef } from 'react';
-import { initEngine, evaluateCode, stopPlayback, isInitialized } from '../services/strudel';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { strudelService, type StrudelState } from '../services/strudel';
 
 const MAX_HISTORY = 50;
 
 export function useStrudel() {
-  const [currentCode, setCurrentCode] = useState('');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [engineReady, setEngineReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [historyLen, setHistoryLen] = useState(0);
-  const historyRef = useRef<string[]>([]);
+  const [state, setState] = useState<StrudelState>(() => ({
+    code: '',
+    isPlaying: false,
+    error: null,
+    engineReady: false,
+  }));
 
-  const init = useCallback(async () => {
+  const historyRef = useRef<string[]>([]);
+  const [historyLen, setHistoryLen] = useState(0);
+
+  useEffect(() => {
+    const unsub = strudelService.onStateChange(setState);
+    return unsub;
+  }, []);
+
+  const setRoot = useCallback((el: HTMLDivElement) => {
+    strudelService.attach(el);
+  }, []);
+
+  // play(code?) — if code provided, set it first then evaluate
+  const play = useCallback(async (code?: string) => {
+    if (!strudelService.isReady) {
+      setState(s => ({ ...s, error: '音频引擎启动中，请稍后再试' }));
+      return false;
+    }
     try {
-      await initEngine();
-      setEngineReady(true);
-      setError(null);
+      const currentCode = strudelService.code;
+      if (code !== undefined && code !== currentCode) {
+        strudelService.setCode(code);
+      }
+      if (currentCode) {
+        historyRef.current.push(currentCode);
+        if (historyRef.current.length > MAX_HISTORY) historyRef.current.shift();
+        setHistoryLen(historyRef.current.length);
+      }
+      await strudelService.play();
+      return true;
     } catch {
-      setError('Failed to initialize audio engine');
+      return false;
     }
   }, []);
 
-  const play = useCallback(async (code: string) => {
-    if (!isInitialized()) {
-      setError('Engine not initialized. Click anywhere to start.');
-      return false;
-    }
+  const stop = useCallback(() => {
+    strudelService.stop();
+  }, []);
 
-    const result = await evaluateCode(code);
-    if (result.success) {
-      if (currentCode) {
-        historyRef.current.push(currentCode);
-        if (historyRef.current.length > MAX_HISTORY) {
-          historyRef.current.shift();
-        }
-        setHistoryLen(historyRef.current.length);
-      }
-      setCurrentCode(code);
-      setIsPlaying(true);
-      setError(null);
-      return true;
-    } else {
-      setError(result.error || 'Failed to evaluate code');
-      return false;
-    }
-  }, [currentCode]);
+  const setCode = useCallback((code: string) => {
+    strudelService.setCode(code);
+  }, []);
 
-  const stop = useCallback(async () => {
-    await stopPlayback();
-    setIsPlaying(false);
-    setError(null);
+  const setError = useCallback((error: string | null) => {
+    setState(s => ({ ...s, error }));
   }, []);
 
   const undo = useCallback(async () => {
     const prev = historyRef.current.pop();
     setHistoryLen(historyRef.current.length);
     if (prev) {
-      const result = await evaluateCode(prev);
-      if (result.success) {
-        setCurrentCode(prev);
-        setIsPlaying(true);
-        setError(null);
-      }
+      strudelService.setCode(prev);
+      await strudelService.play();
     } else {
-      await stopPlayback();
-      setCurrentCode('');
-      setIsPlaying(false);
+      strudelService.stop();
+      strudelService.setCode('');
     }
   }, []);
 
-  const canUndo = historyLen > 0 || currentCode !== '';
+  const canUndo = historyLen > 0 || state.code !== '';
 
   return {
-    currentCode,
-    isPlaying,
-    engineReady,
-    error,
+    code: state.code,
+    currentCode: state.code,
+    isPlaying: state.isPlaying,
+    engineReady: state.engineReady,
+    error: state.error,
     canUndo,
-    init,
+    setRoot,
     play,
     stop,
-    undo,
+    setCode,
     setError,
+    undo,
+    init: stop, // no-op; engine initializes on first attach
   };
 }
