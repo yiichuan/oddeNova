@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
   AGENT_SYSTEM_PROMPT,
+  CRITIC_SYSTEM_PROMPT,
   IMPROVISE_SYSTEM_PROMPT,
 } from '../prompts/system-prompt';
 import {
@@ -10,33 +11,38 @@ import {
   type ProgressEvent,
   type RunAgentResult,
 } from '../agent/loop';
-import { getOpenAIToolSchemas } from '../agent/tools';
+import {
+  getOpenAIToolSchemas,
+  type CritiqueResult,
+  type ImproviseRequest,
+} from '../agent/tools';
+import { getRoleHint } from '../prompts/styles';
+import { getActiveModelConfig } from './llm-config';
 
 // ===========================================================================
 // Anthropic client — the upstream proxy at timesniper.club speaks BOTH the
 // OpenAI and Anthropic protocols. We went back to the native Anthropic
 // Messages protocol because json_object / tool-calling behaviour via the
 // OpenAI-compat shim was unreliable on claude-sonnet-4-6.
+//
+// 模型/凭据配置统一放在 ./llm-config.ts，方便在 sonnet / opus 之间切换。
 // ===========================================================================
-
-const ANTHROPIC_API_KEY = 'sk-bQJ3QzB4h6b3u5aRGuvd8XTXG0jD1KDsWMtJgtLGcQjGArvR';
-const ANTHROPIC_BASE_URL = 'https://timesniper.club';
-const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 
 let client: Anthropic | null = null;
 
 function getClient(): Anthropic {
   if (!client) {
+    const cfg = getActiveModelConfig();
     client = new Anthropic({
-      apiKey: ANTHROPIC_API_KEY,
-      baseURL: ANTHROPIC_BASE_URL,
+      apiKey: cfg.apiKey,
+      baseURL: cfg.baseURL,
       dangerouslyAllowBrowser: true,
       // Some OpenAI-compat proxies only read `Authorization: Bearer`. Adding
       // it as a default header is a no-op for a real Anthropic endpoint
       // (which ignores the Authorization header in favour of `x-api-key`),
       // but it lets the same proxy URL work for both protocols.
       defaultHeaders: {
-        Authorization: `Bearer ${ANTHROPIC_API_KEY}`,
+        Authorization: `Bearer ${cfg.apiKey}`,
       },
     });
   }
@@ -44,7 +50,7 @@ function getClient(): Anthropic {
 }
 
 function getModel(): string {
-  return ANTHROPIC_MODEL;
+  return getActiveModelConfig().model;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,14 +274,17 @@ function extractStrudelSnippet(text: string): string | null {
   return null;
 }
 
-async function improviseLLM(
-  role: string,
-  hints: string,
-  currentCode: string
-): Promise<string> {
+async function improviseLLM(req: ImproviseRequest): Promise<string> {
+  const { role, hints, currentCode, style, complementTask } = req;
   const anthropic = getClient();
+  // Look up the per-role style hint from styles.ts so the sub-model gets
+  // concrete guidance instead of just a bare style id.
+  const styleHint = style ? getRoleHint(style, role) : '';
   const userPrompt = [
     `role: ${role}`,
+    style ? `style: ${style}` : '',
+    complementTask ? `complement_task: ${complementTask}` : '',
+    styleHint ? `style_hint: ${styleHint}` : '',
     hints ? `hint: ${hints}` : '',
     currentCode ? `current code (for context):\n${currentCode}` : '',
   ]
@@ -317,6 +326,88 @@ async function improviseLLM(
   return IMPROVISE_FALLBACKS[role] ?? IMPROVISE_FALLBACKS.drums;
 }
 
+// ===========================================================================
+// Critique sub-LLM. Runs ONCE per agent session (gated by AgentState.critiqued
+// in tools.ts) to score the final stack on musicality. Returns a strict JSON
+// shape; if the model produces garbage we fall back to a neutral verdict so
+// the agent loop never gets blocked by a flaky critic.
+// ===========================================================================
+
+const NEUTRAL_CRITIQUE: CritiqueResult = {
+  score: 7,
+  suggestion: null,
+  must_fix: false,
+};
+
+function extractCritiqueJson(text: string): CritiqueResult | null {
+  if (!text) return null;
+  // 1) Direct parse.
+  const tryParse = (raw: string): CritiqueResult | null => {
+    try {
+      const p = JSON.parse(raw) as Record<string, unknown>;
+      if (
+        typeof p?.score === 'number' &&
+        (typeof p?.suggestion === 'string' || p?.suggestion === null) &&
+        typeof p?.must_fix === 'boolean'
+      ) {
+        return {
+          score: Math.max(0, Math.min(10, Math.round(p.score))),
+          suggestion: (p.suggestion as string) || null,
+          must_fix: p.must_fix,
+        };
+      }
+    } catch {
+      /* fall through */
+    }
+    return null;
+  };
+
+  const direct = tryParse(text.trim());
+  if (direct) return direct;
+
+  // 2) ```json {...} ``` code fence.
+  const fenced = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  if (fenced) {
+    const parsed = tryParse(fenced[1]);
+    if (parsed) return parsed;
+  }
+
+  // 3) First {...} block in the body.
+  const block = text.match(/\{[\s\S]*?\}/);
+  if (block) {
+    const parsed = tryParse(block[0]);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+async function critiqueLLM(currentCode: string): Promise<CritiqueResult> {
+  const anthropic = getClient();
+  try {
+    const resp = await anthropic.messages.create({
+      model: getModel(),
+      system: CRITIC_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: `Stack to review:\n\`\`\`\n${currentCode}\n\`\`\``,
+        },
+      ],
+      temperature: 0.4,
+      max_tokens: 256,
+    });
+    const text = extractText(resp);
+    const parsed = extractCritiqueJson(text);
+    if (parsed) return parsed;
+    console.warn('[critique] could not parse JSON, returning neutral verdict', text);
+    return NEUTRAL_CRITIQUE;
+  } catch (e) {
+    console.warn('[critique] upstream call errored', e);
+    return NEUTRAL_CRITIQUE;
+  }
+}
+
 export async function runAgent(
   instruction: string,
   currentCode: string,
@@ -328,6 +419,7 @@ export async function runAgent(
     systemPrompt: AGENT_SYSTEM_PROMPT,
     llm: llmCaller,
     improviseLLM,
+    critiqueLLM,
     onProgress,
   });
 }

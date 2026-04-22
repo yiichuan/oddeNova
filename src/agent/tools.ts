@@ -9,11 +9,30 @@ import { validateCode, validateCodeRuntime } from '../services/strudel';
 export interface AgentState {
   code: string;
   finalCode: string | null;
+  /** Set to true after the first `critique` call so the tool can refuse a 2nd. */
+  critiqued: boolean;
+}
+
+export interface ImproviseRequest {
+  role: string;
+  hints: string;
+  currentCode: string;
+  /** Optional style id from src/prompts/styles.ts (lofi/house/...). */
+  style?: string;
+  /** Free-text instruction about what gap this layer should fill. */
+  complementTask?: string;
+}
+
+export interface CritiqueResult {
+  score: number;
+  suggestion: string | null;
+  must_fix: boolean;
 }
 
 export interface ToolContext {
   state: AgentState;
-  improviseLLM: (role: string, hints: string, currentCode: string) => Promise<string>;
+  improviseLLM: (req: ImproviseRequest) => Promise<string>;
+  critiqueLLM: (currentCode: string) => Promise<CritiqueResult>;
 }
 
 export interface ToolResult {
@@ -303,18 +322,28 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'improvise',
     description:
-      '请一个"小专家"模型为指定角色即兴生成一个单层 strudel 表达式。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。',
+      '请一个"小专家"模型为指定角色生成一个互补的单层 strudel 表达式。子模型会读取当前完整代码，识别 BPM/key/已有层，再生成与之互补的片段。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。',
     parameters: {
       type: 'object',
       properties: {
         role: {
           type: 'string',
-          enum: ['drums', 'bass', 'pad', 'lead', 'fx'],
+          enum: ['drums', 'hh', 'bass', 'pad', 'lead', 'fx'],
           description: '要生成的乐器角色',
+        },
+        style: {
+          type: 'string',
+          enum: ['lofi', 'house', 'dnb', 'ambient', 'techno', 'synthwave'],
+          description: '可选风格，会注入对应的音色与声部建议（如 lofi → 808 + 慢速 boom-bap）',
+        },
+        complement_task: {
+          type: 'string',
+          description:
+            '【强烈推荐填写】这一层要互补什么的自由文本描述，如 "off-beat hi-hat avoiding kick positions"、"warm pad in C minor at 200-2000Hz"、"高频点缀，4 拍循环"。',
         },
         hints: {
           type: 'string',
-          description: '风格、调性、密度等提示（中英文皆可），如 "lo-fi 低密度"、"C minor 抒情"',
+          description: '额外风格、调性、密度等提示（中英文皆可），如 "C minor 抒情"',
         },
       },
       required: ['role'],
@@ -322,13 +351,53 @@ export const TOOLS: ToolDef[] = [
     handler: async (args, ctx) => {
       const role = String(args.role || '').trim();
       const hints = String(args.hints || '').trim();
+      const style = typeof args.style === 'string' ? args.style.trim() : '';
+      const complementTask =
+        typeof args.complement_task === 'string' ? args.complement_task.trim() : '';
       if (!role) return { ok: false, error: 'role 不能为空' };
       try {
-        const snippet = await ctx.improviseLLM(role, hints, ctx.state.code);
+        const snippet = await ctx.improviseLLM({
+          role,
+          hints,
+          currentCode: ctx.state.code,
+          style: style || undefined,
+          complementTask: complementTask || undefined,
+        });
         return { ok: true, data: { role, code: snippet.trim() } };
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         return { ok: false, error: `improvise 失败: ${msg}` };
+      }
+    },
+  },
+
+  {
+    name: 'critique',
+    description:
+      '请一个"音乐评审"小模型对当前完整 stack 做一次音乐性评分（不是语法检查——validate 已经覆盖）。返回 { score: 0-10, suggestion: 中文一句话或 null, must_fix: bool }。must_fix=true 时建议你按 suggestion 做最后一轮编辑再 commit；为 false 时可直接 commit。一次会话最多调用一次。',
+    parameters: { type: 'object', properties: {}, required: [] },
+    handler: async (_args, ctx) => {
+      if (ctx.state.critiqued) {
+        return {
+          ok: false,
+          error: 'critique 已经调用过一次了，本次会话不可再调用，请直接 commit。',
+        };
+      }
+      if (!ctx.state.code || !ctx.state.code.trim()) {
+        return { ok: false, error: '当前还没有代码可以评审，先 addLayer 几层再来。' };
+      }
+      ctx.state.critiqued = true;
+      try {
+        const result = await ctx.critiqueLLM(ctx.state.code);
+        return { ok: true, data: result };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // Soft-fail: a critique failure should not block commit. Return ok with
+        // a neutral verdict so the agent moves on.
+        return {
+          ok: true,
+          data: { score: 7, suggestion: null, must_fix: false, _warning: msg },
+        };
       }
     },
   },
@@ -346,7 +415,8 @@ export const TOOLS: ToolDef[] = [
         },
         explanation: {
           type: 'string',
-          description: '一句话向用户解释这次改动（中文）',
+          description:
+            '【必填】一句话中文向用户解释这次改动，会作为聊天回复展示。如 "加了一层 lo-fi 鼓点" / "把 pad 调小声" / "切到 house 风格 128 BPM"。',
         },
       },
       required: [],

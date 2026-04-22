@@ -53,6 +53,7 @@ export interface RunAgentOptions {
   systemPrompt: string;
   llm: LLMCaller;
   improviseLLM: ToolContext['improviseLLM'];
+  critiqueLLM: ToolContext['critiqueLLM'];
   maxIter?: number;
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
@@ -79,13 +80,18 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     systemPrompt,
     llm,
     improviseLLM,
+    critiqueLLM,
     maxIter = DEFAULT_MAX_ITER,
     timeoutMs = DEFAULT_TIMEOUT,
     onProgress,
   } = opts;
 
-  const state: AgentState = { code: initialCode || '', finalCode: null };
-  const ctx: ToolContext = { state, improviseLLM };
+  const state: AgentState = {
+    code: initialCode || '',
+    finalCode: null,
+    critiqued: false,
+  };
+  const ctx: ToolContext = { state, improviseLLM, critiqueLLM };
 
   const userTurn = initialCode
     ? `当前正在播放的代码:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`

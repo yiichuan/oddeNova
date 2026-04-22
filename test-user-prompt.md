@@ -22,3 +22,41 @@ C. 定制变体版（换调换色）
 
 来一段宫崎骏风格的电子乐
 
+风格/情绪类
+
+来一段深夜开车的 ambient techno，节奏稀疏但 bassline 厚重
+
+做一段日式咖啡厅的背景音乐，jazz 风格，带钢琴和贝斯
+
+来一段赛博朋克城市感的 dark synth，节奏感强，带失真
+
+做一段像在森林里冥想的 ambient 音乐，不需要鼓
+
+来一段 80s 复古迪斯科风格的舞曲
+
+参考场景类
+
+帮我做一段像《千与千寻》开场那种略带忧伤的轻音乐
+
+做一段适合打 boss 的游戏配乐，紧张、层次丰富
+
+来一段早晨醒来窗边喝咖啡的感觉，轻盈、温暖
+
+做一段像 Burial 风格的 UK garage，有颗粒感的人声采样，沉重的鼓
+
+技术细节类
+
+来一段 120 BPM 的 minimal techno，只用 kick、hihat、一条 acid bassline，bassline 用 sawtooth + lpf 调制
+
+做一段 70 BPM 的 trip-hop，鼓要带 swing，钢琴用 gm_acoustic_grand_piano，加 reverb 和 delay
+
+来一段 110 BPM 的 nu-jazz，和弦用 Cm9 → Abmaj7 → Ebmaj7 → Bb7，走四拍循环
+
+极简挑战类
+
+来一段好听的
+
+做点什么让我放松
+
+lo-fi 一段
+
