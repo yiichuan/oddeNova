@@ -184,7 +184,7 @@ export default function App() {
             onStop={strudel.stop}
           />
         </div>
-        <div className="h-[260px] grid grid-cols-2 gap-3 shrink-0">
+        <div className="h-[280px] grid grid-cols-[1fr_2fr] gap-3 shrink-0">
           <HistoryPanel
             sessions={sessions.sessions}
             currentId={sessions.currentId}

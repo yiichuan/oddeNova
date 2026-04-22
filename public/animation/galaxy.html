@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>SPIRAL — Strudel Live</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        #camBtn {
+            position: absolute; top: 12px; left: 12px; z-index: 10;
+            width: 30px; height: 30px; padding: 0;
+            background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 6px; cursor: pointer; display: flex;
+            align-items: center; justify-content: center;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        #camBtn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
+        #camBtn svg { width: 15px; height: 15px; }
+    </style>
+</head>
+<body>
+    <!-- cinematic = orbit path icon, overview = top-down arrow icon -->
+    <button id="camBtn" title="切换视角">
+        <svg id="iconCin" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- orbit ring -->
+            <ellipse cx="8" cy="8" rx="6" ry="3.2" stroke="rgba(255,255,255,0.7)" stroke-width="1.1" stroke-dasharray="2.5 1.8"/>
+            <!-- arrowhead on the ring -->
+            <path d="M13.5 7.2 L14.2 8.9 L12.4 8.5" stroke="rgba(255,255,255,0.7)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+            <!-- center dot -->
+            <circle cx="8" cy="8" r="1.1" fill="rgba(255,255,255,0.7)"/>
+        </svg>
+        <svg id="iconOvr" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+            <!-- outer circle -->
+            <circle cx="8" cy="8" r="5.5" stroke="rgba(255,255,255,0.7)" stroke-width="1.1"/>
+            <!-- down arrow -->
+            <path d="M8 4.5 L8 10.5 M5.5 8.5 L8 11 L10.5 8.5" stroke="rgba(255,255,255,0.7)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    </button>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        let scene, camera, renderer, composer, bloomPass, vortex;
+        let analyser = null, dataArray = null;
+        let audioConnected = false;
+
+        const audioParams = { low: 0, mid: 0, high: 0 };
+        let chaosLevel = 0.5;
+        let energyAvg  = 0;
+
+        // Camera mode: false = cinematic (animated orbit), true = overview (fixed top-down)
+        let cameraOverview = false;
+        let overviewBlend  = 0; // smooth 0→1 transition between modes
+        const OVERVIEW_POS = new THREE.Vector3(0, 25, 15);
+        const _cinPos      = new THREE.Vector3();
+
+        const camBtn  = document.getElementById('camBtn');
+        const iconCin = document.getElementById('iconCin');
+        const iconOvr = document.getElementById('iconOvr');
+
+        init();
+
+        // ─── Audio tap ──────────────────────────────────────────────────────────
+        // Strudel exposes getAudioContext / getSuperdoughAudioController as globals.
+        // When galaxy.html is embedded as an <iframe>, those globals live on
+        // window.parent (same Vite origin). When opened standalone they're absent —
+        // we just run in idle/demo mode until retried.
+
+        function tryConnectAudio() {
+            if (audioConnected) return;
+            try {
+                // Support both iframe (parent) and same-window embedding
+                const win = (window.parent && window.parent !== window)
+                    ? window.parent
+                    : window;
+
+                const getCtx  = win.getAudioContext;
+                const getCtrl = win.getSuperdoughAudioController;
+                if (typeof getCtx !== 'function' || typeof getCtrl !== 'function') return;
+
+                const ctx        = getCtx();
+                const controller = getCtrl();
+                const tapNode    = controller?.output?.destinationGain;
+                if (!ctx || !tapNode) return;
+
+                const node = ctx.createAnalyser();
+                node.fftSize              = 512;
+                node.smoothingTimeConstant = 0.5;
+                tapNode.connect(node);
+
+                dataArray  = new Uint8Array(node.frequencyBinCount);
+                analyser   = node;
+                audioConnected = true;
+            } catch {
+                // silently retry next frame
+            }
+        }
+
+        // ─── Scene setup ────────────────────────────────────────────────────────
+
+        function init() {
+            scene    = new THREE.Scene();
+            camera   = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            setupSpiralVortex();
+            setupPostProcessing();
+            animate();
+
+            camBtn.addEventListener('click', () => {
+                cameraOverview = !cameraOverview;
+                iconCin.style.display = cameraOverview ? 'none'  : '';
+                iconOvr.style.display = cameraOverview ? ''      : 'none';
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                composer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function setupSpiralVortex() {
+            const count    = 350000;
+            const geometry = new THREE.BufferGeometry();
+
+            const positions    = new Float32Array(count * 3);
+            const randoms      = new Float32Array(count * 3);
+            const chaosOffsets = new Float32Array(count * 2);
+
+            for (let i = 0; i < count; i++) {
+                const i3 = i * 3;
+                const rand = Math.random();
+                const isArm    = rand < 0.60;
+                const isBridge = rand < 0.85;
+
+                const u1 = Math.random(), u2 = Math.random();
+                const skewed = Math.pow((u1 + u2) / 2, 1.6);
+                const radius = 0.5 + skewed * 27.5;
+
+                const spiralAngle  = Math.log(radius + 1) * 7.0;
+                const innerBlend   = Math.pow(Math.min(1.0, radius / 4.5), 1.5);
+                const outerBlend   = Math.max(0.0, 1.0 - Math.pow(Math.max(0.0, radius - 16.0) / 12.0, 0.6));
+                const armBlend     = innerBlend * outerBlend;
+                const edgeScatter  = Math.max(0.0, (radius - 15.0) / 13.0);
+                const randomAngle  = Math.random() * Math.PI * 2;
+
+                let finalAngle, off;
+
+                if (isArm) {
+                    const armAngle = (i % 2) / 2 * Math.PI * 2;
+                    off = Math.pow(Math.random(), 1.2) * (Math.random() < 0.5 ? 1 : -1);
+                    const spread = 1.8 * Math.pow(radius / 28.0, 0.75);
+                    const jitter = (Math.random() - 0.5) * 0.7 * Math.pow(radius / 10.0, 0.5)
+                                 + (Math.random() - 0.5) * 0.3 * Math.pow(radius / 28.0, 0.3);
+                    const structured = armAngle + spiralAngle + off * spread + jitter + (Math.random() - 0.5) * edgeScatter * 2.5;
+                    finalAngle = randomAngle * (1 - armBlend) + structured * armBlend;
+
+                } else if (isBridge) {
+                    const bridgeAngle = ((i % 2) + 0.5) / 2 * Math.PI * 2;
+                    off = Math.pow(Math.random(), 1.2) * (Math.random() < 0.5 ? 1 : -1);
+                    const spread = 1.2 * Math.pow(radius / 28.0, 0.75);
+                    const jitter = (Math.random() - 0.5) * 0.4 * Math.pow(radius / 10.0, 0.6);
+                    const structured = bridgeAngle + spiralAngle + off * spread + jitter + (Math.random() - 0.5) * edgeScatter * 3.0;
+                    const bridgeBlend = armBlend * Math.min(1.0, radius / 8.0) * 0.6;
+                    finalAngle = randomAngle * (1 - bridgeBlend) + structured * bridgeBlend;
+
+                } else {
+                    off = 0.0;
+                    finalAngle = randomAngle;
+                }
+
+                const edgeFade    = Math.max(0.0, (radius - 14.0) / 14.0);
+                const finalRadius = radius + edgeFade * Math.pow(Math.random(), 0.5) * 12.0;
+
+                positions[i3]   = Math.cos(finalAngle) * finalRadius * 1.6;
+                const yBase     = Math.pow(radius / 28.0, 2.0) * 3.2;
+                const ySpread   = isArm ? 0.1 + Math.pow(radius / 28.0, 1.3) * 2.5
+                                        : 0.15 + Math.pow(radius / 28.0, 1.0) * 1.8;
+                positions[i3+1] = yBase + (Math.random() - 0.5) * ySpread;
+                positions[i3+2] = Math.sin(finalAngle) * finalRadius;
+
+                randoms[i3]   = 0.5 + Math.random();
+                randoms[i3+1] = radius;
+                randoms[i3+2] = off;
+
+                const chaosDir = Math.random() * Math.PI * 2;
+                const chaosMag = finalRadius * 0.22 + 0.8;
+                chaosOffsets[i * 2]     = Math.cos(chaosDir) * chaosMag;
+                chaosOffsets[i * 2 + 1] = Math.sin(chaosDir) * chaosMag;
+            }
+
+            geometry.setAttribute('position',    new THREE.BufferAttribute(positions,    3));
+            geometry.setAttribute('aRandom',      new THREE.BufferAttribute(randoms,      3));
+            geometry.setAttribute('aChaosOffset', new THREE.BufferAttribute(chaosOffsets, 2));
+
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime:  { value: 0 },
+                    uLow:   { value: 0 },
+                    uMid:   { value: 0 },
+                    uHigh:  { value: 0 },
+                    uChaos: { value: 0.5 },
+                    uScale: { value: 1.0 }  // viewport height / reference height (800px)
+                },
+                vertexShader: `
+                    uniform float uTime;
+                    uniform float uLow;
+                    uniform float uMid;
+                    uniform float uChaos;
+                    uniform float uScale;
+                    attribute vec3 aRandom;
+                    attribute vec2 aChaosOffset;
+                    varying float vBrightness;
+                    varying float vRadius;
+                    varying float vSparkle;
+
+                    void main() {
+                        vec3 pos = position;
+                        float radius = aRandom.y;
+
+                        // Blend particle toward its chaos-offset position:
+                        // uChaos=0 → tight spiral arms; uChaos=1 → fully dispersed
+                        pos.x += aChaosOffset.x * uChaos;
+                        pos.z += aChaosOffset.y * uChaos;
+
+                        // Bass wave: kick energy lifts/dips the galactic disk
+                        float wave = sin(radius * 0.38 + uLow * 12.0 + aRandom.x * 0.6)
+                                   * uLow * 0.9;
+                        pos.y += wave;
+
+                        // Mid adds a gentle radial breathing — melody = expansion
+                        pos.x *= 1.0 + uMid * 0.04;
+                        pos.z *= 1.0 + uMid * 0.04;
+
+                        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                        float sizeSeed  = aRandom.x * aRandom.x;
+                        gl_PointSize    = sizeSeed * 0.9 * (20.0 / -mvPosition.z) * uScale;
+                        gl_Position     = projectionMatrix * mvPosition;
+
+                        vBrightness = 1.4 / (radius + 1.5);
+                        vRadius     = radius;
+                        // per-particle sparkle seed (0..1) driven by high freq externally
+                        vSparkle    = aRandom.x;
+                    }
+                `,
+                fragmentShader: `
+                    uniform float uChaos;
+                    uniform float uHigh;
+                    varying float vBrightness;
+                    varying float vRadius;
+                    varying float vSparkle;
+
+                    void main() {
+                        float d = distance(gl_PointCoord, vec2(0.5));
+                        if (d > 0.5) discard;
+
+                        float alpha     = pow(1.0 - d * 2.0, 4.0);
+                        float intensity = clamp(vBrightness, 0.5, 0.9);
+
+                        vec3 coreColor = vec3(1.0,  0.97, 0.92);
+                        vec3 armColor  = vec3(0.65, 0.82, 1.0);
+                        vec3 edgeColor = vec3(0.35, 0.55, 0.9);
+                        float t1 = clamp(vRadius / 10.0, 0.0, 1.0);
+                        float t2 = clamp((vRadius - 10.0) / 18.0, 0.0, 1.0);
+                        vec3 color = mix(coreColor, armColor, t1);
+                        color      = mix(color, edgeColor, t2);
+
+                        // Hi-hat sparkle: brighten random particles proportional to high-freq energy
+                        float sparkleMask = step(1.0 - uHigh * 0.6, vSparkle);
+                        color  += vec3(0.5, 0.7, 1.0) * sparkleMask * uHigh * 0.8;
+                        alpha  += sparkleMask * uHigh * 0.3;
+
+                        gl_FragColor = vec4(color * intensity, alpha);
+                    }
+                `,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            vortex = new THREE.Points(geometry, material);
+            scene.add(vortex);
+        }
+
+        function setupPostProcessing() {
+            const renderScene = new RenderPass(scene, camera);
+            bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                1.8, 0.5, 0.08
+            );
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+        }
+
+        // ─── Per-frame update ────────────────────────────────────────────────────
+
+        function updateAudio() {
+            if (!analyser) return;
+            analyser.getByteFrequencyData(dataArray);
+
+            // Frequency bands tuned for typical Strudel output:
+            //   low  0–80 Hz   → kick / bass samples  (bins 0–14)
+            //   mid  80–2kHz   → melody, chords        (bins 15–69)
+            //   high 2–10kHz   → hi-hats, cymbals      (bins 70–159)
+            let l = 0, m = 0, h = 0;
+            for (let i = 0;  i < 15;  i++) l += dataArray[i];
+            for (let i = 15; i < 70;  i++) m += dataArray[i];
+            for (let i = 70; i < 160; i++) h += dataArray[i];
+
+            const tLow  = l / (15  * 255);
+            const tMid  = m / (55  * 255);
+            const tHigh = h / (90  * 255);
+
+            // Fast attack, slow decay for punchy response
+            audioParams.low  = THREE.MathUtils.lerp(audioParams.low,  tLow,  tLow  > audioParams.low  ? 0.5 : 0.05);
+            audioParams.mid  = THREE.MathUtils.lerp(audioParams.mid,  tMid,  tMid  > audioParams.mid  ? 0.4 : 0.05);
+            audioParams.high = THREE.MathUtils.lerp(audioParams.high, tHigh, tHigh > audioParams.high ? 0.5 : 0.08);
+
+            // Chaos = beat detection via low+mid energy vs long-term average
+            // Beat hit → spiral arms coalesce (chaos↓); silence → dissolve (chaos↑)
+            const energy    = audioParams.low * 0.65 + audioParams.mid * 0.35;
+            energyAvg       = THREE.MathUtils.lerp(energyAvg, energy, 0.008);
+            const delta     = (energy - energyAvg) * 5.0;
+            const targetChaos = Math.max(0.05, Math.min(0.95, 0.5 - delta));
+            const rate      = targetChaos < chaosLevel ? 0.25 : 0.04;
+            chaosLevel      = THREE.MathUtils.lerp(chaosLevel, targetChaos, rate);
+        }
+
+        function updateCamera(time) {
+            // Cinematic trajectory
+            const radius  = 22 + Math.sin(time * 0.26) * 7.5;
+            const s       = Math.sin(time * 0.142);
+            const height  = Math.pow(s, 3) * 4.5 + 2.5;
+            const azimuth = time * 0.044 * (1.0 + audioParams.mid * 0.3)
+                          + Math.sin(time * 0.22) * 0.45;
+            _cinPos.set(
+                Math.sin(azimuth) * radius,
+                height,
+                Math.cos(azimuth) * radius
+            );
+
+            // Smoothly blend toward whichever mode is active
+            overviewBlend = THREE.MathUtils.lerp(
+                overviewBlend,
+                cameraOverview ? 1 : 0,
+                0.04
+            );
+            camera.position.lerpVectors(_cinPos, OVERVIEW_POS, overviewBlend);
+            camera.lookAt(0, 0, 0);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now() * 0.001;
+
+            // Retry audio tap until Strudel initialises (user must click first)
+            if (!audioConnected) tryConnectAudio();
+
+            updateAudio();
+            updateCamera(time);
+
+            // Base rotation + mid-energy speed variation (melody = faster spin)
+            vortex.rotation.y = -time * 0.06 * (1.0 + audioParams.mid * 0.35);
+
+            // Scale particle size and bloom to actual viewport height.
+            // 800px is the reference height the effect was originally tuned for.
+            const vpScale = renderer.domElement.height / 800;
+
+            vortex.material.uniforms.uTime.value  = time;
+            vortex.material.uniforms.uLow.value   = audioParams.low;
+            vortex.material.uniforms.uMid.value   = audioParams.mid;
+            vortex.material.uniforms.uHigh.value  = audioParams.high;
+            vortex.material.uniforms.uChaos.value = chaosLevel;
+            vortex.material.uniforms.uScale.value = vpScale;
+
+            // Bloom: base strength and radius scale with viewport so glow
+            // doesn't blow out in small windows or disappear in large ones.
+            bloomPass.strength = (1.1 + audioParams.high * 0.6) * Math.max(vpScale, 0.5);
+            bloomPass.radius   = 0.5 * Math.min(vpScale, 1.0);
+
+            // Apply chaos offset in vertex shader via uniform (position blending)
+            // uChaos is already connected — chaos offsets are baked into aChaosOffset attribute
+
+            composer.render();
+        }
+    </script>
+</body>
+</html>
