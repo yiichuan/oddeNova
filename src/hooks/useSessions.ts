@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ChatMessage, ProgressKind } from './useChat';
 
 export interface Session {
@@ -54,37 +54,34 @@ function persistSessions(sessions: Session[], currentId: string | null) {
   }
 }
 
+function getInitialSessionState(): { sessions: Session[]; currentId: string | null } {
+  const { sessions: loaded, currentId: loadedId } = loadSessions();
+  if (loaded.length === 0) {
+    const fresh: Session = {
+      id: newSessionId(),
+      title: '新会话',
+      messages: [],
+      code: '',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    persistSessions([fresh], fresh.id);
+    return { sessions: [fresh], currentId: fresh.id };
+  }
+  const currentId = loadedId && loaded.some((s) => s.id === loadedId) ? loadedId : loaded[0].id;
+  return { sessions: loaded, currentId };
+}
+
 export function useSessions() {
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentId, setCurrentId] = useState<string | null>(null);
-  const initialized = useRef(false);
+  const [sessions, setSessions] = useState<Session[]>(() => getInitialSessionState().sessions);
+  const [currentId, setCurrentId] = useState<string | null>(() => getInitialSessionState().currentId);
 
   // Load from storage on mount; create a fresh session if none exists.
-  useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
-    const { sessions: loaded, currentId: loadedId } = loadSessions();
-    if (loaded.length === 0) {
-      const fresh: Session = {
-        id: newSessionId(),
-        title: '新会话',
-        messages: [],
-        code: '',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      setSessions([fresh]);
-      setCurrentId(fresh.id);
-      persistSessions([fresh], fresh.id);
-    } else {
-      setSessions(loaded);
-      setCurrentId(loadedId && loaded.some((s) => s.id === loadedId) ? loadedId : loaded[0].id);
-    }
-  }, []);
+  // (initialization is handled by useState lazy initializers above)
 
   // Persist on every change after initial load.
   useEffect(() => {
-    if (!initialized.current || sessions.length === 0) return;
+    if (sessions.length === 0) return;
     persistSessions(sessions, currentId);
   }, [sessions, currentId]);
 

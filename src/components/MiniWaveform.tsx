@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { getAudioCtx } from '../services/strudel';
 
 interface MiniWaveformProps {
@@ -38,59 +38,60 @@ export default function MiniWaveform({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  useEffect(() => {
+    if (isPlaying) getAnalyser(); // ensure connected
 
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+    const draw = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    const w = rect.width;
-    const h = rect.height;
-    ctx.clearRect(0, 0, w, h);
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
 
-    const analyser = getAnalyser();
-    const barWidth = (w / barCount) * 0.6;
-    const gap = (w / barCount) * 0.4;
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
 
-    if (!analyser || !isPlaying) {
-      // Idle: low gentle wave.
-      const t = Date.now() / 800;
+      const analyser = getAnalyser();
+      const barWidth = (w / barCount) * 0.6;
+      const gap = (w / barCount) * 0.4;
+
+      if (!analyser || !isPlaying) {
+        // Idle: low gentle wave.
+        const t = Date.now() / 800;
+        for (let i = 0; i < barCount; i++) {
+          const v = 0.08 + Math.sin(t + i * 0.4) * 0.04;
+          const bh = Math.max(2, v * h);
+          const x = i * (barWidth + gap) + gap / 2;
+          ctx.fillStyle = 'rgba(255, 80, 80, 0.5)';
+          ctx.fillRect(x, h - bh, barWidth, bh);
+        }
+        animRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(buf);
+
       for (let i = 0; i < barCount; i++) {
-        const v = 0.08 + Math.sin(t + i * 0.4) * 0.04;
-        const bh = Math.max(2, v * h);
+        const dataIndex = Math.floor((i / barCount) * buf.length);
+        const v = buf[dataIndex] / 255;
+        const bh = Math.max(2, v * h * 0.95);
         const x = i * (barWidth + gap) + gap / 2;
-        ctx.fillStyle = 'rgba(255, 80, 80, 0.5)';
+        ctx.fillStyle = `rgba(255, 80, 80, ${0.5 + v * 0.5})`;
         ctx.fillRect(x, h - bh, barWidth, bh);
       }
       animRef.current = requestAnimationFrame(draw);
-      return;
-    }
+    };
 
-    const buf = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(buf);
-
-    for (let i = 0; i < barCount; i++) {
-      const dataIndex = Math.floor((i / barCount) * buf.length);
-      const v = buf[dataIndex] / 255;
-      const bh = Math.max(2, v * h * 0.95);
-      const x = i * (barWidth + gap) + gap / 2;
-      ctx.fillStyle = `rgba(255, 80, 80, ${0.5 + v * 0.5})`;
-      ctx.fillRect(x, h - bh, barWidth, bh);
-    }
-    animRef.current = requestAnimationFrame(draw);
-  }, [isPlaying, barCount]);
-
-  useEffect(() => {
-    if (isPlaying) getAnalyser(); // ensure connected
     animRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animRef.current);
-  }, [draw, isPlaying]);
+  }, [isPlaying, barCount]);
 
   return (
     <canvas

@@ -34,6 +34,7 @@ export default function App() {
     // don't bleed into each other.
     setEditableCode(current.code);
     strudel.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
   }, [current?.id]);
 
   // Auto-init engine on first user interaction (browser requires a gesture for AudioContext)
@@ -50,6 +51,7 @@ export default function App() {
       window.removeEventListener('click', initOnce);
       window.removeEventListener('keydown', initOnce);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: strudel is a stable hook reference
   }, [strudel.engineReady]);
 
   const handleInstruction = useCallback(
@@ -92,6 +94,10 @@ export default function App() {
           }
           if (e.kind === 'warn') {
             sessions.addProgress('warn', e.message);
+            return;
+          }
+          if (e.kind === 'assistant_text') {
+            sessions.addProgress('thinking', e.text);
             return;
           }
         };

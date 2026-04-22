@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   isSpeechSupported,
   createRecognition,
@@ -11,8 +11,9 @@ export function useSpeech(onResult: (text: string) => void) {
   const [supported] = useState(isSpeechSupported);
   const callbackRef = useRef(onResult);
 
-  callbackRef.current = onResult;
-
+  useLayoutEffect(() => {
+    callbackRef.current = onResult;
+  });
   useEffect(() => {
     if (!supported) return;
     createRecognition(

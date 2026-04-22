@@ -139,8 +139,10 @@ export const TOOLS: ToolDef[] = [
       return {
         ok: true,
         data: {
-          code: ctx.state.code,
+          // layers and bpm first so the LLM sees structure before raw code.
+          // code is included last for reference but is not the primary payload.
           ...summariseScore(score),
+          code: ctx.state.code,
         },
       };
     },

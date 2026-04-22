@@ -19,16 +19,21 @@ export function useSuggestions(opts: {
 }) {
   const { key, currentCode, hasUserMessages } = opts;
   const [suggestions, setSuggestions] = useState<string[]>(() => STATIC_SUGGESTIONS.slice(0, 2));
+  const [prevKey, setPrevKey] = useState(key);
   const reqIdRef = useRef(0);
   const lastCodeRef = useRef<string>('');
-  const lastKeyRef = useRef<string>(key);
 
   // Reset when switching sessions.
-  useEffect(() => {
-    if (lastKeyRef.current === key) return;
-    lastKeyRef.current = key;
-    lastCodeRef.current = '';
+  // Calling setState synchronously during render is the React-recommended pattern
+  // for "storing information from previous renders" (https://react.dev/reference/react/useState#storing-information-from-previous-renders).
+  if (prevKey !== key) {
+    setPrevKey(key);
     setSuggestions(STATIC_SUGGESTIONS.slice(0, 2));
+  }
+
+  // Reset lastCodeRef when key changes (safe to access refs inside effects).
+  useEffect(() => {
+    lastCodeRef.current = '';
   }, [key]);
 
   useEffect(() => {

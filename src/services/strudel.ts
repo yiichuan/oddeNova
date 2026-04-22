@@ -15,9 +15,9 @@ export function getScopeAnalyser(): AnalyserNode | null {
     // getSuperdoughAudioController() is globally exported by @strudel/web.
     // Its .output.destinationGain is the final GainNode before the speakers —
     // tapping it gives us all audio output without disrupting the signal chain.
-    // @ts-ignore
+    // @ts-expect-error — getSuperdoughAudioController is a Strudel global, not typed
     const controller = typeof getSuperdoughAudioController === 'function'
-      // @ts-ignore
+      // @ts-expect-error — calling the untyped global
       ? getSuperdoughAudioController()
       : null;
     const tapNode: AudioNode | null = controller?.output?.destinationGain ?? null;
@@ -80,9 +80,10 @@ export async function evaluateCode(code: string): Promise<{ success: boolean; er
       return { success: false, error: err };
     }
     return { success: true };
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
     console.error('Strudel eval error:', e);
-    return { success: false, error: e.message || String(e) };
+    return { success: false, error: msg };
   }
 }
 
@@ -147,7 +148,6 @@ export function validateCodeRuntime(code: string): { ok: boolean; error?: string
 
   try {
     // `with` is allowed inside `new Function` bodies (non-strict by default).
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
     new Function('__strudel__', `with (__strudel__) { ${stripped} }`)(proxy);
     return { ok: true };
   } catch (e: unknown) {
@@ -170,7 +170,7 @@ export function isInitialized(): boolean {
 
 export function getAudioCtx(): AudioContext | null {
   try {
-    // @ts-ignore - Strudel exposes getAudioContext globally
+    // @ts-expect-error — getAudioContext is a Strudel global, not typed
     return typeof getAudioContext === 'function' ? getAudioContext() : null;
   } catch {
     return null;

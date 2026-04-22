@@ -39,6 +39,16 @@ export default function ConversationView({
           // Skip progress lines while loading — they collapse into the
           // single "思考中" + subtitle indicator below.
           if (isLoading && msg === lastProgress) return null;
+          if (msg.progressKind === 'thinking') {
+            return (
+              <div key={msg.id} className="flex justify-start animate-fade-in-up">
+                <div className="text-xs text-text-secondary px-1 flex items-start gap-1.5 italic">
+                  <span className="opacity-70 mt-0.5">{progressIcon(msg)}</span>
+                  <span>{msg.content}</span>
+                </div>
+              </div>
+            );
+          }
           return (
             <div key={msg.id} className="flex justify-start animate-fade-in-up">
               <div className="text-[11px] text-text-muted/70 px-1 flex items-center gap-1.5">
@@ -104,6 +114,8 @@ export default function ConversationView({
 
 function progressIcon(msg: ChatMessage): string {
   switch (msg.progressKind) {
+    case 'thinking':
+      return '💭';
     case 'tool_call':
       return '⚙';
     case 'tool_result':
