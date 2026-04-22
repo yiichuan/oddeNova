@@ -5,7 +5,7 @@
 
 export type ChatRole = 'user' | 'assistant' | 'progress';
 
-export type ProgressKind = 'tool_call' | 'tool_result' | 'commit' | 'warn' | 'iteration';
+export type ProgressKind = 'tool_call' | 'tool_result' | 'commit' | 'warn' | 'iteration' | 'thinking';
 
 export interface ChatMessage {
   id: string;

@@ -89,7 +89,7 @@ export default function Scope({ isPlaying }: ScopeProps) {
       let x = 0;
       for (let i = 0; i < drawCount; i++) {
         const y = mid - (dataArray[triggerIdx + i] * waveH * GAIN) / 2;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
         x += sliceWidth;
       }
       ctx.stroke();

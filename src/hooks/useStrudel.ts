@@ -8,6 +8,7 @@ export function useStrudel() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyLen, setHistoryLen] = useState(0);
   const historyRef = useRef<string[]>([]);
 
   const init = useCallback(async () => {
@@ -15,7 +16,7 @@ export function useStrudel() {
       await initEngine();
       setEngineReady(true);
       setError(null);
-    } catch (e: any) {
+    } catch {
       setError('Failed to initialize audio engine');
     }
   }, []);
@@ -33,6 +34,7 @@ export function useStrudel() {
         if (historyRef.current.length > MAX_HISTORY) {
           historyRef.current.shift();
         }
+        setHistoryLen(historyRef.current.length);
       }
       setCurrentCode(code);
       setIsPlaying(true);
@@ -52,6 +54,7 @@ export function useStrudel() {
 
   const undo = useCallback(async () => {
     const prev = historyRef.current.pop();
+    setHistoryLen(historyRef.current.length);
     if (prev) {
       const result = await evaluateCode(prev);
       if (result.success) {
@@ -66,7 +69,7 @@ export function useStrudel() {
     }
   }, []);
 
-  const canUndo = historyRef.current.length > 0 || currentCode !== '';
+  const canUndo = historyLen > 0 || currentCode !== '';
 
   return {
     currentCode,
