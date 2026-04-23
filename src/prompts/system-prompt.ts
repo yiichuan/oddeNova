@@ -77,7 +77,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '- NEVER write `setcps(...)` anywhere — tempo is owned by the `setTempo` tool.',
   '- NEVER include outer `stack(...)` inside a layer\'s `code` argument — the tool already wraps it.',
   '- Default to ~120 BPM (`setTempo({ bpm: 120 })`) when starting from scratch with no matching style.',
-  '- Keep each layer\'s expression a single chained call, no semicolons, no `var/let/const`.',
+  '- Keep each layer\'s expression a single chained call, no semicolons, no `var/let/const`. Format method chains across multiple lines: put the base expression on the first line, then each `.method(...)` on its own line indented by 2 extra spaces relative to the base. Example:\n  note("c3 e3 g3 b3")\n    .s("piano")\n    .gain(0.5)\n    ._pianoroll({ fold: 1 })',
 ].join('\n');
 
 // Used inside the `improvise` tool's small focused LLM call.
