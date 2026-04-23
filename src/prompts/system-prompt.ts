@@ -77,7 +77,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '- NEVER write `setcps(...)` anywhere — tempo is owned by the `setTempo` tool.',
   '- NEVER include outer `stack(...)` inside a layer\'s `code` argument — the tool already wraps it.',
   '- Default to ~120 BPM (`setTempo({ bpm: 120 })`) when starting from scratch with no matching style.',
-  '- Keep each layer\'s expression a single chained call, no semicolons, no `var/let/const`.',
+  '- Keep each layer\'s expression a single chained call, no semicolons, no `var/let/const`. Format method chains across multiple lines: put the base expression on the first line, then each `.method(...)` on its own line indented by 2 extra spaces relative to the base. Example:\n  note("c3 e3 g3 b3")\n    .s("piano")\n    .gain(0.5)\n    ._pianoroll({ fold: 1 })',
 ].join('\n');
 
 // Used inside the `improvise` tool's small focused LLM call.
@@ -103,7 +103,7 @@ export const IMPROVISE_SYSTEM_PROMPT = [
   `- input: \`role: pad\\nstyle: ambient\` → ${JSON.stringify({ code: 'n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).gain(0.4)' })}`,
   '',
   'Rules:',
-  '- code must be ONE chained expression, no var declarations, no $: prefix, no setcps, no stack wrapping, no semicolons.',
+  '- code must be ONE chained expression, no var declarations, no $: prefix, no setcps, no stack wrapping, no semicolons. Format method chains across multiple lines: base expression first, then each `.method(...)` on its own line indented by 2 spaces. Example:\n  s("bd ~ sd ~")\n    .bank("RolandTR808")\n    .gain(0.8)',
   '- Use `.lpq(N)` for lpf resonance (NOT `.lpfq` — that method does not exist in Strudel).',
   '- Pick a `.gain(...)` consistent with the role: drums 0.7-0.9, bass 0.6-0.8, pad 0.3-0.5, lead 0.4-0.6, fx 0.3-0.5.',
   '- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference: `fast(N)`, `slow(N)`, `rev`, `ply(N)`, or an inline arrow `x => x.add(note("12"))`. TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT in Strudel and will crash at play time.',

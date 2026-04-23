@@ -69,7 +69,13 @@ interface LayerLite {
 function rebuildStack(layers: LayerLite[]): string {
   if (layers.length === 0) return 'silence';
   const inner = layers
-    .map((l) => `  /* @layer ${l.name} */ ${l.source}`)
+    .map((l) => {
+      const indentedSource = l.source
+        .split('\n')
+        .map((line) => '  ' + line)
+        .join('\n');
+      return `  /* @layer ${l.name} */\n${indentedSource}`;
+    })
     .join(',\n');
   return `stack(\n${inner}\n)`;
 }
