@@ -10,7 +10,7 @@ const STRUDEL_CHEATSHEET_CONCISE = [
   '- Core: `note("c3 e3 g3")`, `s("bd sd hh")`, `stack(...)`, `cat(...)`. Tempo is owned by the `setTempo` tool — never write `setcps` in layer code.',
   '- Drums: `bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`. Banks: `.bank("RolandTR808")`.',
   '- Synths: `.s("sawtooth"|"sine"|"square"|"triangle")`. Melodic samples: `piano arpy bass moog juno sax gtr pluck sitar stab`.',
-  '- Effects: `.gain(0..1)`, `.lpf(Hz)`, `.hpf(Hz)`, `.delay(0..1)`, `.room(N)`, `.pan(0..1)`, `.attack/.decay/.sustain/.release`, `.speed(N)`, `.vowel("a e i o")`.',
+  '- Effects: `.gain(0..1)`, `.lpf(Hz)`, `.lpq(N)` (lpf resonance 0-50; alias `.resonance(N)`), `.hpf(Hz)`, `.hpq(N)`, `.delay(0..1)`, `.room(N)`, `.pan(0..1)`, `.attack/.decay/.sustain/.release`, `.speed(N)`, `.vowel("a e i o")`. `.lpfq` does NOT exist — use `.lpq`.',
   '- Pattern mods: `.fast(N)`, `.slow(N)`, `.rev()`, `.jux(rev)`, `.ply(N)`, `.struct("x ~ x x")`, `.mask("<0 1 1 0>/16")`, `.every(N, fast(2))`, `.sometimes(fast(2))`, `.rarely(fn)`, `.often(fn)`, `.chunk(N, fast(2))`, `.off(0.125, x => x.add(note("7")))`.',
   '- Signals: `sine`, `cosine`, `saw`, `tri`, `rand`, `perlin` — combine with `.range(a,b).slow(N)` / `.segment(N)`. Example: `.lpf(sine.range(500,1000).slow(8))`, `.gain(perlin.range(.6,.9))`.',
   '- Harmony: `chord("<Cm9 Fm9>/4").dict("ireal").voicing()`, `.mode("root:g2")`, `.anchor("D5")`. Use `n("0 1").set(chords)` to map scale degrees onto chord tones.',
@@ -104,6 +104,7 @@ export const IMPROVISE_SYSTEM_PROMPT = [
   '',
   'Rules:',
   '- code must be ONE chained expression, no var declarations, no $: prefix, no setcps, no stack wrapping, no semicolons.',
+  '- Use `.lpq(N)` for lpf resonance (NOT `.lpfq` — that method does not exist in Strudel).',
   '- Pick a `.gain(...)` consistent with the role: drums 0.7-0.9, bass 0.6-0.8, pad 0.3-0.5, lead 0.4-0.6, fx 0.3-0.5.',
   '- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference: `fast(N)`, `slow(N)`, `rev`, `ply(N)`, or an inline arrow `x => x.add(note("12"))`. TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT in Strudel and will crash at play time.',
 ].join('\n');
