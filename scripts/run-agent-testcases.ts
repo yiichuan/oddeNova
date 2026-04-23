@@ -338,8 +338,8 @@ const AGENT_SYSTEM_PROMPT = [
   '4. After your last edit, run `validate` once on the final code. If it passes, `commit` directly.',
   '',
   '## Style matching',
-  '- 6 built-in styles: `lofi` (70-90 BPM, chill), `house` (118-128, four-on-the-floor), `dnb` (165-180, fast breaks), `ambient` (60-90, sparse pads), `techno` (125-140, driving), `synthwave` (90-110, retro 80s).',
-  '- Match the user description to ONE of these by keyword (e.g. "学习/lo-fi/夜晚" → `lofi`, "快节奏/drum and bass" → `dnb`). Use the matched style\'s BPM range as starting tempo and pass `style` to every `improvise` call so the sub-model picks coherent timbres.',
+  '- 8 built-in styles: `lofi` (70-90 BPM, chill/minor), `house` (118-128, four-on-the-floor/dorian), `dnb` (165-180, fast breaks/minor), `ambient` (60-90, sparse pads/lydian), `techno` (125-140, driving/phrygian), `synthwave` (90-110, retro 80s/minor), `trap` (130-160, 808 hi-hat rolls/minor), `jazz` (90-110, swing walking bass/dorian).',
+  '- Match the user description to ONE of these by keyword (e.g. "学习/lo-fi/夜晚" → `lofi`, "快节奏/drum and bass" → `dnb`, "808/切分/drill" → `trap`, "爸士/swing/walking bass" → `jazz`). Use the matched style\'s BPM range as starting tempo and pass `style` to every `improvise` call so the sub-model picks coherent timbres.',
   '- If no style matches, fall back to your own judgment — `style` is optional.',
   '',
   '## Musicality principles (read every time you decide what layer to add next)',
@@ -364,6 +364,14 @@ const AGENT_SYSTEM_PROMPT = [
   '- 每一轮调用工具之前，先用 1-2 句中文简述你的意图和思考（例如：你为何选择这个工具、这一步在整体构思中处于什么位置）。',
   '- 语气自然，像一位音乐人在构思，不要使用"步骤 N："这类模板语言。',
   '- 示例："先铺一层温暖的 pad 做底色，用慢速弦乐感觉，再往上叠旋律。" / "低音层用 sine 合成，律动缓一点，不要抢主角。"',
+  '',
+  '## Before you commit (quality gate)',
+  'Silently run this checklist before calling `commit`. Fix any violation inline without mentioning it to the user:',
+  '- **bass layer**: must have `.lpf(≤500)`. Missing lpf = bass bleeds into kick frequency range.',
+  '- **pad / atmosphere layer**: must have `.room(≥1)` or `.delay(≥0.2)`. A dry pad has no spatial depth.',
+  '- **hh / fx layer**: `.gain` must be ≤ 0.5. Hi-hats and effects should never compete with the kick.',
+  '- **4+ layers total**: at least ONE layer must use `.mask(...)`, `.struct(...)`, or `.sometimes(...)` to leave rhythmic breathing room.',
+  '- **lead / melody layer**: must use the same `.scale("X:mode")` string as the first harmonic layer already in the stack.',
   '',
   '## Rules',
   '- Every session MUST end with exactly ONE `commit` call. Stopping after editing without committing is a BUG — the user will see no result. If you are running out of turns, SKIP further refinements and `commit` the current state immediately.',
@@ -601,7 +609,7 @@ async function main() {
   }
 
   // 生成 Markdown
-  const date = '2026-04-22';
+  const date = '2026-04-23';
   const lines: string[] = [
     `# Vibe 测试用例乐谱 — ${date}`,
     '',
@@ -635,7 +643,7 @@ async function main() {
     lines.push('');
   }
 
-  const outDir = path.join(ROOT, 'docs', 'test-case', '20260422-v2');
+  const outDir = path.join(ROOT, 'docs', 'test-case', '20260423-v3');
   fs.mkdirSync(outDir, { recursive: true });
   const outFile = path.join(outDir, 'scores.md');
   fs.writeFileSync(outFile, lines.join('\n'), 'utf-8');

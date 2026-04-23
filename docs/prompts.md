@@ -7,19 +7,32 @@
 > B 引入风格预设库（`src/prompts/styles.ts`），improvise 工具新增 `style` / `complement_task` 参数；
 > C 新增 `critique` 工具与对应子模型 prompt，commit 前做一次音乐性评审。
 > 设计文档：[docs/superpowers/specs/2026-04-22-prompts-musicality-design.md](superpowers/specs/2026-04-22-prompts-musicality-design.md)
+>
+> **2026-04-23 更新**：完成"风格库精炼 + Prompt 自检增强"——
+> `StyleProfile` 接口新增 `mode`（推荐调式）和 `emotion`（情绪基调）可选字段；
+> `StyleId` 扩展为 8 种（新增 `trap` / `jazz`）；
+> 6 种现有风格的 `hint_for_improvise` 补充了具体音符范围和节奏模式；
+> `AGENT_SYSTEM_PROMPT` 的 Style matching 更新为 8 种风格（含 trap/jazz 关键词）；
+> 新增 `## Before you commit (quality gate)` 自检章节，覆盖 bass lpf、pad room、hh gain、密度留白、旋律调性一致性五项规则；
+> 同时移除了 `critique` 工具步骤（系统改为在 commit 前由 agent 自检替代）。
 
 ---
 
 ## 目录
 
-1. [STRUDEL_CHEATSHEET_CONCISE — Strudel 速查表](#1-strudel_cheatsheet_concise--strudel-速查表)
-2. [AGENT_SYSTEM_PROMPT — Agent 主系统提示词](#2-agent_system_prompt--agent-主系统提示词)
-3. [IMPROVISE_SYSTEM_PROMPT — Improvise 子模型系统提示词](#3-improvise_system_prompt--improvise-子模型系统提示词)
-4. [improvise 重试提示词（内联）](#4-improvise-重试提示词内联)
-5. [CRITIC_SYSTEM_PROMPT — Critique 子模型系统提示词](#5-critic_system_prompt--critique-子模型系统提示词)
-6. [SUGGEST_SYSTEM — 建议生成系统提示词](#6-suggest_system--建议生成系统提示词)
-7. [styles.ts — 风格预设库](#7-stylests--风格预设库)
-8. [提示词调用关系总览](#提示词调用关系总览)
+- [Vibe Live Music — 提示词文档](#vibe-live-music--提示词文档)
+  - [目录](#目录)
+  - [1. STRUDEL\_CHEATSHEET\_CONCISE — Strudel 速查表](#1-strudel_cheatsheet_concise--strudel-速查表)
+  - [2. AGENT\_SYSTEM\_PROMPT — Agent 主系统提示词](#2-agent_system_prompt--agent-主系统提示词)
+    - [配套 Tool 描述（传给 LLM 的 function calling schema）](#配套-tool-描述传给-llm-的-function-calling-schema)
+  - [3. IMPROVISE\_SYSTEM\_PROMPT — Improvise 子模型系统提示词](#3-improvise_system_prompt--improvise-子模型系统提示词)
+  - [4. Improvise 重试提示词（内联）](#4-improvise-重试提示词内联)
+  - [5. CRITIC\_SYSTEM\_PROMPT — Critique 子模型系统提示词](#5-critic_system_prompt--critique-子模型系统提示词)
+  - [6. SUGGEST\_SYSTEM — 建议生成系统提示词](#6-suggest_system--建议生成系统提示词)
+  - [7. styles.ts — 风格预设库](#7-stylests--风格预设库)
+    - [8 个风格速览](#8-个风格速览)
+    - [每个档案的 `hint_for_improvise` 示例（lofi）](#每个档案的-hint_for_improvise-示例lofi)
+  - [提示词调用关系总览](#提示词调用关系总览)
 
 ---
 
@@ -80,6 +93,12 @@
 > - 轮次预算 12 → 14；预算分布加入 `critique` 与可选的 1 轮 fix。
 > - `commit.explanation` 在规则中明确为"必填"。
 > - improvise 调用强制传 `complement_task`。
+>
+> **2026-04-23 变更**：
+> - Style matching 从 6 种扩展为 8 种（新增 `trap` / `jazz`），并在关键词示例中加入对应的中英文关键词。
+> - 工作流第 4 步回退简化：移除 `critique` 调用，改为 `validate` 通过后直接 `commit`（critique 转为"提交前自检"章节）。
+> - 新增 `## Before you commit (quality gate)` 节：bass lpf、pad room/delay、hh gain、4 层密度留白、lead 调性一致共 5 条自检规则。
+> - 迭代轮次预算说明中移除 `critique` 步骤，更新为 2 保留轮（validate + commit）。
 
 **原文：**
 
@@ -93,8 +112,8 @@ You are a Strudel live-coding agent. The user describes music in natural languag
 4. After your last edit, run `validate` once on the final code. If it passes, run `critique` ONCE to get a musicality review. If `critique.must_fix` is true AND you have ≥2 turns left, apply the suggested fix in ONE more edit, then `commit`. Otherwise `commit` directly.
 
 ## Style matching
-- 6 built-in styles: `lofi` (70-90 BPM, chill), `house` (118-128, four-on-the-floor), `dnb` (165-180, fast breaks), `ambient` (60-90, sparse pads), `techno` (125-140, driving), `synthwave` (90-110, retro 80s).
-- Match the user description to ONE of these by keyword (e.g. "学习/lo-fi/夜晚" → `lofi`, "快节奏/drum and bass" → `dnb`). Use the matched style's BPM range as starting tempo and pass `style` to every `improvise` call so the sub-model picks coherent timbres.
+- 8 built-in styles: `lofi` (70-90 BPM, chill/minor), `house` (118-128, four-on-the-floor/dorian), `dnb` (165-180, fast breaks/minor), `ambient` (60-90, sparse pads/lydian), `techno` (125-140, driving/phrygian), `synthwave` (90-110, retro 80s/minor), `trap` (130-160, 808 hi-hat rolls/minor), `jazz` (90-110, swing walking bass/dorian).
+- Match the user description to ONE of these by keyword (e.g. "学习/lo-fi/夜晚" → `lofi`, "快节奏/drum and bass" → `dnb`, "808/切分/drill" → `trap`, "爵士/swing/walking bass" → `jazz`). Use the matched style's BPM range as starting tempo and pass `style` to every `improvise` call so the sub-model picks coherent timbres.
 - If no style matches, fall back to your own judgment — `style` is optional.
 
 ## Musicality principles (read every time you decide what layer to add next)
@@ -120,6 +139,14 @@ You are a Strudel live-coding agent. The user describes music in natural languag
 - 语气自然，像一位音乐人在构思，不要使用"步骤 N："这类模板语言。
 - 示例："先铺一层温暖的 pad 做底色，用慢速弦乐感觉，再往上叠旋律。" / "低音层用 sine 合成，律动缓一点，不要抢主角。"
 
+## Before you commit (quality gate)
+Silently run this checklist before calling `commit`. Fix any violation inline without mentioning it to the user:
+- **bass layer**: must have `.lpf(≤500)`. Missing lpf = bass bleeds into kick frequency range.
+- **pad / atmosphere layer**: must have `.room(≥1)` or `.delay(≥0.2)`. A dry pad has no spatial depth.
+- **hh / fx layer**: `.gain` must be ≤ 0.5. Hi-hats and effects should never compete with the kick.
+- **4+ layers total**: at least ONE layer must use `.mask(...)`, `.struct(...)`, or `.sometimes(...)` to leave rhythmic breathing room.
+- **lead / melody layer**: must use the same `.scale("X:mode")` string as the first harmonic layer already in the stack.
+
 ## Rules
 - Every session MUST end with exactly ONE `commit` call. Stopping after editing without committing is a BUG — the user will see no result. If you are running out of turns, SKIP further refinements and `commit` the current state immediately.
 - `commit({ explanation })` — the `explanation` field is REQUIRED: 1 short Chinese sentence describing what changed (e.g. "加了一层 lo-fi 鼓点和 808 贝斯"). It is shown to the user as the chat reply.
@@ -143,8 +170,8 @@ You are a Strudel live-coding agent. The user describes music in natural languag
 4. 最后一次编辑后，对最终代码调用一次 `validate`。通过后再调用一次 `critique` 做音乐性评审。若 `critique.must_fix` 为 true 且还剩 ≥2 轮预算，按建议做最后一轮编辑再 `commit`；否则直接 `commit`。
 
 ## 风格匹配
-- 6 个内置风格：`lofi`（70-90 BPM，慢节奏）、`house`（118-128，四四拍踩镲）、`dnb`（165-180，快速碎拍）、`ambient`（60-90，稀疏 pad）、`techno`（125-140，工业驱动）、`synthwave`（90-110，复古 80s）。
-- 从用户描述中按关键词匹配出一个风格（如 "学习/lo-fi/夜晚" → `lofi`，"快节奏/drum and bass" → `dnb`）。用该风格的 BPM 范围作为起始速度，并把 `style` 传给每次 `improvise` 调用，让子模型选择一致的音色。
+- 8 个内置风格：`lofi`（70-90 BPM，慢节奏/minor）、`house`（118-128，四四拍/dorian）、`dnb`（165-180，快速碎拍/minor）、`ambient`（60-90，稀疏 pad/lydian）、`techno`（125-140，工业驱动/phrygian）、`synthwave`（90-110，复古 80s/minor）、`trap`（130-160，808 切分/minor）、`jazz`（90-110，swing 走路贝斯/dorian）。
+- 从用户描述中按关键词匹配出一个风格（如 "学习/lo-fi/夜晚" → `lofi`，"快节奏/drum and bass" → `dnb`，"808/切分/drill" → `trap`，"爵士/swing/walking bass" → `jazz`）。用该风格的 BPM 范围作为起始速度，并把 `style` 传给每次 `improvise` 调用，让子模型选择一致的音色。
 - 如果匹配不到任何风格，按自己判断处理——`style` 是可选的。
 
 ## 音乐性原则（每次决定加什么层之前都要回看）
@@ -169,6 +196,14 @@ You are a Strudel live-coding agent. The user describes music in natural languag
 - 每一轮调用工具之前，先用 1-2 句中文简述你的意图和思考（例如：你为何选择这个工具、这一步在整体构思中处于什么位置）。
 - 语气自然，像一位音乐人在构思，不要使用"步骤 N："这类模板语言。
 - 示例："先铺一层温暖的 pad 做底色，用慢速弦乐感觉，再往上叠旋律。" / "低音层用 sine 合成，律动缓一点，不要抢主角。"
+
+## 提交前自检（quality gate）
+在调用 `commit` 前默默执行此清单，发现违规立即内联修复，无需告知用户：
+- **bass 层**：必须有 `.lpf(≤500)`，缺少则 bass 会和 kick 抢频段。
+- **pad / atmosphere 层**：必须有 `.room(≥1)` 或 `.delay(≥0.2)`，干燥的 pad 没有空间感。
+- **hh / fx 层**：`.gain` 必须 ≤ 0.5，hi-hat 和效果层不能和 kick 竞争响度。
+- **4 层以上时**：至少 1 层使用 `.mask(...)`、`.struct(...)` 或 `.sometimes(...)` 留出节奏留白。
+- **lead / melody 层**：必须与 stack 中第一个和声层使用相同的 `.scale("X:mode")` 字符串。
 
 ## 强制规则
 - 每次会话必须以且仅以一次 `commit` 调用结束。编辑后不提交是 BUG——用户将看不到任何结果。如果轮次快用完，立即跳过后续优化，直接 `commit` 当前状态。
@@ -431,37 +466,41 @@ Stack to review:
 
 ## 7. styles.ts — 风格预设库
 
-**来源文件**：`src/prompts/styles.ts`（2026-04-22 新增）  
-**用途**：定义 6 个内置音乐风格档案（不进 system prompt，按需在 `improvise` 工具调用时注入对应的 role hint）。  
+**来源文件**：`src/prompts/styles.ts`（2026-04-22 新增，2026-04-23 扩展）  
+**用途**：定义 8 个内置音乐风格档案（不进 system prompt，按需在 `improvise` 工具调用时注入对应的 role hint）。  
 **消费方**：
 - `AGENT_SYSTEM_PROMPT` 的 `## Style matching` 节内联了 6 个风格的概述（关键词 + BPM 范围）。
 - `src/agent/tools.ts` 的 `improvise` handler 把 `style` 参数传给 `improviseLLM`。
 - `src/services/llm.ts` 的 `improviseLLM` 调用 `getRoleHint(style, role)` 把对应的英文 hint 拼到子模型 user prompt 里（`style_hint:` 行）。
 - 同时导出 `matchStyle(userText)` 工具函数，用于任何需要从用户文本反查风格的地方（目前 agent 自己在 prompt 里做匹配，函数仅作 SDK 提供）。
 
-### 6 个风格速览
+### 8 个风格速览
 
-| id | 关键词（含中英） | BPM | bank | 推荐 layers |
-|---|---|---|---|---|
-| `lofi` | lo-fi, lofi, 慢节奏, 安静, 夜晚, 学习, 放松, chill | 70-90 | RolandTR808 | drums / bass / pad |
-| `house` | house, 舞曲, 夜店, four on the floor, 4/4, 128 | 118-128 | RolandTR909 | drums / hh / bass / pad |
-| `dnb` | dnb, d&b, drum and bass, jungle, 快节奏, breakbeat, amen | 165-180 | RolandTR909 | drums / bass / pad |
-| `ambient` | ambient, drone, 空灵, 冥想, 太空, pad-only, 无节奏 | 60-90 | RolandTR808 | pad / lead / fx |
-| `techno` | techno, 工业, 机械, driving, minimal, 硬核 | 125-140 | RolandTR909 | drums / hh / bass / lead |
-| `synthwave` | synthwave, 合成器, 复古, 80s, retrowave, outrun | 90-110 | RolandTR707 | drums / bass / pad / lead |
+| id | 关键词（含中英） | BPM | mode | emotion | bank | 推荐 layers |
+|---|---|---|---|---|---|---|
+| `lofi` | lo-fi, lofi, 慢节奏, 安静, 夜晚, 学习, 放松, chill | 70-90 | minor\|dorian | melancholic\|dreamy | RolandTR808 | drums / bass / pad |
+| `house` | house, 舞曲, 夜店, four on the floor, 4/4, 128 | 118-128 | minor\|dorian | uplifting | RolandTR909 | drums / hh / bass / pad |
+| `dnb` | dnb, d&b, drum and bass, jungle, 快节奏, breakbeat, amen | 165-180 | minor | dark\|aggressive | RolandTR909 | drums / bass / pad |
+| `ambient` | ambient, drone, 空灵, 冥想, 太空, pad-only, 无节奏 | 60-90 | major\|lydian | dreamy\|tense | RolandTR808 | pad / lead / fx |
+| `techno` | techno, 工业, 机械, driving, minimal, 硬核 | 125-140 | minor\|phrygian | dark\|aggressive | RolandTR909 | drums / hh / bass / lead |
+| `synthwave` | synthwave, 合成器, 复古, 80s, retrowave, outrun | 90-110 | minor | melancholic\|dreamy | RolandTR707 | drums / bass / pad / lead |
+| `trap` | trap, 808, 切分, hi-hat rolls, drill, hip hop, 嘻哈 | 130-160 | minor | dark\|aggressive | RolandTR808 | drums / hh / bass / pad |
+| `jazz` | jazz, jazzy, swing, 爵士, walking bass, bossa, 蓝调, blues | 90-110 | dorian\|lydian | tense\|melancholic | RolandTR909 | drums / bass / pad |
 
 ### 每个档案的 `hint_for_improvise` 示例（lofi）
 
 ```ts
 hint_for_improvise: {
-  drums: 'lazy boom-bap groove, sparse ghost snares, swing feel',
-  bass: 'walking bass in minor, sparse, lots of rest',
-  pad: 'warm Rhodes-like, slow attack, low gain ~0.35',
-  hh: 'soft closed hi-hat, mostly off-beat',
+  drums: 'lazy boom-bap groove, sparse ghost snares, swing feel; typical pattern: "bd ~ bd ~" with bank RolandTR808',
+  bass: 'walking bass in minor, sparse, lots of rest; note range c2-g2, pattern like "c2 ~ eb2 ~", use .lpf(400)',
+  pad: 'warm Rhodes-like, slow attack, low gain ~0.35, add .room(2)',
+  hh: 'soft closed hi-hat, mostly off-beat, euclidean rhythm like hh(5,8), gain ≤0.45',
 }
 ```
 
-完整的 6 条档案见 [src/prompts/styles.ts](../src/prompts/styles.ts)。
+> **2026-04-23 变更**：所有风格的 hints 补充了具体音符范围（如 `c2-g2`）和节奏模式示例（如 `"bd ~ bd ~"`）；`StyleProfile` 新增 `mode` 和 `emotion` 字段（见速览表新增两列）。
+
+完整的 8 条档案见 [src/prompts/styles.ts](../src/prompts/styles.ts)。
 
 > **设计决定**：档案中**不**存储具体的 strudel skeleton 代码——避免锁死风格、丧失多样性。具体代码由 `improvise` 子模型每次现场生成。
 

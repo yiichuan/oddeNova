@@ -20,7 +20,9 @@ export type StyleId =
   | 'dnb'
   | 'ambient'
   | 'techno'
-  | 'synthwave';
+  | 'synthwave'
+  | 'trap'
+  | 'jazz';
 
 export type Role = 'drums' | 'hh' | 'bass' | 'pad' | 'lead' | 'fx';
 
@@ -34,6 +36,10 @@ export interface StyleProfile {
   bank: string;
   /** Recommended layer roles to build, in order. */
   layers: Role[];
+  /** Recommended scale mode(s) for melodic layers, e.g. "minor" or "dorian|lydian". */
+  mode?: string;
+  /** Typical emotional character, e.g. "dark|aggressive". Used in improvise hints. */
+  emotion?: string;
   /** Per-role freeform hints — concatenated into the improvise sub-model prompt. */
   hint_for_improvise: Partial<Record<Role, string>>;
 }
@@ -45,11 +51,13 @@ export const STYLES: StyleProfile[] = [
     bpm: [70, 90],
     bank: 'RolandTR808',
     layers: ['drums', 'bass', 'pad'],
+    mode: 'minor|dorian',
+    emotion: 'melancholic|dreamy',
     hint_for_improvise: {
-      drums: 'lazy boom-bap groove, sparse ghost snares, swing feel',
-      bass: 'walking bass in minor, sparse, lots of rest',
-      pad: 'warm Rhodes-like, slow attack, low gain ~0.35',
-      hh: 'soft closed hi-hat, mostly off-beat',
+      drums: 'lazy boom-bap groove, sparse ghost snares, swing feel; typical pattern: "bd ~ bd ~" with bank RolandTR808',
+      bass: 'walking bass in minor, sparse, lots of rest; note range c2-g2, pattern like "c2 ~ eb2 ~", use .lpf(400)',
+      pad: 'warm Rhodes-like, slow attack, low gain ~0.35, add .room(2)',
+      hh: 'soft closed hi-hat, mostly off-beat, euclidean rhythm like hh(5,8), gain ≤0.45',
     },
   },
   {
@@ -58,11 +66,13 @@ export const STYLES: StyleProfile[] = [
     bpm: [118, 128],
     bank: 'RolandTR909',
     layers: ['drums', 'hh', 'bass', 'pad'],
+    mode: 'minor|dorian',
+    emotion: 'uplifting',
     hint_for_improvise: {
-      drums: 'four-on-the-floor kick, clap on 2 and 4',
-      hh: 'open hi-hat on off-beats (the "tss" between kicks)',
-      bass: 'pumping sub bass, root notes on every kick',
-      pad: 'sustained chord stabs, side-chained feel via low gain',
+      drums: 'four-on-the-floor kick, clap on 2 and 4; pattern: "bd*4" paired with "~ cp ~ cp"',
+      hh: 'open hi-hat on off-beats (the "tss" between kicks); pattern like "~ oh ~ oh", gain 0.4-0.5',
+      bass: 'pumping sub bass, root notes on every kick; note range c2-g2, use .lpf(400), pattern: "c2 c2 eb2 f2"',
+      pad: 'sustained chord stabs, side-chained feel via low gain ~0.4, add .room(1.5)',
     },
   },
   {
@@ -71,10 +81,12 @@ export const STYLES: StyleProfile[] = [
     bpm: [165, 180],
     bank: 'RolandTR909',
     layers: ['drums', 'bass', 'pad'],
+    mode: 'minor',
+    emotion: 'dark|aggressive',
     hint_for_improvise: {
-      drums: 'amen-style break, snare on 2 and 4 with ghost notes, fast hi-hat',
-      bass: 'reese bass or sub-rolling bass, root note in c2-f2',
-      pad: 'atmospheric long pad in minor, very low gain ~0.3',
+      drums: 'amen-style break, snare on 2 and 4 with ghost notes, fast hi-hat; use euclidean rhythms for snare fills',
+      bass: 'reese bass or sub-rolling bass, root note in c2-f2, use .lpf(350), keep pattern sparse with rests',
+      pad: 'atmospheric long pad in minor, very low gain ~0.3, use .room(3).attack(1)',
     },
   },
   {
@@ -83,10 +95,12 @@ export const STYLES: StyleProfile[] = [
     bpm: [60, 90],
     bank: 'RolandTR808',
     layers: ['pad', 'lead', 'fx'],
+    mode: 'major|lydian',
+    emotion: 'dreamy|tense',
     hint_for_improvise: {
-      pad: 'long evolving pad, attack > 1s, release > 2s, low gain',
-      lead: 'sparse single notes, lots of space, with .room(0.7)',
-      fx: 'occasional perlin-modulated noise or reverse cymbal swells',
+      pad: 'long evolving pad, attack > 1s, release > 2s, low gain ~0.3, must have .room(4).delay(0.5)',
+      lead: 'sparse single notes, lots of ~ rests, with .room(0.7), scale in major or lydian',
+      fx: 'occasional perlin-modulated noise or reverse cymbal swells; pattern like s("metal(3,16)").gain(0.2).room(2)',
       drums: 'no drums, or only a single soft kick every 4 bars',
     },
   },
@@ -96,11 +110,13 @@ export const STYLES: StyleProfile[] = [
     bpm: [125, 140],
     bank: 'RolandTR909',
     layers: ['drums', 'hh', 'bass', 'lead'],
+    mode: 'minor|phrygian',
+    emotion: 'dark|aggressive',
     hint_for_improvise: {
-      drums: 'relentless four-on-the-floor kick, no swing',
-      hh: 'fast 16th hi-hat, slight gain modulation',
-      bass: 'monotone driving bass on the root, .lpf modulated by sine',
-      lead: 'acid-style 303 bleeps with .lpf sweep, sparse',
+      drums: 'relentless four-on-the-floor kick, no swing; pattern: "bd*4", hard gain 0.85-0.9',
+      hh: 'fast 16th hi-hat, slight gain modulation with perlin; pattern: "hh*16", use .hpf(6000)',
+      bass: 'monotone driving bass on the root, .lpf modulated by sine; note range c1-c2, pattern: "c1*4" or "c1 ~ c1 ~"',
+      lead: 'acid-style 303 bleeps with .lpf sweep, sparse; use euclidean rhythm like n("0(3,8)").scale("A4:phrygian")',
     },
   },
   {
@@ -109,11 +125,43 @@ export const STYLES: StyleProfile[] = [
     bpm: [90, 110],
     bank: 'RolandTR707',
     layers: ['drums', 'bass', 'pad', 'lead'],
+    mode: 'minor',
+    emotion: 'melancholic|dreamy',
     hint_for_improvise: {
-      drums: 'gated reverb snare on 2 and 4, simple kick pattern',
-      bass: 'arpeggiated bass in minor, eighth notes',
-      pad: 'lush analog pad with .vowel and slow .lpf modulation',
-      lead: 'saw-wave lead with .delay(0.3).room(0.4), bright melody',
+      drums: 'gated reverb snare on 2 and 4, simple kick pattern; pattern: "bd ~ ~ bd ~ ~ bd ~" with "~ sd ~ sd"',
+      bass: 'arpeggiated bass in minor, eighth notes; note range c2-c3, use .lpf(500)',
+      pad: 'lush analog pad with .vowel and slow .lpf modulation; gain ~0.4, .room(2)',
+      lead: 'saw-wave lead with .delay(0.3).room(0.4), bright melody in minor pentatonic',
+    },
+  },
+  {
+    id: 'trap',
+    match: ['trap', '808', '切分', 'hi-hat rolls', 'drill', 'hip hop', '嘻哈'],
+    bpm: [130, 160],
+    bank: 'RolandTR808',
+    layers: ['drums', 'hh', 'bass', 'pad'],
+    mode: 'minor',
+    emotion: 'dark|aggressive',
+    hint_for_improvise: {
+      drums: 'syncopated kick pattern with rests, snare on 2/4; pattern: "bd ~ ~ bd ~ bd ~ ~" with "~ ~ sd ~ ~ ~ sd ~"',
+      hh: 'rolling 16th hi-hat at high density; pattern: "hh*16", gain 0.35-0.45; add occasional open hat with euclidean: "808oh(3,8)"',
+      bass: '808 slide bass with pitch bending feel; use note() in c1-eb2, .s("808bd").decay(0.8), keep very sparse (4-8 notes max)',
+      pad: 'sparse dark pad with long reverb tail; gain ~0.25, .room(3).attack(0.5), note range c3-g3 in minor',
+    },
+  },
+  {
+    id: 'jazz',
+    match: ['jazz', 'jazzy', 'swing', '爵士', 'walking bass', 'bossa', '蓝调', 'blues'],
+    bpm: [90, 110],
+    bank: 'RolandTR909',
+    layers: ['drums', 'bass', 'pad'],
+    mode: 'dorian|lydian',
+    emotion: 'tense|melancholic',
+    hint_for_improvise: {
+      drums: 'swing ride pattern with brush feel; use euclidean rhythms for hi-hat, soft gain 0.5-0.65, sparse kick',
+      bass: 'walking bass in dorian or lydian, quarter-note feel; note range c2-g3, pattern with stepwise motion like "c2 d2 eb2 f2 g2", use .lpf(500)',
+      pad: 'warm chord voicings with delay; gain ~0.4, .delay(0.3).room(1.5), short sustain',
+      lead: 'melodic improvisation with lots of ~ rests, dorian scale, use .room(1)',
     },
   },
 ];
