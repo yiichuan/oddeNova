@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react';
-import MiniWaveform from './MiniWaveform';
+import { useEffect, useRef, useState } from 'react';
 import { PlayIcon, StopIcon } from './icons';
 
 interface CodePanelProps {
@@ -20,6 +19,7 @@ export default function CodePanel({
   onStop,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [gutterWidth, setGutterWidth] = useState(0);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -27,6 +27,30 @@ export default function CodePanel({
     }
   // onMount is stable (useCallback), so this fires only once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Track .cm-gutters width so the footer divider aligns with the editor's gutter border
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let ro: ResizeObserver | null = null;
+
+    const mo = new MutationObserver(() => {
+      const gutters = container.querySelector('.cm-gutters') as HTMLElement | null;
+      if (!gutters) return;
+      mo.disconnect();
+      setGutterWidth(gutters.offsetWidth);
+      ro = new ResizeObserver(() => setGutterWidth(gutters.offsetWidth));
+      ro.observe(gutters);
+    });
+
+    mo.observe(container, { childList: true, subtree: true });
+
+    return () => {
+      mo.disconnect();
+      ro?.disconnect();
+    };
   }, []);
 
   const handlePlayClick = () => {
@@ -38,7 +62,7 @@ export default function CodePanel({
   };
 
   return (
-    <div className="h-full flex flex-col border border-border rounded-lg overflow-hidden bg-bg-secondary/30">
+    <div className="h-full flex flex-col border border-border overflow-hidden bg-bg-secondary/30">
       {/* StrudelMirror mounts here — it renders the CodeMirror editor,
           ._scope() canvas, and ._pianoroll() canvas natively.
           *:h-full is required so .cm-editor fills the container height
@@ -54,23 +78,31 @@ export default function CodePanel({
         </div>
       )}
 
-      {/* Play / waveform footer */}
-      <div className="shrink-0 flex items-center gap-3 px-3 py-2 border-t border-border/40 bg-bg-secondary/60">
-        <button
-          onClick={handlePlayClick}
-          disabled={!engineReady && !isPlaying}
-          className={`w-9 h-9 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-            isPlaying
-              ? 'bg-error/20 text-error hover:bg-error/30'
-              : 'bg-error/15 text-error hover:bg-error/25 disabled:opacity-30 disabled:cursor-not-allowed'
-          }`}
-          title={isPlaying ? '停止' : '播放'}
+      {/* Play button footer — black background, divider aligned with editor gutter */}
+      <div className="shrink-0 flex items-stretch border-t" style={{ background: '#000', borderColor: '#323232' }}>
+        {/* Left section: same width as .cm-gutters, contains play button, right border = divider */}
+        <div
+          className="flex items-center justify-center py-[6px]"
+          style={{
+            width: gutterWidth || undefined,
+            minWidth: gutterWidth || undefined,
+            borderRight: gutterWidth ? '1px solid #323232' : undefined,
+          }}
         >
-          {isPlaying ? <StopIcon size={14} /> : <PlayIcon size={14} />}
-        </button>
-        <div className="flex-1 min-w-0">
-          <MiniWaveform isPlaying={isPlaying} />
+          <button
+            onClick={handlePlayClick}
+            disabled={!engineReady && !isPlaying}
+            className={`flex items-center justify-center transition-opacity text-error ${
+              isPlaying ? 'hover:opacity-70' : 'hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed'
+            }`}
+            title={isPlaying ? '停止' : '播放'}
+          >
+            {isPlaying ? <StopIcon size={52} /> : <PlayIcon size={52} />}
+          </button>
         </div>
+
+        {/* Right spacer */}
+        <div className="flex-1" />
       </div>
     </div>
   );

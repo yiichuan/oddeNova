@@ -164,20 +164,6 @@ class StrudelService {
 
 export const strudelService = StrudelService.instance();
 
-// Compatibility shim for MiniWaveform — getAudioContext registered on globalThis by evalScope
-export function getAudioCtx(): AudioContext | null {
-  try {
-    // @ts-expect-error — getAudioContext registered globally via evalScope at runtime
-    return typeof getAudioContext === 'function' ? getAudioContext() : null;
-  } catch {
-    return null;
-  }
-}
-
-// Kept for Scope.tsx compatibility (StrudelMirror handles ._scope() natively)
-export function getScopeAnalyser(): AnalyserNode | null {
-  return null;
-}
 
 // --- Code validation (no audio engine needed) ---
 
