@@ -1,22 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { ArrowUpIcon } from './icons';
-import VoiceButton from './VoiceButton';
 
 interface ChatInputProps {
   isLoading: boolean;
-  isListening: boolean;
-  speechSupported: boolean;
   onSendText: (text: string) => void;
-  onToggleVoice: () => void;
 }
 
-export default function ChatInput({
-  isLoading,
-  isListening,
-  speechSupported,
-  onSendText,
-  onToggleVoice,
-}: ChatInputProps) {
+export default function ChatInput({ isLoading, onSendText }: ChatInputProps) {
   const [text, setText] = useState('');
 
   const handleSubmit = (e: FormEvent) => {
@@ -53,15 +43,6 @@ export default function ChatInput({
           <ArrowUpIcon size={14} />
         </button>
       </div>
-      {speechSupported && (
-        <div className="shrink-0">
-          <VoiceButton
-            isListening={isListening}
-            supported={speechSupported}
-            onToggle={onToggleVoice}
-          />
-        </div>
-      )}
     </form>
   );
 }

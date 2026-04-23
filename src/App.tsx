@@ -5,7 +5,6 @@ import HistoryPanel from './components/HistoryPanel';
 import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
-import { useSpeech } from './hooks/useSpeech';
 import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
 import type { ProgressEvent } from './services/llm';
@@ -102,23 +101,6 @@ export default function App() {
     [strudel, sessions, currentCode]
   );
 
-  const speech = useSpeech(handleInstruction);
-
-  // Keyboard shortcut: Space to toggle voice (when not typing)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.code === 'Space' &&
-        !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)
-      ) {
-        e.preventDefault();
-        speech.toggle();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [speech]);
-
   const handleNewSession = useCallback(() => {
     strudel.stop();
     sessions.newSession();
@@ -137,12 +119,9 @@ export default function App() {
         title={current?.title ?? '新会话'}
         messages={messages}
         isLoading={isLoading}
-        isListening={speech.isListening}
-        speechSupported={speech.supported}
         engineReady={strudel.engineReady}
         suggestions={suggestions}
         onSendText={handleInstruction}
-        onToggleVoice={speech.toggle}
         onNewSession={handleNewSession}
       />
 

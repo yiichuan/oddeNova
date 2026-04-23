@@ -4,9 +4,11 @@ interface IconProps {
 }
 
 export function PlayIcon({ size = 18, className }: IconProps) {
+  // Rounded-corner triangle: vertices (5,2) (21,12) (5,22), corner radius ~4
+  // Each corner is a quadratic bezier from an offset point through the vertex
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <polygon points="5 3 19 12 5 21 5 3" />
+      <path d="M 5 6 Q 5 2 8.4 4.1 L 17.6 9.9 Q 21 12 17.6 14.1 L 8.4 19.9 Q 5 22 5 18 Z" />
     </svg>
   );
 }
@@ -14,7 +16,7 @@ export function PlayIcon({ size = 18, className }: IconProps) {
 export function StopIcon({ size = 16, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <rect x="5" y="5" width="14" height="14" rx="4" />
     </svg>
   );
 }

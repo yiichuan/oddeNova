@@ -4,13 +4,11 @@ import type { ChatMessage } from '../hooks/useChat';
 interface ConversationViewProps {
   messages: ChatMessage[];
   isLoading: boolean;
-  isListening: boolean;
 }
 
 export default function ConversationView({
   messages,
   isLoading,
-  isListening,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -18,7 +16,7 @@ export default function ConversationView({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isLoading, isListening]);
+  }, [messages, isLoading]);
 
   // Find the last progress message — used as the "subtitle" line under
   // the "思考中..." indicator (matches the design reference).
@@ -27,7 +25,7 @@ export default function ConversationView({
     : undefined;
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0">
+    <div ref={scrollRef} className="conversation-scroll flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0">
       {messages.length === 0 && !isLoading && (
         <div className="h-full flex items-center justify-center text-text-muted text-xs">
           <span>说点什么开始创作</span>
@@ -100,14 +98,6 @@ export default function ConversationView({
         </div>
       )}
 
-      {isListening && (
-        <div className="flex justify-end animate-fade-in-up">
-          <div className="bg-red-500/15 text-red-400 rounded-xl px-3 py-1.5 text-xs flex items-center gap-2 border border-red-500/20">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            正在聆听...
-          </div>
-        </div>
-      )}
     </div>
   );
 }
