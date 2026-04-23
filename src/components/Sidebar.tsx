@@ -1,7 +1,6 @@
 import type { ChatMessage } from '../hooks/useChat';
 import { PlusIcon } from './icons';
 import ConversationView from './ConversationView';
-import SuggestionChips from './SuggestionChips';
 import ChatInput from './ChatInput';
 
 interface SidebarProps {
@@ -9,7 +8,6 @@ interface SidebarProps {
   messages: ChatMessage[];
   isLoading: boolean;
   engineReady: boolean;
-  suggestions: string[];
   onSendText: (text: string) => void;
   onNewSession: () => void;
 }
@@ -19,7 +17,6 @@ export default function Sidebar({
   messages,
   isLoading,
   engineReady,
-  suggestions,
   onSendText,
   onNewSession,
 }: SidebarProps) {
@@ -52,20 +49,26 @@ export default function Sidebar({
         isLoading={isLoading}
       />
 
-      {/* Suggestions + input + status */}
-      <div className="px-4 py-3 space-y-3">
-        <SuggestionChips suggestions={suggestions} onPick={onSendText} disabled={isLoading} />
-        <ChatInput
-          isLoading={isLoading}
-          onSendText={onSendText}
-        />
-        <div className="flex items-center gap-2 text-xs">
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              engineReady ? 'bg-success' : 'bg-text-muted'
-            }`}
-          />
-          <span className="text-text-muted">{engineReady ? '引擎就绪' : '未初始化'}</span>
+      <div className="flex justify-center px-4 pb-4">
+        <div className="w-full max-w-[500px]">
+          <div className="flex flex-wrap gap-2 pb-2">
+            <button
+              type="button"
+              onClick={() => onSendText('下一步动作的提示')}
+              className="rounded-[8px] bg-[#3a3a3a] px-3 py-1.5 text-[13px] text-[#e0e0e0] transition hover:bg-[#4a4a4a]"
+            >
+              下一步动作的提示
+            </button>
+            <button
+              type="button"
+              onClick={() => onSendText('加一些贝斯？')}
+              className="rounded-[8px] bg-[#3a3a3a] px-3 py-1.5 text-[13px] text-[#e0e0e0] transition hover:bg-[#4a4a4a]"
+            >
+              加一些贝斯？
+            </button>
+          </div>
+
+          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} />
         </div>
       </div>
     </aside>
