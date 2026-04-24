@@ -327,12 +327,16 @@ async function improviseLLM(req: ImproviseRequest): Promise<string> {
 export async function runAgent(
   instruction: string,
   currentCode: string,
-  onProgress?: (e: ProgressEvent) => void
+  onProgress?: (e: ProgressEvent) => void,
+  moodContext?: string,
 ): Promise<RunAgentResult> {
+  const systemPrompt = moodContext
+    ? `${AGENT_SYSTEM_PROMPT}\n\n${moodContext}`
+    : AGENT_SYSTEM_PROMPT;
   return runAgentLoop({
     instruction,
     initialCode: currentCode,
-    systemPrompt: AGENT_SYSTEM_PROMPT,
+    systemPrompt,
     llm: llmCaller,
     improviseLLM,
     onProgress,
