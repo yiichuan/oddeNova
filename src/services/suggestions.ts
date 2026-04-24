@@ -76,6 +76,37 @@ export function analyzeMusicState(code: string): MusicState {
   return { layers, missing, stage };
 }
 
+const STYLE_ALIASES: Record<string, string> = {
+  lofi: 'lo-fi',
+  'lo fi': 'lo-fi',
+  hiphop: 'hip-hop',
+  'hip hop': 'hip-hop',
+  dnb: 'drum and bass',
+  'drum and bass': 'drum and bass',
+};
+
+const STYLE_KEYWORDS = [
+  'lo-fi', 'lofi', 'house', 'techno', 'ambient', 'jazz', 'funk',
+  'drum and bass', 'dnb', 'trance', 'minimal', 'classical',
+  'hip hop', 'hiphop', 'trap', 'indie', 'folk', 'lo fi',
+];
+
+/**
+ * Extract a style intent string from the first user message in the conversation.
+ * Returns null if no known style keyword is found.
+ */
+export function extractStyleIntent(messages: { role: string; content: string }[]): string | null {
+  const firstUser = messages.find((m) => m.role === 'user');
+  if (!firstUser) return null;
+  const text = firstUser.content.toLowerCase();
+  for (const kw of STYLE_KEYWORDS) {
+    if (text.includes(kw)) {
+      return STYLE_ALIASES[kw] ?? kw;
+    }
+  }
+  return null;
+}
+
 const SUGGEST_SYSTEM = `你是 Strudel 实时电子乐协作伙伴。基于当前曲谱，建议 2 个用户可以发出的"下一步"中文短指令。
 要求：
 - 每条 6-12 个字，自然口语，不要带编号、不要英文术语堆砌
