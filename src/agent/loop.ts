@@ -143,9 +143,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       break;
     }
 
-    // Per-iteration dedup cache: key = `${name}:${arguments}`, value = tool result JSON.
+    // Per-iteration dedup cache: key = `${name}\0${arguments}`, value = tool result JSON.
     // Prevents duplicate tool_calls (same name + args) in a single LLM response from
-    // being executed twice — a known parallel tool calling hallucination.
+    // being executed twice — a known LLM parallel tool-call duplication bug.
+    // Uses \0 as separator to avoid any ambiguity with tool names or argument strings.
     const iterResultCache = new Map<string, string>();
 
     const outcomes: ToolCallOutcome[] = [];
@@ -161,9 +162,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       } catch {
         parsedArgs = { _raw: call.arguments };
       }
-      const dedupKey = `${call.name}:${call.arguments}`;
+      const dedupKey = `${call.name}\0${call.arguments}`;
       const cachedResult = iterResultCache.get(dedupKey);
       if (cachedResult !== undefined) {
+        // Intentionally skip onProgress — duplicate calls should be invisible to the UI.
         console.debug(`[loop] iter ${i + 1} dedup: skipping duplicate tool_call "${call.name}"`);
         messages.push({
           role: 'tool',
@@ -231,7 +233,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           name: call.name,
           result: { ok: false, error: msg },
         });
-        iterResultCache.set(dedupKey, JSON.stringify({ ok: false, error: msg }));
+        const errorResultJson = JSON.stringify({ ok: false, error: msg });
+        iterResultCache.set(dedupKey, errorResultJson);
         onProgress?.({ kind: 'tool_result', name: call.name, ok: false, error: msg });
       }
     }
