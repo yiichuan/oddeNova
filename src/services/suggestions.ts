@@ -107,11 +107,28 @@ export function extractStyleIntent(messages: { role: string; content: string }[]
   return null;
 }
 
-const SUGGEST_SYSTEM = `你是 Strudel 实时电子乐协作伙伴。基于当前曲谱，建议 2 个用户可以发出的"下一步"中文短指令。
-要求：
-- 每条 6-12 个字，自然口语，不要带编号、不要英文术语堆砌
-- 多样化：可以是加层、调速度、换风格、加效果、移除某层
-- 直接输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
+function buildSuggestSystem(state: MusicState, styleIntent: string | null): string {
+  const layersStr = state.layers.length > 0 ? state.layers.join(', ') : '无';
+  const missingStr = state.missing.length > 0 ? state.missing.join(', ') : '无';
+  const styleStr = styleIntent ?? '未知';
+
+  return `你是 Strudel 实时电子乐协作伙伴。
+
+当前曲子状态：
+- 已有声部：${layersStr}
+- 缺少声部：${missingStr}
+- 制作阶段：${state.stage}
+- 风格方向：${styleStr}
+
+基于以上状态，建议 2 个用户可以发出的"下一步"中文短指令。
+规则：
+- stage=early → 优先建议补 missing 里的声部（如"加入鼓点"、"铺一层低音"）
+- stage=developing → 可以加层，也可以调质感/节奏/速度
+- stage=full → 专注变奏、情绪变化，不要再建议加层
+- 风格方向不为"未知"时，建议内容要符合该风格特征
+- 每条 6-12 个字，自然口语，不要英文术语堆砌
+- 输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
+}
 
 interface SuggestResult {
   suggestions: string[];
@@ -149,19 +166,26 @@ function parseSuggestions(text: string): string[] | null {
 }
 
 /**
- * Build 2 short next-step suggestions based on the current code.
+ * Build 2 short next-step suggestions based on the current code and conversation.
  * - Empty code → static defaults.
- * - Otherwise → light LLM call; failure silently falls back to static.
+ * - Otherwise → LLM call with music state context; failure falls back to static.
  */
-export async function buildSuggestions(currentCode: string): Promise<string[]> {
+export async function buildSuggestions(
+  currentCode: string,
+  messages: { role: string; content: string }[],
+): Promise<string[]> {
   if (!currentCode.trim()) {
     return pickStatic(2);
   }
   try {
+    const state = analyzeMusicState(currentCode);
+    const styleIntent = extractStyleIntent(messages);
+    const system = buildSuggestSystem(state, styleIntent);
+
     const anthropic = getClient();
     const resp = await anthropic.messages.create({
       model: getActiveModelConfig().model,
-      system: SUGGEST_SYSTEM,
+      system,
       messages: [
         {
           role: 'user',
