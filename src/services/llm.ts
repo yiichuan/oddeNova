@@ -169,11 +169,11 @@ function convertTools(
 // ===========================================================================
 
 const llmCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta) {
     const anthropic = getClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
-    const response = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model: getModel(),
       system,
       messages: amsgs,
@@ -181,6 +181,14 @@ const llmCaller: LLMCaller = {
       temperature: 0.7,
       max_tokens: 1024,
     });
+
+    if (onTextDelta) {
+      stream.on('text', (delta) => {
+        onTextDelta(delta);
+      });
+    }
+
+    const response = await stream.finalMessage();
 
     let text = '';
     const toolCalls: { id: string; name: string; arguments: string }[] = [];

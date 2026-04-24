@@ -32,7 +32,8 @@ export interface ChatMsg {
 export interface LLMCaller {
   chatWithTools(
     messages: ChatMsg[],
-    tools: ReturnType<typeof getOpenAIToolSchemas>
+    tools: ReturnType<typeof getOpenAIToolSchemas>,
+    onTextDelta?: (delta: string) => void
   ): Promise<{
     content: string | null;
     toolCalls: ToolCallRequest[];
@@ -45,6 +46,7 @@ export type ProgressEvent =
   | { kind: 'tool_result'; name: string; ok: boolean; error?: string }
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
+  | { kind: 'assistant_text_delta'; delta: string }
   | { kind: 'warn'; message: string };
 
 export interface RunAgentOptions {
@@ -114,11 +116,13 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
-    const resp = await llm.chatWithTools(messages, tools);
+    const onTextDelta = onProgress
+      ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
+      : undefined;
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta);
 
     if (resp.content && resp.content.trim()) {
       console.debug(`[loop] iter ${i + 1} assistant_text:`, resp.content.trim());
-      onProgress?.({ kind: 'assistant_text', text: resp.content.trim() });
     }
 
     // Push the assistant message so subsequent tool messages link back to it

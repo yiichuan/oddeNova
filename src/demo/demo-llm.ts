@@ -18,12 +18,13 @@ export function createDemoLLMCaller(targetCode: string, steps: DemoStep[]): LLMC
   let step = 0;
 
   return {
-    async chatWithTools(_messages, _tools) {
+    async chatWithTools(_messages, _tools, onTextDelta) {
       // 还有 addLayer 步骤未播放 → 模拟思考后返回下一个
       if (step < steps.length) {
         const { name, code, thinking } = steps[step];
         // 首步多等一会儿，后续步骤稍短，模拟真实 LLM 响应节奏
         await sleep(step === 0 ? 2000 : 1500);
+        if (thinking && onTextDelta) onTextDelta(thinking);
         const call: ToolCallRequest = {
           id: `demo-tool-${step}`,
           name: 'addLayer',
@@ -55,11 +56,12 @@ export function createDemoMoodLLMCaller(scenario: DemoMoodScenario): LLMCaller {
   let round = 0;
 
   return {
-    async chatWithTools(_messages, _tools) {
+    async chatWithTools(_messages, _tools, onTextDelta) {
       if (round < scenario.rounds.length) {
         const { thinking, toolCalls } = scenario.rounds[round];
         // 首轮稍长，后续轮次稍短，模拟真实 LLM 思考节奏
         await sleep(round === 0 ? 3000 : 2200);
+        if (thinking && onTextDelta) onTextDelta(thinking);
         const calls: ToolCallRequest[] = toolCalls.map((tc, i) => ({
           id: `demo-mood-${round}-${i}`,
           name: tc.name,
