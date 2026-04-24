@@ -214,7 +214,7 @@ export default function CodePanel({
           <button
             onClick={handlePlayClick}
             disabled={!engineReady && !isPlaying}
-            className={`flex items-center justify-center transition-opacity text-error ${
+            className={`flex items-center justify-center transition-opacity text-[#B2370C] ${
               isPlaying ? 'hover:opacity-70' : 'hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed'
             }`}
             title={isPlaying ? '停止' : '播放'}

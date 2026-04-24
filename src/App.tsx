@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import CodePanel from './components/CodePanel';
 import Sidebar from './components/Sidebar';
-import HistoryPanel from './components/HistoryPanel';
 import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
-import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
 import type { ProgressEvent } from './services/llm';
 
@@ -120,12 +118,6 @@ export default function App() {
     sessions.newSession();
   }, [strudel, sessions]);
 
-  const hasUserMessages = messages.some((m) => m.role === 'user');
-  const suggestions = useSuggestions({
-    key: current?.id ?? 'none',
-    currentCode,
-    hasUserMessages,
-  });
 
   return (
     <div className="flex h-screen w-screen bg-bg-primary overflow-hidden">
@@ -134,10 +126,13 @@ export default function App() {
         messages={messages}
         isLoading={isLoading}
         engineReady={strudel.engineReady}
-        suggestions={suggestions}
+        sessions={sessions.sessions}
+        currentId={sessions.currentId}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
         onReinitEngine={strudel.reinit}
+        onSwitchSession={sessions.switchTo}
+        onDeleteSession={sessions.deleteSession}
       />
 
       <main className="flex-1 flex flex-col gap-3 pt-3 pr-3 pb-3 pl-[22px] min-w-0">
@@ -151,13 +146,7 @@ export default function App() {
             onStop={strudel.stop}
           />
         </div>
-        <div className="h-[280px] grid grid-cols-[1fr_2fr] gap-3 shrink-0">
-          <HistoryPanel
-            sessions={sessions.sessions}
-            currentId={sessions.currentId}
-            onSwitch={sessions.switchTo}
-            onDelete={sessions.deleteSession}
-          />
+        <div className="h-[280px] shrink-0">
           <VizPlaceholder isPlaying={strudel.isPlaying} />
         </div>
       </main>
