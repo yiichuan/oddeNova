@@ -18,7 +18,7 @@ export default function HistoryPanel({
 
   return (
     <div className="h-full flex flex-col bg-bg-secondary/40 border border-border overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-border/60 shrink-0">
+      <div className="px-4 py-2.5 shrink-0">
         <h3 className="text-base font-semibold text-text-primary">历史</h3>
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -29,16 +29,16 @@ export default function HistoryPanel({
             {ordered.map((s) => {
               const active = s.id === currentId;
               return (
-                <li key={s.id}>
+                <li key={s.id} className="px-3.5">
                   <div
-                    className={`group flex items-center gap-2 px-4 py-1.5 cursor-pointer transition-colors ${
+                    className={`group flex items-center gap-2 px-2 py-[3px] cursor-pointer transition-colors ${
                       active
-                        ? 'bg-accent/15 text-text-primary'
+                        ? 'bg-[#2A2A2A] text-text-secondary'
                         : 'text-text-secondary hover:bg-bg-tertiary/50'
                     }`}
                     onClick={() => onSwitch(s.id)}
                   >
-                    <span className="flex-1 text-sm truncate" title={s.title}>
+                    <span className="flex-1 text-xs truncate" title={s.title}>
                       {s.title || '新会话'}
                     </span>
                     <button
@@ -46,7 +46,7 @@ export default function HistoryPanel({
                         e.stopPropagation();
                         onDelete(s.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error text-xs transition-opacity shrink-0"
+                      className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error text-base transition-opacity shrink-0 leading-none"
                       title="删除"
                     >
                       ×

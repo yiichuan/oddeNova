@@ -17,6 +17,10 @@ class StrudelService {
   private isAudioInitialized = false;
   private isInitializing = false;
 
+  private masterLpfNode: BiquadFilterNode | null = null;
+  private masterChainReady = false;
+  private masterChainSettingUp = false;
+
   private _state: StrudelState = {
     code: '',
     isPlaying: false,
@@ -140,6 +144,87 @@ class StrudelService {
     // engineReady is set by prebake() after all modules load
   };
 
+  private setupMasterChain = async (): Promise<void> => {
+    if (this.masterChainReady || this.masterChainSettingUp) return;
+    this.masterChainSettingUp = true;
+    try {
+      const { getAudioContext, getSuperdoughAudioController } = await import('superdough');
+      const ctx = getAudioContext();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const controller = getSuperdoughAudioController() as any;
+      const destGain: GainNode = controller.output.destinationGain;
+
+      this.masterLpfNode = ctx.createBiquadFilter();
+      this.masterLpfNode.type = 'lowpass';
+      this.masterLpfNode.frequency.value = 20000;
+
+      destGain.disconnect();
+      destGain.connect(this.masterLpfNode);
+      this.masterLpfNode.connect(ctx.destination);
+      this.masterChainReady = true;
+    } catch {
+      this.masterChainSettingUp = false;
+    }
+  };
+
+  setMasterVolume = async (value: number): Promise<void> => {
+    await this.setupMasterChain();
+    const { getAudioContext, getSuperdoughAudioController } = await import('superdough');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const controller = getSuperdoughAudioController() as any;
+    const destGain: GainNode | undefined = controller?.output?.destinationGain;
+    if (destGain) {
+      destGain.gain.setTargetAtTime(value, getAudioContext().currentTime, 0.05);
+    }
+  };
+
+  setMasterLPF = async (freq: number): Promise<void> => {
+    await this.setupMasterChain();
+    if (this.masterLpfNode) {
+      const { getAudioContext } = await import('superdough');
+      this.masterLpfNode.frequency.setTargetAtTime(freq, getAudioContext().currentTime, 0.01);
+    }
+  };
+
+  setTempo = (bpm: number): void => {
+    const cps = parseFloat(Math.max(0.05, Math.min(8, bpm / 240)).toFixed(6));
+    const replacement = `setcps(${cps})`;
+
+    // Surgical CodeMirror dispatch: replace only the setcps(...) token so that
+    // miniLocation decorations (the white position boxes) survive unchanged.
+    // Full setCode() replaces the whole document and clears all decorations.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cmView = (this.editorInstance as any)?.editor as {
+      state: { doc: { toString(): string } };
+      dispatch: (tr: object) => void;
+    } | undefined;
+
+    if (cmView) {
+      const code = cmView.state.doc.toString();
+      const match = /\bsetcps\s*\(\s*[\d.]+\s*\)/.exec(code);
+      if (match) {
+        cmView.dispatch({ changes: { from: match.index, to: match.index + match[0].length, insert: replacement } });
+      } else {
+        cmView.dispatch({ changes: { from: 0, to: 0, insert: replacement + '\n' } });
+      }
+      // The EditorView's updateListener already synced editorInstance.code and repl.setCode.
+      // Sync our internal _state so agent tools and history see the right code.
+      this._state = { ...this._state, code: cmView.state.doc.toString() };
+      this.stateCallbacks.forEach(cb => cb(this._state));
+    } else {
+      // Engine not yet mounted — patch internal state only (no editor to update)
+      const code = this._state.code;
+      const match = /\bsetcps\s*\(\s*[\d.]+\s*\)/.exec(code);
+      const patched = match
+        ? code.slice(0, match.index) + replacement + code.slice(match.index + match[0].length)
+        : replacement + '\n' + code;
+      if (patched !== code) this.notify({ code: patched });
+    }
+
+    // setcps is registered globally by @strudel/core via evalScope — apply immediately
+    (window as unknown as Record<string, ((v: number) => void) | undefined>).setcps?.(cps);
+  };
+
   setCode = (code: string): void => {
     this._state = { ...this._state, code };
     if (this.editorInstance) {
@@ -151,6 +236,7 @@ class StrudelService {
     if (!this.editorInstance) throw new Error('Engine not initialized');
     this.notify({ error: null });
     await this.editorInstance.evaluate();
+    void this.setupMasterChain();
   };
 
   stop = (): void => {
