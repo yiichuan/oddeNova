@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'GenWanMin TW';
+  src: url('/fonts/GenWanMinTW.ttc') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'ABeeZee';
+  src: url('/fonts/ABeeZee-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-bg-primary: #000000;
   --color-bg-secondary: #000000;
@@ -30,14 +46,15 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 @keyframes fadeInUp {
@@ -87,6 +104,7 @@ body {
 }
 
 .cm-editor .cm-lineNumbers .cm-gutterElement {
+  font-size: 13px !important;
   padding-left: 24px !important;
   padding-right: 24px !important;
   text-align: center !important;
@@ -96,6 +114,10 @@ body {
 
 .cm-editor .cm-content {
   padding-left: 10px !important;
+  font-size: 13px !important;
+  font-family: 'ABeeZee', monospace !important;
+  line-height: 2.0 !important;
+  letter-spacing: 0.1em !important;
 }
 
 /* Visible divider between gutter and code */

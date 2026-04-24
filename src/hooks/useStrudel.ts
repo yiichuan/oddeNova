@@ -58,6 +58,8 @@ export function useStrudel() {
     setState(s => ({ ...s, error }));
   }, []);
 
+  const reinit = useCallback(() => strudelService.reinit(), []);
+
   const undo = useCallback(async () => {
     const prev = historyRef.current.pop();
     setHistoryLen(historyRef.current.length);
@@ -86,5 +88,6 @@ export function useStrudel() {
     setError,
     undo,
     init: stop, // no-op; engine initializes on first attach
+    reinit,
   };
 }
