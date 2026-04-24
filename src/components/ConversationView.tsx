@@ -131,10 +131,13 @@ export default function ConversationView({
 
       {isLoading && (
         <div className="flex justify-start animate-fade-in-up">
-          <div>
-                        <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0 animate-pulse" />
+          <div className="flex items-start gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse" />
+            <div>
               <div className="text-sm text-text-primary">思考中...</div>
+              {lastProgress && (
+                <div className="text-xs text-text-muted mt-0.5">{stripMarkdown(lastProgress.content)}</div>
+              )}
             </div>
           </div>
         </div>
