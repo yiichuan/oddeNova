@@ -208,6 +208,7 @@ export default function App() {
   const handleNewSession = useCallback(() => {
     strudel.stop();
     sessions.newSession();
+    if (isDemoMode()) setDemoStep(0);
   }, [strudel, sessions]);
 
 
