@@ -123,8 +123,8 @@ export default function Sidebar({
                   key={s}
                   type="button"
                   onClick={() => onSendText(s)}
-                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
-                  style={{ fontFamily: '"GenWanMin TW", serif' }}
+                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] transition hover:border-accent/50 hover:text-text-primary"
+                  style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                 >
                   {s}
                 </button>
@@ -147,6 +147,7 @@ export default function Sidebar({
                 title={airjellyAvailable || isDemoMode() ? '根据你最近的活动感知心情生成音乐' : '需要运行 AirJelly Desktop'}
                 className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ fontFamily: '"GenWanMin TW", serif' }}
+
               >
                 <img src="/airjelly-icon.png" alt="AirJelly" className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" /> 根据心情生成
               </button>

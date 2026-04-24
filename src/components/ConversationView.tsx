@@ -127,7 +127,7 @@ export default function ConversationView({
       {isLoading && (
         <div className="flex justify-start animate-fade-in-up">
           <div className="flex items-start gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-error mt-2 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse" />
             <div>
               <div className="text-sm text-text-primary">思考中...</div>
               {lastProgress && (
