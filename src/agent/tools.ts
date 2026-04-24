@@ -4,7 +4,7 @@
 // terminal — it throws CommitSignal which the loop catches.
 
 import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
-import { validateCode, validateCodeRuntime } from '../services/strudel';
+import { validateCode, validateCodeRuntime, normalizeCode } from '../services/strudel';
 
 export interface AgentState {
   code: string;
@@ -396,7 +396,8 @@ export const TOOLS: ToolDef[] = [
     handler: (_args, ctx) => {
       // Always use the tool-managed state.code — never let the LLM pass its own
       // code blob, which would bypass setcps and other accumulated edits.
-      throw new CommitSignal(ctx.state.code);
+      // Normalize multiline strings so Strudel's evaluator doesn't choke.
+      throw new CommitSignal(normalizeCode(ctx.state.code));
     },
   },
 ];

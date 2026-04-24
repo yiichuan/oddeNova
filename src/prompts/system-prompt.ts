@@ -72,6 +72,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '- **hh / fx layer**: `.gain` must be \u2264 0.5. Hi-hats and effects should never compete with the kick.',
   '- **4+ layers total**: at least ONE layer must use `.mask(...)`, `.struct(...)`, or `.sometimes(...)` to leave rhythmic breathing room.',
   '- **lead / melody layer**: must use the same `.scale("X:mode")` string as the first harmonic layer already in the stack.',
+  '- **sample names**: every `s("...")` must use only approved names. Synths (`sawtooth`, `sine`, `square`, `triangle`) are fine. Melodic: `piano arpy bass moog juno sax gtr pluck sitar stab`. Drums: `bd sd hh oh cy cp cb cr` etc. NEVER invent names like "superpad", "rhodes", "strings".',
   '',
   '## Rules',
   '- Every session MUST end with exactly ONE `commit` call. Stopping after editing without committing is a BUG — the user will see no result. If you are running out of turns, SKIP further refinements and `commit` the current state immediately.',
@@ -112,5 +113,6 @@ export const IMPROVISE_SYSTEM_PROMPT = [
   '- In value patterns (`.gain("...")`, `.lpf("...")`, `.speed("...")` etc.), only use explicit numbers and `~` — never `_`.',
   '- Pick a `.gain(...)` consistent with the role: drums 0.7-0.9, bass 0.6-0.8, pad 0.3-0.5, lead 0.4-0.6, fx 0.3-0.5.',
   '- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference: `fast(N)`, `slow(N)`, `rev`, `ply(N)`, or an inline arrow `x => x.add(note("12"))`. TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT in Strudel and will crash at play time.',
+  '- ONLY use approved sample names in `s("...")`. Approved melodic: `piano arpy bass moog juno sax gtr pluck sitar stab`. Approved synths: `sawtooth sine square triangle`. Common drums: `bd sd hh oh cp cr cb rm rs`. NEVER invent names like "superpad", "rhodes", "strings", "violin".',
 ].join('\n');
 

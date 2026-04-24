@@ -5,11 +5,11 @@ import { getActiveModelConfig } from './llm-config';
 
 export const STATIC_SUGGESTIONS = [
   '来一段 lo-fi 鼓点',
-  '加一个 808 贝斯',
   '来点空灵的 pad',
-  '节奏加快一点',
-  '加些混响效果',
-  '换成 house 风格',
+  '给我来首 ambient 曲',
+  '来段放松的电子乐',
+  '来一首 house 节奏',
+  '来段爵士风格的曲子',
 ];
 
 let client: Anthropic | null = null;
@@ -29,11 +29,106 @@ function getClient(): Anthropic {
   return client;
 }
 
-const SUGGEST_SYSTEM = `你是 Strudel 实时电子乐协作伙伴。基于当前曲谱，建议 2 个用户可以发出的"下一步"中文短指令。
-要求：
-- 每条 6-12 个字，自然口语，不要带编号、不要英文术语堆砌
-- 多样化：可以是加层、调速度、换风格、加效果、移除某层
-- 直接输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
+export type MusicStage = 'early' | 'developing' | 'full';
+export type MusicLayer = typeof ALL_LAYERS[number];
+
+const ALL_LAYERS = ['drum', 'bass', 'melody', 'fx'] as const;
+
+export interface MusicState {
+  layers: MusicLayer[];
+  missing: MusicLayer[];
+  stage: MusicStage;
+}
+
+/**
+ * Lightweight heuristic analysis of a Strudel code snippet.
+ * Returns which layers are present, which are missing, and the overall stage.
+ * Does NOT call LLM — pure string analysis.
+ */
+export function analyzeMusicState(code: string): MusicState {
+  if (!code) return { layers: [], missing: [...ALL_LAYERS], stage: 'early' };
+  const c = code.toLowerCase();
+  const layers: MusicLayer[] = [];
+
+  // Drum detection: common Strudel drum sample names
+  if (/\b(bd|sd|hh|oh|cp|mt|lt|ht|rim|kick|snare|hat|clap)\b/.test(c)) {
+    layers.push('drum');
+  }
+  // Bass detection
+  if (/\b(bass|sub|sawtooth|saw|square)\b/.test(c)) {
+    layers.push('bass');
+  }
+  // Melody detection: pitched synths
+  if (/\b(note|sine|piano|pluck|chord|melody|lead|pad|string)\b/.test(c)) {
+    layers.push('melody');
+  }
+  // FX detection
+  if (/\b(room|reverb|delay|echo|crush|distort|filter|lpf|hpf|pan)\b/.test(c)) {
+    layers.push('fx');
+  }
+
+  const missing = ALL_LAYERS.filter((l) => !layers.includes(l));
+  let stage: MusicStage;
+  if (layers.length <= 1) stage = 'early';
+  else if (layers.length <= 3) stage = 'developing';
+  else stage = 'full';
+
+  return { layers, missing, stage };
+}
+
+const STYLE_ALIASES: Record<string, string> = {
+  lofi: 'lo-fi',
+  'lo fi': 'lo-fi',
+  hiphop: 'hip-hop',
+  'hip hop': 'hip-hop',
+  dnb: 'drum and bass',
+  'drum and bass': 'drum and bass',
+};
+
+const STYLE_KEYWORDS = [
+  'lo-fi', 'lofi', 'house', 'techno', 'ambient', 'jazz', 'funk',
+  'drum and bass', 'dnb', 'trance', 'minimal', 'classical',
+  'hip hop', 'hiphop', 'trap', 'indie', 'folk', 'lo fi',
+];
+
+/**
+ * Extract a style intent string from the first user message in the conversation.
+ * Returns null if no known style keyword is found.
+ */
+export function extractStyleIntent(messages: { role: string; content: string }[]): string | null {
+  const firstUser = messages.find((m) => m.role === 'user');
+  if (!firstUser) return null;
+  const text = firstUser.content.toLowerCase();
+  for (const kw of STYLE_KEYWORDS) {
+    if (text.includes(kw)) {
+      return STYLE_ALIASES[kw] ?? kw;
+    }
+  }
+  return null;
+}
+
+function buildSuggestSystem(state: MusicState, styleIntent: string | null): string {
+  const layersStr = state.layers.length > 0 ? state.layers.join(', ') : '无';
+  const missingStr = state.missing.length > 0 ? state.missing.join(', ') : '无';
+  const styleStr = styleIntent ?? '未知';
+
+  return `你是 Strudel 实时电子乐协作伙伴。
+
+当前曲子状态：
+- 已有声部：${layersStr}
+- 缺少声部：${missingStr}
+- 制作阶段：${state.stage}
+- 风格方向：${styleStr}
+
+基于以上状态，建议 2 个用户可以发出的"下一步"中文短指令。
+规则：
+- stage=early → 优先建议补 missing 里的声部（如"加入鼓点"、"铺一层低音"）
+- stage=developing → 可以加层，也可以调质感/节奏/速度
+- stage=full → 专注变奏、情绪变化，不要再建议加层
+- 风格方向不为"未知"时，建议内容要符合该风格特征
+- 每条 6-12 个字，自然口语，不要英文术语堆砌
+- 输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
+}
 
 interface SuggestResult {
   suggestions: string[];
@@ -71,19 +166,26 @@ function parseSuggestions(text: string): string[] | null {
 }
 
 /**
- * Build 2 short next-step suggestions based on the current code.
+ * Build 2 short next-step suggestions based on the current code and conversation.
  * - Empty code → static defaults.
- * - Otherwise → light LLM call; failure silently falls back to static.
+ * - Otherwise → LLM call with music state context; failure falls back to static.
  */
-export async function buildSuggestions(currentCode: string): Promise<string[]> {
+export async function buildSuggestions(
+  currentCode: string,
+  messages: { role: string; content: string }[],
+): Promise<string[]> {
   if (!currentCode.trim()) {
     return pickStatic(2);
   }
   try {
+    const state = analyzeMusicState(currentCode);
+    const styleIntent = extractStyleIntent(messages);
+    const system = buildSuggestSystem(state, styleIntent);
+
     const anthropic = getClient();
     const resp = await anthropic.messages.create({
       model: getActiveModelConfig().model,
-      system: SUGGEST_SYSTEM,
+      system,
       messages: [
         {
           role: 'user',

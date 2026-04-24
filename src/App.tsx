@@ -4,18 +4,29 @@ import Sidebar from './components/Sidebar';
 import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
+import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
+import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
 
 export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
   const [isLoading, setIsLoading] = useState(false);
+  const [isMoodLoading, setIsMoodLoading] = useState(false);
 
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
   // Session code = last committed/played code (used as agent context)
   const currentCode = current?.code ?? '';
+  const hasUserMessages = messages.some((m) => m.role === 'user');
+
+  const suggestions = useSuggestions({
+    key: current?.id ?? '',
+    currentCode,
+    hasUserMessages,
+    messages,
+  });
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -113,6 +124,75 @@ export default function App() {
     [strudel, sessions, currentCode]
   );
 
+  const handleMoodInstruction = useCallback(async () => {
+    if (!strudel.engineReady) {
+      strudel.setError('音频引擎启动中，请稍后再试');
+      return;
+    }
+
+    setIsMoodLoading(true);
+    const moodContext = await fetchMoodContext();
+    setIsMoodLoading(false);
+    const instruction = '根据我的心情生成音乐';
+
+    sessions.addUserMessage(instruction);
+    setIsLoading(true);
+
+    try {
+      const shownLayerOps = new Set<string>();
+
+      const onProgress = (e: ProgressEvent) => {
+        if (e.kind === 'iteration') return;
+        if (e.kind === 'tool_call') {
+          if (e.name !== 'validate' && e.name !== 'commit') {
+            const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
+              ? `${e.name}:${String(e.args.name ?? '')}`
+              : e.name === 'improvise'
+                ? `improvise:${String(e.args.role ?? '')}`
+                : null;
+            if (layerKey !== null) {
+              if (shownLayerOps.has(layerKey)) return;
+              shownLayerOps.add(layerKey);
+            }
+            sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
+              toolName: e.name,
+            });
+          }
+          return;
+        }
+        if (e.kind === 'tool_result') {
+          if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
+          return;
+        }
+        if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…'); return; }
+        if (e.kind === 'warn') { sessions.addProgress('warn', e.message); return; }
+        if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text); return; }
+      };
+
+      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined);
+      if (result.code) {
+        const success = await strudel.play(result.code);
+        if (success) {
+          sessions.addAssistantMessage(result.explanation, result.code);
+          sessions.setCurrentCode(result.code);
+        } else {
+          sessions.addAssistantMessage(
+            `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+            result.code
+          );
+        }
+      } else {
+        sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码');
+      }
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : '请求失败';
+      sessions.addAssistantMessage(`出错了: ${errMsg}`);
+      strudel.setError(errMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [strudel, sessions, currentCode]);
+
   const handleNewSession = useCallback(() => {
     strudel.stop();
     sessions.newSession();
@@ -125,11 +205,14 @@ export default function App() {
         title={current?.title ?? '新会话'}
         messages={messages}
         isLoading={isLoading}
+        isMoodLoading={isMoodLoading}
         engineReady={strudel.engineReady}
         sessions={sessions.sessions}
         currentId={sessions.currentId}
+        suggestions={suggestions}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
+        onMoodGenerate={handleMoodInstruction}
         onReinitEngine={strudel.reinit}
         onSwitchSession={sessions.switchTo}
         onDeleteSession={sessions.deleteSession}

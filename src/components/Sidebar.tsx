@@ -1,20 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import type { Session } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon } from './icons';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
+import { checkAirJellyAvailable } from '../services/airjelly';
 import HistoryPanel from './HistoryPanel';
 
 interface SidebarProps {
   title: string;
   messages: ChatMessage[];
   isLoading: boolean;
+  isMoodLoading?: boolean;
   engineReady: boolean;
   sessions: Session[];
   currentId: string | null;
+  suggestions: string[];
   onSendText: (text: string) => void;
   onNewSession: () => void;
+  onMoodGenerate: () => void;
   onReinitEngine: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
@@ -24,16 +28,24 @@ export default function Sidebar({
   title,
   messages,
   isLoading,
+  isMoodLoading = false,
   engineReady,
   sessions,
   currentId,
+  suggestions,
   onSendText,
   onNewSession,
+  onMoodGenerate,
   onReinitEngine,
   onSwitchSession,
   onDeleteSession,
 }: SidebarProps) {
+  const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    checkAirJellyAvailable().then(setAirjellyAvailable);
+  }, []);
 
   return (
     <aside className="w-[320px] lg:w-[28%] lg:min-w-[300px] lg:max-w-[400px] shrink-0 flex flex-col bg-bg-primary">
@@ -97,24 +109,31 @@ export default function Sidebar({
 
       <div className="flex justify-center pl-4 pr-0 pb-4">
         <div className="w-full max-w-[500px]">
-          <div className="flex flex-wrap gap-2 pb-2">
-            <button
-              type="button"
-              onClick={() => onSendText('下一步动作的提示')}
-              className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
-              style={{ fontFamily: '"GenWanMin TW", serif' }}
-            >
-              下一步动作的提示
-            </button>
-            <button
-              type="button"
-              onClick={() => onSendText('加一些贝斯？')}
-              className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
-              style={{ fontFamily: '"GenWanMin TW", serif' }}
-            >
-              加一些贝斯？
-            </button>
-          </div>
+          {!isLoading && (
+            <div className="flex flex-wrap gap-2 pb-2">
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onSendText(s)}
+                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
+                  style={{ fontFamily: '"GenWanMin TW", serif' }}
+                >
+                  {s}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={onMoodGenerate}
+                disabled={!airjellyAvailable || isMoodLoading}
+                title={airjellyAvailable ? '根据你最近的活动感知心情生成音乐' : '需要运行 AirJelly Desktop'}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ fontFamily: '"GenWanMin TW", serif' }}
+              >
+                🎭 根据心情生成
+              </button>
+            </div>
+          )}
 
           <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} />
         </div>

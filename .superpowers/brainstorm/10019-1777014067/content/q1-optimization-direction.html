@@ -1,0 +1,35 @@
+<h2>你希望优化提示词的哪个方面？</h2>
+<p class="subtitle">当前系统：AI 根据当前 Strudel 曲谱，生成 2 条"下一步"短指令作为快捷按钮</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="content" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>内容质量</h3>
+      <p>建议不够有创意、太平淡，或总是重复相似的套路（"加鼓"、"换风格"…）</p>
+    </div>
+  </div>
+  <div class="option" data-choice="context" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>上下文感知</h3>
+      <p>建议没有充分利用对话历史，只看了代码，不知道用户之前聊了什么</p>
+    </div>
+  </div>
+  <div class="option" data-choice="timing" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>触发时机</h3>
+      <p>更新太频繁或太少，有时候建议还是上一首曲子的，或者加载太慢</p>
+    </div>
+  </div>
+  <div class="option" data-choice="wording" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>措辞风格</h3>
+      <p>语气太技术性/太普通，不够自然口语化，或者字数不合适</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px">可多选，或直接在对话框里描述你观察到的问题</p>
