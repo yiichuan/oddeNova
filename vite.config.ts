@@ -13,6 +13,7 @@ interface AirJellyRuntime {
 }
 
 function loadAirJellyRuntime(): AirJellyRuntime | null {
+  // macOS only – AirJelly Desktop does not support Windows/Linux
   const p = join(
     homedir(),
     'Library', 'Application Support', 'AirJelly', 'runtime.json'
@@ -29,7 +30,7 @@ function airjellyProxy(): Plugin {
   return {
     name: 'airjelly-proxy',
     configureServer(server) {
-      // GET /api/airjelly-runtime → { available, port, token }
+      // GET /api/airjelly-runtime → { available }
       server.middlewares.use(
         '/api/airjelly-runtime',
         (_req: IncomingMessage, res: ServerResponse) => {
@@ -39,7 +40,7 @@ function airjellyProxy(): Plugin {
             res.end(JSON.stringify({ available: false }))
             return
           }
-          res.end(JSON.stringify({ available: true, port: runtime.port, token: runtime.token }))
+          res.end(JSON.stringify({ available: true }))
         }
       )
 
@@ -54,8 +55,17 @@ function airjellyProxy(): Plugin {
             res.end(JSON.stringify({ ok: false, error: 'AirJelly not running' }))
             return
           }
+          if (req.method !== 'POST') {
+            res.statusCode = 405
+            res.end()
+            return
+          }
           let body = ''
           req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+          req.on('error', () => {
+            res.statusCode = 400
+            res.end()
+          })
           req.on('end', () => {
             fetch(`http://127.0.0.1:${runtime.port}/rpc`, {
               method: 'POST',
