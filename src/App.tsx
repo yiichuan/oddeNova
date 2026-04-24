@@ -8,7 +8,7 @@ import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
-import { isDemoMode, DEMO_SCENARIO_1, DEMO_SCENARIO_2 } from './demo/demo-config';
+import { isDemoMode, getActiveDemoSet, DEMO_SCENARIO_2 } from './demo/demo-config';
 
 export default function App() {
   const strudel = useStrudel();
@@ -29,7 +29,7 @@ export default function App() {
     hasUserMessages,
     messages,
   });
-  const demoSuggestions = isDemoMode() ? DEMO_SCENARIO_1.map((s) => s.prompt) : suggestions;
+  const demoSuggestions = isDemoMode() ? getActiveDemoSet().map((s) => s.prompt) : suggestions;
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
