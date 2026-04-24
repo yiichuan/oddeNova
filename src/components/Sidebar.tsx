@@ -16,6 +16,7 @@ interface SidebarProps {
   sessions: Session[];
   currentId: string | null;
   suggestions: string[];
+  prefill?: string;
   onSendText: (text: string) => void;
   onNewSession: () => void;
   onMoodGenerate: () => void;
@@ -33,6 +34,7 @@ export default function Sidebar({
   sessions,
   currentId,
   suggestions,
+  prefill,
   onSendText,
   onNewSession,
   onMoodGenerate,
@@ -135,7 +137,7 @@ export default function Sidebar({
             </div>
           )}
 
-          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} />
+          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} prefill={prefill} />
         </div>
       </div>
     </aside>
