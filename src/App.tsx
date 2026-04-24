@@ -16,6 +16,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [demoPrefill, setDemoPrefill] = useState('');
+  const [demoStep, setDemoStep] = useState(0);
 
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
@@ -29,7 +30,10 @@ export default function App() {
     hasUserMessages,
     messages,
   });
-  const demoSuggestions = isDemoMode() ? getActiveDemoSet().map((s) => s.prompt) : suggestions;
+  const activeSet = getActiveDemoSet();
+  const demoSuggestions = isDemoMode()
+    ? (demoStep < activeSet.length ? [activeSet[demoStep].prompt] : [])
+    : suggestions;
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -48,6 +52,11 @@ export default function App() {
 
       sessions.addUserMessage(text);
       setIsLoading(true);
+
+      // 在 demo 模式下，若发送的是当前步骤的提示词，则推进到下一步
+      if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
+        setDemoStep((s) => s + 1);
+      }
 
       try {
         // Track layer names already shown in this agent run to prevent
@@ -124,7 +133,7 @@ export default function App() {
         setIsLoading(false);
       }
     },
-    [strudel, sessions, currentCode]
+    [strudel, sessions, currentCode, demoStep, activeSet]
   );
 
   const handleMoodInstruction = useCallback(async () => {
