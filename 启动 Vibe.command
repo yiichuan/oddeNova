@@ -14,7 +14,7 @@ DEV_PID=$!
 # 等待服务器就绪（最多 30 秒）
 for i in $(seq 1 30); do
   if curl -s http://localhost:5173 > /dev/null 2>&1; then
-    open http://localhost:5173
+    /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --app=http://localhost:5173
     break
   fi
   sleep 1

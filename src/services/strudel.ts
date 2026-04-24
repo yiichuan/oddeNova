@@ -62,7 +62,7 @@ class StrudelService {
 
   private prebake = async (): Promise<void> => {
     const { evalScope } = await import('@strudel/core');
-    const { initAudioOnFirstClick, registerSynthSounds, samples } = await import('superdough');
+    const { initAudioOnFirstClick, registerSynthSounds, samples, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
     initAudioOnFirstClick();
 
@@ -84,6 +84,9 @@ class StrudelService {
     ]);
 
     this.isAudioInitialized = true;
+    // Expose audio hooks on window so the galaxy iframe can tap the analyser
+    (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
+    (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
     // Set engineReady after all modules and samples are loaded
     this.notify({ engineReady: true });
   };
@@ -158,7 +161,7 @@ class StrudelService {
       this.masterLpfNode.type = 'lowpass';
       this.masterLpfNode.frequency.value = 20000;
 
-      destGain.disconnect();
+      try { destGain.disconnect(ctx.destination); } catch { /* not connected */ }
       destGain.connect(this.masterLpfNode);
       this.masterLpfNode.connect(ctx.destination);
       this.masterChainReady = true;

@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import { PlusIcon } from './icons';
+import type { Session } from '../hooks/useSessions';
+import { PlusIcon, HistoryIcon } from './icons';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
 import { checkAirJellyAvailable } from '../services/airjelly';
+import HistoryPanel from './HistoryPanel';
 
 interface SidebarProps {
   title: string;
   messages: ChatMessage[];
   isLoading: boolean;
   engineReady: boolean;
+  sessions: Session[];
+  currentId: string | null;
   onSendText: (text: string) => void;
   onNewSession: () => void;
   onMoodGenerate: () => void;
   onReinitEngine: () => void;
+  onSwitchSession: (id: string) => void;
+  onDeleteSession: (id: string) => void;
 }
 
 export default function Sidebar({
@@ -21,12 +27,17 @@ export default function Sidebar({
   messages,
   isLoading,
   engineReady,
+  sessions,
+  currentId,
   onSendText,
   onNewSession,
   onMoodGenerate,
   onReinitEngine,
+  onSwitchSession,
+  onDeleteSession,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     checkAirJellyAvailable().then(setAirjellyAvailable);
@@ -35,28 +46,57 @@ export default function Sidebar({
   return (
     <aside className="w-[320px] lg:w-[28%] lg:min-w-[300px] lg:max-w-[400px] shrink-0 flex flex-col bg-bg-primary">
       {/* Logo */}
-      <div className="px-5 pt-5 pb-2">
-        <h1 className="text-2xl font-bold tracking-wider text-text-primary">
-          *LOGO*
+      <div className="px-5 pt-[5px] pb-2">
+        <h1 className="text-[32px]" style={{
+          background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}>
+          <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
         </h1>
       </div>
 
       {/* Title row */}
       <div className="pl-5 pr-0 pt-[32px] pb-3 flex items-center justify-between">
-        <span className="text-base font-medium text-text-primary truncate" title={title} style={{ fontFamily: '"GenWanMin TW", serif' }}>
+        <span className="text-base font-bold text-text-muted truncate" title={title}>
           {title}
         </span>
-        <button
-          onClick={onNewSession}
-          className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center shrink-0"
-          title="新建会话"
-        >
-          <PlusIcon size={14} />
-        </button>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setShowHistory(v => !v)}
+            className={`w-7 h-7 rounded-full border border-border transition-colors flex items-center justify-center ${
+              showHistory ? 'text-text-primary border-accent/50' : 'text-text-secondary hover:text-text-primary hover:border-accent/50'
+            }`}
+            title="查看历史"
+          >
+            <HistoryIcon size={14} />
+          </button>
+          <button
+            onClick={onNewSession}
+            className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
+            title="新建会话"
+          >
+            <PlusIcon size={14} />
+          </button>
+        </div>
       </div>
 
-      {/* Conversation flow */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[10px] pb-[30px]">
+      {/* Conversation flow + history overlay */}
+      <div className="flex-1 min-h-0 flex flex-col pt-[10px] pb-[30px] relative">
+        {showHistory && (
+          <>
+            <div className="fixed inset-0 z-[9]" onClick={() => setShowHistory(false)} />
+            <div className="absolute top-0 left-4 right-0 h-1/2 z-10">
+              <HistoryPanel
+                sessions={sessions}
+                currentId={currentId}
+                onSwitch={(id) => { onSwitchSession(id); setShowHistory(false); }}
+                onDelete={onDeleteSession}
+              />
+            </div>
+          </>
+        )}
         <ConversationView
           messages={messages}
           isLoading={isLoading}
