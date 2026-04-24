@@ -385,23 +385,18 @@ export const TOOLS: ToolDef[] = [
     parameters: {
       type: 'object',
       properties: {
-        code: {
-          type: 'string',
-          description: '最终要播放的完整代码；不传则使用当前编辑中的代码',
-        },
         explanation: {
           type: 'string',
           description:
             '【必填】一句话中文向用户解释这次改动，会作为聊天回复展示。如 "加了一层 lo-fi 鼓点" / "把 pad 调小声" / "切到 house 风格 128 BPM"。',
         },
       },
-      required: [],
+      required: ['explanation'],
     },
-    handler: (args, ctx) => {
-      const code =
-        typeof args.code === 'string' && args.code.trim() ? args.code : ctx.state.code;
-      // The loop catches this and treats it as terminal.
-      throw new CommitSignal(code);
+    handler: (_args, ctx) => {
+      // Always use the tool-managed state.code — never let the LLM pass its own
+      // code blob, which would bypass setcps and other accumulated edits.
+      throw new CommitSignal(ctx.state.code);
     },
   },
 ];

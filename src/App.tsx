@@ -38,10 +38,26 @@ export default function App() {
       setIsLoading(true);
 
       try {
+        // Track layer names already shown in this agent run to prevent
+        // duplicate progress entries when the LLM calls addLayer/removeLayer/
+        // replaceLayer for the same layer across different iterations.
+        const shownLayerOps = new Set<string>();
+
         const onProgress = (e: ProgressEvent) => {
           if (e.kind === 'iteration') return;
           if (e.kind === 'tool_call') {
             if (e.name !== 'validate' && e.name !== 'commit') {
+              // Dedup layer operations across iterations: same tool + same layer
+              // name means the LLM is retrying something it already attempted
+              // (addLayer will fail at the tool level anyway since the layer
+              // exists). Skip the duplicate progress line to avoid confusing UI.
+              const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
+                ? `${e.name}:${String(e.args.name ?? '')}`
+                : null;
+              if (layerKey !== null) {
+                if (shownLayerOps.has(layerKey)) return;
+                shownLayerOps.add(layerKey);
+              }
               sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
                 toolName: e.name,
               });
