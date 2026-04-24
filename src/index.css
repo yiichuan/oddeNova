@@ -16,6 +16,22 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Baskervville';
+  src: url('/fonts/Baskervville-Italic.ttf') format('truetype');
+  font-weight: normal;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: '42dot Sans';
+  src: url('/fonts/42dotSans-ExtraBold.ttf') format('truetype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-bg-primary: #000000;
   --color-bg-secondary: #000000;
@@ -105,6 +121,7 @@ body {
 
 .cm-editor .cm-lineNumbers .cm-gutterElement {
   font-size: 13px !important;
+  line-height: 2.0 !important;
   padding-left: 24px !important;
   padding-right: 24px !important;
   text-align: center !important;

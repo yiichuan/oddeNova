@@ -17,7 +17,7 @@ export default function HistoryPanel({
   const ordered = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
   return (
-    <div className="h-full flex flex-col bg-bg-secondary/40 border border-border overflow-hidden">
+    <div className="h-full flex flex-col bg-bg-primary border border-border overflow-hidden">
       <div className="px-4 py-2.5 shrink-0">
         <h3 className="text-base font-semibold text-text-primary">历史</h3>
       </div>
