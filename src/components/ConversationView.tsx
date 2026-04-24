@@ -44,10 +44,15 @@ export default function ConversationView({
     }
   }, [messages, isLoading]);
 
-  // Find the last progress message — used as the "subtitle" line under
-  // the "思考中..." indicator (matches the design reference).
+  // Find the last progress message after the most recent user message —
+  // used as the "subtitle" line under the "思考中..." indicator.
+  // We restrict to post-last-user-message to avoid showing stale progress
+  // (e.g. "准备播放…") from the previous turn while the new turn loads.
   const lastProgress = isLoading
-    ? [...messages].reverse().find((m) => m.role === 'progress')
+    ? (() => {
+        const lastUserIdx = messages.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+        return [...messages].slice(lastUserIdx + 1).reverse().find((m) => m.role === 'progress');
+      })()
     : undefined;
 
   return (
@@ -60,9 +65,9 @@ export default function ConversationView({
 
       {messages.map((msg) => {
         if (msg.role === 'progress') {
-          // Skip progress lines while loading — they collapse into the
-          // single "思考中" + subtitle indicator below.
-          if (isLoading && msg === lastProgress) return null;
+          // All progress messages always stay in the list — never suppress
+          // them, to avoid the flash of disappearing from indicator then
+          // reappearing in the list.
           if (msg.progressKind === 'thinking') {
             return (
               <div key={msg.id} className="flex justify-start animate-fade-in-up">
@@ -130,11 +135,6 @@ export default function ConversationView({
             <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse" />
             <div>
               <div className="text-sm text-text-primary">思考中...</div>
-              {lastProgress && (
-                <div className="text-[11px] text-text-muted mt-0.5">
-                  {stripMarkdown(lastProgress.content)}
-                </div>
-              )}
             </div>
           </div>
         </div>

@@ -159,6 +159,34 @@ export function useSessions() {
     [updateCurrent]
   );
 
+  // 流式追加思考文字：若最后一条消息是 thinking，则原地拼接；否则新建一条
+  const appendToLastThinking = useCallback(
+    (delta: string): void => {
+      updateCurrent((s) => {
+        const messages = [...s.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === 'progress' && last.progressKind === 'thinking') {
+          messages[messages.length - 1] = { ...last, content: last.content + delta };
+          return { ...s, messages };
+        }
+        return {
+          ...s,
+          messages: [
+            ...messages,
+            {
+              id: newMessageId(),
+              role: 'progress' as const,
+              content: delta,
+              timestamp: Date.now(),
+              progressKind: 'thinking' as const,
+            },
+          ],
+        };
+      });
+    },
+    [updateCurrent]
+  );
+
   const setCurrentCode = useCallback(
     (code: string) => {
       updateCurrent((s) => ({ ...s, code }));
@@ -223,6 +251,7 @@ export function useSessions() {
     addUserMessage,
     addAssistantMessage,
     addProgress,
+    appendToLastThinking,
     setCurrentCode,
     newSession,
     switchTo,
