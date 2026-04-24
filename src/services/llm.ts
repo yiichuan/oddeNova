@@ -16,6 +16,8 @@ import {
 } from '../agent/tools';
 import { getRoleHint } from '../prompts/styles';
 import { getActiveModelConfig } from './llm-config';
+import { isDemoMode, resolveDemoCode } from '../demo/demo-config';
+import { createDemoLLMCaller } from '../demo/demo-llm';
 
 // ===========================================================================
 // Anthropic client — the upstream proxy at timesniper.club speaks BOTH the
@@ -333,11 +335,16 @@ export async function runAgent(
   const systemPrompt = moodContext
     ? `${AGENT_SYSTEM_PROMPT}\n\n${moodContext}`
     : AGENT_SYSTEM_PROMPT;
+
+  const llm = isDemoMode()
+    ? createDemoLLMCaller(resolveDemoCode(instruction))
+    : llmCaller;
+
   return runAgentLoop({
     instruction,
     initialCode: currentCode,
     systemPrompt,
-    llm: llmCaller,
+    llm,
     improviseLLM,
     onProgress,
   });
