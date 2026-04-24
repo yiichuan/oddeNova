@@ -15,6 +15,7 @@ export default function App() {
   const sessions = useSessions();
   const [isLoading, setIsLoading] = useState(false);
   const [isMoodLoading, setIsMoodLoading] = useState(false);
+  const [demoPrefill, setDemoPrefill] = useState('');
 
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
@@ -212,7 +213,9 @@ export default function App() {
         sessions={sessions.sessions}
         currentId={sessions.currentId}
         suggestions={demoSuggestions}
-        prefill={isDemoMode() ? DEMO_SCENARIO_2.prefill : undefined}
+        prefill={isDemoMode() ? demoPrefill : undefined}
+        fillSuggestion={isDemoMode() ? DEMO_SCENARIO_2.prefill : undefined}
+        onFill={isDemoMode() ? (text) => setDemoPrefill(text) : undefined}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
         onMoodGenerate={handleMoodInstruction}

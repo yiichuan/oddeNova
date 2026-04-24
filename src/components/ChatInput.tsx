@@ -15,8 +15,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
 
   useEffect(() => {
     if (prefill) setText(prefill);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 空依赖：只执行一次
+  }, [prefill]);
 
   const doSubmit = () => {
     const value = text.trim();

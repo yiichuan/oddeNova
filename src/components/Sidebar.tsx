@@ -17,6 +17,8 @@ interface SidebarProps {
   currentId: string | null;
   suggestions: string[];
   prefill?: string;
+  fillSuggestion?: string;
+  onFill?: (text: string) => void;
   onSendText: (text: string) => void;
   onNewSession: () => void;
   onMoodGenerate: () => void;
@@ -35,6 +37,8 @@ export default function Sidebar({
   currentId,
   suggestions,
   prefill,
+  fillSuggestion,
+  onFill,
   onSendText,
   onNewSession,
   onMoodGenerate,
@@ -124,6 +128,17 @@ export default function Sidebar({
                   {s}
                 </button>
               ))}
+              {fillSuggestion && onFill && (
+                <button
+                  key="fill-suggestion"
+                  type="button"
+                  onClick={() => onFill(fillSuggestion)}
+                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
+                  style={{ fontFamily: '"GenWanMin TW", serif' }}
+                >
+                  ✍️ 自定义场景…
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onMoodGenerate}
