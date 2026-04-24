@@ -33,7 +33,7 @@ export default function Sidebar({
 
       {/* Title row */}
       <div className="pl-5 pr-0 pt-[32px] pb-3 flex items-center justify-between">
-        <span className="text-base font-medium text-text-primary truncate" title={title}>
+        <span className="text-base font-medium text-text-primary truncate" title={title} style={{ fontFamily: '"GenWanMin TW", serif' }}>
           {title}
         </span>
         <button

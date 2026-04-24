@@ -93,7 +93,7 @@ function SliderColumn({
           className="aj-slider flex-1 min-w-0"
           style={{
             height: '1px',
-            background: `linear-gradient(to right, rgba(255,255,255,0.7) ${pct * 100}%, #323232 ${pct * 100}%)`,
+            background: `linear-gradient(to right, rgba(255,255,255,0.35) ${pct * 100}%, #323232 ${pct * 100}%)`,
           }}
         />
       </div>
@@ -179,8 +179,8 @@ export default function CodePanel({
     <div className="h-full flex flex-col border border-border overflow-hidden bg-bg-secondary/30">
       <style>{`
         .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; }
-        .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 19px; height: 19px; border-radius: 50%; background: #608FD8; border: 1.5px solid #1F4C92; cursor: pointer; margin-top: -9px; }
-        .aj-slider::-moz-range-thumb { width: 19px; height: 19px; border-radius: 50%; background: #608FD8; border: 1.5px solid #1F4C92; cursor: pointer; }
+        .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 19px; height: 19px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -9px; }
+        .aj-slider::-moz-range-thumb { width: 19px; height: 19px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; }
         .aj-slider::-webkit-slider-runnable-track { height: 1px; }
         .aj-slider::-moz-range-track { height: 1px; }
       `}</style>
