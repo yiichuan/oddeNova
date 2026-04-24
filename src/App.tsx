@@ -53,7 +53,9 @@ export default function App() {
               // exists). Skip the duplicate progress line to avoid confusing UI.
               const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
                 ? `${e.name}:${String(e.args.name ?? '')}`
-                : null;
+                : e.name === 'improvise'
+                  ? `improvise:${String(e.args.role ?? '')}`
+                  : null;
               if (layerKey !== null) {
                 if (shownLayerOps.has(layerKey)) return;
                 shownLayerOps.add(layerKey);
