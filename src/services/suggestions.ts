@@ -30,14 +30,15 @@ function getClient(): Anthropic {
 }
 
 export type MusicStage = 'early' | 'developing' | 'full';
-
-export interface MusicState {
-  layers: string[];
-  missing: string[];
-  stage: MusicStage;
-}
+export type MusicLayer = typeof ALL_LAYERS[number];
 
 const ALL_LAYERS = ['drum', 'bass', 'melody', 'fx'] as const;
+
+export interface MusicState {
+  layers: MusicLayer[];
+  missing: MusicLayer[];
+  stage: MusicStage;
+}
 
 /**
  * Lightweight heuristic analysis of a Strudel code snippet.
@@ -45,38 +46,34 @@ const ALL_LAYERS = ['drum', 'bass', 'melody', 'fx'] as const;
  * Does NOT call LLM — pure string analysis.
  */
 export function analyzeMusicState(code: string): MusicState {
-  try {
-    const c = code.toLowerCase();
-    const layers: string[] = [];
+  if (!code) return { layers: [], missing: [...ALL_LAYERS], stage: 'early' };
+  const c = code.toLowerCase();
+  const layers: MusicLayer[] = [];
 
-    // Drum detection: common Strudel drum sample names
-    if (/\b(bd|sd|hh|oh|cp|mt|lt|ht|rim|kick|snare|hat|clap)\b/.test(c)) {
-      layers.push('drum');
-    }
-    // Bass detection
-    if (/\b(bass|sub|sawtooth|saw|square)\b/.test(c)) {
-      layers.push('bass');
-    }
-    // Melody detection: pitched synths
-    if (/\b(note|sine|piano|pluck|chord|melody|lead|pad|string)\b/.test(c)) {
-      layers.push('melody');
-    }
-    // FX detection
-    if (/\b(room|reverb|delay|echo|crush|distort|filter|lpf|hpf|pan)\b/.test(c)) {
-      layers.push('fx');
-    }
-
-    const missing = ALL_LAYERS.filter((l) => !layers.includes(l));
-    let stage: MusicStage;
-    if (layers.length <= 1) stage = 'early';
-    else if (layers.length <= 3) stage = 'developing';
-    else stage = 'full';
-
-    return { layers, missing, stage };
-  } catch {
-    // Fallback: treat as empty slate
-    return { layers: [], missing: [...ALL_LAYERS], stage: 'early' };
+  // Drum detection: common Strudel drum sample names
+  if (/\b(bd|sd|hh|oh|cp|mt|lt|ht|rim|kick|snare|hat|clap)\b/.test(c)) {
+    layers.push('drum');
   }
+  // Bass detection
+  if (/\b(bass|sub|sawtooth|saw|square)\b/.test(c)) {
+    layers.push('bass');
+  }
+  // Melody detection: pitched synths
+  if (/\b(note|sine|piano|pluck|chord|melody|lead|pad|string)\b/.test(c)) {
+    layers.push('melody');
+  }
+  // FX detection
+  if (/\b(room|reverb|delay|echo|crush|distort|filter|lpf|hpf|pan)\b/.test(c)) {
+    layers.push('fx');
+  }
+
+  const missing = ALL_LAYERS.filter((l) => !layers.includes(l));
+  let stage: MusicStage;
+  if (layers.length <= 1) stage = 'early';
+  else if (layers.length <= 3) stage = 'developing';
+  else stage = 'full';
+
+  return { layers, missing, stage };
 }
 
 const SUGGEST_SYSTEM = `你是 Strudel 实时电子乐协作伙伴。基于当前曲谱，建议 2 个用户可以发出的"下一步"中文短指令。
