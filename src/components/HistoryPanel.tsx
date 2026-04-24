@@ -21,7 +21,7 @@ export default function HistoryPanel({
       <div className="px-4 py-2.5 shrink-0">
         <h3 className="text-base font-semibold text-text-primary">历史</h3>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" style={{ fontFamily: '"GenWanMin TW", serif' }}>
         {ordered.length === 0 ? (
           <div className="p-4 text-xs text-text-muted">暂无会话</div>
         ) : (

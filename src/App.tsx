@@ -137,9 +137,10 @@ export default function App() {
         suggestions={suggestions}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
+        onReinitEngine={strudel.reinit}
       />
 
-      <main className="flex-1 flex flex-col gap-3 p-3 min-w-0">
+      <main className="flex-1 flex flex-col gap-3 pt-3 pr-3 pb-3 pl-[22px] min-w-0">
         <div className="flex-1 min-h-0">
           <CodePanel
             error={strudel.error}

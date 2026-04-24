@@ -246,6 +246,18 @@ class StrudelService {
   clearError = (): void => {
     this.notify({ error: null });
   };
+
+  reinit = async (): Promise<void> => {
+    if (!this.containerElement) return;
+    this.isAudioInitialized = false;
+    this.isInitializing = false;
+    if (this.editorInstance) {
+      this.editorInstance.dispose?.();
+      this.editorInstance = null;
+    }
+    this.notify({ engineReady: false, error: null });
+    await this.attach(this.containerElement);
+  };
 }
 
 export const strudelService = StrudelService.instance();
