@@ -13,6 +13,7 @@ interface SidebarProps {
   onSendText: (text: string) => void;
   onNewSession: () => void;
   onMoodGenerate: () => void;
+  onReinitEngine: () => void;
 }
 
 export default function Sidebar({
@@ -23,6 +24,7 @@ export default function Sidebar({
   onSendText,
   onNewSession,
   onMoodGenerate,
+  onReinitEngine,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
 
@@ -40,8 +42,8 @@ export default function Sidebar({
       </div>
 
       {/* Title row */}
-      <div className="px-5 py-3 flex items-center justify-between">
-        <span className="text-base font-medium text-text-primary truncate" title={title}>
+      <div className="pl-5 pr-0 pt-[32px] pb-3 flex items-center justify-between">
+        <span className="text-base font-medium text-text-primary truncate" title={title} style={{ fontFamily: '"GenWanMin TW", serif' }}>
           {title}
         </span>
         <button
@@ -54,25 +56,29 @@ export default function Sidebar({
       </div>
 
       {/* Conversation flow */}
-      <ConversationView
-        messages={messages}
-        isLoading={isLoading}
-      />
+      <div className="flex-1 min-h-0 flex flex-col pt-[10px] pb-[30px]">
+        <ConversationView
+          messages={messages}
+          isLoading={isLoading}
+        />
+      </div>
 
-      <div className="flex justify-center px-4 pb-4">
+      <div className="flex justify-center pl-4 pr-0 pb-4">
         <div className="w-full max-w-[500px]">
           <div className="flex flex-wrap gap-2 pb-2">
             <button
               type="button"
               onClick={() => onSendText('下一步动作的提示')}
-              className="rounded-[8px] bg-[#3a3a3a] px-3 py-1.5 text-[13px] text-[#e0e0e0] transition hover:bg-[#4a4a4a]"
+              className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
+              style={{ fontFamily: '"GenWanMin TW", serif' }}
             >
               下一步动作的提示
             </button>
             <button
               type="button"
               onClick={() => onSendText('加一些贝斯？')}
-              className="rounded-[8px] bg-[#3a3a3a] px-3 py-1.5 text-[13px] text-[#e0e0e0] transition hover:bg-[#4a4a4a]"
+              className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
+              style={{ fontFamily: '"GenWanMin TW", serif' }}
             >
               加一些贝斯？
             </button>
@@ -87,7 +93,7 @@ export default function Sidebar({
             </button>
           </div>
 
-          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} />
+          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} />
         </div>
       </div>
     </aside>

@@ -41,8 +41,8 @@ export const EDITOR_THEME_VARS: Record<
   "vibe-dark": {
     background: "#000000",
     foreground: "#e2e8f0",
-    caret: "#a29bfe",
-    selection: "rgba(108,92,231,0.25)",
+    caret: "#91a3e0",
+    selection: "rgba(172, 185, 225, 0.25)",
     lineHighlight: "rgba(108,92,231,0.08)",
     gutterBackground: "transparent",
     gutterForeground: "#898989",

@@ -55,10 +55,10 @@ function SliderColumn({
 
   return (
     <div
-      className="flex-1 flex items-center px-[30px] gap-[30px]"
+      className="flex-1 min-w-0 flex items-center px-[30px] gap-[30px]"
       style={borderRight ? { borderRight: '1px solid #323232' } : undefined}
     >
-      <span className="text-[11px] text-white/40 shrink-0 select-none">{label}</span>
+      <span className="text-[13px] text-white/70 shrink-0 select-none">{label}</span>
 
       {/* Slider wrapper — relative so tooltip is anchored here */}
       <div className="relative flex-1 min-w-0 flex items-center">
@@ -93,7 +93,7 @@ function SliderColumn({
           className="aj-slider flex-1 min-w-0"
           style={{
             height: '1px',
-            background: `linear-gradient(to right, rgba(255,255,255,0.7) ${pct * 100}%, #323232 ${pct * 100}%)`,
+            background: `linear-gradient(to right, rgba(255,255,255,0.35) ${pct * 100}%, #323232 ${pct * 100}%)`,
           }}
         />
       </div>
@@ -179,8 +179,8 @@ export default function CodePanel({
     <div className="h-full flex flex-col border border-border overflow-hidden bg-bg-secondary/30">
       <style>{`
         .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; }
-        .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #6DA2F6; border: 1.5px solid #2356A6; cursor: pointer; margin-top: -6.5px; }
-        .aj-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #6DA2F6; border: 1.5px solid #2356A6; cursor: pointer; }
+        .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 19px; height: 19px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -9px; }
+        .aj-slider::-moz-range-thumb { width: 19px; height: 19px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; }
         .aj-slider::-webkit-slider-runnable-track { height: 1px; }
         .aj-slider::-moz-range-track { height: 1px; }
       `}</style>
@@ -200,7 +200,7 @@ export default function CodePanel({
       {/* Footer — play button + sliders */}
       <div
         className="shrink-0 flex items-stretch border-t"
-        style={{ background: '#000', borderColor: '#323232' }}
+        style={{ background: '#000', borderColor: '#323232', fontFamily: "'ABeeZee', monospace" }}
       >
         {/* Play button, width matches .cm-gutters */}
         <div
@@ -219,7 +219,7 @@ export default function CodePanel({
             }`}
             title={isPlaying ? '停止' : '播放'}
           >
-            {isPlaying ? <StopIcon size={52} /> : <PlayIcon size={52} />}
+            {isPlaying ? <StopIcon size={48} /> : <PlayIcon size={48} />}
           </button>
         </div>
 
