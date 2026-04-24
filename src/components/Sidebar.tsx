@@ -136,7 +136,7 @@ export default function Sidebar({
                   className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
                   style={{ fontFamily: '"GenWanMin TW", serif' }}
                 >
-                  ✍️ 自定义场景…
+                  灵感一下…
                 </button>
               )}
               <button

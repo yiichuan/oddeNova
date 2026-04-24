@@ -23,7 +23,7 @@ export function createDemoLLMCaller(targetCode: string, steps: DemoStep[]): LLMC
       if (step < steps.length) {
         const { name, code, thinking } = steps[step];
         // 首步多等一会儿，后续步骤稍短，模拟真实 LLM 响应节奏
-        await sleep(step === 0 ? 1100 : 800);
+        await sleep(step === 0 ? 2000 : 1500);
         const call: ToolCallRequest = {
           id: `demo-tool-${step}`,
           name: 'addLayer',
@@ -34,7 +34,7 @@ export function createDemoLLMCaller(targetCode: string, steps: DemoStep[]): LLMC
       }
 
       // 所有层已播放 → commit 最终代码，结束 agent loop
-      await sleep(500);
+      await sleep(1000);
       step++;
       const call: ToolCallRequest = {
         id: 'demo-tool-commit',
