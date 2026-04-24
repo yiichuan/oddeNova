@@ -5,6 +5,7 @@ import HistoryPanel from './components/HistoryPanel';
 import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
+import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
@@ -18,6 +19,14 @@ export default function App() {
   const messages = current?.messages ?? [];
   // Session code = last committed/played code (used as agent context)
   const currentCode = current?.code ?? '';
+  const hasUserMessages = messages.some((m) => m.role === 'user');
+
+  const suggestions = useSuggestions({
+    key: current?.id ?? '',
+    currentCode,
+    hasUserMessages,
+    messages,
+  });
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -194,6 +203,7 @@ export default function App() {
         messages={messages}
         isLoading={isLoading}
         engineReady={strudel.engineReady}
+        suggestions={suggestions}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
         onMoodGenerate={handleMoodInstruction}
