@@ -64,7 +64,7 @@ drum and bass, dnb, trance, minimal, classical,
 hip hop, hiphop, trap, indie, folk
 ```
 
-匹配成功返回规范化字符串（如 `"lo-fi"`），失败返回 `null`。
+匹配成功返回规范化字符串（如 `"lo-fi"`），失败返回 `null`。规范化规则：`lofi→lo-fi`、`hiphop/hip hop→hip-hop`、`dnb/drum and bass→drum and bass`，其余词保持原样。
 
 ### `buildSuggestions` 接口变更
 
@@ -89,7 +89,8 @@ buildSuggestions(currentCode: string, messages: ChatMessage[]): Promise<string[]
 
 基于以上状态，建议 2 个用户可以发出的"下一步"中文短指令。
 规则：
-- stage=empty 或 early → 优先建议补 missing 里的声部（"加入鼓点"、"铺一层低音"）
+- stage=early → 优先建议补 missing 里的声部（"加入鼓点"、"铺一层低音"）
+  （注：stage=empty 时代码为空，不会调用 LLM，此规则无需覆盖）
 - stage=developing → 可以加层，也可以调质感/节奏/速度
 - stage=full → 专注变奏、情绪变化，不要再建议加层
 - styleIntent 不为"未知"时，建议内容要符合该风格特征
