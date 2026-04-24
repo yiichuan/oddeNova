@@ -5,8 +5,8 @@ import HistoryPanel from './components/HistoryPanel';
 import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
-import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
+import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
 
 export default function App() {
@@ -115,17 +115,77 @@ export default function App() {
     [strudel, sessions, currentCode]
   );
 
+  const handleMoodInstruction = useCallback(async () => {
+    if (!strudel.engineReady) {
+      strudel.setError('音频引擎启动中，请稍后再试');
+      return;
+    }
+
+    const moodContext = await fetchMoodContext();
+    const instruction = '根据我的心情生成音乐';
+
+    sessions.addUserMessage(instruction);
+    setIsLoading(true);
+
+    try {
+      const shownLayerOps = new Set<string>();
+
+      const onProgress = (e: ProgressEvent) => {
+        if (e.kind === 'iteration') return;
+        if (e.kind === 'tool_call') {
+          if (e.name !== 'validate' && e.name !== 'commit') {
+            const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
+              ? `${e.name}:${String(e.args.name ?? '')}`
+              : e.name === 'improvise'
+                ? `improvise:${String(e.args.role ?? '')}`
+                : null;
+            if (layerKey !== null) {
+              if (shownLayerOps.has(layerKey)) return;
+              shownLayerOps.add(layerKey);
+            }
+            sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
+              toolName: e.name,
+            });
+          }
+          return;
+        }
+        if (e.kind === 'tool_result') {
+          if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
+          return;
+        }
+        if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…'); return; }
+        if (e.kind === 'warn') { sessions.addProgress('warn', e.message); return; }
+        if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text); return; }
+      };
+
+      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined);
+      if (result.code) {
+        const success = await strudel.play(result.code);
+        if (success) {
+          sessions.addAssistantMessage(result.explanation, result.code);
+          sessions.setCurrentCode(result.code);
+        } else {
+          sessions.addAssistantMessage(
+            `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+            result.code
+          );
+        }
+      } else {
+        sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码');
+      }
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : '请求失败';
+      sessions.addAssistantMessage(`出错了: ${errMsg}`);
+      strudel.setError(errMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [strudel, sessions, currentCode]);
+
   const handleNewSession = useCallback(() => {
     strudel.stop();
     sessions.newSession();
   }, [strudel, sessions]);
-
-  const hasUserMessages = messages.some((m) => m.role === 'user');
-  const suggestions = useSuggestions({
-    key: current?.id ?? 'none',
-    currentCode,
-    hasUserMessages,
-  });
 
   return (
     <div className="flex h-screen w-screen bg-bg-primary overflow-hidden">
@@ -134,9 +194,9 @@ export default function App() {
         messages={messages}
         isLoading={isLoading}
         engineReady={strudel.engineReady}
-        suggestions={suggestions}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
+        onMoodGenerate={handleMoodInstruction}
       />
 
       <main className="flex-1 flex flex-col gap-3 p-3 min-w-0">
