@@ -38,8 +38,13 @@ export default function Sidebar({
   return (
     <aside className="w-[320px] lg:w-[28%] lg:min-w-[300px] lg:max-w-[400px] shrink-0 flex flex-col bg-bg-primary">
       {/* Logo */}
-      <div className="px-5 pt-5 pb-2">
-        <h1 className="text-[32px] text-text-primary">
+      <div className="px-5 pt-[5px] pb-2">
+        <h1 className="text-[32px]" style={{
+          background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}>
           <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
         </h1>
       </div>

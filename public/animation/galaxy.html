@@ -20,7 +20,7 @@
 <body>
     <!-- cinematic = orbit path icon, overview = top-down arrow icon -->
     <button id="camBtn" title="切换视角">
-        <svg id="iconCin" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <svg id="iconCin" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- orbit ring -->
             <ellipse cx="8" cy="8" rx="6" ry="3.2" stroke="rgba(255,255,255,0.7)" stroke-width="1.1" stroke-dasharray="2.5 1.8"/>
             <!-- arrowhead on the ring -->
@@ -28,7 +28,7 @@
             <!-- center dot -->
             <circle cx="8" cy="8" r="1.1" fill="rgba(255,255,255,0.7)"/>
         </svg>
-        <svg id="iconOvr" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg id="iconOvr" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
             <!-- outer circle -->
             <circle cx="8" cy="8" r="5.5" stroke="rgba(255,255,255,0.7)" stroke-width="1.1"/>
             <!-- down arrow -->
@@ -60,8 +60,8 @@
         let energyAvg  = 0;
 
         // Camera mode: false = cinematic (animated orbit), true = overview (fixed top-down)
-        let cameraOverview = true;
-        let overviewBlend  = 1; // smooth 0→1 transition between modes
+        let cameraOverview = false;
+        let overviewBlend  = 0; // smooth 0→1 transition between modes
         const OVERVIEW_POS = new THREE.Vector3(0, 16.67, 10.0);
         const _cinPos      = new THREE.Vector3();
 
@@ -348,8 +348,7 @@
             );
 
             // Tangent in elevation direction — keeps up vector stable through the poles
-            const cinUp = new THREE.Vector3(-sinEl * sinAz, cosEl, -sinEl * cosAz);
-            const fixedUp = new THREE.Vector3(0, 0, -1);
+            camera.up.set(-sinEl * sinAz, cosEl, -sinEl * cosAz);
 
             // Smoothly blend toward whichever mode is active
             overviewBlend = THREE.MathUtils.lerp(
@@ -358,7 +357,6 @@
                 0.04
             );
             camera.position.lerpVectors(_cinPos, OVERVIEW_POS, overviewBlend);
-            camera.up.lerpVectors(cinUp, fixedUp, overviewBlend);
             camera.lookAt(0, 0, 0);
         }
 

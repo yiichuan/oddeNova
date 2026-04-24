@@ -127,23 +127,31 @@ export default function CodePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Track .cm-gutters width so the footer divider aligns with the editor's gutter border
+  // Track .cm-gutters width so the footer divider aligns with the editor's gutter border.
+  // Keep MutationObserver alive so reinit (which clears + remounts the editor) is handled.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     let ro: ResizeObserver | null = null;
 
-    const mo = new MutationObserver(() => {
-      const gutters = container.querySelector('.cm-gutters') as HTMLElement | null;
-      if (!gutters) return;
-      mo.disconnect();
+    const attachRo = (gutters: HTMLElement) => {
+      ro?.disconnect();
       setGutterWidth(gutters.offsetWidth);
       ro = new ResizeObserver(() => setGutterWidth(gutters.offsetWidth));
       ro.observe(gutters);
+    };
+
+    const mo = new MutationObserver(() => {
+      const gutters = container.querySelector('.cm-gutters') as HTMLElement | null;
+      if (gutters) attachRo(gutters);
     });
 
     mo.observe(container, { childList: true, subtree: true });
+
+    // Handle the case where gutters already exist on mount
+    const existing = container.querySelector('.cm-gutters') as HTMLElement | null;
+    if (existing) attachRo(existing);
 
     return () => {
       mo.disconnect();
@@ -179,8 +187,8 @@ export default function CodePanel({
     <div className="h-full flex flex-col border border-border overflow-hidden bg-bg-secondary/30">
       <style>{`
         .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; }
-        .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 19px; height: 19px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -9px; }
-        .aj-slider::-moz-range-thumb { width: 19px; height: 19px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; }
+        .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -6px; }
+        .aj-slider::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; }
         .aj-slider::-webkit-slider-runnable-track { height: 1px; }
         .aj-slider::-moz-range-track { height: 1px; }
       `}</style>
@@ -219,7 +227,7 @@ export default function CodePanel({
             }`}
             title={isPlaying ? '停止' : '播放'}
           >
-            {isPlaying ? <StopIcon size={48} /> : <PlayIcon size={48} />}
+            {isPlaying ? <StopIcon size={36} /> : <PlayIcon size={36} />}
           </button>
         </div>
 
