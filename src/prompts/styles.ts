@@ -56,7 +56,7 @@ export const STYLES: StyleProfile[] = [
     hint_for_improvise: {
       drums: 'lazy boom-bap groove, sparse ghost snares, swing feel; typical pattern: "bd ~ bd ~" with bank RolandTR808',
       bass: 'walking bass in minor, sparse, lots of rest; note range c2-g2, pattern like "c2 ~ eb2 ~", use .lpf(400)',
-      pad: 'warm Rhodes-like, slow attack, low gain ~0.35, add .room(2)',
+      pad: 'warm electric-piano feel using `.s("juno")` or synth `.s("sawtooth")`, slow attack, low gain ~0.35, add .room(2)',
       hh: 'soft closed hi-hat, mostly off-beat, euclidean rhythm like hh(5,8), gain ≤0.45',
     },
   },

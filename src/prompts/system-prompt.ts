@@ -11,7 +11,7 @@ const STRUDEL_CHEATSHEET_CONCISE = [
   '- FORBIDDEN in mini-notation: `[_ ...]` (hold at bracket start), `, _ ...` (hold at parallel branch start). These produce parse errors at runtime.',
   '- Core: `note("c3 e3 g3")`, `s("bd sd hh")`, `stack(...)`, `cat(...)`. Tempo is owned by the `setTempo` tool — never write `setcps` in layer code.',
   '- Drums: `bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`. Banks: `.bank("RolandTR808")`.',
-  '- Synths: `.s("sawtooth"|"sine"|"square"|"triangle")`. Melodic samples: `piano arpy bass moog juno sax gtr pluck sitar stab`.',
+  '- Synths: `.s("sawtooth"|"sine"|"square"|"triangle")`. Melodic samples (EXACT names only — NEVER invent names like "superpad", "rhodes", "strings", etc.): `piano arpy bass moog juno sax gtr pluck sitar stab`.',
   '- Effects: `.gain(0..1)`, `.lpf(Hz)`, `.lpq(N)` (lpf resonance 0-50; alias `.resonance(N)`), `.hpf(Hz)`, `.hpq(N)`, `.delay(0..1)`, `.room(N)`, `.pan(0..1)`, `.attack/.decay/.sustain/.release`, `.speed(N)`, `.vowel("a e i o")`. `.lpfq` does NOT exist — use `.lpq`.',
   '- Pattern mods: `.fast(N)`, `.slow(N)`, `.rev()`, `.jux(rev)`, `.ply(N)`, `.struct("x ~ x x")`, `.mask("<0 1 1 0>/16")`, `.every(N, fast(2))`, `.sometimes(fast(2))`, `.rarely(fn)`, `.often(fn)`, `.chunk(N, fast(2))`, `.off(0.125, x => x.add(note("7")))`.',
   '- Signals: `sine`, `cosine`, `saw`, `tri`, `rand`, `perlin` — combine with `.range(a,b).slow(N)` / `.segment(N)`. Example: `.lpf(sine.range(500,1000).slow(8))`, `.gain(perlin.range(.6,.9))`.',
