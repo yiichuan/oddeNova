@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { PlusIcon } from './icons';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
+import { checkAirJellyAvailable } from '../services/airjelly';
 
 interface SidebarProps {
   title: string;
@@ -10,6 +12,7 @@ interface SidebarProps {
   engineReady: boolean;
   onSendText: (text: string) => void;
   onNewSession: () => void;
+  onMoodGenerate: () => void;
 }
 
 export default function Sidebar({
@@ -19,7 +22,14 @@ export default function Sidebar({
   engineReady,
   onSendText,
   onNewSession,
+  onMoodGenerate,
 }: SidebarProps) {
+  const [airjellyAvailable, setAirjellyAvailable] = useState(false);
+
+  useEffect(() => {
+    checkAirJellyAvailable().then(setAirjellyAvailable);
+  }, []);
+
   return (
     <aside className="w-[320px] lg:w-[28%] lg:min-w-[300px] lg:max-w-[400px] shrink-0 flex flex-col bg-bg-primary">
       {/* Logo */}
@@ -65,6 +75,15 @@ export default function Sidebar({
               className="rounded-[8px] bg-[#3a3a3a] px-3 py-1.5 text-[13px] text-[#e0e0e0] transition hover:bg-[#4a4a4a]"
             >
               加一些贝斯？
+            </button>
+            <button
+              type="button"
+              onClick={onMoodGenerate}
+              disabled={!airjellyAvailable || isLoading}
+              title={airjellyAvailable ? '根据你最近的活动感知心情生成音乐' : '需要运行 AirJelly Desktop'}
+              className="rounded-[8px] bg-[#3a3a3a] px-3 py-1.5 text-[13px] text-[#e0e0e0] transition hover:bg-[#4a4a4a] disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              🎭 根据心情生成
             </button>
           </div>
 
