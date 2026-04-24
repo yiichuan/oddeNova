@@ -53,19 +53,24 @@ export async function dispatchToolCall(
   let lastError: string | undefined;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      console.debug(`[executor] → tool "${call.name}" (attempt ${attempt})`, parsedArgs);
       const result = await tool.handler(parsedArgs, ctx);
       if (result.ok) {
+        console.debug(`[executor] ✓ tool "${call.name}"`, result.data);
         return { id: call.id, name: call.name, result };
       }
       lastError = result.error;
       // Non-retryable errors: missing fields / unknown layer / etc. The model
       // benefits more from seeing the error than from us silently retrying.
+      console.warn(`[executor] ✗ tool "${call.name}" ok=false:`, lastError);
       break;
     } catch (e: unknown) {
       if (e instanceof CommitSignal) throw e;
       lastError = e instanceof Error ? e.message : String(e);
+      console.error(`[executor] ✗ tool "${call.name}" threw (attempt ${attempt}):`, lastError);
     }
   }
+  console.error(`[executor] ✗ tool "${call.name}" final failure:`, lastError || 'tool 执行失败');
   return {
     id: call.id,
     name: call.name,

@@ -117,6 +117,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     const resp = await llm.chatWithTools(messages, tools);
 
     if (resp.content && resp.content.trim()) {
+      console.debug(`[loop] iter ${i + 1} assistant_text:`, resp.content.trim());
       onProgress?.({ kind: 'assistant_text', text: resp.content.trim() });
     }
 
@@ -142,6 +143,12 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       break;
     }
 
+    // Per-iteration dedup cache: key = `${name}\0${arguments}`, value = tool result JSON.
+    // Prevents duplicate tool_calls (same name + args) in a single LLM response from
+    // being executed twice — a known LLM parallel tool-call duplication bug.
+    // Uses \0 as separator to avoid any ambiguity with tool names or argument strings.
+    const iterResultCache = new Map<string, string>();
+
     const outcomes: ToolCallOutcome[] = [];
     for (const call of resp.toolCalls) {
       let parsedArgs: Record<string, unknown> = {};
@@ -155,11 +162,36 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       } catch {
         parsedArgs = { _raw: call.arguments };
       }
+      const dedupKey = `${call.name}\0${call.arguments}`;
+      const cachedResult = iterResultCache.get(dedupKey);
+      if (cachedResult !== undefined) {
+        // Intentionally skip onProgress — duplicate calls should be invisible to the UI.
+        console.debug(`[loop] iter ${i + 1} dedup: skipping duplicate tool_call "${call.name}"`);
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          name: call.name,
+          content: cachedResult,
+        });
+        continue;
+      }
+
+      console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
 
       try {
         const outcome = await dispatchToolCall(call, ctx);
         outcomes.push(outcome);
+        if (!outcome.result.ok) {
+          console.error(`[loop] iter ${i + 1} tool "${outcome.name}" 返回失败:`, outcome.result.error);
+        }
+        // Cache the result JSON so duplicate calls in the same iteration can reuse it.
+        const resultJson = JSON.stringify(
+          outcome.result.ok
+            ? { ok: true, ...(outcome.result.data as object || {}) }
+            : { ok: false, error: outcome.result.error }
+        );
+        iterResultCache.set(dedupKey, resultJson);
         onProgress?.({
           kind: 'tool_result',
           name: outcome.name,
@@ -184,11 +216,13 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
               /* ignore */
             }
           }
+          const commitResultJson = JSON.stringify({ ok: true, committed: true });
+          iterResultCache.set(dedupKey, commitResultJson);
           messages.push({
             role: 'tool',
             tool_call_id: call.id,
             name: call.name,
-            content: JSON.stringify({ ok: true, committed: true }),
+            content: commitResultJson,
           });
           onProgress?.({ kind: 'commit', code: e.code });
           break outer;
@@ -199,6 +233,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           name: call.name,
           result: { ok: false, error: msg },
         });
+        const errorResultJson = JSON.stringify({ ok: false, error: msg });
+        iterResultCache.set(dedupKey, errorResultJson);
         onProgress?.({ kind: 'tool_result', name: call.name, ok: false, error: msg });
       }
     }

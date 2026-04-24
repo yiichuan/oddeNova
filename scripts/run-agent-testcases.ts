@@ -279,7 +279,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'improvise', description: '请一个"小专家"模型为指定角色即兴生成一个单层 strudel 表达式。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。',
+    name: 'improvise', description: '起草一个指定角色的单层 strudel 表达式。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。',
     parameters: { type: 'object', properties: { role: { type: 'string', enum: ['drums', 'hh', 'bass', 'pad', 'lead', 'fx'], description: '要生成的乐器角色' }, style: { type: 'string', enum: ['lofi', 'house', 'dnb', 'ambient', 'techno', 'synthwave'], description: '音乐风格（可选），与 AGENT_SYSTEM_PROMPT 中的 6 种内置风格对应' }, complement_task: { type: 'string', description: '该层要填补的音乐空缺（如 "off-beat hi-hat avoiding kick positions"、"warm pad in C minor at 200-2000Hz"）' }, hints: { type: 'string', description: '额外的风格、调性、密度等提示（中英文皆可）' } }, required: ['role'] },
     handler: async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
       const role = String(args.role || '').trim();
