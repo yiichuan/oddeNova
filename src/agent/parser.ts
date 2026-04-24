@@ -24,6 +24,20 @@ export interface ParsedScore {
 
 const LAYER_MARKER_RE = /^\s*\/\*\s*@layer\s+([A-Za-z0-9_]+)\s*\*\//;
 
+/** Remove the common leading whitespace from all lines (dedent), then trim. */
+function dedentSource(text: string): string {
+  const lines = text.split('\n');
+  const nonEmpty = lines.filter((l) => l.trim().length > 0);
+  if (nonEmpty.length === 0) return text.trim();
+  const minIndent = Math.min(
+    ...nonEmpty.map((l) => (l.match(/^(\s*)/)?.[1].length ?? 0))
+  );
+  return lines
+    .map((l) => l.slice(minIndent))
+    .join('\n')
+    .trim();
+}
+
 export function parseScore(code: string): ParsedScore {
   const result: ParsedScore = {
     raw: code,
@@ -75,7 +89,7 @@ export function parseScore(code: string): ParsedScore {
           if (!sourceText.trim()) continue;
           result.layers.push({
             name,
-            source: sourceText.trim(),
+            source: dedentSource(sourceText),
             rawStart: result.stackArgsStart + span.start,
             rawEnd: result.stackArgsStart + span.end,
           });

@@ -1,6 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/#{1,6}\s+/g, '')          // 标题
+    .replace(/\*\*(.+?)\*\*/g, '$1')    // 粗体
+    .replace(/\*(.+?)\*/g, '$1')        // 斜体
+    .replace(/__(.+?)__/g, '$1')        // 粗体（下划线）
+    .replace(/_(.+?)_/g, '$1')          // 斜体（下划线）
+    .replace(/`{1,3}[^`]*`{1,3}/g, (m) => m.replace(/`/g, '').trim()) // 代码
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 链接
+    .replace(/^[-*+]\s+/gm, '')         // 无序列表
+    .replace(/^\d+\.\s+/gm, '')         // 有序列表
+    .replace(/^>\s+/gm, '')             // 引用
+    .replace(/~~(.+?)~~/g, '$1')        // 删除线
+    .trim();
+}
+
 interface ConversationViewProps {
   messages: ChatMessage[];
   isLoading: boolean;
@@ -52,7 +68,7 @@ export default function ConversationView({
               <div key={msg.id} className="flex justify-start animate-fade-in-up">
                 <div className="text-xs text-text-secondary px-1 flex items-start gap-1.5">
                   <span className="opacity-70 mt-0.5">{progressIcon(msg)}</span>
-                  <span>{msg.content}</span>
+                  <span>{stripMarkdown(msg.content)}</span>
                 </div>
               </div>
             );
@@ -116,7 +132,7 @@ export default function ConversationView({
               <div className="text-sm text-text-primary">思考中...</div>
               {lastProgress && (
                 <div className="text-[11px] text-text-muted mt-0.5">
-                  {lastProgress.content}
+                  {stripMarkdown(lastProgress.content)}
                 </div>
               )}
             </div>

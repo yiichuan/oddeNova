@@ -1,4 +1,5 @@
 import type { StrudelMirror as StrudelMirrorType, StrudelReplState } from '@strudel/codemirror';
+import { findUnknownSamples } from '../lib/sample-allowlist';
 
 export type StrudelState = {
   code: string;
@@ -266,11 +267,82 @@ class StrudelService {
 export const strudelService = StrudelService.instance();
 
 
+// --- Code normalization ---
+
+/**
+ * Collapses newlines inside single/double-quoted string literals.
+ * LLM sometimes writes multi-line strings with regular quotes, which causes
+ * "Unterminated string constant" in both our validator and Strudel's evaluator.
+ * Template literals (backticks) are left untouched.
+ */
+export function normalizeCode(code: string): string {
+  let result = '';
+  let i = 0;
+  while (i < code.length) {
+    const ch = code[i];
+    // Line comment — copy until newline, skip string processing
+    if (ch === '/' && code[i + 1] === '/') {
+      const end = code.indexOf('\n', i);
+      if (end === -1) { result += code.slice(i); break; }
+      result += code.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+    // Block comment — copy verbatim
+    if (ch === '/' && code[i + 1] === '*') {
+      const end = code.indexOf('*/', i + 2);
+      if (end === -1) { result += code.slice(i); break; }
+      result += code.slice(i, end + 2);
+      i = end + 2;
+      continue;
+    }
+    // Template literal — copy verbatim (already supports multiline)
+    if (ch === '`') {
+      result += ch;
+      i++;
+      while (i < code.length) {
+        const c = code[i];
+        result += c;
+        i++;
+        if (c === '\\') { result += code[i] ?? ''; i++; continue; }
+        if (c === '`') break;
+      }
+      continue;
+    }
+    // Single or double quoted string — collapse inner newlines
+    if (ch === '"' || ch === "'") {
+      result += ch;
+      i++;
+      while (i < code.length) {
+        const c = code[i];
+        if (c === '\\') {
+          result += c + (code[i + 1] ?? '');
+          i += 2;
+          continue;
+        }
+        if (c === '\r' || c === '\n') {
+          result += ' ';
+          i++;
+          if (c === '\r' && code[i] === '\n') i++;
+          continue;
+        }
+        result += c;
+        i++;
+        if (c === ch) break;
+      }
+      continue;
+    }
+    result += ch;
+    i++;
+  }
+  return result;
+}
+
 // --- Code validation (no audio engine needed) ---
 
 export function validateCode(code: string): { ok: boolean; error?: string } {
   if (!code?.trim()) return { ok: false, error: '代码为空' };
-  const clean = code
+  const clean = normalizeCode(code)
     .replace(/\._scope\(\)/g, '')
     .replace(/\._pianoroll\(\{[^}]*\}\)/g, '')
     .replace(/\._pianoroll\(\)/g, '');
@@ -314,6 +386,15 @@ export function validateCodeRuntime(code: string): { ok: boolean; error?: string
 
   try {
     new Function('__s__', `with (__s__) { ${stripped} }`)(proxy);
+    // Check for hallucinated sample names after syntax/runtime validation passes.
+    const unknownSamples = findUnknownSamples(code);
+    if (unknownSamples.length > 0) {
+      const quoted = unknownSamples.map((s) => `"${s}"`).join(', ');
+      return {
+        ok: false,
+        error: `Unknown sample name(s): ${quoted}. Only use approved sample names (piano, arpy, bass, bd, sd, hh ...). See the quality gate in your system prompt.`,
+      };
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

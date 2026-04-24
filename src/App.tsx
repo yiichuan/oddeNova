@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
+import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
@@ -12,6 +13,7 @@ export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
   const [isLoading, setIsLoading] = useState(false);
+  const [isMoodLoading, setIsMoodLoading] = useState(false);
 
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
@@ -128,7 +130,9 @@ export default function App() {
       return;
     }
 
+    setIsMoodLoading(true);
     const moodContext = await fetchMoodContext();
+    setIsMoodLoading(false);
     const instruction = '根据我的心情生成音乐';
 
     sessions.addUserMessage(instruction);
@@ -201,9 +205,11 @@ export default function App() {
         title={current?.title ?? '新会话'}
         messages={messages}
         isLoading={isLoading}
+        isMoodLoading={isMoodLoading}
         engineReady={strudel.engineReady}
         sessions={sessions.sessions}
         currentId={sessions.currentId}
+        suggestions={suggestions}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
         onMoodGenerate={handleMoodInstruction}
