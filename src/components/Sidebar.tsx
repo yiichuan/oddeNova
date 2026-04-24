@@ -148,7 +148,7 @@ export default function Sidebar({
                 className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ fontFamily: '"GenWanMin TW", serif' }}
               >
-                🪼 根据心情生成
+                <img src="/airjelly-icon.png" alt="AirJelly" className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" /> 根据心情生成
               </button>
             </div>
           )}
