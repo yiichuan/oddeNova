@@ -321,7 +321,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'improvise',
     description:
-      '请一个"小专家"模型为指定角色生成一个互补的单层 strudel 表达式。子模型会读取当前完整代码，识别 BPM/key/已有层，再生成与之互补的片段。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。',
+      '起草一个与当前曲子互补的单层 strudel 表达式。会读取当前完整代码，识别 BPM/key/已有层，生成与之互补的片段。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。',
     parameters: {
       type: 'object',
       properties: {
@@ -355,6 +355,7 @@ export const TOOLS: ToolDef[] = [
         typeof args.complement_task === 'string' ? args.complement_task.trim() : '';
       if (!role) return { ok: false, error: 'role 不能为空' };
       try {
+        console.debug(`[tools] improvise(${role}) 开始，style=${style || '-'}, currentCode length=${ctx.state.code.length}`);
         const snippet = await ctx.improviseLLM({
           role,
           hints,
@@ -362,9 +363,16 @@ export const TOOLS: ToolDef[] = [
           style: style || undefined,
           complementTask: complementTask || undefined,
         });
-        return { ok: true, data: { role, code: snippet.trim() } };
+        const trimmed = snippet.trim();
+        if (!trimmed) {
+          console.warn(`[tools] improvise(${role}) 返回空代码，raw snippet:`, JSON.stringify(snippet));
+        } else {
+          console.debug(`[tools] improvise(${role}) ✓ 返回 ${trimmed.length} 字符`);
+        }
+        return { ok: true, data: { role, code: trimmed } };
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[tools] improvise(${role}) 异常:`, e);
         return { ok: false, error: `improvise 失败: ${msg}` };
       }
     },
