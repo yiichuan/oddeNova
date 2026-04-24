@@ -117,6 +117,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     const resp = await llm.chatWithTools(messages, tools);
 
     if (resp.content && resp.content.trim()) {
+      console.debug(`[loop] iter ${i + 1} assistant_text:`, resp.content.trim());
       onProgress?.({ kind: 'assistant_text', text: resp.content.trim() });
     }
 
@@ -155,11 +156,15 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       } catch {
         parsedArgs = { _raw: call.arguments };
       }
+      console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
 
       try {
         const outcome = await dispatchToolCall(call, ctx);
         outcomes.push(outcome);
+        if (!outcome.result.ok) {
+          console.error(`[loop] iter ${i + 1} tool "${outcome.name}" 返回失败:`, outcome.result.error);
+        }
         onProgress?.({
           kind: 'tool_result',
           name: outcome.name,

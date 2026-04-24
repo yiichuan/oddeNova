@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 
 interface ConversationViewProps {
@@ -11,6 +11,16 @@ export default function ConversationView({
   isLoading,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
+
+  const toggleCode = (id: string) => {
+    setExpandedCode((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -72,11 +82,27 @@ export default function ConversationView({
               }`}
             >
               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-              {msg.code && (
-                <pre className="mt-2 p-2 bg-bg-primary/60 rounded-md text-[11px] text-warning/90 font-mono overflow-x-auto whitespace-pre-wrap border border-warning/10">
-                  {msg.code}
-                </pre>
-              )}
+              {msg.code && (() => {
+                const isExpanded = expandedCode.has(msg.id);
+                const lineCount = msg.code.split('\n').length;
+                return (
+                  <div className="mt-2 rounded-md border border-warning/10 overflow-hidden">
+                    <button
+                      onClick={() => toggleCode(msg.id)}
+                      className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-bg-primary/60 text-[11px] text-warning/70 hover:text-warning/90 hover:bg-bg-primary/80 transition-colors text-left"
+                    >
+                      <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                      <span>Strudel 代码</span>
+                      <span className="text-text-muted/50">· {lineCount} 行</span>
+                    </button>
+                    {isExpanded && (
+                      <pre className="p-2 bg-bg-primary/60 text-[11px] text-warning/90 font-mono overflow-x-auto whitespace-pre-wrap">
+                        {msg.code}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         );

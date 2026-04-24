@@ -41,23 +41,19 @@ export default function App() {
         const onProgress = (e: ProgressEvent) => {
           if (e.kind === 'iteration') return;
           if (e.kind === 'tool_call') {
-            sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
-              toolName: e.name,
-            });
+            if (e.name !== 'validate' && e.name !== 'commit') {
+              sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
+                toolName: e.name,
+              });
+            }
             return;
           }
           if (e.kind === 'tool_result') {
             if (e.ok) {
-              if (e.name === 'validate') {
-                sessions.addProgress('tool_result', '语法校验通过', {
-                  toolName: e.name,
-                  ok: true,
-                });
-              }
               return;
             }
-            console.warn(
-              `[agent] tool ${e.name} failed: ${e.error || 'unknown error'}`
+            console.error(
+              `[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error'
             );
             return;
           }
