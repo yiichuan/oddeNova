@@ -7,6 +7,7 @@ export function isDemoMode(): boolean {
 export interface DemoStep {
   name: string;
   code: string;
+  thinking?: string;
 }
 
 // 场景1：3个递进提示词，steps 为中间 addLayer 动画，code 为该轮结束时的完整 Strudel 代码
@@ -14,8 +15,8 @@ export const DEMO_SCENARIO_1 = [
   {
     prompt: '来一段 lo-fi 鼓点',
     steps: [
-      { name: 'drums', code: 's("bd ~ sd ~").bank("RolandTR808").gain(0.8)' },
-      { name: 'hh',    code: 's("hh*8").gain(0.4)' },
+      { name: 'drums', code: 's("bd ~ sd ~").bank("RolandTR808").gain(0.8)', thinking: '好的，先铺一个 lo-fi 鼓点底层，用 TR-808 采样做出颗粒感。' },
+      { name: 'hh',    code: 's("hh*8").gain(0.4)', thinking: '加入踩镲，用 8 拍密度让节奏稳起来。' },
     ] as DemoStep[],
     code: `stack(
   s("bd ~ sd ~").bank("RolandTR808").gain(0.8),
@@ -25,7 +26,7 @@ export const DEMO_SCENARIO_1 = [
   {
     prompt: '再加入一条 bass 线',
     steps: [
-      { name: 'bass', code: 'note("c2 c2 eb2 f2").s("sawtooth").lpf(500).gain(0.7)' },
+      { name: 'bass', code: 'note("c2 c2 eb2 f2").s("sawtooth").lpf(500).gain(0.7)', thinking: '用锯齿波做 bass 线，加低通滤波让低频圆润一点。' },
     ] as DemoStep[],
     code: `stack(
   s("bd ~ sd ~").bank("RolandTR808").gain(0.8),
@@ -36,7 +37,7 @@ export const DEMO_SCENARIO_1 = [
   {
     prompt: '加一层空灵的 pad',
     steps: [
-      { name: 'pad', code: 'n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).room(0.6).gain(0.35)' },
+      { name: 'pad', code: 'n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).room(0.6).gain(0.35)', thinking: '正弦波做 pad，拉长 attack 和 release，加混响，飘渺的氛围感就出来了。' },
     ] as DemoStep[],
     code: `stack(
   s("bd ~ sd ~").bank("RolandTR808").gain(0.8),
@@ -52,11 +53,11 @@ export const DEMO_SCENARIO_2 = {
   prefill:
     '我想要一首充满未来感的电子曲，节奏感强，有层次丰富的合成器 pad，低沉的 bass 线配合踩镲，整体带点 sci-fi 冷峻的氛围',
   steps: [
-    { name: 'drums', code: 's("bd ~ ~ bd sd ~ bd ~").bank("RolandTR808").gain(0.85)' },
-    { name: 'hh',    code: 's("hh*16").gain(0.3).pan(sine.range(0.3, 0.7))' },
-    { name: 'bass',  code: 'note("<c1 c1 eb1 f1>*2").s("sawtooth").lpf(300).gain(0.8)' },
-    { name: 'pad',   code: 'n("<0 3 5 7 10>").scale("C3:minor").s("square").lpf(800).attack(0.2).release(1.5).room(0.4).gain(0.4)' },
-    { name: 'lead',  code: 'n("0 ~ 7 ~ 5 ~ 3 ~").scale("C5:minor").s("triangle").delay(0.3).gain(0.3)' },
+    { name: 'drums', code: 's("bd ~ ~ bd sd ~ bd ~").bank("RolandTR808").gain(0.85)', thinking: '好的，节奏感要强，先搭一个偏切分的鼓组底层。' },
+    { name: 'hh',    code: 's("hh*16").gain(0.3).pan(sine.range(0.3, 0.7))', thinking: '高速踩镲配上 pan 自动移动，空间感出来了。' },
+    { name: 'bass',  code: 'note("<c1 c1 eb1 f1>*2").s("sawtooth").lpf(300).gain(0.8)', thinking: '锯齿波 bass 加低通，低沉而有穿透力。' },
+    { name: 'pad',   code: 'n("<0 3 5 7 10>").scale("C3:minor").s("square").lpf(800).attack(0.2).release(1.5).room(0.4).gain(0.4)', thinking: '合成器 pad 用方波，加 lpf 和长混响，冷峻的 sci-fi 质感就有了...' },
+    { name: 'lead',  code: 'n("0 ~ 7 ~ 5 ~ 3 ~").scale("C5:minor").s("triangle").delay(0.3).gain(0.3)', thinking: '最后加一条主旋律线，用 delay 打出空间感，整体就完整了。' },
   ] as DemoStep[],
   code: `stack(
   s("bd ~ ~ bd sd ~ bd ~").bank("RolandTR808").gain(0.85),
