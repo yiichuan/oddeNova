@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ChatMessage } from './useChat';
 import { buildSuggestions, STATIC_SUGGESTIONS } from '../services/suggestions';
 
 /**
@@ -7,7 +8,7 @@ import { buildSuggestions, STATIC_SUGGESTIONS } from '../services/suggestions';
  * Strategy (mixed):
  *   - When the conversation has no user messages yet → static defaults.
  *   - After each commit (i.e. currentCode changed and is non-empty) →
- *     fetch 2 fresh suggestions from the LLM.
+ *     fetch 2 fresh suggestions from the LLM with music state + style intent context.
  *
  * `key` is used to bust the cache when switching sessions, so we don't
  * carry the previous session's chips into the new one.
@@ -16,16 +17,15 @@ export function useSuggestions(opts: {
   key: string;
   currentCode: string;
   hasUserMessages: boolean;
+  messages: ChatMessage[];
 }) {
-  const { key, currentCode, hasUserMessages } = opts;
+  const { key, currentCode, hasUserMessages, messages } = opts;
   const [suggestions, setSuggestions] = useState<string[]>(() => STATIC_SUGGESTIONS.slice(0, 2));
   const [prevKey, setPrevKey] = useState(key);
   const reqIdRef = useRef(0);
   const lastCodeRef = useRef<string>('');
 
   // Reset when switching sessions.
-  // Calling setState synchronously during render is the React-recommended pattern
-  // for "storing information from previous renders" (https://react.dev/reference/react/useState#storing-information-from-previous-renders).
   if (prevKey !== key) {
     setPrevKey(key);
     setSuggestions(STATIC_SUGGESTIONS.slice(0, 2));
@@ -46,12 +46,12 @@ export function useSuggestions(opts: {
     lastCodeRef.current = currentCode;
 
     const my = ++reqIdRef.current;
-    buildSuggestions(currentCode).then((chips) => {
+    buildSuggestions(currentCode, messages).then((chips) => {
       // Drop stale responses if the user moved on already.
       if (my !== reqIdRef.current) return;
       if (chips.length > 0) setSuggestions(chips);
     });
-  }, [currentCode, hasUserMessages]);
+  }, [currentCode, hasUserMessages, messages]);
 
   return suggestions;
 }
