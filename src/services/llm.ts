@@ -16,7 +16,7 @@ import {
 } from '../agent/tools';
 import { getRoleHint } from '../prompts/styles';
 import { getActiveModelConfig } from './llm-config';
-import { isDemoMode, resolveDemoCode } from '../demo/demo-config';
+import { isDemoMode, resolveDemoCode, resolveDemoSteps } from '../demo/demo-config';
 import { createDemoLLMCaller } from '../demo/demo-llm';
 
 // ===========================================================================
@@ -337,7 +337,7 @@ export async function runAgent(
     : AGENT_SYSTEM_PROMPT;
 
   const llm = isDemoMode()
-    ? createDemoLLMCaller(resolveDemoCode(instruction))
+    ? createDemoLLMCaller(resolveDemoCode(instruction), resolveDemoSteps(instruction))
     : llmCaller;
 
   return runAgentLoop({
