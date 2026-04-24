@@ -16,8 +16,8 @@ import {
 } from '../agent/tools';
 import { getRoleHint } from '../prompts/styles';
 import { getActiveModelConfig } from './llm-config';
-import { isDemoMode, resolveDemoCode, resolveDemoSteps } from '../demo/demo-config';
-import { createDemoLLMCaller } from '../demo/demo-llm';
+import { isDemoMode, resolveDemoCode, resolveDemoSteps, DEMO_MOOD_SCENARIO } from '../demo/demo-config';
+import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 
 // ===========================================================================
 // Anthropic client — the upstream proxy at timesniper.club speaks BOTH the
@@ -336,16 +336,28 @@ export async function runAgent(
     ? `${AGENT_SYSTEM_PROMPT}\n\n${moodContext}`
     : AGENT_SYSTEM_PROMPT;
 
+  const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
+
   const llm = isDemoMode()
-    ? createDemoLLMCaller(resolveDemoCode(instruction), resolveDemoSteps(instruction))
+    ? isMoodDemo
+      ? createDemoMoodLLMCaller(DEMO_MOOD_SCENARIO)
+      : createDemoLLMCaller(resolveDemoCode(instruction), resolveDemoSteps(instruction))
     : llmCaller;
+
+  // 心情 demo 使用预写片段，跳过真实 LLM improvise 调用
+  const effectiveImproviseLLM = isMoodDemo
+    ? async (req: ImproviseRequest) => {
+        await new Promise<void>((r) => setTimeout(r, 1400));
+        return DEMO_MOOD_SCENARIO.roleSnippets[req.role] ?? IMPROVISE_FALLBACKS[req.role] ?? '';
+      }
+    : improviseLLM;
 
   return runAgentLoop({
     instruction,
     initialCode: currentCode,
     systemPrompt,
     llm,
-    improviseLLM,
+    improviseLLM: effectiveImproviseLLM,
     onProgress,
   });
 }

@@ -204,3 +204,124 @@ export function resolveDemoSteps(instruction: string): DemoStep[] {
   const match = getActiveDemoSet().find((s) => s.prompt === instruction);
   return match ? [...match.steps] : [...DEMO_SCENARIO_2.steps];
 }
+
+// ── Demo 心情模式场景 ───────────────────────────────────────────────────────
+
+export interface DemoMoodRound {
+  thinking?: string;
+  toolCalls: Array<{ name: string; args: Record<string, unknown> }>;
+}
+
+export interface DemoMoodScenario {
+  rounds: DemoMoodRound[];
+  /** 每个 improvise role 对应的预写片段，供自定义 improviseLLM 快速返回 */
+  roleSnippets: Record<string, string>;
+}
+
+const _DRUMS = `s("bd ~ bd ~")
+  .bank("RolandTR808")
+  .swing(0.08)
+  .gain(0.82)
+  .room(0.15)
+  .shape(0.18)`;
+
+const _BASS = `note("c2 ~ eb2 ~ g2 ~ f2 ~")
+  .s("sawtooth")
+  .lpf(300)
+  .lpq(2)
+  .attack(0.08)
+  .release(0.7)
+  .gain(0.65)`;
+
+const _PAD = `n("<0 5 3 7> <2 0 5 3> <4 2 0 5> <3 4 2 0>")
+  .scale("C4:minor")
+  .s("juno")
+  .attack(1.8)
+  .decay(0.4)
+  .sustain(0.7)
+  .release(2.4)
+  .lpf("<900 750 820 680>")
+  .lpq(1.2)
+  .room(2)
+  .delay(0.35)
+  .delaytime(0.62)
+  .delayfeedback(0.38)
+  .gain(0.35)
+  .pan("<0.45 0.55 0.48 0.52>")`;
+
+const _HH = `s("hh")
+  .euclid(5,16)
+  .swing(0.58)
+  .gain("0.35 0.28 0.42 0.31 0.38")
+  .speed("1 1.05 0.97 1.02 0.98")
+  .lpf(6000)
+  .room(0.25)
+  .pan("0.45 0.55 0.48 0.52 0.5")`;
+
+const _SNARE = `s("~ sd ~ sd")
+  .bank("RolandTR808")
+  .swing(0.08)
+  .gain(0.75)
+  .room(0.2)`;
+
+export const DEMO_MOOD_SCENARIO: DemoMoodScenario = {
+  roleSnippets: {
+    drums: _DRUMS,
+    bass: _BASS,
+    pad: _PAD,
+    hh: _HH,
+    snare: _SNARE,
+  },
+  rounds: [
+    {
+      thinking: '我来看看当前的状态，同时根据你的使用情况来感受一下心情氛围。',
+      toolCalls: [{ name: 'getScore', args: {} }],
+    },
+    {
+      thinking:
+        '从你最近的使用来看——微信聊了一会儿、写了点代码、偶尔刷刷浏览器——感觉是那种专注工作后微微放松的状态，思绪还在转但身体已经想歇一歇了。很适合来一段 lo-fi：不快不慢，有点颗粒感，温暖又不打扰思考。 先把节奏骨架和贝斯基础打好，同步草拟。',
+      toolCalls: [
+        { name: 'setTempo', args: { bpm: 82 } },
+        { name: 'improvise', args: { role: 'drums', style: 'lofi', hints: '慵懒、有颗粒感、boom-bap 风格' } },
+        { name: 'improvise', args: { role: 'bass', hints: 'C minor，音符不要太密，温暖低沉' } },
+      ],
+    },
+    {
+      thinking: '节奏和低音底色有了，现在来铺一层温暖的 pad，再加一丝高帽点缀呼吸感。',
+      toolCalls: [
+        { name: 'improvise', args: { role: 'pad', hints: 'C minor，温暖朦胧，慢速和弦，像午夜窗边' } },
+        { name: 'improvise', args: { role: 'hh', hints: '不规则、有点懒散的感觉，不要太满' } },
+      ],
+    },
+    {
+      thinking: '四层都准备好了，现在一起装配进去。',
+      toolCalls: [
+        { name: 'addLayer', args: { name: 'drums', code: _DRUMS } },
+        { name: 'addLayer', args: { name: 'bass', code: _BASS } },
+        { name: 'addLayer', args: { name: 'pad', code: _PAD } },
+        { name: 'addLayer', args: { name: 'hh', code: _HH } },
+      ],
+    },
+    {
+      thinking:
+        '四层全部装配完毕，验证一下确保没有问题。drums 层里 gain 的字符串里有逗号分隔导致解析混淆，我来修正一下。',
+      toolCalls: [{ name: 'replaceLayer', args: { name: 'drums', code: _DRUMS } }],
+    },
+    {
+      thinking: '鼓层里逗号并行写法里 ~ 被误解析，改为 stack 分开两个鼓层，彻底规避这个问题。加一个 snare 层，把鼓补完整。',
+      toolCalls: [{ name: 'addLayer', args: { name: 'snare', code: _SNARE } }],
+    },
+    {
+      thinking: '验证通过，可以提交了🎵',
+      toolCalls: [
+        {
+          name: 'commit',
+          args: {
+            explanation:
+              '根据你专注工作后微微放松的心情，生成了一段 82 BPM 的 Lo-fi 音乐：慵懒 boom-bap 鼓点 + C 小调温暖贝斯 + 朦胧 juno pad + 稀疏摇摆高帽，适合放空或继续思考时听。',
+          },
+        },
+      ],
+    },
+  ],
+};

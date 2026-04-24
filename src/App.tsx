@@ -27,7 +27,8 @@ export default function App() {
   const suggestions = useSuggestions({
     key: current?.id ?? '',
     currentCode,
-    hasUserMessages,
+    // demo 模式下不需要真实 LLM suggestions，跳过 buildSuggestions 调用
+    hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
   });
   const activeSet = getActiveDemoSet();
@@ -142,9 +143,12 @@ export default function App() {
       return;
     }
 
-    setIsMoodLoading(true);
-    const moodContext = await fetchMoodContext();
-    setIsMoodLoading(false);
+    let moodContext: string | null = null;
+    if (!isDemoMode()) {
+      setIsMoodLoading(true);
+      moodContext = await fetchMoodContext();
+      setIsMoodLoading(false);
+    }
     const instruction = '根据我的心情生成音乐';
 
     sessions.addUserMessage(instruction);

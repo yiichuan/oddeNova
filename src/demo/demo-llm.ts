@@ -8,7 +8,7 @@
 
 import type { LLMCaller } from '../agent/loop';
 import type { ToolCallRequest } from '../agent/executor';
-import type { DemoStep } from './demo-config';
+import type { DemoStep, DemoMoodScenario } from './demo-config';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,6 +42,35 @@ export function createDemoLLMCaller(targetCode: string, steps: DemoStep[]): LLMC
         arguments: JSON.stringify({ code: targetCode }),
       };
       return { content: '所有层都搭好了，准备播放。', toolCalls: [call] };
+    },
+  };
+}
+
+/**
+ * 心情模式专用剧本 LLM。
+ * 按 scenario.rounds 依次推进，每轮返回 thinking + 多个工具调用，
+ * 完整还原「感知心情 → 即兴生成 → 装配 → 修正 → 提交」的思考过程。
+ */
+export function createDemoMoodLLMCaller(scenario: DemoMoodScenario): LLMCaller {
+  let round = 0;
+
+  return {
+    async chatWithTools(_messages, _tools) {
+      if (round < scenario.rounds.length) {
+        const { thinking, toolCalls } = scenario.rounds[round];
+        // 首轮稍长，后续轮次稍短，模拟真实 LLM 思考节奏
+        await sleep(round === 0 ? 3000 : 2200);
+        const calls: ToolCallRequest[] = toolCalls.map((tc, i) => ({
+          id: `demo-mood-${round}-${i}`,
+          name: tc.name,
+          arguments: JSON.stringify(tc.args),
+        }));
+        round++;
+        return { content: thinking ?? null, toolCalls: calls };
+      }
+
+      // 安全兜底：正常情况下 commit 在最后一轮已经触发 CommitSignal
+      return { content: null, toolCalls: [] };
     },
   };
 }
