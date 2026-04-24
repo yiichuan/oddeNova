@@ -5,11 +5,11 @@ import { getActiveModelConfig } from './llm-config';
 
 export const STATIC_SUGGESTIONS = [
   '来一段 lo-fi 鼓点',
-  '加一个 808 贝斯',
   '来点空灵的 pad',
-  '节奏加快一点',
-  '加些混响效果',
-  '换成 house 风格',
+  '给我来首 ambient 曲',
+  '来段放松的电子乐',
+  '来一首 house 节奏',
+  '来段爵士风格的曲子',
 ];
 
 let client: Anthropic | null = null;
@@ -27,6 +27,56 @@ function getClient(): Anthropic {
     });
   }
   return client;
+}
+
+export type MusicStage = 'early' | 'developing' | 'full';
+
+export interface MusicState {
+  layers: string[];
+  missing: string[];
+  stage: MusicStage;
+}
+
+const ALL_LAYERS = ['drum', 'bass', 'melody', 'fx'] as const;
+
+/**
+ * Lightweight heuristic analysis of a Strudel code snippet.
+ * Returns which layers are present, which are missing, and the overall stage.
+ * Does NOT call LLM — pure string analysis.
+ */
+export function analyzeMusicState(code: string): MusicState {
+  try {
+    const c = code.toLowerCase();
+    const layers: string[] = [];
+
+    // Drum detection: common Strudel drum sample names
+    if (/\b(bd|sd|hh|oh|cp|mt|lt|ht|rim|kick|snare|hat|clap)\b/.test(c)) {
+      layers.push('drum');
+    }
+    // Bass detection
+    if (/\b(bass|sub|sawtooth|saw|square)\b/.test(c)) {
+      layers.push('bass');
+    }
+    // Melody detection: pitched synths
+    if (/\b(note|sine|piano|pluck|chord|melody|lead|pad|string)\b/.test(c)) {
+      layers.push('melody');
+    }
+    // FX detection
+    if (/\b(room|reverb|delay|echo|crush|distort|filter|lpf|hpf|pan)\b/.test(c)) {
+      layers.push('fx');
+    }
+
+    const missing = ALL_LAYERS.filter((l) => !layers.includes(l));
+    let stage: MusicStage;
+    if (layers.length <= 1) stage = 'early';
+    else if (layers.length <= 3) stage = 'developing';
+    else stage = 'full';
+
+    return { layers, missing, stage };
+  } catch {
+    // Fallback: treat as empty slate
+    return { layers: [], missing: [...ALL_LAYERS], stage: 'early' };
+  }
 }
 
 const SUGGEST_SYSTEM = `你是 Strudel 实时电子乐协作伙伴。基于当前曲谱，建议 2 个用户可以发出的"下一步"中文短指令。
