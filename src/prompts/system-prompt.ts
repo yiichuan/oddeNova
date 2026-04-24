@@ -6,7 +6,7 @@
 
 const STRUDEL_CHEATSHEET_CONCISE = [
   '## Strudel cheatsheet (concise)',
-  '- Mini notation: `*N` repeat, `/N` slow, `[]` group, `<>` alternate cycles, `,` parallel, `~` rest, `(k,n)` euclidean, `!N` replicate, `@N` elongate. NEVER use `_` (hold step) — it causes parse errors when at the start of a `,`-branch or inside `[]`; use explicit values or `@N` instead.',
+  '- Mini notation: `*N` repeat, `/N` slow, `[]` group, `<>` alternate cycles, `,` parallel, `~` rest, `(k,n)` euclidean, `!N` replicate, `@N` elongate. NEVER use `_` (hold step) — it causes parse errors when at the start of a `,`-branch or inside `[]`; use explicit values or `@N` instead. NEVER use `|` inside `<>` — `|` is the random-choice operator and is NOT valid inside angle-bracket alternation; to alternate multi-step groups use `<[...] [...] [...]>` instead.',
   '- Value patterns (`.gain("...")`, `.lpf("...")`, `.speed("...")`, etc.): NEVER use `_` in these — always write out explicit numbers. Use `~` only for structural patterns, not numeric value strings.',
   '- FORBIDDEN in mini-notation: `[_ ...]` (hold at bracket start), `, _ ...` (hold at parallel branch start). These produce parse errors at runtime.',
   '- Core: `note("c3 e3 g3")`, `s("bd sd hh")`, `stack(...)`, `cat(...)`. Tempo is owned by the `setTempo` tool — never write `setcps` in layer code.',
@@ -109,8 +109,7 @@ export const IMPROVISE_SYSTEM_PROMPT = [
   'Rules:',
   '- code must be ONE chained expression, no var declarations, no $: prefix, no setcps, no stack wrapping, no semicolons. Format method chains across multiple lines: base expression first, then each `.method(...)` on its own line indented by 2 spaces. Example:\n  s("bd ~ sd ~")\n    .bank("RolandTR808")\n    .gain(0.8)',
   '- Use `.lpq(N)` for lpf resonance (NOT `.lpfq` — that method does not exist in Strudel).',
-  '- NEVER use `_` (hold step) anywhere in mini-notation strings — it causes parse errors when at the start of a `,`-branch or `[]` group (e.g. `"0.8 _, _ 0.6"` is INVALID). Always write explicit values instead (e.g. `"0.8 0.8 0.6 0.6"`).',
-  '- In value patterns (`.gain("...")`, `.lpf("...")`, `.speed("...")` etc.), only use explicit numbers and `~` — never `_`.',
+  '- NEVER use `_` (hold step) anywhere in mini-notation strings — it causes parse errors when at the start of a `,`-branch or `[]` group (e.g. `"0.8 _, _ 0.6"` is INVALID). Always write explicit values instead (e.g. `"0.8 0.8 0.6 0.6"`).',  '- NEVER use `|` inside `<>` — e.g. `\"<a | b>\"` is a PARSE ERROR. `|` (random choice) cannot appear inside angle-bracket alternation. To alternate multi-step groups write `\"<[a ...] [b ...]>\"` instead.',  '- In value patterns (`.gain("...")`, `.lpf("...")`, `.speed("...")` etc.), only use explicit numbers and `~` — never `_`.',
   '- Pick a `.gain(...)` consistent with the role: drums 0.7-0.9, bass 0.6-0.8, pad 0.3-0.5, lead 0.4-0.6, fx 0.3-0.5.',
   '- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference: `fast(N)`, `slow(N)`, `rev`, `ply(N)`, or an inline arrow `x => x.add(note("12"))`. TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT in Strudel and will crash at play time.',
   '- ONLY use approved sample names in `s("...")`. Approved melodic: `piano arpy bass moog juno sax gtr pluck sitar stab`. Approved synths: `sawtooth sine square triangle`. Common drums: `bd sd hh oh cp cr cb rm rs`. NEVER invent names like "superpad", "rhodes", "strings", "violin".',

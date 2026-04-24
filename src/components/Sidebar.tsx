@@ -5,6 +5,7 @@ import { PlusIcon, HistoryIcon } from './icons';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
 import { checkAirJellyAvailable } from '../services/airjelly';
+import { isDemoMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 
 interface SidebarProps {
@@ -16,6 +17,9 @@ interface SidebarProps {
   sessions: Session[];
   currentId: string | null;
   suggestions: string[];
+  prefill?: string;
+  fillSuggestion?: string;
+  onFill?: (text: string) => void;
   onSendText: (text: string) => void;
   onNewSession: () => void;
   onMoodGenerate: () => void;
@@ -33,6 +37,9 @@ export default function Sidebar({
   sessions,
   currentId,
   suggestions,
+  prefill,
+  fillSuggestion,
+  onFill,
   onSendText,
   onNewSession,
   onMoodGenerate,
@@ -122,20 +129,31 @@ export default function Sidebar({
                   {s}
                 </button>
               ))}
+              {fillSuggestion && onFill && (
+                <button
+                  key="fill-suggestion"
+                  type="button"
+                  onClick={() => onFill(fillSuggestion)}
+                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
+                  style={{ fontFamily: '"GenWanMin TW", serif' }}
+                >
+                  灵感一下…
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onMoodGenerate}
-                disabled={!airjellyAvailable || isMoodLoading}
-                title={airjellyAvailable ? '根据你最近的活动感知心情生成音乐' : '需要运行 AirJelly Desktop'}
+                disabled={(!airjellyAvailable && !isDemoMode()) || isMoodLoading}
+                title={airjellyAvailable || isDemoMode() ? '根据你最近的活动感知心情生成音乐' : '需要运行 AirJelly Desktop'}
                 className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ fontFamily: '"GenWanMin TW", serif' }}
               >
-                🎭 根据心情生成
+                🪼 根据心情生成
               </button>
             </div>
           )}
 
-          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} />
+          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} prefill={prefill} />
         </div>
       </div>
     </aside>

@@ -8,12 +8,15 @@ import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
+import { isDemoMode, getActiveDemoSet, DEMO_SCENARIO_2 } from './demo/demo-config';
 
 export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
   const [isLoading, setIsLoading] = useState(false);
   const [isMoodLoading, setIsMoodLoading] = useState(false);
+  const [demoPrefill, setDemoPrefill] = useState('');
+  const [demoStep, setDemoStep] = useState(0);
 
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
@@ -24,9 +27,14 @@ export default function App() {
   const suggestions = useSuggestions({
     key: current?.id ?? '',
     currentCode,
-    hasUserMessages,
+    // demo 模式下不需要真实 LLM suggestions，跳过 buildSuggestions 调用
+    hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
   });
+  const activeSet = getActiveDemoSet();
+  const demoSuggestions = isDemoMode()
+    ? (demoStep < activeSet.length ? [activeSet[demoStep].prompt] : [])
+    : suggestions;
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -45,6 +53,11 @@ export default function App() {
 
       sessions.addUserMessage(text);
       setIsLoading(true);
+
+      // 在 demo 模式下，若发送的是当前步骤的提示词，则推进到下一步
+      if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
+        setDemoStep((s) => s + 1);
+      }
 
       try {
         // Track layer names already shown in this agent run to prevent
@@ -121,7 +134,7 @@ export default function App() {
         setIsLoading(false);
       }
     },
-    [strudel, sessions, currentCode]
+    [strudel, sessions, currentCode, demoStep, activeSet]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -130,9 +143,12 @@ export default function App() {
       return;
     }
 
-    setIsMoodLoading(true);
-    const moodContext = await fetchMoodContext();
-    setIsMoodLoading(false);
+    let moodContext: string | null = null;
+    if (!isDemoMode()) {
+      setIsMoodLoading(true);
+      moodContext = await fetchMoodContext();
+      setIsMoodLoading(false);
+    }
     const instruction = '根据我的心情生成音乐';
 
     sessions.addUserMessage(instruction);
@@ -196,6 +212,7 @@ export default function App() {
   const handleNewSession = useCallback(() => {
     strudel.stop();
     sessions.newSession();
+    if (isDemoMode()) setDemoStep(0);
   }, [strudel, sessions]);
 
 
@@ -209,7 +226,10 @@ export default function App() {
         engineReady={strudel.engineReady}
         sessions={sessions.sessions}
         currentId={sessions.currentId}
-        suggestions={suggestions}
+        suggestions={demoSuggestions}
+        prefill={isDemoMode() ? demoPrefill : undefined}
+        fillSuggestion={isDemoMode() ? DEMO_SCENARIO_2.prefill : undefined}
+        onFill={isDemoMode() ? (text) => setDemoPrefill(text) : undefined}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
         onMoodGenerate={handleMoodInstruction}

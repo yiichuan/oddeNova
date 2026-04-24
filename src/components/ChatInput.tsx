@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowUpIcon } from './icons';
 
 interface ChatInputProps {
@@ -6,11 +6,16 @@ interface ChatInputProps {
   engineReady: boolean;
   onSendText: (text: string) => void;
   onReinitEngine: () => void;
+  prefill?: string;
 }
 
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine }: ChatInputProps) {
+export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, prefill }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (prefill) setText(prefill);
+  }, [prefill]);
 
   const doSubmit = () => {
     const value = text.trim();
