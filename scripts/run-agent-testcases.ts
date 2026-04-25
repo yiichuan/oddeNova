@@ -16,9 +16,9 @@ const ROOT = path.resolve(__dirname, '..');
 // 直接内联使用与 src/services/llm.ts 相同的 API 配置
 // ============================================================================
 
-const ANTHROPIC_API_KEY = 'sk-bQJ3QzB4h6b3u5aRGuvd8XTXG0jD1KDsWMtJgtLGcQjGArvR';
-const ANTHROPIC_BASE_URL = 'https://timesniper.club';
-const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+const ANTHROPIC_API_KEY = process.env['VITE_API_KEY'] || process.env['ANTHROPIC_API_KEY'] || '';
+const ANTHROPIC_BASE_URL = process.env['VITE_BASE_URL'] || 'https://timesniper.club';
+const ANTHROPIC_MODEL = process.env['VITE_LLM_MODEL'] || 'claude-sonnet-4-6';
 
 const client = new Anthropic({
   apiKey: ANTHROPIC_API_KEY,
