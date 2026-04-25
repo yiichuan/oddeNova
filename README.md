@@ -2,6 +2,8 @@
 
 **用自然语言创作与实时编辑电子乐。**
 
+> 本项目为参加 [Attrax Shenzhen](https://attrax.com) 黑客松的参赛作品。
+
 oddeNova 是一个基于浏览器的 AI 音乐创作工具。你只需用文字描述想要的音乐，AI Agent 会自动将其分解为多个音轨层（layer），生成 [Strudel](https://strudel.cc/) live coding 代码并即时播放。你可以持续对话来迭代修改，AI 会精准修改你指定的层，而不影响其他部分。
 
 ## ✨ 功能特色
