@@ -109,6 +109,10 @@ export default function App() {
             sessions.appendToLastThinking(e.delta);
             return;
           }
+          if (e.kind === 'assistant_text') {
+            sessions.addProgress('thinking', e.text);
+            return;
+          }
         };
 
         const result = await runAgent(text, currentCode, onProgress);
@@ -183,6 +187,7 @@ export default function App() {
         if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…'); return; }
         if (e.kind === 'warn') { sessions.addProgress('warn', e.message); return; }
         if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta); return; }
+        if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text); return; }
       };
 
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined);

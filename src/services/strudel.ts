@@ -1,5 +1,6 @@
 import type { StrudelMirror as StrudelMirrorType, StrudelReplState } from '@strudel/codemirror';
 import { findUnknownSamples } from '../lib/sample-allowlist';
+import { registerSoundfonts } from '../lib/soundfont-loader';
 
 export type StrudelState = {
   code: string;
@@ -83,6 +84,8 @@ class StrudelService {
       samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
       samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
     ]);
+
+    registerSoundfonts();
 
     this.isAudioInitialized = true;
     // Expose audio hooks on window so the galaxy iframe can tap the analyser
