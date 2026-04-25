@@ -53,10 +53,10 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         className="w-full min-h-[108px] resize-none rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#ff4500]/15 disabled:cursor-not-allowed disabled:opacity-50"
       />
 
-      <div className="absolute left-4 bottom-3 flex items-center gap-2 text-[12px] text-[#888888]" style={{ pointerEvents: engineReady ? 'none' : 'auto' }}>
-        <span className="inline-flex h-2 w-2 rounded-full bg-[#B2370C]" />
-        {!engineReady && <span>未初始化</span>}
-        {!engineReady && (
+      {!engineReady && (
+        <div className="absolute left-4 bottom-3 flex items-center gap-2 text-[12px] text-[#888888]">
+          <span className="inline-flex h-2 w-2 rounded-full bg-[#B2370C]" />
+          <span>未初始化</span>
           <button
             type="button"
             onClick={onReinitEngine}
@@ -65,8 +65,8 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
           >
             ↺
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <button
         type="submit"
