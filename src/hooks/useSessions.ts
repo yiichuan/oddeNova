@@ -54,22 +54,23 @@ function persistSessions(sessions: Session[], currentId: string | null) {
   }
 }
 
+let _initialState: { sessions: Session[]; currentId: string | null } | null = null;
+
 function getInitialSessionState(): { sessions: Session[]; currentId: string | null } {
-  const { sessions: loaded, currentId: loadedId } = loadSessions();
-  if (loaded.length === 0) {
-    const fresh: Session = {
-      id: newSessionId(),
-      title: '新会话',
-      messages: [],
-      code: '',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    persistSessions([fresh], fresh.id);
-    return { sessions: [fresh], currentId: fresh.id };
-  }
-  const currentId = loadedId && loaded.some((s) => s.id === loadedId) ? loadedId : loaded[0].id;
-  return { sessions: loaded, currentId };
+  if (_initialState) return _initialState;
+  const { sessions: loaded } = loadSessions();
+  const fresh: Session = {
+    id: newSessionId(),
+    title: '新会话',
+    messages: [],
+    code: '',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  const sessions = [fresh, ...loaded].slice(0, MAX_SESSIONS);
+  persistSessions(sessions, fresh.id);
+  _initialState = { sessions, currentId: fresh.id };
+  return _initialState;
 }
 
 export function useSessions() {
