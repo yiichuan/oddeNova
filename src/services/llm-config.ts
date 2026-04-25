@@ -34,7 +34,7 @@ export const MODELS = {
 export type ModelKey = keyof typeof MODELS;
 
 // 默认使用的模型 —— 改这里就能切换全局模型。
-const DEFAULT_MODEL: ModelKey = 'sonnet';
+const DEFAULT_MODEL: ModelKey = 'opus';
 
 // 允许通过 Vite 环境变量覆盖（如 .env.local 里 VITE_LLM_MODEL=opus）。
 function resolveActiveKey(): ModelKey {
