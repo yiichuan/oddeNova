@@ -49,6 +49,12 @@ function getClient(): Anthropic {
   return client;
 }
 
+
+/** 清空 Anthropic client 单例，下次调用 getClient() 时使用最新配置重建。 */
+export function resetClient(): void {
+  client = null;
+}
+
 function getModel(): string {
   return getActiveModelConfig().model;
 }
