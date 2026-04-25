@@ -1,54 +1,66 @@
-# 🎵 Vibe Live Music
+# 🎵 oddeNova
 
-**用说话的方式创作与实时编辑电子乐。**
+**用自然语言创作与实时编辑电子乐。**
 
-Vibe Live Music 是一个基于浏览器的 AI 音乐创作工具。你只需用自然语言（语音或文字）描述想要的音乐，AI 会自动生成 [Strudel](https://strudel.cc/) live coding 代码，并即时在浏览器中播放。你可以不断对话来迭代修改音乐，像和一位 DJ 搭档协作一样。
+oddeNova 是一个基于浏览器的 AI 音乐创作工具。你只需用文字描述想要的音乐，AI Agent 会自动将其分解为多个音轨层（layer），生成 [Strudel](https://strudel.cc/) live coding 代码并即时播放。你可以持续对话来迭代修改，AI 会精准修改你指定的层，而不影响其他部分。
 
 ## ✨ 功能特色
 
-- **语音输入** — 按住空格键或点击麦克风按钮，用说话的方式描述你想要的音乐
-- **文字输入** — 也可以直接打字输入指令
-- **AI 编曲** — LLM 理解你的自然语言描述，生成可运行的 Strudel 代码
-- **即时播放** — 生成的音乐代码立即在浏览器中执行并播放
-- **迭代编辑** — 在已有音乐的基础上继续对话，AI 会保留未提及的部分并修改你指定的内容
+- **文字输入** — 用自然语言描述你想要的音乐或修改意图
+- **Agent 编曲** — Claude 驱动的多工具 Agent，将音乐拆分为独立 layer 分别生成和修改
+- **分层音轨管理** — 每个乐器/声部是独立的 layer（底鼓、军鼓、贝斯、合成器等），可单独增删替换
+- **即时播放** — 生成代码立即在浏览器中执行并播放，无需后端
+- **迭代编辑** — AI 仅修改你指定的层，保留未提及的部分
+- **思考过程可见** — 侧边栏实时展示 Agent 的推理过程和工具调用
+- **多 Session 管理** — 支持创建多个独立的音乐创作会话并随时切换
+- **AI 智能建议** — 根据当前音乐上下文自动生成下一步操作建议
+- **AirJelly 心情感知** — 可读取 AirJelly Desktop 正在播放的音乐作为创作灵感输入
 - **代码面板** — 实时展示当前运行的 Strudel 代码，带语法高亮
-- **频谱可视化** — 动态频率柱状图可视化当前播放的音频
-- **撤销功能** — 支持撤销到之前的版本（最多 50 步历史记录）
-- **快捷提示** — 内置常用音乐风格的快捷提示按钮
+- **撤销功能** — 支持回退到历史版本（最多 50 步）
+- **Demo 模式** — URL 加 `?demo=true` 可进入预设演示流程
 
 ## 🛠️ 技术栈
 
 | 层级 | 技术选型 |
 |------|----------|
 | **前端框架** | React 19 + TypeScript |
-| **构建工具** | Vite 8 |
+| **构建工具** | Vite |
 | **样式** | Tailwind CSS v4 |
-| **音频引擎** | [Strudel](https://strudel.cc/) (CDN 加载) |
-| **AI 模型** | DeepSeek (`deepseek-chat`)，通过 OpenAI SDK 调用 |
-| **语音识别** | Web Speech API（推荐 Chrome 浏览器） |
+| **音频引擎** | [Strudel](https://strudel.cc/) (npm) |
+| **AI 模型** | Claude (`claude-opus-4-6` / `claude-sonnet-4-6`)，通过 Anthropic SDK 调用 |
+| **外部集成** | AirJelly Desktop（可选，心情感知） |
 
 ## 🚀 快速开始
 
 ### 环境要求
 
 - Node.js >= 18
-- 推荐使用 Chrome 浏览器（语音识别依赖 Web Speech API）
 
 ### 安装与运行
 
 ```bash
-# 克隆项目
-git clone <repository-url>
-cd vibe-live-music
+git clone https://github.com/yiichuan/oddeNova.git
+cd oddeNova
 
-# 安装依赖
 npm install
-
-# 启动开发服务器
 npm run dev
 ```
 
-打开浏览器访问 `http://localhost:5173` 即可使用。
+打开浏览器访问 `http://localhost:5173`。
+
+首次使用需在弹窗中填写 API Key（支持 `.env.local` 预配置）。
+
+### 环境变量
+
+在项目根目录创建 `.env.local`：
+
+```env
+VITE_API_KEY=your-anthropic-api-key
+# 可选，覆盖默认 base URL
+VITE_BASE_URL=https://your-proxy.example.com
+# 可选，覆盖默认模型（sonnet / opus）
+VITE_LLM_MODEL=opus
+```
 
 ### 可用脚本
 
@@ -62,94 +74,65 @@ npm run dev
 ## 📁 项目结构
 
 ```
-vibe-live-music/
-├── index.html                 # 入口 HTML，加载 Strudel CDN
-├── package.json
-├── vite.config.ts
-├── tsconfig.json
-├── .env.example               # 环境变量示例
-└── src/
-    ├── main.tsx               # React 入口
-    ├── App.tsx                # 应用主组件，串联所有逻辑
-    ├── index.css              # Tailwind 配置 + 自定义主题色
-    ├── components/
-    │   ├── ApiKeyModal.tsx    # API Key 设置弹窗
-    │   ├── ChatPanel.tsx      # 对话面板（用户/AI 消息）
-    │   ├── CodePanel.tsx      # Strudel 代码展示面板
-    │   ├── ControlBar.tsx     # 底部控制栏（播放/停止/撤销）
-    │   ├── Visualizer.tsx     # 音频频谱可视化
-    │   └── VoiceButton.tsx    # 语音输入按钮
-    ├── hooks/
-    │   ├── useChat.ts         # 对话状态管理
-    │   ├── useSpeech.ts       # 语音识别 Hook
-    │   └── useStrudel.ts      # Strudel 音频引擎管理
-    ├── services/
-    │   ├── llm.ts             # LLM API 调用
-    │   ├── speech.ts          # Web Speech API 封装
-    │   └── strudel.ts         # Strudel 引擎封装
-    ├── prompts/
-    │   └── system-prompt.ts   # AI System Prompt（含 Strudel 语法参考）
-    └── types/
-        └── strudel.d.ts       # Strudel 全局类型声明
+src/
+├── App.tsx                  # 应用主组件，串联所有逻辑
+├── agent/
+│   ├── tools.ts             # Agent 工具定义（addLayer / removeLayer / replaceLayer / commit）
+│   ├── executor.ts          # 工具执行器
+│   ├── loop.ts              # Agent 推理循环
+│   └── parser.ts            # Strudel 代码解析（layer 提取）
+├── components/
+│   ├── Sidebar.tsx          # 侧边栏（对话 + 输入 + 建议）
+│   ├── ConversationView.tsx # 消息流展示
+│   ├── ChatInput.tsx        # 文字输入框
+│   ├── CodePanel.tsx        # Strudel 代码展示
+│   ├── SuggestionChips.tsx  # AI 建议快捷按钮
+│   ├── HistoryPanel.tsx     # Session 历史面板
+│   ├── ApiKeyModal.tsx      # API Key 设置弹窗
+│   └── VizPlaceholder.tsx   # 音频可视化占位
+├── hooks/
+│   ├── useSessions.ts       # Session 状态管理
+│   ├── useSuggestions.ts    # AI 建议生成
+│   └── useStrudel.ts        # Strudel 音频引擎管理
+├── services/
+│   ├── llm.ts               # Claude API 调用 + Agent 运行入口
+│   ├── llm-config.ts        # 模型配置（可切换 sonnet / opus）
+│   ├── strudel.ts           # Strudel 引擎封装
+│   └── airjelly.ts          # AirJelly Desktop 集成
+├── demo/
+│   ├── demo-config.ts       # Demo 场景配置
+│   └── demo-llm.ts          # Demo 模式 LLM 模拟
+└── prompts/                 # System prompt 与风格定义
 ```
 
 ## 🎯 使用方式
 
-1. **启动音频引擎** — 打开页面后，点击底部的「启动音频引擎」按钮
-2. **描述你的音乐** — 通过以下任一方式：
-   - 按 `空格键` 开始/停止语音输入
-   - 点击麦克风按钮进行语音输入
-   - 在输入框中直接打字
-3. **等待 AI 生成** — AI 会返回 Strudel 代码并自动播放
-4. **继续迭代** — 说出你想修改的部分，例如：
-   - "加点贝斯"
-   - "节奏快一点"
-   - "加个延迟效果"
-   - "换成 lo-fi 风格"
-5. **控制播放** — 使用底部控制栏的播放、停止、撤销按钮
-
-### 快捷键
-
-| 快捷键 | 功能 |
-|--------|------|
-| `Space` | 切换语音输入（非输入框焦点时） |
-
-### 示例指令
-
-- "来一段 lo-fi 鼓点"
-- "加个合成器旋律"
-- "贝斯再重一点"
-- "来点 ambient 氛围感"
-- "节奏改成 140 BPM"
-- "加个 reverb 效果"
-
-## ⚙️ 配置
-
-当前版本使用内置的 DeepSeek API 配置。如需自定义，可修改 `src/services/llm.ts` 中的相关常量：
-
-```typescript
-const DEEPSEEK_API_KEY = 'your-api-key';
-const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
-const DEEPSEEK_MODEL = 'deepseek-chat';
-```
-
-也可以通过页面右上角的 ⚙️ 按钮在浏览器中配置 API 参数。
+1. **启动音频引擎** — 打开页面后点击「启动音频引擎」
+2. **描述音乐** — 在输入框中用自然语言描述，例如：
+   - "来一段 lo-fi 鼓点加贝斯"
+   - "加个合成器旋律，偏 ambient 风格"
+   - "把军鼓换成更 trap 的感觉"
+   - "节奏加快到 140 BPM"
+3. **等待 Agent 生成** — 侧边栏会显示 Agent 的思考和工具调用过程
+4. **继续迭代** — 基于已有音乐继续对话，AI 只修改你指定的部分
+5. **使用建议** — 点击底部的建议 chip 快速触发下一步操作
 
 ## 🔧 工作原理
 
 ```
-用户语音/文字 → Web Speech API 转写 → LLM (DeepSeek) 生成 Strudel 代码
-                                              ↓
-               浏览器播放 ← Strudel 引擎执行 ← JSON { code, explanation }
-                  ↓
-            频谱可视化 (Web Audio API AnalyserNode)
+用户文字输入
+    ↓
+Claude Agent（多轮工具调用循环）
+    ├── addLayer(name, code)      添加新音轨
+    ├── removeLayer(name)         移除音轨
+    ├── replaceLayer(name, code)  替换音轨内容
+    ├── validate(code)            验证代码语法
+    └── commit(explanation)       输出最终代码
+    ↓
+stack(...layers) → Strudel 引擎执行 → 浏览器播放
 ```
 
-1. **输入处理**：语音通过 Web Speech API 转为文字，与文字输入统一处理
-2. **Prompt 构建**：将用户指令和当前代码（如有）组合为 LLM 请求
-3. **代码生成**：LLM 基于 Strudel 语法参考和示例生成音乐代码
-4. **音频执行**：Strudel 引擎在浏览器中解析并执行代码，输出音频
-5. **可视化**：通过 Web Audio API 的 AnalyserNode 获取频率数据并绘制
+Agent 将整首音乐维护为多个具名 layer 的集合。每次对话只修改相关 layer，其余保持不变，实现精准的增量编辑。
 
 ## 📄 License
 
