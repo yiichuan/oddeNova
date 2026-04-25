@@ -9,6 +9,9 @@ import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
 import { isDemoMode, getActiveDemoSet, DEMO_SCENARIO_2 } from './demo/demo-config';
+import ApiKeyModal from './components/ApiKeyModal';
+import { hasApiKeyConfigured } from './services/llm-config';
+import { resetClient } from './services/llm';
 
 export default function App() {
   const strudel = useStrudel();
@@ -17,6 +20,8 @@ export default function App() {
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [demoPrefill, setDemoPrefill] = useState('');
   const [demoStep, setDemoStep] = useState(0);
+
+  const [showApiKeyModal, setShowApiKeyModal] = useState(() => !hasApiKeyConfigured());
 
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
@@ -223,6 +228,13 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen bg-bg-primary overflow-hidden">
+      {showApiKeyModal && (
+        <ApiKeyModal
+          onClose={() => setShowApiKeyModal(false)}
+          onSaved={resetClient}
+          required={!hasApiKeyConfigured()}
+        />
+      )}
       <Sidebar
         title={current?.title ?? '新会话'}
         messages={messages}
