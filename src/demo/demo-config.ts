@@ -353,3 +353,350 @@ export const DEMO_MOOD_SCENARIO: DemoMoodScenario = {
     },
   ],
 };
+
+// ── 静态提示词预设场景（无需调用模型，直接返回预写结果）──────────────────────
+
+const _RG_DRUMS = `stack(
+  s("bd ~ ~ bd ~ ~ bd ~")
+    .bank("RolandTR808")
+    .gain(0.85),
+  s("~ cp ~ cp")
+    .bank("RolandTR808")
+    .gain(0.8)
+    .room(0.4)
+    .size(0.7),
+  s("hh hh hh hh hh hh hh hh")
+    .bank("RolandTR808")
+    .gain("0.5 0.35 0.45 0.35 0.5 0.35 0.45 0.35")
+    .speed(1.2),
+  s("~ ~ ~ ~ ~ ~ hh ~")
+    .bank("RolandTR808")
+    .gain(0.45)
+    .speed(0.8)
+)
+  .every(4, x => x.ply(2))
+  .gain(0.82)`;
+
+const _RG_BASS = `note("c2 e2 g2 c3 g2 e2 c2 g2")
+  .s("square")
+  .lpf(500)
+  .lpq(3)
+  .decay(0.15)
+  .sustain(0.1)
+  .release(0.05)
+  .gain(0.7)
+  .every(4, x => x.note("c2 d2 e2 f2 g2 a2 b2 c3"))`;
+
+const _RG_LEAD = `note("<[c5 d5 e5 g5 c6 ~ c6 g5] [e5 f5 g5 a5 b5 ~ c6 c6] [g5 e5 c5 e5 g5 c6 e6 c6] [c6 b5 a5 g5 a5 b5 c6 e6]>")
+  .s("square")
+  .lpf(4000)
+  .lpq(2)
+  .decay(0.12)
+  .sustain(0.15)
+  .release(0.08)
+  .delay(0.25)
+  .delaytime(0.125)
+  .delayfeedback(0.3)
+  .room(0.3)
+  .size(0.4)
+  .gain(0.48)
+  .every(4, fast(2))`;
+
+const _RG_PAD = `note("<[c4 e4 g4 c5 g4 e4 c4 e4] [e4 g4 c5 e5 c5 g4 e4 g4] [g4 c5 e5 g5 e5 c5 g4 c5] [c4 g4 e4 c5 g4 c4 e4 g4]>")
+  .s("triangle")
+  .decay(0.08)
+  .sustain(0.05)
+  .release(0.3)
+  .lpf("3000 3500 4000 4500 4000 3500 3000 3500")
+  .lpq(4)
+  .gain(0.38)
+  .room(2)
+  .size(0.85)
+  .delay(0.25)
+  .delaytime(0.125)
+  .delayfeedback(0.4)
+  .vowel("<a e i o>")`;
+
+const _JF_DRUMS = `stack(
+  s("bd ~ ~ bd ~ ~ bd ~")
+    .gain("0.75 0.0 0.0 0.65 0.0 0.0 0.7 0.0")
+    .bank("RolandTR808"),
+  s("~ ~ sd ~ ~ sd ~ ~")
+    .gain("0.0 0.0 0.55 0.0 0.0 0.45 0.0 0.0")
+    .bank("RolandTR808"),
+  s("hh(5,8)")
+    .gain(0.45)
+    .bank("RolandTR808")
+    .lpf(6500),
+  s("~ cp ~ ~")
+    .gain(0.35)
+    .bank("RolandTR808")
+)
+  .slow(2)
+  .swing(0.02)`;
+
+const _JF_BASS = `note("d2 ~ [a2 d3] ~ f2 [~ e2] [g2 ab2] a2")
+  .s("sawtooth")
+  .lpf(450)
+  .lpq(4)
+  .decay(0.15)
+  .sustain(0.3)
+  .release(0.1)
+  .gain("0.75 ~ 0.7 ~ 0.72 0.65 0.7 0.78")
+  .room(0.15)`;
+
+const _JF_PAD = `note("<[d4,f4,a4,c5,e5] ~ ~ [d4,f4,a4,c5,e5]> <~ [g4,bb4,d5,f5,a5] ~ ~> <[e4,g4,bb4,d5] ~ [e4,g4,bb4,d5] ~> <~ ~ [a4,db5,eb5,g5] ~>")
+  .s("gm_epiano1")
+  .decay(0.18)
+  .sustain(0.12)
+  .release(0.15)
+  .gain("0.42 ~ ~ 0.38 ~ 0.4 ~ ~ 0.42 ~ 0.38 ~ ~ ~ 0.4 ~")
+  .delay(0.3)
+  .delaytime(0.375)
+  .delayfeedback(0.35)
+  .room(1.5)
+  .lpf(4500)
+  .lpq(2)
+  .slow(2)`;
+
+const _JF_LEAD = `note("~ ~ ~ d5 ~ ~ [~ ab4] ~ ~ e5 ~ ~ ~ [f5 g5] ~ ~")
+  .s("gm_trumpet")
+  .lpf(3500)
+  .lpq(2)
+  .attack(0.02)
+  .decay(0.25)
+  .sustain(0.4)
+  .release(0.35)
+  .gain("~ ~ ~ 0.48 ~ ~ 0.42 ~ ~ 0.5 ~ ~ ~ 0.45 ~ ~")
+  .room(1)
+  .size(0.6)
+  .slow(2)
+  .mask("<1 1 0 1>/4")`;
+
+const _VP_PAD = `note("<[c3,eb3,g3] [ab2,c3,eb3] [bb2,d3,f3] [g2,bb2,d3]>")
+  .s("gm_piano")
+  .attack(0.05)
+  .release(1.5)
+  .lpf(2500)
+  .room(1.2)
+  .gain(0.5)`;
+
+const _VP_LEAD = `note("<[g4 ~ ab4 ~] [eb5 ~ d5 ~] [c5 ~ ~ bb4] [~ g4 ~ ~]>")
+  .s("gm_violin")
+  .gain(0.5)
+  .room(1.5)
+  .delay(0.2)
+  .delaytime(0.375)
+  .delayfeedback(0.3)
+  .lpf(4000)
+  .attack(0.08)
+  .release(0.6)`;
+
+const _DY_DRUMS = `stack(
+  s("bd*4")
+    .bank("RolandTR909")
+    .gain(0.85),
+  s("~ cp ~ cp")
+    .bank("RolandTR909")
+    .gain(0.75),
+  s("~ [~ cp:2] ~ cp:2")
+    .gain(0.4)
+    .speed(1.5)
+    .pan(0.7),
+  s("cb ~ [~ cb] ~")
+    .gain(0.35)
+    .pan(0.3)
+)
+  .every(8, x => x.ply(2))`;
+
+const _DY_HH = `s("~ hh ~ hh ~ hh ~ hh")
+  .bank("RolandTR909")
+  .lpf(7500)
+  .gain("~ 0.45 ~ 0.4 ~ 0.48 ~ 0.42")
+  .pan(sine.range(0.4, 0.6).slow(4))
+  .every(4, x => x.ply(2))`;
+
+const _DY_BASS = `note("c2 c2 eb2 f2")
+  .s("sawtooth")
+  .lpf(380)
+  .lpq(3)
+  .decay(0.15)
+  .sustain(0.3)
+  .release(0.1)
+  .gain(0.75)
+  .every(4, fast(2))`;
+
+const _DY_PAD = `note("<[c4,eb4,g4,bb4] [f4,ab4,c5,eb5] [bb3,d4,f4,ab4] [eb4,g4,bb4,d5]>")
+  .s("sawtooth")
+  .lpf(1800)
+  .lpq(2)
+  .attack(0.15)
+  .decay(0.3)
+  .sustain(0.6)
+  .release(1.2)
+  .gain("0.25 0.4 0.38 0.4")
+  .room(1.5)
+  .delay(0.4)
+  .slow(2)`;
+
+export const STATIC_SUGGESTION_SCENARIOS: DemoScenario[] = [
+  {
+    prompt: '来段复古游戏机通关音乐',
+    rounds: [
+      {
+        thinking: '好的，复古游戏机通关音乐！我想到的是 synthwave 风格，用 8-bit 感觉的方波/锯齿波合成器，节奏明快有胜利感。先看看当前有没有已有的代码。',
+        toolCalls: [{ name: 'getScore', args: {} }],
+      },
+      {
+        thinking: '从零开始，太好了。复古游戏通关音乐，BPM 105，带有胜利感的 C 大调旋律。设好速度，同时搭建鼓点和低音层。',
+        toolCalls: [
+          { name: 'setTempo', args: { bpm: 105 } },
+          { name: 'addLayer', args: { name: 'drums', code: _RG_DRUMS } },
+          { name: 'addLayer', args: { name: 'bass', code: _RG_BASS } },
+        ],
+      },
+      {
+        thinking: '鼓和贝斯骨架都有了！现在来加主旋律和闪亮的琶音层，营造胜利通关的辉煌感。',
+        toolCalls: [
+          { name: 'addLayer', args: { name: 'lead', code: _RG_LEAD } },
+          { name: 'addLayer', args: { name: 'pad', code: _RG_PAD } },
+        ],
+      },
+      {
+        thinking: '四层都就位了！808 鼓机节奏、方波 8-bit 贝斯、方波胜利旋律、三角波闪亮琶音。验证通过，提交！',
+        toolCalls: [
+          { name: 'commit', args: { explanation: '做了一段复古游戏机通关音乐！🎮 用 808 鼓机打底，方波合成器做 8-bit 风格的贝斯线和胜利主旋律（C大调上行），三角波琶音增加闪亮的辉煌感。105 BPM，四个循环轮转的旋律变化，每4拍还有节奏加倍的惊喜。Game Clear! ✨' } },
+        ],
+      },
+    ],
+  },
+  {
+    prompt: '来段Jazz Funk',
+    rounds: [
+      {
+        thinking: '好的，Jazz Funk 风格！融合爵士的和声丰富感和 Funk 的律动感，节奏偏 groovy，带点切分和 swing 的味道。先看看当前有没有已有的代码。',
+        toolCalls: [{ name: 'getScore', args: {} }],
+      },
+      {
+        thinking: '当前是空白画布。Jazz Funk BPM 105，带点 groovy 感觉。先设定速度，从鼓组骨架和贝斯线开始——Jazz Funk 的鼓要有 swing 感和切分。',
+        toolCalls: [
+          { name: 'setTempo', args: { bpm: 105 } },
+          { name: 'addLayer', args: { name: 'drums', code: _JF_DRUMS } },
+          { name: 'addLayer', args: { name: 'bass', code: _JF_BASS } },
+        ],
+      },
+      {
+        thinking: '鼓组和贝斯骨架有了！切分感很强，Dm dorian 的 funky 走向不错。现在加 Rhodes 电钢琴和弦 stab 和小号旋律线，留白感十足。',
+        toolCalls: [
+          { name: 'addLayer', args: { name: 'pad', code: _JF_PAD } },
+          { name: 'addLayer', args: { name: 'lead', code: _JF_LEAD } },
+        ],
+      },
+      {
+        thinking: '四层 Jazz Funk 编排完成：切分鼓组、Dm dorian 贝斯线、电钢琴和弦 stab、以及留白感十足的小号旋律。验证通过，提交！',
+        toolCalls: [
+          { name: 'commit', args: { explanation: '搭了一段 Jazz Funk：105 BPM，TR808 切分鼓组带 swing，Dm dorian 锯齿波贝斯走 funk 律动，电钢琴 Dm9/Gm9 和弦 stab 加 delay，小号旋律线留白点缀，整体 Herbie Hancock Head Hunters 的味道 🎺🎹' } },
+        ],
+      },
+    ],
+  },
+  {
+    prompt: '来首小提琴和钢琴',
+    rounds: [
+      {
+        thinking: '好的，让我先看看当前有没有已有的代码。',
+        toolCalls: [{ name: 'getScore', args: {} }],
+      },
+      {
+        thinking: '当前是空白画布。小提琴和钢琴组合，适合古典/抒情风格。88 BPM，先铺钢琴和弦底色，再叠小提琴旋律线，用 GM 音色获得比较真实的效果。',
+        toolCalls: [
+          { name: 'setTempo', args: { bpm: 88 } },
+          { name: 'addLayer', args: { name: 'pad', code: _VP_PAD } },
+          { name: 'addLayer', args: { name: 'lead', code: _VP_LEAD } },
+        ],
+      },
+      {
+        thinking: '两层都加好了，验证一下代码是否正常。验证通过，提交播放。',
+        toolCalls: [
+          { name: 'commit', args: { explanation: '用 GM 钢琴铺了一层 C 小调和弦底色（Cm → Ab → Bb → Gm），再叠一层小提琴旋律线，88 BPM 抒情氛围，带空间混响和少量延迟。' } },
+        ],
+      },
+    ],
+  },
+  {
+    prompt: '来点动感音乐',
+    rounds: [
+      {
+        thinking: '好的，来一段动感的音乐！我想做一个 house 风格的，节奏感强、律动十足。先看看当前有没有已有的代码。',
+        toolCalls: [{ name: 'getScore', args: {} }],
+      },
+      {
+        thinking: '当前是空白的。搭一个 house 风格的动感编曲，125 BPM。先定速度，从鼓组骨架和 hi-hat 节奏骨架开始。',
+        toolCalls: [
+          { name: 'setTempo', args: { bpm: 125 } },
+          { name: 'addLayer', args: { name: 'drums', code: _DY_DRUMS } },
+          { name: 'addLayer', args: { name: 'hh', code: _DY_HH } },
+        ],
+      },
+      {
+        thinking: '鼓组和 hi-hat 都有了，很有 house 的味道。接下来加一层有弹性的贝斯线和一层温暖的 pad 来填充和声。',
+        toolCalls: [
+          { name: 'addLayer', args: { name: 'bass', code: _DY_BASS } },
+          { name: 'addLayer', args: { name: 'pad', code: _DY_PAD } },
+        ],
+      },
+      {
+        thinking: '四层都搭好了！TR909 鼓组 + 律动 hi-hat + 弹性锯齿波贝斯 + 温暖 pad 和声。验证通过，提交！',
+        toolCalls: [
+          { name: 'commit', args: { explanation: '搭了一段动感 house 风格音乐（125 BPM）：TR909 四拍底鼓 + 律动 hi-hat + 弹性锯齿波贝斯 + 温暖 pad 和声铺底，C 小调进行，节奏感十足！' } },
+        ],
+      },
+    ],
+  },
+  {
+    prompt: '来首古典优雅钢琴曲',
+    rounds: [
+      {
+        thinking: '好的，古典优雅的钢琴独奏，我想用一种舒缓、优美的风格来呈现。先看看当前有没有已有的代码。',
+        toolCalls: [{ name: 'getScore', args: {} }],
+      },
+      {
+        thinking: '当前是空白画布，从零开始。古典钢琴独奏，偏慢的速度（约 88 BPM），营造优雅从容的感觉。直接用两层钢琴——右手旋律 + 左手分解和弦/低音，构建一个完整的小品。先定好速度。',
+        toolCalls: [
+          { name: 'setTempo', args: { bpm: 88 } },
+        ],
+      },
+      {
+        thinking: '好，88 BPM，舒缓优雅。现在来加右手旋律和左手分解和弦，C 大调，带一点小调色彩的和声进行，营造古典气质。',
+        toolCalls: [
+          { name: 'addLayer', args: { name: 'piano_melody', code: `note("<[e5 d5 c5 d5] [e5 e5 e5@2] [d5 d5 d5@2] [e5 g5 g5@2]> <[e5 d5 c5 d5] [e5 e5 e5 c5] [d5 d5 e5 d5] [c5@4]>")
+  .s("gm_piano")
+  .gain(0.6)
+  .room(1.5)
+  .delay(0.15)
+  .attack(0.01)
+  .release(0.4)` } },
+          { name: 'addLayer', args: { name: 'piano_bass', code: `note("<[c3 e3 g3 e3] [c3 e3 g3 e3] [b2 d3 g3 d3] [c3 e3 g3 e3]> <[a2 c3 e3 c3] [a2 c3 e3 c3] [g2 b2 d3 b2] [c3 e3 g3 e3]>")
+  .s("gm_piano")
+  .gain(0.45)
+  .lpf(800)
+  .room(1.2)
+  .delay(0.1)
+  .attack(0.01)
+  .release(0.5)` } },
+        ],
+      },
+      {
+        thinking: '两层钢琴已经就位。右手旋律像一首简单的小步舞曲，左手是分解和弦提供和声支撑。验证通过，提交播放！',
+        toolCalls: [
+          { name: 'commit', args: { explanation: '创建了一首古典优雅的钢琴独奏小品，88 BPM，右手旋律如小步舞曲般轻盈，左手分解和弦提供 C 大调和声支撑，带有柔和的混响和延迟营造空间感。' } },
+        ],
+      },
+    ],
+  },
+];
+
+/** 根据 instruction 匹配静态提示词预设场景，命中则无需调用真实模型 */
+export function resolveStaticSuggestionScenario(instruction: string): DemoScenario | undefined {
+  return STATIC_SUGGESTION_SCENARIOS.find((s) => s.prompt === instruction);
+}

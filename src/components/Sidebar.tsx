@@ -17,6 +17,7 @@ interface SidebarProps {
   sessions: Session[];
   currentId: string | null;
   suggestions: string[];
+  suggestionsLoading?: boolean;
   fillSuggestion?: string;
   onSendText: (text: string) => void;
   onNewSession: () => void;
@@ -35,6 +36,7 @@ export default function Sidebar({
   sessions,
   currentId,
   suggestions,
+  suggestionsLoading = false,
   fillSuggestion,
   onSendText,
   onNewSession,
@@ -112,7 +114,7 @@ export default function Sidebar({
 
       <div className="flex justify-center pl-4 pr-0 pb-4">
         <div className="w-full max-w-[500px]">
-          {!isLoading && (
+          {!isLoading && !suggestionsLoading && (
             <div className="flex flex-wrap gap-2 pb-2">
               {suggestions.map((s) => (
                 <button
