@@ -4,206 +4,234 @@ export function isDemoMode(): boolean {
   return new URLSearchParams(window.location.search).get('demo') === 'true';
 }
 
-export interface DemoStep {
-  name: string;
-  code: string;
+export interface DemoRound {
   thinking?: string;
+  toolCalls: Array<{ name: string; args: Record<string, unknown> }>;
 }
 
 export interface DemoScenario {
   prompt: string;
-  steps: DemoStep[];
-  code: string;
+  rounds: DemoRound[];
 }
 
-// ── Set A: Lo-fi Hip Hop ───────────────────────────────────────────────────
-const SET_A: DemoScenario[] = [
+// ── 示例：底鼓 → 军鼓 → 氛围合成器 ──────────────────────────────────────────
+
+const _DRUMS_CODE = `s("bd*4")
+  .gain(0.8)`;
+
+const _SD_CODE = `s("~ sd ~ sd")
+  .gain(0.75)`;
+
+const _PAD_CODE = `note("<[c3,e3,g3,b3] [f3,a3,c4,e4] [d3,f3,a3,c4] [g3,b3,d4,f4]>/2")
+  .s("sawtooth")
+  .lpf(sine.range(400, 1200).slow(16))
+  .attack(0.3)
+  .decay(0.5)
+  .sustain(0.6)
+  .release(0.8)
+  .room(2)
+  .delay(0.3)
+  .gain(0.35)`;
+
+const DEMO_SET: DemoScenario[] = [
   {
-    prompt: '来一段 lo-fi 鼓点',
-    steps: [
-      { name: 'drums', code: 's("bd ~ sd ~").bank("RolandTR808").gain(0.8)', thinking: '先铺一个 lo-fi 鼓点底层，用 TR-808 采样做出颗粒感。' },
-      { name: 'hh',    code: 's("hh*8").gain(0.4)', thinking: '加入踩镲，用 8 拍密度让节奏稳起来。' },
+    prompt: '来个底鼓',
+    rounds: [
+      {
+        thinking: '好的，先来看看当前有没有已有的代码。',
+        toolCalls: [{ name: 'getScore', args: {} }],
+      },
+      {
+        thinking: '当前是空白状态，那就从零开始。4/4 拍底鼓，最经典的 four-on-the-floor 节奏。先设个默认 120 BPM，然后加一层底鼓。',
+        toolCalls: [
+          { name: 'setTempo', args: { bpm: 120 } },
+          { name: 'addLayer', args: { name: 'drums', code: _DRUMS_CODE } },
+        ],
+      },
+      {
+        thinking: '代码已就绪，验证一下确保没有问题。验证通过，提交播放。',
+        toolCalls: [
+          { name: 'commit', args: { explanation: '添加了一层 120 BPM 的 4/4 拍底鼓（bd），每拍一下，经典 four-on-the-floor 节奏。' } },
+        ],
+      },
     ],
-    code: `stack(
-  s("bd ~ sd ~").bank("RolandTR808").gain(0.8),
-  s("hh*8").gain(0.4)
-).setcps(0.4)`,
   },
   {
-    prompt: '再加入一条 bass 线',
-    steps: [
-      { name: 'bass', code: 'note("c2 c2 eb2 f2").s("sawtooth").lpf(500).gain(0.7)', thinking: '用锯齿波做 bass 线，加低通滤波让低频圆润一点。' },
+    prompt: '加个军鼓',
+    rounds: [
+      {
+        thinking: '让我先看看当前的代码结构。',
+        toolCalls: [{ name: 'getScore', args: {} }],
+      },
+      {
+        thinking: '当前只有一层四拍底鼓，加一层军鼓，放在 2、4 拍上，经典的 backbeat 节奏。',
+        toolCalls: [
+          { name: 'addLayer', args: { name: 'sd', code: _SD_CODE } },
+        ],
+      },
+      {
+        thinking: '验证一下最终代码。代码验证通过，提交播放。',
+        toolCalls: [
+          { name: 'commit', args: { explanation: '加了一层军鼓，放在 2、4 拍上，经典 backbeat 节奏 🥁' } },
+        ],
+      },
     ],
-    code: `stack(
-  s("bd ~ sd ~").bank("RolandTR808").gain(0.8),
-  s("hh*8").gain(0.4),
-  note("c2 c2 eb2 f2").s("sawtooth").lpf(500).gain(0.7)
-).setcps(0.4)`,
   },
   {
-    prompt: '加一层空灵的 pad',
-    steps: [
-      { name: 'pad', code: 'n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).room(0.6).gain(0.35)', thinking: '正弦波做 pad，拉长 attack 和 release，加混响，飘渺的氛围感就出来了。' },
+    prompt: '加上氛围合成器',
+    rounds: [
+      {
+        thinking: '让我先看看当前的代码结构，再决定怎么加氛围合成器。',
+        toolCalls: [{ name: 'getScore', args: {} }],
+      },
+      {
+        thinking: '现在有鼓和军鼓两层，120 BPM。来铺一层温暖的氛围 pad，用缓慢的和弦变化做底色，加上空间效果让它有深度感。',
+        toolCalls: [
+          { name: 'addLayer', args: { name: 'pad', code: _PAD_CODE } },
+        ],
+      },
+      {
+        thinking: '加好了，验证一下代码是否正常。代码验证通过，提交播放。',
+        toolCalls: [
+          { name: 'commit', args: { explanation: '加了一层氛围合成器 pad，用锯齿波做缓慢和弦推进（Cmaj7→Fmaj7→Dm7→G7），带有呼吸感的低通滤波扫频和混响空间效果。' } },
+        ],
+      },
     ],
-    code: `stack(
-  s("bd ~ sd ~").bank("RolandTR808").gain(0.8),
-  s("hh*8").gain(0.4),
-  note("c2 c2 eb2 f2").s("sawtooth").lpf(500).gain(0.7),
-  n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).room(0.6).gain(0.35)
-).setcps(0.4)`,
   },
 ];
-
-// ── Set B: Jazz / Soul ─────────────────────────────────────────────────────
-const SET_B: DemoScenario[] = [
-  {
-    prompt: '来一段 jazz 鼓点',
-    steps: [
-      { name: 'kick', code: 's("bd ~ ~ bd ~ sd ~ ~").gain(0.75)', thinking: '摇摆感的 jazz 鼓组，kick 落在 1、4 拍上。' },
-      { name: 'ride', code: 's("ride ~ ride ~ ride ride ~ ride").gain(0.4)', thinking: '加入 ride 镲，律动就摇摆起来了。' },
-    ],
-    code: `stack(
-  s("bd ~ ~ bd ~ sd ~ ~").gain(0.75),
-  s("ride ~ ride ~ ride ride ~ ride").gain(0.4)
-).setcps(0.38)`,
-  },
-  {
-    prompt: '加入一条 upright bass',
-    steps: [
-      { name: 'bass', code: 'note("c2 ~ g2 ~ f2 ~ a2 ~").s("sawtooth").lpf(600).gain(0.7)', thinking: '锯齿波 bass 线加低通，模拟 upright bass 的温暖质感。' },
-    ],
-    code: `stack(
-  s("bd ~ ~ bd ~ sd ~ ~").gain(0.75),
-  s("ride ~ ride ~ ride ride ~ ride").gain(0.4),
-  note("c2 ~ g2 ~ f2 ~ a2 ~").s("sawtooth").lpf(600).gain(0.7)
-).setcps(0.38)`,
-  },
-  {
-    prompt: '再来点钢琴和弦',
-    steps: [
-      { name: 'piano', code: 'n("0 ~ 2 ~ 4 ~ 2 ~").scale("C4:major").s("triangle").attack(0.02).release(0.3).gain(0.5).room(0.3)', thinking: '三角波模拟钢琴拨弦，加点混响，jazz 的味道就出来了。' },
-    ],
-    code: `stack(
-  s("bd ~ ~ bd ~ sd ~ ~").gain(0.75),
-  s("ride ~ ride ~ ride ride ~ ride").gain(0.4),
-  note("c2 ~ g2 ~ f2 ~ a2 ~").s("sawtooth").lpf(600).gain(0.7),
-  n("0 ~ 2 ~ 4 ~ 2 ~").scale("C4:major").s("triangle").attack(0.02).release(0.3).gain(0.5).room(0.3)
-).setcps(0.38)`,
-  },
-];
-
-// ── Set C: Techno ──────────────────────────────────────────────────────────
-const SET_C: DemoScenario[] = [
-  {
-    prompt: '来一段 techno 四四拍',
-    steps: [
-      { name: 'kick', code: 's("bd bd bd bd").bank("RolandTR808").gain(0.9)', thinking: '四四拍 kick 先打起来，这是 techno 的核心骨架。' },
-      { name: 'hh',   code: 's("[hh hh]*2").gain(0.45)', thinking: '高密度踩镲加进来，推动感就有了。' },
-    ],
-    code: `stack(
-  s("bd bd bd bd").bank("RolandTR808").gain(0.9),
-  s("[hh hh]*2").gain(0.45)
-).setcps(0.5)`,
-  },
-  {
-    prompt: '加一条 acid bass 线',
-    steps: [
-      { name: 'acid', code: 'note("c1 ~ c1 ~ eb1 ~ c1 ~").s("sawtooth").lpf(400).gain(0.8)', thinking: '经典 acid bass，锯齿波加低通，带出那个标志性的沉重感。' },
-    ],
-    code: `stack(
-  s("bd bd bd bd").bank("RolandTR808").gain(0.9),
-  s("[hh hh]*2").gain(0.45),
-  note("c1 ~ c1 ~ eb1 ~ c1 ~").s("sawtooth").lpf(400).gain(0.8)
-).setcps(0.5)`,
-  },
-  {
-    prompt: '再加一层合成器 arp',
-    steps: [
-      { name: 'arp', code: 'n("0 3 5 7 10 7 5 3").scale("C4:minor").s("square").lpf(1200).gain(0.3).delay(0.25)', thinking: '方波 arp 扫上去，加 delay，空间立体感出来了。' },
-    ],
-    code: `stack(
-  s("bd bd bd bd").bank("RolandTR808").gain(0.9),
-  s("[hh hh]*2").gain(0.45),
-  note("c1 ~ c1 ~ eb1 ~ c1 ~").s("sawtooth").lpf(400).gain(0.8),
-  n("0 3 5 7 10 7 5 3").scale("C4:minor").s("square").lpf(1200).gain(0.3).delay(0.25)
-).setcps(0.5)`,
-  },
-];
-
-// ── Set D: Ambient / Chill ─────────────────────────────────────────────────
-const SET_D: DemoScenario[] = [
-  {
-    prompt: '来一段 ambient 底层',
-    steps: [
-      { name: 'pad', code: 'n("<0 2 4 7>").scale("C3:minor").s("sine").attack(2).release(4).room(0.8).gain(0.4)', thinking: '正弦波长音 pad，加大混响，像水面一样流动。' },
-    ],
-    code: `n("<0 2 4 7>").scale("C3:minor").s("sine").attack(2).release(4).room(0.8).gain(0.4).setcps(0.3)`,
-  },
-  {
-    prompt: '加入一条 drone 低音',
-    steps: [
-      { name: 'drone', code: 'note("c1").s("sine").gain(0.3).room(0.9)', thinking: '持续的低频 drone 打底，给整体一个重心。' },
-    ],
-    code: `stack(
-  n("<0 2 4 7>").scale("C3:minor").s("sine").attack(2).release(4).room(0.8).gain(0.4),
-  note("c1").s("sine").gain(0.3).room(0.9)
-).setcps(0.3)`,
-  },
-  {
-    prompt: '再加点轻柔的节拍',
-    steps: [
-      { name: 'rhythm', code: 's("~ bd ~ ~").gain(0.3).room(0.6)', thinking: '极简的节拍点缀进来，不破坏氛围又有了律动。' },
-    ],
-    code: `stack(
-  n("<0 2 4 7>").scale("C3:minor").s("sine").attack(2).release(4).room(0.8).gain(0.4),
-  note("c1").s("sine").gain(0.3).room(0.9),
-  s("~ bd ~ ~").gain(0.3).room(0.6)
-).setcps(0.3)`,
-  },
-];
-
-// ── Active set selection（每次页面加载随机选一套）────────────────────────────
-const ALL_DEMO_SETS: DemoScenario[][] = [SET_A, SET_B, SET_C, SET_D];
-
-// 模块级变量：整个 session 内保持同一套，不同次加载可能不同
-const _activeSet: DemoScenario[] =
-  ALL_DEMO_SETS[Math.floor(Math.random() * ALL_DEMO_SETS.length)];
 
 export function getActiveDemoSet(): DemoScenario[] {
-  return _activeSet;
+  return DEMO_SET;
 }
 
-// ── Scenario 2（长提示词）──────────────────────────────────────────────────
-export const DEMO_SCENARIO_2 = {
-  prefill:
-    '我想要一首充满未来感的电子曲，节奏感强，有层次丰富的合成器 pad，低沉的 bass 线配合踩镲，整体带点 sci-fi 冷峻的氛围',
-  steps: [
-    { name: 'drums', code: 's("bd ~ ~ bd sd ~ bd ~").bank("RolandTR808").gain(0.85)', thinking: '好的，节奏感要强，先搭一个偏切分的鼓组底层。' },
-    { name: 'hh',    code: 's("hh*16").gain(0.3).pan(sine.range(0.3, 0.7))', thinking: '高速踩镲配上 pan 自动移动，空间感出来了。' },
-    { name: 'bass',  code: 'note("<c1 c1 eb1 f1>*2").s("sawtooth").lpf(300).gain(0.8)', thinking: '锯齿波 bass 加低通，低沉而有穿透力。' },
-    { name: 'pad',   code: 'n("<0 3 5 7 10>").scale("C3:minor").s("square").lpf(800).attack(0.2).release(1.5).room(0.4).gain(0.4)', thinking: '合成器 pad 用方波，加 lpf 和长混响，冷峻的 sci-fi 质感就有了...' },
-    { name: 'lead',  code: 'n("0 ~ 7 ~ 5 ~ 3 ~").scale("C5:minor").s("triangle").delay(0.3).gain(0.3)', thinking: '最后加一条主旋律线，用 delay 打出空间感，整体就完整了。' },
-  ] as DemoStep[],
-  code: `stack(
-  s("bd ~ ~ bd sd ~ bd ~").bank("RolandTR808").gain(0.85),
-  s("hh*16").gain(0.3).pan(sine.range(0.3, 0.7)),
-  note("<c1 c1 eb1 f1>*2").s("sawtooth").lpf(300).gain(0.8),
-  n("<0 3 5 7 10>").scale("C3:minor").s("square").lpf(800).attack(0.2).release(1.5).room(0.4).gain(0.4),
-  n("0 ~ 7 ~ 5 ~ 3 ~").scale("C5:minor").s("triangle").delay(0.3).gain(0.3)
-).setcps(0.45)`,
+/** 根据 instruction 精确匹配场景，返回对应 DemoScenario */
+export function resolveDemoScenario(instruction: string): DemoScenario | undefined {
+  return DEMO_SET.find((s) => s.prompt === instruction);
+}
+
+/** 灵感一下：点击后直接发送的长提示词 */
+export const DEMO_PREFILL =
+  '一首中速低保真电子乐曲，速度为90 BPM。曲风以流畅饱满的Fender Rhodes电钢琴为主，演奏小九和弦（Bbm9、Fm9），并辅以强烈的相位器和混响效果。深沉的贝斯线紧随根音之后。极简的IDM鼓点节奏，清脆的鼓边敲击、轻柔的沙锤声以及干脆的底鼓声，营造出独特的氛围。音色中穿插着自然的电子音效、FM合成器的啁啾声以及扫频低通滤波器，带来一种轻松、电影般的海岸风情，略带实验性。';
+
+// ── 灵感一下专用 Demo 场景 ─────────────────────────────────────────────────
+const _PF_DRUMS_INITIAL = `stack(
+  s("bd ~ ~ ~ bd ~ ~ ~")
+    .gain(0.78),
+  s("~ cp ~ cp ~ cp ~ ~")
+    .gain(0.38)
+    .pan(0.55)
+    .hpf(800),
+  s("~ hh hh ~ hh ~ hh hh")
+    .gain(0.18)
+    .lpf(6500)
+    .speed(0.8)
+    .pan(0.4)
+    .sometimesBy(0.3, x => x.speed(0.5))
+)
+  .slow(2)`;
+
+const _PF_DRUMS_FINAL = `stack(
+  s("bd ~ ~ ~ bd ~ ~ ~")
+    .gain(0.78),
+  s("~ cp ~ cp ~ cp ~ ~")
+    .gain(0.38)
+    .pan(0.55)
+    .hpf(800),
+  s("~ hh hh ~ hh ~ hh hh")
+    .gain(0.18)
+    .lpf(6500)
+    .speed(0.8)
+    .pan(0.4)
+)
+  .slow(2)`;
+
+const _PF_BASS = `note("<bb1 bb1 ~ bb1 f2 f2 ~ f2> <bb1 ~ ab1 bb1 f2 ~ eb2 f2>")
+  .s("gm_acoustic_bass")
+  .lpf(400)
+  .lpq(1)
+  .gain(0.7)
+  .attack(0.01)
+  .release(0.8)
+  .room(0.3)`;
+
+const _PF_PAD = `note("<[Bb3,Db4,F4,Ab4,C5] [F3,Ab3,C4,Eb4,G4]>")
+  .s("gm_epiano1")
+  .attack(0.15)
+  .release(4)
+  .lpf(2800)
+  .lpq(1.5)
+  .phaser(6)
+  .phaserdepth(0.7)
+  .room(2)
+  .gain(0.38)`;
+
+const _PF_FX = `note("<[bb5 ~ f5 ~] [~ db6 ~ ~] [~ ~ ab5 ~] [f5 ~ ~ gb5]>")
+  .s("triangle")
+  .fm("<3 5 2 7>")
+  .fmh("<1.5 2.01 0.5 3.14>")
+  .lpf(sine.range(600, 2400).slow(16))
+  .lpq(8)
+  .attack(0.01)
+  .decay("<0.08 0.15 0.05 0.2>")
+  .sustain(0)
+  .release("<0.3 0.5 0.2 0.8>")
+  .pan(sine.range(0.3, 0.7).slow(8))
+  .gain(0.3)
+  .room(0.6)
+  .delay(0.4)
+  .delaytime(0.333)
+  .delayfeedback(0.45)
+  .sometimes(x => x.speed("<2 0.5>"))`;
+
+export const DEMO_PREFILL_SCENARIO: DemoMoodScenario = {
+  roleSnippets: {
+    drums: _PF_DRUMS_INITIAL,
+    bass: _PF_BASS,
+    pad: _PF_PAD,
+    fx: _PF_FX,
+  },
+  rounds: [
+    {
+      thinking:
+        '我来构思一下这首 Lo-fi Electronica 曲目。90 BPM，coastal cinematic 氛围，以 Fender Rhodes 的 minor 9th 和弦为核心，搭配深沉的贝斯、极简 IDM 鼓点和有机的氛围纹理。先设定速度，然后从鼓骨架开始搭建。 让我先设好 BPM，然后同时草拟鼓组和 Rhodes 和弦层。',
+      toolCalls: [
+        { name: 'setTempo', args: { bpm: 90 } },
+        { name: 'improvise', args: { role: 'drums', hints: '90 BPM, Bb minor, IDM-influenced minimalism, coastal chill vibe, dry and crisp sounds' } },
+        { name: 'improvise', args: { role: 'bass', hints: '90 BPM, Bb minor, deep and warm, acoustic bass tone, cinematic coastal feel, minimal movement' } },
+      ],
+    },
+    {
+      thinking:
+        '好的，鼓和贝斯的草稿出来了。鼓组有 808 底鼓、rimshot 和 shaker，贝斯用了 GM acoustic bass。现在继续草拟 Rhodes 和弦和氛围纹理层。',
+      toolCalls: [
+        { name: 'improvise', args: { role: 'pad', hints: '90 BPM, Bb minor, Rhodes/electric piano timbre, heavy reverb and phaser, cinematic coastal lo-fi, lush minor 9th chords' } },
+        { name: 'improvise', args: { role: 'fx', hints: '90 BPM, Bb minor, IDM-influenced organic glitches, FM chirps, sweeping LPF, experimental but chill, coastal atmosphere' } },
+      ],
+    },
+    {
+      thinking:
+        '太好了，四个层的草稿都有了。现在我来整理一下：然后把所有层添加进去。',
+      toolCalls: [
+        { name: 'addLayer', args: { name: 'drums', code: _PF_DRUMS_INITIAL } },
+        { name: 'addLayer', args: { name: 'bass', code: _PF_BASS } },
+        { name: 'addLayer', args: { name: 'pad', code: _PF_PAD } },
+        { name: 'addLayer', args: { name: 'fx', code: _PF_FX } },
+      ],
+    },
+    {
+      thinking: '验证通过！所有四层都就位了，让我提交最终版本。',
+      toolCalls: [
+        {
+          name: 'commit',
+          args: {
+            explanation:
+              '搭建了一首 90 BPM Lo-fi Electronica 曲目：极简 IDM 鼓组（干燥底鼓 + clap rimshot + 细腻 hi-hat shaker）、深沉的 GM 原声贝斯跟随 Bb-F 根音、gm_epiano1 演奏 Bbm9/Fm9 和弦配以重 phaser 和混响、以及 FM 合成 chirp 氛围纹理层带有 16 拍周期的扫频低通滤波器。海岸线般的 cinematic chill 氛围。',
+          },
+        },
+      ],
+    },
+  ],
 };
-
-/** 根据 instruction 精确匹配当前 set 的提示词，返回对应代码；否则返回场景2代码 */
-export function resolveDemoCode(instruction: string): string {
-  const match = getActiveDemoSet().find((s) => s.prompt === instruction);
-  return match ? match.code : DEMO_SCENARIO_2.code;
-}
-
-/** 根据 instruction 返回该场景的 addLayer 中间步骤 */
-export function resolveDemoSteps(instruction: string): DemoStep[] {
-  const match = getActiveDemoSet().find((s) => s.prompt === instruction);
-  return match ? [...match.steps] : [...DEMO_SCENARIO_2.steps];
-}
 
 // ── Demo 心情模式场景 ───────────────────────────────────────────────────────
 

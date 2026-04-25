@@ -8,7 +8,7 @@ import { useSuggestions } from './hooks/useSuggestions';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
-import { isDemoMode, getActiveDemoSet, DEMO_SCENARIO_2 } from './demo/demo-config';
+import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
@@ -18,7 +18,6 @@ export default function App() {
   const sessions = useSessions();
   const [isLoading, setIsLoading] = useState(false);
   const [isMoodLoading, setIsMoodLoading] = useState(false);
-  const [demoPrefill, setDemoPrefill] = useState('');
   const [demoStep, setDemoStep] = useState(0);
 
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => !hasApiKeyConfigured());
@@ -245,9 +244,7 @@ export default function App() {
         sessions={sessions.sessions}
         currentId={sessions.currentId}
         suggestions={demoSuggestions}
-        prefill={isDemoMode() ? demoPrefill : undefined}
-        fillSuggestion={isDemoMode() ? DEMO_SCENARIO_2.prefill : undefined}
-        onFill={isDemoMode() ? (text) => setDemoPrefill(text) : undefined}
+        fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
         onMoodGenerate={handleMoodInstruction}

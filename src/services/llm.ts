@@ -16,7 +16,7 @@ import {
 } from '../agent/tools';
 import { getRoleHint } from '../prompts/styles';
 import { getActiveModelConfig } from './llm-config';
-import { isDemoMode, resolveDemoCode, resolveDemoSteps, DEMO_MOOD_SCENARIO } from '../demo/demo-config';
+import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 
 // ===========================================================================
@@ -351,20 +351,28 @@ export async function runAgent(
     : AGENT_SYSTEM_PROMPT;
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
+  const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;
 
   const llm = isDemoMode()
     ? isMoodDemo
       ? createDemoMoodLLMCaller(DEMO_MOOD_SCENARIO)
-      : createDemoLLMCaller(resolveDemoCode(instruction), resolveDemoSteps(instruction))
+      : isPrefillDemo
+        ? createDemoMoodLLMCaller(DEMO_PREFILL_SCENARIO)
+        : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
     : llmCaller;
 
-  // 心情 demo 使用预写片段，跳过真实 LLM improvise 调用
+  // 心情 demo 和灵感 demo 使用预写片段，跳过真实 LLM improvise 调用
   const effectiveImproviseLLM = isMoodDemo
     ? async (req: ImproviseRequest) => {
         await new Promise<void>((r) => setTimeout(r, 1400));
         return DEMO_MOOD_SCENARIO.roleSnippets[req.role] ?? IMPROVISE_FALLBACKS[req.role] ?? '';
       }
-    : improviseLLM;
+    : isPrefillDemo
+      ? async (req: ImproviseRequest) => {
+          await new Promise<void>((r) => setTimeout(r, 1400));
+          return DEMO_PREFILL_SCENARIO.roleSnippets[req.role] ?? IMPROVISE_FALLBACKS[req.role] ?? '';
+        }
+      : improviseLLM;
 
   return runAgentLoop({
     instruction,

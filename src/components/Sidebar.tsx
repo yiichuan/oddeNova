@@ -17,9 +17,7 @@ interface SidebarProps {
   sessions: Session[];
   currentId: string | null;
   suggestions: string[];
-  prefill?: string;
   fillSuggestion?: string;
-  onFill?: (text: string) => void;
   onSendText: (text: string) => void;
   onNewSession: () => void;
   onMoodGenerate: () => void;
@@ -37,9 +35,7 @@ export default function Sidebar({
   sessions,
   currentId,
   suggestions,
-  prefill,
   fillSuggestion,
-  onFill,
   onSendText,
   onNewSession,
   onMoodGenerate,
@@ -129,15 +125,15 @@ export default function Sidebar({
                   {s}
                 </button>
               ))}
-              {fillSuggestion && onFill && (
+              {fillSuggestion && (
                 <button
                   key="fill-suggestion"
                   type="button"
-                  onClick={() => onFill(fillSuggestion)}
+                  onClick={() => onSendText(fillSuggestion)}
                   className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
                   style={{ fontFamily: '"GenWanMin TW", serif' }}
                 >
-                  灵感一下…
+                  来首曲子
                 </button>
               )}
               <button
@@ -154,7 +150,7 @@ export default function Sidebar({
             </div>
           )}
 
-          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} prefill={prefill} />
+          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} />
         </div>
       </div>
     </aside>
