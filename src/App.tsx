@@ -26,7 +26,8 @@ export default function App() {
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
   // Session code = last committed/played code (used as agent context)
-  const currentCode = current?.code ?? '';
+  // Fall back to live editor code so manually-pasted code is visible to the agent.
+  const currentCode = strudel.code || (current?.code ?? '');
   const hasUserMessages = messages.some((m) => m.role === 'user');
 
   const suggestions = useSuggestions({
