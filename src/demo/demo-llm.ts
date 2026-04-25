@@ -14,6 +14,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function streamText(text: string, onTextDelta: (delta: string) => void): Promise<void> {
+  for (const char of text) {
+    onTextDelta(char);
+    await sleep(18);
+  }
+}
+
 export function createDemoLLMCaller(targetCode: string, steps: DemoStep[]): LLMCaller {
   let step = 0;
 
@@ -24,7 +31,7 @@ export function createDemoLLMCaller(targetCode: string, steps: DemoStep[]): LLMC
         const { name, code, thinking } = steps[step];
         // 首步多等一会儿，后续步骤稍短，模拟真实 LLM 响应节奏
         await sleep(step === 0 ? 2000 : 1500);
-        if (thinking && onTextDelta) onTextDelta(thinking);
+        if (thinking && onTextDelta) await streamText(thinking, onTextDelta);
         const call: ToolCallRequest = {
           id: `demo-tool-${step}`,
           name: 'addLayer',
@@ -61,7 +68,7 @@ export function createDemoMoodLLMCaller(scenario: DemoMoodScenario): LLMCaller {
         const { thinking, toolCalls } = scenario.rounds[round];
         // 首轮稍长，后续轮次稍短，模拟真实 LLM 思考节奏
         await sleep(round === 0 ? 3000 : 2200);
-        if (thinking && onTextDelta) onTextDelta(thinking);
+        if (thinking && onTextDelta) await streamText(thinking, onTextDelta);
         const calls: ToolCallRequest[] = toolCalls.map((tc, i) => ({
           id: `demo-mood-${round}-${i}`,
           name: tc.name,
