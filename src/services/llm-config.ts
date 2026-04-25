@@ -42,8 +42,7 @@ const DEFAULT_MODEL: ModelKey = 'opus';
 
 // 允许通过 Vite 环境变量覆盖（如 .env.local 里 VITE_LLM_MODEL=opus）。
 function resolveActiveKey(): ModelKey {
-  const envKey = (import.meta as unknown as { env?: Record<string, string> })?.env
-    ?.VITE_LLM_MODEL as ModelKey | undefined;
+  const envKey = import.meta.env.VITE_LLM_MODEL as ModelKey | undefined;
   if (envKey && envKey in MODELS) return envKey;
   return DEFAULT_MODEL;
 }
@@ -52,16 +51,15 @@ export const ACTIVE_MODEL: ModelKey = resolveActiveKey();
 
 /** 从环境变量或 localStorage 读取运行时配置，合并到模型静态配置中。 */
 export function getActiveModelConfig(): ModelConfig {
-  const env = (import.meta as unknown as { env?: Record<string, string> })?.env ?? {};
   const base = MODELS[ACTIVE_MODEL];
 
   const apiKey =
-    env['VITE_API_KEY'] ||
+    import.meta.env.VITE_API_KEY ||
     localStorage.getItem('vibe_api_key') ||
     '';
 
   const baseURL =
-    env['VITE_BASE_URL'] ||
+    import.meta.env.VITE_BASE_URL ||
     localStorage.getItem('vibe_base_url') ||
     base.baseURL;
 
@@ -70,9 +68,8 @@ export function getActiveModelConfig(): ModelConfig {
 
 /** 是否已有 API Key 配置（环境变量或 localStorage 任一非空即视为已配置）。 */
 export function hasApiKeyConfigured(): boolean {
-  const env = (import.meta as unknown as { env?: Record<string, string> })?.env ?? {};
   return !!(
-    env['VITE_API_KEY'] ||
+    import.meta.env.VITE_API_KEY ||
     localStorage.getItem('vibe_api_key')
   );
 }
