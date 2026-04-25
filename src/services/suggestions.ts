@@ -4,12 +4,11 @@ import { getActiveModelConfig } from './llm-config';
 // 模型/凭据复用 services/llm-config.ts 中的统一配置，方便切换 sonnet / opus。
 
 export const STATIC_SUGGESTIONS = [
-  '来一段 lo-fi 鼓点',
-  '来点空灵的 pad',
-  '给我来首 ambient 曲',
-  '来段放松的电子乐',
-  '来一首 house 节奏',
-  '来段爵士风格的曲子',
+  '来段复古游戏机通关音乐',
+  '来段Jazz Funk',
+  '来首小提琴和钢琴',
+  '来点动感音乐',
+  '来首古典优雅钢琴曲',
 ];
 
 let client: Anthropic | null = null;

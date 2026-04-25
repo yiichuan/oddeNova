@@ -20,7 +20,8 @@ export function useSuggestions(opts: {
   messages: ChatMessage[];
 }) {
   const { key, currentCode, hasUserMessages, messages } = opts;
-  const [suggestions, setSuggestions] = useState<string[]>(() => STATIC_SUGGESTIONS.slice(0, 2));
+  const [suggestions, setSuggestions] = useState<string[]>(() => [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2));
+  const [loading, setLoading] = useState(false);
   const [prevKey, setPrevKey] = useState(key);
   const reqIdRef = useRef(0);
   const lastCodeRef = useRef<string>('');
@@ -28,7 +29,8 @@ export function useSuggestions(opts: {
   // Reset when switching sessions.
   if (prevKey !== key) {
     setPrevKey(key);
-    setSuggestions(STATIC_SUGGESTIONS.slice(0, 2));
+    setSuggestions([...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2));
+    setLoading(false);
   }
 
   // Reset lastCodeRef when key changes (safe to access refs inside effects).
@@ -45,13 +47,18 @@ export function useSuggestions(opts: {
     if (lastCodeRef.current === currentCode) return;
     lastCodeRef.current = currentCode;
 
+    // Hide current chips while fetching new ones.
+    setSuggestions([]);
+    setLoading(true);
+
     const my = ++reqIdRef.current;
     buildSuggestions(currentCode, messages).then((chips) => {
       // Drop stale responses if the user moved on already.
       if (my !== reqIdRef.current) return;
+      setLoading(false);
       if (chips.length > 0) setSuggestions(chips);
     });
   }, [currentCode, hasUserMessages, messages]);
 
-  return suggestions;
+  return { suggestions, loading };
 }

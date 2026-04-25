@@ -29,7 +29,7 @@ export default function App() {
   const currentCode = strudel.code || (current?.code ?? '');
   const hasUserMessages = messages.some((m) => m.role === 'user');
 
-  const suggestions = useSuggestions({
+  const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
     currentCode,
     // demo 模式下不需要真实 LLM suggestions，跳过 buildSuggestions 调用
@@ -244,6 +244,7 @@ export default function App() {
         sessions={sessions.sessions}
         currentId={sessions.currentId}
         suggestions={demoSuggestions}
+        suggestionsLoading={!isDemoMode() && suggestionsLoading}
         fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
         onSendText={handleInstruction}
         onNewSession={handleNewSession}
