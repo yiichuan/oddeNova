@@ -1,4 +1,4 @@
-# Vibe Live Music — 提示词文档
+# oddeNova — 提示词文档
 
 本文档汇总项目中所有 LLM 提示词（System Prompt / User Prompt 模板），包含来源位置、用途说明、完整原文及中文译文。
 
@@ -20,7 +20,7 @@
 
 ## 目录
 
-- [Vibe Live Music — 提示词文档](#vibe-live-music--提示词文档)
+- [oddeNova — 提示词文档](#vibe-live-music--提示词文档)
   - [目录](#目录)
   - [1. STRUDEL\_CHEATSHEET\_CONCISE — Strudel 速查表](#1-strudel_cheatsheet_concise--strudel-速查表)
   - [2. AGENT\_SYSTEM\_PROMPT — Agent 主系统提示词](#2-agent_system_prompt--agent-主系统提示词)
