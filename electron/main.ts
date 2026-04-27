@@ -139,10 +139,10 @@ app.whenReady().then(async () => {
     : nativeImage.createEmpty()
 
   tray = new Tray(icon)
-  tray.setToolTip('Vibe Live Music')
+  tray.setToolTip('oddeNova')
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: '打开 Vibe Live Music', click: () => shell.openExternal(APP_URL) },
+      { label: '打开 oddeNova', click: () => shell.openExternal(APP_URL) },
       { type: 'separator' },
       { label: '退出', click: () => app.quit() },
     ])

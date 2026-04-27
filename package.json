@@ -1,5 +1,5 @@
 {
-  "name": "vibe-live-music",
+  "name": "odde-nova",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -44,8 +44,8 @@
     "vite": "^8.0.4"
   },
   "build": {
-    "appId": "com.vibelivemusic.app",
-    "productName": "Vibe Live Music",
+    "appId": "com.oddenova.app",
+    "productName": "oddeNova",
     "directories": {
       "output": "release"
     },
@@ -68,7 +68,7 @@
       ]
     },
     "dmg": {
-      "title": "Vibe Live Music"
+      "title": "oddeNova"
     }
   }
 }
