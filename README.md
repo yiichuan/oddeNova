@@ -1,5 +1,6 @@
 <div align="center">
-  <img src="./logo/OddeNova-Logo.svg" alt="oddeNova logo" height="100" style="background:#000;padding:16px 24px;border-radius:12px;" />
+
+# oddeNova
 
 ## **你如何 vibe coding，就如何 vibe 一只属于自己的单曲**
 
