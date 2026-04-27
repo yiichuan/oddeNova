@@ -110,14 +110,15 @@ function startServer(distPath: string): Promise<void> {
   })
 }
 
-// Single instance lock — second launch opens browser instead of starting again
+// Single instance lock — let the running instance handle reactivation
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
-  shell.openExternal(APP_URL)
   app.quit()
+} else {
+  app.on('second-instance', () => {
+    shell.openExternal(APP_URL)
+  })
 }
-
-app.dock?.hide()
 
 let tray: Tray | null = null
 
@@ -150,5 +151,9 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  // Keep running as tray app — do not quit
+  // Keep running — do not quit
+})
+
+app.on('activate', () => {
+  shell.openExternal(APP_URL)
 })
