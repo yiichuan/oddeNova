@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "dist:mac": "vite build && npm run build:electron && electron-builder --mac dmg"
   },
   "dependencies": {
     "@airjelly/sdk": "^0.1.0",
@@ -30,6 +32,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
@@ -38,5 +42,33 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",
     "vite": "^8.0.4"
+  },
+  "build": {
+    "appId": "com.vibelivemusic.app",
+    "productName": "Vibe Live Music",
+    "directories": {
+      "output": "release"
+    },
+    "extraMetadata": {
+      "main": "dist-electron/main.js",
+      "type": "commonjs"
+    },
+    "files": [
+      "dist-electron/**"
+    ],
+    "extraResources": [
+      { "from": "dist", "to": "dist" }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "identity": "Developer ID Application",
+      "notarize": true,
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ]
+    },
+    "dmg": {
+      "title": "Vibe Live Music"
+    }
   }
 }
