@@ -20,6 +20,8 @@ import { validateCode } from '../services/strudel';
 export interface ChatMsg {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content?: string | null;
+  /** DeepSeek thinking mode: must be echoed back on every subsequent turn. */
+  reasoning_content?: string | null;
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -36,6 +38,8 @@ export interface LLMCaller {
     onTextDelta?: (delta: string) => void
   ): Promise<{
     content: string | null;
+    /** DeepSeek thinking mode: pass through so the loop can echo it back. */
+    reasoning_content?: string | null;
     toolCalls: ToolCallRequest[];
   }>;
 }
@@ -128,9 +132,11 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     // Push the assistant message so subsequent tool messages link back to it
     // (OpenAI requires assistant tool_calls to be present in history before
     // the matching tool replies).
+    // DeepSeek thinking mode: reasoning_content must be echoed back verbatim.
     messages.push({
       role: 'assistant',
       content: resp.content,
+      ...(resp.reasoning_content ? { reasoning_content: resp.reasoning_content } : {}),
       tool_calls:
         resp.toolCalls.length > 0
           ? resp.toolCalls.map((c) => ({
@@ -182,6 +188,13 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
       console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
+
+      // `improvise` triggers a blocking sub-LLM call with no streaming output.
+      // Show a thinking bubble so the UI doesn't appear frozen.
+      if (call.name === 'improvise') {
+        const role = (parsedArgs.role as string) || '';
+        onProgress?.({ kind: 'assistant_text_delta', delta: `正在为 ${role} 层创作片段…` });
+      }
 
       try {
         const outcome = await dispatchToolCall(call, ctx);

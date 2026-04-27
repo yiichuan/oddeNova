@@ -252,6 +252,7 @@ export default function App() {
         onReinitEngine={strudel.reinit}
         onSwitchSession={sessions.switchTo}
         onDeleteSession={sessions.deleteSession}
+        onOpenSettings={() => setShowApiKeyModal(true)}
       />
 
       <main className="flex-1 flex flex-col gap-3 pt-3 pr-3 pb-3 pl-[22px] min-w-0">

@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { getActiveModelConfig } from './llm-config';
+import { chatOnce } from './llm';
 
-// 模型/凭据复用 services/llm-config.ts 中的统一配置，方便切换 sonnet / opus。
+// 模型/凭据复用 services/llm-config.ts 中的统一配置；
+// 单轮请求通过 chatOnce() 自动路由到当前 provider。
 
 export const STATIC_SUGGESTIONS = [
   '来段复古游戏机通关音乐',
@@ -10,23 +10,6 @@ export const STATIC_SUGGESTIONS = [
   '来点动感音乐',
   '来首古典优雅钢琴曲',
 ];
-
-let client: Anthropic | null = null;
-
-function getClient(): Anthropic {
-  if (!client) {
-    const cfg = getActiveModelConfig();
-    client = new Anthropic({
-      apiKey: cfg.apiKey,
-      baseURL: cfg.baseURL,
-      dangerouslyAllowBrowser: true,
-      defaultHeaders: {
-        Authorization: `Bearer ${cfg.apiKey}`,
-      },
-    });
-  }
-  return client;
-}
 
 export type MusicStage = 'early' | 'developing' | 'full';
 export type MusicLayer = typeof ALL_LAYERS[number];
@@ -181,23 +164,10 @@ export async function buildSuggestions(
     const styleIntent = extractStyleIntent(messages);
     const system = buildSuggestSystem(state, styleIntent);
 
-    const anthropic = getClient();
-    const resp = await anthropic.messages.create({
-      model: getActiveModelConfig().model,
-      system,
-      messages: [
-        {
-          role: 'user',
-          content: `当前曲谱：\n${currentCode}\n\n请输出 2 条建议。`,
-        },
-      ],
+    const text = await chatOnce(system, `当前曲谱：\n${currentCode}\n\n请输出 2 条建议。`, {
       temperature: 0.8,
-      max_tokens: 200,
+      maxTokens: 200,
     });
-    const text = resp.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
     const parsed = parseSuggestions(text);
     if (parsed && parsed.length > 0) return parsed.slice(0, 2);
   } catch (e) {

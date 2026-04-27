@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import {
   AGENT_SYSTEM_PROMPT,
+  AGENT_SYSTEM_PROMPT_OPENAI,
   IMPROVISE_SYSTEM_PROMPT,
 } from '../prompts/system-prompt';
 import {
@@ -20,20 +22,23 @@ import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, 
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 
 // ===========================================================================
-// Anthropic client — the upstream proxy at timesniper.club speaks BOTH the
-// OpenAI and Anthropic protocols. We went back to the native Anthropic
-// Messages protocol because json_object / tool-calling behaviour via the
-// OpenAI-compat shim was unreliable on claude-sonnet-4-6.
+// 双 Provider 客户端管理。
 //
-// 模型/凭据配置统一放在 ./llm-config.ts，方便在 sonnet / opus 之间切换。
+// - provider='anthropic' → 使用 @anthropic-ai/sdk（原生 Anthropic Messages 协议）
+//   tool-calling 行为更可靠，保留原有实现。
+// - provider='openai' / 'openai-compat' → 使用 openai SDK（OpenAI Chat Completions 协议）
+//   支持 OpenAI、DeepSeek、通义千问等兼容接口。
+//
+// 模型/凭据配置统一放在 ./llm-config.ts。
 // ===========================================================================
 
-let client: Anthropic | null = null;
+let anthropicClient: Anthropic | null = null;
+let openaiClient: OpenAI | null = null;
 
-function getClient(): Anthropic {
-  if (!client) {
+function getAnthropicClient(): Anthropic {
+  if (!anthropicClient) {
     const cfg = getActiveModelConfig();
-    client = new Anthropic({
+    anthropicClient = new Anthropic({
       apiKey: cfg.apiKey,
       baseURL: cfg.baseURL,
       dangerouslyAllowBrowser: true,
@@ -46,31 +51,78 @@ function getClient(): Anthropic {
       },
     });
   }
-  return client;
+  return anthropicClient;
 }
 
+function getOpenAIClient(): OpenAI {
+  if (!openaiClient) {
+    const cfg = getActiveModelConfig();
+    openaiClient = new OpenAI({
+      apiKey: cfg.apiKey,
+      baseURL: cfg.baseURL || undefined,
+      dangerouslyAllowBrowser: true,
+    });
+  }
+  return openaiClient;
+}
 
-/** 清空 Anthropic client 单例，下次调用 getClient() 时使用最新配置重建。 */
+/** 清空客户端单例，下次调用时使用最新配置重建。 */
 export function resetClient(): void {
-  client = null;
+  anthropicClient = null;
+  openaiClient = null;
 }
 
 function getModel(): string {
   return getActiveModelConfig().model;
 }
 
+function isOpenAIProvider(): boolean {
+  return getActiveModelConfig().protocol === 'openai';
+}
+
 // ---------------------------------------------------------------------------
-// Helpers: collapse the response.content[] blocks into plain text, and the
-// reverse — convert our ChatMsg[] history (OpenAI-shaped, used by the agent
-// loop) into Anthropic's messages + system pair.
+// chatOnce — 单轮无工具调用。供 improviseLLM 和 suggestions.ts 共用，
+// 自动根据当前 provider 路由到对应 SDK。
 // ---------------------------------------------------------------------------
 
-function extractText(response: Anthropic.Message): string {
-  return response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
+export async function chatOnce(
+  system: string,
+  userContent: string,
+  opts: { temperature?: number; maxTokens?: number } = {}
+): Promise<string> {
+  const { temperature = 0.8, maxTokens = 200 } = opts;
+
+  if (isOpenAIProvider()) {
+    const oai = getOpenAIClient();
+    const resp = await oai.chat.completions.create({
+      model: getModel(),
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userContent },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+    });
+    return resp.choices[0]?.message?.content ?? '';
+  } else {
+    const anthropic = getAnthropicClient();
+    const resp = await anthropic.messages.create({
+      model: getModel(),
+      system,
+      messages: [{ role: 'user', content: userContent }],
+      temperature,
+      max_tokens: maxTokens,
+    });
+    return resp.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('');
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers for Anthropic path: collapse content blocks, convert chat history.
+// ---------------------------------------------------------------------------
 
 interface ConvertedHistory {
   system: string;
@@ -93,7 +145,6 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
     const content = typeof msg.content === 'string' ? msg.content : '';
 
     if (msg.role === 'system') {
-      // Concatenate so we don't silently drop a mid-conversation system nudge.
       system = system ? `${system}\n\n${content}` : content;
       continue;
     }
@@ -128,8 +179,6 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
         }
       }
       if (blocks.length === 0) {
-        // Anthropic rejects empty assistant content. Skip the message —
-        // losing an empty assistant turn doesn't affect the conversation.
         continue;
       }
       out.push({ role: 'assistant', content: blocks });
@@ -142,8 +191,6 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
         tool_use_id: msg.tool_call_id || '',
         content,
       };
-      // Fold consecutive tool replies into the previous user message so each
-      // assistant `tool_use` gets paired inside the same user turn.
       const prev = out[out.length - 1];
       if (prev && prev.role === 'user' && Array.isArray(prev.content)) {
         (prev.content as Anthropic.ContentBlockParam[]).push(block);
@@ -157,8 +204,7 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
   return { system, messages: out };
 }
 
-// OpenAI tool schemas → Anthropic tool schemas. The JSON Schema payload itself
-// is identical; only the outer envelope differs.
+// OpenAI tool schemas → Anthropic tool schemas.
 function convertTools(
   oaiTools: ReturnType<typeof getOpenAIToolSchemas>
 ): Anthropic.Tool[] {
@@ -170,13 +216,12 @@ function convertTools(
 }
 
 // ===========================================================================
-// Agent mode entry point. Wraps the Anthropic client in the loop's LLMCaller
-// interface and exposes a streaming-progress runAgent() to the UI.
+// LLMCaller 实现 — Anthropic 路径（原有逻辑）
 // ===========================================================================
 
-const llmCaller: LLMCaller = {
+const anthropicLLMCaller: LLMCaller = {
   async chatWithTools(messages: ChatMsg[], tools, onTextDelta) {
-    const anthropic = getClient();
+    const anthropic = getAnthropicClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
     const stream = anthropic.messages.stream({
@@ -217,9 +262,84 @@ const llmCaller: LLMCaller = {
   },
 };
 
+// ===========================================================================
+// LLMCaller 实现 — OpenAI / OpenAI-compat 路径
+// ===========================================================================
+
+function createOpenAILLMCaller(): LLMCaller {
+  return {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta) {
+      const oai = getOpenAIClient();
+
+      const stream = await oai.chat.completions.create({
+        model: getModel(),
+        // ChatMsg 已是 OpenAI 格式，可直接传入
+        messages: messages as OpenAI.ChatCompletionMessageParam[],
+        tools: tools as OpenAI.ChatCompletionTool[],
+        tool_choice: 'auto',
+        temperature: 0.7,
+        max_tokens: 8192,
+        stream: true,
+      });
+
+      let text = '';
+      let reasoningContent = '';
+      const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
+
+      for await (const chunk of stream) {
+        // DeepSeek extends the OpenAI delta with `reasoning_content`.
+        // Cast to access this non-standard field without breaking the TS types.
+        const delta = chunk.choices[0]?.delta as (typeof chunk.choices[0]['delta']) & {
+          reasoning_content?: string;
+        };
+        if (!delta) continue;
+
+        if (delta.reasoning_content) {
+          reasoningContent += delta.reasoning_content;
+          // reasoning_content is echoed back for multi-turn correctness but
+          // not shown in the UI — the model outputs a short planning sentence
+          // in `content` instead (see system prompt Working style §5).
+        }
+
+        if (delta.content) {
+          text += delta.content;
+          onTextDelta?.(delta.content);
+        }
+
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            if (!toolCallBuffers.has(tc.index)) {
+              toolCallBuffers.set(tc.index, { id: '', name: '', args: '' });
+            }
+            const buf = toolCallBuffers.get(tc.index)!;
+            if (tc.id) buf.id = tc.id;
+            if (tc.function?.name) buf.name = tc.function.name;
+            if (tc.function?.arguments) buf.args += tc.function.arguments;
+          }
+        }
+      }
+
+      const toolCalls = Array.from(toolCallBuffers.values()).map((buf) => ({
+        id: buf.id,
+        name: buf.name,
+        arguments: buf.args,
+      }));
+
+      return {
+        content: text.trim() || null,
+        reasoning_content: reasoningContent || null,
+        toolCalls,
+      };
+    },
+  };
+}
+
+// ===========================================================================
+// improviseLLM — 基于 chatOnce，自动路由到当前 provider。
+// ===========================================================================
+
 // Role-indexed canned snippets — used as the last-resort fallback so a flaky
-// sub-LLM response never breaks the agent loop. Each must be a single chained
-// Strudel expression (no stack wrap, no setcps, no semicolons).
+// sub-LLM response never breaks the agent loop.
 const IMPROVISE_FALLBACKS: Record<string, string> = {
   drums: 's("bd ~ sd ~").bank("RolandTR808").gain(0.8)',
   hh: 's("hh*8").gain(0.5)',
@@ -230,13 +350,6 @@ const IMPROVISE_FALLBACKS: Record<string, string> = {
 };
 
 // Pull a Strudel snippet out of whatever shape the sub-LLM decided to return.
-// Claude is relatively well-behaved with structured prompts but still varies,
-// so we keep the same tolerant parser we used under the OpenAI-compat path:
-//   1. strict JSON  `{"code": "..."}`
-//   2. markdown-fenced JSON    ```json { "code": "..." } ```
-//   3. unterminated JSON with a `"code": "..."` field we can regex out
-//   4. bare code fence  ```js s("bd") ```
-//   5. raw text that looks like a strudel expression (s(... / note(... / n(...)
 function extractStrudelSnippet(text: string): string | null {
   if (!text) return null;
 
@@ -278,9 +391,6 @@ function extractStrudelSnippet(text: string): string | null {
   // 5) raw text that already looks like a strudel expression
   const trimmed = text.trim();
   if (trimmed && /(^|[^a-zA-Z_])(s|n|note|stack|chord)\s*\(/.test(trimmed)) {
-    // Take everything up to the first line that clearly isn't expression-like
-    // (e.g. trailing prose). A single-expression snippet typically has no blank
-    // lines mid-way, so split on the first blank line.
     const firstChunk = trimmed.split(/\n\s*\n/)[0].trim();
     return firstChunk || trimmed;
   }
@@ -290,9 +400,6 @@ function extractStrudelSnippet(text: string): string | null {
 
 async function improviseLLM(req: ImproviseRequest): Promise<string> {
   const { role, hints, currentCode, style, complementTask } = req;
-  const anthropic = getClient();
-  // Look up the per-role style hint from styles.ts so the sub-model gets
-  // concrete guidance instead of just a bare style id.
   const styleHint = style ? getRoleHint(style, role) : '';
   const userPrompt = [
     `role: ${role}`,
@@ -307,14 +414,8 @@ async function improviseLLM(req: ImproviseRequest): Promise<string> {
 
   const tryCall = async (systemPrompt: string, tokens: number): Promise<string | null> => {
     try {
-      const resp = await anthropic.messages.create({
-        model: getModel(),
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-        temperature: 0.9,
-        max_tokens: tokens,
-      });
-      return extractStrudelSnippet(extractText(resp));
+      const text = await chatOnce(systemPrompt, userPrompt, { temperature: 0.9, maxTokens: tokens });
+      return extractStrudelSnippet(text);
     } catch (e) {
       console.warn('[improvise] upstream call errored', e);
       return null;
@@ -324,7 +425,6 @@ async function improviseLLM(req: ImproviseRequest): Promise<string> {
   const first = await tryCall(IMPROVISE_SYSTEM_PROMPT, 512);
   if (first) return first;
 
-  // Retry with a looser prompt: ask for a raw expression, no JSON at all.
   const retryPrompt = [
     'You are a Strudel snippet generator.',
     'Output ONLY one single chained Strudel expression — no JSON, no markdown fences, no comments, no prose.',
@@ -334,8 +434,6 @@ async function improviseLLM(req: ImproviseRequest): Promise<string> {
   const second = await tryCall(retryPrompt, 512);
   if (second) return second;
 
-  // Last resort — a safe canned snippet so the agent loop can keep progressing
-  // instead of surfacing an "improvise 失败" error the user doesn't need to see.
   console.warn(`[improvise] falling back to canned snippet for role=${role}`);
   return IMPROVISE_FALLBACKS[role] ?? IMPROVISE_FALLBACKS.drums;
 }
@@ -346,13 +444,17 @@ export async function runAgent(
   onProgress?: (e: ProgressEvent) => void,
   moodContext?: string,
 ): Promise<RunAgentResult> {
+  const basePrompt = isOpenAIProvider() ? AGENT_SYSTEM_PROMPT_OPENAI : AGENT_SYSTEM_PROMPT;
   const systemPrompt = moodContext
-    ? `${AGENT_SYSTEM_PROMPT}\n\n${moodContext}`
-    : AGENT_SYSTEM_PROMPT;
+    ? `${basePrompt}\n\n${moodContext}`
+    : basePrompt;
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
   const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;
   const staticScenario = resolveStaticSuggestionScenario(instruction);
+
+  // 根据当前 provider 选择对应的 LLMCaller 实现
+  const activeLLMCaller = isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
 
   const llm = staticScenario
     ? createDemoLLMCaller(staticScenario)
@@ -362,9 +464,8 @@ export async function runAgent(
         : isPrefillDemo
           ? createDemoMoodLLMCaller(DEMO_PREFILL_SCENARIO)
           : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
-      : llmCaller;
+      : activeLLMCaller;
 
-  // 心情 demo 和灵感 demo 使用预写片段，跳过真实 LLM improvise 调用
   const effectiveImproviseLLM = isMoodDemo
     ? async (req: ImproviseRequest) => {
         await new Promise<void>((r) => setTimeout(r, 1400));
@@ -390,6 +491,4 @@ export async function runAgent(
 // Re-exported so callers don't need to reach into ../agent/loop directly.
 export type { ProgressEvent, RunAgentResult } from '../agent/loop';
 
-// Suppress the "unused import" warning if TS strips schema imports.
-// (Schema is imported transitively but listed here for visibility.)
 void getOpenAIToolSchemas;

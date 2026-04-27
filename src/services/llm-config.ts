@@ -1,75 +1,159 @@
 // ===========================================================================
 // LLM 配置文件 —— 集中管理可切换的模型与 API 凭据。
 //
-// 切换模型的方式：把下面的 ACTIVE_MODEL 改成 MODELS 中任意一个 key。
-// 例如：
-//   export const ACTIVE_MODEL: ModelKey = 'sonnet';   // 用 claude-sonnet-4-6
-//   export const ACTIVE_MODEL: ModelKey = 'opus';     // 用 claude-opus-4-6
-//
-// 也可以通过 Vite 环境变量 VITE_LLM_MODEL 覆盖（可选）。
-//
-// API Key 配置优先级（从高到低）：
-//   1. 项目根目录 .env.local 中的 VITE_API_KEY（不提交 git）
-//   2. localStorage['vibe_api_key']（弹窗填写后保存）
+// Provider 路由规则：
+//   anthropic  → 旧版代理 (timesniper.club) + LEGACY_MODELS + VITE_API_KEY 优先
+//   deepseek   → api.deepseek.com + 内置模型 + localStorage vibe_api_key
+//   kimi       → api.moonshot.cn  + 内置模型 + localStorage vibe_api_key
+//   openai     → api.openai.com   + 内置模型 + localStorage vibe_api_key
+//   未设置     → 同 anthropic（向后兼容旧用户）
 // ===========================================================================
 
-export interface ModelConfig {
-  /** 上游模型名（透传给 Anthropic 接口的 model 字段） */
-  model: string;
-  /** 接口 base URL */
+/** Provider 协议类型，决定使用哪套 SDK。 */
+export type Protocol = 'anthropic' | 'openai';
+
+/** 用户可选择的服务商 ID。 */
+export type ProviderType =
+  | 'deepseek'
+  | 'kimi'
+  | 'openai'
+  | 'anthropic';
+
+export interface ProviderPreset {
+  /** 显示名称 */
+  label: string;
+  /** 内置 Base URL */
   baseURL: string;
-  /** API Key */
+  /** 内置模型名，对用户不可见 */
+  model: string;
+  /** 使用哪套 SDK 协议 */
+  protocol: Protocol;
+}
+
+/** 各服务商的内置配置，Base URL 对用户不可见。 */
+export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
+  deepseek: {
+    label: 'DeepSeek',
+    baseURL: 'https://api.deepseek.com/v1',
+    model: 'deepseek-v4-flash', // 官方当前模型，支持 function calling
+    protocol: 'openai',
+  },
+  kimi: {
+    label: 'Kimi',
+    baseURL: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k2.6',         // 官方工具调用文档示例模型
+    protocol: 'openai',
+  },
+  openai: {
+    label: 'OpenAI',
+    baseURL: 'https://api.openai.com/v1',
+    model: 'gpt-5.5',           // 当前旗舰，支持 Chat Completions API + function calling
+    protocol: 'openai',
+  },
+  anthropic: {
+    label: 'Anthropic',
+    baseURL: 'https://api.anthropic.com', // 仅作展示用；实际 baseURL 走 LEGACY_BASE_URL
+    model: 'claude-opus-4-6',             // 仅作展示用；实际 model 走 LEGACY_MODELS
+    protocol: 'anthropic',
+  },
+};
+
+export interface ModelConfig {
+  model: string;
+  baseURL: string;
   apiKey: string;
+  provider: ProviderType;
+  protocol: Protocol;
 }
 
-const DEFAULT_BASE_URL = 'https://timesniper.club';
+// ---------------------------------------------------------------------------
+// Anthropic / 旧用户 路径（保持不变）
+// ---------------------------------------------------------------------------
 
-export const MODELS = {
-  sonnet: {
-    model: 'claude-sonnet-4-6',
-    baseURL: DEFAULT_BASE_URL,
-  },
-  opus: {
-    model: 'claude-opus-4-6',
-    baseURL: DEFAULT_BASE_URL,
-  },
-} as const satisfies Record<string, { model: string; baseURL: string }>;
+const LEGACY_BASE_URL = 'https://timesniper.club';
 
-export type ModelKey = keyof typeof MODELS;
+const LEGACY_MODELS: Record<string, string> = {
+  sonnet: 'claude-sonnet-4-6',
+  opus:   'claude-opus-4-6',
+};
 
-// 默认使用的模型 —— 改这里就能切换全局模型。
-const DEFAULT_MODEL: ModelKey = 'opus';
-
-// 允许通过 Vite 环境变量覆盖（如 .env.local 里 VITE_LLM_MODEL=opus）。
-function resolveActiveKey(): ModelKey {
-  const envKey = import.meta.env.VITE_LLM_MODEL as ModelKey | undefined;
-  if (envKey && envKey in MODELS) return envKey;
-  return DEFAULT_MODEL;
+function resolveAnthropicConfig(apiKey: string): ModelConfig {
+  const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
+  const legacyModel = envModel ? (LEGACY_MODELS[envModel] ?? envModel) : '';
+  return {
+    provider: 'anthropic',
+    protocol: 'anthropic',
+    apiKey,
+    baseURL: import.meta.env.VITE_BASE_URL || LEGACY_BASE_URL,
+    model:   legacyModel || LEGACY_MODELS['sonnet'],
+  };
 }
 
-export const ACTIVE_MODEL: ModelKey = resolveActiveKey();
+// ---------------------------------------------------------------------------
+// OpenAI-compat 路径（deepseek / kimi / openai）
+// ---------------------------------------------------------------------------
 
-/** 从环境变量或 localStorage 读取运行时配置，合并到模型静态配置中。 */
+function resolveOpenAICompatConfig(
+  provider: 'deepseek' | 'kimi' | 'openai',
+  apiKey: string,
+): ModelConfig {
+  const preset = PROVIDER_PRESETS[provider];
+  return {
+    provider,
+    protocol: 'openai',
+    apiKey,
+    baseURL: import.meta.env.VITE_BASE_URL || preset.baseURL,
+    model:   preset.model,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Provider 规范化（向后兼容旧 localStorage 值）
+// ---------------------------------------------------------------------------
+
+function normalizeProvider(raw: string | null): ProviderType {
+  if (!raw) return 'anthropic';
+  if (raw in PROVIDER_PRESETS) return raw as ProviderType;
+  // 旧版 'openai-compat' / 'custom' 均降级为 anthropic
+  return 'anthropic';
+}
+
+// ---------------------------------------------------------------------------
+// 主入口
+// ---------------------------------------------------------------------------
+
+/** 从环境变量或 localStorage 读取运行时配置。 */
 export function getActiveModelConfig(): ModelConfig {
-  const base = MODELS[ACTIVE_MODEL];
+  const provider = normalizeProvider(localStorage.getItem('vibe_provider'));
 
-  const apiKey =
+  // Anthropic 始终走旧代理；VITE_API_KEY 优先（方便本地开发）
+  const anthropicKey =
     import.meta.env.VITE_API_KEY ||
     localStorage.getItem('vibe_api_key') ||
     '';
 
-  const baseURL =
-    import.meta.env.VITE_BASE_URL ||
-    localStorage.getItem('vibe_base_url') ||
-    base.baseURL;
+  if (provider === 'anthropic') {
+    return resolveAnthropicConfig(anthropicKey);
+  }
 
-  return { model: base.model, baseURL, apiKey };
+  // 其他 provider 使用用户在 Modal 里填的 Key
+  const userApiKey = localStorage.getItem('vibe_api_key') || '';
+
+  // deepseek | kimi | openai
+  return resolveOpenAICompatConfig(provider, userApiKey);
 }
 
-/** 是否已有 API Key 配置（环境变量或 localStorage 任一非空即视为已配置）。 */
+/** 是否已有 API Key 配置。 */
 export function hasApiKeyConfigured(): boolean {
   return !!(
     import.meta.env.VITE_API_KEY ||
     localStorage.getItem('vibe_api_key')
   );
 }
+
+// 向后兼容：部分旧代码仍引用这些导出
+export type ModelKey = 'sonnet' | 'opus';
+export const ACTIVE_MODEL: ModelKey = (() => {
+  const env = import.meta.env.VITE_LLM_MODEL as string | undefined;
+  return (env === 'sonnet' ? 'sonnet' : 'opus') as ModelKey;
+})();

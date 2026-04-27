@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { type ProviderType, PROVIDER_PRESETS } from '../services/llm-config';
 
 interface ApiKeyModalProps {
   onClose: () => void;
@@ -7,54 +8,76 @@ interface ApiKeyModalProps {
   required?: boolean;
 }
 
+const PROVIDER_ORDER: ProviderType[] = [
+  'deepseek', 'anthropic',
+];
+
 export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiKeyModalProps) {
+  const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'deepseek';
+
+  const [provider, setProvider] = useState<ProviderType>(savedProvider);
   const [apiKey, setApiKey] = useState(localStorage.getItem('vibe_api_key') || '');
-  const [baseUrl, setBaseUrl] = useState(localStorage.getItem('vibe_base_url') || '');
+
+  const handleProviderChange = (p: ProviderType) => {
+    setProvider(p);
+    setApiKey('');
+  };
 
   const handleSave = () => {
     const trimmedKey = apiKey.trim();
     if (!trimmedKey) return;
+
     localStorage.setItem('vibe_api_key', trimmedKey);
-    if (baseUrl.trim()) {
-      localStorage.setItem('vibe_base_url', baseUrl.trim());
-    } else {
-      localStorage.removeItem('vibe_base_url');
-    }
+    localStorage.setItem('vibe_provider', provider);
+    localStorage.removeItem('vibe_base_url');
+    localStorage.removeItem('vibe_model');
+
     onSaved?.();
     onClose();
   };
 
+  const canSave = !!apiKey.trim();
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
       <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
         <h2 className="text-lg font-semibold text-text-primary mb-1">设置 API Key</h2>
         <p className="text-xs text-text-muted mb-4">
-          填入 Anthropic API Key（或兼容代理的 Key）。Key 保存在本地浏览器中，不会上传。
-          也可在项目根目录创建 <code className="text-accent">.env.local</code> 文件手动配置（重启后生效）。
+          选择服务商并填入对应的 API Key，即可开始使用。Key 仅保存在本地浏览器中。
         </p>
 
         <div className="space-y-3">
+          {/* 服务商选择 */}
           <div>
-            <label className="text-xs text-text-secondary mb-1 block">API Key *</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-              placeholder="sk-..."
-              className="w-full bg-bg-primary text-text-primary text-sm rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
-              autoFocus
-            />
+            <label className="text-xs text-text-secondary mb-1 block">服务商</label>
+            <div className="relative">
+              <select
+                value={provider}
+                onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
+                className="w-full appearance-none bg-bg-primary text-text-primary text-sm rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50 cursor-pointer"
+              >
+                {PROVIDER_ORDER.map((p) => (
+                  <option key={p} value={p}>{PROVIDER_PRESETS[p].label}</option>
+                ))}
+              </select>
+              <svg
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
+                width="12" height="12" viewBox="0 0 12 12" fill="none"
+                stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+              >
+                <polyline points="2,4 6,8 10,4" />
+              </svg>
+            </div>
           </div>
 
+          {/* API Key */}
           <div>
-            <label className="text-xs text-text-secondary mb-1 block">Base URL（可选，留空使用默认端点）</label>
-            <input
-              type="text"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.anthropic.com"
-              className="w-full bg-bg-primary text-text-primary text-sm rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
+            <label className="text-xs text-text-secondary mb-1 block">API Key *</label>
+            <ApiKeyInput
+              value={apiKey}
+              onChange={setApiKey}
+              onEnter={handleSave}
+              placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
             />
           </div>
         </div>
@@ -70,13 +93,56 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
           )}
           <button
             onClick={handleSave}
-            disabled={!apiKey.trim()}
+            disabled={!canSave}
             className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             保存
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ApiKeyInput({
+  value, onChange, onEnter, placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onEnter: () => void;
+  placeholder: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onEnter()}
+        placeholder={placeholder}
+        className="w-full bg-bg-primary text-text-primary text-sm rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50"
+        autoFocus
+      />
+      <button
+        type="button"
+        onClick={() => setShow(v => !v)}
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+        tabIndex={-1}
+      >
+        {show ? (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+            <line x1="1" y1="1" x2="23" y2="23" />
+          </svg>
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        )}
+      </button>
     </div>
   );
 }
