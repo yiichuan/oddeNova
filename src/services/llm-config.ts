@@ -84,7 +84,7 @@ function resolveAnthropicConfig(apiKey: string): ModelConfig {
     provider: 'anthropic',
     protocol: 'anthropic',
     apiKey,
-    baseURL: import.meta.env.VITE_BASE_URL || LEGACY_BASE_URL,
+    baseURL: import.meta.env.VITE_BASE_URL || localStorage.getItem('vibe_base_url') || LEGACY_BASE_URL,
     model:   legacyModel || LEGACY_MODELS['sonnet'],
   };
 }
