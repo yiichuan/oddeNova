@@ -7,7 +7,7 @@ if [ ! -d "node_modules" ] || [ ! -d "node_modules/@anthropic-ai/sdk" ]; then
   npm install
 fi
 
-echo "正在启动 Vibe Live Music..."
+echo "正在启动 oddeNova..."
 npm run dev &
 DEV_PID=$!
 

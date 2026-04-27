@@ -1,14 +1,14 @@
-# Vibe Live Music — 音乐可视化集成调研报告
+# oddeNova — 音乐可视化集成调研报告
 
 > **调研日期：** 2026-04-22  
-> **调研范围：** 在 Vibe Live Music（基于 Strudel + React/TypeScript 的实时音乐编码工具）中集成音乐可视化效果的可行方案  
+> **调研范围：** 在 oddeNova（基于 Strudel + React/TypeScript 的实时音乐编码工具）中集成音乐可视化效果的可行方案  
 > **调研模式：** Standard（综合分析）
 
 ---
 
 ## 执行摘要
 
-Vibe Live Music 当前已具备基础的音频可视化能力：一个嵌入式的 Three.js 银河粒子特效（`galaxy.html`）和一个示波器组件（`Scope.tsx`）。项目通过 Strudel 的 `AnalyserNode` 暴露实时音频数据，为进一步的可视化扩展打下了良好基础。
+oddeNova 当前已具备基础的音频可视化能力：一个嵌入式的 Three.js 银河粒子特效（`galaxy.html`）和一个示波器组件（`Scope.tsx`）。项目通过 Strudel 的 `AnalyserNode` 暴露实时音频数据，为进一步的可视化扩展打下了良好基础。
 
 本报告系统梳理了 **7 类主要可视化展示形式**，从实现难度、与现有技术栈的契合度、视觉表现力三个维度进行评估，最终给出优先级排序与集成路径建议。
 
@@ -284,7 +284,7 @@ await initHydra({ detectAudio: true })
 
 **视觉特点：** Hydra 的 Shader 效果（分形、反馈回路、摄像头混合、几何变换）是其他方案无法复现的独特美学，在 Live Coding 社区中被广泛应用。
 
-**集成方式：** 因为 Vibe Live Music 使用自定义 REPL 而非 Strudel 官方 REPL，需要在 Strudel evaluate 前注入 `initHydra()` 调用。可以作为用户在 Agent 对话中触发的"可视化模式"。
+**集成方式：** 因为 oddeNova 使用自定义 REPL 而非 Strudel 官方 REPL，需要在 Strudel evaluate 前注入 `initHydra()` 调用。可以作为用户在 Agent 对话中触发的"可视化模式"。
 
 **评估：**
 
@@ -537,7 +537,7 @@ Strudel 的 `initHydra()` 在官方 REPL 环境中经过验证，但在 Vibe 的
 8. Butterchurn — Milkdrop WebGL  
    https://butterchurnviz.com/
 
-9. Vibe Live Music 项目源码  
+9. oddeNova 项目源码  
    `src/components/Scope.tsx` / `src/services/strudel.ts` / `public/animation/galaxy.html`
 
 ---
