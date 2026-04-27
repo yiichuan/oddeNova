@@ -12,24 +12,41 @@ const PROVIDER_ORDER: ProviderType[] = [
   'deepseek', 'anthropic',
 ];
 
+/** 按服务商分别读取已保存的 API Key（兼容旧版单 key 存储）。 */
+function getProviderKey(p: ProviderType): string {
+  return localStorage.getItem(`vibe_api_key_${p}`) || localStorage.getItem('vibe_api_key') || '';
+}
+
 export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiKeyModalProps) {
   const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'deepseek';
 
   const [provider, setProvider] = useState<ProviderType>(savedProvider);
-  const [apiKey, setApiKey] = useState(localStorage.getItem('vibe_api_key') || '');
+  const [apiKey, setApiKey] = useState(getProviderKey(savedProvider));
+  const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://timesniper.club');
 
   const handleProviderChange = (p: ProviderType) => {
+    // 先把当前 key 暂存到 provider 分区，再切换并加载新 provider 的 key
+    if (apiKey.trim()) {
+      localStorage.setItem(`vibe_api_key_${provider}`, apiKey.trim());
+    }
     setProvider(p);
-    setApiKey('');
+    setApiKey(getProviderKey(p));
   };
 
   const handleSave = () => {
     const trimmedKey = apiKey.trim();
     if (!trimmedKey) return;
 
+    // 同时写入 provider 分区 key 和通用 key（向后兼容）
+    localStorage.setItem(`vibe_api_key_${provider}`, trimmedKey);
     localStorage.setItem('vibe_api_key', trimmedKey);
     localStorage.setItem('vibe_provider', provider);
-    localStorage.removeItem('vibe_base_url');
+    if (provider === 'anthropic') {
+      const trimmedHost = host.trim() || 'https://timesniper.club';
+      localStorage.setItem('vibe_base_url', trimmedHost);
+    } else {
+      localStorage.removeItem('vibe_base_url');
+    }
     localStorage.removeItem('vibe_model');
 
     onSaved?.();
@@ -77,9 +94,23 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
               value={apiKey}
               onChange={setApiKey}
               onEnter={handleSave}
-              placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
+              placeholder="sk-..."
             />
           </div>
+
+          {/* Anthropic Host */}
+          {provider === 'anthropic' && (
+            <div>
+              <label className="text-xs text-text-secondary mb-1 block">Host</label>
+              <input
+                type="text"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="https://timesniper.club"
+                className="w-full bg-bg-primary text-text-primary text-sm rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 mt-5">
