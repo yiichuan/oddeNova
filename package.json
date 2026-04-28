@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "build:electron": "tsc -p electron/tsconfig.json",
-    "dist:mac": "APPLE_KEYCHAIN_PROFILE=notarytool-password vite build && npm run build:electron && electron-builder --mac dmg"
+    "dist:mac": "APPLE_KEYCHAIN_PROFILE=notarytool-password vite build && npm run build:electron && electron-builder --mac dmg",
+    "dist:win": "vite build && npm run build:electron && electron-builder --win nsis"
   },
   "dependencies": {
     "@airjelly/sdk": "^0.1.0",
@@ -38,6 +39,8 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.2.2",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",
@@ -57,18 +60,41 @@
       "dist-electron/**"
     ],
     "extraResources": [
-      { "from": "dist", "to": "dist" }
+      {
+        "from": "dist",
+        "to": "dist"
+      }
     ],
     "mac": {
       "category": "public.app-category.music",
       "identity": "Developer ID Application",
       "notarize": true,
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ]
     },
     "dmg": {
       "title": "oddeNova"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "shortcutName": "oddeNova",
+      "runAfterFinish": true
     }
   }
 }
