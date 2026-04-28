@@ -81,7 +81,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
       ) : (
         <button
           type="submit"
-          disabled={!text.trim() || isLoading}
+          disabled={!text.trim()}
           className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
           title="发送"
         >

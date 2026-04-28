@@ -10,8 +10,8 @@ import type { ToolCallRequest } from '../agent/executor';
 import type { DemoScenario, DemoMoodScenario } from './demo-config';
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
     const id = setTimeout(resolve, ms);
     signal?.addEventListener('abort', () => { clearTimeout(id); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
   });
