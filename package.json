@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "build:electron": "tsc -p electron/tsconfig.json",
-    "dist:mac": "vite build && npm run build:electron && electron-builder --mac dmg"
+    "dist:mac": "APPLE_KEYCHAIN_PROFILE=notarytool-password vite build && npm run build:electron && electron-builder --mac dmg"
   },
   "dependencies": {
     "@airjelly/sdk": "^0.1.0",
