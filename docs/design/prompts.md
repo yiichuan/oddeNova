@@ -6,7 +6,7 @@
 > A 在主 Agent prompt 中注入 5 条音乐性硬规则；
 > B 引入风格预设库（`src/prompts/styles.ts`），improvise 工具新增 `style` / `complement_task` 参数；
 > C 新增 `critique` 工具与对应子模型 prompt，commit 前做一次音乐性评审。
-> 设计文档：[docs/superpowers/specs/2026-04-22-prompts-musicality-design.md](superpowers/specs/2026-04-22-prompts-musicality-design.md)
+> 设计文档：[docs/superpowers/specs/2026-04-22-prompts-musicality-design.md](../superpowers/specs/2026-04-22-prompts-musicality-design.md)
 >
 > **2026-04-23 更新**：完成"风格库精炼 + Prompt 自检增强"——
 > `StyleProfile` 接口新增 `mode`（推荐调式）和 `emotion`（情绪基调）可选字段；
@@ -20,7 +20,7 @@
 
 ## 目录
 
-- [oddeNova — 提示词文档](#vibe-live-music--提示词文档)
+- [oddeNova — 提示词文档](#oddenova--提示词文档)
   - [目录](#目录)
   - [1. STRUDEL\_CHEATSHEET\_CONCISE — Strudel 速查表](#1-strudel_cheatsheet_concise--strudel-速查表)
   - [2. AGENT\_SYSTEM\_PROMPT — Agent 主系统提示词](#2-agent_system_prompt--agent-主系统提示词)
