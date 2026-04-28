@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import CodePanel from './components/CodePanel';
 import Sidebar from './components/Sidebar';
 import VizPlaceholder from './components/VizPlaceholder';
@@ -19,6 +19,11 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleStop = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => !hasApiKeyConfigured());
 
@@ -63,6 +68,9 @@ export default function App() {
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
       }
+
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
 
       try {
         // Track layer names already shown in this agent run to prevent
@@ -120,7 +128,7 @@ export default function App() {
           }
         };
 
-        const result = await runAgent(text, currentCode, onProgress);
+        const result = await runAgent(text, currentCode, onProgress, undefined, signal);
         if (result.code) {
           const success = await strudel.play(result.code);
           if (success) {
@@ -136,10 +144,15 @@ export default function App() {
           sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码');
         }
       } catch (e: unknown) {
-        const errMsg = e instanceof Error ? e.message : '请求失败';
-        sessions.addAssistantMessage(`出错了: ${errMsg}`);
-        strudel.setError(errMsg);
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          sessions.addAssistantMessage('已中断');
+        } else {
+          const errMsg = e instanceof Error ? e.message : '请求失败';
+          sessions.addAssistantMessage(`出错了: ${errMsg}`);
+          strudel.setError(errMsg);
+        }
       } finally {
+        abortControllerRef.current = null;
         setIsLoading(false);
       }
     },
@@ -162,6 +175,9 @@ export default function App() {
 
     sessions.addUserMessage(instruction);
     setIsLoading(true);
+
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
 
     try {
       const shownLayerOps = new Set<string>();
@@ -195,7 +211,7 @@ export default function App() {
         if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text); return; }
       };
 
-      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined);
+      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (result.code) {
         const success = await strudel.play(result.code);
         if (success) {
@@ -211,10 +227,15 @@ export default function App() {
         sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码');
       }
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : '请求失败';
-      sessions.addAssistantMessage(`出错了: ${errMsg}`);
-      strudel.setError(errMsg);
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        sessions.addAssistantMessage('已中断');
+      } else {
+        const errMsg = e instanceof Error ? e.message : '请求失败';
+        sessions.addAssistantMessage(`出错了: ${errMsg}`);
+        strudel.setError(errMsg);
+      }
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
   }, [strudel, sessions, currentCode]);
@@ -247,6 +268,7 @@ export default function App() {
         suggestionsLoading={!isDemoMode() && suggestionsLoading}
         fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
         onSendText={handleInstruction}
+        onStop={handleStop}
         onNewSession={handleNewSession}
         onMoodGenerate={handleMoodInstruction}
         onReinitEngine={strudel.reinit}

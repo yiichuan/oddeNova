@@ -35,7 +35,8 @@ export interface LLMCaller {
   chatWithTools(
     messages: ChatMsg[],
     tools: ReturnType<typeof getOpenAIToolSchemas>,
-    onTextDelta?: (delta: string) => void
+    onTextDelta?: (delta: string) => void,
+    signal?: AbortSignal
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
@@ -62,6 +63,7 @@ export interface RunAgentOptions {
   maxIter?: number;
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
+  signal?: AbortSignal;
 }
 
 export interface RunAgentResult {
@@ -88,6 +90,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     maxIter = DEFAULT_MAX_ITER,
     timeoutMs = DEFAULT_TIMEOUT,
     onProgress,
+    signal,
   } = opts;
 
   const state: AgentState = {
@@ -117,13 +120,17 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       onProgress?.({ kind: 'warn', message: `超时 ${timeoutMs}ms，强制结束` });
       break;
     }
+    if (signal?.aborted) {
+      onProgress?.({ kind: 'warn', message: '已中断' });
+      break;
+    }
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
     const onTextDelta = onProgress
       ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
       : undefined;
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta);
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta, signal);
 
     if (resp.content && resp.content.trim()) {
       console.debug(`[loop] iter ${i + 1} assistant_text:`, resp.content.trim());

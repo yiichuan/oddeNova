@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUpIcon } from './icons';
+import { ArrowUpIcon, StopIcon } from './icons';
 
 interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
   onSendText: (text: string) => void;
   onReinitEngine: () => void;
+  onStop?: () => void;
   prefill?: string;
 }
 
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, prefill }: ChatInputProps) {
+export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -68,14 +69,25 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={!text.trim() || isLoading}
-        className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
-        title="发送"
-      >
-        <ArrowUpIcon size={18} />
-      </button>
+      {isLoading ? (
+        <button
+          type="button"
+          onClick={onStop}
+          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#ff4500] text-white transition duration-200 hover:bg-[#ff4500]/80"
+          title="停止"
+        >
+          <StopIcon size={14} />
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={!text.trim() || isLoading}
+          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
+          title="发送"
+        >
+          <ArrowUpIcon size={18} />
+        </button>
+      )}
     </form>
   );
 }
