@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "build:electron": "tsc -p electron/tsconfig.json",
-    "dist:mac": "APPLE_KEYCHAIN_PROFILE=notarytool-password vite build && npm run build:electron && electron-builder --mac dmg"
+    "dist:mac": "APPLE_KEYCHAIN_PROFILE=notarytool-password vite build && npm run build:electron && electron-builder --mac dmg",
+    "dist:win": "vite build && npm run build:electron && electron-builder --win nsis"
   },
   "dependencies": {
     "@airjelly/sdk": "^0.1.0",
@@ -80,6 +81,19 @@
     },
     "dmg": {
       "title": "oddeNova"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "shortcutName": "oddeNova",
+      "runAfterFinish": true
     }
   }
 }
