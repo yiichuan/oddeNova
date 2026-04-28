@@ -13,6 +13,9 @@ interface AirJellyRuntime {
 }
 
 function loadAirJellyRuntime(): AirJellyRuntime | null {
+  // AirJelly currently only supports macOS
+  if (process.platform !== 'darwin') return null
+
   const p = path.join(
     os.homedir(),
     'Library', 'Application Support', 'AirJelly', 'runtime.json'
