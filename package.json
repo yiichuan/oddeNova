@@ -90,6 +90,7 @@
     },
     "nsis": {
       "oneClick": true,
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "installerIcon": "public/icon.ico",
       "uninstallerIcon": "public/icon.ico",
       "shortcutName": "oddeNova",
