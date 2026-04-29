@@ -21,6 +21,15 @@ export default function App() {
   const [demoStep, setDemoStep] = useState(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const isUserAbort = useCallback((error: unknown, signal?: AbortSignal) => {
+    if (signal?.aborted) return true;
+    if (error instanceof DOMException && error.name === 'AbortError') return true;
+    if (error instanceof Error) {
+      return /abort(ed)?/i.test(error.name) || /request was aborted\.?/i.test(error.message);
+    }
+    return false;
+  }, []);
+
   const handleStop = useCallback(() => {
     abortControllerRef.current?.abort();
   }, []);
@@ -129,6 +138,10 @@ export default function App() {
         };
 
         const result = await runAgent(text, currentCode, onProgress, undefined, signal);
+        if (signal.aborted) {
+          sessions.addAssistantMessage('已中断');
+          return;
+        }
         if (result.code) {
           const success = await strudel.play(result.code);
           if (success) {
@@ -144,7 +157,7 @@ export default function App() {
           sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码');
         }
       } catch (e: unknown) {
-        if (e instanceof DOMException && e.name === 'AbortError') {
+        if (isUserAbort(e, signal)) {
           sessions.addAssistantMessage('已中断');
         } else {
           const errMsg = e instanceof Error ? e.message : '请求失败';
@@ -156,7 +169,7 @@ export default function App() {
         setIsLoading(false);
       }
     },
-    [strudel, sessions, currentCode, demoStep, activeSet]
+    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -212,6 +225,10 @@ export default function App() {
       };
 
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
+      if (signal.aborted) {
+        sessions.addAssistantMessage('已中断');
+        return;
+      }
       if (result.code) {
         const success = await strudel.play(result.code);
         if (success) {
@@ -227,7 +244,7 @@ export default function App() {
         sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码');
       }
     } catch (e: unknown) {
-      if (e instanceof DOMException && e.name === 'AbortError') {
+      if (isUserAbort(e, signal)) {
         sessions.addAssistantMessage('已中断');
       } else {
         const errMsg = e instanceof Error ? e.message : '请求失败';
@@ -238,7 +255,7 @@ export default function App() {
       abortControllerRef.current = null;
       setIsLoading(false);
     }
-  }, [strudel, sessions, currentCode]);
+  }, [strudel, sessions, currentCode, isUserAbort]);
 
   const handleNewSession = useCallback(() => {
     strudel.stop();

@@ -73,7 +73,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         <button
           type="button"
           onClick={onStop}
-          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#ff4500] text-white transition duration-200 hover:bg-[#ff4500]/80"
+          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#B2370C] text-white transition duration-200 hover:bg-[#B2370C]/80"
           title="停止"
         >
           <StopIcon size={14} />

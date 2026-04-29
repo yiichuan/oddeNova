@@ -282,7 +282,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   // a committed turn so the UI doesn't show a misleading "未生成新代码" while
   // the player is in fact about to hot-reload that very code. If validation
   // fails we keep `committed=false` so App.tsx can surface the runtime error.
-  if (!committed) {
+  // Skip the fallback entirely if the user explicitly aborted.
+  if (!committed && !signal?.aborted) {
     const codeChanged = !!state.code && state.code !== initialCode;
     if (codeChanged) {
       const v = validateCode(state.code);
