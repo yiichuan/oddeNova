@@ -58,15 +58,11 @@ export function useSessions() {
       const loaded = await getAllSessions();
       if (cancelled) return;
 
-      if (loaded.length === 0) {
-        const fresh = makeEmptySession();
-        setSessions([fresh]);
-        setCurrentId(fresh.id);
-        await dbPutSession(fresh);
-      } else {
-        setSessions(loaded);
-        setCurrentId(loaded[0].id);
-      }
+      // 每次启动/刷新都创建新会话
+      const fresh = makeEmptySession();
+      await dbPutSession(fresh);
+      setSessions([fresh, ...loaded]);
+      setCurrentId(fresh.id);
       setIsLoading(false);
     })();
     return () => { cancelled = true; };
@@ -231,7 +227,10 @@ export function useSessions() {
       const existingEmpty = prev.find((s) => s.messages.length === 0 && !s.code);
       if (existingEmpty) {
         setCurrentId(existingEmpty.id);
-        return prev;
+        // Refresh createdAt so the reused empty session sorts to the top.
+        const refreshed = { ...existingEmpty, createdAt: Date.now(), updatedAt: Date.now() };
+        dbPutSession(refreshed);
+        return prev.map((s) => s.id === existingEmpty.id ? refreshed : s);
       }
       const fresh = makeEmptySession();
       setCurrentId(fresh.id);

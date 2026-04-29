@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import type { Session } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, SettingsIcon } from './icons';
@@ -57,6 +57,15 @@ export default function Sidebar({
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [focusTrigger, setFocusTrigger] = useState(1);
+  const prevIsLoadingRef = useRef(false);
+
+  useEffect(() => {
+    if (prevIsLoadingRef.current && !isLoading) {
+      setFocusTrigger((v) => v + 1);
+    }
+    prevIsLoadingRef.current = isLoading;
+  }, [isLoading]);
 
   useEffect(() => {
     checkAirJellyAvailable().then(setAirjellyAvailable);
@@ -99,7 +108,7 @@ export default function Sidebar({
             <HistoryIcon size={14} />
           </button>
           <button
-            onClick={onNewSession}
+            onClick={() => { onNewSession(); setFocusTrigger(v => v + 1); }}
             className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
             title="新建会话"
           >
@@ -173,7 +182,7 @@ export default function Sidebar({
             </div>
           )}
 
-          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} />
+          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} />
         </div>
       </div>
     </aside>

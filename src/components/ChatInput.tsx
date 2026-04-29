@@ -8,15 +8,20 @@ interface ChatInputProps {
   onReinitEngine: () => void;
   onStop?: () => void;
   prefill?: string;
+  focusTrigger?: number;
 }
 
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill }: ChatInputProps) {
+export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (prefill) setText(prefill);
   }, [prefill]);
+
+  useEffect(() => {
+    if (focusTrigger) textareaRef.current?.focus();
+  }, [focusTrigger]);
 
   const doSubmit = () => {
     const value = text.trim();
