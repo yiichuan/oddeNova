@@ -100,9 +100,21 @@ export function useSessions() {
     [currentId]
   );
 
+  const updateSession = useCallback(
+    (sessionId: string, mut: (s: Session) => Session) => {
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...mut(s), updatedAt: Date.now() } : s))
+      );
+    },
+    []
+  );
+
   const addUserMessage = useCallback(
-    (content: string): void => {
-      updateCurrent((s) => {
+    (content: string, sessionId?: string): void => {
+      const apply = sessionId
+        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
+        : updateCurrent;
+      apply((s) => {
         const messages = [
           ...s.messages,
           {
@@ -117,12 +129,15 @@ export function useSessions() {
         return { ...s, messages, title };
       });
     },
-    [updateCurrent]
+    [updateCurrent, updateSession]
   );
 
   const addAssistantMessage = useCallback(
-    (content: string, code?: string): void => {
-      updateCurrent((s) => ({
+    (content: string, code?: string, sessionId?: string): void => {
+      const apply = sessionId
+        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
+        : updateCurrent;
+      apply((s) => ({
         ...s,
         messages: [
           ...s.messages,
@@ -136,12 +151,15 @@ export function useSessions() {
         ],
       }));
     },
-    [updateCurrent]
+    [updateCurrent, updateSession]
   );
 
   const addProgress = useCallback(
-    (kind: ProgressKind, content: string, opts?: { toolName?: string; ok?: boolean }): void => {
-      updateCurrent((s) => ({
+    (kind: ProgressKind, content: string, opts?: { toolName?: string; ok?: boolean; sessionId?: string }): void => {
+      const apply = opts?.sessionId
+        ? (fn: (s: Session) => Session) => updateSession(opts.sessionId!, fn)
+        : updateCurrent;
+      apply((s) => ({
         ...s,
         messages: [
           ...s.messages,
@@ -157,13 +175,16 @@ export function useSessions() {
         ],
       }));
     },
-    [updateCurrent]
+    [updateCurrent, updateSession]
   );
 
   // 流式追加思考文字：若最后一条消息是 thinking，则原地拼接；否则新建一条
   const appendToLastThinking = useCallback(
-    (delta: string): void => {
-      updateCurrent((s) => {
+    (delta: string, sessionId?: string): void => {
+      const apply = sessionId
+        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
+        : updateCurrent;
+      apply((s) => {
         const messages = [...s.messages];
         const last = messages[messages.length - 1];
         if (last?.role === 'progress' && last.progressKind === 'thinking') {
@@ -185,14 +206,17 @@ export function useSessions() {
         };
       });
     },
-    [updateCurrent]
+    [updateCurrent, updateSession]
   );
 
   const setCurrentCode = useCallback(
-    (code: string) => {
-      updateCurrent((s) => ({ ...s, code }));
+    (code: string, sessionId?: string) => {
+      const apply = sessionId
+        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
+        : updateCurrent;
+      apply((s) => ({ ...s, code }));
     },
-    [updateCurrent]
+    [updateCurrent, updateSession]
   );
 
   const newSession = useCallback(() => {
