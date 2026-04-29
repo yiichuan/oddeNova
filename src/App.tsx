@@ -16,10 +16,10 @@ import { resetClient } from './services/llm';
 export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   const isUserAbort = useCallback((error: unknown, signal?: AbortSignal) => {
     if (signal?.aborted) return true;
@@ -31,8 +31,11 @@ export default function App() {
   }, []);
 
   const handleStop = useCallback(() => {
-    abortControllerRef.current?.abort();
-  }, []);
+    const id = sessions.currentId;
+    if (id) {
+      abortControllersRef.current.get(id)?.abort();
+    }
+  }, [sessions]);
 
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => !hasApiKeyConfigured());
 
@@ -42,6 +45,7 @@ export default function App() {
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
   const hasUserMessages = messages.some((m) => m.role === 'user');
+  const isLoading = !!current?.id && loadingSessions.has(current.id);
 
   const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
@@ -71,15 +75,17 @@ export default function App() {
       }
 
       sessions.addUserMessage(text);
-      setIsLoading(true);
+      const sessionId = sessions.currentId;
+      if (!sessionId) return;
+      setLoadingSessions((prev) => new Set(prev).add(sessionId));
 
       // 在 demo 模式下，若发送的是当前步骤的提示词，则推进到下一步
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
       }
 
-      abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
+      abortControllersRef.current.set(sessionId, new AbortController());
+      const signal = abortControllersRef.current.get(sessionId)!.signal;
 
       try {
         // Track layer names already shown in this agent run to prevent
@@ -106,6 +112,7 @@ export default function App() {
               }
               sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
                 toolName: e.name,
+                sessionId,
               });
             }
             return;
@@ -120,53 +127,54 @@ export default function App() {
             return;
           }
           if (e.kind === 'commit') {
-            sessions.addProgress('commit', '准备播放…');
+            sessions.addProgress('commit', '准备播放…', { sessionId });
             return;
           }
           if (e.kind === 'warn') {
-            sessions.addProgress('warn', e.message);
+            sessions.addProgress('warn', e.message, { sessionId });
             return;
           }
           if (e.kind === 'assistant_text_delta') {
-            sessions.appendToLastThinking(e.delta);
+            sessions.appendToLastThinking(e.delta, sessionId);
             return;
           }
           if (e.kind === 'assistant_text') {
-            sessions.addProgress('thinking', e.text);
+            sessions.addProgress('thinking', e.text, { sessionId });
             return;
           }
         };
 
         const result = await runAgent(text, currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
-          sessions.addAssistantMessage('已中断');
+          sessions.addAssistantMessage('已中断', undefined, sessionId);
           return;
         }
         if (result.code) {
           const success = await strudel.play(result.code);
           if (success) {
-            sessions.addAssistantMessage(result.explanation, result.code);
-            sessions.setCurrentCode(result.code);
+            sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+            sessions.setCurrentCode(result.code, sessionId);
           } else {
             sessions.addAssistantMessage(
               `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
-              result.code
+              result.code,
+              sessionId
             );
           }
         } else {
-          sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码');
+          sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
         }
       } catch (e: unknown) {
         if (isUserAbort(e, signal)) {
-          sessions.addAssistantMessage('已中断');
+          sessions.addAssistantMessage('已中断', undefined, sessionId);
         } else {
           const errMsg = e instanceof Error ? e.message : '请求失败';
-          sessions.addAssistantMessage(`出错了: ${errMsg}`);
+          sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
           strudel.setError(errMsg);
         }
       } finally {
-        abortControllerRef.current = null;
-        setIsLoading(false);
+        abortControllersRef.current.delete(sessionId);
+        setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
       }
     },
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
@@ -187,10 +195,12 @@ export default function App() {
     const instruction = '根据我的心情生成音乐';
 
     sessions.addUserMessage(instruction);
-    setIsLoading(true);
+    const sessionId = sessions.currentId;
+    if (!sessionId) return;
+    setLoadingSessions((prev) => new Set(prev).add(sessionId));
 
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
+    abortControllersRef.current.set(sessionId, new AbortController());
+    const signal = abortControllersRef.current.get(sessionId)!.signal;
 
     try {
       const shownLayerOps = new Set<string>();
@@ -210,6 +220,7 @@ export default function App() {
             }
             sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
               toolName: e.name,
+              sessionId,
             });
           }
           return;
@@ -218,42 +229,43 @@ export default function App() {
           if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
           return;
         }
-        if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…'); return; }
-        if (e.kind === 'warn') { sessions.addProgress('warn', e.message); return; }
-        if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta); return; }
-        if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text); return; }
+        if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
+        if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
+        if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
+        if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
       };
 
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
-        sessions.addAssistantMessage('已中断');
+        sessions.addAssistantMessage('已中断', undefined, sessionId);
         return;
       }
       if (result.code) {
         const success = await strudel.play(result.code);
         if (success) {
-          sessions.addAssistantMessage(result.explanation, result.code);
-          sessions.setCurrentCode(result.code);
+          sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+          sessions.setCurrentCode(result.code, sessionId);
         } else {
           sessions.addAssistantMessage(
             `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
-            result.code
+            result.code,
+            sessionId
           );
         }
       } else {
-        sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码');
+        sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
       }
     } catch (e: unknown) {
       if (isUserAbort(e, signal)) {
-        sessions.addAssistantMessage('已中断');
+        sessions.addAssistantMessage('已中断', undefined, sessionId);
       } else {
         const errMsg = e instanceof Error ? e.message : '请求失败';
-        sessions.addAssistantMessage(`出错了: ${errMsg}`);
+        sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
         strudel.setError(errMsg);
       }
     } finally {
-      abortControllerRef.current = null;
-      setIsLoading(false);
+      abortControllersRef.current.delete(sessionId);
+      setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
     }
   }, [strudel, sessions, currentCode, isUserAbort]);
 
