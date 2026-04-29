@@ -9,14 +9,19 @@ import type { LLMCaller } from '../agent/loop';
 import type { ToolCallRequest } from '../agent/executor';
 import type { DemoScenario, DemoMoodScenario } from './demo-config';
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(id); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+  });
 }
 
-async function streamText(text: string, onTextDelta: (delta: string) => void): Promise<void> {
+async function streamText(text: string, onTextDelta: (delta: string) => void, signal?: AbortSignal): Promise<void> {
   for (const char of text) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     onTextDelta(char);
-    await sleep(18);
+    await sleep(18, signal);
   }
 }
 
@@ -24,12 +29,12 @@ export function createDemoLLMCaller(scenario: DemoScenario): LLMCaller {
   let round = 0;
 
   return {
-    async chatWithTools(_messages, _tools, onTextDelta) {
+    async chatWithTools(_messages, _tools, onTextDelta, signal) {
       if (round < scenario.rounds.length) {
         const { thinking, toolCalls } = scenario.rounds[round];
         // 首轮多等一会儿，后续轮次稍短，模拟真实 LLM 响应节奏
-        await sleep(round === 0 ? 2000 : 1500);
-        if (thinking && onTextDelta) await streamText(thinking, onTextDelta);
+        await sleep(round === 0 ? 2000 : 1500, signal);
+        if (thinking && onTextDelta) await streamText(thinking, onTextDelta, signal);
         const calls: ToolCallRequest[] = toolCalls.map((tc, i) => ({
           id: `demo-tool-${round}-${i}`,
           name: tc.name,
@@ -54,12 +59,12 @@ export function createDemoMoodLLMCaller(scenario: DemoMoodScenario): LLMCaller {
   let round = 0;
 
   return {
-    async chatWithTools(_messages, _tools, onTextDelta) {
+    async chatWithTools(_messages, _tools, onTextDelta, signal) {
       if (round < scenario.rounds.length) {
         const { thinking, toolCalls } = scenario.rounds[round];
         // 首轮稍长，后续轮次稍短，模拟真实 LLM 思考节奏
-        await sleep(round === 0 ? 3000 : 2200);
-        if (thinking && onTextDelta) await streamText(thinking, onTextDelta);
+        await sleep(round === 0 ? 3000 : 2200, signal);
+        if (thinking && onTextDelta) await streamText(thinking, onTextDelta, signal);
         const calls: ToolCallRequest[] = toolCalls.map((tc, i) => ({
           id: `demo-mood-${round}-${i}`,
           name: tc.name,

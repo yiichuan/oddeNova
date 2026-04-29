@@ -20,6 +20,7 @@ interface SidebarProps {
   suggestionsLoading?: boolean;
   fillSuggestion?: string;
   onSendText: (text: string) => void;
+  onStop?: () => void;
   onNewSession: () => void;
   onMoodGenerate: () => void;
   onReinitEngine: () => void;
@@ -40,6 +41,7 @@ export default function Sidebar({
   suggestionsLoading = false,
   fillSuggestion,
   onSendText,
+  onStop,
   onNewSession,
   onMoodGenerate,
   onReinitEngine,
@@ -162,7 +164,7 @@ export default function Sidebar({
             </div>
           )}
 
-          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onReinitEngine={onReinitEngine} />
+          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} />
         </div>
       </div>
     </aside>

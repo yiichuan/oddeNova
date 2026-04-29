@@ -220,7 +220,7 @@ function convertTools(
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, signal) {
     const anthropic = getAnthropicClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
@@ -231,7 +231,7 @@ const anthropicLLMCaller: LLMCaller = {
       tools: convertTools(tools),
       temperature: 0.7,
       max_tokens: 1024,
-    });
+    }, { signal });
 
     if (onTextDelta) {
       stream.on('text', (delta) => {
@@ -268,7 +268,7 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller(): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta) {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, signal) {
       const oai = getOpenAIClient();
 
       const stream = await oai.chat.completions.create({
@@ -280,7 +280,7 @@ function createOpenAILLMCaller(): LLMCaller {
         temperature: 0.7,
         max_tokens: 8192,
         stream: true,
-      });
+      }, { signal });
 
       let text = '';
       let reasoningContent = '';
@@ -443,6 +443,7 @@ export async function runAgent(
   currentCode: string,
   onProgress?: (e: ProgressEvent) => void,
   moodContext?: string,
+  signal?: AbortSignal,
 ): Promise<RunAgentResult> {
   const basePrompt = isOpenAIProvider() ? AGENT_SYSTEM_PROMPT_OPENAI : AGENT_SYSTEM_PROMPT;
   const systemPrompt = moodContext
@@ -485,6 +486,7 @@ export async function runAgent(
     llm,
     improviseLLM: effectiveImproviseLLM,
     onProgress,
+    signal,
   });
 }
 
