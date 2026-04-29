@@ -19,8 +19,10 @@ export default function HistoryPanel({
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
 }: HistoryPanelProps) {
-  // Newest first.
-  const ordered = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+  // Newest first (by start time). Exclude empty sessions (no messages).
+  const ordered = [...sessions]
+    .filter((s) => s.messages.length > 0)
+    .sort((a, b) => b.createdAt - a.createdAt);
 
   return (
     <div className="h-full flex flex-col bg-bg-primary border border-border overflow-hidden">
