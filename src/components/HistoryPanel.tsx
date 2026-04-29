@@ -62,9 +62,9 @@ export default function HistoryPanel({
                         ×
                       </button>
                       {loadingSessions.has(s.id) ? (
-                        <span className="w-1.5 h-1.5 rounded-full animate-spin" style={{ border: '1.5px solid transparent', borderTopColor: 'var(--color-accent)', display: 'inline-block' }} />
+                        <span className="w-1.5 h-1.5 rounded-full animate-spin shrink-0" style={{ border: '1.5px solid transparent', borderTopColor: 'var(--color-text-primary)', display: 'inline-block' }} />
                       ) : unreadSessions.has(s.id) ? (
-                        <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-success)' }} />
                       ) : (
                         <span className="w-1.5 h-1.5 shrink-0" />
                       )}
