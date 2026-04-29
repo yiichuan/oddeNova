@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ChatMessage, ProgressKind } from './useChat';
+import {
+  openDB,
+  getAllSessions,
+  putSession as dbPutSession,
+  deleteSession as dbDeleteSession,
+} from '../lib/session-storage';
 
 export interface Session {
   id: string;
@@ -9,10 +15,6 @@ export interface Session {
   createdAt: number;
   updatedAt: number;
 }
-
-const STORAGE_KEY = 'vibe-sessions-v1';
-const STORAGE_CURRENT_KEY = 'vibe-sessions-current-v1';
-const MAX_SESSIONS = 50;
 
 let messageId = 0;
 
@@ -32,34 +34,8 @@ function deriveTitle(messages: ChatMessage[]): string {
   return text.slice(0, 20) + '…';
 }
 
-function loadSessions(): { sessions: Session[]; currentId: string | null } {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const cur = localStorage.getItem(STORAGE_CURRENT_KEY);
-    if (!raw) return { sessions: [], currentId: null };
-    const parsed = JSON.parse(raw) as Session[];
-    if (!Array.isArray(parsed)) return { sessions: [], currentId: null };
-    return { sessions: parsed, currentId: cur || parsed[0]?.id || null };
-  } catch {
-    return { sessions: [], currentId: null };
-  }
-}
-
-function persistSessions(sessions: Session[], currentId: string | null) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-    if (currentId) localStorage.setItem(STORAGE_CURRENT_KEY, currentId);
-  } catch {
-    // localStorage may be full or unavailable; degrade silently.
-  }
-}
-
-let _initialState: { sessions: Session[]; currentId: string | null } | null = null;
-
-function getInitialSessionState(): { sessions: Session[]; currentId: string | null } {
-  if (_initialState) return _initialState;
-  const { sessions: loaded } = loadSessions();
-  const fresh: Session = {
+function makeEmptySession(): Session {
+  return {
     id: newSessionId(),
     title: '新会话',
     messages: [],
@@ -67,24 +43,34 @@ function getInitialSessionState(): { sessions: Session[]; currentId: string | nu
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
-  const sessions = [fresh, ...loaded].slice(0, MAX_SESSIONS);
-  persistSessions(sessions, fresh.id);
-  _initialState = { sessions, currentId: fresh.id };
-  return _initialState;
 }
 
 export function useSessions() {
-  const [sessions, setSessions] = useState<Session[]>(() => getInitialSessionState().sessions);
-  const [currentId, setCurrentId] = useState<string | null>(() => getInitialSessionState().currentId);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load from storage on mount; create a fresh session if none exists.
-  // (initialization is handled by useState lazy initializers above)
-
-  // Persist on every change after initial load.
+  // Initialize: open DB (+ migrate) then load all sessions
   useEffect(() => {
-    if (sessions.length === 0) return;
-    persistSessions(sessions, currentId);
-  }, [sessions, currentId]);
+    let cancelled = false;
+    (async () => {
+      await openDB();
+      const loaded = await getAllSessions();
+      if (cancelled) return;
+
+      if (loaded.length === 0) {
+        const fresh = makeEmptySession();
+        setSessions([fresh]);
+        setCurrentId(fresh.id);
+        await dbPutSession(fresh);
+      } else {
+        setSessions(loaded);
+        setCurrentId(loaded[0].id);
+      }
+      setIsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const currentSession =
     sessions.find((s) => s.id === currentId) || sessions[0] || null;
@@ -94,7 +80,12 @@ export function useSessions() {
       setSessions((prev) => {
         const id = currentId || prev[0]?.id;
         if (!id) return prev;
-        return prev.map((s) => (s.id === id ? { ...mut(s), updatedAt: Date.now() } : s));
+        return prev.map((s) => {
+          if (s.id !== id) return s;
+          const updated = { ...mut(s), updatedAt: Date.now() };
+          dbPutSession(updated);
+          return updated;
+        });
       });
     },
     [currentId]
@@ -103,7 +94,12 @@ export function useSessions() {
   const updateSession = useCallback(
     (sessionId: string, mut: (s: Session) => Session) => {
       setSessions((prev) =>
-        prev.map((s) => (s.id === sessionId ? { ...mut(s), updatedAt: Date.now() } : s))
+        prev.map((s) => {
+          if (s.id !== sessionId) return s;
+          const updated = { ...mut(s), updatedAt: Date.now() };
+          dbPutSession(updated);
+          return updated;
+        })
       );
     },
     []
@@ -229,16 +225,10 @@ export function useSessions() {
         if (id && currentId !== id) setCurrentId(id);
         return prev;
       }
-      const fresh: Session = {
-        id: newSessionId(),
-        title: '新会话',
-        messages: [],
-        code: '',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
+      const fresh = makeEmptySession();
       setCurrentId(fresh.id);
-      return [fresh, ...prev].slice(0, MAX_SESSIONS);
+      dbPutSession(fresh);
+      return [fresh, ...prev];
     });
   }, [currentId]);
 
@@ -250,16 +240,11 @@ export function useSessions() {
     (id: string) => {
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
+        dbDeleteSession(id);
         if (next.length === 0) {
-          const fresh: Session = {
-            id: newSessionId(),
-            title: '新会话',
-            messages: [],
-            code: '',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
+          const fresh = makeEmptySession();
           setCurrentId(fresh.id);
+          dbPutSession(fresh);
           return [fresh];
         }
         if (id === currentId) setCurrentId(next[0].id);
@@ -273,6 +258,7 @@ export function useSessions() {
     sessions,
     currentSession,
     currentId,
+    isLoading,
     addUserMessage,
     addAssistantMessage,
     addProgress,
