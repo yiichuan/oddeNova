@@ -304,6 +304,7 @@ export default function App() {
         onSwitchSession={sessions.switchTo}
         onDeleteSession={sessions.deleteSession}
         onOpenSettings={() => setShowApiKeyModal(true)}
+        isHistoryLoading={sessions.isLoading}
       />
 
       <main className="flex-1 flex flex-col gap-3 pt-3 pr-3 pb-3 pl-[22px] min-w-0">

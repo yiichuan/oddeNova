@@ -3,6 +3,7 @@ import type { Session } from '../hooks/useSessions';
 interface HistoryPanelProps {
   sessions: Session[];
   currentId: string | null;
+  isLoading?: boolean;
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
 }
@@ -10,6 +11,7 @@ interface HistoryPanelProps {
 export default function HistoryPanel({
   sessions,
   currentId,
+  isLoading = false,
   onSwitch,
   onDelete,
 }: HistoryPanelProps) {
@@ -22,7 +24,9 @@ export default function HistoryPanel({
         <h3 className="text-base font-semibold text-text-primary">历史</h3>
       </div>
       <div className="flex-1 overflow-y-auto" style={{ fontFamily: '"GenWanMin TW", serif' }}>
-        {ordered.length === 0 ? (
+        {isLoading ? (
+          <div className="p-4 text-xs text-text-muted">加载中…</div>
+        ) : ordered.length === 0 ? (
           <div className="p-4 text-xs text-text-muted">暂无会话</div>
         ) : (
           <ul className="py-1">
