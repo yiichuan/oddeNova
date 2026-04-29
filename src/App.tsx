@@ -19,7 +19,33 @@ export default function App() {
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
+  const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const currentIdRef = useRef<string | null>(sessions.currentId);
+  const prevLoadingRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    currentIdRef.current = sessions.currentId;
+  }, [sessions.currentId]);
+
+  useEffect(() => {
+    const prev = prevLoadingRef.current;
+    const curr = loadingSessions;
+    // 找出本轮从 loading 消失的 id（即生成完成的会话）
+    const completed = [...prev].filter((id) => !curr.has(id));
+    if (completed.length > 0) {
+      setUnreadSessions((prevUnread) => {
+        const next = new Set(prevUnread);
+        for (const id of completed) {
+          // 只有非当前会话才标为未读
+          if (id !== currentIdRef.current) {
+            next.add(id);
+          }
+        }
+        return next;
+      });
+    }
+    prevLoadingRef.current = curr;
+  }, [loadingSessions]);
 
   const isUserAbort = useCallback((error: unknown, signal?: AbortSignal) => {
     if (signal?.aborted) return true;
@@ -150,16 +176,22 @@ export default function App() {
           return;
         }
         if (result.code) {
-          const success = await strudel.play(result.code);
-          if (success) {
+          if (sessionId === currentIdRef.current) {
+            const success = await strudel.play(result.code);
+            if (success) {
+              sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+              sessions.setCurrentCode(result.code, sessionId);
+            } else {
+              sessions.addAssistantMessage(
+                `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+                result.code,
+                sessionId
+              );
+            }
+          } else {
+            // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
             sessions.addAssistantMessage(result.explanation, result.code, sessionId);
             sessions.setCurrentCode(result.code, sessionId);
-          } else {
-            sessions.addAssistantMessage(
-              `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
-              result.code,
-              sessionId
-            );
           }
         } else {
           sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
@@ -241,16 +273,22 @@ export default function App() {
         return;
       }
       if (result.code) {
-        const success = await strudel.play(result.code);
-        if (success) {
+        if (sessionId === currentIdRef.current) {
+          const success = await strudel.play(result.code);
+          if (success) {
+            sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+            sessions.setCurrentCode(result.code, sessionId);
+          } else {
+            sessions.addAssistantMessage(
+              `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+              result.code,
+              sessionId
+            );
+          }
+        } else {
+          // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
           sessions.addAssistantMessage(result.explanation, result.code, sessionId);
           sessions.setCurrentCode(result.code, sessionId);
-        } else {
-          sessions.addAssistantMessage(
-            `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
-            result.code,
-            sessionId
-          );
         }
       } else {
         sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
