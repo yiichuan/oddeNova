@@ -27,6 +27,7 @@ interface SidebarProps {
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   onOpenSettings: () => void;
+  isHistoryLoading?: boolean;
 }
 
 export default function Sidebar({
@@ -48,6 +49,7 @@ export default function Sidebar({
   onSwitchSession,
   onDeleteSession,
   onOpenSettings,
+  isHistoryLoading = false,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -111,6 +113,7 @@ export default function Sidebar({
               <HistoryPanel
                 sessions={sessions}
                 currentId={currentId}
+                isLoading={isHistoryLoading}
                 onSwitch={(id) => { onSwitchSession(id); setShowHistory(false); }}
                 onDelete={onDeleteSession}
               />
