@@ -313,6 +313,16 @@ export default function App() {
     if (isDemoMode()) setDemoStep(0);
   }, [strudel, sessions]);
 
+  const handleSwitchSession = useCallback((id: string) => {
+    setUnreadSessions((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    sessions.switchTo(id);
+  }, [sessions]);
+
 
   return (
     <div className="flex h-screen w-screen bg-bg-primary overflow-hidden">
@@ -339,7 +349,9 @@ export default function App() {
         onNewSession={handleNewSession}
         onMoodGenerate={handleMoodInstruction}
         onReinitEngine={strudel.reinit}
-        onSwitchSession={sessions.switchTo}
+        loadingSessions={loadingSessions}
+        unreadSessions={unreadSessions}
+        onSwitchSession={handleSwitchSession}
         onDeleteSession={sessions.deleteSession}
         onOpenSettings={() => setShowApiKeyModal(true)}
         isHistoryLoading={sessions.isLoading}
