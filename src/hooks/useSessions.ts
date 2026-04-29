@@ -225,6 +225,14 @@ export function useSessions() {
         if (id && currentId !== id) setCurrentId(id);
         return prev;
       }
+      // If there's already an empty session in the list, switch to it instead
+      // of creating a duplicate. This handles the case where the user starts
+      // with a new session, switches to an old one, then clicks "New Session".
+      const existingEmpty = prev.find((s) => s.messages.length === 0 && !s.code);
+      if (existingEmpty) {
+        setCurrentId(existingEmpty.id);
+        return prev;
+      }
       const fresh = makeEmptySession();
       setCurrentId(fresh.id);
       dbPutSession(fresh);

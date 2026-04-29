@@ -6,6 +6,8 @@ interface HistoryPanelProps {
   isLoading?: boolean;
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
+  loadingSessions?: Set<string>;
+  unreadSessions?: Set<string>;
 }
 
 export default function HistoryPanel({
@@ -14,9 +16,13 @@ export default function HistoryPanel({
   isLoading = false,
   onSwitch,
   onDelete,
+  loadingSessions = new Set<string>(),
+  unreadSessions = new Set<string>(),
 }: HistoryPanelProps) {
-  // Newest first.
-  const ordered = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+  // Newest first (by start time). Exclude empty sessions (no messages).
+  const ordered = [...sessions]
+    .filter((s) => s.messages.length > 0)
+    .sort((a, b) => b.createdAt - a.createdAt);
 
   return (
     <div className="h-full flex flex-col bg-bg-primary border border-border overflow-hidden">
@@ -45,16 +51,26 @@ export default function HistoryPanel({
                     <span className="flex-1 text-xs truncate" title={s.title}>
                       {s.title || '新会话'}
                     </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(s.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error text-base transition-opacity shrink-0 leading-none"
-                      title="删除"
-                    >
-                      ×
-                    </button>
+                    {/* 状态指示器 + 删除按钮 */}
+                    <span className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(s.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error text-base transition-opacity leading-none"
+                        title="删除"
+                      >
+                        ×
+                      </button>
+                      {loadingSessions.has(s.id) ? (
+                        <span className="w-1.5 h-1.5 rounded-full animate-spin shrink-0" style={{ border: '1.5px solid transparent', borderTopColor: 'var(--color-text-primary)', display: 'inline-block' }} />
+                      ) : unreadSessions.has(s.id) ? (
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-success)' }} />
+                      ) : (
+                        <span className="w-1.5 h-1.5 shrink-0" />
+                      )}
+                    </span>
                   </div>
                 </li>
               );
