@@ -58,7 +58,7 @@ body {
 
 #root {
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
 }
 
 ::-webkit-scrollbar {
@@ -172,3 +172,7 @@ canvas[id*="_widget__spectrum_"] {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
 }
+
+/* Mobile: hide scrollbar on suggestion chips row */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
