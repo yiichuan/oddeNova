@@ -18,7 +18,7 @@ interface ApiKeyModalProps {
 }
 
 const PROVIDER_ORDER: ProviderType[] = [
-  'deepseek', 'anthropic',
+  'anthropic', 'deepseek',
 ];
 
 /** 按服务商分别读取已保存的 API Key。 */
@@ -27,7 +27,7 @@ function getProviderKey(p: ProviderType): string {
 }
 
 export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiKeyModalProps) {
-  const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'deepseek';
+  const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'anthropic';
   const savedKey = getProviderKey(savedProvider);
 
   const [provider, setProvider] = useState<ProviderType>(savedProvider);
