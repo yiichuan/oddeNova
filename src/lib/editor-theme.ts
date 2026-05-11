@@ -1,7 +1,7 @@
 export const EDITOR_THEME_STORAGE_KEY = "vibe-editor-theme";
 
 export const EDITOR_THEME_IDS = [
-  "vibe-dark",
+  "oddenova-dark",
   "dracula",
   "tokyo-night",
   "nord",
@@ -16,7 +16,7 @@ export const EDITOR_THEME_OPTIONS: {
   name: string;
   type: "dark" | "light";
 }[] = [
-  { id: "vibe-dark", name: "Vibe Dark", type: "dark" },
+  { id: "oddenova-dark", name: "oddeNova Dark", type: "dark" },
   { id: "dracula", name: "Dracula", type: "dark" },
   { id: "tokyo-night", name: "Tokyo Night", type: "dark" },
   { id: "nord", name: "Nord", type: "dark" },
@@ -38,7 +38,7 @@ export const EDITOR_THEME_VARS: Record<
     gutterBorder: string;
   }
 > = {
-  "vibe-dark": {
+  "oddenova-dark": {
     background: "#000000",
     foreground: "#e2e8f0",
     caret: "#91a3e0",
