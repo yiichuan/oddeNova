@@ -16,7 +16,7 @@ export function PlayIcon({ size = 18, className }: IconProps) {
 export function StopIcon({ size = 16, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <rect x="5" y="5" width="14" height="14" rx="4" />
+      <rect x="4" y="4" width="16" height="16" rx="3.5" />
     </svg>
   );
 }

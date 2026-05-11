@@ -91,10 +91,7 @@ function SliderColumn({
             onChange(v);
           }}
           className="aj-slider flex-1 min-w-0"
-          style={{
-            height: '1px',
-            background: `linear-gradient(to right, rgba(255,255,255,0.35) ${pct * 100}%, #323232 ${pct * 100}%)`,
-          }}
+          style={{ height: '20px', ['--fill-pct' as string]: `${pct * 100}%` }}
         />
       </div>
     </div>
@@ -186,11 +183,12 @@ export default function CodePanel({
   return (
     <div className="h-full flex flex-col border border-border overflow-hidden bg-bg-secondary/30">
       <style>{`
-        .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; }
+        .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; background: transparent; }
         .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -6px; }
         .aj-slider::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; }
-        .aj-slider::-webkit-slider-runnable-track { height: 1px; }
-        .aj-slider::-moz-range-track { height: 1px; }
+        .aj-slider::-webkit-slider-runnable-track { height: 1px; background: linear-gradient(to right, rgba(255,255,255,0.35) var(--fill-pct, 0%), #323232 var(--fill-pct, 0%)); }
+        .aj-slider::-moz-range-track { height: 1px; background: #323232; }
+        .aj-slider::-moz-range-progress { height: 1px; background: rgba(255,255,255,0.35); }
       `}</style>
 
       {/* StrudelMirror mounts here */}

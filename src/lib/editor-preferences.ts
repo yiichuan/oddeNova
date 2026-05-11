@@ -12,7 +12,7 @@ const STORAGE_KEYS = {
 
 const DEFAULT_FONT_SIZE = 14;
 const DEFAULT_FONT_FAMILY = "monospace";
-const DEFAULT_THEME: EditorThemeId = "vibe-dark";
+const DEFAULT_THEME: EditorThemeId = "oddenova-dark";
 
 export { DEFAULT_FONT_SIZE, DEFAULT_FONT_FAMILY, DEFAULT_THEME };
 
@@ -20,7 +20,10 @@ export { DEFAULT_FONT_SIZE, DEFAULT_FONT_FAMILY, DEFAULT_THEME };
 
 export function getEditorTheme(): EditorThemeId | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(STORAGE_KEYS.theme) as EditorThemeId | null;
+  const stored = localStorage.getItem(STORAGE_KEYS.theme);
+  if (stored && stored in EDITOR_THEME_VARS) return stored as EditorThemeId;
+  if (stored) localStorage.removeItem(STORAGE_KEYS.theme);
+  return null;
 }
 
 export function setEditorTheme(theme: EditorThemeId | null): void {

@@ -56,7 +56,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         placeholder="输入文字描述音乐..."
         rows={3}
         disabled={isLoading}
-        className="w-full min-h-[108px] resize-none rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#ff4500]/15 disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full min-h-[108px] resize-none rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] disabled:cursor-not-allowed disabled:opacity-50"
       />
 
       {!engineReady && (
@@ -78,10 +78,10 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         <button
           type="button"
           onClick={onStop}
-          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#B2370C] text-white transition duration-200 hover:bg-[#B2370C]/80"
+          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80"
           title="停止"
         >
-          <StopIcon size={14} />
+          <StopIcon size={18} />
         </button>
       ) : (
         <button

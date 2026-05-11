@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import { type ProviderType, PROVIDER_PRESETS } from '../services/llm-config';
 
+function getModelForProvider(p: ProviderType): string {
+  if (p === 'anthropic') {
+    const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
+    const legacyModels: Record<string, string> = { sonnet: 'claude-sonnet-4-6', opus: 'claude-opus-4-6' };
+    return (envModel ? (legacyModels[envModel] ?? envModel) : '') || legacyModels['sonnet'];
+  }
+  return PROVIDER_PRESETS[p].model;
+}
+
 interface ApiKeyModalProps {
   onClose: () => void;
   onSaved?: () => void;
@@ -12,20 +21,20 @@ const PROVIDER_ORDER: ProviderType[] = [
   'deepseek', 'anthropic',
 ];
 
-/** 按服务商分别读取已保存的 API Key（兼容旧版单 key 存储）。 */
+/** 按服务商分别读取已保存的 API Key。 */
 function getProviderKey(p: ProviderType): string {
-  return localStorage.getItem(`vibe_api_key_${p}`) || localStorage.getItem('vibe_api_key') || '';
+  return localStorage.getItem(`vibe_api_key_${p}`) || '';
 }
 
 export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiKeyModalProps) {
   const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'deepseek';
+  const savedKey = getProviderKey(savedProvider);
 
   const [provider, setProvider] = useState<ProviderType>(savedProvider);
   const [apiKey, setApiKey] = useState(getProviderKey(savedProvider));
   const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://timesniper.club');
 
   const handleProviderChange = (p: ProviderType) => {
-    // 先把当前 key 暂存到 provider 分区，再切换并加载新 provider 的 key
     if (apiKey.trim()) {
       localStorage.setItem(`vibe_api_key_${provider}`, apiKey.trim());
     }
@@ -37,7 +46,6 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     const trimmedKey = apiKey.trim();
     if (!trimmedKey) return;
 
-    // 同时写入 provider 分区 key 和通用 key（向后兼容）
     localStorage.setItem(`vibe_api_key_${provider}`, trimmedKey);
     localStorage.setItem('vibe_api_key', trimmedKey);
     localStorage.setItem('vibe_provider', provider);
@@ -58,10 +66,21 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
       <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
-        <h2 className="text-lg font-semibold text-text-primary mb-1">设置 API Key</h2>
-        <p className="text-xs text-text-muted mb-4">
+        <h2 className="text-lg font-semibold text-text-primary mb-2">设置 API Key</h2>
+        <p className="text-xs text-text-muted mb-7">
           选择服务商并填入对应的 API Key，即可开始使用。Key 仅保存在本地浏览器中。
         </p>
+
+        {/* 当前生效状态 */}
+        {savedKey && (
+          <div className="flex items-center gap-2 mb-7">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 mt-px" />
+            <span className="text-xs text-text-muted">当前使用</span>
+            <span className="text-xs text-text-secondary font-medium">{PROVIDER_PRESETS[savedProvider].label}</span>
+            <span className="text-text-muted/40 text-xs">·</span>
+            <span className="text-xs text-text-muted font-mono">{getModelForProvider(savedProvider)}</span>
+          </div>
+        )}
 
         <div className="space-y-3">
           {/* 服务商选择 */}

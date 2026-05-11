@@ -13,6 +13,13 @@ import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 
+const SIDEBAR_MIN = 240;
+const SIDEBAR_MAX = 600;
+const SIDEBAR_DEFAULT = 320;
+const VIZ_MIN = 120;
+const VIZ_MAX = 500;
+const VIZ_DEFAULT = 280;
+
 export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
@@ -23,6 +30,12 @@ export default function App() {
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
+
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+  const [vizHeight, setVizHeight] = useState(VIZ_DEFAULT);
+  const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
+  const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
@@ -325,7 +338,10 @@ export default function App() {
 
 
   return (
-    <div className="flex h-screen w-screen bg-bg-primary overflow-hidden">
+    <div
+      className="flex h-screen w-screen bg-bg-primary overflow-hidden"
+      style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
+    >
       {showApiKeyModal && (
         <ApiKeyModal
           onClose={() => setShowApiKeyModal(false)}
@@ -333,31 +349,58 @@ export default function App() {
           required={!hasApiKeyConfigured()}
         />
       )}
-      <Sidebar
-        title={current?.title ?? '新会话'}
-        messages={messages}
-        isLoading={isLoading}
-        isMoodLoading={isMoodLoading}
-        engineReady={strudel.engineReady}
-        sessions={sessions.sessions}
-        currentId={sessions.currentId}
-        suggestions={demoSuggestions}
-        suggestionsLoading={!isDemoMode() && suggestionsLoading}
-        fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
-        onSendText={handleInstruction}
-        onStop={handleStop}
-        onNewSession={handleNewSession}
-        onMoodGenerate={handleMoodInstruction}
-        onReinitEngine={strudel.reinit}
-        loadingSessions={loadingSessions}
-        unreadSessions={unreadSessions}
-        onSwitchSession={handleSwitchSession}
-        onDeleteSession={sessions.deleteSession}
-        onOpenSettings={() => setShowApiKeyModal(true)}
-        isHistoryLoading={sessions.isLoading}
-      />
 
-      <main className="flex-1 flex flex-col gap-3 pt-3 pr-3 pb-3 pl-[22px] min-w-0">
+      {/* Sidebar with dynamic width */}
+      <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
+        <Sidebar
+          title={current?.title ?? '新会话'}
+          messages={messages}
+          isLoading={isLoading}
+          isMoodLoading={isMoodLoading}
+          engineReady={strudel.engineReady}
+          sessions={sessions.sessions}
+          currentId={sessions.currentId}
+          suggestions={demoSuggestions}
+          suggestionsLoading={!isDemoMode() && suggestionsLoading}
+          fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
+          onSendText={handleInstruction}
+          onStop={handleStop}
+          onNewSession={handleNewSession}
+          onMoodGenerate={handleMoodInstruction}
+          onReinitEngine={strudel.reinit}
+          loadingSessions={loadingSessions}
+          unreadSessions={unreadSessions}
+          onSwitchSession={handleSwitchSession}
+          onDeleteSession={sessions.deleteSession}
+          onOpenSettings={() => setShowApiKeyModal(true)}
+          isHistoryLoading={sessions.isLoading}
+        />
+      </div>
+
+      {/* Horizontal resize handle */}
+      <div
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          hDragRef.current = { startX: e.clientX, startWidth: sidebarWidth };
+          setIsDragging('h');
+        }}
+        onPointerMove={(e) => {
+          if (!hDragRef.current) return;
+          const delta = e.clientX - hDragRef.current.startX;
+          setSidebarWidth(Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, hDragRef.current.startWidth + delta)));
+        }}
+        onPointerUp={(e) => {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+          hDragRef.current = null;
+          setIsDragging(null);
+        }}
+        className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-3 pb-3"
+        style={{ cursor: 'col-resize' }}
+      >
+        <div className={`w-[6px] h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+      </div>
+
+      <main className="flex-1 flex flex-col pt-3 pr-3 pb-0 min-w-0">
         <div className="flex-1 min-h-0">
           <CodePanel
             error={strudel.error}
@@ -368,7 +411,31 @@ export default function App() {
             onStop={strudel.stop}
           />
         </div>
-        <div className="h-[280px] shrink-0">
+
+        {/* Vertical resize handle */}
+        <div
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            vDragRef.current = { startY: e.clientY, startHeight: vizHeight };
+            setIsDragging('v');
+          }}
+          onPointerMove={(e) => {
+            if (!vDragRef.current) return;
+            const delta = e.clientY - vDragRef.current.startY;
+            setVizHeight(Math.max(VIZ_MIN, Math.min(VIZ_MAX, vDragRef.current.startHeight - delta)));
+          }}
+          onPointerUp={(e) => {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+            vDragRef.current = null;
+            setIsDragging(null);
+          }}
+          className="h-[10px] shrink-0 group flex items-center justify-center"
+          style={{ cursor: 'row-resize' }}
+        >
+          <div className={`h-[6px] w-full transition-colors duration-150 ${isDragging === 'v' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+        </div>
+
+        <div style={{ height: vizHeight, flexShrink: 0 }} className="pb-3">
           <VizPlaceholder isPlaying={strudel.isPlaying} />
         </div>
       </main>
