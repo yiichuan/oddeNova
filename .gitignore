@@ -25,3 +25,6 @@ public/animation
 *.njsproj
 *.sln
 *.sw?
+
+# Local planning docs (not uploaded to GitHub)
+_plans/
