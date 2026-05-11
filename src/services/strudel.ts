@@ -161,13 +161,14 @@ class StrudelService {
       const controller = getSuperdoughAudioController() as any;
       const destGain: GainNode = controller.output.destinationGain;
 
-      this.masterLpfNode = ctx.createBiquadFilter();
-      this.masterLpfNode.type = 'lowpass';
-      this.masterLpfNode.frequency.value = 20000;
+      const lpfNode = ctx.createBiquadFilter();
+      lpfNode.type = 'lowpass';
+      lpfNode.frequency.value = 20000;
+      this.masterLpfNode = lpfNode;
 
       try { destGain.disconnect(ctx.destination); } catch { /* not connected */ }
-      destGain.connect(this.masterLpfNode);
-      this.masterLpfNode.connect(ctx.destination);
+      destGain.connect(lpfNode);
+      lpfNode.connect(ctx.destination);
       this.masterChainReady = true;
     } catch {
       this.masterChainSettingUp = false;
