@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>oddeNova · 移动端适配 · 技术实现报告</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #040604; --bg-card: #080d08;
+      --grid: rgba(77,255,145,0.05);
+      --green: #4dff91; --green-glow: rgba(77,255,145,0.25); --green-dim: #1c4d2e;
+      --amber: #ffb000; --amber-glow: rgba(255,176,0,0.2);
+      --cyan: #00e5ff;
+      --text: #b8f0c8; --text-dim: #4a7a58; --text-muted: #1e3328;
+      --border: rgba(77,255,145,0.12); --border-bright: rgba(77,255,145,0.4);
+      --font-mono: 'Share Tech Mono','Courier New',monospace;
+      --font-display: 'Orbitron',monospace;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;line-height:1.7;min-height:100vh;overflow-x:hidden;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px}
+    body::after{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.06) 3px,rgba(0,0,0,.06) 4px);pointer-events:none;z-index:9999}
+    .hero{padding:80px 48px 0;max-width:1100px;margin:0 auto}
+    canvas#wave{display:block;width:100%;height:120px;margin-bottom:32px}
+    .hero-badge{font-size:11px;color:var(--text-dim);letter-spacing:.2em;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+    .hero-badge::before{content:'';width:6px;height:6px;background:var(--green);border-radius:50%;box-shadow:0 0 8px var(--green);animation:pulse 1.8s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    h1{font-family:var(--font-display);font-weight:900;font-size:clamp(36px,6vw,72px);color:var(--green);text-shadow:0 0 40px var(--green-glow),0 0 80px rgba(77,255,145,.1);line-height:1;margin-bottom:8px}
+    .hero-subtitle{font-family:var(--font-display);font-size:clamp(13px,1.5vw,16px);color:var(--text-dim);letter-spacing:.25em;text-transform:uppercase;margin-bottom:48px}
+    .hero-stats{display:flex;border:1px solid var(--border-bright);width:fit-content;margin-bottom:64px}
+    .stat{padding:16px 32px;border-right:1px solid var(--border-bright);text-align:center}
+    .stat:last-child{border-right:none}
+    .stat-num{font-family:var(--font-display);font-size:28px;font-weight:700;color:var(--green);text-shadow:0 0 20px var(--green-glow);display:block}
+    .stat-label{font-size:10px;letter-spacing:.15em;color:var(--text-dim);text-transform:uppercase}
+    .section{max-width:1100px;margin:0 auto;padding:0 48px 80px}
+    .section-header{display:flex;align-items:center;gap:16px;margin-bottom:40px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+    .section-num{font-family:var(--font-display);font-size:11px;color:var(--text-dim);letter-spacing:.2em}
+    .section-title{font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--green);letter-spacing:.1em;text-shadow:0 0 20px var(--green-glow)}
+    .timeline{position:relative;padding-left:32px}
+    .timeline::before{content:'';position:absolute;left:6px;top:10px;bottom:10px;width:1px;background:linear-gradient(to bottom,var(--green),var(--green-dim),transparent)}
+    .commit{position:relative;margin-bottom:40px;padding:20px 24px;background:var(--bg-card);border:1px solid var(--border);border-left:2px solid var(--green);transition:.2s}
+    .commit:hover{box-shadow:0 0 24px var(--green-glow),-4px 0 0 var(--green)}
+    .commit::before{content:'';position:absolute;left:-39px;top:50%;transform:translateY(-50%);width:10px;height:10px;border:2px solid var(--green);border-radius:50%;background:var(--bg);box-shadow:0 0 8px var(--green)}
+    .commit-sha{font-size:11px;color:var(--amber);letter-spacing:.1em;margin-bottom:6px}
+    .commit-msg{font-size:15px;color:var(--text);margin-bottom:8px;font-weight:bold}
+    .commit-files{display:flex;flex-wrap:wrap;gap:6px}
+    .file-tag{font-size:11px;padding:2px 8px;border:1px solid var(--border-bright);color:var(--text-dim)}
+    .tasks{display:grid;gap:24px}
+    .task-card{background:var(--bg-card);border:1px solid var(--border);overflow:hidden;transition:.3s}
+    .task-card:hover{box-shadow:0 0 32px var(--green-glow);border-color:var(--border-bright)}
+    .task-head{display:flex;align-items:center;gap:16px;padding:20px 28px;border-bottom:1px solid var(--border)}
+    .task-num{font-family:var(--font-display);font-size:11px;font-weight:700;color:var(--bg);background:var(--green);padding:4px 10px;letter-spacing:.1em;white-space:nowrap}
+    .task-num.amber{background:var(--amber)}
+    .task-num.cyan{background:var(--cyan);color:#000}
+    .task-title{font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--text);letter-spacing:.05em}
+    .task-status{margin-left:auto;font-size:10px;color:var(--green);text-shadow:0 0 8px var(--green);letter-spacing:.2em}
+    .task-body{display:grid;grid-template-columns:1fr 1fr}
+    .task-body.single{grid-template-columns:1fr}
+    .task-col{padding:24px 28px;border-right:1px solid var(--border)}
+    .task-col:last-child{border-right:none}
+    .col-label{font-size:10px;letter-spacing:.2em;color:var(--text-dim);text-transform:uppercase;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--text-muted)}
+    .point-list{list-style:none}
+    .point-list li{padding:6px 0 6px 16px;position:relative;color:var(--text);border-bottom:1px solid var(--text-muted)}
+    .point-list li:last-child{border-bottom:none}
+    .point-list li::before{content:'▸';position:absolute;left:0;color:var(--green);font-size:10px}
+    code{color:var(--amber);background:rgba(255,176,0,.06);padding:1px 5px;font-family:var(--font-mono)}
+    .code-block{background:#030503;border:1px solid var(--border);padding:16px 20px;margin:12px 0;overflow-x:auto;position:relative}
+    .code-block::before{content:attr(data-lang);position:absolute;top:8px;right:12px;font-size:9px;color:var(--text-dim);letter-spacing:.2em;text-transform:uppercase}
+    .code-block pre{font-family:var(--font-mono);font-size:12px;line-height:1.8;color:var(--text);white-space:pre}
+    .kw{color:#7ec8e3} .fn{color:var(--green)} .str{color:#d4a574} .num{color:var(--amber)}
+    .wireframe-wrap{display:flex;justify-content:center;padding:40px 0;position:relative}
+    .phone{width:280px;border:2px solid var(--green);border-radius:28px;overflow:hidden;box-shadow:0 0 40px var(--green-glow),inset 0 0 40px rgba(0,0,0,.8);position:relative}
+    .phone::before{content:'';position:absolute;top:12px;left:50%;transform:translateX(-50%);width:60px;height:4px;background:var(--green-dim);border-radius:2px}
+    .phone-inner{display:flex;flex-direction:column;height:560px;background:#000;margin-top:28px}
+    .wf-nav{background:rgba(77,255,145,.08);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .wf-icon{font-size:16px;color:var(--text-dim)}
+    .wf-logo{font-family:var(--font-display);font-size:11px;color:var(--green);letter-spacing:.1em;text-shadow:0 0 10px var(--green)}
+    .wf-label{font-size:9px;color:var(--text-dim);letter-spacing:.1em;text-align:center;padding:3px 6px;border:1px solid var(--border)}
+    .wf-conv{flex:1;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+    .wf-bubble{padding:8px 10px;font-size:9px;line-height:1.4;max-width:80%}
+    .wf-bubble.user{align-self:flex-end;background:rgba(77,255,145,.1);border:1px solid var(--border-bright);color:var(--green)}
+    .wf-bubble.ai{align-self:flex-start;background:rgba(0,0,0,.5);border:1px solid var(--border);color:var(--text-dim)}
+    .wf-drawer{background:rgba(0,20,8,.95);border-top:1px solid var(--green);padding:10px 12px;flex-shrink:0}
+    .wf-drawer-label{font-family:var(--font-display);font-size:8px;color:var(--green);letter-spacing:.15em;margin-bottom:6px}
+    .wf-code-lines{display:flex;flex-direction:column;gap:3px}
+    .wf-line{height:3px;background:var(--green-dim);border-radius:1px}
+    .wf-line:nth-child(1){width:90%} .wf-line:nth-child(2){width:70%;margin-left:16px}
+    .wf-line:nth-child(3){width:80%;margin-left:8px} .wf-line:nth-child(4){width:60%;margin-left:24px}
+    .wf-bottom{background:rgba(0,0,0,.9);border-top:1px solid var(--border);padding:8px 12px 14px;flex-shrink:0}
+    .wf-chips{display:flex;gap:4px;margin-bottom:6px;overflow:hidden}
+    .wf-chip{font-size:8px;padding:2px 7px;border:1px solid var(--border);color:var(--text-dim);white-space:nowrap;flex-shrink:0}
+    .wf-toggle{font-size:8px;color:var(--cyan);border:1px solid rgba(0,229,255,.3);padding:3px 8px;text-align:center;margin-bottom:6px;display:block}
+    .wf-input{height:26px;border:1px solid var(--border-bright);background:rgba(77,255,145,.03);display:flex;align-items:center;padding:0 8px}
+    .wf-input-dot{width:4px;height:14px;background:var(--green);animation:blink 1s step-end infinite}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+    .wf-annotations{position:absolute;right:calc(50% - 340px);top:0;bottom:0;display:flex;flex-direction:column;justify-content:space-around;padding:80px 0 60px;width:180px}
+    .wf-ann{display:flex;align-items:center;gap:8px}
+    .wf-ann-line{width:30px;height:1px;background:var(--border-bright);flex-shrink:0}
+    .wf-ann-text{font-size:10px;color:var(--text-dim);line-height:1.4}
+    .wf-ann-text span{display:block;color:var(--text);font-size:11px}
+    .verify-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+    .verify-item{padding:20px 24px;background:var(--bg-card);border:1px solid var(--border);display:flex;gap:16px;align-items:flex-start;transition:.2s}
+    .verify-item:hover{box-shadow:0 0 20px var(--green-glow);border-color:var(--border-bright)}
+    .verify-icon{font-family:var(--font-display);font-size:20px;color:var(--green);text-shadow:0 0 16px var(--green);flex-shrink:0;line-height:1}
+    .verify-text strong{display:block;color:var(--text);margin-bottom:4px;font-size:13px}
+    .verify-text span{color:var(--text-dim);font-size:12px}
+    footer{border-top:1px solid var(--border);padding:32px 48px;display:flex;justify-content:space-between;align-items:center;color:var(--text-dim);font-size:11px;letter-spacing:.1em}
+    .footer-brand{font-family:var(--font-display);font-size:14px;color:var(--green);text-shadow:0 0 10px var(--green-glow)}
+    .branch-tag{color:var(--amber);background:rgba(255,176,0,.08);border:1px solid rgba(255,176,0,.2);padding:3px 10px;font-size:11px}
+    @media(max-width:768px){
+      .hero,.section{padding-left:24px;padding-right:24px}
+      .hero-stats{flex-wrap:wrap}
+      .task-body{grid-template-columns:1fr}
+      .task-col{border-right:none;border-bottom:1px solid var(--border)}
+      .task-col:last-child{border-bottom:none}
+      .verify-grid{grid-template-columns:1fr}
+      .wf-annotations{display:none}
+      footer{flex-direction:column;gap:16px;text-align:center}
+    }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <canvas id="wave"></canvas>
+  <div class="hero-badge">SIGNAL LOCKED · FEATURE/NOVA-10-ADAPT-MOBILE</div>
+  <h1>oddeNova</h1>
+  <div class="hero-subtitle">移动端适配 // Mobile Adaptation · Technical Report</div>
+  <div class="hero-stats">
+    <div class="stat"><span class="stat-num">3</span><span class="stat-label">Commits</span></div>
+    <div class="stat"><span class="stat-num">4</span><span class="stat-label">Tasks</span></div>
+    <div class="stat"><span class="stat-num">+166</span><span class="stat-label">Lines Added</span></div>
+    <div class="stat"><span class="stat-num">768px</span><span class="stat-label">Breakpoint</span></div>
+    <div class="stat"><span class="stat-num">408ms</span><span class="stat-label">Build Speed</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">01</span>
+    <span class="section-title">COMMIT HISTORY</span>
+  </div>
+  <div class="timeline">
+    <div class="commit">
+      <div class="commit-sha">● 91bdd54 · 2026-05-12</div>
+      <div class="commit-msg">fix: viewport dvh and cover for mobile safari</div>
+      <div class="commit-files">
+        <span class="file-tag">index.html</span>
+        <span class="file-tag">src/index.css</span>
+        <span class="file-tag">+4 −2</span>
+      </div>
+    </div>
+    <div class="commit">
+      <div class="commit-sha">● 2361d18 · 2026-05-12</div>
+      <div class="commit-msg">feat: add useIsMobile hook (768px breakpoint)</div>
+      <div class="commit-files">
+        <span class="file-tag">src/hooks/useIsMobile.ts (NEW)</span>
+        <span class="file-tag">+18</span>
+      </div>
+    </div>
+    <div class="commit">
+      <div class="commit-sha">● 566bfc6 · 2026-05-12</div>
+      <div class="commit-msg">feat: mobile layout branch in App.tsx with drawer and history sheet</div>
+      <div class="commit-files">
+        <span class="file-tag">src/App.tsx</span>
+        <span class="file-tag">+166</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">02</span>
+    <span class="section-title">IMPLEMENTATION TASKS</span>
+  </div>
+  <div class="tasks">
+
+    <div class="task-card">
+      <div class="task-head">
+        <span class="task-num">TASK 01</span>
+        <span class="task-title">Viewport &amp; CSS 基础</span>
+        <span class="task-status">✓ COMMITTED</span>
+      </div>
+      <div class="task-body">
+        <div class="task-col">
+          <div class="col-label">变更点</div>
+          <ul class="point-list">
+            <li><code>index.html</code> — 添加 <code>viewport-fit=cover</code></li>
+            <li><code>src/index.css</code> — <code>#root</code> 高度从 <code>100vh</code> 改为 <code>100dvh</code></li>
+            <li>新增 <code>.no-scrollbar</code> utility class（横向滑动建议芯片用）</li>
+          </ul>
+        </div>
+        <div class="task-col">
+          <div class="col-label">原因</div>
+          <ul class="point-list">
+            <li>iOS Safari 地址栏收起/展开会改变视口高度，<code>dvh</code> 动态适配</li>
+            <li><code>viewport-fit=cover</code> 使内容延伸至刘海区域，再通过 <code>env(safe-area-inset-*)</code> 精确留白</li>
+            <li>横向建议芯片需要隐藏滚动条保持美观</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="task-card">
+      <div class="task-head">
+        <span class="task-num amber">TASK 02</span>
+        <span class="task-title">useIsMobile Hook</span>
+        <span class="task-status">✓ COMMITTED</span>
+      </div>
+      <div class="task-body">
+        <div class="task-col">
+          <div class="col-label">实现</div>
+          <div class="code-block" data-lang="typescript">
+<pre><span class="kw">const</span> MOBILE_BREAKPOINT = <span class="num">768</span>;
+
+<span class="kw">export function</span> <span class="fn">useIsMobile</span>(): <span class="kw">boolean</span> {
+  <span class="kw">const</span> [isMobile, setIsMobile] = <span class="fn">useState</span>(
+    () =&gt; window.<span class="fn">matchMedia</span>(
+      <span class="str">`(max-width: ${MOBILE_BREAKPOINT}px)`</span>
+    ).matches
+  );
+  <span class="fn">useEffect</span>(() =&gt; {
+    <span class="kw">const</span> mq = window.<span class="fn">matchMedia</span>(...);
+    mq.<span class="fn">addEventListener</span>(<span class="str">'change'</span>, handler);
+    <span class="kw">return</span> () =&gt; mq.<span class="fn">removeEventListener</span>(<span class="str">'change'</span>, handler);
+  }, []);
+  <span class="kw">return</span> isMobile;
+}</pre>
+          </div>
+        </div>
+        <div class="task-col">
+          <div class="col-label">设计决策</div>
+          <ul class="point-list">
+            <li>用 <code>window.matchMedia</code> 而非监听 <code>resize</code>，性能更优</li>
+            <li><code>useState</code> 懒初始化避免 SSR hydration 闪烁</li>
+            <li>breakpoint 768px：≤768 为移动端，≥769 为桌面端</li>
+            <li>组件卸载时自动清理 listener（内存无泄漏）</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="task-card">
+      <div class="task-head">
+        <span class="task-num cyan">TASK 03</span>
+        <span class="task-title">App.tsx 移动端布局分支</span>
+        <span class="task-status">✓ COMMITTED</span>
+      </div>
+      <div class="task-body single">
+        <div class="task-col">
+          <div class="col-label">架构策略：Early Return Pattern</div>
+          <ul class="point-list" style="margin-bottom:16px">
+            <li>在原有桌面端 <code>return (...)</code> 之前插入 <code>if (isMobile) return &lt;MobileLayout /&gt;</code>，桌面 JSX 零改动</li>
+            <li>移动端与桌面端共享所有 hooks 和状态（<code>sessions</code>、<code>agent</code>、<code>strudel</code>），无重复逻辑</li>
+          </ul>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+            <div>
+              <div class="col-label" style="margin-bottom:10px">顶部导航栏</div>
+              <ul class="point-list">
+                <li>左：<code>&lt;HistoryIcon&gt;</code> 触发历史底部弹层</li>
+                <li>中：Logo</li>
+                <li>右：<code>&lt;SettingsIcon&gt;</code></li>
+                <li><code>paddingTop: env(safe-area-inset-top)</code></li>
+              </ul>
+            </div>
+            <div>
+              <div class="col-label" style="margin-bottom:10px">代码抽屉</div>
+              <ul class="point-list">
+                <li>默认高度 <code>0</code>，打开时 <code>50dvh</code></li>
+                <li>CSS <code>transition: height 0.35s ease</code></li>
+                <li><code>overflow: hidden</code> 实现平滑展开</li>
+                <li>内嵌 <code>&lt;CodePanel&gt;</code> 复用</li>
+              </ul>
+            </div>
+            <div>
+              <div class="col-label" style="margin-bottom:10px">历史记录底部弹层</div>
+              <ul class="point-list">
+                <li>Fixed 定位遮罩层</li>
+                <li><code>maxHeight: 70dvh</code>，可滚动</li>
+                <li>复用 <code>&lt;HistoryPanel&gt;</code></li>
+                <li>点击遮罩关闭</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="task-card">
+      <div class="task-head">
+        <span class="task-num">TASK 04</span>
+        <span class="task-title">回归验证</span>
+        <span class="task-status">✓ VERIFIED</span>
+      </div>
+      <div class="task-body single">
+        <div class="task-col">
+          <div class="verify-grid">
+            <div class="verify-item">
+              <div class="verify-icon">◉</div>
+              <div class="verify-text"><strong>Vite 启动正常</strong><span>dev server 408ms 就绪，无运行时错误</span></div>
+            </div>
+            <div class="verify-item">
+              <div class="verify-icon">◉</div>
+              <div class="verify-text"><strong>TypeScript 无新增错误</strong><span>VS Code language server 检查 App.tsx 返回 0 errors</span></div>
+            </div>
+            <div class="verify-item">
+              <div class="verify-icon">◉</div>
+              <div class="verify-text"><strong>桌面端 JSX 未改动</strong><span>isMobile=false 时直接跳过移动端分支，原布局完整保留</span></div>
+            </div>
+            <div class="verify-item">
+              <div class="verify-icon">◉</div>
+              <div class="verify-text"><strong>既有 TS 错误为存量</strong><span>ConversationView/strudel/soundfont 中的错误本次改动前已存在</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">03</span>
+    <span class="section-title">MOBILE LAYOUT ARCHITECTURE</span>
+  </div>
+  <div class="wireframe-wrap">
+    <div class="phone">
+      <div class="phone-inner">
+        <div class="wf-nav">
+          <div class="wf-icon">☰</div>
+          <div class="wf-logo">oddeNova</div>
+          <div class="wf-icon">⚙</div>
+        </div>
+        <div style="padding:4px 12px;border-bottom:1px solid var(--border)">
+          <div class="wf-label">顶部导航 · safe-area-inset-top</div>
+        </div>
+        <div class="wf-conv">
+          <div class="wf-bubble user">帮我生成一段爵士鼓节奏</div>
+          <div class="wf-bubble ai">好的，我来为你生成一段爵士风格的节奏…</div>
+          <div class="wf-bubble ai" style="opacity:.5">⬡ 生成代码中…</div>
+          <div style="flex:1"></div>
+          <div class="wf-label" style="align-self:center">ConversationView · flex-1</div>
+        </div>
+        <div class="wf-drawer">
+          <div class="wf-drawer-label">▼ CODE PANEL · height: 0 ↔ 50dvh · transition 0.35s</div>
+          <div class="wf-code-lines">
+            <div class="wf-line"></div><div class="wf-line"></div>
+            <div class="wf-line"></div><div class="wf-line"></div>
+          </div>
+        </div>
+        <div class="wf-bottom">
+          <div class="wf-chips">
+            <div class="wf-chip">爵士风</div>
+            <div class="wf-chip">加入钢琴</div>
+            <div class="wf-chip">更快节奏</div>
+            <div class="wf-chip">→</div>
+          </div>
+          <div class="wf-toggle">查看代码 ↑</div>
+          <div class="wf-input"><div class="wf-input-dot"></div></div>
+          <div style="height:4px"></div>
+          <div class="wf-label">safe-area-inset-bottom</div>
+        </div>
+      </div>
+    </div>
+    <div class="wf-annotations">
+      <div class="wf-ann"><div class="wf-ann-line"></div><div class="wf-ann-text"><span>顶部导航栏</span>HistoryIcon · Logo · SettingsIcon</div></div>
+      <div class="wf-ann"><div class="wf-ann-line"></div><div class="wf-ann-text"><span>对话主区域</span>&lt;ConversationView&gt; · flex-1</div></div>
+      <div class="wf-ann"><div class="wf-ann-line"></div><div class="wf-ann-text"><span>代码抽屉</span>50dvh · CSS transition</div></div>
+      <div class="wf-ann"><div class="wf-ann-line"></div><div class="wf-ann-text"><span>底部操作栏</span>建议芯片 + 输入框</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-brand">oddeNova</div>
+  <div>移动端适配技术报告 · 2026-05-12</div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span>branch</span>
+    <span class="branch-tag">feature/NOVA-10-adapt-mobile</span>
+  </div>
+</footer>
+
+<script>
+  const canvas = document.getElementById('wave');
+  const ctx = canvas.getContext('2d');
+  let t = 0, raf;
+  function resize() {
+    const r = window.devicePixelRatio || 1;
+    canvas.width = canvas.offsetWidth * r;
+    canvas.height = canvas.offsetHeight * r;
+    ctx.scale(r, r);
+  }
+  function draw() {
+    const W = canvas.offsetWidth, H = canvas.offsetHeight;
+    ctx.clearRect(0, 0, W, H);
+    // grid
+    ctx.strokeStyle = 'rgba(77,255,145,0.07)'; ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 32) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 32) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    const cy = H / 2;
+    // wave 1
+    ctx.beginPath(); ctx.strokeStyle='rgba(77,255,145,0.9)'; ctx.lineWidth=1.5; ctx.shadowBlur=14; ctx.shadowColor='#4dff91';
+    for (let x=0; x<W; x++) { const y=cy+Math.sin((x/W)*Math.PI*6+t)*(H*.32)+Math.sin((x/W)*Math.PI*2+t*.7)*(H*.08); x===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+    ctx.stroke();
+    // wave 2
+    ctx.beginPath(); ctx.strokeStyle='rgba(0,229,255,0.35)'; ctx.lineWidth=1; ctx.shadowBlur=6; ctx.shadowColor='#00e5ff';
+    for (let x=0; x<W; x++) { const y=cy+Math.sin((x/W)*Math.PI*4+t*1.3+Math.PI)*(H*.18)+Math.cos((x/W)*Math.PI*8+t*.5)*(H*.06); x===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+    ctx.stroke();
+    // center axis
+    ctx.shadowBlur=0; ctx.strokeStyle='rgba(77,255,145,0.12)'; ctx.lineWidth=1;
+    ctx.setLineDash([4,8]); ctx.beginPath(); ctx.moveTo(0,cy); ctx.lineTo(W,cy); ctx.stroke(); ctx.setLineDash([]);
+    t+=0.025; raf=requestAnimationFrame(draw);
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize(); draw();
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) cancelAnimationFrame(raf); else draw(); });
+</script>
+</body>
+</html>

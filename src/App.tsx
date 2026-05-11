@@ -421,12 +421,22 @@ export default function App() {
 
         {/* ── Bottom Bar ── */}
         <div
-          className="shrink-0 px-3 pt-2 border-t border-border"
+          className="relative shrink-0 px-3 pt-3 border-t border-border"
           style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
         >
+          {/* Code pill toggle — rides on the border-t line */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
+            <button
+              onClick={() => setDrawerOpen((v) => !v)}
+              className="rounded-full border border-border bg-bg-primary px-4 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+            >
+              {drawerOpen ? '收起代码 ↓' : '查看代码 ↑'}
+            </button>
+          </div>
+
           {/* Suggestion chips — horizontal scroll */}
           {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && (
-            <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar">
+            <div className="flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
               {demoSuggestions.map((s) => (
                 <button
                   key={s}
@@ -440,16 +450,6 @@ export default function App() {
               ))}
             </div>
           )}
-
-          {/* Code pill toggle */}
-          <div className="flex justify-center mb-2">
-            <button
-              onClick={() => setDrawerOpen((v) => !v)}
-              className="rounded-full border border-border px-4 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
-            >
-              {drawerOpen ? '收起代码 ↓' : '查看代码 ↑'}
-            </button>
-          </div>
 
           {/* Input */}
           <ChatInput

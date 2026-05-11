@@ -1,0 +1,111 @@
+<h2>移动端适配现状审查</h2>
+<p class="subtitle">基于代码审查，以下是我发现的可优化问题，优先级从高到低。请选择你最想改善的方向。</p>
+
+<style>
+.issue-grid { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.issue-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.issue-card:hover { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.06); }
+.issue-card.selected { border-color: #6ee7b7; background: rgba(110,231,183,0.07); }
+.issue-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.badge-high { background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+.badge-mid { background: rgba(251,191,36,0.15); color: #fde68a; border: 1px solid rgba(251,191,36,0.3); }
+.badge-low { background: rgba(148,163,184,0.1); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.2); }
+.issue-body { flex: 1; min-width: 0; }
+.issue-title { font-size: 14px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; }
+.issue-desc { font-size: 12px; color: rgba(255,255,255,0.5); line-height: 1.6; }
+.issue-code { font-size: 11px; color: rgba(255,255,255,0.3); font-family: monospace; margin-top: 4px; }
+.section-label { font-size: 11px; letter-spacing: 0.12em; color: rgba(255,255,255,0.3); text-transform: uppercase; margin-bottom: 8px; margin-top: 20px; }
+</style>
+
+<div class="section-label">🔴 高优先级 — 影响核心交互体验</div>
+<div class="issue-grid">
+
+  <div class="issue-card" data-choice="keyboard" onclick="toggleSelect(this)">
+    <span class="issue-badge badge-high">高</span>
+    <div class="issue-body">
+      <div class="issue-title">软键盘遮挡输入框</div>
+      <div class="issue-desc">ChatInput 没有监听 <code>visualViewport</code> 变化，软键盘弹出时输入框可能被遮住，发送按钮不可见。是移动端最常见的痛点之一。</div>
+      <div class="issue-code">src/components/ChatInput.tsx</div>
+    </div>
+  </div>
+
+  <div class="issue-card" data-choice="gesture" onclick="toggleSelect(this)">
+    <span class="issue-badge badge-high">高</span>
+    <div class="issue-body">
+      <div class="issue-title">代码抽屉缺少手势支持</div>
+      <div class="issue-desc">代码抽屉（Code Drawer）只能通过底部小按钮切换开/关，没有上滑打开、下滑关闭的手势。且打开时存在滚动穿透问题（ConversationView 仍可滑动）。</div>
+      <div class="issue-code">src/App.tsx — drawerOpen 状态 + height: 0 ↔ 50dvh</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section-label">🟡 中优先级 — 体验细节不够打磨</div>
+<div class="issue-grid">
+
+  <div class="issue-card" data-choice="voice" onclick="toggleSelect(this)">
+    <span class="issue-badge badge-mid">中</span>
+    <div class="issue-body">
+      <div class="issue-title">语音按钮使用 onMouseDown，触控无效</div>
+      <div class="issue-desc">VoiceButton 的「按住说话」用的是 <code>onMouseDown</code>，移动端 touch 事件不触发 mousedown，导致语音功能在手机上无法正常使用。</div>
+      <div class="issue-code">src/components/VoiceButton.tsx — onMouseDown={onToggle}</div>
+    </div>
+  </div>
+
+  <div class="issue-card" data-choice="input-size" onclick="toggleSelect(this)">
+    <span class="issue-badge badge-mid">中</span>
+    <div class="issue-body">
+      <div class="issue-title">输入框固定高度占用过多屏幕空间</div>
+      <div class="issue-desc">ChatInput 固定 <code>rows={3}</code>（min-height: 108px），在小屏手机（375px 宽）上底部区域偏高，挤压对话显示面积。可改为动态高度（1 行起，随内容自增）。</div>
+      <div class="issue-code">src/components/ChatInput.tsx — rows={3}, min-h-[108px]</div>
+    </div>
+  </div>
+
+  <div class="issue-card" data-choice="history-gesture" onclick="toggleSelect(this)">
+    <span class="issue-badge badge-mid">中</span>
+    <div class="issue-body">
+      <div class="issue-title">历史面板 Bottom Sheet 缺少下滑手势关闭</div>
+      <div class="issue-desc">会话历史底部弹层只能点击遮罩或 ✕ 关闭，不支持向下拖拽关闭，与 iOS/Android 原生习惯不符。</div>
+      <div class="issue-code">src/App.tsx — historyOpen Bottom Sheet</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section-label">🔵 低优先级 — 锦上添花</div>
+<div class="issue-grid">
+
+  <div class="issue-card" data-choice="editor-readonly" onclick="toggleSelect(this)">
+    <span class="issue-badge badge-low">低</span>
+    <div class="issue-body">
+      <div class="issue-title">CodeMirror 编辑器未针对移动端优化</div>
+      <div class="issue-desc">移动端打开代码抽屉后，CodeMirror 编辑器没有设为 <code>readOnly</code>，触摸时会调起软键盘。对于以 AI 生成为主的工作流，readonly 更合适。</div>
+      <div class="issue-code">src/hooks/useStrudel.ts — CodeMirror 初始化</div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:24px">点击选中你想优先处理的问题（可多选），然后告诉我你的想法。</p>
