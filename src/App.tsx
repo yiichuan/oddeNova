@@ -41,12 +41,19 @@ export default function App() {
   const keyboardHeight = useKeyboardHeight();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    if (!isMobile) return;
+    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [drawerOpen, isMobile]);
 
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const [vizHeight, setVizHeight] = useState(VIZ_DEFAULT);
   const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const drawerDragRef = useRef<{ startY: number; startOpen: boolean } | null>(null);
+  const [drawerAnimating, setDrawerAnimating] = useState(true);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
@@ -395,18 +402,46 @@ export default function App() {
 
         {/* ── Code Drawer ── */}
         <div
-          className="shrink-0 overflow-hidden border-t border-border transition-all duration-300"
-          style={{ height: drawerOpen ? '50dvh' : 0 }}
+          className="shrink-0 overflow-hidden border-t border-border"
+          style={{
+            height: drawerOpen ? '50dvh' : 0,
+            transition: drawerAnimating ? 'height 0.3s cubic-bezier(0.4,0,0.2,1)' : 'none',
+          }}
         >
           <div className="h-full flex flex-col">
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
-              <span className="text-xs text-text-muted">代码</span>
-              <button
-                onClick={() => setDrawerOpen(false)}
-                className="text-text-secondary hover:text-text-primary transition-colors text-base leading-none"
-              >
-                ✕
-              </button>
+            {/* Handle — 手势触发区，高度 44px 符合触摸目标规范 */}
+            <div
+              className="flex flex-col items-center justify-center shrink-0 cursor-grab active:cursor-grabbing"
+              style={{ height: 44, borderBottom: '1px solid var(--color-border)' }}
+              onTouchStart={(e) => {
+                drawerDragRef.current = { startY: e.touches[0].clientY, startOpen: drawerOpen };
+                setDrawerAnimating(false);
+              }}
+              onTouchMove={(e) => {
+                if (!drawerDragRef.current) return;
+                // 阻止事件穿透到对话区
+                e.stopPropagation();
+              }}
+              onTouchEnd={(e) => {
+                if (!drawerDragRef.current) return;
+                const delta = e.changedTouches[0].clientY - drawerDragRef.current.startY;
+                setDrawerAnimating(true);
+                if (delta < -40) {
+                  // 上滑 → 打开
+                  setDrawerOpen(true);
+                } else if (delta > 40) {
+                  // 下滑 → 关闭
+                  setDrawerOpen(false);
+                }
+                // delta 在 ±40 之间 → 回弹（恢复原状态，动画已恢复）
+                drawerDragRef.current = null;
+              }}
+            >
+              {/* Handle bar 指示条 */}
+              <div className="w-8 h-1 rounded-full bg-border mb-1" />
+              <span className="text-[10px] text-text-muted select-none">
+                {drawerOpen ? '↓ 下滑关闭' : '↑ 上滑打开'}
+              </span>
             </div>
             <div className="flex-1 min-h-0">
               <CodePanel
