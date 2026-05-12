@@ -374,6 +374,7 @@ export default function App() {
             <button
               onClick={handleNewSession}
               className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              aria-label="新建会话"
               title="新建会话"
             >
               <PlusIcon size={18} />
@@ -381,6 +382,7 @@ export default function App() {
             <button
               onClick={() => setHistoryOpen(true)}
               className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              aria-label="会话历史"
               title="会话历史"
             >
               <HistoryIcon size={18} />
@@ -398,6 +400,7 @@ export default function App() {
           <button
             onClick={() => setShowApiKeyModal(true)}
             className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+            aria-label="设置"
             title="设置"
           >
             <SettingsIcon size={18} />
