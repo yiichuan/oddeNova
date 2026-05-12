@@ -68,7 +68,7 @@ onTouchMove  → 计算 deltaY，实时更新抽屉高度（无动画跟手）
 onTouchEnd   → deltaY > +40px 关闭，deltaY < -40px 打开，否则回弹
 ```
 
-- 手势触发区域：仅抽屉顶部 handle 区域（约 40px 高）
+- 手势触发区域：仅抽屉顶部 handle 区域（高度固定 44px，符合 iOS/Android 最小触摸目标规范）
 - 拖动中：`transition: none`（跟手）；松手：恢复 `transition: height 0.3s cubic-bezier(0.4,0,0.2,1)`
 - 底部「查看代码 ↑/↓」pill 保留，作为无障碍备用操作入口
 

@@ -462,7 +462,7 @@ export default function App() {
           style={{
             paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
             transform: keyboardHeight > 0 ? `translateY(-${keyboardHeight}px)` : undefined,
-            transition: 'transform 0.15s ease-out',
+            transition: 'transform 0.3s ease-out',
           }}
         >
           {/* Code pill toggle — rides on the border-t line */}
