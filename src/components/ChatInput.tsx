@@ -56,7 +56,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         placeholder="输入文字描述音乐..."
         rows={3}
         disabled={isLoading}
-        className="w-full min-h-[108px] resize-none rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full min-h-[108px] resize-none rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] disabled:cursor-not-allowed disabled:opacity-50"
       />
 
       {!engineReady && (

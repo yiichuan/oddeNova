@@ -90,7 +90,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
               <select
                 value={provider}
                 onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
-                className="w-full appearance-none bg-bg-primary text-text-primary text-sm rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50 cursor-pointer"
+                className="w-full appearance-none bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50 cursor-pointer"
               >
                 {PROVIDER_ORDER.map((p) => (
                   <option key={p} value={p}>{PROVIDER_PRESETS[p].label}</option>
@@ -126,7 +126,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
                 placeholder="https://timesniper.club"
-                className="w-full bg-bg-primary text-text-primary text-sm rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
+                className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
               />
             </div>
           )}
@@ -171,7 +171,7 @@ function ApiKeyInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && onEnter()}
         placeholder={placeholder}
-        className="w-full bg-bg-primary text-text-primary text-sm rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50"
+        className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50"
         autoFocus
       />
       <button

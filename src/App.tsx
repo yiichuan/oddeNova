@@ -5,6 +5,8 @@ import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
+import { useIsMobile } from './hooks/useIsMobile';
+import { useKeyboardHeight } from './hooks/useKeyboardHeight';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
@@ -12,6 +14,10 @@ import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
+import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
+import ConversationView from './components/ConversationView';
+import HistoryPanel from './components/HistoryPanel';
+import ChatInput from './components/ChatInput';
 
 const SIDEBAR_MIN = 240;
 const SIDEBAR_MAX = 600;
@@ -31,11 +37,23 @@ export default function App() {
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
 
+  const isMobile = useIsMobile();
+  const keyboardHeight = useKeyboardHeight();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    if (!isMobile) return;
+    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [drawerOpen, isMobile]);
+
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const [vizHeight, setVizHeight] = useState(VIZ_DEFAULT);
   const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const drawerDragRef = useRef<{ startY: number } | null>(null);
+  const [drawerAnimating, setDrawerAnimating] = useState(true);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
@@ -336,6 +354,195 @@ export default function App() {
     sessions.switchTo(id);
   }, [sessions]);
 
+  if (isMobile) {
+    return (
+      <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100dvh', width: '100vw' }}>
+        {showApiKeyModal && (
+          <ApiKeyModal
+            onClose={() => setShowApiKeyModal(false)}
+            onSaved={resetClient}
+            required={!hasApiKeyConfigured()}
+          />
+        )}
+
+        {/* ── Top Nav ── */}
+        <div
+          className="flex items-center justify-between px-4 shrink-0 border-b border-border"
+          style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '12px' }}
+        >
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+            title="会话历史"
+          >
+            <HistoryIcon size={18} />
+          </button>
+          <h1 className="text-[24px]" style={{
+            background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}>
+            <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
+            <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
+          </h1>
+          <button
+            onClick={() => setShowApiKeyModal(true)}
+            className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+            title="设置"
+          >
+            <SettingsIcon size={18} />
+          </button>
+        </div>
+
+        {/* ── Conversation ── */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <ConversationView messages={messages} isLoading={isLoading} />
+        </div>
+
+        {/* ── Code Drawer ── */}
+        <div
+          className="shrink-0 overflow-hidden border-t border-border"
+          style={{
+            height: drawerOpen ? '50dvh' : 0,
+            transition: drawerAnimating ? 'height 0.3s cubic-bezier(0.4,0,0.2,1)' : 'none',
+          }}
+        >
+          <div className="h-full flex flex-col">
+            {/* Handle — 手势触发区，高度 44px 符合触摸目标规范 */}
+            <div
+              className="flex flex-col items-center justify-center shrink-0 cursor-grab active:cursor-grabbing"
+              style={{ height: 44, borderBottom: '1px solid var(--color-border)' }}
+              onTouchStart={(e) => {
+                drawerDragRef.current = { startY: e.touches[0].clientY };
+                setDrawerAnimating(false);
+              }}
+              onTouchMove={(e) => {
+                if (!drawerDragRef.current) return;
+                // 阻止事件穿透到对话区
+                e.stopPropagation();
+              }}
+              onTouchEnd={(e) => {
+                if (!drawerDragRef.current) return;
+                const delta = e.changedTouches[0].clientY - drawerDragRef.current.startY;
+                setDrawerAnimating(true);
+                if (delta < -40) {
+                  // 上滑 → 打开
+                  setDrawerOpen(true);
+                } else if (delta > 40) {
+                  // 下滑 → 关闭
+                  setDrawerOpen(false);
+                }
+                // delta 在 ±40 之间 → 回弹（恢复原状态，动画已恢复）
+                drawerDragRef.current = null;
+              }}
+            >
+              {/* Handle bar 指示条 */}
+              <div className="w-8 h-1 rounded-full bg-border mb-1" />
+              <span className="text-[10px] text-text-muted select-none">
+                {drawerOpen ? '↓ 下滑关闭' : '↑ 上滑打开'}
+              </span>
+            </div>
+            <div className="flex-1 min-h-0">
+              <CodePanel
+                error={strudel.error}
+                isPlaying={strudel.isPlaying}
+                engineReady={strudel.engineReady}
+                onMount={strudel.setRoot}
+                onPlay={() => strudel.play()}
+                onStop={strudel.stop}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Bottom Bar ── */}
+        <div
+          className="relative shrink-0 px-3 pt-3 border-t border-border"
+          style={{
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+            transform: keyboardHeight > 0 ? `translateY(-${keyboardHeight}px)` : undefined,
+            transition: 'transform 0.3s ease-out',
+          }}
+        >
+          {/* Code pill toggle — rides on the border-t line */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
+            <button
+              onClick={() => setDrawerOpen((v) => !v)}
+              className="rounded-full border border-border bg-bg-primary px-4 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+            >
+              {drawerOpen ? '收起代码 ↓' : '查看代码 ↑'}
+            </button>
+          </div>
+
+          {/* Suggestion chips — horizontal scroll */}
+          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && (
+            <div className="flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
+              {demoSuggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => handleInstruction(s)}
+                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary"
+                  style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <ChatInput
+            isLoading={isLoading}
+            engineReady={strudel.engineReady}
+            onSendText={handleInstruction}
+            onStop={handleStop}
+            onReinitEngine={strudel.reinit}
+            focusTrigger={1}
+          />
+        </div>
+
+        {/* ── History Bottom Sheet ── */}
+        {historyOpen && (
+          <div className="fixed inset-0 z-30 flex flex-col justify-end">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setHistoryOpen(false)} />
+            <div className="relative bg-bg-primary rounded-t-2xl overflow-hidden flex flex-col" style={{ maxHeight: '70dvh' }}>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+                <span className="text-sm font-semibold text-text-primary">会话历史</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => { handleNewSession(); setHistoryOpen(false); }}
+                    className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary flex items-center justify-center"
+                    title="新建会话"
+                  >
+                    <PlusIcon size={14} />
+                  </button>
+                  <button
+                    onClick={() => setHistoryOpen(false)}
+                    className="text-text-secondary hover:text-text-primary transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto min-h-0">
+                <HistoryPanel
+                  sessions={sessions.sessions}
+                  currentId={sessions.currentId}
+                  isLoading={sessions.isLoading}
+                  onSwitch={(id) => { handleSwitchSession(id); setHistoryOpen(false); }}
+                  onDelete={sessions.deleteSession}
+                  loadingSessions={loadingSessions}
+                  unreadSessions={unreadSessions}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

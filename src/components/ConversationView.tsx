@@ -56,9 +56,9 @@ export default function ConversationView({
     : undefined;
 
   return (
-    <div ref={scrollRef} className="conversation-scroll flex-1 overflow-y-auto px-4 py-[10px] space-y-[22px] min-h-0">
+    <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative">
       {messages.length === 0 && !isLoading && (
-        <div className="h-full flex items-center justify-center text-text-muted text-xs">
+        <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
           <span>说点什么开始创作</span>
         </div>
       )}
