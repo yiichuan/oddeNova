@@ -367,17 +367,26 @@ export default function App() {
 
         {/* ── Top Nav ── */}
         <div
-          className="flex items-center justify-between px-4 shrink-0 border-b border-border"
+          className="relative flex items-center justify-between px-4 shrink-0 border-b border-border"
           style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '12px' }}
         >
-          <button
-            onClick={() => setHistoryOpen(true)}
-            className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-            title="会话历史"
-          >
-            <HistoryIcon size={18} />
-          </button>
-          <h1 className="text-[24px]" style={{
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleNewSession}
+              className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              title="新建会话"
+            >
+              <PlusIcon size={18} />
+            </button>
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              title="会话历史"
+            >
+              <HistoryIcon size={18} />
+            </button>
+          </div>
+          <h1 className="text-[24px] absolute left-1/2 -translate-x-1/2" style={{
             background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
@@ -503,29 +512,19 @@ export default function App() {
           />
         </div>
 
-        {/* ── History Bottom Sheet ── */}
+        {/* ── History Dropdown ── */}
         {historyOpen && (
-          <div className="fixed inset-0 z-30 flex flex-col justify-end">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setHistoryOpen(false)} />
-            <div className="relative bg-bg-primary rounded-t-2xl overflow-hidden flex flex-col" style={{ maxHeight: '70dvh' }}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-                <span className="text-sm font-semibold text-text-primary">会话历史</span>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => { handleNewSession(); setHistoryOpen(false); }}
-                    className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary flex items-center justify-center"
-                    title="新建会话"
-                  >
-                    <PlusIcon size={14} />
-                  </button>
-                  <button
-                    onClick={() => setHistoryOpen(false)}
-                    className="text-text-secondary hover:text-text-primary transition-colors"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setHistoryOpen(false)} />
+            <div
+              className="fixed z-40 bg-bg-primary border border-border rounded-xl overflow-hidden flex flex-col shadow-lg"
+              style={{
+                top: 'calc(max(12px, env(safe-area-inset-top)) + 44px + 8px)',
+                left: '12px',
+                width: '200px',
+                maxHeight: '40dvh',
+              }}
+            >
               <div className="flex-1 overflow-y-auto min-h-0">
                 <HistoryPanel
                   sessions={sessions.sessions}
@@ -538,7 +537,7 @@ export default function App() {
                 />
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     );
