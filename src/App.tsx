@@ -6,6 +6,7 @@ import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useKeyboardHeight } from './hooks/useKeyboardHeight';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
@@ -37,6 +38,7 @@ export default function App() {
   const prevLoadingRef = useRef<Set<string>>(new Set());
 
   const isMobile = useIsMobile();
+  const keyboardHeight = useKeyboardHeight();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -422,7 +424,11 @@ export default function App() {
         {/* ── Bottom Bar ── */}
         <div
           className="relative shrink-0 px-3 pt-3 border-t border-border"
-          style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+          style={{
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+            transform: keyboardHeight > 0 ? `translateY(-${keyboardHeight}px)` : undefined,
+            transition: 'transform 0.15s ease-out',
+          }}
         >
           {/* Code pill toggle — rides on the border-t line */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
