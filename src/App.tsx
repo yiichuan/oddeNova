@@ -52,7 +52,7 @@ export default function App() {
   const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
-  const drawerDragRef = useRef<{ startY: number; startOpen: boolean } | null>(null);
+  const drawerDragRef = useRef<{ startY: number } | null>(null);
   const [drawerAnimating, setDrawerAnimating] = useState(true);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
@@ -414,7 +414,7 @@ export default function App() {
               className="flex flex-col items-center justify-center shrink-0 cursor-grab active:cursor-grabbing"
               style={{ height: 44, borderBottom: '1px solid var(--color-border)' }}
               onTouchStart={(e) => {
-                drawerDragRef.current = { startY: e.touches[0].clientY, startOpen: drawerOpen };
+                drawerDragRef.current = { startY: e.touches[0].clientY };
                 setDrawerAnimating(false);
               }}
               onTouchMove={(e) => {
