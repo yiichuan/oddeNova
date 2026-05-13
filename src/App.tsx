@@ -451,6 +451,9 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={() => strudel.play()}
                 onStop={strudel.stop}
+                exportState={strudel.exportState}
+                onExport={strudel.exportWav}
+                onResetExportState={strudel.resetExportState}
               />
             </div>
           </div>
@@ -616,6 +619,9 @@ export default function App() {
             onMount={strudel.setRoot}
             onPlay={() => strudel.play()}
             onStop={strudel.stop}
+            exportState={strudel.exportState}
+            onExport={strudel.exportWav}
+            onResetExportState={strudel.resetExportState}
           />
         </div>
 

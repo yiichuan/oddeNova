@@ -28,3 +28,6 @@ public/animation
 
 # Local planning docs (not uploaded to GitHub)
 _plans/
+
+# Audio files
+*.wav

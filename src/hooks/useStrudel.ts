@@ -14,6 +14,12 @@ export function useStrudel() {
   const historyRef = useRef<string[]>([]);
   const [historyLen, setHistoryLen] = useState(0);
 
+  const [exportState, setExportState] = useState<{
+    status: 'idle' | 'exporting' | 'error';
+    progress: number;
+    error?: string;
+  }>({ status: 'idle', progress: 0 });
+
   useEffect(() => {
     const unsub = strudelService.onStateChange(setState);
     return unsub;
@@ -74,6 +80,33 @@ export function useStrudel() {
 
   const canUndo = historyLen > 0 || state.code !== '';
 
+  // Export current pattern to WAV.
+  // NOTE: After this returns (success OR error), the underlying audio graph is rebuilt and
+  // master volume / LPF are at their defaults. The caller (CodePanel) must re-apply the
+  // current UI values via strudelService.setMasterVolume / setMasterLPF.
+  const exportWav = useCallback(
+    async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }): Promise<boolean> => {
+      setExportState({ status: 'exporting', progress: 0 });
+      try {
+        await strudelService.exportWav({
+          ...params,
+          onProgress: (p) => setExportState((s) => ({ ...s, progress: p })),
+        });
+        setExportState({ status: 'idle', progress: 1 });
+        return true;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        setExportState({ status: 'error', progress: 0, error: message });
+        return false;
+      }
+    },
+    [],
+  );
+
+  const resetExportState = useCallback(() => {
+    setExportState({ status: 'idle', progress: 0 });
+  }, []);
+
   return {
     code: state.code,
     currentCode: state.code,
@@ -89,5 +122,8 @@ export function useStrudel() {
     undo,
     init: stop, // no-op; engine initializes on first attach
     reinit,
+    exportState,
+    exportWav,
+    resetExportState,
   };
 }

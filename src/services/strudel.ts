@@ -22,6 +22,10 @@ class StrudelService {
   private masterLpfNode: BiquadFilterNode | null = null;
   private masterChainReady = false;
   private masterChainSettingUp = false;
+  // Current UI master values, mirrored here so exportWav can re-apply them on the
+  // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
+  private currentMasterVolume = 1;
+  private currentMasterLpfHz = 20000;
 
   private _state: StrudelState = {
     code: '',
@@ -91,6 +95,10 @@ class StrudelService {
     // Expose audio hooks on window so the galaxy iframe can tap the analyser
     (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
     (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+    // Debug hook: record live playback for N seconds → live.wav (for comparing
+    // against exportWav output). Call from devtools: `await recordLive(8)`.
+    (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
+      this.recordLive(sec, name);
     // Set engineReady after all modules and samples are loaded
     this.notify({ engineReady: true });
   };
@@ -175,7 +183,15 @@ class StrudelService {
     }
   };
 
+  private rebuildMasterChain = async (): Promise<void> => {
+    this.masterChainReady = false;
+    this.masterChainSettingUp = false;
+    this.masterLpfNode = null;
+    await this.setupMasterChain();
+  };
+
   setMasterVolume = async (value: number): Promise<void> => {
+    this.currentMasterVolume = value;
     await this.setupMasterChain();
     const { getAudioContext, getSuperdoughAudioController } = await import('superdough');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -187,6 +203,7 @@ class StrudelService {
   };
 
   setMasterLPF = async (freq: number): Promise<void> => {
+    this.currentMasterLpfHz = freq;
     await this.setupMasterChain();
     if (this.masterLpfNode) {
       const { getAudioContext } = await import('superdough');
@@ -251,6 +268,266 @@ class StrudelService {
     this.editorInstance?.repl.stop();
   };
 
+  exportWav = async (params: {
+    filename: string;
+    beginCycle: number;
+    endCycle: number;
+    sampleRate: number;
+    onProgress?: (progress: number) => void;
+  }): Promise<void> => {
+    const { filename, beginCycle, endCycle, sampleRate, onProgress } = params;
+    if (!this.editorInstance) throw new Error('Engine not initialized');
+    if (endCycle <= beginCycle) throw new Error('结束 cycle 必须大于起始 cycle');
+
+    this.editorInstance.repl.stop();
+    // evaluate() defaults to autostart=true which kicks the scheduler back on
+    // (the user sees playback resume the moment they click Export). We just
+    // need the pattern compiled, not played — pass false.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (this.editorInstance as any).evaluate(false);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const replAny = this.editorInstance.repl as any;
+    const pattern = replAny.scheduler?.pattern;
+    const cps = replAny.scheduler?.cps ?? 0.5;
+    if (!pattern) throw new Error('代码未成功解析，无法导出');
+
+    // We inline the offline render (rather than calling @strudel/webaudio's
+    // renderPatternAudio) so we can splice the same master Gain + LPF chain that
+    // the live path uses — keeping exported audio audibly identical to playback.
+    // IMPORTANT: import everything from the bundled `superdough` entry only.
+    // The npm package ships `dist/index.mjs` as its `main`, but its source
+    // files (e.g. `superdough/superdoughoutput.mjs`, `superdough/nodePools.mjs`)
+    // re-import their own copy of `./helpers.mjs` -> `./audioContext.mjs`.
+    // Importing from a source path therefore yields a *second* module graph
+    // with its own `audioContext` module-level variable that the bundled
+    // `setAudioContext()` never touches. When code in that second graph runs
+    // (e.g. `effectSend` -> `gainNode(wet)` inside `Orbit.sendDelay`), it
+    // calls its own `getAudioContext()`, which falls back to `new AudioContext()`
+    // — a fresh live ctx — and then tries to connect that send gain to nodes
+    // living on the OfflineAudioContext, throwing InvalidAccessError. The user-
+    // visible symptom is that all `delay()` / `room()` sends silently fail
+    // during export, so the exported WAV is missing delay/reverb tails.
+    const {
+      superdough,
+      getAudioContext,
+      setAudioContext,
+      setSuperdoughAudioController,
+      getSuperdoughAudioController,
+      initAudio,
+      resetGlobalEffects,
+      errorLogger,
+    } = await import('superdough');
+
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
+    if (onProgress) {
+      progressTimer = setInterval(() => {
+        try {
+          const ctx = getAudioContext();
+          if (ctx instanceof OfflineAudioContext) {
+            const total = ctx.length / ctx.sampleRate;
+            const p = total > 0 ? ctx.currentTime / total : 0;
+            try { onProgress(Math.max(0, Math.min(1, p))); } catch { /* user callback must not crash polling */ }
+          }
+        } catch { /* ignore polling errors */ }
+      }, 100);
+    }
+
+    try {
+      const liveCtx = getAudioContext();
+      await liveCtx.close();
+
+      const offlineCtx = new OfflineAudioContext(
+        2,
+        ((endCycle - beginCycle) / cps) * sampleRate,
+        sampleRate,
+      );
+      setAudioContext(offlineCtx);
+      // Drop the existing controller so getSuperdoughAudioController() lazily
+      // rebuilds a fresh one bound to the offline ctx, using the bundled
+      // SuperdoughAudioController class (which shares the bundled helpers /
+      // audioContext module state — see the comment on the import above).
+      setSuperdoughAudioController(null);
+      await initAudio({ maxPolyphony: 1024, multiChannelOrbits: false });
+
+      // Splice master Gain + LPF between destinationGain and ctx.destination,
+      // mirroring setupMasterChain() on the live ctx so UI master controls
+      // affect the exported audio.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const controller = getSuperdoughAudioController() as any;
+      const destGain: GainNode | undefined = controller?.output?.destinationGain;
+      if (destGain) {
+        try { destGain.disconnect(offlineCtx.destination); } catch { /* not connected */ }
+        const masterGain = offlineCtx.createGain();
+        masterGain.gain.value = this.currentMasterVolume;
+        const lpf = offlineCtx.createBiquadFilter();
+        lpf.type = 'lowpass';
+        lpf.frequency.value = this.currentMasterLpfHz;
+        destGain.connect(masterGain);
+        masterGain.connect(lpf);
+        lpf.connect(offlineCtx.destination);
+      }
+
+      // Schedule all haps onto the offline ctx (sorted by onset for `cut` correctness).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const haps = (pattern as any)
+        .queryArc(beginCycle, endCycle, { _cps: cps })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .sort((a: any, b: any) => a.whole.begin.valueOf() - b.whole.begin.valueOf());
+      for (const hap of haps) {
+        if (hap.hasOnset()) {
+          try {
+            hap.ensureObjectValue();
+            await superdough(
+              hap.value,
+              (hap.whole.begin.valueOf() - beginCycle) / cps,
+              hap.duration / cps,
+              cps,
+              (hap.whole.begin.valueOf() - beginCycle) / cps,
+            );
+          } catch (err) {
+            errorLogger(err, 'webaudio');
+          }
+        }
+      }
+
+      // Wait for any pending reverb IR generation to finish. Superdough builds
+      // its reverb convolver IR via a *nested* OfflineAudioContext whose
+      // `oncomplete` callback installs `convolver.buffer` (see
+      // strudel/packages/superdough/reverbGen.mjs -> applyGradualLowpass).
+      // If we call startRendering() before that callback fires, the convolver
+      // has an empty buffer and `room()` produces silence — which is exactly
+      // what caused the exported audio to be 12-14 dB quieter in the 500-8kHz
+      // band and to come out mono (no decorrelated reverb tail).
+      //
+      // Poll the controller's per-orbit reverb nodes until their `.buffer` is
+      // populated. Reverb nodes live on `controller.nodes[orbitNum].reverbNode`
+      // (see strudel/packages/superdough/superdoughoutput.mjs: SuperdoughAudioController).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const controllerForWait = getSuperdoughAudioController() as any;
+      // eslint-disable-next-line no-console
+      console.log('[exportWav] scheduled', haps.length, 'haps; orbits:', Object.keys(controllerForWait?.nodes ?? {}));
+      const waitForReverbReady = async (): Promise<void> => {
+        const deadline = Date.now() + 5000; // hard cap so we never hang
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const orbits: Record<string, any> = controllerForWait?.nodes ?? {};
+          const reverbs = Object.values(orbits)
+            .map((o) => o?.reverbNode)
+            .filter(Boolean);
+          if (reverbs.length === 0) {
+            // eslint-disable-next-line no-console
+            console.log('[exportWav] no reverb nodes attached to any orbit; skipping wait');
+            return; // no reverb in this pattern
+          }
+          const status = reverbs.map((n) => ({
+            hasBuffer: !!n.buffer,
+            len: n.buffer?.length ?? 0,
+            channels: n.buffer?.numberOfChannels ?? 0,
+            duration: n.duration,
+          }));
+          const ready = reverbs.every((n) => n.buffer && n.buffer.length > 0);
+          if (ready) {
+            // eslint-disable-next-line no-console
+            console.log('[exportWav] reverb IRs ready:', status);
+            return;
+          }
+          if (Date.now() > deadline) {
+            // eslint-disable-next-line no-console
+            console.warn('[exportWav] reverb wait timed out, rendering anyway:', status);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 20));
+        }
+      };
+      await waitForReverbReady();
+
+      const renderedBuffer = await offlineCtx.startRendering();
+      const wav = audioBufferToWav16(renderedBuffer);
+      downloadWav(wav, filename);
+
+      setAudioContext(null);
+      setSuperdoughAudioController(null);
+      resetGlobalEffects();
+    } finally {
+      if (progressTimer !== null) clearInterval(progressTimer);
+      try { onProgress?.(1); } catch { /* user callback must not crash recovery */ }
+      try {
+        await this.rebuildMasterChain();
+        // registerSoundfonts is synchronous (returns void) — no await needed.
+        registerSoundfonts();
+        (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
+        (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+      } catch { /* best-effort restoration */ }
+    }
+    // Note: master volume / LPF are reset to defaults after rebuildMasterChain; the calling hook is responsible for re-applying current UI values.
+  };
+
+  /**
+   * Record the currently-playing live audio for `durationSec` seconds and download
+   * it as a WAV. Tap point is identical to what reaches `ctx.destination` (after
+   * master Gain + master LPF), so the recording captures exactly what the user
+   * hears — making it directly comparable with the offline `exportWav` output.
+   *
+   * Usage from devtools console:
+   *   await window.recordLive(8, 'live')   // record 8 seconds → live.wav
+   *
+   * The caller is responsible for starting playback (`play()`) before invoking
+   * this; recording starts immediately and runs in real time.
+   */
+  recordLive = async (durationSec: number, filename = 'live'): Promise<void> => {
+    if (durationSec <= 0) throw new Error('durationSec must be > 0');
+    await this.setupMasterChain();
+    const { getAudioContext, getSuperdoughAudioController } = await import('superdough');
+    const ctx = getAudioContext();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const controller = getSuperdoughAudioController() as any;
+    const destGain: AudioNode | undefined = controller?.output?.destinationGain;
+    // Prefer tapping after the master LPF (closest to ctx.destination); fall back
+    // to destinationGain if the master chain isn't wired for some reason.
+    const tap: AudioNode | undefined = this.masterLpfNode ?? destGain;
+    if (!tap) throw new Error('No audio chain to record from');
+
+    // ScriptProcessorNode is deprecated but universally supported and avoids
+    // AudioWorklet boilerplate. 4096-sample blocks ≈ ~85ms @ 48kHz — fine for
+    // a debug recorder.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sp = (ctx as any).createScriptProcessor(4096, 2, 2) as ScriptProcessorNode;
+    const leftChunks: Float32Array[] = [];
+    const rightChunks: Float32Array[] = [];
+    sp.onaudioprocess = (e: AudioProcessingEvent) => {
+      // Copy because the underlying buffer is reused across callbacks.
+      leftChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      rightChunks.push(new Float32Array(e.inputBuffer.getChannelData(1)));
+    };
+    // Pass SP through a muted gain into destination so it actually fires (a SP
+    // with no downstream connection won't process). Gain=0 keeps output silent.
+    const muteGain = ctx.createGain();
+    muteGain.gain.value = 0;
+    tap.connect(sp);
+    sp.connect(muteGain);
+    muteGain.connect(ctx.destination);
+
+    await new Promise((r) => setTimeout(r, durationSec * 1000));
+
+    try { tap.disconnect(sp); } catch { /* not connected */ }
+    try { sp.disconnect(); } catch { /* not connected */ }
+    try { muteGain.disconnect(); } catch { /* not connected */ }
+
+    const totalLen = leftChunks.reduce((acc, c) => acc + c.length, 0);
+    const left = new Float32Array(totalLen);
+    const right = new Float32Array(totalLen);
+    let off = 0;
+    for (let i = 0; i < leftChunks.length; i++) {
+      left.set(leftChunks[i], off);
+      right.set(rightChunks[i], off);
+      off += leftChunks[i].length;
+    }
+    const wav = encodeWav16([left, right], ctx.sampleRate);
+    downloadWav(wav, filename);
+  };
+
   clearError = (): void => {
     this.notify({ error: null });
   };
@@ -269,6 +546,78 @@ class StrudelService {
 }
 
 export const strudelService = StrudelService.instance();
+
+
+// --- WAV encoder (16-bit PCM, interleaved stereo / mono) ---
+// Inlined here because @strudel/webaudio doesn't export its internal helper.
+function encodeWav16(channels: Float32Array[], sampleRate: number): ArrayBuffer {
+  const numChannels = channels.length;
+  const bitDepth = 16;
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+
+  let samples: Float32Array;
+  if (numChannels === 2) {
+    const l = channels[0];
+    const r = channels[1];
+    samples = new Float32Array(l.length * 2);
+    for (let i = 0; i < l.length; i++) {
+      samples[i * 2] = l[i];
+      samples[i * 2 + 1] = r[i];
+    }
+  } else {
+    samples = channels[0];
+  }
+
+  const dataLength = samples.length * bytesPerSample;
+  const ab = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(ab);
+
+  const writeString = (offset: number, s: string): void => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataLength, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);             // fmt chunk size
+  view.setUint16(20, 1, true);              // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataLength, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return ab;
+}
+
+function audioBufferToWav16(buffer: AudioBuffer): ArrayBuffer {
+  const channels: Float32Array[] = [];
+  for (let i = 0; i < buffer.numberOfChannels; i++) {
+    channels.push(buffer.getChannelData(i));
+  }
+  return encodeWav16(channels, buffer.sampleRate);
+}
+
+function downloadWav(ab: ArrayBuffer, filename: string): void {
+  const blob = new Blob([ab], { type: 'audio/wav' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.wav') ? filename : `${filename}.wav`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 
 // --- Code normalization ---
