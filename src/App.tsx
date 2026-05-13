@@ -52,8 +52,6 @@ export default function App() {
   const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
-  const drawerDragRef = useRef<{ startY: number } | null>(null);
-  const [drawerAnimating, setDrawerAnimating] = useState(true);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
@@ -367,17 +365,28 @@ export default function App() {
 
         {/* ── Top Nav ── */}
         <div
-          className="flex items-center justify-between px-4 shrink-0 border-b border-border"
+          className="relative flex items-center justify-between px-2 shrink-0"
           style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '12px' }}
         >
-          <button
-            onClick={() => setHistoryOpen(true)}
-            className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-            title="会话历史"
-          >
-            <HistoryIcon size={18} />
-          </button>
-          <h1 className="text-[24px]" style={{
+          <div className="flex items-center">
+            <button
+              onClick={handleNewSession}
+              className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              aria-label="新建会话"
+              title="新建会话"
+            >
+              <PlusIcon size={18} />
+            </button>
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              aria-label="会话历史"
+              title="会话历史"
+            >
+              <HistoryIcon size={18} />
+            </button>
+          </div>
+          <h1 className="text-[24px] absolute left-1/2 -translate-x-1/2" style={{
             background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
@@ -389,6 +398,7 @@ export default function App() {
           <button
             onClick={() => setShowApiKeyModal(true)}
             className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+            aria-label="设置"
             title="设置"
           >
             <SettingsIcon size={18} />
@@ -404,45 +414,11 @@ export default function App() {
         <div
           className="shrink-0 overflow-hidden border-t border-border"
           style={{
-            height: drawerOpen ? '50dvh' : 0,
-            transition: drawerAnimating ? 'height 0.3s cubic-bezier(0.4,0,0.2,1)' : 'none',
+            height: drawerOpen ? '33dvh' : 0,
+            transition: 'height 0.3s cubic-bezier(0.4,0,0.2,1)',
           }}
         >
           <div className="h-full flex flex-col">
-            {/* Handle — 手势触发区，高度 44px 符合触摸目标规范 */}
-            <div
-              className="flex flex-col items-center justify-center shrink-0 cursor-grab active:cursor-grabbing"
-              style={{ height: 44, borderBottom: '1px solid var(--color-border)' }}
-              onTouchStart={(e) => {
-                drawerDragRef.current = { startY: e.touches[0].clientY };
-                setDrawerAnimating(false);
-              }}
-              onTouchMove={(e) => {
-                if (!drawerDragRef.current) return;
-                // 阻止事件穿透到对话区
-                e.stopPropagation();
-              }}
-              onTouchEnd={(e) => {
-                if (!drawerDragRef.current) return;
-                const delta = e.changedTouches[0].clientY - drawerDragRef.current.startY;
-                setDrawerAnimating(true);
-                if (delta < -40) {
-                  // 上滑 → 打开
-                  setDrawerOpen(true);
-                } else if (delta > 40) {
-                  // 下滑 → 关闭
-                  setDrawerOpen(false);
-                }
-                // delta 在 ±40 之间 → 回弹（恢复原状态，动画已恢复）
-                drawerDragRef.current = null;
-              }}
-            >
-              {/* Handle bar 指示条 */}
-              <div className="w-8 h-1 rounded-full bg-border mb-1" />
-              <span className="text-[10px] text-text-muted select-none">
-                {drawerOpen ? '↓ 下滑关闭' : '↑ 上滑打开'}
-              </span>
-            </div>
             <div className="flex-1 min-h-0">
               <CodePanel
                 error={strudel.error}
@@ -503,29 +479,20 @@ export default function App() {
           />
         </div>
 
-        {/* ── History Bottom Sheet ── */}
+        {/* ── History Dropdown ── */}
         {historyOpen && (
-          <div className="fixed inset-0 z-30 flex flex-col justify-end">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setHistoryOpen(false)} />
-            <div className="relative bg-bg-primary rounded-t-2xl overflow-hidden flex flex-col" style={{ maxHeight: '70dvh' }}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-                <span className="text-sm font-semibold text-text-primary">会话历史</span>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => { handleNewSession(); setHistoryOpen(false); }}
-                    className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary flex items-center justify-center"
-                    title="新建会话"
-                  >
-                    <PlusIcon size={14} />
-                  </button>
-                  <button
-                    onClick={() => setHistoryOpen(false)}
-                    className="text-text-secondary hover:text-text-primary transition-colors"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setHistoryOpen(false)} />
+            <div
+              className="fixed z-40 bg-bg-primary overflow-hidden flex flex-col shadow-lg"
+              style={{
+                top: 'calc(max(12px, env(safe-area-inset-top)) + 44px)',
+                left: '12px',
+                width: '200px',
+                maxHeight: '40dvh',
+                border: '0.5px solid var(--color-border)',
+              }}
+            >
               <div className="flex-1 overflow-y-auto min-h-0">
                 <HistoryPanel
                   sessions={sessions.sessions}
@@ -538,7 +505,7 @@ export default function App() {
                 />
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     );
