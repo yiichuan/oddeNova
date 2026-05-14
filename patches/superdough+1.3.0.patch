@@ -1,0 +1,59 @@
+diff --git a/node_modules/superdough/dist/index.mjs b/node_modules/superdough/dist/index.mjs
+index da81977..12c95da 100644
+--- a/node_modules/superdough/dist/index.mjs
++++ b/node_modules/superdough/dist/index.mjs
+@@ -96,7 +96,7 @@ const st = /* @__PURE__ */ new Map(), ut = Symbol("nodePoolKey"), hn = (e) => !!
+   const n = st.get(e) ?? [];
+   let o, a = !1;
+   for (; n.length; )
+-    if (o = n.pop()?.deref(), o != null && Gn(o)) {
++    if (o = n.pop()?.deref(), o != null && Gn(o) && o.context?.state !== "closed") {
+       a = !0;
+       break;
+     }
+@@ -2535,3 +2535,5 @@ export {
+   Fo as waveformN,
+   pe as webAudioTimeout
+ };
++const clearNodePools = () => st.clear();
++export { clearNodePools };
+diff --git a/node_modules/superdough/index.mjs b/node_modules/superdough/index.mjs
+index c3d2f6c..5e2a453 100644
+--- a/node_modules/superdough/index.mjs
++++ b/node_modules/superdough/index.mjs
+@@ -14,3 +14,4 @@ export * from './modulators.mjs';
+ export * from './dspworklet.mjs';
+ export * from './audioContext.mjs';
+ export * from './wavetable.mjs';
++export * from './nodePools.mjs';
+diff --git a/node_modules/superdough/nodePools.mjs b/node_modules/superdough/nodePools.mjs
+index 90b4c0a..6d7e728 100644
+--- a/node_modules/superdough/nodePools.mjs
++++ b/node_modules/superdough/nodePools.mjs
+@@ -71,7 +71,15 @@ export const getNodeFromPool = (key, factory) => {
+   while (pool.length) {
+     const ref = pool.pop();
+     node = ref?.deref();
+-    if (node != null && isNodeAlive(node)) {
++    // Reject nodes whose AudioContext has been closed (e.g. cached nodes from a
++    // previously-closed live AudioContext when we're now rendering on an
++    // OfflineAudioContext). Connecting a node from a different context throws
++    // InvalidAccessError, so we have to discard those rather than re-use them.
++    if (
++      node != null &&
++      isNodeAlive(node) &&
++      node.context?.state !== 'closed'
++    ) {
+       found = true;
+       break;
+     }
+@@ -82,3 +90,9 @@ export const getNodeFromPool = (key, factory) => {
+   node[POOL_KEY] = key;
+   return node;
+ };
++
++// Drop every cached node. Call this when switching audio contexts so the next
++// `getNodeFromPool` call doesn't hand back a stale node bound to the old ctx.
++export const clearNodePools = () => {
++  nodePools.clear();
++};

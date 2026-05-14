@@ -1,4 +1,6 @@
 declare module 'superdough';
+declare module 'superdough/superdoughoutput.mjs';
+declare module 'superdough/nodePools.mjs';
 declare module '@strudel/core';
 declare module '@strudel/codemirror';
 declare module '@strudel/draw';

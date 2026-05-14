@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { PlayIcon, StopIcon } from './icons';
+import { PlayIcon, StopIcon, DownloadIcon } from './icons';
 import { strudelService } from '../services/strudel';
 import { parseScore } from '../agent/parser';
 import { useIsMobile } from '../hooks/useIsMobile';
+import ExportPopover from './ExportPopover';
 
 interface CodePanelProps {
   error: string | null;
@@ -11,6 +12,9 @@ interface CodePanelProps {
   onMount: (el: HTMLDivElement) => void;
   onPlay: () => void;
   onStop: () => void;
+  exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
+  onExport: (p: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => Promise<boolean>;
+  onResetExportState: () => void;
 }
 
 // Log scale: slider 0–1 → frequency 200Hz–20kHz
@@ -174,6 +178,9 @@ export default function CodePanel({
   onMount,
   onPlay,
   onStop,
+  exportState,
+  onExport,
+  onResetExportState,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gutterWidth, setGutterWidth] = useState(0);
@@ -187,6 +194,18 @@ export default function CodePanel({
 
   const isMobile = useIsMobile();
   const [activeSlider, setActiveSlider] = useState<'volume' | 'bpm' | 'lpf' | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const handleExport = async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => {
+    const ok = await onExport(params);
+    // exportWav resets master volume/LPF — re-apply current UI values.
+    await strudelService.setMasterVolume(volume);
+    await strudelService.setMasterLPF(lpfSliderToHz(lpf));
+    if (ok) {
+      setTimeout(() => setExportOpen(false), 800);
+    }
+    return ok;
+  };
 
   const sliderConfigs: Record<'volume' | 'bpm' | 'lpf', MobileSliderConfig> = {
     volume: {
@@ -277,7 +296,7 @@ export default function CodePanel({
   };
 
   return (
-    <div className="h-full flex flex-col border border-border overflow-hidden bg-bg-secondary/30">
+    <div className="h-full flex flex-col border border-border bg-bg-secondary/30">
       <style>{`
         .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; background: transparent; }
         .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -6px; }
@@ -288,10 +307,27 @@ export default function CodePanel({
       `}</style>
 
       {/* StrudelMirror mounts here */}
-      <div
-        ref={containerRef}
-        className="flex-1 min-h-0 flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
-      />
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={containerRef}
+          className="h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
+        />
+        <button
+          onClick={() => setExportOpen((v) => !v)}
+          disabled={!engineReady || exportState.status === 'exporting'}
+          title="导出 WAV"
+          className="absolute top-0.5 right-2 z-50 w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <DownloadIcon size={18} />
+        </button>
+        <ExportPopover
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          onExport={handleExport}
+          exportState={exportState}
+          onResetState={onResetExportState}
+        />
+      </div>
 
       {error && (
         <div className="mx-3 mb-2 p-2.5 bg-error/10 border border-error/30 rounded-md text-error text-xs font-mono shrink-0">
