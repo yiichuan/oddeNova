@@ -19,5 +19,27 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Forbid deep imports into superdough's source files (e.g.
+      // `superdough/superdoughoutput.mjs`, `superdough/nodePools.mjs`).
+      // The npm package ships a bundled `dist/index.mjs` as its `main`;
+      // importing source paths creates a *second* module graph with its
+      // own module-level `audioContext` / `controller` state that the
+      // bundled `setAudioContext` never updates, leading to silent
+      // cross-context AudioNode connect failures during WAV export.
+      // Always import from the package root: `import { ... } from 'superdough'`.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['superdough/*'],
+              message:
+                'Import from the "superdough" package entry only. Deep imports into source files create a duplicate module graph and break offline rendering (cross-AudioContext connect errors).',
+            },
+          ],
+        },
+      ],
+    },
   },
 ])

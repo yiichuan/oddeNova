@@ -317,6 +317,7 @@ class StrudelService {
       initAudio,
       resetGlobalEffects,
       errorLogger,
+      clearNodePools,
     } = await import('superdough');
 
     let progressTimer: ReturnType<typeof setInterval> | null = null;
@@ -336,6 +337,15 @@ class StrudelService {
     try {
       const liveCtx = getAudioContext();
       await liveCtx.close();
+      // Drop every cached audio node before switching to the offline ctx.
+      // `getNodeFromPool` would otherwise hand back nodes bound to the now-
+      // closed live ctx (compressor / filter / etc. cached during a prior
+      // Play), and connecting those to the offline graph throws
+      // InvalidAccessError. The dist filter for `state !== 'closed'` is a
+      // belt-and-suspenders fallback; clearing here is the primary defense
+      // and also covers future offline→live transitions where the prior ctx
+      // never enters the 'closed' state.
+      clearNodePools();
 
       const offlineCtx = new OfflineAudioContext(
         2,
@@ -454,6 +464,9 @@ class StrudelService {
       if (progressTimer !== null) clearInterval(progressTimer);
       try { onProgress?.(1); } catch { /* user callback must not crash recovery */ }
       try {
+        // Drop any nodes cached against the offline ctx before rebuilding the
+        // live chain, so the next Play doesn't reuse offline-bound nodes.
+        clearNodePools();
         await this.rebuildMasterChain();
         // registerSoundfonts is synchronous (returns void) — no await needed.
         registerSoundfonts();
