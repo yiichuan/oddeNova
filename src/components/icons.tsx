@@ -82,7 +82,7 @@ export function DownloadIcon({ size = 16, className }: IconProps) {
     <svg
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox="0 3 24 16"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.5"

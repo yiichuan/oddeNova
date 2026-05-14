@@ -296,7 +296,7 @@ export default function CodePanel({
   };
 
   return (
-    <div className="h-full flex flex-col border border-border overflow-hidden bg-bg-secondary/30">
+    <div className="h-full flex flex-col border border-border bg-bg-secondary/30">
       <style>{`
         .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; background: transparent; }
         .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -6px; }
@@ -316,9 +316,9 @@ export default function CodePanel({
           onClick={() => setExportOpen((v) => !v)}
           disabled={!engineReady || exportState.status === 'exporting'}
           title="导出 WAV"
-          className="absolute top-2 right-2 z-30 w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
+          className="absolute top-0.5 right-2 z-50 w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <DownloadIcon size={16} />
+          <DownloadIcon size={18} />
         </button>
         <ExportPopover
           open={exportOpen}

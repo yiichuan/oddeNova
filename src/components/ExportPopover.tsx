@@ -195,7 +195,7 @@ export default function ExportPopover({
           onClick={(e) => e.stopPropagation()}
         >
           <div
-            className="text-[14px] text-white/60 mb-4"
+            className="text-[14px] text-white/90 font-bold mb-4"
             style={{ fontFamily: "'ABeeZee', monospace" }}
           >
             导出 WAV
@@ -208,11 +208,11 @@ export default function ExportPopover({
 
   return (
     <div
-      className="absolute top-12 right-2 z-40 w-[280px] bg-[#111] border border-[#323232] rounded-md shadow-xl p-3"
+      className="absolute -top-px -right-px z-40 w-[280px] bg-[#111] border border-[#323232] shadow-xl p-3"
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className="text-[12px] text-white/60 mb-2"
+        className="text-[12px] text-white/90 font-bold mb-6"
         style={{ fontFamily: "'ABeeZee', monospace" }}
       >
         导出 WAV
