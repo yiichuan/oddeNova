@@ -9,6 +9,7 @@ interface CodePanelProps {
   error: string | null;
   isPlaying: boolean;
   engineReady: boolean;
+  hasCode: boolean;
   onMount: (el: HTMLDivElement) => void;
   onPlay: () => void;
   onStop: () => void;
@@ -175,6 +176,7 @@ export default function CodePanel({
   error,
   isPlaying,
   engineReady,
+  hasCode,
   onMount,
   onPlay,
   onStop,
@@ -202,7 +204,10 @@ export default function CodePanel({
     await strudelService.setMasterVolume(volume);
     await strudelService.setMasterLPF(lpfSliderToHz(lpf));
     if (ok) {
-      setTimeout(() => setExportOpen(false), 800);
+      setTimeout(() => {
+        setExportOpen(false);
+        onResetExportState();
+      }, 800);
     }
     return ok;
   };
@@ -314,18 +319,21 @@ export default function CodePanel({
         />
         <button
           onClick={() => setExportOpen((v) => !v)}
-          disabled={!engineReady || exportState.status === 'exporting'}
-          title="导出 WAV"
-          className="absolute top-0.5 right-2 z-50 w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={!engineReady || !hasCode || exportState.status === 'exporting'}
+          title={!hasCode ? '请先输入代码' : '导出 WAV'}
+          className="absolute top-0.5 right-2 z-[51] w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <DownloadIcon size={18} />
         </button>
         <ExportPopover
           open={exportOpen}
           onClose={() => setExportOpen(false)}
+          onToggle={() => setExportOpen((v) => !v)}
+          buttonDisabled={!engineReady || !hasCode || exportState.status === 'exporting'}
           onExport={handleExport}
           exportState={exportState}
           onResetState={onResetExportState}
+          bpm={bpm}
         />
       </div>
 
