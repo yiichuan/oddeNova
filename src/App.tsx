@@ -424,6 +424,7 @@ export default function App() {
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 engineReady={strudel.engineReady}
+                hasCode={!!strudel.code}
                 onMount={strudel.setRoot}
                 onPlay={() => strudel.play()}
                 onStop={strudel.stop}
@@ -583,6 +584,7 @@ export default function App() {
             error={strudel.error}
             isPlaying={strudel.isPlaying}
             engineReady={strudel.engineReady}
+            hasCode={!!strudel.code}
             onMount={strudel.setRoot}
             onPlay={() => strudel.play()}
             onStop={strudel.stop}

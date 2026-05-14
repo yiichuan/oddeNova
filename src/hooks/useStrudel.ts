@@ -92,7 +92,7 @@ export function useStrudel() {
           ...params,
           onProgress: (p) => setExportState((s) => ({ ...s, progress: p })),
         });
-        setExportState({ status: 'idle', progress: 1 });
+        setExportState((s) => ({ ...s, progress: 1 }));
         return true;
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
