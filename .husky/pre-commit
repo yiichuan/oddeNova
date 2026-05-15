@@ -1,0 +1,3 @@
+npx tsc --noEmit -p tsconfig.app.json
+npx lint-staged
+npm test
