@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>oddeNova — Presentation</title>
+  </head>
+  <body>
+    <div id="presentation-frame">
+      <div id="root"></div>
+      <svg id="border-svg" xmlns="http://www.w3.org/2000/svg"
+        style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:9999;overflow:visible;">
+        <defs>
+          <linearGradient id="border-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="rgba(255,255,255,0.40)"/>
+            <stop offset="2%"  stop-color="rgba(255,255,255,0.28)"/>
+            <stop offset="100%" stop-color="rgba(255,255,255,0.10)"/>
+          </linearGradient>
+        </defs>
+        <path id="border-path" fill="none" stroke="url(#border-grad)" stroke-width="1"/>
+      </svg>
+    </div>
+    <script type="module" src="/src/presentation-entry.tsx"></script>
+    <script>
+      // macOS-style squircle: cubic bezier with control points at the corner,
+      // extended r*smoothing into each edge for continuous-curvature corners.
+      function squirclePath(w, h, r, s) {
+        var re = Math.min(r * (1 + s), w / 2, h / 2);
+        return (
+          'M ' + re + ' 0 ' +
+          'L ' + (w - re) + ' 0 ' +
+          'C ' + w + ' 0 ' + w + ' 0 ' + w + ' ' + re + ' ' +
+          'L ' + w + ' ' + (h - re) + ' ' +
+          'C ' + w + ' ' + h + ' ' + w + ' ' + h + ' ' + (w - re) + ' ' + h + ' ' +
+          'L ' + re + ' ' + h + ' ' +
+          'C 0 ' + h + ' 0 ' + h + ' 0 ' + (h - re) + ' ' +
+          'L 0 ' + re + ' ' +
+          'C 0 0 0 0 ' + re + ' 0 Z'
+        );
+      }
+
+      var root = document.getElementById('root');
+      var borderPath = document.getElementById('border-path');
+      function updateClip() {
+        var rect = root.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        var d = squirclePath(rect.width, rect.height, 10, 0.6);
+        root.style.clipPath = "path('" + d + "')";
+        borderPath.setAttribute('d', d);
+        borderPath.removeAttribute('transform');
+      }
+
+      new ResizeObserver(updateClip).observe(root);
+      updateClip();
+    </script>
+  </body>
+</html>

@@ -354,7 +354,7 @@ export default function App() {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100dvh', width: '100vw' }}>
+      <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
         {showApiKeyModal && (
           <ApiKeyModal
             onClose={() => setShowApiKeyModal(false)}
@@ -517,7 +517,7 @@ export default function App() {
 
   return (
     <div
-      className="flex h-screen w-screen bg-bg-primary overflow-hidden"
+      className="flex h-full w-full bg-bg-primary overflow-hidden"
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
     >
       {showApiKeyModal && (

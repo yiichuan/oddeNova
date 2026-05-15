@@ -301,7 +301,7 @@ export default function CodePanel({
   };
 
   return (
-    <div className="h-full flex flex-col border border-border bg-bg-secondary/30">
+    <div className="h-full flex flex-col border border-border">
       <style>{`
         .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; background: transparent; }
         .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -6px; }

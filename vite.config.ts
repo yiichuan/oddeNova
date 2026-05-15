@@ -112,4 +112,12 @@ function syncAnimationHtml(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), airjellyProxy(), syncAnimationHtml()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        presentation: resolve(__dirname, 'presentation.html'),
+      },
+    },
+  },
 })
