@@ -8,8 +8,7 @@ describe('findUnknownSamples', () => {
 
   it('非法 sample 返回未知名称', () => {
     const result = findUnknownSamples('s("superpad violin")');
-    expect(result).toContain('superpad');
-    expect(result).toContain('violin');
+    expect(result).toEqual(['superpad', 'violin']);
   });
 
   it('GM soundfont 名合法', () => {
@@ -18,8 +17,7 @@ describe('findUnknownSamples', () => {
 
   it('合法 GM soundfont 混合非法 sample', () => {
     const result = findUnknownSamples('s("gm_acoustic_grand_piano rhodes")');
-    expect(result).toContain('rhodes');
-    expect(result).not.toContain('gm_acoustic_grand_piano');
+    expect(result).toEqual(['rhodes']);
   });
 
   it('内置合成器（sawtooth、sine 等）合法', () => {
@@ -43,6 +41,17 @@ describe('findUnknownSamples', () => {
 
   it('sound() 别名等同于 s()', () => {
     const result = findUnknownSamples('sound("fakesample")');
-    expect(result).toContain('fakesample');
+    expect(result).toEqual(['fakesample']);
+  });
+
+  it('.bank() 合法组合不报错', () => {
+    // bd 是 VALID_BANK_SUFFIXES 中的合法 suffix，RolandTR808_bd 存在于 allowlist
+    expect(findUnknownSamples('s("bd").bank("RolandTR808")')).toEqual([]);
+  });
+
+  it('.bank() 非法组合返回 bank_suffix 形式的未知 token', () => {
+    // arp 在 SAMPLE_ALLOWLIST 中（DIRT_SAMPLES），但不是 VALID_BANK_SUFFIXES，
+    // 且 RolandTR808_arp 不存在于 allowlist
+    expect(findUnknownSamples('s("arp").bank("RolandTR808")')).toEqual(['RolandTR808_arp']);
   });
 });
