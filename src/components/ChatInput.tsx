@@ -16,6 +16,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (prefill) setText(prefill);
   }, [prefill]);
 

@@ -29,6 +29,7 @@ export function useSuggestions(opts: {
   // Reset when switching sessions.
   if (prevKey !== key) {
     setPrevKey(key);
+    // eslint-disable-next-line react-hooks/purity
     setSuggestions([...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2));
     setLoading(false);
   }
