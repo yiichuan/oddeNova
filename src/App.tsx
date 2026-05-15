@@ -457,7 +457,7 @@ export default function App() {
 
           {/* Suggestion chips — horizontal scroll */}
           {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && (
-            <div className="flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
+            <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
               {demoSuggestions.map((s) => (
                 <button
                   key={s}

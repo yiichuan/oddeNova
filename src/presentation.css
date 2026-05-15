@@ -23,3 +23,7 @@ body {
   overflow: hidden;
 }
 
+.suggestion-chips {
+  display: none !important;
+}
+
