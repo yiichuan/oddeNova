@@ -72,7 +72,7 @@ export default function Sidebar({
   }, []);
 
   return (
-    <aside className="w-full h-full flex flex-col bg-bg-primary">
+    <aside className="w-full h-full flex flex-col">
       {/* Logo */}
       <div className="pl-5 pr-0 pt-[5px] pb-2 flex items-center justify-between">
         <h1 className="text-[32px]" style={{
