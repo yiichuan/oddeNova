@@ -135,7 +135,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
 
         {/* QR code banner */}
         <div className="flex items-center gap-3 mt-5 pt-5 border-t border-border">
-          <img src={qrCode} alt="入群二维码" className="w-16 h-16 rounded-lg bg-white p-1 shrink-0 object-contain" />
+          <img src={qrCode} alt="扫码加入 oddeNova 用户群，免费领取体验 API Key" className="w-16 h-16 rounded-lg bg-white p-1 shrink-0 object-contain" />
           <div>
             <p className="text-sm font-medium text-text-secondary">扫码入群</p>
             <p className="text-xs text-text-muted mt-0.5">免费领体验 API Key</p>
