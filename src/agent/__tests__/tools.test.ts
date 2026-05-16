@@ -2,8 +2,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../services/strudel', () => ({
-  validateCode: vi.fn().mockResolvedValue({ ok: true }),
-  validateCodeRuntime: vi.fn().mockResolvedValue({ ok: true }),
+  validateCode: vi.fn().mockReturnValue({ ok: true }),
+  validateCodeRuntime: vi.fn().mockReturnValue({ ok: true }),
   normalizeCode: vi.fn((code: string) => code),
 }));
 
