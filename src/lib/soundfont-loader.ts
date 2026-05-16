@@ -54,7 +54,6 @@ async function loadFont(name: string): Promise<FontZone[]> {
     const url = `${SOUNDFONT_CDN}/${name}.js`;
     const text = await fetch(url).then((r) => r.text());
     const [, data] = text.split('={');
-    // eslint-disable-next-line no-eval
     return eval('{' + data) as FontZone[];
   };
   loadCache[name] = load();
@@ -120,7 +119,14 @@ async function getFontBufferSource(
   value: Record<string, unknown>,
   ac: AudioContext,
 ): Promise<AudioBufferSourceNode> {
-  const note = (value.note as string | number) ?? 'c3';
+  const rawNote = value.note;
+  let note: string | number;
+  if (typeof rawNote === 'string' || typeof rawNote === 'number') {
+    note = rawNote;
+  } else {
+    console.warn('[soundfont-loader] unexpected note type:', typeof rawNote, rawNote, '— falling back to C3');
+    note = 'c3';
+  }
   const freq = value.freq as number | undefined;
   let midi: number;
   if (freq) {
@@ -128,7 +134,7 @@ async function getFontBufferSource(
   } else if (typeof note === 'string') {
     midi = noteToMidi(note);
   } else {
-    midi = note as number;
+    midi = note;
   }
   const { buffer, zone } = await getFontPitch(name, midi, ac);
   const src = ac.createBufferSource();
