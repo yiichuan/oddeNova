@@ -122,7 +122,7 @@ export default function Sidebar({
         {showHistory && (
           <>
             <div className="fixed inset-0 z-[9]" onClick={() => setShowHistory(false)} />
-            <div className="absolute top-0 left-4 right-0 h-1/2 z-10">
+            <div className="absolute top-0 left-4 right-0 h-1/2 z-10 bg-bg-primary border border-border">
               <HistoryPanel
                 sessions={sessions}
                 currentId={currentId}
