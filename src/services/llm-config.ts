@@ -60,8 +60,8 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   },
   qiniu: {
     label: '官方体验',
-    baseURL: 'https://api.qnaigc.com/v1',
-    model: 'z-ai/glm-5',
+    baseURL: 'https://api.siliconflow.cn/v1',
+    model: 'Pro/zai-org/GLM-5.1',
     protocol: 'openai',
   },
 };
@@ -120,10 +120,10 @@ function resolveOpenAICompatConfig(
 // ---------------------------------------------------------------------------
 
 function normalizeProvider(raw: string | null): ProviderType {
-  if (!raw) return 'anthropic';
+  if (!raw) return 'qiniu';
   if (raw in PROVIDER_PRESETS) return raw as ProviderType;
-  // 旧版 'openai-compat' / 'custom' 均降级为 anthropic
-  return 'anthropic';
+  // 旧版 'openai-compat' / 'custom' 均降级为 qiniu
+  return 'qiniu';
 }
 
 // ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ function getProviderKey(p: ProviderType): string {
 }
 
 export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiKeyModalProps) {
-  const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'anthropic';
+  const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'qiniu';
   const savedKey = getProviderKey(savedProvider);
 
   const [provider, setProvider] = useState<ProviderType>(savedProvider);
@@ -78,8 +78,12 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 mt-px" />
             <span className="text-xs text-text-muted">当前使用</span>
             <span className="text-xs text-text-secondary font-medium">{PROVIDER_PRESETS[savedProvider].label}</span>
-            <span className="text-text-muted/40 text-xs">·</span>
-            <span className="text-xs text-text-muted font-mono">{getModelForProvider(savedProvider)}</span>
+            {savedProvider !== 'qiniu' && (
+              <>
+                <span className="text-text-muted/40 text-xs">·</span>
+                <span className="text-xs text-text-muted font-mono">{getModelForProvider(savedProvider)}</span>
+              </>
+            )}
           </div>
         )}
 
