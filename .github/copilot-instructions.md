@@ -84,9 +84,16 @@ await initAudio({ maxPolyphony: 1024, multiChannelOrbits: false });
 
 ## 代码质量门禁
 
-在提交或提 PR 前，以下命令必须全部通过：
+以下检查已通过 husky pre-commit hook **自动强制**，每次 `git commit` 时运行：
 
 ```bash
-npm run lint        # ESLint —— 包含 no-restricted-imports 等规则
-npx tsc --noEmit -p tsconfig.app.json   # TypeScript 类型检查
+npx tsc --noEmit -p tsconfig.app.json   # TypeScript 类型检查（strict 模式）
+npm run lint                             # ESLint（仅变更文件，via lint-staged）
+npm test                                 # Vitest 单元测试
+```
+
+如需手动运行全量检查：
+
+```bash
+npm run lint && npx tsc --noEmit -p tsconfig.app.json && npm test
 ```

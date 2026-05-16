@@ -44,17 +44,6 @@ export default function ConversationView({
     }
   }, [messages, isLoading]);
 
-  // Find the last progress message after the most recent user message —
-  // used as the "subtitle" line under the "思考中..." indicator.
-  // We restrict to post-last-user-message to avoid showing stale progress
-  // (e.g. "准备播放…") from the previous turn while the new turn loads.
-  const lastProgress = isLoading
-    ? (() => {
-        const lastUserIdx = messages.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
-        return [...messages].slice(lastUserIdx + 1).reverse().find((m) => m.role === 'progress');
-      })()
-    : undefined;
-
   return (
     <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative">
       {messages.length === 0 && !isLoading && (

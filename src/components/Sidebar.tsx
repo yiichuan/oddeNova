@@ -72,7 +72,7 @@ export default function Sidebar({
   }, []);
 
   return (
-    <aside className="w-full h-full flex flex-col bg-bg-primary">
+    <aside className="w-full h-full flex flex-col">
       {/* Logo */}
       <div className="pl-5 pr-0 pt-[5px] pb-2 flex items-center justify-between">
         <h1 className="text-[32px]" style={{
@@ -144,7 +144,7 @@ export default function Sidebar({
       <div className="flex justify-center pl-4 pr-0 pb-2">
         <div className="w-full max-w-[500px]">
           {!isLoading && !suggestionsLoading && (
-            <div className="flex flex-wrap gap-2 pb-2">
+            <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
               {suggestions.map((s) => (
                 <button
                   key={s}

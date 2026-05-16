@@ -1,6 +1,18 @@
-import type { StrudelMirror as StrudelMirrorType, StrudelReplState } from '@strudel/codemirror';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
+
+type StrudelReplState = {
+  code?: string;
+  started?: boolean;
+  evalError?: Error | unknown;
+};
+
+interface StrudelMirrorType {
+  dispose?: () => void;
+  repl: { setCode: (code: string) => void; stop: () => void; [key: string]: unknown };
+  setCode: (code: string) => void;
+  evaluate: (autostart?: boolean) => Promise<void>;
+}
 
 export type StrudelState = {
   code: string;
@@ -151,7 +163,7 @@ class StrudelService {
       });
 
       // Sync REPL internal state with initial code
-      this.editorInstance.repl.setCode(currentCode);
+      this.editorInstance?.repl.setCode(currentCode);
 
     } finally {
       this.isInitializing = false;
