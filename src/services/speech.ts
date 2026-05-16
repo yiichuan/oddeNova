@@ -30,8 +30,8 @@ interface SpeechRecognitionInstance extends EventTarget {
 type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
 
 const SpeechRecognitionAPI: SpeechRecognitionConstructor | undefined =
-  (window as Record<string, unknown>).SpeechRecognition as SpeechRecognitionConstructor ||
-  (window as Record<string, unknown>).webkitSpeechRecognition as SpeechRecognitionConstructor;
+  (window as unknown as Record<string, unknown>).SpeechRecognition as SpeechRecognitionConstructor ||
+  (window as unknown as Record<string, unknown>).webkitSpeechRecognition as SpeechRecognitionConstructor;
 
 export function isSpeechSupported(): boolean {
   return !!SpeechRecognitionAPI;

@@ -130,21 +130,6 @@ const _PF_DRUMS_INITIAL = `stack(
 )
   .slow(2)`;
 
-const _PF_DRUMS_FINAL = `stack(
-  s("bd ~ ~ ~ bd ~ ~ ~")
-    .gain(0.78),
-  s("~ cp ~ cp ~ cp ~ ~")
-    .gain(0.38)
-    .pan(0.55)
-    .hpf(800),
-  s("~ hh hh ~ hh ~ hh hh")
-    .gain(0.18)
-    .lpf(6500)
-    .speed(0.8)
-    .pan(0.4)
-)
-  .slow(2)`;
-
 const _PF_BASS = `note("<bb1 bb1 ~ bb1 f2 f2 ~ f2> <bb1 ~ ab1 bb1 f2 ~ eb2 f2>")
   .s("gm_acoustic_bass")
   .lpf(400)

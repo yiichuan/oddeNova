@@ -84,9 +84,22 @@ await initAudio({ maxPolyphony: 1024, multiChannelOrbits: false });
 
 ## 代码质量门禁
 
-在提交或提 PR 前，以下命令必须全部通过：
+以下检查已通过 husky pre-commit hook **自动强制**，每次 `git commit` 时运行：
 
 ```bash
-npm run lint        # ESLint —— 包含 no-restricted-imports 等规则
-npx tsc --noEmit -p tsconfig.app.json   # TypeScript 类型检查
+npx tsc --noEmit -p tsconfig.app.json   # TypeScript 类型检查（strict 模式）
+npm run lint                             # ESLint（仅变更文件，via lint-staged）
+npm test                                 # Vitest 单元测试
 ```
+
+如需手动运行全量检查：
+
+```bash
+npm run lint && npx tsc --noEmit -p tsconfig.app.json && npm test
+```
+
+### Agent 测试维护约定
+
+- 修改 `src/agent/parser.ts` 或 `tools.ts` 中任何函数 / handler 的行为，必须在**同一次提交**中同步更新 `src/agent/__tests__/` 下对应的测试
+- `validate` / `improvise` tool 依赖浏览器 API（AudioContext），**不写单元测试**
+- 测试写法参考现有文件，使用 `getHandler` + `makeCtx` 模式（见 `src/agent/__tests__/tools.test.ts`）
