@@ -1,0 +1,29 @@
+/* Demo presentation layout — overrides index.css body/#root sizing */
+body {
+  background: url('/background-01.png') center / cover no-repeat !important;
+  padding: 90px 60px !important;
+  box-sizing: border-box;
+  height: 100dvh;
+  width: 100vw;
+}
+
+/* Shadow lives on the parent — clip-path on #root would clip drop-shadow
+   if both were on the same element */
+#presentation-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 16px 24px rgba(0, 0, 0, 0.35))
+          drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+}
+
+#root {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden;
+}
+
+.suggestion-chips {
+  display: none !important;
+}
+
