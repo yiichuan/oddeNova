@@ -22,8 +22,9 @@
 
 **Files:**
 - Create: `.github/workflows/ci.yml`
+- 
 
-- [ ] **Step 1：创建 workflow 目录和文件**
+- [x] **Step 1：创建 workflow 目录和文件**
 
 ```bash
 mkdir -p .github/workflows
@@ -73,7 +74,7 @@ jobs:
 
 > **注意：** job id 和 `name` 都是 `ci`，branch protection 里填的 status check 名称要与此一致。
 
-- [ ] **Step 2：在本地验证文件格式正确（YAML 不报错）**
+- [x] **Step 2：在本地验证文件格式正确（YAML 不报错）**
 
 ```bash
 python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))" && echo "YAML OK"
@@ -81,14 +82,14 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))" && ec
 
 期望输出：`YAML OK`
 
-- [ ] **Step 3：提交 workflow 文件**
+- [x] **Step 3：提交 workflow 文件**
 
 ```bash
 git add .github/workflows/ci.yml
 git commit -m "ci: add GitHub Actions CI workflow (lint + tsc + test + build)"
 ```
 
-- [ ] **Step 4：push 到远程分支，触发首次 CI 运行**
+- [ ] **Step 4：push 到远程分支，触发首次 CI 运行**（⬅️ 需手动执行）
 
 ```bash
 git push origin HEAD
