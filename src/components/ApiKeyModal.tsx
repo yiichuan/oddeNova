@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { type ProviderType, PROVIDER_PRESETS } from '../services/llm-config';
+import qrCode from '../assets/oddeNova音乐制作社区二维码.png';
 
 function getModelForProvider(p: ProviderType): string {
   if (p === 'anthropic') {
@@ -32,7 +33,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
 
   const [provider, setProvider] = useState<ProviderType>(savedProvider);
   const [apiKey, setApiKey] = useState(getProviderKey(savedProvider));
-  const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://timesniper.club');
+  const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://gw.claudeapi.com');
 
   const handleProviderChange = (p: ProviderType) => {
     if (apiKey.trim()) {
@@ -50,7 +51,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     localStorage.setItem('vibe_api_key', trimmedKey);
     localStorage.setItem('vibe_provider', provider);
     if (provider === 'anthropic') {
-      const trimmedHost = host.trim() || 'https://timesniper.club';
+      const trimmedHost = host.trim() || 'https://gw.claudeapi.com';
       localStorage.setItem('vibe_base_url', trimmedHost);
     } else {
       localStorage.removeItem('vibe_base_url');
@@ -125,11 +126,20 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
                 type="text"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
-                placeholder="https://timesniper.club"
+                placeholder="https://gw.claudeapi.com"
                 className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
               />
             </div>
           )}
+        </div>
+
+        {/* QR code banner */}
+        <div className="flex items-center gap-3 mt-5 pt-5 border-t border-border">
+          <img src={qrCode} alt="入群二维码" className="w-16 h-16 rounded-lg bg-white p-1 shrink-0 object-contain" />
+          <div>
+            <p className="text-sm font-medium text-text-secondary">扫码入群</p>
+            <p className="text-xs text-text-muted mt-0.5">免费领体验 API Key</p>
+          </div>
         </div>
 
         <div className="flex gap-3 mt-5">
