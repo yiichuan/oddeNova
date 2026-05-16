@@ -1,0 +1,134 @@
+<h2>二维码放在弹框的哪里？</h2>
+<p class="subtitle">三种布局方案，选一个你觉得合适的</p>
+
+<div class="cards">
+  <!-- Option A: Bottom Banner -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px; background: #1a1a2e;">
+      <div style="background:#252535; border-radius:12px; padding:16px; font-family:sans-serif; width:220px; margin:0 auto;">
+        <div style="font-size:11px; font-weight:600; color:#e2e8f0; margin-bottom:4px;">设置 API Key</div>
+        <div style="font-size:8px; color:#94a3b8; margin-bottom:10px;">选择服务商并填入对应的 API Key</div>
+        <!-- form stub -->
+        <div style="background:#1a1a2e; border-radius:6px; height:22px; margin-bottom:6px; border:1px solid #334155;"></div>
+        <div style="background:#1a1a2e; border-radius:6px; height:22px; margin-bottom:10px; border:1px solid #334155;"></div>
+        <!-- QR section at bottom -->
+        <div style="border-top:1px solid #334155; padding-top:10px; display:flex; align-items:center; gap:10px;">
+          <div style="background:#fff; border-radius:4px; width:44px; height:44px; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+              <rect x="2" y="2" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="5" y="5" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="20" y="2" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="23" y="5" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="2" y="20" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="5" y="23" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="20" y="20" width="4" height="4" fill="#000"/>
+              <rect x="26" y="20" width="4" height="4" fill="#000"/>
+              <rect x="20" y="26" width="4" height="4" fill="#000"/>
+              <rect x="26" y="26" width="4" height="4" fill="#000"/>
+              <rect x="23" y="23" width="4" height="4" fill="#000"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size:8px; font-weight:600; color:#e2e8f0; line-height:1.4;">扫码入群</div>
+            <div style="font-size:7px; color:#94a3b8; line-height:1.4;">免费领体验 API Key</div>
+          </div>
+        </div>
+        <!-- buttons -->
+        <div style="display:flex; gap:6px; margin-top:10px;">
+          <div style="flex:1; background:#334155; border-radius:6px; height:20px;"></div>
+          <div style="flex:1; background:#6366f1; border-radius:6px; height:20px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 底部横条</h3>
+      <p>QR 码 + 文字横排，紧贴表单下方，按钮上方。紧凑、不抢眼。</p>
+    </div>
+  </div>
+
+  <!-- Option B: Top banner below title -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px; background: #1a1a2e;">
+      <div style="background:#252535; border-radius:12px; padding:16px; font-family:sans-serif; width:220px; margin:0 auto;">
+        <div style="font-size:11px; font-weight:600; color:#e2e8f0; margin-bottom:4px;">设置 API Key</div>
+        <div style="font-size:8px; color:#94a3b8; margin-bottom:8px;">选择服务商并填入对应的 API Key</div>
+        <!-- QR section at top as highlight card -->
+        <div style="background:linear-gradient(135deg,#312e81,#1e1b4b); border-radius:8px; padding:8px 10px; display:flex; align-items:center; gap:8px; margin-bottom:10px; border:1px solid #4338ca44;">
+          <div style="background:#fff; border-radius:4px; width:36px; height:36px; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+            <svg width="28" height="28" viewBox="0 0 36 36" fill="none">
+              <rect x="2" y="2" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="5" y="5" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="20" y="2" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="23" y="5" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="2" y="20" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="5" y="23" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="20" y="20" width="4" height="4" fill="#000"/>
+              <rect x="26" y="20" width="4" height="4" fill="#000"/>
+              <rect x="20" y="26" width="4" height="4" fill="#000"/>
+              <rect x="26" y="26" width="4" height="4" fill="#000"/>
+              <rect x="23" y="23" width="4" height="4" fill="#000"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size:8px; font-weight:700; color:#c7d2fe; line-height:1.4;">扫码入群</div>
+            <div style="font-size:7px; color:#a5b4fc; line-height:1.4;">免费领体验 API Key</div>
+          </div>
+        </div>
+        <!-- form stub -->
+        <div style="background:#1a1a2e; border-radius:6px; height:22px; margin-bottom:6px; border:1px solid #334155;"></div>
+        <div style="background:#1a1a2e; border-radius:6px; height:22px; margin-bottom:10px; border:1px solid #334155;"></div>
+        <!-- buttons -->
+        <div style="display:flex; gap:6px; margin-top:6px;">
+          <div style="flex:1; background:#334155; border-radius:6px; height:20px;"></div>
+          <div style="flex:1; background:#6366f1; border-radius:6px; height:20px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 顶部高亮卡片</h3>
+      <p>表单上方的强调卡片，带紫色渐变背景，更醒目，第一眼就能看到。</p>
+    </div>
+  </div>
+
+  <!-- Option C: Centered large QR at bottom -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 16px; background: #1a1a2e;">
+      <div style="background:#252535; border-radius:12px; padding:16px; font-family:sans-serif; width:220px; margin:0 auto;">
+        <div style="font-size:11px; font-weight:600; color:#e2e8f0; margin-bottom:4px;">设置 API Key</div>
+        <div style="font-size:8px; color:#94a3b8; margin-bottom:10px;">选择服务商并填入对应的 API Key</div>
+        <!-- form stub -->
+        <div style="background:#1a1a2e; border-radius:6px; height:22px; margin-bottom:6px; border:1px solid #334155;"></div>
+        <div style="background:#1a1a2e; border-radius:6px; height:22px; margin-bottom:10px; border:1px solid #334155;"></div>
+        <!-- buttons -->
+        <div style="display:flex; gap:6px; margin-bottom:10px;">
+          <div style="flex:1; background:#334155; border-radius:6px; height:20px;"></div>
+          <div style="flex:1; background:#6366f1; border-radius:6px; height:20px;"></div>
+        </div>
+        <!-- separator + centered QR -->
+        <div style="border-top:1px solid #334155; padding-top:10px; text-align:center;">
+          <div style="background:#fff; border-radius:6px; width:56px; height:56px; margin:0 auto 6px; display:flex; align-items:center; justify-content:center;">
+            <svg width="44" height="44" viewBox="0 0 36 36" fill="none">
+              <rect x="2" y="2" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="5" y="5" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="20" y="2" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="23" y="5" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="2" y="20" width="14" height="14" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+              <rect x="5" y="23" width="8" height="8" rx="1" fill="#000"/>
+              <rect x="20" y="20" width="4" height="4" fill="#000"/>
+              <rect x="26" y="20" width="4" height="4" fill="#000"/>
+              <rect x="20" y="26" width="4" height="4" fill="#000"/>
+              <rect x="26" y="26" width="4" height="4" fill="#000"/>
+              <rect x="23" y="23" width="4" height="4" fill="#000"/>
+            </svg>
+          </div>
+          <div style="font-size:8px; font-weight:600; color:#e2e8f0;">扫码入群</div>
+          <div style="font-size:7px; color:#94a3b8;">免费领体验 API Key</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 底部居中大码</h3>
+      <p>按钮下方，QR 码居中放大展示，文字在下。简洁，扫码体验最佳。</p>
+    </div>
+  </div>
+</div>
