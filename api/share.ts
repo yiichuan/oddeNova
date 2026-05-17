@@ -4,6 +4,13 @@ import { randomBytes } from 'crypto';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'POST') {
+    const MAX_PAYLOAD_BYTES = 256 * 1024; // 256 KB
+    const rawBody = JSON.stringify(req.body);
+    if (rawBody.length > MAX_PAYLOAD_BYTES) {
+      res.status(413).json({ error: 'Payload too large' });
+      return;
+    }
+
     const shareId = randomBytes(8).toString('base64url').slice(0, 10);
     const payload = req.body as object;
 

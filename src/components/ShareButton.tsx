@@ -45,9 +45,13 @@ export function ShareButton({ session }: ShareButtonProps) {
   }
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard permission denied or not available
+    }
   }
 
   return (
