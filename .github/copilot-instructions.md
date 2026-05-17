@@ -103,3 +103,9 @@ npm run lint && npx tsc --noEmit -p tsconfig.app.json && npm test
 - 修改 `src/agent/parser.ts` 或 `tools.ts` 中任何函数 / handler 的行为，必须在**同一次提交**中同步更新 `src/agent/__tests__/` 下对应的测试
 - `validate` / `improvise` tool 依赖浏览器 API（AudioContext），**不写单元测试**
 - 测试写法参考现有文件，使用 `getHandler` + `makeCtx` 模式（见 `src/agent/__tests__/tools.test.ts`）
+
+## 提示词版本管理规范
+
+- **禁止**直接编辑 `src/prompts/system-prompt.ts`（这是转发 shim，不含实际内容）
+- **禁止**修改已有版本文件 `src/prompts/versions/v*.ts`（版本只增不改）
+- 修改提示词时，请使用 `@edit-system-prompt` 获取完整操作规程
