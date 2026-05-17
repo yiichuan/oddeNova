@@ -267,7 +267,7 @@ export function useSessions() {
       const now = Date.now();
       const session: Session = {
         id,
-        title: `${payload.title}（共享）`,
+        title: `${payload.title}`,
         messages: payload.messages,
         code: payload.code,
         createdAt: now,

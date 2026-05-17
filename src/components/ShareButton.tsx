@@ -1,56 +1,38 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { uploadShare } from '../services/share';
 import { ShareIcon } from './icons';
 import type { Session } from '../hooks/useSessions';
+import type { ChatMessage } from '../hooks/useChat';
 
 type ShareState = 'idle' | 'loading' | 'done' | 'error';
 
 interface ShareButtonProps {
   session: Session | null;
+  code?: string;
+  messages?: ChatMessage[];
+  disabled?: boolean;
 }
 
-export function ShareButton({ session }: ShareButtonProps) {
+export function ShareButton({ session, code, messages, disabled }: ShareButtonProps) {
   const [state, setState] = useState<ShareState>('idle');
-  const [shareUrl, setShareUrl] = useState('');
-  const [copied, setCopied] = useState(false);
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (state !== 'done') return;
-    function handleClickOutside(e: MouseEvent) {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setState('idle');
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [state]);
 
   async function handleShare() {
-    if (!session) return;
+    const shareCode = session?.code || code || '';
+    if (!shareCode) return;
     setState('loading');
     try {
       const shareId = await uploadShare({
-        title: session.title,
-        code: session.code,
-        messages: session.messages,
+        title: session?.title?.trim() || '新会话',
+        code: shareCode,
+        messages: session?.messages ?? messages ?? [],
       });
       const url = `${window.location.origin}/s/${shareId}`;
-      setShareUrl(url);
+      await navigator.clipboard.writeText(url);
       setState('done');
+      setTimeout(() => setState('idle'), 2000);
     } catch {
       setState('error');
       setTimeout(() => setState('idle'), 3000);
-    }
-  }
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard permission denied or not available
     }
   }
 
@@ -58,8 +40,8 @@ export function ShareButton({ session }: ShareButtonProps) {
     <div className="relative">
       <button
         onClick={handleShare}
-        disabled={state === 'loading' || !session}
-        className="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={disabled || state === 'loading'}
+        className="w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
         title="分享会话"
       >
         {state === 'loading' ? (
@@ -72,32 +54,8 @@ export function ShareButton({ session }: ShareButtonProps) {
       </button>
 
       {state === 'done' && (
-        <div
-          ref={popoverRef}
-          className="absolute right-0 top-9 z-50 bg-bg-secondary border border-border rounded-lg shadow-lg p-3 w-72"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-text-primary font-medium">分享链接</span>
-            <button
-              onClick={() => setState('idle')}
-              className="text-text-secondary hover:text-text-primary text-lg leading-none"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="flex gap-2">
-            <input
-              readOnly
-              value={shareUrl}
-              className="flex-1 text-xs bg-bg-primary border border-border rounded px-2 py-1 text-text-secondary truncate"
-            />
-            <button
-              onClick={handleCopy}
-              className="text-xs px-2 py-1 bg-accent text-white rounded hover:opacity-90 shrink-0"
-            >
-              {copied ? '已复制' : '复制'}
-            </button>
-          </div>
+        <div className="absolute right-0 top-9 z-50">
+          <span className="text-text-secondary text-sm whitespace-nowrap">链接已复制</span>
         </div>
       )}
 

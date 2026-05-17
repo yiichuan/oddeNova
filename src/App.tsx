@@ -15,7 +15,6 @@ import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
-import { ShareButton } from './components/ShareButton';
 import { useImportShare } from './hooks/useImportShare';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
@@ -398,7 +397,6 @@ export default function App() {
             <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
             <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
           </h1>
-          <ShareButton session={sessions.currentSession} />
           <button
             onClick={() => setShowApiKeyModal(true)}
             className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
@@ -435,6 +433,8 @@ export default function App() {
                 exportState={strudel.exportState}
                 onExport={strudel.exportWav}
                 onResetExportState={strudel.resetExportState}
+                session={sessions.currentSession}
+                messages={messages}
               />
             </div>
           </div>
@@ -566,7 +566,6 @@ export default function App() {
           onDeleteSession={sessions.deleteSession}
           onOpenSettings={() => setShowApiKeyModal(true)}
           isHistoryLoading={sessions.isLoading}
-          currentSession={sessions.currentSession}
         />
       </div>
 
@@ -606,6 +605,8 @@ export default function App() {
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
             onResetExportState={strudel.resetExportState}
+            session={sessions.currentSession}
+            messages={messages}
           />
         </div>
 
