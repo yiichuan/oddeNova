@@ -7,7 +7,10 @@ export function useImportShare(
   importSession: (payload: SharePayload) => Promise<void>,
   isReady: boolean
 ): ImportStatus {
-  const [status, setStatus] = useState<ImportStatus>('idle');
+  // Derive initial status from URL so we never call setState synchronously inside an effect.
+  const [status, setStatus] = useState<ImportStatus>(() =>
+    /^\/s\/[^/]+$/.test(window.location.pathname) ? 'loading' : 'idle'
+  );
   const didRun = useRef(false);
 
   useEffect(() => {
@@ -17,7 +20,6 @@ export function useImportShare(
 
     didRun.current = true;
     const shareId = match[1];
-    setStatus('loading');
 
     fetchShare(shareId)
       .then((payload) => importSession(payload))
