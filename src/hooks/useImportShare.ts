@@ -8,8 +8,6 @@ export function useImportShare(
   isReady: boolean
 ): ImportStatus {
   const [status, setStatus] = useState<ImportStatus>('idle');
-  const importSessionRef = useRef(importSession);
-  importSessionRef.current = importSession;
   const didRun = useRef(false);
 
   useEffect(() => {
@@ -22,7 +20,7 @@ export function useImportShare(
     setStatus('loading');
 
     fetchShare(shareId)
-      .then((payload) => importSessionRef.current(payload))
+      .then((payload) => importSession(payload))
       .then(() => {
         history.replaceState(null, '', '/');
         setStatus('idle');
@@ -30,7 +28,7 @@ export function useImportShare(
       .catch(() => {
         setStatus('error');
       });
-  }, [isReady]);
+  }, [isReady, importSession]);
 
   return status;
 }
