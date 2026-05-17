@@ -83,13 +83,15 @@ export default function Sidebar({
         }}>
           <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
         </h1>
-        <button
-          onClick={onOpenSettings}
-          className="w-7 h-7 text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center shrink-0"
-          title="设置 API Key"
-        >
-          <SettingsIcon size={18} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onOpenSettings}
+            className="w-7 h-7 text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center shrink-0"
+            title="设置 API Key"
+          >
+            <SettingsIcon size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Title row */}
@@ -141,8 +143,7 @@ export default function Sidebar({
         />
       </div>
 
-      <div className="flex justify-center pl-4 pr-0 pb-2">
-        <div className="w-full max-w-[500px]">
+      <div className="pl-4 pr-0 pb-2">
           {!isLoading && !suggestionsLoading && (
             <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
               {suggestions.map((s) => (
@@ -183,7 +184,6 @@ export default function Sidebar({
           )}
 
           <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} />
-        </div>
       </div>
     </aside>
   );

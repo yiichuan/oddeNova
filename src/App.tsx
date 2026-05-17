@@ -15,6 +15,7 @@ import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
+import { useImportShare } from './hooks/useImportShare';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
@@ -29,6 +30,7 @@ const VIZ_DEFAULT = 280;
 export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
+  const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
@@ -93,6 +95,7 @@ export default function App() {
   }, [sessions]);
 
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => !hasApiKeyConfigured());
+  const [importErrorDismissed, setImportErrorDismissed] = useState(false);
 
   const current = sessions.currentSession;
   const messages = current?.messages ?? [];
@@ -431,6 +434,8 @@ export default function App() {
                 exportState={strudel.exportState}
                 onExport={strudel.exportWav}
                 onResetExportState={strudel.resetExportState}
+                session={sessions.currentSession}
+                messages={messages}
               />
             </div>
           </div>
@@ -510,6 +515,30 @@ export default function App() {
               </div>
             </div>
           </>
+        )}
+        {importStatus === 'loading' && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
+            <span className="text-text-secondary text-sm">正在载入分享内容…</span>
+          </div>
+        )}
+        {importStatus === 'error' && !importErrorDismissed && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-bg-primary/90">
+            <span className="text-red-400 text-sm">分享内容加载失败</span>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { handleNewSession(); setImportErrorDismissed(true); }}
+                className="px-4 py-1.5 text-sm rounded border border-border text-text-primary hover:border-accent/50 transition-colors"
+              >
+                新建会话
+              </button>
+              <button
+                onClick={() => setImportErrorDismissed(true)}
+                className="px-4 py-1.5 text-sm rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -591,6 +620,8 @@ export default function App() {
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
             onResetExportState={strudel.resetExportState}
+            session={sessions.currentSession}
+            messages={messages}
           />
         </div>
 
@@ -621,6 +652,30 @@ export default function App() {
           <VizPlaceholder isPlaying={strudel.isPlaying} />
         </div>
       </main>
+      {importStatus === 'loading' && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
+          <span className="text-text-secondary text-sm">正在载入分享内容…</span>
+        </div>
+      )}
+      {importStatus === 'error' && !importErrorDismissed && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-bg-primary/90">
+          <span className="text-red-400 text-sm">分享内容加载失败</span>
+          <div className="flex gap-3">
+            <button
+              onClick={() => { handleNewSession(); setImportErrorDismissed(true); }}
+              className="px-4 py-1.5 text-sm rounded border border-border text-text-primary hover:border-accent/50 transition-colors"
+            >
+              新建会话
+            </button>
+            <button
+              onClick={() => setImportErrorDismissed(true)}
+              className="px-4 py-1.5 text-sm rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

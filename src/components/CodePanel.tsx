@@ -4,6 +4,9 @@ import { strudelService } from '../services/strudel';
 import { parseScore } from '../agent/parser';
 import { useIsMobile } from '../hooks/useIsMobile';
 import ExportPopover from './ExportPopover';
+import { ShareButton } from './ShareButton';
+import type { Session } from '../hooks/useSessions';
+import type { ChatMessage } from '../hooks/useChat';
 
 interface CodePanelProps {
   error: string | null;
@@ -16,6 +19,8 @@ interface CodePanelProps {
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
   onExport: (p: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => Promise<boolean>;
   onResetExportState: () => void;
+  session: Session | null;
+  messages: ChatMessage[];
 }
 
 // Log scale: slider 0–1 → frequency 200Hz–20kHz
@@ -183,6 +188,8 @@ export default function CodePanel({
   exportState,
   onExport,
   onResetExportState,
+  session,
+  messages,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gutterWidth, setGutterWidth] = useState(0);
@@ -317,14 +324,17 @@ export default function CodePanel({
           ref={containerRef}
           className="h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
         />
-        <button
-          onClick={() => setExportOpen((v) => !v)}
-          disabled={!engineReady || !hasCode || exportState.status === 'exporting'}
-          title={!hasCode ? '请先输入代码' : '导出 WAV'}
-          className="absolute top-0.5 right-2 z-[51] w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <DownloadIcon size={18} />
-        </button>
+        <div className="absolute top-0.5 right-2 z-[51] flex items-center gap-0.5">
+          <ShareButton session={session} code={strudelService.code} messages={messages} disabled={!engineReady || !hasCode || !session || exportState.status === 'exporting'} />
+          <button
+            onClick={() => setExportOpen((v) => !v)}
+            disabled={!engineReady || !hasCode || exportState.status === 'exporting'}
+            title={!hasCode ? '请先输入代码' : '导出 WAV'}
+            className="w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <DownloadIcon size={18} />
+          </button>
+        </div>
         <ExportPopover
           open={exportOpen}
           onClose={() => setExportOpen(false)}
