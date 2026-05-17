@@ -64,6 +64,12 @@
 - 响应：`SharePayload` JSON
 - 行为：从 Vercel Blob 读取对应文件并返回；文件不存在时返回 404
 
+**`GET /api/cleanup`（Vercel Cron Job）**
+- 触发方式：每天 UTC 00:00 自动执行（配置在 `vercel.json` 的 `crons` 字段）
+- 行为：调用 `blob.list({ prefix: 'shares/' })`，遍历所有 blob，删除 `uploadedAt` 距今超过 30 天的文件
+- 响应：返回 `{ deleted: number }` 供日志查阅
+- 安全：通过检查 `CRON_SECRET` 环境变量防止外部触发
+
 ### 共享数据格式
 
 ```typescript
@@ -84,7 +90,8 @@ interface SharePayload {
 
 ```
 api/
-└── share.ts                  # Vercel serverless function（POST 写入 / GET 读取）
+├── share.ts                  # Vercel serverless function（POST 写入 / GET 读取）
+└── cleanup.ts                # Vercel Cron Job：清理 30 天前的旧 blob
 
 src/
 ├── services/
@@ -160,15 +167,28 @@ App 挂载时（`useImportShare` hook）执行：
 
 ---
 
-## 路由
+## 路由与 Cron 配置
 
-`vercel.json` 无需修改。现有通配重写 `"source": "/(.*)"` 已覆盖 `/s/*`，App 内通过 `pathname` 判断导入逻辑。Serverless function 在 `/api/share` 下自动注册。
+`vercel.json` 的 `rewrites` 无需修改，现有通配规则已覆盖 `/s/*`。需在 `vercel.json` 新增 `crons` 字段：
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cleanup",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
+```
+
+Cron Job 通过 `CRON_SECRET` 环境变量验证合法调用（Vercel 会在请求头中携带），需在 Vercel 项目的 Environment Variables 中配置。
 
 ---
 
 ## 不在此次范围内
 
-- 分享链接过期/撤回
+- 分享链接主动撤回（用户手动删除）
 - 单次上传体积限制
 - 分享内容预览页（接收方直接 fork，无预览确认步骤）
 - 用户鉴权/私有分享
