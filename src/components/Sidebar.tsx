@@ -143,8 +143,7 @@ export default function Sidebar({
         />
       </div>
 
-      <div className="flex justify-center pl-4 pr-0 pb-2">
-        <div className="w-full max-w-[500px]">
+      <div className="pl-4 pr-0 pb-2">
           {!isLoading && !suggestionsLoading && (
             <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
               {suggestions.map((s) => (
@@ -185,7 +184,6 @@ export default function Sidebar({
           )}
 
           <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} />
-        </div>
       </div>
     </aside>
   );
