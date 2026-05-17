@@ -234,3 +234,4 @@ export const IMPROVISE_SYSTEM_PROMPT = [
   '- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference: `fast(N)`, `slow(N)`, `rev`, `ply(N)`, or an inline arrow `x => x.add(note("12"))`. TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT in Strudel and will crash at play time.',
   '- ONLY use approved sample names in `s("...")`. Approved melodic: `piano arpy bass moog juno sax gtr pluck sitar stab`. Approved synths: `sawtooth sine square triangle`. Common drums: `bd sd hh oh cp cr cb rm rs`. GM soundfont: any `gm_*` name (e.g. `gm_acoustic_grand_piano`, `gm_electric_piano_1`, `gm_acoustic_bass`, `gm_violin`, `gm_acoustic_guitar_nylon`, `gm_overdriven_guitar`, `gm_flute`, `gm_trumpet`, `gm_pad_2_warm`). NEVER invent names like "superpad", "rhodes", "strings", "violin".',
 ].join('\n');
+
