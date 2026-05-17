@@ -86,7 +86,9 @@ npm test                                 # Vitest 单元测试
 npm run lint && npx tsc --noEmit -p tsconfig.app.json && npm test
 ```
 
-### Agent 测试维护约定
+---
+
+## Agent 测试维护
 
 - 修改 `src/agent/parser.ts` 或 `tools.ts` 中任何函数 / handler 的行为，必须在**同一次提交**中同步更新 `src/agent/__tests__/` 下对应的测试
 - `validate` / `improvise` tool 依赖浏览器 API（AudioContext），**不写单元测试**
