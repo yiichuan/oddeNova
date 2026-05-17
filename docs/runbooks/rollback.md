@@ -21,7 +21,7 @@
 
 每个 Release 的格式为 `YYYY-MM-DD #N`，展开后可以看到"这个版本包含哪些 PR"。
 
-找到出问题之前的那个 Release，记下它对应的 **commit SHA**（Release Notes 底部会显示 "Full Changelog" 链接，点进去可以看到 commit SHA；或者点击 Release 的 tag 名称，跳转到 GitHub Tags 页查看）。
+找到出问题之前的那个 Release，点击 Release 旁的 tag 名称（如 `deploy/2026-05-17-2`），跳转到 Tags 页后，该 tag 对应的 commit SHA 会直接显示在旁边。记下前 7 位即可（Vercel 用 7 位 short SHA 标识每次部署）。
 
 > **示例：** 出问题的是 `2026-05-17 #3`，那目标版本就是 `2026-05-17 #2`。
 
