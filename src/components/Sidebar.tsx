@@ -83,13 +83,15 @@ export default function Sidebar({
         }}>
           <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
         </h1>
-        <button
-          onClick={onOpenSettings}
-          className="w-7 h-7 text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center shrink-0"
-          title="设置 API Key"
-        >
-          <SettingsIcon size={18} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onOpenSettings}
+            className="w-7 h-7 text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center shrink-0"
+            title="设置 API Key"
+          >
+            <SettingsIcon size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Title row */}

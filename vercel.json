@@ -1,4 +1,5 @@
 {
   "buildCommand": "vite build",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [{"source": "/(.*)", "destination": "/index.html"}],
+  "crons": [{"path": "/api/cleanup", "schedule": "0 0 * * *"}]
 }

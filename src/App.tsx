@@ -15,6 +15,7 @@ import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
+import { useImportShare } from './hooks/useImportShare';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
@@ -29,6 +30,7 @@ const VIZ_DEFAULT = 280;
 export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
+  const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
@@ -431,6 +433,8 @@ export default function App() {
                 exportState={strudel.exportState}
                 onExport={strudel.exportWav}
                 onResetExportState={strudel.resetExportState}
+                session={sessions.currentSession}
+                messages={messages}
               />
             </div>
           </div>
@@ -510,6 +514,16 @@ export default function App() {
               </div>
             </div>
           </>
+        )}
+        {importStatus === 'loading' && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
+            <span className="text-text-secondary text-sm">正在载入分享内容…</span>
+          </div>
+        )}
+        {importStatus === 'error' && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
+            <span className="text-red-400 text-sm">分享内容加载失败</span>
+          </div>
         )}
       </div>
     );
@@ -591,6 +605,8 @@ export default function App() {
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
             onResetExportState={strudel.resetExportState}
+            session={sessions.currentSession}
+            messages={messages}
           />
         </div>
 
@@ -621,6 +637,16 @@ export default function App() {
           <VizPlaceholder isPlaying={strudel.isPlaying} />
         </div>
       </main>
+      {importStatus === 'loading' && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
+          <span className="text-text-secondary text-sm">正在载入分享内容…</span>
+        </div>
+      )}
+      {importStatus === 'error' && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
+          <span className="text-red-400 text-sm">分享内容加载失败</span>
+        </div>
+      )}
     </div>
   );
 }
