@@ -35,10 +35,12 @@ export { AGENT_SYSTEM_PROMPT, AGENT_SYSTEM_PROMPT_OPENAI, IMPROVISE_SYSTEM_PROMP
 
 ### 2. 创建新版本文件
 
-将当前版本号 +1（例如 v1 → v2）：
+将 Step 1 读取到的当前版本号 +1（例如当前为 v1 则新建 v2）：
 
 ```bash
-cp src/prompts/versions/v1.ts src/prompts/versions/v2.ts
+# 将 v{N} 替换为 Step 1 读取到的实际版本号，v{N+1} 替换为新版本号
+cp src/prompts/versions/v{N}.ts src/prompts/versions/v{N+1}.ts
+# 示例（当前为 v1）：cp src/prompts/versions/v1.ts src/prompts/versions/v2.ts
 ```
 
 ### 3. 更新新版本文件元数据
@@ -86,7 +88,7 @@ npm test -- --run                        # 必须所有测试通过
 
 ```bash
 git add src/prompts/versions/v2.ts src/prompts/active.ts
-git commit -m "prompts: <简述本次改动，例如：strengthen music style guidance>"
+git commit -m "prompts: strengthen music style guidance"  # 根据实际改动替换引号内的描述
 ```
 
 ## 回滚
