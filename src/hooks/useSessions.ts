@@ -261,6 +261,25 @@ export function useSessions() {
     [currentId]
   );
 
+  const importSession = useCallback(
+    async (payload: { title: string; code: string; messages: ChatMessage[] }): Promise<void> => {
+      const id = newSessionId();
+      const now = Date.now();
+      const session: Session = {
+        id,
+        title: `${payload.title}（共享）`,
+        messages: payload.messages,
+        code: payload.code,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await dbPutSession(session);
+      setSessions((prev) => [session, ...prev]);
+      setCurrentId(id);
+    },
+    []
+  );
+
   return {
     sessions,
     currentSession,
@@ -274,5 +293,6 @@ export function useSessions() {
     newSession,
     switchTo,
     deleteSession,
+    importSession,
   };
 }
