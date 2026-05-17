@@ -155,6 +155,14 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
               取消
             </button>
           )}
+          {required && (
+            <button
+              onClick={onClose}
+              className="flex-1 py-2.5 text-sm text-text-secondary bg-bg-tertiary rounded-lg hover:bg-border transition-colors"
+            >
+              稍后设置
+            </button>
+          )}
           <button
             onClick={handleSave}
             disabled={!canSave}
