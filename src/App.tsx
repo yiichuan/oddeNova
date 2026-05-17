@@ -31,7 +31,7 @@ const VIZ_DEFAULT = 280;
 export default function App() {
   const strudel = useStrudel();
   const sessions = useSessions();
-  const importStatus = useImportShare(sessions.importSession);
+  const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
