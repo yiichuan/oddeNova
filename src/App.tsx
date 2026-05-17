@@ -104,7 +104,7 @@ export default function App() {
 
   const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
-    currentCode,
+    currentCode: current?.code ?? '',
     // demo 模式下不需要真实 LLM suggestions，跳过 buildSuggestions 调用
     hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,

@@ -47,12 +47,24 @@ export default function ExportPopover({
   const isMobile = useIsMobile();
 
   const [filename, setFilename] = useState('');
-  const [filenamePlaceholder] = useState(() => defaultFilename());
+  const [filenamePlaceholder, setFilenamePlaceholder] = useState('');
   const [beginCycle, setBeginCycle] = useState(0);
   const [endCycle, setEndCycle] = useState(4);
   const [beginCycleStr, setBeginCycleStr] = useState('0');
   const [endCycleStr, setEndCycleStr] = useState('4');
   const [sampleRate, setSampleRate] = useState(48000);
+  const [prevOpen, setPrevOpen] = useState(false);
+
+  // Reset filename and regenerate placeholder each time the popover opens.
+  // Uses the "adjust state during render" pattern (React docs) to avoid
+  // an extra render cycle from useEffect.
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) {
+      setFilename('');
+      setFilenamePlaceholder(defaultFilename());
+    }
+  }
 
   const commitBegin = (str: string) => {
     const n = parseInt(str, 10);
