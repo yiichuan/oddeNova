@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import type { Session } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, SettingsIcon } from './icons';
+import { ShareButton } from './ShareButton';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
 import { checkAirJellyAvailable } from '../services/airjelly';
@@ -27,6 +28,7 @@ interface SidebarProps {
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   onOpenSettings: () => void;
+  currentSession: Session | null;
   isHistoryLoading?: boolean;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
@@ -51,6 +53,7 @@ export default function Sidebar({
   onSwitchSession,
   onDeleteSession,
   onOpenSettings,
+  currentSession,
   isHistoryLoading = false,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
@@ -83,13 +86,16 @@ export default function Sidebar({
         }}>
           <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
         </h1>
-        <button
-          onClick={onOpenSettings}
-          className="w-7 h-7 text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center shrink-0"
-          title="设置 API Key"
-        >
-          <SettingsIcon size={18} />
-        </button>
+        <div className="flex items-center gap-1">
+          <ShareButton session={currentSession} />
+          <button
+            onClick={onOpenSettings}
+            className="w-7 h-7 text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center shrink-0"
+            title="设置 API Key"
+          >
+            <SettingsIcon size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Title row */}
