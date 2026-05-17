@@ -45,11 +45,11 @@ cp src/prompts/versions/v{N}.ts src/prompts/versions/v{N+1}.ts
 
 ### 3. 更新新版本文件元数据
 
-编辑 `src/prompts/versions/v2.ts` 顶部注释，更新三个字段：
+编辑 `src/prompts/versions/v{N+1}.ts` 顶部注释，更新三个字段（`v{N+1}` 即 Step 2 中创建的新版本号）：
 
 ```ts
 /**
- * @version v2
+ * @version v{N+1}
  * @date YYYY-MM-DD
  * @description 简要描述本次改动
  */
@@ -57,7 +57,7 @@ cp src/prompts/versions/v{N}.ts src/prompts/versions/v{N+1}.ts
 
 ### 4. 修改提示词内容
 
-只编辑 `src/prompts/versions/v2.ts`，修改对应的导出常量：
+只编辑 `src/prompts/versions/v{N+1}.ts`，修改对应的导出常量：
 
 - `AGENT_SYSTEM_PROMPT` — Anthropic 系模型的系统提示词
 - `AGENT_SYSTEM_PROMPT_OPENAI` — OpenAI 系模型的系统提示词
@@ -87,7 +87,7 @@ npm test -- --run                        # 必须所有测试通过
 ### 7. 提交
 
 ```bash
-git add src/prompts/versions/v2.ts src/prompts/active.ts
+git add src/prompts/versions/v{N+1}.ts src/prompts/active.ts
 git commit -m "prompts: strengthen music style guidance"  # 根据实际改动替换引号内的描述
 ```
 
@@ -105,5 +105,5 @@ export { AGENT_SYSTEM_PROMPT, AGENT_SYSTEM_PROMPT_OPENAI, IMPROVISE_SYSTEM_PROMP
 ```bash
 npx tsc --noEmit -p tsconfig.app.json && npm test -- --run
 git add src/prompts/active.ts
-git commit -m "prompts: revert to v1"
+git commit -m "prompts: revert to v{N}"  # v{N} 为回滚后的目标版本号
 ```
