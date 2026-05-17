@@ -1,0 +1,31 @@
+name: Create Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate tag name
+        id: tag
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          COUNT=$(git tag -l "deploy/${DATE}-*" | wc -l | tr -d ' ')
+          N=$((COUNT + 1))
+          echo "tag=deploy/${DATE}-${N}" >> $GITHUB_OUTPUT
+          echo "name=${DATE} #${N}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.name }}
+          generate_release_notes: true
