@@ -62,11 +62,11 @@ await initAudio({ maxPolyphony: 1024, multiChannelOrbits: false });
 
 ---
 
-## AudioContext 管理约定
+## AudioContext 管理
 
-- **不要** 在组件或 service 里直接 `new AudioContext()`；统一走 `superdough` 提供的 `getAudioContext()` / `setAudioContext()`。
-- **不要** 缓存 `AudioContext` 实例到 React state 或组件本地变量；它是单例，走 superdough 获取即可。
-- WAV 导出结束后必须重建 live ctx（调用 `rebuildMasterChain()`）并恢复 soundfonts。
+- ❌ **不要** 在组件或 service 里直接 `new AudioContext()`；统一走 `superdough` 提供的 `getAudioContext()` / `setAudioContext()`。
+- ❌ **不要** 缓存 `AudioContext` 实例到 React state 或组件本地变量；它是单例，走 superdough 获取即可。
+- ✅ WAV 导出结束后必须重建 live ctx（调用 `rebuildMasterChain()`）并恢复 soundfonts。
 
 ---
 
