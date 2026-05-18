@@ -46,19 +46,18 @@ type FontZone = {
   buffer?: AudioBuffer;
 };
 
-const loadCache: Record<string, Promise<FontZone[]>> = {};
+const loadCache: Record<string, Promise<FontZone[]> | undefined> = {};
 
 async function loadFont(name: string): Promise<FontZone[]> {
-  if (loadCache[name]) return loadCache[name];
+  if (loadCache[name]) return loadCache[name]!;
   const load = async (): Promise<FontZone[]> => {
     const url = `${SOUNDFONT_CDN}/${name}.js`;
     const text = await fetch(url).then((r) => r.text());
     const [, data] = text.split('={');
-    // eslint-disable-next-line no-eval
     return eval('{' + data) as FontZone[];
   };
   loadCache[name] = load();
-  return loadCache[name];
+  return loadCache[name]!;
 }
 
 function findZone(preset: FontZone[], pitch: number): FontZone | undefined {
@@ -94,7 +93,7 @@ async function getBuffer(zone: FontZone, ac: AudioContext): Promise<AudioBuffer 
   return undefined;
 }
 
-const pitchCache: Record<string, Promise<{ buffer: AudioBuffer; zone: FontZone }>> = {};
+const pitchCache: Record<string, Promise<{ buffer: AudioBuffer; zone: FontZone }> | undefined> = {};
 
 async function getFontPitch(
   name: string,
@@ -102,7 +101,7 @@ async function getFontPitch(
   ac: AudioContext,
 ): Promise<{ buffer: AudioBuffer; zone: FontZone }> {
   const key = `${name}:::${pitch}`;
-  if (pitchCache[key]) return pitchCache[key];
+  if (pitchCache[key]) return pitchCache[key]!;
   const load = async () => {
     const preset = await loadFont(name);
     const zone = findZone(preset, pitch);
@@ -112,7 +111,7 @@ async function getFontPitch(
     return { buffer, zone };
   };
   pitchCache[key] = load();
-  return pitchCache[key];
+  return pitchCache[key]!;
 }
 
 async function getFontBufferSource(
@@ -120,7 +119,14 @@ async function getFontBufferSource(
   value: Record<string, unknown>,
   ac: AudioContext,
 ): Promise<AudioBufferSourceNode> {
-  const note = (value.note as string | number) ?? 'c3';
+  const rawNote = value.note;
+  let note: string | number;
+  if (typeof rawNote === 'string' || typeof rawNote === 'number') {
+    note = rawNote;
+  } else {
+    console.warn('[soundfont-loader] unexpected note type:', typeof rawNote, rawNote, '— falling back to C3');
+    note = 'c3';
+  }
   const freq = value.freq as number | undefined;
   let midi: number;
   if (freq) {
@@ -128,7 +134,7 @@ async function getFontBufferSource(
   } else if (typeof note === 'string') {
     midi = noteToMidi(note);
   } else {
-    midi = note as number;
+    midi = note;
   }
   const { buffer, zone } = await getFontPitch(name, midi, ac);
   const src = ac.createBufferSource();
@@ -173,7 +179,7 @@ export function registerSoundfonts(): void {
         const envGain = ctx.createGain();
         const node = bufferSource.connect(envGain);
         const holdEnd = time + duration;
-        getParamADSR(node.gain, attack, decay, sustain, release, 0, 0.3, time, holdEnd, 'linear');
+        getParamADSR(envGain.gain, attack, decay, sustain, release, 0, 0.3, time, holdEnd, 'linear');
         const envEnd = holdEnd + release + 0.01;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const vibratoHandle = getVibratoOscillator(bufferSource.detune, value as any, time);
@@ -254,7 +260,7 @@ export function registerSoundfonts(): void {
         const envGain = ctx.createGain();
         const node = bufferSource.connect(envGain);
         const holdEnd = time + duration;
-        getParamADSR(node.gain, attack, decay, sustain, release, 0, 0.3, time, holdEnd, 'linear');
+        getParamADSR(envGain.gain, attack, decay, sustain, release, 0, 0.3, time, holdEnd, 'linear');
         const envEnd = holdEnd + release + 0.01;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const vibratoHandle = getVibratoOscillator(bufferSource.detune, value as any, time);

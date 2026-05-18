@@ -7,8 +7,10 @@ import { buildSuggestions, STATIC_SUGGESTIONS } from '../services/suggestions';
  *
  * Strategy (mixed):
  *   - When the conversation has no user messages yet → static defaults.
- *   - After each commit (i.e. currentCode changed and is non-empty) →
- *     fetch 2 fresh suggestions from the LLM with music state + style intent context.
+ *   - After each agent commit (i.e. current.code / session committed code changed and
+ *     is non-empty) → fetch 2 fresh suggestions from the LLM with music state + style
+ *     intent context. NOTE: live editor edits and BPM changes do NOT trigger a refetch;
+ *     only committed code (set via sessions.setCurrentCode()) does.
  *
  * `key` is used to bust the cache when switching sessions, so we don't
  * carry the previous session's chips into the new one.
@@ -29,6 +31,7 @@ export function useSuggestions(opts: {
   // Reset when switching sessions.
   if (prevKey !== key) {
     setPrevKey(key);
+    // eslint-disable-next-line react-hooks/purity
     setSuggestions([...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2));
     setLoading(false);
   }

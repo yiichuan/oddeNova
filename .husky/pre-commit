@@ -1,0 +1,7 @@
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+
+npx tsc --noEmit -p tsconfig.app.json
+npx lint-staged
+npm test

@@ -20,6 +20,12 @@ export default defineConfig([
       globals: globals.browser,
     },
     rules: {
+      // Allow unused variables/args starting with _ (conventional placeholder prefix).
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
       // Forbid deep imports into superdough's source files (e.g.
       // `superdough/superdoughoutput.mjs`, `superdough/nodePools.mjs`).
       // The npm package ships a bundled `dist/index.mjs` as its `main`;
