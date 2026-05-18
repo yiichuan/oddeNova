@@ -120,6 +120,7 @@ body {
 }
 
 .cm-editor .cm-lineNumbers .cm-gutterElement {
+  font-family: 'ABeeZee', monospace !important;
   font-size: 13px !important;
   line-height: 2.0 !important;
   padding-left: 24px !important;

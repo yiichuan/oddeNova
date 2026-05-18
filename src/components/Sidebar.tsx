@@ -124,7 +124,7 @@ export default function Sidebar({
         {showHistory && (
           <>
             <div className="fixed inset-0 z-[9]" onClick={() => setShowHistory(false)} />
-            <div className="absolute top-0 left-4 right-0 h-1/2 z-10 bg-bg-primary border border-border">
+            <div className="absolute top-0 left-5 right-0 max-h-[33.333%] z-10 bg-bg-primary border border-border overflow-y-auto">
               <HistoryPanel
                 sessions={sessions}
                 currentId={currentId}
@@ -144,46 +144,46 @@ export default function Sidebar({
       </div>
 
       <div className="pl-4 pr-0 pb-2">
-          {!isLoading && !suggestionsLoading && (
-            <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => onSendText(s)}
-                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] transition hover:border-accent/50 hover:text-text-primary"
-                  style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
-                >
-                  {s}
-                </button>
-              ))}
-              {fillSuggestion && (
-                <button
-                  key="fill-suggestion"
-                  type="button"
-                  onClick={() => onSendText(fillSuggestion)}
-                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
-                  style={{ fontFamily: '"GenWanMin TW", serif' }}
-                >
-                  来首曲子
-                </button>
-              )}
-              {!navigator.userAgent.includes('Windows') && (airjellyAvailable || isDemoMode()) && (
-                <button
-                  type="button"
-                  onClick={onMoodGenerate}
-                  disabled={isMoodLoading}
-                  title="根据你最近的活动感知心情生成音乐"
-                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ fontFamily: '"GenWanMin TW", serif' }}
-                >
-                  <img src="/airjelly-icon.png" alt="AirJelly" className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" /> 根据心情生成
-                </button>
-              )}
-            </div>
-          )}
+        {!isLoading && !suggestionsLoading && (
+          <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onSendText(s)}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] transition hover:border-accent/50 hover:text-text-primary"
+                style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+              >
+                {s}
+              </button>
+            ))}
+            {fillSuggestion && (
+              <button
+                key="fill-suggestion"
+                type="button"
+                onClick={() => onSendText(fillSuggestion)}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
+                style={{ fontFamily: '"GenWanMin TW", serif' }}
+              >
+                来首曲子
+              </button>
+            )}
+            {!navigator.userAgent.includes('Windows') && (
+              <button
+                type="button"
+                onClick={onMoodGenerate}
+                disabled={(!airjellyAvailable && !isDemoMode()) || isMoodLoading}
+                title={airjellyAvailable || isDemoMode() ? '根据你最近的活动感知心情生成音乐' : '需要运行 AirJelly Desktop'}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ fontFamily: '"GenWanMin TW", serif' }}
+              >
+                <img src="/airjelly-icon.png" alt="AirJelly" className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" /> 根据心情生成
+              </button>
+            )}
+          </div>
+        )}
 
-          <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} />
       </div>
     </aside>
   );

@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Start-Process *)",
+      "PowerShell(Start-Process \"http://localhost:5173/presentation.html\")",
+      "PowerShell(nvm list *)",
+      "PowerShell(winget install *)",
+      "PowerShell(node --version)",
+      "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); node --version)",
+      "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); $env:PATH -split \";\" | Where-Object { $_ -match \"nvm|nodejs\" })",
+      "PowerShell($nvmHome = [System.Environment]::GetEnvironmentVariable\\(\"NVM_HOME\", \"Machine\"\\); $nvmSymlink = [System.Environment]::GetEnvironmentVariable\\(\"NVM_SYMLINK\", \"Machine\"\\); Write-Host \"NVM_HOME: $nvmHome\"; Write-Host \"NVM_SYMLINK: $nvmSymlink\"; $env:PATH = \"$nvmHome;$nvmSymlink;\" + $env:PATH; node --version)",
+      "PowerShell(npm run *)",
+      "PowerShell(npm install *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Test-Path \"D:\\\\GitHubProjects\\\\oddeNova\\\\node_modules\\\\.bin\\\\vite.cmd\"; \\(Get-ChildItem \"D:\\\\GitHubProjects\\\\oddeNova\\\\node_modules\" -ErrorAction SilentlyContinue | Measure-Object\\).Count)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(netstat *)",
+      "PowerShell(Get-ChildItem *)",
+      "Bash(git checkout *)",
+      "Bash(mkdir -p \"d:/GitHubProjects/oddeNova/scripts/win\" \"d:/GitHubProjects/oddeNova/scripts/mac\")",
+      "Bash(Move-Item \"d:/GitHubProjects/oddeNova/presentation-resize.ps1\" \"d:/GitHubProjects/oddeNova/scripts/win/presentation-resize.ps1\")",
+      "Bash(Remove-Item \"d:/GitHubProjects/oddeNova/presentation.bat\")",
+      "PowerShell(Move-Item \"d:/GitHubProjects/oddeNova/presentation-resize.ps1\" \"d:/GitHubProjects/oddeNova/scripts/win/presentation-resize.ps1\")"
+    ],
+    "additionalDirectories": [
+      "d:\\GitHubProjects\\oddeNova\\scripts"
+    ]
+  }
+}

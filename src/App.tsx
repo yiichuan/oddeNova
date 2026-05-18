@@ -20,12 +20,13 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 
-const SIDEBAR_MIN = 240;
-const SIDEBAR_MAX = 600;
-const SIDEBAR_DEFAULT = 320;
-const VIZ_MIN = 120;
-const VIZ_MAX = 500;
-const VIZ_DEFAULT = 280;
+const SIDEBAR_RATIO_DEFAULT = 0.22;
+const SIDEBAR_RATIO_MIN = 0.15;
+const SIDEBAR_RATIO_MAX = 0.45;
+
+const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392，由上:下=1.55推导
+const VIZ_RATIO_MIN = 0.15;
+const VIZ_RATIO_MAX = 0.45;
 
 export default function App() {
   const strudel = useStrudel();
@@ -49,14 +50,31 @@ export default function App() {
     return () => { document.body.style.overflow = ''; };
   }, [drawerOpen, isMobile]);
 
-  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
-  const [vizHeight, setVizHeight] = useState(VIZ_DEFAULT);
+  const [sidebarWidth, setSidebarWidth] = useState(() => window.innerWidth * SIDEBAR_RATIO_DEFAULT);
+  const [vizHeight, setVizHeight] = useState(() => window.innerHeight * VIZ_RATIO_DEFAULT);
   const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
+
+  useEffect(() => {
+    if (mainRef.current) {
+      setVizHeight(mainRef.current.offsetHeight * VIZ_RATIO_DEFAULT);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const h = mainRef.current?.offsetHeight ?? window.innerHeight;
+      setSidebarWidth(w => Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, w)));
+      setVizHeight(v => Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, v)));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const prev = prevLoadingRef.current;
@@ -594,7 +612,7 @@ export default function App() {
         onPointerMove={(e) => {
           if (!hDragRef.current) return;
           const delta = e.clientX - hDragRef.current.startX;
-          setSidebarWidth(Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, hDragRef.current.startWidth + delta)));
+          setSidebarWidth(Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, hDragRef.current.startWidth + delta)));
         }}
         onPointerUp={(e) => {
           e.currentTarget.releasePointerCapture(e.pointerId);
@@ -607,7 +625,7 @@ export default function App() {
         <div className={`w-[6px] h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
       </div>
 
-      <main className="flex-1 flex flex-col pt-3 pr-3 pb-0 min-w-0">
+      <main ref={mainRef} className="flex-1 flex flex-col pt-3 pr-3 pb-0 min-w-0">
         <div className="flex-1 min-h-0">
           <CodePanel
             error={strudel.error}
@@ -635,7 +653,8 @@ export default function App() {
           onPointerMove={(e) => {
             if (!vDragRef.current) return;
             const delta = e.clientY - vDragRef.current.startY;
-            setVizHeight(Math.max(VIZ_MIN, Math.min(VIZ_MAX, vDragRef.current.startHeight - delta)));
+            const h = mainRef.current?.offsetHeight ?? window.innerHeight;
+            setVizHeight(Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, vDragRef.current.startHeight - delta)));
           }}
           onPointerUp={(e) => {
             e.currentTarget.releasePointerCapture(e.pointerId);

@@ -1,4 +1,5 @@
 import type { Session } from '../hooks/useSessions';
+import { TrashIcon } from './icons';
 
 interface HistoryPanelProps {
   sessions: Session[];
@@ -25,51 +26,49 @@ export default function HistoryPanel({
     .sort((a, b) => b.createdAt - a.createdAt);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="flex flex-col">
       <div className="px-4 pt-3 pb-2 shrink-0">
-        <h3 className="text-base font-semibold text-text-primary">历史</h3>
+        <h3 className="text-base font-semibold text-text-primary">历史对话</h3>
       </div>
-      <div className="flex-1 overflow-y-auto" style={{ fontFamily: '"GenWanMin TW", serif' }}>
+      <div>
         {isLoading ? (
           <div className="px-4 pb-4 text-xs text-text-muted">加载中…</div>
         ) : ordered.length === 0 ? (
           <div className="px-4 pb-4 text-xs text-text-muted">暂无会话</div>
         ) : (
-          <ul className="pt-1 pb-3">
+          <ul className="pt-1 pb-3 space-y-1">
             {ordered.map((s) => {
               const active = s.id === currentId;
               return (
-                <li key={s.id} className="px-3.5">
+                <li key={s.id} className="px-2">
                   <div
-                    className={`group flex items-center gap-2 px-2 py-[3px] cursor-pointer transition-colors ${
+                    className={`group flex items-stretch gap-2 px-2 cursor-pointer transition-colors ${
                       active
-                        ? 'bg-[#2A2A2A] text-text-secondary'
-                        : 'text-text-secondary hover:bg-bg-tertiary/50'
+                        ? 'bg-[#1e2d3d] text-text-secondary'
+                        : 'text-text-secondary hover:bg-[#2a2a2a]'
                     }`}
                     onClick={() => onSwitch(s.id)}
                   >
-                    <span className="flex-1 text-xs truncate" title={s.title}>
+                    <span className="flex-1 flex items-center py-[8px] text-xs leading-none truncate" title={s.title}>
                       {s.title || '新会话'}
                     </span>
                     {/* 状态指示器 + 删除按钮 */}
-                    <span className="flex items-center gap-1 shrink-0">
+                    <span className="flex items-center gap-2 shrink-0">
+                      {loadingSessions.has(s.id) ? (
+                        <span className="w-1.5 h-1.5 rounded-full animate-spin shrink-0" style={{ border: '1.5px solid transparent', borderTopColor: 'var(--color-text-primary)', display: 'inline-block' }} />
+                      ) : unreadSessions.has(s.id) ? (
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-success)' }} />
+                      ) : null}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           onDelete(s.id);
                         }}
-                        className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error text-base transition-opacity leading-none"
+                        className="self-stretch flex items-center opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-opacity"
                         title="删除"
                       >
-                        ×
+                        <TrashIcon size={20} />
                       </button>
-                      {loadingSessions.has(s.id) ? (
-                        <span className="w-1.5 h-1.5 rounded-full animate-spin shrink-0" style={{ border: '1.5px solid transparent', borderTopColor: 'var(--color-text-primary)', display: 'inline-block' }} />
-                      ) : unreadSessions.has(s.id) ? (
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-success)' }} />
-                      ) : (
-                        <span className="w-1.5 h-1.5 shrink-0" />
-                      )}
                     </span>
                   </div>
                 </li>
