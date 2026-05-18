@@ -1,7 +1,7 @@
 /* Demo presentation layout — overrides index.css body/#root sizing */
 body {
   background: url('/background-01.png') center / cover no-repeat !important;
-  padding: 90px 60px !important;
+  padding: 240px 60px !important;
   box-sizing: border-box;
   height: 100dvh;
   width: 100vw;
