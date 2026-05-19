@@ -2,11 +2,47 @@
   "label": "smoke-test",
   "timestamp": "2026-05-19T14:26:35.797Z",
   "promptVersion": "v1",
-  "results": [],
+  "results": [
+    {
+      "caseId": "TC-001",
+      "caseName": "Smoke Test Case",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "生成一段简单的 techno 节拍",
+          "generatedCode": "s(\"bd sd\").fast(2)",
+          "explanation": "基础四四拍节奏",
+          "durationMs": 1200
+        }
+      ],
+      "ruleScore": {
+        "total": 60,
+        "breakdown": {
+          "syntaxValid": {
+            "pass": true,
+            "score": 20
+          },
+          "hasSound": {
+            "pass": true,
+            "score": 20
+          },
+          "hasPattern": {
+            "pass": true,
+            "score": 20
+          }
+        }
+      },
+      "judgeScore": null,
+      "humanScore": {
+        "score": 7,
+        "note": "节奏简单清晰，符合 techno 风格"
+      }
+    }
+  ],
   "summary": {
-    "totalCases": 0,
-    "avgRuleScore": 0,
+    "totalCases": 1,
+    "avgRuleScore": 60,
     "avgJudgeScore": null,
-    "syntaxPassRate": 0
+    "syntaxPassRate": 1
   }
 }
