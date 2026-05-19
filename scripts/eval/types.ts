@@ -62,6 +62,7 @@ export interface EvalSnapshot {
   label: string;
   timestamp: string;  // ISO 8601
   promptVersion: string;
+  model: string;
   results: CaseResult[];
   summary: EvalSummary;
 }

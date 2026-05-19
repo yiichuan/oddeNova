@@ -48,6 +48,7 @@ function compareSnapshots(labelA: string, labelB: string): void {
 
   console.log(`\n版本对比: ${labelA} → ${labelB}`);
   console.log('─'.repeat(45));
+  console.log(`模型:      ${a.model ?? '-'} → ${b.model ?? '-'}`);
   console.log(`规则分:    ${a.summary.avgRuleScore.toFixed(1)} → ${b.summary.avgRuleScore.toFixed(1)}  (${ruleDiff >= 0 ? '+' : ''}${ruleDiff.toFixed(1)} ${ruleDiff >= 0 ? '↑' : '↓'})`);
   console.log(`Judge分:   ${judgeAStr} → ${judgeBStr}${judgeDiff !== null ? `  (${judgeDiff >= 0 ? '+' : ''}${judgeDiff.toFixed(1)} ${judgeDiff >= 0 ? '↑' : '↓'})` : ''}`);
   console.log(`语法通过率: ${(a.summary.syntaxPassRate * 100).toFixed(0)}% → ${(b.summary.syntaxPassRate * 100).toFixed(0)}%  (${syntaxDiff >= 0 ? '+' : ''}${syntaxDiff.toFixed(0)}%)`);

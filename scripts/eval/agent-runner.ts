@@ -409,6 +409,8 @@ interface ChatMsg {
   content?: string | null;
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
   tool_call_id?: string;
+  /** Raw Anthropic response blocks — must be passed back when thinking mode is active */
+  rawContent?: Anthropic.ContentBlock[];
 }
 
 function convertChatHistory(msgs: ChatMsg[]): { system: string; messages: Anthropic.MessageParam[] } {
@@ -419,6 +421,10 @@ function convertChatHistory(msgs: ChatMsg[]): { system: string; messages: Anthro
     if (msg.role === 'system') { system = system ? `${system}\n\n${content}` : content; continue; }
     if (msg.role === 'user') { out.push({ role: 'user', content }); continue; }
     if (msg.role === 'assistant') {
+      // Prefer raw content blocks (preserves thinking blocks required by some models)
+      if (msg.rawContent && msg.rawContent.length > 0) {
+        out.push({ role: 'assistant', content: msg.rawContent as Anthropic.ContentBlockParam[] }); continue;
+      }
       const blocks: Anthropic.ContentBlockParam[] = [];
       if (content.trim()) blocks.push({ type: 'text', text: content });
       if (msg.tool_calls && msg.tool_calls.length > 0) {
@@ -547,6 +553,7 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<RunTurnResult>
       role: 'assistant',
       content: text || null,
       tool_calls: toolCalls.length > 0 ? toolCalls.map((tc) => ({ id: tc.id, type: 'function' as const, function: { name: tc.name, arguments: tc.arguments } })) : undefined,
+      rawContent: response.content,
     };
     messages.push(assistantMsg);
 

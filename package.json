@@ -10,7 +10,9 @@
     "test": "vitest run --passWithNoTests",
     "preview": "vite preview",
     "postinstall": "patch-package",
-    "prepare": "husky"
+    "prepare": "husky",
+    "eval": "node --env-file=scripts/eval/.env --import=tsx/esm scripts/eval/runner.ts",
+    "eval:report": "node --env-file=scripts/eval/.env --import=tsx/esm scripts/eval/report.ts"
   },
   "dependencies": {
     "@airjelly/sdk": "^0.1.0",

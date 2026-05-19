@@ -100,7 +100,7 @@ function generateReviewMarkdown(snapshot: EvalSnapshot): string {
   const lines: string[] = [
     `# Strudel 评测结果 — ${snapshot.label}`,
     '',
-    `> 生成时间: ${snapshot.timestamp} | Prompt 版本: ${snapshot.promptVersion}`,
+    `> 生成时间: ${snapshot.timestamp} | Prompt 版本: ${snapshot.promptVersion} | 模型: ${snapshot.model}`,
     `> 规则分: ${snapshot.summary.avgRuleScore.toFixed(1)}/100 | Judge 分: ${snapshot.summary.avgJudgeScore?.toFixed(1) ?? '-'}/10 | 语法通过率: ${(snapshot.summary.syntaxPassRate * 100).toFixed(0)}%`,
     '',
     '---',
@@ -197,6 +197,7 @@ async function main() {
     label,
     timestamp: new Date().toISOString(),
     promptVersion: getPromptVersion(),
+    model: process.env['VITE_LLM_MODEL'] ?? process.env['ANTHROPIC_MODEL'] ?? 'claude-sonnet-4-6',
     results,
     summary,
   };

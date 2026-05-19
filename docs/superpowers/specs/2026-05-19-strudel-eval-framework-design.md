@@ -28,6 +28,8 @@ scripts/eval/
     multi-turn.ts        # 9 个多轮对话用例
   history/               # git 追踪的历史快照（不应被 .gitignore 忽略）
     .gitkeep
+  review/                # 人工审阅产物（同样 git 追踪）
+    .gitkeep
 ```
 
 ---
@@ -224,6 +226,49 @@ MT-C-003: 低音过重
 
 ---
 
+## 人工审阅产物
+
+每次 `runner.ts` 运行完毕，除了写入 `history/<label>.json` 外，同时生成一份人工可读的 Markdown 文件到 `scripts/eval/review/<label>.md`。
+
+该文件结构：
+- 每个用例单独一节，展示用户 prompt（多轮则展示每轮）
+- 展示最终生成的完整 strudel 代码（用 ` ```strudel ` 代码块）
+- 展示自动评分摘要（规则分 + judge 分及各维度理由）
+- 预留人工评分栏，可手动填写后提交 git
+
+**示例格式**：
+
+````markdown
+## TC-001 — 自然表达-Lofi House
+
+**提示词**: 来一段 90 BPM 的 lofi house 完整作品...
+
+**规则分**: 90/100  **Judge 分**: 7.5/10
+> 风格匹配(2) 层次完整(2) 多样性(1) 参数精确(2) 创意(0.5)
+> LLM 说明: "旋律层缺少 perlin 调制，未达到用户要求的'飘'感"
+
+**生成代码**:
+```strudel
+setcps(90/240)
+stack(
+  /* @layer drums */ s("bd ~ sd ~").bank("RolandTR909").gain(0.8),
+  /* @layer bass */  note("bb1 bb1 f2 f2").s("sawtooth").lpf(400).gain(0.7),
+  ...
+)
+```
+
+**人工评分**: （待填写，1-10）  
+**人工备注**: 
+````
+
+人工填写完评分后，可运行：
+```bash
+npx tsx scripts/eval/report.ts --import-human-scores scripts/eval/review/v2.md
+```
+将人工分数合并回 `history/v2.json`，后续对比报告中可同时展示自动分 vs 人工分。
+
+---
+
 ## Runner CLI
 
 ```bash
@@ -244,6 +289,9 @@ npx tsx scripts/eval/runner.ts --label v2 --no-judge
 
 # 对比两个历史快照，输出 diff 报告
 npx tsx scripts/eval/report.ts --compare v1 v2
+
+# 将人工评分从 review markdown 合并回 JSON 快照
+npx tsx scripts/eval/report.ts --import-human-scores scripts/eval/review/v2.md
 ```
 
 **report 输出示例**：
@@ -264,6 +312,9 @@ Judge分:   6.2  → 7.0   (+0.8 ↑)
   MT-C-002 模糊反馈-旋律  rule: 60→90 (+30)
   TC-013 技术-Minimal Techno  judge: 5→8 (+3)
   ...
+
+人工分 (已填写 12/27):
+  TC-001 自动7.5 → 人工8  TC-002 自动6.0 → 人工7 ...
 ```
 
 ---
