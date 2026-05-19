@@ -1,0 +1,12 @@
+{
+  "label": "smoke-test",
+  "timestamp": "2026-05-19T14:26:35.797Z",
+  "promptVersion": "v1",
+  "results": [],
+  "summary": {
+    "totalCases": 0,
+    "avgRuleScore": 0,
+    "avgJudgeScore": null,
+    "syntaxPassRate": 0
+  }
+}
