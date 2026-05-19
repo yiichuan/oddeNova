@@ -45,6 +45,20 @@ export function scoreRules(code: string): RuleScore {
   const parsed = parseScore(code);
   const layers = parsed.layers;
 
+  // 1.5 hasMusic gate（0pt，级联门）
+  const hasMusicPass = layers.length > 0;
+  breakdown['hasMusic'] = {
+    pass: hasMusicPass,
+    score: 0,
+    detail: hasMusicPass ? undefined : '无实际音乐层（silence），后续规则全部跳过',
+  };
+  if (!hasMusicPass) {
+    for (const key of ['hasBpm', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
+      breakdown[key] = { pass: false, score: 0, detail: '无音乐层，跳过' };
+    }
+    return { total, breakdown };
+  }
+
   // 2. hasBpm (10pt)
   const hasBpmPass = /setcps\s*\(/.test(code);
   breakdown['hasBpm'] = { pass: hasBpmPass, score: hasBpmPass ? 10 : 0 };
@@ -177,9 +191,31 @@ const MULTI_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到�
 // ── LLM Judge 解析辅助 ────────────────────────────────────
 
 function parseJudgeResponse(raw: string): Record<string, { score: number; reason: string }> & { total?: number } {
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in judge response');
-  return JSON.parse(jsonMatch[0]) as Record<string, { score: number; reason: string }> & { total?: number };
+  type JudgeResult = Record<string, { score: number; reason: string }> & { total?: number };
+
+  // 1. 整体直接解析
+  try {
+    return JSON.parse(raw.trim()) as JudgeResult;
+  } catch { /* continue */ }
+
+  // 2. markdown 代码块（```json ... ``` 或 ``` ... ```）
+  const codeBlockMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1]) as JudgeResult;
+    } catch { /* continue */ }
+  }
+
+  // 3. 贪婪正则：从最后一个顶层 JSON 对象向前尝试
+  //    先收集所有 { ... }（最多两层嵌套），倒序尝试解析
+  const candidates = [...raw.matchAll(/\{(?:[^{}]|\{[^{}]*\})*\}/g)].reverse();
+  for (const m of candidates) {
+    try {
+      return JSON.parse(m[0]) as JudgeResult;
+    } catch { /* continue */ }
+  }
+
+  throw new Error(`No JSON found in judge response. Raw (first 500 chars): ${raw.substring(0, 500)}`);
 }
 
 // ── 单轮 Judge ────────────────────────────────────────────

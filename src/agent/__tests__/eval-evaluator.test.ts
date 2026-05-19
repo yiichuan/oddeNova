@@ -60,4 +60,19 @@ describe('scoreRules', () => {
     const result = scoreRules(code);
     expect(result.breakdown['noTidalOnly'].pass).toBe(false);
   });
+
+  it('silence 代码 hasMusic 应失败，total 应为 20', () => {
+    const result = scoreRules('setcps(0.375)\nsilence');
+    expect(result.breakdown['hasMusic'].pass).toBe(false);
+    expect(result.breakdown['hasBpm'].pass).toBe(false);
+    expect(result.breakdown['hhGain'].pass).toBe(false);
+    expect(result.breakdown['breathingSpace'].pass).toBe(false);
+    expect(result.total).toBe(20);
+  });
+
+  it('仅 silence（无 setcps）hasMusic 失败，total 应为 20（语法通过）', () => {
+    const result = scoreRules('silence');
+    expect(result.breakdown['hasMusic'].pass).toBe(false);
+    expect(result.total).toBe(20);
+  });
 });
