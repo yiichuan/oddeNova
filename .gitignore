@@ -28,8 +28,8 @@ public/animation
 
 # Local planning docs (not uploaded to GitHub)
 _plans/
-.superpowers/
 docs/superpowers/
+.superpowers/
 
 # Audio files
 *.wav
