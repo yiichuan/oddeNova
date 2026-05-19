@@ -28,10 +28,14 @@ function getProviderKey(p: ProviderType): string {
 }
 
 export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiKeyModalProps) {
-  const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'official';
+  const rawProvider = localStorage.getItem('vibe_provider');
+  const savedProvider: ProviderType =
+    rawProvider && rawProvider in PROVIDER_PRESETS ? (rawProvider as ProviderType) : 'official';
   const savedKey = getProviderKey(savedProvider);
 
-  const [provider, setProvider] = useState<ProviderType>(savedProvider);
+  const [provider, setProvider] = useState<ProviderType>(
+    PROVIDER_ORDER.includes(savedProvider) ? savedProvider : 'official'
+  );
   const [apiKey, setApiKey] = useState(getProviderKey(savedProvider));
   const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://gw.claudeapi.com');
 
