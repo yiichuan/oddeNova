@@ -1,0 +1,84 @@
+name: Cleanup Zombie Branches
+
+on:
+  schedule:
+    - cron: '0 3 * * 1' # 每周一 UTC 03:00
+  workflow_dispatch:
+
+jobs:
+  cleanup-branches:
+    name: Delete branches with no activity for 90 days
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - name: Delete zombie branches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // 保护分支（不删除）
+            const PROTECTED = new Set(['main', 'release_preview']);
+
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 90);
+
+            // 获取所有分支
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            // 获取所有打开的 PR（用于快速查找）
+            const openPRs = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const prBranches = new Set(openPRs.map(pr => pr.head.ref));
+
+            core.info(`Total branches: ${branches.length}, branches with open PRs: ${prBranches.size}`);
+
+            let deleted = 0;
+            for (const branch of branches) {
+              const name = branch.name;
+
+              // 跳过保护分支
+              if (PROTECTED.has(name)) continue;
+
+              // 跳过有打开 PR 的分支
+              if (prBranches.has(name)) continue;
+
+              // 检查最近提交日期
+              const rawDate = branch.commit.commit?.committer?.date ?? branch.commit.commit?.author?.date;
+              if (!rawDate) { core.warning(`No commit date for branch ${name}, skipping`); continue; }
+              const commitDate = new Date(rawDate);
+              if (isNaN(commitDate.getTime()) || commitDate >= cutoff) continue;
+
+              // 再次从 API 确认分支未受保护
+              try {
+                await github.rest.repos.getBranchProtection({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  branch: name,
+                });
+                // 如果没有抛异常说明有保护规则，跳过
+                core.info(`Skipping protected branch: ${name}`);
+                continue;
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                // 404 = 无保护规则，继续删除
+              }
+
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${name}`,
+              });
+              core.info(`Deleted zombie branch: ${name} (last commit: ${commitDate.toISOString()})`);
+              deleted++;
+            }
+            core.info(`Done. Deleted ${deleted} zombie branch(es).`);
