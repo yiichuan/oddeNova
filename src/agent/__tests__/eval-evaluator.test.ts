@@ -19,6 +19,7 @@ describe('scoreRules', () => {
     const result = scoreRules(VALID_4_LAYER);
     expect(result.total).toBeGreaterThanOrEqual(80);
     expect(result.breakdown['syntax'].pass).toBe(true);
+    expect(result.breakdown['hasMusic'].pass).toBe(true);
     expect(result.breakdown['hasBpm'].pass).toBe(true);
     expect(result.breakdown['layerCount'].pass).toBe(true);
     expect(result.breakdown['breathingSpace'].pass).toBe(true);

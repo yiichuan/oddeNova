@@ -36,7 +36,7 @@ export function scoreRules(code: string): RuleScore {
 
   // 语法错误时，级联失败所有后续检查
   if (!syntaxPass) {
-    for (const key of ['hasBpm', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
+    for (const key of ['hasMusic', 'hasBpm', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
       breakdown[key] = { pass: false, score: 0, detail: '语法错误，跳过' };
     }
     return { total: 0, breakdown };
