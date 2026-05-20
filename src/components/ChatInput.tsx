@@ -31,6 +31,17 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
 
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const recalc = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, []);
+
   const doSubmit = () => {
     const value = text.trim();
     if (!value || isLoading) return;
