@@ -685,3 +685,7 @@ export const STATIC_SUGGESTION_SCENARIOS: DemoScenario[] = [
 export function resolveStaticSuggestionScenario(instruction: string): DemoScenario | undefined {
   return STATIC_SUGGESTION_SCENARIOS.find((s) => s.prompt === instruction);
 }
+
+export function isPresentationMode(): boolean {
+  return window.location.pathname.includes('presentation');
+}
