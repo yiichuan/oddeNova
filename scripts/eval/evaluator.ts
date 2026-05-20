@@ -188,6 +188,25 @@ const MULTI_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到�
   "total": 0-14
 }`;
 
+// ── 重试辅助 ────────────────────────────────────────────
+
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3, delayMs = 1000): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      console.warn(`    [judge] 第 ${attempt} 次尝试失败: ${e instanceof Error ? e.message : String(e)}`);
+      if (attempt < maxAttempts) {
+        console.warn(`    [judge] ${delayMs * attempt}ms 后重试...`);
+        await new Promise((r) => setTimeout(r, delayMs * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
 // ── LLM Judge 解析辅助 ────────────────────────────────────
 
 function parseJudgeResponse(raw: string): Record<string, { score: number; reason: string }> & { total?: number } {
@@ -215,6 +234,7 @@ function parseJudgeResponse(raw: string): Record<string, { score: number; reason
     } catch { /* continue */ }
   }
 
+  console.error(`    [judge] 无法解析 JSON，完整原始响应 (${raw.length} 字符):\n${raw}`);
   throw new Error(`No JSON found in judge response. Raw (first 500 chars): ${raw.substring(0, 500)}`);
 }
 
@@ -223,20 +243,32 @@ function parseJudgeResponse(raw: string): Record<string, { score: number; reason
 export async function judgeSingleTurn(tc: SingleTurnCase, code: string): Promise<JudgeScore> {
   const userContent = `用户 prompt：${tc.prompt}\n\n期望维度：${tc.expectedDimensions.join('、')}\n\n生成代码：\n\`\`\`\n${code}\n\`\`\``;
 
-  const msg = await client.messages.create({
-    model: ANTHROPIC_MODEL,
-    max_tokens: 1024,
-    system: SINGLE_JUDGE_PROMPT,
-    messages: [{ role: 'user', content: userContent }],
+  const parsed = await withRetry(async () => {
+    const msg = await client.messages.create({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 8192,
+      system: SINGLE_JUDGE_PROMPT,
+      messages: [{ role: 'user', content: userContent }],
+    });
+
+    const raw = msg.content
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text)
+      .join('');
+
+    const result = parseJudgeResponse(raw);
+    const hasDimensions = Object.entries(result).some(
+      ([k, v]) => k !== 'total' && typeof v === 'object' && v !== null && 'score' in v
+    );
+    if (!hasDimensions) {
+      console.warn(`    [judge] 解析到 JSON 但无维度数据，完整响应 (${raw.length} 字符):\n${raw}`);
+      throw new Error(`Judge 返回了无维度数据的响应: ${raw.substring(0, 200)}`);
+    }
+    return { result, raw };
   });
 
-  const raw = msg.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-
-  const parsed = parseJudgeResponse(raw);
-  const { total: _total, ...dims } = parsed;
+  const { result: parsedSingle, raw: rawSingle } = parsed;
+  const { total: _total, ...dims } = parsedSingle;
 
   const breakdown: JudgeScore['breakdown'] = {};
   for (const [key, val] of Object.entries(dims)) {
@@ -247,7 +279,7 @@ export async function judgeSingleTurn(tc: SingleTurnCase, code: string): Promise
 
   const total = typeof _total === 'number' ? _total : Object.values(breakdown).reduce((s, v) => s + v.score, 0);
 
-  return { total, breakdown, rawResponse: raw };
+  return { total, breakdown, rawResponse: rawSingle };
 }
 
 // ── 多轮 Judge ────────────────────────────────────────────
@@ -266,20 +298,32 @@ export async function judgeMultiTurn(tc: MultiTurnCase, turns: TurnResult[]): Pr
 
   const userContent = historyLines.join('\n\n');
 
-  const msg = await client.messages.create({
-    model: ANTHROPIC_MODEL,
-    max_tokens: 1024,
-    system: MULTI_JUDGE_PROMPT,
-    messages: [{ role: 'user', content: userContent }],
+  const parsedMulti = await withRetry(async () => {
+    const msg = await client.messages.create({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 8192,
+      system: MULTI_JUDGE_PROMPT,
+      messages: [{ role: 'user', content: userContent }],
+    });
+
+    const raw = msg.content
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text)
+      .join('');
+
+    const result = parseJudgeResponse(raw);
+    const hasDimensions = Object.entries(result).some(
+      ([k, v]) => k !== 'total' && typeof v === 'object' && v !== null && 'score' in v
+    );
+    if (!hasDimensions) {
+      console.warn(`    [judge] 解析到 JSON 但无维度数据，完整响应 (${raw.length} 字符):\n${raw}`);
+      throw new Error(`Judge 返回了无维度数据的响应: ${raw.substring(0, 200)}`);
+    }
+    return { result, raw };
   });
 
-  const raw = msg.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-
-  const parsed = parseJudgeResponse(raw);
-  const { total: rawTotal, ...dims } = parsed;
+  const { result: parsed2, raw: raw2 } = parsedMulti;
+  const { total: rawTotal, ...dims } = parsed2;
 
   const breakdown: JudgeScore['breakdown'] = {};
   for (const [key, val] of Object.entries(dims)) {
@@ -291,5 +335,5 @@ export async function judgeMultiTurn(tc: MultiTurnCase, turns: TurnResult[]): Pr
   const sumRaw = typeof rawTotal === 'number' ? rawTotal : Object.values(breakdown).reduce((s, v) => s + v.score, 0);
   const total = Math.round((sumRaw / 14) * 100) / 10;
 
-  return { total, breakdown, rawResponse: raw };
+  return { total, breakdown, rawResponse: raw2 };
 }

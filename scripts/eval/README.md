@@ -49,26 +49,30 @@ scripts/eval/
 
 ### 环境配置
 
+在 `scripts/eval/` 目录下创建 `.env` 文件（runner 启动时自动加载，无需手动 export）：
+
 ```bash
-export VITE_API_KEY=sk-ant-xxxxx              # 必填
-export VITE_BASE_URL=https://timesniper.club  # 可选，默认值
-export VITE_LLM_MODEL=claude-sonnet-4-6       # 可选，默认值；会被记录在快照的 model 字段中
+VITE_API_KEY=sk-ant-xxxxx              # 必填
+VITE_BASE_URL=https://timesniper.club  # 可选，默认值
+VITE_LLM_MODEL=claude-sonnet-4-6       # 可选，默认值；会被记录在快照的 model 字段中
 ```
+
+> `.env` 已加入 `.gitignore`，不会提交到仓库。
 
 ### 运行评测
 
 ```bash
 # 运行全部用例（含 LLM Judge）
-npx tsx scripts/eval/runner.ts --label v2
+npm run eval -- --label v2
 
 # 只跑单轮用例，跳过 LLM Judge（快速验证）
-npx tsx scripts/eval/runner.ts --label v2 --only single --no-judge
+npm run eval -- --label v2 --only single --no-judge
 
 # 指定特定用例
-npx tsx scripts/eval/runner.ts --label v2 --case TC-001,MT-A-001
+npm run eval -- --label v2 --case TC-001,MT-A-001
 
 # 只跑多轮用例
-npx tsx scripts/eval/runner.ts --label v2 --only multi
+npm run eval -- --label v2 --only multi
 ```
 
 运行结束后自动生成：
@@ -78,7 +82,7 @@ npx tsx scripts/eval/runner.ts --label v2 --only multi
 ### 版本对比
 
 ```bash
-npx tsx scripts/eval/report.ts --compare v1 v2
+npm run eval:report -- --compare v1 v2
 ```
 
 输出规则分、Judge 分、语法通过率的对比，并列出退步用例（规则分下降 >5 或 Judge 分下降 >1）和进步用例。
@@ -90,7 +94,7 @@ npx tsx scripts/eval/report.ts --compare v1 v2
 3. 运行导入命令：
 
 ```bash
-npx tsx scripts/eval/report.ts --import-human-scores scripts/eval/review/v2.md
+npm run eval:report -- --import-human-scores scripts/eval/review/v2.md
 ```
 
 人工评分将被合并回对应的 `history/<label>.json` 中，字段为 `humanScore.score` 和 `humanScore.note`。
@@ -119,9 +123,9 @@ npx tsx scripts/eval/report.ts --import-human-scores scripts/eval/review/v2.md
 
 ```
 1. 修改提示词（src/prompts/versions/）→ 更新 active.ts
-2. 运行基线评测：npx tsx scripts/eval/runner.ts --label v1 --no-judge
-3. 修改提示词 → 运行：npx tsx scripts/eval/runner.ts --label v2 --no-judge
-4. 对比：npx tsx scripts/eval/report.ts --compare v1 v2
+2. 运行基线评测：npm run eval -- --label v1 --no-judge
+3. 修改提示词 → 运行：npm run eval -- --label v2 --no-judge
+4. 对比：npm run eval:report -- --compare v1 v2
 5. 有需要时开启 LLM Judge 做更细粒度分析
 6. 填写人工评分后导入，持久化到 history JSON
 ```
