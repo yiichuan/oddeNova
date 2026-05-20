@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import CodePanel from './components/CodePanel';
 import Sidebar from './components/Sidebar';
 import VizPlaceholder from './components/VizPlaceholder';
@@ -701,6 +702,7 @@ export default function App() {
         </div>
       )}
       <Analytics />
+      <SpeedInsights />
     </div>
   );
 }
