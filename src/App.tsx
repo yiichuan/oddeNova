@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import CodePanel from './components/CodePanel';
 import Sidebar from './components/Sidebar';
 import VizPlaceholder from './components/VizPlaceholder';
@@ -699,6 +700,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <Analytics />
     </div>
   );
 }
