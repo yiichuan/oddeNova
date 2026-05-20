@@ -56,6 +56,7 @@ export default function App() {
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
+  const topActionsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
@@ -454,6 +455,7 @@ export default function App() {
                 onResetExportState={strudel.resetExportState}
                 session={sessions.currentSession}
                 messages={messages}
+                onOpenSettings={() => setShowApiKeyModal(true)}
               />
             </div>
           </div>
@@ -597,7 +599,6 @@ export default function App() {
           unreadSessions={unreadSessions}
           onSwitchSession={handleSwitchSession}
           onDeleteSession={sessions.deleteSession}
-          onOpenSettings={() => setShowApiKeyModal(true)}
           isHistoryLoading={sessions.isLoading}
         />
       </div>
@@ -619,13 +620,14 @@ export default function App() {
           hDragRef.current = null;
           setIsDragging(null);
         }}
-        className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-3 pb-3"
+        className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-[80px] pb-3"
         style={{ cursor: 'col-resize' }}
       >
         <div className={`w-[6px] h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
       </div>
 
-      <main ref={mainRef} className="flex-1 flex flex-col pt-3 pr-3 pb-0 min-w-0">
+      <main ref={mainRef} className="flex-1 flex flex-col pr-3 pb-0 min-w-0">
+        <div ref={topActionsRef} className="h-[80px] self-stretch relative" />
         <div className="flex-1 min-h-0">
           <CodePanel
             error={strudel.error}
@@ -640,6 +642,8 @@ export default function App() {
             onResetExportState={strudel.resetExportState}
             session={sessions.currentSession}
             messages={messages}
+            topActionsContainer={topActionsRef}
+            onOpenSettings={() => setShowApiKeyModal(true)}
           />
         </div>
 
