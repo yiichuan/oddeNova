@@ -63,8 +63,8 @@ export function scoreRules(code: string, prompts?: string[]): RuleScore {
   // Extract target BPM from any prompt using regex (handles "120 BPM" or "BPM 120")
   const bpmFromPrompts = (() => {
     if (!prompts || prompts.length === 0) return null;
-    for (const p of prompts) {
-      const m = p.match(/(\d+)\s*BPM|BPM\s*(\d+)/i);
+    for (let i = prompts.length - 1; i >= 0; i--) {
+      const m = prompts[i].match(/(\d+)\s*BPM|BPM\s*(\d+)/i);
       if (m) return parseInt(m[1] ?? m[2], 10);
     }
     return null;

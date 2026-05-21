@@ -76,4 +76,19 @@ describe('scoreRules', () => {
     expect(result.breakdown['hasMusic'].pass).toBe(false);
     expect(result.total).toBe(20);
   });
+
+  it('bpmAccuracy 通过：提示词含 120 BPM，代码 setcps(0.5)', () => {
+    const code = `setcps(0.5)\nstack(/* @layer drums */ s("bd ~ sd ~"))`;
+    const result = scoreRules(code, ['来一段 120 BPM 的音乐']);
+    expect(result.breakdown['bpmAccuracy']?.pass).toBe(true);
+    expect(result.breakdown['bpmAccuracy']?.score).toBe(10);
+  });
+
+  it('bpmAccuracy 失败：提示词含 100 BPM，代码 setcps(0.5) 实际 120 BPM', () => {
+    const code = `setcps(0.5)\nstack(/* @layer drums */ s("bd ~ sd ~"))`;
+    const result = scoreRules(code, ['来一段 100 BPM 的音乐']);
+    expect(result.breakdown['bpmAccuracy']?.pass).toBe(false);
+    expect(result.breakdown['bpmAccuracy']?.score).toBe(0);
+    expect(result.breakdown['bpmAccuracy']?.detail).toContain('100');
+  });
 });
