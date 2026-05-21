@@ -19,7 +19,7 @@ interface ApiKeyModalProps {
 }
 
 const PROVIDER_ORDER: ProviderType[] = [
-  'anthropic', 'deepseek', 'glm', 'official',
+  'official', 'anthropic', 'deepseek', 'glm',
 ];
 
 /** 按服务商分别读取已保存的 API Key。 */

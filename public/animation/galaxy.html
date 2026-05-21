@@ -298,6 +298,15 @@
 
         function updateAudio() {
             if (!analyser) return;
+            // After WAV export, the live AudioContext is replaced; the old
+            // AnalyserNode belongs to a closed context and returns silence.
+            // Reset so tryConnectAudio() re-taps the new context next frame.
+            if (analyser.context.state === 'closed') {
+                audioConnected = false;
+                analyser = null;
+                dataArray = null;
+                return;
+            }
             analyser.getByteFrequencyData(dataArray);
 
             // Frequency bands tuned for typical Strudel output:

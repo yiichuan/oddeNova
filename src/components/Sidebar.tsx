@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import type { Session } from '../hooks/useSessions';
-import { PlusIcon, HistoryIcon, SettingsIcon } from './icons';
+import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
+import SuggestionChips from './SuggestionChips';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
 import { checkAirJellyAvailable } from '../services/airjelly';
-import { isDemoMode } from '../demo/demo-config';
+import { isDemoMode, isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 
 interface SidebarProps {
@@ -26,10 +27,12 @@ interface SidebarProps {
   onReinitEngine: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
-  onOpenSettings: () => void;
   isHistoryLoading?: boolean;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
+  onReplay?: () => void;
+  isReplaying?: boolean;
+  replayInputText?: string;
 }
 
 export default function Sidebar({
@@ -50,10 +53,12 @@ export default function Sidebar({
   onReinitEngine,
   onSwitchSession,
   onDeleteSession,
-  onOpenSettings,
   isHistoryLoading = false,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
+  onReplay,
+  isReplaying = false,
+  replayInputText,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -74,7 +79,7 @@ export default function Sidebar({
   return (
     <aside className="w-full h-full flex flex-col">
       {/* Logo */}
-      <div className="pl-5 pr-0 pt-[5px] pb-2 flex items-center justify-between">
+      <div className="pl-5 pr-0 pt-[5px] pb-2 flex items-center">
         <h1 className="text-[32px]" style={{
           background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
           WebkitBackgroundClip: 'text',
@@ -83,23 +88,23 @@ export default function Sidebar({
         }}>
           <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
         </h1>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={onOpenSettings}
-            className="w-7 h-7 text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center shrink-0"
-            title="设置 API Key"
-          >
-            <SettingsIcon size={18} />
-          </button>
-        </div>
       </div>
 
       {/* Title row */}
-      <div className="pl-5 pr-0 pt-[32px] pb-3 flex items-center justify-between">
+      <div className="pl-5 pr-0 pt-[20px] pb-3 flex items-center justify-between ">
         <span className="text-base font-bold text-text-muted truncate" title={title}>
           {title}
         </span>
         <div className="flex items-center gap-3 shrink-0">
+          {isPresentationMode() && onReplay && !isReplaying && (
+            <button
+              onClick={onReplay}
+              className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
+              title="回放会话"
+            >
+              <PlayIcon size={14} />
+            </button>
+          )}
           <button
             onClick={() => setShowHistory(v => !v)}
             className={`w-7 h-7 rounded-full border border-border transition-colors flex items-center justify-center ${
@@ -139,24 +144,14 @@ export default function Sidebar({
         )}
         <ConversationView
           messages={messages}
-          isLoading={isLoading}
+          isLoading={isLoading && !isReplaying}
         />
       </div>
 
       <div className="pl-4 pr-0 pb-2">
         {!isLoading && !suggestionsLoading && (
           <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
-            {suggestions.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => onSendText(s)}
-                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] transition hover:border-accent/50 hover:text-text-primary"
-                style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
-              >
-                {s}
-              </button>
-            ))}
+            <SuggestionChips suggestions={suggestions} onPick={onSendText} />
             {fillSuggestion && (
               <button
                 key="fill-suggestion"
@@ -183,7 +178,7 @@ export default function Sidebar({
           </div>
         )}
 
-        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} />
       </div>
     </aside>
   );

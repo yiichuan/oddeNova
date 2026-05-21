@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import CodePanel from './components/CodePanel';
 import Sidebar from './components/Sidebar';
 import VizPlaceholder from './components/VizPlaceholder';
@@ -16,6 +18,7 @@ import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
 import { useImportShare } from './hooks/useImportShare';
+import { useReplay } from './hooks/useReplay';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
@@ -30,6 +33,9 @@ const VIZ_RATIO_MAX = 0.45;
 
 export default function App() {
   const strudel = useStrudel();
+  const { isReplaying, replayMessages, replayInputText, startReplay } = useReplay(
+    (code) => { strudel.play(code); }
+  );
   const sessions = useSessions();
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
@@ -56,6 +62,7 @@ export default function App() {
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
+  const topActionsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
@@ -116,7 +123,7 @@ export default function App() {
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
 
   const current = sessions.currentSession;
-  const messages = current?.messages ?? [];
+  const messages = isReplaying ? replayMessages : (current?.messages ?? []);
   // Session code = last committed/played code (used as agent context)
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
@@ -454,6 +461,7 @@ export default function App() {
                 onResetExportState={strudel.resetExportState}
                 session={sessions.currentSession}
                 messages={messages}
+                onOpenSettings={() => setShowApiKeyModal(true)}
               />
             </div>
           </div>
@@ -578,9 +586,9 @@ export default function App() {
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
         <Sidebar
-          title={current?.title ?? '新会话'}
+          title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? '新会话' : (current?.title ?? '新会话')}
           messages={messages}
-          isLoading={isLoading}
+          isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
           engineReady={strudel.engineReady}
           sessions={sessions.sessions}
@@ -597,8 +605,10 @@ export default function App() {
           unreadSessions={unreadSessions}
           onSwitchSession={handleSwitchSession}
           onDeleteSession={sessions.deleteSession}
-          onOpenSettings={() => setShowApiKeyModal(true)}
           isHistoryLoading={sessions.isLoading}
+          onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
+          isReplaying={isReplaying}
+          replayInputText={replayInputText}
         />
       </div>
 
@@ -619,13 +629,14 @@ export default function App() {
           hDragRef.current = null;
           setIsDragging(null);
         }}
-        className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-3 pb-3"
+        className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-[80px] pb-3"
         style={{ cursor: 'col-resize' }}
       >
         <div className={`w-[6px] h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
       </div>
 
-      <main ref={mainRef} className="flex-1 flex flex-col pt-3 pr-3 pb-0 min-w-0">
+      <main ref={mainRef} className="flex-1 flex flex-col pr-3 pb-0 min-w-0">
+        <div ref={topActionsRef} className="h-[80px] self-stretch relative" />
         <div className="flex-1 min-h-0">
           <CodePanel
             error={strudel.error}
@@ -640,6 +651,8 @@ export default function App() {
             onResetExportState={strudel.resetExportState}
             session={sessions.currentSession}
             messages={messages}
+            topActionsContainer={topActionsRef}
+            onOpenSettings={() => setShowApiKeyModal(true)}
           />
         </div>
 
@@ -695,6 +708,8 @@ export default function App() {
           </div>
         </div>
       )}
+      <Analytics />
+      <SpeedInsights />
     </div>
   );
 }
