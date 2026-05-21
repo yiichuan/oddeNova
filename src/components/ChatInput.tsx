@@ -9,9 +9,10 @@ interface ChatInputProps {
   onStop?: () => void;
   prefill?: string;
   focusTrigger?: number;
+  replayValue?: string;
 }
 
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger }: ChatInputProps) {
+export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -43,6 +44,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
   }, []);
 
   const doSubmit = () => {
+    if (replayValue !== undefined) return;
     const value = text.trim();
     if (!value || isLoading) return;
     onSendText(value);
@@ -64,9 +66,11 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
     <form onSubmit={handleSubmit} onClick={handleCardClick} className="relative w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       <textarea
         ref={textareaRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
+        value={replayValue !== undefined ? replayValue : text}
+        onChange={replayValue !== undefined ? undefined : (e) => setText(e.target.value)}
+        readOnly={replayValue !== undefined}
         onKeyDown={(e) => {
+          if (replayValue !== undefined) return;
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             handleSubmit(e);

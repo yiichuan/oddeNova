@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import type { Session } from '../hooks/useSessions';
-import { PlusIcon, HistoryIcon } from './icons';
+import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
 import SuggestionChips from './SuggestionChips';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
 import { checkAirJellyAvailable } from '../services/airjelly';
-import { isDemoMode } from '../demo/demo-config';
+import { isDemoMode, isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 
 interface SidebarProps {
@@ -30,6 +30,9 @@ interface SidebarProps {
   isHistoryLoading?: boolean;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
+  onReplay?: () => void;
+  isReplaying?: boolean;
+  replayInputText?: string;
 }
 
 export default function Sidebar({
@@ -53,6 +56,9 @@ export default function Sidebar({
   isHistoryLoading = false,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
+  onReplay,
+  isReplaying = false,
+  replayInputText,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -90,6 +96,15 @@ export default function Sidebar({
           {title}
         </span>
         <div className="flex items-center gap-3 shrink-0">
+          {isPresentationMode() && onReplay && !isReplaying && (
+            <button
+              onClick={onReplay}
+              className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
+              title="回放会话"
+            >
+              <PlayIcon size={14} />
+            </button>
+          )}
           <button
             onClick={() => setShowHistory(v => !v)}
             className={`w-7 h-7 rounded-full border border-border transition-colors flex items-center justify-center ${
@@ -163,7 +178,7 @@ export default function Sidebar({
           </div>
         )}
 
-        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} />
       </div>
     </aside>
   );

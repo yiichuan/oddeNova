@@ -18,6 +18,7 @@ import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
 import { useImportShare } from './hooks/useImportShare';
+import { useReplay } from './hooks/useReplay';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
@@ -32,6 +33,9 @@ const VIZ_RATIO_MAX = 0.45;
 
 export default function App() {
   const strudel = useStrudel();
+  const { isReplaying, replayMessages, replayInputText, startReplay } = useReplay(
+    (code) => { strudel.play(code); }
+  );
   const sessions = useSessions();
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
@@ -119,7 +123,7 @@ export default function App() {
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
 
   const current = sessions.currentSession;
-  const messages = current?.messages ?? [];
+  const messages = isReplaying ? replayMessages : (current?.messages ?? []);
   // Session code = last committed/played code (used as agent context)
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
@@ -584,7 +588,7 @@ export default function App() {
         <Sidebar
           title={current?.title ?? '新会话'}
           messages={messages}
-          isLoading={isLoading}
+          isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
           engineReady={strudel.engineReady}
           sessions={sessions.sessions}
@@ -602,6 +606,9 @@ export default function App() {
           onSwitchSession={handleSwitchSession}
           onDeleteSession={sessions.deleteSession}
           isHistoryLoading={sessions.isLoading}
+          onReplay={current ? () => startReplay(current) : undefined}
+          isReplaying={isReplaying}
+          replayInputText={replayInputText}
         />
       </div>
 
