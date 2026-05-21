@@ -19,7 +19,7 @@ const client = new Anthropic({
 
 // ── 规则打分 ──────────────────────────────────────────────
 
-export function scoreRules(code: string): RuleScore {
+export function scoreRules(code: string, prompts?: string[]): RuleScore {
   const breakdown: RuleScore['breakdown'] = {};
   let total = 0;
 
@@ -36,7 +36,7 @@ export function scoreRules(code: string): RuleScore {
 
   // 语法错误时，级联失败所有后续检查
   if (!syntaxPass) {
-    for (const key of ['hasMusic', 'hasBpm', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
+    for (const key of ['hasMusic', 'bpmAccuracy', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
       breakdown[key] = { pass: false, score: 0, detail: '语法错误，跳过' };
     }
     return { total: 0, breakdown };
@@ -53,16 +53,41 @@ export function scoreRules(code: string): RuleScore {
     detail: hasMusicPass ? undefined : '无实际音乐层（silence），后续规则全部跳过',
   };
   if (!hasMusicPass) {
-    for (const key of ['hasBpm', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
+    for (const key of ['bpmAccuracy', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
       breakdown[key] = { pass: false, score: 0, detail: '无音乐层，跳过' };
     }
     return { total, breakdown };
   }
 
-  // 2. hasBpm (10pt)
-  const hasBpmPass = /setcps\s*\(/.test(code);
-  breakdown['hasBpm'] = { pass: hasBpmPass, score: hasBpmPass ? 10 : 0 };
-  total += breakdown['hasBpm'].score;
+  // 2. bpmAccuracy (10pt) — replaces hasBpm
+  // Extract target BPM from any prompt using regex (handles "120 BPM" or "BPM 120")
+  const bpmFromPrompts = (() => {
+    if (!prompts || prompts.length === 0) return null;
+    for (const p of prompts) {
+      const m = p.match(/(\d+)\s*BPM|BPM\s*(\d+)/i);
+      if (m) return parseInt(m[1] ?? m[2], 10);
+    }
+    return null;
+  })();
+  const setcpsMatch = code.match(/setcps\s*\(\s*([0-9.]+)\s*\)/);
+  let bpmAccuracyPass: boolean;
+  let bpmAccuracyDetail: string | undefined;
+  if (bpmFromPrompts === null) {
+    // No target BPM specified: fall back to "setcps exists" check
+    bpmAccuracyPass = setcpsMatch !== null;
+    bpmAccuracyDetail = bpmAccuracyPass ? undefined : '未设置 setcps';
+  } else if (!setcpsMatch) {
+    bpmAccuracyPass = false;
+    bpmAccuracyDetail = `期望 ${bpmFromPrompts} BPM，但代码中无 setcps`;
+  } else {
+    const actualBpm = Math.round(parseFloat(setcpsMatch[1]) * 240);
+    bpmAccuracyPass = Math.abs(actualBpm - bpmFromPrompts) <= 5;
+    bpmAccuracyDetail = bpmAccuracyPass
+      ? undefined
+      : `期望 ${bpmFromPrompts} BPM，实际 ${actualBpm} BPM`;
+  }
+  breakdown['bpmAccuracy'] = { pass: bpmAccuracyPass, score: bpmAccuracyPass ? 10 : 0, detail: bpmAccuracyDetail };
+  total += breakdown['bpmAccuracy'].score;
 
   // 3. layerCount (10pt)
   const layerCountPass = layers.length >= 2;
@@ -153,6 +178,7 @@ const SINGLE_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到
 2. layer_completeness: 是否有合理的鼓/律动骨架，而非全由 pad 堆砌
 3. musical_diversity: 各层在密度、节奏、频率区间上是否有对比和差异
 4. parameter_accuracy: 用户明确指定的参数（BPM、和弦、乐器）是否准确落地
+   【重要】Strudel BPM 公式：setcps(x) 对应 x × 240 BPM。例：setcps(0.5)=120 BPM，setcps(0.375)=90 BPM，setcps(0.2917)=70 BPM。评估 BPM 时必须用此公式换算，不要用 x×60。
 5. creative_expression: 是否有让音乐"活"起来的调制（perlin/sine/mask/off 等）
 
 严格输出 JSON，不加任何解释文字：
@@ -172,6 +198,7 @@ const MULTI_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到�
 2. layer_completeness: 是否有合理的鼓/律动骨架
 3. musical_diversity: 各层在密度、频率区间上是否有对比
 4. parameter_accuracy: 明确指定的参数是否准确落地
+   【重要】Strudel BPM 公式：setcps(x) 对应 x × 240 BPM。例：setcps(0.5)=120 BPM，setcps(0.375)=90 BPM，setcps(0.2917)=70 BPM。评估 BPM 时必须用此公式换算，不要用 x×60。
 5. creative_expression: 是否有让音乐"活"起来的调制
 6. edit_precision: 每轮修改是否只改了用户要求的地方，未提及的层保持不变
 7. intent_understanding: 对模糊反馈（"太吵了"/"旋律太平"等）的理解是否合理

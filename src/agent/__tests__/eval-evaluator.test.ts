@@ -20,7 +20,7 @@ describe('scoreRules', () => {
     expect(result.total).toBeGreaterThanOrEqual(80);
     expect(result.breakdown['syntax'].pass).toBe(true);
     expect(result.breakdown['hasMusic'].pass).toBe(true);
-    expect(result.breakdown['hasBpm'].pass).toBe(true);
+    expect(result.breakdown['bpmAccuracy'].pass).toBe(true);
     expect(result.breakdown['layerCount'].pass).toBe(true);
     expect(result.breakdown['breathingSpace'].pass).toBe(true);
   });
@@ -31,9 +31,9 @@ describe('scoreRules', () => {
     expect(result.total).toBeLessThan(30);
   });
 
-  it('无 BPM 代码 hasBpm 应失败', () => {
+  it('无 BPM 代码 bpmAccuracy 应失败', () => {
     const result = scoreRules(NO_BPM_CODE);
-    expect(result.breakdown['hasBpm'].pass).toBe(false);
+    expect(result.breakdown['bpmAccuracy'].pass).toBe(false);
   });
 
   it('bass 层有 lpf 应通过', () => {
@@ -65,7 +65,7 @@ describe('scoreRules', () => {
   it('silence 代码 hasMusic 应失败，total 应为 20', () => {
     const result = scoreRules('setcps(0.375)\nsilence');
     expect(result.breakdown['hasMusic'].pass).toBe(false);
-    expect(result.breakdown['hasBpm'].pass).toBe(false);
+    expect(result.breakdown['bpmAccuracy'].pass).toBe(false);
     expect(result.breakdown['hhGain'].pass).toBe(false);
     expect(result.breakdown['breathingSpace'].pass).toBe(false);
     expect(result.total).toBe(20);

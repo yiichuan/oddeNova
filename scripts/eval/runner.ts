@@ -75,7 +75,7 @@ async function runSingleCase(tc: SingleTurnCase, noJudge: boolean): Promise<Case
     explanation: turnResult.explanation,
     durationMs: turnResult.durationMs,
   }];
-  const ruleScore = scoreRules(turnResult.code);
+  const ruleScore = scoreRules(turnResult.code, [tc.prompt]);
   let judgeScore: JudgeScore | null = null;
   if (!noJudge) {
     try {
@@ -112,7 +112,7 @@ async function runMultiCase(tc: MultiTurnCase, noJudge: boolean): Promise<CaseRe
     currentCode = result.code;
   }
   const finalCode = turns[turns.length - 1].generatedCode;
-  const ruleScore = scoreRules(finalCode);
+  const ruleScore = scoreRules(finalCode, tc.turns.map((t) => t.userMessage));
   ruleScore.layerPreservationScore = scoreLayerPreservation(turns);
   let judgeScore: JudgeScore | null = null;
   if (!noJudge) {
