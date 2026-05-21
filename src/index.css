@@ -120,6 +120,7 @@ body {
 }
 
 .cm-editor .cm-lineNumbers .cm-gutterElement {
+  font-family: 'ABeeZee', monospace !important;
   font-size: 13px !important;
   line-height: 2.0 !important;
   padding-left: 24px !important;
@@ -159,6 +160,12 @@ body {
   border-radius: 0;
 }
 .cm-editor .cm-scroller::-webkit-scrollbar-corner { background: transparent; }
+
+/* Mobile: prevent iOS Safari auto-zoom on editor focus (font-size < 16px triggers zoom) */
+@media (pointer: coarse) {
+  .cm-editor .cm-content { font-size: 16px !important; }
+  .cm-editor .cm-lineNumbers .cm-gutterElement { font-size: 16px !important; }
+}
 
 canvas[id*="_widget__scope_"],
 canvas[id*="_widget__pianoroll_"],

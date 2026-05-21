@@ -19,7 +19,7 @@ interface ApiKeyModalProps {
 }
 
 const PROVIDER_ORDER: ProviderType[] = [
-  'anthropic', 'deepseek', 'qiniu',
+  'official', 'anthropic', 'deepseek', 'glm',
 ];
 
 /** 按服务商分别读取已保存的 API Key。 */
@@ -28,10 +28,14 @@ function getProviderKey(p: ProviderType): string {
 }
 
 export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiKeyModalProps) {
-  const savedProvider = (localStorage.getItem('vibe_provider') as ProviderType) || 'qiniu';
+  const rawProvider = localStorage.getItem('vibe_provider');
+  const savedProvider: ProviderType =
+    rawProvider && rawProvider in PROVIDER_PRESETS ? (rawProvider as ProviderType) : 'official';
   const savedKey = getProviderKey(savedProvider);
 
-  const [provider, setProvider] = useState<ProviderType>(savedProvider);
+  const [provider, setProvider] = useState<ProviderType>(
+    PROVIDER_ORDER.includes(savedProvider) ? savedProvider : 'official'
+  );
   const [apiKey, setApiKey] = useState(getProviderKey(savedProvider));
   const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://gw.claudeapi.com');
 
@@ -78,7 +82,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 mt-px" />
             <span className="text-xs text-text-muted">当前使用</span>
             <span className="text-xs text-text-secondary font-medium">{PROVIDER_PRESETS[savedProvider].label}</span>
-            {savedProvider !== 'qiniu' && (
+            {savedProvider !== 'official' && (
               <>
                 <span className="text-text-muted/40 text-xs">·</span>
                 <span className="text-xs text-text-muted font-mono">{getModelForProvider(savedProvider)}</span>

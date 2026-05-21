@@ -1,3 +1,8 @@
+# Env files
+.env
+.env.local
+scripts/eval/.env
+
 # Logs
 logs
 *.log
@@ -28,8 +33,8 @@ public/animation
 
 # Local planning docs (not uploaded to GitHub)
 _plans/
-.superpowers/
 docs/superpowers/
+.superpowers/
 
 # Audio files
 *.wav

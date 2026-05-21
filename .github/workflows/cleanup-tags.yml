@@ -1,0 +1,72 @@
+name: Cleanup Old Tags
+
+on:
+  schedule:
+    - cron: '0 2 * * 1' # 每周一 UTC 02:00
+  workflow_dispatch:
+
+jobs:
+  cleanup-tags:
+    name: Delete deploy tags older than 90 days
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Cleanup old deploy tags and releases
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 90);
+
+            // 获取所有 deploy/* tag
+            const tags = await github.paginate(github.rest.repos.listTags, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            const deployTags = tags.filter(t => t.name.startsWith('deploy/'));
+            core.info(`Found ${deployTags.length} deploy/* tags total`);
+
+            let deleted = 0;
+            for (const tag of deployTags) {
+              // 获取 tag 对应的 commit 日期
+              const commit = await github.rest.repos.getCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: tag.commit.sha,
+              });
+              const rawDate = commit.data.commit.committer?.date ?? commit.data.commit.author?.date;
+              if (!rawDate) { core.warning(`No date for tag ${tag.name}, skipping`); continue; }
+              const commitDate = new Date(rawDate);
+              if (commitDate >= cutoff) continue;
+
+              // 先尝试删除关联 Release（若存在）
+              try {
+                const release = await github.rest.repos.getReleaseByTag({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag: tag.name,
+                });
+                await github.rest.repos.deleteRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.data.id,
+                });
+                core.info(`Deleted release for ${tag.name}`);
+              } catch (e) {
+                if (e.status !== 404) throw e;
+              }
+
+              // 删除 tag ref
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag.name}`,
+              });
+              core.info(`Deleted tag ${tag.name} (committed ${commitDate.toISOString()})`);
+              deleted++;
+            }
+            core.info(`Done. Deleted ${deleted} tag(s).`);

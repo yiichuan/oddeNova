@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { PlayIcon, StopIcon, DownloadIcon } from './icons';
+import { createPortal } from 'react-dom';
+import { PlayIcon, StopIcon } from './icons';
 import { strudelService } from '../services/strudel';
 import { parseScore } from '../agent/parser';
 import { useIsMobile } from '../hooks/useIsMobile';
-import ExportPopover from './ExportPopover';
-import { ShareButton } from './ShareButton';
+import TopActionBar from './TopActionBar';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
 
@@ -21,6 +21,8 @@ interface CodePanelProps {
   onResetExportState: () => void;
   session: Session | null;
   messages: ChatMessage[];
+  topActionsContainer?: React.RefObject<HTMLDivElement | null>;
+  onOpenSettings: () => void;
 }
 
 // Log scale: slider 0–1 → frequency 200Hz–20kHz
@@ -69,7 +71,7 @@ function SliderColumn({
       className="flex-1 min-w-0 flex items-center px-[30px] gap-[30px]"
       style={borderRight ? { borderRight: '1px solid #323232' } : undefined}
     >
-      <span className="text-[13px] text-white/70 shrink-0 select-none">{label}</span>
+      <span className="text-[14px] text-white/70 shrink-0 select-none">{label}</span>
 
       {/* Slider wrapper — relative so tooltip is anchored here */}
       <div className="relative flex-1 min-w-0 flex items-center">
@@ -124,7 +126,7 @@ function MobileSliderButton({ label, displayValue, borderRight, onClick }: Mobil
       onClick={onClick}
     >
       <span className="text-[11px] text-white/50 select-none">{label}</span>
-      <span className="text-[13px] text-white/90 select-none">{displayValue}</span>
+      <span className="text-[14px] text-white/90 select-none">{displayValue}</span>
     </button>
   );
 }
@@ -190,6 +192,8 @@ export default function CodePanel({
   onResetExportState,
   session,
   messages,
+  topActionsContainer,
+  onOpenSettings,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gutterWidth, setGutterWidth] = useState(0);
@@ -203,19 +207,12 @@ export default function CodePanel({
 
   const isMobile = useIsMobile();
   const [activeSlider, setActiveSlider] = useState<'volume' | 'bpm' | 'lpf' | null>(null);
-  const [exportOpen, setExportOpen] = useState(false);
 
   const handleExport = async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => {
     const ok = await onExport(params);
     // exportWav resets master volume/LPF — re-apply current UI values.
     await strudelService.setMasterVolume(volume);
     await strudelService.setMasterLPF(lpfSliderToHz(lpf));
-    if (ok) {
-      setTimeout(() => {
-        setExportOpen(false);
-        onResetExportState();
-      }, 800);
-    }
     return ok;
   };
 
@@ -324,28 +321,23 @@ export default function CodePanel({
           ref={containerRef}
           className="h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
         />
-        <div className="absolute top-0.5 right-2 z-[51] flex items-center gap-0.5">
-          <ShareButton session={session} code={strudelService.code} messages={messages} disabled={!engineReady || !hasCode || !session || exportState.status === 'exporting'} />
-          <button
-            onClick={() => setExportOpen((v) => !v)}
-            disabled={!engineReady || !hasCode || exportState.status === 'exporting'}
-            title={!hasCode ? '请先输入代码' : '导出 WAV'}
-            className="w-[28px] h-[28px] flex items-center justify-center text-white/60 hover:text-white/90 bg-black/40 backdrop-blur-sm rounded disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <DownloadIcon size={18} />
-          </button>
-        </div>
-        <ExportPopover
-          open={exportOpen}
-          onClose={() => setExportOpen(false)}
-          onToggle={() => setExportOpen((v) => !v)}
-          buttonDisabled={!engineReady || !hasCode || exportState.status === 'exporting'}
-          onExport={handleExport}
-          exportState={exportState}
-          onResetState={onResetExportState}
-          bpm={bpm}
-        />
       </div>
+
+      {topActionsContainer?.current && createPortal(
+        <TopActionBar
+          onOpenSettings={onOpenSettings}
+          session={session}
+          code={strudelService.code}
+          messages={messages}
+          engineReady={engineReady}
+          hasCode={hasCode}
+          exportState={exportState}
+          onExport={handleExport}
+          onResetExportState={onResetExportState}
+          bpm={bpm}
+        />,
+        topActionsContainer.current,
+      )}
 
       {error && (
         <div className="mx-3 mb-2 p-2.5 bg-error/10 border border-error/30 rounded-md text-error text-xs font-mono shrink-0">

@@ -6,7 +6,8 @@
 //   deepseek   → api.deepseek.com + 内置模型 + localStorage vibe_api_key
 //   kimi       → api.moonshot.cn  + 内置模型 + localStorage vibe_api_key
 //   openai     → api.openai.com   + 内置模型 + localStorage vibe_api_key
-//   qiniu      → api.qnaigc.com + 内置模型 + localStorage vibe_api_key
+//   official   → api.deepseek.com + 内置模型 + localStorage vibe_api_key
+//   glm        → open.bigmodel.cn + 内置模型 + localStorage vibe_api_key
 //   未设置     → 同 anthropic（向后兼容旧用户）
 // ===========================================================================
 
@@ -19,7 +20,8 @@ export type ProviderType =
   | 'kimi'
   | 'openai'
   | 'anthropic'
-  | 'qiniu';
+  | 'official'
+  | 'glm';
 
 export interface ProviderPreset {
   /** 显示名称 */
@@ -58,10 +60,16 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     model: 'claude-opus-4-6',             // 仅作展示用；实际 model 走 LEGACY_MODELS
     protocol: 'anthropic',
   },
-  qiniu: {
+  official: {
     label: '官方体验',
-    baseURL: 'https://api.siliconflow.cn/v1',
-    model: 'Pro/zai-org/GLM-5.1',
+    baseURL: 'https://api.deepseek.com/v1',
+    model: 'deepseek-v4-flash',
+    protocol: 'openai',
+  },
+  glm: {
+    label: 'GLM',
+    baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-5.1',
     protocol: 'openai',
   },
 };
@@ -98,11 +106,11 @@ function resolveAnthropicConfig(apiKey: string): ModelConfig {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI-compat 路径（deepseek / kimi / openai / qiniu）
+// OpenAI-compat 路径（deepseek / kimi / openai / official / glm）
 // ---------------------------------------------------------------------------
 
 function resolveOpenAICompatConfig(
-  provider: 'deepseek' | 'kimi' | 'openai' | 'qiniu',
+  provider: 'deepseek' | 'kimi' | 'openai' | 'official' | 'glm',
   apiKey: string,
 ): ModelConfig {
   const preset = PROVIDER_PRESETS[provider];
@@ -120,10 +128,10 @@ function resolveOpenAICompatConfig(
 // ---------------------------------------------------------------------------
 
 function normalizeProvider(raw: string | null): ProviderType {
-  if (!raw) return 'qiniu';
+  if (!raw) return 'official';
   if (raw in PROVIDER_PRESETS) return raw as ProviderType;
-  // 旧版 'openai-compat' / 'custom' 均降级为 qiniu
-  return 'qiniu';
+  // 旧版 'openai-compat' / 'custom' / 'qiniu' 均降级为 official
+  return 'official';
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +155,7 @@ export function getActiveModelConfig(): ModelConfig {
   // 其他 provider 使用用户在 Modal 里填的 Key
   const userApiKey = localStorage.getItem('vibe_api_key') || '';
 
-  // deepseek | kimi | openai | qiniu
+  // deepseek | kimi | openai | official | glm
   return resolveOpenAICompatConfig(provider, userApiKey);
 }
 
