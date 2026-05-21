@@ -586,7 +586,7 @@ export default function App() {
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
         <Sidebar
-          title={current?.title ?? '新会话'}
+          title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? '新会话' : (current?.title ?? '新会话')}
           messages={messages}
           isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
@@ -606,7 +606,7 @@ export default function App() {
           onSwitchSession={handleSwitchSession}
           onDeleteSession={sessions.deleteSession}
           isHistoryLoading={sessions.isLoading}
-          onReplay={current ? () => startReplay(current) : undefined}
+          onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
         />

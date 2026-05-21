@@ -3,6 +3,36 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from './useChat';
 import type { Session } from './useSessions';
 
+// ── 回放延时配置（统一调参入口）─────────────────────────────────────
+
+export const REPLAY_TIMING = {
+  /** 初始等待，让 UI 在开始推消息前先稳定 */
+  initialStabilize: 500,
+
+  /** 逐字打入输入框的每字间隔 */
+  charInterval: 30,
+  /** 打完一条用户消息后的确认停顿 */
+  afterTyping: 300,
+  /** 用户消息"发送"后到下一条消息的间隔 */
+  afterUserSend: 600,
+
+  /** progress 消息各类型的停顿 */
+  progress: {
+    thinking: 400,
+    toolCallResult: 150,
+    commit: 200,
+    other: 100, // iteration / warn
+  },
+
+  /** 助手消息带代码（触发播放）后的停顿 */
+  afterPlay: 4000,
+  /** 助手消息无代码后的停顿 */
+  afterAssistant: 800,
+
+  /** 回放全部完成后，回放按钮再次出现前的延迟 */
+  afterReplayComplete: 6000,
+};
+
 // ── 纯异步回放逻辑（可单独测试）──────────────────────────────────────
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -47,31 +77,31 @@ export async function runReplay(
         if (signal?.aborted) return;
         accumulated += char;
         onSetInputText(accumulated);
-        await sleep(30, signal);
+        await sleep(REPLAY_TIMING.charInterval, signal);
       }
       // 停顿模拟确认，然后"发送"
-      await sleep(300, signal);
+      await sleep(REPLAY_TIMING.afterTyping, signal);
       onAppendMessage(msg);
       onSetInputText('');
-      await sleep(600, signal);
+      await sleep(REPLAY_TIMING.afterUserSend, signal);
     } else if (msg.role === 'progress') {
       const delay =
         msg.progressKind === 'thinking'
-          ? 400
+          ? REPLAY_TIMING.progress.thinking
           : msg.progressKind === 'tool_call' || msg.progressKind === 'tool_result'
-            ? 150
+            ? REPLAY_TIMING.progress.toolCallResult
             : msg.progressKind === 'commit'
-              ? 200
-              : 100; // iteration / warn
+              ? REPLAY_TIMING.progress.commit
+              : REPLAY_TIMING.progress.other; // iteration / warn
       await sleep(delay, signal);
       onAppendMessage(msg);
     } else if (msg.role === 'assistant') {
       onAppendMessage(msg);
       if (msg.code) {
         onPlay(msg.code);
-        await sleep(2000, signal);
+        await sleep(REPLAY_TIMING.afterPlay, signal);
       } else {
-        await sleep(800, signal);
+        await sleep(REPLAY_TIMING.afterAssistant, signal);
       }
     }
   }
@@ -82,14 +112,14 @@ export async function runReplay(
 export interface UseReplayReturn {
   isReplaying: boolean;
   replayMessages: ChatMessage[];
-  replayInputText: string;
+  replayInputText: string | undefined;
   startReplay: (session: Session) => void;
 }
 
 export function useReplay(onPlay: (code: string) => void): UseReplayReturn {
   const [isReplaying, setIsReplaying] = useState(false);
   const [replayMessages, setReplayMessages] = useState<ChatMessage[]>([]);
-  const [replayInputText, setReplayInputText] = useState('');
+  const [replayInputText, setReplayInputText] = useState<string | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
   const onPlayRef = useRef(onPlay);
 
@@ -108,7 +138,7 @@ export function useReplay(onPlay: (code: string) => void): UseReplayReturn {
     setReplayInputText('');
 
     (async () => {
-      await sleep(500, controller.signal); // 等待 500ms 让 UI 稳定
+      await sleep(REPLAY_TIMING.initialStabilize, controller.signal); // 等待让 UI 稳定
       await runReplay(
         session.messages,
         {
@@ -118,10 +148,13 @@ export function useReplay(onPlay: (code: string) => void): UseReplayReturn {
         },
         controller.signal,
       );
+      await sleep(REPLAY_TIMING.afterReplayComplete, controller.signal);
       setIsReplaying(false);
+      setReplayInputText(undefined);
     })().catch((e: unknown) => {
       if (e instanceof DOMException && e.name === 'AbortError') return;
       setIsReplaying(false);
+      setReplayInputText(undefined);
     });
   }, []);
 

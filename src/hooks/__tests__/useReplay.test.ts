@@ -46,7 +46,7 @@ describe('runReplay', () => {
     const onPlay = vi.fn();
 
     const promise = runReplay(msgs, { onAppendMessage, onSetInputText: vi.fn(), onPlay });
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(4001); // afterPlay = 4000ms
     await promise;
 
     expect(onPlay).toHaveBeenCalledWith(code);

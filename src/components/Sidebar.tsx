@@ -144,7 +144,7 @@ export default function Sidebar({
         )}
         <ConversationView
           messages={messages}
-          isLoading={isLoading}
+          isLoading={isLoading && !isReplaying}
         />
       </div>
 

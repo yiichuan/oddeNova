@@ -25,6 +25,14 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
     if (focusTrigger) textareaRef.current?.focus();
   }, [focusTrigger]);
 
+  const prevReplayRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (replayValue !== undefined && prevReplayRef.current === undefined) {
+      textareaRef.current?.focus();
+    }
+    prevReplayRef.current = replayValue;
+  }, [replayValue]);
+
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -78,8 +86,8 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         }}
         placeholder="输入文字描述音乐..."
         rows={1}
-        disabled={isLoading}
-        className="w-full min-h-[108px] resize-none overflow-hidden rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={isLoading && replayValue === undefined}
+        className="w-full min-h-[108px] resize-none overflow-hidden rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] focus:text-white disabled:cursor-not-allowed disabled:opacity-50"
       />
 
       {!engineReady && (
@@ -97,7 +105,16 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         </div>
       )}
 
-      {isLoading ? (
+      {replayValue !== undefined ? (
+        <button
+          type="button"
+          disabled={!replayValue.trim()}
+          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-30"
+          title="发送"
+        >
+          <ArrowUpIcon size={18} />
+        </button>
+      ) : isLoading ? (
         <button
           type="button"
           onClick={onStop}
