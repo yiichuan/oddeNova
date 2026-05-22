@@ -189,6 +189,37 @@ describe('setTempo', () => {
   });
 });
 
+describe('getStyleGuide', () => {
+  const getStyleGuide = getHandler('getStyleGuide');
+
+  it('已知风格返回 guide 字符串', async () => {
+    const ctx = makeCtx('');
+    const result = await getStyleGuide({ styleId: 'lofi' }, ctx);
+    expect(result.ok).toBe(true);
+    const data = result.data as { styleId: string; guide: string };
+    expect(data.styleId).toBe('lofi');
+    expect(typeof data.guide).toBe('string');
+    expect(data.guide.length).toBeGreaterThan(100);
+  });
+
+  it('每种风格都有 guide', async () => {
+    const ctx = makeCtx('');
+    const styles = ['lofi', 'house', 'dnb', 'ambient', 'techno', 'synthwave', 'trap', 'jazz'];
+    for (const styleId of styles) {
+      const result = await getStyleGuide({ styleId }, ctx);
+      expect(result.ok).toBe(true);
+      expect((result.data as { guide: string }).guide.length).toBeGreaterThan(100);
+    }
+  });
+
+  it('未知 styleId 返回 ok: false', async () => {
+    const ctx = makeCtx('');
+    const result = await getStyleGuide({ styleId: 'unknown' }, ctx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('unknown');
+  });
+});
+
 describe('ensureStack（通过 addLayer 间接测试）', () => {
   const addLayer = getHandler('addLayer');
 

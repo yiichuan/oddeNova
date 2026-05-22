@@ -5,6 +5,8 @@
 
 import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
 import { validateCode, validateCodeRuntime, normalizeCode } from '../services/strudel';
+import { STYLE_GUIDES } from '../prompts/styles/index';
+import type { StyleId } from '../prompts/styles';
 
 export interface AgentState {
   code: string;
@@ -315,6 +317,34 @@ export const TOOLS: ToolDef[] = [
       return runtime.ok
         ? { ok: true, data: { valid: true } }
         : { ok: false, error: `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）` };
+    },
+  },
+
+  {
+    name: 'getStyleGuide',
+    description:
+      '获取指定风格的完整作曲规范（BPM 范围、sample bank、各角色代码骨架、风格标志技巧）。匹配到用户描述的风格后，在生成任何层代码之前调用此工具，按其规范编写 layer code。',
+    parameters: {
+      type: 'object',
+      properties: {
+        styleId: {
+          type: 'string',
+          enum: ['lofi', 'house', 'dnb', 'ambient', 'techno', 'synthwave', 'trap', 'jazz'],
+          description: '风格 ID，与用户描述匹配的风格名称',
+        },
+      },
+      required: ['styleId'],
+    },
+    handler: (args, _ctx): ToolResult => {
+      const { styleId } = args as { styleId: string };
+      const guide = STYLE_GUIDES[styleId as StyleId];
+      if (!guide) {
+        return {
+          ok: false,
+          error: `Style guide not found for: "${styleId}". Use your own musical judgment.`,
+        };
+      }
+      return { ok: true, data: { styleId, guide } };
     },
   },
 
