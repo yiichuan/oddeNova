@@ -725,20 +725,37 @@ export function normalizeCode(code: string): string {
 export function fixMiniNotationIssues(code: string): { fixed: string; fixes: string[] } {
   const fixes: string[] = [];
   const fixed = code.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, (str) => {
-    if (!str.includes(';')) return str;
+    if (!str.includes(';') && !str.includes('<')) return str;
     const quote = str[0];
-    const inner = str.slice(1, -1);
-    const fixedInner = inner.replace(/<([^>]*)>/g, (_match, content: string) => {
-      if (!content.includes(';')) return `<${content}>`;
-      const groups = content.split(';').map((g: string) => g.trim()).filter(Boolean);
-      const fixedGroups = groups.map((g: string) => {
-        const tokens = g.split(/\s+/).filter(Boolean);
-        return tokens.length > 1 ? `[${tokens.join(',')}]` : g;
+    let inner = str.slice(1, -1);
+
+    // Fix 1: semicolons in angle brackets
+    if (inner.includes(';')) {
+      inner = inner.replace(/<([^>]*)>/g, (_match, content: string) => {
+        if (!content.includes(';')) return `<${content}>`;
+        const groups = content.split(';').map((g: string) => g.trim()).filter(Boolean);
+        const fixedGroups = groups.map((g: string) => {
+          const tokens = g.split(/\s+/).filter(Boolean);
+          return tokens.length > 1 ? `[${tokens.join(',')}]` : g;
+        });
+        fixes.push(`auto-fixed ";" in angle-bracket alternation: <${content.trim()}> → <${fixedGroups.join(' ')}>`);
+        return `<${fixedGroups.join(' ')}>`;
       });
-      fixes.push(`auto-fixed ";" in angle-bracket alternation: <${content.trim()}> → <${fixedGroups.join(' ')}>`);
-      return `<${fixedGroups.join(' ')}>`;
-    });
-    return quote + fixedInner + quote;
+    }
+
+    // Fix 2: unbalanced < > (missing closing >)
+    let depth = 0;
+    for (const char of inner) {
+      if (char === '<') depth++;
+      else if (char === '>') depth--;
+    }
+    if (depth > 0) {
+      fixes.push(`auto-fixed unbalanced angle brackets in mini notation: added ${depth} missing ">"`);
+      inner += '>'.repeat(depth);
+    }
+
+    if (inner === str.slice(1, -1)) return str;
+    return quote + inner + quote;
   });
   return { fixed, fixes };
 }

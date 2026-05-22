@@ -149,6 +149,21 @@ function parseSuggestions(text: string): string[] | null {
 }
 
 /**
+ * Extract next-step suggestion lines from a commit explanation.
+ * Matches "接下来可以：\n- item1\n- item2" format written by the agent.
+ * Returns an empty array if the section is absent.
+ */
+export function parseNextSteps(explanation: string): string[] {
+  const match = explanation.match(/接下来可以[：:][\s\S]*$/);
+  if (!match) return [];
+  return match[0]
+    .split('\n')
+    .filter((l) => /^\s*-\s/.test(l))
+    .map((l) => l.replace(/^\s*-\s*/, '').trim())
+    .filter(Boolean);
+}
+
+/**
  * Build 2 short next-step suggestions based on the current code and conversation.
  * - Empty code → static defaults.
  * - Otherwise → LLM call with music state context; failure falls back to static.
@@ -168,7 +183,7 @@ export async function buildSuggestions(
 
     const text = await chatOnce(system, `当前曲谱：\n${currentCode}\n\n请输出 2 条建议。`, {
       temperature: 0.8,
-      maxTokens: 200,
+      maxTokens: 2048,
     });
     console.debug('[suggestions] LLM responded:', text.slice(0, 300));
     const parsed = parseSuggestions(text);
