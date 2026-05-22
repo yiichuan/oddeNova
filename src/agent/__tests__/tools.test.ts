@@ -8,6 +8,7 @@ vi.mock('../../services/strudel', () => ({
 }));
 
 import { TOOLS, type AgentState, type ToolContext } from '../tools';
+import { STYLE_GUIDES } from '../../prompts/styles/index';
 
 // 辅助函数：根据 name 找到 tool handler
 function getHandler(name: string) {
@@ -204,7 +205,7 @@ describe('getStyleGuide', () => {
 
   it('每种风格都有 guide', async () => {
     const ctx = makeCtx('');
-    const styles = ['lofi', 'house', 'dnb', 'ambient', 'techno', 'synthwave', 'trap', 'jazz'];
+    const styles = Object.keys(STYLE_GUIDES);
     for (const styleId of styles) {
       const result = await getStyleGuide({ styleId }, ctx);
       expect(result.ok).toBe(true);

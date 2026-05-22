@@ -329,7 +329,7 @@ export const TOOLS: ToolDef[] = [
       properties: {
         styleId: {
           type: 'string',
-          enum: ['lofi', 'house', 'dnb', 'ambient', 'techno', 'synthwave', 'trap', 'jazz'],
+          enum: Object.keys(STYLE_GUIDES),
           description: '风格 ID，与用户描述匹配的风格名称',
         },
       },
