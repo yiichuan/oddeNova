@@ -8,6 +8,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-blue?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-646cff?style=flat-square&logo=vite&logoColor=white)](https://vite.dev)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-orange?style=flat-square)](LICENSE)
+[![CI](https://github.com/yiichuan/oddeNova/actions/workflows/ci.yml/badge.svg)](https://github.com/yiichuan/oddeNova/actions/workflows/ci.yml)
+
+**🎵 [立即体验 → www.oddenova.com](https://www.oddenova.com)**
 
 [功能特色](#功能特色) • [快速开始](#快速开始) • [工作原理](#工作原理) • [项目结构](#项目结构)
 
@@ -18,7 +21,10 @@
 oddeNova 是一个基于浏览器的 AI 音乐创作工具。用文字描述你想要的音乐，AI Agent 会将其自动拆分为多个独立音轨层（layer），生成 [Strudel](https://strudel.cc/) live coding 代码并即时播放。支持持续对话迭代——AI 精准修改你指定的层，其余部分保持不变。
 
 > [!NOTE]
-> 本项目在 Attrax Shenzhen 黑客松期间创作。
+> 本项目在 Attrax Shenzhen 黑客松期间创作，并持续迭代中。
+
+<!-- screenshot: 三栏布局全景图（历史面板 + 对话区 + 代码面板） -->
+<!-- gif: 从输入描述到 Agent 工作到音乐播放的完整流程 -->
 
 ## 功能特色
 
@@ -62,6 +68,12 @@ npm run dev
 | `npm run preview` | 预览生产构建产物 |
 | `npm run lint` | ESLint 代码检查 |
 | `npm run dist:mac` | 打包为 macOS 桌面应用（.dmg） |
+
+### 一键部署到 Vercel
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyiichuan%2FoddeNova)
+
+> API key 在应用内界面填写，无需配置环境变量即可运行基础功能。如需 cron 清理功能，在 Vercel 项目设置中配置 `CRON_SECRET`。
 
 ## 工作原理
 
@@ -108,6 +120,42 @@ Agent 将整首音乐维护为多个具名 layer 的集合。每次对话只修�
 | 音频引擎 | [Strudel](https://strudel.cc/) |
 | AI 模型 | Anthropic Claude / DeepSeek，可在界面中自由切换 |
 | 桌面端 | Electron（可选） |
+
+## 系统架构
+
+```
+┌─────────────────────────────────────────────────────┐
+│                      Browser                        │
+│                                                     │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ History  │  │  Chat / UI   │  │  Code Panel  │  │
+│  │  Panel   │  │  (React 19)  │  │ (CodeMirror) │  │
+│  └──────────┘  └──────┬───────┘  └──────────────┘  │
+│                        │                            │
+│               ┌────────▼────────┐                   │
+│               │   Agent Loop    │                   │
+│               │  loop.ts        │                   │
+│               │  executor.ts    │                   │
+│               │  tools.ts       │                   │
+│               └────────┬────────┘                   │
+│                        │ tool calls                 │
+│         ┌──────────────┼──────────────┐             │
+│         ▼              ▼              ▼             │
+│   addLayer()    replaceLayer()   validate()         │
+│   removeLayer() commit()         improvise()        │
+│         └──────────────┬──────────────┘             │
+│                        │ final code                 │
+│               ┌────────▼────────┐                   │
+│               │  Strudel Engine │                   │
+│               │  (WebAudio API) │                   │
+│               └─────────────────┘                   │
+│                                                     │
+│  ─────── LLM API (Anthropic / DeepSeek / Kimi) ─── │
+│  ─────── IndexedDB (session persistence) ─────────  │
+└─────────────────────────────────────────────────────┘
+```
+
+详见 [docs/frontend-architecture.md](docs/frontend-architecture.md)。
 
 ## 项目结构
 
