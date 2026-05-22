@@ -12,6 +12,7 @@ import { useKeyboardHeight } from './hooks/useKeyboardHeight';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
+import { parseNextSteps } from './services/suggestions';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
@@ -45,6 +46,7 @@ export default function App() {
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
+  const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -141,6 +143,7 @@ export default function App() {
     // demo 模式下不需要真实 LLM suggestions，跳过 buildSuggestions 调用
     hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
+    commitSuggestions: commitSuggestions ?? undefined,
   });
   const activeSet = getActiveDemoSet();
   const demoSuggestions = isDemoMode()
@@ -162,6 +165,7 @@ export default function App() {
         return;
       }
 
+      setCommitSuggestions(null); // reset on each new instruction
       sessions.addUserMessage(text);
       const sessionId = sessions.currentId;
       if (!sessionId) return;
@@ -241,6 +245,8 @@ export default function App() {
           if (sessionId === currentIdRef.current) {
             const success = await strudel.play(result.code);
             if (success) {
+              const nextSteps = parseNextSteps(result.explanation);
+              if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
               sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
               sessions.setCurrentCode(result.code, sessionId);
             } else {
@@ -288,6 +294,7 @@ export default function App() {
     }
     const instruction = '根据我的心情生成音乐';
 
+    setCommitSuggestions(null);
     sessions.addUserMessage(instruction);
     const sessionId = sessions.currentId;
     if (!sessionId) return;
@@ -338,6 +345,8 @@ export default function App() {
         if (sessionId === currentIdRef.current) {
           const success = await strudel.play(result.code);
           if (success) {
+            const nextSteps = parseNextSteps(result.explanation);
+            if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
             sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
             sessions.setCurrentCode(result.code, sessionId);
           } else {
@@ -376,6 +385,7 @@ export default function App() {
   }, [strudel, sessions]);
 
   const handleSwitchSession = useCallback((id: string) => {
+    setCommitSuggestions(null);
     setUnreadSessions((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
