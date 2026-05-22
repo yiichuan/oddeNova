@@ -4,7 +4,9 @@
 // terminal — it throws CommitSignal which the loop catches.
 
 import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
-import { validateCode, validateCodeRuntime, normalizeCode } from '../services/strudel';
+import { validateCode, validateCodeRuntime, normalizeCode, fixMiniNotationIssues } from '../services/strudel';
+import { STYLE_GUIDES } from '../prompts/styles/index';
+import type { StyleId } from '../prompts/styles';
 
 export interface AgentState {
   code: string;
@@ -148,7 +150,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'addLayer',
     description:
-      '向 stack 中添加一个新层。layer name 必须唯一；若当前还没有 stack 会自动创建。code 字段填该层的 strudel 表达式（如 s("bd sd bd sd").gain(0.8)）。',
+      '向 stack 中添加一个新层。layer name 必须唯一；若当前还没有 stack 会自动创建。code 字段填该层的 strudel 表达式（如 s("bd sd bd sd").gain(0.8)）。code 必须满足 Layer Code Generation 规则：与当前调性/音阶对齐、遵守频段分离要求、使用该角色对应的 gain 范围。',
     parameters: {
       type: 'object',
       properties: {
@@ -209,7 +211,7 @@ export const TOOLS: ToolDef[] = [
 
   {
     name: 'replaceLayer',
-    description: '把指定层的整段表达式替换为新代码。',
+    description: '把指定层的整段表达式替换为新代码。code 必须满足 Layer Code Generation 规则：与当前调性/音阶对齐、遵守频段分离要求、使用该角色对应的 gain 范围。',
     parameters: {
       type: 'object',
       properties: {
@@ -307,74 +309,48 @@ export const TOOLS: ToolDef[] = [
     },
     handler: (args, ctx) => {
       const code = typeof args.code === 'string' && args.code.trim() ? args.code : ctx.state.code;
-      const synOnly = validateCode(code);
+      // Auto-fix known mini-notation issues (e.g. ";" inside "<>") before validation
+      const { fixed, fixes } = fixMiniNotationIssues(code);
+      const codeToValidate = fixes.length > 0 ? fixed : code;
+      if (fixes.length > 0) {
+        ctx.state.code = fixed;
+      }
+      const synOnly = validateCode(codeToValidate);
       if (!synOnly.ok) {
         return { ok: false, error: `语法错误: ${synOnly.error}` };
       }
-      const runtime = validateCodeRuntime(code);
+      const runtime = validateCodeRuntime(codeToValidate);
       return runtime.ok
-        ? { ok: true, data: { valid: true } }
+        ? { ok: true, data: { valid: true, ...(fixes.length > 0 && { autoFixed: fixes }) } }
         : { ok: false, error: `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）` };
     },
   },
 
   {
-    name: 'improvise',
+    name: 'getStyleGuide',
     description:
-      '起草一个与当前曲子互补的单层 strudel 表达式。会读取当前完整代码，识别 BPM/key/已有层，生成与之互补的片段。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。',
+      '获取指定风格的完整作曲规范（BPM 范围、sample bank、各角色代码骨架、风格标志技巧）。匹配到用户描述的风格后，在生成任何层代码之前调用此工具，按其规范编写 layer code。',
     parameters: {
       type: 'object',
       properties: {
-        role: {
+        styleId: {
           type: 'string',
-          enum: ['drums', 'hh', 'bass', 'pad', 'lead', 'fx'],
-          description: '要生成的乐器角色',
-        },
-        style: {
-          type: 'string',
-          enum: ['lofi', 'house', 'dnb', 'ambient', 'techno', 'synthwave'],
-          description: '可选风格，会注入对应的音色与声部建议（如 lofi → 808 + 慢速 boom-bap）',
-        },
-        complement_task: {
-          type: 'string',
-          description:
-            '【强烈推荐填写】这一层要互补什么的自由文本描述，如 "off-beat hi-hat avoiding kick positions"、"warm pad in C minor at 200-2000Hz"、"高频点缀，4 拍循环"。',
-        },
-        hints: {
-          type: 'string',
-          description: '额外风格、调性、密度等提示（中英文皆可），如 "C minor 抒情"',
+          enum: Object.keys(STYLE_GUIDES),
+          description: '风格 ID，与用户描述匹配的风格名称',
         },
       },
-      required: ['role'],
+      required: ['styleId'],
     },
-    handler: async (args, ctx) => {
-      const role = String(args.role || '').trim();
-      const hints = String(args.hints || '').trim();
-      const style = typeof args.style === 'string' ? args.style.trim() : '';
-      const complementTask =
-        typeof args.complement_task === 'string' ? args.complement_task.trim() : '';
-      if (!role) return { ok: false, error: 'role 不能为空' };
-      try {
-        console.debug(`[tools] improvise(${role}) 开始，style=${style || '-'}, currentCode length=${ctx.state.code.length}`);
-        const snippet = await ctx.improviseLLM({
-          role,
-          hints,
-          currentCode: ctx.state.code,
-          style: style || undefined,
-          complementTask: complementTask || undefined,
-        });
-        const trimmed = snippet.trim();
-        if (!trimmed) {
-          console.warn(`[tools] improvise(${role}) 返回空代码，raw snippet:`, JSON.stringify(snippet));
-        } else {
-          console.debug(`[tools] improvise(${role}) ✓ 返回 ${trimmed.length} 字符`);
-        }
-        return { ok: true, data: { role, code: trimmed } };
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[tools] improvise(${role}) 异常:`, e);
-        return { ok: false, error: `improvise 失败: ${msg}` };
+    handler: (args, _ctx): ToolResult => {
+      const { styleId } = args as { styleId: string };
+      const guide = STYLE_GUIDES[styleId as StyleId];
+      if (!guide) {
+        return {
+          ok: false,
+          error: `Style guide not found for: "${styleId}". Use your own musical judgment.`,
+        };
       }
+      return { ok: true, data: { styleId, guide } };
     },
   },
 

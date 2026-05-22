@@ -27,6 +27,10 @@ export function useSuggestions(opts: {
   const [prevKey, setPrevKey] = useState(key);
   const reqIdRef = useRef(0);
   const lastCodeRef = useRef<string>('');
+  // Use a ref for messages so it's always fresh inside the effect without
+  // re-triggering it on every progress message update.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   // Reset when switching sessions.
   if (prevKey !== key) {
@@ -55,13 +59,13 @@ export function useSuggestions(opts: {
     setLoading(true);
 
     const my = ++reqIdRef.current;
-    buildSuggestions(currentCode, messages).then((chips) => {
+    buildSuggestions(currentCode, messagesRef.current).then((chips) => {
       // Drop stale responses if the user moved on already.
       if (my !== reqIdRef.current) return;
       setLoading(false);
       if (chips.length > 0) setSuggestions(chips);
     });
-  }, [currentCode, hasUserMessages, messages]);
+  }, [currentCode, hasUserMessages]);
 
   return { suggestions, loading };
 }

@@ -27,6 +27,11 @@ const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
 const SIDEBAR_RATIO_MAX = 0.45;
 
+/** 去掉 agent explanation 末尾的"接下来可以"建议段落，避免在聊天记录里重复显示 */
+function stripNextSteps(explanation: string): string {
+  return explanation.replace(/\n\n接下来可以[：:][^]*$/, '').trim();
+}
+
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392，由上:下=1.55推导
 const VIZ_RATIO_MIN = 0.15;
 const VIZ_RATIO_MAX = 0.45;
@@ -236,7 +241,7 @@ export default function App() {
           if (sessionId === currentIdRef.current) {
             const success = await strudel.play(result.code);
             if (success) {
-              sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+              sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
               sessions.setCurrentCode(result.code, sessionId);
             } else {
               sessions.addAssistantMessage(
@@ -247,7 +252,7 @@ export default function App() {
             }
           } else {
             // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
-            sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
             sessions.setCurrentCode(result.code, sessionId);
           }
         } else {
@@ -333,7 +338,7 @@ export default function App() {
         if (sessionId === currentIdRef.current) {
           const success = await strudel.play(result.code);
           if (success) {
-            sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
             sessions.setCurrentCode(result.code, sessionId);
           } else {
             sessions.addAssistantMessage(
@@ -344,7 +349,7 @@ export default function App() {
           }
         } else {
           // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
-          sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+          sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
           sessions.setCurrentCode(result.code, sessionId);
         }
       } else {

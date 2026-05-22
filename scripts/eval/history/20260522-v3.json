@@ -1,0 +1,2471 @@
+{
+  "label": "20260522-v3",
+  "timestamp": "2026-05-22T03:39:55.873Z",
+  "promptVersion": "v3",
+  "model": "deepseek-v4-flash",
+  "results": [
+    {
+      "caseId": "TC-001",
+      "caseName": "自然表达-Lofi House",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "来一段 90 BPM 的 lofi house 完整作品。和弦循环用 Bbm9 → Fm9，共享给电钢琴、原声贝斯和一条飘的旋律层。鼓走 909，加一点 swing（late 0.01）。旋律层要用 chunk 切段、perlin 调音量、sine 扫 lpf、偶尔 ply，带 reverb/delay/fm/distortion。",
+          "generatedCode": "setcps(0.375)\nstack(\n  /* @layer drums */ stack(\n  s(\"bd*4\").bank(\"RolandTR909\").gain(0.85),\n  s(\"~ sd ~ sd\").bank(\"RolandTR909\").gain(0.7).late(0.01),\n  s(\"hh*8\").bank(\"RolandTR909\").gain(0.35).late(0.01)\n),\n  /* @layer bass */ note(\"<Bb2 Bb2_F2 F2>/2\").s(\"triangle\").lpf(300).gain(0.7).late(0.01).scale(\"Bb2:minor\"),\n  /* @layer piano */ chord(\"<Bbm9 Fm9>/4\").s(\"piano\").lpf(3000).gain(0.5).room(0.3).late(0.01),\n  /* @layer lead */ n(\"<0 2 3 5 4 3 2 0>/8\").scale(\"Bb4:minor\").s(\"sawtooth\").gain(perlin.range(0.2,0.6).slow(8)).lpf(sine.range(500,3000).slow(16)).delay(0.3).delaytime(0.25).delayfeedback(0.4).room(0.5).fm(0.4).distortion(0.3).sometimes(ply(3)).chunk(4, fast(2)).late(0.01)\n)",
+          "explanation": "验证通过，代码语法无误。提交！",
+          "durationMs": 83788
+        }
+      ],
+      "ruleScore": {
+        "total": 110,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": false,
+            "score": 0,
+            "detail": "无 pad 层，跳过"
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10,
+            "detail": "无 hh 层，默认通过"
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": true,
+            "score": 10
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 9,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "代码符合lofi house风格，使用909鼓、电钢琴、柔和贝斯和调制lead，整体氛围贴切"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "包含鼓、贝斯、钢琴、旋律四层，鼓有基本律动，层次完整"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层密度、节奏和频率区间有对比，鼓密集与和弦稀疏形成对比，旋律有变化"
+          },
+          "parameter_accuracy": {
+            "score": 1,
+            "reason": "BPM准确90，和弦Bbm9/Fm9在钢琴中明确，但贝斯音符序列写法含混（同时音Bb2_F2），根音虽对但不够精确"
+          },
+          "creative_expression": {
+            "score": 2,
+            "reason": "使用perlin调音量、sine扫lpf、延迟混响、fm、失真、chunk切段和ply，音乐富有变化"
+          },
+          "signal_modulation": {
+            "score": 2,
+            "reason": "旋律层有perlin.range调gain和sine.range调lpf，实现呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "使用了late(0.01) swing、偶尔ply(3)和chunk切段，但缺乏欧几里得或struct等更复杂节奏"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"代码符合lofi house风格，使用909鼓、电钢琴、柔和贝斯和调制lead，整体氛围贴切\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"包含鼓、贝斯、钢琴、旋律四层，鼓有基本律动，层次完整\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层密度、节奏和频率区间有对比，鼓密集与和弦稀疏形成对比，旋律有变化\" },\n  \"parameter_accuracy\": { \"score\": 1, \"reason\": \"BPM准确90，和弦Bbm9/Fm9在钢琴中明确，但贝斯音符序列写法含混（同时音Bb2_F2），根音虽对但不够精确\" },\n  \"creative_expression\": { \"score\": 2, \"reason\": \"使用perlin调音量、sine扫lpf、延迟混响、fm、失真、chunk切段和ply，音乐富有变化\" },\n  \"signal_modulation\": { \"score\": 2, \"reason\": \"旋律层有perlin.range调gain和sine.range调lpf，实现呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"使用了late(0.01) swing、偶尔ply(3)和chunk切段，但缺乏欧几里得或struct等更复杂节奏\" },\n  \"total\": 9\n}"
+      }
+    },
+    {
+      "caseId": "TC-002",
+      "caseName": "极简触发-Coastline",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "按 coastline 风格做一段：Bbm9/Fm9、共享和弦进行、鼓+电钢+贝斯+旋律四层，旋律层要丰富点。",
+          "generatedCode": "setcps(0.3333333333333333)\nstack(\n  /* @layer drums */ s(\"bd(3,8) sd(2,8) hh(4,8)\").bank(\"RolandTR808\").gain(0.8),\n  /* @layer bass */ note(\"<Bb2 F2>/2\").s(\"sawtooth\").lpf(400).gain(0.7),\n  /* @layer ep */ chord(\"<Bb3:m9 F3:m9>/2\").s(\"piano\").gain(0.4).room(0.6).delay(0.2),\n  /* @layer lead */ n(\"<0 2 4 5 7 9 10 9 7 5 4 2 0 2 3 5>\").scale(\"Bb3:minor\").s(\"triangle\").gain(0.5).delay(0.3).room(0.4).struct(\"x*2 ~ x ~ x x ~ x*2\")\n)",
+          "explanation": "校验通过，提交最终版本。",
+          "durationMs": 90609
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": false,
+            "score": 0,
+            "detail": "无 pad 层，跳过"
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10,
+            "detail": "无 hh 层，默认通过"
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 8,
+        "breakdown": {
+          "style_match": {
+            "score": 1,
+            "reason": "整体氛围偏lofi，但缺少调制与呼吸感，与coastline风格略有距离"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、贝斯、电钢、旋律四层齐全，鼓组有bd/sd/hh完整骨架"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层密度与频率区间有明显对比：鼓密集、贝斯低频长音、电钢中频和弦、旋律中高频变化"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "BPM 80正确，和弦Bbm9/Fm9准确，乐器类型与用户指定一致"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "旋律层使用了struct和音高序列变化，但缺乏动态调制使音乐缺少'活'的感觉"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "没有使用任何信号调制（sine.range/perlin.range/fm等），所有参数均为静态值"
+          },
+          "rhythmic_richness": {
+            "score": 2,
+            "reason": "鼓组使用欧几里得节奏(3,8)/(2,8)/(4,8)，旋律层使用struct创造切分节奏"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 1, \"reason\": \"整体氛围偏lofi，但缺少调制与呼吸感，与coastline风格略有距离\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、贝斯、电钢、旋律四层齐全，鼓组有bd/sd/hh完整骨架\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层密度与频率区间有明显对比：鼓密集、贝斯低频长音、电钢中频和弦、旋律中高频变化\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"BPM 80正确，和弦Bbm9/Fm9准确，乐器类型与用户指定一致\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"旋律层使用了struct和音高序列变化，但缺乏动态调制使音乐缺少'活'的感觉\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"没有使用任何信号调制（sine.range/perlin.range/fm等），所有参数均为静态值\" },\n  \"rhythmic_richness\": { \"score\": 2, \"reason\": \"鼓组使用欧几里得节奏(3,8)/(2,8)/(4,8)，旋律层使用struct创造切分节奏\" },\n  \"total\": 8\n}"
+      }
+    },
+    {
+      "caseId": "TC-003",
+      "caseName": "定制变体-Downtempo",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "参考 coastline 的结构做一段 downtempo：和弦改成 <Am11 Dm9 Fmaj7 G7>，BPM 85，电钢琴换成 gm_electric_piano_1，贝斯保持 gm_acoustic_bass，旋律层保留 chunk(4, fast(2)) 和 perlin/sine 的调制，但把 mask 改成 <1 0 1 1>/16",
+          "generatedCode": "setcps(0.3541666666666667)\nstack(\n  /* @layer drums */ s(\"bd(3,8), hh(5,8), sd(2,8)\").gain(0.75),\n  /* @layer bass */ note(\"<a2 d2 f2 g2>/4\").s(\"gm_acoustic_bass\").lpf(400).gain(0.7),\n  /* @layer chords */ chord(\"<Am11 Dm9 Fmaj7 G7>/4\").s(\"gm_electric_piano_1\").voicing().lpf(1200).gain(0.45).room(1).delay(0.15),\n  /* @layer lead */ n(\"0 2 4 6 7 9 11 12\").scale(\"C4:major\").s(\"sawtooth\").chunk(4, fast(2)).lpf(perlin.range(500,2000).slow(16)).gain(sine.range(0.3,0.6).slow(8)).mask(\"<1 0 1 1>/16\").room(0.4)\n)",
+          "explanation": "校验通过，最终提交。",
+          "durationMs": 53021
+        }
+      ],
+      "ruleScore": {
+        "total": 120,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10,
+            "detail": "无 hh 层，默认通过"
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": true,
+            "score": 10
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 10,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "代码完美贴合 downtempo 风格，和弦与乐器选择准确"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、贝斯、和弦、旋律四层齐全，骨架完整"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层节奏密度和频率区间有对比，鼓点稀疏、贝斯低频、和弦中频、旋律高频带调制"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "BPM 85 准确（setcps 计算正确），和弦 Am11/Dm9/Fmaj7/G7 准确，乐器 gm_electric_piano_1 和 gm_acoustic_bass 正确，chunk+perlin+sine 与 mask 均正确"
+          },
+          "creative_expression": {
+            "score": 2,
+            "reason": "perlin 和 sine 调制让旋律层有动态呼吸感，富有生命力"
+          },
+          "signal_modulation": {
+            "score": 2,
+            "reason": "旋律层使用了 perlin.range 和 sine.range 进行信号调制，实现呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 2,
+            "reason": "鼓使用欧几里得节奏 (3,8)、(5,8)、(2,8)，旋律层用 mask 产生节奏变化"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"代码完美贴合 downtempo 风格，和弦与乐器选择准确\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、贝斯、和弦、旋律四层齐全，骨架完整\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层节奏密度和频率区间有对比，鼓点稀疏、贝斯低频、和弦中频、旋律高频带调制\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"BPM 85 准确（setcps 计算正确），和弦 Am11/Dm9/Fmaj7/G7 准确，乐器 gm_electric_piano_1 和 gm_acoustic_bass 正确，chunk+perlin+sine 与 mask 均正确\" },\n  \"creative_expression\": { \"score\": 2, \"reason\": \"perlin 和 sine 调制让旋律层有动态呼吸感，富有生命力\" },\n  \"signal_modulation\": { \"score\": 2, \"reason\": \"旋律层使用了 perlin.range 和 sine.range 进行信号调制，实现呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 2, \"reason\": \"鼓使用欧几里得节奏 (3,8)、(5,8)、(2,8)，旋律层用 mask 产生节奏变化\" },\n  \"total\": 10\n}"
+      }
+    },
+    {
+      "caseId": "TC-004",
+      "caseName": "风格-深夜开车 Ambient Techno",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "来一段深夜开车的 ambient techno，节奏稀疏但 bassline 厚重",
+          "generatedCode": "setcps(0.4583333333333333)\nstack(\n  /* @layer drums */ s(\"bd(3,8) oh(1,16)\").bank(\"RolandTR808\").gain(\"0.85 0.35\"),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(350).gain(0.75).attack(0.02).release(0.4),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.8).delay(0.3),\n  /* @layer fx */ s(\"noise\").struct(\"~ ~ ~ x/4\").lpf(sine.range(500,4000).slow(16)).gain(0.25).room(0.6).hpf(200)\n)",
+          "explanation": "校验通过！所有质量检查都符合：bass 做了低通滤波、pad 有混响空间感、fx 层次音量克制且用 struct 留出了呼吸感。准备提交播放。",
+          "durationMs": 80903
+        }
+      ],
+      "ruleScore": {
+        "total": 120,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": true,
+            "score": 10
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 9,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "贴合 ambient techno 风格，稀疏节奏与厚重 bassline 达成"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、bass、pad、fx 四层完整，支撑起音乐骨架"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层密度、频率区间差异明显：鼓稀疏、bass低沉、pad绵长、fx高频噪声"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "BPM 约110 (setcps(0.4583)*240)，符合预期；和弦为C小调，乐器使用正确"
+          },
+          "creative_expression": {
+            "score": 2,
+            "reason": "fx层有sine.range调制lpf、pad有delay/room，使音乐有动态感"
+          },
+          "signal_modulation": {
+            "score": 1,
+            "reason": "仅fx层使用了 sine.range 调制 lpf，其他层缺乏显式信号调制"
+          },
+          "rhythmic_richness": {
+            "score": 2,
+            "reason": "鼓层使用欧几里得(3,8)和(1,16)，fx层使用struct制造节奏呼吸"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"贴合 ambient techno 风格，稀疏节奏与厚重 bassline 达成\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、bass、pad、fx 四层完整，支撑起音乐骨架\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层密度、频率区间差异明显：鼓稀疏、bass低沉、pad绵长、fx高频噪声\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"BPM 约110 (setcps(0.4583)*240)，符合预期；和弦为C小调，乐器使用正确\" },\n  \"creative_expression\": { \"score\": 2, \"reason\": \"fx层有sine.range调制lpf、pad有delay/room，使音乐有动态感\" },\n  \"signal_modulation\": { \"score\": 1, \"reason\": \"仅fx层使用了 sine.range 调制 lpf，其他层缺乏显式信号调制\" },\n  \"rhythmic_richness\": { \"score\": 2, \"reason\": \"鼓层使用欧几里得(3,8)和(1,16)，fx层使用struct制造节奏呼吸\" },\n  \"total\": 9\n}"
+      }
+    },
+    {
+      "caseId": "TC-005",
+      "caseName": "风格-森林冥想 Ambient",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "做一段像在森林里冥想的 ambient 音乐，不需要鼓",
+          "generatedCode": "setcps(0.2916666666666667)\nstack(\n  /* @layer pad */ n(\"0 2 4 7 ~ 0 3 5 7\").scale(\"C4:minor\").s(\"sawtooth\").attack(2).release(4).gain(0.4).lpf(1500).room(0.8).delay(0.3),\n  /* @layer bass */ note(\"c2 ~ eb2 ~ g2 ~ ~ ~\").s(\"sine\").attack(0.3).release(3).gain(0.3).lpf(200).room(0.4).delay(0.2),\n  /* @layer fx */ s(\"sawtooth\").attack(3).release(5).gain(0.2).lpf(sine.range(500,2000).slow(8)).hpf(800).room(0.9).delay(0.5).vowel(\"o a e\").struct(\"x ~ x ~\")\n)",
+          "explanation": "验证通过！提交最终代码。",
+          "durationMs": 53835
+        }
+      ],
+      "ruleScore": {
+        "total": 120,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": true,
+            "score": 10
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 9,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "代码使用 C 小调、缓起缓释、混响延迟和低通滤波，营造出森林冥想的空间感和 ambient 氛围，且无鼓层贴合提示"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "pad、bass、fx 三层分工明确，虽无鼓但符合 ambient 需求，骨架完整"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层在密度（pad 音符序列含休止、fx 有 struct 节奏）、频率区间（bass 低频、pad 中高频、fx 扫频）和音色（sawtooth vs sine vs 元音）上均有明显对比"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps(0.2917) 换算为 70 BPM 合理，C minor 音阶准确落地，乐器选择 sawtooth、sine 明确"
+          },
+          "creative_expression": {
+            "score": 2,
+            "reason": "fx 层的 lpf 用 sine 缓慢调频、vowel 序列变化、混响延迟叠加，使音乐富有流动感"
+          },
+          "signal_modulation": {
+            "score": 2,
+            "reason": "fx 层 lpf 使用 sine.range(500,2000).slow(8) 进行信号调制，产生呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "fx 层使用了 struct('x ~ x ~') 自定义节奏，但整体节奏变化较简单，未使用欧几里得或 swing"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"代码使用 C 小调、缓起缓释、混响延迟和低通滤波，营造出森林冥想的空间感和 ambient 氛围，且无鼓层贴合提示\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"pad、bass、fx 三层分工明确，虽无鼓但符合 ambient 需求，骨架完整\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层在密度（pad 音符序列含休止、fx 有 struct 节奏）、频率区间（bass 低频、pad 中高频、fx 扫频）和音色（sawtooth vs sine vs 元音）上均有明显对比\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps(0.2917) 换算为 70 BPM 合理，C minor 音阶准确落地，乐器选择 sawtooth、sine 明确\" },\n  \"creative_expression\": { \"score\": 2, \"reason\": \"fx 层的 lpf 用 sine 缓慢调频、vowel 序列变化、混响延迟叠加，使音乐富有流动感\" },\n  \"signal_modulation\": { \"score\": 2, \"reason\": \"fx 层 lpf 使用 sine.range(500,2000).slow(8) 进行信号调制，产生呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"fx 层使用了 struct('x ~ x ~') 自定义节奏，但整体节奏变化较简单，未使用欧几里得或 swing\" },\n  \"total\": 9\n}"
+      }
+    },
+    {
+      "caseId": "TC-006",
+      "caseName": "场景-游戏 Boss 配乐",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "做一段适合打 boss 的游戏配乐，紧张、层次丰富",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ stack(\n  s(\"bd*4\").gain(0.85).lpf(150),\n  s(\"sd*2\").gain(0.75).delay(0.15).room(0.3),\n  s(\"hh*8\").gain(0.3).hpf(6000)\n),\n  /* @layer bass */ n(\"0 0 3 2\").scale(\"C3:phrygian\").s(\"sawtooth\").gain(0.65).lpf(400).attack(0.02).release(0.25).room(0.2),\n  /* @layer pad */ n(\"0 3 5 7\").scale(\"C4:phrygian\").s(\"sawtooth\").gain(0.35).lpf(2000).room(0.8).attack(0.2).release(1.5).delay(0.25),\n  /* @layer lead */ n(\"0 ~ 3 5 ~ 6 8 7\").scale(\"C5:phrygian\").s(\"sawtooth\").gain(0.5).hpf(1200).lpf(5000).struct(\"x ~ x x ~ x ~ x\").delay(0.3).room(0.4)\n)",
+          "explanation": "校验通过，直接提交最终成果！",
+          "durationMs": 34305
+        }
+      ],
+      "ruleScore": {
+        "total": 110,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10,
+            "detail": "无 hh 层，默认通过"
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 8,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "Phrygian调式、密集鼓点和快节奏（130BPM）充分营造了紧张感，贴合boss战场景"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "包含鼓、贝斯、铺垫、主奏四层，且鼓组提供了清晰的节奏骨架"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层密度（鼓密集、铺垫缓）和频率区间（低中高）均有明显对比"
+          },
+          "parameter_accuracy": {
+            "score": 1,
+            "reason": "用户未指定具体参数，默认BPM与乐器合理，但无明确的参数落地需求"
+          },
+          "creative_expression": {
+            "score": 0,
+            "reason": "没有任何动态调制或随机变化，音乐较为静态，缺乏“活”感"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "未使用任何信号调制（如sine.range/perlin.range等）赋予呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "仅主奏使用了struct，其他层节奏均匀，缺乏欧几里得、swing等变化"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"Phrygian调式、密集鼓点和快节奏（130BPM）充分营造了紧张感，贴合boss战场景\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"包含鼓、贝斯、铺垫、主奏四层，且鼓组提供了清晰的节奏骨架\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层密度（鼓密集、铺垫缓）和频率区间（低中高）均有明显对比\" },\n  \"parameter_accuracy\": { \"score\": 1, \"reason\": \"用户未指定具体参数，默认BPM与乐器合理，但无明确的参数落地需求\" },\n  \"creative_expression\": { \"score\": 0, \"reason\": \"没有任何动态调制或随机变化，音乐较为静态，缺乏“活”感\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"未使用任何信号调制（如sine.range/perlin.range等）赋予呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"仅主奏使用了struct，其他层节奏均匀，缺乏欧几里得、swing等变化\" },\n  \"total\": 8\n}"
+      }
+    },
+    {
+      "caseId": "TC-007",
+      "caseName": "场景-早晨咖啡时刻",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "来一段早晨醒来窗边喝咖啡的感觉，轻盈、温暖",
+          "generatedCode": "setcps(0.3333333333333333)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8),\n  /* @layer bass */ note(\"c2 g2 c2 g2\").s(\"sawtooth\").lpf(350).gain(0.65).attack(0.1),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.8).delay(0.2),\n  /* @layer hh */ s(\"hh*8\").struct(\"x ~ x ~ x ~ x x\").gain(0.3).lpf(8000)\n)",
+          "explanation": "完美，代码验证通过！所有层各司其职，温暖不拥挤。现在提交播放。",
+          "durationMs": 60840
+        }
+      ],
+      "ruleScore": {
+        "total": 110,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 5,
+        "breakdown": {
+          "style_match": {
+            "score": 1,
+            "reason": "C minor 音阶偏忧郁，不符轻盈温暖的正面情绪"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "有清晰鼓组骨架、bass 和 pad，层次完整"
+          },
+          "musical_diversity": {
+            "score": 1,
+            "reason": "bass 和 pad 密度几乎一致，缺乏节奏和频率区间的对比"
+          },
+          "parameter_accuracy": {
+            "score": 1,
+            "reason": "BPM 换算正确(80)，但选用小调与轻盈温暖偏离"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "使用了混响和延迟，但缺乏更生动的调制手段"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "没有任何信号调制（sine.range/perlin.range 等）"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "hh 层使用了 struct，但整体节奏模式仍较简单"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 1, \"reason\": \"C minor 音阶偏忧郁，不符轻盈温暖的正面情绪\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"有清晰鼓组骨架、bass 和 pad，层次完整\" },\n  \"musical_diversity\": { \"score\": 1, \"reason\": \"bass 和 pad 密度几乎一致，缺乏节奏和频率区间的对比\" },\n  \"parameter_accuracy\": { \"score\": 1, \"reason\": \"BPM 换算正确(80)，但选用小调与轻盈温暖偏离\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"使用了混响和延迟，但缺乏更生动的调制手段\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"没有任何信号调制（sine.range/perlin.range 等）\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"hh 层使用了 struct，但整体节奏模式仍较简单\" },\n  \"total\": 5\n}"
+      }
+    },
+    {
+      "caseId": "TC-008",
+      "caseName": "技术-Minimal Techno",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "来一段 120 BPM 的 minimal techno，只用 kick、hihat、一条 acid bassline，bassline 用 sawtooth + lpf 调制",
+          "generatedCode": "setcps(0.5)\nstack(\n  /* @layer kick */ s(\"bd*4\").gain(0.85),\n  /* @layer hh */ s(\"hh*8\").gain(0.35).lpf(12000),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(sine.range(200,800).slow(4)).gain(0.7)\n)",
+          "explanation": "校验通过，提交最终代码。",
+          "durationMs": 36791
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": false,
+            "score": 0
+          },
+          "padRoom": {
+            "pass": false,
+            "score": 0,
+            "detail": "无 pad 层，跳过"
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": true,
+            "score": 10
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 8,
+        "breakdown": {
+          "style_match": {
+            "score": 1,
+            "reason": "基本符合 minimal techno 与 acid 风格，但 sawtooth 替代 303 音色略有不符"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "精确实现三层：kick、hihat、bass，无多余堆砌"
+          },
+          "musical_diversity": {
+            "score": 1,
+            "reason": "层间有频率和密度差异，bass 音符重复略显单调"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "BPM 120 正确，乐器与 sawtooth+lpf 调制精准落地"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "bass 的 lpf 有调制，但其余层缺乏动态变化"
+          },
+          "signal_modulation": {
+            "score": 2,
+            "reason": "bass 层使用 sine.range 调制 lpf，赋予呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 0,
+            "reason": "未使用欧几里得、struct、swing 或 late，节奏缺乏变化"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 1, \"reason\": \"基本符合 minimal techno 与 acid 风格，但 sawtooth 替代 303 音色略有不符\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"精确实现三层：kick、hihat、bass，无多余堆砌\" },\n  \"musical_diversity\": { \"score\": 1, \"reason\": \"层间有频率和密度差异，bass 音符重复略显单调\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"BPM 120 正确，乐器与 sawtooth+lpf 调制精准落地\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"bass 的 lpf 有调制，但其余层缺乏动态变化\" },\n  \"signal_modulation\": { \"score\": 2, \"reason\": \"bass 层使用 sine.range 调制 lpf，赋予呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 0, \"reason\": \"未使用欧几里得、struct、swing 或 late，节奏缺乏变化\" },\n  \"total\": 8\n}"
+      }
+    },
+    {
+      "caseId": "TC-009",
+      "caseName": "技术-Trip-hop",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "做一段 70 BPM 的 trip-hop，鼓要带 swing，钢琴用 gm_acoustic_grand_piano，加 reverb 和 delay",
+          "generatedCode": "setcps(0.2916666666666667)\nstack(\n  /* @layer drums */ s(\"bd(3,8), sd(3,8), hh(5,8)\").bank(\"RolandTR808\").gain(0.8),\n  /* @layer bass */ note(\"c2 ~ g2 ~ f2 ~ g2 ~\").s(\"sawtooth\").lpf(200).gain(0.7),\n  /* @layer piano */ note(\"c4 eb4 g4 ~ f4 ab4 c5 ~ g4 b4 d5 ~ c5 eb5 g5 ~\").s(\"gm_acoustic_grand_piano\").gain(0.5).room(0.6).delay(0.3)\n)",
+          "explanation": "代码校验通过，提交！",
+          "durationMs": 65936
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": false,
+            "score": 0,
+            "detail": "无 pad 层，跳过"
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10,
+            "detail": "无 hh 层，默认通过"
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 5,
+        "breakdown": {
+          "style_match": {
+            "score": 1,
+            "reason": "鼓使用808且钢琴匹配，但缺少trip-hop特有的迷幻氛围和显式swing"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、bass、piano三层结构完整，鼓律动骨架清晰"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层节奏密度和频率区间有明显对比"
+          },
+          "parameter_accuracy": {
+            "score": 1,
+            "reason": "BPM和钢琴乐器准确，reverb+delay实现，但swing未体现"
+          },
+          "creative_expression": {
+            "score": 0,
+            "reason": "无任何调制或动态变化，音乐静态"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "未使用信号调制，缺乏呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "鼓使用欧几里得节奏，但缺少swing/late/struct等丰富手段"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 1, \"reason\": \"鼓使用808且钢琴匹配，但缺少trip-hop特有的迷幻氛围和显式swing\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、bass、piano三层结构完整，鼓律动骨架清晰\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层节奏密度和频率区间有明显对比\" },\n  \"parameter_accuracy\": { \"score\": 1, \"reason\": \"BPM和钢琴乐器准确，reverb+delay实现，但swing未体现\" },\n  \"creative_expression\": { \"score\": 0, \"reason\": \"无任何调制或动态变化，音乐静态\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"未使用信号调制，缺乏呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"鼓使用欧几里得节奏，但缺少swing/late/struct等丰富手段\" },\n  \"total\": 5\n}"
+      }
+    },
+    {
+      "caseId": "TC-010",
+      "caseName": "极简-开放式请求",
+      "caseType": "single",
+      "turns": [
+        {
+          "userMessage": "来一段好听的",
+          "generatedCode": "setcps(0.3333333333333333)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8),\n  /* @layer bass */ note(\"c2 c2 g1 g1\").s(\"sine\").lpf(300).gain(0.65),\n  /* @layer hh */ s(\"hh*8\").gain(0.4),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(1).struct(\"x ~ x x\")\n)",
+          "explanation": "验证通过，提交成品啦！",
+          "durationMs": 56399
+        }
+      ],
+      "ruleScore": {
+        "total": 110,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        }
+      },
+      "judgeScore": {
+        "total": 7,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "生成结果符合默认的听感舒适、柔和的电子/氛围风格，贴合‘好听’的模糊要求"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "包含鼓、贝斯、hi-hat、pad四层，基本结构完整，有鼓律动骨架"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层在节奏密度（鼓稀疏、hi-hat八分、pad用struct）和音高区间上具有明显对比"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "用户未指定参数，代码中BPM(setcps(0.3333)=80)、乐器(bank)、和弦(scale)均准确执行"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "使用了attack/release/room但缺少perlin/sine等动态调制，音乐略显静态"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "没有任何层使用sine.range/perlin.range或FM等信号调制，缺乏呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "仅使用了struct模式，未使用欧几里得、swing或late，节奏变化有限"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"生成结果符合默认的听感舒适、柔和的电子/氛围风格，贴合‘好听’的模糊要求\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"包含鼓、贝斯、hi-hat、pad四层，基本结构完整，有鼓律动骨架\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层在节奏密度（鼓稀疏、hi-hat八分、pad用struct）和音高区间上具有明显对比\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"用户未指定参数，代码中BPM(setcps(0.3333)=80)、乐器(bank)、和弦(scale)均准确执行\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"使用了attack/release/room但缺少perlin/sine等动态调制，音乐略显静态\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"没有任何层使用sine.range/perlin.range或FM等信号调制，缺乏呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"仅使用了struct模式，未使用欧几里得、swing或late，节奏变化有限\" },\n  \"total\": 7\n}"
+      }
+    },
+    {
+      "caseId": "MT-A-001",
+      "caseName": "渐进式-加旋律层-换鼓音色",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "来一段 lofi 风格的音乐",
+          "generatedCode": "setcps(0.3416666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.78).sometimes(x => x.fast(2)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer hh */ s(\"~ ch ~ ch\").bank(\"RolandTR808\").gain(0.35).lpf(8000),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.6).delay(0.3)\n)",
+          "explanation": "校验通过，提交最终版。",
+          "durationMs": 56434
+        },
+        {
+          "userMessage": "加一条飘的旋律层",
+          "generatedCode": "setcps(0.3416666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.78).sometimes(x => x.fast(2)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer hh */ s(\"~ ch ~ ch\").bank(\"RolandTR808\").gain(0.35).lpf(8000),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.6).delay(0.3),\n  /* @layer lead */ n(\"<0 2 4 7 5 4>\").scale(\"C4:minor\").s(\"triangle\").attack(0.3).release(1.5).delay(0.5).room(0.4).gain(0.45).mask(\"<1 1 1 0 1 1 0 1>/8\")\n)",
+          "explanation": "校验通过，提交最终代码 🎵",
+          "durationMs": 28518
+        },
+        {
+          "userMessage": "把鼓换成 909 音色",
+          "generatedCode": "setcps(0.3416666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR909\").gain(0.78).sometimes(x => x.fast(2)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer hh */ s(\"~ oh ~ oh\").bank(\"RolandTR909\").gain(0.35).lpf(8000),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.6).delay(0.3),\n  /* @layer lead */ n(\"<0 2 4 7 5 4>\").scale(\"C4:minor\").s(\"triangle\").attack(0.3).release(1.5).delay(0.5).room(0.4).gain(0.45).mask(\"<1 1 1 0 1 1 0 1>/8\")\n)",
+          "explanation": "校验通过，提交最终代码。",
+          "durationMs": 12359
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": false,
+            "score": 0,
+            "detail": "无节奏多样性（无 euclidean、struct、swing、late）— 节奏机械"
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 7.2,
+        "breakdown": {
+          "style_match": {
+            "score": 1,
+            "reason": "BPM和pad/lead柔和度接近lofi，但hi-hat使用oh和不完全典型的音色设计略显偏离"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "包含鼓、贝斯、hi-hat、pad、旋律五层，构成完整的律动骨架"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层在频率区间（低频贝斯、中高频pad、高频hi-hat）和密度（鼓密集、旋律切分）上均有良好对比"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps换算为82 BPM，所有增益、滤波器、包络参数均按指定值精确实现"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "有时用fast(2)制造节奏变化，但缺少LFO或调制类的动态表达"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "第二轮只添加lead层，第三轮将鼓和hi-hat改为TR909，但用户仅要求改鼓，hi-hat改动属合理延伸"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "对‘飘的旋律层’理解为带delay/room的三角波旋律，对‘鼓换909’正确更换音源并保留原有节奏"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "没有任何层使用sine.range、perlin.range或fm调制，缺乏呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "仅鼓的sometimes(fast(2))和lead的mask序列提供简单节奏变化，未使用欧几里得、struct、swing或late"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 1, \"reason\": \"BPM和pad/lead柔和度接近lofi，但hi-hat使用oh和不完全典型的音色设计略显偏离\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"包含鼓、贝斯、hi-hat、pad、旋律五层，构成完整的律动骨架\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层在频率区间（低频贝斯、中高频pad、高频hi-hat）和密度（鼓密集、旋律切分）上均有良好对比\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps换算为82 BPM，所有增益、滤波器、包络参数均按指定值精确实现\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"有时用fast(2)制造节奏变化，但缺少LFO或调制类的动态表达\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"第二轮只添加lead层，第三轮将鼓和hi-hat改为TR909，但用户仅要求改鼓，hi-hat改动属合理延伸\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"对‘飘的旋律层’理解为带delay/room的三角波旋律，对‘鼓换909’正确更换音源并保留原有节奏\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"没有任何层使用sine.range、perlin.range或fm调制，缺乏呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"仅鼓的sometimes(fast(2))和lead的mask序列提供简单节奏变化，未使用欧几里得、struct、swing或late\" },\n  \"total\": 13\n}"
+      }
+    },
+    {
+      "caseId": "MT-A-002",
+      "caseName": "渐进式-降BPM-加混响",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "来一段 house 风格的音乐",
+          "generatedCode": "setcps(0.5208333333333334)\nstack(\n  /* @layer drums */ stack(s(\"bd bd bd bd\").gain(0.85), s(\"~ sd ~ sd\").gain(0.7)),\n  /* @layer hh */ s(\"hh*16\").gain(0.35).sometimes(fast(2)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.3)\n)",
+          "explanation": "质量检查全部通过！现在验证代码并提交。",
+          "durationMs": 51651
+        },
+        {
+          "userMessage": "BPM 降到 100",
+          "generatedCode": "setcps(0.4166666666666667)\nstack(\n  /* @layer drums */ stack(s(\"bd bd bd bd\").gain(0.85), s(\"~ sd ~ sd\").gain(0.7)),\n  /* @layer hh */ s(\"hh*16\").gain(0.35).sometimes(fast(2)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.3)\n)",
+          "explanation": "BPM 已从 125 降至 100。校验一下最终代码：",
+          "durationMs": 5173
+        },
+        {
+          "userMessage": "给 pad 层加更多混响",
+          "generatedCode": "setcps(0.4166666666666667)\nstack(\n  /* @layer drums */ stack(s(\"bd bd bd bd\").gain(0.85), s(\"~ sd ~ sd\").gain(0.7)),\n  /* @layer hh */ s(\"hh*16\").gain(0.35).sometimes(fast(2)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.3).room(0.65)\n)",
+          "explanation": "混响值已经追加为 0.65（后面的值会覆盖前面的 0.3），最终 pad 混响感会更足。来验证并提交：",
+          "durationMs": 6253
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": false,
+            "score": 0,
+            "detail": "无节奏多样性（无 euclidean、struct、swing、late）— 节奏机械"
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 7.8,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "最终代码保持house风格的典型元素（四对地鼓、军鼓、16分hi-hat、锯齿波贝斯、弦乐pad）"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、hi-hat、贝斯、pad四层覆盖house律动骨架"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "鼓密度低、hi-hat密度高、bass低频短促、pad中高频长音，频率和密度对比明显"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "BPM正确换算为100，所有明确参数（gain、lpf、room）准确落地"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "偶尔hi-hat加速带来小变化，但整体缺乏动态调制"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "每轮只修改了BPM和pad的room，未提及的层完全保持不变"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "正确理解降BPM到100和增加混响的意图"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "没有使用任何信号调制（sine.range/perlin.range/rand.range/fm）"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "使用了sometimes fast(2)产生偶尔的速度变化，但缺少欧几里得、struct、swing或late"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"最终代码保持house风格的典型元素（四对地鼓、军鼓、16分hi-hat、锯齿波贝斯、弦乐pad）\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、hi-hat、贝斯、pad四层覆盖house律动骨架\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"鼓密度低、hi-hat密度高、bass低频短促、pad中高频长音，频率和密度对比明显\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"BPM正确换算为100，所有明确参数（gain、lpf、room）准确落地\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"偶尔hi-hat加速带来小变化，但整体缺乏动态调制\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"每轮只修改了BPM和pad的room，未提及的层完全保持不变\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"正确理解降BPM到100和增加混响的意图\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"没有使用任何信号调制（sine.range/perlin.range/rand.range/fm）\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"使用了sometimes fast(2)产生偶尔的速度变化，但缺少欧几里得、struct、swing或late\" },\n  \"total\": 14\n}"
+      }
+    },
+    {
+      "caseId": "MT-A-003",
+      "caseName": "渐进式-移除旋律层-调鼓音量",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "做一段四层的 techno：鼓、hh、贝斯、旋律",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ s(\"bd*4\").bank(\"RolandTR808\").gain(0.85),\n  /* @layer hh */ s(\"hh*8\").gain(0.45).sometimes(x => x.struct(\"x ~ x x\")),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(400).gain(0.7).attack(0.02).release(0.15),\n  /* @layer lead */ note(\"0 3 2 0 0 3 2 1\").scale(\"C:phrygian\").s(\"sawtooth\").lpf(1200).gain(0.5).delay(0.3).room(0.4)\n)",
+          "explanation": "校验通过，提交最终作品。",
+          "durationMs": 52878
+        },
+        {
+          "userMessage": "把旋律层去掉",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ s(\"bd*4\").bank(\"RolandTR808\").gain(0.85),\n  /* @layer hh */ s(\"hh*8\").gain(0.45).sometimes(x => x.struct(\"x ~ x x\")),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(400).gain(0.7).attack(0.02).release(0.15)\n)",
+          "explanation": "旋律层已移除。现在只剩鼓、hi-hat 和贝斯，结构更干净紧凑。做一次校验然后提交。",
+          "durationMs": 3648
+        },
+        {
+          "userMessage": "鼓的音量再大一点",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ s(\"bd*4\").bank(\"RolandTR808\").gain(0.95),\n  /* @layer hh */ s(\"hh*8\").gain(0.45).sometimes(x => x.struct(\"x ~ x x\")),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(400).gain(0.7).attack(0.02).release(0.15)\n)",
+          "explanation": "鼓的 gain 从 0.85 提到 0.95，让 kick 更有冲击力。",
+          "durationMs": 6966
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": false,
+            "score": 0,
+            "detail": "无 pad 层，跳过"
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        },
+        "layerPreservationScore": 8.8
+      },
+      "judgeScore": {
+        "total": 7.2,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "最终三层代码保留了 techno 核心元素：4/4 鼓、hi-hat 带切分、sawtooth 贝斯，风格一致"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、hi-hat、贝斯三层构成完整的 techno 律动骨架"
+          },
+          "musical_diversity": {
+            "score": 1,
+            "reason": "各层频率区间有区分，但节奏模式较为固定（bd*4, hh*8, 贝斯循环）缺乏密度变化"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps(0.5417)=130BPM 符合 techno，gain 参数按用户要求准确调整且未误改其他参数"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "仅有 delay 和 room 效果，缺少使声音动态变化的调制"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "每轮修改仅移除旋律层和增大鼓 gain，其他层完全保持不变"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "对“去掉旋律层”和“鼓音量再大一点”的理解正确并且执行到位"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "未使用任何 sine.range/perlin.range/rand.range/fm 等信号调制"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "hi-hat 使用了 struct('x ~ x x') 带来轻微变化，但缺乏欧几里得、swing、late 等丰富手法"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"最终三层代码保留了 techno 核心元素：4/4 鼓、hi-hat 带切分、sawtooth 贝斯，风格一致\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、hi-hat、贝斯三层构成完整的 techno 律动骨架\" },\n  \"musical_diversity\": { \"score\": 1, \"reason\": \"各层频率区间有区分，但节奏模式较为固定（bd*4, hh*8, 贝斯循环）缺乏密度变化\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps(0.5417)=130BPM 符合 techno，gain 参数按用户要求准确调整且未误改其他参数\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"仅有 delay 和 room 效果，缺少使声音动态变化的调制\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"每轮修改仅移除旋律层和增大鼓 gain，其他层完全保持不变\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"对“去掉旋律层”和“鼓音量再大一点”的理解正确并且执行到位\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"未使用任何 sine.range/perlin.range/rand.range/fm 等信号调制\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"hi-hat 使用了 struct('x ~ x x') 带来轻微变化，但缺乏欧几里得、swing、late 等丰富手法\" },\n  \"total\": 13\n}"
+      }
+    },
+    {
+      "caseId": "MT-A-004",
+      "caseName": "渐进式-lofi-鼓贝斯旋律逐层叠加",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "只要一个简单的 lofi 鼓点",
+          "generatedCode": "setcps(0.3541666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8).room(0.3).lpf(1500),\n  /* @layer hh */ s(\"hh*4\").bank(\"RolandTR808\").gain(0.35).room(0.2).hpf(4000)\n)",
+          "explanation": "校验通过，直接提交。",
+          "durationMs": 29542
+        },
+        {
+          "userMessage": "加一条贝斯",
+          "generatedCode": "setcps(0.3541666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8).room(0.3).lpf(1500),\n  /* @layer hh */ s(\"hh*4\").bank(\"RolandTR808\").gain(0.35).room(0.2).hpf(4000),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7)\n)",
+          "explanation": "验证通过，所有质量门都满足。提交最终代码。",
+          "durationMs": 24576
+        },
+        {
+          "userMessage": "再加一条飘的旋律",
+          "generatedCode": "setcps(0.3541666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8).room(0.3).lpf(1500),\n  /* @layer hh */ s(\"hh*4\").bank(\"RolandTR808\").gain(0.35).room(0.2).hpf(4000),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer lead */ n(\"<0 2 4 7 5 4>\").scale(\"C4:minor\").s(\"triangle\").gain(0.45).room(0.6).delay(0.3).lpf(2000).struct(\"x ~ x ~\")\n)",
+          "explanation": "校验通过，提交最终代码。",
+          "durationMs": 32357
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": false,
+            "score": 0,
+            "detail": "无 pad 层，跳过"
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 5.6,
+        "breakdown": {
+          "style_match": {
+            "score": 1,
+            "reason": "鼓点简单、贝斯和旋律符合lofi氛围，但缺少典型lofi效果如噪声或切片"
+          },
+          "layer_completeness": {
+            "score": 1,
+            "reason": "有鼓、HH、贝斯、旋律层，但打击乐层只有BD和SD，缺少其他打击乐"
+          },
+          "musical_diversity": {
+            "score": 1,
+            "reason": "各层频率区间分布良好，但密度对比有限，节奏模式较为规整"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps换算BPM正确（约85BPM），所有参数使用准确"
+          },
+          "creative_expression": {
+            "score": 0,
+            "reason": "没有使用任何调制（如sine.range、perlin.range等），音乐缺乏动态变化"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "每轮仅添加要求的层，未修改已有层，完全符合增量修改"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "准确理解'简单lofi鼓点'、'加贝斯'、'加飘旋律'，并合理实现"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "没有一层使用信号调制，无呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "旋律层使用了struct但鼓和贝斯节奏简单，缺乏欧几里得、swing等"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 1, \"reason\": \"鼓点简单、贝斯和旋律符合lofi氛围，但缺少典型lofi效果如噪声或切片\" },\n  \"layer_completeness\": { \"score\": 1, \"reason\": \"有鼓、HH、贝斯、旋律层，但打击乐层只有BD和SD，缺少其他打击乐\" },\n  \"musical_diversity\": { \"score\": 1, \"reason\": \"各层频率区间分布良好，但密度对比有限，节奏模式较为规整\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps换算BPM正确（约85BPM），所有参数使用准确\" },\n  \"creative_expression\": { \"score\": 0, \"reason\": \"没有使用任何调制（如sine.range、perlin.range等），音乐缺乏动态变化\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"每轮仅添加要求的层，未修改已有层，完全符合增量修改\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"准确理解'简单lofi鼓点'、'加贝斯'、'加飘旋律'，并合理实现\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"没有一层使用信号调制，无呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"旋律层使用了struct但鼓和贝斯节奏简单，缺乏欧几里得、swing等\" },\n  \"total\": 10\n}"
+      }
+    },
+    {
+      "caseId": "MT-A-005",
+      "caseName": "渐进式-techno-鼓bass-hh-pad四层叠加",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "只要一个 techno 鼓点",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ s(\"bd*4\").gain(0.85).lpf(200).add(s(\"hh*8\").gain(0.35).hpf(10000)).add(s(\"cp\").mask(\"<1 0 1 0>/4\").gain(0.65))\n)",
+          "explanation": "鼓点已经铺好了——经典的 techno 四四拍 kick、八分 hi-hat 加 off-beat clap。验证一下然后提交。",
+          "durationMs": 19549
+        },
+        {
+          "userMessage": "加一条低频 bass",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ s(\"bd*4\").gain(0.85).lpf(200).add(s(\"hh*8\").gain(0.35).hpf(10000)).add(s(\"cp\").mask(\"<1 0 1 0>/4\").gain(0.65)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(400).gain(0.7).attack(0.05).release(0.3)\n)",
+          "explanation": "验证通过，提交最终代码。",
+          "durationMs": 21423
+        },
+        {
+          "userMessage": "再加一层 hi-hat",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ s(\"bd*4\").gain(0.85).lpf(200).add(s(\"hh*8\").gain(0.35).hpf(10000)).add(s(\"cp\").mask(\"<1 0 1 0>/4\").gain(0.65)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(400).gain(0.7).attack(0.05).release(0.3),\n  /* @layer hh2 */ s(\"hh*16\").gain(0.3).hpf(8000).struct(\"x ~ x x\").chunk(4, fast(2)).sometimes(x => x.speed(\"<1 1.2>\"))\n)",
+          "explanation": "新层已添加——16分音符 hi-hat，加入切分节奏（`struct(\"x ~ x x\")`）、分块加速和音高微变，在现有 8 分 hh 的间隙中穿插，让镲片层更灵动。",
+          "durationMs": 8400
+        },
+        {
+          "userMessage": "最后加一个 pad",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ s(\"bd*4\").gain(0.85).lpf(200).add(s(\"hh*8\").gain(0.35).hpf(10000)).add(s(\"cp\").mask(\"<1 0 1 0>/4\").gain(0.65)),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(400).gain(0.7).attack(0.05).release(0.3),\n  /* @layer hh2 */ s(\"hh*16\").gain(0.3).hpf(8000).struct(\"x ~ x x\").chunk(4, fast(2)).sometimes(x => x.speed(\"<1 1.2>\")),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sawtooth\").attack(0.3).release(1.5).gain(0.4).lpf(1200).room(1.2).pan(sine.range(-0.3,0.3).slow(8))\n)",
+          "explanation": "好，pad 已加好，让我做最终校验。",
+          "durationMs": 26927
+        }
+      ],
+      "ruleScore": {
+        "total": 120,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": true,
+            "score": 10
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 8.9,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "最终代码使用techno常见元素（bd, hh, cp, sawtooth bass, pad），速度130BPM，符合要求的techno风格"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "包含鼓（kick, hi-hat, clap）、bass、附加hi-hat、pad，结构完整，层次清晰"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层在密度（bd每拍1次，hh每拍2次，hh2十六分音符，bass半拍，pad长音）和频率区间（bd低通200，hh高通10000，bass低通400，pad低通1200）均有对比"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps(0.5417)准确对应130BPM，所有增益、滤波截止频率等参数合理且精确"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "pad使用了sine.range调制pan产生立体声移动，hh2有sometimes speed变化，但bass和鼓层缺乏调制"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "每轮只添加新层，原有层代码完全保留未修改，符合递增修改要求"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "用户指令简单明确（加一层），代码准确响应并保持了原有架构"
+          },
+          "signal_modulation": {
+            "score": 2,
+            "reason": "pad层使用了sine.range(-0.3,0.3)调制pan，满足至少一层信号调制的条件"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "cp使用mask交替，hh2使用struct和chunk改变节奏，但未使用欧几里得节奏、swing或late"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"最终代码使用techno常见元素（bd, hh, cp, sawtooth bass, pad），速度130BPM，符合要求的techno风格\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"包含鼓（kick, hi-hat, clap）、bass、附加hi-hat、pad，结构完整，层次清晰\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层在密度（bd每拍1次，hh每拍2次，hh2十六分音符，bass半拍，pad长音）和频率区间（bd低通200，hh高通10000，bass低通400，pad低通1200）均有对比\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps(0.5417)准确对应130BPM，所有增益、滤波截止频率等参数合理且精确\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"pad使用了sine.range调制pan产生立体声移动，hh2有sometimes speed变化，但bass和鼓层缺乏调制\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"每轮只添加新层，原有层代码完全保留未修改，符合递增修改要求\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"用户指令简单明确（加一层），代码准确响应并保持了原有架构\" },\n  \"signal_modulation\": { \"score\": 2, \"reason\": \"pad层使用了sine.range(-0.3,0.3)调制pan，满足至少一层信号调制的条件\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"cp使用mask交替，hh2使用struct和chunk改变节奏，但未使用欧几里得节奏、swing或late\" },\n  \"total\": 16\n}"
+      }
+    },
+    {
+      "caseId": "MT-A-006",
+      "caseName": "渐进式-jazz-鼓钢琴贝斯逐层叠加",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "只要一段 jazz 鼓点",
+          "generatedCode": "setcps(0.4166666666666667)\nstack(\n  /* @layer drums */ stack(\n  s(\"rd*8\").speed(1.5).gain(0.6),          // swing ride\n  s(\"~ ch ~ ch\").gain(0.3).delay(0.1),      // hi-hat foot 2&4\n  s(\"~ sd ~ sd\").bank(\"RolandTR808\").gain(0.5), // snare 2&4\n  s(\"bd ~ ~ ~ bd ~ bd ~\").gain(0.65).lpf(200) // walking-style kick\n)\n)",
+          "explanation": "校验通过，提交最终代码。",
+          "durationMs": 25205
+        },
+        {
+          "userMessage": "加一条钢琴",
+          "generatedCode": "setcps(0.4166666666666667)\nstack(\n  /* @layer drums */ stack(\n  s(\"rd*8\").speed(1.5).gain(0.6),          // swing ride\n  s(\"~ ch ~ ch\").gain(0.3).delay(0.1),      // hi-hat foot 2&4\n  s(\"~ sd ~ sd\").bank(\"RolandTR808\").gain(0.5), // snare 2&4\n  s(\"bd ~ ~ ~ bd ~ bd ~\").gain(0.65).lpf(200) // walking-style kick\n),\n  /* @layer piano */ n(\"<Cmaj9 Dm9 G13 Cmaj9>\").s(\"piano\").gain(0.5).room(0.3).delay(0.15).lpf(2000)\n)",
+          "explanation": "校验通过，提交最终代码。",
+          "durationMs": 26582
+        },
+        {
+          "userMessage": "再加一条贝斯",
+          "generatedCode": "setcps(0.4166666666666667)\nstack(\n  /* @layer drums */ stack(\n  s(\"rd*8\").speed(1.5).gain(0.6),          // swing ride\n  s(\"~ ch ~ ch\").gain(0.3).delay(0.1),      // hi-hat foot 2&4\n  s(\"~ sd ~ sd\").bank(\"RolandTR808\").gain(0.5), // snare 2&4\n  s(\"bd ~ ~ ~ bd ~ bd ~\").gain(0.65).lpf(200) // walking-style kick\n),\n  /* @layer piano */ n(\"<Cmaj9 Dm9 G13 Cmaj9>\").s(\"piano\").gain(0.5).room(0.3).delay(0.15).lpf(2000),\n  /* @layer bass */ n(\"<c2 e2 g2 a2 d2 f2 a2 c3 g2 b2 d3 f3 c2 e2 g2 c3>\").s(\"bass\").slow(4).gain(0.7).lpf(400).attack(0.02).release(0.35)\n)",
+          "explanation": "校验通过，提交最终结果。",
+          "durationMs": 41610
+        }
+      ],
+      "ruleScore": {
+        "total": 90,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": false,
+            "score": 0,
+            "detail": "无 pad 层，跳过"
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10,
+            "detail": "无 hh 层，默认通过"
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": false,
+            "score": 0,
+            "detail": "无节奏多样性（无 euclidean、struct、swing、late）— 节奏机械"
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 6.7,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "摇摆镲、脚跟踩镲、2/4拍军鼓、步行贝斯及爵士和声进行，整体符合爵士鼓点风格。"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓（ride、hi-hat、snare、kick）、钢琴、贝斯三层结构完整，构成合理的律动骨架。"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "鼓节奏密集，钢琴和弦缓慢变化，贝斯线条速度慢，各层在密度和音区上有明显对比。"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps(0.4167) 对应 100 BPM（准确爵士速度），所有指定参数（gain、lpf、speed等）均落实无误。"
+          },
+          "creative_expression": {
+            "score": 1,
+            "reason": "使用了room、delay、lpf等效果器，但缺乏LFO或动态调制，音乐表现力可进一步提升。"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "第二轮仅添加钢琴，第三轮仅添加贝斯，未影响其他层，精准响应每次修改要求。"
+          },
+          "intent_understanding": {
+            "score": 1,
+            "reason": "用户指令明确直接，没有模糊反馈需要推断，默认理解正确。"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "未使用任何sine.range/perlin.range等信号调制，音乐缺乏呼吸感。"
+          },
+          "rhythmic_richness": {
+            "score": 0,
+            "reason": "未使用欧几里得节奏、struct、swing或late，节奏模式较为常规。"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"摇摆镲、脚跟踩镲、2/4拍军鼓、步行贝斯及爵士和声进行，整体符合爵士鼓点风格。\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓（ride、hi-hat、snare、kick）、钢琴、贝斯三层结构完整，构成合理的律动骨架。\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"鼓节奏密集，钢琴和弦缓慢变化，贝斯线条速度慢，各层在密度和音区上有明显对比。\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps(0.4167) 对应 100 BPM（准确爵士速度），所有指定参数（gain、lpf、speed等）均落实无误。\" },\n  \"creative_expression\": { \"score\": 1, \"reason\": \"使用了room、delay、lpf等效果器，但缺乏LFO或动态调制，音乐表现力可进一步提升。\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"第二轮仅添加钢琴，第三轮仅添加贝斯，未影响其他层，精准响应每次修改要求。\" },\n  \"intent_understanding\": { \"score\": 1, \"reason\": \"用户指令明确直接，没有模糊反馈需要推断，默认理解正确。\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"未使用任何sine.range/perlin.range等信号调制，音乐缺乏呼吸感。\" },\n  \"rhythmic_richness\": { \"score\": 0, \"reason\": \"未使用欧几里得节奏、struct、swing或late，节奏模式较为常规。\" },\n  \"total\": 12\n}"
+      }
+    },
+    {
+      "caseId": "MT-B-001",
+      "caseName": "风格迁移-lofi转techno",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "来一段 lofi 风格的音乐",
+          "generatedCode": "setcps(0.3541666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(1.5).delay(0.3),\n  /* @layer hh */ s(\"hh*8\").struct(\"x ~ x x ~ x x ~\").gain(0.4).sometimes(x => x.speed(1.5))\n)",
+          "explanation": "有了呼吸感，结构完整了。做最终的校验然后提交。",
+          "durationMs": 61896
+        },
+        {
+          "userMessage": "改成 techno 感觉",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ stack(s(\"bd*4\").bank(\"RolandTR808\").gain(0.9), s(\"clap*2\").struct(\"~ x ~ x\").bank(\"RolandTR808\").gain(0.65)),\n  /* @layer bass */ note(\"c2 eb2 f2 g2\").s(\"sawtooth\").lpf(400).attack(0.01).release(0.15).gain(0.7),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(1.5).delay(0.3),\n  /* @layer hh */ s(\"hh*8\").bank(\"RolandTR808\").gain(0.3).sometimes(x => x.speed(2)).every(4, x => x.s(\"oh\").gain(0.4)),\n  /* @layer fx */ s(\"noise!2\").delay(0.6).lpf(sine.range(200,4000).slow(16)).gain(0.25).struct(\"x ~ ~ ~\")\n)",
+          "explanation": "改好了，来校验最终代码：",
+          "durationMs": 50570
+        }
+      ],
+      "ruleScore": {
+        "total": 120,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": true,
+            "score": 10
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 9.4,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "setcps=130BPM，四四拍鼓+合成低音+噪声FX，准确匹配techno风格"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、贝斯、和弦、擦片、FX五层完备，骨架清晰"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层密度、频率区间有明显对比，从低频到高频覆盖完整"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps(0.5417)严格对应130BPM，其他参数精确落地"
+          },
+          "creative_expression": {
+            "score": 2,
+            "reason": "噪声层lpf用sine调制扫频，hihat有speed和音色变换，富有动感"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "只修改了鼓和贝斯层，新增FX层，保留pad和hihat未改动"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "正确理解'techno感觉'，提升BPM、改为四四拍、增加工业感FX"
+          },
+          "signal_modulation": {
+            "score": 2,
+            "reason": "FX层使用了lpf(sine.range(200,4000).slow(16))信号调制"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "仅使用了struct和偶尔的hihat变化，缺少欧几里得/swing/late等多样性"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"setcps=130BPM，四四拍鼓+合成低音+噪声FX，准确匹配techno风格\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、贝斯、和弦、擦片、FX五层完备，骨架清晰\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、贝斯、和弦、擦片、FX五层完备，骨架清晰\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层密度、频率区间有明显对比，从低频到高频覆盖完整\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps(0.5417)严格对应130BPM，其他参数精确落地\" },\n  \"creative_expression\": { \"score\": 2, \"reason\": \"噪声层lpf用sine调制扫频，hihat有speed和音色变换，富有动感\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"只修改了鼓和贝斯层，新增FX层，保留pad和hihat未改动\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"正确理解'techno感觉'，提升BPM、改为四四拍、增加工业感FX\" },\n  \"signal_modulation\": { \"score\": 2, \"reason\": \"FX层使用了lpf(sine.range(200,4000).slow(16))信号调制\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"仅使用了struct和偶尔的hihat变化，缺少欧几里得/swing/late等多样性\" },\n  \"total\": 17\n}"
+      }
+    },
+    {
+      "caseId": "MT-B-002",
+      "caseName": "风格迁移-ambient转house",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "做一段安静的 ambient 音乐",
+          "generatedCode": "setcps(0.2916666666666667)\nstack(\n  /* @layer drums */ s(\"bd\").gain(0.4).lpf(100).struct(\"x ~ ~ ~ ~ ~ ~ ~\"),\n  /* @layer bass */ n(\"0 0 7 0\").scale(\"C3:lydian\").s(\"sine\").lpf(200).gain(0.5).attack(0.5).release(3).slow(4),\n  /* @layer pad */ n(\"0 4 7 6\").scale(\"C4:lydian\").s(\"sawtooth\").lpf(1800).gain(0.35).attack(2).release(4).room(0.8).delay(0.3).slow(2),\n  /* @layer fx */ n(\"0 7 12 16\").scale(\"C5:lydian\").s(\"sine\").hpf(2500).gain(0.2).delay(0.8).room(1).attack(2).release(6).slow(4)\n)",
+          "explanation": "校验通过，所有质量门控检查也都满足。提交最终代码。",
+          "durationMs": 68536
+        },
+        {
+          "userMessage": "改成 house 风格，加入四四拍鼓",
+          "generatedCode": "setcps(0.5208333333333334)\nstack(\n  /* @layer drums */ stack(\n  s(\"bd*4\").gain(0.85),\n  s(\"sd*2\").gain(0.75),\n  s(\"hh*8\").sometimes(fast(2)).gain(0.35)\n).bank(\"RolandTR808\"),\n  /* @layer bass */ n(\"0 0 7 0\").scale(\"C3:lydian\").s(\"sawtooth\").lpf(300).gain(0.6).attack(0.02).release(0.15).sustain(0.8),\n  /* @layer pad */ n(\"0 4 7 6\").scale(\"C4:lydian\").s(\"sawtooth\").lpf(2000).gain(0.35).attack(0.1).release(1.5).room(0.7).delay(0.25),\n  /* @layer fx */ n(\"0 7 12 16\").scale(\"C5:lydian\").s(\"sine\").hpf(2500).gain(0.15).delay(0.6).room(0.8).attack(0.5).release(2)\n)",
+          "explanation": "校验通过，提交最终成果。",
+          "durationMs": 42662
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": false,
+            "score": 0,
+            "detail": "无节奏多样性（无 euclidean、struct、swing、late）— 节奏机械"
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 6.7,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "最终代码从 ambient 转化为典型的 house 风格，鼓点为 four-on-the-floor，BPM 125 符合要求。"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓组包含 kick、snare、hi-hat，组成完整的 house 律动骨架。"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层在音色（鼓、锯齿波、正弦波）、频率（低、中、高）、密度（鼓密集、其他稀疏）上有明显对比。"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "BPM 125（setcps(0.5208)）准确落在 118-128 范围内，且所有 gain、滤波、包络参数均按需设定。"
+          },
+          "creative_expression": {
+            "score": 0,
+            "reason": "代码未使用任何动态调制（如 sine.range、perlin.range 等），所有参数静态。"
+          },
+          "edit_precision": {
+            "score": 1,
+            "reason": "用户仅要求改风格和鼓，但 bass、pad、fx 层的 attack/release 等参数也被修改，未保持原样。"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "正确理解并实现了‘house 风格’和‘四四拍鼓’，BPM 提升到 house 范围。"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "无任何信号调制（如 sine.range、perlin.range 等），缺少呼吸感。"
+          },
+          "rhythmic_richness": {
+            "score": 1,
+            "reason": "鼓为简单的倍数序列，仅 hi-hat 有 sometimes(fast(2)) 带来一点变化，未使用欧几里得、struct、swing 等。"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"最终代码从 ambient 转化为典型的 house 风格，鼓点为 four-on-the-floor，BPM 125 符合要求。\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓组包含 kick、snare、hi-hat，组成完整的 house 律动骨架。\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层在音色（鼓、锯齿波、正弦波）、频率（低、中、高）、密度（鼓密集、其他稀疏）上有明显对比。\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"BPM 125（setcps(0.5208)）准确落在 118-128 范围内，且所有 gain、滤波、包络参数均按需设定。\" },\n  \"creative_expression\": { \"score\": 0, \"reason\": \"代码未使用任何动态调制（如 sine.range、perlin.range 等），所有参数静态。\" },\n  \"edit_precision\": { \"score\": 1, \"reason\": \"用户仅要求改风格和鼓，但 bass、pad、fx 层的 attack/release 等参数也被修改，未保持原样。\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"正确理解并实现了‘house 风格’和‘四四拍鼓’，BPM 提升到 house 范围。\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"无任何信号调制（如 sine.range、perlin.range 等），缺少呼吸感。\" },\n  \"rhythmic_richness\": { \"score\": 1, \"reason\": \"鼓为简单的倍数序列，仅 hi-hat 有 sometimes(fast(2)) 带来一点变化，未使用欧几里得、struct、swing 等。\" },\n  \"total\": 12\n}"
+      }
+    },
+    {
+      "caseId": "MT-B-003",
+      "caseName": "风格迁移-jazz转trap",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "做一段 jazz 风格的音乐，有钢琴和贝斯",
+          "generatedCode": "setcps(0.4166666666666667)\nstack(\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer piano */ chord(\"<Cm9 Fm9 G7alt Cm9>/4\").dict(\"ireal\").voicing().s(\"piano\").gain(0.5).room(0.3).delay(0.15),\n  /* @layer drums */ s(\"rd bd rd bd, ~ sd ~ ~\").gain(0.35).room(0.2)\n)",
+          "explanation": "校验通过，可以提交了！",
+          "durationMs": 52544
+        },
+        {
+          "userMessage": "改成 trap 风格，保留贝斯但换成 808",
+          "generatedCode": "setcps(0.625)\nstack(\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(200).gain(0.8).decay(0.2).sustain(0.7).release(0.4),\n  /* @layer piano */ chord(\"<Cm9 Fm9 G7alt Cm9>/4\").dict(\"ireal\").voicing().s(\"piano\").gain(0.5).room(0.3).delay(0.15),\n  /* @layer drums */ s(\"808bd ~ 808bd ~, ~ 808sd ~ 808sd, [808hc!3 808oh]*2\").gain(0.8,0.6,0.25).room(0.2)\n)",
+          "explanation": "校验通过，最终结果是完整的 trap 编曲：150 BPM、808 sub bass（保留原 note 线条）、trap 鼓组（808 kick/clap + hi-hat rolls），钢琴层保留原和弦营造氛围。",
+          "durationMs": 53731
+        }
+      ],
+      "ruleScore": {
+        "total": 90,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": false,
+            "score": 0,
+            "detail": "无 pad 层，跳过"
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10,
+            "detail": "无 hh 层，默认通过"
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": false,
+            "score": 0,
+            "detail": "无节奏多样性（无 euclidean、struct、swing、late）— 节奏机械"
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 3.3,
+        "breakdown": {
+          "style_match": {
+            "score": 1,
+            "reason": "BPM符合trap范围，鼓改用808，但钢琴和弦进行仍偏jazz"
+          },
+          "layer_completeness": {
+            "score": 1,
+            "reason": "包含贝斯、钢琴、鼓三层，缺少trap常见的synth旋律层"
+          },
+          "musical_diversity": {
+            "score": 1,
+            "reason": "各层频率区间有对比，但节奏型单一，缺乏密度变化"
+          },
+          "parameter_accuracy": {
+            "score": 0,
+            "reason": "BPM准确(150)，但用户要求'贝斯换成808'，代码仍用sawtooth音色，未实现"
+          },
+          "creative_expression": {
+            "score": 0,
+            "reason": "没有任何调制或自动化，音乐缺乏动态变化"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "第二轮仅修改了贝斯和鼓层，钢琴层未改动，符合要求"
+          },
+          "intent_understanding": {
+            "score": 1,
+            "reason": "对改trap理解正确，但对'换成808'理解为仅调整包络和滤波，未更换音色"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "未使用任何信号调制(如sine.range/perlin.range等)"
+          },
+          "rhythmic_richness": {
+            "score": 0,
+            "reason": "鼓节奏仅为简单模式，未使用欧几里得、struct、swing或late"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 1, \"reason\": \"BPM符合trap范围，鼓改用808，但钢琴和弦进行仍偏jazz\" },\n  \"layer_completeness\": { \"score\": 1, \"reason\": \"包含贝斯、钢琴、鼓三层，缺少trap常见的synth旋律层\" },\n  \"musical_diversity\": { \"score\": 1, \"reason\": \"各层频率区间有对比，但节奏型单一，缺乏密度变化\" },\n  \"parameter_accuracy\": { \"score\": 0, \"reason\": \"BPM准确(150)，但用户要求'贝斯换成808'，代码仍用sawtooth音色，未实现\" },\n  \"creative_expression\": { \"score\": 0, \"reason\": \"没有任何调制或自动化，音乐缺乏动态变化\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"第二轮仅修改了贝斯和鼓层，钢琴层未改动，符合要求\" },\n  \"intent_understanding\": { \"score\": 1, \"reason\": \"对改trap理解正确，但对'换成808'理解为仅调整包络和滤波，未更换音色\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"未使用任何信号调制(如sine.range/perlin.range等)\" },\n  \"rhythmic_richness\": { \"score\": 0, \"reason\": \"鼓节奏仅为简单模式，未使用欧几里得、struct、swing或late\" },\n  \"total\": 6\n}"
+      }
+    },
+    {
+      "caseId": "MT-C-001",
+      "caseName": "模糊反馈-太吵了",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "来一段电子音乐",
+          "generatedCode": "setcps(0.5416666666666666)\nstack(\n  /* @layer drums */ s(\"bd bd bd bd\").bank(\"RolandTR808\").gain(0.85),\n  /* @layer clap */ s(\"~ cp ~ cp\").bank(\"RolandTR808\").gain(0.7),\n  /* @layer bass */ note(\"e2 e2 G2 g2 f#2 f#2 e2 d2\").s(\"sawtooth\").lpf(400).gain(0.7),\n  /* @layer hh */ s(\"hc*8\").mask(\"<1 1 1 0 1 0 1 1>/8\").bank(\"RolandTR808\").gain(0.4),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"E4:minor\").s(\"sawtooth\").attack(0.5).release(2).lpf(2000).hpf(300).room(0.8).gain(0.35).delay(0.3),\n  /* @layer fx */ s(\"~ ~ ~ oh\").bank(\"RolandTR808\").gain(0.3)\n)",
+          "explanation": "校验通过！提交最终作品。",
+          "durationMs": 60455
+        },
+        {
+          "userMessage": "感觉太吵了，能安静一点吗",
+          "generatedCode": "setcps(0.4166666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ bd ~\").bank(\"RolandTR808\").gain(0.5),\n  /* @layer clap */ s(\"~ cp ~ cp\").bank(\"RolandTR808\").gain(0.3),\n  /* @layer bass */ note(\"e2 e2 G2 g2 f#2 f#2 e2 d2\").s(\"sine\").lpf(400).gain(0.4),\n  /* @layer hh */ s(\"hc*8\").mask(\"<1 0 1 0 1 0 0 1>/8\").bank(\"RolandTR808\").gain(0.2),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"E4:minor\").s(\"sine\").attack(0.5).release(2).lpf(2000).hpf(300).room(0.8).gain(0.25).delay(0.3),\n  /* @layer fx */ s(\"~ ~ ~ oh\").bank(\"RolandTR808\").gain(0.15)\n)",
+          "explanation": "校验通过，安静感大幅提升了——现在来提交。",
+          "durationMs": 20917
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": false,
+            "score": 0,
+            "detail": "无节奏多样性（无 euclidean、struct、swing、late）— 节奏机械"
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 5.6,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "最终代码仍保持电子音乐风格，使用了合成器与RolandTR808鼓机，情绪从激烈变为安静但未脱离风格"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、拍手、镲片、贝斯、铺垫、FX各层齐全，形成完整律动骨架"
+          },
+          "musical_diversity": {
+            "score": 1,
+            "reason": "各层音色频率区间有对比（低音贝斯、中高pad、高频hh），但密度差异缩小，整体略显稀疏"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "用户未指定具体参数，setcps对应100BPM，各gain值准确落地，无参数错误"
+          },
+          "creative_expression": {
+            "score": 0,
+            "reason": "未使用任何调制或动态变化，音乐缺乏呼吸感和意外性"
+          },
+          "edit_precision": {
+            "score": 1,
+            "reason": "主要降低了gain和密度，但将bass和pad音色从sawtooth改为sine，超出了用户仅要求'安静'的范畴"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "对'太吵了'的反馈理解合理，通过降低gain、减少密度、切换柔和音色使整体更安静"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "任何层均未使用sine.range/perlin.range/rand.range或fm等信号调制"
+          },
+          "rhythmic_richness": {
+            "score": 0,
+            "reason": "未使用欧几里得节奏、struct、swing或late，节奏模式基础无变化"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"最终代码仍保持电子音乐风格，使用了合成器与RolandTR808鼓机，情绪从激烈变为安静但未脱离风格\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、拍手、镲片、贝斯、铺垫、FX各层齐全，形成完整律动骨架\" },\n  \"musical_diversity\": { \"score\": 1, \"reason\": \"各层音色频率区间有对比（低音贝斯、中高pad、高频hh），但密度差异缩小，整体略显稀疏\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"用户未指定具体参数，setcps对应100BPM，各gain值准确落地，无参数错误\" },\n  \"creative_expression\": { \"score\": 0, \"reason\": \"未使用任何调制或动态变化，音乐缺乏呼吸感和意外性\" },\n  \"edit_precision\": { \"score\": 1, \"reason\": \"主要降低了gain和密度，但将bass和pad音色从sawtooth改为sine，超出了用户仅要求'安静'的范畴\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"对'太吵了'的反馈理解合理，通过降低gain、减少密度、切换柔和音色使整体更安静\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"任何层均未使用sine.range/perlin.range/rand.range或fm等信号调制\" },\n  \"rhythmic_richness\": { \"score\": 0, \"reason\": \"未使用欧几里得节奏、struct、swing或late，节奏模式基础无变化\" },\n  \"total\": 10\n}"
+      }
+    },
+    {
+      "caseId": "MT-C-002",
+      "caseName": "模糊反馈-旋律太平",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "来一段带旋律的 lofi 音乐",
+          "generatedCode": "setcps(0.3333333333333333)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer hh */ s(\"hh*8\").bank(\"RolandTR808\").gain(0.4).lpf(10000),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.5).delay(0.2),\n  /* @layer lead */ n(\"<0 2 4 7 5 4>\").scale(\"C4:minor\").s(\"triangle\").gain(0.5).release(0.8).room(0.3).delay(0.15)\n)",
+          "explanation": "校验通过，一切完美。提交！",
+          "durationMs": 75557
+        },
+        {
+          "userMessage": "旋律太平了，缺少变化",
+          "generatedCode": "setcps(0.3333333333333333)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer hh */ s(\"hh*8\").bank(\"RolandTR808\").gain(0.4).lpf(10000),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(0.5).delay(0.2).gain(sine.range(0.3,0.5).slow(8)),\n  /* @layer lead */ n(\"<[0 2 4 7] [7 5 4 2] [0 3 7 10] [8 7 5 4]>\").scale(\"C4:minor\").s(\"triangle\").gain(0.5).release(0.6).room(0.3).delay(0.15).lpf(sine.range(800,3000).slow(8)).struct(\"x x x ~ x x x x\")\n)",
+          "explanation": "验证通过，提交最终版本。",
+          "durationMs": 19653
+        }
+      ],
+      "ruleScore": {
+        "total": 120,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": true,
+            "score": 10
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": true,
+            "score": 10
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 10,
+        "breakdown": {
+          "style_match": {
+            "score": 2,
+            "reason": "最终代码保持了 lofi 风格，使用 808 鼓、模拟合成音色和舒缓速度，未偏离原始风格"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "有鼓、贝斯、hihat、pad、lead 五个层，骨架完整，速度符合 lofi 特征"
+          },
+          "musical_diversity": {
+            "score": 2,
+            "reason": "各层在频率（贝斯低频、pad中低频、lead中高频、hihat高频）和密度（鼓稀疏、hihat连续、pad长音、lead有节奏变化）上对比明显"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps(0.3333) 正确对应 80 BPM，其他指定参数如 lpf(500) 等均准确落地"
+          },
+          "creative_expression": {
+            "score": 2,
+            "reason": "pad 的 gain 和 lead 的 lpf 均使用了 sine 范围调制，且 lead 添加了序列变化和 struct，让旋律有生命感"
+          },
+          "edit_precision": {
+            "score": 2,
+            "reason": "只修改了 pad 和 lead 层（添加调制和节奏变化），drums、bass、hh 层完全保持原样"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "针对‘旋律太平缺少变化’的理解合理，通过增加音高序列、struct 节奏和滤波调制实现了动态变化"
+          },
+          "signal_modulation": {
+            "score": 2,
+            "reason": "pad 的 gain 和 lead 的 lpf 均使用了 sine.range 信号调制，使音乐有呼吸感"
+          },
+          "rhythmic_richness": {
+            "score": 2,
+            "reason": "lead 层使用了 struct 模式，提供了节奏上的变化，打破了原本平直的节奏"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 2, \"reason\": \"最终代码保持了 lofi 风格，使用 808 鼓、模拟合成音色和舒缓速度，未偏离原始风格\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"有鼓、贝斯、hihat、pad、lead 五个层，骨架完整，速度符合 lofi 特征\" },\n  \"musical_diversity\": { \"score\": 2, \"reason\": \"各层在频率（贝斯低频、pad中低频、lead中高频、hihat高频）和密度（鼓稀疏、hihat连续、pad长音、lead有节奏变化）上对比明显\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps(0.3333) 正确对应 80 BPM，其他指定参数如 lpf(500) 等均准确落地\" },\n  \"creative_expression\": { \"score\": 2, \"reason\": \"pad 的 gain 和 lead 的 lpf 均使用了 sine 范围调制，且 lead 添加了序列变化和 struct，让旋律有生命感\" },\n  \"edit_precision\": { \"score\": 2, \"reason\": \"只修改了 pad 和 lead 层（添加调制和节奏变化），drums、bass、hh 层完全保持原样\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"针对‘旋律太平缺少变化’的理解合理，通过增加音高序列、struct 节奏和滤波调制实现了动态变化\" },\n  \"signal_modulation\": { \"score\": 2, \"reason\": \"pad 的 gain 和 lead 的 lpf 均使用了 sine.range 信号调制，使音乐有呼吸感\" },\n  \"rhythmic_richness\": { \"score\": 2, \"reason\": \"lead 层使用了 struct 模式，提供了节奏上的变化，打破了原本平直的节奏\" },\n  \"total\": 18\n}"
+      }
+    },
+    {
+      "caseId": "MT-C-003",
+      "caseName": "模糊反馈-低音过重",
+      "caseType": "multi",
+      "turns": [
+        {
+          "userMessage": "做一段有厚重低音的音乐",
+          "generatedCode": "setcps(0.3541666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.7),\n  /* @layer hh */ s(\"hh*8\").gain(0.5).sometimes(x => x.struct(\"x ~ x ~\")),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(1)\n)",
+          "explanation": "验证通过，代码没有问题。现在提交最终成果。",
+          "durationMs": 60225
+        },
+        {
+          "userMessage": "低音太重了，压住其他层了",
+          "generatedCode": "setcps(0.3541666666666667)\nstack(\n  /* @layer drums */ s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.85),\n  /* @layer bass */ note(\"c2 c2 eb2 f2\").s(\"sawtooth\").lpf(500).gain(0.5),\n  /* @layer hh */ s(\"hh*8\").gain(0.55).sometimes(x => x.struct(\"x ~ x ~\")),\n  /* @layer pad */ n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4).room(1)\n)",
+          "explanation": "调整到位了：bass 从 0.7 降到 0.5，鼓从 0.8 微提到 0.85，hi-hat 从 0.5 提到 0.55。这样低音不再压头，整体层次更分明。来验证一下最终代码。",
+          "durationMs": 8003
+        }
+      ],
+      "ruleScore": {
+        "total": 100,
+        "breakdown": {
+          "syntax": {
+            "pass": true,
+            "score": 20
+          },
+          "hasMusic": {
+            "pass": true,
+            "score": 0
+          },
+          "bpmAccuracy": {
+            "pass": true,
+            "score": 10
+          },
+          "layerCount": {
+            "pass": true,
+            "score": 10
+          },
+          "bassLpf": {
+            "pass": true,
+            "score": 10
+          },
+          "padRoom": {
+            "pass": true,
+            "score": 10
+          },
+          "hhGain": {
+            "pass": false,
+            "score": 0
+          },
+          "breathingSpace": {
+            "pass": true,
+            "score": 10
+          },
+          "noTidalOnly": {
+            "pass": true,
+            "score": 10
+          },
+          "noSetcpsInLayers": {
+            "pass": true,
+            "score": 10
+          },
+          "signalModulation": {
+            "pass": false,
+            "score": 0,
+            "detail": "无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感"
+          },
+          "rhythmicVariety": {
+            "pass": true,
+            "score": 10
+          }
+        },
+        "layerPreservationScore": 10
+      },
+      "judgeScore": {
+        "total": 5,
+        "breakdown": {
+          "style_match": {
+            "score": 1,
+            "reason": "初始厚重低音风格满足，降低 gain 后仍保留厚重感但减轻压迫，基本符合"
+          },
+          "layer_completeness": {
+            "score": 2,
+            "reason": "鼓、贝司、踩镲、铺底四层骨架完整"
+          },
+          "musical_diversity": {
+            "score": 1,
+            "reason": "各层在密度和频率区间有基本对比但不够丰富，如缺少中高频变化"
+          },
+          "parameter_accuracy": {
+            "score": 2,
+            "reason": "setcps 换算正确，所有指定参数精确落地"
+          },
+          "creative_expression": {
+            "score": 0,
+            "reason": "无任何 LFO、渐变或动态调制，音乐缺乏活性"
+          },
+          "edit_precision": {
+            "score": 1,
+            "reason": "修改了 bass gain 符合要求，但额外提高了鼓和踩镲 gain，非用户要求"
+          },
+          "intent_understanding": {
+            "score": 2,
+            "reason": "正确理解用户要求降低 bass 以减轻压迫感，调整方向合理"
+          },
+          "signal_modulation": {
+            "score": 0,
+            "reason": "未使用任何信号调制（sine.range / perlin.range 等）"
+          },
+          "rhythmic_richness": {
+            "score": 0,
+            "reason": "未使用欧几里得节奏、struct、swing 或 late，节奏较平淡"
+          }
+        },
+        "rawResponse": "{\n  \"style_match\": { \"score\": 1, \"reason\": \"初始厚重低音风格满足，降低 gain 后仍保留厚重感但减轻压迫，基本符合\" },\n  \"layer_completeness\": { \"score\": 2, \"reason\": \"鼓、贝司、踩镲、铺底四层骨架完整\" },\n  \"musical_diversity\": { \"score\": 1, \"reason\": \"各层在密度和频率区间有基本对比但不够丰富，如缺少中高频变化\" },\n  \"parameter_accuracy\": { \"score\": 2, \"reason\": \"setcps 换算正确，所有指定参数精确落地\" },\n  \"creative_expression\": { \"score\": 0, \"reason\": \"无任何 LFO、渐变或动态调制，音乐缺乏活性\" },\n  \"edit_precision\": { \"score\": 1, \"reason\": \"修改了 bass gain 符合要求，但额外提高了鼓和踩镲 gain，非用户要求\" },\n  \"intent_understanding\": { \"score\": 2, \"reason\": \"正确理解用户要求降低 bass 以减轻压迫感，调整方向合理\" },\n  \"signal_modulation\": { \"score\": 0, \"reason\": \"未使用任何信号调制（sine.range / perlin.range 等）\" },\n  \"rhythmic_richness\": { \"score\": 0, \"reason\": \"未使用欧几里得节奏、struct、swing 或 late，节奏较平淡\" },\n  \"total\": 9\n}"
+      }
+    }
+  ],
+  "summary": {
+    "totalCases": 22,
+    "avgRuleScore": 106.36363636363636,
+    "avgJudgeScore": 7.336363636363637,
+    "syntaxPassRate": 1
+  }
+}

@@ -2,13 +2,31 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// 加载 scripts/eval/.env（如存在）
+{
+  const __dir = path.dirname(fileURLToPath(import.meta.url));
+  const envFile = path.join(__dir, '.env');
+  if (fs.existsSync(envFile)) {
+    const lines = fs.readFileSync(envFile, 'utf8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const idx = trimmed.indexOf('=');
+      if (idx === -1) continue;
+      const key = trimmed.slice(0, idx).trim();
+      const val = trimmed.slice(idx + 1).trim();
+      if (key && !(key in process.env)) process.env[key] = val;
+    }
+  }
+}
 import { SINGLE_TURN_CASES } from './test-cases/single-turn.js';
 import { MULTI_TURN_CASES } from './test-cases/multi-turn.js';
 import { runAgentTurn, AGENT_SYSTEM_PROMPT, IMPROVISE_SYSTEM_PROMPT } from './agent-runner.js';
 import { scoreRules, scoreLayerPreservation, judgeSingleTurn, judgeMultiTurn } from './evaluator.js';
 import type {
   SingleTurnCase, MultiTurnCase, CaseResult, TurnResult,
-  EvalSnapshot, EvalSummary,
+  EvalSnapshot, EvalSummary, JudgeScore,
 } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,8 +75,15 @@ async function runSingleCase(tc: SingleTurnCase, noJudge: boolean): Promise<Case
     explanation: turnResult.explanation,
     durationMs: turnResult.durationMs,
   }];
-  const ruleScore = scoreRules(turnResult.code);
-  const judgeScore = noJudge ? null : await judgeSingleTurn(tc, turnResult.code);
+  const ruleScore = scoreRules(turnResult.code, [tc.prompt]);
+  let judgeScore: JudgeScore | null = null;
+  if (!noJudge) {
+    try {
+      judgeScore = await judgeSingleTurn(tc, turnResult.code);
+    } catch (e) {
+      console.warn(`     [judge] 评分失败，跳过: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   console.log(`     规则分: ${ruleScore.total} | Judge分: ${judgeScore?.total ?? '-'}`);
   return { caseId: tc.id, caseName: tc.name, caseType: 'single', turns, ruleScore, judgeScore };
 }
@@ -87,9 +112,16 @@ async function runMultiCase(tc: MultiTurnCase, noJudge: boolean): Promise<CaseRe
     currentCode = result.code;
   }
   const finalCode = turns[turns.length - 1].generatedCode;
-  const ruleScore = scoreRules(finalCode);
+  const ruleScore = scoreRules(finalCode, tc.turns.map((t) => t.userMessage));
   ruleScore.layerPreservationScore = scoreLayerPreservation(turns);
-  const judgeScore = noJudge ? null : await judgeMultiTurn(tc, turns);
+  let judgeScore: JudgeScore | null = null;
+  if (!noJudge) {
+    try {
+      judgeScore = await judgeMultiTurn(tc, turns);
+    } catch (e) {
+      console.warn(`     [judge] 评分失败，跳过: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   console.log(`     规则分: ${ruleScore.total} | 层保留: ${ruleScore.layerPreservationScore} | Judge分: ${judgeScore?.total ?? '-'}`);
   return { caseId: tc.id, caseName: tc.name, caseType: 'multi', turns, ruleScore, judgeScore };
 }

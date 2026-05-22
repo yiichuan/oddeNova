@@ -19,7 +19,8 @@ describe('scoreRules', () => {
     const result = scoreRules(VALID_4_LAYER);
     expect(result.total).toBeGreaterThanOrEqual(80);
     expect(result.breakdown['syntax'].pass).toBe(true);
-    expect(result.breakdown['hasBpm'].pass).toBe(true);
+    expect(result.breakdown['hasMusic'].pass).toBe(true);
+    expect(result.breakdown['bpmAccuracy'].pass).toBe(true);
     expect(result.breakdown['layerCount'].pass).toBe(true);
     expect(result.breakdown['breathingSpace'].pass).toBe(true);
   });
@@ -30,9 +31,9 @@ describe('scoreRules', () => {
     expect(result.total).toBeLessThan(30);
   });
 
-  it('无 BPM 代码 hasBpm 应失败', () => {
+  it('无 BPM 代码 bpmAccuracy 应失败', () => {
     const result = scoreRules(NO_BPM_CODE);
-    expect(result.breakdown['hasBpm'].pass).toBe(false);
+    expect(result.breakdown['bpmAccuracy'].pass).toBe(false);
   });
 
   it('bass 层有 lpf 应通过', () => {
@@ -59,5 +60,35 @@ describe('scoreRules', () => {
     const code = `setcps(0.5)\nstack(\n  /* @layer drums */ s("bd sd").sometimesBy(0.5, fast(2))\n)`;
     const result = scoreRules(code);
     expect(result.breakdown['noTidalOnly'].pass).toBe(false);
+  });
+
+  it('silence 代码 hasMusic 应失败，total 应为 20', () => {
+    const result = scoreRules('setcps(0.375)\nsilence');
+    expect(result.breakdown['hasMusic'].pass).toBe(false);
+    expect(result.breakdown['bpmAccuracy'].pass).toBe(false);
+    expect(result.breakdown['hhGain'].pass).toBe(false);
+    expect(result.breakdown['breathingSpace'].pass).toBe(false);
+    expect(result.total).toBe(20);
+  });
+
+  it('仅 silence（无 setcps）hasMusic 失败，total 应为 20（语法通过）', () => {
+    const result = scoreRules('silence');
+    expect(result.breakdown['hasMusic'].pass).toBe(false);
+    expect(result.total).toBe(20);
+  });
+
+  it('bpmAccuracy 通过：提示词含 120 BPM，代码 setcps(0.5)', () => {
+    const code = `setcps(0.5)\nstack(/* @layer drums */ s("bd ~ sd ~"))`;
+    const result = scoreRules(code, ['来一段 120 BPM 的音乐']);
+    expect(result.breakdown['bpmAccuracy']?.pass).toBe(true);
+    expect(result.breakdown['bpmAccuracy']?.score).toBe(10);
+  });
+
+  it('bpmAccuracy 失败：提示词含 100 BPM，代码 setcps(0.5) 实际 120 BPM', () => {
+    const code = `setcps(0.5)\nstack(/* @layer drums */ s("bd ~ sd ~"))`;
+    const result = scoreRules(code, ['来一段 100 BPM 的音乐']);
+    expect(result.breakdown['bpmAccuracy']?.pass).toBe(false);
+    expect(result.breakdown['bpmAccuracy']?.score).toBe(0);
+    expect(result.breakdown['bpmAccuracy']?.detail).toContain('100');
   });
 });

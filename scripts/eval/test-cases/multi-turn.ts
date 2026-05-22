@@ -51,6 +51,58 @@ export const MULTI_TURN_CASES: MultiTurnCase[] = [
       },
     ],
   },
+  {
+    id: 'MT-A-004',
+    name: '渐进式-lofi-鼓贝斯旋律逐层叠加',
+    type: 'progressive',
+    turns: [
+      { userMessage: '只要一个简单的 lofi 鼓点' },
+      {
+        userMessage: '加一条贝斯',
+        checkpoints: ['贝斯层应被添加', '鼓层应保留'],
+      },
+      {
+        userMessage: '再加一条飘的旋律',
+        checkpoints: ['旋律层应被添加', '贝斯层和鼓层应保留，共三层'],
+      },
+    ],
+  },
+  {
+    id: 'MT-A-005',
+    name: '渐进式-techno-鼓bass-hh-pad四层叠加',
+    type: 'progressive',
+    turns: [
+      { userMessage: '只要一个 techno 鼓点' },
+      {
+        userMessage: '加一条低频 bass',
+        checkpoints: ['bass 层应被添加', '鼓层应保留'],
+      },
+      {
+        userMessage: '再加一层 hi-hat',
+        checkpoints: ['hi-hat 层应被添加', '鼓和 bass 层应保留'],
+      },
+      {
+        userMessage: '最后加一个 pad',
+        checkpoints: ['pad 层应被添加', '鼓/bass/hi-hat 层应全部保留，共四层'],
+      },
+    ],
+  },
+  {
+    id: 'MT-A-006',
+    name: '渐进式-jazz-鼓钢琴贝斯逐层叠加',
+    type: 'progressive',
+    turns: [
+      { userMessage: '只要一段 jazz 鼓点' },
+      {
+        userMessage: '加一条钢琴',
+        checkpoints: ['钢琴层应被添加', '鼓层应保留'],
+      },
+      {
+        userMessage: '再加一条贝斯',
+        checkpoints: ['贝斯层应被添加', '钢琴层和鼓层应保留，共三层'],
+      },
+    ],
+  },
   // ── B. 风格迁移 ────────────────────────────────────────
   {
     id: 'MT-B-001',
