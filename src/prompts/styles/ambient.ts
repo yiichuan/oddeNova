@@ -32,7 +32,6 @@ export const AMBIENT_GUIDE = [
   'occasional perlin-modulated noise，sparse metallic textures。',
   '```',
   's("metal(3,16)")',
-  '  .gain(0.2)',
   '  .room(2)',
   '  .gain(perlin.range(.1,.3).slow(16))',
   '```',

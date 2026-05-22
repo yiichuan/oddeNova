@@ -26,7 +26,6 @@ export const LOFI_GUIDE = [
   'note("c2 ~ eb2 ~")',
   '  .s("sawtooth")',
   '  .lpf(400)',
-  '  .gain(0.7)',
   '  .gain(perlin.range(.5,.8))',
   '```',
   '',

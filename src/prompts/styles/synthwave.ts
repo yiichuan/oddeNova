@@ -26,7 +26,7 @@ export const SYNTHWAVE_GUIDE = [
   '```',
   '',
   '### pad',
-  'lush analog pad with .vowel and slow .lpf modulation；gain ~0.4，.room(2)。',
+  'lush analog pad with slow .lpf modulation；gain ~0.4，.room(2)。',
   '```',
   'note("c3 eb3 g3 bb3")',
   '  .s("juno")',
