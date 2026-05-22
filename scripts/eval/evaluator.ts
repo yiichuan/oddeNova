@@ -36,7 +36,7 @@ export function scoreRules(code: string, prompts?: string[]): RuleScore {
 
   // 语法错误时，级联失败所有后续检查
   if (!syntaxPass) {
-    for (const key of ['hasMusic', 'bpmAccuracy', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
+    for (const key of ['hasMusic', 'bpmAccuracy', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers', 'signalModulation', 'rhythmicVariety']) {
       breakdown[key] = { pass: false, score: 0, detail: '语法错误，跳过' };
     }
     return { total: 0, breakdown };
@@ -53,7 +53,7 @@ export function scoreRules(code: string, prompts?: string[]): RuleScore {
     detail: hasMusicPass ? undefined : '无实际音乐层（silence），后续规则全部跳过',
   };
   if (!hasMusicPass) {
-    for (const key of ['bpmAccuracy', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers']) {
+    for (const key of ['bpmAccuracy', 'layerCount', 'bassLpf', 'padRoom', 'hhGain', 'breathingSpace', 'noTidalOnly', 'noSetcpsInLayers', 'signalModulation', 'rhythmicVariety']) {
       breakdown[key] = { pass: false, score: 0, detail: '无音乐层，跳过' };
     }
     return { total, breakdown };
@@ -150,6 +150,17 @@ export function scoreRules(code: string, prompts?: string[]): RuleScore {
   breakdown['noSetcpsInLayers'] = { pass: noSetcpsInLayersPass, score: noSetcpsInLayersPass ? 10 : 0 };
   total += breakdown['noSetcpsInLayers'].score;
 
+  // 10. signalModulation (10pt)
+  const signalModRe = /sine\.range\s*\(|cosine\.range\s*\(|perlin\.range\s*\(|rand\.range\s*\(|\.fm\s*\(sine|\.fm\s*\(perlin/;
+  const signalModPass = signalModRe.test(code);
+  breakdown['signalModulation'] = { pass: signalModPass, score: signalModPass ? 10 : 0, detail: signalModPass ? undefined : '无信号调制（sine/perlin/rand .range）— 音乐缺乏有机感' };
+  total += breakdown['signalModulation'].score;
+
+  // 11. rhythmicVariety (10pt)
+  const rhythmicPass = /\(\d+,\d+\)/.test(code) || /\.struct\s*\(/.test(code) || /\.swing\s*\(/.test(code) || /\.late\s*\(/.test(code);
+  breakdown['rhythmicVariety'] = { pass: rhythmicPass, score: rhythmicPass ? 10 : 0, detail: rhythmicPass ? undefined : '无节奏多样性（无 euclidean、struct、swing、late）— 节奏机械' };
+  total += breakdown['rhythmicVariety'].score;
+
   return { total, breakdown };
 }
 
@@ -173,13 +184,15 @@ export function scoreLayerPreservation(turns: TurnResult[]): number {
 
 const SINGLE_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到用户的音乐创作提示词和生成的 Strudel 代码。
 
-请从以下 5 个维度各给 0-2 分（0=差/未体现，1=基本达到，2=优秀）：
+请从以下 7 个维度各给 0-2 分（0=差/未体现，1=基本达到，2=优秀）：
 1. style_match: 生成结果是否贴合 prompt 描述的音乐风格/情绪
 2. layer_completeness: 是否有合理的鼓/律动骨架，而非全由 pad 堆砌
 3. musical_diversity: 各层在密度、节奏、频率区间上是否有对比和差异
 4. parameter_accuracy: 用户明确指定的参数（BPM、和弦、乐器）是否准确落地
    【重要】Strudel BPM 公式：setcps(x) 对应 x × 240 BPM。例：setcps(0.5)=120 BPM，setcps(0.375)=90 BPM，setcps(0.2917)=70 BPM。评估 BPM 时必须用此公式换算，不要用 x×60。
 5. creative_expression: 是否有让音乐"活"起来的调制（perlin/sine/mask/off 等）
+6. signal_modulation: 是否有至少一层使用信号调制（sine.range/perlin.range/rand.range/fm(sine/perlin)）使音乐有呼吸感
+7. rhythmic_richness: 是否使用了欧几里得节奏、struct、swing 或 late 使节奏富有变化
 
 严格输出 JSON，不加任何解释文字：
 {
@@ -188,12 +201,14 @@ const SINGLE_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到
   "musical_diversity": { "score": 0-2, "reason": "一句话" },
   "parameter_accuracy": { "score": 0-2, "reason": "一句话" },
   "creative_expression": { "score": 0-2, "reason": "一句话" },
+  "signal_modulation": { "score": 0-2, "reason": "一句话" },
+  "rhythmic_richness": { "score": 0-2, "reason": "一句话" },
   "total": 0-10
 }`;
 
 const MULTI_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到一段多轮对话历史（用户指令 + 每轮生成代码），以及期望行为说明。
 
-请从以下 7 个维度各给 0-2 分（0=差/未体现，1=基本达到，2=优秀）：
+请从以下 9 个维度各给 0-2 分（0=差/未体现，1=基本达到，2=优秀）：
 1. style_match: 最终代码是否贴合原始 prompt 的风格/情绪
 2. layer_completeness: 是否有合理的鼓/律动骨架
 3. musical_diversity: 各层在密度、频率区间上是否有对比
@@ -202,8 +217,10 @@ const MULTI_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到�
 5. creative_expression: 是否有让音乐"活"起来的调制
 6. edit_precision: 每轮修改是否只改了用户要求的地方，未提及的层保持不变
 7. intent_understanding: 对模糊反馈（"太吵了"/"旋律太平"等）的理解是否合理
+8. signal_modulation: 是否有至少一层使用信号调制（sine.range/perlin.range/rand.range/fm(sine/perlin)）使音乐有呼吸感
+9. rhythmic_richness: 是否使用了欧几里得节奏、struct、swing 或 late 使节奏富有变化
 
-严格输出 JSON，total 为 7 项之和（0-14），归一化由调用方处理：
+严格输出 JSON，total 为 9 项之和（0-18），归一化由调用方处理：
 {
   "style_match": { "score": 0-2, "reason": "一句话" },
   "layer_completeness": { "score": 0-2, "reason": "一句话" },
@@ -212,7 +229,9 @@ const MULTI_JUDGE_PROMPT = `你是一名 Strudel 代码评审员。你将收到�
   "creative_expression": { "score": 0-2, "reason": "一句话" },
   "edit_precision": { "score": 0-2, "reason": "一句话" },
   "intent_understanding": { "score": 0-2, "reason": "一句话" },
-  "total": 0-14
+  "signal_modulation": { "score": 0-2, "reason": "一句话" },
+  "rhythmic_richness": { "score": 0-2, "reason": "一句话" },
+  "total": 0-18
 }`;
 
 // ── 重试辅助 ────────────────────────────────────────────
@@ -360,7 +379,7 @@ export async function judgeMultiTurn(tc: MultiTurnCase, turns: TurnResult[]): Pr
   }
 
   const sumRaw = typeof rawTotal === 'number' ? rawTotal : Object.values(breakdown).reduce((s, v) => s + v.score, 0);
-  const total = Math.round((sumRaw / 14) * 100) / 10;
+  const total = Math.round((sumRaw / 18) * 100) / 10;
 
   return { total, breakdown, rawResponse: raw2 };
 }
