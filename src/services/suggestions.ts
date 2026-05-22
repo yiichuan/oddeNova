@@ -144,6 +144,7 @@ function parseSuggestions(text: string): string[] | null {
       // fall through
     }
   }
+  console.warn('[suggestions] parseSuggestions: could not find valid JSON in LLM response:', text.slice(0, 200));
   return null;
 }
 
@@ -163,13 +164,19 @@ export async function buildSuggestions(
     const state = analyzeMusicState(currentCode);
     const styleIntent = extractStyleIntent(messages);
     const system = buildSuggestSystem(state, styleIntent);
+    console.debug('[suggestions] calling LLM for suggestions, stage=%s style=%s', state.stage, styleIntent);
 
     const text = await chatOnce(system, `当前曲谱：\n${currentCode}\n\n请输出 2 条建议。`, {
       temperature: 0.8,
       maxTokens: 200,
     });
+    console.debug('[suggestions] LLM responded:', text.slice(0, 300));
     const parsed = parseSuggestions(text);
-    if (parsed && parsed.length > 0) return parsed.slice(0, 2);
+    if (parsed && parsed.length > 0) {
+      console.debug('[suggestions] parsed suggestions:', parsed);
+      return parsed.slice(0, 2);
+    }
+    console.warn('[suggestions] parseSuggestions returned empty, falling back to static');
   } catch (e) {
     console.warn('[suggestions] upstream call failed, falling back to static', e);
   }

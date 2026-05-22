@@ -4,7 +4,7 @@
 // terminal — it throws CommitSignal which the loop catches.
 
 import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
-import { validateCode, validateCodeRuntime, normalizeCode } from '../services/strudel';
+import { validateCode, validateCodeRuntime, normalizeCode, fixMiniNotationIssues } from '../services/strudel';
 import { STYLE_GUIDES } from '../prompts/styles/index';
 import type { StyleId } from '../prompts/styles';
 
@@ -309,13 +309,19 @@ export const TOOLS: ToolDef[] = [
     },
     handler: (args, ctx) => {
       const code = typeof args.code === 'string' && args.code.trim() ? args.code : ctx.state.code;
-      const synOnly = validateCode(code);
+      // Auto-fix known mini-notation issues (e.g. ";" inside "<>") before validation
+      const { fixed, fixes } = fixMiniNotationIssues(code);
+      const codeToValidate = fixes.length > 0 ? fixed : code;
+      if (fixes.length > 0) {
+        ctx.state.code = fixed;
+      }
+      const synOnly = validateCode(codeToValidate);
       if (!synOnly.ok) {
         return { ok: false, error: `语法错误: ${synOnly.error}` };
       }
-      const runtime = validateCodeRuntime(code);
+      const runtime = validateCodeRuntime(codeToValidate);
       return runtime.ok
-        ? { ok: true, data: { valid: true } }
+        ? { ok: true, data: { valid: true, ...(fixes.length > 0 && { autoFixed: fixes }) } }
         : { ok: false, error: `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）` };
     },
   },
