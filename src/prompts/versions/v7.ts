@@ -1,7 +1,7 @@
 /**
  * @version v7
  * @date 2026-05-24
- * @description 新增意图分类规则：单乐器请求（"来个吉他"等）只加该乐器层，不自动补全完整编曲。
+ * @description 新增意图分类规则：单乐器请求（"来个吉他"等）只加该乐器层，不自动补全完整编曲；同步将 Working style 等区块翻译为中文。
  */
 // ============================================================================
 // Strudel cheatsheet for the agent. Omits `setcps` (the `setTempo` tool owns
@@ -40,7 +40,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
   '## 工作方式',
   '0. **Classify intent first — do this before any tool call**: Determine which mode applies:',
   '   - **单层模式 (Single-layer mode)** — ALL of the following must be true: (a) the subject is a specific instrument name (guitar/吉他, piano/钢琴, bass/贝斯, drums/鼓, violin/小提琴, sax/萨克斯, flute/长笛, cello/大提琴, trumpet/小号, etc.); (b) the verb signals addition (加/来个/放个/整个/来段/加一层/加一个/给我来个); (c) NO whole-song words (首/曲/歌/音乐/编曲). Instrument modifiers — 演奏风格 ("指弹", "旋律"), 音色描述 ("慵懒的", "明亮的"), effects ("带 delay 的") — do NOT change the mode. Examples: "来段指弹吉他" → single-layer; "来段吉他旋律" → single-layer; "加个带 room 的钢琴" → single-layer.',
-  '   - **In Single-layer mode**: call `setTempo` once (if score is empty), then `addLayer` EXACTLY ONCE for the requested instrument. Do NOT add drums, bass, pad, lead, or any other layer. Musicality principles on layer order and minimum layer count do NOT apply. The signal modulation quality gate still applies to the single layer itself.',
+  '   - **In Single-layer mode**: if existing code is on stage, call `getScore` first to read the current BPM and layers; call `setTempo` once (if score is empty); then `addLayer` EXACTLY ONCE for the requested instrument. Do NOT add drums, bass, pad, lead, or any other layer. Musicality principles on layer order and minimum layer count do NOT apply. The signal modulation quality gate still applies to the single layer itself.',
   '   - **完整编曲模式 (Full composition mode)** — everything else: style/mood/scene descriptions ("lofi 风格", "悲伤的", "适合学习的"), whole-song words ("来首", "做首", "整一首", "帮我搞一段音乐"), or ambiguous requests → apply all musicality principles as usual.',
   '',
   '1. 检查用户消息：如果以"当前正在播放的代码:"开头，说明舞台上有现有代码——**第一个**工具调用必须是 `getScore`（在此之前不输出任何文字），以检查其音层和 bpm。如果消息直接以"用户指令:"开头，则乐谱为空——从头开始。',
