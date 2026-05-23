@@ -1,0 +1,76 @@
+diff --git a/node_modules/@strudel/codemirror/dist/index.mjs b/node_modules/@strudel/codemirror/dist/index.mjs
+index 7e172ca..bb12f6b 100644
+--- a/node_modules/@strudel/codemirror/dist/index.mjs
++++ b/node_modules/@strudel/codemirror/dist/index.mjs
+@@ -7,7 +7,7 @@ import { StateEffect as E, StateField as V, RangeSetBuilder as on, Prec as W, Ed
+ import { highlightSpecialChars as ye, dropCursor as mn, rectangularSelection as cn, crosshairCursor as ln, keymap as B, drawSelection as ke, Decoration as P, EditorView as C, ViewPlugin as ve, WidgetType as we, hoverTooltip as pn, lineNumbers as dn, highlightActiveLine as un, highlightActiveLineGutter as hn } from "@codemirror/view";
+ import { persistentAtom as gn } from "@nanostores/persistent";
+ import { logger as xe, pure as bn, ref as fn, Pattern as yn, registerControl as kn, repl as vn } from "@strudel/core";
+-import { setTheme as wn, Drawer as xn, cleanupDraw as ce } from "@strudel/draw";
++import { setTheme as wn, Drawer as xn, cleanupDraw as ce, getPunchcardPainter as _Pn } from "@strudel/draw";
+ import { complex as jn } from "@strudel/tonal";
+ import { SearchCursor as Dn } from "@codemirror/search";
+ import { emacs as Pn } from "@replit/codemirror-emacs";
+@@ -2609,8 +2609,8 @@ class ho extends we {
+   constructor(n) {
+     super(), this.widgetConfig = n;
+   }
+-  eq() {
+-    return !0;
++  eq(n) {
++    return n instanceof ho && An(this.widgetConfig) === An(n.widgetConfig);
+   }
+   toDOM() {
+     const n = An(this.widgetConfig);
+@@ -2637,7 +2637,10 @@ N("_pianoroll", (t, n = {}, a) => {
+ });
+ N("_punchcard", (t, n = {}, a) => {
+   const o = T(t, n).getContext("2d");
+-  return a.tag(t).punchcard({ fold: 1, ...n, ctx: o, id: t });
++  const { cycles: r = 4, playhead: s = 0.5, overscan: i = 0 } = n;
++  const p = -r * s, l = r * (1 - s), d = [r * s, l];
++  const m = _Pn({ fold: 1, ...n });
++  return a.tag(t).draw((g, A) => m(o, A, g, d), { lookbehind: p - i, lookahead: l + i, id: t });
+ });
+ N("_spiral", (t, n = {}, a) => {
+   let o = n.size || 275;
+diff --git a/node_modules/@strudel/codemirror/widget.mjs b/node_modules/@strudel/codemirror/widget.mjs
+index 42d3b15..df93d1e 100644
+--- a/node_modules/@strudel/codemirror/widget.mjs
++++ b/node_modules/@strudel/codemirror/widget.mjs
+@@ -2,6 +2,7 @@ import { StateEffect, StateField } from '@codemirror/state';
+ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
+ import { getWidgetID, registerWidgetType } from '@strudel/transpiler';
+ import { Pattern } from '@strudel/core';
++import { getPunchcardPainter } from '@strudel/draw';
+ 
+ export const addWidget = StateEffect.define({
+   map: ({ from, to }, change) => {
+@@ -64,8 +65,8 @@ export class BlockWidget extends WidgetType {
+     super();
+     this.widgetConfig = widgetConfig;
+   }
+-  eq() {
+-    return true;
++  eq(other) {
++    return other instanceof BlockWidget && getWidgetID(this.widgetConfig) === getWidgetID(other.widgetConfig);
+   }
+   toDOM() {
+     const id = getWidgetID(this.widgetConfig);
+@@ -111,7 +112,15 @@ registerWidget('_pianoroll', (id, options = {}, pat) => {
+ 
+ registerWidget('_punchcard', (id, options = {}, pat) => {
+   const ctx = getCanvasWidget(id, options).getContext('2d');
+-  return pat.tag(id).punchcard({ fold: 1, ...options, ctx, id });
++  const { cycles = 4, playhead = 0.5, overscan = 0 } = options;
++  const from = -cycles * playhead;
++  const to = cycles * (1 - playhead);
++  const drawTime = [cycles * playhead, to];
++  const painter = getPunchcardPainter({ fold: 1, ...options });
++  return pat.tag(id).draw(
++    (haps, time) => painter(ctx, time, haps, drawTime),
++    { lookbehind: from - overscan, lookahead: to + overscan, id },
++  );
+ });
+ 
+ registerWidget('_spiral', (id, options = {}, pat) => {

@@ -97,6 +97,48 @@ function rebuildCode(
   return setcpsLine + rebuildStack(newLayers);
 }
 
+// Split a chained expression at top-level dot boundaries.
+// Handles strings, nested parens/brackets, and existing newlines in the input.
+function splitChainParts(code: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let inStr: string | null = null;
+  let cur = '';
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+    if (inStr) {
+      cur += ch;
+      if (ch === inStr && code[i - 1] !== '\\') inStr = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; cur += ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') { depth++; cur += ch; continue; }
+    if (ch === ')' || ch === ']' || ch === '}') { depth--; cur += ch; continue; }
+    if (ch === '.' && depth === 0 && cur !== '') {
+      parts.push(cur.trim());
+      cur = '.';
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
+}
+
+// Format a full layer expression: base on first line, each method on its own
+// line indented by 2 spaces. Normalises both single-line and already-multi-line input.
+function formatLayerCode(code: string): string {
+  const parts = splitChainParts(code);
+  if (parts.length <= 1) return code.trim();
+  return parts[0] + parts.slice(1).map((p) => '\n  ' + p).join('');
+}
+
+// Format an effect chain (starts with "."). All parts get a leading newline+indent
+// because they are appended to an existing source expression.
+function formatChain(chain: string): string {
+  return splitChainParts(chain).map((p) => '\n  ' + p).join('');
+}
+
 function layersOf(score: ParsedScore): LayerLite[] {
   return score.layers.map((l) => ({ name: l.name, source: l.source }));
 }
@@ -177,7 +219,7 @@ export const TOOLS: ToolDef[] = [
           error: `layer "${args.name}" 已存在，如需修改请用 replaceLayer 或 applyEffect`,
         };
       }
-      const newLayers = [...layers, { name: args.name, source: args.code.trim() }];
+      const newLayers = [...layers, { name: args.name, source: formatLayerCode(args.code) }];
       ctx.state.code = rebuildCode(score, newLayers);
       return { ok: true, data: { code: ctx.state.code, layerCount: newLayers.length } };
     },
@@ -230,7 +272,7 @@ export const TOOLS: ToolDef[] = [
         return { ok: false, error: `未找到 layer "${name}"` };
       }
       const newLayers = layers.slice();
-      newLayers[idx] = { name, source: args.code.trim() };
+      newLayers[idx] = { name, source: formatLayerCode(args.code) };
       ctx.state.code = rebuildCode(score, newLayers);
       return { ok: true, data: { code: ctx.state.code } };
     },
@@ -263,7 +305,7 @@ export const TOOLS: ToolDef[] = [
         return { ok: false, error: `未找到 layer "${layerName}"` };
       }
       const newLayers = layers.slice();
-      newLayers[idx] = { name: layerName, source: layers[idx].source + chain };
+      newLayers[idx] = { name: layerName, source: layers[idx].source + formatChain(chain) };
       ctx.state.code = rebuildCode(score, newLayers);
       return { ok: true, data: { code: ctx.state.code } };
     },
