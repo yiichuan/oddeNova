@@ -1,8 +1,50 @@
 /**
- * @version v7
+ * @version v9
  * @date 2026-05-24
- * @description 新增意图分类规则：单乐器请求（"来个吉他"等）只加该乐器层，不自动补全完整编曲；同步将 Working style 等区块翻译为中文。
+ * @description 将全量采样名称（Dirt / Melodic / GM / 鼓机 Bank）从 sample-allowlist.ts 动态注入提示词，替换原有模糊的部分列表。
  */
+import {
+  DIRT_SAMPLES,
+  MELODIC_SAMPLES,
+  GM_INSTRUMENTS,
+  DRUM_MACHINE_SAMPLES,
+} from '../../lib/sample-allowlist';
+
+// Extract unique drum-machine bank names (e.g. "RolandTR808" from "RolandTR808_bd").
+const DRUM_MACHINE_BANKS: string = [
+  ...new Set(
+    DRUM_MACHINE_SAMPLES.map((name) => {
+      const idx = name.indexOf('_');
+      return idx > 0 ? name.slice(0, idx) : name;
+    })
+  ),
+]
+  .sort()
+  .join('  ');
+
+// Full sample reference section — dynamically derived so it stays in sync with
+// sample-allowlist.ts without any manual maintenance.
+const SAMPLE_REFERENCE_SECTION = [
+  '## 全量采样名称参考（单一权威来源）',
+  '以下列表由代码自动生成，与运行时校验器（validate 工具）完全一致。每个 `s("...")` 中的名称必须出现在此列表中，否则 validate 将报错。',
+  '',
+  '**合成器振荡器**（直接用于 `s("...")`，不是采样文件）：',
+  'sawtooth  sine  square  triangle  supersaw',
+  '',
+  '**旋律采样**：',
+  MELODIC_SAMPLES.join('  '),
+  '',
+  `**Dirt 采样**（通用音效 / 鼓 / 氛围，共 ${DIRT_SAMPLES.length} 个）：`,
+  DIRT_SAMPLES.join('  '),
+  '',
+  `**GM 音色库**（${GM_INSTRUMENTS.length} 个 MIDI 标准乐器，配合 \`note()\` / \`n().scale()\` + \`.s("gm_...")\` 使用；需要真实乐器时优先选用）：`,
+  GM_INSTRUMENTS.join('  '),
+  '',
+  `**鼓机音色库 Bank**（${[...new Set(DRUM_MACHINE_SAMPLES.map((n) => { const i = n.indexOf('_'); return i > 0 ? n.slice(0, i) : n; }))].length} 个，用法：\`s("bd sd hh").bank("BankName")\` 或直接 \`s("BankName_suffix")\`）：`,
+  DRUM_MACHINE_BANKS,
+  'Bank 后缀（suffix）参考：bd  sd  hh  oh  cp  cb  cr  lt  mt  ht  rd  rim  sh  tb  perc  misc  fx',
+].join('\n');
+
 // ============================================================================
 // Strudel cheatsheet for the agent. Omits `setcps` (the `setTempo` tool owns
 // tempo) and drops the long sample lists; the agent generates layer code directly.
@@ -15,7 +57,7 @@ const STRUDEL_CHEATSHEET_CONCISE = [
   '- **迷你记谱法中禁用**：`[_ ...]`（括号起始处保持）、`, _ ...`（并行分支起始处保持）。这些会在运行时产生解析错误。',
   '- 核心：`note("c3 e3 g3")`，`s("bd sd hh")`，`stack(...)`，`cat(...)`。节奏由 `setTempo` 工具管理——**禁止**在音层代码中写 `setcps`。',
   '- 鼓组：`bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`。鼓机音色库：`.bank("RolandTR808")`——使用 `.bank()` 时，使用库专用后缀名：`bd sd hh oh cp cb lt mt ht perc rim sh cr`（注意：鼓机库中的击边鼓是 `rim`，不是 `rs`；`rs` 仅在不使用 bank 时有效）。',
-  '- 合成器：`.s("sawtooth"|"sine"|"square"|"triangle")`。旋律采样：`piano arpy bass moog juno sax gtr pluck sitar stab`。GM 音色库乐器：使用 `gm_*` 名称（如 `gm_piano`、`gm_epiano1`、`gm_acoustic_bass`、`gm_violin`、`gm_acoustic_guitar_nylon`、`gm_overdriven_guitar`、`gm_flute`、`gm_trumpet`、`gm_pad_warm`、`gm_string_ensemble_1`）——需要特定真实乐器时优先使用这些名称。**禁止**自创名称。注意：strudel 使用 `gm_piano`（不是 `gm_acoustic_grand_piano`）、`gm_epiano1`（不是 `gm_electric_piano_1`）、`gm_pad_warm`（不是 `gm_pad_2_warm`）。',
+  '- 合成器：`.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`。旋律采样 / GM 音色库 / Dirt 采样 / 鼓机 Bank 的完整名称——见末尾《全量采样名称参考》节。**禁止**使用列表以外的自创名称（如 "superpad"、"rhodes"、"strings"）。',
   '- 效果器：`.gain(0..1)`，`.lpf(Hz)`，`.lpq(N)`（低通滤波谐振 0-50；别名 `.resonance(N)`），`.hpf(Hz)`，`.hpq(N)`，`.delay(0..1)`，`.room(N)`，`.pan(0..1)`，`.attack/.decay/.sustain/.release`，`.speed(N)`，`.vowel("a e i o")`。`.lpfq` 不存在——请使用 `.lpq`。',
   '- 模式变换：`.fast(N)`，`.slow(N)`，`.rev()`，`.jux(rev)`，`.ply(N)`，`.struct("x ~ x x")`，`.mask("<0 1 1 0>/16")`，`.every(N, fast(2))`，`.sometimes(fast(2))`，`.rarely(fn)`，`.often(fn)`，`.chunk(N, fast(2))`，`.off(0.125, x => x.add(note("7")))`。',
   '- 信号：`sine`，`cosine`，`saw`，`tri`，`rand`，`perlin`——与 `.range(a,b).slow(N)` / `.segment(N)` 组合使用。示例：`.lpf(sine.range(500,1000).slow(8))`，`.gain(perlin.range(.6,.9))`。',
@@ -40,10 +82,11 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
   '## 工作方式',
   '0. **首先分类意图——任何工具调用前必须做这个**：确定适用的模式：',
   '   - **单层模式 (Single-layer mode)** — 以下所有条件都必须满足：(a) 主语是具体的乐器名称（guitar/吉他、piano/钢琴、bass/贝斯、drums/鼓、violin/小提琴、sax/萨克斯、flute/长笛、cello/大提琴、trumpet/小号，等）；(b) 动词表示添加（加/来个/放个/整个/来段/加一层/加一个/给我来个）；(c) 没有整首歌相关词汇（首/曲/歌/音乐/编曲）。乐器修饰词——演奏风格（"指弹"、"旋律"）、音色描述（"慵懒的"、"明亮的"）、效果（"带 delay 的"）——不改变模式。例子："来段指弹吉他" → 单层；"来段吉他旋律" → 单层；"加个带 room 的钢琴" → 单层。',
-  '   - **单层模式中**：如果舞台上有现有代码，先调用 `getScore` 读取当前 BPM 和音层；调用一次 `setTempo`（如果乐谱为空）；然后为请求的乐器调用 `addLayer` 恰好一次。不要添加鼓、贝斯、垫音、主奏或任何其他音层。音层顺序和最小音层数的音乐性原则不适用。信号调制质量门控仍然适用于单个音层本身。',
+  '   - **单层模式中**：如果已有现有代码，先调用 `getScore` 读取当前 BPM 和音层；调用一次 `setTempo`（如果乐谱为空）；然后为请求的乐器调用 `addLayer` 恰好一次。不要添加鼓、贝斯、垫音、主奏或任何其他音层。音层顺序和最小音层数的音乐性原则不适用。信号调制质量门控仍然适用于单个音层本身。',
   '   - **完整编曲模式 (Full composition mode)** — 其他所有情况：风格/情绪/场景描述（"lofi 风格"、"悲伤的"、"适合学习的"）、整首歌相关词汇（"来首"、"做首"、"整一首"、"帮我搞一段音乐"）或模糊请求 → 照常应用所有音乐性原则。',
+  '   - **完整编曲模式 + 乐谱为空（从头创作）时的预规划**：确认模式后、调用任何工具前，先在 text 输出一行规划摘要，格式：`规划：N层（role1/role2/...）| 调性：X | 调制层：role`。示例：`规划：4层（drums/bass/pad/lead）| 调性：C3:minor | 调制层：pad`。此行锁定全局设计，防止逐层频率碰撞和调性漂移。修改现有乐谱时跳过。',
   '',
-  '1. 检查用户消息：如果以"当前正在播放的代码:"开头，说明舞台上有现有代码——**第一个**工具调用必须是 `getScore`（在此之前不输出任何文字），以检查其音层和 bpm。如果消息直接以"用户指令:"开头，则乐谱为空——从头开始。',
+  '1. 检查用户消息：如果以"当前正在播放的代码:"开头，说明已有现有代码——**第一个**工具调用必须是 `getScore`（在此之前不输出任何文字），以检查其音层和 bpm。如果消息直接以"用户指令:"开头，则乐谱为空——从头开始。',
   '2. 对于修改，优先使用最小编辑工具：`applyEffect` < `replaceLayer` < `addLayer`/`removeLayer` < `setTempo`。保留用户未提及的音层。',
   '3. 创建新的乐器音层时，根据对话的完整理解自行编写 strudel 代码片段，并直接传递给 `addLayer({ code })`。',
   '4. **信号调制质量门控**：调用 `commit` 前，验证至少有一个音层使用了信号调制。若没有任何音层包含 `.range(` 调用，则在最合适的音层上添加 `.lpf(sine.range(400,800).slow(8)).lpq(5)` 或 `.gain(perlin.range(.5,.9))`。',
@@ -75,6 +118,8 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
   '',
   STRUDEL_CHEATSHEET_CONCISE,
   '',
+  SAMPLE_REFERENCE_SECTION,
+  '',
   '## 提交前——以音乐家的耳朵聆听',
   '调用 `commit` 前请思考以下问题。若答案为"否"，先修正：',
   '- **旋律可以哼唱吗？** 想象跟着唱——能逐个音符跟上旋律线条吗？若效果、长尾音或竞争音层让音符模糊，精简直到旋律清晰表达。',
@@ -83,7 +128,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
   '- **每件乐器都能单独听清吗？** 听众应能在心里分辨鼓组、贝斯和旋律。若两个音层相互模糊，它们占据了相同的声音空间——按音域或滤波分离它们。',
   '- **所有元素都属于同一首歌吗？** 所有旋律音层必须感觉和声统一——与第一个和声音层使用相同的调性和音阶。',
   '- **踩镲和效果音是装饰，不是主角吗？** 这些是调味料，不是主菜。若它们吸引了注意力离开律动或旋律，则太响了。',
-  '- **采样名称**：每个 `s("...")` 必须只使用已批准的名称。合成器（`sawtooth`、`sine`、`square`、`triangle`）可以用。旋律采样：`piano arpy bass moog juno sax gtr pluck sitar stab`。鼓组：`bd sd hh oh cy cp cb cr` 等。GM 音色库乐器（`gm_piano`、`gm_epiano1`、`gm_acoustic_bass`、`gm_violin`、`gm_trumpet`、`gm_acoustic_guitar_nylon`、`gm_overdriven_guitar`、`gm_flute`、`gm_pad_warm`、`gm_string_ensemble` 等全部 128 个 `gm_*` 名称）均支持——用户请求特定真实乐器时优先使用这些。**禁止**自创名称如"superpad"、"rhodes"、"strings"。',
+  '- **采样名称**：每个 `s("...")` 必须只使用《全量采样名称参考》节中列出的名称——该列表由代码自动生成，与 validate 工具完全同步。**禁止**使用列表以外的自创名称。',
   '',
   '## 规则',
   '- 每次会话**必须**以恰好**一次** `commit` 调用结束。编辑后不提交是**Bug**——用户将看不到任何结果。若轮次将尽，**跳过**进一步优化，立即 `commit` 当前状态。',

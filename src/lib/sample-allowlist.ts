@@ -3,7 +3,7 @@
 //   sample_library/tidal-drum-machines.md — drum machine packs (## headers)
 // Plus melodic samples listed in the agent system prompt.
 
-const DIRT_SAMPLES: readonly string[] = [
+export const DIRT_SAMPLES: readonly string[] = [
   '808bd', '808cy', '808hc', '808ht', '808lc', '808lt', '808mc', '808mt', '808oh', '808sd',
   'ab', 'ade', 'ades2', 'ades3', 'ades4', 'alex', 'alphabet', 'amencutup', 'armora', 'arp', 'arpy',
   'auto', 'baa', 'baa2', 'bass', 'bass0', 'bass1', 'bass2', 'bass3', 'bassdm', 'bassfoo', 'battles',
@@ -40,7 +40,7 @@ const DIRT_SAMPLES: readonly string[] = [
 ];
 
 // Melodic samples explicitly listed in the agent system prompt.
-const MELODIC_SAMPLES: readonly string[] = [
+export const MELODIC_SAMPLES: readonly string[] = [
   'piano', 'arpy', 'bass', 'moog', 'juno', 'sax', 'gtr', 'pluck', 'sitar', 'stab',
 ];
 
@@ -48,7 +48,7 @@ const MELODIC_SAMPLES: readonly string[] = [
 // Loaded via registerSoundfonts() in prebake (src/services/strudel.ts).
 // Use with note() or n().scale() + .s("gm_...").
 // Source: https://codeberg.org/uzu/strudel/raw/branch/main/packages/soundfonts/gm.mjs
-const GM_INSTRUMENTS: readonly string[] = [
+export const GM_INSTRUMENTS: readonly string[] = [
   // Piano (gm_piano covers acoustic grand / bright / electric grand / honky-tonk)
   'gm_piano', 'gm_epiano1', 'gm_epiano2',
   'gm_harpsichord', 'gm_clavinet',
@@ -111,7 +111,7 @@ const GM_INSTRUMENTS: readonly string[] = [
 ];
 
 // Drum machine packs from tidal-drum-machines.md.
-const DRUM_MACHINE_SAMPLES: readonly string[] = [
+export const DRUM_MACHINE_SAMPLES: readonly string[] = [
   'AJKPercusyn_bd', 'AJKPercusyn_cb', 'AJKPercusyn_ht', 'AJKPercusyn_sd',
   'AkaiLinn_bd', 'AkaiLinn_cb', 'AkaiLinn_cp', 'AkaiLinn_cr', 'AkaiLinn_hh', 'AkaiLinn_ht',
   'AkaiLinn_lt', 'AkaiLinn_mt', 'AkaiLinn_oh', 'AkaiLinn_rd', 'AkaiLinn_sd', 'AkaiLinn_sh', 'AkaiLinn_tb',
