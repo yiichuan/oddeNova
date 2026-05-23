@@ -5,27 +5,15 @@
 
 import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
 import { validateCode, validateCodeRuntime, normalizeCode, fixMiniNotationIssues } from '../services/strudel';
-import { STYLE_GUIDES } from '../prompts/styles/index';
-import type { StyleId } from '../prompts/styles';
+import { STYLE_GUIDES, type StyleId } from '../prompts/styles/index';
 
 export interface AgentState {
   code: string;
   finalCode: string | null;
 }
 
-export interface ImproviseRequest {
-  role: string;
-  hints: string;
-  currentCode: string;
-  /** Optional style id from src/prompts/styles.ts (lofi/house/...). */
-  style?: string;
-  /** Free-text instruction about what gap this layer should fill. */
-  complementTask?: string;
-}
-
 export interface ToolContext {
   state: AgentState;
-  improviseLLM: (req: ImproviseRequest) => Promise<string>;
 }
 
 export interface ToolResult {

@@ -22,7 +22,7 @@ function getHandler(name: string) {
 // 辅助函数：构造最小 ctx
 function makeCtx(code: string): ToolContext {
   const state: AgentState = { code, finalCode: null };
-  return { state, improviseLLM: vi.fn() };
+  return { state };
 }
 
 // 标准 2 层代码，用于多数测试的初始状态
