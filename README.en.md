@@ -157,6 +157,16 @@ The Agent maintains the entire piece of music as a collection of named layers. E
 | synthwave | 90–110 | Retro synthesizers, 80s aesthetic |
 | trap | 130–160 | Hi-hat rolls, 808 bass |
 | jazz | 90–110 | Swing feel, jazz harmony |
+| blues | 72–100 | Soulful, earthy, 12-bar blues feel |
+| funk | 90–115 | Syncopated rhythms, strong groove |
+| bossanova | 90–130 | Brazilian jazz, elegant and flowing |
+| reggae | 60–90 | Jamaican roots, off-beat emphasis |
+| classical | 60–120 | Orchestral textures, structured harmony |
+| rnb | 70–100 | Soulful, laid-back groove |
+| folk | 70–100 | Warm and intimate, acoustic storytelling |
+| country | 80–130 | Southern American roots, twangy character |
+| latin | 100–135 | Latin heat, clave-driven rhythm |
+| afrobeat | 92–120 | West African groove, polyrhythmic layers |
 
 ## Tech Stack
 
