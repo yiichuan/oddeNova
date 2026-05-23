@@ -28,8 +28,7 @@ oddeNova is an Agent platform for improvised music creation. Describe a feeling,
 
 **Not a one-click generator — a private space where you participate in the full creative process.**
 
-<!-- screenshot: three-column layout overview (history panel + chat area + code panel) -->
-<!-- gif: full flow from input to agent working to music playback -->
+<img src="docs/images/oddenova-demo.gif" alt="oddeNova Demo" width="100%" />
 
 ## For Whom
 

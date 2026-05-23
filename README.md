@@ -29,8 +29,7 @@ oddeNova 是面向创作者的即兴音乐创作 Agent 平台。用一句话描�
 
 **不是一键生成器——是你参与完整创作过程的私密空间。**
 
-<!-- screenshot: 三栏布局全景图（历史面板 + 对话区 + 代码面板） -->
-<!-- gif: 从输入描述到 Agent 工作到音乐播放的完整流程 -->
+<img src="docs/images/oddenova-demo.gif" alt="oddeNova 演示" width="100%" />
 
 ## 为谁而生
 
