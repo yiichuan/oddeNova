@@ -63,7 +63,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   official: {
     label: '官方体验',
     baseURL: 'https://api.deepseek.com/v1',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-v4-pro',
     protocol: 'openai',
   },
   glm: {

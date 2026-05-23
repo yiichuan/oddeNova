@@ -59,7 +59,6 @@ export interface RunAgentOptions {
   instruction: string;
   systemPrompt: string;
   llm: LLMCaller;
-  improviseLLM: ToolContext['improviseLLM'];
   maxIter?: number;
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
@@ -74,10 +73,6 @@ export interface RunAgentResult {
 }
 
 const DEFAULT_MAX_ITER = 30;
-// 120s covers ~10 tool-calls worth of latency (including nested `improvise`
-// sub-LLM calls). 45s was too tight — a typical multi-layer request
-// (read → setTempo → improvise drums → addLayer → improvise bass → addLayer
-// → validate → commit) easily overruns it before the model reaches `commit`.
 const DEFAULT_TIMEOUT = 300_000;
 
 export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResult> {
@@ -86,7 +81,6 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     instruction,
     systemPrompt,
     llm,
-    improviseLLM,
     maxIter = DEFAULT_MAX_ITER,
     timeoutMs = DEFAULT_TIMEOUT,
     onProgress,
@@ -97,7 +91,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     code: initialCode || '',
     finalCode: null,
   };
-  const ctx: ToolContext = { state, improviseLLM };
+  const ctx: ToolContext = { state };
 
   const userTurn = initialCode
     ? `当前正在播放的代码:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`
@@ -195,13 +189,6 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
       console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
-
-      // `improvise` triggers a blocking sub-LLM call with no streaming output.
-      // Show a thinking bubble so the UI doesn't appear frozen.
-      if (call.name === 'improvise') {
-        const role = (parsedArgs.role as string) || '';
-        onProgress?.({ kind: 'assistant_text_delta', delta: `正在为 ${role} 层创作片段…` });
-      }
 
       try {
         const outcome = await dispatchToolCall(call, ctx);
