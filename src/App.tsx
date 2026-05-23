@@ -195,9 +195,7 @@ export default function App() {
               // exists). Skip the duplicate progress line to avoid confusing UI.
               const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
                 ? `${e.name}:${String(e.args.name ?? '')}`
-                : e.name === 'improvise'
-                  ? `improvise:${String(e.args.role ?? '')}`
-                  : null;
+                : null;
               if (layerKey !== null) {
                 if (shownLayerOps.has(layerKey)) return;
                 shownLayerOps.add(layerKey);
@@ -312,9 +310,7 @@ export default function App() {
           if (e.name !== 'validate' && e.name !== 'commit') {
             const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
               ? `${e.name}:${String(e.args.name ?? '')}`
-              : e.name === 'improvise'
-                ? `improvise:${String(e.args.role ?? '')}`
-                : null;
+              : null;
             if (layerKey !== null) {
               if (shownLayerOps.has(layerKey)) return;
               shownLayerOps.add(layerKey);
@@ -749,10 +745,6 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
       return `设速度 ${s('bpm')} BPM`;
     case 'validate':
       return '校验代码';
-    case 'improvise': {
-      const hints = s('hints');
-      return `即兴生成 ${s('role')}${hints ? `（${hints}）` : ''}`;
-    }
     case 'commit':
       return '提交并播放';
     default:
