@@ -139,7 +139,7 @@ describe('applyEffect', () => {
     const ctx = makeCtx(TWO_LAYER_CODE);
     const result = await applyEffect({ layer: 'drums', chain: '.gain(0.8)' }, ctx);
     expect(result.ok).toBe(true);
-    expect(ctx.state.code).toContain('s("bd ~ sd ~").gain(0.8)');
+    expect(ctx.state.code).toContain('s("bd ~ sd ~")\n    .gain(0.8)');
     expect(ctx.state.code).toContain('@layer bass'); // 其他层不变
   });
 

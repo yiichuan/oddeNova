@@ -1,7 +1,27 @@
 {
   "name": "odde-nova",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "AI-powered music creation tool — describe music in natural language, let the Agent compose layered Strudel patterns and play them instantly in the browser.",
+  "keywords": [
+    "ai",
+    "music",
+    "strudel",
+    "live-coding",
+    "agent",
+    "web-audio",
+    "anthropic",
+    "deepseek",
+    "typescript"
+  ],
+  "homepage": "https://www.oddenova.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yiichuan/oddeNova.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yiichuan/oddeNova/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -40,6 +60,7 @@
     "@types/react-dom": "^19.2.3",
     "@vercel/node": "^5.8.2",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
