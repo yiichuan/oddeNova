@@ -12,6 +12,7 @@ import { useKeyboardHeight } from './hooks/useKeyboardHeight';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ProgressEvent } from './services/llm';
+import { parseNextSteps } from './services/suggestions';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
@@ -27,6 +28,11 @@ const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
 const SIDEBAR_RATIO_MAX = 0.45;
 
+/** 去掉 agent explanation 末尾的"接下来可以"建议段落，避免在聊天记录里重复显示 */
+function stripNextSteps(explanation: string): string {
+  return explanation.replace(/\n\n接下来可以[：:][^]*$/, '').trim();
+}
+
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392，由上:下=1.55推导
 const VIZ_RATIO_MIN = 0.15;
 const VIZ_RATIO_MAX = 0.45;
@@ -40,6 +46,7 @@ export default function App() {
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
+  const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -136,6 +143,7 @@ export default function App() {
     // demo 模式下不需要真实 LLM suggestions，跳过 buildSuggestions 调用
     hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
+    commitSuggestions: commitSuggestions ?? undefined,
   });
   const activeSet = getActiveDemoSet();
   const demoSuggestions = isDemoMode()
@@ -157,6 +165,7 @@ export default function App() {
         return;
       }
 
+      setCommitSuggestions(null); // reset on each new instruction
       sessions.addUserMessage(text);
       const sessionId = sessions.currentId;
       if (!sessionId) return;
@@ -236,7 +245,9 @@ export default function App() {
           if (sessionId === currentIdRef.current) {
             const success = await strudel.play(result.code);
             if (success) {
-              sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+              const nextSteps = parseNextSteps(result.explanation);
+              if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
+              sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
               sessions.setCurrentCode(result.code, sessionId);
             } else {
               sessions.addAssistantMessage(
@@ -247,7 +258,7 @@ export default function App() {
             }
           } else {
             // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
-            sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
             sessions.setCurrentCode(result.code, sessionId);
           }
         } else {
@@ -283,6 +294,7 @@ export default function App() {
     }
     const instruction = '根据我的心情生成音乐';
 
+    setCommitSuggestions(null);
     sessions.addUserMessage(instruction);
     const sessionId = sessions.currentId;
     if (!sessionId) return;
@@ -333,7 +345,9 @@ export default function App() {
         if (sessionId === currentIdRef.current) {
           const success = await strudel.play(result.code);
           if (success) {
-            sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+            const nextSteps = parseNextSteps(result.explanation);
+            if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
+            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
             sessions.setCurrentCode(result.code, sessionId);
           } else {
             sessions.addAssistantMessage(
@@ -344,7 +358,7 @@ export default function App() {
           }
         } else {
           // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
-          sessions.addAssistantMessage(result.explanation, result.code, sessionId);
+          sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
           sessions.setCurrentCode(result.code, sessionId);
         }
       } else {
@@ -371,6 +385,7 @@ export default function App() {
   }, [strudel, sessions]);
 
   const handleSwitchSession = useCallback((id: string) => {
+    setCommitSuggestions(null);
     setUnreadSessions((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);

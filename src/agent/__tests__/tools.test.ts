@@ -5,9 +5,12 @@ vi.mock('../../services/strudel', () => ({
   validateCode: vi.fn().mockReturnValue({ ok: true }),
   validateCodeRuntime: vi.fn().mockReturnValue({ ok: true }),
   normalizeCode: vi.fn((code: string) => code),
+  fixMiniNotationIssues: vi.fn((code: string) => ({ fixed: code, fixes: [] })),
 }));
 
 import { TOOLS, type AgentState, type ToolContext } from '../tools';
+import { STYLE_GUIDES } from '../../prompts/styles/index';
+import { validateCode, validateCodeRuntime, fixMiniNotationIssues } from '../../services/strudel';
 
 // 辅助函数：根据 name 找到 tool handler
 function getHandler(name: string) {
@@ -189,6 +192,37 @@ describe('setTempo', () => {
   });
 });
 
+describe('getStyleGuide', () => {
+  const getStyleGuide = getHandler('getStyleGuide');
+
+  it('已知风格返回 guide 字符串', async () => {
+    const ctx = makeCtx('');
+    const result = await getStyleGuide({ styleId: 'lofi' }, ctx);
+    expect(result.ok).toBe(true);
+    const data = result.data as { styleId: string; guide: string };
+    expect(data.styleId).toBe('lofi');
+    expect(typeof data.guide).toBe('string');
+    expect(data.guide.length).toBeGreaterThan(100);
+  });
+
+  it('每种风格都有 guide', async () => {
+    const ctx = makeCtx('');
+    const styles = Object.keys(STYLE_GUIDES);
+    for (const styleId of styles) {
+      const result = await getStyleGuide({ styleId }, ctx);
+      expect(result.ok).toBe(true);
+      expect((result.data as { guide: string }).guide.length).toBeGreaterThan(100);
+    }
+  });
+
+  it('未知 styleId 返回 ok: false', async () => {
+    const ctx = makeCtx('');
+    const result = await getStyleGuide({ styleId: 'unknown' }, ctx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('unknown');
+  });
+});
+
 describe('ensureStack（通过 addLayer 间接测试）', () => {
   const addLayer = getHandler('addLayer');
 
@@ -208,5 +242,46 @@ describe('ensureStack（通过 addLayer 间接测试）', () => {
     // silence 不应作为独立层出现在 stack 中
     const layerMatches = ctx.state.code.match(/@layer/g) ?? [];
     expect(layerMatches.length).toBe(1); // 只有 drums 这一层
+  });
+});
+
+describe('validate', () => {
+  const validate = getHandler('validate');
+
+  it('代码合法且无修复 — 返回 ok: true, valid: true', async () => {
+    const ctx = makeCtx('s("bd ~ sd ~")');
+    const result = await validate({}, ctx);
+    expect(result.ok).toBe(true);
+    expect((result.data as { valid: boolean }).valid).toBe(true);
+    expect((result.data as { autoFixed?: string[] }).autoFixed).toBeUndefined();
+  });
+
+  it('发现 ";" in <> 后自动修复，更新 ctx.state.code 并在 data.autoFixed 中报告', async () => {
+    const fixedCode = 'note("<[c4,eb4,g4] [g4,bb4,d5]>/4")';
+    vi.mocked(fixMiniNotationIssues).mockReturnValueOnce({
+      fixed: fixedCode,
+      fixes: ['auto-fixed ";" in angle-bracket alternation: <c4 eb4 g4; g4 bb4 d5> → <[c4,eb4,g4] [g4,bb4,d5]>'],
+    });
+    const ctx = makeCtx('note("<c4 eb4 g4; g4 bb4 d5>/4")');
+    const result = await validate({}, ctx);
+    expect(result.ok).toBe(true);
+    expect(ctx.state.code).toBe(fixedCode);
+    expect((result.data as { autoFixed: string[] }).autoFixed).toHaveLength(1);
+  });
+
+  it('语法错误 — 返回 ok: false，error 含"语法错误"', async () => {
+    vi.mocked(validateCode).mockReturnValueOnce({ ok: false, error: 'Unexpected token }' });
+    const ctx = makeCtx('s("bd") }}}');
+    const result = await validate({}, ctx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/语法错误/);
+  });
+
+  it('运行时错误（幻觉 API）— 返回 ok: false，error 含"运行时错误"', async () => {
+    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'sometimesBy is not defined' });
+    const ctx = makeCtx('s("bd").sometimesBy(0.5, fast(2))');
+    const result = await validate({}, ctx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/运行时错误/);
   });
 });

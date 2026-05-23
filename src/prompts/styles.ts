@@ -54,9 +54,9 @@ export const STYLES: StyleProfile[] = [
     mode: 'minor|dorian',
     emotion: 'melancholic|dreamy',
     hint_for_improvise: {
-      drums: 'lazy boom-bap groove, sparse ghost snares, swing feel; typical pattern: "bd ~ bd ~" with bank RolandTR808',
-      bass: 'walking bass in minor, sparse, lots of rest; note range c2-g2, pattern like "c2 ~ eb2 ~", use .lpf(400)',
-      pad: 'warm electric-piano feel using `.s("juno")` or synth `.s("sawtooth")`, slow attack, low gain ~0.35, add .room(2)',
+      drums: 'lazy boom-bap groove, sparse ghost snares, swing feel; typical pattern: "bd ~ bd ~" with bank RolandTR808; for groove: add .late("[0 .01 0 .02]*4") for a lazy, drunk feel',
+      bass: 'walking bass in minor, sparse, lots of rest; note range c2-g2, pattern like "c2 ~ eb2 ~", use .lpf(400); use .gain(perlin.range(.5,.8)) for organic breathing dynamics',
+      pad: 'warm electric-piano feel using `.s("juno")` or synth `.s("sawtooth")`, slow attack, low gain ~0.35, add .room(2); add .lpf(sine.range(800,2000).slow(16)) for gentle warmth movement',
       hh: 'soft closed hi-hat, mostly off-beat, euclidean rhythm like hh(5,8), gain ≤0.45',
     },
   },
@@ -70,8 +70,8 @@ export const STYLES: StyleProfile[] = [
     emotion: 'uplifting',
     hint_for_improvise: {
       drums: 'four-on-the-floor kick, clap on 2 and 4; pattern: "bd*4" paired with "~ cp ~ cp"',
-      hh: 'open hi-hat on off-beats (the "tss" between kicks); pattern like "~ oh ~ oh", gain 0.4-0.5',
-      bass: 'pumping sub bass, root notes on every kick; note range c2-g2, use .lpf(400), pattern: "c2 c2 eb2 f2"',
+      hh: 'open hi-hat on off-beats (the "tss" between kicks); pattern like "~ oh ~ oh", gain 0.4-0.5; use euclidean (5,8) or (3,8) pattern; add .gain(sine.range(.3,.6).slow(2)) for pumping feel',
+      bass: 'pumping sub bass, root notes on every kick; note range c2-g2, use .lpf(400), pattern: "c2 c2 eb2 f2"; sidechain-like: .gain("<.2 1@3>*2") to duck under kick',
       pad: 'sustained chord stabs, side-chained feel via low gain ~0.4, add .room(1.5)',
     },
   },
@@ -85,7 +85,7 @@ export const STYLES: StyleProfile[] = [
     emotion: 'dark|aggressive',
     hint_for_improvise: {
       drums: 'amen-style break, snare on 2 and 4 with ghost notes, fast hi-hat; use euclidean rhythms for snare fills',
-      bass: 'reese bass or sub-rolling bass, root note in c2-f2, use .lpf(350), keep pattern sparse with rests',
+      bass: 'reese bass or sub-rolling bass, root note in c2-f2, use .lpf(350), keep pattern sparse with rests; add .lpf(sine.range(100,400).slow(8)) for growling filter movement',
       pad: 'atmospheric long pad in minor, very low gain ~0.3, use .room(3).attack(1)',
     },
   },
@@ -98,7 +98,7 @@ export const STYLES: StyleProfile[] = [
     mode: 'major|lydian',
     emotion: 'dreamy|tense',
     hint_for_improvise: {
-      pad: 'long evolving pad, attack > 1s, release > 2s, low gain ~0.3, must have .room(4).delay(0.5)',
+      pad: 'long evolving pad, attack > 1s, release > 2s, low gain ~0.3, must have .room(4).delay(0.5); MUST add .lpf(sine.range(200,800).slow(8)).lpq(3) — ambient always needs signal modulation',
       lead: 'sparse single notes, lots of ~ rests, with .room(0.7), scale in major or lydian',
       fx: 'occasional perlin-modulated noise or reverse cymbal swells; pattern like s("metal(3,16)").gain(0.2).room(2)',
       drums: 'no drums, or only a single soft kick every 4 bars',
@@ -114,8 +114,8 @@ export const STYLES: StyleProfile[] = [
     emotion: 'dark|aggressive',
     hint_for_improvise: {
       drums: 'relentless four-on-the-floor kick, no swing; pattern: "bd*4", hard gain 0.85-0.9',
-      hh: 'fast 16th hi-hat, slight gain modulation with perlin; pattern: "hh*16", use .hpf(6000)',
-      bass: 'monotone driving bass on the root, .lpf modulated by sine; note range c1-c2, pattern: "c1*4" or "c1 ~ c1 ~"',
+      hh: 'fast 16th hi-hat, slight gain modulation with perlin; pattern: "hh*16", use .hpf(6000); add .gain(perlin.range(.3,.7).slow(8)) for variation',
+      bass: 'monotone driving bass on the root, .lpf modulated by sine; note range c1-c2, pattern: "c1*4" or "c1 ~ c1 ~"; add .lpf(sine.range(100,400).slow(4)) for acid sweep',
       lead: 'acid-style 303 bleeps with .lpf sweep, sparse; use euclidean rhythm like n("0(3,8)").scale("A4:phrygian")',
     },
   },
@@ -131,7 +131,7 @@ export const STYLES: StyleProfile[] = [
       drums: 'gated reverb snare on 2 and 4, simple kick pattern; pattern: "bd ~ ~ bd ~ ~ bd ~" with "~ sd ~ sd"',
       bass: 'arpeggiated bass in minor, eighth notes; note range c2-c3, use .lpf(500)',
       pad: 'lush analog pad with .vowel and slow .lpf modulation; gain ~0.4, .room(2)',
-      lead: 'saw-wave lead with .delay(0.3).room(0.4), bright melody in minor pentatonic',
+      lead: 'saw-wave lead with .delay(0.3).room(0.4), bright melody in minor pentatonic; add .delay(0.5).delaytime(0.375) for tempo-synced echo (0.375 = dotted-8th at 120BPM)',
     },
   },
   {
@@ -144,7 +144,7 @@ export const STYLES: StyleProfile[] = [
     emotion: 'dark|aggressive',
     hint_for_improvise: {
       drums: 'syncopated kick pattern with rests, snare on 2/4; pattern: "bd ~ ~ bd ~ bd ~ ~" with "~ ~ sd ~ ~ ~ sd ~"',
-      hh: 'rolling 16th hi-hat at high density; pattern: "hh*16", gain 0.35-0.45; add occasional open hat with euclidean: "808oh(3,8)"',
+      hh: 'rolling 16th hi-hat at high density; pattern: "hh*16", gain 0.35-0.45; add occasional open hat with euclidean: "808oh(3,8)"; use .gain(saw.range(.3,.6).slow(2)) for variation',
       bass: '808 slide bass with pitch bending feel; use note() in c1-eb2, .s("808bd").decay(0.8), keep very sparse (4-8 notes max)',
       pad: 'sparse dark pad with long reverb tail; gain ~0.25, .room(3).attack(0.5), note range c3-g3 in minor',
     },
@@ -158,7 +158,7 @@ export const STYLES: StyleProfile[] = [
     mode: 'dorian|lydian',
     emotion: 'tense|melancholic',
     hint_for_improvise: {
-      drums: 'swing ride pattern with brush feel; use euclidean rhythms for hi-hat, soft gain 0.5-0.65, sparse kick',
+      drums: 'swing ride pattern with brush feel; use euclidean rhythms for hi-hat, soft gain 0.5-0.65, sparse kick; use .gain(perlin.range(.45,.65)) for human-feel dynamics',
       bass: 'walking bass in dorian or lydian, quarter-note feel; note range c2-g3, pattern with stepwise motion like "c2 d2 eb2 f2 g2", use .lpf(500)',
       pad: 'warm chord voicings with delay; gain ~0.4, .delay(0.3).room(1.5), short sustain',
       lead: 'melodic improvisation with lots of ~ rests, dorian scale, use .room(1)',

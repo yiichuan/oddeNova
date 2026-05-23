@@ -3,6 +3,27 @@
 // 内联所有 parser / tools / Anthropic 调用逻辑，避免引入浏览器端依赖。
 
 import Anthropic from '@anthropic-ai/sdk';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// 加载 scripts/eval/.env（如存在）
+{
+  const __dir = path.dirname(fileURLToPath(import.meta.url));
+  const envFile = path.join(__dir, '.env');
+  if (fs.existsSync(envFile)) {
+    const lines = fs.readFileSync(envFile, 'utf8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const idx = trimmed.indexOf('=');
+      if (idx === -1) continue;
+      const key = trimmed.slice(0, idx).trim();
+      const val = trimmed.slice(idx + 1).trim();
+      if (key && !(key in process.env)) process.env[key] = val;
+    }
+  }
+}
 
 // ============================================================================
 // Anthropic 客户端（与 run-agent-testcases.ts 相同配置）
@@ -538,7 +559,7 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<RunTurnResult>
     const { system, messages: amsgs } = convertChatHistory(messages);
     const response = await client.messages.create({
       model: ANTHROPIC_MODEL, system, messages: amsgs,
-      tools: convertTools(tools), temperature: 0.7, max_tokens: 1024,
+      tools: convertTools(tools), temperature: 0.7, max_tokens: 8192,
     });
 
     let text = '';

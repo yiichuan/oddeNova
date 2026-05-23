@@ -20,13 +20,23 @@ export function useSuggestions(opts: {
   currentCode: string;
   hasUserMessages: boolean;
   messages: ChatMessage[];
+  /** When provided (from commit explanation), use directly and skip LLM call. */
+  commitSuggestions?: string[];
 }) {
-  const { key, currentCode, hasUserMessages, messages } = opts;
+  const { key, currentCode, hasUserMessages, messages, commitSuggestions } = opts;
   const [suggestions, setSuggestions] = useState<string[]>(() => [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2));
   const [loading, setLoading] = useState(false);
   const [prevKey, setPrevKey] = useState(key);
   const reqIdRef = useRef(0);
   const lastCodeRef = useRef<string>('');
+  // Use a ref for messages so it's always fresh inside the effect without
+  // re-triggering it on every progress message update.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  // Always hold the latest commitSuggestions so we can read it inside the effect
+  // without adding it to the deps array (avoids spurious re-runs).
+  const commitSuggestionsRef = useRef(commitSuggestions);
+  commitSuggestionsRef.current = commitSuggestions;
 
   // Reset when switching sessions.
   if (prevKey !== key) {
@@ -50,18 +60,25 @@ export function useSuggestions(opts: {
     if (lastCodeRef.current === currentCode) return;
     lastCodeRef.current = currentCode;
 
+    // Commit-provided suggestions → use immediately, skip LLM call.
+    const override = commitSuggestionsRef.current;
+    if (override && override.length > 0) {
+      setSuggestions(override.slice(0, 2));
+      return;
+    }
+
     // Hide current chips while fetching new ones.
     setSuggestions([]);
     setLoading(true);
 
     const my = ++reqIdRef.current;
-    buildSuggestions(currentCode, messages).then((chips) => {
+    buildSuggestions(currentCode, messagesRef.current).then((chips) => {
       // Drop stale responses if the user moved on already.
       if (my !== reqIdRef.current) return;
       setLoading(false);
       if (chips.length > 0) setSuggestions(chips);
     });
-  }, [currentCode, hasUserMessages, messages]);
+  }, [currentCode, hasUserMessages]);
 
   return { suggestions, loading };
 }

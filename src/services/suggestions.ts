@@ -144,7 +144,23 @@ function parseSuggestions(text: string): string[] | null {
       // fall through
     }
   }
+  console.warn('[suggestions] parseSuggestions: could not find valid JSON in LLM response:', text.slice(0, 200));
   return null;
+}
+
+/**
+ * Extract next-step suggestion lines from a commit explanation.
+ * Matches "接下来可以：\n- item1\n- item2" format written by the agent.
+ * Returns an empty array if the section is absent.
+ */
+export function parseNextSteps(explanation: string): string[] {
+  const match = explanation.match(/接下来可以[：:][\s\S]*$/);
+  if (!match) return [];
+  return match[0]
+    .split('\n')
+    .filter((l) => /^\s*-\s/.test(l))
+    .map((l) => l.replace(/^\s*-\s*/, '').trim())
+    .filter(Boolean);
 }
 
 /**
@@ -163,13 +179,19 @@ export async function buildSuggestions(
     const state = analyzeMusicState(currentCode);
     const styleIntent = extractStyleIntent(messages);
     const system = buildSuggestSystem(state, styleIntent);
+    console.debug('[suggestions] calling LLM for suggestions, stage=%s style=%s', state.stage, styleIntent);
 
     const text = await chatOnce(system, `当前曲谱：\n${currentCode}\n\n请输出 2 条建议。`, {
       temperature: 0.8,
-      maxTokens: 200,
+      maxTokens: 2048,
     });
+    console.debug('[suggestions] LLM responded:', text.slice(0, 300));
     const parsed = parseSuggestions(text);
-    if (parsed && parsed.length > 0) return parsed.slice(0, 2);
+    if (parsed && parsed.length > 0) {
+      console.debug('[suggestions] parsed suggestions:', parsed);
+      return parsed.slice(0, 2);
+    }
+    console.warn('[suggestions] parseSuggestions returned empty, falling back to static');
   } catch (e) {
     console.warn('[suggestions] upstream call failed, falling back to static', e);
   }

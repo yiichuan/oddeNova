@@ -427,11 +427,9 @@ class StrudelService {
       // (see strudel/packages/superdough/superdoughoutput.mjs: SuperdoughAudioController).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const controllerForWait = getSuperdoughAudioController() as any;
-      // eslint-disable-next-line no-console
       console.log('[exportWav] scheduled', haps.length, 'haps; orbits:', Object.keys(controllerForWait?.nodes ?? {}));
       const waitForReverbReady = async (): Promise<void> => {
         const deadline = Date.now() + 5000; // hard cap so we never hang
-        // eslint-disable-next-line no-constant-condition
         while (true) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const orbits: Record<string, any> = controllerForWait?.nodes ?? {};
@@ -439,7 +437,6 @@ class StrudelService {
             .map((o) => o?.reverbNode)
             .filter(Boolean);
           if (reverbs.length === 0) {
-            // eslint-disable-next-line no-console
             console.log('[exportWav] no reverb nodes attached to any orbit; skipping wait');
             return; // no reverb in this pattern
           }
@@ -451,12 +448,10 @@ class StrudelService {
           }));
           const ready = reverbs.every((n) => n.buffer && n.buffer.length > 0);
           if (ready) {
-            // eslint-disable-next-line no-console
             console.log('[exportWav] reverb IRs ready:', status);
             return;
           }
           if (Date.now() > deadline) {
-            // eslint-disable-next-line no-console
             console.warn('[exportWav] reverb wait timed out, rendering anyway:', status);
             return;
           }
@@ -714,6 +709,55 @@ export function normalizeCode(code: string): string {
     i++;
   }
   return result;
+}
+
+// --- Mini-notation auto-fix ---
+
+/**
+ * Detects and auto-fixes known mini-notation pitfalls in Strudel code.
+ * Currently handles:
+ *   - Semicolons inside `<>` alternation patterns inside string literals.
+ *     e.g. `note("<c4 eb4; g4 bb4>/4")` → `note("<[c4,eb4] [g4,bb4]>/4")`
+ *     `;` is not valid mini-notation; each `;`-delimited group of space-separated
+ *     notes is converted to a simultaneous chord `[n1,n2,...]`.
+ * Returns the fixed code and a list of human-readable fix descriptions.
+ */
+export function fixMiniNotationIssues(code: string): { fixed: string; fixes: string[] } {
+  const fixes: string[] = [];
+  const fixed = code.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, (str) => {
+    if (!str.includes(';') && !str.includes('<')) return str;
+    const quote = str[0];
+    let inner = str.slice(1, -1);
+
+    // Fix 1: semicolons in angle brackets
+    if (inner.includes(';')) {
+      inner = inner.replace(/<([^>]*)>/g, (_match, content: string) => {
+        if (!content.includes(';')) return `<${content}>`;
+        const groups = content.split(';').map((g: string) => g.trim()).filter(Boolean);
+        const fixedGroups = groups.map((g: string) => {
+          const tokens = g.split(/\s+/).filter(Boolean);
+          return tokens.length > 1 ? `[${tokens.join(',')}]` : g;
+        });
+        fixes.push(`auto-fixed ";" in angle-bracket alternation: <${content.trim()}> → <${fixedGroups.join(' ')}>`);
+        return `<${fixedGroups.join(' ')}>`;
+      });
+    }
+
+    // Fix 2: unbalanced < > (missing closing >)
+    let depth = 0;
+    for (const char of inner) {
+      if (char === '<') depth++;
+      else if (char === '>') depth--;
+    }
+    if (depth > 0) {
+      fixes.push(`auto-fixed unbalanced angle brackets in mini notation: added ${depth} missing ">"`);
+      inner += '>'.repeat(depth);
+    }
+
+    if (inner === str.slice(1, -1)) return str;
+    return quote + inner + quote;
+  });
+  return { fixed, fixes };
 }
 
 // --- Code validation (no audio engine needed) ---
