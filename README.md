@@ -6,7 +6,7 @@
 
 <div align="center">
 
-<img src="logo/oddenova-Logo.png" alt="oddenova" height="80" />
+<img src="logo/oddenova-logo.png" alt="oddenova" height="80" />
 
 
 ## **你的即兴音乐创作空间**

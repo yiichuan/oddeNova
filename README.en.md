@@ -6,7 +6,7 @@
 
 <div align="center">
 
-<img src="logo/oddenova-log.png" alt="oddeNova" height="80" />
+<img src="logo/oddenova-logo.png" alt="oddeNova" height="80" />
 
 ## **Your space for improvised music-making**
 
