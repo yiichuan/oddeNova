@@ -31,7 +31,7 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.app.json
 
       - name: Test
-        run: npm test
+        run: npm test -- --coverage
 
       - name: Build
         run: npm run build

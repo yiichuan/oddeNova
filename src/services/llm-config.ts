@@ -127,7 +127,7 @@ function resolveOpenAICompatConfig(
 // Provider 规范化（向后兼容旧 localStorage 值）
 // ---------------------------------------------------------------------------
 
-function normalizeProvider(raw: string | null): ProviderType {
+export function normalizeProvider(raw: string | null): ProviderType {
   if (!raw) return 'official';
   if (raw in PROVIDER_PRESETS) return raw as ProviderType;
   // 旧版 'openai-compat' / 'custom' / 'qiniu' 均降级为 official
