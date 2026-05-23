@@ -72,4 +72,18 @@ export const SINGLE_TURN_CASES: SingleTurnCase[] = [
     prompt: '来一段好听的',
     expectedDimensions: ['有合理默认风格', '基本结构完整'],
   },
+  {
+    id: 'TC-011',
+    name: '单乐器意图-只加吉他',
+    category: '单乐器意图类',
+    prompt: '来个吉他',
+    expectedDimensions: ['只有一层(guitar)', '无鼓层', '无贝斯层'],
+  },
+  {
+    id: 'TC-012',
+    name: '单乐器意图-带修饰词的钢琴',
+    category: '单乐器意图类',
+    prompt: '来段慵懒的钢琴旋律',
+    expectedDimensions: ['只有一层(piano)', '无鼓层', '无贝斯层'],
+  },
 ];
