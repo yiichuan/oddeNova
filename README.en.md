@@ -1,8 +1,12 @@
+<!-- README-I18N:START -->
+
+[中文](./README.md) | **English**
+
+<!-- README-I18N:END -->
+
 <div align="center">
 
-<img src="logo/OddeNova-Logo.svg" alt="oddeNova" height="80" />
-
-> *Playing for nobody — which means playing completely free.*
+<img src="logo/oddenova-log.png" alt="oddeNova" height="80" />
 
 ## **Your space for improvised music-making**
 
@@ -19,12 +23,6 @@
 </div>
 
 ---
-
-<!-- README-I18N:START -->
-
-[汉语](./README.md) | **English**
-
-<!-- README-I18N:END -->
 
 oddeNova is an Agent platform for improvised music creation. Describe a feeling, theme, or image in a single sentence — the AI Agent breaks it into visible track layers, and you shape the music through a loop of listening, judging, and refining.
 

@@ -8,7 +8,6 @@
 
 <img src="logo/oddenova-Logo.png" alt="oddenova" height="80" />
 
-> *正是因为没有给谁听，所以能够自由自在地演奏。*
 
 ## **你的即兴音乐创作空间**
 
