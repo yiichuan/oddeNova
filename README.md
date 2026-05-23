@@ -1,8 +1,16 @@
+<!-- README-I18N:START -->
+
+**中文** | [English](./README.en.md)
+
+<!-- README-I18N:END -->
+
 <div align="center">
 
-<img src="logo/OddeNova-Logo.svg" alt="oddeNova" height="80" />
+<img src="logo/oddenova-Logo.png" alt="oddenova" height="80" />
 
-## **你如何 vibe coding，就如何 vibe 一只属于自己的单曲**
+> *正是因为没有给谁听，所以能够自由自在地演奏。*
+
+## **你的即兴音乐创作空间**
 
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-blue?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -18,12 +26,22 @@
 
 ---
 
-oddeNova 是一个基于浏览器的 AI 音乐创作工具。用文字描述你想要的音乐，AI Agent 会自动拆分为多个独立音轨层（layer），生成 [Strudel](https://strudel.cc/) live coding 代码并即时播放。支持持续对话迭代——AI 精准修改你指定的层，其余部分保持不变。
+oddeNova 是面向创作者的即兴音乐创作 Agent 平台。用一句话描述感觉、主题或画面，AI Agent 将其拆解为可见的音轨层，你在「听—判断—修改」的循环中，把音乐一步步做出来。
+
+**不是一键生成器——是你参与完整创作过程的私密空间。**
 
 <!-- screenshot: 三栏布局全景图（历史面板 + 对话区 + 代码面板） -->
 <!-- gif: 从输入描述到 Agent 工作到音乐播放的完整流程 -->
 
+## 为谁而生
+
+有表达欲和审美判断，但暂时缺少乐理、编曲或电子乐工具经验——  
+脑中有画面、情绪或主题，能感知音乐是否符合自己的感觉，  
+愿意参与修改和迭代，而不满足于随机抽卡式的生成结果。
+
 ## 功能特色
+
+描述感觉，调整结构，直到作品真正长出来。
 
 **核心创作体验**
 
