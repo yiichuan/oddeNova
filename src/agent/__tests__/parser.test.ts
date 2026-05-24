@@ -80,6 +80,18 @@ describe('parseScore — 边界 case', () => {
     const r = parseScore('setcps(0.5)\nsilence');
     expect(r.layers).toEqual([]);
   });
+
+  it('setcpm(60) 解析为 cps=1, bpm=240', () => {
+    const r = parseScore('setcpm(60)');
+    expect(r.cps).toBeCloseTo(1);
+    expect(r.bpm).toBe(240);
+  });
+
+  it('setcpm(30) 解析为 cps=0.5, bpm=120', () => {
+    const r = parseScore('setcpm(30)');
+    expect(r.cps).toBeCloseTo(0.5);
+    expect(r.bpm).toBe(120);
+  });
 });
 
 describe('bpmToCps', () => {

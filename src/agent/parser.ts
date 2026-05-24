@@ -229,7 +229,9 @@ function findSetcps(code: string): { cps: number; start: number; end: number } |
       continue;
     }
     if (skip === 0) continue;
-    if (code.slice(i, i + 6) === 'setcps') {
+    const isSetcps = code.slice(i, i + 6) === 'setcps';
+    const isSetcpm = code.slice(i, i + 6) === 'setcpm';
+    if (isSetcps || isSetcpm) {
       const before = i > 0 ? code[i - 1] : '';
       const after = code[i + 6];
       if (/[A-Za-z0-9_$]/.test(before)) continue;
@@ -241,7 +243,8 @@ function findSetcps(code: string): { cps: number; start: number; end: number } |
       const inner = code.slice(open + 1, close).trim();
       const num = parseFloat(inner);
       if (isNaN(num)) continue;
-      return { cps: num, start: i, end: close + 1 };
+      const cps = isSetcpm ? num / 60 : num;
+      return { cps, start: i, end: close + 1 };
     }
   }
   return null;
