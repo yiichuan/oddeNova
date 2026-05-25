@@ -317,6 +317,8 @@ export default function App() {
 
     abortControllersRef.current.set(sessionId, new AbortController());
     const signal = abortControllersRef.current.get(sessionId)!.signal;
+    const _analyticsStart = Date.now();
+    const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
     try {
       const shownLayerOps = new Set<string>();
@@ -352,8 +354,16 @@ export default function App() {
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
         sessions.addAssistantMessage('已中断', undefined, sessionId);
+        trackAgentAbort();
         return;
       }
+      trackAgentRun({
+        provider: _analyticsProvider,
+        model: _analyticsModel,
+        iterations: result.iterations,
+        durationMs: Date.now() - _analyticsStart,
+        committed: result.committed,
+      });
       if (result.code) {
         if (sessionId === currentIdRef.current) {
           const success = await strudel.play(result.code);
@@ -380,10 +390,16 @@ export default function App() {
     } catch (e: unknown) {
       if (isUserAbort(e, signal)) {
         sessions.addAssistantMessage('已中断', undefined, sessionId);
+        trackAgentAbort();
       } else {
         const errMsg = e instanceof Error ? e.message : '请求失败';
         sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
         strudel.setError(errMsg);
+        trackAgentError({
+          provider: _analyticsProvider,
+          model: _analyticsModel,
+          error_type: e instanceof Error ? e.name : 'unknown',
+        });
       }
     } finally {
       abortControllersRef.current.delete(sessionId);
