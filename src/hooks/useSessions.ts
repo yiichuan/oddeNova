@@ -45,6 +45,21 @@ function makeEmptySession(): Session {
   };
 }
 
+export function applyTruncateAndEdit(s: Session, targetMessageId: string, newContent: string): Session {
+  const index = s.messages.findIndex((m) => m.id === targetMessageId);
+  if (index === -1) return s;
+  const before = s.messages.slice(0, index);
+  const newMsg = {
+    id: newMessageId(),
+    role: 'user' as const,
+    content: newContent,
+    timestamp: Date.now(),
+  };
+  const messages = [...before, newMsg];
+  const title = before.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+  return { ...s, messages, title };
+}
+
 export function useSessions() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -125,21 +140,8 @@ export function useSessions() {
   );
 
   const truncateAndEdit = useCallback(
-    (messageId: string, newContent: string): void => {
-      updateCurrent((s) => {
-        const index = s.messages.findIndex((m) => m.id === messageId);
-        if (index === -1) return s;
-        const before = s.messages.slice(0, index);
-        const newMsg = {
-          id: newMessageId(),
-          role: 'user' as const,
-          content: newContent,
-          timestamp: Date.now(),
-        };
-        const messages = [...before, newMsg];
-        const title = before.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
-        return { ...s, messages, title };
-      });
+    (targetMessageId: string, newContent: string): void => {
+      updateCurrent((s) => applyTruncateAndEdit(s, targetMessageId, newContent));
     },
     [updateCurrent]
   );
