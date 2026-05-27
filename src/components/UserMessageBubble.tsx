@@ -12,7 +12,7 @@ interface UserMessageBubbleProps {
   isLoading: boolean;
   isEditing: boolean;
   editText: string;
-  editTextareaRef: RefObject<HTMLTextAreaElement>;
+  editTextareaRef: RefObject<HTMLTextAreaElement | null>;
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onEditTextChange: (text: string) => void;
