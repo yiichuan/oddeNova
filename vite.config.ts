@@ -40,7 +40,22 @@ function airjellyProxy(): Plugin {
             res.end(JSON.stringify({ available: false }))
             return
           }
-          res.end(JSON.stringify({ available: true }))
+          // Verify the service is actually running, not just the config file exists
+          fetch(`http://127.0.0.1:${runtime.port}/rpc`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${runtime.token}`,
+            },
+            body: JSON.stringify({ method: 'ping', args: [] }),
+            signal: AbortSignal.timeout(1000),
+          })
+            .then(() => {
+              res.end(JSON.stringify({ available: true }))
+            })
+            .catch(() => {
+              res.end(JSON.stringify({ available: false }))
+            })
         }
       )
 
