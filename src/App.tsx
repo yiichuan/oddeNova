@@ -299,10 +299,28 @@ export default function App() {
 
   const handleResend = useCallback(
     async (messageId: string, newContent: string) => {
+      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      const allMessages = sessions.currentSession?.messages ?? [];
+      const idx = allMessages.findIndex((m) => m.id === messageId);
+      const before = idx >= 0 ? allMessages.slice(0, idx) : [];
+      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
+      const previousCode = prevAssistant?.code ?? '';
+
+      // 回退 strudel 状态到该消息发出前
+      if (previousCode) {
+        await strudel.play(previousCode);
+      } else {
+        strudel.stop();
+        strudel.setCode('');
+      }
+      if (sessions.currentId) {
+        sessions.setCurrentCode(previousCode, sessions.currentId);
+      }
+
       sessions.truncateAndEdit(messageId, newContent);
       await handleInstruction(newContent, { skipAddMessage: true });
     },
-    [sessions, handleInstruction]
+    [sessions, handleInstruction, strudel]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -489,7 +507,7 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView messages={messages} isLoading={isLoading} onResend={handleResend} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} />
         </div>
 
         {/* ── Code Drawer ── */}

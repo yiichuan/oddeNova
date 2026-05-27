@@ -145,6 +145,7 @@ export default function Sidebar({
           </>
         )}
         <ConversationView
+          key={currentId ?? 'default'}
           messages={messages}
           isLoading={isLoading && !isReplaying}
           onResend={onResend}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
+import { ArrowUpIcon, EditIcon, XIcon } from './icons';
 
 function stripMarkdown(text: string): string {
   return text
@@ -29,9 +30,24 @@ export default function ConversationView({
   onResend,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+
+  useEffect(() => {
+    const el = editTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [editText]);
+
+  useEffect(() => {
+    const el = editTextareaRef.current;
+    if (!el || !editingId) return;
+    const len = el.value.length;
+    el.setSelectionRange(len, len);
+  }, [editingId]);
 
   const toggleCode = (id: string) => {
     setExpandedCode((prev) => {
@@ -85,20 +101,10 @@ export default function ConversationView({
           const isEditing = editingId === msg.id;
           return (
             <div key={msg.id} className="flex justify-end items-end gap-1.5 animate-fade-in-up group">
-              {/* Edit button — left of bubble, visible on group-hover */}
-              {!isEditing && (
-                <button
-                  disabled={isLoading}
-                  onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-text-muted/50 hover:text-text-muted disabled:opacity-0 disabled:cursor-not-allowed text-xs p-1 self-center"
-                  title="重新编辑"
-                >
-                  ✏
-                </button>
-              )}
               {isEditing ? (
                 <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary w-full">
                   <textarea
+                    ref={editTextareaRef}
                     autoFocus
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
@@ -114,15 +120,16 @@ export default function ConversationView({
                         setEditingId(null);
                       }
                     }}
-                    className="w-full bg-transparent text-text-primary resize-none outline-none text-sm whitespace-pre-wrap break-words min-h-[1.5rem]"
-                    rows={Math.max(1, editText.split('\n').length)}
+                    className="w-full bg-transparent text-text-primary resize-none outline-none text-sm whitespace-pre-wrap break-words min-h-[1.5rem] max-h-[30vh] overflow-y-auto"
+                    rows={1}
                   />
-                  <div className="flex gap-2 mt-1.5 justify-end">
+                  <div className="flex gap-1.5 mt-1.5 justify-end">
                     <button
                       onClick={() => setEditingId(null)}
-                      className="text-xs text-text-muted/60 hover:text-text-muted px-2 py-0.5"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full text-text-muted/50 hover:text-text-muted hover:bg-white/5 transition-colors"
+                      title="取消"
                     >
-                      取消
+                      <XIcon size={13} />
                     </button>
                     <button
                       disabled={!editText.trim()}
@@ -132,15 +139,25 @@ export default function ConversationView({
                           setEditingId(null);
                         }
                       }}
-                      className="text-xs text-[#93C2FF]/70 hover:text-[#93C2FF] disabled:opacity-40 disabled:cursor-not-allowed px-2 py-0.5"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition-colors hover:bg-[#d0d0d0]/80 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="发送"
                     >
-                      发送
+                      <ArrowUpIcon size={14} />
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary">
+                <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary">
                   <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  {/* Edit button — bottom-right of bubble, visible on group-hover */}
+                  <button
+                    disabled={isLoading}
+                    onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
+                    className="absolute -bottom-5 right-0 opacity-0 group-hover:opacity-100 transition-opacity text-text-muted/50 hover:text-text-muted disabled:opacity-0 disabled:cursor-not-allowed p-1"
+                    title="重新编辑"
+                  >
+                    <EditIcon size={13} />
+                  </button>
                 </div>
               )}
             </div>
