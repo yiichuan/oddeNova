@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { uploadShare } from '../services/share';
+import { trackShare } from '../lib/analytics';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
@@ -32,6 +33,7 @@ function ShareButton({ session, code, messages, disabled }: ShareButtonProps) {
       });
       const url = `${window.location.origin}/s/${shareId}`;
       await navigator.clipboard.writeText(url);
+      trackShare();
       setState('done');
       setTimeout(() => setState('idle'), 2000);
     } catch {

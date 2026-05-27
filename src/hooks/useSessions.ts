@@ -124,6 +124,26 @@ export function useSessions() {
     [updateCurrent, updateSession]
   );
 
+  const truncateAndEdit = useCallback(
+    (messageId: string, newContent: string): void => {
+      updateCurrent((s) => {
+        const index = s.messages.findIndex((m) => m.id === messageId);
+        if (index === -1) return s;
+        const before = s.messages.slice(0, index);
+        const newMsg = {
+          id: newMessageId(),
+          role: 'user' as const,
+          content: newContent,
+          timestamp: Date.now(),
+        };
+        const messages = [...before, newMsg];
+        const title = before.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+        return { ...s, messages, title };
+      });
+    },
+    [updateCurrent]
+  );
+
   const addAssistantMessage = useCallback(
     (content: string, code?: string, sessionId?: string): void => {
       const apply = sessionId
@@ -286,6 +306,7 @@ export function useSessions() {
     currentId,
     isLoading,
     addUserMessage,
+    truncateAndEdit,
     addAssistantMessage,
     addProgress,
     appendToLastThinking,

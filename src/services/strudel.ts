@@ -1,5 +1,6 @@
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
+import { trackWavExport } from '../lib/analytics';
 
 type StrudelReplState = {
   code?: string;
@@ -463,6 +464,7 @@ class StrudelService {
       const renderedBuffer = await offlineCtx.startRendering();
       const wav = audioBufferToWav16(renderedBuffer);
       downloadWav(wav, filename);
+      trackWavExport();
 
       setAudioContext(null);
       setSuperdoughAudioController(null);

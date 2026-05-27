@@ -15,7 +15,7 @@ import type { ProgressEvent } from './services/llm';
 import { parseNextSteps } from './services/suggestions';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
-import { hasApiKeyConfigured } from './services/llm-config';
+import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
 import { useImportShare } from './hooks/useImportShare';
@@ -23,6 +23,7 @@ import { useReplay } from './hooks/useReplay';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
+import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
@@ -159,14 +160,16 @@ export default function App() {
   }, [current?.id]);
 
   const handleInstruction = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { skipAddMessage?: boolean }) => {
       if (!strudel.engineReady) {
         strudel.setError('音频引擎启动中，请稍后再试');
         return;
       }
 
       setCommitSuggestions(null); // reset on each new instruction
-      sessions.addUserMessage(text);
+      if (!options?.skipAddMessage) {
+        sessions.addUserMessage(text);
+      }
       const sessionId = sessions.currentId;
       if (!sessionId) return;
       setLoadingSessions((prev) => new Set(prev).add(sessionId));
@@ -178,6 +181,8 @@ export default function App() {
 
       abortControllersRef.current.set(sessionId, new AbortController());
       const signal = abortControllersRef.current.get(sessionId)!.signal;
+      const _analyticsStart = Date.now();
+      const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
       try {
         // Track layer names already shown in this agent run to prevent
@@ -237,8 +242,16 @@ export default function App() {
         const result = await runAgent(text, currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
           sessions.addAssistantMessage('已中断', undefined, sessionId);
+          trackAgentAbort();
           return;
         }
+        trackAgentRun({
+          provider: _analyticsProvider,
+          model: _analyticsModel,
+          iterations: result.iterations,
+          durationMs: Date.now() - _analyticsStart,
+          committed: result.committed,
+        });
         if (result.code) {
           if (sessionId === currentIdRef.current) {
             const success = await strudel.play(result.code);
@@ -265,10 +278,16 @@ export default function App() {
       } catch (e: unknown) {
         if (isUserAbort(e, signal)) {
           sessions.addAssistantMessage('已中断', undefined, sessionId);
+          trackAgentAbort();
         } else {
           const errMsg = e instanceof Error ? e.message : '请求失败';
           sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
           strudel.setError(errMsg);
+          trackAgentError({
+            provider: _analyticsProvider,
+            model: _analyticsModel,
+            error_type: e instanceof Error ? e.name : 'unknown',
+          });
         }
       } finally {
         abortControllersRef.current.delete(sessionId);
@@ -276,6 +295,32 @@ export default function App() {
       }
     },
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
+  );
+
+  const handleResend = useCallback(
+    async (messageId: string, newContent: string) => {
+      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      const allMessages = sessions.currentSession?.messages ?? [];
+      const idx = allMessages.findIndex((m) => m.id === messageId);
+      const before = idx >= 0 ? allMessages.slice(0, idx) : [];
+      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
+      const previousCode = prevAssistant?.code ?? '';
+
+      // 回退 strudel 状态到该消息发出前
+      if (previousCode) {
+        await strudel.play(previousCode);
+      } else {
+        strudel.stop();
+        strudel.setCode('');
+      }
+      if (sessions.currentId) {
+        sessions.setCurrentCode(previousCode, sessions.currentId);
+      }
+
+      sessions.truncateAndEdit(messageId, newContent);
+      await handleInstruction(newContent, { skipAddMessage: true });
+    },
+    [sessions, handleInstruction, strudel]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -300,6 +345,8 @@ export default function App() {
 
     abortControllersRef.current.set(sessionId, new AbortController());
     const signal = abortControllersRef.current.get(sessionId)!.signal;
+    const _analyticsStart = Date.now();
+    const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
     try {
       const shownLayerOps = new Set<string>();
@@ -335,8 +382,16 @@ export default function App() {
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
         sessions.addAssistantMessage('已中断', undefined, sessionId);
+        trackAgentAbort();
         return;
       }
+      trackAgentRun({
+        provider: _analyticsProvider,
+        model: _analyticsModel,
+        iterations: result.iterations,
+        durationMs: Date.now() - _analyticsStart,
+        committed: result.committed,
+      });
       if (result.code) {
         if (sessionId === currentIdRef.current) {
           const success = await strudel.play(result.code);
@@ -363,10 +418,16 @@ export default function App() {
     } catch (e: unknown) {
       if (isUserAbort(e, signal)) {
         sessions.addAssistantMessage('已中断', undefined, sessionId);
+        trackAgentAbort();
       } else {
         const errMsg = e instanceof Error ? e.message : '请求失败';
         sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
         strudel.setError(errMsg);
+        trackAgentError({
+          provider: _analyticsProvider,
+          model: _analyticsModel,
+          error_type: e instanceof Error ? e.name : 'unknown',
+        });
       }
     } finally {
       abortControllersRef.current.delete(sessionId);
@@ -446,7 +507,7 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView messages={messages} isLoading={isLoading} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -620,6 +681,7 @@ export default function App() {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
+          onResend={handleResend}
         />
       </div>
 
