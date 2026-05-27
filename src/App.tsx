@@ -160,7 +160,7 @@ export default function App() {
   }, [current?.id]);
 
   const handleInstruction = useCallback(
-    async (text: string, options?: { skipAddMessage?: boolean }) => {
+    async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
       if (!strudel.engineReady) {
         strudel.setError('音频引擎启动中，请稍后再试');
         return;
@@ -239,7 +239,7 @@ export default function App() {
           }
         };
 
-        const result = await runAgent(text, currentCode, onProgress, undefined, signal);
+        const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
           sessions.addAssistantMessage('已中断', undefined, sessionId);
           trackAgentAbort();
@@ -318,7 +318,7 @@ export default function App() {
       }
 
       sessions.truncateAndEdit(messageId, newContent);
-      await handleInstruction(newContent, { skipAddMessage: true });
+      await handleInstruction(newContent, { skipAddMessage: true, initialCode: previousCode });
     },
     [sessions, handleInstruction, strudel]
   );

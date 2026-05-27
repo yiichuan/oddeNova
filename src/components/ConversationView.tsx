@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import { ArrowUpIcon, EditIcon, XIcon } from './icons';
+import { ArrowUpIcon, CheckIcon, CopyIcon, EditIcon, XIcon } from './icons';
 
 function stripMarkdown(text: string): string {
   return text
@@ -34,6 +34,7 @@ export default function ConversationView({
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     const el = editTextareaRef.current;
@@ -149,15 +150,29 @@ export default function ConversationView({
               ) : (
                 <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary">
                   <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                  {/* Edit button — bottom-right of bubble, visible on group-hover */}
-                  <button
-                    disabled={isLoading}
-                    onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
-                    className="absolute -bottom-5 right-0 opacity-0 group-hover:opacity-100 transition-opacity text-white/60 hover:text-white disabled:opacity-0 disabled:cursor-not-allowed p-1"
-                    title="重新编辑"
-                  >
-                    <EditIcon size={13} />
-                  </button>
+                  {/* Action buttons — bottom-right of bubble, visible on group-hover */}
+                  <div className="absolute -bottom-5 right-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(msg.content).then(() => {
+                          setCopiedId(msg.id);
+                          setTimeout(() => setCopiedId(null), 2000);
+                        });
+                      }}
+                      className="text-white/60 hover:text-white p-1"
+                      title="复制"
+                    >
+                      {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                    </button>
+                    <button
+                      disabled={isLoading}
+                      onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
+                      className="text-white/60 hover:text-white disabled:opacity-0 disabled:cursor-not-allowed p-1"
+                      title="编辑"
+                    >
+                      <EditIcon size={13} />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
