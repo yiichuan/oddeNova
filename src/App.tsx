@@ -160,14 +160,16 @@ export default function App() {
   }, [current?.id]);
 
   const handleInstruction = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { skipAddMessage?: boolean }) => {
       if (!strudel.engineReady) {
         strudel.setError('音频引擎启动中，请稍后再试');
         return;
       }
 
       setCommitSuggestions(null); // reset on each new instruction
-      sessions.addUserMessage(text);
+      if (!options?.skipAddMessage) {
+        sessions.addUserMessage(text);
+      }
       const sessionId = sessions.currentId;
       if (!sessionId) return;
       setLoadingSessions((prev) => new Set(prev).add(sessionId));
@@ -293,6 +295,14 @@ export default function App() {
       }
     },
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
+  );
+
+  const handleResend = useCallback(
+    async (messageId: string, newContent: string) => {
+      sessions.truncateAndEdit(messageId, newContent);
+      await handleInstruction(newContent, { skipAddMessage: true });
+    },
+    [sessions, handleInstruction]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -479,7 +489,7 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView messages={messages} isLoading={isLoading} />
+          <ConversationView messages={messages} isLoading={isLoading} onResend={handleResend} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -653,6 +663,7 @@ export default function App() {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
+          onResend={handleResend}
         />
       </div>
 
