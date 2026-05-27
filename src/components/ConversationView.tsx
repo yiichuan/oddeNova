@@ -153,7 +153,7 @@ export default function ConversationView({
                   <button
                     disabled={isLoading}
                     onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
-                    className="absolute -bottom-5 right-0 opacity-0 group-hover:opacity-100 transition-opacity text-text-muted/50 hover:text-text-muted disabled:opacity-0 disabled:cursor-not-allowed p-1"
+                    className="absolute -bottom-5 right-0 opacity-0 group-hover:opacity-100 transition-opacity text-white/60 hover:text-white disabled:opacity-0 disabled:cursor-not-allowed p-1"
                     title="重新编辑"
                   >
                     <EditIcon size={13} />
