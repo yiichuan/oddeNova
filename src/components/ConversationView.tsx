@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import { ArrowUpIcon, CheckIcon, CopyIcon, EditIcon, GitBranchIcon, XIcon } from './icons';
+import { ArrowUpIcon, CheckIcon, CopyIcon, EditIcon, GitBranchIcon, RetryIcon, XIcon } from './icons';
 
 function stripMarkdown(text: string): string {
   return text
@@ -23,6 +23,7 @@ interface ConversationViewProps {
   isLoading: boolean;
   onResend: (messageId: string, content: string) => void;
   onBranch: (messageId: string) => void;
+  onRetry: (messageId: string) => void;
 }
 
 export default function ConversationView({
@@ -30,6 +31,7 @@ export default function ConversationView({
   isLoading,
   onResend,
   onBranch,
+  onRetry,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -167,9 +169,8 @@ export default function ConversationView({
                       {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
                     </button>
                     <button
-                      disabled={isLoading}
                       onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
-                      className="text-white/60 hover:text-white disabled:opacity-0 disabled:cursor-not-allowed p-1"
+                      className="text-white/60 hover:text-white p-1"
                       title="编辑"
                     >
                       <EditIcon size={13} />
@@ -185,7 +186,7 @@ export default function ConversationView({
         return (
           <div
             key={msg.id}
-            className="flex justify-start animate-fade-in-up group"
+            className="flex justify-start animate-fade-in-up group mb-6"
           >
             <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-xs bg-transparent text-text-primary">
               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
@@ -210,8 +211,15 @@ export default function ConversationView({
                   </div>
                 );
               })()}
-              {/* Branch button — bottom-left, visible on group-hover */}
-              <div className="absolute -bottom-5 left-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+              {/* Action buttons — bottom-left, always visible */}
+              <div className="absolute -bottom-5 left-0 flex items-center">
+                <button
+                  onClick={() => onRetry(msg.id)}
+                  className="text-white/60 hover:text-white p-1"
+                  title="重试"
+                >
+                  <RetryIcon size={13} />
+                </button>
                 <button
                   onClick={() => onBranch(msg.id)}
                   className="text-white/60 hover:text-white p-1"
