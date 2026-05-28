@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import { ArrowUpIcon, CheckIcon, CopyIcon, EditIcon, XIcon } from './icons';
+import { ArrowUpIcon, CheckIcon, CopyIcon, EditIcon, GitBranchIcon, RetryIcon, XIcon } from './icons';
 
 function stripMarkdown(text: string): string {
   return text
@@ -22,12 +22,16 @@ interface ConversationViewProps {
   messages: ChatMessage[];
   isLoading: boolean;
   onResend: (messageId: string, content: string) => void;
+  onBranch: (messageId: string) => void;
+  onRetry: (messageId: string) => void;
 }
 
 export default function ConversationView({
   messages,
   isLoading,
   onResend,
+  onBranch,
+  onRetry,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -165,9 +169,8 @@ export default function ConversationView({
                       {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
                     </button>
                     <button
-                      disabled={isLoading}
                       onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
-                      className="text-white/60 hover:text-white disabled:opacity-0 disabled:cursor-not-allowed p-1"
+                      className="text-white/60 hover:text-white p-1"
                       title="编辑"
                     >
                       <EditIcon size={13} />
@@ -183,9 +186,9 @@ export default function ConversationView({
         return (
           <div
             key={msg.id}
-            className="flex justify-start animate-fade-in-up"
+            className="flex justify-start animate-fade-in-up group mb-6"
           >
-            <div className="max-w-[85%] rounded-xl px-3 py-2 text-xs bg-transparent text-text-primary">
+            <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-xs bg-transparent text-text-primary">
               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
               {msg.code && (() => {
                 const isExpanded = expandedCode.has(msg.id);
@@ -208,6 +211,23 @@ export default function ConversationView({
                   </div>
                 );
               })()}
+              {/* Action buttons — bottom-left, always visible */}
+              <div className="absolute -bottom-5 left-0 flex items-center">
+                <button
+                  onClick={() => onRetry(msg.id)}
+                  className="text-white/60 hover:text-white p-1"
+                  title="重试"
+                >
+                  <RetryIcon size={13} />
+                </button>
+                <button
+                  onClick={() => onBranch(msg.id)}
+                  className="text-white/60 hover:text-white p-1"
+                  title="从此处创建分支对话"
+                >
+                  <GitBranchIcon size={13} />
+                </button>
+              </div>
             </div>
           </div>
         );

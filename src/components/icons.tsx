@@ -155,3 +155,41 @@ export function XIcon({ size = 16, className }: IconProps) {
     </svg>
   );
 }
+
+export function RetryIcon({ size = 16, className }: IconProps) {
+  // Center (12,12) R=7. CW tangent at θ: (-sinθ, cosθ).
+  // Arc 1: θ=220°→340° (120° CW through 12 o'clock)
+  //   start=(6.64,7.50) end=(18.58,9.61) t=(0.342,0.940) n=(-0.940,0.342)
+  //   wings: tip-2.5t±1.5n → (16.31,7.77) (19.13,6.74)
+  // Arc 2: θ=40°→160° (120° CW through 6 o'clock) — 180° symmetric
+  //   start=(17.36,16.50) end=(5.42,14.39) wings=(7.69,16.23) (4.87,17.26)
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+      <path d="M 6.64 7.50 A 7 7 0 0 1 18.58 9.61"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <polyline points="16.31,7.77 18.58,9.61 19.13,6.74"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M 17.36 16.50 A 7 7 0 0 1 5.42 14.39"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <polyline points="7.69,16.23 5.42,14.39 4.87,17.26"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function GitBranchIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {/* horizontal stem */}
+      <line x1="3" y1="12" x2="10" y2="12" />
+      {/* upper branch → NE */}
+      <line x1="10" y1="12" x2="20" y2="4" />
+      {/* upper arrowhead: L-bracket at top-right */}
+      <polyline points="14,4 20,4 20,10" />
+      {/* lower branch → SE */}
+      <line x1="10" y1="12" x2="20" y2="20" />
+      {/* lower arrowhead: L-bracket at bottom-right */}
+      <polyline points="14,20 20,20 20,14" />
+    </svg>
+  );
+}
