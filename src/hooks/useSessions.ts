@@ -322,9 +322,9 @@ export function useSessions() {
         createdAt: now,
         updatedAt: now,
       };
-      await dbPutSession(branched);
       setSessions((prev) => [branched, ...prev]);
       setCurrentId(id);
+      dbPutSession(branched).catch(console.error);
     },
     [sessions, currentId]
   );
