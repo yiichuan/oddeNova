@@ -179,8 +179,9 @@ export default function App() {
         setDemoStep((s) => s + 1);
       }
 
-      abortControllersRef.current.set(sessionId, new AbortController());
-      const signal = abortControllersRef.current.get(sessionId)!.signal;
+      const controller = new AbortController();
+      abortControllersRef.current.set(sessionId, controller);
+      const signal = controller.signal;
       const _analyticsStart = Date.now();
       const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
@@ -241,7 +242,9 @@ export default function App() {
 
         const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
-          sessions.addAssistantMessage('已中断', undefined, sessionId);
+          if (abortControllersRef.current.get(sessionId) === controller) {
+            sessions.addAssistantMessage('已中断', undefined, sessionId);
+          }
           trackAgentAbort();
           return;
         }
@@ -277,7 +280,9 @@ export default function App() {
         }
       } catch (e: unknown) {
         if (isUserAbort(e, signal)) {
-          sessions.addAssistantMessage('已中断', undefined, sessionId);
+          if (abortControllersRef.current.get(sessionId) === controller) {
+            sessions.addAssistantMessage('已中断', undefined, sessionId);
+          }
           trackAgentAbort();
         } else {
           const errMsg = e instanceof Error ? e.message : '请求失败';
@@ -290,8 +295,10 @@ export default function App() {
           });
         }
       } finally {
-        abortControllersRef.current.delete(sessionId);
-        setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+        if (abortControllersRef.current.get(sessionId) === controller) {
+          abortControllersRef.current.delete(sessionId);
+          setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+        }
       }
     },
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
@@ -299,6 +306,11 @@ export default function App() {
 
   const handleResend = useCallback(
     async (messageId: string, newContent: string) => {
+      // Abort any in-progress run before resending
+      const currentSessionId = sessions.currentId;
+      if (currentSessionId) {
+        abortControllersRef.current.get(currentSessionId)?.abort();
+      }
       // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
       const allMessages = sessions.currentSession?.messages ?? [];
       const idx = allMessages.findIndex((m) => m.id === messageId);
@@ -321,6 +333,18 @@ export default function App() {
       await handleInstruction(newContent, { skipAddMessage: true, initialCode: previousCode });
     },
     [sessions, handleInstruction, strudel]
+  );
+
+  const handleRetry = useCallback(
+    async (assistantMessageId: string) => {
+      const allMessages = sessions.currentSession?.messages ?? [];
+      const idx = allMessages.findIndex((m) => m.id === assistantMessageId);
+      if (idx < 0) return;
+      const userMsg = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'user');
+      if (!userMsg) return;
+      await handleResend(userMsg.id, userMsg.content);
+    },
+    [sessions, handleResend]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -507,7 +531,7 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -682,6 +706,8 @@ export default function App() {
           isReplaying={isReplaying}
           replayInputText={replayInputText}
           onResend={handleResend}
+          onBranch={sessions.branchFromMessage}
+          onRetry={handleRetry}
         />
       </div>
 

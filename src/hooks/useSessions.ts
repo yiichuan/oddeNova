@@ -302,6 +302,36 @@ export function useSessions() {
     []
   );
 
+  const branchFromMessage = useCallback(
+    (targetMessageId: string): void => {
+      const session = sessions.find((s) => s.id === currentId) || sessions[0];
+      if (!session) return;
+      const index = session.messages.findIndex((m) => m.id === targetMessageId);
+      if (index === -1) return;
+      const sliced = session.messages.slice(0, index + 1);
+      // Use the code from the target assistant message if available
+      const targetMsg = session.messages[index];
+      const code = (targetMsg.role === 'assistant' && targetMsg.code) ? targetMsg.code : session.code;
+      const id = newSessionId();
+      const now = Date.now();
+      const branched: Session = {
+        id,
+        title: `${session.title}（分支）`,
+        messages: sliced,
+        code,
+        createdAt: now,
+        updatedAt: now,
+      };
+      // Optimistic update: UI reflects immediately; DB write is fire-and-forget.
+      // If dbPutSession fails, the session exists in memory for the current page
+      // load but won't persist on refresh.
+      setSessions((prev) => [branched, ...prev]);
+      setCurrentId(id);
+      dbPutSession(branched).catch(console.error);
+    },
+    [sessions, currentId]
+  );
+
   return {
     sessions,
     currentSession,
@@ -317,5 +347,6 @@ export function useSessions() {
     switchTo,
     deleteSession,
     importSession,
+    branchFromMessage,
   };
 }
