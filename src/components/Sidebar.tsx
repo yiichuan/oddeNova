@@ -33,6 +33,7 @@ interface SidebarProps {
   onReplay?: () => void;
   isReplaying?: boolean;
   replayInputText?: string;
+  onResend: (messageId: string, content: string) => void;
 }
 
 export default function Sidebar({
@@ -59,6 +60,7 @@ export default function Sidebar({
   onReplay,
   isReplaying = false,
   replayInputText,
+  onResend,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -143,8 +145,10 @@ export default function Sidebar({
           </>
         )}
         <ConversationView
+          key={currentId ?? 'default'}
           messages={messages}
           isLoading={isLoading && !isReplaying}
+          onResend={onResend}
         />
       </div>
 

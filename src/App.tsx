@@ -160,14 +160,16 @@ export default function App() {
   }, [current?.id]);
 
   const handleInstruction = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
       if (!strudel.engineReady) {
         strudel.setError('音频引擎启动中，请稍后再试');
         return;
       }
 
       setCommitSuggestions(null); // reset on each new instruction
-      sessions.addUserMessage(text);
+      if (!options?.skipAddMessage) {
+        sessions.addUserMessage(text);
+      }
       const sessionId = sessions.currentId;
       if (!sessionId) return;
       setLoadingSessions((prev) => new Set(prev).add(sessionId));
@@ -237,7 +239,7 @@ export default function App() {
           }
         };
 
-        const result = await runAgent(text, currentCode, onProgress, undefined, signal);
+        const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
           sessions.addAssistantMessage('已中断', undefined, sessionId);
           trackAgentAbort();
@@ -293,6 +295,32 @@ export default function App() {
       }
     },
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
+  );
+
+  const handleResend = useCallback(
+    async (messageId: string, newContent: string) => {
+      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      const allMessages = sessions.currentSession?.messages ?? [];
+      const idx = allMessages.findIndex((m) => m.id === messageId);
+      const before = idx >= 0 ? allMessages.slice(0, idx) : [];
+      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
+      const previousCode = prevAssistant?.code ?? '';
+
+      // 回退 strudel 状态到该消息发出前
+      if (previousCode) {
+        await strudel.play(previousCode);
+      } else {
+        strudel.stop();
+        strudel.setCode('');
+      }
+      if (sessions.currentId) {
+        sessions.setCurrentCode(previousCode, sessions.currentId);
+      }
+
+      sessions.truncateAndEdit(messageId, newContent);
+      await handleInstruction(newContent, { skipAddMessage: true, initialCode: previousCode });
+    },
+    [sessions, handleInstruction, strudel]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -479,7 +507,7 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView messages={messages} isLoading={isLoading} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -653,6 +681,7 @@ export default function App() {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
+          onResend={handleResend}
         />
       </div>
 
