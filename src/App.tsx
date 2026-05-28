@@ -323,6 +323,13 @@ export default function App() {
     [sessions, handleInstruction, strudel]
   );
 
+  const handleBranch = useCallback(
+    (messageId: string) => {
+      sessions.branchFromMessage(messageId);
+    },
+    [sessions]
+  );
+
   const handleMoodInstruction = useCallback(async () => {
     if (!strudel.engineReady) {
       strudel.setError('音频引擎启动中，请稍后再试');
@@ -507,7 +514,7 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} onBranch={handleBranch} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -682,6 +689,7 @@ export default function App() {
           isReplaying={isReplaying}
           replayInputText={replayInputText}
           onResend={handleResend}
+          onBranch={handleBranch}
         />
       </div>
 
