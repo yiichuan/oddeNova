@@ -3,7 +3,7 @@ index 7e172ca..bb12f6b 100644
 --- a/node_modules/@strudel/codemirror/dist/index.mjs
 +++ b/node_modules/@strudel/codemirror/dist/index.mjs
 @@ -7,7 +7,7 @@ import { StateEffect as E, StateField as V, RangeSetBuilder as on, Prec as W, Ed
- import { highlightSpecialChars as ye, dropCursor as mn, rectangularSelection as cn, crosshairCursor as ln, keymap as B, drawSelection as ke, Decoration as P, EditorView as C, ViewPlugin as ve, WidgetType as we } from "@codemirror/view";
+ import { highlightSpecialChars as ye, dropCursor as mn, rectangularSelection as cn, crosshairCursor as ln, keymap as B, drawSelection as ke, Decoration as P, EditorView as C, ViewPlugin as ve, WidgetType as we, hoverTooltip as pn, lineNumbers as dn, highlightActiveLine as un, highlightActiveLineGutter as hn } from "@codemirror/view";
  import { persistentAtom as gn } from "@nanostores/persistent";
  import { logger as xe, pure as bn, ref as fn, Pattern as yn, registerControl as kn, repl as vn } from "@strudel/core";
 -import { setTheme as wn, Drawer as xn, cleanupDraw as ce } from "@strudel/draw";
