@@ -34,6 +34,7 @@ export default function ConversationView({
   onRetry,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -64,9 +65,7 @@ export default function ConversationView({
   };
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
   }, [messages, isLoading]);
 
   return (
@@ -244,6 +243,7 @@ export default function ConversationView({
         </div>
       )}
 
+      <div ref={bottomRef} className="h-6" />
     </div>
   );
 }
