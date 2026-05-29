@@ -785,15 +785,15 @@ function stripUIDecorations(code: string): string {
 export function validateCode(code: string): { ok: boolean; error?: string } {
   if (!code?.trim()) return { ok: false, error: '代码为空' };
   const result = validateCodeRuntime(code);
-  return { ok: result.ok, ...(result.error ? { error: result.error } : {}) };
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 export function validateCodeRuntime(code: string): { ok: boolean; error?: string; kind?: 'syntax' | 'runtime' } {
   const clean = normalizeCode(stripUIDecorations(code));
+  if (!clean.trim()) return { ok: false, error: '代码为空', kind: 'syntax' };
 
   if (!strudelService.isReady) {
-    // 引擎未就绪：退化为 JS 语法检查（原 validateCode 的职责）
-    if (!clean.trim()) return { ok: false, error: '代码为空', kind: 'syntax' };
+    // 引擎未就绪：退化为 JS 语法检查（已在上面处理空代码情况）
     try {
       new Function(clean);
       return { ok: true };
