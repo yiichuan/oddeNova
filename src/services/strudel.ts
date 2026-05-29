@@ -124,6 +124,7 @@ class StrudelService {
     try {
       const { StrudelMirror } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
+      cachedTranspiler = transpiler;
       const { webaudioOutput } = await import('@strudel/webaudio');
       const { getAudioContext } = await import('superdough');
       const { getDrawContext } = await import('@strudel/draw');
@@ -762,38 +763,47 @@ export function fixMiniNotationIssues(code: string): { fixed: string; fixes: str
   return { fixed, fixes };
 }
 
-// --- Code validation (no audio engine needed) ---
+// Cached after first attach() so validateCodeTranspiler can run synchronously.
+let cachedTranspiler: ((code: string, opts?: object) => unknown) | null = null;
 
-export function validateCode(code: string): { ok: boolean; error?: string } {
-  if (!code?.trim()) return { ok: false, error: '代码为空' };
-  const clean = normalizeCode(code)
+const PASS_THROUGH = new Set([
+  'undefined', 'NaN', 'Infinity', 'globalThis', 'window', 'self',
+  'console', 'Math', 'Number', 'String', 'Array', 'Object', 'JSON',
+  'Boolean', 'Symbol', 'Date', 'RegExp', 'Promise',
+]);
+
+function stripUIDecorations(code: string): string {
+  return code
     .replace(/\._scope\(\)/g, '')
     .replace(/\._pianoroll\(\{[^}]*\}\)/g, '')
     .replace(/\._pianoroll\(\)/g, '');
-  try {
-    new Function(clean);
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
 }
 
-export function validateCodeRuntime(code: string): { ok: boolean; error?: string } {
-  const syn = validateCode(code);
-  if (!syn.ok) return syn;
-  if (!strudelService.isReady) return { ok: true };
+// --- Code validation (no audio engine needed) ---
 
-  const stripped = code
-    .replace(/\._scope\(\)/g, '')
-    .replace(/\._pianoroll\(\{[^}]*\}\)/g, '')
-    .replace(/\._pianoroll\(\)/g, '')
-    .replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');
+/** @deprecated Use validateCodeRuntime directly. */
+export function validateCode(code: string): { ok: boolean; error?: string } {
+  if (!code?.trim()) return { ok: false, error: '代码为空' };
+  const result = validateCodeRuntime(code);
+  return { ok: result.ok, ...(result.error ? { error: result.error } : {}) };
+}
 
-  const PASS_THROUGH = new Set([
-    'undefined', 'NaN', 'Infinity', 'globalThis', 'window', 'self',
-    'console', 'Math', 'Number', 'String', 'Array', 'Object', 'JSON',
-    'Boolean', 'Symbol', 'Date', 'RegExp', 'Promise',
-  ]);
+export function validateCodeRuntime(code: string): { ok: boolean; error?: string; kind?: 'syntax' | 'runtime' } {
+  const clean = normalizeCode(stripUIDecorations(code));
+
+  if (!strudelService.isReady) {
+    // 引擎未就绪：退化为 JS 语法检查（原 validateCode 的职责）
+    if (!clean.trim()) return { ok: false, error: '代码为空', kind: 'syntax' };
+    try {
+      new Function(clean);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e), kind: 'syntax' };
+    }
+  }
+
+  // 引擎就绪：Proxy dry-run（使用 normalized + stripped 的代码）
+  const stripped = clean.replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');
 
   const proxy = new Proxy({}, {
     has() { return true; },
@@ -816,12 +826,34 @@ export function validateCodeRuntime(code: string): { ok: boolean; error?: string
       const quoted = unknownSamples.map((s) => `"${s}"`).join(', ');
       return {
         ok: false,
+        kind: 'runtime',
         error: `Unknown sample name(s): ${quoted}. Only use approved sample names (piano, arpy, bass, bd, sd, hh ...). See the quality gate in your system prompt.`,
       };
     }
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: e instanceof Error ? e.message : String(e), kind: 'runtime' };
+  }
+}
+
+// Runs the Strudel transpiler to catch mini-notation parse errors that the
+// Proxy dry-run cannot see (e.g. unclosed brackets in "bd [sd").
+// Returns ok:true when the transpiler is not yet loaded (first run before attach).
+export function validateCodeTranspiler(code: string): { ok: boolean; error?: string } {
+  if (!cachedTranspiler) return { ok: true };
+  const clean = stripUIDecorations(code);
+  try {
+    cachedTranspiler(clean);
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // Only surface errors explicitly from the mini-notation parser (prefixed with
+    // "[mini]" by mini2ast). Other transpiler errors (acorn JS parse issues,
+    // unregistered plugins, etc.) may be false positives — let them pass through.
+    if (msg.startsWith('[mini]')) {
+      return { ok: false, error: msg };
+    }
+    return { ok: true };
   }
 }
 
