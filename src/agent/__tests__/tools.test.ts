@@ -2,15 +2,15 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../services/strudel', () => ({
-  validateCode: vi.fn().mockReturnValue({ ok: true }),
   validateCodeRuntime: vi.fn().mockReturnValue({ ok: true }),
+  validateCodeTranspiler: vi.fn().mockReturnValue({ ok: true }),
   normalizeCode: vi.fn((code: string) => code),
   fixMiniNotationIssues: vi.fn((code: string) => ({ fixed: code, fixes: [] })),
 }));
 
 import { TOOLS, type AgentState, type ToolContext } from '../tools';
 import { STYLE_GUIDES } from '../../prompts/styles/index';
-import { validateCode, validateCodeRuntime, fixMiniNotationIssues } from '../../services/strudel';
+import { validateCodeRuntime, validateCodeTranspiler, fixMiniNotationIssues } from '../../services/strudel';
 
 // 辅助函数：根据 name 找到 tool handler
 function getHandler(name: string) {
@@ -269,8 +269,22 @@ describe('validate', () => {
     expect((result.data as { autoFixed: string[] }).autoFixed).toHaveLength(1);
   });
 
+  it('发现 "|" in <> — transpiler 返回 ok: false，error 含 Mini-notation，code 不改变', async () => {
+    const badCode = 'n("<0 ~ 2 | 4 ~ 3>/2")';
+    vi.mocked(validateCodeTranspiler).mockReturnValueOnce({
+      ok: false,
+      error: '[mini] parse error at line 1: Expected ... but "|" found.',
+    });
+    const ctx = makeCtx(badCode);
+    const result = await validate({}, ctx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Mini-notation 错误/);
+    // code 不被修改，由 agent 自己决定如何修复
+    expect(ctx.state.code).toBe(badCode);
+  });
+
   it('语法错误 — 返回 ok: false，error 含"语法错误"', async () => {
-    vi.mocked(validateCode).mockReturnValueOnce({ ok: false, error: 'Unexpected token }' });
+    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'Unexpected token }', kind: 'syntax' });
     const ctx = makeCtx('s("bd") }}}');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(false);
@@ -278,7 +292,7 @@ describe('validate', () => {
   });
 
   it('运行时错误（幻觉 API）— 返回 ok: false，error 含"运行时错误"', async () => {
-    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'sometimesBy is not defined' });
+    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'sometimesBy is not defined', kind: 'runtime' });
     const ctx = makeCtx('s("bd").sometimesBy(0.5, fast(2))');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(false);

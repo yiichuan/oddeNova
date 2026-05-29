@@ -4,7 +4,7 @@
 // terminal — it throws CommitSignal which the loop catches.
 
 import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
-import { validateCode, validateCodeRuntime, normalizeCode, fixMiniNotationIssues } from '../services/strudel';
+import { validateCodeRuntime, validateCodeTranspiler, normalizeCode, fixMiniNotationIssues } from '../services/strudel';
 import { STYLE_GUIDES, type StyleId } from '../prompts/styles/index';
 
 export interface AgentState {
@@ -345,14 +345,19 @@ export const TOOLS: ToolDef[] = [
       if (fixes.length > 0) {
         ctx.state.code = fixed;
       }
-      const synOnly = validateCode(codeToValidate);
-      if (!synOnly.ok) {
-        return { ok: false, error: `语法错误: ${synOnly.error}` };
-      }
+      // Step 2 (syntax check) is now handled inside validateCodeRuntime:
+      // when the engine is not ready, it falls back to JS syntax check.
       const runtime = validateCodeRuntime(codeToValidate);
-      return runtime.ok
+      if (!runtime.ok) {
+        if (runtime.kind === 'syntax') {
+          return { ok: false, error: `语法错误: ${runtime.error}` };
+        }
+        return { ok: false, error: `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）` };
+      }
+      const transpilerCheck = validateCodeTranspiler(codeToValidate);
+      return transpilerCheck.ok
         ? { ok: true, data: { valid: true, ...(fixes.length > 0 && { autoFixed: fixes }) } }
-        : { ok: false, error: `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）` };
+        : { ok: false, error: `Mini-notation 错误: ${transpilerCheck.error}` };
     },
   },
 
