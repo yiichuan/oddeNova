@@ -345,8 +345,8 @@ export const TOOLS: ToolDef[] = [
       if (fixes.length > 0) {
         ctx.state.code = fixed;
       }
-      // Step 2 (syntax check) is now handled inside validateCodeRuntime:
-      // when the engine is not ready, it falls back to JS syntax check.
+      // validateCodeRuntime handles JS syntax check (engine not ready, kind:'syntax')
+      // and Proxy dry-run (engine ready, kind:'runtime') in a single call.
       const runtime = validateCodeRuntime(codeToValidate);
       if (!runtime.ok) {
         if (runtime.kind === 'syntax') {

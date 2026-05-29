@@ -766,6 +766,8 @@ export function fixMiniNotationIssues(code: string): { fixed: string; fixes: str
 // Cached after first attach() so validateCodeTranspiler can run synchronously.
 let cachedTranspiler: ((code: string, opts?: object) => unknown) | null = null;
 
+type ValidationResult = { ok: true } | { ok: false; error: string; kind: 'syntax' | 'runtime' };
+
 const PASS_THROUGH = new Set([
   'undefined', 'NaN', 'Infinity', 'globalThis', 'window', 'self',
   'console', 'Math', 'Number', 'String', 'Array', 'Object', 'JSON',
@@ -788,7 +790,7 @@ export function validateCode(code: string): { ok: boolean; error?: string } {
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
-export function validateCodeRuntime(code: string): { ok: boolean; error?: string; kind?: 'syntax' | 'runtime' } {
+export function validateCodeRuntime(code: string): ValidationResult {
   const clean = normalizeCode(stripUIDecorations(code));
   if (!clean.trim()) return { ok: false, error: '代码为空', kind: 'syntax' };
 
