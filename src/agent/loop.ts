@@ -31,6 +31,11 @@ export interface ChatMsg {
   name?: string;
 }
 
+export interface LLMUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface LLMCaller {
   chatWithTools(
     messages: ChatMsg[],
@@ -42,6 +47,7 @@ export interface LLMCaller {
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
     reasoning_content?: string | null;
     toolCalls: ToolCallRequest[];
+    usage?: LLMUsage;
   }>;
 }
 
@@ -65,11 +71,17 @@ export interface RunAgentOptions {
   signal?: AbortSignal;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  systemEstimate: number;
+}
+
 export interface RunAgentResult {
   code: string;
   explanation: string;
   iterations: number;
   committed: boolean;
+  tokenUsage?: TokenUsage;
 }
 
 const DEFAULT_MAX_ITER = 30;
@@ -108,6 +120,9 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   let explanation = '';
   let committed = false;
   let finalCode = state.code;
+  // 只取最后一次迭代的 usage：每次调用时 messages 已累积全部历史，
+  // 最后一次 inputTokens 即当前完整上下文的真实大小。
+  let lastUsage: LLMUsage | undefined;
 
   outer: for (let i = 0; i < maxIter; i++) {
     if (Date.now() - start > timeoutMs) {
@@ -125,6 +140,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
       : undefined;
     const resp = await llm.chatWithTools(messages, tools, onTextDelta, signal);
+    if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
       console.debug(`[loop] iter ${i + 1} assistant_text:`, resp.content.trim());
@@ -312,10 +328,28 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     }
   }
 
+  // 估算 system prompt + tools 的 token 数。
+  // CJK 字符约 1 token/字，其余约 4 字符/token。
+  const systemRaw = systemPrompt + JSON.stringify(tools);
+  let cjkCount = 0;
+  for (const ch of systemRaw) {
+    const cp = ch.codePointAt(0)!;
+    if ((cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3000 && cp <= 0x9fff)) cjkCount++;
+  }
+  const systemEstimate = Math.ceil(cjkCount + (systemRaw.length - cjkCount) / 4);
+
+  const tokenUsage: TokenUsage | undefined = lastUsage
+    ? {
+        promptTokens: lastUsage.inputTokens,
+        systemEstimate,
+      }
+    : undefined;
+
   return {
     code: finalCode,
     explanation,
     iterations,
     committed,
+    tokenUsage,
   };
 }

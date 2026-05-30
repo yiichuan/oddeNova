@@ -255,6 +255,12 @@ export default function App() {
           durationMs: Date.now() - _analyticsStart,
           committed: result.committed,
         });
+        if (result.tokenUsage) {
+          sessions.updateTokenStats({
+            ...result.tokenUsage,
+            modelId: _analyticsModel,
+          }, sessionId);
+        }
         if (result.code) {
           if (sessionId === currentIdRef.current) {
             const success = await strudel.play(result.code);
@@ -416,6 +422,12 @@ export default function App() {
         durationMs: Date.now() - _analyticsStart,
         committed: result.committed,
       });
+      if (result.tokenUsage) {
+        sessions.updateTokenStats({
+          ...result.tokenUsage,
+          modelId: _analyticsModel,
+        }, sessionId);
+      }
       if (result.code) {
         if (sessionId === currentIdRef.current) {
           const success = await strudel.play(result.code);
@@ -708,6 +720,7 @@ export default function App() {
           onResend={handleResend}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
+          tokenStats={current?.tokenStats}
         />
       </div>
 

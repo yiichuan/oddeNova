@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from './icons';
+import type { TokenStats } from '../hooks/useSessions';
 
 interface ChatInputProps {
   isLoading: boolean;
@@ -10,9 +11,10 @@ interface ChatInputProps {
   prefill?: string;
   focusTrigger?: number;
   replayValue?: string;
+  tokenStats?: TokenStats;
 }
 
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue }: ChatInputProps) {
+export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue, tokenStats: _tokenStats }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -104,6 +106,13 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
           </button>
         </div>
       )}
+
+      {/* 隐藏上下文窗口指示器，现在距离上限还差很多，只用于后续提示词优化查看*/
+      /* {engineReady && tokenStats && (
+        <div className="absolute left-3 bottom-3">
+          <ContextWindowIndicator tokenStats={tokenStats} />
+        </div>
+      )} */}
 
       {replayValue !== undefined ? (
         <button

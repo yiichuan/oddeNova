@@ -224,7 +224,7 @@ const anthropicLLMCaller: LLMCaller = {
       messages: amsgs,
       tools: convertTools(tools),
       temperature: 0.7,
-      max_tokens: 1024,
+      max_tokens: 8192,
     }, { signal });
 
     if (onTextDelta) {
@@ -252,6 +252,10 @@ const anthropicLLMCaller: LLMCaller = {
     return {
       content: text.trim() ? text : null,
       toolCalls,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
     };
   },
 };
@@ -274,11 +278,13 @@ function createOpenAILLMCaller(): LLMCaller {
         temperature: 0.7,
         max_tokens: 8192,
         stream: true,
+        stream_options: { include_usage: true },
       }, { signal });
 
       let text = '';
       let reasoningContent = '';
       const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
+      let streamUsage: { prompt_tokens: number; completion_tokens: number } | undefined;
 
       for await (const chunk of stream) {
         // DeepSeek extends the OpenAI delta with `reasoning_content`.
@@ -311,6 +317,10 @@ function createOpenAILLMCaller(): LLMCaller {
             if (tc.function?.arguments) buf.args += tc.function.arguments;
           }
         }
+
+        if (chunk.usage) {
+          streamUsage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
+        }
       }
 
       const toolCalls = Array.from(toolCallBuffers.values()).map((buf) => ({
@@ -323,6 +333,9 @@ function createOpenAILLMCaller(): LLMCaller {
         content: text.trim() || null,
         reasoning_content: reasoningContent || null,
         toolCalls,
+        usage: streamUsage
+          ? { inputTokens: streamUsage.prompt_tokens, outputTokens: streamUsage.completion_tokens }
+          : undefined,
       };
     },
   };
