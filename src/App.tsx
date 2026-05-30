@@ -159,6 +159,24 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
   }, [current?.id]);
 
+  // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
+  const strudelRef = useRef(strudel);
+  strudelRef.current = strudel;
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey && e.code === 'Period' && e.key !== '.') {
+        e.preventDefault();
+        if (strudelRef.current.isPlaying) {
+          strudelRef.current.stop();
+        } else if (strudelRef.current.engineReady) {
+          void strudelRef.current.play();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const handleInstruction = useCallback(
     async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
       if (!strudel.engineReady) {
