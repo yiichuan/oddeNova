@@ -2,15 +2,14 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../services/strudel', () => ({
-  validateCode: vi.fn().mockReturnValue({ ok: true }),
   validateCodeRuntime: vi.fn().mockReturnValue({ ok: true }),
+  validateCodeTranspiler: vi.fn().mockReturnValue({ ok: true }),
   normalizeCode: vi.fn((code: string) => code),
-  fixMiniNotationIssues: vi.fn((code: string) => ({ fixed: code, fixes: [] })),
 }));
 
 import { TOOLS, type AgentState, type ToolContext } from '../tools';
 import { STYLE_GUIDES } from '../../prompts/styles/index';
-import { validateCode, validateCodeRuntime, fixMiniNotationIssues } from '../../services/strudel';
+import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
 // 辅助函数：根据 name 找到 tool handler
 function getHandler(name: string) {
@@ -248,29 +247,29 @@ describe('ensureStack（通过 addLayer 间接测试）', () => {
 describe('validate', () => {
   const validate = getHandler('validate');
 
-  it('代码合法且无修复 — 返回 ok: true, valid: true', async () => {
+  it('代码合法 — 返回 ok: true, valid: true', async () => {
     const ctx = makeCtx('s("bd ~ sd ~")');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(true);
     expect((result.data as { valid: boolean }).valid).toBe(true);
-    expect((result.data as { autoFixed?: string[] }).autoFixed).toBeUndefined();
   });
 
-  it('发现 ";" in <> 后自动修复，更新 ctx.state.code 并在 data.autoFixed 中报告', async () => {
-    const fixedCode = 'note("<[c4,eb4,g4] [g4,bb4,d5]>/4")';
-    vi.mocked(fixMiniNotationIssues).mockReturnValueOnce({
-      fixed: fixedCode,
-      fixes: ['auto-fixed ";" in angle-bracket alternation: <c4 eb4 g4; g4 bb4 d5> → <[c4,eb4,g4] [g4,bb4,d5]>'],
+  it('发现 "|" in <> — transpiler 返回 ok: false，error 含 Mini-notation，code 不改变', async () => {
+    const badCode = 'n("<0 ~ 2 | 4 ~ 3>/2")';
+    vi.mocked(validateCodeTranspiler).mockReturnValueOnce({
+      ok: false,
+      error: '[mini] parse error at line 1: Expected ... but "|" found.',
     });
-    const ctx = makeCtx('note("<c4 eb4 g4; g4 bb4 d5>/4")');
+    const ctx = makeCtx(badCode);
     const result = await validate({}, ctx);
-    expect(result.ok).toBe(true);
-    expect(ctx.state.code).toBe(fixedCode);
-    expect((result.data as { autoFixed: string[] }).autoFixed).toHaveLength(1);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Mini-notation 错误/);
+    // code 不被修改，由 agent 自己决定如何修复
+    expect(ctx.state.code).toBe(badCode);
   });
 
   it('语法错误 — 返回 ok: false，error 含"语法错误"', async () => {
-    vi.mocked(validateCode).mockReturnValueOnce({ ok: false, error: 'Unexpected token }' });
+    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'Unexpected token }', kind: 'syntax' });
     const ctx = makeCtx('s("bd") }}}');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(false);
@@ -278,7 +277,7 @@ describe('validate', () => {
   });
 
   it('运行时错误（幻觉 API）— 返回 ok: false，error 含"运行时错误"', async () => {
-    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'sometimesBy is not defined' });
+    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'sometimesBy is not defined', kind: 'runtime' });
     const ctx = makeCtx('s("bd").sometimesBy(0.5, fast(2))');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(false);
