@@ -152,7 +152,7 @@ class StrudelService {
         defaultOutput: webaudioOutput,
         getTime: () => getAudioContext().currentTime,
         drawTime: [0, -2],
-        drawContext: getDrawContext(),
+        drawContext: getDrawContext(), // 默认 id='test-canvas'；src/index.css 有对应 #test-canvas z-index 规则
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
           const error = evalError

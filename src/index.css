@@ -167,6 +167,12 @@ body {
   .cm-editor .cm-lineNumbers .cm-gutterElement { font-size: 16px !important; }
 }
 
+/* Strudel full-page visualizer canvas (pianoroll, scope等) 浮于编辑器上层，pointer-events:none 不影响操作 */
+/* z-index 生效依赖 strudel 在 JS 中内联设置的 position:fixed（见 @strudel/draw draw.mjs getDrawContext）*/
+canvas#test-canvas {
+  z-index: 1;
+}
+
 canvas[id*="_widget__scope_"],
 canvas[id*="_widget__pianoroll_"],
 canvas[id*="_widget__spiral_"],
