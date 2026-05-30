@@ -111,6 +111,28 @@ dry-run 通过后，扫描所有 `s("…")` / `sound("…")` 调用中的 sample
 
 ---
 
+## validate 结果的后续处理（Agent Loop）
+
+`validate` 的返回值被 agent loop（`src/agent/loop.ts`）统一处理，流程如下：
+
+### 成功（`ok: true`）
+
+tool 结果以 `{ ok: true, valid: true, autoFixed?: [...] }` 序列化写入 `messages`，交给下一轮 LLM 推理。ChatPanel 显示 ✓ "语法校验通过"（`tool_result` + `ok: true` + name 为 `validate` 时才显示）。若含 `autoFixed`，LLM 可感知哪些修复已自动完成。
+
+### 失败（`ok: false`）
+
+1. Loop 将错误以 `{ ok: false, error: "..." }` 写入 `messages`，同时在 `console.error` 中打印当前 `ctx.state.code`（便于调试定位是哪段代码触发了错误）。
+2. ChatPanel 显示 ✗ "{validate} 失败: {error}"。
+3. LLM 收到失败结果后，**自主决定下一步**：通常会修改代码（`replaceLayer` / 直接改写）并再次调用 `validate`，直到通过或达到 `max_iter=8` 安全上限退出。
+4. `|` in `<>` 等需要语义判断的错误**不会自动修复**，由 LLM 根据创作意图选择修复方式。
+
+### 重要约束
+
+- **不触发 commit**：`validate` 失败不会自动终止 loop，也不会回退 `ctx.state.code`；代码状态保持失败前最后一次编辑的结果，LLM 可在此基础上修复。
+- **重试上限**：单个 tool 调用异常时最多重试 2 次（executor 层），但 `validate` 本身不抛异常，其失败属于正常工具返回，不消耗重试次数，LLM 可多次调用。
+
+---
+
 ## 注意事项
 
 - **`|` in `<>` 的覆盖**：同时被 Step 3（transpiler）捕捉，但不自动修复——需 LLM 根据意图选择修复方式（`<[A B] [C D]>` 交替 vs `[A B | C D]` 随机选择）。

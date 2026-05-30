@@ -81,7 +81,7 @@ class StrudelService {
 
   private prebake = async (): Promise<void> => {
     const { evalScope } = await import('@strudel/core');
-    const { initAudioOnFirstClick, registerSynthSounds, samples, getAudioContext, getSuperdoughAudioController } = await import('superdough');
+    const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
     initAudioOnFirstClick();
 
@@ -100,7 +100,13 @@ class StrudelService {
       samples('github:tidalcycles/dirt-samples'),
       samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
       samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
+      samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json'),
+      samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json'),
     ]);
+    // Load uzu-drumkit after dirt-samples (same order as strudel.cc) so that
+    // standalone names like `oh`, `rd`, `rim`, `sh`, `tb` are available.
+    await samples('https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json');
+    await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
 
     registerSoundfonts();
 
