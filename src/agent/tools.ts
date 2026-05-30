@@ -4,7 +4,7 @@
 // terminal — it throws CommitSignal which the loop catches.
 
 import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
-import { validateCode, validateCodeRuntime, normalizeCode, fixMiniNotationIssues } from '../services/strudel';
+import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
 import { STYLE_GUIDES, type StyleId } from '../prompts/styles/index';
 
 export interface AgentState {
@@ -339,20 +339,19 @@ export const TOOLS: ToolDef[] = [
     },
     handler: (args, ctx) => {
       const code = typeof args.code === 'string' && args.code.trim() ? args.code : ctx.state.code;
-      // Auto-fix known mini-notation issues (e.g. ";" inside "<>") before validation
-      const { fixed, fixes } = fixMiniNotationIssues(code);
-      const codeToValidate = fixes.length > 0 ? fixed : code;
-      if (fixes.length > 0) {
-        ctx.state.code = fixed;
+      // validateCodeRuntime handles JS syntax check (engine not ready, kind:'syntax')
+      // and Proxy dry-run (engine ready, kind:'runtime') in a single call.
+      const runtime = validateCodeRuntime(code);
+      if (!runtime.ok) {
+        if (runtime.kind === 'syntax') {
+          return { ok: false, error: `语法错误: ${runtime.error}` };
+        }
+        return { ok: false, error: `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）` };
       }
-      const synOnly = validateCode(codeToValidate);
-      if (!synOnly.ok) {
-        return { ok: false, error: `语法错误: ${synOnly.error}` };
-      }
-      const runtime = validateCodeRuntime(codeToValidate);
-      return runtime.ok
-        ? { ok: true, data: { valid: true, ...(fixes.length > 0 && { autoFixed: fixes }) } }
-        : { ok: false, error: `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）` };
+      const transpilerCheck = validateCodeTranspiler(code);
+      return transpilerCheck.ok
+        ? { ok: true, data: { valid: true } }
+        : { ok: false, error: `Mini-notation 错误: ${transpilerCheck.error}` };
     },
   },
 

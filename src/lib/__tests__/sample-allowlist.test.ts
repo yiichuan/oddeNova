@@ -54,4 +54,9 @@ describe('findUnknownSamples', () => {
     // 且 RolandTR808_arp 不存在于 allowlist
     expect(findUnknownSamples('s("arp").bank("RolandTR808")')).toEqual(['RolandTR808_arp']);
   });
+
+  it('逗号分隔的多轨 mini-notation 不误报', () => {
+    // s("bd*4, ~ sd ~ sd, hh*8") — 逗号是多轨分隔符，不是 sample 名的一部分
+    expect(findUnknownSamples('s("bd*4, ~ sd ~ sd, hh*8")')).toEqual([]);
+  });
 });

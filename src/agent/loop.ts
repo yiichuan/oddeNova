@@ -195,6 +195,9 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
         outcomes.push(outcome);
         if (!outcome.result.ok) {
           console.error(`[loop] iter ${i + 1} tool "${outcome.name}" 返回失败:`, outcome.result.error);
+          if (outcome.name === 'validate') {
+            console.error(`[loop] validate 失败时的当前代码:\n${ctx.state.code}`);
+          }
         }
         // Cache the result JSON so duplicate calls in the same iteration can reuse it.
         const resultJson = JSON.stringify(
