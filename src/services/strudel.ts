@@ -720,55 +720,6 @@ export function normalizeCode(code: string): string {
   return result;
 }
 
-// --- Mini-notation auto-fix ---
-
-/**
- * Detects and auto-fixes known mini-notation pitfalls in Strudel code.
- * Currently handles:
- *   - Semicolons inside `<>` alternation patterns inside string literals.
- *     e.g. `note("<c4 eb4; g4 bb4>/4")` → `note("<[c4,eb4] [g4,bb4]>/4")`
- *     `;` is not valid mini-notation; each `;`-delimited group of space-separated
- *     notes is converted to a simultaneous chord `[n1,n2,...]`.
- * Returns the fixed code and a list of human-readable fix descriptions.
- */
-export function fixMiniNotationIssues(code: string): { fixed: string; fixes: string[] } {
-  const fixes: string[] = [];
-  const fixed = code.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, (str) => {
-    if (!str.includes(';') && !str.includes('<')) return str;
-    const quote = str[0];
-    let inner = str.slice(1, -1);
-
-    // Fix 1: semicolons in angle brackets
-    if (inner.includes(';')) {
-      inner = inner.replace(/<([^>]*)>/g, (_match, content: string) => {
-        if (!content.includes(';')) return `<${content}>`;
-        const groups = content.split(';').map((g: string) => g.trim()).filter(Boolean);
-        const fixedGroups = groups.map((g: string) => {
-          const tokens = g.split(/\s+/).filter(Boolean);
-          return tokens.length > 1 ? `[${tokens.join(',')}]` : g;
-        });
-        fixes.push(`auto-fixed ";" in angle-bracket alternation: <${content.trim()}> → <${fixedGroups.join(' ')}>`);
-        return `<${fixedGroups.join(' ')}>`;
-      });
-    }
-
-    // Fix 2: unbalanced < > (missing closing >)
-    let depth = 0;
-    for (const char of inner) {
-      if (char === '<') depth++;
-      else if (char === '>') depth--;
-    }
-    if (depth > 0) {
-      fixes.push(`auto-fixed unbalanced angle brackets in mini notation: added ${depth} missing ">"`);
-      inner += '>'.repeat(depth);
-    }
-
-    if (inner === str.slice(1, -1)) return str;
-    return quote + inner + quote;
-  });
-  return { fixed, fixes };
-}
-
 // Cached after first attach() so validateCodeTranspiler can run synchronously.
 let cachedTranspiler: ((code: string, opts?: object) => unknown) | null = null;
 
@@ -800,17 +751,7 @@ export function validateCodeRuntime(code: string): ValidationResult {
   const clean = normalizeCode(stripUIDecorations(code));
   if (!clean.trim()) return { ok: false, error: '代码为空', kind: 'syntax' };
 
-  if (!strudelService.isReady) {
-    // 引擎未就绪：退化为 JS 语法检查（已在上面处理空代码情况）
-    try {
-      new Function(clean);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e), kind: 'syntax' };
-    }
-  }
-
-  // 引擎就绪：Proxy dry-run（使用 normalized + stripped 的代码）
+  // Proxy dry-run（调用方保证引擎已就绪，见 App.tsx handleInstruction guard）
   const stripped = clean.replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');
 
   const proxy = new Proxy({}, {

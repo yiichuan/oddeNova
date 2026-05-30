@@ -5,12 +5,11 @@ vi.mock('../../services/strudel', () => ({
   validateCodeRuntime: vi.fn().mockReturnValue({ ok: true }),
   validateCodeTranspiler: vi.fn().mockReturnValue({ ok: true }),
   normalizeCode: vi.fn((code: string) => code),
-  fixMiniNotationIssues: vi.fn((code: string) => ({ fixed: code, fixes: [] })),
 }));
 
 import { TOOLS, type AgentState, type ToolContext } from '../tools';
 import { STYLE_GUIDES } from '../../prompts/styles/index';
-import { validateCodeRuntime, validateCodeTranspiler, fixMiniNotationIssues } from '../../services/strudel';
+import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
 // 辅助函数：根据 name 找到 tool handler
 function getHandler(name: string) {
@@ -248,25 +247,11 @@ describe('ensureStack（通过 addLayer 间接测试）', () => {
 describe('validate', () => {
   const validate = getHandler('validate');
 
-  it('代码合法且无修复 — 返回 ok: true, valid: true', async () => {
+  it('代码合法 — 返回 ok: true, valid: true', async () => {
     const ctx = makeCtx('s("bd ~ sd ~")');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(true);
     expect((result.data as { valid: boolean }).valid).toBe(true);
-    expect((result.data as { autoFixed?: string[] }).autoFixed).toBeUndefined();
-  });
-
-  it('发现 ";" in <> 后自动修复，更新 ctx.state.code 并在 data.autoFixed 中报告', async () => {
-    const fixedCode = 'note("<[c4,eb4,g4] [g4,bb4,d5]>/4")';
-    vi.mocked(fixMiniNotationIssues).mockReturnValueOnce({
-      fixed: fixedCode,
-      fixes: ['auto-fixed ";" in angle-bracket alternation: <c4 eb4 g4; g4 bb4 d5> → <[c4,eb4,g4] [g4,bb4,d5]>'],
-    });
-    const ctx = makeCtx('note("<c4 eb4 g4; g4 bb4 d5>/4")');
-    const result = await validate({}, ctx);
-    expect(result.ok).toBe(true);
-    expect(ctx.state.code).toBe(fixedCode);
-    expect((result.data as { autoFixed: string[] }).autoFixed).toHaveLength(1);
   });
 
   it('发现 "|" in <> — transpiler 返回 ok: false，error 含 Mini-notation，code 不改变', async () => {
