@@ -80,7 +80,7 @@ class StrudelService {
   }
 
   private prebake = async (): Promise<void> => {
-    const { evalScope } = await import('@strudel/core');
+    const { evalScope, Pattern, noteToMidi, valueToMidi } = await import('@strudel/core');
     const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
     initAudioOnFirstClick();
@@ -109,6 +109,22 @@ class StrudelService {
     await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
 
     registerSoundfonts();
+
+    // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
+    const maxPan = noteToMidi('C8');
+    const panwidth = (pan: number, width: number) => pan * width + (1 - width) / 2;
+    if (!Pattern.prototype.piano) {
+      Pattern.prototype.piano = function () {
+        return this.fmap((v: Record<string, unknown>) => ({ ...v, clip: v['clip'] ?? 1 }))
+          .s('piano')
+          .release(0.1)
+          .fmap((value: Record<string, unknown>) => {
+            const midi = valueToMidi(value);
+            const pan = panwidth(Math.min(Math.round(midi) / maxPan, 1), 0.5);
+            return { ...value, pan: ((value['pan'] as number) || 1) * pan };
+          });
+      };
+    }
 
     this.isAudioInitialized = true;
     // Expose audio hooks on window so the galaxy iframe can tap the analyser

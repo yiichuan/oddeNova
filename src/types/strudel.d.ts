@@ -1,3 +1,9 @@
+declare module '@strudel/core' {
+  interface Pattern {
+    piano(): Pattern;
+  }
+}
+
 // Global audio context helpers registered via evalScope at runtime
 declare function getAudioContext(): AudioContext;
 declare function getSuperdoughAudioController(): { output: { destinationGain: AudioNode } } | null;
