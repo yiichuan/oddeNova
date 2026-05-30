@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import type { Session } from '../hooks/useSessions';
+import type { Session, TokenStats } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
 import SuggestionChips from './SuggestionChips';
 import ConversationView from './ConversationView';
@@ -36,6 +36,7 @@ interface SidebarProps {
   onResend: (messageId: string, content: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  tokenStats?: TokenStats;
 }
 
 export default function Sidebar({
@@ -65,6 +66,7 @@ export default function Sidebar({
   onResend,
   onBranch,
   onRetry,
+  tokenStats,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -188,7 +190,7 @@ export default function Sidebar({
           </div>
         )}
 
-        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} tokenStats={tokenStats} />
       </div>
     </aside>
   );

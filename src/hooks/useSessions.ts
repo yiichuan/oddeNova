@@ -7,11 +7,18 @@ import {
   deleteSession as dbDeleteSession,
 } from '../lib/session-storage';
 
+export interface TokenStats {
+  promptTokens: number;
+  systemEstimate: number;
+  modelId: string;
+}
+
 export interface Session {
   id: string;
   title: string;
   messages: ChatMessage[];
   code: string;
+  tokenStats?: TokenStats;
   createdAt: number;
   updatedAt: number;
 }
@@ -332,6 +339,16 @@ export function useSessions() {
     [sessions, currentId]
   );
 
+  const updateTokenStats = useCallback(
+    (stats: TokenStats, sessionId?: string) => {
+      const apply = sessionId
+        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
+        : updateCurrent;
+      apply((s) => ({ ...s, tokenStats: stats }));
+    },
+    [updateCurrent, updateSession]
+  );
+
   return {
     sessions,
     currentSession,
@@ -348,5 +365,6 @@ export function useSessions() {
     deleteSession,
     importSession,
     branchFromMessage,
+    updateTokenStats,
   };
 }
