@@ -384,6 +384,38 @@ export const TOOLS: ToolDef[] = [
   },
 
   {
+    name: 'setCode',
+    description:
+      '一次性设置完整的 Strudel 代码，适用于从头创作整首曲子。code 必须是含 setcps(N) + stack(...) 的完整代码，stack 内每个音层前须有 /* @layer NAME */ 注释。设置后请用 validate 校验，通过后再 commit。',
+    parameters: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          description:
+            '完整的 Strudel 代码：第一行 setcps(N)，后接 stack(...) 包含所有音层（每层前写 /* @layer NAME */）',
+        },
+      },
+      required: ['code'],
+    },
+    handler: (args, ctx) => {
+      if (typeof args.code !== 'string' || !args.code.trim()) {
+        return { ok: false, error: 'code 不能为空' };
+      }
+      const code = args.code.trim();
+      const score = parseScore(code);
+      ctx.state.code = code;
+      return {
+        ok: true,
+        data: {
+          layers: score.layers.length,
+          bpm: score.bpm,
+        },
+      };
+    },
+  },
+
+  {
     name: 'commit',
     description:
       '终止本次 agent 循环，把最终代码交给播放器 hot-reload 播放。必须在所有编辑完成且 validate 通过后调用。一次会话内只能调用一次。',

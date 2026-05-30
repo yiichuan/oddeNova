@@ -284,3 +284,53 @@ describe('validate', () => {
     expect(result.error).toMatch(/运行时错误/);
   });
 });
+
+describe('setCode', () => {
+  const setCode = getHandler('setCode');
+
+  const FULL_CODE = `setcps(0.5)
+stack(
+  /* @layer drums */
+  s("bd ~ sd ~")
+    .gain(0.8),
+  /* @layer bass */
+  note("c2 e2")
+    .s("sawtooth")
+    .gain(0.6)
+)`;
+
+  it('设置完整代码后 ctx.state.code 更新', async () => {
+    const ctx = makeCtx('');
+    const result = await setCode({ code: FULL_CODE }, ctx);
+    expect(result.ok).toBe(true);
+    expect(ctx.state.code).toBe(FULL_CODE.trim());
+  });
+
+  it('返回正确的 layers 数量（2）和 bpm（120）', async () => {
+    const ctx = makeCtx('');
+    const result = await setCode({ code: FULL_CODE }, ctx);
+    expect(result.ok).toBe(true);
+    const data = result.data as { layers: number; bpm: number };
+    expect(data.layers).toBe(2);
+    expect(data.bpm).toBe(120);
+  });
+
+  it('替换已有代码', async () => {
+    const ctx = makeCtx(TWO_LAYER_CODE);
+    const result = await setCode({ code: FULL_CODE }, ctx);
+    expect(result.ok).toBe(true);
+    expect(ctx.state.code).toBe(FULL_CODE.trim());
+  });
+
+  it('code 为空字符串返回 ok: false', async () => {
+    const ctx = makeCtx('');
+    const result = await setCode({ code: '' }, ctx);
+    expect(result.ok).toBe(false);
+  });
+
+  it('code 仅含空白字符返回 ok: false', async () => {
+    const ctx = makeCtx('');
+    const result = await setCode({ code: '   \n  ' }, ctx);
+    expect(result.ok).toBe(false);
+  });
+});
