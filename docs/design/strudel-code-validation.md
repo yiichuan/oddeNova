@@ -110,3 +110,73 @@ tool 结果以 `{ ok: true, valid: true }` 序列化写入 `messages`，交给�
 - **`|` in `<>` 的处理**：被 Step 2（transpiler）捕捉，不自动修复——需 LLM 根据意图选择修复方式（`<[A B] [C D]>` 交替 vs `[A B | C D]` 随机选择）。
 - **`;` in `<>` 的处理**：被 Step 2（transpiler）捕捉，不自动修复——需 LLM 将 `<c4 eb4; g4 bb4>` 改写为 `<[c4,eb4] [g4,bb4]>` 等正确形式。
 - **Step 2 依赖 transpiler 缓存**：首次 `attach()` 前调用时直接放行，mini-notation 语法错误此时无法检测。
+
+---
+
+## 已知盲区（两步校验无法覆盖的问题）
+
+### 1. Pattern 延迟求值错误（最高风险）
+
+Strudel 的 Pattern 是惰性的——参数只在音频引擎每个 cycle 拉取事件时才真正求值。Proxy dry-run 会调用真实的 strudel 函数构造 Pattern 对象，但**不会驱动 Pattern 查询**，因此运行时的链式调用错误无法被提前捕获：
+
+```js
+// dry-run 通过，但播放时每个 cycle 都抛错
+note(rand.range(60, 72).floor())  // .floor() 不存在于 Signal 对象上
+```
+
+这是实践中最常见的漏网场景：LLM 偶尔对 Pattern/Signal 对象调用不存在的方法，校验全通过，播放时报错。
+
+### 2. 参数类型错误（静默失败）
+
+大多数 strudel 函数对错误类型有容错，不会抛异常，但行为未定义：
+
+```js
+s("bd").fast("two")  // 字符串传给 fast，不抛错，但结果可能不符合预期
+```
+
+Proxy dry-run 无法发现此类问题。
+
+### 3. 动态 sample 名绕过白名单
+
+`findUnknownSamples` 只扫描字面量 `s("...")` 中的 token，动态拼接的 sample 名完全绕过检测：
+
+```js
+const drum = "nonexistent_sample";
+s(drum)  // 白名单检查无效
+```
+
+### 4. Step 2 在 `attach()` 前直接放行
+
+`cachedTranspiler === null` 时返回 `{ ok: true }` 跳过检查，引擎初始化前的 mini-notation 语法错误全部漏报。
+
+### 5. Step 2 只上报 `[mini]` 前缀的错误
+
+其他 transpiler 错误被主动忽略（设计上为避免误报）。某些边缘 mini-notation 问题若未被 `mini2ast` 标注为 `[mini]` 前缀，会静默放行。
+
+### 6. 音乐语义错误（设计外）
+
+两步校验只判断"能否运行"，不判断"音乐上是否正确"：
+
+- 层间频段冲突（如 bass 和 lead 同时占满低频）
+- 音阶不匹配（其他层用 C:minor，新层写随机音符）
+- 速度/节拍不一致
+
+### 7. 播放时 WebAudio 运行时错误
+
+AudioNode 连接错误、`OfflineAudioContext` 限制等仅在实际渲染时触发，校验阶段无法预知。
+
+---
+
+### 盲区覆盖矩阵
+
+| 错误类型 | Step 1 (dry-run) | Step 2 (transpiler) | 实际播放 |
+|---|---|---|---|
+| JS 语法错误 | ✅ | — | — |
+| 幻觉 API（未注册全局） | ✅ | — | — |
+| 幻觉 sample 名（字面量） | ✅ | — | — |
+| mini-notation 语法错误 | ❌ | ✅（需 attach 后） | ✅ |
+| Pattern 延迟求值错误 | ❌ | ❌ | ✅ |
+| 参数类型错误（静默） | ❌ | ❌ | 可能异常 |
+| 动态 sample 名幻觉 | ❌ | ❌ | ✅ |
+| 音乐语义 / 层间协调 | ❌ | ❌ | 人耳判断 |
+| WebAudio 运行时错误 | ❌ | ❌ | ✅ |
