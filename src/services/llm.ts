@@ -266,7 +266,7 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller(): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, _onReasoningDelta, signal) {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal) {
       const oai = getOpenAIClient();
 
       const stream = await oai.chat.completions.create({
@@ -296,9 +296,7 @@ function createOpenAILLMCaller(): LLMCaller {
 
         if (delta.reasoning_content) {
           reasoningContent += delta.reasoning_content;
-          // reasoning_content is echoed back for multi-turn correctness but
-          // not shown in the UI — the model outputs a short planning sentence
-          // in `content` instead (see system prompt Working style §5).
+          onReasoningDelta?.(delta.reasoning_content);
         }
 
         if (delta.content) {
