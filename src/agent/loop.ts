@@ -16,6 +16,9 @@ import {
 } from './tools';
 import { validateCode } from '../services/strudel';
 
+/** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
+export type ThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
+
 // OpenAI ChatCompletion message shape (only the bits we use).
 export interface ChatMsg {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -23,7 +26,7 @@ export interface ChatMsg {
   /** DeepSeek thinking mode: must be echoed back on every subsequent turn. */
   reasoning_content?: string | null;
   /** Anthropic extended thinking: thinking blocks must be echoed back verbatim. */
-  thinking_blocks?: Array<{ type: 'thinking'; thinking: string; signature: string }>;
+  thinking_blocks?: ThinkingBlock[];
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -47,8 +50,9 @@ export interface LLMCaller {
     signal?: AbortSignal
   ): Promise<{
     content: string | null;
+    /** DeepSeek thinking mode: pass through so the loop can echo it back. */
     reasoning_content?: string | null;
-    thinking_blocks?: Array<{ type: 'thinking'; thinking: string; signature: string }>;
+    thinking_blocks?: ThinkingBlock[];
     toolCalls: ToolCallRequest[];
     usage?: LLMUsage;
   }>;
@@ -143,7 +147,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     const onTextDelta = onProgress
       ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
       : undefined;
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, undefined, signal);
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta, undefined /* TODO(Task 4): wire up onReasoningDelta */, signal);
     if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
