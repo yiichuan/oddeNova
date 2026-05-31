@@ -248,6 +248,10 @@ export default function App() {
             sessions.addProgress('warn', e.message, { sessionId });
             return;
           }
+          if (e.kind === 'reasoning_delta') {
+            sessions.appendToLastReasoning(e.delta, sessionId);
+            return;
+          }
           if (e.kind === 'assistant_text_delta') {
             sessions.appendToLastThinking(e.delta, sessionId);
             return;
@@ -423,6 +427,7 @@ export default function App() {
         }
         if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
         if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
+        if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
         if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
         if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
       };
