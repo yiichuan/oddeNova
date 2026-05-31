@@ -114,20 +114,14 @@ Every text message you send triggers an AI Agent inference loop:
 User text input
     ↓
 AI Agent (multi-round tool call loop, up to 30 rounds)
-    ├── getScore()                View current track structure
-    ├── addLayer(name, code)      Add a new track layer
-    ├── removeLayer(name)         Remove a track layer
-    ├── replaceLayer(name, code)  Replace track content
-    ├── applyEffect(layer, chain) Apply an effect chain to a layer
-    ├── setTempo(bpm)             Set BPM (30–240)
-    ├── improvise(role, style)    Let a sub-LLM improvise a new track
+    ├── setCode(code)             Write or modify the complete Strudel code
     ├── validate(code)            Validate code syntax and runtime
     └── commit(explanation)       Commit final code and play
     ↓
-stack(...layers) → Strudel engine executes → Browser WebAudio playback
+Strudel engine executes → Browser WebAudio playback
 ```
 
-The Agent maintains the entire piece of music as a collection of named layers. Each conversation only modifies the relevant layers while leaving the rest intact, enabling precise incremental editing.
+The Agent manages the complete Strudel code directly via `setCode`. Each conversation writes a new version, which is validated with `validate`, and finally `commit` triggers a hot-reload. Track layers are marked with `/* @layer NAME */` comments inside the code, enabling structured incremental editing.
 
 **Anyone can get started — no music theory or coding knowledge required:**
 
@@ -202,9 +196,7 @@ The Agent maintains the entire piece of music as a collection of named layers. E
 │                        │ tool calls                 │
 │    ┌───────────────────┼───────────────────┐        │
 │    ▼                   ▼                   ▼        │
-│ addLayer()       replaceLayer()       validate()    │
-│ removeLayer()    applyEffect()        improvise()   │
-│ setTempo()       getScore()           commit()      │
+│         setCode()    validate()    commit()         │
 │    └───────────────────┬───────────────────┘        │
 │                        │ final code                 │
 │               ┌────────▼────────┐                   │
@@ -225,7 +217,7 @@ See [docs/frontend-architecture.md](docs/frontend-architecture.md) for details.
 src/
 ├── App.tsx                  # Main application component
 ├── agent/
-│   ├── tools.ts             # Agent tool definitions (9 tools)
+│   ├── tools.ts             # Agent tool definitions (3 tools)
 │   ├── executor.ts          # Tool executor
 │   ├── loop.ts              # Agent inference loop (up to 30 rounds)
 │   └── parser.ts            # Strudel code parsing (layer extraction)
