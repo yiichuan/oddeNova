@@ -22,6 +22,8 @@ export interface ChatMsg {
   content?: string | null;
   /** DeepSeek thinking mode: must be echoed back on every subsequent turn. */
   reasoning_content?: string | null;
+  /** Anthropic extended thinking: thinking blocks must be echoed back verbatim. */
+  thinking_blocks?: Array<{ type: 'thinking'; thinking: string; signature: string }>;
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -41,11 +43,12 @@ export interface LLMCaller {
     messages: ChatMsg[],
     tools: ReturnType<typeof getOpenAIToolSchemas>,
     onTextDelta?: (delta: string) => void,
+    onReasoningDelta?: (delta: string) => void,
     signal?: AbortSignal
   ): Promise<{
     content: string | null;
-    /** DeepSeek thinking mode: pass through so the loop can echo it back. */
     reasoning_content?: string | null;
+    thinking_blocks?: Array<{ type: 'thinking'; thinking: string; signature: string }>;
     toolCalls: ToolCallRequest[];
     usage?: LLMUsage;
   }>;
@@ -58,6 +61,7 @@ export type ProgressEvent =
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'assistant_text_delta'; delta: string }
+  | { kind: 'reasoning_delta'; delta: string }
   | { kind: 'warn'; message: string };
 
 export interface RunAgentOptions {
@@ -139,7 +143,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     const onTextDelta = onProgress
       ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
       : undefined;
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, signal);
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta, undefined, signal);
     if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {

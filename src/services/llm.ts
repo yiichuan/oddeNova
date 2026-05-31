@@ -214,7 +214,7 @@ function convertTools(
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, signal) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, _onReasoningDelta, signal) {
     const anthropic = getAnthropicClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
@@ -266,7 +266,7 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller(): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, signal) {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, _onReasoningDelta, signal) {
       const oai = getOpenAIClient();
 
       const stream = await oai.chat.completions.create({
