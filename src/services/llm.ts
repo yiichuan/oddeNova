@@ -238,6 +238,8 @@ const anthropicLLMCaller: LLMCaller = {
       temperature: 1,
       max_tokens: 16000,
       thinking: { type: 'enabled', budget_tokens: 10000 },
+    // Type assertion needed: SDK types don't yet include `thinking` in the
+    // stream params, but it works at runtime when the beta header is set.
     } as Parameters<typeof anthropic.messages.stream>[0], { signal });
 
     if (onTextDelta) {
@@ -246,14 +248,7 @@ const anthropicLLMCaller: LLMCaller = {
       });
     }
 
-    stream.on('streamEvent', (event) => {
-      if (
-        event.type === 'content_block_delta' &&
-        event.delta.type === 'thinking_delta'
-      ) {
-        onReasoningDelta?.(event.delta.thinking);
-      }
-    });
+    stream.on('thinking', (delta) => onReasoningDelta?.(delta));
 
     const response = await stream.finalMessage();
 
