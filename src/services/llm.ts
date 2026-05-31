@@ -296,6 +296,7 @@ function createOpenAILLMCaller(): LLMCaller {
 
         if (delta.reasoning_content) {
           reasoningContent += delta.reasoning_content;
+          // Fire streaming callback so callers can show reasoning in real time.
           onReasoningDelta?.(delta.reasoning_content);
         }
 
