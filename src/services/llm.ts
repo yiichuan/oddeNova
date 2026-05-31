@@ -301,7 +301,7 @@ function createOpenAILLMCaller(): LLMCaller {
         tools: tools as OpenAI.ChatCompletionTool[],
         tool_choice: 'auto',
         temperature: 0.7,
-        max_tokens: 8192,
+        max_tokens: 16000,
         stream: true,
         stream_options: { include_usage: true },
       }, { signal });

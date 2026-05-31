@@ -2,6 +2,7 @@
  * @version v12
  * @date 2026-06-07
  * @description 新增 setCode 工具支持：引入创作模式/编辑模式/重写模式三意图分类，创作模式下使用 setCode 一次性写出完整作品，解决逐层 addLayer 破坏整体构想的根本问题。
+ * @deprecated 本版本提示词引用了 getScore/addLayer/replaceLayer/applyEffect/setTempo 等工具，这些工具已在 v13 中移除。切勿将 active.ts 回滚至 v12，否则 agent 将因调用不存在的工具而循环失败。
  */
 import {
   DIRT_SAMPLES,

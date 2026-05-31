@@ -5,7 +5,6 @@
 
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
-import { STYLE_GUIDES, type StyleId } from '../prompts/styles/index';
 
 export interface AgentState {
   code: string;
@@ -81,34 +80,6 @@ export const TOOLS: ToolDef[] = [
   },
 
   {
-    name: 'getStyleGuide',
-    description:
-      '获取指定风格的完整作曲规范（BPM 范围、sample bank、各角色代码骨架、风格标志技巧）。匹配到用户描述的风格后，在生成任何层代码之前调用此工具，按其规范编写 layer code。',
-    parameters: {
-      type: 'object',
-      properties: {
-        styleId: {
-          type: 'string',
-          enum: Object.keys(STYLE_GUIDES),
-          description: '风格 ID，与用户描述匹配的风格名称',
-        },
-      },
-      required: ['styleId'],
-    },
-    handler: (args, _ctx): ToolResult => {
-      const { styleId } = args as { styleId: string };
-      const guide = STYLE_GUIDES[styleId as StyleId];
-      if (!guide) {
-        return {
-          ok: false,
-          error: `Style guide not found for: "${styleId}". Use your own musical judgment.`,
-        };
-      }
-      return { ok: true, data: { styleId, guide } };
-    },
-  },
-
-  {
     name: 'setCode',
     description:
       '设置完整的 Strudel 代码，适用于从头创作或在现有代码基础上编辑（如添加/修改/删除音层、调整 BPM 等任意改动）。若已有现存代码，代码已通过系统消息传入（含 BPM 和音层摘要），直接心算读取即可。设置后请用 validate 校验，通过后再 commit。',
@@ -118,7 +89,7 @@ export const TOOLS: ToolDef[] = [
         code: {
           type: 'string',
           description:
-            '完整的 Strudel 代码：第一行 setcps(N)，后接 stack(...) 包含所有音层（每层前写 /* @layer NAME */）',
+            '完整的 Strudel 代码：第一行写顶部注释 `// STYLE | BPM: N`，第二行 setcps(N)，后接 stack(...) 包含所有音层（每层 `/* @layer NAME */` 后另起一行写 `// 简短中文说明`）',
         },
       },
       required: ['code'],

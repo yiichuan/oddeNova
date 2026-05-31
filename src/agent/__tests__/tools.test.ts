@@ -8,7 +8,6 @@ vi.mock('../../services/strudel', () => ({
 }));
 
 import { TOOLS, type AgentState, type ToolContext } from '../tools';
-import { STYLE_GUIDES } from '../../prompts/styles/index';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
 // 辅助函数：根据 name 找到 tool handler
@@ -32,37 +31,6 @@ stack(
   /* @layer bass */
   note("c2 e2")
 )`;
-
-describe('getStyleGuide', () => {
-  const getStyleGuide = getHandler('getStyleGuide');
-
-  it('已知风格返回 guide 字符串', async () => {
-    const ctx = makeCtx('');
-    const result = await getStyleGuide({ styleId: 'lofi' }, ctx);
-    expect(result.ok).toBe(true);
-    const data = result.data as { styleId: string; guide: string };
-    expect(data.styleId).toBe('lofi');
-    expect(typeof data.guide).toBe('string');
-    expect(data.guide.length).toBeGreaterThan(100);
-  });
-
-  it('每种风格都有 guide', async () => {
-    const ctx = makeCtx('');
-    const styles = Object.keys(STYLE_GUIDES);
-    for (const styleId of styles) {
-      const result = await getStyleGuide({ styleId }, ctx);
-      expect(result.ok).toBe(true);
-      expect((result.data as { guide: string }).guide.length).toBeGreaterThan(100);
-    }
-  });
-
-  it('未知 styleId 返回 ok: false', async () => {
-    const ctx = makeCtx('');
-    const result = await getStyleGuide({ styleId: 'unknown' }, ctx);
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('unknown');
-  });
-});
 
 describe('validate', () => {
   const validate = getHandler('validate');

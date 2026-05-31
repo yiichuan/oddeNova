@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { ArrowUpIcon, CheckIcon, CopyIcon, EditIcon, GitBranchIcon, RetryIcon, XIcon } from './icons';
 
@@ -95,27 +95,29 @@ export default function ConversationView({
   }, [messages, isLoading]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
-  const absorbedReasoningIds = new Set<string>();
-  const assistantReasoningMap = new Map<string, string>();
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.role === 'progress' && m.progressKind === 'reasoning') {
-      for (let j = i + 1; j < messages.length; j++) {
-        if (messages[j].role === 'assistant') {
-          absorbedReasoningIds.add(m.id);
-          assistantReasoningMap.set(
-            messages[j].id,
-            (assistantReasoningMap.get(messages[j].id) ?? '') + m.content,
-          );
-          break;
+  const { absorbedReasoningIds } = useMemo(() => {
+    const absorbedReasoningIds = new Set<string>();
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+      if (m.role === 'progress' && m.progressKind === 'reasoning') {
+        for (let j = i + 1; j < messages.length; j++) {
+          if (messages[j].role === 'assistant') {
+            absorbedReasoningIds.add(m.id);
+            break;
+          }
         }
       }
     }
-  }
+    return { absorbedReasoningIds };
+  }, [messages]);
 
   // 当前正在流式输出的 reasoning（尚未被 assistant 消息吸收）
-  const streamingReasoningMsg = messages.find(
-    (m) => m.role === 'progress' && m.progressKind === 'reasoning' && !absorbedReasoningIds.has(m.id),
+  // 使用 findLast 取最新一条，避免多轮迭代时前一轮的 reasoning 被 tool_call 消息隔断导致 reasoningPhaseActive 失效
+  const streamingReasoningMsg = useMemo(
+    () => messages.findLast(
+      (m) => m.role === 'progress' && m.progressKind === 'reasoning' && !absorbedReasoningIds.has(m.id),
+    ),
+    [messages, absorbedReasoningIds],
   );
 
   // 判断推理阶段是否仍在进行：若 reasoning 消息之后已有其他非 reasoning 消息（如文字流式输出），
