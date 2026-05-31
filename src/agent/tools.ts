@@ -3,9 +3,8 @@
 // and a handler that operates on a mutable AgentState. The `commit` tool is
 // terminal — it throws CommitSignal which the loop catches.
 
-import { parseScore, summariseScore, bpmToCps, type ParsedScore } from './parser';
+import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
-import { STYLE_GUIDES, type StyleId } from '../prompts/styles/index';
 
 export interface AgentState {
   code: string;
@@ -45,284 +44,9 @@ export class CommitSignal extends Error {
   }
 }
 
-// ----- code rebuild helpers --------------------------------------------------
-
-interface LayerLite {
-  name: string;
-  source: string;
-}
-
-// `silence` (no parens) is a Pattern *value* in @strudel/core, not a function.
-// Earlier versions emitted `silence()` here, which throws `TypeError: silence
-// is not a function` at evaluate-time and silently kills audio because Strudel's
-// repl.evaluate swallows runtime errors.
-function rebuildStack(layers: LayerLite[]): string {
-  if (layers.length === 0) return 'silence';
-  const inner = layers
-    .map((l) => {
-      const indentedSource = l.source
-        .split('\n')
-        .map((line) => '  ' + line)
-        .join('\n');
-      return `  /* @layer ${l.name} */\n${indentedSource}`;
-    })
-    .join(',\n');
-  return `stack(\n${inner}\n)`;
-}
-
-// Treat both `silence` and the legacy-buggy `silence()` as the empty-body
-// sentinel so older codepaths don't leak a fake "main" layer into rebuilt stacks.
-function isSilencePlaceholder(src: string): boolean {
-  const s = src.trim();
-  return s === 'silence' || s === 'silence()';
-}
-
-function rebuildCode(
-  score: ParsedScore,
-  newLayers: LayerLite[],
-  newCps?: number | null
-): string {
-  const cps = newCps !== undefined ? newCps : score.cps;
-  const setcpsLine = cps !== null ? `setcps(${cps})\n` : '';
-  return setcpsLine + rebuildStack(newLayers);
-}
-
-// Split a chained expression at top-level dot boundaries.
-// Handles strings, nested parens/brackets, and existing newlines in the input.
-function splitChainParts(code: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let inStr: string | null = null;
-  let cur = '';
-  for (let i = 0; i < code.length; i++) {
-    const ch = code[i];
-    if (inStr) {
-      cur += ch;
-      if (ch === inStr && code[i - 1] !== '\\') inStr = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; cur += ch; continue; }
-    if (ch === '(' || ch === '[' || ch === '{') { depth++; cur += ch; continue; }
-    if (ch === ')' || ch === ']' || ch === '}') { depth--; cur += ch; continue; }
-    if (ch === '.' && depth === 0 && cur !== '') {
-      parts.push(cur.trim());
-      cur = '.';
-      continue;
-    }
-    cur += ch;
-  }
-  if (cur.trim()) parts.push(cur.trim());
-  return parts;
-}
-
-// Format a full layer expression: base on first line, each method on its own
-// line indented by 2 spaces. Normalises both single-line and already-multi-line input.
-function formatLayerCode(code: string): string {
-  const parts = splitChainParts(code);
-  if (parts.length <= 1) return code.trim();
-  return parts[0] + parts.slice(1).map((p) => '\n  ' + p).join('');
-}
-
-// Format an effect chain (starts with "."). All parts get a leading newline+indent
-// because they are appended to an existing source expression.
-function formatChain(chain: string): string {
-  return splitChainParts(chain).map((p) => '\n  ' + p).join('');
-}
-
-function layersOf(score: ParsedScore): LayerLite[] {
-  return score.layers.map((l) => ({ name: l.name, source: l.source }));
-}
-
-// If the current code has no stack but does have a single top-level expression
-// (e.g. just `s("bd*4")`), wrap it as a default layer so layer-ops work.
-function ensureStack(code: string): { score: ParsedScore; layers: LayerLite[] } {
-  const score = parseScore(code);
-  if (score.hasStack) {
-    // Drop any placeholder-`silence` layers that older rebuilds may have left
-    // behind so they never get re-serialised into a real stack.
-    return {
-      score,
-      layers: layersOf(score).filter((l) => !isSilencePlaceholder(l.source)),
-    };
-  }
-  // No stack — treat any non-setcps body as one layer named "main", except
-  // when the body is just the empty-stack sentinel (`silence` / `silence()`).
-  const body = score.setcpsMatch
-    ? (code.slice(0, score.setcpsMatch.start) + code.slice(score.setcpsMatch.end))
-    : code;
-  const trimmed = body.trim().replace(/;$/, '').trim();
-  if (!trimmed || isSilencePlaceholder(trimmed)) return { score, layers: [] };
-  return { score, layers: [{ name: 'main', source: trimmed }] };
-}
-
 // ----- tool definitions ------------------------------------------------------
 
 export const TOOLS: ToolDef[] = [
-  {
-    name: 'getScore',
-    description:
-      '读取当前正在编辑的 strudel 代码及其结构化信息（bpm、所有层名称与片段预览）。在做任何修改前应先调用一次了解现状。',
-    parameters: { type: 'object', properties: {}, required: [] },
-    handler: (_args, ctx) => {
-      const score = parseScore(ctx.state.code);
-      return {
-        ok: true,
-        data: {
-          // layers and bpm first so the LLM sees structure before raw code.
-          // code is included last for reference but is not the primary payload.
-          ...summariseScore(score),
-          code: ctx.state.code,
-        },
-      };
-    },
-  },
-
-  {
-    name: 'addLayer',
-    description:
-      '向 stack 中添加一个新层。layer name 必须唯一；若当前还没有 stack 会自动创建。code 字段填该层的 strudel 表达式（如 s("bd sd bd sd").gain(0.8)）。code 必须满足 Layer Code Generation 规则：与当前调性/音阶对齐、遵守频段分离要求、使用该角色对应的 gain 范围。',
-    parameters: {
-      type: 'object',
-      properties: {
-        name: {
-          type: 'string',
-          description: '层名称，建议用语义化短词：drums / hh / bass / pad / lead / fx',
-        },
-        code: {
-          type: 'string',
-          description: '该层的完整 strudel 表达式，不要包含外层 stack/setcps',
-        },
-      },
-      required: ['name', 'code'],
-    },
-    handler: (args, ctx) => {
-      if (typeof args.name !== 'string' || !args.name.trim()) {
-        return { ok: false, error: 'name 不能为空' };
-      }
-      if (typeof args.code !== 'string' || !args.code.trim()) {
-        return { ok: false, error: 'code 不能为空' };
-      }
-      const { score, layers } = ensureStack(ctx.state.code);
-      if (layers.some((l) => l.name === args.name)) {
-        return {
-          ok: false,
-          error: `layer "${args.name}" 已存在，如需修改请用 replaceLayer 或 applyEffect`,
-        };
-      }
-      const newLayers = [...layers, { name: args.name, source: formatLayerCode(args.code) }];
-      ctx.state.code = rebuildCode(score, newLayers);
-      return { ok: true, data: { code: ctx.state.code, layerCount: newLayers.length } };
-    },
-  },
-
-  {
-    name: 'removeLayer',
-    description: '从 stack 中移除指定名称的层。',
-    parameters: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: '要移除的层名称（来自 getScore 的返回）' },
-      },
-      required: ['name'],
-    },
-    handler: (args, ctx) => {
-      const name = String(args.name || '');
-      if (!name) return { ok: false, error: 'name 不能为空' };
-      const { score, layers } = ensureStack(ctx.state.code);
-      const idx = layers.findIndex((l) => l.name === name);
-      if (idx < 0) {
-        return { ok: false, error: `未找到 layer "${name}"` };
-      }
-      const newLayers = layers.filter((_, i) => i !== idx);
-      ctx.state.code = rebuildCode(score, newLayers);
-      return { ok: true, data: { code: ctx.state.code, layerCount: newLayers.length } };
-    },
-  },
-
-  {
-    name: 'replaceLayer',
-    description: '把指定层的整段表达式替换为新代码。code 必须满足 Layer Code Generation 规则：与当前调性/音阶对齐、遵守频段分离要求、使用该角色对应的 gain 范围。',
-    parameters: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: '要替换的层名称' },
-        code: { type: 'string', description: '新的 strudel 表达式' },
-      },
-      required: ['name', 'code'],
-    },
-    handler: (args, ctx) => {
-      const name = String(args.name || '');
-      if (!name) return { ok: false, error: 'name 不能为空' };
-      if (typeof args.code !== 'string' || !args.code.trim()) {
-        return { ok: false, error: 'code 不能为空' };
-      }
-      const { score, layers } = ensureStack(ctx.state.code);
-      const idx = layers.findIndex((l) => l.name === name);
-      if (idx < 0) {
-        return { ok: false, error: `未找到 layer "${name}"` };
-      }
-      const newLayers = layers.slice();
-      newLayers[idx] = { name, source: formatLayerCode(args.code) };
-      ctx.state.code = rebuildCode(score, newLayers);
-      return { ok: true, data: { code: ctx.state.code } };
-    },
-  },
-
-  {
-    name: 'applyEffect',
-    description:
-      '在指定层尾部追加效果链，例如 ".lpf(800).gain(0.7)"。chain 必须以点号开头。',
-    parameters: {
-      type: 'object',
-      properties: {
-        layer: { type: 'string', description: '目标层名称' },
-        chain: {
-          type: 'string',
-          description: '效果链字符串，必须以点号开头，如 ".delay(0.3).room(2)"',
-        },
-      },
-      required: ['layer', 'chain'],
-    },
-    handler: (args, ctx) => {
-      const layerName = String(args.layer || '');
-      const chain = String(args.chain || '').trim();
-      if (!chain.startsWith('.')) {
-        return { ok: false, error: 'chain 必须以 "." 开头' };
-      }
-      const { score, layers } = ensureStack(ctx.state.code);
-      const idx = layers.findIndex((l) => l.name === layerName);
-      if (idx < 0) {
-        return { ok: false, error: `未找到 layer "${layerName}"` };
-      }
-      const newLayers = layers.slice();
-      newLayers[idx] = { name: layerName, source: layers[idx].source + formatChain(chain) };
-      ctx.state.code = rebuildCode(score, newLayers);
-      return { ok: true, data: { code: ctx.state.code } };
-    },
-  },
-
-  {
-    name: 'setTempo',
-    description: '修改速度。bpm 范围约 30 ~ 240。内部会换算为 cps（cps = bpm / 240）。',
-    parameters: {
-      type: 'object',
-      properties: {
-        bpm: { type: 'number', description: '每分钟节拍数，常见值 90/120/140/170' },
-      },
-      required: ['bpm'],
-    },
-    handler: (args, ctx) => {
-      const bpm = Number(args.bpm);
-      if (!isFinite(bpm) || bpm <= 0) {
-        return { ok: false, error: 'bpm 必须是正数' };
-      }
-      const cps = bpmToCps(bpm);
-      const { score, layers } = ensureStack(ctx.state.code);
-      ctx.state.code = rebuildCode(score, layers, cps);
-      return { ok: true, data: { code: ctx.state.code, bpm: Math.round(cps * 240), cps } };
-    },
-  },
-
   {
     name: 'validate',
     description:
@@ -356,30 +80,34 @@ export const TOOLS: ToolDef[] = [
   },
 
   {
-    name: 'getStyleGuide',
+    name: 'setCode',
     description:
-      '获取指定风格的完整作曲规范（BPM 范围、sample bank、各角色代码骨架、风格标志技巧）。匹配到用户描述的风格后，在生成任何层代码之前调用此工具，按其规范编写 layer code。',
+      '设置完整的 Strudel 代码，适用于从头创作或在现有代码基础上编辑（如添加/修改/删除音层、调整 BPM 等任意改动）。若已有现存代码，代码已通过系统消息传入（含 BPM 和音层摘要），直接心算读取即可。设置后请用 validate 校验，通过后再 commit。',
     parameters: {
       type: 'object',
       properties: {
-        styleId: {
+        code: {
           type: 'string',
-          enum: Object.keys(STYLE_GUIDES),
-          description: '风格 ID，与用户描述匹配的风格名称',
+          description:
+            '完整的 Strudel 代码：第一行写顶部注释 `// STYLE | BPM: N`，第二行 setcps(N)，后接 stack(...) 包含所有音层（每层 `/* @layer NAME */` 后另起一行写 `// 简短中文说明`）',
         },
       },
-      required: ['styleId'],
+      required: ['code'],
     },
-    handler: (args, _ctx): ToolResult => {
-      const { styleId } = args as { styleId: string };
-      const guide = STYLE_GUIDES[styleId as StyleId];
-      if (!guide) {
-        return {
-          ok: false,
-          error: `Style guide not found for: "${styleId}". Use your own musical judgment.`,
-        };
+    handler: (args, ctx) => {
+      if (typeof args.code !== 'string' || !args.code.trim()) {
+        return { ok: false, error: 'code 不能为空' };
       }
-      return { ok: true, data: { styleId, guide } };
+      const code = args.code.trim();
+      const score = parseScore(code);
+      ctx.state.code = code;
+      return {
+        ok: true,
+        data: {
+          layers: score.layers.length,
+          bpm: score.bpm,
+        },
+      };
     },
   },
 
