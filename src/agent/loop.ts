@@ -147,7 +147,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     const onTextDelta = onProgress
       ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
       : undefined;
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, undefined /* TODO(Task 4): wire up onReasoningDelta */, signal);
+    const onReasoningDelta = onProgress
+      ? (delta: string) => onProgress({ kind: 'reasoning_delta', delta })
+      : undefined;
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal);
     if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
@@ -162,6 +165,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       role: 'assistant',
       content: resp.content,
       ...(resp.reasoning_content ? { reasoning_content: resp.reasoning_content } : {}),
+      ...(resp.thinking_blocks?.length ? { thinking_blocks: resp.thinking_blocks } : {}),
       tool_calls:
         resp.toolCalls.length > 0
           ? resp.toolCalls.map((c) => ({
