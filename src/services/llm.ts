@@ -7,6 +7,7 @@ import {
   type LLMCaller,
   type ProgressEvent,
   type RunAgentResult,
+  type ThinkingBlock,
 } from '../agent/loop';
 import {
   getOpenAIToolSchemas,
@@ -42,6 +43,7 @@ function getAnthropicClient(): Anthropic {
       // but it lets the same proxy URL work for both protocols.
       defaultHeaders: {
         Authorization: `Bearer ${cfg.apiKey}`,
+        'anthropic-beta': 'interleaved-thinking-2025-05-14',
       },
     });
   }
@@ -150,6 +152,16 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
 
     if (msg.role === 'assistant') {
       const blocks: Anthropic.ContentBlockParam[] = [];
+      // Anthropic requires thinking blocks to appear before text/tool_use blocks.
+      if (msg.thinking_blocks && msg.thinking_blocks.length > 0) {
+        for (const tb of msg.thinking_blocks) {
+          blocks.push({
+            type: 'thinking',
+            thinking: tb.thinking,
+            signature: tb.signature,
+          } as Anthropic.ContentBlockParam);
+        }
+      }
       if (content.trim()) {
         blocks.push({ type: 'text', text: content });
       }
@@ -214,7 +226,7 @@ function convertTools(
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, _onReasoningDelta, signal) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal) {
     const anthropic = getAnthropicClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
@@ -223,9 +235,10 @@ const anthropicLLMCaller: LLMCaller = {
       system,
       messages: amsgs,
       tools: convertTools(tools),
-      temperature: 0.7,
-      max_tokens: 8192,
-    }, { signal });
+      temperature: 1,
+      max_tokens: 16000,
+      thinking: { type: 'enabled', budget_tokens: 10000 },
+    } as Parameters<typeof anthropic.messages.stream>[0], { signal });
 
     if (onTextDelta) {
       stream.on('text', (delta) => {
@@ -233,10 +246,20 @@ const anthropicLLMCaller: LLMCaller = {
       });
     }
 
+    stream.on('streamEvent', (event) => {
+      if (
+        event.type === 'content_block_delta' &&
+        event.delta.type === 'thinking_delta'
+      ) {
+        onReasoningDelta?.(event.delta.thinking);
+      }
+    });
+
     const response = await stream.finalMessage();
 
     let text = '';
     const toolCalls: { id: string; name: string; arguments: string }[] = [];
+    const thinkingBlocks: ThinkingBlock[] = [];
     for (const block of response.content) {
       if (block.type === 'text') {
         text += block.text;
@@ -246,11 +269,18 @@ const anthropicLLMCaller: LLMCaller = {
           name: block.name,
           arguments: JSON.stringify(block.input ?? {}),
         });
+      } else if (block.type === 'thinking') {
+        thinkingBlocks.push({
+          type: 'thinking',
+          thinking: block.thinking,
+          signature: block.signature,
+        });
       }
     }
 
     return {
       content: text.trim() ? text : null,
+      ...(thinkingBlocks.length > 0 ? { thinking_blocks: thinkingBlocks } : {}),
       toolCalls,
       usage: {
         inputTokens: response.usage.input_tokens,
