@@ -14,7 +14,11 @@ import {
   type AgentState,
   type ToolContext,
 } from './tools';
+import { parseScore, summariseScore } from './parser';
 import { validateCode } from '../services/strudel';
+
+/** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
+export type ThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
 
 // OpenAI ChatCompletion message shape (only the bits we use).
 export interface ChatMsg {
@@ -22,6 +26,8 @@ export interface ChatMsg {
   content?: string | null;
   /** DeepSeek thinking mode: must be echoed back on every subsequent turn. */
   reasoning_content?: string | null;
+  /** Anthropic extended thinking: thinking blocks must be echoed back verbatim. */
+  thinking_blocks?: ThinkingBlock[];
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -41,11 +47,13 @@ export interface LLMCaller {
     messages: ChatMsg[],
     tools: ReturnType<typeof getOpenAIToolSchemas>,
     onTextDelta?: (delta: string) => void,
+    onReasoningDelta?: (delta: string) => void,
     signal?: AbortSignal
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
     reasoning_content?: string | null;
+    thinking_blocks?: ThinkingBlock[];
     toolCalls: ToolCallRequest[];
     usage?: LLMUsage;
   }>;
@@ -58,6 +66,7 @@ export type ProgressEvent =
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'assistant_text_delta'; delta: string }
+  | { kind: 'reasoning_delta'; delta: string }
   | { kind: 'warn'; message: string };
 
 export interface RunAgentOptions {
@@ -105,9 +114,17 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   };
   const ctx: ToolContext = { state };
 
-  const userTurn = initialCode
-    ? `当前正在播放的代码:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`
-    : `用户指令: ${instruction}`;
+  let userTurn: string;
+  if (initialCode) {
+    const score = parseScore(initialCode);
+    const { bpm, layers } = summariseScore(score);
+    const bpmStr = bpm != null ? `BPM: ${bpm}` : '';
+    const layersStr = layers.length > 0 ? `音层: ${layers.map((l) => l.name).join(' / ')}` : '（无音层）';
+    const meta = [bpmStr, layersStr].filter(Boolean).join('，');
+    userTurn = `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`;
+  } else {
+    userTurn = `用户指令: ${instruction}`;
+  }
 
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt },
@@ -139,7 +156,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     const onTextDelta = onProgress
       ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
       : undefined;
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, signal);
+    const onReasoningDelta = onProgress
+      ? (delta: string) => onProgress({ kind: 'reasoning_delta', delta })
+      : undefined;
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal);
     if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
@@ -154,6 +174,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       role: 'assistant',
       content: resp.content,
       ...(resp.reasoning_content ? { reasoning_content: resp.reasoning_content } : {}),
+      ...(resp.thinking_blocks?.length ? { thinking_blocks: resp.thinking_blocks } : {}),
       tool_calls:
         resp.toolCalls.length > 0
           ? resp.toolCalls.map((c) => ({

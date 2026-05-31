@@ -29,7 +29,7 @@ export function createDemoLLMCaller(scenario: DemoScenario): LLMCaller {
   let round = 0;
 
   return {
-    async chatWithTools(_messages, _tools, onTextDelta, signal) {
+    async chatWithTools(_messages, _tools, onTextDelta, _onReasoningDelta, signal) {
       if (round < scenario.rounds.length) {
         const { thinking, toolCalls } = scenario.rounds[round];
         // 首轮多等一会儿，后续轮次稍短，模拟真实 LLM 响应节奏
@@ -59,7 +59,7 @@ export function createDemoMoodLLMCaller(scenario: DemoMoodScenario): LLMCaller {
   let round = 0;
 
   return {
-    async chatWithTools(_messages, _tools, onTextDelta, signal) {
+    async chatWithTools(_messages, _tools, onTextDelta, _onReasoningDelta, signal) {
       if (round < scenario.rounds.length) {
         const { thinking, toolCalls } = scenario.rounds[round];
         // 首轮稍长，后续轮次稍短，模拟真实 LLM 思考节奏

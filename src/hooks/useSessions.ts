@@ -230,6 +230,37 @@ export function useSessions() {
     [updateCurrent, updateSession]
   );
 
+  // 流式追加推理文字：若最后一条消息是 reasoning，则原地拼接；否则新建一条
+  const appendToLastReasoning = useCallback(
+    (delta: string, sessionId?: string): void => {
+      const apply = sessionId
+        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
+        : updateCurrent;
+      apply((s) => {
+        const messages = [...s.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === 'progress' && last.progressKind === 'reasoning') {
+          messages[messages.length - 1] = { ...last, content: last.content + delta };
+          return { ...s, messages };
+        }
+        return {
+          ...s,
+          messages: [
+            ...messages,
+            {
+              id: newMessageId(),
+              role: 'progress' as const,
+              content: delta,
+              timestamp: Date.now(),
+              progressKind: 'reasoning' as const,
+            },
+          ],
+        };
+      });
+    },
+    [updateCurrent, updateSession]
+  );
+
   const setCurrentCode = useCallback(
     (code: string, sessionId?: string) => {
       const apply = sessionId
@@ -359,6 +390,7 @@ export function useSessions() {
     addAssistantMessage,
     addProgress,
     appendToLastThinking,
+    appendToLastReasoning,
     setCurrentCode,
     newSession,
     switchTo,

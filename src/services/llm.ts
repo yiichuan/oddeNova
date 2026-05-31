@@ -7,6 +7,7 @@ import {
   type LLMCaller,
   type ProgressEvent,
   type RunAgentResult,
+  type ThinkingBlock,
 } from '../agent/loop';
 import {
   getOpenAIToolSchemas,
@@ -42,6 +43,7 @@ function getAnthropicClient(): Anthropic {
       // but it lets the same proxy URL work for both protocols.
       defaultHeaders: {
         Authorization: `Bearer ${cfg.apiKey}`,
+        'anthropic-beta': 'interleaved-thinking-2025-05-14',
       },
     });
   }
@@ -150,6 +152,16 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
 
     if (msg.role === 'assistant') {
       const blocks: Anthropic.ContentBlockParam[] = [];
+      // Anthropic requires thinking blocks to appear before text/tool_use blocks.
+      if (msg.thinking_blocks && msg.thinking_blocks.length > 0) {
+        for (const tb of msg.thinking_blocks) {
+          blocks.push({
+            type: 'thinking',
+            thinking: tb.thinking,
+            signature: tb.signature,
+          } as Anthropic.ContentBlockParam);
+        }
+      }
       if (content.trim()) {
         blocks.push({ type: 'text', text: content });
       }
@@ -214,7 +226,7 @@ function convertTools(
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, signal) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal) {
     const anthropic = getAnthropicClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
@@ -223,9 +235,12 @@ const anthropicLLMCaller: LLMCaller = {
       system,
       messages: amsgs,
       tools: convertTools(tools),
-      temperature: 0.7,
-      max_tokens: 8192,
-    }, { signal });
+      temperature: 1,
+      max_tokens: 16000,
+      thinking: { type: 'enabled', budget_tokens: 10000 },
+    // Type assertion needed: SDK types don't yet include `thinking` in the
+    // stream params, but it works at runtime when the beta header is set.
+    } as Parameters<typeof anthropic.messages.stream>[0], { signal });
 
     if (onTextDelta) {
       stream.on('text', (delta) => {
@@ -233,10 +248,13 @@ const anthropicLLMCaller: LLMCaller = {
       });
     }
 
+    stream.on('thinking', (delta) => onReasoningDelta?.(delta));
+
     const response = await stream.finalMessage();
 
     let text = '';
     const toolCalls: { id: string; name: string; arguments: string }[] = [];
+    const thinkingBlocks: ThinkingBlock[] = [];
     for (const block of response.content) {
       if (block.type === 'text') {
         text += block.text;
@@ -246,11 +264,18 @@ const anthropicLLMCaller: LLMCaller = {
           name: block.name,
           arguments: JSON.stringify(block.input ?? {}),
         });
+      } else if (block.type === 'thinking') {
+        thinkingBlocks.push({
+          type: 'thinking',
+          thinking: block.thinking,
+          signature: block.signature,
+        });
       }
     }
 
     return {
       content: text.trim() ? text : null,
+      ...(thinkingBlocks.length > 0 ? { thinking_blocks: thinkingBlocks } : {}),
       toolCalls,
       usage: {
         inputTokens: response.usage.input_tokens,
@@ -266,7 +291,7 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller(): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, signal) {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal) {
       const oai = getOpenAIClient();
 
       const stream = await oai.chat.completions.create({
@@ -296,9 +321,8 @@ function createOpenAILLMCaller(): LLMCaller {
 
         if (delta.reasoning_content) {
           reasoningContent += delta.reasoning_content;
-          // reasoning_content is echoed back for multi-turn correctness but
-          // not shown in the UI — the model outputs a short planning sentence
-          // in `content` instead (see system prompt Working style §5).
+          // Fire streaming callback so callers can show reasoning in real time.
+          onReasoningDelta?.(delta.reasoning_content);
         }
 
         if (delta.content) {
