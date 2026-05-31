@@ -40,7 +40,6 @@ export default function ConversationView({
   const reasoningPreRef = useRef<HTMLPreElement>(null);
   const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
-  const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -80,15 +79,6 @@ export default function ConversationView({
     });
   };
 
-  const toggleReasoning = (id: string) => {
-    setExpandedReasoning((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   useEffect(() => {
     if (!userScrolledRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: 'instant' });
@@ -105,25 +95,20 @@ export default function ConversationView({
   }, [messages, isLoading]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
-  const { absorbedReasoningIds, assistantReasoningMap } = useMemo(() => {
+  const { absorbedReasoningIds } = useMemo(() => {
     const absorbedReasoningIds = new Set<string>();
-    const assistantReasoningMap = new Map<string, string>();
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i];
       if (m.role === 'progress' && m.progressKind === 'reasoning') {
         for (let j = i + 1; j < messages.length; j++) {
           if (messages[j].role === 'assistant') {
             absorbedReasoningIds.add(m.id);
-            assistantReasoningMap.set(
-              messages[j].id,
-              (assistantReasoningMap.get(messages[j].id) ?? '') + m.content,
-            );
             break;
           }
         }
       }
     }
-    return { absorbedReasoningIds, assistantReasoningMap };
+    return { absorbedReasoningIds };
   }, [messages]);
 
   // 当前正在流式输出的 reasoning（尚未被 assistant 消息吸收）
@@ -265,29 +250,12 @@ export default function ConversationView({
         }
 
         // assistant message:
-        const reasoning = assistantReasoningMap.get(msg.id);
         return (
           <div
             key={msg.id}
             className="flex justify-start animate-fade-in-up group mb-6"
           >
             <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-xs bg-transparent text-text-primary">
-              {reasoning && (
-                <div className="mb-2 rounded-md border border-white/5 overflow-hidden">
-                  <button
-                    onClick={() => toggleReasoning(msg.id)}
-                    className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-bg-primary/40 text-[11px] text-text-muted/50 hover:text-text-muted/70 hover:bg-bg-primary/60 transition-colors text-left"
-                  >
-                    <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: expandedReasoning.has(msg.id) ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                    <span>推理过程</span>
-                  </button>
-                  {expandedReasoning.has(msg.id) && (
-                    <pre className="p-2 bg-bg-primary/40 text-[11px] text-text-muted/50 font-mono whitespace-pre-wrap break-words max-h-60 overflow-y-auto leading-relaxed">
-                      {reasoning}
-                    </pre>
-                  )}
-                </div>
-              )}
               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
               {msg.code && (() => {
                 const isExpanded = expandedCode.has(msg.id);
