@@ -204,26 +204,10 @@ export default function App() {
       const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
       try {
-        // Track layer names already shown in this agent run to prevent
-        // duplicate progress entries when the LLM calls addLayer/removeLayer/
-        // replaceLayer for the same layer across different iterations.
-        const shownLayerOps = new Set<string>();
-
         const onProgress = (e: ProgressEvent) => {
           if (e.kind === 'iteration') return;
           if (e.kind === 'tool_call') {
             if (e.name !== 'validate' && e.name !== 'commit') {
-              // Dedup layer operations across iterations: same tool + same layer
-              // name means the LLM is retrying something it already attempted
-              // (addLayer will fail at the tool level anyway since the layer
-              // exists). Skip the duplicate progress line to avoid confusing UI.
-              const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
-                ? `${e.name}:${String(e.args.name ?? '')}`
-                : null;
-              if (layerKey !== null) {
-                if (shownLayerOps.has(layerKey)) return;
-                shownLayerOps.add(layerKey);
-              }
               sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
                 toolName: e.name,
                 sessionId,
@@ -401,19 +385,10 @@ export default function App() {
     const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
     try {
-      const shownLayerOps = new Set<string>();
-
       const onProgress = (e: ProgressEvent) => {
         if (e.kind === 'iteration') return;
         if (e.kind === 'tool_call') {
           if (e.name !== 'validate' && e.name !== 'commit') {
-            const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
-              ? `${e.name}:${String(e.args.name ?? '')}`
-              : null;
-            if (layerKey !== null) {
-              if (shownLayerOps.has(layerKey)) return;
-              shownLayerOps.add(layerKey);
-            }
             sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
               toolName: e.name,
               sessionId,
@@ -857,12 +832,7 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
   switch (name) {
     case 'getScore':
       return '读取当前曲谱';
-    case 'addLayer':
-      return `加入层 ${s('name')}`;
-    case 'removeLayer':
-      return `移除层 ${s('name')}`;
-    case 'replaceLayer':
-      return `替换层 ${s('name')}`;
+
     case 'applyEffect':
       return `给 ${s('layer')} 加效果 ${s('chain')}`;
     case 'setTempo':
