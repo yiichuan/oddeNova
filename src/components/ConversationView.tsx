@@ -36,8 +36,10 @@ export default function ConversationView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const userScrolledRef = useRef(false);
+  const reasoningPreRef = useRef<HTMLPreElement>(null);
+  const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
-  const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -56,6 +58,18 @@ export default function ConversationView({
     el.setSelectionRange(len, len);
   }, [editingId]);
 
+  // 检测用户手动滚动：距底部 > 80px 时停止自动跟随，滚回底部时恢复
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      userScrolledRef.current = distFromBottom > 80;
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const toggleCode = (id: string) => {
     setExpandedCode((prev) => {
       const next = new Set(prev);
@@ -65,18 +79,55 @@ export default function ConversationView({
     });
   };
 
-  const toggleReasoning = (id: string) => {
-    setExpandedReasoning((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    if (!userScrolledRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    }
+    // 自动滚动 reasoning <pre> 到底部（流式输出时跟随内容）
+    const preEl = reasoningPreRef.current;
+    if (preEl && !reasoningUserScrolledRef.current) {
+      preEl.scrollTop = preEl.scrollHeight;
+    }
+    // isLoading 结束时重置 reasoning 区域的用户滚动标记
+    if (!isLoading) {
+      reasoningUserScrolledRef.current = false;
+    }
   }, [messages, isLoading]);
+
+  // Pre-process: attach each reasoning progress message to the next assistant message.
+  const absorbedReasoningIds = new Set<string>();
+  const assistantReasoningMap = new Map<string, string>();
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === 'progress' && m.progressKind === 'reasoning') {
+      for (let j = i + 1; j < messages.length; j++) {
+        if (messages[j].role === 'assistant') {
+          absorbedReasoningIds.add(m.id);
+          assistantReasoningMap.set(
+            messages[j].id,
+            (assistantReasoningMap.get(messages[j].id) ?? '') + m.content,
+          );
+          break;
+        }
+      }
+    }
+  }
+
+  // 当前正在流式输出的 reasoning（尚未被 assistant 消息吸收）
+  const streamingReasoningMsg = messages.find(
+    (m) => m.role === 'progress' && m.progressKind === 'reasoning' && !absorbedReasoningIds.has(m.id),
+  );
+
+  // 判断推理阶段是否仍在进行：若 reasoning 消息之后已有其他非 reasoning 消息（如文字流式输出），
+  // 说明思考已完成，不应继续展开显示推理内容。
+  const streamingReasoningIdx = streamingReasoningMsg
+    ? messages.findIndex((m) => m.id === streamingReasoningMsg.id)
+    : -1;
+  const reasoningPhaseActive =
+    streamingReasoningMsg !== undefined &&
+    messages
+      .slice(streamingReasoningIdx + 1)
+      .every((m) => m.role === 'progress' && m.progressKind === 'reasoning');
 
   return (
     <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative">
@@ -91,27 +142,10 @@ export default function ConversationView({
           // All progress messages always stay in the list — never suppress
           // them, to avoid the flash of disappearing from indicator then
           // reappearing in the list.
+          // Reasoning messages: hide from list (shown below blue dot during streaming,
+          // or in assistant bubble after completion).
           if (msg.progressKind === 'reasoning') {
-            const isLastMsg = msg.id === messages[messages.length - 1]?.id;
-            const isStreaming = isLoading && isLastMsg;
-            const isExpanded = isStreaming || expandedReasoning.has(msg.id);
-            return (
-              <div key={msg.id} className="animate-fade-in-up mb-1">
-                <button
-                  onClick={() => !isStreaming && toggleReasoning(msg.id)}
-                  className="flex items-center gap-1 text-[11px] text-text-muted/60 hover:text-text-muted/90 transition-colors px-1"
-                  disabled={isStreaming}
-                >
-                  <span>🧠</span>
-                  <span>{isStreaming ? '思考中...' : `查看思考过程 ${isExpanded ? '▾' : '▸'}`}</span>
-                </button>
-                {isExpanded && (
-                  <div className="mt-1 max-h-48 overflow-y-auto text-[11px] opacity-60 whitespace-pre-wrap pl-5 border-l border-text-muted/20 text-text-secondary px-1">
-                    {msg.content}
-                  </div>
-                )}
-              </div>
-            );
+            return null;
           }
           if (msg.progressKind === 'thinking') {
             return (
@@ -242,6 +276,7 @@ export default function ConversationView({
                   </div>
                 );
               })()}
+
               {/* Action buttons — bottom-left, always visible */}
               <div className="absolute -bottom-5 left-0 flex items-center">
                 <button
@@ -267,9 +302,22 @@ export default function ConversationView({
       {isLoading && (
         <div className="flex justify-start animate-fade-in-up">
           <div className="flex items-start gap-1.5 px-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse" />
-            <div>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse flex-shrink-0" />
+            <div className="min-w-0">
               <div className="text-sm text-text-primary">思考中...</div>
+              {streamingReasoningMsg && streamingReasoningMsg.content && reasoningPhaseActive && (
+                <pre
+                  ref={reasoningPreRef}
+                  onScroll={(e) => {
+                    const el = e.currentTarget;
+                    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+                    reasoningUserScrolledRef.current = distFromBottom > 20;
+                  }}
+                  className="mt-1.5 text-[11px] text-text-muted/60 font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto leading-relaxed"
+                >
+                  {streamingReasoningMsg.content}
+                </pre>
+              )}
             </div>
           </div>
         </div>
@@ -282,8 +330,6 @@ export default function ConversationView({
 
 function progressIcon(msg: ChatMessage): string {
   switch (msg.progressKind) {
-    case 'reasoning':
-      return '🧠';
     case 'thinking':
       return '💭';
     case 'tool_call':

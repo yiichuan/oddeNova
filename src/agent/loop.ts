@@ -14,6 +14,7 @@ import {
   type AgentState,
   type ToolContext,
 } from './tools';
+import { parseScore, summariseScore } from './parser';
 import { validateCode } from '../services/strudel';
 
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
@@ -113,9 +114,17 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   };
   const ctx: ToolContext = { state };
 
-  const userTurn = initialCode
-    ? `当前正在播放的代码:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`
-    : `用户指令: ${instruction}`;
+  let userTurn: string;
+  if (initialCode) {
+    const score = parseScore(initialCode);
+    const { bpm, layers } = summariseScore(score);
+    const bpmStr = bpm != null ? `BPM: ${bpm}` : '';
+    const layersStr = layers.length > 0 ? `音层: ${layers.map((l) => l.name).join(' / ')}` : '（无音层）';
+    const meta = [bpmStr, layersStr].filter(Boolean).join('，');
+    userTurn = `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`;
+  } else {
+    userTurn = `用户指令: ${instruction}`;
+  }
 
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt },
