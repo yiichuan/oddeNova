@@ -37,6 +37,7 @@ export default function ConversationView({
   const bottomRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
+  const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -64,6 +65,15 @@ export default function ConversationView({
     });
   };
 
+  const toggleReasoning = (id: string) => {
+    setExpandedReasoning((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'instant' });
   }, [messages, isLoading]);
@@ -81,6 +91,28 @@ export default function ConversationView({
           // All progress messages always stay in the list — never suppress
           // them, to avoid the flash of disappearing from indicator then
           // reappearing in the list.
+          if (msg.progressKind === 'reasoning') {
+            const isLastMsg = msg.id === messages[messages.length - 1]?.id;
+            const isStreaming = isLoading && isLastMsg;
+            const isExpanded = isStreaming || expandedReasoning.has(msg.id);
+            return (
+              <div key={msg.id} className="animate-fade-in-up mb-1">
+                <button
+                  onClick={() => !isStreaming && toggleReasoning(msg.id)}
+                  className="flex items-center gap-1 text-[11px] text-text-muted/60 hover:text-text-muted/90 transition-colors px-1"
+                  disabled={isStreaming}
+                >
+                  <span>🧠</span>
+                  <span>{isStreaming ? '思考中...' : `查看思考过程 ${isExpanded ? '▾' : '▸'}`}</span>
+                </button>
+                {isExpanded && (
+                  <div className="mt-1 max-h-48 overflow-y-auto text-[11px] opacity-60 whitespace-pre-wrap pl-5 border-l border-text-muted/20 text-text-secondary px-1">
+                    {msg.content}
+                  </div>
+                )}
+              </div>
+            );
+          }
           if (msg.progressKind === 'thinking') {
             return (
               <div key={msg.id} className="flex justify-start animate-fade-in-up">
@@ -250,6 +282,8 @@ export default function ConversationView({
 
 function progressIcon(msg: ChatMessage): string {
   switch (msg.progressKind) {
+    case 'reasoning':
+      return '🧠';
     case 'thinking':
       return '💭';
     case 'tool_call':
