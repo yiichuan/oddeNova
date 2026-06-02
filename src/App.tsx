@@ -9,30 +9,21 @@ import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useKeyboardHeight } from './hooks/useKeyboardHeight';
-import { runAgent } from './services/llm';
+import { useAgentRunner } from './hooks/useAgentRunner';
 import { fetchMoodContext } from './services/airjelly';
-import type { ProgressEvent } from './services/llm';
-import { parseNextSteps } from './services/suggestions';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
-import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
+import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
 import { useImportShare } from './hooks/useImportShare';
-import { useReplay } from './hooks/useReplay';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
-import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
 const SIDEBAR_RATIO_MAX = 0.45;
-
-/** 去掉 agent explanation 末尾的"接下来可以"建议段落，避免在聊天记录里重复显示 */
-function stripNextSteps(explanation: string): string {
-  return explanation.replace(/\n\n接下来可以[：:][^]*$/, '').trim();
-}
 
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392，由上:下=1.55推导
 const VIZ_RATIO_MIN = 0.15;
@@ -40,19 +31,20 @@ const VIZ_RATIO_MAX = 0.45;
 
 export default function App() {
   const strudel = useStrudel();
-  const { isReplaying, replayMessages, replayInputText, startReplay } = useReplay(
-    (code) => { strudel.play(code); }
-  );
   const sessions = useSessions();
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
-  const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
-  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
+  const { loadingSessions, runAgentSession, stop: agentRunnerStop } = useAgentRunner({
+    sessions,
+    strudel,
+    currentIdRef,
+    setCommitSuggestions,
+  });
 
   const isMobile = useIsMobile();
   const keyboardHeight = useKeyboardHeight();
@@ -111,30 +103,17 @@ export default function App() {
     prevLoadingRef.current = curr;
   }, [loadingSessions]);
 
-  const isUserAbort = useCallback((error: unknown, signal?: AbortSignal) => {
-    if (signal?.aborted) return true;
-    if (error instanceof DOMException && error.name === 'AbortError') return true;
-    if (error instanceof Error) {
-      return /abort(ed)?/i.test(error.name) || /request was aborted\.?/i.test(error.message);
-    }
-    return false;
-  }, []);
-
-  const handleStop = useCallback(() => {
-    const id = sessions.currentId;
-    if (id) {
-      abortControllersRef.current.get(id)?.abort();
-    }
-  }, [sessions]);
+  const handleStop = agentRunnerStop;
 
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => !hasApiKeyConfigured());
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
 
   const current = sessions.currentSession;
-  const messages = isReplaying ? replayMessages : (current?.messages ?? []);
-  // Session code = last committed/played code (used as agent context)
-  // Fall back to live editor code so manually-pasted code is visible to the agent.
-  const currentCode = strudel.code || (current?.code ?? '');
+  const messages = current?.messages ?? [];
+  // editorCode: strudel.code is the live editor content (authoritative).
+  // Falls back to session.code for the brief window after a session switch
+  // before the sync effect runs (strudel.setCode hasn't fired yet).
+  const editorCode = strudel.code || (current?.code ?? '');
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
 
@@ -183,146 +162,28 @@ export default function App() {
         strudel.setError('音频引擎启动中，请稍后再试');
         return;
       }
-
-      setCommitSuggestions(null); // reset on each new instruction
       if (!options?.skipAddMessage) {
         sessions.addUserMessage(text);
       }
       const sessionId = sessions.currentId;
       if (!sessionId) return;
-      setLoadingSessions((prev) => new Set(prev).add(sessionId));
-
       // 在 demo 模式下，若发送的是当前步骤的提示词，则推进到下一步
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
       }
-
-      const controller = new AbortController();
-      abortControllersRef.current.set(sessionId, controller);
-      const signal = controller.signal;
-      const _analyticsStart = Date.now();
-      const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
-
-      try {
-        const onProgress = (e: ProgressEvent) => {
-          if (e.kind === 'iteration') return;
-          if (e.kind === 'tool_call') {
-            if (e.name !== 'validate' && e.name !== 'commit') {
-              sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
-                toolName: e.name,
-                sessionId,
-              });
-            }
-            return;
-          }
-          if (e.kind === 'tool_result') {
-            if (e.ok) {
-              return;
-            }
-            console.error(
-              `[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error'
-            );
-            return;
-          }
-          if (e.kind === 'commit') {
-            sessions.addProgress('commit', '准备播放…', { sessionId });
-            return;
-          }
-          if (e.kind === 'warn') {
-            sessions.addProgress('warn', e.message, { sessionId });
-            return;
-          }
-          if (e.kind === 'reasoning_delta') {
-            sessions.appendToLastReasoning(e.delta, sessionId);
-            return;
-          }
-          if (e.kind === 'assistant_text_delta') {
-            sessions.appendToLastThinking(e.delta, sessionId);
-            return;
-          }
-          if (e.kind === 'assistant_text') {
-            sessions.addProgress('thinking', e.text, { sessionId });
-            return;
-          }
-        };
-
-        const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
-        if (signal.aborted) {
-          if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage('已中断', undefined, sessionId);
-          }
-          trackAgentAbort();
-          return;
-        }
-        trackAgentRun({
-          provider: _analyticsProvider,
-          model: _analyticsModel,
-          iterations: result.iterations,
-          durationMs: Date.now() - _analyticsStart,
-          committed: result.committed,
-        });
-        if (result.tokenUsage) {
-          sessions.updateTokenStats({
-            ...result.tokenUsage,
-            modelId: _analyticsModel,
-          }, sessionId);
-        }
-        if (result.code) {
-          if (sessionId === currentIdRef.current) {
-            const success = await strudel.play(result.code);
-            if (success) {
-              const nextSteps = parseNextSteps(result.explanation);
-              if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
-              sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-              sessions.setCurrentCode(result.code, sessionId);
-            } else {
-              sessions.addAssistantMessage(
-                `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
-                result.code,
-                sessionId
-              );
-            }
-          } else {
-            // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
-            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-            sessions.setCurrentCode(result.code, sessionId);
-          }
-        } else {
-          sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
-        }
-      } catch (e: unknown) {
-        if (isUserAbort(e, signal)) {
-          if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage('已中断', undefined, sessionId);
-          }
-          trackAgentAbort();
-        } else {
-          const errMsg = e instanceof Error ? e.message : '请求失败';
-          sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
-          strudel.setError(errMsg);
-          trackAgentError({
-            provider: _analyticsProvider,
-            model: _analyticsModel,
-            error_type: e instanceof Error ? e.name : 'unknown',
-          });
-        }
-      } finally {
-        if (abortControllersRef.current.get(sessionId) === controller) {
-          abortControllersRef.current.delete(sessionId);
-          setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
-        }
-      }
+      await runAgentSession({
+        instruction: text,
+        sessionId,
+        currentCode: options?.initialCode ?? editorCode,
+      });
     },
-    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
+    [strudel, sessions, editorCode, runAgentSession, demoStep, activeSet]
   );
 
   const handleResend = useCallback(
     async (messageId: string, newContent: string) => {
       // Abort any in-progress run before resending
-      const currentSessionId = sessions.currentId;
-      if (currentSessionId) {
-        abortControllersRef.current.get(currentSessionId)?.abort();
-      }
+      handleStop();
       // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
       const allMessages = sessions.currentSession?.messages ?? [];
       const idx = allMessages.findIndex((m) => m.id === messageId);
@@ -344,7 +205,7 @@ export default function App() {
       sessions.truncateAndEdit(messageId, newContent);
       await handleInstruction(newContent, { skipAddMessage: true, initialCode: previousCode });
     },
-    [sessions, handleInstruction, strudel]
+    [sessions, handleInstruction, strudel, handleStop]
   );
 
   const handleRetry = useCallback(
@@ -364,7 +225,6 @@ export default function App() {
       strudel.setError('音频引擎启动中，请稍后再试');
       return;
     }
-
     let moodContext: string | null = null;
     if (!isDemoMode()) {
       setIsMoodLoading(true);
@@ -372,102 +232,16 @@ export default function App() {
       setIsMoodLoading(false);
     }
     const instruction = '根据我的心情生成音乐';
-
-    setCommitSuggestions(null);
     sessions.addUserMessage(instruction);
     const sessionId = sessions.currentId;
     if (!sessionId) return;
-    setLoadingSessions((prev) => new Set(prev).add(sessionId));
-
-    abortControllersRef.current.set(sessionId, new AbortController());
-    const signal = abortControllersRef.current.get(sessionId)!.signal;
-    const _analyticsStart = Date.now();
-    const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
-
-    try {
-      const onProgress = (e: ProgressEvent) => {
-        if (e.kind === 'iteration') return;
-        if (e.kind === 'tool_call') {
-          if (e.name !== 'validate' && e.name !== 'commit') {
-            sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
-              toolName: e.name,
-              sessionId,
-            });
-          }
-          return;
-        }
-        if (e.kind === 'tool_result') {
-          if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
-          return;
-        }
-        if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
-        if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
-        if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
-        if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
-        if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
-      };
-
-      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
-      if (signal.aborted) {
-        sessions.addAssistantMessage('已中断', undefined, sessionId);
-        trackAgentAbort();
-        return;
-      }
-      trackAgentRun({
-        provider: _analyticsProvider,
-        model: _analyticsModel,
-        iterations: result.iterations,
-        durationMs: Date.now() - _analyticsStart,
-        committed: result.committed,
-      });
-      if (result.tokenUsage) {
-        sessions.updateTokenStats({
-          ...result.tokenUsage,
-          modelId: _analyticsModel,
-        }, sessionId);
-      }
-      if (result.code) {
-        if (sessionId === currentIdRef.current) {
-          const success = await strudel.play(result.code);
-          if (success) {
-            const nextSteps = parseNextSteps(result.explanation);
-            if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
-            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-            sessions.setCurrentCode(result.code, sessionId);
-          } else {
-            sessions.addAssistantMessage(
-              `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
-              result.code,
-              sessionId
-            );
-          }
-        } else {
-          // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
-          sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-          sessions.setCurrentCode(result.code, sessionId);
-        }
-      } else {
-        sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
-      }
-    } catch (e: unknown) {
-      if (isUserAbort(e, signal)) {
-        sessions.addAssistantMessage('已中断', undefined, sessionId);
-        trackAgentAbort();
-      } else {
-        const errMsg = e instanceof Error ? e.message : '请求失败';
-        sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
-        strudel.setError(errMsg);
-        trackAgentError({
-          provider: _analyticsProvider,
-          model: _analyticsModel,
-          error_type: e instanceof Error ? e.name : 'unknown',
-        });
-      }
-    } finally {
-      abortControllersRef.current.delete(sessionId);
-      setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
-    }
-  }, [strudel, sessions, currentCode, isUserAbort]);
+    await runAgentSession({
+      instruction,
+      sessionId,
+      currentCode: editorCode,
+      moodContext: moodContext ?? undefined,
+    });
+  }, [strudel, sessions, editorCode, runAgentSession]);
 
   const handleNewSession = useCallback(() => {
     strudel.stop();
@@ -692,9 +466,9 @@ export default function App() {
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
         <Sidebar
-          title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? '新会话' : (current?.title ?? '新会话')}
+          title={current?.title ?? '新会话'}
           messages={messages}
-          isLoading={isLoading || isReplaying}
+          isLoading={isLoading}
           isMoodLoading={isMoodLoading}
           engineReady={strudel.engineReady}
           sessions={sessions.sessions}
@@ -712,9 +486,6 @@ export default function App() {
           onSwitchSession={handleSwitchSession}
           onDeleteSession={sessions.deleteSession}
           isHistoryLoading={sessions.isLoading}
-          onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
-          isReplaying={isReplaying}
-          replayInputText={replayInputText}
           onResend={handleResend}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
@@ -822,26 +593,4 @@ export default function App() {
       <SpeedInsights />
     </div>
   );
-}
-
-function formatToolCall(name: string, args: Record<string, unknown>): string {
-  const s = (key: string): string => {
-    const v = args[key];
-    return v == null ? '' : String(v);
-  };
-  switch (name) {
-    case 'getScore':
-      return '读取当前曲谱';
-
-    case 'applyEffect':
-      return `给 ${s('layer')} 加效果 ${s('chain')}`;
-    case 'setTempo':
-      return `设速度 ${s('bpm')} BPM`;
-    case 'validate':
-      return '校验代码';
-    case 'commit':
-      return '提交并播放';
-    default:
-      return `${name}(${JSON.stringify(args).slice(0, 60)})`;
-  }
 }

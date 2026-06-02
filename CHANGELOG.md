@@ -11,7 +11,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.1.0] — 2026-05-21
 
 ### Added
-- **Session Replay** — replay previous sessions step-by-step; `useReplay` hook + `runReplay` function with ChatInput and Sidebar integration
 - **AI Eval Framework** — automated agent evaluation pipeline with `agent-runner`, LLM judge evaluator, snapshot CLI, and human score import for regression tracking (`scripts/eval/`)
 - **Vercel Analytics & Speed Insights** — production performance monitoring via `@vercel/analytics` and `@vercel/speed-insights`
 - **Prompt Version Management** — structured system for versioning LLM prompts (`src/prompts/versions/v1.ts`, `active.ts` pointer, rollback runbook)

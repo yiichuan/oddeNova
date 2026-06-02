@@ -15,6 +15,17 @@
 > `AGENT_SYSTEM_PROMPT` 的 Style matching 更新为 8 种风格（含 trap/jazz 关键词）；
 > 新增 `## Before you commit (quality gate)` 自检章节，覆盖 bass lpf、pad room、hh gain、密度留白、旋律调性一致性五项规则；
 > 同时移除了 `critique` 工具步骤（系统改为在 commit 前由 agent 自检替代）。
+>
+> **2026-05-xx 更新（v3–v15）**：完成"架构简化——全代码重写模式"——
+> - `improvise` 工具已移除（v3），音乐层生成规则合并进主 agent prompt；`IMPROVISE_SYSTEM_PROMPT` 标注 deprecated；
+> - 独立 `getScore`/`addLayer`/`removeLayer`/`replaceLayer`/`applyEffect`/`setTempo` 工具全部移除，改由单一 `setCode({ code })` 全量重写代码；
+> - 当前代码直接通过 user message 传入（含 BPM/层摘要），无需 `getScore` 工具；
+> - `critique` 工具随架构调整一同移除；
+> - 风格库 `StyleId` 从 8 种扩展为 18 种（新增 blues/funk/bossanova/reggae/classical/rnb/folk/country/latin/afrobeat），样式以独立 `*_GUIDE` 字符串管理（`src/prompts/styles/`），后随架构调整一并移除（2026-06-01）；
+> - `getStyleGuide` 工具也已从 `tools.ts` 中删除，风格知识内化进主 prompt；
+> - `commit.explanation` 格式升级为两部分：一句变更描述 + 两条"接下来可以："建议；
+> - `max_iter` 从 8 调整为 30，`timeout` 从 120s 调整为 300s；
+> - 代码生成规范新增注释要求：顶部 `// STYLE | BPM: N` 注释 + 每层 `/* @layer NAME */` 后中文说明。
 
 ---
 
@@ -25,13 +36,11 @@
   - [1. STRUDEL\_CHEATSHEET\_CONCISE — Strudel 速查表](#1-strudel_cheatsheet_concise--strudel-速查表)
   - [2. AGENT\_SYSTEM\_PROMPT — Agent 主系统提示词](#2-agent_system_prompt--agent-主系统提示词)
     - [配套 Tool 描述（传给 LLM 的 function calling schema）](#配套-tool-描述传给-llm-的-function-calling-schema)
-  - [3. IMPROVISE\_SYSTEM\_PROMPT — Improvise 子模型系统提示词](#3-improvise_system_prompt--improvise-子模型系统提示词)
-  - [4. Improvise 重试提示词（内联）](#4-improvise-重试提示词内联)
-  - [5. CRITIC\_SYSTEM\_PROMPT — Critique 子模型系统提示词](#5-critic_system_prompt--critique-子模型系统提示词)
+  - [3. IMPROVISE\_SYSTEM\_PROMPT — Improvise 子模型系统提示词（已移除）](#3-improvise_system_prompt--improvise-子模型系统提示词已移除)
+  - [4. Improvise 重试提示词（已移除）](#4-improvise-重试提示词已移除)
+  - [5. CRITIC\_SYSTEM\_PROMPT — Critique 子模型系统提示词（已移除）](#5-critic_system_prompt--critique-子模型系统提示词已移除)
   - [6. SUGGEST\_SYSTEM — 建议生成系统提示词](#6-suggest_system--建议生成系统提示词)
-  - [7. styles.ts — 风格预设库](#7-stylests--风格预设库)
-    - [8 个风格速览](#8-个风格速览)
-    - [每个档案的 `hint_for_improvise` 示例（lofi）](#每个档案的-hint_for_improvise-示例lofi)
+  - [7. 风格预设库（已移除）](#7-风格预设库已移除)
   - [提示词调用关系总览](#提示词调用关系总览)
 
 ---
@@ -222,218 +231,39 @@ Silently run this checklist before calling `commit`. Fix any violation inline wi
 
 | Tool | description |
 |---|---|
-| `getScore` | 读取当前正在编辑的 strudel 代码及其结构化信息（bpm、所有层名称与片段预览）。在做任何修改前应先调用一次了解现状。 |
-| `addLayer` | 向 stack 中添加一个新层。layer name 必须唯一；若当前还没有 stack 会自动创建。code 字段填该层的 strudel 表达式（如 `s("bd sd bd sd").gain(0.8)`）。 |
-| `removeLayer` | 从 stack 中移除指定名称的层。 |
-| `replaceLayer` | 把指定层的整段表达式替换为新代码。 |
-| `applyEffect` | 在指定层尾部追加效果链，例如 `.lpf(800).gain(0.7)`。chain 必须以点号开头。 |
-| `setTempo` | 修改速度。bpm 范围约 30 ~ 240。内部会换算为 cps（cps = bpm / 240）。 |
-| `validate` | 对一段 strudel 代码做校验（不会播放）：先做 JS 语法检查，再在沙箱里 dry-run 一次以捕捉未定义函数（如 by/sometimesBy 等幻觉 API）和类型错误。在 commit 前应该至少 validate 一次最终代码；若失败请按错误信息修代码后再 validate 一次。 |
-| `improvise` | 请一个"小专家"模型为指定角色生成一个**互补**的单层 strudel 表达式。子模型会读取当前完整代码，识别 BPM/key/已有层，再生成与之互补的片段。返回的 code 不会自动落入当前曲子，需要你再调用 addLayer 或 replaceLayer 把它装配进去。**新增字段**：`style`（可选 enum，6 风格之一）、`complement_task`（强烈推荐填写，自由文本描述要互补什么）。**enum 修复**：`role` 现在包含 `hh`。 |
-| `critique` | **新增工具**。请一个"音乐评审"小模型对当前完整 stack 做一次音乐性评分（不是语法检查——validate 已经覆盖）。返回 `{ score: 0-10, suggestion: 中文一句话或 null, must_fix: bool }`。`must_fix=true` 时建议你按 suggestion 做最后一轮编辑再 commit；为 false 时可直接 commit。**一次会话最多调用一次**。 |
-| `commit` | 终止本次 agent 循环，把最终代码交给播放器 hot-reload 播放。必须在所有编辑完成且 validate 通过后调用。一次会话内只能调用一次。**`explanation` 字段必填**：一句中文向用户解释这次改动，会作为聊天回复展示。 |
+| `validate` | 对当前代码（或传入代码）做校验（不会播放）：JS 语法检查 → Proxy dry-run（捕捉幻觉 API / 未知 sample）→ transpiler mini-notation 解析。commit 前至少 validate 一次；失败时按错误信息修改后再次 validate。 |
+| `setCode` | 写入完整的 Strudel 代码（第一行顶部注释 `// STYLE \| BPM: N`，第二行 setcps(N)，后接 stack(...) 含所有音层）。设置后用 validate 校验，通过后 commit。 |
+| `commit` | 终止本次 agent 循环，把最终代码交给播放器 hot-reload 播放。必须在 validate 通过后调用。一次会话内只能调用一次。**`explanation` 字段必填**：两部分，用空行分隔——(1) 一句简短中文描述变更；(2) 两条"接下来可以："建议。 |
+
+> **历史工具（已移除）**：`getScore`、`addLayer`、`removeLayer`、`replaceLayer`、`applyEffect`、`setTempo`、`improvise`、`critique` 均已从 `tools.ts` 中删除。
 
 ---
 
-## 3. IMPROVISE_SYSTEM_PROMPT — Improvise 子模型系统提示词
+## 3. IMPROVISE_SYSTEM_PROMPT — Improvise 子模型系统提示词（已移除）
 
-**来源文件**：`src/prompts/system-prompt.ts`  
-**调用位置**：`src/services/llm.ts` → `improviseLLM()` → 第一次尝试  
-**用途**：驱动 `improvise` 工具内部的小型 LLM 调用，为指定乐器角色生成**与现有 stack 互补**的单层 Strudel 表达式。  
-**触发时机**：主 Agent 调用 `improvise` tool 时，内部发起一次独立的 LLM 请求。  
-**模型**：`claude-sonnet-4-6`，`temperature: 0.9`，`max_tokens: 512`
-
-> **2026-04-22 变更**：
-> - 改写整体定位为"生成互补层"。新增 `CRITICAL` 段落，强制要求子模型从 `current code` 中读出 BPM / key / 密度，输出在频段、调性、密度上互补的片段。
-> - 新增 `style`、`complement_task`、`style_hint` 三个输入字段（在 `llm.ts` 的 user prompt 中拼接）。
-> - few-shot 示例改为体现新字段使用方式。
-> - 新增 gain 范围约束。
-> - TidalCycles 警告精简为单行。
-
-**System Prompt 原文：**
-
-```
-You are a Strudel snippet generator producing ONE complementary layer for a live-coding stack.
-
-You will be given:
-- `role`: drums / hh / bass / pad / lead / fx
-- `style` (optional): one of lofi / house / dnb / ambient / techno / synthwave
-- `complement_task` (optional): a free-text instruction about what gap this layer should fill (e.g. "off-beat hi-hat avoiding kick positions", "warm pad in C minor")
-- `hint` (optional): extra style/density words
-- `current code` (optional): the full Strudel code already on stage
-
-CRITICAL: when `current code` is provided, you MUST first read it to detect (a) the BPM (look for setcps; bpm = cps*240), (b) the key/scale already used by any melodic layer, (c) the existing rhythm density. Your output MUST be MUSICALLY COMPLEMENTARY: same key/scale, complementary frequency band (kick<100Hz, bass c2-g2, pad/lead c4+, hh+fx >2kHz), and complementary density (if existing layers are dense, leave space; if sparse, you can be active).
-
-Output STRICT JSON only: {"code": "..."}
-
-Examples (illustrative — adapt to actual context):
-- input: `role: drums\nstyle: lofi\nhint: 低密度` → {"code":"s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8)"}
-- input: `role: bass\ncomplement_task: walking bass in C minor, sparse` → {"code":"note(\"c2 c2 eb2 g2\").s(\"sawtooth\").lpf(500).gain(0.7)"}
-- input: `role: pad\nstyle: ambient` → {"code":"n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4)"}
-
-Rules:
-- code must be ONE chained expression, no var declarations, no $: prefix, no setcps, no stack wrapping, no semicolons.
-- Pick a `.gain(...)` consistent with the role: drums 0.7-0.9, bass 0.6-0.8, pad 0.3-0.5, lead 0.4-0.6, fx 0.3-0.5.
-- For `every`/`sometimes`/`off`/`jux`/`chunk`, the callback MUST be a real Strudel function reference: `fast(N)`, `slow(N)`, `rev`, `ply(N)`, or an inline arrow `x => x.add(note("12"))`. TidalCycles-only APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are NOT in Strudel and will crash at play time.
-```
-
-**中文译文：**
-
-```
-你是一个 Strudel 片段生成器，为实时编程 stack 生成**一个互补层**。
-
-输入字段：
-- `role`：drums / hh / bass / pad / lead / fx
-- `style`（可选）：lofi / house / dnb / ambient / techno / synthwave 之一
-- `complement_task`（可选）：自由文本，描述这一层要填补什么空缺（如 "off-beat hi-hat avoiding kick positions"、"warm pad in C minor"）
-- `hint`（可选）：额外的风格/密度提示词
-- `current code`（可选）：当前已经在场上的完整 Strudel 代码
-
-关键规则：当 `current code` 提供时，必须先从中识别 (a) BPM（找 setcps；bpm = cps*240）、(b) 任何旋律层已经使用的调性/音阶、(c) 现有节奏的密度。你的输出必须在音乐上是互补的：使用相同调性/音阶、互补的频段（kick<100Hz、bass c2-g2、pad/lead c4 以上、hh+fx >2kHz）、互补的密度（已有层密集就留白；稀疏就可以主动）。
-
-只输出严格的 JSON 格式：{"code": "..."}
-
-示例（仅作说明，需根据实际上下文调整）：
-- 输入：`role: drums\nstyle: lofi\nhint: 低密度` → {"code":"s(\"bd ~ sd ~\").bank(\"RolandTR808\").gain(0.8)"}
-- 输入：`role: bass\ncomplement_task: walking bass in C minor, sparse` → {"code":"note(\"c2 c2 eb2 g2\").s(\"sawtooth\").lpf(500).gain(0.7)"}
-- 输入：`role: pad\nstyle: ambient` → {"code":"n(\"0 2 4 7\").scale(\"C4:minor\").s(\"sine\").attack(0.5).release(2).gain(0.4)"}
-
-规则：
-- code 必须是一条链式表达式，不使用 var 声明，不带 $: 前缀，不写 setcps，不包含外层 stack，不写分号。
-- `.gain(...)` 应与角色相匹配：drums 0.7-0.9、bass 0.6-0.8、pad 0.3-0.5、lead 0.4-0.6、fx 0.3-0.5。
-- 在 `every`/`sometimes`/`off`/`jux`/`chunk` 中，回调必须是真实的 Strudel 函数引用：`fast(N)`、`slow(N)`、`rev`、`ply(N)`，或内联箭头函数 `x => x.add(note("12"))`。TidalCycles 专有 API（`by`、`sometimesBy`、`someCyclesBy`、`within`）在 Strudel 中不存在，运行时会崩溃。
-```
-
-**User Prompt 模板：**（在 `improviseLLM()` 中动态拼接）
-
-```
-role: {role}
-style: {style}                  ← 可选，无 style 时省略
-complement_task: {complementTask} ← 可选
-style_hint: {styleHint}         ← 由 styles.ts 的 hint_for_improvise[role] 提供，可选
-hint: {hints}                   ← 可选
-current code (for context):
-{currentCode}                   ← 可选，无当前代码时省略此行
-```
+> **已移除（v3+）**：`improvise` 工具及其内部子模型调用已删除。音乐层生成规则已合并进主 Agent 提示词的"音层代码生成"节。历史版本见 `src/prompts/versions/v1.ts`、`v2.ts`。
 
 ---
 
-## 4. Improvise 重试提示词（内联）
+## 4. Improvise 重试提示词（已移除）
 
-**来源文件**：`src/services/llm.ts` → `improviseLLM()` 函数内  
-**用途**：当第一次 `improvise` LLM 调用失败或无法解析返回值时，用更宽松的提示词发起第二次重试。格式要求从 JSON 降级为裸表达式，避免因格式解析失败导致 agent loop 中断。  
-**触发时机**：`improvise` 子模型第一次响应解析失败后自动触发。  
-**模型**：`claude-sonnet-4-6`，`temperature: 0.9`，`max_tokens: 512`
-
-**原文：**
-
-```
-You are a Strudel snippet generator.
-Output ONLY one single chained Strudel expression — no JSON, no markdown fences, no comments, no prose.
-Example output: s("bd ~ sd ~").bank("RolandTR808").gain(0.8)
-Rules: no stack wrapping, no setcps, no semicolons, no var/let/const.
-```
-
-**中文译文：**
-
-```
-你是一个 Strudel 片段生成器。
-只输出一条单独的链式 Strudel 表达式——不要 JSON、不要 Markdown 代码块、不要注释、不要任何解释文字。
-输出示例：s("bd ~ sd ~").bank("RolandTR808").gain(0.8)
-规则：不包含外层 stack、不写 setcps、不用分号、不用 var/let/const。
-```
-
-> **兜底机制**：若两次 LLM 调用均失败，`improviseLLM()` 返回 `IMPROVISE_FALLBACKS` 中按角色预设的固定片段，保证 agent loop 不因 `improvise` 报错而中断：
->
-> | 角色 | 兜底片段 |
-> |---|---|
-> | `drums` | `s("bd ~ sd ~").bank("RolandTR808").gain(0.8)` |
-> | `hh` | `s("hh*8").gain(0.5)` |
-> | `bass` | `note("c2 c2 eb2 f2").s("sawtooth").lpf(500).gain(0.7)` |
-> | `pad` | `n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).gain(0.4)` |
-> | `lead` | `n("<0 2 4 7 5 4>").scale("C4:minor").s("triangle").gain(0.5)` |
-> | `fx` | `s("~ ~ ~ cp").room(0.5).gain(0.5)` |
+> **已移除（v3+）**：随 `improvise` 工具一同删除。
 
 ---
 
-## 5. CRITIC_SYSTEM_PROMPT — Critique 子模型系统提示词
+## 5. CRITIC_SYSTEM_PROMPT — Critique 子模型系统提示词（已移除）
 
-**来源文件**：`src/prompts/system-prompt.ts`  
-**调用位置**：`src/services/llm.ts` → `critiqueLLM()`  
-**用途**：在 agent 完成所有编辑、validate 通过后，对当前完整 stack 做一次音乐性评分。按 rubric 扣分，输出 `{ score, suggestion, must_fix }`，由主 agent 决定是否再做最后一轮 fix。  
-**触发时机**：主 Agent 调用 `critique` tool 时，内部发起一次独立的 LLM 请求。**一次会话最多触发一次**（由 `AgentState.critiqued` 标志位强制）。  
-**模型**：`claude-sonnet-4-6`，`temperature: 0.4`，`max_tokens: 256`
-
-> **设计要点**：
-> - rubric 写死量化指标（"≥4 层无 mask/struct 扣 2 分"），避免子模型自由发挥导致评分飘忽。
-> - `must_fix` 触发条件严格：score ≤ 6 且 suggestion 必须是单步可改的具体编辑。
-> - 解析失败时返回中性结论 `{ score: 7, suggestion: null, must_fix: false }`，保证 agent 总能继续。
-> - 兜底机制：upstream 报错也返回中性结论（在 `critiqueLLM` 中 catch），不阻塞 commit。
-
-**System Prompt 原文：**
-
-```
-You are a music critic for live-coded Strudel patterns. You will receive a complete Strudel stack and must score it on musicality (NOT syntax — `validate` already covers that).
-
-Output STRICT JSON only: {"score": <0-10 integer>, "suggestion": <one short Chinese sentence or null>, "must_fix": <true|false>}
-
-Rubric (deduct from a starting score of 10):
-- **Layer completeness**: missing both drums and bass → −4. Missing one of them → −2.
-- **Frequency clash**: 2+ sustained layers (pad / lead / bass) in the same octave with no .lpf/.hpf separation → −2.
-- **Density contrast**: ≥4 layers and NO layer uses `.mask`, `.struct`, `.sometimes`, `.rarely`, or rest-rich mini-notation (`~`) → −2.
-- **Key consistency**: melodic layers use different `.scale(...)` roots → −3.
-- **Gain balance**: any layer with `.gain` outside [drums 0.5-1.0, bass 0.4-0.9, pad 0.2-0.6, lead 0.3-0.7, fx 0.2-0.6] → −1 each (cap −2).
-
-`must_fix` rules:
-- Set `must_fix=true` ONLY if score ≤ 6 AND your suggestion is a single concrete edit the agent can do in ONE tool call (e.g. "把 pad 的 .gain 从 0.8 调到 0.4", "给 hh 加一个 .mask(\"<1 0 1 1>/4\") 留白").
-- Otherwise `must_fix=false` and `suggestion=null` (or a one-line praise / minor nit).
-- NEVER suggest adding more than one layer or rewriting multiple layers — that does not fit a single edit.
-
-Be terse. The agent has only 1-2 turns left after you respond.
-```
-
-**中文译文：**
-
-```
-你是 Strudel 实时编程曲谱的音乐评审。你会收到一个完整的 Strudel stack，需要从**音乐性**角度评分（不是语法——validate 已经检查过）。
-
-只输出严格 JSON：{"score": <0-10 整数>, "suggestion": <一句中文短句或 null>, "must_fix": <true|false>}
-
-评分细则（从 10 分起扣）：
-- **层次完整性**：drums 和 bass 都缺 → 扣 4 分。缺一个 → 扣 2 分。
-- **频段冲突**：2 个以上 sustain 类层（pad / lead / bass）在同一八度且未用 .lpf/.hpf 分离 → 扣 2 分。
-- **密度对比**：≥4 层但没有任何一层使用 `.mask`、`.struct`、`.sometimes`、`.rarely`，或富休止的 mini-notation（`~`）→ 扣 2 分。
-- **调性一致性**：旋律层使用了不同的 `.scale(...)` 根音 → 扣 3 分。
-- **gain 平衡**：任何层的 `.gain` 超出 [drums 0.5-1.0、bass 0.4-0.9、pad 0.2-0.6、lead 0.3-0.7、fx 0.2-0.6] → 每个扣 1 分（上限 2 分）。
-
-`must_fix` 规则：
-- 仅当 score ≤ 6 **且** suggestion 是 agent 一步工具调用就能完成的具体编辑（如 "把 pad 的 .gain 从 0.8 调到 0.4"、"给 hh 加一个 .mask(\"<1 0 1 1>/4\") 留白"）时，才设为 `true`。
-- 否则 `must_fix=false`，`suggestion=null`（或一行夸奖/小毛病）。
-- 禁止建议加多层或重写多个层——单步编辑做不到。
-
-简洁。agent 在你回复之后只剩 1-2 轮了。
-```
-
-**User Prompt 模板：**
-
-```
-Stack to review:
-```
-{currentCode}
-```
-```
+> **已移除（v3+）**：`critique` 工具及其 `CRITIC_SYSTEM_PROMPT` 已删除。音乐性评审改为在主 Agent prompt 的 `## 提交前——以音乐家的耳朵聆听` 节由 Agent 自检替代。
 
 ---
 
 ## 6. SUGGEST_SYSTEM — 建议生成系统提示词
 
 **来源文件**：`src/services/suggestions.ts`  
-**调用位置**：`buildSuggestions(currentCode)` → Anthropic Messages API  
+**调用位置**：`buildSuggestions(currentCode)` → LLM API  
 **用途**：根据当前 Strudel 曲谱代码，为用户生成 2 条下一步操作的中文短指令建议，显示在 ChatPanel 的快速操作按钮中。  
 **触发时机**：每次 Agent 完成一轮操作、曲谱更新后（`useSuggestions` hook 监听 `code` 变化自动触发）。  
 **模型**：`claude-sonnet-4-6`，`temperature: 0.8`，`max_tokens: 200`
-
-> **2026-04-22**：未改动。本次音乐性升级聚焦在 Agent 主流程，建议生成与音乐性目标弱相关。
 
 **System Prompt：**（本身即为中文，无需另附译文）
 
@@ -464,45 +294,11 @@ Stack to review:
 
 ---
 
-## 7. styles.ts — 风格预设库
+## 7. 风格预设库（已移除）
 
-**来源文件**：`src/prompts/styles.ts`（2026-04-22 新增，2026-04-23 扩展）  
-**用途**：定义 8 个内置音乐风格档案（不进 system prompt，按需在 `improvise` 工具调用时注入对应的 role hint）。  
-**消费方**：
-- `AGENT_SYSTEM_PROMPT` 的 `## Style matching` 节内联了 6 个风格的概述（关键词 + BPM 范围）。
-- `src/agent/tools.ts` 的 `improvise` handler 把 `style` 参数传给 `improviseLLM`。
-- `src/services/llm.ts` 的 `improviseLLM` 调用 `getRoleHint(style, role)` 把对应的英文 hint 拼到子模型 user prompt 里（`style_hint:` 行）。
-- 同时导出 `matchStyle(userText)` 工具函数，用于任何需要从用户文本反查风格的地方（目前 agent 自己在 prompt 里做匹配，函数仅作 SDK 提供）。
-
-### 8 个风格速览
-
-| id | 关键词（含中英） | BPM | mode | emotion | bank | 推荐 layers |
-|---|---|---|---|---|---|---|
-| `lofi` | lo-fi, lofi, 慢节奏, 安静, 夜晚, 学习, 放松, chill | 70-90 | minor\|dorian | melancholic\|dreamy | RolandTR808 | drums / bass / pad |
-| `house` | house, 舞曲, 夜店, four on the floor, 4/4, 128 | 118-128 | minor\|dorian | uplifting | RolandTR909 | drums / hh / bass / pad |
-| `dnb` | dnb, d&b, drum and bass, jungle, 快节奏, breakbeat, amen | 165-180 | minor | dark\|aggressive | RolandTR909 | drums / bass / pad |
-| `ambient` | ambient, drone, 空灵, 冥想, 太空, pad-only, 无节奏 | 60-90 | major\|lydian | dreamy\|tense | RolandTR808 | pad / lead / fx |
-| `techno` | techno, 工业, 机械, driving, minimal, 硬核 | 125-140 | minor\|phrygian | dark\|aggressive | RolandTR909 | drums / hh / bass / lead |
-| `synthwave` | synthwave, 合成器, 复古, 80s, retrowave, outrun | 90-110 | minor | melancholic\|dreamy | RolandTR707 | drums / bass / pad / lead |
-| `trap` | trap, 808, 切分, hi-hat rolls, drill, hip hop, 嘻哈 | 130-160 | minor | dark\|aggressive | RolandTR808 | drums / hh / bass / pad |
-| `jazz` | jazz, jazzy, swing, 爵士, walking bass, bossa, 蓝调, blues | 90-110 | dorian\|lydian | tense\|melancholic | RolandTR909 | drums / bass / pad |
-
-### 每个档案的 `hint_for_improvise` 示例（lofi）
-
-```ts
-hint_for_improvise: {
-  drums: 'lazy boom-bap groove, sparse ghost snares, swing feel; typical pattern: "bd ~ bd ~" with bank RolandTR808',
-  bass: 'walking bass in minor, sparse, lots of rest; note range c2-g2, pattern like "c2 ~ eb2 ~", use .lpf(400)',
-  pad: 'warm Rhodes-like, slow attack, low gain ~0.35, add .room(2)',
-  hh: 'soft closed hi-hat, mostly off-beat, euclidean rhythm like hh(5,8), gain ≤0.45',
-}
-```
-
-> **2026-04-23 变更**：所有风格的 hints 补充了具体音符范围（如 `c2-g2`）和节奏模式示例（如 `"bd ~ bd ~"`）；`StyleProfile` 新增 `mode` 和 `emotion` 字段（见速览表新增两列）。
-
-完整的 8 条档案见 [src/prompts/styles.ts](../src/prompts/styles.ts)。
-
-> **设计决定**：档案中**不**存储具体的 strudel skeleton 代码——避免锁死风格、丧失多样性。具体代码由 `improvise` 子模型每次现场生成。
+> **已移除（2026-06-01）**：`src/prompts/styles/` 目录及所有风格档案（`lofi.ts`、`house.ts` 等 18 个文件）已删除。`getStyleGuide` 工具也随之从 `tools.ts` 中删除。
+>
+> 当前版本（v15）中，Agent 不再依赖独立的风格档案，风格知识已内化进 Strudel 速查表和主 prompt 中的音层生成规则。`// STYLE | BPM: N` 注释格式仍然保留，由 Agent 自行判断风格并写入顶部注释。
 
 ---
 
@@ -512,37 +308,20 @@ hint_for_improvise: {
 用户指令
   │
   ▼
-AGENT_SYSTEM_PROMPT（主 Agent，claude-sonnet-4-6，temp=0.7）
-  │  包含 STRUDEL_CHEATSHEET_CONCISE + Style matching + Musicality principles
-  │  + 10 个 Tool 描述（含新增 critique）
+AGENT_SYSTEM_PROMPT（主 Agent，claude-sonnet-4-6）
+  │  包含 STRUDEL_CHEATSHEET_CONCISE + 全量采样名称参考 + 音层生成规则
+  │  + 3 个 Tool 描述（validate / setCode / commit）
+  │  当前代码（含 BPM/层摘要）直接拼入 user message
   │
-  ├─ [可选]  agent 在 prompt 中匹配用户描述 → 选定 style id
-  │
-  ├─ [调用 improvise tool]
-  │     │  传入 role / style / complement_task / hints / currentCode
-  │     │
+  ├─ [调用 setCode tool]
   │     ▼
-  │   IMPROVISE_SYSTEM_PROMPT（子模型，temp=0.9）
-  │     │  user prompt 中拼接 styles.ts 的 hint_for_improvise[role]
-  │     │  失败
-  │     ▼
-  │   improvise 重试提示词（temp=0.9）
-  │     │  仍失败
-  │     ▼
-  │   IMPROVISE_FALLBACKS（静态兜底）
+  │   更新 state.code
   │
   ├─ [调用 validate tool]
   │     ▼
-  │   strudel 沙箱 dry-run
-  │
-  ├─ [调用 critique tool] ← 一次会话最多 1 次（AgentState.critiqued 守门）
-  │     │
-  │     ▼
-  │   CRITIC_SYSTEM_PROMPT（子模型，temp=0.4）
-  │     │  按 rubric 评分，输出 { score, suggestion, must_fix }
-  │     │  解析失败 / 调用失败
-  │     ▼
-  │   NEUTRAL_CRITIQUE = { score: 7, suggestion: null, must_fix: false }
+  │   validateCodeRuntime → Proxy dry-run + sample 白名单
+  │     ↓ 通过
+  │   validateCodeTranspiler → mini-notation 解析
   │
   └─ [调用 commit tool（必带 explanation）] → 播放器 hot-reload
 

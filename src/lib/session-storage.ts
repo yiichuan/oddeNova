@@ -32,8 +32,20 @@ async function migrateFromLocalStorage(): Promise<void> {
   const raw = localStorage.getItem(LS_SESSIONS_KEY);
   if (!raw || !db) return;
   try {
-    const sessions = JSON.parse(raw) as Session[];
-    if (!Array.isArray(sessions) || sessions.length === 0) {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.removeItem(LS_SESSIONS_KEY);
+      localStorage.removeItem(LS_CURRENT_KEY);
+      return;
+    }
+    const sessions = (parsed as unknown[]).filter(
+      (s): s is Session =>
+        typeof s === 'object' &&
+        s !== null &&
+        typeof (s as Record<string, unknown>).id === 'string' &&
+        typeof (s as Record<string, unknown>).updatedAt === 'number'
+    );
+    if (sessions.length === 0) {
       localStorage.removeItem(LS_SESSIONS_KEY);
       localStorage.removeItem(LS_CURRENT_KEY);
       return;

@@ -108,6 +108,15 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     signal,
   } = opts;
 
+  // Wrap onProgress so a buggy callback can never interrupt the agent loop.
+  const fireProgress = (e: ProgressEvent) => {
+    try {
+      onProgress?.(e);
+    } catch (err) {
+      console.error('[loop] onProgress callback threw:', err);
+    }
+  };
+
   const state: AgentState = {
     code: initialCode || '',
     finalCode: null,
@@ -143,22 +152,18 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
   outer: for (let i = 0; i < maxIter; i++) {
     if (Date.now() - start > timeoutMs) {
-      onProgress?.({ kind: 'warn', message: `超时 ${timeoutMs}ms，强制结束` });
+      fireProgress({ kind: 'warn', message: `超时 ${timeoutMs}ms，强制结束` });
       break;
     }
     if (signal?.aborted) {
-      onProgress?.({ kind: 'warn', message: '已中断' });
+      fireProgress({ kind: 'warn', message: '已中断' });
       break;
     }
     iterations = i + 1;
-    onProgress?.({ kind: 'iteration', index: iterations });
+    fireProgress({ kind: 'iteration', index: iterations });
 
-    const onTextDelta = onProgress
-      ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
-      : undefined;
-    const onReasoningDelta = onProgress
-      ? (delta: string) => onProgress({ kind: 'reasoning_delta', delta })
-      : undefined;
+    const onTextDelta = (delta: string) => fireProgress({ kind: 'assistant_text_delta', delta });
+    const onReasoningDelta = (delta: string) => fireProgress({ kind: 'reasoning_delta', delta });
     const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal);
     if (resp.usage) lastUsage = resp.usage;
 
@@ -225,7 +230,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       }
 
       console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
-      onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
+      fireProgress({ kind: 'tool_call', name: call.name, args: parsedArgs });
 
       try {
         const outcome = await dispatchToolCall(call, ctx);
@@ -243,7 +248,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
             : { ok: false, error: outcome.result.error }
         );
         iterResultCache.set(dedupKey, resultJson);
-        onProgress?.({
+        fireProgress({
           kind: 'tool_result',
           name: outcome.name,
           ok: outcome.result.ok,
@@ -275,7 +280,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
             name: call.name,
             content: commitResultJson,
           });
-          onProgress?.({ kind: 'commit', code: e.code });
+          fireProgress({ kind: 'commit', code: e.code });
           break outer;
         }
         const msg = e instanceof Error ? e.message : String(e);
@@ -286,7 +291,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
         });
         const errorResultJson = JSON.stringify({ ok: false, error: msg });
         iterResultCache.set(dedupKey, errorResultJson);
-        onProgress?.({ kind: 'tool_result', name: call.name, ok: false, error: msg });
+        fireProgress({ kind: 'tool_result', name: call.name, ok: false, error: msg });
       }
     }
 
@@ -318,20 +323,20 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
         committed = true;
         finalCode = state.code;
         state.finalCode = state.code;
-        onProgress?.({
+        fireProgress({
           kind: 'warn',
           message: 'agent 未显式调用 commit，已自动收尾并播放',
         });
-        onProgress?.({ kind: 'commit', code: state.code });
+        fireProgress({ kind: 'commit', code: state.code });
       } else {
-        onProgress?.({
+        fireProgress({
           kind: 'warn',
           message: `agent 未调用 commit 且最后代码语法错误: ${v.error || '未知'}`,
         });
         finalCode = state.code;
       }
     } else {
-      onProgress?.({
+      fireProgress({
         kind: 'warn',
         message: 'agent 未产出任何代码改动',
       });

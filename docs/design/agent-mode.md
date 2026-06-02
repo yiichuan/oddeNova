@@ -11,7 +11,7 @@
 | 决策 | 选项 | 理由 |
 |---|---|---|
 | 工具方向 | **能力解耦（function calling）** | 让 LLM 自主编排细粒度操作，可解释、可调试 |
-| Tool 形态 | **混合：代码操作型 + 1 个意图型 `improvise`** | 既享受确定性骨架编辑的可控性，又保留创造性子任务 |
+| Tool 形态 | **全代码重写：单一 `setCode` + `validate` + `commit`** | LLM 直接读取消息中的当前代码，全量重写，消除层级 API 的状态同步复杂度 |
 | 反馈机制 | **弱反馈（语法校验）** | MVP 优先跑通框架，避免"评判员"开销 |
 | UX 露出 | **步进式可见（Y 方案）** | ChatPanel 流式显示 tool 调用，音频仍一次 hot-reload，不会因半成品打断听感 |
 | Undo 语义 | **1 次 agent loop = 1 个 undo 步** | 中间 tool 不进 undo 栈，撤销体验与经典模式一致 |
@@ -37,30 +37,21 @@ flowchart TD
 5. LLM 调用 `commit({ code, explanation })` → handler 抛出 `CommitSignal`，loop 捕获后退出
 6. App.tsx 用最终代码调一次 `strudel.play()` → 写入 undo 栈、hot-reload 播放、加一条 assistant 解释消息
 
-## 4. Tool 清单（MVP 共 9 个）
-
-### 代码操作型（确定性，纯前端）
+## 4. Tool 清单（共 3 个）
 
 | Tool | 作用 |
 |---|---|
-| `getScore()` | 读当前代码，返回 `{ code, bpm, layers: [{ name, preview }] }` |
-| `addLayer({ name, code })` | 加一层进 stack（自动生成 `/* @layer NAME */` 标记） |
-| `removeLayer({ name })` | 移除指定层 |
-| `replaceLayer({ name, code })` | 整段替换 |
-| `applyEffect({ layer, chain })` | 在某层尾追加效果链，如 `.lpf(800).gain(0.7)` |
-| `setTempo({ bpm })` | 改 `setcps(...)` 行（cps = bpm / 240） |
-| `validate({ code? })` | 用 `new Function()` 做语法校验，**不触音频** |
-| `commit({ code?, explanation? })` | 终结 loop，触发 hot-reload + undo 栈写入 |
-
-### 意图型（内部各自一次小 LLM 调用）
-
-| Tool | 作用 |
-|---|---|
-| `improvise({ role, hints? })` | role ∈ {drums, bass, pad, lead, fx}，返回单层 strudel 片段；agent 拿到后用 addLayer/replaceLayer 装配 |
+| `validate({ code? })` | 对当前 `state.code`（或显式传入的 code）做三层校验：JS 语法检查 → Proxy dry-run（捕捉幻觉 API 及未知 sample）→ transpiler mini-notation 解析。**不触发音频**。 |
+| `setCode({ code })` | 写入完整的 Strudel 代码（含 `setcps` 和全部 `stack` 层）。这是**唯一的代码编辑工具**，替代了旧版的 `addLayer`/`removeLayer`/`replaceLayer`/`applyEffect`/`setTempo`/`improvise`。LLM 从 user message 中读取当前代码并全量重写。 |
+| `commit({ explanation })` | 终结 loop，触发 hot-reload + undo 栈写入。`explanation` **必填**，格式：一句描述变更 + 空行 + 两条"接下来可以："建议。 |
 
 ### Layer 命名约定
 
-代码操作型 tool 在 stack 中用 `/* @layer NAME */` 标记每一层。Parser 识别这个标记把 stack 拆成 `ParsedLayer[]`。如果某层没有标记（比如经典模式生成的代码），自动取名 `layer_0`、`layer_1`……
+代码中用 `/* @layer NAME */` 标记每一层，其后接一行中文注释描述本层意图。`setCode` 写入的代码由 LLM 自己维护这些标记；Parser 识别标记把 stack 拆成 `ParsedLayer[]`。如果某层没有标记，自动取名 `layer_0`、`layer_1`……
+
+### 当前代码的传递方式
+
+当 `currentCode` 不为空时，loop 构建 user message 时自动追加代码内容（含 BPM 和音层摘要），LLM 直接从 user message 中读取。**无需调用任何工具读取现有代码**——这是与旧版最大的区别（旧版需要先调 `getScore()`）。
 
 ## 5. 文件改动地图
 
@@ -89,16 +80,17 @@ flowchart TD
 ```text
 runAgentLoop(opts):
   state = { code: initialCode, finalCode: null }
-  messages = [system, user(instruction + currentCode)]
+  // 当前代码（含 BPM/层摘要）直接拼入 user message，无需 getScore tool
+  messages = [system, user(instruction + currentCode_with_meta)]
   for i in 0..max_iter:
     if elapsed > timeout: warn + break
-    resp = llm.chatWithTools(messages, TOOLS)
+    resp = llm.chatWithTools(messages, [validate, setCode, commit])
     push assistant msg (with tool_calls)
     if no tool_calls: break (model done)
     for each call:
       onProgress({ tool_call })
-      try outcome = dispatch(call)
-      catch CommitSignal: finalCode = signal.code; commit; break outer
+      try outcome = dispatch(call)          // setCode 更新 state.code
+      catch CommitSignal: finalCode = signal.code; break outer
       onProgress({ tool_result })
     push tool reply messages
   return { code: finalCode || state.code, explanation, iterations, committed }
@@ -106,11 +98,11 @@ runAgentLoop(opts):
 
 ### `commit` 终止机制
 
-`commit` handler 直接 `throw new CommitSignal(code)`。Loop 在 try/catch 中识别 CommitSignal，写入 finalCode 并 `break outer`。这样：
+`commit` handler 直接 `throw new CommitSignal(ctx.state.code)`（注意：代码始终从 `state.code` 取，LLM 不能通过 commit 参数传入代码，避免绕过 `setCode` 的规范化处理）。Loop 在 try/catch 中识别 CommitSignal，写入 finalCode 并 `break outer`。这样：
 
 - 一次 loop 内只能 commit 一次（之后的循环走不到）
 - commit 之后的 tool_call 不会被 dispatch
-- explanation 从 commit 的 args 中提取（如果有）
+- explanation 从 commit 的 args 中提取（必填字段）
 
 ### Undo 一致性
 
@@ -123,10 +115,10 @@ runAgentLoop(opts):
 
 ### 安全网
 
-- `max_iter = 8`：防止 LLM 死循环
-- `timeout = 120s`：防止 tool 卡死；要覆盖含 `improvise` 嵌套 LLM 的多层编曲请求
+- `max_iter = 30`（`DEFAULT_MAX_ITER`）：防止 LLM 死循环；架构简化后实际轮次通常 3–5 次（setCode → validate → commit）
+- `timeout = 300s / 5min`（`DEFAULT_TIMEOUT`）：防止 tool 卡死
 - 单个 tool 报错最多重试 2 次
-- LLM 不调用 commit 就退出时：使用最后一次编辑的 `state.code`，对用户提示 ⚠ 警告
+- LLM 不调用 commit 就退出时：使用最后一次 `setCode` 写入的 `state.code`，对用户提示 ⚠ 警告
 - LLM 一次都没产生有效代码时：保留原 `currentCode`
 
 ### DeepSeek function calling

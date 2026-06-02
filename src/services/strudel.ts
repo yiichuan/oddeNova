@@ -214,8 +214,9 @@ class StrudelService {
       destGain.connect(lpfNode);
       lpfNode.connect(ctx.destination);
       this.masterChainReady = true;
-    } catch {
+    } catch (e) {
       this.masterChainSettingUp = false;
+      console.error('[strudel] setupMasterChain failed:', e);
     }
   };
 
