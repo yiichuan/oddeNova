@@ -17,12 +17,14 @@ import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
 import { resetClient } from './services/llm';
-import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
+import { HistoryIcon, PlusIcon } from './components/icons';
+import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useReplay } from './hooks/useReplay';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
+import TopActionBar from './components/TopActionBar';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
@@ -135,6 +137,7 @@ export default function App() {
   // Session code = last committed/played code (used as agent context)
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
+  const currentBpm = parseScore(currentCode).bpm ?? 120;
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
 
@@ -529,14 +532,18 @@ export default function App() {
             <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
             <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
           </h1>
-          <button
-            onClick={() => setShowApiKeyModal(true)}
-            className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-            aria-label="设置"
-            title="设置"
-          >
-            <SettingsIcon size={18} />
-          </button>
+          <TopActionBar
+            onOpenSettings={() => setShowApiKeyModal(true)}
+            session={sessions.currentSession}
+            code={strudel.code}
+            messages={messages}
+            engineReady={strudel.engineReady}
+            hasCode={!!strudel.code}
+            exportState={strudel.exportState}
+            onExport={strudel.exportWav}
+            onResetExportState={strudel.resetExportState}
+            bpm={currentBpm}
+          />
         </div>
 
         {/* ── Conversation ── */}
