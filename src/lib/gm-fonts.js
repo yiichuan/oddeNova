@@ -1,3 +1,15 @@
+/**
+ * GM（通用 MIDI）乐器名称 → 可用音色补丁列表的映射表。
+ *
+ * 每个键对应一种 GM 乐器，值为该乐器可使用的 SF2 音色文件名数组。
+ * 文件名格式：`<程序号（4位）><变体号（2位）>_<SF2来源>_sf2_file`
+ *   - 程序号：MIDI Program Number，0000 = Acoustic Grand Piano
+ *   - 变体号：同一程序的不同音色变体（00 为默认）
+ *   - SF2来源：JCLive / FluidR3_GM / Aspirin / Chaos / GeneralUserGS 等
+ *
+ * 被注释掉的条目（//）表示该文件存在但未启用，或音质存疑（标注 ?）。
+ * 此映射由 soundfonts 服务使用，供用户在 UI 中选择乐器音色。
+ */
 export default {
   gm_piano: [
     //'gm_acoustic_piano': [

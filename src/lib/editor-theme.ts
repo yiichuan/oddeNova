@@ -1,5 +1,7 @@
+/** localStorage 中保存用户主题选择的键名 */
 export const EDITOR_THEME_STORAGE_KEY = "vibe-editor-theme";
 
+/** 所有可用主题的 ID 元组，用于类型推导 */
 export const EDITOR_THEME_IDS = [
   "oddenova-dark",
   "dracula",
@@ -9,8 +11,10 @@ export const EDITOR_THEME_IDS = [
   "solarized-light",
 ] as const;
 
+/** 编辑器主题 ID 的联合类型 */
 export type EditorThemeId = (typeof EDITOR_THEME_IDS)[number];
 
+/** 主题选项列表，供 UI 下拉菜单渲染使用 */
 export const EDITOR_THEME_OPTIONS: {
   id: EditorThemeId;
   name: string;
@@ -24,7 +28,7 @@ export const EDITOR_THEME_OPTIONS: {
   { id: "solarized-light", name: "Solarized Light", type: "light" },
 ];
 
-/** CSS variable values injected per theme for .cm-editor overrides */
+/** 每个主题对应的 CSS 变量值，注入到 .cm-editor 覆盖样式中 */
 export const EDITOR_THEME_VARS: Record<
   EditorThemeId,
   {

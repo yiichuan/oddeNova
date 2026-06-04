@@ -25,6 +25,7 @@ import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 
+// 侧边栏宽度占窗口宽度的比例（默认/最小/最大）
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
 const SIDEBAR_RATIO_MAX = 0.45;
@@ -45,13 +46,19 @@ export default function App() {
   );
   const sessions = useSessions();
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
+  // 正在生成中的会话 id 集合，用于显示 loading 状态
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
+  // agent 完成后从 explanation 中解析出的后续操作建议
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
+  // 已生成完成但用户尚未查看的后台会话 id 集合
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
+  // 每个会话独立的 AbortController，支持多会话并发时精确中止
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  // 用 ref 跟踪当前会话 id，避免异步回调中读到过期的 state
   const currentIdRef = useRef<string | null>(sessions.currentId);
+  // 上一轮 loadingSessions 快照，用于检测哪些会话从 loading 变为完成
   const prevLoadingRef = useRef<Set<string>>(new Set());
 
   const isMobile = useIsMobile();
@@ -111,6 +118,7 @@ export default function App() {
     prevLoadingRef.current = curr;
   }, [loadingSessions]);
 
+  // 判断错误是否来自用户主动中止（AbortController.abort()），而非网络异常
   const isUserAbort = useCallback((error: unknown, signal?: AbortSignal) => {
     if (signal?.aborted) return true;
     if (error instanceof DOMException && error.name === 'AbortError') return true;
@@ -197,6 +205,7 @@ export default function App() {
         setDemoStep((s) => s + 1);
       }
 
+      // 为当前会话创建独立的 AbortController，支持精确中止单个会话
       const controller = new AbortController();
       abortControllersRef.current.set(sessionId, controller);
       const signal = controller.signal;
@@ -246,7 +255,9 @@ export default function App() {
           }
         };
 
+        // initialCode 优先于编辑器当前代码，供 resend 时从正确的历史快照出发
         const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
+        // runAgent 返回后再次检查 signal，防止 race condition（resolve 与 abort 同时发生）
         if (signal.aborted) {
           if (abortControllersRef.current.get(sessionId) === controller) {
             sessions.addAssistantMessage('已中断', undefined, sessionId);
@@ -307,6 +318,7 @@ export default function App() {
           });
         }
       } finally {
+        // 只有当前 controller 仍为最新时才清理，避免覆盖后续 resend 创建的新 controller
         if (abortControllersRef.current.get(sessionId) === controller) {
           abortControllersRef.current.delete(sessionId);
           setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
@@ -316,9 +328,10 @@ export default function App() {
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
   );
 
+  // 编辑并重发某条用户消息：先回退代码状态，再截断消息历史，最后重新发起 agent
   const handleResend = useCallback(
     async (messageId: string, newContent: string) => {
-      // Abort any in-progress run before resending
+      // 先中止当前进行中的 agent，避免新旧请求交叉写入
       const currentSessionId = sessions.currentId;
       if (currentSessionId) {
         abortControllersRef.current.get(currentSessionId)?.abort();
@@ -347,6 +360,7 @@ export default function App() {
     [sessions, handleInstruction, strudel]
   );
 
+  // 重试某条 assistant 回复：找到其对应的 user 消息并触发 resend
   const handleRetry = useCallback(
     async (assistantMessageId: string) => {
       const allMessages = sessions.currentSession?.messages ?? [];
