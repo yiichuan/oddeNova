@@ -6,7 +6,7 @@
 //   deepseek   → api.deepseek.com + 内置模型 + localStorage vibe_api_key
 //   kimi       → api.moonshot.cn  + 内置模型 + localStorage vibe_api_key
 //   openai     → api.openai.com   + 内置模型 + localStorage vibe_api_key
-//   official   → api.deepseek.com + 内置模型 + 调试 Key（如有）或占位 Key
+//   official   → /api/official/v1 + 内置模型 + 服务端 OFFICIAL_API_KEY / VITE_API_KEY
 //   glm        → open.bigmodel.cn + 内置模型 + localStorage vibe_api_key
 //   未设置     → official
 // ===========================================================================
@@ -62,7 +62,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   },
   official: {
     label: '官方体验',
-    baseURL: 'https://api.deepseek.com/v1',
+    baseURL: '/api/official/v1',
     model: 'deepseek-v4-pro',
     protocol: 'openai',
   },
@@ -118,10 +118,15 @@ function resolveOpenAICompatConfig(
   return {
     provider,
     protocol: 'openai',
-    apiKey: isOfficial ? (apiKey || 'official-proxy') : apiKey,
-    baseURL: import.meta.env.VITE_BASE_URL || preset.baseURL,
+    apiKey: isOfficial ? 'official-proxy' : apiKey,
+    baseURL: isOfficial ? resolveOfficialBaseURL() : (import.meta.env.VITE_BASE_URL || preset.baseURL),
     model:   preset.model,
   };
+}
+
+function resolveOfficialBaseURL(): string {
+  if (typeof window === 'undefined') return PROVIDER_PRESETS.official.baseURL;
+  return `${window.location.origin}${PROVIDER_PRESETS.official.baseURL}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,11 +159,7 @@ export function getActiveModelConfig(): ModelConfig {
   }
 
   if (provider === 'official') {
-    const officialDebugKey =
-      import.meta.env.VITE_API_KEY ||
-      localStorage.getItem('vibe_api_key') ||
-      '';
-    return resolveOpenAICompatConfig(provider, officialDebugKey);
+    return resolveOpenAICompatConfig(provider, 'official-proxy');
   }
 
   // 其他 provider 使用用户在 Modal 里填的 Key
