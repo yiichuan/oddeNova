@@ -21,6 +21,8 @@ function stripMarkdown(text: string): string {
 interface ConversationViewProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  isVideoMode?: boolean;
+  scrollBottom?: boolean;
   onResend: (messageId: string, content: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
@@ -29,6 +31,8 @@ interface ConversationViewProps {
 export default function ConversationView({
   messages,
   isLoading,
+  isVideoMode = false,
+  scrollBottom = false,
   onResend,
   onBranch,
   onRetry,
@@ -80,19 +84,24 @@ export default function ConversationView({
   };
 
   useEffect(() => {
-    if (!userScrolledRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    if (isVideoMode && !scrollBottom) {
+      // [video] 视频模式：从顶部展示，scrollBottom=true 时才滚底
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    } else {
+      if (!userScrolledRef.current) {
+        bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+      }
+      // 自动滚动 reasoning <pre> 到底部（流式输出时跟随内容）
+      const preEl = reasoningPreRef.current;
+      if (preEl && !reasoningUserScrolledRef.current) {
+        preEl.scrollTop = preEl.scrollHeight;
+      }
+      // isLoading 结束时重置 reasoning 区域的用户滚动标记
+      if (!isLoading) {
+        reasoningUserScrolledRef.current = false;
+      }
     }
-    // 自动滚动 reasoning <pre> 到底部（流式输出时跟随内容）
-    const preEl = reasoningPreRef.current;
-    if (preEl && !reasoningUserScrolledRef.current) {
-      preEl.scrollTop = preEl.scrollHeight;
-    }
-    // isLoading 结束时重置 reasoning 区域的用户滚动标记
-    if (!isLoading) {
-      reasoningUserScrolledRef.current = false;
-    }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isVideoMode, scrollBottom]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
   const { absorbedReasoningIds } = useMemo(() => {
@@ -132,7 +141,7 @@ export default function ConversationView({
       .every((m) => m.role === 'progress' && m.progressKind === 'reasoning');
 
   return (
-    <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative">
+    <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative" style={{ scrollbarGutter: 'stable' }}>
       {messages.length === 0 && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
           <span>说点什么开始创作</span>

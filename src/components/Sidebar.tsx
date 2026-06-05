@@ -33,6 +33,8 @@ interface SidebarProps {
   onReplay?: () => void;
   isReplaying?: boolean;
   replayInputText?: string;
+  isVideoMode?: boolean;
+  scrollBottom?: boolean;
   onResend: (messageId: string, content: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
@@ -63,6 +65,8 @@ export default function Sidebar({
   onReplay,
   isReplaying = false,
   replayInputText,
+  isVideoMode = false,
+  scrollBottom = false,
   onResend,
   onBranch,
   onRetry,
@@ -154,6 +158,8 @@ export default function Sidebar({
           key={currentId ?? 'default'}
           messages={messages}
           isLoading={isLoading && !isReplaying}
+          isVideoMode={isVideoMode}
+          scrollBottom={scrollBottom}
           onResend={onResend}
           onBranch={onBranch}
           onRetry={onRetry}
@@ -161,7 +167,8 @@ export default function Sidebar({
       </div>
 
       <div className="pl-4 pr-0 pb-2">
-        {!isLoading && !suggestionsLoading && (
+        {/* [video] 视频模式下隐藏建议词和心情按钮，避免遮挡 CodePanel 画面 */}
+        {!isLoading && !suggestionsLoading && !isVideoMode && (
           <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
             <SuggestionChips suggestions={suggestions} onPick={onSendText} />
             {fillSuggestion && (
@@ -189,8 +196,7 @@ export default function Sidebar({
             )}
           </div>
         )}
-
-        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} tokenStats={tokenStats} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
       </div>
     </aside>
   );
