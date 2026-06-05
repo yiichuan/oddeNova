@@ -1,4 +1,4 @@
-export type ShareTargetResult = 'copied';
+export type ShareTargetResult = 'copied' | 'shared' | 'shown';
 
 function legacyCopy(text: string): boolean {
   if (typeof document === 'undefined' || !document.body) return false;
@@ -32,5 +32,17 @@ export async function shareUrl(url: string): Promise<ShareTargetResult> {
 
   if (legacyCopy(url)) return 'copied';
 
-  throw new Error('Share target unavailable');
+  if (nav?.share) {
+    await nav.share({ url });
+    return 'shared';
+  }
+
+  if (typeof globalThis.prompt === 'function') {
+    globalThis.prompt('复制分享链接', url);
+    return 'shown';
+  }
+
+  throw new Error(
+    `Share target unavailable: clipboard=${Boolean(nav?.clipboard?.writeText)}, nativeShare=${Boolean(nav?.share)}, prompt=false`
+  );
 }
