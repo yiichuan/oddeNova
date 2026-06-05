@@ -157,8 +157,6 @@ class StrudelService {
       const { StrudelMirror } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
       cachedTranspiler = transpiler;
-      const { webaudioOutput } = await import('@strudel/webaudio');
-      const { getAudioContext } = await import('superdough');
       const { getDrawContext } = await import('@strudel/draw');
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
