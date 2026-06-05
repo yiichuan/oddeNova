@@ -44,7 +44,8 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
       setState('done');
       onShared?.();
       setTimeout(() => setState('idle'), 2000);
-    } catch {
+    } catch (error) {
+      console.error('[share] Failed to create or open share target', error);
       setState('error');
       setTimeout(() => setState('idle'), 3000);
     }

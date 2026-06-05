@@ -47,4 +47,54 @@ describe('shareUrl', () => {
     expect(appended).toEqual([textarea]);
     expect(removed).toEqual([textarea]);
   });
+
+  it('falls back to native share when clipboard copy is unavailable', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('NotAllowedError'));
+    const nativeShare = vi.fn().mockResolvedValue(undefined);
+
+    vi.stubGlobal('navigator', {
+      clipboard: { writeText },
+      share: nativeShare,
+    });
+    vi.stubGlobal('document', {
+      createElement: vi.fn(() => ({
+        value: '',
+        setAttribute: vi.fn(),
+        select: vi.fn(),
+        style: {},
+      })),
+      execCommand: vi.fn(() => false),
+      body: {
+        appendChild: vi.fn(),
+        removeChild: vi.fn(),
+      },
+    });
+
+    await expect(shareUrl('https://www.oddenova.com/s/abc123')).resolves.toBe('shared');
+    expect(writeText).toHaveBeenCalledWith('https://www.oddenova.com/s/abc123');
+    expect(nativeShare).toHaveBeenCalledWith({ url: 'https://www.oddenova.com/s/abc123' });
+  });
+
+  it('shows the share URL when automatic share targets are unavailable', async () => {
+    const prompt = vi.fn();
+
+    vi.stubGlobal('navigator', {});
+    vi.stubGlobal('document', {
+      createElement: vi.fn(() => ({
+        value: '',
+        setAttribute: vi.fn(),
+        select: vi.fn(),
+        style: {},
+      })),
+      execCommand: vi.fn(() => false),
+      body: {
+        appendChild: vi.fn(),
+        removeChild: vi.fn(),
+      },
+    });
+    vi.stubGlobal('prompt', prompt);
+
+    await expect(shareUrl('http://192.168.0.112/s/abc123')).resolves.toBe('shown');
+    expect(prompt).toHaveBeenCalledWith('复制分享链接', 'http://192.168.0.112/s/abc123');
+  });
 });
