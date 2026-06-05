@@ -221,8 +221,6 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   }, [current?.id]);
 
   // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
-  const strudelRef = useRef(strudel);
-  strudelRef.current = strudel;
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.altKey && e.code === 'Period' && e.key !== '.') {

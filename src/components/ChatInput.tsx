@@ -12,13 +12,10 @@ interface ChatInputProps {
   focusTrigger?: number;
   replayValue?: string;
   isVideoMode?: boolean;
-}
-
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue, isVideoMode = false }: ChatInputProps) {
   tokenStats?: TokenStats;
 }
 
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue, tokenStats: _tokenStats }: ChatInputProps) {
+export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue, isVideoMode = false, tokenStats: _tokenStats }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
