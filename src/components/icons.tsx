@@ -58,6 +58,35 @@ export function SettingsIcon({ size = 16, className }: IconProps) {
   );
 }
 
+export function MenuIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="20" y2="17" />
+    </svg>
+  );
+}
+
+export function BookOpenIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2H11v18H4.5A2.5 2.5 0 0 0 2 22V4.5z" />
+      <path d="M22 4.5A2.5 2.5 0 0 0 19.5 2H13v18h6.5A2.5 2.5 0 0 1 22 22V4.5z" />
+    </svg>
+  );
+}
+
 export function ArrowUpIcon({ size = 16, className }: IconProps) {
   return (
     <svg
@@ -117,6 +146,79 @@ export function ShareIcon({ size = 16, className }: IconProps) {
       <circle cx="18" cy="19" r="3" />
       <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
       <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </svg>
+  );
+}
+
+export function EditIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </svg>
+  );
+}
+
+export function CheckIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+export function CopyIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+export function XIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+export function RetryIcon({ size = 16, className }: IconProps) {
+  // Center (12,12) R=7. CW tangent at θ: (-sinθ, cosθ).
+  // Arc 1: θ=220°→340° (120° CW through 12 o'clock)
+  //   start=(6.64,7.50) end=(18.58,9.61) t=(0.342,0.940) n=(-0.940,0.342)
+  //   wings: tip-2.5t±1.5n → (16.31,7.77) (19.13,6.74)
+  // Arc 2: θ=40°→160° (120° CW through 6 o'clock) — 180° symmetric
+  //   start=(17.36,16.50) end=(5.42,14.39) wings=(7.69,16.23) (4.87,17.26)
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+      <path d="M 6.64 7.50 A 7 7 0 0 1 18.58 9.61"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <polyline points="16.31,7.77 18.58,9.61 19.13,6.74"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M 17.36 16.50 A 7 7 0 0 1 5.42 14.39"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <polyline points="7.69,16.23 5.42,14.39 4.87,17.26"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function GitBranchIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {/* horizontal stem */}
+      <line x1="3" y1="12" x2="10" y2="12" />
+      {/* upper branch → NE */}
+      <line x1="10" y1="12" x2="20" y2="4" />
+      {/* upper arrowhead: L-bracket at top-right */}
+      <polyline points="14,4 20,4 20,10" />
+      {/* lower branch → SE */}
+      <line x1="10" y1="12" x2="20" y2="20" />
+      {/* lower arrowhead: L-bracket at bottom-right */}
+      <polyline points="14,20 20,20 20,14" />
     </svg>
   );
 }

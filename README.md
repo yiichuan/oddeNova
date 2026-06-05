@@ -29,8 +29,7 @@ oddeNova 是面向创作者的即兴音乐创作 Agent 平台。用一句话描�
 
 **不是一键生成器——是你参与完整创作过程的私密空间。**
 
-<!-- screenshot: 三栏布局全景图（历史面板 + 对话区 + 代码面板） -->
-<!-- gif: 从输入描述到 Agent 工作到音乐播放的完整流程 -->
+<img src="docs/images/oddenova-demo.gif" alt="oddeNova 演示" width="100%" />
 
 ## 为谁而生
 
@@ -116,20 +115,14 @@ npm run dev
 用户文字输入
     ↓
 AI Agent（多轮工具调用循环，最多 30 轮）
-    ├── getScore()                查看当前音轨结构
-    ├── addLayer(name, code)      添加新音轨层
-    ├── removeLayer(name)         移除音轨层
-    ├── replaceLayer(name, code)  替换音轨内容
-    ├── applyEffect(layer, chain) 为音轨叠加效果链
-    ├── setTempo(bpm)             设置 BPM（30–240）
-    ├── improvise(role, style)    让子 LLM 即兴生成新音轨
+    ├── setCode(code)             编写或修改完整 Strudel 代码
     ├── validate(code)            验证代码语法与运行时
     └── commit(explanation)       提交最终代码并播放
     ↓
-stack(...layers) → Strudel 引擎执行 → 浏览器 WebAudio 播放
+Strudel 引擎执行 → 浏览器 WebAudio 播放
 ```
 
-Agent 将整首音乐维护为多个具名 layer 的集合。每次对话只修改相关 layer，其余保持不变，实现精准的增量编辑。
+Agent 通过 `setCode` 直接管理完整的 Strudel 代码。每次对话写入新版本后经 `validate` 校验，最终 `commit` 触发热重载播放。代码内以 `/* @layer NAME */` 注释标记各音轨层，实现结构化的增量编辑。
 
 **任何人都可以上手——不需要会编曲，也不需要懂代码：**
 
@@ -146,19 +139,6 @@ Agent 将整首音乐维护为多个具名 layer 的集合。每次对话只修�
 > "加个合成器旋律，偏 ambient 风格，用 Fender Rhodes 音色"  
 > "把军鼓换成更 trap 的感觉，加 808 低音"  
 > "把整体调到 A 小调，tempo 升到 140"
-
-### 内置音乐风格
-
-| 风格 | BPM 范围 | 特色 |
-|------|---------|------|
-| lo-fi | 70–90 | 慵懒颗粒感，轻柔鼓点 |
-| house | 118–128 | 四四拍踩镲，律动贝斯线 |
-| dnb | 165–180 | 高速碎拍，深沉低频 |
-| ambient | 60–90 | 大量留白，氛围感铺垫层 |
-| techno | 125–140 | 工业感打击，循环律动 |
-| synthwave | 90–110 | 复古合成器，八十年代质感 |
-| trap | 130–160 | hi-hat 连排，808 低音 |
-| jazz | 90–110 | 摇摆律动，爵士和声 |
 
 ## 技术栈
 
@@ -194,9 +174,7 @@ Agent 将整首音乐维护为多个具名 layer 的集合。每次对话只修�
 │                        │ tool calls                 │
 │    ┌───────────────────┼───────────────────┐        │
 │    ▼                   ▼                   ▼        │
-│ addLayer()       replaceLayer()       validate()    │
-│ removeLayer()    applyEffect()        improvise()   │
-│ setTempo()       getScore()           commit()      │
+│         setCode()    validate()    commit()         │
 │    └───────────────────┬───────────────────┘        │
 │                        │ final code                 │
 │               ┌────────▼────────┐                   │
@@ -217,7 +195,7 @@ Agent 将整首音乐维护为多个具名 layer 的集合。每次对话只修�
 src/
 ├── App.tsx                  # 应用主组件
 ├── agent/
-│   ├── tools.ts             # Agent 工具定义（9 个工具）
+│   ├── tools.ts             # Agent 工具定义（3 个工具）
 │   ├── executor.ts          # 工具执行器
 │   ├── loop.ts              # Agent 推理循环（最多 30 轮）
 │   └── parser.ts            # Strudel 代码解析（layer 提取）

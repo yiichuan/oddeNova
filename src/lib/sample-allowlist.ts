@@ -1,14 +1,18 @@
 // Auto-derived from:
-//   sample_library/strudel.md          — Dirt-Samples (## headers)
-//   sample_library/tidal-drum-machines.md — drum machine packs (## headers)
+//   sample_library/strudel.md              — Dirt-Samples (## headers)
+//   sample_library/tidal-drum-machines.md  — drum machine packs (## headers)
+//   tidalcycles/uzu-drumkit strudel.json   — brk, misc, oh, rd, rim, sh, tb
+//   felixroos/dough-samples vcsl.json      — VCSL instruments
+//   felixroos/dough-samples mridangam.json — Mridangam
+//   todepond/samples tidal-drum-machines-alias.json — drum machine short aliases
 // Plus melodic samples listed in the agent system prompt.
 
-const DIRT_SAMPLES: readonly string[] = [
+export const DIRT_SAMPLES: readonly string[] = [
   '808bd', '808cy', '808hc', '808ht', '808lc', '808lt', '808mc', '808mt', '808oh', '808sd',
   'ab', 'ade', 'ades2', 'ades3', 'ades4', 'alex', 'alphabet', 'amencutup', 'armora', 'arp', 'arpy',
   'auto', 'baa', 'baa2', 'bass', 'bass0', 'bass1', 'bass2', 'bass3', 'bassdm', 'bassfoo', 'battles',
   'bd', 'bend', 'bev', 'bin', 'birds', 'birds3', 'bleep', 'blip', 'blue', 'bottle',
-  'breaks125', 'breaks152', 'breaks157', 'breaks165', 'breath', 'bubble',
+  'breaks125', 'breaks152', 'breaks157', 'breaks165', 'breath', 'brk', 'bubble',
   'can', 'casio', 'cb', 'cc', 'chin', 'circus', 'clak', 'click', 'clubkick', 'co', 'coins',
   'control', 'cosmicg', 'cp', 'cr', 'crow',
   'd', 'db', 'diphone', 'diphone2', 'dist', 'dork2', 'dorkbot', 'dr', 'dr2', 'dr55', 'dr_few',
@@ -22,16 +26,16 @@ const DIRT_SAMPLES: readonly string[] = [
   'jazz', 'jungbass', 'jungle', 'juno', 'jvbass',
   'kicklinn', 'koy', 'kurt',
   'latibro', 'led', 'less', 'lighter', 'linnhats', 'lt',
-  'made', 'made2', 'mash', 'mash2', 'metal', 'miniyeah', 'monsterb', 'moog', 'mouth', 'mp3',
+  'made', 'made2', 'mash', 'mash2', 'metal', 'miniyeah', 'misc', 'monsterb', 'moog', 'mouth', 'mp3',
   'msg', 'mt', 'mute',
   'newnotes', 'noise', 'noise2', 'notes', 'numbers', 'num',
-  'oc', 'odx', 'off', 'outdoor',
+  'oc', 'odx', 'off', 'oh', 'outdoor',
   'pad', 'padlong', 'pebbles', 'perc', 'peri', 'pluck', 'popkick', 'print', 'proc', 'procshort', 'psr',
-  'rave', 'rave2', 'ravemono', 'realclaps', 'reverbkick', 'rm', 'rs',
-  'sax', 'sd', 'seawolf', 'sequential', 'sf', 'sheffield', 'short', 'sid', 'simplesine', 'sitar',
+  'rave', 'rave2', 'ravemono', 'rd', 'realclaps', 'reverbkick', 'rim', 'rm', 'rs',
+  'sax', 'sd', 'seawolf', 'sequential', 'sf', 'sh', 'sheffield', 'short', 'sid', 'simplesine', 'sitar',
   'sn', 'space', 'speakspell', 'speech', 'speechless', 'speedupdown', 'stab', 'stomp', 'subroc3d',
   'sugar', 'sundance',
-  'tabla', 'tabla2', 'tablex', 'tacscan', 'tech', 'techno', 'tink', 'tok', 'toys', 'trump',
+  'tabla', 'tabla2', 'tablex', 'tacscan', 'tb', 'tech', 'techno', 'tink', 'tok', 'toys', 'trump',
   'ul', 'ulgab', 'uxay',
   'v', 'voodoo',
   'wind', 'wobble', 'world',
@@ -40,7 +44,7 @@ const DIRT_SAMPLES: readonly string[] = [
 ];
 
 // Melodic samples explicitly listed in the agent system prompt.
-const MELODIC_SAMPLES: readonly string[] = [
+export const MELODIC_SAMPLES: readonly string[] = [
   'piano', 'arpy', 'bass', 'moog', 'juno', 'sax', 'gtr', 'pluck', 'sitar', 'stab',
 ];
 
@@ -48,7 +52,7 @@ const MELODIC_SAMPLES: readonly string[] = [
 // Loaded via registerSoundfonts() in prebake (src/services/strudel.ts).
 // Use with note() or n().scale() + .s("gm_...").
 // Source: https://codeberg.org/uzu/strudel/raw/branch/main/packages/soundfonts/gm.mjs
-const GM_INSTRUMENTS: readonly string[] = [
+export const GM_INSTRUMENTS: readonly string[] = [
   // Piano (gm_piano covers acoustic grand / bright / electric grand / honky-tonk)
   'gm_piano', 'gm_epiano1', 'gm_epiano2',
   'gm_harpsichord', 'gm_clavinet',
@@ -111,7 +115,7 @@ const GM_INSTRUMENTS: readonly string[] = [
 ];
 
 // Drum machine packs from tidal-drum-machines.md.
-const DRUM_MACHINE_SAMPLES: readonly string[] = [
+export const DRUM_MACHINE_SAMPLES: readonly string[] = [
   'AJKPercusyn_bd', 'AJKPercusyn_cb', 'AJKPercusyn_ht', 'AJKPercusyn_sd',
   'AkaiLinn_bd', 'AkaiLinn_cb', 'AkaiLinn_cp', 'AkaiLinn_cr', 'AkaiLinn_hh', 'AkaiLinn_ht',
   'AkaiLinn_lt', 'AkaiLinn_mt', 'AkaiLinn_oh', 'AkaiLinn_rd', 'AkaiLinn_sd', 'AkaiLinn_sh', 'AkaiLinn_tb',
@@ -263,11 +267,138 @@ const DRUM_MACHINE_SAMPLES: readonly string[] = [
   'YamahaTG33_perc', 'YamahaTG33_rd', 'YamahaTG33_rim', 'YamahaTG33_sd', 'YamahaTG33_sh', 'YamahaTG33_tb',
 ];
 
+// VCSL (Vienna Symphonic Library Community Edition) samples from:
+// https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json
+// License: CC0.
+export const VCSL_SAMPLES: readonly string[] = [
+  'ballwhistle', 'bassdrum1', 'bassdrum2', 'bongo', 'conga', 'darbuka', 'framedrum',
+  'snare_hi', 'snare_low', 'snare_rim',
+  'timpani', 'timpani_roll', 'timpani2',
+  'tom_mallet', 'tom_stick', 'tom_rim', 'tom2_mallet', 'tom2_stick', 'tom2_rim',
+  'recorder_alto_stacc', 'recorder_alto_vib', 'recorder_alto_sus',
+  'recorder_bass_stacc',
+  'recorder_soprano_stacc', 'recorder_soprano_sus',
+  'recorder_tenor_stacc', 'recorder_tenor_sus',
+  'ocarina', 'ocarina_small', 'ocarina_small_stacc', 'ocarina_vib',
+  'pipeorgan_loud', 'pipeorgan_loud_pedal', 'pipeorgan_quiet', 'pipeorgan_quiet_pedal',
+  'organ_4inch', 'organ_8inch', 'organ_full',
+  'trainwhistle', 'harmonica', 'harmonica_soft', 'super64', 'siren', 'didgeridoo',
+  'saxello', 'saxello_stacc', 'saxello_vib', 'sax_stacc', 'sax_vib',
+  'harp', 'folkharp', 'strumstick',
+  'dantranh', 'dantranh_tremolo', 'dantranh_vibrato',
+  'kawai', 'steinway', 'piano1',
+  'psaltery_pluck', 'psaltery_spiccato', 'psaltery_bow',
+  'clavisynth', 'fmpiano', 'wineglass', 'brakedrum',
+  'balafon', 'belltree', 'clash1', 'clash2', 'cowbell', 'fingercymbal', 'flexatone',
+  'gong', 'gong2', 'handbells', 'handchimes', 'hihat_cymbal',
+  'kalimba', 'kalimba2', 'kalimba3', 'kalimba4', 'kalimba5',
+  'marimba', 'marktrees', 'oceandrum',
+  'shaker_large', 'shaker_small', 'slapstick', 'sleighbells',
+  'sus_cymbal', 'sus_cymbal2', 'tambourine1', 'tambourine2', 'triangles',
+  'tubularbells', 'tubularbells2',
+  'vibraphone', 'vibraphone_soft', 'vibraphone_bowed',
+  'xylophone', 'xylophone_soft',
+];
+
+// Mridangam samples from:
+// https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json
+export const MRIDANGAM_SAMPLES: readonly string[] = [
+  'gumki', 'ka', 'nam', 'ta', 'ki', 'dhin', 'na', 'chaapu', 'dhum', 'ardha', 'thom', 'dhi', 'tha',
+];
+
+// Short-name alias map for tidal-drum-machines banks.
+// Mirrors tidal-drum-machines-alias.json loaded at runtime via aliasBank().
+// Used to pre-populate SAMPLE_ALLOWLIST so the validator accepts alias tokens
+// like s("TR808_bd"), s("Linn_hh").
+const DRUM_MACHINE_ALIAS_MAP: Readonly<Record<string, string>> = {
+  AJKPercusyn: 'Percysyn',
+  AkaiLinn: 'Linn',
+  AkaiMPC60: 'MPC60',
+  AkaiXR10: 'XR10',
+  AlesisHR16: 'HR16',
+  AlesisSR16: 'SR16',
+  BossDR110: 'DR110',
+  BossDR220: 'DR220',
+  BossDR55: 'DR55',
+  BossDR550: 'DR550',
+  CasioRZ1: 'RZ1',
+  CasioSK1: 'SK1',
+  CasioVL1: 'VL1',
+  DoepferMS404: 'MS404',
+  EmuDrumulator: 'Drumulator',
+  EmuSP12: 'SP12',
+  KorgDDM110: 'DDM110',
+  KorgKPR77: 'KPR77',
+  KorgKR55: 'KR55',
+  KorgKRZ: 'KRZ',
+  KorgM1: 'M1',
+  KorgMinipops: 'Minipops',
+  KorgPoly800: 'Poly800',
+  KorgT3: 'T3',
+  Linn9000: '9000',
+  LinnLM1: 'LM1',
+  LinnLM2: 'LM2',
+  MoogConcertMateMG1: 'ConcertMateMG1',
+  OberheimDMX: 'DMX',
+  RhodesPolaris: 'Polaris',
+  RhythmAce: 'Ace',
+  RolandCompurhythm1000: 'Compurhythm1000',
+  RolandCompurhythm78: 'Compurhythm78',
+  RolandCompurhythm8000: 'Compurhythm8000',
+  RolandD110: 'D110',
+  RolandD70: 'D70',
+  RolandDDR30: 'DDR30',
+  RolandJD990: 'JD990',
+  RolandMC202: 'MC202',
+  RolandMC303: 'MC303',
+  RolandMT32: 'MT32',
+  RolandR8: 'R8',
+  RolandS50: 'S50',
+  RolandSH09: 'SH09',
+  RolandSystem100: 'System100',
+  RolandTR505: 'TR505',
+  RolandTR606: 'TR606',
+  RolandTR626: 'TR626',
+  RolandTR707: 'TR707',
+  RolandTR727: 'TR727',
+  RolandTR808: 'TR808',
+  RolandTR909: 'TR909',
+  SakataDPM48: 'DPM48',
+  SequentialCircuitsDrumtracks: 'CircuitsDrumtracks',
+  SequentialCircuitsTom: 'CircuitsTom',
+  SimmonsSDS400: 'SDS400',
+  SimmonsSDS5: 'SDS5',
+  SoundmastersR88: 'R88',
+  UnivoxMicroRhythmer12: 'MicroRhythmer12',
+  ViscoSpaceDrum: 'SpaceDrum',
+  XdrumLM8953: 'LM8953',
+  YamahaRM50: 'RM50',
+  YamahaRX21: 'RX21',
+  YamahaRX5: 'RX5',
+  YamahaRY30: 'RY30',
+  YamahaTG33: 'TG33',
+};
+
+// Pre-compute alias short-name variants (e.g. "TR808_bd") mirroring
+// what aliasBank() registers at runtime, so findUnknownSamples() accepts them.
+const _dmAliasVariants: string[] = [];
+for (const entry of DRUM_MACHINE_SAMPLES) {
+  const idx = entry.indexOf('_');
+  if (idx === -1) continue;
+  const bank = entry.slice(0, idx);
+  const suffix = entry.slice(idx); // includes the '_'
+  const alias = DRUM_MACHINE_ALIAS_MAP[bank];
+  if (alias) _dmAliasVariants.push(alias + suffix);
+}
+
 export const SAMPLE_ALLOWLIST: Set<string> = new Set([
   ...DIRT_SAMPLES,
   ...MELODIC_SAMPLES,
   ...DRUM_MACHINE_SAMPLES,
   ...GM_INSTRUMENTS,
+  ...VCSL_SAMPLES,
+  ...MRIDANGAM_SAMPLES,
+  ..._dmAliasVariants,
 ]);
 
 // Strudel built-in synth oscillator names — these are valid in s("...") but are
@@ -304,6 +435,7 @@ export function findUnknownSamples(code: string): string[] {
     const tokens = content
       .replace(/[<>[\]{}]/g, ' ')   // brackets → spaces
       .replace(/\(\d+,\d+\)/g, '')  // (N,M) euclidean
+      .replace(/,/g, ' ')           // , simultaneous-pattern separator → spaces
       .replace(/:\d+/g, '')         // :N index suffix
       .replace(/[*!@?][\d.]*/g, '') // *N !N @N ? modifiers
       .split(/\s+/)

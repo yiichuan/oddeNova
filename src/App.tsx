@@ -15,14 +15,17 @@ import type { ProgressEvent } from './services/llm';
 import { parseNextSteps } from './services/suggestions';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
-import { hasApiKeyConfigured } from './services/llm-config';
+import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
 import { resetClient } from './services/llm';
-import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
+import { HistoryIcon, PlusIcon } from './components/icons';
+import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useReplay } from './hooks/useReplay';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
+import TopActionBar from './components/TopActionBar';
+import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
@@ -192,6 +195,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   // Session code = last committed/played code (used as agent context)
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
+  const currentBpm = parseScore(currentCode).bpm ?? 120;
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
 
@@ -216,15 +220,35 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
   }, [current?.id]);
 
+  // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
+  const strudelRef = useRef(strudel);
+  strudelRef.current = strudel;
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey && e.code === 'Period' && e.key !== '.') {
+        e.preventDefault();
+        if (strudelRef.current.isPlaying) {
+          strudelRef.current.stop();
+        } else if (strudelRef.current.engineReady) {
+          void strudelRef.current.play();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const handleInstruction = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
       if (!strudel.engineReady) {
         strudel.setError('音频引擎启动中，请稍后再试');
         return;
       }
 
       setCommitSuggestions(null); // reset on each new instruction
-      sessions.addUserMessage(text);
+      if (!options?.skipAddMessage) {
+        sessions.addUserMessage(text);
+      }
       const sessionId = sessions.currentId;
       if (!sessionId) return;
       setLoadingSessions((prev) => new Set(prev).add(sessionId));
@@ -234,32 +258,17 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         setDemoStep((s) => s + 1);
       }
 
-      abortControllersRef.current.set(sessionId, new AbortController());
-      const signal = abortControllersRef.current.get(sessionId)!.signal;
+      const controller = new AbortController();
+      abortControllersRef.current.set(sessionId, controller);
+      const signal = controller.signal;
+      const _analyticsStart = Date.now();
+      const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
       try {
-        // Track layer names already shown in this agent run to prevent
-        // duplicate progress entries when the LLM calls addLayer/removeLayer/
-        // replaceLayer for the same layer across different iterations.
-        const shownLayerOps = new Set<string>();
-
         const onProgress = (e: ProgressEvent) => {
           if (e.kind === 'iteration') return;
           if (e.kind === 'tool_call') {
             if (e.name !== 'validate' && e.name !== 'commit') {
-              // Dedup layer operations across iterations: same tool + same layer
-              // name means the LLM is retrying something it already attempted
-              // (addLayer will fail at the tool level anyway since the layer
-              // exists). Skip the duplicate progress line to avoid confusing UI.
-              const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
-                ? `${e.name}:${String(e.args.name ?? '')}`
-                : e.name === 'improvise'
-                  ? `improvise:${String(e.args.role ?? '')}`
-                  : null;
-              if (layerKey !== null) {
-                if (shownLayerOps.has(layerKey)) return;
-                shownLayerOps.add(layerKey);
-              }
               sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
                 toolName: e.name,
                 sessionId,
@@ -284,6 +293,10 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             sessions.addProgress('warn', e.message, { sessionId });
             return;
           }
+          if (e.kind === 'reasoning_delta') {
+            sessions.appendToLastReasoning(e.delta, sessionId);
+            return;
+          }
           if (e.kind === 'assistant_text_delta') {
             sessions.appendToLastThinking(e.delta, sessionId);
             return;
@@ -294,10 +307,26 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           }
         };
 
-        const result = await runAgent(text, currentCode, onProgress, undefined, signal);
+        const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
-          sessions.addAssistantMessage('已中断', undefined, sessionId);
+          if (abortControllersRef.current.get(sessionId) === controller) {
+            sessions.addAssistantMessage('已中断', undefined, sessionId);
+          }
+          trackAgentAbort();
           return;
+        }
+        trackAgentRun({
+          provider: _analyticsProvider,
+          model: _analyticsModel,
+          iterations: result.iterations,
+          durationMs: Date.now() - _analyticsStart,
+          committed: result.committed,
+        });
+        if (result.tokenUsage) {
+          sessions.updateTokenStats({
+            ...result.tokenUsage,
+            modelId: _analyticsModel,
+          }, sessionId);
         }
         if (result.code) {
           if (sessionId === currentIdRef.current) {
@@ -324,18 +353,71 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         }
       } catch (e: unknown) {
         if (isUserAbort(e, signal)) {
-          sessions.addAssistantMessage('已中断', undefined, sessionId);
+          if (abortControllersRef.current.get(sessionId) === controller) {
+            sessions.addAssistantMessage('已中断', undefined, sessionId);
+          }
+          trackAgentAbort();
         } else {
           const errMsg = e instanceof Error ? e.message : '请求失败';
           sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
           strudel.setError(errMsg);
+          trackAgentError({
+            provider: _analyticsProvider,
+            model: _analyticsModel,
+            error_type: e instanceof Error ? e.name : 'unknown',
+          });
         }
       } finally {
-        abortControllersRef.current.delete(sessionId);
-        setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+        if (abortControllersRef.current.get(sessionId) === controller) {
+          abortControllersRef.current.delete(sessionId);
+          setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+        }
       }
     },
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
+  );
+
+  const handleResend = useCallback(
+    async (messageId: string, newContent: string) => {
+      // Abort any in-progress run before resending
+      const currentSessionId = sessions.currentId;
+      if (currentSessionId) {
+        abortControllersRef.current.get(currentSessionId)?.abort();
+      }
+      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      const allMessages = sessions.currentSession?.messages ?? [];
+      const idx = allMessages.findIndex((m) => m.id === messageId);
+      const before = idx >= 0 ? allMessages.slice(0, idx) : [];
+      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
+      const previousCode = prevAssistant?.code ?? '';
+
+      // 回退 strudel 状态到该消息发出前
+      if (previousCode) {
+        await strudel.play(previousCode);
+      } else {
+        strudel.stop();
+        strudel.setCode('');
+      }
+      if (sessions.currentId) {
+        sessions.setCurrentCode(previousCode, sessions.currentId);
+      }
+
+      sessions.truncateAndEdit(messageId, newContent);
+      await handleInstruction(newContent, { skipAddMessage: true, initialCode: previousCode });
+    },
+    [sessions, handleInstruction, strudel]
+  );
+
+  const handleRetry = useCallback(
+    async (assistantMessageId: string) => {
+      const allMessages = sessions.currentSession?.messages ?? [];
+      const idx = allMessages.findIndex((m) => m.id === assistantMessageId);
+      if (idx < 0) return;
+      const userMsg = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'user');
+      if (!userMsg) return;
+      await handleResend(userMsg.id, userMsg.content);
+    },
+    [sessions, handleResend]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -360,23 +442,14 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
     abortControllersRef.current.set(sessionId, new AbortController());
     const signal = abortControllersRef.current.get(sessionId)!.signal;
+    const _analyticsStart = Date.now();
+    const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
     try {
-      const shownLayerOps = new Set<string>();
-
       const onProgress = (e: ProgressEvent) => {
         if (e.kind === 'iteration') return;
         if (e.kind === 'tool_call') {
           if (e.name !== 'validate' && e.name !== 'commit') {
-            const layerKey = (e.name === 'addLayer' || e.name === 'removeLayer' || e.name === 'replaceLayer')
-              ? `${e.name}:${String(e.args.name ?? '')}`
-              : e.name === 'improvise'
-                ? `improvise:${String(e.args.role ?? '')}`
-                : null;
-            if (layerKey !== null) {
-              if (shownLayerOps.has(layerKey)) return;
-              shownLayerOps.add(layerKey);
-            }
             sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
               toolName: e.name,
               sessionId,
@@ -390,6 +463,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         }
         if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
         if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
+        if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
         if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
         if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
       };
@@ -397,7 +471,21 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
         sessions.addAssistantMessage('已中断', undefined, sessionId);
+        trackAgentAbort();
         return;
+      }
+      trackAgentRun({
+        provider: _analyticsProvider,
+        model: _analyticsModel,
+        iterations: result.iterations,
+        durationMs: Date.now() - _analyticsStart,
+        committed: result.committed,
+      });
+      if (result.tokenUsage) {
+        sessions.updateTokenStats({
+          ...result.tokenUsage,
+          modelId: _analyticsModel,
+        }, sessionId);
       }
       if (result.code) {
         if (sessionId === currentIdRef.current) {
@@ -425,10 +513,16 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     } catch (e: unknown) {
       if (isUserAbort(e, signal)) {
         sessions.addAssistantMessage('已中断', undefined, sessionId);
+        trackAgentAbort();
       } else {
         const errMsg = e instanceof Error ? e.message : '请求失败';
         sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
         strudel.setError(errMsg);
+        trackAgentError({
+          provider: _analyticsProvider,
+          model: _analyticsModel,
+          error_type: e instanceof Error ? e.name : 'unknown',
+        });
       }
     } finally {
       abortControllersRef.current.delete(sessionId);
@@ -496,19 +590,23 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
             <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
           </h1>
-          <button
-            onClick={() => setShowApiKeyModal(true)}
-            className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-            aria-label="设置"
-            title="设置"
-          >
-            <SettingsIcon size={18} />
-          </button>
+          <TopActionBar
+            onOpenSettings={() => setShowApiKeyModal(true)}
+            session={sessions.currentSession}
+            code={strudel.code}
+            messages={messages}
+            engineReady={strudel.engineReady}
+            hasCode={!!strudel.code}
+            exportState={strudel.exportState}
+            onExport={strudel.exportWav}
+            onResetExportState={strudel.resetExportState}
+            bpm={currentBpm}
+          />
         </div>
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView messages={videoDemoMsgs ?? messages} isLoading={isLoading} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -684,6 +782,10 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
+          onResend={handleResend}
+          onBranch={sessions.branchFromMessage}
+          onRetry={handleRetry}
+          tokenStats={current?.tokenStats}
         />
       </div>
 
@@ -797,22 +899,13 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
   switch (name) {
     case 'getScore':
       return '读取当前曲谱';
-    case 'addLayer':
-      return `加入层 ${s('name')}`;
-    case 'removeLayer':
-      return `移除层 ${s('name')}`;
-    case 'replaceLayer':
-      return `替换层 ${s('name')}`;
+
     case 'applyEffect':
       return `给 ${s('layer')} 加效果 ${s('chain')}`;
     case 'setTempo':
       return `设速度 ${s('bpm')} BPM`;
     case 'validate':
       return '校验代码';
-    case 'improvise': {
-      const hints = s('hints');
-      return `即兴生成 ${s('role')}${hints ? `（${hints}）` : ''}`;
-    }
     case 'commit':
       return '提交并播放';
     default:

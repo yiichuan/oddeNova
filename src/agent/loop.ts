@@ -14,7 +14,11 @@ import {
   type AgentState,
   type ToolContext,
 } from './tools';
+import { parseScore, summariseScore } from './parser';
 import { validateCode } from '../services/strudel';
+
+/** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
+export type ThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
 
 // OpenAI ChatCompletion message shape (only the bits we use).
 export interface ChatMsg {
@@ -22,6 +26,8 @@ export interface ChatMsg {
   content?: string | null;
   /** DeepSeek thinking mode: must be echoed back on every subsequent turn. */
   reasoning_content?: string | null;
+  /** Anthropic extended thinking: thinking blocks must be echoed back verbatim. */
+  thinking_blocks?: ThinkingBlock[];
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -31,17 +37,25 @@ export interface ChatMsg {
   name?: string;
 }
 
+export interface LLMUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface LLMCaller {
   chatWithTools(
     messages: ChatMsg[],
     tools: ReturnType<typeof getOpenAIToolSchemas>,
     onTextDelta?: (delta: string) => void,
+    onReasoningDelta?: (delta: string) => void,
     signal?: AbortSignal
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
     reasoning_content?: string | null;
+    thinking_blocks?: ThinkingBlock[];
     toolCalls: ToolCallRequest[];
+    usage?: LLMUsage;
   }>;
 }
 
@@ -52,6 +66,7 @@ export type ProgressEvent =
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'assistant_text_delta'; delta: string }
+  | { kind: 'reasoning_delta'; delta: string }
   | { kind: 'warn'; message: string };
 
 export interface RunAgentOptions {
@@ -59,11 +74,15 @@ export interface RunAgentOptions {
   instruction: string;
   systemPrompt: string;
   llm: LLMCaller;
-  improviseLLM: ToolContext['improviseLLM'];
   maxIter?: number;
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
   signal?: AbortSignal;
+}
+
+export interface TokenUsage {
+  promptTokens: number;
+  systemEstimate: number;
 }
 
 export interface RunAgentResult {
@@ -71,13 +90,10 @@ export interface RunAgentResult {
   explanation: string;
   iterations: number;
   committed: boolean;
+  tokenUsage?: TokenUsage;
 }
 
 const DEFAULT_MAX_ITER = 30;
-// 120s covers ~10 tool-calls worth of latency (including nested `improvise`
-// sub-LLM calls). 45s was too tight — a typical multi-layer request
-// (read → setTempo → improvise drums → addLayer → improvise bass → addLayer
-// → validate → commit) easily overruns it before the model reaches `commit`.
 const DEFAULT_TIMEOUT = 300_000;
 
 export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResult> {
@@ -86,7 +102,6 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     instruction,
     systemPrompt,
     llm,
-    improviseLLM,
     maxIter = DEFAULT_MAX_ITER,
     timeoutMs = DEFAULT_TIMEOUT,
     onProgress,
@@ -97,11 +112,19 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     code: initialCode || '',
     finalCode: null,
   };
-  const ctx: ToolContext = { state, improviseLLM };
+  const ctx: ToolContext = { state };
 
-  const userTurn = initialCode
-    ? `当前正在播放的代码:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`
-    : `用户指令: ${instruction}`;
+  let userTurn: string;
+  if (initialCode) {
+    const score = parseScore(initialCode);
+    const { bpm, layers } = summariseScore(score);
+    const bpmStr = bpm != null ? `BPM: ${bpm}` : '';
+    const layersStr = layers.length > 0 ? `音层: ${layers.map((l) => l.name).join(' / ')}` : '（无音层）';
+    const meta = [bpmStr, layersStr].filter(Boolean).join('，');
+    userTurn = `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`;
+  } else {
+    userTurn = `用户指令: ${instruction}`;
+  }
 
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt },
@@ -114,6 +137,9 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   let explanation = '';
   let committed = false;
   let finalCode = state.code;
+  // 只取最后一次迭代的 usage：每次调用时 messages 已累积全部历史，
+  // 最后一次 inputTokens 即当前完整上下文的真实大小。
+  let lastUsage: LLMUsage | undefined;
 
   outer: for (let i = 0; i < maxIter; i++) {
     if (Date.now() - start > timeoutMs) {
@@ -130,7 +156,11 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     const onTextDelta = onProgress
       ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
       : undefined;
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, signal);
+    const onReasoningDelta = onProgress
+      ? (delta: string) => onProgress({ kind: 'reasoning_delta', delta })
+      : undefined;
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal);
+    if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
       console.debug(`[loop] iter ${i + 1} assistant_text:`, resp.content.trim());
@@ -144,6 +174,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       role: 'assistant',
       content: resp.content,
       ...(resp.reasoning_content ? { reasoning_content: resp.reasoning_content } : {}),
+      ...(resp.thinking_blocks?.length ? { thinking_blocks: resp.thinking_blocks } : {}),
       tool_calls:
         resp.toolCalls.length > 0
           ? resp.toolCalls.map((c) => ({
@@ -196,18 +227,14 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
 
-      // `improvise` triggers a blocking sub-LLM call with no streaming output.
-      // Show a thinking bubble so the UI doesn't appear frozen.
-      if (call.name === 'improvise') {
-        const role = (parsedArgs.role as string) || '';
-        onProgress?.({ kind: 'assistant_text_delta', delta: `正在为 ${role} 层创作片段…` });
-      }
-
       try {
         const outcome = await dispatchToolCall(call, ctx);
         outcomes.push(outcome);
         if (!outcome.result.ok) {
           console.error(`[loop] iter ${i + 1} tool "${outcome.name}" 返回失败:`, outcome.result.error);
+          if (outcome.name === 'validate') {
+            console.error(`[loop] validate 失败时的当前代码:\n${ctx.state.code}`);
+          }
         }
         // Cache the result JSON so duplicate calls in the same iteration can reuse it.
         const resultJson = JSON.stringify(
@@ -322,10 +349,28 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     }
   }
 
+  // 估算 system prompt + tools 的 token 数。
+  // CJK 字符约 1 token/字，其余约 4 字符/token。
+  const systemRaw = systemPrompt + JSON.stringify(tools);
+  let cjkCount = 0;
+  for (const ch of systemRaw) {
+    const cp = ch.codePointAt(0)!;
+    if ((cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3000 && cp <= 0x9fff)) cjkCount++;
+  }
+  const systemEstimate = Math.ceil(cjkCount + (systemRaw.length - cjkCount) / 4);
+
+  const tokenUsage: TokenUsage | undefined = lastUsage
+    ? {
+        promptTokens: lastUsage.inputTokens,
+        systemEstimate,
+      }
+    : undefined;
+
   return {
     code: finalCode,
     explanation,
     iterations,
     committed,
+    tokenUsage,
   };
 }

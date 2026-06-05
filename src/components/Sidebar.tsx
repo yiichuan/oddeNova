@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import type { Session } from '../hooks/useSessions';
+import type { Session, TokenStats } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
 import SuggestionChips from './SuggestionChips';
 import ConversationView from './ConversationView';
@@ -35,6 +35,10 @@ interface SidebarProps {
   replayInputText?: string;
   isVideoMode?: boolean;
   scrollBottom?: boolean;
+  onResend: (messageId: string, content: string) => void;
+  onBranch: (messageId: string) => void;
+  onRetry: (messageId: string) => void;
+  tokenStats?: TokenStats;
 }
 
 export default function Sidebar({
@@ -63,6 +67,10 @@ export default function Sidebar({
   replayInputText,
   isVideoMode = false,
   scrollBottom = false,
+  onResend,
+  onBranch,
+  onRetry,
+  tokenStats,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -147,10 +155,14 @@ export default function Sidebar({
           </>
         )}
         <ConversationView
+          key={currentId ?? 'default'}
           messages={messages}
           isLoading={isLoading && !isReplaying}
           isVideoMode={isVideoMode}
           scrollBottom={scrollBottom}
+          onResend={onResend}
+          onBranch={onBranch}
+          onRetry={onRetry}
         />
       </div>
 
@@ -184,8 +196,7 @@ export default function Sidebar({
             )}
           </div>
         )}
-
-        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
       </div>
     </aside>
   );

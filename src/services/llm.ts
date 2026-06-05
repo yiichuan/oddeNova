@@ -7,12 +7,11 @@ import {
   type LLMCaller,
   type ProgressEvent,
   type RunAgentResult,
+  type ThinkingBlock,
 } from '../agent/loop';
 import {
   getOpenAIToolSchemas,
-  type ImproviseRequest,
 } from '../agent/tools';
-import { getRoleHint } from '../prompts/styles';
 import { getActiveModelConfig } from './llm-config';
 import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO, resolveStaticSuggestionScenario } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
@@ -44,6 +43,7 @@ function getAnthropicClient(): Anthropic {
       // but it lets the same proxy URL work for both protocols.
       defaultHeaders: {
         Authorization: `Bearer ${cfg.apiKey}`,
+        'anthropic-beta': 'interleaved-thinking-2025-05-14',
       },
     });
   }
@@ -152,6 +152,16 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
 
     if (msg.role === 'assistant') {
       const blocks: Anthropic.ContentBlockParam[] = [];
+      // Anthropic requires thinking blocks to appear before text/tool_use blocks.
+      if (msg.thinking_blocks && msg.thinking_blocks.length > 0) {
+        for (const tb of msg.thinking_blocks) {
+          blocks.push({
+            type: 'thinking',
+            thinking: tb.thinking,
+            signature: tb.signature,
+          } as Anthropic.ContentBlockParam);
+        }
+      }
       if (content.trim()) {
         blocks.push({ type: 'text', text: content });
       }
@@ -216,7 +226,7 @@ function convertTools(
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, signal) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal) {
     const anthropic = getAnthropicClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
@@ -225,9 +235,12 @@ const anthropicLLMCaller: LLMCaller = {
       system,
       messages: amsgs,
       tools: convertTools(tools),
-      temperature: 0.7,
-      max_tokens: 1024,
-    }, { signal });
+      temperature: 1,
+      max_tokens: 16000,
+      thinking: { type: 'enabled', budget_tokens: 10000 },
+    // Type assertion needed: SDK types don't yet include `thinking` in the
+    // stream params, but it works at runtime when the beta header is set.
+    } as Parameters<typeof anthropic.messages.stream>[0], { signal });
 
     if (onTextDelta) {
       stream.on('text', (delta) => {
@@ -235,10 +248,13 @@ const anthropicLLMCaller: LLMCaller = {
       });
     }
 
+    stream.on('thinking', (delta) => onReasoningDelta?.(delta));
+
     const response = await stream.finalMessage();
 
     let text = '';
     const toolCalls: { id: string; name: string; arguments: string }[] = [];
+    const thinkingBlocks: ThinkingBlock[] = [];
     for (const block of response.content) {
       if (block.type === 'text') {
         text += block.text;
@@ -248,12 +264,23 @@ const anthropicLLMCaller: LLMCaller = {
           name: block.name,
           arguments: JSON.stringify(block.input ?? {}),
         });
+      } else if (block.type === 'thinking') {
+        thinkingBlocks.push({
+          type: 'thinking',
+          thinking: block.thinking,
+          signature: block.signature,
+        });
       }
     }
 
     return {
       content: text.trim() ? text : null,
+      ...(thinkingBlocks.length > 0 ? { thinking_blocks: thinkingBlocks } : {}),
       toolCalls,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
     };
   },
 };
@@ -264,7 +291,7 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller(): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, signal) {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal) {
       const oai = getOpenAIClient();
 
       const stream = await oai.chat.completions.create({
@@ -274,13 +301,15 @@ function createOpenAILLMCaller(): LLMCaller {
         tools: tools as OpenAI.ChatCompletionTool[],
         tool_choice: 'auto',
         temperature: 0.7,
-        max_tokens: 8192,
+        max_tokens: 16000,
         stream: true,
+        stream_options: { include_usage: true },
       }, { signal });
 
       let text = '';
       let reasoningContent = '';
       const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
+      let streamUsage: { prompt_tokens: number; completion_tokens: number } | undefined;
 
       for await (const chunk of stream) {
         // DeepSeek extends the OpenAI delta with `reasoning_content`.
@@ -292,9 +321,8 @@ function createOpenAILLMCaller(): LLMCaller {
 
         if (delta.reasoning_content) {
           reasoningContent += delta.reasoning_content;
-          // reasoning_content is echoed back for multi-turn correctness but
-          // not shown in the UI — the model outputs a short planning sentence
-          // in `content` instead (see system prompt Working style §5).
+          // Fire streaming callback so callers can show reasoning in real time.
+          onReasoningDelta?.(delta.reasoning_content);
         }
 
         if (delta.content) {
@@ -313,6 +341,10 @@ function createOpenAILLMCaller(): LLMCaller {
             if (tc.function?.arguments) buf.args += tc.function.arguments;
           }
         }
+
+        if (chunk.usage) {
+          streamUsage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
+        }
       }
 
       const toolCalls = Array.from(toolCallBuffers.values()).map((buf) => ({
@@ -325,136 +357,12 @@ function createOpenAILLMCaller(): LLMCaller {
         content: text.trim() || null,
         reasoning_content: reasoningContent || null,
         toolCalls,
+        usage: streamUsage
+          ? { inputTokens: streamUsage.prompt_tokens, outputTokens: streamUsage.completion_tokens }
+          : undefined,
       };
     },
   };
-}
-
-// ===========================================================================
-// improviseLLM — 基于 chatOnce，自动路由到当前 provider。
-// ===========================================================================
-
-// System prompt for the focused sub-LLM call that generates a single layer snippet.
-const IMPROVISE_SYSTEM_PROMPT = [
-  'You are a Strudel snippet generator producing ONE complementary layer for a live-coding stack.',
-  '',
-  'You will be given:',
-  '- `role`: drums / hh / bass / pad / lead / fx',
-  '- `style` (optional): one of lofi / house / dnb / ambient / techno / synthwave',
-  '- `complement_task` (optional): a free-text instruction about what gap this layer should fill (e.g. "off-beat hi-hat avoiding kick positions", "warm pad in C minor")',
-  '- `hint` (optional): extra style/density words',
-  '- `current code` (optional): the full Strudel code already on stage',
-  '',
-  'CRITICAL: when `current code` is provided, you MUST first read it to detect (a) the BPM (look for setcps; bpm = cps*240), (b) the key/scale already used by any melodic layer, (c) the existing rhythm density. Your output MUST be MUSICALLY COMPLEMENTARY: same key/scale, complementary frequency band (kick<100Hz, bass c2-g2, pad/lead c4+, hh+fx >2kHz), and complementary density (if existing layers are dense, leave space; if sparse, you can be active).',
-  '',
-  'Output STRICT JSON only: {"code": "..."}',
-  '',
-  'Rules:',
-  '- code must be ONE chained expression, no var declarations, no $: prefix, no setcps, no stack wrapping, no semicolons.',
-  '- Use `.lpq(N)` for lpf resonance (NOT `.lpfq`).',
-  '- NEVER use `_` in mini-notation strings. NEVER use `|` inside `<>`. NEVER use `;` inside `<>`.',
-  '- Pick a `.gain(...)` consistent with the role: drums 0.7-0.9, bass 0.6-0.8, pad 0.3-0.5, lead 0.4-0.6, fx 0.3-0.5.',
-  '- ONLY use approved sample names: melodic: `piano arpy bass moog juno sax gtr pluck sitar stab`; synths: `sawtooth sine square triangle`; drums: `bd sd hh oh cp cr cb rm rs`; GM soundfont: any `gm_*` name. NEVER invent names.',
-].join('\n');
-
-// Role-indexed canned snippets — used as the last-resort fallback so a flaky
-// sub-LLM response never breaks the agent loop.
-const IMPROVISE_FALLBACKS: Record<string, string> = {
-  drums: 's("bd ~ sd ~").bank("RolandTR808").gain(0.8)',
-  hh: 's("hh*8").gain(0.5)',
-  bass: 'note("c2 c2 eb2 f2").s("sawtooth").lpf(500).gain(0.7)',
-  pad: 'n("0 2 4 7").scale("C4:minor").s("sine").attack(0.5).release(2).gain(0.4)',
-  lead: 'n("<0 2 4 7 5 4>").scale("C4:minor").s("triangle").gain(0.5)',
-  fx: 's("~ ~ ~ cp").room(0.5).gain(0.5)',
-};
-
-// Pull a Strudel snippet out of whatever shape the sub-LLM decided to return.
-function extractStrudelSnippet(text: string): string | null {
-  if (!text) return null;
-
-  // 1) pure JSON
-  try {
-    const p = JSON.parse(text) as { code?: unknown };
-    if (typeof p?.code === 'string' && p.code.trim()) return p.code.trim();
-  } catch {
-    /* fallthrough */
-  }
-
-  // 2) ```json {...} ```  or  ``` {...} ```
-  const jsonBlock = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-  if (jsonBlock) {
-    try {
-      const p = JSON.parse(jsonBlock[1]) as { code?: unknown };
-      if (typeof p?.code === 'string' && p.code.trim()) return p.code.trim();
-    } catch {
-      /* fallthrough */
-    }
-  }
-
-  // 3) regex the `"code": "..."` field out (survives truncated JSON)
-  const field = text.match(/"code"\s*:\s*"((?:\\.|[^"\\])*)"/);
-  if (field) {
-    try {
-      return JSON.parse(`"${field[1]}"`);
-    } catch {
-      return field[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
-    }
-  }
-
-  // 4) non-JSON code fence — treat body as the snippet
-  const codeBlock = text.match(/```(?:js|javascript|strudel)?\s*([\s\S]*?)```/);
-  if (codeBlock && codeBlock[1].trim()) {
-    return codeBlock[1].trim();
-  }
-
-  // 5) raw text that already looks like a strudel expression
-  const trimmed = text.trim();
-  if (trimmed && /(^|[^a-zA-Z_])(s|n|note|stack|chord)\s*\(/.test(trimmed)) {
-    const firstChunk = trimmed.split(/\n\s*\n/)[0].trim();
-    return firstChunk || trimmed;
-  }
-
-  return null;
-}
-
-async function improviseLLM(req: ImproviseRequest): Promise<string> {
-  const { role, hints, currentCode, style, complementTask } = req;
-  const styleHint = style ? getRoleHint(style, role) : '';
-  const userPrompt = [
-    `role: ${role}`,
-    style ? `style: ${style}` : '',
-    complementTask ? `complement_task: ${complementTask}` : '',
-    styleHint ? `style_hint: ${styleHint}` : '',
-    hints ? `hint: ${hints}` : '',
-    currentCode ? `current code (for context):\n${currentCode}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  const tryCall = async (systemPrompt: string, tokens: number): Promise<string | null> => {
-    try {
-      const text = await chatOnce(systemPrompt, userPrompt, { temperature: 0.9, maxTokens: tokens });
-      return extractStrudelSnippet(text);
-    } catch (e) {
-      console.warn('[improvise] upstream call errored', e);
-      return null;
-    }
-  };
-
-  const first = await tryCall(IMPROVISE_SYSTEM_PROMPT, 512);
-  if (first) return first;
-
-  const retryPrompt = [
-    'You are a Strudel snippet generator.',
-    'Output ONLY one single chained Strudel expression — no JSON, no markdown fences, no comments, no prose.',
-    'Example output: s("bd ~ sd ~").bank("RolandTR808").gain(0.8)',
-    'Rules: no stack wrapping, no setcps, no semicolons, no var/let/const.',
-  ].join('\n');
-  const second = await tryCall(retryPrompt, 512);
-  if (second) return second;
-
-  console.warn(`[improvise] falling back to canned snippet for role=${role}`);
-  return IMPROVISE_FALLBACKS[role] ?? IMPROVISE_FALLBACKS.drums;
 }
 
 export async function runAgent(
@@ -486,24 +394,11 @@ export async function runAgent(
           : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
       : activeLLMCaller;
 
-  const effectiveImproviseLLM = isMoodDemo
-    ? async (req: ImproviseRequest) => {
-        await new Promise<void>((r) => setTimeout(r, 1400));
-        return DEMO_MOOD_SCENARIO.roleSnippets[req.role] ?? IMPROVISE_FALLBACKS[req.role] ?? '';
-      }
-    : isPrefillDemo
-      ? async (req: ImproviseRequest) => {
-          await new Promise<void>((r) => setTimeout(r, 1400));
-          return DEMO_PREFILL_SCENARIO.roleSnippets[req.role] ?? IMPROVISE_FALLBACKS[req.role] ?? '';
-        }
-      : improviseLLM;
-
   return runAgentLoop({
     instruction,
     initialCode: currentCode,
     systemPrompt,
     llm,
-    improviseLLM: effectiveImproviseLLM,
     onProgress,
     signal,
   });

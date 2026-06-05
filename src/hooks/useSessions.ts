@@ -7,11 +7,18 @@ import {
   deleteSession as dbDeleteSession,
 } from '../lib/session-storage';
 
+export interface TokenStats {
+  promptTokens: number;
+  systemEstimate: number;
+  modelId: string;
+}
+
 export interface Session {
   id: string;
   title: string;
   messages: ChatMessage[];
   code: string;
+  tokenStats?: TokenStats;
   createdAt: number;
   updatedAt: number;
 }
@@ -43,6 +50,21 @@ function makeEmptySession(): Session {
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
+}
+
+export function applyTruncateAndEdit(s: Session, targetMessageId: string, newContent: string): Session {
+  const index = s.messages.findIndex((m) => m.id === targetMessageId);
+  if (index === -1) return s;
+  const before = s.messages.slice(0, index);
+  const newMsg = {
+    id: newMessageId(),
+    role: 'user' as const,
+    content: newContent,
+    timestamp: Date.now(),
+  };
+  const messages = [...before, newMsg];
+  const title = before.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+  return { ...s, messages, title };
 }
 
 export function useSessions() {
@@ -124,6 +146,13 @@ export function useSessions() {
     [updateCurrent, updateSession]
   );
 
+  const truncateAndEdit = useCallback(
+    (targetMessageId: string, newContent: string): void => {
+      updateCurrent((s) => applyTruncateAndEdit(s, targetMessageId, newContent));
+    },
+    [updateCurrent]
+  );
+
   const addAssistantMessage = useCallback(
     (content: string, code?: string, sessionId?: string): void => {
       const apply = sessionId
@@ -193,6 +222,37 @@ export function useSessions() {
               content: delta,
               timestamp: Date.now(),
               progressKind: 'thinking' as const,
+            },
+          ],
+        };
+      });
+    },
+    [updateCurrent, updateSession]
+  );
+
+  // 流式追加推理文字：若最后一条消息是 reasoning，则原地拼接；否则新建一条
+  const appendToLastReasoning = useCallback(
+    (delta: string, sessionId?: string): void => {
+      const apply = sessionId
+        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
+        : updateCurrent;
+      apply((s) => {
+        const messages = [...s.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === 'progress' && last.progressKind === 'reasoning') {
+          messages[messages.length - 1] = { ...last, content: last.content + delta };
+          return { ...s, messages };
+        }
+        return {
+          ...s,
+          messages: [
+            ...messages,
+            {
+              id: newMessageId(),
+              role: 'progress' as const,
+              content: delta,
+              timestamp: Date.now(),
+              progressKind: 'reasoning' as const,
             },
           ],
         };
@@ -280,19 +340,63 @@ export function useSessions() {
     []
   );
 
+  const branchFromMessage = useCallback(
+    (targetMessageId: string): void => {
+      const session = sessions.find((s) => s.id === currentId) || sessions[0];
+      if (!session) return;
+      const index = session.messages.findIndex((m) => m.id === targetMessageId);
+      if (index === -1) return;
+      const sliced = session.messages.slice(0, index + 1);
+      // Use the code from the target assistant message if available
+      const targetMsg = session.messages[index];
+      const code = (targetMsg.role === 'assistant' && targetMsg.code) ? targetMsg.code : session.code;
+      const id = newSessionId();
+      const now = Date.now();
+      const branched: Session = {
+        id,
+        title: `${session.title}（分支）`,
+        messages: sliced,
+        code,
+        createdAt: now,
+        updatedAt: now,
+      };
+      // Optimistic update: UI reflects immediately; DB write is fire-and-forget.
+      // If dbPutSession fails, the session exists in memory for the current page
+      // load but won't persist on refresh.
+      setSessions((prev) => [branched, ...prev]);
+      setCurrentId(id);
+      dbPutSession(branched).catch(console.error);
+    },
+    [sessions, currentId]
+  );
+
+  const updateTokenStats = useCallback(
+    (stats: TokenStats, sessionId?: string) => {
+      const apply = sessionId
+        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
+        : updateCurrent;
+      apply((s) => ({ ...s, tokenStats: stats }));
+    },
+    [updateCurrent, updateSession]
+  );
+
   return {
     sessions,
     currentSession,
     currentId,
     isLoading,
     addUserMessage,
+    truncateAndEdit,
     addAssistantMessage,
     addProgress,
     appendToLastThinking,
+    appendToLastReasoning,
     setCurrentCode,
     newSession,
     switchTo,
     deleteSession,
     importSession,
+    branchFromMessage,
+    updateTokenStats,
   };
 }

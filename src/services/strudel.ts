@@ -1,5 +1,6 @@
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
+import { trackWavExport } from '../lib/analytics';
 
 type StrudelReplState = {
   code?: string;
@@ -89,7 +90,10 @@ class StrudelService {
   }
 
   private prebake = async (): Promise<void> => {
-    const { evalScope } = await import('@strudel/core');
+    const { evalScope, Pattern, noteToMidi, valueToMidi } = await import('@strudel/core');
+    const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
+
+    initAudioOnFirstClick();
 
     const loadModules = evalScope(
       import('@strudel/core'),
@@ -106,20 +110,38 @@ class StrudelService {
       // Remotion headless Chrome page and are not needed for screenshot rendering.
       await loadModules;
     } else {
-      const { initAudioOnFirstClick, registerSynthSounds, samples, getAudioContext, getSuperdoughAudioController } = await import('superdough');
-      initAudioOnFirstClick();
       await Promise.all([
         loadModules,
         registerSynthSounds(),
         samples('github:tidalcycles/dirt-samples'),
         samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
         samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
+        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json'),
+        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json'),
       ]);
+      await samples('https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json');
+      await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
       registerSoundfonts();
       (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
       (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
       (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
         this.recordLive(sec, name);
+    }
+
+    // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
+    const maxPan = noteToMidi('C8');
+    const panwidth = (pan: number, width: number) => pan * width + (1 - width) / 2;
+    if (!Pattern.prototype.piano) {
+      Pattern.prototype.piano = function () {
+        return this.fmap((v: Record<string, unknown>) => ({ ...v, clip: v['clip'] ?? 1 }))
+          .s('piano')
+          .release(0.1)
+          .fmap((value: Record<string, unknown>) => {
+            const midi = valueToMidi(value);
+            const pan = panwidth(Math.min(Math.round(midi) / maxPan, 1), 0.5);
+            return { ...value, pan: ((value['pan'] as number) || 1) * pan };
+          });
+      };
     }
 
     this.isAudioInitialized = true;
@@ -134,6 +156,9 @@ class StrudelService {
     try {
       const { StrudelMirror } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
+      cachedTranspiler = transpiler;
+      const { webaudioOutput } = await import('@strudel/webaudio');
+      const { getAudioContext } = await import('superdough');
       const { getDrawContext } = await import('@strudel/draw');
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -168,7 +193,7 @@ class StrudelService {
         defaultOutput,
         getTime: getTimeFn,
         drawTime: [0, -2],
-        drawContext: getDrawContext(),
+        drawContext: getDrawContext(), // 默认 id='test-canvas'；src/index.css 有对应 #test-canvas z-index 规则
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
           const error = evalError
@@ -495,6 +520,7 @@ class StrudelService {
       const renderedBuffer = await offlineCtx.startRendering();
       const wav = audioBufferToWav16(renderedBuffer);
       downloadWav(wav, filename);
+      trackWavExport();
 
       setAudioContext(null);
       setSuperdoughAudioController(null);
@@ -743,87 +769,39 @@ export function normalizeCode(code: string): string {
   return result;
 }
 
-// --- Mini-notation auto-fix ---
+// Cached after first attach() so validateCodeTranspiler can run synchronously.
+let cachedTranspiler: ((code: string, opts?: object) => unknown) | null = null;
 
-/**
- * Detects and auto-fixes known mini-notation pitfalls in Strudel code.
- * Currently handles:
- *   - Semicolons inside `<>` alternation patterns inside string literals.
- *     e.g. `note("<c4 eb4; g4 bb4>/4")` → `note("<[c4,eb4] [g4,bb4]>/4")`
- *     `;` is not valid mini-notation; each `;`-delimited group of space-separated
- *     notes is converted to a simultaneous chord `[n1,n2,...]`.
- * Returns the fixed code and a list of human-readable fix descriptions.
- */
-export function fixMiniNotationIssues(code: string): { fixed: string; fixes: string[] } {
-  const fixes: string[] = [];
-  const fixed = code.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, (str) => {
-    if (!str.includes(';') && !str.includes('<')) return str;
-    const quote = str[0];
-    let inner = str.slice(1, -1);
+type ValidationResult = { ok: true } | { ok: false; error: string; kind: 'syntax' | 'runtime' };
 
-    // Fix 1: semicolons in angle brackets
-    if (inner.includes(';')) {
-      inner = inner.replace(/<([^>]*)>/g, (_match, content: string) => {
-        if (!content.includes(';')) return `<${content}>`;
-        const groups = content.split(';').map((g: string) => g.trim()).filter(Boolean);
-        const fixedGroups = groups.map((g: string) => {
-          const tokens = g.split(/\s+/).filter(Boolean);
-          return tokens.length > 1 ? `[${tokens.join(',')}]` : g;
-        });
-        fixes.push(`auto-fixed ";" in angle-bracket alternation: <${content.trim()}> → <${fixedGroups.join(' ')}>`);
-        return `<${fixedGroups.join(' ')}>`;
-      });
-    }
+const PASS_THROUGH = new Set([
+  'undefined', 'NaN', 'Infinity', 'globalThis', 'window', 'self',
+  'console', 'Math', 'Number', 'String', 'Array', 'Object', 'JSON',
+  'Boolean', 'Symbol', 'Date', 'RegExp', 'Promise',
+]);
 
-    // Fix 2: unbalanced < > (missing closing >)
-    let depth = 0;
-    for (const char of inner) {
-      if (char === '<') depth++;
-      else if (char === '>') depth--;
-    }
-    if (depth > 0) {
-      fixes.push(`auto-fixed unbalanced angle brackets in mini notation: added ${depth} missing ">"`);
-      inner += '>'.repeat(depth);
-    }
-
-    if (inner === str.slice(1, -1)) return str;
-    return quote + inner + quote;
-  });
-  return { fixed, fixes };
+function stripUIDecorations(code: string): string {
+  return code
+    .replace(/\._scope\(\)/g, '')
+    .replace(/\._pianoroll\(\{[^}]*\}\)/g, '')
+    .replace(/\._pianoroll\(\)/g, '');
 }
 
 // --- Code validation (no audio engine needed) ---
 
+/** @deprecated Use validateCodeRuntime directly. */
 export function validateCode(code: string): { ok: boolean; error?: string } {
   if (!code?.trim()) return { ok: false, error: '代码为空' };
-  const clean = normalizeCode(code)
-    .replace(/\._scope\(\)/g, '')
-    .replace(/\._pianoroll\(\{[^}]*\}\)/g, '')
-    .replace(/\._pianoroll\(\)/g, '');
-  try {
-    new Function(clean);
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
+  const result = validateCodeRuntime(code);
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
-export function validateCodeRuntime(code: string): { ok: boolean; error?: string } {
-  const syn = validateCode(code);
-  if (!syn.ok) return syn;
-  if (!strudelService.isReady) return { ok: true };
+export function validateCodeRuntime(code: string): ValidationResult {
+  const clean = normalizeCode(stripUIDecorations(code));
+  if (!clean.trim()) return { ok: false, error: '代码为空', kind: 'syntax' };
 
-  const stripped = code
-    .replace(/\._scope\(\)/g, '')
-    .replace(/\._pianoroll\(\{[^}]*\}\)/g, '')
-    .replace(/\._pianoroll\(\)/g, '')
-    .replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');
-
-  const PASS_THROUGH = new Set([
-    'undefined', 'NaN', 'Infinity', 'globalThis', 'window', 'self',
-    'console', 'Math', 'Number', 'String', 'Array', 'Object', 'JSON',
-    'Boolean', 'Symbol', 'Date', 'RegExp', 'Promise',
-  ]);
+  // Proxy dry-run（调用方保证引擎已就绪，见 App.tsx handleInstruction guard）
+  const stripped = clean.replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');
 
   const proxy = new Proxy({}, {
     has() { return true; },
@@ -846,12 +824,34 @@ export function validateCodeRuntime(code: string): { ok: boolean; error?: string
       const quoted = unknownSamples.map((s) => `"${s}"`).join(', ');
       return {
         ok: false,
+        kind: 'runtime',
         error: `Unknown sample name(s): ${quoted}. Only use approved sample names (piano, arpy, bass, bd, sd, hh ...). See the quality gate in your system prompt.`,
       };
     }
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: e instanceof Error ? e.message : String(e), kind: 'runtime' };
+  }
+}
+
+// Runs the Strudel transpiler to catch mini-notation parse errors that the
+// Proxy dry-run cannot see (e.g. unclosed brackets in "bd [sd").
+// Returns ok:true when the transpiler is not yet loaded (first run before attach).
+export function validateCodeTranspiler(code: string): { ok: boolean; error?: string } {
+  if (!cachedTranspiler) return { ok: true };
+  const clean = stripUIDecorations(code);
+  try {
+    cachedTranspiler(clean);
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // Only surface errors explicitly from the mini-notation parser (prefixed with
+    // "[mini]" by mini2ast). Other transpiler errors (acorn JS parse issues,
+    // unregistered plugins, etc.) may be false positives — let them pass through.
+    if (msg.startsWith('[mini]')) {
+      return { ok: false, error: msg };
+    }
+    return { ok: true };
   }
 }
 
