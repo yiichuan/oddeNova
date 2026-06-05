@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { type ProviderType, PROVIDER_PRESETS } from '../services/llm-config';
 import qrCode from '../assets/oddeNova音乐制作社区二维码.png';
+import { getCommunityInviteText, isApiKeyRequiredForProvider } from './apiKeyModalUtils';
 
 function getModelForProvider(p: ProviderType): string {
   if (p === 'anthropic') {
@@ -38,6 +39,8 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
   );
   const [apiKey, setApiKey] = useState(getProviderKey(savedProvider));
   const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://gw.claudeapi.com');
+  const apiKeyRequired = isApiKeyRequiredForProvider(provider);
+  const communityInvite = getCommunityInviteText();
 
   const handleProviderChange = (p: ProviderType) => {
     if (apiKey.trim()) {
@@ -49,10 +52,14 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
 
   const handleSave = () => {
     const trimmedKey = apiKey.trim();
-    if (!trimmedKey) return;
+    if (apiKeyRequired && !trimmedKey) return;
 
-    localStorage.setItem(`vibe_api_key_${provider}`, trimmedKey);
-    localStorage.setItem('vibe_api_key', trimmedKey);
+    if (apiKeyRequired) {
+      localStorage.setItem(`vibe_api_key_${provider}`, trimmedKey);
+      localStorage.setItem('vibe_api_key', trimmedKey);
+    } else {
+      localStorage.removeItem('vibe_api_key');
+    }
     localStorage.setItem('vibe_provider', provider);
     if (provider === 'anthropic') {
       const trimmedHost = host.trim() || 'https://gw.claudeapi.com';
@@ -66,7 +73,8 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     onClose();
   };
 
-  const canSave = !!apiKey.trim();
+  const canSave = !apiKeyRequired || !!apiKey.trim();
+  const hasCurrentProviderConfig = savedProvider === 'official' || !!savedKey;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
@@ -77,7 +85,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
         </p>
 
         {/* 当前生效状态 */}
-        {savedKey && (
+        {hasCurrentProviderConfig && (
           <div className="flex items-center gap-2 mb-7">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 mt-px" />
             <span className="text-xs text-text-muted">当前使用</span>
@@ -116,15 +124,17 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
           </div>
 
           {/* API Key */}
-          <div>
-            <label className="text-xs text-text-secondary mb-1 block">API Key *</label>
-            <ApiKeyInput
-              value={apiKey}
-              onChange={setApiKey}
-              onEnter={handleSave}
-              placeholder="sk-..."
-            />
-          </div>
+          {apiKeyRequired && (
+            <div>
+              <label className="text-xs text-text-secondary mb-1 block">API Key *</label>
+              <ApiKeyInput
+                value={apiKey}
+                onChange={setApiKey}
+                onEnter={handleSave}
+                placeholder="sk-..."
+              />
+            </div>
+          )}
 
           {/* Anthropic Host */}
           {provider === 'anthropic' && (
@@ -143,10 +153,9 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
 
         {/* QR code banner */}
         <div className="flex items-center gap-3 mt-5 pt-5 border-t border-border">
-          <img src={qrCode} alt="扫码加入 oddeNova 用户群，免费领取体验 API Key" className="w-16 h-16 rounded-lg bg-white p-1 shrink-0 object-contain" />
+          <img src={qrCode} alt={communityInvite.alt} className="w-16 h-16 rounded-lg bg-white p-1 shrink-0 object-contain" />
           <div>
-            <p className="text-sm font-medium text-text-secondary">扫码入群</p>
-            <p className="text-xs text-text-muted mt-0.5">免费领体验 API Key</p>
+            <p className="text-sm font-medium text-text-secondary">{communityInvite.title}</p>
           </div>
         </div>
 
