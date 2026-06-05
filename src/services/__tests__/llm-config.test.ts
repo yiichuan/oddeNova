@@ -1,5 +1,20 @@
-import { describe, it, expect } from 'vitest';
-import { normalizeProvider, PROVIDER_PRESETS } from '../llm-config';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { getActiveModelConfig, hasApiKeyConfigured, normalizeProvider, PROVIDER_PRESETS } from '../llm-config';
+
+function installLocalStorage(): void {
+  const store = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => { store.set(key, value); }),
+    removeItem: vi.fn((key: string) => { store.delete(key); }),
+    clear: vi.fn(() => { store.clear(); }),
+  });
+}
+
+beforeEach(() => {
+  vi.unstubAllGlobals();
+  installLocalStorage();
+});
 
 describe('normalizeProvider', () => {
   it('returns "official" when raw is null', () => {
@@ -51,5 +66,39 @@ describe('PROVIDER_PRESETS', () => {
 
   it.each(expectedProviders)('"%s" baseURL starts with https://', (provider) => {
     expect(PROVIDER_PRESETS[provider].baseURL).toMatch(/^https:\/\//);
+  });
+});
+
+describe('official provider API key defaults', () => {
+  it('treats missing provider as official and already configured', () => {
+    expect(normalizeProvider(null)).toBe('official');
+    expect(hasApiKeyConfigured()).toBe(true);
+  });
+
+  it('uses DeepSeek directly and keeps a placeholder API key when no key is saved', () => {
+    localStorage.setItem('vibe_provider', 'official');
+
+    const cfg = getActiveModelConfig();
+
+    expect(cfg.provider).toBe('official');
+    expect(cfg.baseURL).toBe('https://api.deepseek.com/v1');
+    expect(cfg.apiKey).toBe('official-proxy');
+  });
+
+  it('uses a saved key for official debugging without changing the provider default', () => {
+    localStorage.setItem('vibe_provider', 'official');
+    localStorage.setItem('vibe_api_key', 'sk-debug');
+
+    const cfg = getActiveModelConfig();
+
+    expect(cfg.baseURL).toBe('https://api.deepseek.com/v1');
+    expect(cfg.apiKey).toBe('sk-debug');
+  });
+
+  it('still requires a user key for non-official providers', () => {
+    localStorage.setItem('vibe_provider', 'deepseek');
+    localStorage.removeItem('vibe_api_key');
+
+    expect(hasApiKeyConfigured()).toBe(false);
   });
 });
