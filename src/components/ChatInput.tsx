@@ -10,9 +10,10 @@ interface ChatInputProps {
   prefill?: string;
   focusTrigger?: number;
   replayValue?: string;
+  isVideoMode?: boolean;
 }
 
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue }: ChatInputProps) {
+export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue, isVideoMode = false }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -88,6 +89,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         rows={1}
         disabled={isLoading && replayValue === undefined}
         className="w-full min-h-[108px] resize-none overflow-hidden rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] focus:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] 视频渲染时隐藏光标闪烁
       />
 
       {!engineReady && (

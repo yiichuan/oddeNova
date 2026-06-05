@@ -20,11 +20,15 @@ function stripMarkdown(text: string): string {
 interface ConversationViewProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  isVideoMode?: boolean;
+  scrollBottom?: boolean;
 }
 
 export default function ConversationView({
   messages,
   isLoading,
+  isVideoMode = false,
+  scrollBottom = false,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
@@ -39,13 +43,18 @@ export default function ConversationView({
   };
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (!scrollRef.current) return;
+    // [video] 视频模式下对话从顶部开始展示（Remotion 逐条打字），
+    // scrollBottom=true 时（场景切换）才滚底；正常使用始终滚底
+    if (isVideoMode && !scrollBottom) {
+      scrollRef.current.scrollTop = 0;
+    } else {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isVideoMode, scrollBottom]);
 
   return (
-    <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative">
+    <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative" style={{ scrollbarGutter: 'stable' }}>
       {messages.length === 0 && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
           <span>说点什么开始创作</span>
