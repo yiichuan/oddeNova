@@ -6,9 +6,9 @@
 //   deepseek   → api.deepseek.com + 内置模型 + localStorage vibe_api_key
 //   kimi       → api.moonshot.cn  + 内置模型 + localStorage vibe_api_key
 //   openai     → api.openai.com   + 内置模型 + localStorage vibe_api_key
-//   official   → api.deepseek.com + 内置模型 + localStorage vibe_api_key
+//   official   → /api/official/v1 + 内置模型 + 服务端 OFFICIAL_API_KEY
 //   glm        → open.bigmodel.cn + 内置模型 + localStorage vibe_api_key
-//   未设置     → 同 anthropic（向后兼容旧用户）
+//   未设置     → official
 // ===========================================================================
 
 /** Provider 协议类型，决定使用哪套 SDK。 */
@@ -62,7 +62,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   },
   official: {
     label: '官方体验',
-    baseURL: 'https://api.deepseek.com/v1',
+    baseURL: '/api/official/v1',
     model: 'deepseek-v4-pro',
     protocol: 'openai',
   },
@@ -114,13 +114,19 @@ function resolveOpenAICompatConfig(
   apiKey: string,
 ): ModelConfig {
   const preset = PROVIDER_PRESETS[provider];
+  const isOfficial = provider === 'official';
   return {
     provider,
     protocol: 'openai',
-    apiKey,
-    baseURL: import.meta.env.VITE_BASE_URL || preset.baseURL,
+    apiKey: isOfficial ? 'official-proxy' : apiKey,
+    baseURL: isOfficial ? resolveOfficialBaseURL() : (import.meta.env.VITE_BASE_URL || preset.baseURL),
     model:   preset.model,
   };
+}
+
+function resolveOfficialBaseURL(): string {
+  if (typeof window === 'undefined') return PROVIDER_PRESETS.official.baseURL;
+  return `${window.location.origin}${PROVIDER_PRESETS.official.baseURL}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +158,10 @@ export function getActiveModelConfig(): ModelConfig {
     return resolveAnthropicConfig(anthropicKey);
   }
 
+  if (provider === 'official') {
+    return resolveOpenAICompatConfig(provider, 'official-proxy');
+  }
+
   // 其他 provider 使用用户在 Modal 里填的 Key
   const userApiKey = localStorage.getItem('vibe_api_key') || '';
 
@@ -161,6 +171,9 @@ export function getActiveModelConfig(): ModelConfig {
 
 /** 是否已有 API Key 配置。 */
 export function hasApiKeyConfigured(): boolean {
+  const provider = normalizeProvider(localStorage.getItem('vibe_provider'));
+  if (provider === 'official') return true;
+
   return !!(
     import.meta.env.VITE_API_KEY ||
     localStorage.getItem('vibe_api_key')
