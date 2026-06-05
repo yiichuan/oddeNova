@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react';
 import { uploadShare } from '../services/share';
+import { shareUrl } from '../services/share-target';
 import { trackShare } from '../lib/analytics';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon } from './icons';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
 
-const zh = navigator.language.startsWith('zh');
+const zh = globalThis.navigator?.language?.startsWith('zh') ?? true;
+const learnUrl = 'https://strudel.cc/workshop/getting-started/';
+const githubUrl = 'https://github.com/yiichuan/oddeNova';
 
 // ─── Share ───────────────────────────────────────────────────────────────────
 
@@ -16,9 +20,11 @@ interface ShareButtonProps {
   code?: string;
   messages?: ChatMessage[];
   disabled?: boolean;
+  variant?: 'inline' | 'menu';
+  onShared?: () => void;
 }
 
-function ShareButton({ session, code, messages, disabled }: ShareButtonProps) {
+function ShareButton({ session, code, messages, disabled, variant = 'inline', onShared }: ShareButtonProps) {
   const [state, setState] = useState<ShareState>('idle');
 
   async function handleShare() {
@@ -26,20 +32,43 @@ function ShareButton({ session, code, messages, disabled }: ShareButtonProps) {
     if (!shareCode) return;
     setState('loading');
     try {
+      const title = session?.title?.trim() || '新会话';
       const shareId = await uploadShare({
-        title: session?.title?.trim() || '新会话',
+        title,
         code: shareCode,
         messages: session?.messages ?? messages ?? [],
       });
       const url = `${window.location.origin}/s/${shareId}`;
-      await navigator.clipboard.writeText(url);
+      await shareUrl(url);
       trackShare();
       setState('done');
+      onShared?.();
       setTimeout(() => setState('idle'), 2000);
-    } catch {
+    } catch (error) {
+      console.error('[share] Failed to create or open share target', error);
       setState('error');
       setTimeout(() => setState('idle'), 3000);
     }
+  }
+
+  if (variant === 'menu') {
+    const label = state === 'loading'
+      ? (zh ? '分享中…' : 'Sharing…')
+      : state === 'error'
+        ? (zh ? '分享失败' : 'Share failed')
+        : (zh ? '分享' : 'Share');
+
+    return (
+      <button
+        type="button"
+        onClick={handleShare}
+        disabled={disabled || state === 'loading'}
+        className="mobile-menu-item disabled:opacity-35 disabled:cursor-not-allowed"
+      >
+        <span>{label}</span>
+        <ShareIcon size={19} />
+      </button>
+    );
   }
 
   return (
@@ -296,6 +325,11 @@ export default function TopActionBar({
   bpm,
 }: TopActionBarProps) {
   const [exportOpen, setExportOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const actionDisabled = !engineReady || !hasCode;
+  const shareDisabled = actionDisabled || !session || exportState.status === 'exporting';
+  const exportDisabled = actionDisabled || exportState.status === 'exporting';
 
   const handleExport = async (params: ExportParams) => {
     const ok = await onExport(params);
@@ -307,6 +341,96 @@ export default function TopActionBar({
     }
     return ok;
   };
+
+  if (isMobile) {
+    return (
+      <div className="h-full relative flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+          aria-label={zh ? '打开菜单' : 'Open menu'}
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+          title={zh ? '菜单' : 'Menu'}
+        >
+          <MenuIcon size={20} />
+        </button>
+
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-30 bg-black/35 backdrop-blur-[6px]" onClick={() => setMenuOpen(false)} />
+            <div
+              role="menu"
+              className="fixed right-3 z-40 w-[min(244px,calc(100vw-24px))] rounded-[18px] border border-[#323232] bg-[#0d0d0d]/95 p-2 text-text-primary shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+              style={{ top: 'calc(max(12px, env(safe-area-inset-top)) + 44px)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); onOpenSettings(); }}
+                className="mobile-menu-item"
+              >
+                <span>{zh ? '设置' : 'Settings'}</span>
+                <SettingsIcon size={19} />
+              </button>
+              <ShareButton
+                session={session}
+                code={code}
+                messages={messages}
+                disabled={shareDisabled}
+                variant="menu"
+                onShared={() => setMenuOpen(false)}
+              />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); setExportOpen(true); }}
+                disabled={exportDisabled}
+                className="mobile-menu-item disabled:opacity-35 disabled:cursor-not-allowed"
+              >
+                <span>{zh ? '导出' : 'Export'}</span>
+                <DownloadIcon size={19} />
+              </button>
+              <div className="my-2 h-px bg-white/10" />
+              <a
+                role="menuitem"
+                href={learnUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMenuOpen(false)}
+                className="mobile-menu-item"
+              >
+                <span>{zh ? '学习' : 'Learn'}</span>
+                <BookOpenIcon size={19} />
+              </a>
+              <a
+                role="menuitem"
+                href={githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMenuOpen(false)}
+                className="mobile-menu-item"
+              >
+                <span>GitHub</span>
+                <GitBranchIcon size={19} />
+              </a>
+            </div>
+          </>
+        )}
+
+        <ExportPopover
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          exportState={exportState}
+          onResetState={onResetExportState}
+          onExport={handleExport}
+          bpm={bpm}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full relative flex items-center justify-end gap-3">
@@ -323,13 +447,13 @@ export default function TopActionBar({
         session={session}
         code={code}
         messages={messages}
-        disabled={!engineReady || !hasCode || !session || exportState.status === 'exporting'}
+        disabled={shareDisabled}
       />
 
       {/* 导出 */}
       <button
         onClick={() => setExportOpen((v) => !v)}
-        disabled={!engineReady || !hasCode || exportState.status === 'exporting'}
+        disabled={exportDisabled}
         className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5"
       >
         {zh ? '导出' : 'Export'}
@@ -337,7 +461,7 @@ export default function TopActionBar({
 
       {/* 学习 */}
       <a
-        href="https://strudel.cc/workshop/getting-started/"
+        href={learnUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5"
@@ -347,7 +471,7 @@ export default function TopActionBar({
 
       {/* GitHub */}
       <a
-        href="https://github.com/yiichuan/oddeNova"
+        href={githubUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5"

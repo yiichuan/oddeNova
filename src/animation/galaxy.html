@@ -56,6 +56,17 @@
         let audioConnected = false;
 
         const audioParams = { low: 0, mid: 0, high: 0 };
+        let simAudio = null; // {low, mid, high} injected by video postMessage
+        let simTime = null;  // absolute video time (seconds) injected by Remotion; replaces performance.now()
+
+        window.addEventListener('message', (e) => {
+            if (e.data?.type === 'AUDIO_SIM') {
+                simAudio = { low: e.data.low || 0, mid: e.data.mid || 0, high: e.data.high || 0 };
+            }
+            if (e.data?.type === 'GALAXY_TIME' && typeof e.data.time === 'number') {
+                simTime = e.data.time;
+            }
+        });
         let chaosLevel = 0.2;
         let energyAvg  = 0;
 
@@ -297,30 +308,29 @@
         // ─── Per-frame update ────────────────────────────────────────────────────
 
         function updateAudio() {
-            if (!analyser) return;
-            // After WAV export, the live AudioContext is replaced; the old
-            // AnalyserNode belongs to a closed context and returns silence.
-            // Reset so tryConnectAudio() re-taps the new context next frame.
-            if (analyser.context.state === 'closed') {
-                audioConnected = false;
-                analyser = null;
-                dataArray = null;
-                return;
+            let tLow = 0, tMid = 0, tHigh = 0;
+
+            if (simAudio) {
+                // Video simulation mode: use injected beat values
+                tLow = simAudio.low; tMid = simAudio.mid; tHigh = simAudio.high;
+            } else {
+                if (!analyser) return;
+                // After WAV export, the live AudioContext is replaced; reset and re-tap.
+                if (analyser.context.state === 'closed') {
+                    audioConnected = false;
+                    analyser = null;
+                    dataArray = null;
+                    return;
+                }
+                analyser.getByteFrequencyData(dataArray);
+                let l = 0, m = 0, h = 0;
+                for (let i = 0;  i < 15;  i++) l += dataArray[i];
+                for (let i = 15; i < 70;  i++) m += dataArray[i];
+                for (let i = 70; i < 160; i++) h += dataArray[i];
+                tLow  = l / (15  * 255);
+                tMid  = m / (55  * 255);
+                tHigh = h / (90  * 255);
             }
-            analyser.getByteFrequencyData(dataArray);
-
-            // Frequency bands tuned for typical Strudel output:
-            //   low  0–80 Hz   → kick / bass samples  (bins 0–14)
-            //   mid  80–2kHz   → melody, chords        (bins 15–69)
-            //   high 2–10kHz   → hi-hats, cymbals      (bins 70–159)
-            let l = 0, m = 0, h = 0;
-            for (let i = 0;  i < 15;  i++) l += dataArray[i];
-            for (let i = 15; i < 70;  i++) m += dataArray[i];
-            for (let i = 70; i < 160; i++) h += dataArray[i];
-
-            const tLow  = l / (15  * 255);
-            const tMid  = m / (55  * 255);
-            const tHigh = h / (90  * 255);
 
             // Fast attack, slow decay for punchy response
             audioParams.low  = THREE.MathUtils.lerp(audioParams.low,  tLow,  tLow  > audioParams.low  ? 0.5 : 0.05);
@@ -371,7 +381,8 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            const time = performance.now() * 0.001;
+            // 渲染模式下用 Remotion 注入的帧时间，避免 performance.now() 随渲染耗时加速
+            const time = simTime !== null ? simTime : performance.now() * 0.001;
 
             // Retry audio tap until Strudel initialises (user must click first)
             if (!audioConnected) tryConnectAudio();

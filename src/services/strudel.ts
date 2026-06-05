@@ -32,6 +32,16 @@ class StrudelService {
   private isAudioInitialized = false;
   private isInitializing = false;
 
+  // Video mode: drive the Strudel scheduler clock from postMessage frame time
+  // instead of AudioContext.currentTime, so mini-notation highlights work in
+  // Remotion headless render without any WebAudio / sample loading.
+  private readonly _isVideoMode: boolean = (() => {
+    try { return window.self !== window.top; } catch { return true; }
+  })();
+  private _videoTime = 0;
+  // [video] Remotion 每帧通过 postMessage 更新此值，替代 AudioContext.currentTime 驱动高亮
+  setVideoTime = (t: number): void => { this._videoTime = t; };
+
   private masterLpfNode: BiquadFilterNode | null = null;
   private masterChainReady = false;
   private masterChainSettingUp = false;
@@ -94,21 +104,29 @@ class StrudelService {
       import('@strudel/webaudio'),
     );
 
-    await Promise.all([
-      loadModules,
-      registerSynthSounds(),
-      samples('github:tidalcycles/dirt-samples'),
-      samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
-      samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
-      samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json'),
-      samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json'),
-    ]);
-    // Load uzu-drumkit after dirt-samples (same order as strudel.cc) so that
-    // standalone names like `oh`, `rd`, `rim`, `sh`, `tb` are available.
-    await samples('https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json');
-    await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
-
-    registerSoundfonts();
+    if (this._isVideoMode) {
+      // Video/headless render: only load pattern evaluation modules.
+      // Skip WebAudio init and remote sample downloads — they freeze the
+      // Remotion headless Chrome page and are not needed for screenshot rendering.
+      await loadModules;
+    } else {
+      await Promise.all([
+        loadModules,
+        registerSynthSounds(),
+        samples('github:tidalcycles/dirt-samples'),
+        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
+        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
+        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json'),
+        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json'),
+      ]);
+      await samples('https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json');
+      await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
+      registerSoundfonts();
+      (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
+      (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+      (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
+        this.recordLive(sec, name);
+    }
 
     // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
     const maxPan = noteToMidi('C8');
@@ -127,14 +145,6 @@ class StrudelService {
     }
 
     this.isAudioInitialized = true;
-    // Expose audio hooks on window so the galaxy iframe can tap the analyser
-    (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
-    (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
-    // Debug hook: record live playback for N seconds → live.wav (for comparing
-    // against exportWav output). Call from devtools: `await recordLive(8)`.
-    (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
-      this.recordLive(sec, name);
-    // Set engineReady after all modules and samples are loaded
     this.notify({ engineReady: true });
   };
 
@@ -147,9 +157,22 @@ class StrudelService {
       const { StrudelMirror } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
       cachedTranspiler = transpiler;
-      const { webaudioOutput } = await import('@strudel/webaudio');
-      const { getAudioContext } = await import('superdough');
       const { getDrawContext } = await import('@strudel/draw');
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let defaultOutput: any;
+      let getTimeFn: () => number;
+
+      if (this._isVideoMode) {
+        // [video] Remotion headless 渲染：禁用音频输出，用帧时间替代 AudioContext 时钟
+        defaultOutput = async () => {};
+        getTimeFn = () => this._videoTime;
+      } else {
+        const { webaudioOutput } = await import('@strudel/webaudio');
+        const { getAudioContext } = await import('superdough');
+        defaultOutput = webaudioOutput;
+        getTimeFn = () => getAudioContext().currentTime;
+      }
 
       const currentCode = this._state.code;
 
@@ -165,8 +188,8 @@ class StrudelService {
         root: this.containerElement,
         initialCode: currentCode,
         transpiler,
-        defaultOutput: webaudioOutput,
-        getTime: () => getAudioContext().currentTime,
+        defaultOutput,
+        getTime: getTimeFn,
         drawTime: [0, -2],
         drawContext: getDrawContext(), // 默认 id='test-canvas'；src/index.css 有对应 #test-canvas z-index 规则
         onUpdateState: (state: StrudelReplState) => {
@@ -302,6 +325,14 @@ class StrudelService {
 
   stop = (): void => {
     this.editorInstance?.repl.stop();
+  };
+
+  scrollCodeToBottom = (): void => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scrollDOM = ((this.editorInstance as any)?.editor as any)?.scrollDOM as HTMLElement | undefined;
+    if (scrollDOM) {
+      scrollDOM.scrollTop = scrollDOM.scrollHeight - scrollDOM.clientHeight;
+    }
   };
 
   exportWav = async (params: {

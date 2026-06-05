@@ -17,12 +17,14 @@ import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
 import { resetClient } from './services/llm';
-import { HistoryIcon, PlusIcon, SettingsIcon } from './components/icons';
+import { HistoryIcon, PlusIcon } from './components/icons';
+import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useReplay } from './hooks/useReplay';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
+import TopActionBar from './components/TopActionBar';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
@@ -50,9 +52,64 @@ export default function App() {
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
+  // [video] Remotion 每帧通过 VIDEO_DEMO_MESSAGES 推送的模拟对话列表；null 时 App 正常显示真实消息
+  const [videoDemoMsgs, setVideoDemoMsgs] = useState<import('./hooks/useChat').ChatMessage[] | null>(null);
+  // [video] Remotion 在场景切换时发出 scrollBottom:true，让 ConversationView 滚到底部
+  const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
+  // [video] 检测是否运行在 Remotion iframe 内；正常浏览器访问时始终为 false，不影响任何逻辑
+  const [isVideoMode, setIsVideoMode] = useState(() => {
+    try { return window.self !== window.top; } catch { return true; }
+  });
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
+  // 用 ref 避免 postMessage handler 捕获过期的 strudel 闭包
+  const strudelRef = useRef(strudel);
+  useEffect(() => { strudelRef.current = strudel; }, [strudel]);
+
+  // [video] 接收 Remotion MyVideo.tsx 每帧推送的 VIDEO_* 控制消息，驱动视频内 App 的状态
+  // 正常用户不会发送这些消息，handler 在普通浏览器访问时完全静默
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'VIDEO_DEMO_MESSAGES') {
+        setVideoDemoMsgs(e.data.messages.length > 0 ? e.data.messages : null);
+        setIsVideoMode(true);
+        if (e.data.scrollBottom) setVideoConvScrollBottom(true);
+      }
+if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
+        strudelRef.current.setCode(e.data.code);
+      }
+      if (e.data?.type === 'VIDEO_STOP') {
+        strudelRef.current.stop();
+      }
+      if (e.data?.type === 'VIDEO_TIME' && typeof e.data.time === 'number') {
+        strudelRef.current.setVideoTime(e.data.time);
+      }
+      if (e.data?.type === 'VIDEO_AUDIO_SIM') {
+        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[title="galaxy visualizer"]');
+        galaxy?.contentWindow?.postMessage({ type: 'AUDIO_SIM', low: e.data.low, mid: e.data.mid, high: e.data.high }, '*');
+      }
+      if (e.data?.type === 'VIDEO_GALAXY_TIME' && typeof e.data.time === 'number') {
+        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[title="galaxy visualizer"]');
+        galaxy?.contentWindow?.postMessage({ type: 'GALAXY_TIME', time: e.data.time }, '*');
+      }
+      if (e.data?.type === 'VIDEO_PLAY') {
+        // 先在同一 tick 内设置代码，防止 session 初始化 effect 在消息间隙清空代码
+        if (typeof e.data.code === 'string') {
+          strudelRef.current.setCode(e.data.code);
+        }
+        // 直接走 play() → evaluate()，与 agent 更新代码的路径完全一致，实现无缝播放
+        strudelRef.current.play();
+        // ._scope() widget 由 evaluate() 异步添加到 CodeMirror DOM，
+        // 直接走 scrollDOM 不依赖 CSS 选择器；2000ms 兜底防止首次加载音色延迟
+        const scrollBottom = () => strudelRef.current.scrollCodeToBottom();
+        setTimeout(scrollBottom, 500);
+        setTimeout(scrollBottom, 2000);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
 
   const isMobile = useIsMobile();
   const keyboardHeight = useKeyboardHeight();
@@ -127,7 +184,10 @@ export default function App() {
     }
   }, [sessions]);
 
-  const [showApiKeyModal, setShowApiKeyModal] = useState(() => !hasApiKeyConfigured());
+  const [showApiKeyModal, setShowApiKeyModal] = useState(() => {
+    try { if (window.self !== window.top) return false; } catch { return false; }
+    return !hasApiKeyConfigured();
+  });
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
 
   const current = sessions.currentSession;
@@ -135,6 +195,7 @@ export default function App() {
   // Session code = last committed/played code (used as agent context)
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
+  const currentBpm = parseScore(currentCode).bpm ?? 120;
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
 
@@ -160,8 +221,6 @@ export default function App() {
   }, [current?.id]);
 
   // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
-  const strudelRef = useRef(strudel);
-  strudelRef.current = strudel;
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.altKey && e.code === 'Period' && e.key !== '.') {
@@ -529,14 +588,18 @@ export default function App() {
             <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
             <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
           </h1>
-          <button
-            onClick={() => setShowApiKeyModal(true)}
-            className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-            aria-label="设置"
-            title="设置"
-          >
-            <SettingsIcon size={18} />
-          </button>
+          <TopActionBar
+            onOpenSettings={() => setShowApiKeyModal(true)}
+            session={sessions.currentSession}
+            code={strudel.code}
+            messages={messages}
+            engineReady={strudel.engineReady}
+            hasCode={!!strudel.code}
+            exportState={strudel.exportState}
+            onExport={strudel.exportWav}
+            onResetExportState={strudel.resetExportState}
+            bpm={currentBpm}
+          />
         </div>
 
         {/* ── Conversation ── */}
@@ -593,7 +656,7 @@ export default function App() {
           </div>
 
           {/* Suggestion chips — horizontal scroll */}
-          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && (
+          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && !isVideoMode && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
               {demoSuggestions.map((s) => (
                 <button
@@ -693,13 +756,15 @@ export default function App() {
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
         <Sidebar
           title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? '新会话' : (current?.title ?? '新会话')}
-          messages={messages}
+          messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
           engineReady={strudel.engineReady}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
-          suggestions={demoSuggestions}
+          suggestions={isVideoMode ? [] : demoSuggestions}  // [video] 视频模式隐藏建议词，避免遮挡画面
+          isVideoMode={isVideoMode}
+          scrollBottom={videoConvScrollBottom}  // [video] 传递场景切换的滚底信号
           suggestionsLoading={!isDemoMode() && suggestionsLoading}
           fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
           onSendText={handleInstruction}

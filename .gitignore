@@ -38,3 +38,6 @@ docs/superpowers/
 
 # Audio files
 *.wav
+
+# Video recordings
+videos/

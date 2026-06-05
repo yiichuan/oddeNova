@@ -125,5 +125,8 @@ export function useStrudel() {
     exportState,
     exportWav,
     resetExportState,
+    scrollCodeToBottom: () => strudelService.scrollCodeToBottom(),
+    // [video] 让 App.tsx 的 postMessage handler 能把 Remotion 帧时间注入 Strudel 调度器，驱动高亮白框
+    setVideoTime: (t: number) => strudelService.setVideoTime(t),
   };
 }
