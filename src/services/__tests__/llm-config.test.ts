@@ -64,11 +64,7 @@ describe('PROVIDER_PRESETS', () => {
     expect(['anthropic', 'openai']).toContain(protocol);
   });
 
-  it.each(expectedProviders)('"%s" baseURL uses the expected transport', (provider) => {
-    if (provider === 'official') {
-      expect(PROVIDER_PRESETS[provider].baseURL).toMatch(/^\/api\//);
-      return;
-    }
+  it.each(expectedProviders)('"%s" baseURL starts with https://', (provider) => {
     expect(PROVIDER_PRESETS[provider].baseURL).toMatch(/^https:\/\//);
   });
 });
@@ -79,23 +75,24 @@ describe('official provider API key defaults', () => {
     expect(hasApiKeyConfigured()).toBe(true);
   });
 
-  it('uses same-origin official proxy and a placeholder API key', () => {
+  it('uses DeepSeek directly and keeps a placeholder API key when no key is saved', () => {
     localStorage.setItem('vibe_provider', 'official');
 
     const cfg = getActiveModelConfig();
 
     expect(cfg.provider).toBe('official');
-    expect(cfg.baseURL).toBe('/api/official/v1');
+    expect(cfg.baseURL).toBe('https://api.deepseek.com/v1');
     expect(cfg.apiKey).toBe('official-proxy');
   });
 
-  it('expands official proxy baseURL to the current origin in browsers', () => {
+  it('uses a saved key for official debugging without changing the provider default', () => {
     localStorage.setItem('vibe_provider', 'official');
-    vi.stubGlobal('window', {
-      location: { origin: 'https://www.oddenova.com' },
-    });
+    localStorage.setItem('vibe_api_key', 'sk-debug');
 
-    expect(getActiveModelConfig().baseURL).toBe('https://www.oddenova.com/api/official/v1');
+    const cfg = getActiveModelConfig();
+
+    expect(cfg.baseURL).toBe('https://api.deepseek.com/v1');
+    expect(cfg.apiKey).toBe('sk-debug');
   });
 
   it('still requires a user key for non-official providers', () => {
