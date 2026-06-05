@@ -13,6 +13,9 @@ function installLocalStorage(): void {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.stubEnv('VITE_API_KEY', '');
+  vi.stubEnv('VITE_BASE_URL', '');
   installLocalStorage();
 });
 
@@ -64,7 +67,11 @@ describe('PROVIDER_PRESETS', () => {
     expect(['anthropic', 'openai']).toContain(protocol);
   });
 
-  it.each(expectedProviders)('"%s" baseURL starts with https://', (provider) => {
+  it.each(expectedProviders)('"%s" baseURL uses the expected transport', (provider) => {
+    if (provider === 'official') {
+      expect(PROVIDER_PRESETS[provider].baseURL).toMatch(/^\/api\//);
+      return;
+    }
     expect(PROVIDER_PRESETS[provider].baseURL).toMatch(/^https:\/\//);
   });
 });
@@ -75,24 +82,23 @@ describe('official provider API key defaults', () => {
     expect(hasApiKeyConfigured()).toBe(true);
   });
 
-  it('uses DeepSeek directly and keeps a placeholder API key when no key is saved', () => {
+  it('uses the same-origin official proxy and a placeholder API key', () => {
     localStorage.setItem('vibe_provider', 'official');
 
     const cfg = getActiveModelConfig();
 
     expect(cfg.provider).toBe('official');
-    expect(cfg.baseURL).toBe('https://api.deepseek.com/v1');
+    expect(cfg.baseURL).toBe('/api/official/v1');
     expect(cfg.apiKey).toBe('official-proxy');
   });
 
-  it('uses a saved key for official debugging without changing the provider default', () => {
+  it('expands official proxy baseURL to the current origin in browsers', () => {
     localStorage.setItem('vibe_provider', 'official');
-    localStorage.setItem('vibe_api_key', 'sk-debug');
+    vi.stubGlobal('window', {
+      location: { origin: 'https://www.oddenova.com' },
+    });
 
-    const cfg = getActiveModelConfig();
-
-    expect(cfg.baseURL).toBe('https://api.deepseek.com/v1');
-    expect(cfg.apiKey).toBe('sk-debug');
+    expect(getActiveModelConfig().baseURL).toBe('https://www.oddenova.com/api/official/v1');
   });
 
   it('still requires a user key for non-official providers', () => {
