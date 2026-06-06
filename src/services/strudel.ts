@@ -210,14 +210,14 @@ export class StrudelService {
         await Promise.all([
           loadModules,
           registerSynthSounds(),
-          samples('github:tidalcycles/dirt-samples'),
-          samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
-          samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
-          samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json'),
-          samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json'),
+          samples('/sample-index/dirt-samples.json'),
+          samples('/sample-index/tidal-drum-machines.json'),
+          samples('/sample-index/piano.json'),
+          samples('/sample-index/vcsl.json'),
+          samples('/sample-index/mridangam.json'),
         ]);
-        await samples('https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json');
-        await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
+        await samples('/sample-index/uzu-drumkit.json');
+        await aliasBank('/sample-index/tidal-drum-machines-alias.json');
         registerSoundfonts();
         (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
         (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
