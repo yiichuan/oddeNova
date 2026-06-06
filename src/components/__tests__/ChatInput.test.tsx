@@ -82,4 +82,29 @@ describe('ChatInput engine initialization status', () => {
     expect(container.textContent).not.toContain('初始化失败');
     expect(getSubmitButton(container).disabled).toBe(false);
   });
+
+  it('reports textarea focus changes to the parent', () => {
+    const onFocusChange = vi.fn();
+    const { container, root } = renderChatInput({
+      engineReady: true,
+      engineStatus: 'ready',
+      onFocusChange,
+    });
+    roots.push(root);
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    expect(textarea).not.toBeNull();
+
+    act(() => {
+      textarea?.focus();
+    });
+
+    expect(onFocusChange).toHaveBeenCalledWith(true);
+
+    act(() => {
+      textarea?.blur();
+    });
+
+    expect(onFocusChange).toHaveBeenCalledWith(false);
+  });
 });

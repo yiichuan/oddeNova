@@ -23,6 +23,7 @@ interface CodePanelProps {
   messages: ChatMessage[];
   topActionsContainer?: React.RefObject<HTMLDivElement | null>;
   onOpenSettings: () => void;
+  onEditorFocusChange?: (focused: boolean) => void;
 }
 
 // Log scale: slider 0–1 → frequency 200Hz–20kHz
@@ -194,6 +195,7 @@ export default function CodePanel({
   messages,
   topActionsContainer,
   onOpenSettings,
+  onEditorFocusChange,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gutterWidth, setGutterWidth] = useState(0);
@@ -247,6 +249,46 @@ export default function CodePanel({
   // onMount is stable (useCallback), so this fires only once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !onEditorFocusChange) return;
+
+    let focusOutTimer: number | null = null;
+
+    const clearFocusOutTimer = () => {
+      if (focusOutTimer === null) return;
+      window.clearTimeout(focusOutTimer);
+      focusOutTimer = null;
+    };
+
+    const handleFocusIn = () => {
+      clearFocusOutTimer();
+      onEditorFocusChange(true);
+    };
+
+    const handleFocusOut = (event: FocusEvent) => {
+      clearFocusOutTimer();
+      const nextTarget = event.relatedTarget;
+      if (nextTarget instanceof Node && container.contains(nextTarget)) return;
+
+      focusOutTimer = window.setTimeout(() => {
+        focusOutTimer = null;
+        const activeElement = document.activeElement;
+        if (activeElement instanceof Node && container.contains(activeElement)) return;
+        onEditorFocusChange(false);
+      }, 0);
+    };
+
+    container.addEventListener('focusin', handleFocusIn);
+    container.addEventListener('focusout', handleFocusOut);
+
+    return () => {
+      clearFocusOutTimer();
+      container.removeEventListener('focusin', handleFocusIn);
+      container.removeEventListener('focusout', handleFocusOut);
+    };
+  }, [onEditorFocusChange]);
 
   // Track .cm-gutters width so the footer divider aligns with the editor's gutter border.
   // Keep MutationObserver alive so reinit (which clears + remounts the editor) is handled.
@@ -319,6 +361,7 @@ export default function CodePanel({
       <div className="relative flex-1 min-h-0">
         <div
           ref={containerRef}
+          data-testid="code-panel-editor-root"
           className="h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
         />
       </div>

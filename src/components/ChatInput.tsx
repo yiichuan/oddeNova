@@ -14,9 +14,23 @@ interface ChatInputProps {
   replayValue?: string;
   isVideoMode?: boolean;
   tokenStats?: TokenStats;
+  onFocusChange?: (focused: boolean) => void;
 }
 
-export default function ChatInput({ isLoading, engineReady, engineStatus = engineReady ? 'ready' : 'initializing', onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue, isVideoMode = false, tokenStats: _tokenStats }: ChatInputProps) {
+export default function ChatInput({
+  isLoading,
+  engineReady,
+  engineStatus = engineReady ? 'ready' : 'initializing',
+  onSendText,
+  onReinitEngine,
+  onStop,
+  prefill,
+  focusTrigger,
+  replayValue,
+  isVideoMode = false,
+  tokenStats: _tokenStats,
+  onFocusChange,
+}: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -81,6 +95,8 @@ export default function ChatInput({ isLoading, engineReady, engineStatus = engin
         value={replayValue !== undefined ? replayValue : text}
         onChange={replayValue !== undefined ? undefined : (e) => setText(e.target.value)}
         readOnly={replayValue !== undefined}
+        onFocus={() => onFocusChange?.(true)}
+        onBlur={() => onFocusChange?.(false)}
         onKeyDown={(e) => {
           if (replayValue !== undefined) return;
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
