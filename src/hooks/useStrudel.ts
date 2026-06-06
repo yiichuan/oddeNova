@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { getEngineUnavailableMessage } from '../lib/engine-status';
 import { strudelService, type StrudelState } from '../services/strudel';
 
 const MAX_HISTORY = 50;
@@ -9,6 +10,7 @@ export function useStrudel() {
     isPlaying: false,
     error: null,
     engineReady: false,
+    engineStatus: 'initializing',
   }));
 
   const historyRef = useRef<string[]>([]);
@@ -26,13 +28,16 @@ export function useStrudel() {
   }, []);
 
   const setRoot = useCallback((el: HTMLDivElement) => {
-    strudelService.attach(el);
+    void strudelService.attach(el).catch(() => {});
   }, []);
 
   // play(code?) — if code provided, set it first then evaluate
   const play = useCallback(async (code?: string) => {
     if (!strudelService.isReady) {
-      setState(s => ({ ...s, error: '音频引擎启动中，请稍后再试' }));
+      setState(s => ({
+        ...s,
+        error: getEngineUnavailableMessage(s.engineStatus) ?? '音频引擎启动中，请稍后再试',
+      }));
       return false;
     }
     try {
@@ -112,6 +117,7 @@ export function useStrudel() {
     currentCode: state.code,
     isPlaying: state.isPlaying,
     engineReady: state.engineReady,
+    engineStatus: state.engineStatus,
     error: state.error,
     canUndo,
     setRoot,
