@@ -2,6 +2,8 @@ import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExport } from '../lib/analytics';
 
+type SafariAudioContextState = AudioContextState | 'interrupted';
+
 type StrudelReplState = {
   code?: string;
   started?: boolean;
@@ -20,11 +22,22 @@ export type StrudelState = {
   isPlaying: boolean;
   error: string | null;
   engineReady: boolean;
+  engineStatus: 'initializing' | 'ready' | 'failed';
 };
 
 type StateCallback = (state: StrudelState) => void;
 
-class StrudelService {
+export async function ensureAudioContextResumed(): Promise<void> {
+  const { getAudioContext } = await import('superdough');
+  const ctx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+
+  if (typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext) return;
+  if (ctx.state === 'running' || ctx.state === 'closed') return;
+
+  await ctx.resume();
+}
+
+export class StrudelService {
   private static _instance: StrudelService | null = null;
 
   private editorInstance: StrudelMirrorType | null = null;
@@ -49,12 +62,12 @@ class StrudelService {
   // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
-
   private _state: StrudelState = {
     code: '',
     isPlaying: false,
     error: null,
     engineReady: false,
+    engineStatus: 'initializing',
   };
 
   private stateCallbacks: StateCallback[] = [];
@@ -66,7 +79,7 @@ class StrudelService {
     return StrudelService._instance;
   }
 
-  private constructor() {}
+  constructor() {}
 
   onStateChange(cb: StateCallback): () => void {
     this.stateCallbacks.push(cb);
@@ -90,69 +103,78 @@ class StrudelService {
   }
 
   private prebake = async (): Promise<void> => {
-    const { evalScope, Pattern, noteToMidi, valueToMidi } = await import('@strudel/core');
-    const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
+    try {
+      const { evalScope, Pattern, noteToMidi, valueToMidi } = await import('@strudel/core');
+      const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
-    initAudioOnFirstClick();
+      initAudioOnFirstClick();
 
-    const loadModules = evalScope(
-      import('@strudel/core'),
-      import('@strudel/codemirror'),
-      import('@strudel/draw'),
-      import('@strudel/mini'),
-      import('@strudel/tonal'),
-      import('@strudel/webaudio'),
-    );
+      const loadModules = evalScope(
+        import('@strudel/core'),
+        import('@strudel/codemirror'),
+        import('@strudel/draw'),
+        import('@strudel/mini'),
+        import('@strudel/tonal'),
+        import('@strudel/webaudio'),
+      );
 
-    if (this._isVideoMode) {
-      // Video/headless render: only load pattern evaluation modules.
-      // Skip WebAudio init and remote sample downloads — they freeze the
-      // Remotion headless Chrome page and are not needed for screenshot rendering.
-      await loadModules;
-    } else {
-      await Promise.all([
-        loadModules,
-        registerSynthSounds(),
-        samples('github:tidalcycles/dirt-samples'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json'),
-      ]);
-      await samples('https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json');
-      await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
-      registerSoundfonts();
-      (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
-      (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
-      (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
-        this.recordLive(sec, name);
+      if (this._isVideoMode) {
+        // Video/headless render: only load pattern evaluation modules.
+        // Skip WebAudio init and remote sample downloads — they freeze the
+        // Remotion headless Chrome page and are not needed for screenshot rendering.
+        await loadModules;
+      } else {
+        await Promise.all([
+          loadModules,
+          registerSynthSounds(),
+          samples('github:tidalcycles/dirt-samples'),
+          samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
+          samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
+          samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json'),
+          samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json'),
+        ]);
+        await samples('https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json');
+        await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
+        registerSoundfonts();
+        (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
+        (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+        (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
+          this.recordLive(sec, name);
+      }
+
+      // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
+      const maxPan = noteToMidi('C8');
+      const panwidth = (pan: number, width: number) => pan * width + (1 - width) / 2;
+      if (!Pattern.prototype.piano) {
+        Pattern.prototype.piano = function () {
+          return this.fmap((v: Record<string, unknown>) => ({ ...v, clip: v['clip'] ?? 1 }))
+            .s('piano')
+            .release(0.1)
+            .fmap((value: Record<string, unknown>) => {
+              const midi = valueToMidi(value);
+              const pan = panwidth(Math.min(Math.round(midi) / maxPan, 1), 0.5);
+              return { ...value, pan: ((value['pan'] as number) || 1) * pan };
+            });
+        };
+      }
+
+      this.isAudioInitialized = true;
+      this.notify({ engineReady: true, engineStatus: 'ready', error: null });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.isAudioInitialized = false;
+      this.notify({ engineReady: false, engineStatus: 'failed', error: message });
+      throw error;
     }
-
-    // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
-    const maxPan = noteToMidi('C8');
-    const panwidth = (pan: number, width: number) => pan * width + (1 - width) / 2;
-    if (!Pattern.prototype.piano) {
-      Pattern.prototype.piano = function () {
-        return this.fmap((v: Record<string, unknown>) => ({ ...v, clip: v['clip'] ?? 1 }))
-          .s('piano')
-          .release(0.1)
-          .fmap((value: Record<string, unknown>) => {
-            const midi = valueToMidi(value);
-            const pan = panwidth(Math.min(Math.round(midi) / maxPan, 1), 0.5);
-            return { ...value, pan: ((value['pan'] as number) || 1) * pan };
-          });
-      };
-    }
-
-    this.isAudioInitialized = true;
-    this.notify({ engineReady: true });
   };
 
   attach = async (container: HTMLElement): Promise<void> => {
     if (this.containerElement === container && this.editorInstance) return;
     if (this.isInitializing) return;
 
+    this.containerElement = container;
     this.isInitializing = true;
+    this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     try {
       const { StrudelMirror } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
@@ -181,7 +203,6 @@ class StrudelService {
         this.editorInstance = null;
       }
 
-      this.containerElement = container;
       this.containerElement.innerHTML = '';
 
       this.editorInstance = new StrudelMirror({
@@ -211,7 +232,11 @@ class StrudelService {
 
       // Sync REPL internal state with initial code
       this.editorInstance?.repl.setCode(currentCode);
-
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.isAudioInitialized = false;
+      this.notify({ engineReady: false, engineStatus: 'failed', error: message });
+      throw error;
     } finally {
       this.isInitializing = false;
     }
@@ -319,6 +344,7 @@ class StrudelService {
   play = async (): Promise<void> => {
     if (!this.editorInstance) throw new Error('Engine not initialized');
     this.notify({ error: null });
+    await ensureAudioContextResumed();
     await this.editorInstance.evaluate();
     void this.setupMasterChain();
   };
@@ -616,7 +642,7 @@ class StrudelService {
       this.editorInstance.dispose?.();
       this.editorInstance = null;
     }
-    this.notify({ engineReady: false, error: null });
+    this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     await this.attach(this.containerElement);
   };
 }

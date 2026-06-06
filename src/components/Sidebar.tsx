@@ -15,6 +15,7 @@ interface SidebarProps {
   isLoading: boolean;
   isMoodLoading?: boolean;
   engineReady: boolean;
+  engineStatus?: 'initializing' | 'ready' | 'failed';
   sessions: Session[];
   currentId: string | null;
   suggestions: string[];
@@ -47,6 +48,7 @@ export default function Sidebar({
   isLoading,
   isMoodLoading = false,
   engineReady,
+  engineStatus = engineReady ? 'ready' : 'initializing',
   sessions,
   currentId,
   suggestions,
@@ -170,13 +172,14 @@ export default function Sidebar({
         {/* [video] 视频模式下隐藏建议词和心情按钮，避免遮挡 CodePanel 画面 */}
         {!isLoading && !suggestionsLoading && !isVideoMode && (
           <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
-            <SuggestionChips suggestions={suggestions} onPick={onSendText} />
+            <SuggestionChips suggestions={suggestions} disabled={engineStatus !== 'ready'} onPick={onSendText} />
             {fillSuggestion && (
               <button
                 key="fill-suggestion"
                 type="button"
                 onClick={() => onSendText(fillSuggestion)}
-                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
+                disabled={engineStatus !== 'ready'}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ fontFamily: '"GenWanMin TW", serif' }}
               >
                 来首曲子
@@ -186,7 +189,7 @@ export default function Sidebar({
               <button
                 type="button"
                 onClick={onMoodGenerate}
-                disabled={isMoodLoading}
+                disabled={isMoodLoading || engineStatus !== 'ready'}
                 title="根据你最近的活动感知心情生成音乐"
                 className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ fontFamily: '"GenWanMin TW", serif' }}
@@ -196,7 +199,7 @@ export default function Sidebar({
             )}
           </div>
         )}
-        <ChatInput isLoading={isLoading} engineReady={engineReady} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
       </div>
     </aside>
   );

@@ -26,6 +26,7 @@ import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
+import { getEngineUnavailableMessage } from './lib/engine-status';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
@@ -238,8 +239,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
   const handleInstruction = useCallback(
     async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
-      if (!strudel.engineReady) {
-        strudel.setError('音频引擎启动中，请稍后再试');
+      const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
+      if (engineUnavailableMessage) {
+        strudel.setError(engineUnavailableMessage);
         return;
       }
 
@@ -419,8 +421,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   );
 
   const handleMoodInstruction = useCallback(async () => {
-    if (!strudel.engineReady) {
-      strudel.setError('音频引擎启动中，请稍后再试');
+    const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
+    if (engineUnavailableMessage) {
+      strudel.setError(engineUnavailableMessage);
       return;
     }
 
@@ -663,7 +666,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
                   key={s}
                   type="button"
                   onClick={() => handleInstruction(s)}
-                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary"
+                  disabled={strudel.engineStatus !== 'ready'}
+                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                 >
                   {s}
@@ -676,6 +680,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           <ChatInput
             isLoading={isLoading}
             engineReady={strudel.engineReady}
+            engineStatus={strudel.engineStatus}
             onSendText={handleInstruction}
             onStop={handleStop}
             onReinitEngine={strudel.reinit}
@@ -760,6 +765,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
           engineReady={strudel.engineReady}
+          engineStatus={strudel.engineStatus}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
           suggestions={isVideoMode ? [] : demoSuggestions}  // [video] 视频模式隐藏建议词，避免遮挡画面
