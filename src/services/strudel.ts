@@ -27,14 +27,82 @@ export type StrudelState = {
 
 type StateCallback = (state: StrudelState) => void;
 
-export async function ensureAudioContextResumed(): Promise<void> {
+const USER_RESUME_PROMPT = '点击播放继续';
+
+type PageAudioRecoveryTarget = Pick<Window | Document, 'addEventListener' | 'removeEventListener'>;
+
+type PageAudioRecoveryOptions = {
+  getIsPlaying: () => boolean;
+  getVisibilityState: () => DocumentVisibilityState;
+  onPlaybackInterrupted: () => void;
+  requestUserResume: () => void;
+  windowTarget: PageAudioRecoveryTarget;
+  documentTarget: PageAudioRecoveryTarget;
+};
+
+type PageAudioRecovery = {
+  clearResumeIntent: () => void;
+  dispose: () => void;
+};
+
+function isOfflineAudioContext(ctx: BaseAudioContext): boolean {
+  return typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+}
+
+export async function ensureAudioContextResumed(): Promise<SafariAudioContextState> {
   const { getAudioContext } = await import('superdough');
   const ctx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
 
-  if (typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext) return;
-  if (ctx.state === 'running' || ctx.state === 'closed') return;
+  if (isOfflineAudioContext(ctx)) return ctx.state;
+  if (ctx.state === 'running' || ctx.state === 'closed') return ctx.state;
 
   await ctx.resume();
+  return ctx.state;
+}
+
+export function installPageAudioRecovery(options: PageAudioRecoveryOptions): PageAudioRecovery {
+  let shouldResume = false;
+  let hasRequestedResume = false;
+
+  const rememberResumeIntent = (): void => {
+    if (shouldResume || !options.getIsPlaying()) return;
+
+    shouldResume = true;
+    hasRequestedResume = false;
+    options.onPlaybackInterrupted();
+  };
+
+  const requestResumeIfVisible = (): void => {
+    if (!shouldResume || hasRequestedResume || options.getVisibilityState() !== 'visible') return;
+    hasRequestedResume = true;
+    options.requestUserResume();
+  };
+
+  const handleVisibilityChange = (): void => {
+    if (options.getVisibilityState() === 'hidden') {
+      rememberResumeIntent();
+    } else {
+      requestResumeIfVisible();
+    }
+  };
+
+  options.documentTarget.addEventListener('visibilitychange', handleVisibilityChange);
+  options.windowTarget.addEventListener('pagehide', rememberResumeIntent);
+  options.windowTarget.addEventListener('pageshow', requestResumeIfVisible);
+  options.windowTarget.addEventListener('focus', requestResumeIfVisible);
+
+  return {
+    clearResumeIntent: () => {
+      shouldResume = false;
+      hasRequestedResume = false;
+    },
+    dispose: () => {
+      options.documentTarget.removeEventListener('visibilitychange', handleVisibilityChange);
+      options.windowTarget.removeEventListener('pagehide', rememberResumeIntent);
+      options.windowTarget.removeEventListener('pageshow', requestResumeIfVisible);
+      options.windowTarget.removeEventListener('focus', requestResumeIfVisible);
+    },
+  };
 }
 
 export class StrudelService {
@@ -62,6 +130,7 @@ export class StrudelService {
   // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
+  private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
     code: '',
     isPlaying: false,
@@ -79,7 +148,21 @@ export class StrudelService {
     return StrudelService._instance;
   }
 
-  constructor() {}
+  constructor() {
+    if (!this._isVideoMode && typeof window !== 'undefined' && typeof document !== 'undefined') {
+      this.pageAudioRecovery = installPageAudioRecovery({
+        getIsPlaying: () => this._state.isPlaying,
+        getVisibilityState: () => document.visibilityState,
+        onPlaybackInterrupted: () => {
+          this.editorInstance?.repl.stop();
+          this.notify({ isPlaying: false });
+        },
+        requestUserResume: () => this.notify({ error: USER_RESUME_PROMPT, isPlaying: false }),
+        windowTarget: window,
+        documentTarget: document,
+      });
+    }
+  }
 
   onStateChange(cb: StateCallback): () => void {
     this.stateCallbacks.push(cb);
@@ -274,6 +357,76 @@ export class StrudelService {
     await this.setupMasterChain();
   };
 
+  private resetLiveAudioGraph = async (): Promise<void> => {
+    const {
+      getAudioContext,
+      setAudioContext,
+      setSuperdoughAudioController,
+      getSuperdoughAudioController,
+      clearNodePools,
+      resetGlobalEffects,
+      initAudio,
+    } = await import('superdough');
+
+    const currentCtx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+    this.editorInstance?.repl.stop();
+
+    if (!isOfflineAudioContext(currentCtx) && currentCtx.state !== 'closed' && typeof currentCtx.close === 'function') {
+      try { await currentCtx.close(); } catch { /* Safari may reject close while interrupted */ }
+    }
+
+    setAudioContext(null);
+    setSuperdoughAudioController(null);
+    clearNodePools();
+    resetGlobalEffects();
+    registerSoundfonts();
+
+    if (typeof window !== 'undefined') {
+      (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
+      (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+    }
+
+    const nextCtx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+    if (!isOfflineAudioContext(nextCtx) && nextCtx.state !== 'running') {
+      await nextCtx.resume();
+    }
+
+    await initAudio({ maxPolyphony: 128, multiChannelOrbits: false });
+    await this.rebuildMasterChain();
+    await this.setMasterVolume(this.currentMasterVolume);
+    await this.setMasterLPF(this.currentMasterLpfHz);
+  };
+
+  private ensurePlayableAudioGraph = async (): Promise<void> => {
+    if (this._isVideoMode) return;
+
+    const { getAudioContext } = await import('superdough');
+    const ctx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+    if (isOfflineAudioContext(ctx)) return;
+
+    if (ctx.state === 'closed') {
+      await this.resetLiveAudioGraph();
+      return;
+    }
+
+    try {
+      await ensureAudioContextResumed();
+    } catch {
+      await this.resetLiveAudioGraph();
+      return;
+    }
+
+    const resumedCtx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+    if (!isOfflineAudioContext(resumedCtx) && resumedCtx.state !== 'running') {
+      await this.resetLiveAudioGraph();
+    }
+  };
+
+  private isLikelyAudioGraphError(error: unknown): boolean {
+    const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+    return /AudioContext|AudioNode|InvalidAccessError|interrupted|suspended|closed/i.test(message);
+  }
+
   setMasterVolume = async (value: number): Promise<void> => {
     this.currentMasterVolume = value;
     await this.setupMasterChain();
@@ -344,12 +497,33 @@ export class StrudelService {
   play = async (): Promise<void> => {
     if (!this.editorInstance) throw new Error('Engine not initialized');
     this.notify({ error: null });
-    await ensureAudioContextResumed();
-    await this.editorInstance.evaluate();
-    void this.setupMasterChain();
+    try {
+      await this.ensurePlayableAudioGraph();
+      await this.editorInstance.evaluate();
+      this.pageAudioRecovery?.clearResumeIntent();
+      void this.setupMasterChain();
+    } catch (error) {
+      if (this.isLikelyAudioGraphError(error)) {
+        try {
+          await this.resetLiveAudioGraph();
+          await this.editorInstance.evaluate();
+          this.pageAudioRecovery?.clearResumeIntent();
+          void this.setupMasterChain();
+          return;
+        } catch (retryError) {
+          const message = retryError instanceof Error ? retryError.message : String(retryError);
+          this.notify({ error: message });
+          throw retryError;
+        }
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.notify({ error: message });
+      throw error;
+    }
   };
 
   stop = (): void => {
+    this.pageAudioRecovery?.clearResumeIntent();
     this.editorInstance?.repl.stop();
   };
 
