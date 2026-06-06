@@ -27,22 +27,6 @@ export type StrudelState = {
 
 type StateCallback = (state: StrudelState) => void;
 
-type PageAudioRecoveryTarget = Pick<Window | Document, 'addEventListener' | 'removeEventListener'>;
-
-type PageAudioRecoveryOptions = {
-  getIsPlaying: () => boolean;
-  getVisibilityState: () => DocumentVisibilityState;
-  resumePlayback: () => Promise<void>;
-  setError: (error: string | null) => void;
-  windowTarget: PageAudioRecoveryTarget;
-  documentTarget: PageAudioRecoveryTarget;
-};
-
-type PageAudioRecovery = {
-  clearResumeIntent: () => void;
-  dispose: () => void;
-};
-
 export async function ensureAudioContextResumed(): Promise<void> {
   const { getAudioContext } = await import('superdough');
   const ctx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
@@ -51,61 +35,6 @@ export async function ensureAudioContextResumed(): Promise<void> {
   if (ctx.state === 'running' || ctx.state === 'closed') return;
 
   await ctx.resume();
-}
-
-export function installPageAudioRecovery(options: PageAudioRecoveryOptions): PageAudioRecovery {
-  let shouldResume = false;
-  let isRestoring = false;
-
-  const rememberResumeIntent = (): void => {
-    if (options.getIsPlaying()) {
-      shouldResume = true;
-    }
-  };
-
-  const attemptResume = async (): Promise<void> => {
-    if (!shouldResume || isRestoring || options.getVisibilityState() !== 'visible') return;
-
-    isRestoring = true;
-    try {
-      await options.resumePlayback();
-      shouldResume = false;
-      options.setError(null);
-    } catch {
-      options.setError('点一下播放继续音乐');
-    } finally {
-      isRestoring = false;
-    }
-  };
-
-  const handleVisibilityChange = (): void => {
-    if (options.getVisibilityState() === 'hidden') {
-      rememberResumeIntent();
-    } else {
-      void attemptResume();
-    }
-  };
-
-  const handlePageShow = (): void => {
-    void attemptResume();
-  };
-
-  options.documentTarget.addEventListener('visibilitychange', handleVisibilityChange);
-  options.windowTarget.addEventListener('pagehide', rememberResumeIntent);
-  options.windowTarget.addEventListener('pageshow', handlePageShow);
-  options.windowTarget.addEventListener('focus', handlePageShow);
-
-  return {
-    clearResumeIntent: () => {
-      shouldResume = false;
-    },
-    dispose: () => {
-      options.documentTarget.removeEventListener('visibilitychange', handleVisibilityChange);
-      options.windowTarget.removeEventListener('pagehide', rememberResumeIntent);
-      options.windowTarget.removeEventListener('pageshow', handlePageShow);
-      options.windowTarget.removeEventListener('focus', handlePageShow);
-    },
-  };
 }
 
 export class StrudelService {
@@ -133,8 +62,6 @@ export class StrudelService {
   // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
-  private pageAudioRecovery: PageAudioRecovery | null = null;
-
   private _state: StrudelState = {
     code: '',
     isPlaying: false,
@@ -152,21 +79,7 @@ export class StrudelService {
     return StrudelService._instance;
   }
 
-  constructor() {
-    if (!this._isVideoMode && typeof window !== 'undefined' && typeof document !== 'undefined') {
-      this.pageAudioRecovery = installPageAudioRecovery({
-        getIsPlaying: () => this._state.isPlaying,
-        getVisibilityState: () => document.visibilityState,
-        resumePlayback: async () => {
-          if (!this.editorInstance || !this.isAudioInitialized) return;
-          await this.play();
-        },
-        setError: (error) => this.notify({ error }),
-        windowTarget: window,
-        documentTarget: document,
-      });
-    }
-  }
+  constructor() {}
 
   onStateChange(cb: StateCallback): () => void {
     this.stateCallbacks.push(cb);
@@ -437,7 +350,6 @@ export class StrudelService {
   };
 
   stop = (): void => {
-    this.pageAudioRecovery?.clearResumeIntent();
     this.editorInstance?.repl.stop();
   };
 
