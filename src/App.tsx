@@ -116,11 +116,37 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   const keyboardHeight = useKeyboardHeight();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobileFocusedArea, setMobileFocusedArea] = useState<'chat' | 'code' | null>(null);
+  const shouldLiftBottomBar = mobileFocusedArea === 'chat' && keyboardHeight > 0;
+  const mobileDrawerHeight = !drawerOpen
+    ? 0
+    : mobileFocusedArea === 'code'
+      ? '50dvh'
+      : '33dvh';
   useEffect(() => {
     if (!isMobile) return;
     document.body.style.overflow = drawerOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [drawerOpen, isMobile]);
+
+  useEffect(() => {
+    if (!isMobile || keyboardHeight > 0) return;
+    setMobileFocusedArea(null);
+  }, [isMobile, keyboardHeight]);
+
+  const handleChatFocusChange = useCallback((focused: boolean) => {
+    setMobileFocusedArea((current) => {
+      if (focused) return 'chat';
+      return current === 'chat' ? null : current;
+    });
+  }, []);
+
+  const handleCodeFocusChange = useCallback((focused: boolean) => {
+    setMobileFocusedArea((current) => {
+      if (focused) return 'code';
+      return current === 'code' ? null : current;
+    });
+  }, []);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => window.innerWidth * SIDEBAR_RATIO_DEFAULT);
   const [vizHeight, setVizHeight] = useState(() => window.innerHeight * VIZ_RATIO_DEFAULT);
@@ -614,7 +640,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         <div
           className="shrink-0 overflow-hidden border-t border-border"
           style={{
-            height: drawerOpen ? '33dvh' : 0,
+            height: mobileDrawerHeight,
             transition: 'height 0.3s cubic-bezier(0.4,0,0.2,1)',
           }}
         >
@@ -634,6 +660,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
                 session={sessions.currentSession}
                 messages={messages}
                 onOpenSettings={() => setShowApiKeyModal(true)}
+                onEditorFocusChange={handleCodeFocusChange}
               />
             </div>
           </div>
@@ -644,7 +671,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           className="relative shrink-0 px-3 pt-3 border-t border-border"
           style={{
             paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-            transform: keyboardHeight > 0 ? `translateY(-${keyboardHeight}px)` : undefined,
+            transform: shouldLiftBottomBar ? `translateY(-${keyboardHeight}px)` : undefined,
             transition: 'transform 0.3s ease-out',
           }}
         >
@@ -659,7 +686,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           </div>
 
           {/* Suggestion chips — horizontal scroll */}
-          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && !isVideoMode && (
+          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code' && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
               {demoSuggestions.map((s) => (
                 <button
@@ -685,6 +712,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             onStop={handleStop}
             onReinitEngine={strudel.reinit}
             focusTrigger={1}
+            onFocusChange={handleChatFocusChange}
           />
         </div>
 
