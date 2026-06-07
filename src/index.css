@@ -152,6 +152,13 @@ body {
   border-radius: 0;
 }
 
+.mobile-rollback-bubble-no-select,
+.mobile-rollback-bubble-no-select * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Scrollbar styling inside the editor */
 .cm-editor .cm-scroller::-webkit-scrollbar { width: 6px; height: 6px; }
 .cm-editor .cm-scroller::-webkit-scrollbar-track { background: transparent; }
