@@ -50,6 +50,15 @@ function isOfflineAudioContext(ctx: BaseAudioContext): boolean {
   return typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
 }
 
+// Disconnect a node (optionally from a specific destination), ignoring the
+// "node is not connected" error WebAudio throws when it was never wired up.
+function safeDisconnect(node: AudioNode, dest?: AudioNode): void {
+  try {
+    if (dest) node.disconnect(dest);
+    else node.disconnect();
+  } catch { /* not connected */ }
+}
+
 export async function ensureAudioContextResumed(): Promise<SafariAudioContextState> {
   const { getAudioContext } = await import('superdough');
   const ctx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
@@ -340,7 +349,7 @@ export class StrudelService {
       lpfNode.frequency.value = 20000;
       this.masterLpfNode = lpfNode;
 
-      try { destGain.disconnect(ctx.destination); } catch { /* not connected */ }
+      safeDisconnect(destGain, ctx.destination);
       destGain.connect(lpfNode);
       lpfNode.connect(ctx.destination);
       this.masterChainReady = true;
@@ -633,7 +642,7 @@ export class StrudelService {
       const controller = getSuperdoughAudioController() as any;
       const destGain: GainNode | undefined = controller?.output?.destinationGain;
       if (destGain) {
-        try { destGain.disconnect(offlineCtx.destination); } catch { /* not connected */ }
+        safeDisconnect(destGain, offlineCtx.destination);
         const masterGain = offlineCtx.createGain();
         masterGain.gain.value = this.currentMasterVolume;
         const lpf = offlineCtx.createBiquadFilter();
@@ -786,9 +795,9 @@ export class StrudelService {
 
     await new Promise((r) => setTimeout(r, durationSec * 1000));
 
-    try { tap.disconnect(sp); } catch { /* not connected */ }
-    try { sp.disconnect(); } catch { /* not connected */ }
-    try { muteGain.disconnect(); } catch { /* not connected */ }
+    safeDisconnect(tap, sp);
+    safeDisconnect(sp);
+    safeDisconnect(muteGain);
 
     const totalLen = leftChunks.reduce((acc, c) => acc + c.length, 0);
     const left = new Float32Array(totalLen);
