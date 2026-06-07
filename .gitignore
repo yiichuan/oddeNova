@@ -31,6 +31,9 @@ public/animation
 *.sln
 *.sw?
 
+# Claude Code local settings
+.claude/
+
 # Local planning docs (not uploaded to GitHub)
 _plans/
 docs/superpowers/

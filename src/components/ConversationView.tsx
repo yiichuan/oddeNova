@@ -268,20 +268,35 @@ export default function ConversationView({
               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
               {msg.code && (() => {
                 const isExpanded = expandedCode.has(msg.id);
-                const lineCount = msg.code.split('\n').length;
+                const code = msg.code;
+                const lineCount = code.split('\n').length;
                 return (
                   <div className="mt-2 rounded-md border border-[#93C2FF]/10 overflow-hidden">
-                    <button
-                      onClick={() => toggleCode(msg.id)}
-                      className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-bg-primary/60 text-[11px] text-[#93C2FF]/70 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors text-left"
-                    >
-                      <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                      <span>Strudel 代码</span>
-                      <span className="text-text-muted/50">· {lineCount} 行</span>
-                    </button>
+                    <div className="w-full flex items-center bg-bg-primary/60 text-[11px] text-[#93C2FF]/70">
+                      <button
+                        onClick={() => toggleCode(msg.id)}
+                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors text-left"
+                      >
+                        <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                        <span>Strudel 代码</span>
+                        <span className="text-text-muted/50">· {lineCount} 行</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(code).then(() => {
+                            setCopiedId(msg.id);
+                            setTimeout(() => setCopiedId(null), 2000);
+                          });
+                        }}
+                        className="px-2 py-1.5 text-white/60 hover:text-white hover:bg-bg-primary/80 transition-colors"
+                        title="复制代码"
+                      >
+                        {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                      </button>
+                    </div>
                     {isExpanded && (
                       <pre className="p-2 bg-bg-primary/60 text-[11px] text-[#93C2FF]/90 font-mono overflow-x-auto whitespace-pre-wrap">
-                        {msg.code}
+                        {code}
                       </pre>
                     )}
                   </div>
