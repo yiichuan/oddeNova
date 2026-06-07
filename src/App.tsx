@@ -406,18 +406,23 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
   );
 
-  const handleResend = useCallback(
-    async (messageId: string, newContent: string) => {
-      // Abort any in-progress run before resending
+  // Abort 进行中的运行, 并把 strudel/会话代码状态回退到 messageId 这条消息发出前。
+  // handleResend (重新编辑发送) 与 handleRollback (回滚) 共用这段"回退引擎状态"逻辑,
+  // 仅在回退之后的处理 (覆盖编辑并重发 / 回填输入框) 上分叉。
+  const rewindBeforeMessage = useCallback(
+    async (messageId: string) => {
       const currentSessionId = sessions.currentId;
       if (currentSessionId) {
         abortControllersRef.current.get(currentSessionId)?.abort();
       }
-      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+
       const allMessages = sessions.currentSession?.messages ?? [];
       const idx = allMessages.findIndex((m) => m.id === messageId);
-      const before = idx >= 0 ? allMessages.slice(0, idx) : [];
-      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
+      if (idx < 0) return null;
+      const target = allMessages[idx];
+
+      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
       // 回退 strudel 状态到该消息发出前
@@ -431,48 +436,34 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         sessions.setCurrentCode(previousCode, sessions.currentId);
       }
 
-      sessions.truncateAndEdit(messageId, newContent);
-      await handleInstruction(newContent, { skipAddMessage: true, initialCode: previousCode });
+      return { target, previousCode };
     },
-    [sessions, handleInstruction, strudel]
+    [sessions, strudel]
+  );
+
+  const handleResend = useCallback(
+    async (messageId: string, newContent: string) => {
+      const rewound = await rewindBeforeMessage(messageId);
+      if (!rewound) return;
+
+      sessions.truncateAndEdit(messageId, newContent);
+      await handleInstruction(newContent, { skipAddMessage: true, initialCode: rewound.previousCode });
+    },
+    [sessions, handleInstruction, rewindBeforeMessage]
   );
 
   const handleRollback = useCallback(
-    (messageId: string) => {
-      // Abort any in-progress run before rewinding
-      const currentSessionId = sessions.currentId;
-      if (currentSessionId) {
-        abortControllersRef.current.get(currentSessionId)?.abort();
-      }
-
-      const allMessages = sessions.currentSession?.messages ?? [];
-      const idx = allMessages.findIndex((m) => m.id === messageId);
-      if (idx < 0) return;
-      const target = allMessages[idx];
-
-      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
-      const before = allMessages.slice(0, idx);
-      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
-      const previousCode = prevAssistant?.code ?? '';
-
-      // 回退 strudel 状态到该消息发出前
-      if (previousCode) {
-        strudel.play(previousCode);
-      } else {
-        strudel.stop();
-        strudel.setCode('');
-      }
-      if (sessions.currentId) {
-        sessions.setCurrentCode(previousCode, sessions.currentId);
-      }
+    async (messageId: string) => {
+      const rewound = await rewindBeforeMessage(messageId);
+      if (!rewound) return;
 
       sessions.truncate(messageId);
 
       // 把消息内容回填进输入框并聚焦
-      setRollbackPrefill(target.content);
+      setRollbackPrefill(rewound.target.content);
       setInputFocusTrigger((n) => n + 1);
     },
-    [sessions, strudel]
+    [sessions, rewindBeforeMessage]
   );
 
   const handleRetry = useCallback(
