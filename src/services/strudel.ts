@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../lib/errors';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExport } from '../lib/analytics';
@@ -244,7 +245,7 @@ export class StrudelService {
       this.isAudioInitialized = true;
       this.notify({ engineReady: true, engineStatus: 'ready', error: null });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       this.isAudioInitialized = false;
       this.notify({ engineReady: false, engineStatus: 'failed', error: message });
       throw error;
@@ -298,9 +299,7 @@ export class StrudelService {
         drawContext: getDrawContext(), // 默认 id='test-canvas'；src/index.css 有对应 #test-canvas z-index 规则
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
-          const error = evalError
-            ? (evalError instanceof Error ? evalError.message : String(evalError))
-            : null;
+          const error = evalError ? getErrorMessage(evalError) : null;
           this.notify({
             code: state.code ?? this._state.code,
             isPlaying: state.started ?? false,
@@ -316,7 +315,7 @@ export class StrudelService {
       // Sync REPL internal state with initial code
       this.editorInstance?.repl.setCode(currentCode);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       this.isAudioInitialized = false;
       this.notify({ engineReady: false, engineStatus: 'failed', error: message });
       throw error;
@@ -511,12 +510,12 @@ export class StrudelService {
           void this.setupMasterChain();
           return;
         } catch (retryError) {
-          const message = retryError instanceof Error ? retryError.message : String(retryError);
+          const message = getErrorMessage(retryError);
           this.notify({ error: message });
           throw retryError;
         }
       }
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       this.notify({ error: message });
       throw error;
     }
@@ -1028,7 +1027,7 @@ export function validateCodeRuntime(code: string): ValidationResult {
     }
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e), kind: 'runtime' };
+    return { ok: false, error: getErrorMessage(e), kind: 'runtime' };
   }
 }
 
@@ -1042,7 +1041,7 @@ export function validateCodeTranspiler(code: string): { ok: boolean; error?: str
     cachedTranspiler(clean);
     return { ok: true };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = getErrorMessage(e);
     // Only surface errors explicitly from the mini-notation parser (prefixed with
     // "[mini]" by mini2ast). Other transpiler errors (acorn JS parse issues,
     // unregistered plugins, etc.) may be false positives — let them pass through.

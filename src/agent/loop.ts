@@ -16,6 +16,7 @@ import {
 } from './tools';
 import { parseScore, summariseScore } from './parser';
 import { validateCode } from '../services/strudel';
+import { getErrorMessage } from '../lib/errors';
 
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
 export type ThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
@@ -278,7 +279,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           onProgress?.({ kind: 'commit', code: e.code });
           break outer;
         }
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = getErrorMessage(e);
         outcomes.push({
           id: call.id,
           name: call.name,
