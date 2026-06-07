@@ -167,13 +167,13 @@ export default function ConversationView({
               <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary">
                 <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                 {/* Rollback button — top-right of bubble, visible on group-hover */}
-                <div className="absolute -top-2 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute -top-2.5 -right-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => onRollback(msg.id)}
-                    className="text-white/60 hover:text-white p-1"
+                    className="w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
                     title="回滚到此处"
                   >
-                    <RollbackIcon size={13} />
+                    <RollbackIcon size={12} />
                   </button>
                 </div>
               </div>

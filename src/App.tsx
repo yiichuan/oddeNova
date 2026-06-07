@@ -274,6 +274,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       }
 
       setCommitSuggestions(null); // reset on each new instruction
+      setRollbackPrefill(''); // 消息已发出，回滚回填的内容已被消费
       if (!options?.skipAddMessage) {
         sessions.addUserMessage(text);
       }
@@ -502,6 +503,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     const instruction = '根据我的心情生成音乐';
 
     setCommitSuggestions(null);
+    setRollbackPrefill(''); // 消息已发出，回滚回填的内容已被消费
     sessions.addUserMessage(instruction);
     const sessionId = sessions.currentId;
     if (!sessionId) return;
@@ -855,6 +857,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
+          prefill={rollbackPrefill}
+          prefillTrigger={inputFocusTrigger}
           onRollback={handleRollback}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}

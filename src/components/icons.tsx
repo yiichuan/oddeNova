@@ -207,14 +207,11 @@ export function RetryIcon({ size = 16, className }: IconProps) {
 }
 
 export function RollbackIcon({ size = 16, className }: IconProps) {
-  // Counter-clockwise rewind arrow: arc from 4 o'clock back to 8 o'clock,
-  // arrowhead at the trailing (8 o'clock) end — "go back to this point in time".
+  // Counter-clockwise rewind arrow with a hooked arrowhead — "go back to this point in time".
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
-      <path d="M 18.36 15.36 A 7 7 0 1 1 17.36 7.50"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <polyline points="9.61,5.42 7.50,7.50 9.61,9.61"
-                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
     </svg>
   );
 }
