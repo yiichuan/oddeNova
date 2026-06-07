@@ -86,6 +86,24 @@ export interface TokenUsage {
   systemEstimate: number;
 }
 
+// Wrap a streaming-delta progress event, or undefined when there's no listener.
+function makeProgressDelta(
+  onProgress: ((e: ProgressEvent) => void) | undefined,
+  kind: 'assistant_text_delta' | 'reasoning_delta',
+): ((delta: string) => void) | undefined {
+  return onProgress ? (delta: string) => onProgress({ kind, delta }) : undefined;
+}
+
+// Count CJK code points (≈1 token/char) for the system-prompt token estimate.
+function countCJK(s: string): number {
+  let count = 0;
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!;
+    if ((cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3000 && cp <= 0x9fff)) count++;
+  }
+  return count;
+}
+
 export interface RunAgentResult {
   code: string;
   explanation: string;
@@ -154,12 +172,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
-    const onTextDelta = onProgress
-      ? (delta: string) => onProgress({ kind: 'assistant_text_delta', delta })
-      : undefined;
-    const onReasoningDelta = onProgress
-      ? (delta: string) => onProgress({ kind: 'reasoning_delta', delta })
-      : undefined;
+    const onTextDelta = makeProgressDelta(onProgress, 'assistant_text_delta');
+    const onReasoningDelta = makeProgressDelta(onProgress, 'reasoning_delta');
     const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal);
     if (resp.usage) lastUsage = resp.usage;
 
@@ -353,11 +367,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   // 估算 system prompt + tools 的 token 数。
   // CJK 字符约 1 token/字，其余约 4 字符/token。
   const systemRaw = systemPrompt + JSON.stringify(tools);
-  let cjkCount = 0;
-  for (const ch of systemRaw) {
-    const cp = ch.codePointAt(0)!;
-    if ((cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3000 && cp <= 0x9fff)) cjkCount++;
-  }
+  const cjkCount = countCJK(systemRaw);
   const systemEstimate = Math.ceil(cjkCount + (systemRaw.length - cjkCount) / 4);
 
   const tokenUsage: TokenUsage | undefined = lastUsage
