@@ -129,11 +129,17 @@ export function useSessions() {
     []
   );
 
+  // Pick the mutator for a given session: a specific one by id, or the current
+  // session when no id is passed. Centralizes the branch reused by every writer.
+  const getApply = useCallback(
+    (sessionId?: string): ((fn: (s: Session) => Session) => void) =>
+      sessionId ? (fn) => updateSession(sessionId, fn) : updateCurrent,
+    [updateCurrent, updateSession]
+  );
+
   const addUserMessage = useCallback(
     (content: string, sessionId?: string): void => {
-      const apply = sessionId
-        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
-        : updateCurrent;
+      const apply = getApply(sessionId);
       apply((s) => {
         const messages = [
           ...s.messages,
@@ -149,7 +155,7 @@ export function useSessions() {
         return { ...s, messages, title };
       });
     },
-    [updateCurrent, updateSession]
+    [getApply]
   );
 
   const truncateAndEdit = useCallback(
@@ -168,9 +174,7 @@ export function useSessions() {
 
   const addAssistantMessage = useCallback(
     (content: string, code?: string, sessionId?: string): void => {
-      const apply = sessionId
-        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
-        : updateCurrent;
+      const apply = getApply(sessionId);
       apply((s) => ({
         ...s,
         messages: [
@@ -185,14 +189,12 @@ export function useSessions() {
         ],
       }));
     },
-    [updateCurrent, updateSession]
+    [getApply]
   );
 
   const addProgress = useCallback(
     (kind: ProgressKind, content: string, opts?: { toolName?: string; ok?: boolean; sessionId?: string }): void => {
-      const apply = opts?.sessionId
-        ? (fn: (s: Session) => Session) => updateSession(opts.sessionId!, fn)
-        : updateCurrent;
+      const apply = getApply(opts?.sessionId);
       apply((s) => ({
         ...s,
         messages: [
@@ -209,79 +211,54 @@ export function useSessions() {
         ],
       }));
     },
-    [updateCurrent, updateSession]
+    [getApply]
   );
 
-  // 流式追加思考文字：若最后一条消息是 thinking，则原地拼接；否则新建一条
+  // 流式追加进度文字：若最后一条消息已是同类型 progress，则原地拼接；否则新建一条
+  const appendToLastProgress = useCallback(
+    (delta: string, kind: 'thinking' | 'reasoning', sessionId?: string): void => {
+      const apply = getApply(sessionId);
+      apply((s) => {
+        const messages = [...s.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === 'progress' && last.progressKind === kind) {
+          messages[messages.length - 1] = { ...last, content: last.content + delta };
+          return { ...s, messages };
+        }
+        return {
+          ...s,
+          messages: [
+            ...messages,
+            {
+              id: newMessageId(),
+              role: 'progress' as const,
+              content: delta,
+              timestamp: Date.now(),
+              progressKind: kind,
+            },
+          ],
+        };
+      });
+    },
+    [getApply]
+  );
+
   const appendToLastThinking = useCallback(
-    (delta: string, sessionId?: string): void => {
-      const apply = sessionId
-        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
-        : updateCurrent;
-      apply((s) => {
-        const messages = [...s.messages];
-        const last = messages[messages.length - 1];
-        if (last?.role === 'progress' && last.progressKind === 'thinking') {
-          messages[messages.length - 1] = { ...last, content: last.content + delta };
-          return { ...s, messages };
-        }
-        return {
-          ...s,
-          messages: [
-            ...messages,
-            {
-              id: newMessageId(),
-              role: 'progress' as const,
-              content: delta,
-              timestamp: Date.now(),
-              progressKind: 'thinking' as const,
-            },
-          ],
-        };
-      });
-    },
-    [updateCurrent, updateSession]
+    (delta: string, sessionId?: string): void => appendToLastProgress(delta, 'thinking', sessionId),
+    [appendToLastProgress]
   );
 
-  // 流式追加推理文字：若最后一条消息是 reasoning，则原地拼接；否则新建一条
   const appendToLastReasoning = useCallback(
-    (delta: string, sessionId?: string): void => {
-      const apply = sessionId
-        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
-        : updateCurrent;
-      apply((s) => {
-        const messages = [...s.messages];
-        const last = messages[messages.length - 1];
-        if (last?.role === 'progress' && last.progressKind === 'reasoning') {
-          messages[messages.length - 1] = { ...last, content: last.content + delta };
-          return { ...s, messages };
-        }
-        return {
-          ...s,
-          messages: [
-            ...messages,
-            {
-              id: newMessageId(),
-              role: 'progress' as const,
-              content: delta,
-              timestamp: Date.now(),
-              progressKind: 'reasoning' as const,
-            },
-          ],
-        };
-      });
-    },
-    [updateCurrent, updateSession]
+    (delta: string, sessionId?: string): void => appendToLastProgress(delta, 'reasoning', sessionId),
+    [appendToLastProgress]
   );
 
   const setCurrentCode = useCallback(
     (code: string, sessionId?: string) => {
-      const apply = sessionId
-        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
-        : updateCurrent;
+      const apply = getApply(sessionId);
       apply((s) => ({ ...s, code }));
     },
-    [updateCurrent, updateSession]
+    [getApply]
   );
 
   const newSession = useCallback(() => {
@@ -385,12 +362,10 @@ export function useSessions() {
 
   const updateTokenStats = useCallback(
     (stats: TokenStats, sessionId?: string) => {
-      const apply = sessionId
-        ? (fn: (s: Session) => Session) => updateSession(sessionId, fn)
-        : updateCurrent;
+      const apply = getApply(sessionId);
       apply((s) => ({ ...s, tokenStats: stats }));
     },
-    [updateCurrent, updateSession]
+    [getApply]
   );
 
   return {
