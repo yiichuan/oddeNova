@@ -121,28 +121,30 @@ function pickStatic(n = 2): string[] {
   return shuffled.slice(0, n);
 }
 
-function parseSuggestions(text: string): string[] | null {
-  if (!text) return null;
-  // Try direct JSON first.
+// Parse `jsonText` and return up to 3 non-empty string suggestions, or null if
+// it isn't valid JSON with a `suggestions` array.
+function extractSuggestionsFromJSON(jsonText: string): string[] | null {
   try {
-    const p = JSON.parse(text) as SuggestResult;
+    const p = JSON.parse(jsonText) as SuggestResult;
     if (Array.isArray(p?.suggestions)) {
       return p.suggestions.filter((s) => typeof s === 'string' && s.trim()).slice(0, 3);
     }
   } catch {
     // fall through
   }
+  return null;
+}
+
+function parseSuggestions(text: string): string[] | null {
+  if (!text) return null;
+  // Try direct JSON first.
+  const direct = extractSuggestionsFromJSON(text);
+  if (direct) return direct;
   // Try to find a JSON object inside fences.
   const m = text.match(/\{[\s\S]*?"suggestions"[\s\S]*?\}/);
   if (m) {
-    try {
-      const p = JSON.parse(m[0]) as SuggestResult;
-      if (Array.isArray(p?.suggestions)) {
-        return p.suggestions.filter((s) => typeof s === 'string' && s.trim()).slice(0, 3);
-      }
-    } catch {
-      // fall through
-    }
+    const fenced = extractSuggestionsFromJSON(m[0]);
+    if (fenced) return fenced;
   }
   console.warn('[suggestions] parseSuggestions: could not find valid JSON in LLM response:', text.slice(0, 200));
   return null;

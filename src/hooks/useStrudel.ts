@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getEngineUnavailableMessage } from '../lib/engine-status';
+import { getErrorMessage } from '../lib/errors';
 import { strudelService, type StrudelState } from '../services/strudel';
 
 const MAX_HISTORY = 50;
@@ -100,7 +101,7 @@ export function useStrudel() {
         setExportState((s) => ({ ...s, progress: 1 }));
         return true;
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
+        const message = getErrorMessage(e);
         setExportState({ status: 'error', progress: 0, error: message });
         return false;
       }
