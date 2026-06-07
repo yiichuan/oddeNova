@@ -1,6 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { CheckIcon, CopyIcon, GitBranchIcon, RetryIcon, RollbackIcon } from './icons';
+
+type MobileNoSelectStyle = CSSProperties & {
+  WebkitTouchCallout?: 'none';
+};
+
+const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  WebkitTouchCallout: 'none',
+};
 
 function stripMarkdown(text: string): string {
   return text
@@ -44,6 +55,10 @@ export default function ConversationView({
   const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const isMobile = useIsMobile();
+  // 移动端长按消息显示回退按钮（触屏无真正的 hover 状态）
+  const [longPressedId, setLongPressedId] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 检测用户手动滚动：距底部 > 80px 时停止自动跟随，滚回底部时恢复
   useEffect(() => {
@@ -65,6 +80,59 @@ export default function ConversationView({
       return next;
     });
   };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+  const startLongPress = (id: string) => {
+    cancelLongPress();
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      setLongPressedId(id);
+    }, 500);
+  };
+  const getMobileRollbackBubbleProps = (id: string): HTMLAttributes<HTMLDivElement> => (
+    isMobile
+      ? {
+        onTouchStart: () => {
+          window.getSelection()?.removeAllRanges();
+          startLongPress(id);
+        },
+        onTouchEnd: cancelLongPress,
+        onTouchMove: cancelLongPress,
+        onContextMenu: (e) => e.preventDefault(),
+        onSelect: (e) => {
+          e.preventDefault();
+          window.getSelection()?.removeAllRanges();
+        },
+        style: mobileRollbackBubbleStyle,
+      }
+      : {}
+  );
+
+  useEffect(() => () => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+    }
+  }, []);
+
+  // 长按显示回退按钮后，点击气泡以外的区域则收起
+  useEffect(() => {
+    if (!isMobile || !longPressedId) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    const handler = (e: TouchEvent) => {
+      const bubble = (e.target as HTMLElement).closest('[data-rollback-bubble]') as HTMLElement | null;
+      if (!bubble || bubble.dataset.rollbackBubble !== longPressedId) {
+        setLongPressedId(null);
+      }
+    };
+    container.addEventListener('touchstart', handler);
+    return () => container.removeEventListener('touchstart', handler);
+  }, [isMobile, longPressedId]);
 
   useEffect(() => {
     if (isVideoMode && !scrollBottom) {
@@ -162,14 +230,26 @@ export default function ConversationView({
         }
 
         if (msg.role === 'user') {
+          const rollbackButtonEnabled = !isMobile || longPressedId === msg.id;
           return (
             <div key={msg.id} className="flex justify-end items-end gap-1.5 animate-fade-in-up group">
-              <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary">
+              <div
+                className={`relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary${
+                  isMobile ? ' mobile-rollback-bubble-no-select' : ''
+                }`}
+                data-rollback-bubble={msg.id}
+                {...getMobileRollbackBubbleProps(msg.id)}
+              >
                 <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                {/* Rollback button — top-right of bubble, visible on group-hover */}
-                <div className="absolute -top-2.5 -right-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
+                <div className={`absolute -top-2.5 -right-2.5 transition-opacity ${
+                  isMobile
+                    ? (rollbackButtonEnabled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none')
+                    : 'opacity-0 group-hover:opacity-100'
+                }`}>
                   <button
-                    onClick={() => onRollback(msg.id)}
+                    onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
+                    disabled={!rollbackButtonEnabled}
                     className="w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
                     title="回滚到此处"
                   >
