@@ -67,6 +67,12 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
   return { ...s, messages, title };
 }
 
+export function applyTruncate(s: Session, targetMessageId: string): Session {
+  const index = s.messages.findIndex((m) => m.id === targetMessageId);
+  if (index === -1) return s;
+  return { ...s, messages: s.messages.slice(0, index) };
+}
+
 export function useSessions() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -149,6 +155,13 @@ export function useSessions() {
   const truncateAndEdit = useCallback(
     (targetMessageId: string, newContent: string): void => {
       updateCurrent((s) => applyTruncateAndEdit(s, targetMessageId, newContent));
+    },
+    [updateCurrent]
+  );
+
+  const truncate = useCallback(
+    (targetMessageId: string): void => {
+      updateCurrent((s) => applyTruncate(s, targetMessageId));
     },
     [updateCurrent]
   );
@@ -387,6 +400,7 @@ export function useSessions() {
     isLoading,
     addUserMessage,
     truncateAndEdit,
+    truncate,
     addAssistantMessage,
     addProgress,
     appendToLastThinking,

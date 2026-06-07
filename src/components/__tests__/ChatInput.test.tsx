@@ -107,4 +107,42 @@ describe('ChatInput engine initialization status', () => {
 
     expect(onFocusChange).toHaveBeenCalledWith(false);
   });
+
+  it('focusTrigger 变化时即使 prefill 内容相同也会重新回填输入框', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+
+    const baseProps = {
+      isLoading: false,
+      engineReady: true,
+      engineStatus: 'ready' as const,
+      onSendText: vi.fn(),
+      onReinitEngine: vi.fn(),
+    };
+
+    act(() => {
+      root.render(<ChatInput {...baseProps} prefill="来一段 house" focusTrigger={1} />);
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+    expect(textarea.value).toBe('来一段 house');
+
+    // 模拟用户编辑回填后的文本
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(textarea), 'value')?.set;
+    act(() => {
+      setter?.call(textarea, '用户编辑后的内容');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(textarea.value).toBe('用户编辑后的内容');
+
+    // 再次回滚到内容相同的消息：prefill 字符串不变，但 focusTrigger 自增
+    act(() => {
+      root.render(<ChatInput {...baseProps} prefill="来一段 house" focusTrigger={2} />);
+    });
+
+    expect(textarea.value).toBe('来一段 house');
+  });
 });

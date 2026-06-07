@@ -37,7 +37,7 @@ export default function ChatInput({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (prefill) setText(prefill);
-  }, [prefill]);
+  }, [prefill, focusTrigger]);
 
   useEffect(() => {
     if (focusTrigger) textareaRef.current?.focus();

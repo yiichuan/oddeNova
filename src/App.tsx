@@ -57,6 +57,8 @@ export default function App() {
   const [videoDemoMsgs, setVideoDemoMsgs] = useState<import('./hooks/useChat').ChatMessage[] | null>(null);
   // [video] Remotion 在场景切换时发出 scrollBottom:true，让 ConversationView 滚到底部
   const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
+  const [rollbackPrefill, setRollbackPrefill] = useState('');
+  const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   // [video] 检测是否运行在 Remotion iframe 内；正常浏览器访问时始终为 false，不影响任何逻辑
   const [isVideoMode, setIsVideoMode] = useState(() => {
     try { return window.self !== window.top; } catch { return true; }
@@ -272,6 +274,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       }
 
       setCommitSuggestions(null); // reset on each new instruction
+      setRollbackPrefill(''); // 消息已发出，回滚回填的内容已被消费
       if (!options?.skipAddMessage) {
         sessions.addUserMessage(text);
       }
@@ -403,18 +406,23 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
   );
 
-  const handleResend = useCallback(
-    async (messageId: string, newContent: string) => {
-      // Abort any in-progress run before resending
+  // Abort 进行中的运行, 并把 strudel/会话代码状态回退到 messageId 这条消息发出前。
+  // handleResend (重新编辑发送) 与 handleRollback (回滚) 共用这段"回退引擎状态"逻辑,
+  // 仅在回退之后的处理 (覆盖编辑并重发 / 回填输入框) 上分叉。
+  const rewindBeforeMessage = useCallback(
+    async (messageId: string) => {
       const currentSessionId = sessions.currentId;
       if (currentSessionId) {
         abortControllersRef.current.get(currentSessionId)?.abort();
       }
-      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+
       const allMessages = sessions.currentSession?.messages ?? [];
       const idx = allMessages.findIndex((m) => m.id === messageId);
-      const before = idx >= 0 ? allMessages.slice(0, idx) : [];
-      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
+      if (idx < 0) return null;
+      const target = allMessages[idx];
+
+      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
       // 回退 strudel 状态到该消息发出前
@@ -428,10 +436,34 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         sessions.setCurrentCode(previousCode, sessions.currentId);
       }
 
-      sessions.truncateAndEdit(messageId, newContent);
-      await handleInstruction(newContent, { skipAddMessage: true, initialCode: previousCode });
+      return { target, previousCode };
     },
-    [sessions, handleInstruction, strudel]
+    [sessions, strudel]
+  );
+
+  const handleResend = useCallback(
+    async (messageId: string, newContent: string) => {
+      const rewound = await rewindBeforeMessage(messageId);
+      if (!rewound) return;
+
+      sessions.truncateAndEdit(messageId, newContent);
+      await handleInstruction(newContent, { skipAddMessage: true, initialCode: rewound.previousCode });
+    },
+    [sessions, handleInstruction, rewindBeforeMessage]
+  );
+
+  const handleRollback = useCallback(
+    async (messageId: string) => {
+      const rewound = await rewindBeforeMessage(messageId);
+      if (!rewound) return;
+
+      sessions.truncate(messageId);
+
+      // 把消息内容回填进输入框并聚焦
+      setRollbackPrefill(rewound.target.content);
+      setInputFocusTrigger((n) => n + 1);
+    },
+    [sessions, rewindBeforeMessage]
   );
 
   const handleRetry = useCallback(
@@ -462,6 +494,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     const instruction = '根据我的心情生成音乐';
 
     setCommitSuggestions(null);
+    setRollbackPrefill(''); // 消息已发出，回滚回填的内容已被消费
     sessions.addUserMessage(instruction);
     const sessionId = sessions.currentId;
     if (!sessionId) return;
@@ -633,7 +666,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -711,7 +744,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             onSendText={handleInstruction}
             onStop={handleStop}
             onReinitEngine={strudel.reinit}
-            focusTrigger={1}
+            prefill={rollbackPrefill}
+            focusTrigger={inputFocusTrigger}
             onFocusChange={handleChatFocusChange}
           />
         </div>
@@ -814,7 +848,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
-          onResend={handleResend}
+          prefill={rollbackPrefill}
+          prefillTrigger={inputFocusTrigger}
+          onRollback={handleRollback}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
           tokenStats={current?.tokenStats}

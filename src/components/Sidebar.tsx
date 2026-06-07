@@ -36,7 +36,9 @@ interface SidebarProps {
   replayInputText?: string;
   isVideoMode?: boolean;
   scrollBottom?: boolean;
-  onResend: (messageId: string, content: string) => void;
+  prefill?: string;
+  prefillTrigger?: number;
+  onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
   tokenStats?: TokenStats;
@@ -69,7 +71,9 @@ export default function Sidebar({
   replayInputText,
   isVideoMode = false,
   scrollBottom = false,
-  onResend,
+  prefill,
+  prefillTrigger,
+  onRollback,
   onBranch,
   onRetry,
   tokenStats,
@@ -78,6 +82,7 @@ export default function Sidebar({
   const [showHistory, setShowHistory] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(1);
   const prevIsLoadingRef = useRef(false);
+  const prevPrefillTriggerRef = useRef(prefillTrigger);
 
   useEffect(() => {
     if (prevIsLoadingRef.current && !isLoading) {
@@ -85,6 +90,14 @@ export default function Sidebar({
     }
     prevIsLoadingRef.current = isLoading;
   }, [isLoading]);
+
+  // 回滚回填到来时（prefillTrigger 变化）一并触发输入框的回填 + 聚焦
+  useEffect(() => {
+    if (prefillTrigger !== undefined && prefillTrigger !== prevPrefillTriggerRef.current) {
+      prevPrefillTriggerRef.current = prefillTrigger;
+      setFocusTrigger((v) => v + 1);
+    }
+  }, [prefillTrigger]);
 
   useEffect(() => {
     checkAirJellyAvailable().then(setAirjellyAvailable);
@@ -162,7 +175,7 @@ export default function Sidebar({
           isLoading={isLoading && !isReplaying}
           isVideoMode={isVideoMode}
           scrollBottom={scrollBottom}
-          onResend={onResend}
+          onRollback={onRollback}
           onBranch={onBranch}
           onRetry={onRetry}
         />
@@ -199,7 +212,7 @@ export default function Sidebar({
             )}
           </div>
         )}
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
       </div>
     </aside>
   );
