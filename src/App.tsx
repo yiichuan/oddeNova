@@ -57,6 +57,8 @@ export default function App() {
   const [videoDemoMsgs, setVideoDemoMsgs] = useState<import('./hooks/useChat').ChatMessage[] | null>(null);
   // [video] Remotion 在场景切换时发出 scrollBottom:true，让 ConversationView 滚到底部
   const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
+  const [rollbackPrefill, setRollbackPrefill] = useState('');
+  const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   // [video] 检测是否运行在 Remotion iframe 内；正常浏览器访问时始终为 false，不影响任何逻辑
   const [isVideoMode, setIsVideoMode] = useState(() => {
     try { return window.self !== window.top; } catch { return true; }
@@ -434,6 +436,44 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     [sessions, handleInstruction, strudel]
   );
 
+  const handleRollback = useCallback(
+    (messageId: string) => {
+      // Abort any in-progress run before rewinding
+      const currentSessionId = sessions.currentId;
+      if (currentSessionId) {
+        abortControllersRef.current.get(currentSessionId)?.abort();
+      }
+
+      const allMessages = sessions.currentSession?.messages ?? [];
+      const idx = allMessages.findIndex((m) => m.id === messageId);
+      if (idx < 0) return;
+      const target = allMessages[idx];
+
+      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      const before = allMessages.slice(0, idx);
+      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
+      const previousCode = prevAssistant?.code ?? '';
+
+      // 回退 strudel 状态到该消息发出前
+      if (previousCode) {
+        strudel.play(previousCode);
+      } else {
+        strudel.stop();
+        strudel.setCode('');
+      }
+      if (sessions.currentId) {
+        sessions.setCurrentCode(previousCode, sessions.currentId);
+      }
+
+      sessions.truncate(messageId);
+
+      // 把消息内容回填进输入框并聚焦
+      setRollbackPrefill(target.content);
+      setInputFocusTrigger((n) => n + 1);
+    },
+    [sessions, strudel]
+  );
+
   const handleRetry = useCallback(
     async (assistantMessageId: string) => {
       const allMessages = sessions.currentSession?.messages ?? [];
@@ -633,7 +673,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -711,7 +751,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             onSendText={handleInstruction}
             onStop={handleStop}
             onReinitEngine={strudel.reinit}
-            focusTrigger={1}
+            prefill={rollbackPrefill}
+            focusTrigger={inputFocusTrigger}
             onFocusChange={handleChatFocusChange}
           />
         </div>
@@ -814,7 +855,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
-          onResend={handleResend}
+          onRollback={handleRollback}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
           tokenStats={current?.tokenStats}

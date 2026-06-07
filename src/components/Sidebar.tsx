@@ -36,7 +36,7 @@ interface SidebarProps {
   replayInputText?: string;
   isVideoMode?: boolean;
   scrollBottom?: boolean;
-  onResend: (messageId: string, content: string) => void;
+  onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
   tokenStats?: TokenStats;
@@ -69,7 +69,7 @@ export default function Sidebar({
   replayInputText,
   isVideoMode = false,
   scrollBottom = false,
-  onResend,
+  onRollback,
   onBranch,
   onRetry,
   tokenStats,
@@ -162,7 +162,7 @@ export default function Sidebar({
           isLoading={isLoading && !isReplaying}
           isVideoMode={isVideoMode}
           scrollBottom={scrollBottom}
-          onResend={onResend}
+          onRollback={onRollback}
           onBranch={onBranch}
           onRetry={onRetry}
         />
