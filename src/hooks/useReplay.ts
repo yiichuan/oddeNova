@@ -33,6 +33,14 @@ export const REPLAY_TIMING = {
   afterReplayComplete: 6000,
 };
 
+/** progress 消息各 kind 的回放停顿；未列出的 kind（reasoning/iteration/warn）走 other。 */
+const PROGRESS_REPLAY_DELAY: Record<string, number> = {
+  thinking: REPLAY_TIMING.progress.thinking,
+  tool_call: REPLAY_TIMING.progress.toolCallResult,
+  tool_result: REPLAY_TIMING.progress.toolCallResult,
+  commit: REPLAY_TIMING.progress.commit,
+};
+
 // ── 纯异步回放逻辑（可单独测试）──────────────────────────────────────
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -85,14 +93,7 @@ export async function runReplay(
       onSetInputText('');
       await sleep(REPLAY_TIMING.afterUserSend, signal);
     } else if (msg.role === 'progress') {
-      const delay =
-        msg.progressKind === 'thinking'
-          ? REPLAY_TIMING.progress.thinking
-          : msg.progressKind === 'tool_call' || msg.progressKind === 'tool_result'
-            ? REPLAY_TIMING.progress.toolCallResult
-            : msg.progressKind === 'commit'
-              ? REPLAY_TIMING.progress.commit
-              : REPLAY_TIMING.progress.other; // iteration / warn
+      const delay = PROGRESS_REPLAY_DELAY[msg.progressKind ?? ''] ?? REPLAY_TIMING.progress.other;
       await sleep(delay, signal);
       onAppendMessage(msg);
     } else if (msg.role === 'assistant') {

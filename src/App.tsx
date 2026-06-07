@@ -265,6 +265,47 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // Build the agent progress→UI handler for a given session. Shared verbatim by
+  // handleInstruction and handleMoodInstruction.
+  const makeAgentProgressHandler = useCallback(
+    (sessionId: string) => (e: ProgressEvent) => {
+      if (e.kind === 'iteration') return;
+      if (e.kind === 'tool_call') {
+        if (e.name !== 'validate' && e.name !== 'commit') {
+          sessions.addProgress('tool_call', formatToolCall(e.name, e.args), { toolName: e.name, sessionId });
+        }
+        return;
+      }
+      if (e.kind === 'tool_result') {
+        if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
+        return;
+      }
+      if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
+      if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
+      if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
+      if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
+      if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
+    },
+    [sessions]
+  );
+
+  // Drop the session's abort controller and clear its loading flag.
+  const cleanupLoadingSession = useCallback((sessionId: string) => {
+    abortControllersRef.current.delete(sessionId);
+    setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+  }, []);
+
+  // Surface a non-abort agent error to the user + analytics.
+  const reportAgentError = useCallback(
+    (e: unknown, sessionId: string, provider: string, model: string) => {
+      const errMsg = e instanceof Error ? e.message : '请求失败';
+      sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
+      strudel.setError(errMsg);
+      trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
+    },
+    [sessions, strudel]
+  );
+
   const handleInstruction = useCallback(
     async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
       const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
@@ -294,47 +335,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
       try {
-        const onProgress = (e: ProgressEvent) => {
-          if (e.kind === 'iteration') return;
-          if (e.kind === 'tool_call') {
-            if (e.name !== 'validate' && e.name !== 'commit') {
-              sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
-                toolName: e.name,
-                sessionId,
-              });
-            }
-            return;
-          }
-          if (e.kind === 'tool_result') {
-            if (e.ok) {
-              return;
-            }
-            console.error(
-              `[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error'
-            );
-            return;
-          }
-          if (e.kind === 'commit') {
-            sessions.addProgress('commit', '准备播放…', { sessionId });
-            return;
-          }
-          if (e.kind === 'warn') {
-            sessions.addProgress('warn', e.message, { sessionId });
-            return;
-          }
-          if (e.kind === 'reasoning_delta') {
-            sessions.appendToLastReasoning(e.delta, sessionId);
-            return;
-          }
-          if (e.kind === 'assistant_text_delta') {
-            sessions.appendToLastThinking(e.delta, sessionId);
-            return;
-          }
-          if (e.kind === 'assistant_text') {
-            sessions.addProgress('thinking', e.text, { sessionId });
-            return;
-          }
-        };
+        const onProgress = makeAgentProgressHandler(sessionId);
 
         const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
@@ -387,23 +388,15 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           }
           trackAgentAbort();
         } else {
-          const errMsg = e instanceof Error ? e.message : '请求失败';
-          sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
-          strudel.setError(errMsg);
-          trackAgentError({
-            provider: _analyticsProvider,
-            model: _analyticsModel,
-            error_type: e instanceof Error ? e.name : 'unknown',
-          });
+          reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
         }
       } finally {
         if (abortControllersRef.current.get(sessionId) === controller) {
-          abortControllersRef.current.delete(sessionId);
-          setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+          cleanupLoadingSession(sessionId);
         }
       }
     },
-    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
+    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]
   );
 
   // Abort 进行中的运行, 并把 strudel/会话代码状态回退到 messageId 这条消息发出前。
@@ -506,27 +499,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
     try {
-      const onProgress = (e: ProgressEvent) => {
-        if (e.kind === 'iteration') return;
-        if (e.kind === 'tool_call') {
-          if (e.name !== 'validate' && e.name !== 'commit') {
-            sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
-              toolName: e.name,
-              sessionId,
-            });
-          }
-          return;
-        }
-        if (e.kind === 'tool_result') {
-          if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
-          return;
-        }
-        if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
-        if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
-        if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
-        if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
-        if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
-      };
+      const onProgress = makeAgentProgressHandler(sessionId);
 
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
@@ -575,20 +548,12 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         sessions.addAssistantMessage('已中断', undefined, sessionId);
         trackAgentAbort();
       } else {
-        const errMsg = e instanceof Error ? e.message : '请求失败';
-        sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
-        strudel.setError(errMsg);
-        trackAgentError({
-          provider: _analyticsProvider,
-          model: _analyticsModel,
-          error_type: e instanceof Error ? e.name : 'unknown',
-        });
+        reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
       }
     } finally {
-      abortControllersRef.current.delete(sessionId);
-      setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+      cleanupLoadingSession(sessionId);
     }
-  }, [strudel, sessions, currentCode, isUserAbort]);
+  }, [strudel, sessions, currentCode, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]);
 
   const handleNewSession = useCallback(() => {
     strudel.stop();

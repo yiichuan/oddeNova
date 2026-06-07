@@ -3,6 +3,7 @@
 // the loop so it can terminate.
 
 import { CommitSignal, findTool, type ToolContext, type ToolResult } from './tools';
+import { getErrorMessage } from '../lib/errors';
 
 export interface ToolCallRequest {
   id: string;
@@ -38,7 +39,7 @@ export async function dispatchToolCall(
         parsedArgs = parsed as Record<string, unknown>;
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = getErrorMessage(e);
       return {
         id: call.id,
         name: call.name,
@@ -66,7 +67,7 @@ export async function dispatchToolCall(
       break;
     } catch (e: unknown) {
       if (e instanceof CommitSignal) throw e;
-      lastError = e instanceof Error ? e.message : String(e);
+      lastError = getErrorMessage(e);
       console.error(`[executor] ✗ tool "${call.name}" threw (attempt ${attempt}):`, lastError);
     }
   }

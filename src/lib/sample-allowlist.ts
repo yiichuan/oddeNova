@@ -381,15 +381,12 @@ const DRUM_MACHINE_ALIAS_MAP: Readonly<Record<string, string>> = {
 
 // Pre-compute alias short-name variants (e.g. "TR808_bd") mirroring
 // what aliasBank() registers at runtime, so findUnknownSamples() accepts them.
-const _dmAliasVariants: string[] = [];
-for (const entry of DRUM_MACHINE_SAMPLES) {
+const _dmAliasVariants: string[] = DRUM_MACHINE_SAMPLES.flatMap((entry) => {
   const idx = entry.indexOf('_');
-  if (idx === -1) continue;
-  const bank = entry.slice(0, idx);
-  const suffix = entry.slice(idx); // includes the '_'
-  const alias = DRUM_MACHINE_ALIAS_MAP[bank];
-  if (alias) _dmAliasVariants.push(alias + suffix);
-}
+  if (idx === -1) return [];
+  const alias = DRUM_MACHINE_ALIAS_MAP[entry.slice(0, idx)];
+  return alias ? [alias + entry.slice(idx)] : []; // suffix includes the '_'
+});
 
 export const SAMPLE_ALLOWLIST: Set<string> = new Set([
   ...DIRT_SAMPLES,

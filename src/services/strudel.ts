@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../lib/errors';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExport } from '../lib/analytics';
@@ -47,6 +48,15 @@ type PageAudioRecovery = {
 
 function isOfflineAudioContext(ctx: BaseAudioContext): boolean {
   return typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+}
+
+// Disconnect a node (optionally from a specific destination), ignoring the
+// "node is not connected" error WebAudio throws when it was never wired up.
+function safeDisconnect(node: AudioNode, dest?: AudioNode): void {
+  try {
+    if (dest) node.disconnect(dest);
+    else node.disconnect();
+  } catch { /* not connected */ }
 }
 
 export async function ensureAudioContextResumed(): Promise<SafariAudioContextState> {
@@ -244,7 +254,7 @@ export class StrudelService {
       this.isAudioInitialized = true;
       this.notify({ engineReady: true, engineStatus: 'ready', error: null });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       this.isAudioInitialized = false;
       this.notify({ engineReady: false, engineStatus: 'failed', error: message });
       throw error;
@@ -298,9 +308,7 @@ export class StrudelService {
         drawContext: getDrawContext(), // 默认 id='test-canvas'；src/index.css 有对应 #test-canvas z-index 规则
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
-          const error = evalError
-            ? (evalError instanceof Error ? evalError.message : String(evalError))
-            : null;
+          const error = evalError ? getErrorMessage(evalError) : null;
           this.notify({
             code: state.code ?? this._state.code,
             isPlaying: state.started ?? false,
@@ -316,7 +324,7 @@ export class StrudelService {
       // Sync REPL internal state with initial code
       this.editorInstance?.repl.setCode(currentCode);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       this.isAudioInitialized = false;
       this.notify({ engineReady: false, engineStatus: 'failed', error: message });
       throw error;
@@ -341,7 +349,7 @@ export class StrudelService {
       lpfNode.frequency.value = 20000;
       this.masterLpfNode = lpfNode;
 
-      try { destGain.disconnect(ctx.destination); } catch { /* not connected */ }
+      safeDisconnect(destGain, ctx.destination);
       destGain.connect(lpfNode);
       lpfNode.connect(ctx.destination);
       this.masterChainReady = true;
@@ -511,12 +519,12 @@ export class StrudelService {
           void this.setupMasterChain();
           return;
         } catch (retryError) {
-          const message = retryError instanceof Error ? retryError.message : String(retryError);
+          const message = getErrorMessage(retryError);
           this.notify({ error: message });
           throw retryError;
         }
       }
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       this.notify({ error: message });
       throw error;
     }
@@ -634,7 +642,7 @@ export class StrudelService {
       const controller = getSuperdoughAudioController() as any;
       const destGain: GainNode | undefined = controller?.output?.destinationGain;
       if (destGain) {
-        try { destGain.disconnect(offlineCtx.destination); } catch { /* not connected */ }
+        safeDisconnect(destGain, offlineCtx.destination);
         const masterGain = offlineCtx.createGain();
         masterGain.gain.value = this.currentMasterVolume;
         const lpf = offlineCtx.createBiquadFilter();
@@ -787,9 +795,9 @@ export class StrudelService {
 
     await new Promise((r) => setTimeout(r, durationSec * 1000));
 
-    try { tap.disconnect(sp); } catch { /* not connected */ }
-    try { sp.disconnect(); } catch { /* not connected */ }
-    try { muteGain.disconnect(); } catch { /* not connected */ }
+    safeDisconnect(tap, sp);
+    safeDisconnect(sp);
+    safeDisconnect(muteGain);
 
     const totalLen = leftChunks.reduce((acc, c) => acc + c.length, 0);
     const left = new Float32Array(totalLen);
@@ -1028,7 +1036,7 @@ export function validateCodeRuntime(code: string): ValidationResult {
     }
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e), kind: 'runtime' };
+    return { ok: false, error: getErrorMessage(e), kind: 'runtime' };
   }
 }
 
@@ -1042,7 +1050,7 @@ export function validateCodeTranspiler(code: string): { ok: boolean; error?: str
     cachedTranspiler(clean);
     return { ok: true };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = getErrorMessage(e);
     // Only surface errors explicitly from the mini-notation parser (prefixed with
     // "[mini]" by mini2ast). Other transpiler errors (acorn JS parse issues,
     // unregistered plugins, etc.) may be false positives — let them pass through.
