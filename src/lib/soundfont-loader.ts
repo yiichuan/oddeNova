@@ -154,51 +154,53 @@ async function getFontBufferSource(
 // Register all GM instruments
 // --------------------------------------------------------------------------
 
+// Build the superdough sound handler for a GM instrument backed by `fonts`.
+// Shared by both canonical-name and MIDI-alias registration below.
+function createGMSoundHandler(fonts: string[]) {
+  return async (
+    time: number,
+    value: Record<string, unknown>,
+    onended: () => void,
+  ) => {
+    const [attack, decay, sustain, release] = getADSRValues([
+      value.attack,
+      value.decay,
+      value.sustain,
+      value.release,
+    ]);
+    const { duration } = value as { duration: number };
+    const n = getSoundIndex(value.n, fonts.length);
+    const font = fonts[n];
+    const ctx = getAudioContext() as AudioContext;
+    const bufferSource = await getFontBufferSource(font, value, ctx);
+    bufferSource.start(time);
+    const envGain = ctx.createGain();
+    const node = bufferSource.connect(envGain);
+    const holdEnd = time + duration;
+    getParamADSR(envGain.gain, attack, decay, sustain, release, 0, 0.3, time, holdEnd, 'linear');
+    const envEnd = holdEnd + release + 0.01;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vibratoHandle = getVibratoOscillator(bufferSource.detune, value as any, time);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getPitchEnvelope(bufferSource.detune, value as any, time, holdEnd);
+    bufferSource.stop(envEnd);
+    onceEnded(bufferSource, () => {
+      releaseAudioNode(bufferSource);
+      vibratoHandle?.stop?.();
+      onended();
+    });
+    return {
+      node,
+      stop: (_releaseTime: number) => {},
+      nodes: { source: [bufferSource], ...vibratoHandle?.nodes },
+    };
+  };
+}
+
 export function registerSoundfonts(): void {
   const entries = Object.entries(gm as Record<string, string[]>);
   for (const [name, fonts] of entries) {
-    registerSound(
-      name,
-      async (
-        time: number,
-        value: Record<string, unknown>,
-        onended: () => void,
-      ) => {
-        const [attack, decay, sustain, release] = getADSRValues([
-          value.attack,
-          value.decay,
-          value.sustain,
-          value.release,
-        ]);
-        const { duration } = value as { duration: number };
-        const n = getSoundIndex(value.n, fonts.length);
-        const font = fonts[n];
-        const ctx = getAudioContext() as AudioContext;
-        const bufferSource = await getFontBufferSource(font, value, ctx);
-        bufferSource.start(time);
-        const envGain = ctx.createGain();
-        const node = bufferSource.connect(envGain);
-        const holdEnd = time + duration;
-        getParamADSR(envGain.gain, attack, decay, sustain, release, 0, 0.3, time, holdEnd, 'linear');
-        const envEnd = holdEnd + release + 0.01;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const vibratoHandle = getVibratoOscillator(bufferSource.detune, value as any, time);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        getPitchEnvelope(bufferSource.detune, value as any, time, holdEnd);
-        bufferSource.stop(envEnd);
-        onceEnded(bufferSource, () => {
-          releaseAudioNode(bufferSource);
-          vibratoHandle?.stop?.();
-          onended();
-        });
-        return {
-          node,
-          stop: (_releaseTime: number) => {},
-          nodes: { source: [bufferSource], ...vibratoHandle?.nodes },
-        };
-      },
-      { type: 'soundfont', prebake: true, fonts },
-    );
+    registerSound(name, createGMSoundHandler(fonts), { type: 'soundfont', prebake: true, fonts });
   }
 
   // MIDI-standard name aliases → strudel canonical names.
@@ -238,47 +240,6 @@ export function registerSoundfonts(): void {
   for (const [alias, canonical] of Object.entries(ALIASES)) {
     const fonts = gmMap[canonical];
     if (!fonts) continue;
-    registerSound(
-      alias,
-      async (
-        time: number,
-        value: Record<string, unknown>,
-        onended: () => void,
-      ) => {
-        const [attack, decay, sustain, release] = getADSRValues([
-          value.attack,
-          value.decay,
-          value.sustain,
-          value.release,
-        ]);
-        const { duration } = value as { duration: number };
-        const n = getSoundIndex(value.n, fonts.length);
-        const font = fonts[n];
-        const ctx = getAudioContext() as AudioContext;
-        const bufferSource = await getFontBufferSource(font, value, ctx);
-        bufferSource.start(time);
-        const envGain = ctx.createGain();
-        const node = bufferSource.connect(envGain);
-        const holdEnd = time + duration;
-        getParamADSR(envGain.gain, attack, decay, sustain, release, 0, 0.3, time, holdEnd, 'linear');
-        const envEnd = holdEnd + release + 0.01;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const vibratoHandle = getVibratoOscillator(bufferSource.detune, value as any, time);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        getPitchEnvelope(bufferSource.detune, value as any, time, holdEnd);
-        bufferSource.stop(envEnd);
-        onceEnded(bufferSource, () => {
-          releaseAudioNode(bufferSource);
-          vibratoHandle?.stop?.();
-          onended();
-        });
-        return {
-          node,
-          stop: (_releaseTime: number) => {},
-          nodes: { source: [bufferSource], ...vibratoHandle?.nodes },
-        };
-      },
-      { type: 'soundfont', prebake: true, fonts },
-    );
+    registerSound(alias, createGMSoundHandler(fonts), { type: 'soundfont', prebake: true, fonts });
   }
 }

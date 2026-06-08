@@ -27,6 +27,7 @@ import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 import { zh, t } from './lib/i18n';
+import { getEngineUnavailableMessage } from './lib/engine-status';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
@@ -57,6 +58,8 @@ export default function App() {
   const [videoDemoMsgs, setVideoDemoMsgs] = useState<import('./hooks/useChat').ChatMessage[] | null>(null);
   // [video] Remotion emits scrollBottom:true on scene transitions to scroll ConversationView to the bottom
   const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
+  const [rollbackPrefill, setRollbackPrefill] = useState('');
+  const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   // [video] Detects whether running inside a Remotion iframe; always false in normal browser access, has no effect on any logic
   const [isVideoMode, setIsVideoMode] = useState(() => {
     try { return window.self !== window.top; } catch { return true; }
@@ -116,11 +119,37 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   const keyboardHeight = useKeyboardHeight();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobileFocusedArea, setMobileFocusedArea] = useState<'chat' | 'code' | null>(null);
+  const shouldLiftBottomBar = mobileFocusedArea === 'chat' && keyboardHeight > 0;
+  const mobileDrawerHeight = !drawerOpen
+    ? 0
+    : mobileFocusedArea === 'code'
+      ? '50dvh'
+      : '33dvh';
   useEffect(() => {
     if (!isMobile) return;
     document.body.style.overflow = drawerOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [drawerOpen, isMobile]);
+
+  useEffect(() => {
+    if (!isMobile || keyboardHeight > 0) return;
+    setMobileFocusedArea(null);
+  }, [isMobile, keyboardHeight]);
+
+  const handleChatFocusChange = useCallback((focused: boolean) => {
+    setMobileFocusedArea((current) => {
+      if (focused) return 'chat';
+      return current === 'chat' ? null : current;
+    });
+  }, []);
+
+  const handleCodeFocusChange = useCallback((focused: boolean) => {
+    setMobileFocusedArea((current) => {
+      if (focused) return 'code';
+      return current === 'code' ? null : current;
+    });
+  }, []);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => window.innerWidth * SIDEBAR_RATIO_DEFAULT);
   const [vizHeight, setVizHeight] = useState(() => window.innerHeight * VIZ_RATIO_DEFAULT);
@@ -237,14 +266,57 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // Build the agent progress→UI handler for a given session. Shared verbatim by
+  // handleInstruction and handleMoodInstruction.
+  const makeAgentProgressHandler = useCallback(
+    (sessionId: string) => (e: ProgressEvent) => {
+      if (e.kind === 'iteration') return;
+      if (e.kind === 'tool_call') {
+        if (e.name !== 'validate' && e.name !== 'commit') {
+          sessions.addProgress('tool_call', formatToolCall(e.name, e.args), { toolName: e.name, sessionId });
+        }
+        return;
+      }
+      if (e.kind === 'tool_result') {
+        if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
+        return;
+      }
+      if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
+      if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
+      if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
+      if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
+      if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
+    },
+    [sessions]
+  );
+
+  // Drop the session's abort controller and clear its loading flag.
+  const cleanupLoadingSession = useCallback((sessionId: string) => {
+    abortControllersRef.current.delete(sessionId);
+    setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+  }, []);
+
+  // Surface a non-abort agent error to the user + analytics.
+  const reportAgentError = useCallback(
+    (e: unknown, sessionId: string, provider: string, model: string) => {
+      const errMsg = e instanceof Error ? e.message : '请求失败';
+      sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
+      strudel.setError(errMsg);
+      trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
+    },
+    [sessions, strudel]
+  );
+
   const handleInstruction = useCallback(
     async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
-      if (!strudel.engineReady) {
-        strudel.setError(t('engineStarting'));
+      const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
+      if (engineUnavailableMessage) {
+        strudel.setError(engineUnavailableMessage);
         return;
       }
 
       setCommitSuggestions(null); // reset on each new instruction
+      setRollbackPrefill(''); // 消息已发出，回滚回填的内容已被消费
       if (!options?.skipAddMessage) {
         sessions.addUserMessage(text);
       }
@@ -264,47 +336,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
       try {
-        const onProgress = (e: ProgressEvent) => {
-          if (e.kind === 'iteration') return;
-          if (e.kind === 'tool_call') {
-            if (e.name !== 'validate' && e.name !== 'commit') {
-              sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
-                toolName: e.name,
-                sessionId,
-              });
-            }
-            return;
-          }
-          if (e.kind === 'tool_result') {
-            if (e.ok) {
-              return;
-            }
-            console.error(
-              `[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error'
-            );
-            return;
-          }
-          if (e.kind === 'commit') {
-            sessions.addProgress('commit', t('preparingToPlay'), { sessionId });
-            return;
-          }
-          if (e.kind === 'warn') {
-            sessions.addProgress('warn', e.message, { sessionId });
-            return;
-          }
-          if (e.kind === 'reasoning_delta') {
-            sessions.appendToLastReasoning(e.delta, sessionId);
-            return;
-          }
-          if (e.kind === 'assistant_text_delta') {
-            sessions.appendToLastThinking(e.delta, sessionId);
-            return;
-          }
-          if (e.kind === 'assistant_text') {
-            sessions.addProgress('thinking', e.text, { sessionId });
-            return;
-          }
-        };
+        const onProgress = makeAgentProgressHandler(sessionId);
 
         const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
@@ -357,37 +389,35 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           }
           trackAgentAbort();
         } else {
-          const errMsg = e instanceof Error ? e.message : t('requestFailed');
-          sessions.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
-          strudel.setError(errMsg);
-          trackAgentError({
-            provider: _analyticsProvider,
-            model: _analyticsModel,
-            error_type: e instanceof Error ? e.name : 'unknown',
-          });
+          reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
         }
       } finally {
         if (abortControllersRef.current.get(sessionId) === controller) {
-          abortControllersRef.current.delete(sessionId);
-          setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+          cleanupLoadingSession(sessionId);
         }
       }
     },
-    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort]
+    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]
   );
 
-  const handleResend = useCallback(
-    async (messageId: string, newContent: string) => {
-      // Abort any in-progress run before resending
+  // Abort 进行中的运行, 并把 strudel/会话代码状态回退到 messageId 这条消息发出前。
+  // handleResend (重新编辑发送) 与 handleRollback (回滚) 共用这段"回退引擎状态"逻辑,
+  // 仅在回退之后的处理 (覆盖编辑并重发 / 回填输入框) 上分叉。
+  const rewindBeforeMessage = useCallback(
+    async (messageId: string) => {
       const currentSessionId = sessions.currentId;
       if (currentSessionId) {
         abortControllersRef.current.get(currentSessionId)?.abort();
       }
       // Find the last assistant message with code before this message, as the rollback target
+
       const allMessages = sessions.currentSession?.messages ?? [];
       const idx = allMessages.findIndex((m) => m.id === messageId);
-      const before = idx >= 0 ? allMessages.slice(0, idx) : [];
-      const prevAssistant = [...before].reverse().find((m) => m.role === 'assistant' && m.code != null);
+      if (idx < 0) return null;
+      const target = allMessages[idx];
+
+      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
       // Roll back strudel state to before this message was sent
@@ -401,10 +431,34 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         sessions.setCurrentCode(previousCode, sessions.currentId);
       }
 
-      sessions.truncateAndEdit(messageId, newContent);
-      await handleInstruction(newContent, { skipAddMessage: true, initialCode: previousCode });
+      return { target, previousCode };
     },
-    [sessions, handleInstruction, strudel]
+    [sessions, strudel]
+  );
+
+  const handleResend = useCallback(
+    async (messageId: string, newContent: string) => {
+      const rewound = await rewindBeforeMessage(messageId);
+      if (!rewound) return;
+
+      sessions.truncateAndEdit(messageId, newContent);
+      await handleInstruction(newContent, { skipAddMessage: true, initialCode: rewound.previousCode });
+    },
+    [sessions, handleInstruction, rewindBeforeMessage]
+  );
+
+  const handleRollback = useCallback(
+    async (messageId: string) => {
+      const rewound = await rewindBeforeMessage(messageId);
+      if (!rewound) return;
+
+      sessions.truncate(messageId);
+
+      // 把消息内容回填进输入框并聚焦
+      setRollbackPrefill(rewound.target.content);
+      setInputFocusTrigger((n) => n + 1);
+    },
+    [sessions, rewindBeforeMessage]
   );
 
   const handleRetry = useCallback(
@@ -420,8 +474,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   );
 
   const handleMoodInstruction = useCallback(async () => {
-    if (!strudel.engineReady) {
-      strudel.setError(t('engineStarting'));
+    const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
+    if (engineUnavailableMessage) {
+      strudel.setError(engineUnavailableMessage);
       return;
     }
 
@@ -434,6 +489,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     const instruction = '根据我的心情生成音乐';
 
     setCommitSuggestions(null);
+    setRollbackPrefill(''); // 消息已发出，回滚回填的内容已被消费
     sessions.addUserMessage(instruction);
     const sessionId = sessions.currentId;
     if (!sessionId) return;
@@ -445,27 +501,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
     try {
-      const onProgress = (e: ProgressEvent) => {
-        if (e.kind === 'iteration') return;
-        if (e.kind === 'tool_call') {
-          if (e.name !== 'validate' && e.name !== 'commit') {
-            sessions.addProgress('tool_call', formatToolCall(e.name, e.args), {
-              toolName: e.name,
-              sessionId,
-            });
-          }
-          return;
-        }
-        if (e.kind === 'tool_result') {
-          if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
-          return;
-        }
-        if (e.kind === 'commit') { sessions.addProgress('commit', t('preparingToPlay'), { sessionId }); return; }
-        if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
-        if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
-        if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
-        if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
-      };
+      const onProgress = makeAgentProgressHandler(sessionId);
 
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
@@ -514,20 +550,12 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
         trackAgentAbort();
       } else {
-        const errMsg = e instanceof Error ? e.message : t('requestFailed');
-        sessions.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
-        strudel.setError(errMsg);
-        trackAgentError({
-          provider: _analyticsProvider,
-          model: _analyticsModel,
-          error_type: e instanceof Error ? e.name : 'unknown',
-        });
+        reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
       }
     } finally {
-      abortControllersRef.current.delete(sessionId);
-      setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
+      cleanupLoadingSession(sessionId);
     }
-  }, [strudel, sessions, currentCode, isUserAbort]);
+  }, [strudel, sessions, currentCode, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]);
 
   const handleNewSession = useCallback(() => {
     strudel.stop();
@@ -605,14 +633,14 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onResend={handleResend} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
         </div>
 
         {/* ── Code Drawer ── */}
         <div
           className="shrink-0 overflow-hidden border-t border-border"
           style={{
-            height: drawerOpen ? '33dvh' : 0,
+            height: mobileDrawerHeight,
             transition: 'height 0.3s cubic-bezier(0.4,0,0.2,1)',
           }}
         >
@@ -632,6 +660,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
                 session={sessions.currentSession}
                 messages={messages}
                 onOpenSettings={() => setShowApiKeyModal(true)}
+                onEditorFocusChange={handleCodeFocusChange}
               />
             </div>
           </div>
@@ -642,7 +671,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           className="relative shrink-0 px-3 pt-3 border-t border-border"
           style={{
             paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-            transform: keyboardHeight > 0 ? `translateY(-${keyboardHeight}px)` : undefined,
+            transform: shouldLiftBottomBar ? `translateY(-${keyboardHeight}px)` : undefined,
             transition: 'transform 0.3s ease-out',
           }}
         >
@@ -657,14 +686,15 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           </div>
 
           {/* Suggestion chips — horizontal scroll */}
-          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && !isVideoMode && (
+          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code' && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
               {demoSuggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => handleInstruction(s)}
-                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary"
+                  disabled={strudel.engineStatus !== 'ready'}
+                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                 >
                   {s}
@@ -677,10 +707,13 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           <ChatInput
             isLoading={isLoading}
             engineReady={strudel.engineReady}
+            engineStatus={strudel.engineStatus}
             onSendText={handleInstruction}
             onStop={handleStop}
             onReinitEngine={strudel.reinit}
-            focusTrigger={1}
+            prefill={rollbackPrefill}
+            focusTrigger={inputFocusTrigger}
+            onFocusChange={handleChatFocusChange}
           />
         </div>
 
@@ -761,6 +794,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
           engineReady={strudel.engineReady}
+          engineStatus={strudel.engineStatus}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
           suggestions={isVideoMode ? [] : demoSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
@@ -781,7 +815,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
-          onResend={handleResend}
+          prefill={rollbackPrefill}
+          prefillTrigger={inputFocusTrigger}
+          onRollback={handleRollback}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
           tokenStats={current?.tokenStats}

@@ -6,6 +6,7 @@ import { t } from '../lib/i18n';
 interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
+  engineStatus?: 'initializing' | 'ready' | 'failed';
   onSendText: (text: string) => void;
   onReinitEngine: () => void;
   onStop?: () => void;
@@ -14,16 +15,30 @@ interface ChatInputProps {
   replayValue?: string;
   isVideoMode?: boolean;
   tokenStats?: TokenStats;
+  onFocusChange?: (focused: boolean) => void;
 }
 
-export default function ChatInput({ isLoading, engineReady, onSendText, onReinitEngine, onStop, prefill, focusTrigger, replayValue, isVideoMode = false, tokenStats: _tokenStats }: ChatInputProps) {
+export default function ChatInput({
+  isLoading,
+  engineReady,
+  engineStatus = engineReady ? 'ready' : 'initializing',
+  onSendText,
+  onReinitEngine,
+  onStop,
+  prefill,
+  focusTrigger,
+  replayValue,
+  isVideoMode = false,
+  tokenStats: _tokenStats,
+  onFocusChange,
+}: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (prefill) setText(prefill);
-  }, [prefill]);
+  }, [prefill, focusTrigger]);
 
   useEffect(() => {
     if (focusTrigger) textareaRef.current?.focus();
@@ -81,6 +96,8 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         value={replayValue !== undefined ? replayValue : text}
         onChange={replayValue !== undefined ? undefined : (e) => setText(e.target.value)}
         readOnly={replayValue !== undefined}
+        onFocus={() => onFocusChange?.(true)}
+        onBlur={() => onFocusChange?.(false)}
         onKeyDown={(e) => {
           if (replayValue !== undefined) return;
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -95,18 +112,20 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
       />
 
-      {!engineReady && (
+      {engineStatus !== 'ready' && (
         <div className="absolute left-4 bottom-3 flex items-center gap-2 text-[12px] text-[#888888]">
-          <span className="inline-flex h-2 w-2 rounded-full bg-[#B2370C]" />
-          <span>{t('notInitialized')}</span>
-          <button
-            type="button"
-            onClick={onReinitEngine}
-            className="text-[18px] font-thin text-[#e0e0e0]/60 hover:text-[#e0e0e0] transition-colors leading-none relative -top-[2px]"
-            title={t('restartEngine')}
-          >
-            ↺
-          </button>
+          <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-[#B2370C]' : 'bg-[#666666]'}`} />
+          <span>{engineStatus === 'failed' ? '初始化失败' : '初始化中...'}</span>
+          {engineStatus === 'failed' && (
+            <button
+              type="button"
+              onClick={onReinitEngine}
+              className="text-[18px] font-thin text-[#e0e0e0]/60 hover:text-[#e0e0e0] transition-colors leading-none relative -top-[2px]"
+              title="重新初始化"
+            >
+              ↺
+            </button>
+          )}
         </div>
       )}
 
@@ -138,7 +157,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
       ) : (
         <button
           type="submit"
-          disabled={!text.trim()}
+          disabled={!text.trim() || engineStatus !== 'ready'}
           className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
           title={t('send')}
         >

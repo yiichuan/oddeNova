@@ -1,7 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import { ArrowUpIcon, CheckIcon, CopyIcon, EditIcon, GitBranchIcon, RetryIcon, XIcon } from './icons';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { CheckIcon, CopyIcon, GitBranchIcon, RetryIcon, RollbackIcon } from './icons';
 import { t } from '../lib/i18n';
+
+type MobileNoSelectStyle = CSSProperties & {
+  WebkitTouchCallout?: 'none';
+};
+
+const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  WebkitTouchCallout: 'none',
+};
 
 function stripMarkdown(text: string): string {
   return text
@@ -24,7 +35,7 @@ interface ConversationViewProps {
   isLoading: boolean;
   isVideoMode?: boolean;
   scrollBottom?: boolean;
-  onResend: (messageId: string, content: string) => void;
+  onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
 }
@@ -34,34 +45,21 @@ export default function ConversationView({
   isLoading,
   isVideoMode = false,
   scrollBottom = false,
-  onResend,
+  onRollback,
   onBranch,
   onRetry,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const userScrolledRef = useRef(false);
   const reasoningPreRef = useRef<HTMLPreElement>(null);
   const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const el = editTextareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [editText]);
-
-  useEffect(() => {
-    const el = editTextareaRef.current;
-    if (!el || !editingId) return;
-    const len = el.value.length;
-    el.setSelectionRange(len, len);
-  }, [editingId]);
+  const isMobile = useIsMobile();
+  // 移动端长按消息显示回退按钮（触屏无真正的 hover 状态）
+  const [longPressedId, setLongPressedId] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Detect manual user scroll: stop auto-following when more than 80px from the bottom, resume when scrolled back
   useEffect(() => {
@@ -83,6 +81,59 @@ export default function ConversationView({
       return next;
     });
   };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+  const startLongPress = (id: string) => {
+    cancelLongPress();
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      setLongPressedId(id);
+    }, 500);
+  };
+  const getMobileRollbackBubbleProps = (id: string): HTMLAttributes<HTMLDivElement> => (
+    isMobile
+      ? {
+        onTouchStart: () => {
+          window.getSelection()?.removeAllRanges();
+          startLongPress(id);
+        },
+        onTouchEnd: cancelLongPress,
+        onTouchMove: cancelLongPress,
+        onContextMenu: (e) => e.preventDefault(),
+        onSelect: (e) => {
+          e.preventDefault();
+          window.getSelection()?.removeAllRanges();
+        },
+        style: mobileRollbackBubbleStyle,
+      }
+      : {}
+  );
+
+  useEffect(() => () => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+    }
+  }, []);
+
+  // 长按显示回退按钮后，点击气泡以外的区域则收起
+  useEffect(() => {
+    if (!isMobile || !longPressedId) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    const handler = (e: TouchEvent) => {
+      const bubble = (e.target as HTMLElement).closest('[data-rollback-bubble]') as HTMLElement | null;
+      if (!bubble || bubble.dataset.rollbackBubble !== longPressedId) {
+        setLongPressedId(null);
+      }
+    };
+    container.addEventListener('touchstart', handler);
+    return () => container.removeEventListener('touchstart', handler);
+  }, [isMobile, longPressedId]);
 
   useEffect(() => {
     if (isVideoMode && !scrollBottom) {
@@ -182,81 +233,33 @@ export default function ConversationView({
         }
 
         if (msg.role === 'user') {
-          const isEditing = editingId === msg.id;
+          const rollbackButtonEnabled = !isMobile || longPressedId === msg.id;
           return (
             <div key={msg.id} className="flex justify-end items-end gap-1.5 animate-fade-in-up group">
-              {isEditing ? (
-                <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary w-full">
-                  <textarea
-                    ref={editTextareaRef}
-                    autoFocus
-                    value={editText}
-                    onChange={(e) => setEditText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        if (editText.trim()) {
-                          onResend(msg.id, editText.trim());
-                          setEditingId(null);
-                        }
-                      }
-                      if (e.key === 'Escape') {
-                        setEditingId(null);
-                      }
-                    }}
-                    className="w-full bg-transparent text-text-primary resize-none outline-none text-sm whitespace-pre-wrap break-words min-h-[1.5rem] max-h-[30vh] overflow-y-auto"
-                    rows={1}
-                  />
-                  <div className="flex gap-1.5 mt-1.5 justify-end">
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-full text-text-muted/50 hover:text-text-muted hover:bg-white/5 transition-colors"
-                      title={t('cancel')}
-                    >
-                      <XIcon size={13} />
-                    </button>
-                    <button
-                      disabled={!editText.trim()}
-                      onClick={() => {
-                        if (editText.trim()) {
-                          onResend(msg.id, editText.trim());
-                          setEditingId(null);
-                        }
-                      }}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition-colors hover:bg-[#d0d0d0]/80 disabled:opacity-30 disabled:cursor-not-allowed"
-                      title={t('send')}
-                    >
-                      <ArrowUpIcon size={14} />
-                    </button>
-                  </div>
+              <div
+                className={`relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary${
+                  isMobile ? ' mobile-rollback-bubble-no-select' : ''
+                }`}
+                data-rollback-bubble={msg.id}
+                {...getMobileRollbackBubbleProps(msg.id)}
+              >
+                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
+                <div className={`absolute -top-2.5 -right-2.5 transition-opacity ${
+                  isMobile
+                    ? (rollbackButtonEnabled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none')
+                    : 'opacity-0 group-hover:opacity-100'
+                }`}>
+                  <button
+                    onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
+                    disabled={!rollbackButtonEnabled}
+                    className="w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
+                    title="回滚到此处"
+                  >
+                    <RollbackIcon size={12} />
+                  </button>
                 </div>
-              ) : (
-                <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary">
-                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                  {/* Action buttons — bottom-right of bubble, visible on group-hover */}
-                  <div className="absolute -bottom-5 right-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(msg.content).then(() => {
-                          setCopiedId(msg.id);
-                          setTimeout(() => setCopiedId(null), 2000);
-                        });
-                      }}
-                      className="text-white/60 hover:text-white p-1"
-                      title={t('copy')}
-                    >
-                      {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-                    </button>
-                    <button
-                      onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
-                      className="text-white/60 hover:text-white p-1"
-                      title={t('edit')}
-                    >
-                      <EditIcon size={13} />
-                    </button>
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
           );
         }
@@ -271,20 +274,35 @@ export default function ConversationView({
               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
               {msg.code && (() => {
                 const isExpanded = expandedCode.has(msg.id);
-                const lineCount = msg.code.split('\n').length;
+                const code = msg.code;
+                const lineCount = code.split('\n').length;
                 return (
                   <div className="mt-2 rounded-md border border-[#93C2FF]/10 overflow-hidden">
-                    <button
-                      onClick={() => toggleCode(msg.id)}
-                      className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-bg-primary/60 text-[11px] text-[#93C2FF]/70 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors text-left"
-                    >
-                      <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                      <span>{t('strudelCode')}</span>
-                      <span className="text-text-muted/50">· {lineCount} {t('lines')}</span>
-                    </button>
+                    <div className="w-full flex items-center bg-bg-primary/60 text-[11px] text-[#93C2FF]/70">
+                      <button
+                        onClick={() => toggleCode(msg.id)}
+                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors text-left"
+                      >
+                        <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                        <span>Strudel 代码</span>
+                        <span className="text-text-muted/50">· {lineCount} 行</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(code).then(() => {
+                            setCopiedId(msg.id);
+                            setTimeout(() => setCopiedId(null), 2000);
+                          });
+                        }}
+                        className="px-2 py-1.5 text-white/60 hover:text-white hover:bg-bg-primary/80 transition-colors"
+                        title="复制代码"
+                      >
+                        {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                      </button>
+                    </div>
                     {isExpanded && (
                       <pre className="p-2 bg-bg-primary/60 text-[11px] text-[#93C2FF]/90 font-mono overflow-x-auto whitespace-pre-wrap">
-                        {msg.code}
+                        {code}
                       </pre>
                     )}
                   </div>

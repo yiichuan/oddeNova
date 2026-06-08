@@ -1,6 +1,9 @@
+import { getErrorMessage } from '../lib/errors';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExport } from '../lib/analytics';
+
+type SafariAudioContextState = AudioContextState | 'interrupted';
 
 type StrudelReplState = {
   code?: string;
@@ -20,11 +23,99 @@ export type StrudelState = {
   isPlaying: boolean;
   error: string | null;
   engineReady: boolean;
+  engineStatus: 'initializing' | 'ready' | 'failed';
 };
 
 type StateCallback = (state: StrudelState) => void;
 
-class StrudelService {
+const USER_RESUME_PROMPT = '点击播放继续';
+
+type PageAudioRecoveryTarget = Pick<Window | Document, 'addEventListener' | 'removeEventListener'>;
+
+type PageAudioRecoveryOptions = {
+  getIsPlaying: () => boolean;
+  getVisibilityState: () => DocumentVisibilityState;
+  onPlaybackInterrupted: () => void;
+  requestUserResume: () => void;
+  windowTarget: PageAudioRecoveryTarget;
+  documentTarget: PageAudioRecoveryTarget;
+};
+
+type PageAudioRecovery = {
+  clearResumeIntent: () => void;
+  dispose: () => void;
+};
+
+function isOfflineAudioContext(ctx: BaseAudioContext): boolean {
+  return typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+}
+
+// Disconnect a node (optionally from a specific destination), ignoring the
+// "node is not connected" error WebAudio throws when it was never wired up.
+function safeDisconnect(node: AudioNode, dest?: AudioNode): void {
+  try {
+    if (dest) node.disconnect(dest);
+    else node.disconnect();
+  } catch { /* not connected */ }
+}
+
+export async function ensureAudioContextResumed(): Promise<SafariAudioContextState> {
+  const { getAudioContext } = await import('superdough');
+  const ctx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+
+  if (isOfflineAudioContext(ctx)) return ctx.state;
+  if (ctx.state === 'running' || ctx.state === 'closed') return ctx.state;
+
+  await ctx.resume();
+  return ctx.state;
+}
+
+export function installPageAudioRecovery(options: PageAudioRecoveryOptions): PageAudioRecovery {
+  let shouldResume = false;
+  let hasRequestedResume = false;
+
+  const rememberResumeIntent = (): void => {
+    if (shouldResume || !options.getIsPlaying()) return;
+
+    shouldResume = true;
+    hasRequestedResume = false;
+    options.onPlaybackInterrupted();
+  };
+
+  const requestResumeIfVisible = (): void => {
+    if (!shouldResume || hasRequestedResume || options.getVisibilityState() !== 'visible') return;
+    hasRequestedResume = true;
+    options.requestUserResume();
+  };
+
+  const handleVisibilityChange = (): void => {
+    if (options.getVisibilityState() === 'hidden') {
+      rememberResumeIntent();
+    } else {
+      requestResumeIfVisible();
+    }
+  };
+
+  options.documentTarget.addEventListener('visibilitychange', handleVisibilityChange);
+  options.windowTarget.addEventListener('pagehide', rememberResumeIntent);
+  options.windowTarget.addEventListener('pageshow', requestResumeIfVisible);
+  options.windowTarget.addEventListener('focus', requestResumeIfVisible);
+
+  return {
+    clearResumeIntent: () => {
+      shouldResume = false;
+      hasRequestedResume = false;
+    },
+    dispose: () => {
+      options.documentTarget.removeEventListener('visibilitychange', handleVisibilityChange);
+      options.windowTarget.removeEventListener('pagehide', rememberResumeIntent);
+      options.windowTarget.removeEventListener('pageshow', requestResumeIfVisible);
+      options.windowTarget.removeEventListener('focus', requestResumeIfVisible);
+    },
+  };
+}
+
+export class StrudelService {
   private static _instance: StrudelService | null = null;
 
   private editorInstance: StrudelMirrorType | null = null;
@@ -49,12 +140,13 @@ class StrudelService {
   // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
-
+  private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
     code: '',
     isPlaying: false,
     error: null,
     engineReady: false,
+    engineStatus: 'initializing',
   };
 
   private stateCallbacks: StateCallback[] = [];
@@ -66,7 +158,21 @@ class StrudelService {
     return StrudelService._instance;
   }
 
-  private constructor() {}
+  constructor() {
+    if (!this._isVideoMode && typeof window !== 'undefined' && typeof document !== 'undefined') {
+      this.pageAudioRecovery = installPageAudioRecovery({
+        getIsPlaying: () => this._state.isPlaying,
+        getVisibilityState: () => document.visibilityState,
+        onPlaybackInterrupted: () => {
+          this.editorInstance?.repl.stop();
+          this.notify({ isPlaying: false });
+        },
+        requestUserResume: () => this.notify({ error: USER_RESUME_PROMPT, isPlaying: false }),
+        windowTarget: window,
+        documentTarget: document,
+      });
+    }
+  }
 
   onStateChange(cb: StateCallback): () => void {
     this.stateCallbacks.push(cb);
@@ -90,69 +196,78 @@ class StrudelService {
   }
 
   private prebake = async (): Promise<void> => {
-    const { evalScope, Pattern, noteToMidi, valueToMidi } = await import('@strudel/core');
-    const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
+    try {
+      const { evalScope, Pattern, noteToMidi, valueToMidi } = await import('@strudel/core');
+      const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
-    initAudioOnFirstClick();
+      initAudioOnFirstClick();
 
-    const loadModules = evalScope(
-      import('@strudel/core'),
-      import('@strudel/codemirror'),
-      import('@strudel/draw'),
-      import('@strudel/mini'),
-      import('@strudel/tonal'),
-      import('@strudel/webaudio'),
-    );
+      const loadModules = evalScope(
+        import('@strudel/core'),
+        import('@strudel/codemirror'),
+        import('@strudel/draw'),
+        import('@strudel/mini'),
+        import('@strudel/tonal'),
+        import('@strudel/webaudio'),
+      );
 
-    if (this._isVideoMode) {
-      // Video/headless render: only load pattern evaluation modules.
-      // Skip WebAudio init and remote sample downloads — they freeze the
-      // Remotion headless Chrome page and are not needed for screenshot rendering.
-      await loadModules;
-    } else {
-      await Promise.all([
-        loadModules,
-        registerSynthSounds(),
-        samples('github:tidalcycles/dirt-samples'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json'),
-        samples('https://raw.githubusercontent.com/felixroos/dough-samples/main/mridangam.json'),
-      ]);
-      await samples('https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json');
-      await aliasBank('https://raw.githubusercontent.com/todepond/samples/main/tidal-drum-machines-alias.json');
-      registerSoundfonts();
-      (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
-      (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
-      (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
-        this.recordLive(sec, name);
+      if (this._isVideoMode) {
+        // Video/headless render: only load pattern evaluation modules.
+        // Skip WebAudio init and remote sample downloads — they freeze the
+        // Remotion headless Chrome page and are not needed for screenshot rendering.
+        await loadModules;
+      } else {
+        await Promise.all([
+          loadModules,
+          registerSynthSounds(),
+          samples('/sample-index/dirt-samples.json'),
+          samples('/sample-index/tidal-drum-machines.json'),
+          samples('/sample-index/piano.json'),
+          samples('/sample-index/vcsl.json'),
+          samples('/sample-index/mridangam.json'),
+        ]);
+        await samples('/sample-index/uzu-drumkit.json');
+        await aliasBank('/sample-index/tidal-drum-machines-alias.json');
+        registerSoundfonts();
+        (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
+        (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+        (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
+          this.recordLive(sec, name);
+      }
+
+      // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
+      const maxPan = noteToMidi('C8');
+      const panwidth = (pan: number, width: number) => pan * width + (1 - width) / 2;
+      if (!Pattern.prototype.piano) {
+        Pattern.prototype.piano = function () {
+          return this.fmap((v: Record<string, unknown>) => ({ ...v, clip: v['clip'] ?? 1 }))
+            .s('piano')
+            .release(0.1)
+            .fmap((value: Record<string, unknown>) => {
+              const midi = valueToMidi(value);
+              const pan = panwidth(Math.min(Math.round(midi) / maxPan, 1), 0.5);
+              return { ...value, pan: ((value['pan'] as number) || 1) * pan };
+            });
+        };
+      }
+
+      this.isAudioInitialized = true;
+      this.notify({ engineReady: true, engineStatus: 'ready', error: null });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.isAudioInitialized = false;
+      this.notify({ engineReady: false, engineStatus: 'failed', error: message });
+      throw error;
     }
-
-    // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
-    const maxPan = noteToMidi('C8');
-    const panwidth = (pan: number, width: number) => pan * width + (1 - width) / 2;
-    if (!Pattern.prototype.piano) {
-      Pattern.prototype.piano = function () {
-        return this.fmap((v: Record<string, unknown>) => ({ ...v, clip: v['clip'] ?? 1 }))
-          .s('piano')
-          .release(0.1)
-          .fmap((value: Record<string, unknown>) => {
-            const midi = valueToMidi(value);
-            const pan = panwidth(Math.min(Math.round(midi) / maxPan, 1), 0.5);
-            return { ...value, pan: ((value['pan'] as number) || 1) * pan };
-          });
-      };
-    }
-
-    this.isAudioInitialized = true;
-    this.notify({ engineReady: true });
   };
 
   attach = async (container: HTMLElement): Promise<void> => {
     if (this.containerElement === container && this.editorInstance) return;
     if (this.isInitializing) return;
 
+    this.containerElement = container;
     this.isInitializing = true;
+    this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     try {
       const { StrudelMirror } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
@@ -181,7 +296,6 @@ class StrudelService {
         this.editorInstance = null;
       }
 
-      this.containerElement = container;
       this.containerElement.innerHTML = '';
 
       this.editorInstance = new StrudelMirror({
@@ -194,9 +308,7 @@ class StrudelService {
         drawContext: getDrawContext(), // default id='test-canvas'; src/index.css has the corresponding #test-canvas z-index rule
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
-          const error = evalError
-            ? (evalError instanceof Error ? evalError.message : String(evalError))
-            : null;
+          const error = evalError ? getErrorMessage(evalError) : null;
           this.notify({
             code: state.code ?? this._state.code,
             isPlaying: state.started ?? false,
@@ -211,7 +323,11 @@ class StrudelService {
 
       // Sync REPL internal state with initial code
       this.editorInstance?.repl.setCode(currentCode);
-
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.isAudioInitialized = false;
+      this.notify({ engineReady: false, engineStatus: 'failed', error: message });
+      throw error;
     } finally {
       this.isInitializing = false;
     }
@@ -233,7 +349,7 @@ class StrudelService {
       lpfNode.frequency.value = 20000;
       this.masterLpfNode = lpfNode;
 
-      try { destGain.disconnect(ctx.destination); } catch { /* not connected */ }
+      safeDisconnect(destGain, ctx.destination);
       destGain.connect(lpfNode);
       lpfNode.connect(ctx.destination);
       this.masterChainReady = true;
@@ -248,6 +364,76 @@ class StrudelService {
     this.masterLpfNode = null;
     await this.setupMasterChain();
   };
+
+  private resetLiveAudioGraph = async (): Promise<void> => {
+    const {
+      getAudioContext,
+      setAudioContext,
+      setSuperdoughAudioController,
+      getSuperdoughAudioController,
+      clearNodePools,
+      resetGlobalEffects,
+      initAudio,
+    } = await import('superdough');
+
+    const currentCtx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+    this.editorInstance?.repl.stop();
+
+    if (!isOfflineAudioContext(currentCtx) && currentCtx.state !== 'closed' && typeof currentCtx.close === 'function') {
+      try { await currentCtx.close(); } catch { /* Safari may reject close while interrupted */ }
+    }
+
+    setAudioContext(null);
+    setSuperdoughAudioController(null);
+    clearNodePools();
+    resetGlobalEffects();
+    registerSoundfonts();
+
+    if (typeof window !== 'undefined') {
+      (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
+      (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+    }
+
+    const nextCtx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+    if (!isOfflineAudioContext(nextCtx) && nextCtx.state !== 'running') {
+      await nextCtx.resume();
+    }
+
+    await initAudio({ maxPolyphony: 128, multiChannelOrbits: false });
+    await this.rebuildMasterChain();
+    await this.setMasterVolume(this.currentMasterVolume);
+    await this.setMasterLPF(this.currentMasterLpfHz);
+  };
+
+  private ensurePlayableAudioGraph = async (): Promise<void> => {
+    if (this._isVideoMode) return;
+
+    const { getAudioContext } = await import('superdough');
+    const ctx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+    if (isOfflineAudioContext(ctx)) return;
+
+    if (ctx.state === 'closed') {
+      await this.resetLiveAudioGraph();
+      return;
+    }
+
+    try {
+      await ensureAudioContextResumed();
+    } catch {
+      await this.resetLiveAudioGraph();
+      return;
+    }
+
+    const resumedCtx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
+    if (!isOfflineAudioContext(resumedCtx) && resumedCtx.state !== 'running') {
+      await this.resetLiveAudioGraph();
+    }
+  };
+
+  private isLikelyAudioGraphError(error: unknown): boolean {
+    const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+    return /AudioContext|AudioNode|InvalidAccessError|interrupted|suspended|closed/i.test(message);
+  }
 
   setMasterVolume = async (value: number): Promise<void> => {
     this.currentMasterVolume = value;
@@ -319,11 +505,33 @@ class StrudelService {
   play = async (): Promise<void> => {
     if (!this.editorInstance) throw new Error('Engine not initialized');
     this.notify({ error: null });
-    await this.editorInstance.evaluate();
-    void this.setupMasterChain();
+    try {
+      await this.ensurePlayableAudioGraph();
+      await this.editorInstance.evaluate();
+      this.pageAudioRecovery?.clearResumeIntent();
+      void this.setupMasterChain();
+    } catch (error) {
+      if (this.isLikelyAudioGraphError(error)) {
+        try {
+          await this.resetLiveAudioGraph();
+          await this.editorInstance.evaluate();
+          this.pageAudioRecovery?.clearResumeIntent();
+          void this.setupMasterChain();
+          return;
+        } catch (retryError) {
+          const message = getErrorMessage(retryError);
+          this.notify({ error: message });
+          throw retryError;
+        }
+      }
+      const message = getErrorMessage(error);
+      this.notify({ error: message });
+      throw error;
+    }
   };
 
   stop = (): void => {
+    this.pageAudioRecovery?.clearResumeIntent();
     this.editorInstance?.repl.stop();
   };
 
@@ -434,7 +642,7 @@ class StrudelService {
       const controller = getSuperdoughAudioController() as any;
       const destGain: GainNode | undefined = controller?.output?.destinationGain;
       if (destGain) {
-        try { destGain.disconnect(offlineCtx.destination); } catch { /* not connected */ }
+        safeDisconnect(destGain, offlineCtx.destination);
         const masterGain = offlineCtx.createGain();
         masterGain.gain.value = this.currentMasterVolume;
         const lpf = offlineCtx.createBiquadFilter();
@@ -587,9 +795,9 @@ class StrudelService {
 
     await new Promise((r) => setTimeout(r, durationSec * 1000));
 
-    try { tap.disconnect(sp); } catch { /* not connected */ }
-    try { sp.disconnect(); } catch { /* not connected */ }
-    try { muteGain.disconnect(); } catch { /* not connected */ }
+    safeDisconnect(tap, sp);
+    safeDisconnect(sp);
+    safeDisconnect(muteGain);
 
     const totalLen = leftChunks.reduce((acc, c) => acc + c.length, 0);
     const left = new Float32Array(totalLen);
@@ -616,7 +824,7 @@ class StrudelService {
       this.editorInstance.dispose?.();
       this.editorInstance = null;
     }
-    this.notify({ engineReady: false, error: null });
+    this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     await this.attach(this.containerElement);
   };
 }
@@ -828,7 +1036,7 @@ export function validateCodeRuntime(code: string): ValidationResult {
     }
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e), kind: 'runtime' };
+    return { ok: false, error: getErrorMessage(e), kind: 'runtime' };
   }
 }
 
@@ -842,7 +1050,7 @@ export function validateCodeTranspiler(code: string): { ok: boolean; error?: str
     cachedTranspiler(clean);
     return { ok: true };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = getErrorMessage(e);
     // Only surface errors explicitly from the mini-notation parser (prefixed with
     // "[mini]" by mini2ast). Other transpiler errors (acorn JS parse issues,
     // unregistered plugins, etc.) may be false positives — let them pass through.

@@ -1,14 +1,14 @@
 // ===========================================================================
 // LLM configuration file — centralised management of switchable models and API credentials.
 //
-// Provider routing rules:
+// Provider routing rules：
 //   anthropic  → legacy proxy (timesniper.club) + LEGACY_MODELS + VITE_API_KEY takes priority
 //   deepseek   → api.deepseek.com + built-in model + localStorage vibe_api_key
 //   kimi       → api.moonshot.cn  + built-in model + localStorage vibe_api_key
 //   openai     → api.openai.com   + built-in model + localStorage vibe_api_key
-//   official   → api.deepseek.com + built-in model + localStorage vibe_api_key
+//   official   → /api/official/v1 + built-in model + server OFFICIAL_API_KEY / VITE_API_KEY
 //   glm        → open.bigmodel.cn + built-in model + localStorage vibe_api_key
-//   not set    → same as anthropic (backwards compatible with existing users)
+//   not set     → official
 // ===========================================================================
 
 /** Provider protocol type; determines which SDK to use. */
@@ -62,7 +62,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   },
   official: {
     label: '官方体验',
-    baseURL: 'https://api.deepseek.com/v1',
+    baseURL: '/api/official/v1',
     model: 'deepseek-v4-pro',
     protocol: 'openai',
   },
@@ -114,13 +114,19 @@ function resolveOpenAICompatConfig(
   apiKey: string,
 ): ModelConfig {
   const preset = PROVIDER_PRESETS[provider];
+  const isOfficial = provider === 'official';
   return {
     provider,
     protocol: 'openai',
-    apiKey,
-    baseURL: import.meta.env.VITE_BASE_URL || preset.baseURL,
+    apiKey: isOfficial ? 'official-proxy' : apiKey,
+    baseURL: isOfficial ? resolveOfficialBaseURL() : (import.meta.env.VITE_BASE_URL || preset.baseURL),
     model:   preset.model,
   };
+}
+
+function resolveOfficialBaseURL(): string {
+  if (typeof window === 'undefined') return PROVIDER_PRESETS.official.baseURL;
+  return `${window.location.origin}${PROVIDER_PRESETS.official.baseURL}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +158,11 @@ export function getActiveModelConfig(): ModelConfig {
     return resolveAnthropicConfig(anthropicKey);
   }
 
-  // Other providers use the key the user entered in the Modal
+  if (provider === 'official') {
+    return resolveOpenAICompatConfig(provider, 'official-proxy');
+  }
+
+  // 其他 provider 使用用户在 Modal 里填的 Key
   const userApiKey = localStorage.getItem('vibe_api_key') || '';
 
   // deepseek | kimi | openai | official | glm
@@ -161,6 +171,9 @@ export function getActiveModelConfig(): ModelConfig {
 
 /** Whether an API Key has already been configured. */
 export function hasApiKeyConfigured(): boolean {
+  const provider = normalizeProvider(localStorage.getItem('vibe_provider'));
+  if (provider === 'official') return true;
+
   return !!(
     import.meta.env.VITE_API_KEY ||
     localStorage.getItem('vibe_api_key')
