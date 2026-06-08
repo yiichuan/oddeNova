@@ -1,20 +1,20 @@
 // ===========================================================================
-// LLM 配置文件 —— 集中管理可切换的模型与 API 凭据。
+// LLM configuration file — centralised management of switchable models and API credentials.
 //
-// Provider 路由规则：
-//   anthropic  → 旧版代理 (timesniper.club) + LEGACY_MODELS + VITE_API_KEY 优先
-//   deepseek   → api.deepseek.com + 内置模型 + localStorage vibe_api_key
-//   kimi       → api.moonshot.cn  + 内置模型 + localStorage vibe_api_key
-//   openai     → api.openai.com   + 内置模型 + localStorage vibe_api_key
-//   official   → /api/official/v1 + 内置模型 + 服务端 OFFICIAL_API_KEY / VITE_API_KEY
-//   glm        → open.bigmodel.cn + 内置模型 + localStorage vibe_api_key
-//   未设置     → official
+// Provider routing rules：
+//   anthropic  → legacy proxy (timesniper.club) + LEGACY_MODELS + VITE_API_KEY takes priority
+//   deepseek   → api.deepseek.com + built-in model + localStorage vibe_api_key
+//   kimi       → api.moonshot.cn  + built-in model + localStorage vibe_api_key
+//   openai     → api.openai.com   + built-in model + localStorage vibe_api_key
+//   official   → /api/official/v1 + built-in model + server OFFICIAL_API_KEY / VITE_API_KEY
+//   glm        → open.bigmodel.cn + built-in model + localStorage vibe_api_key
+//   not set     → official
 // ===========================================================================
 
-/** Provider 协议类型，决定使用哪套 SDK。 */
+/** Provider protocol type; determines which SDK to use. */
 export type Protocol = 'anthropic' | 'openai';
 
-/** 用户可选择的服务商 ID。 */
+/** User-selectable provider ID. */
 export type ProviderType =
   | 'deepseek'
   | 'kimi'
@@ -24,40 +24,40 @@ export type ProviderType =
   | 'glm';
 
 export interface ProviderPreset {
-  /** 显示名称 */
+  /** Display name */
   label: string;
-  /** 内置 Base URL */
+  /** Built-in base URL */
   baseURL: string;
-  /** 内置模型名，对用户不可见 */
+  /** Built-in model name, not visible to the user */
   model: string;
-  /** 使用哪套 SDK 协议 */
+  /** Which SDK protocol to use */
   protocol: Protocol;
 }
 
-/** 各服务商的内置配置，Base URL 对用户不可见。 */
+/** Built-in configuration for each provider; Base URL is not visible to the user. */
 export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   deepseek: {
     label: 'DeepSeek',
     baseURL: 'https://api.deepseek.com/v1',
-    model: 'deepseek-v4-flash', // 官方当前模型，支持 function calling
+    model: 'deepseek-v4-flash', // current official model, supports function calling
     protocol: 'openai',
   },
   kimi: {
     label: 'Kimi',
     baseURL: 'https://api.moonshot.cn/v1',
-    model: 'kimi-k2.6',         // 官方工具调用文档示例模型
+    model: 'kimi-k2.6',         // model shown in the official tool-calling documentation examples
     protocol: 'openai',
   },
   openai: {
     label: 'OpenAI',
     baseURL: 'https://api.openai.com/v1',
-    model: 'gpt-5.5',           // 当前旗舰，支持 Chat Completions API + function calling
+    model: 'gpt-5.5',           // current flagship model, supports Chat Completions API + function calling
     protocol: 'openai',
   },
   anthropic: {
     label: 'Anthropic',
-    baseURL: 'https://api.anthropic.com', // 仅作展示用；实际 baseURL 走 LEGACY_BASE_URL
-    model: 'claude-opus-4-6',             // 仅作展示用；实际 model 走 LEGACY_MODELS
+    baseURL: 'https://api.anthropic.com', // display only; actual baseURL uses LEGACY_BASE_URL
+    model: 'claude-opus-4-6',             // display only; actual model uses LEGACY_MODELS
     protocol: 'anthropic',
   },
   official: {
@@ -83,7 +83,7 @@ export interface ModelConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Anthropic / 旧用户 路径（保持不变）
+// Anthropic / legacy-user path (kept unchanged)
 // ---------------------------------------------------------------------------
 
 const LEGACY_BASE_URL = 'https://timesniper.club';
@@ -106,7 +106,7 @@ function resolveAnthropicConfig(apiKey: string): ModelConfig {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI-compat 路径（deepseek / kimi / openai / official / glm）
+// OpenAI-compat path (deepseek / kimi / openai / official / glm)
 // ---------------------------------------------------------------------------
 
 function resolveOpenAICompatConfig(
@@ -130,25 +130,25 @@ function resolveOfficialBaseURL(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Provider 规范化（向后兼容旧 localStorage 值）
+// Provider normalisation (backwards compatible with old localStorage values)
 // ---------------------------------------------------------------------------
 
 export function normalizeProvider(raw: string | null): ProviderType {
   if (!raw) return 'official';
   if (raw in PROVIDER_PRESETS) return raw as ProviderType;
-  // 旧版 'openai-compat' / 'custom' / 'qiniu' 均降级为 official
+  // Legacy values 'openai-compat' / 'custom' / 'qiniu' all downgrade to official
   return 'official';
 }
 
 // ---------------------------------------------------------------------------
-// 主入口
+// Main entry point
 // ---------------------------------------------------------------------------
 
-/** 从环境变量或 localStorage 读取运行时配置。 */
+/** Read runtime configuration from environment variables or localStorage. */
 export function getActiveModelConfig(): ModelConfig {
   const provider = normalizeProvider(localStorage.getItem('vibe_provider'));
 
-  // Anthropic 始终走旧代理；VITE_API_KEY 优先（方便本地开发）
+  // Anthropic always uses the legacy proxy; VITE_API_KEY takes priority (convenient for local development)
   const anthropicKey =
     import.meta.env.VITE_API_KEY ||
     localStorage.getItem('vibe_api_key') ||
@@ -169,7 +169,7 @@ export function getActiveModelConfig(): ModelConfig {
   return resolveOpenAICompatConfig(provider, userApiKey);
 }
 
-/** 是否已有 API Key 配置。 */
+/** Whether an API Key has already been configured. */
 export function hasApiKeyConfigured(): boolean {
   const provider = normalizeProvider(localStorage.getItem('vibe_provider'));
   if (provider === 'official') return true;
@@ -180,7 +180,7 @@ export function hasApiKeyConfigured(): boolean {
   );
 }
 
-// 向后兼容：部分旧代码仍引用这些导出
+// Backwards compatibility: some legacy code still references these exports
 export type ModelKey = 'sonnet' | 'opus';
 export const ACTIVE_MODEL: ModelKey = (() => {
   const env = import.meta.env.VITE_LLM_MODEL as string | undefined;

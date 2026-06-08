@@ -1,9 +1,9 @@
 // src/demo/demo-llm.ts
 //
-// 实现 LLMCaller 接口的"剧本 LLM"。
-// 每次调用 createDemoLLMCaller 得到一个新实例（round 计数器归零）。
-// chatWithTools 按剧本逐轮推进，每轮返回 thinking + 一组工具调用，
-// 直到 commit 被触发（由 agent loop 捕获 CommitSignal 结束）。
+// A "scripted LLM" that implements the LLMCaller interface.
+// Each call to createDemoLLMCaller returns a fresh instance (round counter reset to zero).
+// chatWithTools advances through the script round by round, returning thinking + a set of tool calls each round,
+// until commit is triggered (the agent loop catches CommitSignal and exits).
 
 import type { LLMCaller } from '../agent/loop';
 import type { ToolCallRequest } from '../agent/executor';
@@ -32,7 +32,7 @@ export function createDemoLLMCaller(scenario: DemoScenario): LLMCaller {
     async chatWithTools(_messages, _tools, onTextDelta, _onReasoningDelta, signal) {
       if (round < scenario.rounds.length) {
         const { thinking, toolCalls } = scenario.rounds[round];
-        // 首轮多等一会儿，后续轮次稍短，模拟真实 LLM 响应节奏
+        // Wait longer on the first round, shorter on subsequent rounds, simulating realistic LLM response pacing
         await sleep(round === 0 ? 2000 : 1500, signal);
         if (thinking && onTextDelta) await streamText(thinking, onTextDelta, signal);
         const calls: ToolCallRequest[] = toolCalls.map((tc, i) => ({
@@ -44,16 +44,16 @@ export function createDemoLLMCaller(scenario: DemoScenario): LLMCaller {
         return { content: thinking ?? null, toolCalls: calls };
       }
 
-      // 安全兜底：正常情况下 commit 在最后一轮已触发 CommitSignal
+      // Safety fallback: under normal conditions commit should have triggered CommitSignal on the last round
       return { content: null, toolCalls: [] };
     },
   };
 }
 
 /**
- * 心情模式专用剧本 LLM。
- * 按 scenario.rounds 依次推进，每轮返回 thinking + 多个工具调用，
- * 完整还原「感知心情 → 即兴生成 → 装配 → 修正 → 提交」的思考过程。
+ * Scripted LLM dedicated to mood mode.
+ * Advances through scenario.rounds in order, returning thinking + multiple tool calls each round,
+ * fully reproducing the thought process of "sense mood → improvise → assemble → refine → commit".
  */
 export function createDemoMoodLLMCaller(scenario: DemoMoodScenario): LLMCaller {
   let round = 0;
@@ -62,7 +62,7 @@ export function createDemoMoodLLMCaller(scenario: DemoMoodScenario): LLMCaller {
     async chatWithTools(_messages, _tools, onTextDelta, _onReasoningDelta, signal) {
       if (round < scenario.rounds.length) {
         const { thinking, toolCalls } = scenario.rounds[round];
-        // 首轮稍长，后续轮次稍短，模拟真实 LLM 思考节奏
+        // Slightly longer on the first round, shorter on subsequent rounds, simulating realistic LLM thinking pacing
         await sleep(round === 0 ? 3000 : 2200, signal);
         if (thinking && onTextDelta) await streamText(thinking, onTextDelta, signal);
         const calls: ToolCallRequest[] = toolCalls.map((tc, i) => ({
@@ -74,7 +74,7 @@ export function createDemoMoodLLMCaller(scenario: DemoMoodScenario): LLMCaller {
         return { content: thinking ?? null, toolCalls: calls };
       }
 
-      // 安全兜底：正常情况下 commit 在最后一轮已经触发 CommitSignal
+      // Safety fallback: under normal conditions commit should have triggered CommitSignal on the last round
       return { content: null, toolCalls: [] };
     },
   };

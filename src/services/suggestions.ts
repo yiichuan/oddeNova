@@ -1,15 +1,26 @@
 import { chatOnce } from './llm';
+import { zh } from '../lib/i18n';
 
-// 模型/凭据复用 services/llm-config.ts 中的统一配置；
-// 单轮请求通过 chatOnce() 自动路由到当前 provider。
+// Model/credentials reuse the unified configuration in services/llm-config.ts;
+// single-turn requests are automatically routed to the current provider via chatOnce().
 
-export const STATIC_SUGGESTIONS = [
+const STATIC_SUGGESTIONS_ZH = [
   '来段复古游戏机通关音乐',
   '来段Jazz Funk',
   '来首小提琴和钢琴',
   '来点动感音乐',
   '来首古典优雅钢琴曲',
 ];
+
+const STATIC_SUGGESTIONS_EN = [
+  'Play some retro game music',
+  'Play some Jazz Funk',
+  'Play violin and piano',
+  'Play some energetic music',
+  'Play a classical piano piece',
+];
+
+export const STATIC_SUGGESTIONS = zh ? STATIC_SUGGESTIONS_ZH : STATIC_SUGGESTIONS_EN;
 
 export type MusicStage = 'early' | 'developing' | 'full';
 export type MusicLayer = typeof ALL_LAYERS[number];
@@ -89,12 +100,12 @@ export function extractStyleIntent(messages: { role: string; content: string }[]
   return null;
 }
 
-function buildSuggestSystem(state: MusicState, styleIntent: string | null): string {
-  const layersStr = state.layers.length > 0 ? state.layers.join(', ') : '无';
-  const missingStr = state.missing.length > 0 ? state.missing.join(', ') : '无';
-  const styleStr = styleIntent ?? '未知';
-
-  return `你是 Strudel 实时电子乐协作伙伴。
+function buildSuggestSystem(state: MusicState, styleIntent: string | null, isZh: boolean): string {
+  if (isZh) {
+    const layersStr = state.layers.length > 0 ? state.layers.join(', ') : '无';
+    const missingStr = state.missing.length > 0 ? state.missing.join(', ') : '无';
+    const styleStr = styleIntent ?? '未知';
+    return `你是 Strudel 实时电子乐协作伙伴。
 
 当前曲子状态：
 - 已有声部：${layersStr}
@@ -110,6 +121,27 @@ function buildSuggestSystem(state: MusicState, styleIntent: string | null): stri
 - 风格方向不为"未知"时，建议内容要符合该风格特征
 - 每条 6-12 个字，自然口语，不要英文术语堆砌
 - 输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
+  }
+
+  const layersStr = state.layers.length > 0 ? state.layers.join(', ') : 'none';
+  const missingStr = state.missing.length > 0 ? state.missing.join(', ') : 'none';
+  const styleStr = styleIntent ?? 'unknown';
+  return `You are a Strudel live-coding music collaborator.
+
+Current track state:
+- Present layers: ${layersStr}
+- Missing layers: ${missingStr}
+- Production stage: ${state.stage}
+- Style direction: ${styleStr}
+
+Based on this state, suggest 2 short next-step instructions the user could give, in English.
+Rules:
+- stage=early → prioritise adding missing layers (e.g. "Add a drum beat", "Lay in a bass line")
+- stage=developing → can add layers or tweak texture/rhythm/tempo
+- stage=full → focus on variation and mood shifts, do not suggest adding more layers
+- When style direction is known, suggestions must fit that style
+- 5–10 words each, natural phrasing, avoid jargon
+- Output JSON: {"suggestions":["...","..."]}, nothing else`;
 }
 
 interface SuggestResult {
@@ -152,11 +184,13 @@ function parseSuggestions(text: string): string[] | null {
 
 /**
  * Extract next-step suggestion lines from a commit explanation.
- * Matches "接下来可以：\n- item1\n- item2" format written by the agent.
- * Returns an empty array if the section is absent.
+ * Supports both Chinese ("接下来可以：") and English ("Next steps:") formats.
+ * Returns an empty array if neither section is found.
  */
 export function parseNextSteps(explanation: string): string[] {
-  const match = explanation.match(/接下来可以[：:][\s\S]*$/);
+  const match =
+    explanation.match(/接下来可以[：:][\s\S]*$/) ??
+    explanation.match(/Next steps[：:]\s*[\s\S]*$/i);
   if (!match) return [];
   return match[0]
     .split('\n')
@@ -170,6 +204,11 @@ export function parseNextSteps(explanation: string): string[] {
  * - Empty code → static defaults.
  * - Otherwise → LLM call with music state context; failure falls back to static.
  */
+function detectIsZh(messages: { role: string; content: string }[]): boolean {
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+  return lastUser ? /[一-龥]/.test(lastUser.content) : zh;
+}
+
 export async function buildSuggestions(
   currentCode: string,
   messages: { role: string; content: string }[],
@@ -178,12 +217,16 @@ export async function buildSuggestions(
     return pickStatic(2);
   }
   try {
+    const isZh = detectIsZh(messages);
     const state = analyzeMusicState(currentCode);
     const styleIntent = extractStyleIntent(messages);
-    const system = buildSuggestSystem(state, styleIntent);
-    console.debug('[suggestions] calling LLM for suggestions, stage=%s style=%s', state.stage, styleIntent);
+    const system = buildSuggestSystem(state, styleIntent, isZh);
+    console.debug('[suggestions] calling LLM for suggestions, stage=%s style=%s isZh=%s', state.stage, styleIntent, isZh);
 
-    const text = await chatOnce(system, `当前曲谱：\n${currentCode}\n\n请输出 2 条建议。`, {
+    const userMsg = isZh
+      ? `当前曲谱：\n${currentCode}\n\n请输出 2 条建议。`
+      : `Current score:\n${currentCode}\n\nOutput 2 suggestions.`;
+    const text = await chatOnce(system, userMsg, {
       temperature: 0.8,
       maxTokens: 2048,
     });

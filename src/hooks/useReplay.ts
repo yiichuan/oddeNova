@@ -3,20 +3,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from './useChat';
 import type { Session } from './useSessions';
 
-// ── 回放延时配置（统一调参入口）─────────────────────────────────────
+// ── Replay timing configuration (single place to tune all delays) ─────────
 
 export const REPLAY_TIMING = {
-  /** 初始等待，让 UI 在开始推消息前先稳定 */
+  /** Initial wait to let the UI stabilize before messages start being pushed */
   initialStabilize: 500,
 
-  /** 逐字打入输入框的每字间隔 */
+  /** Interval between each character typed into the input box */
   charInterval: 30,
-  /** 打完一条用户消息后的确认停顿 */
+  /** Confirmation pause after finishing typing a user message */
   afterTyping: 300,
-  /** 用户消息"发送"后到下一条消息的间隔 */
+  /** Delay after a user message is "sent" before the next message */
   afterUserSend: 600,
 
-  /** progress 消息各类型的停顿 */
+  /** Pause durations for each type of progress message */
   progress: {
     thinking: 400,
     toolCallResult: 150,
@@ -24,12 +24,12 @@ export const REPLAY_TIMING = {
     other: 100, // iteration / warn
   },
 
-  /** 助手消息带代码（触发播放）后的停顿 */
+  /** Pause after an assistant message that carries code (triggering playback) */
   afterPlay: 4000,
-  /** 助手消息无代码后的停顿 */
+  /** Pause after an assistant message with no code */
   afterAssistant: 800,
 
-  /** 回放全部完成后，回放按钮再次出现前的延迟 */
+  /** Delay after all replay is complete before the replay button reappears */
   afterReplayComplete: 6000,
 };
 
@@ -65,8 +65,8 @@ export interface ReplayCallbacks {
 }
 
 /**
- * 按 session 消息顺序依次回放，通过 callbacks 通知外层。
- * 若 signal 触发 abort，会提前退出（reject with AbortError）。
+ * Replay session messages in order, notifying the outer layer via callbacks.
+ * If the signal triggers an abort, exits early (rejects with AbortError).
  */
 export async function runReplay(
   messages: ChatMessage[],
@@ -79,7 +79,7 @@ export async function runReplay(
     if (signal?.aborted) return;
 
     if (msg.role === 'user') {
-      // 逐字流入输入框
+      // Stream characters into the input box one at a time
       let accumulated = '';
       for (const char of msg.content) {
         if (signal?.aborted) return;
@@ -87,7 +87,7 @@ export async function runReplay(
         onSetInputText(accumulated);
         await sleep(REPLAY_TIMING.charInterval, signal);
       }
-      // 停顿模拟确认，然后"发送"
+      // Pause to simulate confirmation, then "send"
       await sleep(REPLAY_TIMING.afterTyping, signal);
       onAppendMessage(msg);
       onSetInputText('');
@@ -108,7 +108,7 @@ export async function runReplay(
   }
 }
 
-// ── React Hook 封装 ───────────────────────────────────────────────────
+// ── React Hook wrapper ────────────────────────────────────────────────────
 
 export interface UseReplayReturn {
   isReplaying: boolean;
@@ -133,13 +133,13 @@ export function useReplay(onPlay: (code: string) => void): UseReplayReturn {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // 立即设为 true → 按钮消失；内部 500ms 后才开始推消息
+    // Set to true immediately → button disappears; messages start being pushed 500ms later
     setIsReplaying(true);
     setReplayMessages([]);
     setReplayInputText('');
 
     (async () => {
-      await sleep(REPLAY_TIMING.initialStabilize, controller.signal); // 等待让 UI 稳定
+      await sleep(REPLAY_TIMING.initialStabilize, controller.signal); // wait for UI to stabilize
       await runReplay(
         session.messages,
         {

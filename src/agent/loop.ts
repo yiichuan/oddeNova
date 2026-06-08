@@ -131,18 +131,22 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     code: initialCode || '',
     finalCode: null,
   };
-  const ctx: ToolContext = { state };
-
+  const isZh = /[一-龥]/.test(instruction);
+  const ctx: ToolContext = { state, isZh };
   let userTurn: string;
   if (initialCode) {
     const score = parseScore(initialCode);
     const { bpm, layers } = summariseScore(score);
     const bpmStr = bpm != null ? `BPM: ${bpm}` : '';
-    const layersStr = layers.length > 0 ? `音层: ${layers.map((l) => l.name).join(' / ')}` : '（无音层）';
-    const meta = [bpmStr, layersStr].filter(Boolean).join('，');
-    userTurn = `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`;
+    const layersStr = isZh
+      ? layers.length > 0 ? `音层: ${layers.map((l) => l.name).join(' / ')}` : '（无音层）'
+      : layers.length > 0 ? `Layers: ${layers.map((l) => l.name).join(' / ')}` : '(no layers)';
+    const meta = [bpmStr, layersStr].filter(Boolean).join(isZh ? '，' : ', ');
+    userTurn = isZh
+      ? `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`
+      : `Current playing code (${meta}):\n\`\`\`\n${initialCode}\n\`\`\`\n\nUser instruction: ${instruction}`;
   } else {
-    userTurn = `用户指令: ${instruction}`;
+    userTurn = isZh ? `用户指令: ${instruction}` : `User instruction: ${instruction}`;
   }
 
   const messages: ChatMsg[] = [
@@ -150,14 +154,14 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     { role: 'user', content: userTurn },
   ];
 
-  const tools = getOpenAIToolSchemas();
+  const tools = getOpenAIToolSchemas(isZh);
   const start = Date.now();
   let iterations = 0;
   let explanation = '';
   let committed = false;
   let finalCode = state.code;
-  // 只取最后一次迭代的 usage：每次调用时 messages 已累积全部历史，
-  // 最后一次 inputTokens 即当前完整上下文的真实大小。
+  // Only keep usage from the last iteration: each call accumulates the full message history,
+  // so the final inputTokens reflects the true size of the current complete context.
   let lastUsage: LLMUsage | undefined;
 
   outer: for (let i = 0; i < maxIter; i++) {
@@ -202,7 +206,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
     if (resp.toolCalls.length === 0) {
       // No tools requested — model done. Treat its text as explanation.
-      explanation = resp.content?.trim() || '已完成';
+      explanation = resp.content?.trim() || (isZh ? '已完成' : 'Done');
       break;
     }
 
@@ -321,7 +325,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   // DeepSeek frequently stops without invoking `commit` (returns no tool_calls
   // after the last edit, or just runs out of iterations). If the agent did
   // mutate `state.code` AND the result still parses as valid JS, treat it as
-  // a committed turn so the UI doesn't show a misleading "未生成新代码" while
+  // a committed turn so the UI doesn't show a misleading "No code changes made" while
   // the player is in fact about to hot-reload that very code. If validation
   // fails we keep `committed=false` so App.tsx can surface the runtime error.
   // Skip the fallback entirely if the user explicitly aborted.
@@ -356,16 +360,16 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
   if (!explanation) {
     if (committed) {
-      explanation = '已更新';
+      explanation = isZh ? '已更新' : 'Updated';
     } else if (finalCode && finalCode !== initialCode) {
-      explanation = '已生成新代码，但语法校验未通过，请检查';
+      explanation = isZh ? '已生成新代码，但语法校验未通过，请检查' : 'Code generated but syntax validation failed — please check';
     } else {
-      explanation = '未生成新代码';
+      explanation = isZh ? '未生成新代码' : 'No code changes made';
     }
   }
 
-  // 估算 system prompt + tools 的 token 数。
-  // CJK 字符约 1 token/字，其余约 4 字符/token。
+  // Estimate token count for system prompt + tools.
+  // CJK characters are ~1 token each; all other characters are ~4 chars/token.
   const systemRaw = systemPrompt + JSON.stringify(tools);
   const cjkCount = countCJK(systemRaw);
   const systemEstimate = Math.ceil(cjkCount + (systemRaw.length - cjkCount) / 4);

@@ -26,18 +26,19 @@ import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
+import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
 const SIDEBAR_RATIO_MAX = 0.45;
 
-/** 去掉 agent explanation 末尾的"接下来可以"建议段落，避免在聊天记录里重复显示 */
+/** Strip the "next steps" suggestion paragraph from the end of the agent explanation to avoid duplicate display in chat history */
 function stripNextSteps(explanation: string): string {
   return explanation.replace(/\n\n接下来可以[：:][^]*$/, '').trim();
 }
 
-const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392，由上:下=1.55推导
+const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
 const VIZ_RATIO_MIN = 0.15;
 const VIZ_RATIO_MAX = 0.45;
 
@@ -53,25 +54,25 @@ export default function App() {
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
-  // [video] Remotion 每帧通过 VIDEO_DEMO_MESSAGES 推送的模拟对话列表；null 时 App 正常显示真实消息
+  // [video] Simulated conversation list pushed frame-by-frame by Remotion via VIDEO_DEMO_MESSAGES; when null, App displays real messages normally
   const [videoDemoMsgs, setVideoDemoMsgs] = useState<import('./hooks/useChat').ChatMessage[] | null>(null);
-  // [video] Remotion 在场景切换时发出 scrollBottom:true，让 ConversationView 滚到底部
+  // [video] Remotion emits scrollBottom:true on scene transitions to scroll ConversationView to the bottom
   const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
-  // [video] 检测是否运行在 Remotion iframe 内；正常浏览器访问时始终为 false，不影响任何逻辑
+  // [video] Detects whether running inside a Remotion iframe; always false in normal browser access, has no effect on any logic
   const [isVideoMode, setIsVideoMode] = useState(() => {
     try { return window.self !== window.top; } catch { return true; }
   });
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
-  // 用 ref 避免 postMessage handler 捕获过期的 strudel 闭包
+  // Use ref to prevent the postMessage handler from capturing a stale strudel closure
   const strudelRef = useRef(strudel);
   useEffect(() => { strudelRef.current = strudel; }, [strudel]);
 
-  // [video] 接收 Remotion MyVideo.tsx 每帧推送的 VIDEO_* 控制消息，驱动视频内 App 的状态
-  // 正常用户不会发送这些消息，handler 在普通浏览器访问时完全静默
+  // [video] Receive VIDEO_* control messages pushed per-frame by Remotion MyVideo.tsx to drive the in-video App state
+  // Normal users never send these messages; the handler is completely silent during regular browser access
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === 'VIDEO_DEMO_MESSAGES') {
@@ -97,14 +98,14 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         galaxy?.contentWindow?.postMessage({ type: 'GALAXY_TIME', time: e.data.time }, '*');
       }
       if (e.data?.type === 'VIDEO_PLAY') {
-        // 先在同一 tick 内设置代码，防止 session 初始化 effect 在消息间隙清空代码
+        // Set code in the same tick first, preventing the session init effect from clearing code between messages
         if (typeof e.data.code === 'string') {
           strudelRef.current.setCode(e.data.code);
         }
-        // 直接走 play() → evaluate()，与 agent 更新代码的路径完全一致，实现无缝播放
+        // Call play() → evaluate() directly, identical to the agent's code-update path, for seamless playback
         strudelRef.current.play();
-        // ._scope() widget 由 evaluate() 异步添加到 CodeMirror DOM，
-        // 直接走 scrollDOM 不依赖 CSS 选择器；2000ms 兜底防止首次加载音色延迟
+        // The ._scope() widget is asynchronously added to the CodeMirror DOM by evaluate(),
+        // using scrollDOM directly avoids CSS selector dependency; 2000ms fallback guards against first-load soundfont delay
         const scrollBottom = () => strudelRef.current.scrollCodeToBottom();
         setTimeout(scrollBottom, 500);
         setTimeout(scrollBottom, 2000);
@@ -180,13 +181,13 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   useEffect(() => {
     const prev = prevLoadingRef.current;
     const curr = loadingSessions;
-    // 找出本轮从 loading 消失的 id（即生成完成的会话）
+    // Find IDs that disappeared from loading in this round (i.e. sessions that finished generating)
     const completed = [...prev].filter((id) => !curr.has(id));
     if (completed.length > 0) {
       setUnreadSessions((prevUnread) => {
         const next = new Set(prevUnread);
         for (const id of completed) {
-          // 只有非当前会话才标为未读
+          // Only mark as unread if it is not the current session
           if (id !== currentIdRef.current) {
             next.add(id);
           }
@@ -231,7 +232,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
-    // demo 模式下不需要真实 LLM suggestions，跳过 buildSuggestions 调用
+    // In demo mode real LLM suggestions are not needed; skip the buildSuggestions call
     hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
     commitSuggestions: commitSuggestions ?? undefined,
@@ -323,7 +324,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       if (!sessionId) return;
       setLoadingSessions((prev) => new Set(prev).add(sessionId));
 
-      // 在 demo 模式下，若发送的是当前步骤的提示词，则推进到下一步
+      // In demo mode, if the sent text matches the current step's prompt, advance to the next step
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
       }
@@ -340,7 +341,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
           if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage('已中断', undefined, sessionId);
+            sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
           }
           trackAgentAbort();
           return;
@@ -368,23 +369,23 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
               sessions.setCurrentCode(result.code, sessionId);
             } else {
               sessions.addAssistantMessage(
-                `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+                zh ? `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}` : `Agent generated code but it failed to run: ${strudel.error || 'unknown error'}`,
                 result.code,
                 sessionId
               );
             }
           } else {
-            // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
+            // Background session completed; only save the result, do not update the editor or play audio
             sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
             sessions.setCurrentCode(result.code, sessionId);
           }
         } else {
-          sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
+          sessions.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
         }
       } catch (e: unknown) {
         if (isUserAbort(e, signal)) {
           if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage('已中断', undefined, sessionId);
+            sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
           }
           trackAgentAbort();
         } else {
@@ -408,6 +409,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       if (currentSessionId) {
         abortControllersRef.current.get(currentSessionId)?.abort();
       }
+      // Find the last assistant message with code before this message, as the rollback target
 
       const allMessages = sessions.currentSession?.messages ?? [];
       const idx = allMessages.findIndex((m) => m.id === messageId);
@@ -418,7 +420,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
-      // 回退 strudel 状态到该消息发出前
+      // Roll back strudel state to before this message was sent
       if (previousCode) {
         await strudel.play(previousCode);
       } else {
@@ -503,7 +505,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
-        sessions.addAssistantMessage('已中断', undefined, sessionId);
+        sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
         trackAgentAbort();
         return;
       }
@@ -530,22 +532,22 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             sessions.setCurrentCode(result.code, sessionId);
           } else {
             sessions.addAssistantMessage(
-              `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+              zh ? `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}` : `Agent generated code but it failed to run: ${strudel.error || 'unknown error'}`,
               result.code,
               sessionId
             );
           }
         } else {
-          // 后台会话完成，仅保存结果，不更新编辑器也不播放音频
+          // Background session completed; only save the result, do not update the editor or play audio
           sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
           sessions.setCurrentCode(result.code, sessionId);
         }
       } else {
-        sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
+        sessions.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
       }
     } catch (e: unknown) {
       if (isUserAbort(e, signal)) {
-        sessions.addAssistantMessage('已中断', undefined, sessionId);
+        sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
         trackAgentAbort();
       } else {
         reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
@@ -592,16 +594,16 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             <button
               onClick={handleNewSession}
               className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-              aria-label="新建会话"
-              title="新建会话"
+              aria-label={t('newSession')}
+              title={t('newSession')}
             >
               <PlusIcon size={18} />
             </button>
             <button
               onClick={() => setHistoryOpen(true)}
               className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-              aria-label="会话历史"
-              title="会话历史"
+              aria-label={t('sessionHistory')}
+              title={t('sessionHistory')}
             >
               <HistoryIcon size={18} />
             </button>
@@ -679,7 +681,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
               onClick={() => setDrawerOpen((v) => !v)}
               className="rounded-full border border-border bg-bg-primary px-4 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
             >
-              {drawerOpen ? '收起代码 ↓' : '查看代码 ↑'}
+              {drawerOpen ? t('collapseCode') : t('viewCode')}
             </button>
           </div>
 
@@ -745,24 +747,24 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         )}
         {importStatus === 'loading' && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
-            <span className="text-text-secondary text-sm">正在载入分享内容…</span>
+            <span className="text-text-secondary text-sm">{t('loadingShare')}</span>
           </div>
         )}
         {importStatus === 'error' && !importErrorDismissed && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-bg-primary/90">
-            <span className="text-red-400 text-sm">分享内容加载失败</span>
+            <span className="text-red-400 text-sm">{t('shareLoadFailed')}</span>
             <div className="flex gap-3">
               <button
                 onClick={() => { handleNewSession(); setImportErrorDismissed(true); }}
                 className="px-4 py-1.5 text-sm rounded border border-border text-text-primary hover:border-accent/50 transition-colors"
               >
-                新建会话
+                {t('newSession')}
               </button>
               <button
                 onClick={() => setImportErrorDismissed(true)}
                 className="px-4 py-1.5 text-sm rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors"
               >
-                关闭
+                {t('close')}
               </button>
             </div>
           </div>
@@ -787,7 +789,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
         <Sidebar
-          title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? '新会话' : (current?.title ?? '新会话')}
+          title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle'))}
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
@@ -795,9 +797,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           engineStatus={strudel.engineStatus}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
-          suggestions={isVideoMode ? [] : demoSuggestions}  // [video] 视频模式隐藏建议词，避免遮挡画面
+          suggestions={isVideoMode ? [] : demoSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
-          scrollBottom={videoConvScrollBottom}  // [video] 传递场景切换的滚底信号
+          scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
           suggestionsLoading={!isDemoMode() && suggestionsLoading}
           fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
           onSendText={handleInstruction}
@@ -931,16 +933,16 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
   };
   switch (name) {
     case 'getScore':
-      return '读取当前曲谱';
+      return t('readScore');
 
     case 'applyEffect':
-      return `给 ${s('layer')} 加效果 ${s('chain')}`;
+      return zh ? `给 ${s('layer')} 加效果 ${s('chain')}` : `Apply effect ${s('chain')} to ${s('layer')}`;
     case 'setTempo':
-      return `设速度 ${s('bpm')} BPM`;
+      return zh ? `设速度 ${s('bpm')} BPM` : `Set tempo ${s('bpm')} BPM`;
     case 'validate':
-      return '校验代码';
+      return t('validateCode');
     case 'commit':
-      return '提交并播放';
+      return t('commitAndPlay');
     default:
       return `${name}(${JSON.stringify(args).slice(0, 60)})`;
   }

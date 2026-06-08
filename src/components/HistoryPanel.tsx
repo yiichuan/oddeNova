@@ -1,5 +1,6 @@
 import type { Session } from '../hooks/useSessions';
 import { TrashIcon } from './icons';
+import { t } from '../lib/i18n';
 
 interface HistoryPanelProps {
   sessions: Session[];
@@ -28,13 +29,13 @@ export default function HistoryPanel({
   return (
     <div className="flex flex-col">
       <div className="px-4 pt-3 pb-2 shrink-0">
-        <h3 className="text-base font-semibold text-text-primary">历史对话</h3>
+        <h3 className="text-base font-semibold text-text-primary">{t('history')}</h3>
       </div>
       <div>
         {isLoading ? (
-          <div className="px-4 pb-4 text-xs text-text-muted">加载中…</div>
+          <div className="px-4 pb-4 text-xs text-text-muted">{t('loading')}</div>
         ) : ordered.length === 0 ? (
-          <div className="px-4 pb-4 text-xs text-text-muted">暂无会话</div>
+          <div className="px-4 pb-4 text-xs text-text-muted">{t('noSessions')}</div>
         ) : (
           <ul className="pt-1 pb-3 space-y-1">
             {ordered.map((s) => {
@@ -50,9 +51,9 @@ export default function HistoryPanel({
                     onClick={() => onSwitch(s.id)}
                   >
                     <span className="flex-1 flex items-center py-[8px] text-xs leading-none truncate" title={s.title}>
-                      {s.title || '新会话'}
+                      {s.title || t('newSessionTitle')}
                     </span>
-                    {/* 状态指示器 + 删除按钮 */}
+                    {/* Status indicator + delete button */}
                     <span className="flex items-center gap-2 shrink-0">
                       {loadingSessions.has(s.id) ? (
                         <span className="w-1.5 h-1.5 rounded-full animate-spin shrink-0" style={{ border: '1.5px solid transparent', borderTopColor: 'var(--color-text-primary)', display: 'inline-block' }} />
@@ -65,7 +66,7 @@ export default function HistoryPanel({
                           onDelete(s.id);
                         }}
                         className="self-stretch flex items-center opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-opacity"
-                        title="删除"
+                        title={t('delete')}
                       >
                         <TrashIcon size={20} />
                       </button>

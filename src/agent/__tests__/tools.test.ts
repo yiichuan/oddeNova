@@ -10,20 +10,20 @@ vi.mock('../../services/strudel', () => ({
 import { TOOLS, type AgentState, type ToolContext } from '../tools';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
-// 辅助函数：根据 name 找到 tool handler
+// Helper: find a tool handler by name
 function getHandler(name: string) {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) throw new Error(`Tool "${name}" not found`);
   return tool.handler;
 }
 
-// 辅助函数：构造最小 ctx
+// Helper: build a minimal ctx
 function makeCtx(code: string): ToolContext {
   const state: AgentState = { code, finalCode: null };
   return { state };
 }
 
-// 标准 2 层代码，用于多数测试的初始状态
+// Standard 2-layer code used as the initial state for most tests
 const TWO_LAYER_CODE = `setcps(0.5)
 stack(
   /* @layer drums */
@@ -52,7 +52,7 @@ describe('validate', () => {
     const result = await validate({}, ctx);
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/Mini-notation 错误/);
-    // code 不被修改，由 agent 自己决定如何修复
+    // code must not be modified; it is up to the agent to decide how to fix it
     expect(ctx.state.code).toBe(badCode);
   });
 

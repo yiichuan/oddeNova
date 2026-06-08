@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TokenStats } from '../hooks/useSessions';
 import { getContextWindowSize } from '../lib/model-context-sizes';
+import { t } from '../lib/i18n';
 
 interface ContextWindowIndicatorProps {
   tokenStats: TokenStats;
@@ -16,11 +17,11 @@ export default function ContextWindowIndicator({ tokenStats }: ContextWindowIndi
   const [hovered, setHovered] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const contextWindowSize = getContextWindowSize(tokenStats.modelId);  // 上限（静态）
-  const totalPrompt = tokenStats.promptTokens;  // API 实际返回的 prompt token 数（包含 system + dialog）
-  const pct = Math.min(totalPrompt / contextWindowSize, 1);  // 使用总占比（上限 100%）
-  const systemPct = Math.min(tokenStats.systemEstimate / contextWindowSize, 1);  // 系统提示词占比
-  const dialogPct = Math.max(0, pct - systemPct);  // 对话内容占比
+  const contextWindowSize = getContextWindowSize(tokenStats.modelId);  // upper bound (static)
+  const totalPrompt = tokenStats.promptTokens;  // actual prompt token count returned by the API (includes system + dialog)
+  const pct = Math.min(totalPrompt / contextWindowSize, 1);  // total usage ratio (capped at 100%)
+  const systemPct = Math.min(tokenStats.systemEstimate / contextWindowSize, 1);  // system prompt proportion
+  const dialogPct = Math.max(0, pct - systemPct);  // dialog content proportion
 
   // SVG donut ring params
   const SIZE = 20;
@@ -53,8 +54,8 @@ export default function ContextWindowIndicator({ tokenStats }: ContextWindowIndi
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className="relative inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors hover:bg-white/5"
-        title="上下文窗口"
-        aria-label="Context window (上下文窗口)"
+        title={t('contextWindow')}
+        aria-label={t('contextWindow')}
       >
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ transform: 'rotate(-90deg)' }}>
           {/* Track */}
@@ -108,11 +109,11 @@ export default function ContextWindowIndicator({ tokenStats }: ContextWindowIndi
           style={{ fontSize: '12px' }}
         >
           {/* Header */}
-          <div className="text-[#cccccc] font-medium mb-1.5">上下文窗口</div>
+          <div className="text-[#cccccc] font-medium mb-1.5">{t('contextWindow')}</div>
 
           {/* Total line */}
           <div className="flex items-center justify-between text-[#aaaaaa] mb-1.5">
-            <span>{formatK(totalPrompt)}/{formatK(contextWindowSize)} 个令牌</span>
+            <span>{formatK(totalPrompt)}/{formatK(contextWindowSize)} {t('tokens')}</span>
             <span className="text-[#cccccc] font-medium">{Math.round(pct * 100)}%</span>
           </div>
 

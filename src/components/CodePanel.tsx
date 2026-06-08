@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PlayIcon, StopIcon } from './icons';
+import { t } from '../lib/i18n';
 import { strudelService } from '../services/strudel';
 import { parseScore } from '../agent/parser';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -408,7 +409,7 @@ export default function CodePanel({
             className={`flex items-center justify-center transition-opacity text-[#B2370C] ${
               isPlaying ? 'hover:opacity-70' : 'hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed'
             }`}
-            title={isPlaying ? '停止' : '播放'}
+            title={isPlaying ? t('stop') : t('play')}
           >
             {isPlaying ? <StopIcon size={36} /> : <PlayIcon size={36} />}
           </button>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from './icons';
 import type { TokenStats } from '../hooks/useSessions';
+import { t } from '../lib/i18n';
 
 interface ChatInputProps {
   isLoading: boolean;
@@ -104,11 +105,11 @@ export default function ChatInput({
             handleSubmit(e);
           }
         }}
-        placeholder="输入文字描述音乐..."
+        placeholder={t('inputPlaceholder')}
         rows={1}
         disabled={isLoading && replayValue === undefined}
         className="w-full min-h-[108px] resize-none overflow-hidden rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] focus:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] 视频渲染时隐藏光标闪烁
+        style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
       />
 
       {engineStatus !== 'ready' && (
@@ -128,7 +129,7 @@ export default function ChatInput({
         </div>
       )}
 
-      {/* 隐藏上下文窗口指示器，现在距离上限还差很多，只用于后续提示词优化查看*/
+      {/* Context window indicator hidden for now — still far from the limit; kept for future prompt optimisation review*/
       /* {engineReady && tokenStats && (
         <div className="absolute left-3 bottom-3">
           <ContextWindowIndicator tokenStats={tokenStats} />
@@ -140,7 +141,7 @@ export default function ChatInput({
           type="button"
           disabled={!replayValue.trim()}
           className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-30"
-          title="发送"
+          title={t('send')}
         >
           <ArrowUpIcon size={18} />
         </button>
@@ -149,7 +150,7 @@ export default function ChatInput({
           type="button"
           onClick={onStop}
           className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80"
-          title="停止"
+          title={t('stop')}
         >
           <StopIcon size={18} />
         </button>
@@ -158,7 +159,7 @@ export default function ChatInput({
           type="submit"
           disabled={!text.trim() || engineStatus !== 'ready'}
           className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
-          title="发送"
+          title={t('send')}
         >
           <ArrowUpIcon size={18} />
         </button>

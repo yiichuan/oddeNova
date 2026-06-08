@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { AGENT_SYSTEM_PROMPT_OPENAI } from '../prompts/system-prompt';
+import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from '../prompts/system-prompt';
 import {
   runAgentLoop,
   type ChatMsg,
@@ -17,14 +17,14 @@ import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, 
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 
 // ===========================================================================
-// 双 Provider 客户端管理。
+// Dual-provider client management.
 //
-// - provider='anthropic' → 使用 @anthropic-ai/sdk（原生 Anthropic Messages 协议）
-//   tool-calling 行为更可靠，保留原有实现。
-// - provider='openai' / 'openai-compat' → 使用 openai SDK（OpenAI Chat Completions 协议）
-//   支持 OpenAI、DeepSeek、通义千问等兼容接口。
+// - provider='anthropic' → uses @anthropic-ai/sdk (native Anthropic Messages protocol)
+//   tool-calling behaviour is more reliable; original implementation retained.
+// - provider='openai' / 'openai-compat' → uses openai SDK (OpenAI Chat Completions protocol)
+//   supports OpenAI, DeepSeek, Tongyi Qianwen and other compatible endpoints.
 //
-// 模型/凭据配置统一放在 ./llm-config.ts。
+// Model/credential configuration is centralised in ./llm-config.ts.
 // ===========================================================================
 
 let anthropicClient: Anthropic | null = null;
@@ -62,7 +62,7 @@ function getOpenAIClient(): OpenAI {
   return openaiClient;
 }
 
-/** 清空客户端单例，下次调用时使用最新配置重建。 */
+/** Clear the client singletons; they will be rebuilt with the latest config on the next call. */
 export function resetClient(): void {
   anthropicClient = null;
   openaiClient = null;
@@ -77,8 +77,8 @@ function isOpenAIProvider(): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// chatOnce — 单轮无工具调用。供 improviseLLM 和 suggestions.ts 共用，
-// 自动根据当前 provider 路由到对应 SDK。
+// chatOnce — single-turn, no tool calls. Shared by improviseLLM and suggestions.ts;
+// automatically routes to the appropriate SDK based on the current provider.
 // ---------------------------------------------------------------------------
 
 export async function chatOnce(
@@ -222,7 +222,7 @@ function convertTools(
 }
 
 // ===========================================================================
-// LLMCaller 实现 — Anthropic 路径（原有逻辑）
+// LLMCaller implementation — Anthropic path (original logic)
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
@@ -286,7 +286,7 @@ const anthropicLLMCaller: LLMCaller = {
 };
 
 // ===========================================================================
-// LLMCaller 实现 — OpenAI / OpenAI-compat 路径
+// LLMCaller implementation — OpenAI / OpenAI-compat path
 // ===========================================================================
 
 function createOpenAILLMCaller(): LLMCaller {
@@ -296,7 +296,7 @@ function createOpenAILLMCaller(): LLMCaller {
 
       const stream = await oai.chat.completions.create({
         model: getModel(),
-        // ChatMsg 已是 OpenAI 格式，可直接传入
+        // ChatMsg is already in OpenAI format, can be passed directly
         messages: messages as OpenAI.ChatCompletionMessageParam[],
         tools: tools as OpenAI.ChatCompletionTool[],
         tool_choice: 'auto',
@@ -372,7 +372,9 @@ export async function runAgent(
   moodContext?: string,
   signal?: AbortSignal,
 ): Promise<RunAgentResult> {
-  const basePrompt = AGENT_SYSTEM_PROMPT_OPENAI;
+  const basePrompt = /[一-龥]/.test(instruction)
+    ? AGENT_SYSTEM_PROMPT_OPENAI
+    : AGENT_SYSTEM_PROMPT_EN;
   const systemPrompt = moodContext
     ? `${basePrompt}\n\n${moodContext}`
     : basePrompt;
@@ -381,7 +383,7 @@ export async function runAgent(
   const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;
   const staticScenario = resolveStaticSuggestionScenario(instruction);
 
-  // 根据当前 provider 选择对应的 LLMCaller 实现
+  // Select the LLMCaller implementation corresponding to the current provider
   const activeLLMCaller = isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
 
   const llm = staticScenario

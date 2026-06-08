@@ -20,7 +20,7 @@ describe('runReplay', () => {
     vi.useRealTimers();
   });
 
-  it('user 消息逐字填充 inputText，发送后清空', async () => {
+  it('user message fills inputText character by character, clears after send', async () => {
     const msgs = [makeMsg('user', 'hi')];
     const onAppendMessage = vi.fn();
     const onSetInputText = vi.fn();
@@ -28,13 +28,13 @@ describe('runReplay', () => {
 
     const promise = runReplay(msgs, { onAppendMessage, onSetInputText, onPlay });
 
-    // 'h'(30ms) + 'i'(30ms) = 60ms 打字，300ms 停顿，发送，600ms 间隔
+    // 'h'(30ms) + 'i'(30ms) = 60ms typing, 300ms pause, send, 600ms gap
     await vi.advanceTimersByTimeAsync(990);
     await promise;
 
     expect(onSetInputText).toHaveBeenCalledWith('h');
     expect(onSetInputText).toHaveBeenCalledWith('hi');
-    expect(onSetInputText).toHaveBeenCalledWith(''); // 发送后清空
+    expect(onSetInputText).toHaveBeenCalledWith(''); // cleared after send
     expect(onAppendMessage).toHaveBeenCalledOnce();
     expect(onAppendMessage).toHaveBeenCalledWith(msgs[0]);
   });
@@ -91,10 +91,10 @@ describe('runReplay', () => {
       controller.signal,
     );
 
-    await vi.advanceTimersByTimeAsync(60); // 打字进行中
+    await vi.advanceTimersByTimeAsync(60); // typing in progress
     controller.abort();
 
-    await promise.catch(() => {}); // 忽略 AbortError
+    await promise.catch(() => {}); // ignore AbortError
     expect(onAppendMessage).not.toHaveBeenCalled();
   });
 });

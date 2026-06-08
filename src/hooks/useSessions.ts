@@ -6,6 +6,7 @@ import {
   putSession as dbPutSession,
   deleteSession as dbDeleteSession,
 } from '../lib/session-storage';
+import { t } from '../lib/i18n';
 
 export interface TokenStats {
   promptTokens: number;
@@ -35,7 +36,7 @@ function newMessageId(): string {
 
 function deriveTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
-  if (!firstUser) return '新会话';
+  if (!firstUser) return t('newSessionTitle');
   const text = firstUser.content.trim();
   if (text.length <= 20) return text;
   return text.slice(0, 20) + '…';
@@ -44,7 +45,7 @@ function deriveTitle(messages: ChatMessage[]): string {
 function makeEmptySession(): Session {
   return {
     id: newSessionId(),
-    title: '新会话',
+    title: t('newSessionTitle'),
     messages: [],
     code: '',
     createdAt: Date.now(),
@@ -86,7 +87,7 @@ export function useSessions() {
       const loaded = await getAllSessions();
       if (cancelled) return;
 
-      // 每次启动/刷新都创建新会话
+      // Create a new session on every startup/refresh
       const fresh = makeEmptySession();
       await dbPutSession(fresh);
       setSessions([fresh, ...loaded]);
@@ -266,7 +267,7 @@ export function useSessions() {
       const id = currentId || prev[0]?.id;
       const cur = prev.find((s) => s.id === id);
       // If the current session is already empty, reuse it instead of stacking
-      // up another untouched "新会话".
+      // up another untouched "New Session".
       if (cur && cur.messages.length === 0 && !cur.code) {
         if (id && currentId !== id) setCurrentId(id);
         return prev;
@@ -344,7 +345,7 @@ export function useSessions() {
       const now = Date.now();
       const branched: Session = {
         id,
-        title: `${session.title}（分支）`,
+        title: `${session.title}${t('branchSuffix')}`,
         messages: sliced,
         code,
         createdAt: now,

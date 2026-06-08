@@ -1,3 +1,5 @@
+import { t } from '../lib/i18n';
+
 interface VoiceButtonProps {
   isListening: boolean;
   supported: boolean;
@@ -10,7 +12,7 @@ export default function VoiceButton({ isListening, supported, onToggle }: VoiceB
       <button
         disabled
         className="w-12 h-12 rounded-full bg-bg-tertiary text-text-muted flex items-center justify-center cursor-not-allowed"
-        title="浏览器不支持语音识别，请使用 Chrome"
+        title={t('voiceNotSupported')}
       >
         <MicOffIcon />
       </button>
@@ -25,7 +27,7 @@ export default function VoiceButton({ isListening, supported, onToggle }: VoiceB
           ? 'bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.5)] scale-110 animate-pulse'
           : 'bg-gradient-to-br from-accent to-accent-light hover:shadow-[0_0_20px_var(--color-accent-glow)] hover:scale-105'
       }`}
-      title={isListening ? '松开停止' : '按住说话'}
+      title={isListening ? t('releaseToStop') : t('holdToSpeak')}
     >
       {isListening ? <MicOnIcon /> : <MicIcon />}
     </button>

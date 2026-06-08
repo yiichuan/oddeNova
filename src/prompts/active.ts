@@ -1,3 +1,3 @@
-// 切换版本：修改下面这一行的路径指向目标版本即可。
-// 注意：若新版本新增或删除了导出名，也需同步更新此处的 {} 列表。
-export { AGENT_SYSTEM_PROMPT_OPENAI } from './versions/v15';
+// To switch versions: change the path on the line below to point to the target version.
+// Note: if the new version adds or removes export names, update the {} list here as well.
+export { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from './versions/v16';

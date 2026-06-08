@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { type ProviderType, PROVIDER_PRESETS } from '../services/llm-config';
 import qrCode from '../assets/oddeNova音乐制作社区二维码.png';
+import { t } from '../lib/i18n';
 import { getCommunityInviteText, isApiKeyRequiredForProvider } from './apiKeyModalUtils';
 
 function getModelForProvider(p: ProviderType): string {
@@ -15,7 +16,7 @@ function getModelForProvider(p: ProviderType): string {
 interface ApiKeyModalProps {
   onClose: () => void;
   onSaved?: () => void;
-  /** true 时隐藏"取消"按钮，强制用户填写（首次无配置场景）。 */
+  /** When true, hides the "cancel" button and forces the user to fill in the key (first-run, no config). */
   required?: boolean;
 }
 
@@ -23,7 +24,7 @@ const PROVIDER_ORDER: ProviderType[] = [
   'official', 'anthropic', 'deepseek', 'glm',
 ];
 
-/** 按服务商分别读取已保存的 API Key。 */
+/** Read the saved API Key for each provider separately. */
 function getProviderKey(p: ProviderType): string {
   return localStorage.getItem(`vibe_api_key_${p}`) || '';
 }
@@ -79,17 +80,17 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
       <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
-        <h2 className="text-lg font-semibold text-text-primary mb-2">设置 API Key</h2>
+        <h2 className="text-lg font-semibold text-text-primary mb-2">{t('setApiKey')}</h2>
         <p className="text-xs text-text-muted mb-7">
-          选择服务商并填入对应的 API Key，即可开始使用。Key 仅保存在本地浏览器中。
+          {t('apiKeyDesc')}
         </p>
 
         {/* 当前生效状态 */}
         {hasCurrentProviderConfig && (
           <div className="flex items-center gap-2 mb-7">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 mt-px" />
-            <span className="text-xs text-text-muted">当前使用</span>
-            <span className="text-xs text-text-secondary font-medium">{PROVIDER_PRESETS[savedProvider].label}</span>
+            <span className="text-xs text-text-muted">{t('currentUsing')}</span>
+            <span className="text-xs text-text-secondary font-medium">{savedProvider === 'official' ? t('officialLabel') : PROVIDER_PRESETS[savedProvider].label}</span>
             {savedProvider !== 'official' && (
               <>
                 <span className="text-text-muted/40 text-xs">·</span>
@@ -100,9 +101,9 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
         )}
 
         <div className="space-y-3">
-          {/* 服务商选择 */}
+          {/* Provider selection */}
           <div>
-            <label className="text-xs text-text-secondary mb-1 block">服务商</label>
+            <label className="text-xs text-text-secondary mb-1 block">{t('provider')}</label>
             <div className="relative">
               <select
                 value={provider}
@@ -110,7 +111,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
                 className="w-full appearance-none bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50 cursor-pointer"
               >
                 {PROVIDER_ORDER.map((p) => (
-                  <option key={p} value={p}>{PROVIDER_PRESETS[p].label}</option>
+                  <option key={p} value={p}>{p === 'official' ? t('officialLabel') : PROVIDER_PRESETS[p].label}</option>
                 ))}
               </select>
               <svg
@@ -165,7 +166,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
               onClick={onClose}
               className="flex-1 py-2.5 text-sm text-text-secondary bg-bg-tertiary rounded-lg hover:bg-border transition-colors"
             >
-              取消
+              {t('cancel')}
             </button>
           )}
           {required && (
@@ -173,7 +174,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
               onClick={onClose}
               className="flex-1 py-2.5 text-sm text-text-secondary bg-bg-tertiary rounded-lg hover:bg-border transition-colors"
             >
-              稍后设置
+              {t('setUpLater')}
             </button>
           )}
           <button
@@ -181,7 +182,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
             disabled={!canSave}
             className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            保存
+            {t('save')}
           </button>
         </div>
       </div>
