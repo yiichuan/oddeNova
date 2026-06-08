@@ -95,6 +95,6 @@ describe('shareUrl', () => {
     vi.stubGlobal('prompt', prompt);
 
     await expect(shareUrl('http://192.168.0.112/s/abc123')).resolves.toBe('shown');
-    expect(prompt).toHaveBeenCalledWith('复制分享链接', 'http://192.168.0.112/s/abc123');
+    expect(prompt).toHaveBeenCalledWith('Copy share link', 'http://192.168.0.112/s/abc123');
   });
 });

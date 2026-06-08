@@ -92,7 +92,7 @@ export default function Sidebar({
     prevIsLoadingRef.current = isLoading;
   }, [isLoading]);
 
-  // 回滚回填到来时（prefillTrigger 变化）一并触发输入框的回填 + 聚焦
+  // When a rollback prefill arrives (prefillTrigger changes), trigger input prefill + focus
   useEffect(() => {
     if (prefillTrigger !== undefined && prefillTrigger !== prevPrefillTriggerRef.current) {
       prevPrefillTriggerRef.current = prefillTrigger;

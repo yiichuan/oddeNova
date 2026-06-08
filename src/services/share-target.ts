@@ -1,3 +1,5 @@
+import { t } from '../lib/i18n';
+
 export type ShareTargetResult = 'copied' | 'shared' | 'shown';
 
 function legacyCopy(text: string): boolean {
@@ -38,7 +40,7 @@ export async function shareUrl(url: string): Promise<ShareTargetResult> {
   }
 
   if (typeof globalThis.prompt === 'function') {
-    globalThis.prompt('复制分享链接', url);
+    globalThis.prompt(t('copyShareLink'), url);
     return 'shown';
   }
 

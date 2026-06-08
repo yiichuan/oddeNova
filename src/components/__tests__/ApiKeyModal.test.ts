@@ -14,8 +14,8 @@ describe('ApiKeyModal official provider behavior', () => {
 
   it('uses community-oriented QR copy', () => {
     expect(getCommunityInviteText()).toEqual({
-      alt: '欢迎加入 oddeNova 音乐制作社群',
-      title: '欢迎加入我们的音乐制作社群',
+      alt: 'Join the oddeNova music community',
+      title: 'Join our music creation community',
     });
   });
 });

@@ -15,7 +15,7 @@ import {
   type ToolContext,
 } from './tools';
 import { parseScore, summariseScore } from './parser';
-import { validateCode } from '../services/strudel';
+import { validateCodeRuntime } from '../services/strudel';
 import { getErrorMessage } from '../lib/errors';
 
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
@@ -166,11 +166,11 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
   outer: for (let i = 0; i < maxIter; i++) {
     if (Date.now() - start > timeoutMs) {
-      onProgress?.({ kind: 'warn', message: `超时 ${timeoutMs}ms，强制结束` });
+      onProgress?.({ kind: 'warn', message: isZh ? `超时 ${timeoutMs}ms，强制结束` : `Timed out after ${timeoutMs}ms, force-stopping` });
       break;
     }
     if (signal?.aborted) {
-      onProgress?.({ kind: 'warn', message: '已中断' });
+      onProgress?.({ kind: 'warn', message: isZh ? '已中断' : 'Interrupted' });
       break;
     }
     iterations = i + 1;
@@ -250,9 +250,9 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
         const outcome = await dispatchToolCall(call, ctx);
         outcomes.push(outcome);
         if (!outcome.result.ok) {
-          console.error(`[loop] iter ${i + 1} tool "${outcome.name}" 返回失败:`, outcome.result.error);
+          console.error(`[loop] iter ${i + 1} tool "${outcome.name}" returned failure:`, outcome.result.error);
           if (outcome.name === 'validate') {
-            console.error(`[loop] validate 失败时的当前代码:\n${ctx.state.code}`);
+            console.error(`[loop] code at validate failure:\n${ctx.state.code}`);
           }
         }
         // Cache the result JSON so duplicate calls in the same iteration can reuse it.
@@ -332,27 +332,27 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   if (!committed && !signal?.aborted) {
     const codeChanged = !!state.code && state.code !== initialCode;
     if (codeChanged) {
-      const v = validateCode(state.code);
+      const v = validateCodeRuntime(state.code);
       if (v.ok) {
         committed = true;
         finalCode = state.code;
         state.finalCode = state.code;
         onProgress?.({
           kind: 'warn',
-          message: 'agent 未显式调用 commit，已自动收尾并播放',
+          message: isZh ? 'agent 未显式调用 commit，已自动收尾并播放' : 'Agent did not call commit — auto-finalised and playing',
         });
         onProgress?.({ kind: 'commit', code: state.code });
       } else {
         onProgress?.({
           kind: 'warn',
-          message: `agent 未调用 commit 且最后代码语法错误: ${v.error || '未知'}`,
+          message: isZh ? `agent 未调用 commit 且最后代码语法错误: ${v.error || '未知'}` : `Agent did not call commit and final code has syntax errors: ${v.error || 'unknown'}`,
         });
         finalCode = state.code;
       }
     } else {
       onProgress?.({
         kind: 'warn',
-        message: 'agent 未产出任何代码改动',
+        message: isZh ? 'agent 未产出任何代码改动' : 'Agent produced no code changes',
       });
       finalCode = initialCode;
     }

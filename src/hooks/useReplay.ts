@@ -33,7 +33,7 @@ export const REPLAY_TIMING = {
   afterReplayComplete: 6000,
 };
 
-/** progress 消息各 kind 的回放停顿；未列出的 kind（reasoning/iteration/warn）走 other。 */
+/** Replay pause per progress message kind; unlisted kinds (reasoning/iteration/warn) fall through to other. */
 const PROGRESS_REPLAY_DELAY: Record<string, number> = {
   thinking: REPLAY_TIMING.progress.thinking,
   tool_call: REPLAY_TIMING.progress.toolCallResult,
@@ -41,7 +41,7 @@ const PROGRESS_REPLAY_DELAY: Record<string, number> = {
   commit: REPLAY_TIMING.progress.commit,
 };
 
-// ── 纯异步回放逻辑（可单独测试）──────────────────────────────────────
+// ── Pure async replay logic (testable in isolation) ──────────────────────────────────────
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));

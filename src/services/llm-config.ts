@@ -11,6 +11,8 @@
 //   not set     → official
 // ===========================================================================
 
+import { t } from '../lib/i18n';
+
 /** Provider protocol type; determines which SDK to use. */
 export type Protocol = 'anthropic' | 'openai';
 
@@ -61,7 +63,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     protocol: 'anthropic',
   },
   official: {
-    label: '官方体验',
+    label: t('officialLabel'),
     baseURL: '/api/official/v1',
     model: 'deepseek-v4-pro',
     protocol: 'openai',
@@ -162,7 +164,7 @@ export function getActiveModelConfig(): ModelConfig {
     return resolveOpenAICompatConfig(provider, 'official-proxy');
   }
 
-  // 其他 provider 使用用户在 Modal 里填的 Key
+  // Other providers use the key entered by the user in the Modal
   const userApiKey = localStorage.getItem('vibe_api_key') || '';
 
   // deepseek | kimi | openai | official | glm
