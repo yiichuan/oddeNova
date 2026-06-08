@@ -6,8 +6,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon } from './icons';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
-
-const zh = globalThis.navigator?.language?.startsWith('zh') ?? true;
+import { zh, t } from '../lib/i18n';
 const learnUrl = 'https://strudel.cc/workshop/getting-started/';
 const githubUrl = 'https://github.com/yiichuan/oddeNova';
 
@@ -32,7 +31,7 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
     if (!shareCode) return;
     setState('loading');
     try {
-      const title = session?.title?.trim() || '新会话';
+      const title = session?.title?.trim() || t('newSessionTitle');
       const shareId = await uploadShare({
         title,
         code: shareCode,
@@ -53,10 +52,10 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
 
   if (variant === 'menu') {
     const label = state === 'loading'
-      ? (zh ? '分享中…' : 'Sharing…')
+      ? t('sharing')
       : state === 'error'
-        ? (zh ? '分享失败' : 'Share failed')
-        : (zh ? '分享' : 'Share');
+        ? t('shareFailed')
+        : t('share');
 
     return (
       <button
@@ -78,19 +77,19 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
         disabled={disabled || state === 'loading'}
         className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5"
       >
-        {zh ? '分享' : 'Share'}
+        {t('share')}
       </button>
       {state === 'done' && (
         <div className="absolute right-0 top-7 z-50">
           <span className="text-text-secondary text-xs whitespace-nowrap">
-            {zh ? '链接已复制' : 'Link copied'}
+            {t('linkCopied')}
           </span>
         </div>
       )}
       {state === 'error' && (
         <div className="absolute right-0 top-7 z-50">
           <span className="text-red-400 text-xs whitespace-nowrap">
-            {zh ? '分享失败，请重试' : 'Share failed'}
+            {t('shareFailedRetry')}
           </span>
         </div>
       )}
@@ -125,10 +124,10 @@ function defaultFilename() {
 }
 
 function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds.toFixed(1)} 秒`;
+  if (seconds < 60) return zh ? `${seconds.toFixed(1)} 秒` : `${seconds.toFixed(1)}s`;
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
-  return `${m} 分 ${s} 秒`;
+  return zh ? `${m} 分 ${s} 秒` : `${m}m ${s}s`;
 }
 
 function CycleInput({
@@ -224,40 +223,40 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
     <div className="flex flex-col gap-3" style={{ fontFamily: "'ABeeZee', monospace" }}>
       {exportState.status === 'exporting' ? (
         <>
-          <div className="text-[13px] text-white/70">渲染中… {Math.round(exportState.progress * 100)}%</div>
+          <div className="text-[13px] text-white/70">{t('rendering')} {Math.round(exportState.progress * 100)}%</div>
           <div className="h-[3px] w-full bg-[#323232] overflow-hidden">
             <div className="h-full bg-white/70 transition-[width] duration-100 ease-linear" style={{ width: `${Math.round(exportState.progress * 100)}%` }} />
           </div>
           <div className="flex justify-end">
-            <button onClick={onClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">取消</button>
+            <button onClick={onClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">{t('cancel')}</button>
           </div>
         </>
       ) : exportState.status === 'error' ? (
         <>
-          <div className="text-[12px] text-red-400 break-words">{exportState.error || '导出失败'}</div>
+          <div className="text-[12px] text-red-400 break-words">{exportState.error || t('exportFailed')}</div>
           <div className="flex justify-end">
-            <button onClick={handleErrorClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">关闭</button>
+            <button onClick={handleErrorClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">{t('close')}</button>
           </div>
         </>
       ) : (
         <>
-          <Field label="文件名">
+          <Field label={t('filename')}>
             <input type="text" value={filename} onChange={(e) => setFilename(e.target.value)} placeholder={filenamePlaceholder}
               className="w-full bg-black border border-[#323232] px-2 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/30 placeholder:text-white/30"
               style={{ fontFamily: "'ABeeZee', monospace" }} />
           </Field>
           <div className="flex gap-2">
-            <Field label="起始 cycle"><CycleInput value={beginCycleStr} onChange={setBeginCycleStr} onCommit={commitBegin} /></Field>
-            <Field label="结束 cycle"><CycleInput value={endCycleStr}   onChange={setEndCycleStr}   onCommit={commitEnd} /></Field>
+            <Field label={t('startCycle')}><CycleInput value={beginCycleStr} onChange={setBeginCycleStr} onCommit={commitBegin} /></Field>
+            <Field label={t('endCycle')}><CycleInput value={endCycleStr}   onChange={setEndCycleStr}   onCommit={commitEnd} /></Field>
           </div>
           {durationStr && (
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-white/50">预计时长</span>
+              <span className="text-white/50">{t('estDuration')}</span>
               <span className="text-white/80" style={{ fontFamily: "'ABeeZee', monospace" }}>{durationStr}</span>
             </div>
           )}
-          {!canExport && <div className="text-[12px] text-red-400">起始 cycle 必须小于结束 cycle</div>}
-          <Field label="采样率">
+          {!canExport && <div className="text-[12px] text-red-400">{t('cycleError')}</div>}
+          <Field label={t('sampleRate')}>
             <select value={sampleRate} onChange={(e) => setSampleRate(Number(e.target.value))}
               className="w-full bg-black border border-[#323232] px-2 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/30"
               style={{ fontFamily: "'ABeeZee', monospace" }}>
@@ -266,8 +265,8 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
             </select>
           </Field>
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">取消</button>
-            <button onClick={handleExport} disabled={!canExport} className="px-3 py-1.5 text-[12px] text-white border border-white/30 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed">导出</button>
+            <button onClick={onClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">{t('cancel')}</button>
+            <button onClick={handleExport} disabled={!canExport} className="px-3 py-1.5 text-[12px] text-white border border-white/30 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed">{t('export')}</button>
           </div>
         </>
       )}
@@ -279,7 +278,7 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
       <div className="fixed inset-0 z-50" onClick={handleCloseSafe}>
         <div className="absolute inset-0 bg-black/50" />
         <div className="absolute bottom-0 left-0 right-0 bg-[#111] border-t border-[#323232] px-6 py-6" onClick={(e) => e.stopPropagation()}>
-          <div className="text-[14px] text-white/90 font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>导出 WAV</div>
+          <div className="text-[14px] text-white/90 font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
           {body}
         </div>
       </div>
@@ -290,7 +289,7 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
     <>
       <div className="fixed inset-0 z-40" onClick={handleCloseSafe} />
       <div className="absolute top-full right-0 z-50 w-[280px] bg-[#111] border border-[#323232] shadow-xl p-3" onClick={(e) => e.stopPropagation()}>
-        <div className="text-[12px] text-white/90 font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>导出 WAV</div>
+        <div className="text-[12px] text-white/90 font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
         {body}
       </div>
     </>
@@ -349,10 +348,10 @@ export default function TopActionBar({
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
           className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-          aria-label={zh ? '打开菜单' : 'Open menu'}
+          aria-label={t('openMenu')}
           aria-expanded={menuOpen}
           aria-haspopup="menu"
-          title={zh ? '菜单' : 'Menu'}
+          title={t('menu')}
         >
           <MenuIcon size={20} />
         </button>
@@ -372,7 +371,7 @@ export default function TopActionBar({
                 onClick={() => { setMenuOpen(false); onOpenSettings(); }}
                 className="mobile-menu-item"
               >
-                <span>{zh ? '设置' : 'Settings'}</span>
+                <span>{t('settings')}</span>
                 <SettingsIcon size={19} />
               </button>
               <ShareButton
@@ -390,7 +389,7 @@ export default function TopActionBar({
                 disabled={exportDisabled}
                 className="mobile-menu-item disabled:opacity-35 disabled:cursor-not-allowed"
               >
-                <span>{zh ? '导出' : 'Export'}</span>
+                <span>{t('export')}</span>
                 <DownloadIcon size={19} />
               </button>
               <div className="my-2 h-px bg-white/10" />
@@ -402,7 +401,7 @@ export default function TopActionBar({
                 onClick={() => setMenuOpen(false)}
                 className="mobile-menu-item"
               >
-                <span>{zh ? '学习' : 'Learn'}</span>
+                <span>{t('learn')}</span>
                 <BookOpenIcon size={19} />
               </a>
               <a
@@ -439,7 +438,7 @@ export default function TopActionBar({
         onClick={onOpenSettings}
         className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5"
       >
-        {zh ? '设置' : 'Settings'}
+        {t('settings')}
       </button>
 
       {/* 分享 */}
@@ -456,7 +455,7 @@ export default function TopActionBar({
         disabled={exportDisabled}
         className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5"
       >
-        {zh ? '导出' : 'Export'}
+        {t('export')}
       </button>
 
       {/* 学习 */}
@@ -466,7 +465,7 @@ export default function TopActionBar({
         rel="noopener noreferrer"
         className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5"
       >
-        {zh ? '学习' : 'Learn'}
+        {t('learn')}
       </a>
 
       {/* GitHub */}

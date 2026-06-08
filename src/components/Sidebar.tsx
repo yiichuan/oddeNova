@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
+import { t } from '../lib/i18n';
 import type { Session, TokenStats } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
 import SuggestionChips from './SuggestionChips';
@@ -112,7 +113,7 @@ export default function Sidebar({
             <button
               onClick={onReplay}
               className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
-              title="回放会话"
+              title={t('replaySession')}
             >
               <PlayIcon size={14} />
             </button>
@@ -122,14 +123,14 @@ export default function Sidebar({
             className={`w-7 h-7 rounded-full border border-border transition-colors flex items-center justify-center ${
               showHistory ? 'text-text-primary border-accent/50' : 'text-text-secondary hover:text-text-primary hover:border-accent/50'
             }`}
-            title="查看历史"
+            title={t('viewHistory')}
           >
             <HistoryIcon size={14} />
           </button>
           <button
             onClick={() => { onNewSession(); setFocusTrigger(v => v + 1); }}
             className="w-7 h-7 rounded-full border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
-            title="新建会话"
+            title={t('newSession')}
           >
             <PlusIcon size={14} />
           </button>
@@ -179,7 +180,7 @@ export default function Sidebar({
                 className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary"
                 style={{ fontFamily: '"GenWanMin TW", serif' }}
               >
-                来首曲子
+                {t('playSong')}
               </button>
             )}
             {!navigator.userAgent.includes('Windows') && (airjellyAvailable || isDemoMode()) && (
@@ -187,11 +188,11 @@ export default function Sidebar({
                 type="button"
                 onClick={onMoodGenerate}
                 disabled={isMoodLoading}
-                title="根据你最近的活动感知心情生成音乐"
+                title={t('moodTooltip')}
                 className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ fontFamily: '"GenWanMin TW", serif' }}
               >
-                <img src="/airjelly-icon.png" alt="AirJelly" className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" /> 根据心情生成
+                <img src="/airjelly-icon.png" alt="AirJelly" className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" /> {t('moodGenerate')}
               </button>
             )}
           </div>

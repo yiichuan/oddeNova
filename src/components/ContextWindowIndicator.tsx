@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TokenStats } from '../hooks/useSessions';
 import { getContextWindowSize } from '../lib/model-context-sizes';
+import { t } from '../lib/i18n';
 
 interface ContextWindowIndicatorProps {
   tokenStats: TokenStats;
@@ -53,8 +54,8 @@ export default function ContextWindowIndicator({ tokenStats }: ContextWindowIndi
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className="relative inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors hover:bg-white/5"
-        title="上下文窗口"
-        aria-label="Context window (上下文窗口)"
+        title={t('contextWindow')}
+        aria-label={t('contextWindow')}
       >
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ transform: 'rotate(-90deg)' }}>
           {/* Track */}
@@ -108,11 +109,11 @@ export default function ContextWindowIndicator({ tokenStats }: ContextWindowIndi
           style={{ fontSize: '12px' }}
         >
           {/* Header */}
-          <div className="text-[#cccccc] font-medium mb-1.5">上下文窗口</div>
+          <div className="text-[#cccccc] font-medium mb-1.5">{t('contextWindow')}</div>
 
           {/* Total line */}
           <div className="flex items-center justify-between text-[#aaaaaa] mb-1.5">
-            <span>{formatK(totalPrompt)}/{formatK(contextWindowSize)} 个令牌</span>
+            <span>{formatK(totalPrompt)}/{formatK(contextWindowSize)} {t('tokens')}</span>
             <span className="text-[#cccccc] font-medium">{Math.round(pct * 100)}%</span>
           </div>
 

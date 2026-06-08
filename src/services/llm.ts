@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { AGENT_SYSTEM_PROMPT_OPENAI } from '../prompts/system-prompt';
+import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from '../prompts/system-prompt';
 import {
   runAgentLoop,
   type ChatMsg,
@@ -372,7 +372,9 @@ export async function runAgent(
   moodContext?: string,
   signal?: AbortSignal,
 ): Promise<RunAgentResult> {
-  const basePrompt = AGENT_SYSTEM_PROMPT_OPENAI;
+  const basePrompt = /[一-龥]/.test(instruction)
+    ? AGENT_SYSTEM_PROMPT_OPENAI
+    : AGENT_SYSTEM_PROMPT_EN;
   const systemPrompt = moodContext
     ? `${basePrompt}\n\n${moodContext}`
     : basePrompt;

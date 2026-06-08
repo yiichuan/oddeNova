@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { ArrowUpIcon, CheckIcon, CopyIcon, EditIcon, GitBranchIcon, RetryIcon, XIcon } from './icons';
+import { t } from '../lib/i18n';
 
 function stripMarkdown(text: string): string {
   return text
@@ -144,7 +145,7 @@ export default function ConversationView({
     <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative" style={{ scrollbarGutter: 'stable' }}>
       {messages.length === 0 && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
-          <span>说点什么开始创作</span>
+          <span>{t('startCreating')}</span>
         </div>
       )}
 
@@ -208,7 +209,7 @@ export default function ConversationView({
                     <button
                       onClick={() => setEditingId(null)}
                       className="inline-flex h-6 w-6 items-center justify-center rounded-full text-text-muted/50 hover:text-text-muted hover:bg-white/5 transition-colors"
-                      title="取消"
+                      title={t('cancel')}
                     >
                       <XIcon size={13} />
                     </button>
@@ -221,7 +222,7 @@ export default function ConversationView({
                         }
                       }}
                       className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition-colors hover:bg-[#d0d0d0]/80 disabled:opacity-30 disabled:cursor-not-allowed"
-                      title="发送"
+                      title={t('send')}
                     >
                       <ArrowUpIcon size={14} />
                     </button>
@@ -240,14 +241,14 @@ export default function ConversationView({
                         });
                       }}
                       className="text-white/60 hover:text-white p-1"
-                      title="复制"
+                      title={t('copy')}
                     >
                       {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
                     </button>
                     <button
                       onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
                       className="text-white/60 hover:text-white p-1"
-                      title="编辑"
+                      title={t('edit')}
                     >
                       <EditIcon size={13} />
                     </button>
@@ -276,8 +277,8 @@ export default function ConversationView({
                       className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-bg-primary/60 text-[11px] text-[#93C2FF]/70 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors text-left"
                     >
                       <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                      <span>Strudel 代码</span>
-                      <span className="text-text-muted/50">· {lineCount} 行</span>
+                      <span>{t('strudelCode')}</span>
+                      <span className="text-text-muted/50">· {lineCount} {t('lines')}</span>
                     </button>
                     {isExpanded && (
                       <pre className="p-2 bg-bg-primary/60 text-[11px] text-[#93C2FF]/90 font-mono overflow-x-auto whitespace-pre-wrap">
@@ -293,14 +294,14 @@ export default function ConversationView({
                 <button
                   onClick={() => onRetry(msg.id)}
                   className="text-white/60 hover:text-white p-1"
-                  title="重试"
+                  title={t('retry')}
                 >
                   <RetryIcon size={13} />
                 </button>
                 <button
                   onClick={() => onBranch(msg.id)}
                   className="text-white/60 hover:text-white p-1"
-                  title="从此处创建分支对话"
+                  title={t('branchFrom')}
                 >
                   <GitBranchIcon size={13} />
                 </button>
@@ -315,7 +316,7 @@ export default function ConversationView({
           <div className="flex items-start gap-1.5 px-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse flex-shrink-0" />
             <div className="min-w-0">
-              <div className="text-sm text-text-primary">思考中...</div>
+              <div className="text-sm text-text-primary">{t('thinking')}</div>
               {streamingReasoningMsg && streamingReasoningMsg.content && reasoningPhaseActive && (
                 <pre
                   ref={reasoningPreRef}

@@ -26,6 +26,7 @@ import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
+import { zh, t } from './lib/i18n';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
@@ -239,7 +240,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   const handleInstruction = useCallback(
     async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
       if (!strudel.engineReady) {
-        strudel.setError('音频引擎启动中，请稍后再试');
+        strudel.setError(t('engineStarting'));
         return;
       }
 
@@ -284,7 +285,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             return;
           }
           if (e.kind === 'commit') {
-            sessions.addProgress('commit', '准备播放…', { sessionId });
+            sessions.addProgress('commit', t('preparingToPlay'), { sessionId });
             return;
           }
           if (e.kind === 'warn') {
@@ -308,7 +309,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
         if (signal.aborted) {
           if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage('已中断', undefined, sessionId);
+            sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
           }
           trackAgentAbort();
           return;
@@ -336,7 +337,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
               sessions.setCurrentCode(result.code, sessionId);
             } else {
               sessions.addAssistantMessage(
-                `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+                zh ? `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}` : `Agent generated code but it failed to run: ${strudel.error || 'unknown error'}`,
                 result.code,
                 sessionId
               );
@@ -347,17 +348,17 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             sessions.setCurrentCode(result.code, sessionId);
           }
         } else {
-          sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
+          sessions.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
         }
       } catch (e: unknown) {
         if (isUserAbort(e, signal)) {
           if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage('已中断', undefined, sessionId);
+            sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
           }
           trackAgentAbort();
         } else {
-          const errMsg = e instanceof Error ? e.message : '请求失败';
-          sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
+          const errMsg = e instanceof Error ? e.message : t('requestFailed');
+          sessions.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
           strudel.setError(errMsg);
           trackAgentError({
             provider: _analyticsProvider,
@@ -420,7 +421,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
   const handleMoodInstruction = useCallback(async () => {
     if (!strudel.engineReady) {
-      strudel.setError('音频引擎启动中，请稍后再试');
+      strudel.setError(t('engineStarting'));
       return;
     }
 
@@ -459,7 +460,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
           return;
         }
-        if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
+        if (e.kind === 'commit') { sessions.addProgress('commit', t('preparingToPlay'), { sessionId }); return; }
         if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
         if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
         if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
@@ -468,7 +469,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
       const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
-        sessions.addAssistantMessage('已中断', undefined, sessionId);
+        sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
         trackAgentAbort();
         return;
       }
@@ -495,7 +496,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             sessions.setCurrentCode(result.code, sessionId);
           } else {
             sessions.addAssistantMessage(
-              `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}`,
+              zh ? `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}` : `Agent generated code but it failed to run: ${strudel.error || 'unknown error'}`,
               result.code,
               sessionId
             );
@@ -506,15 +507,15 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           sessions.setCurrentCode(result.code, sessionId);
         }
       } else {
-        sessions.addAssistantMessage(result.explanation || 'agent 没有产出代码', undefined, sessionId);
+        sessions.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
       }
     } catch (e: unknown) {
       if (isUserAbort(e, signal)) {
-        sessions.addAssistantMessage('已中断', undefined, sessionId);
+        sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
         trackAgentAbort();
       } else {
-        const errMsg = e instanceof Error ? e.message : '请求失败';
-        sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
+        const errMsg = e instanceof Error ? e.message : t('requestFailed');
+        sessions.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
         strudel.setError(errMsg);
         trackAgentError({
           provider: _analyticsProvider,
@@ -565,16 +566,16 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             <button
               onClick={handleNewSession}
               className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-              aria-label="新建会话"
-              title="新建会话"
+              aria-label={t('newSession')}
+              title={t('newSession')}
             >
               <PlusIcon size={18} />
             </button>
             <button
               onClick={() => setHistoryOpen(true)}
               className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-              aria-label="会话历史"
-              title="会话历史"
+              aria-label={t('sessionHistory')}
+              title={t('sessionHistory')}
             >
               <HistoryIcon size={18} />
             </button>
@@ -651,7 +652,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
               onClick={() => setDrawerOpen((v) => !v)}
               className="rounded-full border border-border bg-bg-primary px-4 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
             >
-              {drawerOpen ? '收起代码 ↓' : '查看代码 ↑'}
+              {drawerOpen ? t('collapseCode') : t('viewCode')}
             </button>
           </div>
 
@@ -713,24 +714,24 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         )}
         {importStatus === 'loading' && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
-            <span className="text-text-secondary text-sm">正在载入分享内容…</span>
+            <span className="text-text-secondary text-sm">{t('loadingShare')}</span>
           </div>
         )}
         {importStatus === 'error' && !importErrorDismissed && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-bg-primary/90">
-            <span className="text-red-400 text-sm">分享内容加载失败</span>
+            <span className="text-red-400 text-sm">{t('shareLoadFailed')}</span>
             <div className="flex gap-3">
               <button
                 onClick={() => { handleNewSession(); setImportErrorDismissed(true); }}
                 className="px-4 py-1.5 text-sm rounded border border-border text-text-primary hover:border-accent/50 transition-colors"
               >
-                新建会话
+                {t('newSession')}
               </button>
               <button
                 onClick={() => setImportErrorDismissed(true)}
                 className="px-4 py-1.5 text-sm rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors"
               >
-                关闭
+                {t('close')}
               </button>
             </div>
           </div>
@@ -755,7 +756,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
         <Sidebar
-          title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? '新会话' : (current?.title ?? '新会话')}
+          title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle'))}
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
@@ -896,16 +897,16 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
   };
   switch (name) {
     case 'getScore':
-      return '读取当前曲谱';
+      return t('readScore');
 
     case 'applyEffect':
-      return `给 ${s('layer')} 加效果 ${s('chain')}`;
+      return zh ? `给 ${s('layer')} 加效果 ${s('chain')}` : `Apply effect ${s('chain')} to ${s('layer')}`;
     case 'setTempo':
-      return `设速度 ${s('bpm')} BPM`;
+      return zh ? `设速度 ${s('bpm')} BPM` : `Set tempo ${s('bpm')} BPM`;
     case 'validate':
-      return '校验代码';
+      return t('validateCode');
     case 'commit':
-      return '提交并播放';
+      return t('commitAndPlay');
     default:
       return `${name}(${JSON.stringify(args).slice(0, 60)})`;
   }
