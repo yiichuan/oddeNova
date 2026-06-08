@@ -1,5 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { uploadShare, fetchShare } from '../share';
+import { createShareCard, uploadShare, fetchShare } from '../share';
+
+describe('createShareCard', () => {
+  it('derives dynamic title and description from session messages', () => {
+    const card = createShareCard({
+      title: '新会话',
+      code: 'note "c5"',
+      messages: [
+        { id: 'm1', role: 'user', content: '做一段雨夜城市的 ambient techno', timestamp: 0 },
+        { id: 'm2', role: 'assistant', content: '我会加入低频 bass 和空间 delay。', timestamp: 0 },
+      ],
+    });
+
+    expect(card.title).toBe('做一段雨夜城市的 ambient techno | oddeNova');
+    expect(card.description).toContain('雨夜城市');
+  });
+});
 
 describe('uploadShare', () => {
   beforeEach(() => {
@@ -29,6 +45,8 @@ describe('uploadShare', () => {
     expect(body.version).toBe(1);
     expect(body.title).toBe('My Session');
     expect(body.code).toBe('note "c5"');
+    expect(body.card.title).toBe('My Session | oddeNova');
+    expect(body.card.description).toContain('note "c5"');
     expect(typeof body.sharedAt).toBe('number');
     expect(shareId).toBe(mockShareId);
   });
