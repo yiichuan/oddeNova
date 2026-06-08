@@ -53,7 +53,7 @@ export default function HistoryPanel({
                     <span className="flex-1 flex items-center py-[8px] text-xs leading-none truncate" title={s.title}>
                       {s.title || t('newSessionTitle')}
                     </span>
-                    {/* 状态指示器 + 删除按钮 */}
+                    {/* Status indicator + delete button */}
                     <span className="flex items-center gap-2 shrink-0">
                       {loadingSessions.has(s.id) ? (
                         <span className="w-1.5 h-1.5 rounded-full animate-spin shrink-0" style={{ border: '1.5px solid transparent', borderTopColor: 'var(--color-text-primary)', display: 'inline-block' }} />

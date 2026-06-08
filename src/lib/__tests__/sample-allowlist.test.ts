@@ -30,7 +30,7 @@ describe('findUnknownSamples', () => {
   });
 
   it('mini-notation 括号内的 token 正确解析', () => {
-    // 仅使用确认存在于 DIRT_SAMPLES 的 token：bd、sd、hh、hh27
+    // Only use tokens confirmed to exist in DIRT_SAMPLES: bd, sd, hh, hh27
     const result = findUnknownSamples('s("[bd sd] ~ [hh <hh27 hh>]")');
     expect(result).toEqual([]);
   });
@@ -45,18 +45,18 @@ describe('findUnknownSamples', () => {
   });
 
   it('.bank() 合法组合不报错', () => {
-    // bd 是 VALID_BANK_SUFFIXES 中的合法 suffix，RolandTR808_bd 存在于 allowlist
+    // bd is a valid suffix in VALID_BANK_SUFFIXES and RolandTR808_bd exists in the allowlist
     expect(findUnknownSamples('s("bd").bank("RolandTR808")')).toEqual([]);
   });
 
   it('.bank() 非法组合返回 bank_suffix 形式的未知 token', () => {
-    // arp 在 SAMPLE_ALLOWLIST 中（DIRT_SAMPLES），但不是 VALID_BANK_SUFFIXES，
-    // 且 RolandTR808_arp 不存在于 allowlist
+    // arp is in SAMPLE_ALLOWLIST (DIRT_SAMPLES) but is not in VALID_BANK_SUFFIXES,
+    // and RolandTR808_arp does not exist in the allowlist
     expect(findUnknownSamples('s("arp").bank("RolandTR808")')).toEqual(['RolandTR808_arp']);
   });
 
   it('逗号分隔的多轨 mini-notation 不误报', () => {
-    // s("bd*4, ~ sd ~ sd, hh*8") — 逗号是多轨分隔符，不是 sample 名的一部分
+    // s("bd*4, ~ sd ~ sd, hh*8") — commas are multi-track separators, not part of sample names
     expect(findUnknownSamples('s("bd*4, ~ sd ~ sd, hh*8")')).toEqual([]);
   });
 });

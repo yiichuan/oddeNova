@@ -141,8 +141,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   let explanation = '';
   let committed = false;
   let finalCode = state.code;
-  // 只取最后一次迭代的 usage：每次调用时 messages 已累积全部历史，
-  // 最后一次 inputTokens 即当前完整上下文的真实大小。
+  // Only keep usage from the last iteration: each call accumulates the full message history,
+  // so the final inputTokens reflects the true size of the current complete context.
   let lastUsage: LLMUsage | undefined;
 
   outer: for (let i = 0; i < maxIter; i++) {
@@ -310,7 +310,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   // DeepSeek frequently stops without invoking `commit` (returns no tool_calls
   // after the last edit, or just runs out of iterations). If the agent did
   // mutate `state.code` AND the result still parses as valid JS, treat it as
-  // a committed turn so the UI doesn't show a misleading "未生成新代码" while
+  // a committed turn so the UI doesn't show a misleading "No code changes made" while
   // the player is in fact about to hot-reload that very code. If validation
   // fails we keep `committed=false` so App.tsx can surface the runtime error.
   // Skip the fallback entirely if the user explicitly aborted.
@@ -353,8 +353,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     }
   }
 
-  // 估算 system prompt + tools 的 token 数。
-  // CJK 字符约 1 token/字，其余约 4 字符/token。
+  // Estimate token count for system prompt + tools.
+  // CJK characters are ~1 token each; all other characters are ~4 chars/token.
   const systemRaw = systemPrompt + JSON.stringify(tools);
   let cjkCount = 0;
   for (const ch of systemRaw) {

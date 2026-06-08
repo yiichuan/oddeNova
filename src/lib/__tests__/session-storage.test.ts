@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-describe('session-storage fallback 路径', () => {
-  // 在 Node 环境中 IndexedDB 不存在，openDB() 会触发 fallback，
-  // 之后所有写操作静默忽略，读操作返回空数组。
+describe('session-storage fallback path', () => {
+  // IndexedDB does not exist in the Node environment; openDB() triggers the fallback,
+  // after which all write operations are silently ignored and read operations return an empty array.
 
   beforeEach(async () => {
-    // 每次测试重新 import，确保模块状态干净
+    // Re-import on each test to ensure a clean module state
     const { vi } = await import('vitest');
     vi.resetModules();
   });

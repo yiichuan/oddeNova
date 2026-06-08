@@ -15,7 +15,7 @@ function getModelForProvider(p: ProviderType): string {
 interface ApiKeyModalProps {
   onClose: () => void;
   onSaved?: () => void;
-  /** true 时隐藏"取消"按钮，强制用户填写（首次无配置场景）。 */
+  /** When true, hides the "cancel" button and forces the user to fill in the key (first-run, no config). */
   required?: boolean;
 }
 
@@ -23,7 +23,7 @@ const PROVIDER_ORDER: ProviderType[] = [
   'official', 'anthropic', 'deepseek', 'glm',
 ];
 
-/** 按服务商分别读取已保存的 API Key。 */
+/** Read the saved API Key for each provider separately. */
 function getProviderKey(p: ProviderType): string {
   return localStorage.getItem(`vibe_api_key_${p}`) || '';
 }
@@ -77,7 +77,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
           {t('apiKeyDesc')}
         </p>
 
-        {/* 当前生效状态 */}
+        {/* Currently active configuration */}
         {savedKey && (
           <div className="flex items-center gap-2 mb-7">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 mt-px" />
@@ -93,7 +93,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
         )}
 
         <div className="space-y-3">
-          {/* 服务商选择 */}
+          {/* Provider selection */}
           <div>
             <label className="text-xs text-text-secondary mb-1 block">{t('provider')}</label>
             <div className="relative">

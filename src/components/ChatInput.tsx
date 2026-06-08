@@ -92,7 +92,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         rows={1}
         disabled={isLoading && replayValue === undefined}
         className="w-full min-h-[108px] resize-none overflow-hidden rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] focus:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] 视频渲染时隐藏光标闪烁
+        style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
       />
 
       {!engineReady && (
@@ -110,7 +110,7 @@ export default function ChatInput({ isLoading, engineReady, onSendText, onReinit
         </div>
       )}
 
-      {/* 隐藏上下文窗口指示器，现在距离上限还差很多，只用于后续提示词优化查看*/
+      {/* Context window indicator hidden for now — still far from the limit; kept for future prompt optimisation review*/
       /* {engineReady && tokenStats && (
         <div className="absolute left-3 bottom-3">
           <ContextWindowIndicator tokenStats={tokenStats} />

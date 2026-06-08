@@ -5,17 +5,17 @@ import { t } from '../lib/i18n';
 
 function stripMarkdown(text: string): string {
   return text
-    .replace(/#{1,6}\s+/g, '')          // 标题
-    .replace(/\*\*(.+?)\*\*/g, '$1')    // 粗体
-    .replace(/\*(.+?)\*/g, '$1')        // 斜体
-    .replace(/__(.+?)__/g, '$1')        // 粗体（下划线）
-    .replace(/_(.+?)_/g, '$1')          // 斜体（下划线）
-    .replace(/`{1,3}[^`]*`{1,3}/g, (m) => m.replace(/`/g, '').trim()) // 代码
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 链接
-    .replace(/^[-*+]\s+/gm, '')         // 无序列表
-    .replace(/^\d+\.\s+/gm, '')         // 有序列表
-    .replace(/^>\s+/gm, '')             // 引用
-    .replace(/~~(.+?)~~/g, '$1')        // 删除线
+    .replace(/#{1,6}\s+/g, '')          // headings
+    .replace(/\*\*(.+?)\*\*/g, '$1')    // bold
+    .replace(/\*(.+?)\*/g, '$1')        // italic
+    .replace(/__(.+?)__/g, '$1')        // bold (underscore)
+    .replace(/_(.+?)_/g, '$1')          // italic (underscore)
+    .replace(/`{1,3}[^`]*`{1,3}/g, (m) => m.replace(/`/g, '').trim()) // code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
+    .replace(/^[-*+]\s+/gm, '')         // unordered lists
+    .replace(/^\d+\.\s+/gm, '')         // ordered lists
+    .replace(/^>\s+/gm, '')             // blockquotes
+    .replace(/~~(.+?)~~/g, '$1')        // strikethrough
     .trim();
 }
 
@@ -63,7 +63,7 @@ export default function ConversationView({
     el.setSelectionRange(len, len);
   }, [editingId]);
 
-  // 检测用户手动滚动：距底部 > 80px 时停止自动跟随，滚回底部时恢复
+  // Detect manual user scroll: stop auto-following when more than 80px from the bottom, resume when scrolled back
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -86,18 +86,18 @@ export default function ConversationView({
 
   useEffect(() => {
     if (isVideoMode && !scrollBottom) {
-      // [video] 视频模式：从顶部展示，scrollBottom=true 时才滚底
+      // [video] Video mode: display from the top; only scroll to bottom when scrollBottom=true
       if (scrollRef.current) scrollRef.current.scrollTop = 0;
     } else {
       if (!userScrolledRef.current) {
         bottomRef.current?.scrollIntoView({ behavior: 'instant' });
       }
-      // 自动滚动 reasoning <pre> 到底部（流式输出时跟随内容）
+      // Auto-scroll the reasoning <pre> to the bottom (follow content during streaming output)
       const preEl = reasoningPreRef.current;
       if (preEl && !reasoningUserScrolledRef.current) {
         preEl.scrollTop = preEl.scrollHeight;
       }
-      // isLoading 结束时重置 reasoning 区域的用户滚动标记
+      // Reset the user-scrolled flag for the reasoning area when isLoading ends
       if (!isLoading) {
         reasoningUserScrolledRef.current = false;
       }
@@ -121,8 +121,9 @@ export default function ConversationView({
     return { absorbedReasoningIds };
   }, [messages]);
 
-  // 当前正在流式输出的 reasoning（尚未被 assistant 消息吸收）
-  // 使用 findLast 取最新一条，避免多轮迭代时前一轮的 reasoning 被 tool_call 消息隔断导致 reasoningPhaseActive 失效
+  // The reasoning currently being streamed (not yet absorbed by an assistant message).
+  // Use findLast to get the most recent one, preventing the previous round's reasoning from being
+  // cut off by a tool_call message across multiple iterations and causing reasoningPhaseActive to malfunction.
   const streamingReasoningMsg = useMemo(
     () => messages.findLast(
       (m) => m.role === 'progress' && m.progressKind === 'reasoning' && !absorbedReasoningIds.has(m.id),
@@ -130,8 +131,9 @@ export default function ConversationView({
     [messages, absorbedReasoningIds],
   );
 
-  // 判断推理阶段是否仍在进行：若 reasoning 消息之后已有其他非 reasoning 消息（如文字流式输出），
-  // 说明思考已完成，不应继续展开显示推理内容。
+  // Determine whether the reasoning phase is still in progress: if there are non-reasoning messages
+  // after the reasoning message (e.g. streaming text output), thinking is complete and
+  // the reasoning content should no longer be displayed expanded.
   const streamingReasoningIdx = streamingReasoningMsg
     ? messages.findIndex((m) => m.id === streamingReasoningMsg.id)
     : -1;

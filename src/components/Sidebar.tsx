@@ -168,7 +168,7 @@ export default function Sidebar({
       </div>
 
       <div className="pl-4 pr-0 pb-2">
-        {/* [video] 视频模式下隐藏建议词和心情按钮，避免遮挡 CodePanel 画面 */}
+        {/* [video] In video mode, hide suggestion chips and the mood button to avoid obscuring the CodePanel view */}
         {!isLoading && !suggestionsLoading && !isVideoMode && (
           <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
             <SuggestionChips suggestions={suggestions} onPick={onSendText} />

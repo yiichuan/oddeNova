@@ -39,7 +39,7 @@ class StrudelService {
     try { return window.self !== window.top; } catch { return true; }
   })();
   private _videoTime = 0;
-  // [video] Remotion 每帧通过 postMessage 更新此值，替代 AudioContext.currentTime 驱动高亮
+  // [video] Remotion updates this value per frame via postMessage, replacing AudioContext.currentTime to drive highlighting
   setVideoTime = (t: number): void => { this._videoTime = t; };
 
   private masterLpfNode: BiquadFilterNode | null = null;
@@ -164,7 +164,7 @@ class StrudelService {
       let getTimeFn: () => number;
 
       if (this._isVideoMode) {
-        // [video] Remotion headless 渲染：禁用音频输出，用帧时间替代 AudioContext 时钟
+        // [video] Remotion headless render: disable audio output, use frame time instead of AudioContext clock
         defaultOutput = async () => {};
         getTimeFn = () => this._videoTime;
       } else {
@@ -191,7 +191,7 @@ class StrudelService {
         defaultOutput,
         getTime: getTimeFn,
         drawTime: [0, -2],
-        drawContext: getDrawContext(), // 默认 id='test-canvas'；src/index.css 有对应 #test-canvas z-index 规则
+        drawContext: getDrawContext(), // default id='test-canvas'; src/index.css has the corresponding #test-canvas z-index rule
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
           const error = evalError
@@ -798,7 +798,7 @@ export function validateCodeRuntime(code: string): ValidationResult {
   const clean = normalizeCode(stripUIDecorations(code));
   if (!clean.trim()) return { ok: false, error: '代码为空', kind: 'syntax' };
 
-  // Proxy dry-run（调用方保证引擎已就绪，见 App.tsx handleInstruction guard）
+  // Proxy dry-run (caller guarantees the engine is ready — see App.tsx handleInstruction guard)
   const stripped = clean.replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');
 
   const proxy = new Proxy({}, {

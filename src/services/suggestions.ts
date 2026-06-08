@@ -1,8 +1,8 @@
 import { chatOnce } from './llm';
 import { zh } from '../lib/i18n';
 
-// 模型/凭据复用 services/llm-config.ts 中的统一配置；
-// 单轮请求通过 chatOnce() 自动路由到当前 provider。
+// Model/credentials reuse the unified configuration in services/llm-config.ts;
+// single-turn requests are automatically routed to the current provider via chatOnce().
 
 const STATIC_SUGGESTIONS_ZH = [
   '来段复古游戏机通关音乐',

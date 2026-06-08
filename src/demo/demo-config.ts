@@ -33,7 +33,7 @@ ${layerCode.join(',\n')}
 )`;
 }
 
-// ── 示例：底鼓 → 军鼓 → 氛围合成器 ──────────────────────────────────────────
+// ── Example: kick drum → snare → ambient synth ───────────────────────────────
 
 const _DRUMS_CODE = `s("bd*4")
   .gain(0.8)`;
@@ -128,16 +128,16 @@ export function getActiveDemoSet(): DemoScenario[] {
   return DEMO_SET;
 }
 
-/** 根据 instruction 精确匹配场景，返回对应 DemoScenario */
+/** Exact-match instruction to a scenario and return the corresponding DemoScenario */
 export function resolveDemoScenario(instruction: string): DemoScenario | undefined {
   return DEMO_SET.find((s) => s.prompt === instruction);
 }
 
-/** 灵感一下：点击后直接发送的长提示词 */
+/** Inspire me: long prompt sent directly on click */
 export const DEMO_PREFILL =
   '一首中速低保真电子乐曲，速度为90 BPM。曲风以流畅饱满的Fender Rhodes电钢琴为主，演奏小九和弦（Bbm9、Fm9），并辅以强烈的相位器和混响效果。深沉的贝斯线紧随根音之后。极简的IDM鼓点节奏，清脆的鼓边敲击、轻柔的沙锤声以及干脆的底鼓声，营造出独特的氛围。音色中穿插着自然的电子音效、FM合成器的啁啾声以及扫频低通滤波器，带来一种轻松、电影般的海岸风情，略带实验性。';
 
-// ── 灵感一下专用 Demo 场景 ─────────────────────────────────────────────────
+// ── Demo scenario dedicated to the "Inspire Me" feature ──────────────────────
 const _PF_DRUMS_INITIAL = `stack(
   s("bd ~ ~ ~ bd ~ ~ ~")
     .gain(0.78),
@@ -230,7 +230,7 @@ export const DEMO_PREFILL_SCENARIO: DemoMoodScenario = {
   ],
 };
 
-// ── Demo 心情模式场景 ───────────────────────────────────────────────────────
+// ── Demo mood mode scenario ────────────────────────────────────────────────
 
 export interface DemoMoodRound {
   thinking?: string;
@@ -239,7 +239,7 @@ export interface DemoMoodRound {
 
 export interface DemoMoodScenario {
   rounds: DemoMoodRound[];
-  /** 每个 role 对应的预写片段，供 demo UI 展示和回放使用 */
+  /** Pre-written snippet for each role, used for demo UI display and replay */
   roleSnippets: Record<string, string>;
 }
 
@@ -329,7 +329,7 @@ export const DEMO_MOOD_SCENARIO: DemoMoodScenario = {
   ],
 };
 
-// ── 静态提示词预设场景（无需调用模型，直接返回预写结果）──────────────────────
+// ── Static prompt preset scenarios (no model call needed, returns pre-written results directly) ──
 
 const _RG_DRUMS = `stack(
   s("bd ~ ~ bd ~ ~ bd ~")
@@ -655,7 +655,7 @@ export const STATIC_SUGGESTION_SCENARIOS: DemoScenario[] = [
   },
 ];
 
-/** 根据 instruction 匹配静态提示词预设场景，命中则无需调用真实模型 */
+/** Match instruction against static prompt preset scenarios; a hit means no real model call is needed */
 export function resolveStaticSuggestionScenario(instruction: string): DemoScenario | undefined {
   return STATIC_SUGGESTION_SCENARIOS.find((s) => s.prompt === instruction);
 }

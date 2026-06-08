@@ -45,7 +45,7 @@ describe('applyTruncateAndEdit', () => {
       ],
     });
     const result = applyTruncateAndEdit(s, 'msg-1', '全新内容');
-    // before 为空，无用户消息，触发 deriveTitle
+    // before is empty, no user message, triggers deriveTitle
     expect(result.title).toBe('全新内容');
   });
 

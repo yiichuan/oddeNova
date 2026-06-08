@@ -81,7 +81,7 @@ export function useSessions() {
       const loaded = await getAllSessions();
       if (cancelled) return;
 
-      // 每次启动/刷新都创建新会话
+      // Create a new session on every startup/refresh
       const fresh = makeEmptySession();
       await dbPutSession(fresh);
       setSessions([fresh, ...loaded]);
@@ -200,7 +200,7 @@ export function useSessions() {
     [updateCurrent, updateSession]
   );
 
-  // 流式追加思考文字：若最后一条消息是 thinking，则原地拼接；否则新建一条
+  // Stream-append thinking text: if the last message is a thinking message, append in place; otherwise create a new one
   const appendToLastThinking = useCallback(
     (delta: string, sessionId?: string): void => {
       const apply = sessionId
@@ -231,7 +231,7 @@ export function useSessions() {
     [updateCurrent, updateSession]
   );
 
-  // 流式追加推理文字：若最后一条消息是 reasoning，则原地拼接；否则新建一条
+  // Stream-append reasoning text: if the last message is a reasoning message, append in place; otherwise create a new one
   const appendToLastReasoning = useCallback(
     (delta: string, sessionId?: string): void => {
       const apply = sessionId
@@ -277,7 +277,7 @@ export function useSessions() {
       const id = currentId || prev[0]?.id;
       const cur = prev.find((s) => s.id === id);
       // If the current session is already empty, reuse it instead of stacking
-      // up another untouched "新会话".
+      // up another untouched "New Session".
       if (cur && cur.messages.length === 0 && !cur.code) {
         if (id && currentId !== id) setCurrentId(id);
         return prev;

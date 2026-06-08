@@ -433,7 +433,7 @@ export default function TopActionBar({
 
   return (
     <div className="h-full relative flex items-center justify-end gap-3">
-      {/* 设置 */}
+      {/* Settings */}
       <button
         onClick={onOpenSettings}
         className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5"
@@ -441,7 +441,7 @@ export default function TopActionBar({
         {t('settings')}
       </button>
 
-      {/* 分享 */}
+      {/* Share */}
       <ShareButton
         session={session}
         code={code}
@@ -449,7 +449,7 @@ export default function TopActionBar({
         disabled={shareDisabled}
       />
 
-      {/* 导出 */}
+      {/* Export */}
       <button
         onClick={() => setExportOpen((v) => !v)}
         disabled={exportDisabled}
@@ -458,7 +458,7 @@ export default function TopActionBar({
         {t('export')}
       </button>
 
-      {/* 学习 */}
+      {/* Learn */}
       <a
         href={learnUrl}
         target="_blank"
