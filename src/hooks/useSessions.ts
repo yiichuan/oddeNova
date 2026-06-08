@@ -215,7 +215,7 @@ export function useSessions() {
     [getApply]
   );
 
-  // 流式追加进度文字：若最后一条消息已是同类型 progress，则原地拼接；否则新建一条
+  // Stream-append progress text: if the last message is already the same progress kind, append in-place; otherwise create a new one
   const appendToLastProgress = useCallback(
     (delta: string, kind: 'thinking' | 'reasoning', sessionId?: string): void => {
       const apply = getApply(sessionId);

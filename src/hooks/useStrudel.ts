@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getEngineUnavailableMessage } from '../lib/engine-status';
 import { getErrorMessage } from '../lib/errors';
+import { t } from '../lib/i18n';
 import { strudelService, type StrudelState } from '../services/strudel';
 
 const MAX_HISTORY = 50;
@@ -37,7 +38,7 @@ export function useStrudel() {
     if (!strudelService.isReady) {
       setState(s => ({
         ...s,
-        error: getEngineUnavailableMessage(s.engineStatus) ?? '音频引擎启动中，请稍后再试',
+        error: getEngineUnavailableMessage(s.engineStatus) ?? t('engineStarting'),
       }));
       return false;
     }

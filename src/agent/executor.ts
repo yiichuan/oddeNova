@@ -27,7 +27,7 @@ export async function dispatchToolCall(
     return {
       id: call.id,
       name: call.name,
-      result: { ok: false, error: `未知 tool: ${call.name}` },
+      result: { ok: false, error: `Unknown tool: ${call.name}` },
     };
   }
 
@@ -45,7 +45,7 @@ export async function dispatchToolCall(
         name: call.name,
         result: {
           ok: false,
-          error: `arguments JSON 解析失败: ${msg}`,
+          error: `Failed to parse arguments JSON: ${msg}`,
         },
       };
     }
@@ -71,10 +71,10 @@ export async function dispatchToolCall(
       console.error(`[executor] ✗ tool "${call.name}" threw (attempt ${attempt}):`, lastError);
     }
   }
-  console.error(`[executor] ✗ tool "${call.name}" final failure:`, lastError || 'tool 执行失败');
+  console.error(`[executor] ✗ tool "${call.name}" final failure:`, lastError || 'Tool execution failed');
   return {
     id: call.id,
     name: call.name,
-    result: { ok: false, error: lastError || 'tool 执行失败' },
+    result: { ok: false, error: lastError || 'Tool execution failed' },
   };
 }

@@ -278,10 +278,10 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         return;
       }
       if (e.kind === 'tool_result') {
-        if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" 失败:`, e.error || 'unknown error');
+        if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" failed:`, e.error || 'unknown error');
         return;
       }
-      if (e.kind === 'commit') { sessions.addProgress('commit', '准备播放…', { sessionId }); return; }
+      if (e.kind === 'commit') { sessions.addProgress('commit', t('preparingToPlay'), { sessionId }); return; }
       if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
       if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
       if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
@@ -299,8 +299,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   // Surface a non-abort agent error to the user + analytics.
   const reportAgentError = useCallback(
     (e: unknown, sessionId: string, provider: string, model: string) => {
-      const errMsg = e instanceof Error ? e.message : '请求失败';
-      sessions.addAssistantMessage(`出错了: ${errMsg}`, undefined, sessionId);
+      const errMsg = e instanceof Error ? e.message : t('requestFailed');
+      sessions.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
       strudel.setError(errMsg);
       trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
     },
@@ -316,7 +316,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       }
 
       setCommitSuggestions(null); // reset on each new instruction
-      setRollbackPrefill(''); // 消息已发出，回滚回填的内容已被消费
+      setRollbackPrefill(''); // message sent — rollback prefill content consumed
       if (!options?.skipAddMessage) {
         sessions.addUserMessage(text);
       }
@@ -400,9 +400,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]
   );
 
-  // Abort 进行中的运行, 并把 strudel/会话代码状态回退到 messageId 这条消息发出前。
-  // handleResend (重新编辑发送) 与 handleRollback (回滚) 共用这段"回退引擎状态"逻辑,
-  // 仅在回退之后的处理 (覆盖编辑并重发 / 回填输入框) 上分叉。
+  // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
+  // Shared by handleResend (edit + resend) and handleRollback (rewind only);
+  // they diverge only in what they do after the rewind (overwrite + resend vs. prefill input).
   const rewindBeforeMessage = useCallback(
     async (messageId: string) => {
       const currentSessionId = sessions.currentId;
@@ -416,7 +416,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       if (idx < 0) return null;
       const target = allMessages[idx];
 
-      // 找到该消息之前最后一条有代码的 assistant 消息，作为回退目标
+      // Find the last assistant message with code before this message, as the rollback target
       const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
@@ -454,7 +454,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
       sessions.truncate(messageId);
 
-      // 把消息内容回填进输入框并聚焦
+      // Prefill the input with the message content and focus
       setRollbackPrefill(rewound.target.content);
       setInputFocusTrigger((n) => n + 1);
     },
@@ -489,7 +489,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     const instruction = '根据我的心情生成音乐';
 
     setCommitSuggestions(null);
-    setRollbackPrefill(''); // 消息已发出，回滚回填的内容已被消费
+    setRollbackPrefill(''); // message sent — rollback prefill content consumed
     sessions.addUserMessage(instruction);
     const sessionId = sessions.currentId;
     if (!sessionId) return;
@@ -898,24 +898,24 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       </main>
       {importStatus === 'loading' && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
-          <span className="text-text-secondary text-sm">正在载入分享内容…</span>
+          <span className="text-text-secondary text-sm">{t('loadingShare')}</span>
         </div>
       )}
       {importStatus === 'error' && !importErrorDismissed && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-bg-primary/90">
-          <span className="text-red-400 text-sm">分享内容加载失败</span>
+          <span className="text-red-400 text-sm">{t('shareLoadFailed')}</span>
           <div className="flex gap-3">
             <button
               onClick={() => { handleNewSession(); setImportErrorDismissed(true); }}
               className="px-4 py-1.5 text-sm rounded border border-border text-text-primary hover:border-accent/50 transition-colors"
             >
-              新建会话
+              {t('newSession')}
             </button>
             <button
               onClick={() => setImportErrorDismissed(true)}
               className="px-4 py-1.5 text-sm rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors"
             >
-              关闭
+              {t('close')}
             </button>
           </div>
         </div>

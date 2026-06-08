@@ -115,13 +115,13 @@ export default function ChatInput({
       {engineStatus !== 'ready' && (
         <div className="absolute left-4 bottom-3 flex items-center gap-2 text-[12px] text-[#888888]">
           <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-[#B2370C]' : 'bg-[#666666]'}`} />
-          <span>{engineStatus === 'failed' ? '初始化失败' : '初始化中...'}</span>
+          <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
           {engineStatus === 'failed' && (
             <button
               type="button"
               onClick={onReinitEngine}
               className="text-[18px] font-thin text-[#e0e0e0]/60 hover:text-[#e0e0e0] transition-colors leading-none relative -top-[2px]"
-              title="重新初始化"
+              title={t('restartEngine')}
             >
               ↺
             </button>

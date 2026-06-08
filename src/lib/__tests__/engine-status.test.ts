@@ -4,11 +4,11 @@ import { getEngineUnavailableMessage } from '../engine-status';
 
 describe('getEngineUnavailableMessage', () => {
   it('returns retry guidance for failed engine status', () => {
-    expect(getEngineUnavailableMessage('failed')).toBe('初始化失败，请点击重试按钮');
+    expect(getEngineUnavailableMessage('failed')).toBe('Engine init failed — click retry');
   });
 
   it('returns startup guidance for initializing engine status', () => {
-    expect(getEngineUnavailableMessage('initializing')).toBe('音频引擎启动中，请稍后再试');
+    expect(getEngineUnavailableMessage('initializing')).toBe('Audio engine starting, please try again later');
   });
 
   it('returns no message for ready engine status', () => {

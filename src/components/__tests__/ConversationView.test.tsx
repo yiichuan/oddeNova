@@ -98,7 +98,7 @@ describe('ConversationView mobile interactions', () => {
     roots.push(root);
 
     const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="user-1"]');
-    const button = container.querySelector<HTMLButtonElement>('button[title="回滚到此处"]');
+    const button = container.querySelector<HTMLButtonElement>('button[title="Roll back to here"]');
     expect(button?.disabled).toBe(true);
 
     act(() => {
@@ -141,7 +141,7 @@ describe('ConversationView mobile interactions', () => {
 
     const firstBubble = container.querySelector<HTMLElement>('[data-rollback-bubble="user-1"]');
     const secondBubble = container.querySelector<HTMLElement>('[data-rollback-bubble="user-2"]');
-    const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[title="回滚到此处"]'));
+    const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[title="Roll back to here"]'));
 
     act(() => {
       firstBubble?.dispatchEvent(new Event('touchstart', { bubbles: true, cancelable: true }));

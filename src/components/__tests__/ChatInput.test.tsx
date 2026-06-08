@@ -27,7 +27,7 @@ function renderChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
 }
 
 function getSubmitButton(container: HTMLElement): HTMLButtonElement {
-  const button = container.querySelector<HTMLButtonElement>('button[title="发送"]');
+  const button = container.querySelector<HTMLButtonElement>('button[type="submit"]');
   if (!button) throw new Error('send button not found');
   return button;
 }
@@ -46,8 +46,8 @@ describe('ChatInput engine initialization status', () => {
     const { container, root } = renderChatInput({ engineReady: false, engineStatus: 'initializing' });
     roots.push(root);
 
-    expect(container.textContent).toContain('初始化中...');
-    expect(container.querySelector('button[title="重启引擎"]')).toBeNull();
+    expect(container.textContent).toContain('Initializing...');
+    expect(container.querySelector('button[title="Restart engine"]')).toBeNull();
     expect(getSubmitButton(container).disabled).toBe(true);
   });
 
@@ -60,8 +60,8 @@ describe('ChatInput engine initialization status', () => {
     });
     roots.push(root);
 
-    expect(container.textContent).toContain('初始化失败');
-    const retryButton = container.querySelector<HTMLButtonElement>('button[title="重新初始化"]');
+    expect(container.textContent).toContain('Engine init failed');
+    const retryButton = container.querySelector<HTMLButtonElement>('button[title="Restart engine"]');
     expect(retryButton).not.toBeNull();
 
     act(() => retryButton?.click());
@@ -130,7 +130,7 @@ describe('ChatInput engine initialization status', () => {
     if (!textarea) throw new Error('textarea not found');
     expect(textarea.value).toBe('来一段 house');
 
-    // 模拟用户编辑回填后的文本
+    // Simulate user editing the prefilled text
     const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(textarea), 'value')?.set;
     act(() => {
       setter?.call(textarea, '用户编辑后的内容');
@@ -138,7 +138,7 @@ describe('ChatInput engine initialization status', () => {
     });
     expect(textarea.value).toBe('用户编辑后的内容');
 
-    // 再次回滚到内容相同的消息：prefill 字符串不变，但 focusTrigger 自增
+    // Roll back to a message with the same content again: prefill string unchanged, but focusTrigger incremented
     act(() => {
       root.render(<ChatInput {...baseProps} prefill="来一段 house" focusTrigger={2} />);
     });

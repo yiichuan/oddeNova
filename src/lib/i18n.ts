@@ -59,9 +59,12 @@ const S: Record<string, readonly [string, string]> = {
   setUpLater:      ['稍后设置', 'Set up later'],
 
   // ChatInput
-  inputPlaceholder: ['输入文字描述音乐...', 'Describe your music...'],
-  notInitialized:   ['未初始化', 'Not initialized'],
-  restartEngine:    ['重启引擎', 'Restart engine'],
+  inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
+  notInitialized:      ['未初始化', 'Not initialized'],
+  restartEngine:       ['重启引擎', 'Restart engine'],
+  engineInitializing:  ['初始化中...', 'Initializing...'],
+  engineFailed:        ['初始化失败', 'Engine init failed'],
+  engineFailedRetry:   ['初始化失败，请点击重试按钮', 'Engine init failed — click retry'],
 
   // ApiKeyModal
   setApiKey:    ['设置 API Key', 'Set API Key'],
@@ -79,6 +82,8 @@ const S: Record<string, readonly [string, string]> = {
   lines:         ['行', 'lines'],
   branchFrom:    ['从此处创建分支对话', 'Branch conversation from here'],
   thinking:      ['思考中...', 'Thinking...'],
+  rollbackHere:  ['回滚到此处', 'Roll back to here'],
+  copyCode:      ['复制代码', 'Copy code'],
 
   // HistoryPanel
   history:    ['历史对话', 'History'],
@@ -99,6 +104,11 @@ const S: Record<string, readonly [string, string]> = {
   // ContextWindowIndicator
   contextWindow: ['上下文窗口', 'Context window'],
   tokens:        ['个令牌', 'tokens'],
+
+  // strudel / engine
+  clickToResume:   ['点击播放继续', 'Click to resume'],
+  emptyCode:       ['代码为空', 'Code is empty'],
+  copyShareLink:   ['复制分享链接', 'Copy share link'],
 };
 
 export function t(key: string): string {

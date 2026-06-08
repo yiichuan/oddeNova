@@ -1,6 +1,6 @@
 /**
- * 各模型上下文窗口大小（token 数）。
- * 按前缀匹配：先精确匹配，再前缀匹配，未命中时回退 128K。
+ * Context window sizes (in tokens) for each model.
+ * Matched by prefix: exact match first, then prefix match, falls back to 128K.
  */
 const MODEL_CONTEXT_SIZES: Array<{ prefix: string; size: number }> = [
   // Anthropic

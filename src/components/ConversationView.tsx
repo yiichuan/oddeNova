@@ -57,7 +57,7 @@ export default function ConversationView({
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const isMobile = useIsMobile();
-  // 移动端长按消息显示回退按钮（触屏无真正的 hover 状态）
+  // On mobile, long-pressing a message reveals the rollback button (no real hover state on touch screens)
   const [longPressedId, setLongPressedId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -120,7 +120,7 @@ export default function ConversationView({
     }
   }, []);
 
-  // 长按显示回退按钮后，点击气泡以外的区域则收起
+  // After long-press reveals the rollback button, tapping outside the bubble dismisses it
   useEffect(() => {
     if (!isMobile || !longPressedId) return;
     const container = scrollRef.current;
@@ -254,7 +254,7 @@ export default function ConversationView({
                     onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
                     disabled={!rollbackButtonEnabled}
                     className="w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
-                    title="回滚到此处"
+                    title={t('rollbackHere')}
                   >
                     <RollbackIcon size={12} />
                   </button>
@@ -284,8 +284,8 @@ export default function ConversationView({
                         className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors text-left"
                       >
                         <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                        <span>Strudel 代码</span>
-                        <span className="text-text-muted/50">· {lineCount} 行</span>
+                        <span>{t('strudelCode')}</span>
+                        <span className="text-text-muted/50">· {lineCount} {t('lines')}</span>
                       </button>
                       <button
                         onClick={() => {
@@ -295,7 +295,7 @@ export default function ConversationView({
                           });
                         }}
                         className="px-2 py-1.5 text-white/60 hover:text-white hover:bg-bg-primary/80 transition-colors"
-                        title="复制代码"
+                        title={t('copyCode')}
                       >
                         {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
                       </button>

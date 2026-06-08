@@ -1,4 +1,5 @@
 import { getErrorMessage } from '../lib/errors';
+import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExport } from '../lib/analytics';
@@ -28,7 +29,7 @@ export type StrudelState = {
 
 type StateCallback = (state: StrudelState) => void;
 
-const USER_RESUME_PROMPT = '点击播放继续';
+const USER_RESUME_PROMPT = t('clickToResume');
 
 type PageAudioRecoveryTarget = Pick<Window | Document, 'addEventListener' | 'removeEventListener'>;
 
@@ -552,7 +553,7 @@ export class StrudelService {
   }): Promise<void> => {
     const { filename, beginCycle, endCycle, sampleRate, onProgress } = params;
     if (!this.editorInstance) throw new Error('Engine not initialized');
-    if (endCycle <= beginCycle) throw new Error('结束 cycle 必须大于起始 cycle');
+    if (endCycle <= beginCycle) throw new Error(t('cycleError'));
 
     this.editorInstance.repl.stop();
     // evaluate() defaults to autostart=true which kicks the scheduler back on
@@ -565,7 +566,7 @@ export class StrudelService {
     const replAny = this.editorInstance.repl as any;
     const pattern = replAny.scheduler?.pattern;
     const cps = replAny.scheduler?.cps ?? 0.5;
-    if (!pattern) throw new Error('代码未成功解析，无法导出');
+    if (!pattern) throw new Error('Code failed to parse — cannot export');
 
     // We inline the offline render (rather than calling @strudel/webaudio's
     // renderPatternAudio) so we can splice the same master Gain + LPF chain that
@@ -997,14 +998,14 @@ function stripUIDecorations(code: string): string {
 
 /** @deprecated Use validateCodeRuntime directly. */
 export function validateCode(code: string): { ok: boolean; error?: string } {
-  if (!code?.trim()) return { ok: false, error: '代码为空' };
+  if (!code?.trim()) return { ok: false, error: t('emptyCode') };
   const result = validateCodeRuntime(code);
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 export function validateCodeRuntime(code: string): ValidationResult {
   const clean = normalizeCode(stripUIDecorations(code));
-  if (!clean.trim()) return { ok: false, error: '代码为空', kind: 'syntax' };
+  if (!clean.trim()) return { ok: false, error: t('emptyCode'), kind: 'syntax' };
 
   // Proxy dry-run (caller guarantees the engine is ready — see App.tsx handleInstruction guard)
   const stripped = clean.replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');

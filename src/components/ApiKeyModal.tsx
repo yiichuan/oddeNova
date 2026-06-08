@@ -85,7 +85,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
           {t('apiKeyDesc')}
         </p>
 
-        {/* 当前生效状态 */}
+        {/* Current active status */}
         {hasCurrentProviderConfig && (
           <div className="flex items-center gap-2 mb-7">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 mt-px" />
