@@ -79,6 +79,7 @@ export interface RunAgentOptions {
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
   signal?: AbortSignal;
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 export interface TokenUsage {
@@ -125,6 +126,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     timeoutMs = DEFAULT_TIMEOUT,
     onProgress,
     signal,
+    conversationHistory,
   } = opts;
 
   const state: AgentState = {
@@ -151,6 +153,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt },
+    ...(conversationHistory ?? []),
     { role: 'user', content: userTurn },
   ];
 
