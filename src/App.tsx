@@ -308,7 +308,11 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   );
 
   const handleInstruction = useCallback(
-    async (text: string, options?: { skipAddMessage?: boolean; initialCode?: string }) => {
+    async (text: string, options?: {
+      skipAddMessage?: boolean;
+      initialCode?: string;
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    }) => {
       const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
       if (engineUnavailableMessage) {
         strudel.setError(engineUnavailableMessage);
@@ -338,7 +342,12 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       try {
         const onProgress = makeAgentProgressHandler(sessionId);
 
-        const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal);
+        const history = options?.history ??
+          (sessions.currentSession?.messages ?? [])
+            .filter((m) => m.role === 'user' || m.role === 'assistant')
+            .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+        const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal, history);
         if (signal.aborted) {
           if (abortControllersRef.current.get(sessionId) === controller) {
             sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
@@ -441,8 +450,19 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       const rewound = await rewindBeforeMessage(messageId);
       if (!rewound) return;
 
+      const allMsgs = sessions.currentSession?.messages ?? [];
+      const idx = allMsgs.findIndex((m) => m.id === messageId);
+      const history = allMsgs
+        .slice(0, idx)
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
       sessions.truncateAndEdit(messageId, newContent);
-      await handleInstruction(newContent, { skipAddMessage: true, initialCode: rewound.previousCode });
+      await handleInstruction(newContent, {
+        skipAddMessage: true,
+        initialCode: rewound.previousCode,
+        history,
+      });
     },
     [sessions, handleInstruction, rewindBeforeMessage]
   );
