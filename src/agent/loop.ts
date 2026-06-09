@@ -70,6 +70,8 @@ export type ProgressEvent =
   | { kind: 'reasoning_delta'; delta: string }
   | { kind: 'warn'; message: string };
 
+export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
+
 export interface RunAgentOptions {
   initialCode: string;
   instruction: string;
@@ -79,7 +81,7 @@ export interface RunAgentOptions {
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
   signal?: AbortSignal;
-  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  conversationHistory?: ConversationTurn[];
 }
 
 export interface TokenUsage {
