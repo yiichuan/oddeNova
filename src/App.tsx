@@ -12,6 +12,7 @@ import { useKeyboardHeight } from './hooks/useKeyboardHeight';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
+import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
 import { parseNextSteps } from './services/suggestions';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
@@ -325,9 +326,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       // Capture history snapshot before addUserMessage mutates session state,
       // so the current turn is not included as a history item sent to the LLM.
       const history: ConversationTurn[] = options?.history ??
-        (sessions.currentSession?.messages ?? [])
-          .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+        conversationHistoryFromMessages(sessions.currentSession?.messages ?? []);
 
       if (!options?.skipAddMessage) {
         sessions.addUserMessage(text);
@@ -451,11 +450,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   const handleResend = useCallback(
     async (messageId: string, newContent: string) => {
       const allMsgs = sessions.currentSession?.messages ?? [];
-      const idx = allMsgs.findIndex((m) => m.id === messageId);
-      const history: ConversationTurn[] = allMsgs
-        .slice(0, idx)
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+      const history = conversationHistoryBefore(allMsgs, messageId);
 
       const rewound = await rewindBeforeMessage(messageId);
       if (!rewound) return;
@@ -514,10 +509,6 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     setCommitSuggestions(null);
     setRollbackPrefill(''); // message sent — rollback prefill content consumed
 
-    const moodHistory: ConversationTurn[] = (sessions.currentSession?.messages ?? [])
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-
     sessions.addUserMessage(instruction);
     const sessionId = sessions.currentId;
     if (!sessionId) return;
@@ -531,7 +522,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     try {
       const onProgress = makeAgentProgressHandler(sessionId);
 
-      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal, moodHistory);
+      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
       if (signal.aborted) {
         sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
         trackAgentAbort();
