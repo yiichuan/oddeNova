@@ -447,15 +447,15 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
   const handleResend = useCallback(
     async (messageId: string, newContent: string) => {
-      const rewound = await rewindBeforeMessage(messageId);
-      if (!rewound) return;
-
       const allMsgs = sessions.currentSession?.messages ?? [];
       const idx = allMsgs.findIndex((m) => m.id === messageId);
       const history = allMsgs
         .slice(0, idx)
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+      const rewound = await rewindBeforeMessage(messageId);
+      if (!rewound) return;
 
       sessions.truncateAndEdit(messageId, newContent);
       await handleInstruction(newContent, {
