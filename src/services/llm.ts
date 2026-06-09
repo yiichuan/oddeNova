@@ -371,6 +371,7 @@ export async function runAgent(
   onProgress?: (e: ProgressEvent) => void,
   moodContext?: string,
   signal?: AbortSignal,
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>,
 ): Promise<RunAgentResult> {
   const basePrompt = /[一-龥]/.test(instruction)
     ? AGENT_SYSTEM_PROMPT_OPENAI
@@ -403,6 +404,7 @@ export async function runAgent(
     llm,
     onProgress,
     signal,
+    conversationHistory,
   });
 }
 
