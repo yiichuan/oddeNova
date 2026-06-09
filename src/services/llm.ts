@@ -4,6 +4,7 @@ import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from '../prompts/s
 import {
   runAgentLoop,
   type ChatMsg,
+  type ConversationTurn,
   type LLMCaller,
   type ProgressEvent,
   type RunAgentResult,
@@ -371,6 +372,7 @@ export async function runAgent(
   onProgress?: (e: ProgressEvent) => void,
   moodContext?: string,
   signal?: AbortSignal,
+  conversationHistory?: ConversationTurn[],
 ): Promise<RunAgentResult> {
   const basePrompt = /[一-龥]/.test(instruction)
     ? AGENT_SYSTEM_PROMPT_OPENAI
@@ -403,10 +405,11 @@ export async function runAgent(
     llm,
     onProgress,
     signal,
+    conversationHistory,
   });
 }
 
 // Re-exported so callers don't need to reach into ../agent/loop directly.
-export type { ProgressEvent, RunAgentResult } from '../agent/loop';
+export type { ProgressEvent, RunAgentResult, ConversationTurn } from '../agent/loop';
 
 void getOpenAIToolSchemas;

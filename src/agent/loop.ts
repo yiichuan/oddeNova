@@ -70,6 +70,8 @@ export type ProgressEvent =
   | { kind: 'reasoning_delta'; delta: string }
   | { kind: 'warn'; message: string };
 
+export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
+
 export interface RunAgentOptions {
   initialCode: string;
   instruction: string;
@@ -79,6 +81,7 @@ export interface RunAgentOptions {
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
   signal?: AbortSignal;
+  conversationHistory?: ConversationTurn[];
 }
 
 export interface TokenUsage {
@@ -125,6 +128,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     timeoutMs = DEFAULT_TIMEOUT,
     onProgress,
     signal,
+    conversationHistory,
   } = opts;
 
   const state: AgentState = {
@@ -151,6 +155,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt },
+    ...(conversationHistory ?? []),
     { role: 'user', content: userTurn },
   ];
 
