@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ConversationTurn, RunAgentOptions } from '../../agent/loop';
+import type { RunAgentOptions } from '../../agent/loop';
+import type { ConversationTurn } from '../llm';
 
 const runAgentLoopMock = vi.hoisted(() => vi.fn());
 
