@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from '../prompts/system-prompt';
+import { buildChatSystemPrompt } from '../prompts/chat';
 import {
   runAgentLoop,
   type ChatMsg,
@@ -222,6 +223,10 @@ function convertTools(
   }));
 }
 
+function getActiveLLMCaller(): LLMCaller {
+  return isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
+}
+
 // ===========================================================================
 // LLMCaller implementation — Anthropic path (original logic)
 // ===========================================================================
@@ -235,7 +240,7 @@ const anthropicLLMCaller: LLMCaller = {
       model: getModel(),
       system,
       messages: amsgs,
-      tools: convertTools(tools),
+      ...(tools.length > 0 ? { tools: convertTools(tools) } : {}),
       temperature: 1,
       max_tokens: 16000,
       thinking: { type: 'enabled', budget_tokens: 10000 },
@@ -299,8 +304,12 @@ function createOpenAILLMCaller(): LLMCaller {
         model: getModel(),
         // ChatMsg is already in OpenAI format, can be passed directly
         messages: messages as OpenAI.ChatCompletionMessageParam[],
-        tools: tools as OpenAI.ChatCompletionTool[],
-        tool_choice: 'auto',
+        ...(tools.length > 0
+          ? {
+              tools: tools as OpenAI.ChatCompletionTool[],
+              tool_choice: 'auto' as const,
+            }
+          : {}),
         temperature: 0.7,
         max_tokens: 16000,
         stream: true,
@@ -366,6 +375,34 @@ function createOpenAILLMCaller(): LLMCaller {
   };
 }
 
+export interface RunChatResult {
+  reply: string;
+}
+
+export async function runChat(
+  instruction: string,
+  onProgress?: (e: ProgressEvent) => void,
+  signal?: AbortSignal,
+  conversationHistory?: ConversationTurn[],
+): Promise<RunChatResult> {
+  const systemPrompt = buildChatSystemPrompt(instruction);
+  const messages: ChatMsg[] = [
+    { role: 'system', content: systemPrompt },
+    ...(conversationHistory ?? []),
+    { role: 'user', content: instruction },
+  ];
+
+  const resp = await getActiveLLMCaller().chatWithTools(
+    messages,
+    [],
+    (delta) => onProgress?.({ kind: 'assistant_text_delta', delta }),
+    undefined,
+    signal,
+  );
+
+  return { reply: resp.content?.trim() ?? '' };
+}
+
 export async function runAgent(
   instruction: string,
   currentCode: string,
@@ -386,7 +423,7 @@ export async function runAgent(
   const staticScenario = resolveStaticSuggestionScenario(instruction);
 
   // Select the LLMCaller implementation corresponding to the current provider
-  const activeLLMCaller = isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
+  const activeLLMCaller = getActiveLLMCaller();
 
   const llm = staticScenario
     ? createDemoLLMCaller(staticScenario)
