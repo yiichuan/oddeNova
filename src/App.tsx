@@ -239,6 +239,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
+    enabled: currentMode === 'create',
     // In demo mode real LLM suggestions are not needed; skip the buildSuggestions call
     hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
@@ -553,16 +554,18 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
   const handleComposeFromChat = useCallback(
     async (seed: string) => {
-      const history = conversationHistoryFromMessages(sessions.currentSession?.messages ?? []);
-      if (sessions.currentId) {
-        sessions.setMode('create', sessions.currentId);
+      const sessionId = sessions.currentId;
+      if (!sessionId || loadingSessions.has(sessionId) || abortControllersRef.current.has(sessionId)) {
+        return;
       }
+      const history = conversationHistoryFromMessages(sessions.currentSession?.messages ?? []);
+      sessions.setMode('create', sessionId);
       await handleInstruction(seed, {
         modeOverride: 'create',
         history,
       });
     },
-    [sessions, handleInstruction]
+    [sessions, loadingSessions, handleInstruction]
   );
 
   const handleMoodInstruction = useCallback(async () => {

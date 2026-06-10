@@ -315,8 +315,9 @@ export default function ConversationView({
                 <button
                   type="button"
                   onClick={() => onComposeFromChat(msg.composeSeed!)}
+                  disabled={isLoading}
                   title={t('composeFromChat')}
-                  className="mt-2 inline-flex w-full min-w-0 max-w-full items-center gap-1.5 rounded-[8px] border border-[#93C2FF]/25 bg-[#93C2FF]/5 px-2.5 py-1.5 text-[11px] text-[#93C2FF] transition hover:border-[#93C2FF]/45 hover:bg-[#93C2FF]/10"
+                  className="mt-2 inline-flex w-full min-w-0 max-w-full items-center gap-1.5 rounded-[8px] border border-[#93C2FF]/25 bg-[#93C2FF]/5 px-2.5 py-1.5 text-[11px] text-[#93C2FF] transition hover:border-[#93C2FF]/45 hover:bg-[#93C2FF]/10 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-[#93C2FF]/25 disabled:hover:bg-[#93C2FF]/5"
                 >
                   <SparklesIcon size={13} className="shrink-0" />
                   <span className="min-w-0 max-w-[55%] shrink truncate">{t('composeFromChat')}</span>
