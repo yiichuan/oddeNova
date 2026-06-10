@@ -4,6 +4,7 @@ import type { AgentMode } from '../useChat';
 import {
   applyAppendAssistantDelta,
   applyFinalizeLastAssistantMessage,
+  applyRefreshEmptySessionForReuse,
   applySetMode,
   applyTruncate,
   applyTruncateAndEdit,
@@ -85,6 +86,17 @@ describe('session mode helpers', () => {
   it('applySetMode returns the same object when the mode already matches', () => {
     const s = makeSession({ mode: 'chat' });
     expect(applySetMode(s, 'chat')).toBe(s);
+  });
+
+  it('resets reused empty chat sessions back to create mode', () => {
+    const s = makeSession({ mode: 'chat', createdAt: 1, updatedAt: 1 });
+
+    expect(applyRefreshEmptySessionForReuse(s, 2)).toEqual({
+      ...s,
+      mode: 'create',
+      createdAt: 2,
+      updatedAt: 2,
+    });
   });
 });
 

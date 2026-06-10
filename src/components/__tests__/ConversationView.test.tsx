@@ -35,6 +35,7 @@ function renderConversationView(
   onRollback = vi.fn(),
   onComposeFromChat = vi.fn(),
   isLoading = false,
+  showThinkingIndicator = true,
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -45,6 +46,7 @@ function renderConversationView(
       <ConversationView
         messages={messages}
         isLoading={isLoading}
+        showThinkingIndicator={showThinkingIndicator}
         onRollback={onRollback}
         onBranch={vi.fn()}
         onRetry={vi.fn()}
@@ -222,5 +224,34 @@ describe('ConversationView chat compose actions', () => {
     act(() => button?.click());
 
     expect(onComposeFromChat).not.toHaveBeenCalled();
+  });
+
+  it('can suppress the generic thinking row while chat text streams in assistant bubbles', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: '你是谁',
+        timestamp: 1,
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '我是 oddeNova',
+        timestamp: 2,
+      },
+    ];
+    const { container, root } = renderConversationView(
+      messages,
+      vi.fn(),
+      vi.fn(),
+      true,
+      false,
+    );
+    roots.push(root);
+
+    expect(container.textContent).toContain('我是 oddeNova');
+    expect(container.textContent).not.toContain('Thinking...');
   });
 });

@@ -6,7 +6,6 @@ import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
 import SuggestionChips from './SuggestionChips';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
-import ModeSwitcher from './ModeSwitcher';
 import { checkAirJellyAvailable } from '../services/airjelly';
 import { isDemoMode, isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
@@ -15,6 +14,7 @@ interface SidebarProps {
   title: string;
   messages: ChatMessage[];
   isLoading: boolean;
+  showThinkingIndicator?: boolean;
   isMoodLoading?: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
@@ -53,6 +53,7 @@ export default function Sidebar({
   title,
   messages,
   isLoading,
+  showThinkingIndicator = true,
   isMoodLoading = false,
   engineReady,
   engineStatus = engineReady ? 'ready' : 'initializing',
@@ -181,6 +182,7 @@ export default function Sidebar({
           key={currentId ?? 'default'}
           messages={messages}
           isLoading={isLoading && !isReplaying}
+          showThinkingIndicator={showThinkingIndicator}
           isVideoMode={isVideoMode}
           scrollBottom={scrollBottom}
           onRollback={onRollback}
@@ -221,10 +223,7 @@ export default function Sidebar({
             )}
           </div>
         )}
-        <div className="mb-2 flex justify-end">
-          <ModeSwitcher mode={mode} onChange={onModeChange} />
-        </div>
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} mode={mode} onModeChange={onModeChange} />
       </div>
     </aside>
   );

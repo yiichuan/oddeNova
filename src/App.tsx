@@ -15,7 +15,7 @@ import type { AgentMode } from './hooks/useChat';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
 import { extractChatComposeMarker } from './lib/chat-compose-marker';
-import { parseNextSteps } from './services/suggestions';
+import { parseNextSteps, stripNextSteps } from './services/suggestions';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
@@ -28,19 +28,13 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
-import ModeSwitcher from './components/ModeSwitcher';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
-import { zh, t } from './lib/i18n';
+import { zh, t, randomChatGreeting } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
 const SIDEBAR_RATIO_MAX = 0.45;
-
-/** Strip the "next steps" suggestion paragraph from the end of the agent explanation to avoid duplicate display in chat history */
-function stripNextSteps(explanation: string): string {
-  return explanation.replace(/\n\n接下来可以[：:][^]*$/, '').trim();
-}
 
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
 const VIZ_RATIO_MIN = 0.15;
@@ -671,8 +665,11 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   }, [sessions]);
 
   const handleModeChange = useCallback((mode: AgentMode) => {
-    if (sessions.currentId) {
-      sessions.setMode(mode, sessions.currentId);
+    const sessionId = sessions.currentId;
+    if (!sessionId) return;
+    sessions.setMode(mode, sessionId);
+    if (mode === 'chat' && (sessions.currentSession?.messages.length ?? 0) === 0) {
+      sessions.addAssistantMessage(randomChatGreeting(), undefined, sessionId);
     }
   }, [sessions]);
 
@@ -735,7 +732,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} onComposeFromChat={handleComposeFromChat} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} showThinkingIndicator={currentMode === 'create'} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} onComposeFromChat={handleComposeFromChat} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -805,22 +802,22 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             </div>
           )}
 
-          <div className={`mb-2 flex justify-end ${showMobileCreateSuggestions ? '' : 'mt-3'}`}>
-            <ModeSwitcher mode={currentMode} onChange={handleModeChange} />
-          </div>
-
           {/* Input */}
-          <ChatInput
-            isLoading={isLoading}
-            engineReady={inputEngineReady}
-            engineStatus={inputEngineStatus}
-            onSendText={handleInstruction}
-            onStop={handleStop}
-            onReinitEngine={strudel.reinit}
-            prefill={rollbackPrefill}
-            focusTrigger={inputFocusTrigger}
-            onFocusChange={handleChatFocusChange}
-          />
+          <div className={showMobileCreateSuggestions ? '' : 'mt-3'}>
+            <ChatInput
+              isLoading={isLoading}
+              engineReady={inputEngineReady}
+              engineStatus={inputEngineStatus}
+              onSendText={handleInstruction}
+              onStop={handleStop}
+              onReinitEngine={strudel.reinit}
+              prefill={rollbackPrefill}
+              focusTrigger={inputFocusTrigger}
+              onFocusChange={handleChatFocusChange}
+              mode={currentMode}
+              onModeChange={handleModeChange}
+            />
+          </div>
         </div>
 
         {/* ── History Dropdown ── */}
@@ -898,6 +895,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle'))}
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
+          showThinkingIndicator={currentMode === 'create'}
           isMoodLoading={isMoodLoading}
           engineReady={inputEngineReady}
           engineStatus={inputEngineStatus}

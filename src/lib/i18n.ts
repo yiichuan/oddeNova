@@ -122,3 +122,31 @@ export function t(key: string): string {
   if (!entry) return key;
   return zh ? entry[0] : entry[1];
 }
+
+export const chatModeGreetings: ReadonlyArray<readonly [string, string]> = [
+  [
+    '嗨，我是 oddeNova。想聊聊今天发生了什么、心里在想的事，或者随便什么都行',
+    "Hi, I'm oddeNova. Tell me about your day, what's on your mind, or anything at all",
+  ],
+  [
+    '嗨，我在听。今天过得怎么样？',
+    "Hey, I'm listening. How's your day going?",
+  ],
+  [
+    '欢迎来聊天模式。有什么想说的，随时聊',
+    "Welcome to chat mode. Feel free to share what's on your mind",
+  ],
+  [
+    '嗨～此刻心情如何？想聊点什么都可以',
+    'Hi there~ How are you feeling right now? Let\'s talk about anything',
+  ],
+  [
+    '我在这儿。不管是琐事还是心事，都可以和我聊聊',
+    "I'm here. Whether it's small talk or something on your mind, let's chat",
+  ],
+];
+
+export function randomChatGreeting(): string {
+  const entry = chatModeGreetings[Math.floor(Math.random() * chatModeGreetings.length)];
+  return zh ? entry[0] : entry[1];
+}

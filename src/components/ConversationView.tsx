@@ -33,6 +33,7 @@ function stripMarkdown(text: string): string {
 interface ConversationViewProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  showThinkingIndicator?: boolean;
   isVideoMode?: boolean;
   scrollBottom?: boolean;
   onRollback: (messageId: string) => void;
@@ -44,6 +45,7 @@ interface ConversationViewProps {
 export default function ConversationView({
   messages,
   isLoading,
+  showThinkingIndicator = true,
   isVideoMode = false,
   scrollBottom = false,
   onRollback,
@@ -347,7 +349,7 @@ export default function ConversationView({
         );
       })}
 
-      {isLoading && (
+      {isLoading && showThinkingIndicator && (
         <div className="flex justify-start animate-fade-in-up">
           <div className="flex items-start gap-1.5 px-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse flex-shrink-0" />
