@@ -1,8 +1,9 @@
-import type { ChatMessage } from '../hooks/useChat';
+import type { AgentMode, ChatMessage } from '../hooks/useChat';
 
 export interface SharePayload {
   version: 1;
   title: string;
+  mode?: AgentMode;
   code: string;
   messages: ChatMessage[];
   sharedAt: number;
@@ -10,6 +11,7 @@ export interface SharePayload {
 
 interface UploadShareInput {
   title: string;
+  mode?: AgentMode;
   code: string;
   messages: ChatMessage[];
 }
@@ -18,6 +20,7 @@ export async function uploadShare(input: UploadShareInput): Promise<string> {
   const payload: SharePayload = {
     version: 1,
     title: input.title,
+    mode: input.mode,
     code: input.code,
     messages: input.messages,
     sharedAt: Date.now(),

@@ -1,4 +1,5 @@
 import { openDB as idbOpenDB, type IDBPDatabase } from 'idb';
+import type { AgentMode } from '../hooks/useChat';
 import type { Session } from '../hooks/useSessions';
 
 const DB_NAME = 'oddenova-db';
@@ -11,6 +12,15 @@ const LS_CURRENT_KEY = 'vibe-sessions-current-v1';
 
 let db: IDBPDatabase | null = null;
 let memoryFallback = false;
+
+type StoredSession = Omit<Session, 'mode'> & { mode?: AgentMode | string };
+
+export function normalizeSession(session: StoredSession): Session {
+  return {
+    ...session,
+    mode: session.mode === 'chat' ? 'chat' : 'create',
+  };
+}
 
 export async function openDB(): Promise<void> {
   try {
@@ -32,12 +42,13 @@ async function migrateFromLocalStorage(): Promise<void> {
   const raw = localStorage.getItem(LS_SESSIONS_KEY);
   if (!raw || !db) return;
   try {
-    const sessions = JSON.parse(raw) as Session[];
-    if (!Array.isArray(sessions) || sessions.length === 0) {
+    const parsed = JSON.parse(raw) as StoredSession[];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
       localStorage.removeItem(LS_SESSIONS_KEY);
       localStorage.removeItem(LS_CURRENT_KEY);
       return;
     }
+    const sessions = parsed.map(normalizeSession);
     const tx = db.transaction(STORE_NAME, 'readwrite');
     await Promise.all(sessions.map((s) => tx.store.put(s)));
     await tx.done;
@@ -52,7 +63,7 @@ async function migrateFromLocalStorage(): Promise<void> {
 export async function getAllSessions(): Promise<Session[]> {
   if (memoryFallback || !db) return [];
   try {
-    const all = (await db.getAll(STORE_NAME)) as Session[];
+    const all = ((await db.getAll(STORE_NAME)) as StoredSession[]).map(normalizeSession);
     return all.sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];

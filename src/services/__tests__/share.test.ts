@@ -15,6 +15,7 @@ describe('uploadShare', () => {
 
     const shareId = await uploadShare({
       title: 'My Session',
+      mode: 'chat',
       code: 'note "c5"',
       messages: [],
     });
@@ -28,6 +29,7 @@ describe('uploadShare', () => {
     );
     expect(body.version).toBe(1);
     expect(body.title).toBe('My Session');
+    expect(body.mode).toBe('chat');
     expect(body.code).toBe('note "c5"');
     expect(typeof body.sharedAt).toBe('number');
     expect(shareId).toBe(mockShareId);

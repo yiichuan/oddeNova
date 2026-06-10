@@ -1,12 +1,20 @@
 // src/hooks/__tests__/useSessions.test.ts
 import { describe, it, expect } from 'vitest';
-import { applyTruncate, applyTruncateAndEdit } from '../useSessions';
+import type { AgentMode } from '../useChat';
+import {
+  applyAppendAssistantDelta,
+  applyFinalizeLastAssistantMessage,
+  applySetMode,
+  applyTruncate,
+  applyTruncateAndEdit,
+} from '../useSessions';
 import type { Session } from '../useSessions';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 's-1',
     title: '新会话',
+    mode: 'create',
     messages: [],
     code: '',
     createdAt: 0,
@@ -64,6 +72,72 @@ describe('applyTruncateAndEdit', () => {
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0].id).toBe('msg-0');
     expect(result.messages[1].content).toBe('新内容');
+  });
+});
+
+describe('session mode helpers', () => {
+  it('applySetMode changes only the mode field', () => {
+    const mode: AgentMode = 'chat';
+    const s = makeSession({ mode: 'create', title: '聊天' });
+    expect(applySetMode(s, mode)).toEqual({ ...s, mode: 'chat' });
+  });
+
+  it('applySetMode returns the same object when the mode already matches', () => {
+    const s = makeSession({ mode: 'chat' });
+    expect(applySetMode(s, 'chat')).toBe(s);
+  });
+});
+
+describe('assistant streaming helpers', () => {
+  it('creates and appends to one assistant message while chat text streams', () => {
+    const s = makeSession({
+      messages: [{ id: 'u1', role: 'user', content: '你是谁', timestamp: 0 }],
+    });
+
+    const first = applyAppendAssistantDelta(s, '我是 ');
+    const second = applyAppendAssistantDelta(first, 'Nova');
+
+    expect(second.messages).toHaveLength(2);
+    expect(second.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '我是 Nova',
+    });
+  });
+
+  it('finalizes the last chat assistant message with stripped content and a compose seed', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'u1', role: 'user', content: '聊聊今晚', timestamp: 0 },
+        { id: 'a1', role: 'assistant', content: '今晚像一片蓝色湖面。[[谱曲: 蓝色湖面]]', timestamp: 1 },
+      ],
+    });
+
+    const result = applyFinalizeLastAssistantMessage(s, '今晚像一片蓝色湖面。', {
+      composeSeed: '蓝色湖面',
+    });
+
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '今晚像一片蓝色湖面。',
+      composeSeed: '蓝色湖面',
+    });
+  });
+
+  it('removes a previous compose seed when finalizing without one', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'a1', role: 'assistant', content: '旧回复', composeSeed: '旧种子', timestamp: 0 },
+      ],
+    });
+
+    const result = applyFinalizeLastAssistantMessage(s, '新回复');
+
+    expect(result.messages[0]).toEqual({
+      id: 'a1',
+      role: 'assistant',
+      content: '新回复',
+      timestamp: 0,
+    });
   });
 });
 

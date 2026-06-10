@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ChatMessage, ProgressKind } from './useChat';
+import type { AgentMode, ChatMessage, ProgressKind } from './useChat';
 import {
   openDB,
   getAllSessions,
@@ -17,6 +17,7 @@ export interface TokenStats {
 export interface Session {
   id: string;
   title: string;
+  mode: AgentMode;
   messages: ChatMessage[];
   code: string;
   tokenStats?: TokenStats;
@@ -46,6 +47,7 @@ function makeEmptySession(): Session {
   return {
     id: newSessionId(),
     title: t('newSessionTitle'),
+    mode: 'create',
     messages: [],
     code: '',
     createdAt: Date.now(),
@@ -72,6 +74,68 @@ export function applyTruncate(s: Session, targetMessageId: string): Session {
   const index = s.messages.findIndex((m) => m.id === targetMessageId);
   if (index === -1) return s;
   return { ...s, messages: s.messages.slice(0, index) };
+}
+
+export function applySetMode(s: Session, mode: AgentMode): Session {
+  if (s.mode === mode) return s;
+  return { ...s, mode };
+}
+
+export function applyAppendAssistantDelta(s: Session, delta: string): Session {
+  const messages = [...s.messages];
+  const last = messages[messages.length - 1];
+  if (last?.role === 'assistant' && !last.code) {
+    messages[messages.length - 1] = { ...last, content: last.content + delta };
+    return { ...s, messages };
+  }
+  return {
+    ...s,
+    messages: [
+      ...messages,
+      {
+        id: newMessageId(),
+        role: 'assistant' as const,
+        content: delta,
+        timestamp: Date.now(),
+      },
+    ],
+  };
+}
+
+function withComposeSeed(message: ChatMessage, composeSeed?: string): ChatMessage {
+  const next = { ...message };
+  delete next.composeSeed;
+  if (!composeSeed?.trim()) return next;
+  return { ...next, composeSeed: composeSeed.trim() };
+}
+
+export function applyFinalizeLastAssistantMessage(
+  s: Session,
+  content: string,
+  opts: { composeSeed?: string } = {},
+): Session {
+  const messages = [...s.messages];
+  const last = messages[messages.length - 1];
+  const finalized = (message: ChatMessage): ChatMessage =>
+    withComposeSeed({ ...message, content }, opts.composeSeed);
+
+  if (last?.role === 'assistant' && !last.code) {
+    messages[messages.length - 1] = finalized(last);
+    return { ...s, messages };
+  }
+
+  return {
+    ...s,
+    messages: [
+      ...messages,
+      finalized({
+        id: newMessageId(),
+        role: 'assistant' as const,
+        content,
+        timestamp: Date.now(),
+      }),
+    ],
+  };
 }
 
 export function useSessions() {
@@ -254,6 +318,30 @@ export function useSessions() {
     [appendToLastProgress]
   );
 
+  const appendToLastAssistant = useCallback(
+    (delta: string, sessionId?: string): void => {
+      const apply = getApply(sessionId);
+      apply((s) => applyAppendAssistantDelta(s, delta));
+    },
+    [getApply]
+  );
+
+  const finalizeLastAssistantMessage = useCallback(
+    (content: string, sessionId?: string, opts?: { composeSeed?: string }): void => {
+      const apply = getApply(sessionId);
+      apply((s) => applyFinalizeLastAssistantMessage(s, content, opts));
+    },
+    [getApply]
+  );
+
+  const setMode = useCallback(
+    (mode: AgentMode, sessionId?: string): void => {
+      const apply = getApply(sessionId);
+      apply((s) => applySetMode(s, mode));
+    },
+    [getApply]
+  );
+
   const setCurrentCode = useCallback(
     (code: string, sessionId?: string) => {
       const apply = getApply(sessionId);
@@ -313,12 +401,13 @@ export function useSessions() {
   );
 
   const importSession = useCallback(
-    async (payload: { title: string; code: string; messages: ChatMessage[] }): Promise<void> => {
+    async (payload: { title: string; code: string; messages: ChatMessage[]; mode?: AgentMode }): Promise<void> => {
       const id = newSessionId();
       const now = Date.now();
       const session: Session = {
         id,
         title: `${payload.title}`,
+        mode: payload.mode === 'chat' ? 'chat' : 'create',
         messages: payload.messages,
         code: payload.code,
         createdAt: now,
@@ -346,6 +435,7 @@ export function useSessions() {
       const branched: Session = {
         id,
         title: `${session.title}${t('branchSuffix')}`,
+        mode: session.mode,
         messages: sliced,
         code,
         createdAt: now,
@@ -381,6 +471,9 @@ export function useSessions() {
     addProgress,
     appendToLastThinking,
     appendToLastReasoning,
+    appendToLastAssistant,
+    finalizeLastAssistantMessage,
+    setMode,
     setCurrentCode,
     newSession,
     switchTo,
