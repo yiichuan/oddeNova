@@ -9,10 +9,12 @@ import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useKeyboardHeight } from './hooks/useKeyboardHeight';
-import { runAgent } from './services/llm';
+import { runAgent, runChat } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
+import type { AgentMode } from './hooks/useChat';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
+import { extractChatComposeMarker } from './lib/chat-compose-marker';
 import { parseNextSteps } from './services/suggestions';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
@@ -229,6 +231,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   const currentBpm = parseScore(currentCode).bpm ?? 120;
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
+  const currentMode: AgentMode = current?.mode ?? 'create';
+  const inputEngineReady = currentMode === 'chat' ? true : strudel.engineReady;
+  const inputEngineStatus = currentMode === 'chat' ? 'ready' : strudel.engineStatus;
 
   const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
@@ -242,6 +247,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   const demoSuggestions = isDemoMode()
     ? (demoStep < activeSet.length ? [activeSet[demoStep].prompt] : [])
     : suggestions;
+  const createModeSuggestions = currentMode === 'create' ? demoSuggestions : [];
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -291,6 +297,19 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     [sessions]
   );
 
+  const makeChatProgressHandler = useCallback(
+    (sessionId: string) => (e: ProgressEvent) => {
+      if (e.kind === 'assistant_text_delta') {
+        sessions.appendToLastAssistant(e.delta, sessionId);
+        return;
+      }
+      if (e.kind === 'warn') {
+        sessions.addProgress('warn', e.message, { sessionId });
+      }
+    },
+    [sessions]
+  );
+
   // Drop the session's abort controller and clear its loading flag.
   const cleanupLoadingSession = useCallback((sessionId: string) => {
     abortControllersRef.current.delete(sessionId);
@@ -313,11 +332,15 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       skipAddMessage?: boolean;
       initialCode?: string;
       history?: ConversationTurn[];
+      modeOverride?: AgentMode;
     }) => {
-      const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
-      if (engineUnavailableMessage) {
-        strudel.setError(engineUnavailableMessage);
-        return;
+      const mode: AgentMode = options?.modeOverride ?? sessions.currentSession?.mode ?? 'create';
+      if (mode === 'create') {
+        const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
+        if (engineUnavailableMessage) {
+          strudel.setError(engineUnavailableMessage);
+          return;
+        }
       }
 
       setCommitSuggestions(null); // reset on each new instruction
@@ -347,6 +370,23 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
       try {
+        if (mode === 'chat') {
+          const result = await runChat(text, makeChatProgressHandler(sessionId), signal, history);
+          if (signal.aborted) {
+            if (abortControllersRef.current.get(sessionId) === controller) {
+              sessions.finalizeLastAssistantMessage(t('interrupted'), sessionId);
+            }
+            trackAgentAbort();
+            return;
+          }
+
+          const parsed = extractChatComposeMarker(result.reply);
+          sessions.finalizeLastAssistantMessage(parsed.displayText, sessionId, {
+            composeSeed: parsed.composeSeed ?? undefined,
+          });
+          return;
+        }
+
         const onProgress = makeAgentProgressHandler(sessionId);
 
         const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal, history);
@@ -396,7 +436,11 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       } catch (e: unknown) {
         if (isUserAbort(e, signal)) {
           if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
+            if (mode === 'chat') {
+              sessions.finalizeLastAssistantMessage(t('interrupted'), sessionId);
+            } else {
+              sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
+            }
           }
           trackAgentAbort();
         } else {
@@ -408,7 +452,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         }
       }
     },
-    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]
+    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, makeChatProgressHandler, reportAgentError, cleanupLoadingSession]
   );
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
@@ -489,6 +533,20 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       await handleResend(userMsg.id, userMsg.content);
     },
     [sessions, handleResend]
+  );
+
+  const handleComposeFromChat = useCallback(
+    async (seed: string) => {
+      const history = conversationHistoryFromMessages(sessions.currentSession?.messages ?? []);
+      if (sessions.currentId) {
+        sessions.setMode('create', sessions.currentId);
+      }
+      await handleInstruction(seed, {
+        modeOverride: 'create',
+        history,
+      });
+    },
+    [sessions, handleInstruction]
   );
 
   const handleMoodInstruction = useCallback(async () => {
@@ -652,7 +710,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} onComposeFromChat={handleComposeFromChat} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -705,9 +763,9 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           </div>
 
           {/* Suggestion chips — horizontal scroll */}
-          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code' && (
+          {!isLoading && !suggestionsLoading && createModeSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code' && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
-              {demoSuggestions.map((s) => (
+              {createModeSuggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -725,8 +783,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           {/* Input */}
           <ChatInput
             isLoading={isLoading}
-            engineReady={strudel.engineReady}
-            engineStatus={strudel.engineStatus}
+            engineReady={inputEngineReady}
+            engineStatus={inputEngineStatus}
             onSendText={handleInstruction}
             onStop={handleStop}
             onReinitEngine={strudel.reinit}
@@ -812,11 +870,13 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
-          engineReady={strudel.engineReady}
-          engineStatus={strudel.engineStatus}
+          engineReady={inputEngineReady}
+          engineStatus={inputEngineStatus}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
-          suggestions={isVideoMode ? [] : demoSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
+          mode={currentMode}
+          onModeChange={(mode) => sessions.currentId && sessions.setMode(mode, sessions.currentId)}
+          suggestions={isVideoMode ? [] : createModeSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
           suggestionsLoading={!isDemoMode() && suggestionsLoading}
@@ -839,6 +899,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           onRollback={handleRollback}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
+          onComposeFromChat={handleComposeFromChat}
           tokenStats={current?.tokenStats}
         />
       </div>

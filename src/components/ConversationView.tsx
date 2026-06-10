@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { CheckIcon, CopyIcon, GitBranchIcon, RetryIcon, RollbackIcon } from './icons';
+import { CheckIcon, CopyIcon, GitBranchIcon, RetryIcon, RollbackIcon, SparklesIcon } from './icons';
 import { t } from '../lib/i18n';
 
 type MobileNoSelectStyle = CSSProperties & {
@@ -38,6 +38,7 @@ interface ConversationViewProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  onComposeFromChat: (seed: string) => void;
 }
 
 export default function ConversationView({
@@ -48,6 +49,7 @@ export default function ConversationView({
   onRollback,
   onBranch,
   onRetry,
+  onComposeFromChat,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -308,6 +310,19 @@ export default function ConversationView({
                   </div>
                 );
               })()}
+
+              {msg.composeSeed && (
+                <button
+                  type="button"
+                  onClick={() => onComposeFromChat(msg.composeSeed!)}
+                  title={t('composeFromChat')}
+                  className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-[8px] border border-[#93C2FF]/25 bg-[#93C2FF]/5 px-2.5 py-1.5 text-[11px] text-[#93C2FF] transition hover:border-[#93C2FF]/45 hover:bg-[#93C2FF]/10"
+                >
+                  <SparklesIcon size={13} />
+                  <span className="shrink-0">{t('composeFromChat')}</span>
+                  <span className="min-w-0 truncate text-[#93C2FF]/70">{msg.composeSeed}</span>
+                </button>
+              )}
 
               {/* Action buttons — bottom-left, always visible */}
               <div className="absolute -bottom-5 left-0 flex items-center">

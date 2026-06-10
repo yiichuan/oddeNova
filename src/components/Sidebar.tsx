@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import type { AgentMode, ChatMessage } from '../hooks/useChat';
 import { t } from '../lib/i18n';
 import type { Session, TokenStats } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
 import SuggestionChips from './SuggestionChips';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
+import ModeSwitcher from './ModeSwitcher';
 import { checkAirJellyAvailable } from '../services/airjelly';
 import { isDemoMode, isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
@@ -19,6 +20,8 @@ interface SidebarProps {
   engineStatus?: 'initializing' | 'ready' | 'failed';
   sessions: Session[];
   currentId: string | null;
+  mode: AgentMode;
+  onModeChange: (mode: AgentMode) => void;
   suggestions: string[];
   suggestionsLoading?: boolean;
   fillSuggestion?: string;
@@ -42,6 +45,7 @@ interface SidebarProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  onComposeFromChat: (seed: string) => void;
   tokenStats?: TokenStats;
 }
 
@@ -54,6 +58,8 @@ export default function Sidebar({
   engineStatus = engineReady ? 'ready' : 'initializing',
   sessions,
   currentId,
+  mode,
+  onModeChange,
   suggestions,
   suggestionsLoading = false,
   fillSuggestion,
@@ -77,6 +83,7 @@ export default function Sidebar({
   onRollback,
   onBranch,
   onRetry,
+  onComposeFromChat,
   tokenStats,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
@@ -179,12 +186,13 @@ export default function Sidebar({
           onRollback={onRollback}
           onBranch={onBranch}
           onRetry={onRetry}
+          onComposeFromChat={onComposeFromChat}
         />
       </div>
 
       <div className="pl-4 pr-0 pb-2">
         {/* [video] In video mode, hide suggestion chips and the mood button to avoid obscuring the CodePanel view */}
-        {!isLoading && !suggestionsLoading && !isVideoMode && (
+        {!isLoading && !suggestionsLoading && !isVideoMode && mode === 'create' && (
           <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
             <SuggestionChips suggestions={suggestions} disabled={engineStatus !== 'ready'} onPick={onSendText} />
             {fillSuggestion && (
@@ -213,6 +221,9 @@ export default function Sidebar({
             )}
           </div>
         )}
+        <div className="mb-2 flex justify-end">
+          <ModeSwitcher mode={mode} onChange={onModeChange} />
+        </div>
         <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
       </div>
     </aside>

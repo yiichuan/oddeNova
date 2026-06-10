@@ -30,7 +30,7 @@ function setMobileViewport(matches: boolean) {
   });
 }
 
-function renderConversationView(messages: ChatMessage[], onRollback = vi.fn()) {
+function renderConversationView(messages: ChatMessage[], onRollback = vi.fn(), onComposeFromChat = vi.fn()) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -43,6 +43,7 @@ function renderConversationView(messages: ChatMessage[], onRollback = vi.fn()) {
         onRollback={onRollback}
         onBranch={vi.fn()}
         onRetry={vi.fn()}
+        onComposeFromChat={onComposeFromChat}
       />,
     );
   });
@@ -151,5 +152,41 @@ describe('ConversationView mobile interactions', () => {
     });
 
     expect(buttons.every((button) => button.disabled)).toBe(true);
+  });
+});
+
+describe('ConversationView chat compose actions', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('renders a compose-from-chat button for assistant messages with composeSeed', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '我听见这像一片蓝色湖面。',
+        composeSeed: '蓝色湖面的慢速钢琴',
+        timestamp: 1,
+      },
+    ];
+    const onComposeFromChat = vi.fn();
+    const { container, root } = renderConversationView(messages, vi.fn(), onComposeFromChat);
+    roots.push(root);
+
+    const button = container.querySelector<HTMLButtonElement>('button[title="Switch to create and compose"]');
+    expect(button).not.toBeNull();
+    expect(button?.textContent).toContain('蓝色湖面的慢速钢琴');
+
+    act(() => button?.click());
+
+    expect(onComposeFromChat).toHaveBeenCalledWith('蓝色湖面的慢速钢琴');
   });
 });

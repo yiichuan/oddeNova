@@ -15,6 +15,12 @@ const S: Record<string, readonly [string, string]> = {
   retry:        ['重试', 'Retry'],
   loading:      ['加载中…', 'Loading…'],
   play:         ['播放', 'Play'],
+  switchMode:     ['切换模式', 'Switch mode'],
+  modeCreate:     ['创作', 'Create'],
+  modeChat:       ['聊天', 'Chat'],
+  modeCreateDesc: ['生成并播放 Strudel 曲子', 'Compose and play Strudel music'],
+  modeChatDesc:   ['只聊天，不生成音乐', 'Pure chat, no music generation'],
+  composeFromChat:['切到创作并谱曲', 'Switch to create and compose'],
 
   // App status
   engineStarting:   ['音频引擎启动中，请稍后再试', 'Audio engine starting, please try again later'],
