@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { AgentMode } from '../hooks/useChat';
 import { ChatBubbleIcon, ChevronDownIcon, SparklesIcon } from './icons';
 import { t } from '../lib/i18n';
@@ -35,18 +35,6 @@ export default function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
   const CurrentIcon = current.Icon;
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab' || !event.shiftKey) return;
-      event.preventDefault();
-      setOpen(false);
-      onChange(mode === 'create' ? 'chat' : 'create');
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mode, onChange]);
-
-  useEffect(() => {
     if (!open) return;
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
@@ -70,8 +58,15 @@ export default function ModeSwitcher({ mode, onChange }: ModeSwitcherProps) {
     setOpen(false);
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !event.shiftKey) return;
+    event.preventDefault();
+    setOpen(false);
+    onChange(mode === 'create' ? 'chat' : 'create');
+  };
+
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative" onKeyDown={handleKeyDown}>
       <button
         type="button"
         aria-label={t('switchMode')}

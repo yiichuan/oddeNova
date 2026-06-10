@@ -28,6 +28,7 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
+import ModeSwitcher from './components/ModeSwitcher';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
@@ -248,6 +249,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     ? (demoStep < activeSet.length ? [activeSet[demoStep].prompt] : [])
     : suggestions;
   const createModeSuggestions = currentMode === 'create' ? demoSuggestions : [];
+  const showMobileCreateSuggestions =
+    !isLoading && !suggestionsLoading && createModeSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -325,6 +328,15 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
     },
     [sessions, strudel]
+  );
+
+  const reportChatError = useCallback(
+    (e: unknown, sessionId: string, provider: string, model: string) => {
+      const errMsg = e instanceof Error ? e.message : t('requestFailed');
+      sessions.finalizeLastAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, sessionId);
+      trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
+    },
+    [sessions]
   );
 
   const handleInstruction = useCallback(
@@ -444,7 +456,11 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           }
           trackAgentAbort();
         } else {
-          reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
+          if (mode === 'chat') {
+            reportChatError(e, sessionId, _analyticsProvider, _analyticsModel);
+          } else {
+            reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
+          }
         }
       } finally {
         if (abortControllersRef.current.get(sessionId) === controller) {
@@ -452,7 +468,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         }
       }
     },
-    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, makeChatProgressHandler, reportAgentError, cleanupLoadingSession]
+    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, makeChatProgressHandler, reportAgentError, reportChatError, cleanupLoadingSession]
   );
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
@@ -651,6 +667,12 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     sessions.switchTo(id);
   }, [sessions]);
 
+  const handleModeChange = useCallback((mode: AgentMode) => {
+    if (sessions.currentId) {
+      sessions.setMode(mode, sessions.currentId);
+    }
+  }, [sessions]);
+
   if (isMobile) {
     return (
       <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
@@ -763,7 +785,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           </div>
 
           {/* Suggestion chips — horizontal scroll */}
-          {!isLoading && !suggestionsLoading && createModeSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code' && (
+          {showMobileCreateSuggestions && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
               {createModeSuggestions.map((s) => (
                 <button
@@ -779,6 +801,10 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
               ))}
             </div>
           )}
+
+          <div className={`mb-2 flex justify-end ${showMobileCreateSuggestions ? '' : 'mt-3'}`}>
+            <ModeSwitcher mode={currentMode} onChange={handleModeChange} />
+          </div>
 
           {/* Input */}
           <ChatInput
@@ -875,7 +901,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           sessions={sessions.sessions}
           currentId={sessions.currentId}
           mode={currentMode}
-          onModeChange={(mode) => sessions.currentId && sessions.setMode(mode, sessions.currentId)}
+          onModeChange={handleModeChange}
           suggestions={isVideoMode ? [] : createModeSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal

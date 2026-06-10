@@ -54,7 +54,41 @@ describe('ModeSwitcher', () => {
     expect(onChange).toHaveBeenCalledWith('chat');
   });
 
-  it('cycles modes with Shift+Tab', () => {
+  it('cycles modes with Shift+Tab while the switcher owns focus', () => {
+    const { container, root, onChange } = renderModeSwitcher({ mode: 'chat' });
+    roots.push(root);
+
+    const unrelatedInput = document.createElement('textarea');
+    document.body.appendChild(unrelatedInput);
+    unrelatedInput.focus();
+
+    act(() => {
+      unrelatedInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Switch mode"]');
+    trigger?.focus();
+
+    act(() => {
+      trigger?.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onChange).toHaveBeenCalledWith('create');
+  });
+
+  it('does not cycle modes from a global Shift+Tab event', () => {
     const { root, onChange } = renderModeSwitcher({ mode: 'chat' });
     roots.push(root);
 
@@ -67,6 +101,23 @@ describe('ModeSwitcher', () => {
       }));
     });
 
-    expect(onChange).toHaveBeenCalledWith('create');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('closes the popover on outside click', () => {
+    const { container, root } = renderModeSwitcher({ mode: 'create' });
+    roots.push(root);
+
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Switch mode"]');
+
+    act(() => trigger?.click());
+
+    expect(container.querySelector('[role="menu"]')).not.toBeNull();
+
+    act(() => {
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[role="menu"]')).toBeNull();
   });
 });
