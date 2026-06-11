@@ -76,6 +76,27 @@ describe('PROVIDER_PRESETS', () => {
   });
 });
 
+describe('PROVIDER_PRESETS models lists', () => {
+  const providersWithModels = ['deepseek', 'kimi', 'openai', 'anthropic', 'glm'] as const;
+
+  it.each(providersWithModels)('"%s" has a non-empty models list', (provider) => {
+    expect(PROVIDER_PRESETS[provider].models?.length).toBeGreaterThan(0);
+  });
+
+  it('"official" does not define a models list', () => {
+    expect(PROVIDER_PRESETS.official.models).toBeUndefined();
+  });
+
+  it.each(['deepseek', 'kimi', 'openai', 'glm'] as const)('"%s" models list includes its preset.model', (provider) => {
+    const preset = PROVIDER_PRESETS[provider];
+    expect(preset.models).toContain(preset.model);
+  });
+
+  it('anthropic models[0] matches the LEGACY_MODELS sonnet default', () => {
+    expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-sonnet-4-6');
+  });
+});
+
 describe('official provider API key defaults', () => {
   it('treats missing provider as official and already configured', () => {
     expect(normalizeProvider(null)).toBe('official');
