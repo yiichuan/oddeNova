@@ -1,17 +1,8 @@
 import { useState } from 'react';
-import { type ProviderType, PROVIDER_PRESETS } from '../services/llm-config';
+import { type ProviderType, PROVIDER_PRESETS, getSelectedModel } from '../services/llm-config';
 import qrCode from '../assets/oddeNova音乐制作社区二维码.png';
-import { t } from '../lib/i18n';
+import { t, zh } from '../lib/i18n';
 import { getCommunityInviteText, isApiKeyRequiredForProvider } from './apiKeyModalUtils';
-
-function getModelForProvider(p: ProviderType): string {
-  if (p === 'anthropic') {
-    const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
-    const legacyModels: Record<string, string> = { sonnet: 'claude-sonnet-4-6', opus: 'claude-opus-4-6' };
-    return (envModel ? (legacyModels[envModel] ?? envModel) : '') || legacyModels['sonnet'];
-  }
-  return PROVIDER_PRESETS[p].model;
-}
 
 interface ApiKeyModalProps {
   onClose: () => void;
@@ -20,9 +11,9 @@ interface ApiKeyModalProps {
   required?: boolean;
 }
 
-const PROVIDER_ORDER: ProviderType[] = [
-  'official', 'anthropic', 'deepseek', 'glm',
-];
+const PROVIDER_ORDER: ProviderType[] = zh
+  ? ['official', 'deepseek', 'glm', 'anthropic', 'openai']
+  : ['official', 'anthropic', 'openai', 'deepseek', 'glm'];
 
 /** Read the saved API Key for each provider separately. */
 function getProviderKey(p: ProviderType): string {
@@ -39,7 +30,9 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     PROVIDER_ORDER.includes(savedProvider) ? savedProvider : 'official'
   );
   const [apiKey, setApiKey] = useState(getProviderKey(savedProvider));
-  const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://gw.claudeapi.com');
+  const [model, setModel] = useState(getSelectedModel(
+    PROVIDER_ORDER.includes(savedProvider) ? savedProvider : 'official'
+  ));
   const apiKeyRequired = isApiKeyRequiredForProvider(provider);
   const communityInvite = getCommunityInviteText();
 
@@ -47,8 +40,12 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     if (apiKey.trim()) {
       localStorage.setItem(`vibe_api_key_${provider}`, apiKey.trim());
     }
+    if (PROVIDER_PRESETS[provider].models) {
+      localStorage.setItem(`vibe_model_${provider}`, model);
+    }
     setProvider(p);
     setApiKey(getProviderKey(p));
+    setModel(getSelectedModel(p));
   };
 
   const handleSave = () => {
@@ -62,12 +59,10 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
       localStorage.removeItem('vibe_api_key');
     }
     localStorage.setItem('vibe_provider', provider);
-    if (provider === 'anthropic') {
-      const trimmedHost = host.trim() || 'https://gw.claudeapi.com';
-      localStorage.setItem('vibe_base_url', trimmedHost);
-    } else {
-      localStorage.removeItem('vibe_base_url');
+    if (PROVIDER_PRESETS[provider].models) {
+      localStorage.setItem(`vibe_model_${provider}`, model);
     }
+    localStorage.removeItem('vibe_base_url');
     localStorage.removeItem('vibe_model');
 
     onSaved?.();
@@ -94,7 +89,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
             {savedProvider !== 'official' && (
               <>
                 <span className="text-text-muted/40 text-xs">·</span>
-                <span className="text-xs text-text-muted font-mono">{getModelForProvider(savedProvider)}</span>
+                <span className="text-xs text-text-muted font-mono">{getSelectedModel(savedProvider)}</span>
               </>
             )}
           </div>
@@ -137,17 +132,28 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
             </div>
           )}
 
-          {/* Anthropic Host */}
-          {provider === 'anthropic' && (
+          {/* Model selection */}
+          {apiKeyRequired && PROVIDER_PRESETS[provider].models && (
             <div>
-              <label className="text-xs text-text-secondary mb-1 block">Host</label>
-              <input
-                type="text"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="https://gw.claudeapi.com"
-                className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
-              />
+              <label className="text-xs text-text-secondary mb-1 block">{t('model')}</label>
+              <div className="relative">
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="w-full appearance-none bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50 cursor-pointer"
+                >
+                  {PROVIDER_PRESETS[provider].models!.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <svg
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
+                  width="12" height="12" viewBox="0 0 12 12" fill="none"
+                  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <polyline points="2,4 6,8 10,4" />
+                </svg>
+              </div>
             </div>
           )}
         </div>

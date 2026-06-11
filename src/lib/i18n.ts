@@ -71,6 +71,7 @@ const S: Record<string, readonly [string, string]> = {
   apiKeyDesc:   ['选择服务商并填入对应的 API Key，即可开始使用。Key 仅保存在本地浏览器中。', 'Select a provider and enter the API Key to get started. Keys are stored locally in your browser.'],
   currentUsing:  ['当前使用', 'Currently using'],
   provider:      ['服务商', 'Provider'],
+  model:         ['模型', 'Model'],
   officialLabel: ['官方体验', 'Official Trial'],
   qrAlt:        ['扫码加入 oddeNova 用户群，免费领取体验 API Key', 'Scan to join the oddeNova community and get a free API Key'],
   scanToJoin:   ['扫码入群', 'Scan to join'],
