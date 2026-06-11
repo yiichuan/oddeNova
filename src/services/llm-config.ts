@@ -139,6 +139,25 @@ function resolveOfficialBaseURL(): string {
 }
 
 // ---------------------------------------------------------------------------
+// User-selected model (per provider, persisted in localStorage)
+// ---------------------------------------------------------------------------
+
+/** Resolve the model to use for `provider`, honouring a user override if valid. */
+export function getSelectedModel(provider: ProviderType): string {
+  const preset = PROVIDER_PRESETS[provider];
+  const override = localStorage.getItem(`vibe_model_${provider}`);
+  if (override && preset.models?.includes(override)) {
+    return override;
+  }
+  if (provider === 'anthropic') {
+    const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
+    const legacyModel = envModel ? (LEGACY_MODELS[envModel] ?? envModel) : '';
+    return legacyModel || LEGACY_MODELS['sonnet'];
+  }
+  return preset.model;
+}
+
+// ---------------------------------------------------------------------------
 // Provider normalisation (backwards compatible with old localStorage values)
 // ---------------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { getActiveModelConfig, hasApiKeyConfigured, normalizeProvider, PROVIDER_PRESETS } from '../llm-config';
+import { getActiveModelConfig, getSelectedModel, hasApiKeyConfigured, normalizeProvider, PROVIDER_PRESETS } from '../llm-config';
 
 function installLocalStorage(): void {
   const store = new Map<string, string>();
@@ -127,5 +127,35 @@ describe('official provider API key defaults', () => {
     localStorage.removeItem('vibe_api_key');
 
     expect(hasApiKeyConfigured()).toBe(false);
+  });
+});
+
+describe('getSelectedModel', () => {
+  it('returns preset.model when no override is stored', () => {
+    expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
+  });
+
+  it('returns the stored override when it is a valid model for the provider', () => {
+    localStorage.setItem('vibe_model_deepseek', 'deepseek-v4-pro');
+    expect(getSelectedModel('deepseek')).toBe('deepseek-v4-pro');
+  });
+
+  it('ignores an override that is not in the provider models list', () => {
+    localStorage.setItem('vibe_model_deepseek', 'not-a-real-model');
+    expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
+  });
+
+  it('falls back to the LEGACY_MODELS sonnet default for anthropic when no override is stored', () => {
+    expect(getSelectedModel('anthropic')).toBe('claude-sonnet-4-6');
+  });
+
+  it('returns a valid stored override for anthropic', () => {
+    localStorage.setItem('vibe_model_anthropic', 'claude-opus-4-8');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-4-8');
+  });
+
+  it('returns preset.model for official regardless of any stored override', () => {
+    localStorage.setItem('vibe_model_official', 'whatever');
+    expect(getSelectedModel('official')).toBe('deepseek-v4-pro');
   });
 });
