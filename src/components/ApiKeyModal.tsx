@@ -41,8 +41,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     if (apiKey.trim()) {
       localStorage.setItem(`vibe_api_key_${provider}`, apiKey.trim());
     }
-    const defaultModel = PROVIDER_PRESETS[provider].models?.[0];
-    if (defaultModel && model !== defaultModel) {
+    if (PROVIDER_PRESETS[provider].models) {
       localStorage.setItem(`vibe_model_${provider}`, model);
     }
     setProvider(p);
