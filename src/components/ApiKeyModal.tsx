@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { type ProviderType, PROVIDER_PRESETS, getSelectedModel } from '../services/llm-config';
 import qrCode from '../assets/oddeNova音乐制作社区二维码.png';
-import { t } from '../lib/i18n';
+import { t, zh } from '../lib/i18n';
 import { getCommunityInviteText, isApiKeyRequiredForProvider } from './apiKeyModalUtils';
 
 interface ApiKeyModalProps {
@@ -11,9 +11,9 @@ interface ApiKeyModalProps {
   required?: boolean;
 }
 
-const PROVIDER_ORDER: ProviderType[] = [
-  'official', 'anthropic', 'openai', 'deepseek', 'glm',
-];
+const PROVIDER_ORDER: ProviderType[] = zh
+  ? ['official', 'deepseek', 'glm', 'anthropic', 'openai']
+  : ['official', 'anthropic', 'openai', 'deepseek', 'glm'];
 
 /** Read the saved API Key for each provider separately. */
 function getProviderKey(p: ProviderType): string {
@@ -33,7 +33,6 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
   const [model, setModel] = useState(getSelectedModel(
     PROVIDER_ORDER.includes(savedProvider) ? savedProvider : 'official'
   ));
-  const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://gw.claudeapi.com');
   const apiKeyRequired = isApiKeyRequiredForProvider(provider);
   const communityInvite = getCommunityInviteText();
 
@@ -63,12 +62,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     if (PROVIDER_PRESETS[provider].models) {
       localStorage.setItem(`vibe_model_${provider}`, model);
     }
-    if (provider === 'anthropic') {
-      const trimmedHost = host.trim() || 'https://gw.claudeapi.com';
-      localStorage.setItem('vibe_base_url', trimmedHost);
-    } else {
-      localStorage.removeItem('vibe_base_url');
-    }
+    localStorage.removeItem('vibe_base_url');
     localStorage.removeItem('vibe_model');
 
     onSaved?.();
@@ -160,20 +154,6 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
                   <polyline points="2,4 6,8 10,4" />
                 </svg>
               </div>
-            </div>
-          )}
-
-          {/* Anthropic Host */}
-          {provider === 'anthropic' && (
-            <div>
-              <label className="text-xs text-text-secondary mb-1 block">Host</label>
-              <input
-                type="text"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="https://gw.claudeapi.com"
-                className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
-              />
             </div>
           )}
         </div>

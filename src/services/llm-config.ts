@@ -2,7 +2,7 @@
 // LLM configuration file — centralised management of switchable models and API credentials.
 //
 // Provider routing rules：
-//   anthropic  → legacy proxy (timesniper.club) + LEGACY_MODELS + VITE_API_KEY takes priority
+//   anthropic  → api.anthropic.com + LEGACY_MODELS + VITE_API_KEY takes priority
 //   deepseek   → api.deepseek.com + built-in model + localStorage vibe_api_key
 //   kimi       → api.moonshot.cn  + built-in model + localStorage vibe_api_key
 //   openai     → api.openai.com   + built-in model + localStorage vibe_api_key
@@ -63,7 +63,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   },
   anthropic: {
     label: 'Anthropic',
-    baseURL: 'https://api.anthropic.com', // display only; actual baseURL uses LEGACY_BASE_URL
+    baseURL: 'https://api.anthropic.com',
     model: 'claude-opus-4-6',             // display only; actual model uses LEGACY_MODELS
     protocol: 'anthropic',
     models: ['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-haiku-4-5'],
@@ -95,8 +95,6 @@ export interface ModelConfig {
 // Anthropic / legacy-user path (kept unchanged)
 // ---------------------------------------------------------------------------
 
-const LEGACY_BASE_URL = 'https://timesniper.club';
-
 const LEGACY_MODELS: Record<string, string> = {
   sonnet: 'claude-sonnet-4-6',
   opus:   'claude-opus-4-6',
@@ -107,7 +105,7 @@ function resolveAnthropicConfig(apiKey: string): ModelConfig {
     provider: 'anthropic',
     protocol: 'anthropic',
     apiKey,
-    baseURL: import.meta.env.VITE_BASE_URL || localStorage.getItem('vibe_base_url') || LEGACY_BASE_URL,
+    baseURL: import.meta.env.VITE_BASE_URL || PROVIDER_PRESETS.anthropic.baseURL,
     model:   getSelectedModel('anthropic'),
   };
 }
