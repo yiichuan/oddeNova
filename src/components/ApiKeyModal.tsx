@@ -1,17 +1,8 @@
 import { useState } from 'react';
-import { type ProviderType, PROVIDER_PRESETS } from '../services/llm-config';
+import { type ProviderType, PROVIDER_PRESETS, getSelectedModel } from '../services/llm-config';
 import qrCode from '../assets/oddeNova音乐制作社区二维码.png';
 import { t } from '../lib/i18n';
 import { getCommunityInviteText, isApiKeyRequiredForProvider } from './apiKeyModalUtils';
-
-function getModelForProvider(p: ProviderType): string {
-  if (p === 'anthropic') {
-    const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
-    const legacyModels: Record<string, string> = { sonnet: 'claude-sonnet-4-6', opus: 'claude-opus-4-6' };
-    return (envModel ? (legacyModels[envModel] ?? envModel) : '') || legacyModels['sonnet'];
-  }
-  return PROVIDER_PRESETS[p].model;
-}
 
 interface ApiKeyModalProps {
   onClose: () => void;
@@ -21,7 +12,7 @@ interface ApiKeyModalProps {
 }
 
 const PROVIDER_ORDER: ProviderType[] = [
-  'official', 'anthropic', 'deepseek', 'glm',
+  'official', 'anthropic', 'openai', 'deepseek', 'glm',
 ];
 
 /** Read the saved API Key for each provider separately. */
@@ -39,6 +30,9 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     PROVIDER_ORDER.includes(savedProvider) ? savedProvider : 'official'
   );
   const [apiKey, setApiKey] = useState(getProviderKey(savedProvider));
+  const [model, setModel] = useState(getSelectedModel(
+    PROVIDER_ORDER.includes(savedProvider) ? savedProvider : 'official'
+  ));
   const [host, setHost] = useState(localStorage.getItem('vibe_base_url') || 'https://gw.claudeapi.com');
   const apiKeyRequired = isApiKeyRequiredForProvider(provider);
   const communityInvite = getCommunityInviteText();
@@ -47,8 +41,13 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
     if (apiKey.trim()) {
       localStorage.setItem(`vibe_api_key_${provider}`, apiKey.trim());
     }
+    const defaultModel = PROVIDER_PRESETS[provider].models?.[0];
+    if (defaultModel && model !== defaultModel) {
+      localStorage.setItem(`vibe_model_${provider}`, model);
+    }
     setProvider(p);
     setApiKey(getProviderKey(p));
+    setModel(getSelectedModel(p));
   };
 
   const handleSave = () => {
@@ -62,6 +61,9 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
       localStorage.removeItem('vibe_api_key');
     }
     localStorage.setItem('vibe_provider', provider);
+    if (PROVIDER_PRESETS[provider].models) {
+      localStorage.setItem(`vibe_model_${provider}`, model);
+    }
     if (provider === 'anthropic') {
       const trimmedHost = host.trim() || 'https://gw.claudeapi.com';
       localStorage.setItem('vibe_base_url', trimmedHost);
@@ -94,7 +96,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
             {savedProvider !== 'official' && (
               <>
                 <span className="text-text-muted/40 text-xs">·</span>
-                <span className="text-xs text-text-muted font-mono">{getModelForProvider(savedProvider)}</span>
+                <span className="text-xs text-text-muted font-mono">{getSelectedModel(savedProvider)}</span>
               </>
             )}
           </div>
@@ -134,6 +136,31 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
                 onEnter={handleSave}
                 placeholder="sk-..."
               />
+            </div>
+          )}
+
+          {/* Model selection */}
+          {apiKeyRequired && PROVIDER_PRESETS[provider].models && (
+            <div>
+              <label className="text-xs text-text-secondary mb-1 block">{t('model')}</label>
+              <div className="relative">
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="w-full appearance-none bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50 cursor-pointer"
+                >
+                  {PROVIDER_PRESETS[provider].models!.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <svg
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
+                  width="12" height="12" viewBox="0 0 12 12" fill="none"
+                  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <polyline points="2,4 6,8 10,4" />
+                </svg>
+              </div>
             </div>
           )}
 
