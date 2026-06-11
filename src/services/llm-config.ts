@@ -2,7 +2,7 @@
 // LLM configuration file — centralised management of switchable models and API credentials.
 //
 // Provider routing rules：
-//   anthropic  → legacy proxy (timesniper.club) + LEGACY_MODELS + VITE_API_KEY takes priority
+//   anthropic  → api.anthropic.com + LEGACY_MODELS + VITE_API_KEY takes priority
 //   deepseek   → api.deepseek.com + built-in model + localStorage vibe_api_key
 //   kimi       → api.moonshot.cn  + built-in model + localStorage vibe_api_key
 //   openai     → api.openai.com   + built-in model + localStorage vibe_api_key
@@ -34,6 +34,8 @@ export interface ProviderPreset {
   model: string;
   /** Which SDK protocol to use */
   protocol: Protocol;
+  /** User-selectable models for this provider; first item is the default. Omitted for providers without manual model selection (official). */
+  models?: string[];
 }
 
 /** Built-in configuration for each provider; Base URL is not visible to the user. */
@@ -43,24 +45,28 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     baseURL: 'https://api.deepseek.com/v1',
     model: 'deepseek-v4-flash', // current official model, supports function calling
     protocol: 'openai',
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
   },
   kimi: {
     label: 'Kimi',
     baseURL: 'https://api.moonshot.cn/v1',
     model: 'kimi-k2.6',         // model shown in the official tool-calling documentation examples
     protocol: 'openai',
+    models: ['kimi-k2.6', 'kimi-k2.5'],
   },
   openai: {
     label: 'OpenAI',
     baseURL: 'https://api.openai.com/v1',
     model: 'gpt-5.5',           // current flagship model, supports Chat Completions API + function calling
     protocol: 'openai',
+    models: ['gpt-5.5', 'gpt-5.5-mini', 'gpt-5.1', 'gpt-5'],
   },
   anthropic: {
     label: 'Anthropic',
-    baseURL: 'https://api.anthropic.com', // display only; actual baseURL uses LEGACY_BASE_URL
+    baseURL: 'https://api.anthropic.com',
     model: 'claude-opus-4-6',             // display only; actual model uses LEGACY_MODELS
     protocol: 'anthropic',
+    models: ['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-haiku-4-5'],
   },
   official: {
     label: t('officialLabel'),
@@ -73,6 +79,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     baseURL: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-5.1',
     protocol: 'openai',
+    models: ['glm-5.1', 'glm-5.1-air', 'glm-5'],
   },
 };
 
@@ -85,25 +92,16 @@ export interface ModelConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Anthropic / legacy-user path (kept unchanged)
+// Anthropic path
 // ---------------------------------------------------------------------------
 
-const LEGACY_BASE_URL = 'https://timesniper.club';
-
-const LEGACY_MODELS: Record<string, string> = {
-  sonnet: 'claude-sonnet-4-6',
-  opus:   'claude-opus-4-6',
-};
-
 function resolveAnthropicConfig(apiKey: string): ModelConfig {
-  const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
-  const legacyModel = envModel ? (LEGACY_MODELS[envModel] ?? envModel) : '';
   return {
     provider: 'anthropic',
     protocol: 'anthropic',
     apiKey,
-    baseURL: import.meta.env.VITE_BASE_URL || localStorage.getItem('vibe_base_url') || LEGACY_BASE_URL,
-    model:   legacyModel || LEGACY_MODELS['sonnet'],
+    baseURL: import.meta.env.VITE_BASE_URL || PROVIDER_PRESETS.anthropic.baseURL,
+    model:   getSelectedModel('anthropic'),
   };
 }
 
@@ -122,13 +120,31 @@ function resolveOpenAICompatConfig(
     protocol: 'openai',
     apiKey: isOfficial ? 'official-proxy' : apiKey,
     baseURL: isOfficial ? resolveOfficialBaseURL() : (import.meta.env.VITE_BASE_URL || preset.baseURL),
-    model:   preset.model,
+    model:   getSelectedModel(provider),
   };
 }
 
 function resolveOfficialBaseURL(): string {
   if (typeof window === 'undefined') return PROVIDER_PRESETS.official.baseURL;
   return `${window.location.origin}${PROVIDER_PRESETS.official.baseURL}`;
+}
+
+// ---------------------------------------------------------------------------
+// User-selected model (per provider, persisted in localStorage)
+// ---------------------------------------------------------------------------
+
+/** Resolve the model to use for `provider`, honouring a user override if valid. */
+export function getSelectedModel(provider: ProviderType): string {
+  const preset = PROVIDER_PRESETS[provider];
+  const override = localStorage.getItem(`vibe_model_${provider}`);
+  if (override && preset.models?.includes(override)) {
+    return override;
+  }
+  if (provider === 'anthropic') {
+    const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
+    return envModel || 'claude-sonnet-4-6';
+  }
+  return preset.model;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,10 +197,3 @@ export function hasApiKeyConfigured(): boolean {
     localStorage.getItem('vibe_api_key')
   );
 }
-
-// Backwards compatibility: some legacy code still references these exports
-export type ModelKey = 'sonnet' | 'opus';
-export const ACTIVE_MODEL: ModelKey = (() => {
-  const env = import.meta.env.VITE_LLM_MODEL as string | undefined;
-  return (env === 'sonnet' ? 'sonnet' : 'opus') as ModelKey;
-})();

@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { getActiveModelConfig, hasApiKeyConfigured, normalizeProvider, PROVIDER_PRESETS } from '../llm-config';
+import { getActiveModelConfig, getSelectedModel, hasApiKeyConfigured, normalizeProvider, PROVIDER_PRESETS } from '../llm-config';
 
 function installLocalStorage(): void {
   const store = new Map<string, string>();
@@ -76,6 +76,27 @@ describe('PROVIDER_PRESETS', () => {
   });
 });
 
+describe('PROVIDER_PRESETS models lists', () => {
+  const providersWithModels = ['deepseek', 'kimi', 'openai', 'anthropic', 'glm'] as const;
+
+  it.each(providersWithModels)('"%s" has a non-empty models list', (provider) => {
+    expect(PROVIDER_PRESETS[provider].models?.length).toBeGreaterThan(0);
+  });
+
+  it('"official" does not define a models list', () => {
+    expect(PROVIDER_PRESETS.official.models).toBeUndefined();
+  });
+
+  it.each(['deepseek', 'kimi', 'openai', 'glm'] as const)('"%s" models list includes its preset.model', (provider) => {
+    const preset = PROVIDER_PRESETS[provider];
+    expect(preset.models).toContain(preset.model);
+  });
+
+  it('anthropic models[0] matches the built-in anthropic default', () => {
+    expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-sonnet-4-6');
+  });
+});
+
 describe('official provider API key defaults', () => {
   it('treats missing provider as official and already configured', () => {
     expect(normalizeProvider(null)).toBe('official');
@@ -106,5 +127,69 @@ describe('official provider API key defaults', () => {
     localStorage.removeItem('vibe_api_key');
 
     expect(hasApiKeyConfigured()).toBe(false);
+  });
+});
+
+describe('getSelectedModel', () => {
+  it('returns preset.model when no override is stored', () => {
+    expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
+  });
+
+  it('returns the stored override when it is a valid model for the provider', () => {
+    localStorage.setItem('vibe_model_deepseek', 'deepseek-v4-pro');
+    expect(getSelectedModel('deepseek')).toBe('deepseek-v4-pro');
+  });
+
+  it('ignores an override that is not in the provider models list', () => {
+    localStorage.setItem('vibe_model_deepseek', 'not-a-real-model');
+    expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
+  });
+
+  it('falls back to the built-in anthropic default when no override is stored', () => {
+    expect(getSelectedModel('anthropic')).toBe('claude-sonnet-4-6');
+  });
+
+  it('uses the exact VITE_LLM_MODEL value for anthropic when it is set', () => {
+    vi.stubEnv('VITE_LLM_MODEL', 'claude-opus-4-8');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-4-8');
+  });
+
+  it('does not map legacy anthropic aliases from VITE_LLM_MODEL', () => {
+    vi.stubEnv('VITE_LLM_MODEL', 'sonnet');
+    expect(getSelectedModel('anthropic')).toBe('sonnet');
+  });
+
+  it('returns a valid stored override for anthropic', () => {
+    localStorage.setItem('vibe_model_anthropic', 'claude-opus-4-8');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-4-8');
+  });
+
+  it('returns preset.model for official regardless of any stored override', () => {
+    localStorage.setItem('vibe_model_official', 'whatever');
+    expect(getSelectedModel('official')).toBe('deepseek-v4-pro');
+  });
+});
+
+describe('getActiveModelConfig with model overrides', () => {
+  it('uses the stored model override for an openai-compat provider', () => {
+    localStorage.setItem('vibe_provider', 'deepseek');
+    localStorage.setItem('vibe_api_key', 'sk-test');
+    localStorage.setItem('vibe_model_deepseek', 'deepseek-v4-pro');
+
+    expect(getActiveModelConfig().model).toBe('deepseek-v4-pro');
+  });
+
+  it('uses the stored model override for anthropic', () => {
+    localStorage.setItem('vibe_provider', 'anthropic');
+    localStorage.setItem('vibe_model_anthropic', 'claude-haiku-4-5');
+
+    expect(getActiveModelConfig().model).toBe('claude-haiku-4-5');
+  });
+
+  it('falls back to preset.model for an openai-compat provider with no override', () => {
+    localStorage.setItem('vibe_provider', 'kimi');
+    localStorage.setItem('vibe_api_key', 'sk-test');
+
+    expect(getActiveModelConfig().model).toBe('kimi-k2.6');
   });
 });
