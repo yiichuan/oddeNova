@@ -92,13 +92,8 @@ export interface ModelConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Anthropic / legacy-user path (kept unchanged)
+// Anthropic path
 // ---------------------------------------------------------------------------
-
-const LEGACY_MODELS: Record<string, string> = {
-  sonnet: 'claude-sonnet-4-6',
-  opus:   'claude-opus-4-6',
-};
 
 function resolveAnthropicConfig(apiKey: string): ModelConfig {
   return {
@@ -147,8 +142,7 @@ export function getSelectedModel(provider: ProviderType): string {
   }
   if (provider === 'anthropic') {
     const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
-    const legacyModel = envModel ? (LEGACY_MODELS[envModel] ?? envModel) : '';
-    return legacyModel || LEGACY_MODELS['sonnet'];
+    return envModel || 'claude-sonnet-4-6';
   }
   return preset.model;
 }
@@ -203,10 +197,3 @@ export function hasApiKeyConfigured(): boolean {
     localStorage.getItem('vibe_api_key')
   );
 }
-
-// Backwards compatibility: some legacy code still references these exports
-export type ModelKey = 'sonnet' | 'opus';
-export const ACTIVE_MODEL: ModelKey = (() => {
-  const env = import.meta.env.VITE_LLM_MODEL as string | undefined;
-  return (env === 'sonnet' ? 'sonnet' : 'opus') as ModelKey;
-})();

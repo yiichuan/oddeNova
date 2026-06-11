@@ -92,7 +92,7 @@ describe('PROVIDER_PRESETS models lists', () => {
     expect(preset.models).toContain(preset.model);
   });
 
-  it('anthropic models[0] matches the LEGACY_MODELS sonnet default', () => {
+  it('anthropic models[0] matches the built-in anthropic default', () => {
     expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-sonnet-4-6');
   });
 });
@@ -145,8 +145,18 @@ describe('getSelectedModel', () => {
     expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
   });
 
-  it('falls back to the LEGACY_MODELS sonnet default for anthropic when no override is stored', () => {
+  it('falls back to the built-in anthropic default when no override is stored', () => {
     expect(getSelectedModel('anthropic')).toBe('claude-sonnet-4-6');
+  });
+
+  it('uses the exact VITE_LLM_MODEL value for anthropic when it is set', () => {
+    vi.stubEnv('VITE_LLM_MODEL', 'claude-opus-4-8');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-4-8');
+  });
+
+  it('does not map legacy anthropic aliases from VITE_LLM_MODEL', () => {
+    vi.stubEnv('VITE_LLM_MODEL', 'sonnet');
+    expect(getSelectedModel('anthropic')).toBe('sonnet');
   });
 
   it('returns a valid stored override for anthropic', () => {
