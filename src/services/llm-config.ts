@@ -103,14 +103,12 @@ const LEGACY_MODELS: Record<string, string> = {
 };
 
 function resolveAnthropicConfig(apiKey: string): ModelConfig {
-  const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
-  const legacyModel = envModel ? (LEGACY_MODELS[envModel] ?? envModel) : '';
   return {
     provider: 'anthropic',
     protocol: 'anthropic',
     apiKey,
     baseURL: import.meta.env.VITE_BASE_URL || localStorage.getItem('vibe_base_url') || LEGACY_BASE_URL,
-    model:   legacyModel || LEGACY_MODELS['sonnet'],
+    model:   getSelectedModel('anthropic'),
   };
 }
 
@@ -129,7 +127,7 @@ function resolveOpenAICompatConfig(
     protocol: 'openai',
     apiKey: isOfficial ? 'official-proxy' : apiKey,
     baseURL: isOfficial ? resolveOfficialBaseURL() : (import.meta.env.VITE_BASE_URL || preset.baseURL),
-    model:   preset.model,
+    model:   getSelectedModel(provider),
   };
 }
 

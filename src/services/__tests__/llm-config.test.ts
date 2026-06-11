@@ -159,3 +159,27 @@ describe('getSelectedModel', () => {
     expect(getSelectedModel('official')).toBe('deepseek-v4-pro');
   });
 });
+
+describe('getActiveModelConfig with model overrides', () => {
+  it('uses the stored model override for an openai-compat provider', () => {
+    localStorage.setItem('vibe_provider', 'deepseek');
+    localStorage.setItem('vibe_api_key', 'sk-test');
+    localStorage.setItem('vibe_model_deepseek', 'deepseek-v4-pro');
+
+    expect(getActiveModelConfig().model).toBe('deepseek-v4-pro');
+  });
+
+  it('uses the stored model override for anthropic', () => {
+    localStorage.setItem('vibe_provider', 'anthropic');
+    localStorage.setItem('vibe_model_anthropic', 'claude-haiku-4-5');
+
+    expect(getActiveModelConfig().model).toBe('claude-haiku-4-5');
+  });
+
+  it('falls back to preset.model for an openai-compat provider with no override', () => {
+    localStorage.setItem('vibe_provider', 'kimi');
+    localStorage.setItem('vibe_api_key', 'sk-test');
+
+    expect(getActiveModelConfig().model).toBe('kimi-k2.6');
+  });
+});
