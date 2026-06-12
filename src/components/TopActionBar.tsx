@@ -36,6 +36,7 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
         title,
         code: shareCode,
         messages: session?.messages ?? messages ?? [],
+        locale: zh ? 'zh-CN' : 'en',
       });
       const url = `${window.location.origin}/s/${shareId}`;
       await shareUrl(url);
