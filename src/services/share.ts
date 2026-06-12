@@ -1,17 +1,21 @@
 import type { ChatMessage } from '../hooks/useChat';
 
+export type ShareLocale = 'zh-CN' | 'en';
+
 export interface SharePayload {
   version: 1;
   title: string;
   code: string;
   messages: ChatMessage[];
   sharedAt: number;
+  locale?: ShareLocale;
 }
 
 interface UploadShareInput {
   title: string;
   code: string;
   messages: ChatMessage[];
+  locale: ShareLocale;
 }
 
 export async function uploadShare(input: UploadShareInput): Promise<string> {
@@ -21,6 +25,7 @@ export async function uploadShare(input: UploadShareInput): Promise<string> {
     code: input.code,
     messages: input.messages,
     sharedAt: Date.now(),
+    locale: input.locale,
   };
 
   const res = await fetch('/api/share', {
