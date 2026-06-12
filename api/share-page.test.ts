@@ -68,6 +68,8 @@ describe('share-page handler', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toBe('text/html; charset=utf-8');
     expect(res.body).toContain('property="og:url" content="https://www.oddenova.com/s/abc123"');
+    expect(res.body).toContain('property="og:image" content="https://www.oddenova.com/oddenova-og.png?v=c1189f30"');
+    expect(res.body).toContain('name="twitter:image" content="https://www.oddenova.com/oddenova-og.png?v=c1189f30"');
     expect(res.body).toContain('content="oddeNova | Vibe Your Live Music"');
   });
 
