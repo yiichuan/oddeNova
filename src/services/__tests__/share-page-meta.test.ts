@@ -35,6 +35,8 @@ describe('renderShareHtml', () => {
     expect(html).toContain('content="oddeNova | Vibe Your Live Music"');
     expect(html).toContain('content="即兴 vibe 音乐，让灵感，自由发声"');
     expect(html).toContain('property="og:url" content="https://oddenova.com/s/abc123"');
+    expect(html).toContain('property="og:image" content="https://www.oddenova.com/oddenova-og.png?v=c1189f30"');
+    expect(html).toContain('name="twitter:image" content="https://www.oddenova.com/oddenova-og.png?v=c1189f30"');
     expect(html).toContain('<title>oddeNova | Vibe Your Live Music</title>');
   });
 
@@ -46,9 +48,9 @@ describe('renderShareHtml', () => {
 
     expect(html).toContain('<html lang="en">');
     expect(html).toContain('content="oddeNova | Vibe Your Live Music"');
-    expect(html).toContain('name="description"\n      content="Vibes in your head -&gt; Music in your ears"');
-    expect(html).toContain('property="og:description"\n      content="Vibes in your head -&gt; Music in your ears"');
-    expect(html).toContain('name="twitter:description"\n      content="Vibes in your head -&gt; Music in your ears"');
+    expect(html).toContain('name="description"\n      content="Plain text in, rich music out"');
+    expect(html).toContain('property="og:description"\n      content="Plain text in, rich music out"');
+    expect(html).toContain('name="twitter:description"\n      content="Plain text in, rich music out"');
     expect(html).toContain('property="og:url" content="https://oddenova.com/s/abc123"');
   });
 

@@ -8,11 +8,11 @@ interface SharePayload {
 }
 
 const SHARE_TITLE = 'oddeNova | Vibe Your Live Music';
-const SHARE_IMAGE = 'https://oddenova.com/oddenova-og.png';
+const SHARE_IMAGE = 'https://www.oddenova.com/oddenova-og.png?v=c1189f30';
 
 const SHARE_DESCRIPTIONS: Record<ShareLocale, string> = {
   'zh-CN': '即兴 vibe 音乐，让灵感，自由发声',
-  en: 'Vibes in your head -> Music in your ears',
+  en: 'Plain text in, rich music out',
 };
 
 const FALLBACK_APP_SHELL = `<!doctype html>
@@ -54,7 +54,11 @@ function escapeHtmlAttr(value: string): string {
 function replaceMeta(html: string, selector: string, value: string): string {
   const escaped = escapeHtmlAttr(value);
   const pattern = new RegExp(`(<meta\\b(?=[^>]*${selector})[^>]*\\bcontent=")[^"]*("[^>]*>)`, 'i');
-  return html.replace(pattern, `$1${escaped}$2`);
+  const replaced = html.replace(pattern, `$1${escaped}$2`);
+  if (replaced !== html) {
+    return replaced;
+  }
+  return html.replace(/<\/head>/i, `    <meta ${selector} content="${escaped}" />\n  </head>`);
 }
 
 function renderShareHtml(html: string, options: { locale?: ShareLocale; url: string }): string {
