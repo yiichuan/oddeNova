@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import handler from './share-page';
 import { list } from '@vercel/blob';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 vi.mock('@vercel/blob', () => ({
   list: vi.fn(),
@@ -67,5 +69,11 @@ describe('share-page handler', () => {
     expect(res.headers['Content-Type']).toBe('text/html; charset=utf-8');
     expect(res.body).toContain('property="og:url" content="https://www.oddenova.com/s/abc123"');
     expect(res.body).toContain('content="oddeNova | Vibe Your Live Music"');
+  });
+
+  it('does not depend on client src modules at runtime', () => {
+    const source = readFileSync(fileURLToPath(new URL('./share-page.ts', import.meta.url)), 'utf8');
+
+    expect(source).not.toContain('../src/');
   });
 });
