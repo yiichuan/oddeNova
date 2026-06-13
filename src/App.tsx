@@ -11,6 +11,7 @@ import { useIsMobile } from './hooks/useIsMobile';
 import { useKeyboardHeight } from './hooks/useKeyboardHeight';
 import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
+import { generateSongTitle } from './services/song-title';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
 import { parseNextSteps } from './services/suggestions';
@@ -669,6 +670,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             hasCode={!!strudel.code}
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
+            onGenerateTitle={generateSongTitle}
             onResetExportState={strudel.resetExportState}
             bpm={currentBpm}
           />
@@ -699,6 +701,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
                 onStop={strudel.stop}
                 exportState={strudel.exportState}
                 onExport={strudel.exportWav}
+                onGenerateTitle={generateSongTitle}
                 onResetExportState={strudel.resetExportState}
                 session={sessions.currentSession}
                 messages={messages}
@@ -903,6 +906,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             onStop={strudel.stop}
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
+            onGenerateTitle={generateSongTitle}
             onResetExportState={strudel.resetExportState}
             session={sessions.currentSession}
             messages={messages}

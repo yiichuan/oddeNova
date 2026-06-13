@@ -8,6 +8,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import TopActionBar from './TopActionBar';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
+import type { GenerateTitleParams } from './TopActionBar';
 
 interface CodePanelProps {
   error: string | null;
@@ -19,6 +20,7 @@ interface CodePanelProps {
   onStop: () => void;
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
   onExport: (p: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => Promise<boolean>;
+  onGenerateTitle?: (p: GenerateTitleParams) => Promise<string>;
   onResetExportState: () => void;
   session: Session | null;
   messages: ChatMessage[];
@@ -191,6 +193,7 @@ export default function CodePanel({
   onStop,
   exportState,
   onExport,
+  onGenerateTitle = async () => '',
   onResetExportState,
   session,
   messages,
@@ -379,6 +382,7 @@ export default function CodePanel({
           hasCode={hasCode}
           exportState={exportState}
           onExport={handleExport}
+          onGenerateTitle={onGenerateTitle}
           onResetExportState={onResetExportState}
           bpm={bpm}
         />,

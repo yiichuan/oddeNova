@@ -3,7 +3,7 @@ import { uploadShare } from '../services/share';
 import { shareUrl } from '../services/share-target';
 import { trackShare } from '../lib/analytics';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon } from './icons';
+import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon, SparkleIcon } from './icons';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
 import { zh, t } from '../lib/i18n';
@@ -107,12 +107,23 @@ interface ExportParams {
   sampleRate: number;
 }
 
+export interface GenerateTitleParams {
+  code: string;
+  sessionTitle?: string;
+  messages: ChatMessage[];
+  locale: 'zh-CN' | 'en';
+}
+
 interface ExportPopoverProps {
   open: boolean;
   onClose: () => void;
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
   onResetState: () => void;
   onExport: (p: ExportParams) => Promise<boolean>;
+  code: string;
+  sessionTitle?: string;
+  messages: ChatMessage[];
+  onGenerateTitle: (p: GenerateTitleParams) => Promise<string>;
   bpm: number;
 }
 
@@ -186,10 +197,22 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm }: ExportPopoverProps) {
+function ExportPopover({
+  open,
+  onClose,
+  exportState,
+  onResetState,
+  onExport,
+  code,
+  sessionTitle,
+  messages,
+  onGenerateTitle,
+  bpm,
+}: ExportPopoverProps) {
   const isMobile = useIsMobile();
   const [filename, setFilename] = useState('');
   const [filenamePlaceholder, setFilenamePlaceholder] = useState('');
+  const [generateTitleState, setGenerateTitleState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [beginCycle, setBeginCycle] = useState(0);
   const [endCycle, setEndCycle] = useState(4);
   const [beginCycleStr, setBeginCycleStr] = useState('0');
@@ -199,7 +222,11 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
 
   if (prevOpen !== open) {
     setPrevOpen(open);
-    if (open) { setFilename(''); setFilenamePlaceholder(defaultFilename()); }
+    if (open) {
+      setFilename('');
+      setFilenamePlaceholder(defaultFilename());
+      setGenerateTitleState('idle');
+    }
   }
 
   const commitBegin = (str: string) => { const v = Math.max(0, parseInt(str, 10) || 0); setBeginCycle(v); setBeginCycleStr(String(v)); };
@@ -217,8 +244,31 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
     if (!canExport) return;
     await onExport({ filename: filename.trim() || filenamePlaceholder, beginCycle, endCycle, sampleRate });
   };
+  const handleGenerateTitle = async () => {
+    setGenerateTitleState('loading');
+    try {
+      const title = await onGenerateTitle({
+        code,
+        sessionTitle,
+        messages,
+        locale: zh ? 'zh-CN' : 'en',
+      });
+      setFilename(title);
+      setGenerateTitleState('idle');
+    } catch (error) {
+      console.error('[export] Failed to generate song title', error);
+      setGenerateTitleState('error');
+    }
+  };
+  const handleFilenameChange = (value: string) => {
+    setFilename(value);
+    if (generateTitleState === 'error') setGenerateTitleState('idle');
+  };
   const handleCloseSafe = () => { if (exportState.status !== 'exporting') onClose(); };
   const handleErrorClose = () => { onResetState(); onClose(); };
+  const generateTitleLabel = generateTitleState === 'loading'
+    ? t('generatingSongTitle')
+    : t('generateSongTitle');
 
   const body = (
     <div className="flex flex-col gap-3" style={{ fontFamily: "'ABeeZee', monospace" }}>
@@ -242,9 +292,24 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
       ) : (
         <>
           <Field label={t('filename')}>
-            <input type="text" value={filename} onChange={(e) => setFilename(e.target.value)} placeholder={filenamePlaceholder}
-              className="w-full bg-black border border-[#323232] px-2 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/30 placeholder:text-white/30"
-              style={{ fontFamily: "'ABeeZee', monospace" }} />
+            <div className="flex w-full gap-1.5">
+              <input type="text" value={filename} onChange={(e) => handleFilenameChange(e.target.value)} placeholder={filenamePlaceholder}
+                className="flex-1 min-w-0 bg-black border border-[#323232] px-2 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/30 placeholder:text-white/30"
+                style={{ fontFamily: "'ABeeZee', monospace" }} />
+              <button
+                type="button"
+                onClick={handleGenerateTitle}
+                disabled={generateTitleState === 'loading'}
+                aria-label={generateTitleLabel}
+                title={generateTitleLabel}
+                className={`w-8 h-8 shrink-0 flex items-center justify-center bg-black border border-[#323232] text-white/70 hover:text-white hover:border-white/30 disabled:opacity-45 disabled:cursor-not-allowed ${generateTitleState === 'loading' ? 'animate-pulse' : ''}`}
+              >
+                <SparkleIcon size={16} />
+              </button>
+            </div>
+            {generateTitleState === 'error' && (
+              <span className="text-[11px] text-red-400">{t('generateSongTitleFailed')}</span>
+            )}
           </Field>
           <div className="flex gap-2">
             <Field label={t('startCycle')}><CycleInput value={beginCycleStr} onChange={setBeginCycleStr} onCommit={commitBegin} /></Field>
@@ -308,6 +373,7 @@ interface TopActionBarProps {
   hasCode: boolean;
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
   onExport: (p: ExportParams) => Promise<boolean>;
+  onGenerateTitle: (p: GenerateTitleParams) => Promise<string>;
   onResetExportState: () => void;
   bpm: number;
 }
@@ -321,6 +387,7 @@ export default function TopActionBar({
   hasCode,
   exportState,
   onExport,
+  onGenerateTitle,
   onResetExportState,
   bpm,
 }: TopActionBarProps) {
@@ -426,6 +493,10 @@ export default function TopActionBar({
           exportState={exportState}
           onResetState={onResetExportState}
           onExport={handleExport}
+          code={code}
+          sessionTitle={session?.title}
+          messages={messages}
+          onGenerateTitle={onGenerateTitle}
           bpm={bpm}
         />
       </div>
@@ -485,6 +556,10 @@ export default function TopActionBar({
         exportState={exportState}
         onResetState={onResetExportState}
         onExport={handleExport}
+        code={code}
+        sessionTitle={session?.title}
+        messages={messages}
+        onGenerateTitle={onGenerateTitle}
         bpm={bpm}
       />
     </div>
