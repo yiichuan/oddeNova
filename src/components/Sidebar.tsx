@@ -9,6 +9,7 @@ import ChatInput from './ChatInput';
 import { checkAirJellyAvailable } from '../services/airjelly';
 import { isDemoMode, isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
+import EditableSessionTitle from './EditableSessionTitle';
 
 interface SidebarProps {
   title: string;
@@ -29,6 +30,7 @@ interface SidebarProps {
   onReinitEngine: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
+  onRenameSession: (id: string, title: string) => void;
   isHistoryLoading?: boolean;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
@@ -64,6 +66,7 @@ export default function Sidebar({
   onReinitEngine,
   onSwitchSession,
   onDeleteSession,
+  onRenameSession,
   isHistoryLoading = false,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
@@ -120,9 +123,16 @@ export default function Sidebar({
 
       {/* Title row */}
       <div className="pl-5 pr-0 pt-[20px] pb-3 flex items-center justify-between ">
-        <span className="text-base font-bold text-text-muted truncate" title={title}>
-          {title}
-        </span>
+        <EditableSessionTitle
+          title={title}
+          canEdit={!!currentId && messages.length > 0}
+          className="min-w-0 flex-1 text-left"
+          titleTextClassName="block text-base font-bold text-text-muted truncate"
+          inputClassName="min-w-0 flex-1 bg-transparent border border-border px-1 py-0.5 text-base font-bold text-text-primary outline-none focus:border-accent/60"
+          onRename={(nextTitle) => {
+            if (currentId) onRenameSession(currentId, nextTitle);
+          }}
+        />
         <div className="flex items-center gap-3 shrink-0">
           {isPresentationMode() && onReplay && !isReplaying && (
             <button
@@ -164,6 +174,7 @@ export default function Sidebar({
                 isLoading={isHistoryLoading}
                 onSwitch={(id) => { onSwitchSession(id); setShowHistory(false); }}
                 onDelete={onDeleteSession}
+                onRename={onRenameSession}
                 loadingSessions={loadingSessions}
                 unreadSessions={unreadSessions}
               />

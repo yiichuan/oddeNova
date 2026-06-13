@@ -781,6 +781,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
                   isLoading={sessions.isLoading}
                   onSwitch={(id) => { handleSwitchSession(id); setHistoryOpen(false); }}
                   onDelete={sessions.deleteSession}
+                  onRename={sessions.renameSession}
                   loadingSessions={loadingSessions}
                   unreadSessions={unreadSessions}
                 />
@@ -854,6 +855,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           unreadSessions={unreadSessions}
           onSwitchSession={handleSwitchSession}
           onDeleteSession={sessions.deleteSession}
+          onRenameSession={sessions.renameSession}
           isHistoryLoading={sessions.isLoading}
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}

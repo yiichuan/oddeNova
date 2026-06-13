@@ -1,6 +1,7 @@
 import type { Session } from '../hooks/useSessions';
 import { TrashIcon } from './icons';
 import { t } from '../lib/i18n';
+import EditableSessionTitle from './EditableSessionTitle';
 
 interface HistoryPanelProps {
   sessions: Session[];
@@ -8,6 +9,7 @@ interface HistoryPanelProps {
   isLoading?: boolean;
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, title: string) => void;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
 }
@@ -18,6 +20,7 @@ export default function HistoryPanel({
   isLoading = false,
   onSwitch,
   onDelete,
+  onRename,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
 }: HistoryPanelProps) {
@@ -50,9 +53,14 @@ export default function HistoryPanel({
                     }`}
                     onClick={() => onSwitch(s.id)}
                   >
-                    <span className="flex-1 flex items-center py-[8px] text-xs leading-none truncate" title={s.title}>
-                      {s.title || t('newSessionTitle')}
-                    </span>
+                    <EditableSessionTitle
+                      title={s.title || t('newSessionTitle')}
+                      canEdit={true}
+                      className="flex-1 flex items-center py-[8px] text-left min-w-0"
+                      titleTextClassName="block w-full text-xs leading-none truncate"
+                      inputClassName="flex-1 min-w-0 my-[5px] bg-transparent border border-border px-1 py-0.5 text-xs leading-none text-text-primary outline-none focus:border-accent/60"
+                      onRename={(title) => onRename(s.id, title)}
+                    />
                     {/* Status indicator + delete button */}
                     <span className="flex items-center gap-2 shrink-0">
                       {loadingSessions.has(s.id) ? (
