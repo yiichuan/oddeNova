@@ -1,11 +1,11 @@
 import type { ShareLocale } from './share';
 
-const SHARE_TITLE = 'oddeNova | Vibe Your Live Music';
+const SHARE_TITLE = 'oddeNova | Vibe Your Music, Live';
 const SHARE_IMAGE = 'https://www.oddenova.com/oddenova-og.png?v=c1189f30';
 
 const SHARE_DESCRIPTIONS: Record<ShareLocale, string> = {
   'zh-CN': '即兴 vibe 音乐，让灵感，自由发声',
-  en: 'Plain text in, rich music out',
+  en: 'Plain text → Rich music',
 };
 
 interface RenderShareHtmlOptions {
