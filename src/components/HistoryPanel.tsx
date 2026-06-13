@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Session } from '../hooks/useSessions';
-import { TrashIcon } from './icons';
+import { EditIcon, TrashIcon } from './icons';
 import { t } from '../lib/i18n';
 
 interface HistoryPanelProps {
@@ -8,6 +9,7 @@ interface HistoryPanelProps {
   isLoading?: boolean;
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, title: string) => void;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
 }
@@ -18,9 +20,40 @@ export default function HistoryPanel({
   isLoading = false,
   onSwitch,
   onDelete,
+  onRename,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
 }: HistoryPanelProps) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cancelRef = useRef(false);
+
+  useEffect(() => {
+    if (!editingId) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [editingId]);
+
+  const startEditing = (session: Session) => {
+    cancelRef.current = false;
+    setEditingId(session.id);
+    setDraft(session.title || t('newSessionTitle'));
+  };
+
+  const save = (session: Session) => {
+    const nextTitle = draft.trim();
+    setEditingId(null);
+    if (!nextTitle || nextTitle === session.title) return;
+    onRename(session.id, nextTitle);
+  };
+
+  const cancel = (session: Session) => {
+    cancelRef.current = true;
+    setDraft(session.title || t('newSessionTitle'));
+    setEditingId(null);
+  };
+
   // Newest first (by start time). Exclude empty sessions (no messages).
   const ordered = [...sessions]
     .filter((s) => s.messages.length > 0)
@@ -40,6 +73,8 @@ export default function HistoryPanel({
           <ul className="pt-1 pb-3 space-y-1">
             {ordered.map((s) => {
               const active = s.id === currentId;
+              const isEditing = editingId === s.id;
+              const displayTitle = s.title || t('newSessionTitle');
               return (
                 <li key={s.id} className="px-2">
                   <div
@@ -50,9 +85,44 @@ export default function HistoryPanel({
                     }`}
                     onClick={() => onSwitch(s.id)}
                   >
-                    <span className="flex-1 flex items-center py-[8px] text-xs leading-none truncate" title={s.title}>
-                      {s.title || t('newSessionTitle')}
-                    </span>
+                    {isEditing ? (
+                      <input
+                        ref={inputRef}
+                        aria-label="Edit session title"
+                        value={draft}
+                        maxLength={60}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setDraft(e.currentTarget.value)}
+                        onBlur={() => {
+                          if (cancelRef.current) {
+                            cancelRef.current = false;
+                            return;
+                          }
+                          save(s);
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            save(s);
+                          }
+                          if (e.key === 'Escape') {
+                            e.preventDefault();
+                            cancel(s);
+                          }
+                        }}
+                        className="flex-1 min-w-0 my-[5px] bg-transparent border border-border px-1 py-0.5 text-xs leading-none text-text-primary outline-none focus:border-accent/60"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        data-session-title-edit
+                        className="flex-1 flex items-center py-[8px] text-left min-w-0"
+                        title={displayTitle}
+                      >
+                        <span className="block w-full text-xs leading-none truncate">{displayTitle}</span>
+                      </button>
+                    )}
                     {/* Status indicator + delete button */}
                     <span className="flex items-center gap-2 shrink-0">
                       {loadingSessions.has(s.id) ? (
@@ -60,6 +130,16 @@ export default function HistoryPanel({
                       ) : unreadSessions.has(s.id) ? (
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-success)' }} />
                       ) : null}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEditing(s);
+                        }}
+                        className="self-stretch flex items-center opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary transition-opacity"
+                        title={t('edit')}
+                      >
+                        <EditIcon size={16} />
+                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
