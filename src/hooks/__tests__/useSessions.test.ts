@@ -1,12 +1,5 @@
 // src/hooks/__tests__/useSessions.test.ts
-import { describe, it, expect, vi } from 'vitest';
-
-vi.hoisted(() => {
-  Object.defineProperty(globalThis, 'navigator', {
-    value: { language: 'zh-CN' },
-    configurable: true,
-  });
-});
+import { describe, it, expect } from 'vitest';
 
 import { applyTruncate, applyTruncateAndEdit } from '../useSessions';
 import type { Session } from '../useSessions';
@@ -46,7 +39,7 @@ describe('applyTruncateAndEdit', () => {
 
   it('截断到首条用户消息且标题仍是新会话时重新派生 title', () => {
     const s = makeSession({
-      title: '新会话',
+      title: 'New session',
       messages: [
         { id: 'msg-1', role: 'user', content: '旧内容', timestamp: 0 },
         { id: 'msg-2', role: 'assistant', content: '回复', timestamp: 0 },
