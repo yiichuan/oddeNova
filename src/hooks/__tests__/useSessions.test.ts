@@ -1,6 +1,7 @@
 // src/hooks/__tests__/useSessions.test.ts
 import { describe, it, expect } from 'vitest';
 
+import { t } from '../../lib/i18n';
 import { applyTruncate, applyTruncateAndEdit } from '../useSessions';
 import type { Session } from '../useSessions';
 
@@ -39,7 +40,7 @@ describe('applyTruncateAndEdit', () => {
 
   it('截断到首条用户消息且标题仍是新会话时重新派生 title', () => {
     const s = makeSession({
-      title: 'New session',
+      title: t('newSessionTitle'),
       messages: [
         { id: 'msg-1', role: 'user', content: '旧内容', timestamp: 0 },
         { id: 'msg-2', role: 'assistant', content: '回复', timestamp: 0 },
