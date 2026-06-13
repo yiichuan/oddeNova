@@ -1,5 +1,13 @@
 // src/hooks/__tests__/useSessions.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.hoisted(() => {
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { language: 'zh-CN' },
+    configurable: true,
+  });
+});
+
 import { applyTruncate, applyTruncateAndEdit } from '../useSessions';
 import type { Session } from '../useSessions';
 
@@ -36,7 +44,7 @@ describe('applyTruncateAndEdit', () => {
     expect(result.messages[0].id).toMatch(/^msg-/);
   });
 
-  it('截断到首条用户消息时 title 从新消息内容衍生', () => {
+  it('截断到首条用户消息且标题仍是新会话时重新派生 title', () => {
     const s = makeSession({
       title: '新会话',
       messages: [
@@ -45,8 +53,19 @@ describe('applyTruncateAndEdit', () => {
       ],
     });
     const result = applyTruncateAndEdit(s, 'msg-1', '全新内容');
-    // before is empty, no user message, triggers deriveTitle
     expect(result.title).toBe('全新内容');
+  });
+
+  it('截断到首条用户消息但标题已自定义时不覆盖 title', () => {
+    const s = makeSession({
+      title: '周末广告配乐',
+      messages: [
+        { id: 'msg-1', role: 'user', content: '旧内容', timestamp: 0 },
+        { id: 'msg-2', role: 'assistant', content: '回复', timestamp: 0 },
+      ],
+    });
+    const result = applyTruncateAndEdit(s, 'msg-1', '全新内容');
+    expect(result.title).toBe('周末广告配乐');
   });
 
   it('目标消息前已有用户消息时保留原 title', () => {

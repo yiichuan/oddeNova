@@ -64,7 +64,8 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
     timestamp: Date.now(),
   };
   const messages = [...before, newMsg];
-  const title = before.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+  const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
+  const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
   return { ...s, messages, title };
 }
 
@@ -152,7 +153,8 @@ export function useSessions() {
           },
         ];
         // Auto-rename on first user message.
-        const title = s.messages.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+        const shouldDeriveTitle = !s.messages.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
+        const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
         return { ...s, messages, title };
       });
     },
@@ -294,6 +296,15 @@ export function useSessions() {
     setCurrentId(id);
   }, []);
 
+  const renameSession = useCallback(
+    (sessionId: string, title: string): void => {
+      const nextTitle = title.trim();
+      if (!nextTitle) return;
+      updateSession(sessionId, (s) => ({ ...s, title: nextTitle.slice(0, 60) }));
+    },
+    [updateSession]
+  );
+
   const deleteSession = useCallback(
     (id: string) => {
       setSessions((prev) => {
@@ -384,6 +395,7 @@ export function useSessions() {
     setCurrentCode,
     newSession,
     switchTo,
+    renameSession,
     deleteSession,
     importSession,
     branchFromMessage,
