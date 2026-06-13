@@ -111,6 +111,29 @@ describe('useSessions', () => {
     expect(getHook().currentSession?.title).toBe('全新内容');
   });
 
+  it('newSession resets the title when reusing an empty current session', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().addUserMessage('来段普通的鼓点');
+    });
+    const firstMessageId = getHook().currentSession?.messages[0].id;
+    expect(firstMessageId).toBeTruthy();
+
+    act(() => {
+      getHook().truncate(firstMessageId!);
+    });
+    expect(getHook().currentSession?.messages).toHaveLength(0);
+    expect(getHook().currentSession?.title).toBe('来段普通的鼓点');
+
+    act(() => {
+      getHook().newSession();
+    });
+
+    expect(getHook().currentSession?.title).toBe(t('newSessionTitle'));
+  });
+
   it('renameSession trims, ignores blank strings, and slices to 60 chars', async () => {
     const { root, getHook } = await renderUseSessions();
     roots.push(root);

@@ -122,7 +122,7 @@ export default function Sidebar({
       </div>
 
       {/* Title row */}
-      <div className="pl-5 pr-0 pt-[20px] pb-3 flex items-center justify-between ">
+      <div className="pl-5 pr-0 pt-[20px] pb-3 flex items-center justify-between gap-3">
         <EditableSessionTitle
           title={title}
           canEdit={!!currentId && messages.length > 0}

@@ -272,7 +272,9 @@ export function useSessions() {
       // up another untouched "New Session".
       if (cur && cur.messages.length === 0 && !cur.code) {
         if (id && currentId !== id) setCurrentId(id);
-        return prev;
+        const refreshed = { ...cur, title: t('newSessionTitle'), updatedAt: Date.now() };
+        dbPutSession(refreshed);
+        return prev.map((s) => s.id === cur.id ? refreshed : s);
       }
       // If there's already an empty session in the list, switch to it instead
       // of creating a duplicate. This handles the case where the user starts
@@ -281,7 +283,7 @@ export function useSessions() {
       if (existingEmpty) {
         setCurrentId(existingEmpty.id);
         // Refresh createdAt so the reused empty session sorts to the top.
-        const refreshed = { ...existingEmpty, createdAt: Date.now(), updatedAt: Date.now() };
+        const refreshed = { ...existingEmpty, title: t('newSessionTitle'), createdAt: Date.now(), updatedAt: Date.now() };
         dbPutSession(refreshed);
         return prev.map((s) => s.id === existingEmpty.id ? refreshed : s);
       }

@@ -63,12 +63,24 @@ describe('HistoryPanel title editing', () => {
     vi.restoreAllMocks();
   });
 
+  it('switches sessions when clicking a history title', () => {
+    const { container, root, onSwitch } = renderHistory();
+    roots.push(root);
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
+    });
+
+    expect(onSwitch).toHaveBeenCalledWith('s-1');
+    expect(container.querySelector('input')).toBeNull();
+  });
+
   it('renames a session from the history list', () => {
     const { container, root, onRename } = renderHistory();
     roots.push(root);
 
     act(() => {
-      container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
+      container.querySelector<HTMLButtonElement>('button[title="Edit"]')?.click();
     });
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
     expect(input).not.toBeNull();
@@ -86,7 +98,7 @@ describe('HistoryPanel title editing', () => {
     roots.push(root);
 
     act(() => {
-      container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
+      container.querySelector<HTMLButtonElement>('button[title="Edit"]')?.click();
     });
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
     expect(input).not.toBeNull();
