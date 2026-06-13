@@ -305,7 +305,8 @@ function ExportPopover({
     setTitleForm((current) => ({
       ...current,
       filename: value,
-      generateTitleState: current.generateTitleState === 'error' ? 'idle' : current.generateTitleState,
+      generateTitleState: 'idle',
+      activeGenerateTitleRequest: null,
     }));
   };
   const handleCloseSafe = () => { if (exportState.status !== 'exporting') onClose(); };

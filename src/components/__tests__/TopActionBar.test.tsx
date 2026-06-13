@@ -234,4 +234,26 @@ describe('TopActionBar export title generation', () => {
       expect(getFilenameInput(container).value).toBe('manual-title');
     });
   });
+
+  it('does not let pending generation overwrite a manually edited filename', async () => {
+    let resolveTitle!: (title: string) => void;
+    const onGenerateTitle = vi.fn().mockImplementation(
+      () => new Promise<string>((resolve) => { resolveTitle = resolve; }),
+    );
+    const { container, root } = renderTopActionBar({ onGenerateTitle });
+    roots.push(root);
+
+    act(() => {
+      getButton(container, 'Generate song title').click();
+    });
+    changeInput(getFilenameInput(container), 'manual-title');
+
+    await act(async () => {
+      resolveTitle('Generated title');
+    });
+
+    await waitFor(() => {
+      expect(getFilenameInput(container).value).toBe('manual-title');
+    });
+  });
 });
