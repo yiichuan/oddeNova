@@ -23,6 +23,15 @@ describe('sanitizeSongTitle', () => {
     expect(long.startsWith(sanitized)).toBe(true);
   });
 
+  it('trims emoji titles to 60 code points without splitting surrogate pairs', () => {
+    const sanitized = sanitizeSongTitle(`${'A'.repeat(59)}🎵Z`);
+
+    expect(Array.from(sanitized)).toHaveLength(60);
+    expect(sanitized).toBe(`${'A'.repeat(59)}🎵`);
+    expect(sanitized).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
+    expect(sanitized).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u);
+  });
+
   it('collapses multiline model output to spaces', () => {
     expect(sanitizeSongTitle('Neon\nMidnight\r\nDrift')).toBe('Neon Midnight Drift');
   });
@@ -78,5 +87,37 @@ describe('generateSongTitle', () => {
     expect(userPrompt).not.toContain('message-2');
     expect(userPrompt).toContain('message-3');
     expect(userPrompt).toContain('message-8');
+  });
+
+  it('truncates huge session titles in the prompt', async () => {
+    mockedChatOnce.mockResolvedValue('Late Night Signals');
+    const sessionTitle = 'Session '.repeat(40);
+
+    await generateSongTitle({
+      code: 's("bd")',
+      sessionTitle,
+      locale: 'en',
+    });
+
+    const userPrompt = mockedChatOnce.mock.calls[0][1];
+    const sessionTitleLine = userPrompt.split('\n')[0];
+    const promptTitle = sessionTitleLine.replace('Session title: ', '');
+
+    expect(Array.from(promptTitle)).toHaveLength(120);
+    expect(promptTitle).toBe(Array.from(sessionTitle.trim()).slice(0, 120).join(''));
+    expect(userPrompt).not.toContain(sessionTitle.trim());
+  });
+
+  it('uses an untitled session fallback for whitespace-only session titles', async () => {
+    mockedChatOnce.mockResolvedValue('Late Night Signals');
+
+    await generateSongTitle({
+      code: 's("bd")',
+      sessionTitle: '   ',
+      locale: 'en',
+    });
+
+    const userPrompt = mockedChatOnce.mock.calls[0][1];
+    expect(userPrompt).toContain('Session title: Untitled session');
   });
 });

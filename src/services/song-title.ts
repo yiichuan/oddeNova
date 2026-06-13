@@ -9,6 +9,7 @@ export interface GenerateSongTitleParams {
 }
 
 const MAX_TITLE_CHARS = 60;
+const MAX_SESSION_TITLE_CHARS = 120;
 const MAX_CONTEXT_MESSAGES = 6;
 const MAX_CODE_CHARS = 4000;
 const MAX_MESSAGE_CHARS = 500;
@@ -19,21 +20,24 @@ function stripWrappingQuotes(value: string): string {
     .replace(/["'`“”‘’」』》]+$/, '');
 }
 
+function truncateVisible(value: string, maxChars: number): string {
+  return Array.from(value).slice(0, maxChars).join('');
+}
+
 export function sanitizeSongTitle(raw: string): string {
   const withoutExtension = stripWrappingQuotes(raw.trim()).replace(/\.(wav|wave|mp3|flac|aiff?|ogg)$/i, '');
   const cleaned = withoutExtension
     .replace(/[\r\n]+/g, ' ')
     .replace(/[<>:"/\\|?*]/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, MAX_TITLE_CHARS)
     .trim();
+  const truncated = truncateVisible(cleaned, MAX_TITLE_CHARS).trim();
 
-  if (!cleaned) {
+  if (!truncated) {
     throw new Error('No usable song title');
   }
 
-  return cleaned;
+  return truncated;
 }
 
 function summarizeMessages(messages: GenerateSongTitleParams['messages']): string {
@@ -59,7 +63,7 @@ function buildSystemPrompt(locale: GenerateSongTitleParams['locale']): string {
 }
 
 function buildUserPrompt(params: GenerateSongTitleParams): string {
-  const sessionTitle = params.sessionTitle?.trim() || 'Untitled session';
+  const sessionTitle = truncateVisible(params.sessionTitle?.trim() || 'Untitled session', MAX_SESSION_TITLE_CHARS);
   const code = params.code.trim().slice(0, MAX_CODE_CHARS) || 'No code available.';
 
   return [
