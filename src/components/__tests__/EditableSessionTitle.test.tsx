@@ -114,6 +114,35 @@ describe('EditableSessionTitle', () => {
     expect(onRename).not.toHaveBeenCalled();
   });
 
+  it('saves on blur after a previous Escape cancel', () => {
+    const { container, root, onRename } = renderTitle();
+    roots.push(root);
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
+    });
+    const firstInput = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
+    expect(firstInput).not.toBeNull();
+
+    act(() => {
+      firstInput?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(onRename).not.toHaveBeenCalled();
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
+    });
+    const secondInput = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
+    expect(secondInput).not.toBeNull();
+    changeInput(secondInput!, '第二次标题');
+
+    act(() => {
+      secondInput?.blur();
+    });
+
+    expect(onRename).toHaveBeenCalledWith('第二次标题');
+  });
+
   it('does not enter edit mode when canEdit is false', () => {
     const { container, root } = renderTitle({ canEdit: false });
     roots.push(root);

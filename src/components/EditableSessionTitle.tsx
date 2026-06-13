@@ -92,6 +92,7 @@ export default function EditableSessionTitle({
       title={displayTitle}
       onClick={(e) => {
         e.stopPropagation();
+        cancelRef.current = false;
         setDraft(displayTitle);
         setIsEditing(true);
       }}
