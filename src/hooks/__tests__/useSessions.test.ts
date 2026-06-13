@@ -1,9 +1,29 @@
+// @vitest-environment happy-dom
+
 // src/hooks/__tests__/useSessions.test.ts
-import { describe, it, expect } from 'vitest';
+import { act, createElement, useEffect } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { t } from '../../lib/i18n';
-import { applyTruncate, applyTruncateAndEdit } from '../useSessions';
+import { applyTruncate, applyTruncateAndEdit, useSessions } from '../useSessions';
 import type { Session } from '../useSessions';
+
+const storageMocks = vi.hoisted(() => ({
+  openDB: vi.fn(async () => undefined),
+  getAllSessions: vi.fn(async () => []),
+  putSession: vi.fn(async () => undefined),
+  deleteSession: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../lib/session-storage', () => ({
+  openDB: storageMocks.openDB,
+  getAllSessions: storageMocks.getAllSessions,
+  putSession: storageMocks.putSession,
+  deleteSession: storageMocks.deleteSession,
+}));
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -16,6 +36,103 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     ...overrides,
   };
 }
+
+async function renderUseSessions(): Promise<{ root: Root; getHook: () => ReturnType<typeof useSessions> }> {
+  let hook: ReturnType<typeof useSessions> | undefined;
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  function Probe({ onValue }: { onValue: (value: ReturnType<typeof useSessions>) => void }) {
+    const value = useSessions();
+    useEffect(() => {
+      onValue(value);
+    });
+    return null;
+  }
+
+  await act(async () => {
+    root.render(createElement(Probe, { onValue: (value) => { hook = value; } }));
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  return {
+    root,
+    getHook: () => {
+      if (!hook) throw new Error('useSessions hook was not rendered');
+      return hook;
+    },
+  };
+}
+
+describe('useSessions', () => {
+  const roots: Root[] = [];
+
+  beforeEach(() => {
+    storageMocks.openDB.mockResolvedValue(undefined);
+    storageMocks.getAllSessions.mockResolvedValue([]);
+    storageMocks.putSession.mockResolvedValue(undefined);
+    storageMocks.deleteSession.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  it('custom title survives first addUserMessage', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().renameSession(getHook().currentId!, '周末广告配乐');
+    });
+    act(() => {
+      getHook().addUserMessage('全新内容');
+    });
+
+    expect(getHook().currentSession?.title).toBe('周末广告配乐');
+    expect(getHook().currentSession?.messages[0].content).toBe('全新内容');
+  });
+
+  it('default title derives on first addUserMessage', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().addUserMessage('全新内容');
+    });
+
+    expect(getHook().currentSession?.title).toBe('全新内容');
+  });
+
+  it('renameSession trims, ignores blank strings, and slices to 60 chars', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+    const longTitle = '一'.repeat(61);
+
+    act(() => {
+      getHook().renameSession(sessionId, '  周末广告配乐  ');
+    });
+    expect(getHook().currentSession?.title).toBe('周末广告配乐');
+
+    act(() => {
+      getHook().renameSession(sessionId, '   ');
+    });
+    expect(getHook().currentSession?.title).toBe('周末广告配乐');
+
+    act(() => {
+      getHook().renameSession(sessionId, longTitle);
+    });
+    expect(getHook().currentSession?.title).toBe(longTitle.slice(0, 60));
+  });
+});
 
 describe('applyTruncateAndEdit', () => {
   it('targetMessageId 不存在时返回同一个 session 对象不变', () => {
