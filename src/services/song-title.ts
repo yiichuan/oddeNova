@@ -8,7 +8,7 @@ export interface GenerateSongTitleParams {
   locale: 'zh-CN' | 'en';
 }
 
-const MAX_TITLE_CHARS = 36;
+const MAX_TITLE_CHARS = 60;
 const MAX_CONTEXT_MESSAGES = 6;
 const MAX_CODE_CHARS = 4000;
 const MAX_MESSAGE_CHARS = 500;

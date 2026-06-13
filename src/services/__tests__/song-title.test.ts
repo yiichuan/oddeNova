@@ -16,7 +16,15 @@ describe('sanitizeSongTitle', () => {
 
   it('preserves Chinese characters and trims to 60 visible characters', () => {
     const long = '霓虹午夜漂流'.repeat(12);
-    expect(sanitizeSongTitle(long)).toBe('霓虹午夜漂流'.repeat(6));
+    const sanitized = sanitizeSongTitle(long);
+
+    expect(sanitized).toHaveLength(60);
+    expect(sanitized).toBe('霓虹午夜漂流'.repeat(10));
+    expect(long.startsWith(sanitized)).toBe(true);
+  });
+
+  it('collapses multiline model output to spaces', () => {
+    expect(sanitizeSongTitle('Neon\nMidnight\r\nDrift')).toBe('Neon Midnight Drift');
   });
 
   it('throws when sanitization leaves no usable title', () => {
