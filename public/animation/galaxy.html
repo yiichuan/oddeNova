@@ -59,9 +59,15 @@
         let simAudio = null; // {low, mid, high} injected by video postMessage
         let simTime = null;  // absolute video time (seconds) injected by Remotion; replaces performance.now()
 
+        // [video] Deterministic chaos override pushed per-frame by Remotion; null in normal usage.
+        // The adaptive beat detection below accumulates state per rAF tick (wall-clock), which
+        // drifts during headless rendering and falsely triggers "silence → dissolve".
+        let simChaos = null;
+
         window.addEventListener('message', (e) => {
             if (e.data?.type === 'AUDIO_SIM') {
                 simAudio = { low: e.data.low || 0, mid: e.data.mid || 0, high: e.data.high || 0 };
+                if (typeof e.data.chaos === 'number') simChaos = e.data.chaos;
             }
             if (e.data?.type === 'GALAXY_TIME' && typeof e.data.time === 'number') {
                 simTime = e.data.time;
@@ -399,7 +405,7 @@
 
             vortex.material.uniforms.uTime.value  = time;
             vortex.material.uniforms.uLow.value   = audioParams.low;
-            vortex.material.uniforms.uChaos.value = chaosLevel;
+            vortex.material.uniforms.uChaos.value = simChaos !== null ? simChaos : chaosLevel;
             vortex.material.uniforms.uScale.value = vpScale;
 
             bloomPass.strength = 1.1 * Math.max(vpScale, 0.5);
