@@ -70,7 +70,7 @@ describe('share-page handler', () => {
     expect(res.body).toContain('property="og:url" content="https://www.oddenova.com/s/abc123"');
     expect(res.body).toContain('property="og:image" content="https://www.oddenova.com/oddenova-og.png?v=c1189f30"');
     expect(res.body).toContain('name="twitter:image" content="https://www.oddenova.com/oddenova-og.png?v=c1189f30"');
-    expect(res.body).toContain('content="oddeNova | Vibe Your Live Music"');
+    expect(res.body).toContain('content="oddeNova | Vibe Your Music, Live"');
   });
 
   it('does not depend on client src modules at runtime', () => {
