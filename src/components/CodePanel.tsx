@@ -356,6 +356,8 @@ export default function CodePanel({
         .aj-slider::-webkit-slider-runnable-track { height: 1px; background: linear-gradient(to right, rgba(255,255,255,0.35) var(--fill-pct, 0%), #323232 var(--fill-pct, 0%)); }
         .aj-slider::-moz-range-track { height: 1px; background: #323232; }
         .aj-slider::-moz-range-progress { height: 1px; background: rgba(255,255,255,0.35); }
+        @keyframes cmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .video-fade-in { animation: cmFadeIn 0.6s ease-out forwards; }
       `}</style>
 
       {/* StrudelMirror mounts here */}

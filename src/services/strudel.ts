@@ -499,6 +499,12 @@ export class StrudelService {
   setCode = (code: string): void => {
     this._state = { ...this._state, code };
     if (this.editorInstance) {
+      // Skip the full-document replace when content is unchanged — a redundant
+      // setCode clears all CodeMirror decorations (miniLocation highlight boxes)
+      // and shows up as a visible flash
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cmView = (this.editorInstance as any)?.editor as { state: { doc: { toString(): string } } } | undefined;
+      if (cmView?.state.doc.toString() === code) return;
       this.editorInstance.setCode(code);
     }
   };
@@ -542,6 +548,65 @@ export class StrudelService {
     if (scrollDOM) {
       scrollDOM.scrollTop = scrollDOM.scrollHeight - scrollDOM.clientHeight;
     }
+  };
+
+  scrollCodeToPosition = (scrollTop: number): void => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scrollDOM = ((this.editorInstance as any)?.editor as any)?.scrollDOM as HTMLElement | undefined;
+    if (scrollDOM) {
+      scrollDOM.scrollTop = scrollTop;
+    }
+  };
+
+  scrollCodeToBottomEased = (durationMs: number): void => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scrollDOM = ((this.editorInstance as any)?.editor as any)?.scrollDOM as HTMLElement | undefined;
+    if (!scrollDOM) return;
+    const startPos = scrollDOM.scrollTop;
+    const endPos = scrollDOM.scrollHeight - scrollDOM.clientHeight;
+    if (endPos <= startPos) return;
+    const startTime = performance.now();
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - startTime) / durationMs);
+      scrollDOM.scrollTop = startPos + (endPos - startPos) * easeOutCubic(t);
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+
+  // [video] Scroll start position for the frame-driven scroll below; only touched in video mode
+  private scrollProgressStart: number | null = null;
+
+  // [video] Frame-driven variant of scrollCodeToBottomEased, only used by Remotion video
+  // rendering (VIDEO_SCROLL_PROGRESS message) — never called during normal app usage.
+  // Remotion pushes an eased progress (0..1) every frame so the scroll is tied to video
+  // time instead of wall-clock time (wall-clock animations get compressed during headless render)
+  scrollCodeToBottomProgress = (progress: number): void => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scrollDOM = ((this.editorInstance as any)?.editor as any)?.scrollDOM as HTMLElement | undefined;
+    if (!scrollDOM) return;
+    if (this.scrollProgressStart === null) {
+      this.scrollProgressStart = scrollDOM.scrollTop;
+    }
+    const endPos = scrollDOM.scrollHeight - scrollDOM.clientHeight;
+    scrollDOM.scrollTop = this.scrollProgressStart + (endPos - this.scrollProgressStart) * progress;
+    if (progress >= 1) this.scrollProgressStart = null;
+  };
+
+  triggerFadeIn = (): void => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scrollDOM = ((this.editorInstance as any)?.editor as any)?.scrollDOM as HTMLElement | undefined;
+    if (!scrollDOM) return;
+    scrollDOM.classList.remove('video-fade-in');
+    // force reflow so re-adding the class restarts the animation
+    void scrollDOM.offsetWidth;
+    scrollDOM.classList.add('video-fade-in');
+    const onEnd = () => {
+      scrollDOM.classList.remove('video-fade-in');
+      scrollDOM.removeEventListener('animationend', onEnd);
+    };
+    scrollDOM.addEventListener('animationend', onEnd);
   };
 
   exportWav = async (params: {
