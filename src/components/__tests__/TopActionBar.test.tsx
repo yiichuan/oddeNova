@@ -206,4 +206,32 @@ describe('TopActionBar export title generation', () => {
     });
     await waitFor(() => expect(button.disabled).toBe(false));
   });
+
+  it('does not let stale generation overwrite a filename after close and reopen', async () => {
+    let resolveTitle!: (title: string) => void;
+    const onGenerateTitle = vi.fn().mockImplementation(
+      () => new Promise<string>((resolve) => { resolveTitle = resolve; }),
+    );
+    const { container, root } = renderTopActionBar({ onGenerateTitle });
+    roots.push(root);
+
+    act(() => {
+      getButton(container, 'Generate song title').click();
+    });
+    act(() => {
+      getButton(container, 'Export').click();
+    });
+    act(() => {
+      getButton(container, 'Export').click();
+    });
+    changeInput(getFilenameInput(container), 'manual-title');
+
+    await act(async () => {
+      resolveTitle('Stale generated title');
+    });
+
+    await waitFor(() => {
+      expect(getFilenameInput(container).value).toBe('manual-title');
+    });
+  });
 });

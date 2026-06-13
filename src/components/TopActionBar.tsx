@@ -197,6 +197,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+type GenerateTitleState = 'idle' | 'loading' | 'error';
+
+interface TitleFormState {
+  filename: string;
+  filenamePlaceholder: string;
+  generateTitleState: GenerateTitleState;
+  activeGenerateTitleRequest: symbol | null;
+}
+
 function ExportPopover({
   open,
   onClose,
@@ -210,22 +219,35 @@ function ExportPopover({
   bpm,
 }: ExportPopoverProps) {
   const isMobile = useIsMobile();
-  const [filename, setFilename] = useState('');
-  const [filenamePlaceholder, setFilenamePlaceholder] = useState('');
-  const [generateTitleState, setGenerateTitleState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [titleForm, setTitleForm] = useState<TitleFormState>({
+    filename: '',
+    filenamePlaceholder: '',
+    generateTitleState: 'idle',
+    activeGenerateTitleRequest: null,
+  });
   const [beginCycle, setBeginCycle] = useState(0);
   const [endCycle, setEndCycle] = useState(4);
   const [beginCycleStr, setBeginCycleStr] = useState('0');
   const [endCycleStr, setEndCycleStr] = useState('4');
   const [sampleRate, setSampleRate] = useState(48000);
   const [prevOpen, setPrevOpen] = useState(false);
+  const { filename, filenamePlaceholder, generateTitleState } = titleForm;
 
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (open) {
-      setFilename('');
-      setFilenamePlaceholder(defaultFilename());
-      setGenerateTitleState('idle');
+      setTitleForm({
+        filename: '',
+        filenamePlaceholder: defaultFilename(),
+        generateTitleState: 'idle',
+        activeGenerateTitleRequest: null,
+      });
+    } else {
+      setTitleForm((current) => ({
+        ...current,
+        generateTitleState: 'idle',
+        activeGenerateTitleRequest: null,
+      }));
     }
   }
 
@@ -245,7 +267,12 @@ function ExportPopover({
     await onExport({ filename: filename.trim() || filenamePlaceholder, beginCycle, endCycle, sampleRate });
   };
   const handleGenerateTitle = async () => {
-    setGenerateTitleState('loading');
+    const requestId = Symbol('generateTitleRequest');
+    setTitleForm((current) => ({
+      ...current,
+      generateTitleState: 'loading',
+      activeGenerateTitleRequest: requestId,
+    }));
     try {
       const title = await onGenerateTitle({
         code,
@@ -253,16 +280,33 @@ function ExportPopover({
         messages,
         locale: zh ? 'zh-CN' : 'en',
       });
-      setFilename(title);
-      setGenerateTitleState('idle');
+      setTitleForm((current) => {
+        if (current.activeGenerateTitleRequest !== requestId) return current;
+        return {
+          ...current,
+          filename: title,
+          generateTitleState: 'idle',
+          activeGenerateTitleRequest: null,
+        };
+      });
     } catch (error) {
       console.error('[export] Failed to generate song title', error);
-      setGenerateTitleState('error');
+      setTitleForm((current) => {
+        if (current.activeGenerateTitleRequest !== requestId) return current;
+        return {
+          ...current,
+          generateTitleState: 'error',
+          activeGenerateTitleRequest: null,
+        };
+      });
     }
   };
   const handleFilenameChange = (value: string) => {
-    setFilename(value);
-    if (generateTitleState === 'error') setGenerateTitleState('idle');
+    setTitleForm((current) => ({
+      ...current,
+      filename: value,
+      generateTitleState: current.generateTitleState === 'error' ? 'idle' : current.generateTitleState,
+    }));
   };
   const handleCloseSafe = () => { if (exportState.status !== 'exporting') onClose(); };
   const handleErrorClose = () => { onResetState(); onClose(); };

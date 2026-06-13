@@ -20,7 +20,7 @@ interface CodePanelProps {
   onStop: () => void;
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
   onExport: (p: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => Promise<boolean>;
-  onGenerateTitle?: (p: GenerateTitleParams) => Promise<string>;
+  onGenerateTitle: (p: GenerateTitleParams) => Promise<string>;
   onResetExportState: () => void;
   session: Session | null;
   messages: ChatMessage[];
@@ -193,7 +193,7 @@ export default function CodePanel({
   onStop,
   exportState,
   onExport,
-  onGenerateTitle = async () => '',
+  onGenerateTitle,
   onResetExportState,
   session,
   messages,
