@@ -324,13 +324,29 @@ export default function App() {
     });
   }, [strudel, runTurn]);
 
+  // Persist any unsaved manual edits in the editor to the outgoing session
+  // before switching/creating, so they aren't overwritten by the next
+  // session's code. Skip when strudel.code is empty or unchanged to avoid
+  // clobbering a session's stored code with stale/empty editor state
+  // (e.g. before the editor has synced on initial mount) and to avoid
+  // redundant writes when nothing changed.
+  const persistLiveCodeToCurrentSession = useCallback(() => {
+    if (sessions.currentId && strudel.code && strudel.code !== current?.code) {
+      sessions.setCurrentCode(strudel.code, sessions.currentId);
+    }
+  }, [sessions, strudel, current?.code]);
+
   const handleNewSession = useCallback(() => {
+    persistLiveCodeToCurrentSession();
     strudel.stop();
     sessions.newSession();
     if (isDemoMode()) setDemoStep(0);
-  }, [strudel, sessions]);
+  }, [strudel, sessions, persistLiveCodeToCurrentSession]);
 
   const handleSwitchSession = useCallback((id: string) => {
+    if (sessions.currentId !== id) {
+      persistLiveCodeToCurrentSession();
+    }
     setCommitSuggestions(null);
     setUnreadSessions((prev) => {
       if (!prev.has(id)) return prev;
@@ -339,7 +355,7 @@ export default function App() {
       return next;
     });
     sessions.switchTo(id);
-  }, [sessions]);
+  }, [sessions, persistLiveCodeToCurrentSession]);
 
   if (isMobile) {
     return (
