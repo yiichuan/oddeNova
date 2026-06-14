@@ -8,6 +8,7 @@ import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
 import { fetchMoodContext } from './services/airjelly';
+import { generateSongTitle } from './services/song-title';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore } from './lib/conversation-history';
 import { commitPlayback } from './lib/playback-commit';
@@ -392,6 +393,7 @@ export default function App() {
             hasCode={!!strudel.code}
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
+            onGenerateTitle={generateSongTitle}
             onResetExportState={strudel.resetExportState}
             bpm={currentBpm}
           />
@@ -422,6 +424,7 @@ export default function App() {
                 onStop={strudel.stop}
                 exportState={strudel.exportState}
                 onExport={strudel.exportWav}
+                onGenerateTitle={generateSongTitle}
                 onResetExportState={strudel.resetExportState}
                 session={sessions.currentSession}
                 messages={messages}
@@ -614,6 +617,7 @@ export default function App() {
             onStop={strudel.stop}
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
+            onGenerateTitle={generateSongTitle}
             onResetExportState={strudel.resetExportState}
             session={sessions.currentSession}
             messages={messages}

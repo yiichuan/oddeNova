@@ -3,7 +3,7 @@ import { uploadShare } from '../services/share';
 import { shareUrl } from '../services/share-target';
 import { trackShare } from '../lib/analytics';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon } from './icons';
+import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon, SparkleIcon } from './icons';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
 import { zh, t } from '../lib/i18n';
@@ -107,12 +107,23 @@ interface ExportParams {
   sampleRate: number;
 }
 
+export interface GenerateTitleParams {
+  code: string;
+  sessionTitle?: string;
+  messages: ChatMessage[];
+  locale: 'zh-CN' | 'en';
+}
+
 interface ExportPopoverProps {
   open: boolean;
   onClose: () => void;
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
   onResetState: () => void;
   onExport: (p: ExportParams) => Promise<boolean>;
+  code: string;
+  sessionTitle?: string;
+  messages: ChatMessage[];
+  onGenerateTitle: (p: GenerateTitleParams) => Promise<string>;
   bpm: number;
 }
 
@@ -186,20 +197,58 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm }: ExportPopoverProps) {
+type GenerateTitleState = 'idle' | 'loading' | 'error';
+
+interface TitleFormState {
+  filename: string;
+  filenamePlaceholder: string;
+  generateTitleState: GenerateTitleState;
+  activeGenerateTitleRequest: symbol | null;
+}
+
+function ExportPopover({
+  open,
+  onClose,
+  exportState,
+  onResetState,
+  onExport,
+  code,
+  sessionTitle,
+  messages,
+  onGenerateTitle,
+  bpm,
+}: ExportPopoverProps) {
   const isMobile = useIsMobile();
-  const [filename, setFilename] = useState('');
-  const [filenamePlaceholder, setFilenamePlaceholder] = useState('');
+  const [titleForm, setTitleForm] = useState<TitleFormState>({
+    filename: '',
+    filenamePlaceholder: '',
+    generateTitleState: 'idle',
+    activeGenerateTitleRequest: null,
+  });
   const [beginCycle, setBeginCycle] = useState(0);
   const [endCycle, setEndCycle] = useState(4);
   const [beginCycleStr, setBeginCycleStr] = useState('0');
   const [endCycleStr, setEndCycleStr] = useState('4');
   const [sampleRate, setSampleRate] = useState(48000);
   const [prevOpen, setPrevOpen] = useState(false);
+  const { filename, filenamePlaceholder, generateTitleState } = titleForm;
 
   if (prevOpen !== open) {
     setPrevOpen(open);
-    if (open) { setFilename(''); setFilenamePlaceholder(defaultFilename()); }
+    if (open) {
+      setTitleForm({
+        filename: '',
+        filenamePlaceholder: defaultFilename(),
+        generateTitleState: 'idle',
+        activeGenerateTitleRequest: null,
+      });
+    } else {
+      setTitleForm((current) => ({
+        ...current,
+        generateTitleState: 'idle',
+        activeGenerateTitleRequest: null,
+      }));
+    }
   }
 
   const commitBegin = (str: string) => { const v = Math.max(0, parseInt(str, 10) || 0); setBeginCycle(v); setBeginCycleStr(String(v)); };
@@ -217,8 +266,54 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
     if (!canExport) return;
     await onExport({ filename: filename.trim() || filenamePlaceholder, beginCycle, endCycle, sampleRate });
   };
+  const handleGenerateTitle = async () => {
+    const requestId = Symbol('generateTitleRequest');
+    setTitleForm((current) => ({
+      ...current,
+      generateTitleState: 'loading',
+      activeGenerateTitleRequest: requestId,
+    }));
+    try {
+      const title = await onGenerateTitle({
+        code,
+        sessionTitle,
+        messages,
+        locale: zh ? 'zh-CN' : 'en',
+      });
+      setTitleForm((current) => {
+        if (current.activeGenerateTitleRequest !== requestId) return current;
+        return {
+          ...current,
+          filename: title,
+          generateTitleState: 'idle',
+          activeGenerateTitleRequest: null,
+        };
+      });
+    } catch (error) {
+      console.error('[export] Failed to generate song title', error);
+      setTitleForm((current) => {
+        if (current.activeGenerateTitleRequest !== requestId) return current;
+        return {
+          ...current,
+          generateTitleState: 'error',
+          activeGenerateTitleRequest: null,
+        };
+      });
+    }
+  };
+  const handleFilenameChange = (value: string) => {
+    setTitleForm((current) => ({
+      ...current,
+      filename: value,
+      generateTitleState: 'idle',
+      activeGenerateTitleRequest: null,
+    }));
+  };
   const handleCloseSafe = () => { if (exportState.status !== 'exporting') onClose(); };
   const handleErrorClose = () => { onResetState(); onClose(); };
+  const generateTitleLabel = generateTitleState === 'loading'
+    ? t('generatingSongTitle')
+    : t('generateSongTitle');
 
   const body = (
     <div className="flex flex-col gap-3" style={{ fontFamily: "'ABeeZee', monospace" }}>
@@ -242,9 +337,24 @@ function ExportPopover({ open, onClose, exportState, onResetState, onExport, bpm
       ) : (
         <>
           <Field label={t('filename')}>
-            <input type="text" value={filename} onChange={(e) => setFilename(e.target.value)} placeholder={filenamePlaceholder}
-              className="w-full bg-black border border-[#323232] px-2 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/30 placeholder:text-white/30"
-              style={{ fontFamily: "'ABeeZee', monospace" }} />
+            <div className="relative w-full">
+              <input type="text" value={filename} onChange={(e) => handleFilenameChange(e.target.value)} placeholder={filenamePlaceholder}
+                className="w-full bg-black border border-[#323232] px-2 py-1.5 pr-9 text-[12px] text-white/90 outline-none focus:border-white/30 placeholder:text-white/30"
+                style={{ fontFamily: "'ABeeZee', monospace" }} />
+              <button
+                type="button"
+                onClick={handleGenerateTitle}
+                disabled={generateTitleState === 'loading'}
+                aria-label={generateTitleLabel}
+                title={generateTitleLabel}
+                className={`absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-white/70 hover:text-white disabled:opacity-45 disabled:cursor-not-allowed ${generateTitleState === 'loading' ? 'animate-pulse' : ''}`}
+              >
+                <SparkleIcon size={16} />
+              </button>
+            </div>
+            {generateTitleState === 'error' && (
+              <span className="text-[11px] text-red-400">{t('generateSongTitleFailed')}</span>
+            )}
           </Field>
           <div className="flex gap-2">
             <Field label={t('startCycle')}><CycleInput value={beginCycleStr} onChange={setBeginCycleStr} onCommit={commitBegin} /></Field>
@@ -308,6 +418,7 @@ interface TopActionBarProps {
   hasCode: boolean;
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
   onExport: (p: ExportParams) => Promise<boolean>;
+  onGenerateTitle: (p: GenerateTitleParams) => Promise<string>;
   onResetExportState: () => void;
   bpm: number;
 }
@@ -321,6 +432,7 @@ export default function TopActionBar({
   hasCode,
   exportState,
   onExport,
+  onGenerateTitle,
   onResetExportState,
   bpm,
 }: TopActionBarProps) {
@@ -426,6 +538,10 @@ export default function TopActionBar({
           exportState={exportState}
           onResetState={onResetExportState}
           onExport={handleExport}
+          code={code}
+          sessionTitle={session?.title}
+          messages={messages}
+          onGenerateTitle={onGenerateTitle}
           bpm={bpm}
         />
       </div>
@@ -485,6 +601,10 @@ export default function TopActionBar({
         exportState={exportState}
         onResetState={onResetExportState}
         onExport={handleExport}
+        code={code}
+        sessionTitle={session?.title}
+        messages={messages}
+        onGenerateTitle={onGenerateTitle}
         bpm={bpm}
       />
     </div>
