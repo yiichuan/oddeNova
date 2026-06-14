@@ -9,35 +9,28 @@ import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useKeyboardHeight } from './hooks/useKeyboardHeight';
-import { runAgent } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
-import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
-import { parseNextSteps } from './services/suggestions';
+import { conversationHistoryBefore } from './lib/conversation-history';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
-import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
+import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useReplay } from './hooks/useReplay';
+import { useAgentRunner } from './hooks/useAgentRunner';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
-import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 
 const SIDEBAR_RATIO_DEFAULT = 0.22;
 const SIDEBAR_RATIO_MIN = 0.15;
 const SIDEBAR_RATIO_MAX = 0.45;
-
-/** Strip the "next steps" suggestion paragraph from the end of the agent explanation to avoid duplicate display in chat history */
-function stripNextSteps(explanation: string): string {
-  return explanation.replace(/\n\n接下来可以[：:][^]*$/, '').trim();
-}
 
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
 const VIZ_RATIO_MIN = 0.15;
@@ -223,15 +216,6 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     prevLoadingRef.current = curr;
   }, [loadingSessions]);
 
-  const isUserAbort = useCallback((error: unknown, signal?: AbortSignal) => {
-    if (signal?.aborted) return true;
-    if (error instanceof DOMException && error.name === 'AbortError') return true;
-    if (error instanceof Error) {
-      return /abort(ed)?/i.test(error.name) || /request was aborted\.?/i.test(error.message);
-    }
-    return false;
-  }, []);
-
   const handleStop = useCallback(() => {
     const id = sessions.currentId;
     if (id) {
@@ -315,124 +299,39 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     [sessions]
   );
 
-  // Drop the session's abort controller and clear its loading flag.
-  const cleanupLoadingSession = useCallback((sessionId: string) => {
-    abortControllersRef.current.delete(sessionId);
-    setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
-  }, []);
-
-  // Surface a non-abort agent error to the user + analytics.
-  const reportAgentError = useCallback(
-    (e: unknown, sessionId: string, provider: string, model: string) => {
-      const errMsg = e instanceof Error ? e.message : t('requestFailed');
-      sessions.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
-      strudel.setError(errMsg);
-      trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
-    },
-    [sessions, strudel]
-  );
+  // One Agent turn (instruction → generation → playback + persistence), shared by
+  // the text and mood entry points below. See src/hooks/useAgentRunner.ts.
+  const runTurn = useAgentRunner({
+    strudel,
+    sessions,
+    currentCode,
+    abortControllersRef,
+    currentIdRef,
+    setLoadingSessions,
+    setCommitSuggestions,
+    setRollbackPrefill,
+    makeProgressHandler: makeAgentProgressHandler,
+  });
 
   const handleInstruction = useCallback(
-    async (text: string, options?: {
+    (text: string, options?: {
       skipAddMessage?: boolean;
       initialCode?: string;
       history?: ConversationTurn[];
     }) => {
-      const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
-      if (engineUnavailableMessage) {
-        strudel.setError(engineUnavailableMessage);
-        return;
-      }
-
-      setCommitSuggestions(null); // reset on each new instruction
-      setRollbackPrefill(''); // message sent — rollback prefill content consumed
-
-      // Capture history snapshot before addUserMessage mutates session state,
-      // so the current turn is not included as a history item sent to the LLM.
-      const history: ConversationTurn[] = options?.history ??
-        conversationHistoryFromMessages(sessions.currentSession?.messages ?? []);
-
-      if (!options?.skipAddMessage) {
-        sessions.addUserMessage(text);
-      }
-      const sessionId = sessions.currentId;
-      if (!sessionId) return;
-      setLoadingSessions((prev) => new Set(prev).add(sessionId));
-
-      // In demo mode, if the sent text matches the current step's prompt, advance to the next step
+      // In demo mode, if the sent text matches the current step's prompt, advance to the next step.
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
       }
-
-      const controller = new AbortController();
-      abortControllersRef.current.set(sessionId, controller);
-      const signal = controller.signal;
-      const _analyticsStart = Date.now();
-      const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
-
-      try {
-        const onProgress = makeAgentProgressHandler(sessionId);
-
-        const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal, history);
-        if (signal.aborted) {
-          if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
-          }
-          trackAgentAbort();
-          return;
-        }
-        trackAgentRun({
-          provider: _analyticsProvider,
-          model: _analyticsModel,
-          iterations: result.iterations,
-          durationMs: Date.now() - _analyticsStart,
-          committed: result.committed,
-        });
-        if (result.tokenUsage) {
-          sessions.updateTokenStats({
-            ...result.tokenUsage,
-            modelId: _analyticsModel,
-          }, sessionId);
-        }
-        if (result.code) {
-          if (sessionId === currentIdRef.current) {
-            const success = await strudel.play(result.code);
-            if (success) {
-              const nextSteps = parseNextSteps(result.explanation);
-              if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
-              sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-              sessions.setCurrentCode(result.code, sessionId);
-            } else {
-              sessions.addAssistantMessage(
-                zh ? `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}` : `Agent generated code but it failed to run: ${strudel.error || 'unknown error'}`,
-                result.code,
-                sessionId
-              );
-            }
-          } else {
-            // Background session completed; only save the result, do not update the editor or play audio
-            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-            sessions.setCurrentCode(result.code, sessionId);
-          }
-        } else {
-          sessions.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
-        }
-      } catch (e: unknown) {
-        if (isUserAbort(e, signal)) {
-          if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
-          }
-          trackAgentAbort();
-        } else {
-          reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
-        }
-      } finally {
-        if (abortControllersRef.current.get(sessionId) === controller) {
-          cleanupLoadingSession(sessionId);
-        }
-      }
+      return runTurn({
+        text,
+        includeHistory: true,
+        skipAddMessage: options?.skipAddMessage,
+        initialCode: options?.initialCode,
+        suppliedHistory: options?.history,
+      });
     },
-    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]
+    [runTurn, activeSet, demoStep]
   );
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
@@ -516,6 +415,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   );
 
   const handleMoodInstruction = useCallback(async () => {
+    // Pre-flight engine check before the (potentially slow) mood fetch, so we don't
+    // fire the mood request when audio is unavailable. runTurn re-checks internally.
     const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
     if (engineUnavailableMessage) {
       strudel.setError(engineUnavailableMessage);
@@ -528,77 +429,14 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       moodContext = await fetchMoodContext();
       setIsMoodLoading(false);
     }
-    const instruction = '根据我的心情生成音乐';
 
-    setCommitSuggestions(null);
-    setRollbackPrefill(''); // message sent — rollback prefill content consumed
-
-    sessions.addUserMessage(instruction);
-    const sessionId = sessions.currentId;
-    if (!sessionId) return;
-    setLoadingSessions((prev) => new Set(prev).add(sessionId));
-
-    abortControllersRef.current.set(sessionId, new AbortController());
-    const signal = abortControllersRef.current.get(sessionId)!.signal;
-    const _analyticsStart = Date.now();
-    const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
-
-    try {
-      const onProgress = makeAgentProgressHandler(sessionId);
-
-      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
-      if (signal.aborted) {
-        sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
-        trackAgentAbort();
-        return;
-      }
-      trackAgentRun({
-        provider: _analyticsProvider,
-        model: _analyticsModel,
-        iterations: result.iterations,
-        durationMs: Date.now() - _analyticsStart,
-        committed: result.committed,
-      });
-      if (result.tokenUsage) {
-        sessions.updateTokenStats({
-          ...result.tokenUsage,
-          modelId: _analyticsModel,
-        }, sessionId);
-      }
-      if (result.code) {
-        if (sessionId === currentIdRef.current) {
-          const success = await strudel.play(result.code);
-          if (success) {
-            const nextSteps = parseNextSteps(result.explanation);
-            if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
-            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-            sessions.setCurrentCode(result.code, sessionId);
-          } else {
-            sessions.addAssistantMessage(
-              zh ? `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}` : `Agent generated code but it failed to run: ${strudel.error || 'unknown error'}`,
-              result.code,
-              sessionId
-            );
-          }
-        } else {
-          // Background session completed; only save the result, do not update the editor or play audio
-          sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-          sessions.setCurrentCode(result.code, sessionId);
-        }
-      } else {
-        sessions.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
-      }
-    } catch (e: unknown) {
-      if (isUserAbort(e, signal)) {
-        sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
-        trackAgentAbort();
-      } else {
-        reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
-      }
-    } finally {
-      cleanupLoadingSession(sessionId);
-    }
-  }, [strudel, sessions, currentCode, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]);
+    // Mood generation is a one-off creation: deliberately no conversation history.
+    await runTurn({
+      text: '根据我的心情生成音乐',
+      moodContext: moodContext ?? undefined,
+      includeHistory: false,
+    });
+  }, [strudel, runTurn]);
 
   const handleNewSession = useCallback(() => {
     strudel.stop();
