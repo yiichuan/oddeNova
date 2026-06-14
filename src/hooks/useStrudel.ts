@@ -134,6 +134,11 @@ export function useStrudel() {
     exportWav,
     resetExportState,
     scrollCodeToBottom: () => strudelService.scrollCodeToBottom(),
+    scrollCodeToPosition: (pos: number) => strudelService.scrollCodeToPosition(pos),
+    scrollCodeToBottomEased: (ms: number) => strudelService.scrollCodeToBottomEased(ms),
+    // [video] Frame-driven scroll for Remotion rendering (VIDEO_SCROLL_PROGRESS); unused in normal app flow
+    scrollCodeToBottomProgress: (p: number) => strudelService.scrollCodeToBottomProgress(p),
+    triggerFadeIn: () => strudelService.triggerFadeIn(),
     // [video] Allow App.tsx's postMessage handler to inject Remotion frame time into the Strudel scheduler, driving the highlight box
     setVideoTime: (t: number) => strudelService.setVideoTime(t),
   };

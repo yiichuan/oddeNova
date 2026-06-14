@@ -64,7 +64,8 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
     timestamp: Date.now(),
   };
   const messages = [...before, newMsg];
-  const title = before.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+  const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
+  const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
   return { ...s, messages, title };
 }
 
@@ -152,7 +153,8 @@ export function useSessions() {
           },
         ];
         // Auto-rename on first user message.
-        const title = s.messages.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+        const shouldDeriveTitle = !s.messages.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
+        const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
         return { ...s, messages, title };
       });
     },
@@ -270,7 +272,9 @@ export function useSessions() {
       // up another untouched "New Session".
       if (cur && cur.messages.length === 0 && !cur.code) {
         if (id && currentId !== id) setCurrentId(id);
-        return prev;
+        const refreshed = { ...cur, title: t('newSessionTitle'), updatedAt: Date.now() };
+        dbPutSession(refreshed);
+        return prev.map((s) => s.id === cur.id ? refreshed : s);
       }
       // If there's already an empty session in the list, switch to it instead
       // of creating a duplicate. This handles the case where the user starts
@@ -279,7 +283,7 @@ export function useSessions() {
       if (existingEmpty) {
         setCurrentId(existingEmpty.id);
         // Refresh createdAt so the reused empty session sorts to the top.
-        const refreshed = { ...existingEmpty, createdAt: Date.now(), updatedAt: Date.now() };
+        const refreshed = { ...existingEmpty, title: t('newSessionTitle'), createdAt: Date.now(), updatedAt: Date.now() };
         dbPutSession(refreshed);
         return prev.map((s) => s.id === existingEmpty.id ? refreshed : s);
       }
@@ -293,6 +297,15 @@ export function useSessions() {
   const switchTo = useCallback((id: string) => {
     setCurrentId(id);
   }, []);
+
+  const renameSession = useCallback(
+    (sessionId: string, title: string): void => {
+      const nextTitle = title.trim();
+      if (!nextTitle) return;
+      updateSession(sessionId, (s) => ({ ...s, title: nextTitle.slice(0, 60) }));
+    },
+    [updateSession]
+  );
 
   const deleteSession = useCallback(
     (id: string) => {
@@ -384,6 +397,7 @@ export function useSessions() {
     setCurrentCode,
     newSession,
     switchTo,
+    renameSession,
     deleteSession,
     importSession,
     branchFromMessage,

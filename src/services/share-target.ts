@@ -20,8 +20,34 @@ function legacyCopy(text: string): boolean {
   }
 }
 
+function prefersNativeShare(): boolean {
+  return typeof globalThis.matchMedia === 'function' && globalThis.matchMedia('(pointer: coarse)').matches;
+}
+
+async function nativeShare(url: string): Promise<boolean> {
+  const nav = globalThis.navigator;
+  if (!nav?.share) return false;
+  try {
+    await nav.share({ url });
+    return true;
+  } catch {
+    // Fall through to copy/prompt fallbacks when native sharing is unavailable
+    // for the current browser context.
+    return false;
+  }
+}
+
 export async function shareUrl(url: string): Promise<ShareTargetResult> {
   const nav = globalThis.navigator;
+  const shouldPreferNativeShare = prefersNativeShare();
+  let triedNativeShare = false;
+
+  if (shouldPreferNativeShare) {
+    triedNativeShare = true;
+    if (await nativeShare(url)) {
+      return 'shared';
+    }
+  }
 
   if (nav?.clipboard?.writeText) {
     try {
@@ -34,8 +60,7 @@ export async function shareUrl(url: string): Promise<ShareTargetResult> {
 
   if (legacyCopy(url)) return 'copied';
 
-  if (nav?.share) {
-    await nav.share({ url });
+  if (!triedNativeShare && await nativeShare(url)) {
     return 'shared';
   }
 
