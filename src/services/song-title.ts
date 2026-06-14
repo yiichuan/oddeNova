@@ -13,6 +13,7 @@ const MAX_SESSION_TITLE_CHARS = 120;
 const MAX_CONTEXT_MESSAGES = 6;
 const MAX_CODE_CHARS = 4000;
 const MAX_MESSAGE_CHARS = 500;
+const TITLE_COMPLETION_MAX_TOKENS = 2000;
 
 function stripWrappingQuotes(value: string): string {
   return value
@@ -55,10 +56,12 @@ function summarizeMessages(messages: GenerateSongTitleParams['messages']): strin
 function buildSystemPrompt(locale: GenerateSongTitleParams['locale']): string {
   const language = locale === 'zh-CN' ? 'Chinese' : 'English';
   return [
-    'You generate concise song titles for exported music files.',
-    `Return exactly one ${language} song title.`,
+    'You are a celebrated album-naming poet, hired to give exported tracks titles that feel like they belong on a real record sleeve.',
+    `Read the session context and code below, then return exactly one ${language} song name that captures a specific mood, image, or moment from it.`,
+    'Favor concrete imagery, unexpected word pairings, or a vivid fragment over generic mood words such as "Midnight", "Dream", "Journey", "Echo", "Drift", or "Neon".',
+    'Avoid naming the genre, BPM, or instruments literally; suggest them instead.',
     'Do not include explanations, quotes, numbering, punctuation-only decoration, or a file extension.',
-    'Keep it short, evocative, and suitable as a filename.',
+    'Keep it evocative, surprising, and suitable as a filename.'
   ].join(' ');
 }
 
@@ -80,7 +83,7 @@ function buildUserPrompt(params: GenerateSongTitleParams): string {
 export async function generateSongTitle(params: GenerateSongTitleParams): Promise<string> {
   const raw = await chatOnce(buildSystemPrompt(params.locale), buildUserPrompt(params), {
     temperature: 0.8,
-    maxTokens: 40,
+    maxTokens: TITLE_COMPLETION_MAX_TOKENS,
   });
 
   return sanitizeSongTitle(raw);

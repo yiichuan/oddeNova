@@ -65,7 +65,23 @@ describe('generateSongTitle', () => {
     expect(user).toContain('夜晚 lo-fi');
     expect(user).toContain('setcps(0.5)');
     expect(user).toContain('做一个夜晚感的 lofi');
-    expect(opts).toEqual({ temperature: 0.8, maxTokens: 40 });
+    expect(opts).toEqual({ temperature: 0.8, maxTokens: 2000 });
+  });
+
+  it('reserves enough completion tokens for reasoning models to still emit a title', async () => {
+    mockedChatOnce.mockResolvedValue('反叛引擎');
+
+    await generateSongTitle({
+      code: '// CLASSIC ROCK | BPM: 130\nsetcps(0.5417)\nstack(s("bd ~ bd [bd bd]"), note("<[e3,b3] [c3,g3]>/4").s("supersaw"))',
+      sessionTitle: 'A rebellious, fist-pumping classic rock anthem',
+      messages: [
+        { role: 'assistant', content: 'Built a full classic rock arrangement in E minor at 130 BPM.', timestamp: 1 },
+      ],
+      locale: 'zh-CN',
+    });
+
+    const opts = mockedChatOnce.mock.calls[0][2];
+    expect(opts?.maxTokens).toBeGreaterThanOrEqual(200);
   });
 
   it('uses only the latest 6 messages', async () => {

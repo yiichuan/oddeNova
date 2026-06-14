@@ -134,7 +134,7 @@ describe('TopActionBar export title generation', () => {
     const button = getButton(container, 'Generate song title');
 
     expect(filename).toBeTruthy();
-    expect(button.className).toContain('w-8');
+    expect(button.className).toContain('w-7');
   });
 
   it('click fills filename with generated title and calls onGenerateTitle with export context', async () => {

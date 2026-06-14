@@ -337,9 +337,9 @@ function ExportPopover({
       ) : (
         <>
           <Field label={t('filename')}>
-            <div className="flex w-full gap-1.5">
+            <div className="relative w-full">
               <input type="text" value={filename} onChange={(e) => handleFilenameChange(e.target.value)} placeholder={filenamePlaceholder}
-                className="flex-1 min-w-0 bg-black border border-[#323232] px-2 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/30 placeholder:text-white/30"
+                className="w-full bg-black border border-[#323232] px-2 py-1.5 pr-9 text-[12px] text-white/90 outline-none focus:border-white/30 placeholder:text-white/30"
                 style={{ fontFamily: "'ABeeZee', monospace" }} />
               <button
                 type="button"
@@ -347,7 +347,7 @@ function ExportPopover({
                 disabled={generateTitleState === 'loading'}
                 aria-label={generateTitleLabel}
                 title={generateTitleLabel}
-                className={`w-8 h-8 shrink-0 flex items-center justify-center bg-black border border-[#323232] text-white/70 hover:text-white hover:border-white/30 disabled:opacity-45 disabled:cursor-not-allowed ${generateTitleState === 'loading' ? 'animate-pulse' : ''}`}
+                className={`absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-white/70 hover:text-white disabled:opacity-45 disabled:cursor-not-allowed ${generateTitleState === 'loading' ? 'animate-pulse' : ''}`}
               >
                 <SparkleIcon size={16} />
               </button>
