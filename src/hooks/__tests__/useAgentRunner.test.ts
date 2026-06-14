@@ -93,11 +93,12 @@ describe('runAgentTurn', () => {
     expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1');
   });
 
-  it('does NOT persist code when playback fails', async () => {
+  it('persists the code even when playback fails — latest code is always the session truth', async () => {
     const deps = makeDeps({ play: vi.fn(async () => false), getStrudelError: () => 'bad node' });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.setCurrentCode).not.toHaveBeenCalled();
-    // the failed-playback message still carries the code so the editor can show it
+    // always persist the newest code, regardless of whether it ran
+    expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
+    // and still surface the runtime error so the user knows it didn't play
     const call = (deps.addAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[1]).toBe('note("c3")');
     expect(String(call[0])).toContain('bad node');

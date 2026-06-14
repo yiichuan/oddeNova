@@ -5,6 +5,7 @@ import type { useSessions, TokenStats } from './useSessions';
 import { runAgent } from '../services/llm';
 import type { ConversationTurn, ProgressEvent } from '../services/llm';
 import { conversationHistoryFromMessages } from '../lib/conversation-history';
+import { commitPlayback } from '../lib/playback-commit';
 import { parseNextSteps } from '../services/suggestions';
 import { getEngineUnavailableMessage } from '../lib/engine-status';
 import { getActiveModelConfig } from '../services/llm-config';
@@ -150,12 +151,12 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
 
     if (result.code) {
       if (deps.isCurrentSession(sessionId)) {
-        const success = await deps.play(result.code);
+        // Always persist the newest code as the session truth, run or not.
+        const success = await commitPlayback(result.code, sessionId, deps);
         if (success) {
           const nextSteps = parseNextSteps(result.explanation);
           if (nextSteps.length > 0) deps.setCommitSuggestions(nextSteps);
           deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-          deps.setCurrentCode(result.code, sessionId);
         } else {
           deps.addAssistantMessage(
             zh

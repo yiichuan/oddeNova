@@ -12,6 +12,7 @@ import { useKeyboardHeight } from './hooks/useKeyboardHeight';
 import { fetchMoodContext } from './services/airjelly';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore } from './lib/conversation-history';
+import { commitPlayback } from './lib/playback-commit';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
@@ -354,15 +355,21 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
-      // Roll back strudel state to before this message was sent
+      // Roll back to the rollback target and commit it as the session truth.
+      // A non-empty target plays + persists via commitPlayback; an empty one clears.
       if (previousCode) {
-        await strudel.play(previousCode);
+        if (sessions.currentId) {
+          await commitPlayback(previousCode, sessions.currentId, {
+            play: strudel.play,
+            setCurrentCode: sessions.setCurrentCode,
+          });
+        } else {
+          await strudel.play(previousCode);
+        }
       } else {
         strudel.stop();
         strudel.setCode('');
-      }
-      if (sessions.currentId) {
-        sessions.setCurrentCode(previousCode, sessions.currentId);
+        if (sessions.currentId) sessions.setCurrentCode('', sessions.currentId);
       }
 
       return { target, previousCode };

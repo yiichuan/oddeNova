@@ -20,6 +20,10 @@ _Avoid_: pattern、track、composition
 Score 里的一个声部——stack 中的一个顶层条目。agent 通过增删替换 Layer 来改音乐。
 _Avoid_: voice、part、channel、stem
 
+**Playback commit**:
+让一段代码成为某条 [Session] 的"真相":先 play 它,再无条件写入存档(`setCurrentCode`)——不论 play 成没成功,落库的始终是最新代码,使 strudel 的"在播代码"与 session 的"存档代码"不发散。[Agent turn] 与 rewind 都经由 `commitPlayback` 提交。
+_Avoid_: save、sync、persist(单指落库那一步)
+
 **Conversation history**:
 传给 agent 作为上下文的历史回合快照,在 [Agent turn] 写入新用户消息之前截取。文本指令携带它;"根据心情生成"刻意不带(独立的一次性创作)。
 _Avoid_: context、memory、transcript
