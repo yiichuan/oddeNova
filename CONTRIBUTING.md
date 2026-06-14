@@ -37,7 +37,7 @@ Open `http://localhost:5173`. On first launch, select a provider and enter your 
 - Never call `new AudioContext()` directly in components or services.
 - Always use `getAudioContext()` / `setAudioContext()` from `superdough`.
 
-Full coding conventions: [`.github/copilot-instructions.md`](.github/copilot-instructions.md)
+Full coding conventions: [`CLAUDE.md`](CLAUDE.md)
 
 ## Running Checks
 
