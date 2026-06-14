@@ -7,8 +7,6 @@ import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
-import { useIsMobile } from './hooks/useIsMobile';
-import { useKeyboardHeight } from './hooks/useKeyboardHeight';
 import { fetchMoodContext } from './services/airjelly';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore } from './lib/conversation-history';
@@ -22,20 +20,14 @@ import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
+import { useVideoDemo } from './hooks/useVideoDemo';
+import { useLayout } from './hooks/useLayout';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
-
-const SIDEBAR_RATIO_DEFAULT = 0.22;
-const SIDEBAR_RATIO_MIN = 0.15;
-const SIDEBAR_RATIO_MAX = 0.45;
-
-const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
-const VIZ_RATIO_MIN = 0.15;
-const VIZ_RATIO_MAX = 0.45;
 
 export default function App() {
   const strudel = useStrudel();
@@ -49,153 +41,39 @@ export default function App() {
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
-  // [video] Simulated conversation list pushed frame-by-frame by Remotion via VIDEO_DEMO_MESSAGES; when null, App displays real messages normally
-  const [videoDemoMsgs, setVideoDemoMsgs] = useState<import('./hooks/useChat').ChatMessage[] | null>(null);
-  // [video] Remotion emits scrollBottom:true on scene transitions to scroll ConversationView to the bottom
-  const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
-  // [video] Title override — only active when isVideoMode; no effect on normal app usage
-  const [videoTitle, setVideoTitle] = useState<string | null>(null);
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
-  // [video] Detects whether running inside a Remotion iframe; always false in normal browser access, has no effect on any logic
-  const [isVideoMode, setIsVideoMode] = useState(() => {
-    try { return window.self !== window.top; } catch { return true; }
-  });
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
   const strudelRef = useRef(strudel);
   useEffect(() => { strudelRef.current = strudel; }, [strudel]);
+  const { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle } = useVideoDemo(strudelRef);
 
-  // [video] Receive VIDEO_* control messages pushed per-frame by Remotion MyVideo.tsx to drive the in-video App state
-  // Normal users never send these messages; the handler is completely silent during regular browser access
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type === 'VIDEO_DEMO_MESSAGES') {
-        setVideoDemoMsgs(e.data.messages.length > 0 ? e.data.messages : null);
-        setIsVideoMode(true);
-        if (e.data.scrollBottom) setVideoConvScrollBottom(true);
-        if (e.data.sessionTitle) setVideoTitle(e.data.sessionTitle);
-      }
-if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
-        strudelRef.current.setCode(e.data.code);
-        if (e.data.fadeIn) strudelRef.current.triggerFadeIn();
-        if (e.data.scrollToBottom) setTimeout(() => strudelRef.current.scrollCodeToBottom(), 300);
-      }
-      if (e.data?.type === 'VIDEO_SET_SCROLL_POSITION' && typeof e.data.position === 'number') {
-        strudelRef.current.scrollCodeToPosition(e.data.position);
-      }
-      if (e.data?.type === 'VIDEO_SCROLL_EASED' && typeof e.data.durationMs === 'number') {
-        strudelRef.current.scrollCodeToBottomEased(e.data.durationMs);
-      }
-      // [video] Frame-driven scroll, only sent by Remotion MyVideo.tsx: eased progress is
-      // pushed per frame so the scroll speed follows video time (wall-clock easing gets
-      // compressed in render); normal users never trigger this
-      if (e.data?.type === 'VIDEO_SCROLL_PROGRESS' && typeof e.data.progress === 'number') {
-        strudelRef.current.scrollCodeToBottomProgress(e.data.progress);
-      }
-      if (e.data?.type === 'VIDEO_STOP') {
-        strudelRef.current.stop();
-      }
-      if (e.data?.type === 'VIDEO_TIME' && typeof e.data.time === 'number') {
-        strudelRef.current.setVideoTime(e.data.time);
-      }
-      if (e.data?.type === 'VIDEO_AUDIO_SIM') {
-        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[title="galaxy visualizer"]');
-        galaxy?.contentWindow?.postMessage({ type: 'AUDIO_SIM', low: e.data.low, mid: e.data.mid, high: e.data.high, chaos: e.data.chaos }, '*');
-      }
-      if (e.data?.type === 'VIDEO_GALAXY_TIME' && typeof e.data.time === 'number') {
-        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[title="galaxy visualizer"]');
-        galaxy?.contentWindow?.postMessage({ type: 'GALAXY_TIME', time: e.data.time }, '*');
-      }
-      if (e.data?.type === 'VIDEO_SET_TITLE' && typeof e.data.title === 'string') {
-        setVideoTitle(e.data.title);
-      }
-      if (e.data?.type === 'VIDEO_PLAY') {
-        // Set code in the same tick first, preventing the session init effect from clearing code between messages
-        if (typeof e.data.code === 'string') {
-          strudelRef.current.setCode(e.data.code);
-        }
-        // Call play() → evaluate() directly, identical to the agent's code-update path, for seamless playback
-        strudelRef.current.play();
-        // The ._scope() widget is asynchronously added to the CodeMirror DOM by evaluate(),
-        // using scrollDOM directly avoids CSS selector dependency; 2000ms fallback guards against first-load soundfont delay
-        // skipScroll: scenes whose scroll is driven per-frame via VIDEO_SCROLL_PROGRESS
-        // opt out, so these wall-clock snaps don't fight the eased animation
-        if (!e.data.skipScroll) {
-          const scrollBottom = () => strudelRef.current.scrollCodeToBottom();
-          setTimeout(scrollBottom, 500);
-          setTimeout(scrollBottom, 2000);
-        }
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
-
-  const isMobile = useIsMobile();
-  const keyboardHeight = useKeyboardHeight();
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [mobileFocusedArea, setMobileFocusedArea] = useState<'chat' | 'code' | null>(null);
-  const shouldLiftBottomBar = mobileFocusedArea === 'chat' && keyboardHeight > 0;
-  const mobileDrawerHeight = !drawerOpen
-    ? 0
-    : mobileFocusedArea === 'code'
-      ? '50dvh'
-      : '33dvh';
-  useEffect(() => {
-    if (!isMobile) return;
-    document.body.style.overflow = drawerOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [drawerOpen, isMobile]);
-
-  useEffect(() => {
-    if (!isMobile || keyboardHeight > 0) return;
-    setMobileFocusedArea(null);
-  }, [isMobile, keyboardHeight]);
-
-  const handleChatFocusChange = useCallback((focused: boolean) => {
-    setMobileFocusedArea((current) => {
-      if (focused) return 'chat';
-      return current === 'chat' ? null : current;
-    });
-  }, []);
-
-  const handleCodeFocusChange = useCallback((focused: boolean) => {
-    setMobileFocusedArea((current) => {
-      if (focused) return 'code';
-      return current === 'code' ? null : current;
-    });
-  }, []);
-
-  const [sidebarWidth, setSidebarWidth] = useState(() => window.innerWidth * SIDEBAR_RATIO_DEFAULT);
-  const [vizHeight, setVizHeight] = useState(() => window.innerHeight * VIZ_RATIO_DEFAULT);
-  const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
-  const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
-  const mainRef = useRef<HTMLDivElement>(null);
-  const topActionsRef = useRef<HTMLDivElement>(null);
+  const {
+    isMobile,
+    keyboardHeight,
+    sidebarWidth,
+    vizHeight,
+    isDragging,
+    mainRef,
+    topActionsRef,
+    hDragHandlers,
+    vDragHandlers,
+    historyOpen,
+    setHistoryOpen,
+    drawerOpen,
+    setDrawerOpen,
+    mobileFocusedArea,
+    shouldLiftBottomBar,
+    mobileDrawerHeight,
+    handleChatFocusChange,
+    handleCodeFocusChange,
+  } = useLayout();
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
-
-  useEffect(() => {
-    if (mainRef.current) {
-      setVizHeight(mainRef.current.offsetHeight * VIZ_RATIO_DEFAULT);
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleResize = () => {
-      const h = mainRef.current?.offsetHeight ?? window.innerHeight;
-      setSidebarWidth(w => Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, w)));
-      setVizHeight(v => Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, v)));
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   useEffect(() => {
     const prev = prevLoadingRef.current;
@@ -716,21 +594,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
       {/* Horizontal resize handle */}
       <div
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          hDragRef.current = { startX: e.clientX, startWidth: sidebarWidth };
-          setIsDragging('h');
-        }}
-        onPointerMove={(e) => {
-          if (!hDragRef.current) return;
-          const delta = e.clientX - hDragRef.current.startX;
-          setSidebarWidth(Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, hDragRef.current.startWidth + delta)));
-        }}
-        onPointerUp={(e) => {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-          hDragRef.current = null;
-          setIsDragging(null);
-        }}
+        {...hDragHandlers}
         className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-[80px] pb-3"
         style={{ cursor: 'col-resize' }}
       >
@@ -760,22 +624,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
         {/* Vertical resize handle */}
         <div
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            vDragRef.current = { startY: e.clientY, startHeight: vizHeight };
-            setIsDragging('v');
-          }}
-          onPointerMove={(e) => {
-            if (!vDragRef.current) return;
-            const delta = e.clientY - vDragRef.current.startY;
-            const h = mainRef.current?.offsetHeight ?? window.innerHeight;
-            setVizHeight(Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, vDragRef.current.startHeight - delta)));
-          }}
-          onPointerUp={(e) => {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-            vDragRef.current = null;
-            setIsDragging(null);
-          }}
+          {...vDragHandlers}
           className="h-[10px] shrink-0 group flex items-center justify-center"
           style={{ cursor: 'row-resize' }}
         >
