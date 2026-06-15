@@ -8,6 +8,7 @@
 // Plus melodic samples listed in the agent system prompt.
 
 export const DIRT_SAMPLES: readonly string[] = [
+  '808', '909',
   '808bd', '808cy', '808hc', '808ht', '808lc', '808lt', '808mc', '808mt', '808oh', '808sd',
   'ab', 'ade', 'ades2', 'ades3', 'ades4', 'alex', 'alphabet', 'amencutup', 'armora', 'arp', 'arpy',
   'auto', 'baa', 'baa2', 'bass', 'bass0', 'bass1', 'bass2', 'bass3', 'bassdm', 'bassfoo', 'battles',

@@ -11,6 +11,10 @@ describe('findUnknownSamples', () => {
     expect(result).toEqual(['superpad', 'violin']);
   });
 
+  it('808/909 鼓机文件夹名合法', () => {
+    expect(findUnknownSamples('s("808 909")')).toEqual([]);
+  });
+
   it('GM soundfont 名合法', () => {
     expect(findUnknownSamples('s("gm_acoustic_grand_piano")')).toEqual([]);
   });
