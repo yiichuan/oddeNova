@@ -121,4 +121,14 @@ stack(
     const result = await setCode({ code: '   \n  ' }, ctx);
     expect(result.ok).toBe(false);
   });
+
+  it('把 MIDI 标准 GM 名归一化为 strudel 规范名', async () => {
+    const ctx = makeCtx('');
+    const result = await setCode(
+      { code: 'note("c4 e4 g4").s("gm_acoustic_grand_piano")' },
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    expect(ctx.state.code).toBe('note("c4 e4 g4").s("gm_piano")');
+  });
 });
