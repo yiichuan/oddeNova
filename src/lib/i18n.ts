@@ -98,7 +98,7 @@ const S: Record<string, readonly [string, string]> = {
   viewHistory:   ['查看历史', 'View history'],
   playSong:      ['来首曲子', 'Play me a song'],
   moodTooltip:   ['根据你最近的活动感知心情生成音乐', 'Generate music based on your recent mood and activity'],
-  moodGenerate:  ['根据心情生成', 'Mood-based'],
+  moodGenerate:  ['根据心情生成音乐', 'Mood-based music'],
 
   // VoiceButton
   voiceNotSupported: ['浏览器不支持语音识别，请使用 Chrome', 'Speech recognition not supported, please use Chrome'],
