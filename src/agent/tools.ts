@@ -5,6 +5,7 @@
 
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
+import { normalizeGmSampleNames } from '../lib/sample-allowlist';
 
 export interface AgentState {
   code: string;
@@ -106,7 +107,10 @@ export const TOOLS: ToolDef[] = [
       if (typeof args.code !== 'string' || !args.code.trim()) {
         return { ok: false, error: (ctx.isZh ?? true) ? 'code 不能为空' : 'code must not be empty' };
       }
-      const code = args.code.trim();
+      // Rewrite MIDI-standard GM names (e.g. gm_acoustic_grand_piano) to strudel's
+      // canonical names (gm_piano) so the stored/validated/committed code stays
+      // portable to vanilla strudel — oddeNova's runtime aliases are only a fallback.
+      const code = normalizeGmSampleNames(args.code.trim());
       const score = parseScore(code);
       ctx.state.code = code;
       return {

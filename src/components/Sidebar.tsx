@@ -127,7 +127,7 @@ export default function Sidebar({
           title={title}
           canEdit={!!currentId && messages.length > 0}
           className="min-w-0 flex-1 text-left"
-          titleTextClassName="block text-base font-bold text-text-muted truncate"
+          titleTextClassName="block min-w-0 text-base font-bold text-text-muted truncate"
           inputClassName="min-w-0 flex-1 bg-transparent border border-border px-1 py-0.5 text-base font-bold text-text-primary outline-none focus:border-accent/60"
           onRename={(nextTitle) => {
             if (currentId) onRenameSession(currentId, nextTitle);

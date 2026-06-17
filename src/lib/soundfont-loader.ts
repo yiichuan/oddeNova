@@ -12,6 +12,7 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — gm-fonts.js is a plain JS ESM file with no type declarations
 import gm from './gm-fonts.js';
+import { GM_NAME_ALIASES } from './sample-allowlist';
 import { noteToMidi, freqToMidi, getSoundIndex } from '@strudel/core';
 import {
   getAudioContext,
@@ -204,40 +205,12 @@ export function registerSoundfonts(): void {
   }
 
   // MIDI-standard name aliases → strudel canonical names.
-  // The LLM tends to generate these from training data; register them so
-  // they work at runtime (allowlist also includes them).
+  // The LLM tends to generate these from training data; register them so they
+  // play at runtime as a fallback. The committed code itself is normalized to
+  // the canonical names (see normalizeGmSampleNames) so it stays portable to
+  // vanilla strudel. GM_NAME_ALIASES is the single source of truth.
   const gmMap = gm as Record<string, string[]>;
-  const ALIASES: Record<string, string> = {
-    // Piano
-    gm_acoustic_grand_piano: 'gm_piano',
-    gm_bright_acoustic_piano: 'gm_piano',
-    gm_electric_grand_piano: 'gm_piano',
-    gm_honky_tonk_piano: 'gm_piano',
-    gm_honky_tonk: 'gm_piano',
-    // Electric pianos
-    gm_electric_piano_1: 'gm_epiano1',
-    gm_electric_piano_2: 'gm_epiano2',
-    // Pads (MIDI uses numbered names; strudel drops the number)
-    gm_pad_1_new_age: 'gm_pad_new_age',
-    gm_pad_2_warm: 'gm_pad_warm',
-    gm_pad_3_polysynth: 'gm_pad_poly',
-    gm_pad_4_choir: 'gm_pad_choir',
-    gm_pad_5_bowed: 'gm_pad_bowed',
-    gm_pad_6_metallic: 'gm_pad_metallic',
-    gm_pad_7_halo: 'gm_pad_halo',
-    gm_pad_8_sweep: 'gm_pad_sweep',
-    // Leads (MIDI uses numbered names)
-    gm_lead_square: 'gm_lead_1_square',
-    gm_lead_sawtooth: 'gm_lead_2_sawtooth',
-    gm_lead_calliope: 'gm_lead_3_calliope',
-    gm_lead_chiff: 'gm_lead_4_chiff',
-    gm_lead_charang: 'gm_lead_5_charang',
-    gm_lead_voice: 'gm_lead_6_voice',
-    gm_lead_fifths: 'gm_lead_7_fifths',
-    gm_lead_bass_lead: 'gm_lead_8_bass_lead',
-  };
-
-  for (const [alias, canonical] of Object.entries(ALIASES)) {
+  for (const [alias, canonical] of Object.entries(GM_NAME_ALIASES)) {
     const fonts = gmMap[canonical];
     if (!fonts) continue;
     registerSound(alias, createGMSoundHandler(fonts), { type: 'soundfont', prebake: true, fonts });

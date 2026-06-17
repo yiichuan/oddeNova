@@ -36,6 +36,11 @@ type PageAudioRecoveryTarget = Pick<Window | Document, 'addEventListener' | 'rem
 type PageAudioRecoveryOptions = {
   getIsPlaying: () => boolean;
   getVisibilityState: () => DocumentVisibilityState;
+  // Whether to proactively stop playback when the page is hidden. Mobile OSes
+  // suspend the AudioContext for backgrounded tabs, so we stop cleanly and ask
+  // the user to resume; desktop keeps audio running in the background, so it
+  // should keep playing across tab switches.
+  shouldInterruptOnHidden: () => boolean;
   onPlaybackInterrupted: () => void;
   requestUserResume: () => void;
   windowTarget: PageAudioRecoveryTarget;
@@ -49,6 +54,18 @@ type PageAudioRecovery = {
 
 function isOfflineAudioContext(ctx: BaseAudioContext): boolean {
   return typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+}
+
+// Touch devices (phones, tablets) report a coarse pointer. We use this rather
+// than a viewport-width breakpoint because the goal is to detect platforms that
+// suspend the AudioContext for backgrounded tabs — that maps to the device
+// being touch-driven, not to how wide the window happens to be.
+function isTouchDevice(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(pointer: coarse)').matches
+  );
 }
 
 // Disconnect a node (optionally from a specific destination), ignoring the
@@ -91,7 +108,9 @@ export function installPageAudioRecovery(options: PageAudioRecoveryOptions): Pag
 
   const handleVisibilityChange = (): void => {
     if (options.getVisibilityState() === 'hidden') {
-      rememberResumeIntent();
+      if (options.shouldInterruptOnHidden()) {
+        rememberResumeIntent();
+      }
     } else {
       requestResumeIfVisible();
     }
@@ -164,6 +183,7 @@ export class StrudelService {
       this.pageAudioRecovery = installPageAudioRecovery({
         getIsPlaying: () => this._state.isPlaying,
         getVisibilityState: () => document.visibilityState,
+        shouldInterruptOnHidden: isTouchDevice,
         onPlaybackInterrupted: () => {
           this.editorInstance?.repl.stop();
           this.notify({ isPlaying: false });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findUnknownSamples } from '../sample-allowlist';
+import { findUnknownSamples, normalizeGmSampleNames } from '../sample-allowlist';
 
 describe('findUnknownSamples', () => {
   it('合法 sample 不报错', () => {
@@ -9,6 +9,10 @@ describe('findUnknownSamples', () => {
   it('非法 sample 返回未知名称', () => {
     const result = findUnknownSamples('s("superpad violin")');
     expect(result).toEqual(['superpad', 'violin']);
+  });
+
+  it('808/909 鼓机文件夹名合法', () => {
+    expect(findUnknownSamples('s("808 909")')).toEqual([]);
   });
 
   it('GM soundfont 名合法', () => {
@@ -58,5 +62,26 @@ describe('findUnknownSamples', () => {
   it('逗号分隔的多轨 mini-notation 不误报', () => {
     // s("bd*4, ~ sd ~ sd, hh*8") — commas are multi-track separators, not part of sample names
     expect(findUnknownSamples('s("bd*4, ~ sd ~ sd, hh*8")')).toEqual([]);
+  });
+});
+
+describe('normalizeGmSampleNames', () => {
+  it('把 MIDI 标准名改写为 strudel 规范名', () => {
+    expect(normalizeGmSampleNames('s("gm_acoustic_grand_piano")')).toBe('s("gm_piano")');
+    expect(normalizeGmSampleNames('note("c4").s("gm_pad_2_warm")')).toBe('note("c4").s("gm_pad_warm")');
+    expect(normalizeGmSampleNames('s("gm_lead_square")')).toBe('s("gm_lead_1_square")');
+  });
+
+  it('honky_tonk_piano 优先于 honky_tonk（最长匹配）', () => {
+    expect(normalizeGmSampleNames('s("gm_honky_tonk_piano")')).toBe('s("gm_piano")');
+    expect(normalizeGmSampleNames('s("gm_honky_tonk")')).toBe('s("gm_piano")');
+  });
+
+  it('已是规范名时保持不变', () => {
+    expect(normalizeGmSampleNames('s("gm_piano gm_epiano1")')).toBe('s("gm_piano gm_epiano1")');
+  });
+
+  it('改写后的代码通过 sample 校验', () => {
+    expect(findUnknownSamples(normalizeGmSampleNames('s("gm_acoustic_grand_piano")'))).toEqual([]);
   });
 });

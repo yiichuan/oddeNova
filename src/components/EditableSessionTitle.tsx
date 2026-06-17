@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../lib/i18n';
+import { EditIcon } from './icons';
 
 interface EditableSessionTitleProps {
   title: string;
@@ -88,7 +89,7 @@ export default function EditableSessionTitle({
     <button
       type="button"
       data-session-title-edit
-      className={className}
+      className={`group flex items-center gap-1.5 ${className}`}
       title={displayTitle}
       onClick={(e) => {
         e.stopPropagation();
@@ -98,6 +99,10 @@ export default function EditableSessionTitle({
       }}
     >
       <span className={titleTextClassName}>{displayTitle}</span>
+      <EditIcon
+        size={12}
+        className="shrink-0 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity"
+      />
     </button>
   );
 }

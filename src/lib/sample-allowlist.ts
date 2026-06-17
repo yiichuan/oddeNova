@@ -8,6 +8,7 @@
 // Plus melodic samples listed in the agent system prompt.
 
 export const DIRT_SAMPLES: readonly string[] = [
+  '808', '909',
   '808bd', '808cy', '808hc', '808ht', '808lc', '808lt', '808mc', '808mt', '808oh', '808sd',
   'ab', 'ade', 'ades2', 'ades3', 'ades4', 'alex', 'alphabet', 'amencutup', 'armora', 'arp', 'arpy',
   'auto', 'baa', 'baa2', 'bass', 'bass0', 'bass1', 'bass2', 'bass3', 'bassdm', 'bassfoo', 'battles',
@@ -47,6 +48,46 @@ export const DIRT_SAMPLES: readonly string[] = [
 export const MELODIC_SAMPLES: readonly string[] = [
   'piano', 'arpy', 'bass', 'moog', 'juno', 'sax', 'gtr', 'pluck', 'sitar', 'stab',
 ];
+
+// MIDI-standard GM name → strudel canonical name.
+// The LLM tends to generate the long MIDI-standard names from its training data,
+// but strudel (and strudel.cc) only know the shorter canonical names. This map is
+// the single source of truth used in three places:
+//   1. soundfont-loader.ts — registers the aliases at runtime (playback fallback).
+//   2. SAMPLE_ALLOWLIST below — so validate() accepts the alias spelling. These
+//      names are deliberately kept OUT of GM_INSTRUMENTS so the system prompt
+//      (which lists GM_INSTRUMENTS) steers the model toward the canonical names.
+//   3. normalizeGmSampleNames() — rewrites aliases to canonical names so the
+//      committed code is portable to vanilla strudel, not just oddeNova.
+export const GM_NAME_ALIASES: Readonly<Record<string, string>> = {
+  // Piano
+  gm_acoustic_grand_piano: 'gm_piano',
+  gm_bright_acoustic_piano: 'gm_piano',
+  gm_electric_grand_piano: 'gm_piano',
+  gm_honky_tonk_piano: 'gm_piano',
+  gm_honky_tonk: 'gm_piano',
+  // Electric pianos
+  gm_electric_piano_1: 'gm_epiano1',
+  gm_electric_piano_2: 'gm_epiano2',
+  // Pads (MIDI uses numbered names; strudel drops the number)
+  gm_pad_1_new_age: 'gm_pad_new_age',
+  gm_pad_2_warm: 'gm_pad_warm',
+  gm_pad_3_polysynth: 'gm_pad_poly',
+  gm_pad_4_choir: 'gm_pad_choir',
+  gm_pad_5_bowed: 'gm_pad_bowed',
+  gm_pad_6_metallic: 'gm_pad_metallic',
+  gm_pad_7_halo: 'gm_pad_halo',
+  gm_pad_8_sweep: 'gm_pad_sweep',
+  // Leads (MIDI uses numbered names)
+  gm_lead_square: 'gm_lead_1_square',
+  gm_lead_sawtooth: 'gm_lead_2_sawtooth',
+  gm_lead_calliope: 'gm_lead_3_calliope',
+  gm_lead_chiff: 'gm_lead_4_chiff',
+  gm_lead_charang: 'gm_lead_5_charang',
+  gm_lead_voice: 'gm_lead_6_voice',
+  gm_lead_fifths: 'gm_lead_7_fifths',
+  gm_lead_bass_lead: 'gm_lead_8_bass_lead',
+};
 
 // General MIDI soundfont instruments — exact names from strudel's gm.mjs.
 // Loaded via registerSoundfonts() in prebake (src/services/strudel.ts).
@@ -103,15 +144,6 @@ export const GM_INSTRUMENTS: readonly string[] = [
   // Sound Effects
   'gm_guitar_fret_noise', 'gm_breath_noise', 'gm_seashore', 'gm_bird_tweet',
   'gm_telephone', 'gm_helicopter', 'gm_applause', 'gm_gunshot',
-  // MIDI-standard name aliases (strudel uses shorter names; these are accepted
-  // so validate() doesn't reject LLM-generated code that uses standard names)
-  'gm_acoustic_grand_piano', 'gm_bright_acoustic_piano', 'gm_electric_grand_piano',
-  'gm_honky_tonk_piano', 'gm_honky_tonk',
-  'gm_electric_piano_1', 'gm_electric_piano_2',
-  'gm_pad_1_new_age', 'gm_pad_2_warm', 'gm_pad_3_polysynth', 'gm_pad_4_choir',
-  'gm_pad_5_bowed', 'gm_pad_6_metallic', 'gm_pad_7_halo', 'gm_pad_8_sweep',
-  'gm_lead_square', 'gm_lead_sawtooth', 'gm_lead_calliope', 'gm_lead_chiff',
-  'gm_lead_charang', 'gm_lead_voice', 'gm_lead_fifths', 'gm_lead_bass_lead',
 ];
 
 // Drum machine packs from tidal-drum-machines.md.
@@ -393,6 +425,10 @@ export const SAMPLE_ALLOWLIST: Set<string> = new Set([
   ...MELODIC_SAMPLES,
   ...DRUM_MACHINE_SAMPLES,
   ...GM_INSTRUMENTS,
+  // MIDI-standard alias spellings — accepted so validate() doesn't reject
+  // LLM-generated code, but intentionally NOT in GM_INSTRUMENTS so the prompt
+  // doesn't advertise them. normalizeGmSampleNames() rewrites them to canonical.
+  ...Object.keys(GM_NAME_ALIASES),
   ...VCSL_SAMPLES,
   ...MRIDANGAM_SAMPLES,
   ..._dmAliasVariants,
@@ -415,6 +451,29 @@ const VALID_BANK_SUFFIXES: ReadonlySet<string> = new Set([
   'bd', 'sd', 'hh', 'oh', 'cp', 'cb', 'cr', 'lt', 'mt', 'ht', 'rd',
   'rim', 'sh', 'tb', 'perc', 'misc', 'fx',
 ]);
+
+// Whole-word matcher for the MIDI-standard alias names, longest first so that
+// e.g. `gm_honky_tonk_piano` is tried before `gm_honky_tonk`. The names are
+// unique `gm_*` identifiers that only ever appear inside s("...") sample
+// strings, so a global word-boundary replace is safe.
+const _gmAliasRe = new RegExp(
+  '\\b(' +
+    Object.keys(GM_NAME_ALIASES)
+      .sort((a, b) => b.length - a.length)
+      .join('|') +
+    ')\\b',
+  'g',
+);
+
+/**
+ * Rewrite MIDI-standard GM names (e.g. `gm_acoustic_grand_piano`) to strudel's
+ * canonical names (`gm_piano`). oddeNova registers the alias names at runtime so
+ * they play locally, but vanilla strudel / strudel.cc only know the canonical
+ * names — normalizing here keeps the committed code portable.
+ */
+export function normalizeGmSampleNames(code: string): string {
+  return code.replace(_gmAliasRe, (m) => GM_NAME_ALIASES[m] ?? m);
+}
 
 export function findUnknownSamples(code: string): string[] {
   const unknown: string[] = [];

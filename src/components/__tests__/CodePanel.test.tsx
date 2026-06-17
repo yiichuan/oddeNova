@@ -32,6 +32,7 @@ function renderCodePanel(props: Partial<Parameters<typeof CodePanel>[0]> = {}) {
     onStop: vi.fn(),
     exportState: { status: 'idle', progress: 0 },
     onExport: vi.fn().mockResolvedValue(true),
+    onGenerateTitle: vi.fn().mockResolvedValue('Generated title'),
     onResetExportState: vi.fn(),
     session: null,
     messages: [],
