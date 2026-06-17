@@ -15,8 +15,9 @@ describe('buildChatSystemPrompt', () => {
   it('builds Chinese chat instructions with the compose marker contract', () => {
     const prompt = buildChatSystemPrompt('今晚月亮好亮');
 
-    expect(prompt).toContain('你是 oddeNova');
-    expect(prompt).toContain('不要生成 Strudel 代码');
+    expect(prompt).toContain('## oddeNova 的存在方式');
+    expect(prompt).toContain('纯聊天时，你只陪伴、倾听、回应和提炼');
+    expect(prompt).toContain('真正创作只在用户主动切到创作模式');
     expect(prompt).toContain('[[谱曲: ');
     expect(prompt).toContain('跟随用户输入的语言');
   });
@@ -24,8 +25,9 @@ describe('buildChatSystemPrompt', () => {
   it('builds English chat instructions with the compose marker contract', () => {
     const prompt = buildChatSystemPrompt('tell me about yourself');
 
-    expect(prompt).toContain('You are oddeNova');
-    expect(prompt).toContain('Do not generate Strudel code');
+    expect(prompt).toContain('## oddeNova Way of Being');
+    expect(prompt).toContain('In pure chat, only accompany, listen, respond, and distill');
+    expect(prompt).toContain('Actual composition only happens after the user switches to create mode');
     expect(prompt).toContain('[[compose: ');
     expect(prompt).toContain('Follow the language of the user');
   });
