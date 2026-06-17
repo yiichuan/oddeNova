@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from '../prompts/system-prompt';
 import { buildChatSystemPrompt } from '../prompts/chat';
+import { buildSystemPrompt } from '../prompts/build-system-prompt';
 import {
   runAgentLoop,
   type ChatMsg,
@@ -411,12 +411,7 @@ export async function runAgent(
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
 ): Promise<RunAgentResult> {
-  const basePrompt = /[一-龥]/.test(instruction)
-    ? AGENT_SYSTEM_PROMPT_OPENAI
-    : AGENT_SYSTEM_PROMPT_EN;
-  const systemPrompt = moodContext
-    ? `${basePrompt}\n\n${moodContext}`
-    : basePrompt;
+  const systemPrompt = buildSystemPrompt({ instruction, moodContext });
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
   const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;

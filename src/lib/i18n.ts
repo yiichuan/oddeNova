@@ -57,6 +57,9 @@ const S: Record<string, readonly [string, string]> = {
   rendering:       ['渲染中…', 'Rendering…'],
   exportFailed:    ['导出失败', 'Export failed'],
   filename:        ['文件名', 'Filename'],
+  generateSongTitle:       ['自动生成曲名', 'Generate song title'],
+  generatingSongTitle:     ['曲名生成中…', 'Generating song title…'],
+  generateSongTitleFailed: ['曲名生成失败，请手动输入', 'Could not generate song title. You can enter one manually.'],
   startCycle:      ['起始 cycle', 'Start cycle'],
   endCycle:        ['结束 cycle', 'End cycle'],
   estDuration:     ['预计时长', 'Est. duration'],
@@ -101,7 +104,7 @@ const S: Record<string, readonly [string, string]> = {
   viewHistory:   ['查看历史', 'View history'],
   playSong:      ['来首曲子', 'Play me a song'],
   moodTooltip:   ['根据你最近的活动感知心情生成音乐', 'Generate music based on your recent mood and activity'],
-  moodGenerate:  ['根据心情生成', 'Mood-based'],
+  moodGenerate:  ['根据心情生成音乐', 'Mood-based music'],
 
   // VoiceButton
   voiceNotSupported: ['浏览器不支持语音识别，请使用 Chrome', 'Speech recognition not supported, please use Chrome'],

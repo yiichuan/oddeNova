@@ -18,6 +18,7 @@ describe('uploadShare', () => {
       mode: 'chat',
       code: 'note "c5"',
       messages: [],
+      locale: 'zh-CN',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/share', expect.objectContaining({
@@ -31,6 +32,7 @@ describe('uploadShare', () => {
     expect(body.title).toBe('My Session');
     expect(body.mode).toBe('chat');
     expect(body.code).toBe('note "c5"');
+    expect(body.locale).toBe('zh-CN');
     expect(typeof body.sharedAt).toBe('number');
     expect(shareId).toBe(mockShareId);
   });
@@ -42,7 +44,7 @@ describe('uploadShare', () => {
     } as Response);
 
     await expect(
-      uploadShare({ title: '', code: '', messages: [] })
+      uploadShare({ title: '', code: '', messages: [], locale: 'en' })
     ).rejects.toThrow('Share failed: 500');
   });
 });

@@ -7,15 +7,14 @@ import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
-import { useIsMobile } from './hooks/useIsMobile';
-import { useKeyboardHeight } from './hooks/useKeyboardHeight';
-import { runAgent, runChat } from './services/llm';
+import { runChat } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
+import { generateSongTitle } from './services/song-title';
 import type { AgentMode } from './hooks/useChat';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
 import { extractChatComposeMarker } from './lib/chat-compose-marker';
-import { parseNextSteps, stripNextSteps } from './services/suggestions';
+import { commitPlayback } from './lib/playback-commit';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
@@ -24,21 +23,16 @@ import { HistoryIcon, PlusIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useReplay } from './hooks/useReplay';
+import { useAgentRunner, isUserAbort } from './hooks/useAgentRunner';
+import { useVideoDemo } from './hooks/useVideoDemo';
+import { useLayout } from './hooks/useLayout';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
-import { trackAgentRun, trackAgentError, trackAgentAbort } from './lib/analytics';
+import { trackAgentError, trackAgentAbort } from './lib/analytics';
 import { zh, t, randomChatGreeting } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
-
-const SIDEBAR_RATIO_DEFAULT = 0.22;
-const SIDEBAR_RATIO_MIN = 0.15;
-const SIDEBAR_RATIO_MAX = 0.45;
-
-const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
-const VIZ_RATIO_MIN = 0.15;
-const VIZ_RATIO_MAX = 0.45;
 
 export default function App() {
   const strudel = useStrudel();
@@ -52,129 +46,39 @@ export default function App() {
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
-  // [video] Simulated conversation list pushed frame-by-frame by Remotion via VIDEO_DEMO_MESSAGES; when null, App displays real messages normally
-  const [videoDemoMsgs, setVideoDemoMsgs] = useState<import('./hooks/useChat').ChatMessage[] | null>(null);
-  // [video] Remotion emits scrollBottom:true on scene transitions to scroll ConversationView to the bottom
-  const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
-  // [video] Detects whether running inside a Remotion iframe; always false in normal browser access, has no effect on any logic
-  const [isVideoMode, setIsVideoMode] = useState(() => {
-    try { return window.self !== window.top; } catch { return true; }
-  });
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
   const strudelRef = useRef(strudel);
   useEffect(() => { strudelRef.current = strudel; }, [strudel]);
+  const { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle } = useVideoDemo(strudelRef);
 
-  // [video] Receive VIDEO_* control messages pushed per-frame by Remotion MyVideo.tsx to drive the in-video App state
-  // Normal users never send these messages; the handler is completely silent during regular browser access
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type === 'VIDEO_DEMO_MESSAGES') {
-        setVideoDemoMsgs(e.data.messages.length > 0 ? e.data.messages : null);
-        setIsVideoMode(true);
-        if (e.data.scrollBottom) setVideoConvScrollBottom(true);
-      }
-if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
-        strudelRef.current.setCode(e.data.code);
-      }
-      if (e.data?.type === 'VIDEO_STOP') {
-        strudelRef.current.stop();
-      }
-      if (e.data?.type === 'VIDEO_TIME' && typeof e.data.time === 'number') {
-        strudelRef.current.setVideoTime(e.data.time);
-      }
-      if (e.data?.type === 'VIDEO_AUDIO_SIM') {
-        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[title="galaxy visualizer"]');
-        galaxy?.contentWindow?.postMessage({ type: 'AUDIO_SIM', low: e.data.low, mid: e.data.mid, high: e.data.high }, '*');
-      }
-      if (e.data?.type === 'VIDEO_GALAXY_TIME' && typeof e.data.time === 'number') {
-        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[title="galaxy visualizer"]');
-        galaxy?.contentWindow?.postMessage({ type: 'GALAXY_TIME', time: e.data.time }, '*');
-      }
-      if (e.data?.type === 'VIDEO_PLAY') {
-        // Set code in the same tick first, preventing the session init effect from clearing code between messages
-        if (typeof e.data.code === 'string') {
-          strudelRef.current.setCode(e.data.code);
-        }
-        // Call play() → evaluate() directly, identical to the agent's code-update path, for seamless playback
-        strudelRef.current.play();
-        // The ._scope() widget is asynchronously added to the CodeMirror DOM by evaluate(),
-        // using scrollDOM directly avoids CSS selector dependency; 2000ms fallback guards against first-load soundfont delay
-        const scrollBottom = () => strudelRef.current.scrollCodeToBottom();
-        setTimeout(scrollBottom, 500);
-        setTimeout(scrollBottom, 2000);
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
-
-  const isMobile = useIsMobile();
-  const keyboardHeight = useKeyboardHeight();
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [mobileFocusedArea, setMobileFocusedArea] = useState<'chat' | 'code' | null>(null);
-  const shouldLiftBottomBar = mobileFocusedArea === 'chat' && keyboardHeight > 0;
-  const mobileDrawerHeight = !drawerOpen
-    ? 0
-    : mobileFocusedArea === 'code'
-      ? '50dvh'
-      : '33dvh';
-  useEffect(() => {
-    if (!isMobile) return;
-    document.body.style.overflow = drawerOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [drawerOpen, isMobile]);
-
-  useEffect(() => {
-    if (!isMobile || keyboardHeight > 0) return;
-    setMobileFocusedArea(null);
-  }, [isMobile, keyboardHeight]);
-
-  const handleChatFocusChange = useCallback((focused: boolean) => {
-    setMobileFocusedArea((current) => {
-      if (focused) return 'chat';
-      return current === 'chat' ? null : current;
-    });
-  }, []);
-
-  const handleCodeFocusChange = useCallback((focused: boolean) => {
-    setMobileFocusedArea((current) => {
-      if (focused) return 'code';
-      return current === 'code' ? null : current;
-    });
-  }, []);
-
-  const [sidebarWidth, setSidebarWidth] = useState(() => window.innerWidth * SIDEBAR_RATIO_DEFAULT);
-  const [vizHeight, setVizHeight] = useState(() => window.innerHeight * VIZ_RATIO_DEFAULT);
-  const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
-  const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
-  const mainRef = useRef<HTMLDivElement>(null);
-  const topActionsRef = useRef<HTMLDivElement>(null);
+  const {
+    isMobile,
+    keyboardHeight,
+    sidebarWidth,
+    vizHeight,
+    isDragging,
+    mainRef,
+    topActionsRef,
+    hDragHandlers,
+    vDragHandlers,
+    historyOpen,
+    setHistoryOpen,
+    drawerOpen,
+    setDrawerOpen,
+    mobileFocusedArea,
+    shouldLiftBottomBar,
+    mobileDrawerHeight,
+    handleChatFocusChange,
+    handleCodeFocusChange,
+  } = useLayout();
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
-
-  useEffect(() => {
-    if (mainRef.current) {
-      setVizHeight(mainRef.current.offsetHeight * VIZ_RATIO_DEFAULT);
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleResize = () => {
-      const h = mainRef.current?.offsetHeight ?? window.innerHeight;
-      setSidebarWidth(w => Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, w)));
-      setVizHeight(v => Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, v)));
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   useEffect(() => {
     const prev = prevLoadingRef.current;
@@ -195,15 +99,6 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     }
     prevLoadingRef.current = curr;
   }, [loadingSessions]);
-
-  const isUserAbort = useCallback((error: unknown, signal?: AbortSignal) => {
-    if (signal?.aborted) return true;
-    if (error instanceof DOMException && error.name === 'AbortError') return true;
-    if (error instanceof Error) {
-      return /abort(ed)?/i.test(error.name) || /request was aborted\.?/i.test(error.message);
-    }
-    return false;
-  }, []);
 
   const handleStop = useCallback(() => {
     const id = sessions.currentId;
@@ -314,16 +209,19 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
     setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
   }, []);
 
-  // Surface a non-abort agent error to the user + analytics.
-  const reportAgentError = useCallback(
-    (e: unknown, sessionId: string, provider: string, model: string) => {
-      const errMsg = e instanceof Error ? e.message : t('requestFailed');
-      sessions.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
-      strudel.setError(errMsg);
-      trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
-    },
-    [sessions, strudel]
-  );
+  // One Agent turn (instruction → generation → playback + persistence), shared by
+  // the text and mood entry points below. See src/hooks/useAgentRunner.ts.
+  const runTurn = useAgentRunner({
+    strudel,
+    sessions,
+    currentCode,
+    abortControllersRef,
+    currentIdRef,
+    setLoadingSessions,
+    setCommitSuggestions,
+    setRollbackPrefill,
+    makeProgressHandler: makeAgentProgressHandler,
+  });
 
   const reportChatError = useCallback(
     (e: unknown, sessionId: string, provider: string, model: string) => {
@@ -342,14 +240,25 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       modeOverride?: AgentMode;
     }) => {
       const mode: AgentMode = options?.modeOverride ?? sessions.currentSession?.mode ?? 'create';
-      if (mode === 'create') {
-        const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
-        if (engineUnavailableMessage) {
-          strudel.setError(engineUnavailableMessage);
-          return;
-        }
+
+      // In demo mode, if the sent text matches the current step's prompt, advance to the next step.
+      if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
+        setDemoStep((s) => s + 1);
       }
 
+      // Create mode delegates the full agent turn (engine check, generation,
+      // playback, persistence, analytics) to the shared agent runner.
+      if (mode !== 'chat') {
+        return runTurn({
+          text,
+          includeHistory: true,
+          skipAddMessage: options?.skipAddMessage,
+          initialCode: options?.initialCode,
+          suppliedHistory: options?.history,
+        });
+      }
+
+      // Chat mode: no tools, no playback — just a conversational reply.
       setCommitSuggestions(null); // reset on each new instruction
       setRollbackPrefill(''); // message sent — rollback prefill content consumed
 
@@ -365,97 +274,33 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       if (!sessionId) return;
       setLoadingSessions((prev) => new Set(prev).add(sessionId));
 
-      // In demo mode, if the sent text matches the current step's prompt, advance to the next step
-      if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
-        setDemoStep((s) => s + 1);
-      }
-
       const controller = new AbortController();
       abortControllersRef.current.set(sessionId, controller);
       const signal = controller.signal;
-      const _analyticsStart = Date.now();
       const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
 
       try {
-        if (mode === 'chat') {
-          const result = await runChat(text, makeChatProgressHandler(sessionId), signal, history);
-          if (signal.aborted) {
-            if (abortControllersRef.current.get(sessionId) === controller) {
-              sessions.finalizeLastAssistantMessage(t('interrupted'), sessionId);
-            }
-            trackAgentAbort();
-            return;
-          }
-
-          const parsed = extractChatComposeMarker(result.reply);
-          sessions.finalizeLastAssistantMessage(parsed.displayText, sessionId, {
-            composeSeed: parsed.composeSeed ?? undefined,
-          });
-          return;
-        }
-
-        const onProgress = makeAgentProgressHandler(sessionId);
-
-        const result = await runAgent(text, options?.initialCode ?? currentCode, onProgress, undefined, signal, history);
+        const result = await runChat(text, makeChatProgressHandler(sessionId), signal, history);
         if (signal.aborted) {
           if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
+            sessions.finalizeLastAssistantMessage(t('interrupted'), sessionId);
           }
           trackAgentAbort();
           return;
         }
-        trackAgentRun({
-          provider: _analyticsProvider,
-          model: _analyticsModel,
-          iterations: result.iterations,
-          durationMs: Date.now() - _analyticsStart,
-          committed: result.committed,
+
+        const parsed = extractChatComposeMarker(result.reply);
+        sessions.finalizeLastAssistantMessage(parsed.displayText, sessionId, {
+          composeSeed: parsed.composeSeed ?? undefined,
         });
-        if (result.tokenUsage) {
-          sessions.updateTokenStats({
-            ...result.tokenUsage,
-            modelId: _analyticsModel,
-          }, sessionId);
-        }
-        if (result.code) {
-          if (sessionId === currentIdRef.current) {
-            const success = await strudel.play(result.code);
-            if (success) {
-              const nextSteps = parseNextSteps(result.explanation);
-              if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
-              sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-              sessions.setCurrentCode(result.code, sessionId);
-            } else {
-              sessions.addAssistantMessage(
-                zh ? `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}` : `Agent generated code but it failed to run: ${strudel.error || 'unknown error'}`,
-                result.code,
-                sessionId
-              );
-            }
-          } else {
-            // Background session completed; only save the result, do not update the editor or play audio
-            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-            sessions.setCurrentCode(result.code, sessionId);
-          }
-        } else {
-          sessions.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
-        }
       } catch (e: unknown) {
         if (isUserAbort(e, signal)) {
           if (abortControllersRef.current.get(sessionId) === controller) {
-            if (mode === 'chat') {
-              sessions.finalizeLastAssistantMessage(t('interrupted'), sessionId);
-            } else {
-              sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
-            }
+            sessions.finalizeLastAssistantMessage(t('interrupted'), sessionId);
           }
           trackAgentAbort();
         } else {
-          if (mode === 'chat') {
-            reportChatError(e, sessionId, _analyticsProvider, _analyticsModel);
-          } else {
-            reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
-          }
+          reportChatError(e, sessionId, _analyticsProvider, _analyticsModel);
         }
       } finally {
         if (abortControllersRef.current.get(sessionId) === controller) {
@@ -463,7 +308,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         }
       }
     },
-    [strudel, sessions, currentCode, demoStep, activeSet, isUserAbort, makeAgentProgressHandler, makeChatProgressHandler, reportAgentError, reportChatError, cleanupLoadingSession]
+    [runTurn, sessions, demoStep, activeSet, makeChatProgressHandler, reportChatError, cleanupLoadingSession]
   );
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
@@ -486,15 +331,21 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
-      // Roll back strudel state to before this message was sent
+      // Roll back to the rollback target and commit it as the session truth.
+      // A non-empty target plays + persists via commitPlayback; an empty one clears.
       if (previousCode) {
-        await strudel.play(previousCode);
+        if (sessions.currentId) {
+          await commitPlayback(previousCode, sessions.currentId, {
+            play: strudel.play,
+            setCurrentCode: sessions.setCurrentCode,
+          });
+        } else {
+          await strudel.play(previousCode);
+        }
       } else {
         strudel.stop();
         strudel.setCode('');
-      }
-      if (sessions.currentId) {
-        sessions.setCurrentCode(previousCode, sessions.currentId);
+        if (sessions.currentId) sessions.setCurrentCode('', sessions.currentId);
       }
 
       return { target, previousCode };
@@ -563,6 +414,8 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
   );
 
   const handleMoodInstruction = useCallback(async () => {
+    // Pre-flight engine check before the (potentially slow) mood fetch, so we don't
+    // fire the mood request when audio is unavailable. runTurn re-checks internally.
     const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
     if (engineUnavailableMessage) {
       strudel.setError(engineUnavailableMessage);
@@ -575,85 +428,38 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       moodContext = await fetchMoodContext();
       setIsMoodLoading(false);
     }
-    const instruction = '根据我的心情生成音乐';
 
-    setCommitSuggestions(null);
-    setRollbackPrefill(''); // message sent — rollback prefill content consumed
+    // Mood generation is a one-off creation: deliberately no conversation history.
+    await runTurn({
+      text: '根据我的心情生成音乐',
+      moodContext: moodContext ?? undefined,
+      includeHistory: false,
+    });
+  }, [strudel, runTurn]);
 
-    sessions.addUserMessage(instruction);
-    const sessionId = sessions.currentId;
-    if (!sessionId) return;
-    setLoadingSessions((prev) => new Set(prev).add(sessionId));
-
-    abortControllersRef.current.set(sessionId, new AbortController());
-    const signal = abortControllersRef.current.get(sessionId)!.signal;
-    const _analyticsStart = Date.now();
-    const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
-
-    try {
-      const onProgress = makeAgentProgressHandler(sessionId);
-
-      const result = await runAgent(instruction, currentCode, onProgress, moodContext ?? undefined, signal);
-      if (signal.aborted) {
-        sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
-        trackAgentAbort();
-        return;
-      }
-      trackAgentRun({
-        provider: _analyticsProvider,
-        model: _analyticsModel,
-        iterations: result.iterations,
-        durationMs: Date.now() - _analyticsStart,
-        committed: result.committed,
-      });
-      if (result.tokenUsage) {
-        sessions.updateTokenStats({
-          ...result.tokenUsage,
-          modelId: _analyticsModel,
-        }, sessionId);
-      }
-      if (result.code) {
-        if (sessionId === currentIdRef.current) {
-          const success = await strudel.play(result.code);
-          if (success) {
-            const nextSteps = parseNextSteps(result.explanation);
-            if (nextSteps.length > 0) setCommitSuggestions(nextSteps);
-            sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-            sessions.setCurrentCode(result.code, sessionId);
-          } else {
-            sessions.addAssistantMessage(
-              zh ? `agent 生成完了但代码无法运行: ${strudel.error || '未知错误'}` : `Agent generated code but it failed to run: ${strudel.error || 'unknown error'}`,
-              result.code,
-              sessionId
-            );
-          }
-        } else {
-          // Background session completed; only save the result, do not update the editor or play audio
-          sessions.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
-          sessions.setCurrentCode(result.code, sessionId);
-        }
-      } else {
-        sessions.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
-      }
-    } catch (e: unknown) {
-      if (isUserAbort(e, signal)) {
-        sessions.addAssistantMessage(t('interrupted'), undefined, sessionId);
-        trackAgentAbort();
-      } else {
-        reportAgentError(e, sessionId, _analyticsProvider, _analyticsModel);
-      }
-    } finally {
-      cleanupLoadingSession(sessionId);
+  // Persist any unsaved manual edits in the editor to the outgoing session
+  // before switching/creating, so they aren't overwritten by the next
+  // session's code. Skip when strudel.code is empty or unchanged to avoid
+  // clobbering a session's stored code with stale/empty editor state
+  // (e.g. before the editor has synced on initial mount) and to avoid
+  // redundant writes when nothing changed.
+  const persistLiveCodeToCurrentSession = useCallback(() => {
+    if (sessions.currentId && strudel.code && strudel.code !== current?.code) {
+      sessions.setCurrentCode(strudel.code, sessions.currentId);
     }
-  }, [strudel, sessions, currentCode, isUserAbort, makeAgentProgressHandler, reportAgentError, cleanupLoadingSession]);
+  }, [sessions, strudel, current?.code]);
 
   const handleNewSession = useCallback(() => {
+    persistLiveCodeToCurrentSession();
     strudel.stop();
     sessions.newSession();
     if (isDemoMode()) setDemoStep(0);
-  }, [strudel, sessions]);
+  }, [strudel, sessions, persistLiveCodeToCurrentSession]);
 
   const handleSwitchSession = useCallback((id: string) => {
+    if (sessions.currentId !== id) {
+      persistLiveCodeToCurrentSession();
+    }
     setCommitSuggestions(null);
     setUnreadSessions((prev) => {
       if (!prev.has(id)) return prev;
@@ -662,7 +468,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       return next;
     });
     sessions.switchTo(id);
-  }, [sessions]);
+  }, [sessions, persistLiveCodeToCurrentSession]);
 
   const handleModeChange = useCallback((mode: AgentMode) => {
     const sessionId = sessions.currentId;
@@ -725,6 +531,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             hasCode={!!strudel.code}
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
+            onGenerateTitle={generateSongTitle}
             onResetExportState={strudel.resetExportState}
             bpm={currentBpm}
           />
@@ -755,6 +562,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
                 onStop={strudel.stop}
                 exportState={strudel.exportState}
                 onExport={strudel.exportWav}
+                onGenerateTitle={generateSongTitle}
                 onResetExportState={strudel.resetExportState}
                 session={sessions.currentSession}
                 messages={messages}
@@ -841,6 +649,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
                   isLoading={sessions.isLoading}
                   onSwitch={(id) => { handleSwitchSession(id); setHistoryOpen(false); }}
                   onDelete={sessions.deleteSession}
+                  onRename={sessions.renameSession}
                   loadingSessions={loadingSessions}
                   unreadSessions={unreadSessions}
                 />
@@ -892,7 +701,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
         <Sidebar
-          title={isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle'))}
+          title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
           showThinkingIndicator={currentMode === 'create'}
@@ -917,6 +726,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
           unreadSessions={unreadSessions}
           onSwitchSession={handleSwitchSession}
           onDeleteSession={sessions.deleteSession}
+          onRenameSession={sessions.renameSession}
           isHistoryLoading={sessions.isLoading}
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
@@ -933,21 +743,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
       {/* Horizontal resize handle */}
       <div
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          hDragRef.current = { startX: e.clientX, startWidth: sidebarWidth };
-          setIsDragging('h');
-        }}
-        onPointerMove={(e) => {
-          if (!hDragRef.current) return;
-          const delta = e.clientX - hDragRef.current.startX;
-          setSidebarWidth(Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, hDragRef.current.startWidth + delta)));
-        }}
-        onPointerUp={(e) => {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-          hDragRef.current = null;
-          setIsDragging(null);
-        }}
+        {...hDragHandlers}
         className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-[80px] pb-3"
         style={{ cursor: 'col-resize' }}
       >
@@ -967,6 +763,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
             onStop={strudel.stop}
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
+            onGenerateTitle={generateSongTitle}
             onResetExportState={strudel.resetExportState}
             session={sessions.currentSession}
             messages={messages}
@@ -977,22 +774,7 @@ if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
 
         {/* Vertical resize handle */}
         <div
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            vDragRef.current = { startY: e.clientY, startHeight: vizHeight };
-            setIsDragging('v');
-          }}
-          onPointerMove={(e) => {
-            if (!vDragRef.current) return;
-            const delta = e.clientY - vDragRef.current.startY;
-            const h = mainRef.current?.offsetHeight ?? window.innerHeight;
-            setVizHeight(Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, vDragRef.current.startHeight - delta)));
-          }}
-          onPointerUp={(e) => {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-            vDragRef.current = null;
-            setIsDragging(null);
-          }}
+          {...vDragHandlers}
           className="h-[10px] shrink-0 group flex items-center justify-center"
           style={{ cursor: 'row-resize' }}
         >

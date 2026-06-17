@@ -66,7 +66,8 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
     timestamp: Date.now(),
   };
   const messages = [...before, newMsg];
-  const title = before.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+  const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
+  const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
   return { ...s, messages, title };
 }
 
@@ -85,6 +86,7 @@ export function applyRefreshEmptySessionForReuse(s: Session, now: number): Sessi
   return {
     ...s,
     mode: 'create',
+    title: t('newSessionTitle'),
     createdAt: now,
     updatedAt: now,
   };
@@ -225,7 +227,8 @@ export function useSessions() {
           },
         ];
         // Auto-rename on first user message.
-        const title = s.messages.some((m) => m.role === 'user') ? s.title : deriveTitle(messages);
+        const shouldDeriveTitle = !s.messages.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
+        const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
         return { ...s, messages, title };
       });
     },
@@ -367,7 +370,6 @@ export function useSessions() {
       // up another untouched "New Session".
       if (cur && cur.messages.length === 0 && !cur.code) {
         if (id && currentId !== id) setCurrentId(id);
-        if (cur.mode === 'create') return prev;
         const refreshed = applyRefreshEmptySessionForReuse(cur, Date.now());
         dbPutSession(refreshed);
         return prev.map((s) => s.id === cur.id ? refreshed : s);
@@ -393,6 +395,15 @@ export function useSessions() {
   const switchTo = useCallback((id: string) => {
     setCurrentId(id);
   }, []);
+
+  const renameSession = useCallback(
+    (sessionId: string, title: string): void => {
+      const nextTitle = title.trim();
+      if (!nextTitle) return;
+      updateSession(sessionId, (s) => ({ ...s, title: nextTitle.slice(0, 60) }));
+    },
+    [updateSession]
+  );
 
   const deleteSession = useCallback(
     (id: string) => {
@@ -489,6 +500,7 @@ export function useSessions() {
     setCurrentCode,
     newSession,
     switchTo,
+    renameSession,
     deleteSession,
     importSession,
     branchFromMessage,

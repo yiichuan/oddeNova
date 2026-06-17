@@ -8,6 +8,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import TopActionBar from './TopActionBar';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
+import type { GenerateTitleParams } from './TopActionBar';
 
 interface CodePanelProps {
   error: string | null;
@@ -19,6 +20,7 @@ interface CodePanelProps {
   onStop: () => void;
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
   onExport: (p: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => Promise<boolean>;
+  onGenerateTitle: (p: GenerateTitleParams) => Promise<string>;
   onResetExportState: () => void;
   session: Session | null;
   messages: ChatMessage[];
@@ -191,6 +193,7 @@ export default function CodePanel({
   onStop,
   exportState,
   onExport,
+  onGenerateTitle,
   onResetExportState,
   session,
   messages,
@@ -356,6 +359,8 @@ export default function CodePanel({
         .aj-slider::-webkit-slider-runnable-track { height: 1px; background: linear-gradient(to right, rgba(255,255,255,0.35) var(--fill-pct, 0%), #323232 var(--fill-pct, 0%)); }
         .aj-slider::-moz-range-track { height: 1px; background: #323232; }
         .aj-slider::-moz-range-progress { height: 1px; background: rgba(255,255,255,0.35); }
+        @keyframes cmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .video-fade-in { animation: cmFadeIn 0.6s ease-out forwards; }
       `}</style>
 
       {/* StrudelMirror mounts here */}
@@ -377,6 +382,7 @@ export default function CodePanel({
           hasCode={hasCode}
           exportState={exportState}
           onExport={handleExport}
+          onGenerateTitle={onGenerateTitle}
           onResetExportState={onResetExportState}
           bpm={bpm}
         />,
