@@ -7,31 +7,28 @@ import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
-import { runChat } from './services/llm';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
 import type { AgentMode } from './hooks/useChat';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
-import { extractChatComposeMarker } from './lib/chat-compose-marker';
 import { commitPlayback } from './lib/playback-commit';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
-import { hasApiKeyConfigured, getActiveModelConfig } from './services/llm-config';
+import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useReplay } from './hooks/useReplay';
-import { useAgentRunner, isUserAbort } from './hooks/useAgentRunner';
+import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout } from './hooks/useLayout';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
-import { trackAgentError, trackAgentAbort } from './lib/analytics';
-import { zh, t, randomChatGreeting } from './lib/i18n';
+import { t, randomChatGreeting } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 
 export default function App() {
@@ -122,13 +119,13 @@ export default function App() {
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
   const currentMode: AgentMode = current?.mode ?? 'create';
-  const inputEngineReady = currentMode === 'chat' ? true : strudel.engineReady;
-  const inputEngineStatus = currentMode === 'chat' ? 'ready' : strudel.engineStatus;
+  const inputEngineReady = strudel.engineReady;
+  const inputEngineStatus = strudel.engineStatus;
 
   const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
-    enabled: currentMode === 'create',
+    enabled: true,
     // In demo mode real LLM suggestions are not needed; skip the buildSuggestions call
     hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
@@ -138,9 +135,9 @@ export default function App() {
   const demoSuggestions = isDemoMode()
     ? (demoStep < activeSet.length ? [activeSet[demoStep].prompt] : [])
     : suggestions;
-  const createModeSuggestions = currentMode === 'create' ? demoSuggestions : [];
+  const visibleSuggestions = demoSuggestions;
   const showMobileCreateSuggestions =
-    !isLoading && !suggestionsLoading && createModeSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
+    !isLoading && !suggestionsLoading && visibleSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -184,30 +181,11 @@ export default function App() {
       if (e.kind === 'commit') { sessions.addProgress('commit', t('preparingToPlay'), { sessionId }); return; }
       if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
       if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
-      if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
-      if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
+      if (e.kind === 'assistant_text_delta') { sessions.appendToLastAssistant(e.delta, sessionId); return; }
+      if (e.kind === 'assistant_text') { sessions.finalizeLastAssistantMessage(e.text, sessionId); return; }
     },
     [sessions]
   );
-
-  const makeChatProgressHandler = useCallback(
-    (sessionId: string) => (e: ProgressEvent) => {
-      if (e.kind === 'assistant_text_delta') {
-        sessions.appendToLastAssistant(e.delta, sessionId);
-        return;
-      }
-      if (e.kind === 'warn') {
-        sessions.addProgress('warn', e.message, { sessionId });
-      }
-    },
-    [sessions]
-  );
-
-  // Drop the session's abort controller and clear its loading flag.
-  const cleanupLoadingSession = useCallback((sessionId: string) => {
-    abortControllersRef.current.delete(sessionId);
-    setLoadingSessions((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
-  }, []);
 
   // One Agent turn (instruction → generation → playback + persistence), shared by
   // the text and mood entry points below. See src/hooks/useAgentRunner.ts.
@@ -223,92 +201,25 @@ export default function App() {
     makeProgressHandler: makeAgentProgressHandler,
   });
 
-  const reportChatError = useCallback(
-    (e: unknown, sessionId: string, provider: string, model: string) => {
-      const errMsg = e instanceof Error ? e.message : t('requestFailed');
-      sessions.finalizeLastAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, sessionId);
-      trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
-    },
-    [sessions]
-  );
-
   const handleInstruction = useCallback(
     async (text: string, options?: {
       skipAddMessage?: boolean;
       initialCode?: string;
       history?: ConversationTurn[];
-      modeOverride?: AgentMode;
     }) => {
-      const mode: AgentMode = options?.modeOverride ?? sessions.currentSession?.mode ?? 'create';
-
-      // In demo mode, if the sent text matches the current step's prompt, advance to the next step.
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
       }
 
-      // Create mode delegates the full agent turn (engine check, generation,
-      // playback, persistence, analytics) to the shared agent runner.
-      if (mode !== 'chat') {
-        return runTurn({
-          text,
-          includeHistory: true,
-          skipAddMessage: options?.skipAddMessage,
-          initialCode: options?.initialCode,
-          suppliedHistory: options?.history,
-        });
-      }
-
-      // Chat mode: no tools, no playback — just a conversational reply.
-      setCommitSuggestions(null); // reset on each new instruction
-      setRollbackPrefill(''); // message sent — rollback prefill content consumed
-
-      // Capture history snapshot before addUserMessage mutates session state,
-      // so the current turn is not included as a history item sent to the LLM.
-      const history: ConversationTurn[] = options?.history ??
-        conversationHistoryFromMessages(sessions.currentSession?.messages ?? []);
-
-      if (!options?.skipAddMessage) {
-        sessions.addUserMessage(text);
-      }
-      const sessionId = sessions.currentId;
-      if (!sessionId) return;
-      setLoadingSessions((prev) => new Set(prev).add(sessionId));
-
-      const controller = new AbortController();
-      abortControllersRef.current.set(sessionId, controller);
-      const signal = controller.signal;
-      const { provider: _analyticsProvider, model: _analyticsModel } = getActiveModelConfig();
-
-      try {
-        const result = await runChat(text, makeChatProgressHandler(sessionId), signal, history);
-        if (signal.aborted) {
-          if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.finalizeLastAssistantMessage(t('interrupted'), sessionId);
-          }
-          trackAgentAbort();
-          return;
-        }
-
-        const parsed = extractChatComposeMarker(result.reply);
-        sessions.finalizeLastAssistantMessage(parsed.displayText, sessionId, {
-          composeSeed: parsed.composeSeed ?? undefined,
-        });
-      } catch (e: unknown) {
-        if (isUserAbort(e, signal)) {
-          if (abortControllersRef.current.get(sessionId) === controller) {
-            sessions.finalizeLastAssistantMessage(t('interrupted'), sessionId);
-          }
-          trackAgentAbort();
-        } else {
-          reportChatError(e, sessionId, _analyticsProvider, _analyticsModel);
-        }
-      } finally {
-        if (abortControllersRef.current.get(sessionId) === controller) {
-          cleanupLoadingSession(sessionId);
-        }
-      }
+      return runTurn({
+        text,
+        includeHistory: true,
+        skipAddMessage: options?.skipAddMessage,
+        initialCode: options?.initialCode,
+        suppliedHistory: options?.history,
+      });
     },
-    [runTurn, sessions, demoStep, activeSet, makeChatProgressHandler, reportChatError, cleanupLoadingSession]
+    [runTurn, demoStep, activeSet]
   );
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
@@ -406,7 +317,6 @@ export default function App() {
       const history = conversationHistoryFromMessages(sessions.currentSession?.messages ?? []);
       sessions.setMode('create', sessionId);
       await handleInstruction(seed, {
-        modeOverride: 'create',
         history,
       });
     },
@@ -415,7 +325,7 @@ export default function App() {
 
   const handleMoodInstruction = useCallback(async () => {
     // Pre-flight engine check before the (potentially slow) mood fetch, so we don't
-    // fire the mood request when audio is unavailable. runTurn re-checks internally.
+    // fire the mood request when audio is unavailable.
     const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
     if (engineUnavailableMessage) {
       strudel.setError(engineUnavailableMessage);
@@ -539,7 +449,7 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} showThinkingIndicator={currentMode === 'create'} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} onComposeFromChat={handleComposeFromChat} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} onComposeFromChat={handleComposeFromChat} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -595,7 +505,7 @@ export default function App() {
           {/* Suggestion chips — horizontal scroll */}
           {showMobileCreateSuggestions && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
-              {createModeSuggestions.map((s) => (
+              {visibleSuggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -614,8 +524,8 @@ export default function App() {
           <div className={showMobileCreateSuggestions ? '' : 'mt-3'}>
             <ChatInput
               isLoading={isLoading}
-              engineReady={inputEngineReady}
-              engineStatus={inputEngineStatus}
+              engineReady={strudel.engineReady}
+              engineStatus={strudel.engineStatus}
               onSendText={handleInstruction}
               onStop={handleStop}
               onReinitEngine={strudel.reinit}
@@ -704,7 +614,6 @@ export default function App() {
           title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
-          showThinkingIndicator={currentMode === 'create'}
           isMoodLoading={isMoodLoading}
           engineReady={inputEngineReady}
           engineStatus={inputEngineStatus}
@@ -712,7 +621,7 @@ export default function App() {
           currentId={sessions.currentId}
           mode={currentMode}
           onModeChange={handleModeChange}
-          suggestions={isVideoMode ? [] : createModeSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
+          suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
           suggestionsLoading={!isDemoMode() && suggestionsLoading}
@@ -816,18 +725,9 @@ export default function App() {
 }
 
 function formatToolCall(name: string, args: Record<string, unknown>): string {
-  const s = (key: string): string => {
-    const v = args[key];
-    return v == null ? '' : String(v);
-  };
   switch (name) {
     case 'getScore':
       return t('readScore');
-
-    case 'applyEffect':
-      return zh ? `给 ${s('layer')} 加效果 ${s('chain')}` : `Apply effect ${s('chain')} to ${s('layer')}`;
-    case 'setTempo':
-      return zh ? `设速度 ${s('bpm')} BPM` : `Set tempo ${s('bpm')} BPM`;
     case 'validate':
       return t('validateCode');
     case 'commit':
