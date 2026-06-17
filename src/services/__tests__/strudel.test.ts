@@ -194,6 +194,7 @@ describe('page audio recovery', () => {
     installPageAudioRecovery({
       getIsPlaying: () => true,
       getVisibilityState: () => visibilityState,
+      shouldInterruptOnHidden: () => true,
       onPlaybackInterrupted,
       requestUserResume,
       windowTarget,
@@ -208,5 +209,35 @@ describe('page audio recovery', () => {
 
     expect(onPlaybackInterrupted).toHaveBeenCalledTimes(1);
     expect(requestUserResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps playing on hidden when interruption is disabled (desktop)', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { installPageAudioRecovery } = await import('../strudel');
+    const windowTarget = createFakeEventTarget();
+    const documentTarget = createFakeEventTarget();
+    let visibilityState: DocumentVisibilityState = 'hidden';
+    const onPlaybackInterrupted = vi.fn();
+    const requestUserResume = vi.fn();
+
+    installPageAudioRecovery({
+      getIsPlaying: () => true,
+      getVisibilityState: () => visibilityState,
+      shouldInterruptOnHidden: () => false,
+      onPlaybackInterrupted,
+      requestUserResume,
+      windowTarget,
+      documentTarget,
+    });
+
+    documentTarget.emit('visibilitychange');
+    visibilityState = 'visible';
+    documentTarget.emit('visibilitychange');
+    windowTarget.emit('focus');
+
+    expect(onPlaybackInterrupted).not.toHaveBeenCalled();
+    expect(requestUserResume).not.toHaveBeenCalled();
   });
 });
