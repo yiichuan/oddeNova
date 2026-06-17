@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgentMode, ChatMessage } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChat';
 import { t } from '../lib/i18n';
 import type { Session, TokenStats } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
@@ -21,8 +21,6 @@ interface SidebarProps {
   engineStatus?: 'initializing' | 'ready' | 'failed';
   sessions: Session[];
   currentId: string | null;
-  mode: AgentMode;
-  onModeChange: (mode: AgentMode) => void;
   suggestions: string[];
   suggestionsLoading?: boolean;
   fillSuggestion?: string;
@@ -47,7 +45,6 @@ interface SidebarProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
-  onComposeFromChat: (seed: string) => void;
   tokenStats?: TokenStats;
 }
 
@@ -61,8 +58,6 @@ export default function Sidebar({
   engineStatus = engineReady ? 'ready' : 'initializing',
   sessions,
   currentId,
-  mode,
-  onModeChange,
   suggestions,
   suggestionsLoading = false,
   fillSuggestion,
@@ -87,7 +82,6 @@ export default function Sidebar({
   onRollback,
   onBranch,
   onRetry,
-  onComposeFromChat,
   tokenStats,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
@@ -95,6 +89,8 @@ export default function Sidebar({
   const [focusTrigger, setFocusTrigger] = useState(1);
   const prevIsLoadingRef = useRef(false);
   const prevPrefillTriggerRef = useRef(prefillTrigger);
+  const canShowMoodButton = !navigator.userAgent.includes('Windows') && (airjellyAvailable || isDemoMode());
+  const canShowActionRow = suggestions.length > 0 || Boolean(fillSuggestion) || canShowMoodButton;
 
   useEffect(() => {
     if (prevIsLoadingRef.current && !isLoading) {
@@ -199,13 +195,12 @@ export default function Sidebar({
           onRollback={onRollback}
           onBranch={onBranch}
           onRetry={onRetry}
-          onComposeFromChat={onComposeFromChat}
         />
       </div>
 
       <div className="pl-4 pr-0 pb-2">
         {/* [video] In video mode, hide suggestion chips and the mood button to avoid obscuring the CodePanel view */}
-        {!isLoading && !suggestionsLoading && !isVideoMode && mode === 'create' && (
+        {!isLoading && !suggestionsLoading && !isVideoMode && canShowActionRow && (
           <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
             <SuggestionChips suggestions={suggestions} disabled={engineStatus !== 'ready'} onPick={onSendText} />
             {fillSuggestion && (
@@ -220,7 +215,7 @@ export default function Sidebar({
                 {t('playSong')}
               </button>
             )}
-            {!navigator.userAgent.includes('Windows') && (airjellyAvailable || isDemoMode()) && (
+            {canShowMoodButton && (
               <button
                 type="button"
                 onClick={onMoodGenerate}
@@ -234,7 +229,7 @@ export default function Sidebar({
             )}
           </div>
         )}
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} mode={mode} onModeChange={onModeChange} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
       </div>
     </aside>
   );

@@ -42,13 +42,17 @@ describe('ChatInput engine initialization status', () => {
     document.body.innerHTML = '';
   });
 
-  it('shows initializing status without retry and disables send', () => {
-    const { container, root } = renderChatInput({ engineReady: false, engineStatus: 'initializing' });
+  it('shows initializing status without retry and keeps send available for text', () => {
+    const { container, root } = renderChatInput({
+      engineReady: false,
+      engineStatus: 'initializing',
+      prefill: '先聊聊今天',
+    });
     roots.push(root);
 
     expect(container.textContent).toContain('Initializing...');
     expect(container.querySelector('button[title="Restart engine"]')).toBeNull();
-    expect(getSubmitButton(container).disabled).toBe(true);
+    expect(getSubmitButton(container).disabled).toBe(false);
   });
 
   it('shows failed status with retry button', () => {
@@ -106,34 +110,6 @@ describe('ChatInput engine initialization status', () => {
     });
 
     expect(onFocusChange).toHaveBeenCalledWith(false);
-  });
-
-  it('Shift+Tab in the textarea toggles the agent mode without losing focus', () => {
-    const onModeChange = vi.fn();
-    const { container, root } = renderChatInput({
-      engineReady: true,
-      engineStatus: 'ready',
-      mode: 'create',
-      onModeChange,
-    });
-    roots.push(root);
-
-    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
-    if (!textarea) throw new Error('textarea not found');
-
-    let prevented = false;
-    act(() => {
-      const event = new KeyboardEvent('keydown', {
-        key: 'Tab',
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      });
-      prevented = !textarea.dispatchEvent(event);
-    });
-
-    expect(prevented).toBe(true);
-    expect(onModeChange).toHaveBeenCalledWith('chat');
   });
 
   it('focusTrigger 变化时即使 prefill 内容相同也会重新回填输入框', () => {

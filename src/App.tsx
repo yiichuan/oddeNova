@@ -9,9 +9,8 @@ import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
-import type { AgentMode } from './hooks/useChat';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
-import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
+import { conversationHistoryBefore } from './lib/conversation-history';
 import { commitPlayback } from './lib/playback-commit';
 import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
@@ -28,7 +27,7 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
-import { t, randomChatGreeting } from './lib/i18n';
+import { t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 
 export default function App() {
@@ -118,7 +117,6 @@ export default function App() {
   const currentBpm = parseScore(currentCode).bpm ?? 120;
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
-  const currentMode: AgentMode = current?.mode ?? 'create';
   const inputEngineReady = strudel.engineReady;
   const inputEngineStatus = strudel.engineStatus;
 
@@ -308,21 +306,6 @@ export default function App() {
     [sessions, handleResend]
   );
 
-  const handleComposeFromChat = useCallback(
-    async (seed: string) => {
-      const sessionId = sessions.currentId;
-      if (!sessionId || loadingSessions.has(sessionId) || abortControllersRef.current.has(sessionId)) {
-        return;
-      }
-      const history = conversationHistoryFromMessages(sessions.currentSession?.messages ?? []);
-      sessions.setMode('create', sessionId);
-      await handleInstruction(seed, {
-        history,
-      });
-    },
-    [sessions, loadingSessions, handleInstruction]
-  );
-
   const handleMoodInstruction = useCallback(async () => {
     // Pre-flight engine check before the (potentially slow) mood fetch, so we don't
     // fire the mood request when audio is unavailable.
@@ -379,15 +362,6 @@ export default function App() {
     });
     sessions.switchTo(id);
   }, [sessions, persistLiveCodeToCurrentSession]);
-
-  const handleModeChange = useCallback((mode: AgentMode) => {
-    const sessionId = sessions.currentId;
-    if (!sessionId) return;
-    sessions.setMode(mode, sessionId);
-    if (mode === 'chat' && (sessions.currentSession?.messages.length ?? 0) === 0) {
-      sessions.addAssistantMessage(randomChatGreeting(), undefined, sessionId);
-    }
-  }, [sessions]);
 
   if (isMobile) {
     return (
@@ -449,7 +423,7 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} onComposeFromChat={handleComposeFromChat} />
+          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -532,8 +506,6 @@ export default function App() {
               prefill={rollbackPrefill}
               focusTrigger={inputFocusTrigger}
               onFocusChange={handleChatFocusChange}
-              mode={currentMode}
-              onModeChange={handleModeChange}
             />
           </div>
         </div>
@@ -619,8 +591,6 @@ export default function App() {
           engineStatus={inputEngineStatus}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
-          mode={currentMode}
-          onModeChange={handleModeChange}
           suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
@@ -645,7 +615,6 @@ export default function App() {
           onRollback={handleRollback}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
-          onComposeFromChat={handleComposeFromChat}
           tokenStats={current?.tokenStats}
         />
       </div>
