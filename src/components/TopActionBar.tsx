@@ -35,7 +35,6 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
       const title = session?.title?.trim() || t('newSessionTitle');
       const shareId = await uploadShare({
         title,
-        mode: session?.mode ?? 'create',
         code: shareCode,
         messages: shareMessages,
         locale: zh ? 'zh-CN' : 'en',

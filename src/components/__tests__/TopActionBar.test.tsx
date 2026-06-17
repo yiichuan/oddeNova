@@ -48,7 +48,6 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 's-1',
     title: 'Chat only',
-    mode: 'chat',
     messages: [{ id: 'm-1', role: 'user', content: 'hello', timestamp: 1 }],
     code: '',
     createdAt: 1,
@@ -125,7 +124,6 @@ describe('TopActionBar mobile menu', () => {
 
     expect(uploadShareMock).toHaveBeenCalledWith({
       title: 'Chat only',
-      mode: 'chat',
       code: '',
       messages: session.messages,
       locale: 'en',
@@ -145,7 +143,6 @@ const messages: ChatMessage[] = [
 const session: Session = {
   id: 's1',
   title: 'Morning sketch',
-  mode: 'create',
   messages,
   code: 'note("c d e f").s("piano")',
   createdAt: 1,

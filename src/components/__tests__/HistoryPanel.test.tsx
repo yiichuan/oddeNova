@@ -12,7 +12,6 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 's-1',
     title: '旧标题',
-    mode: 'create',
     messages: [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 }],
     code: '',
     createdAt: 1,

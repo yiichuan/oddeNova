@@ -28,7 +28,6 @@ describe('session-storage fallback path', () => {
     const fakeSession = {
       id: 'test-id',
       title: 'Test',
-      mode: 'create',
       messages: [],
       code: '',
       createdAt: Date.now(),
@@ -45,47 +44,25 @@ describe('session-storage fallback path', () => {
 });
 
 describe('normalizeSession', () => {
-  it('backfills create mode for legacy sessions without mode', async () => {
+  it('ignores legacy mode fields when reading saved sessions', async () => {
     const { normalizeSession } = await import('../session-storage');
     const legacy = {
+      id: 'legacy',
+      title: '旧会话',
+      mode: 'chat',
+      messages: [],
+      code: '',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    expect(normalizeSession(legacy)).toEqual({
       id: 'legacy',
       title: '旧会话',
       messages: [],
       code: '',
       createdAt: 1,
       updatedAt: 2,
-    };
-
-    expect(normalizeSession(legacy).mode).toBe('create');
-  });
-
-  it('preserves chat mode for saved chat sessions', async () => {
-    const { normalizeSession } = await import('../session-storage');
-    const saved = {
-      id: 'chat',
-      title: '聊天',
-      mode: 'chat' as const,
-      messages: [],
-      code: '',
-      createdAt: 1,
-      updatedAt: 2,
-    };
-
-    expect(normalizeSession(saved).mode).toBe('chat');
-  });
-
-  it('normalizes invalid mode values to create', async () => {
-    const { normalizeSession } = await import('../session-storage');
-    const broken = {
-      id: 'broken',
-      title: '坏数据',
-      mode: 'compose',
-      messages: [],
-      code: '',
-      createdAt: 1,
-      updatedAt: 2,
-    };
-
-    expect(normalizeSession(broken).mode).toBe('create');
+    });
   });
 });

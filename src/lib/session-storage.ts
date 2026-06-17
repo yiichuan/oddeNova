@@ -1,5 +1,4 @@
 import { openDB as idbOpenDB, type IDBPDatabase } from 'idb';
-import type { AgentMode } from '../hooks/useChat';
 import type { Session } from '../hooks/useSessions';
 
 const DB_NAME = 'oddenova-db';
@@ -13,13 +12,11 @@ const LS_CURRENT_KEY = 'vibe-sessions-current-v1';
 let db: IDBPDatabase | null = null;
 let memoryFallback = false;
 
-type StoredSession = Omit<Session, 'mode'> & { mode?: AgentMode | string };
+type StoredSession = Session & { mode?: unknown };
 
 export function normalizeSession(session: StoredSession): Session {
-  return {
-    ...session,
-    mode: session.mode === 'chat' ? 'chat' : 'create',
-  };
+  const { mode: _ignored, ...normalized } = session;
+  return normalized;
 }
 
 export async function openDB(): Promise<void> {

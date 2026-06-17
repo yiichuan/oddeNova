@@ -3,8 +3,6 @@
 // favour of useSessions(), which owns the persisted, multi-session message
 // store.
 
-export type AgentMode = 'create' | 'chat';
-
 export type ChatRole = 'user' | 'assistant' | 'progress';
 
 export type ProgressKind = 'tool_call' | 'tool_result' | 'commit' | 'warn' | 'iteration' | 'thinking' | 'reasoning';
@@ -15,7 +13,6 @@ export interface ChatMessage {
   content: string;
   code?: string;
   timestamp: number;
-  composeSeed?: string;
   // For role === 'progress':
   progressKind?: ProgressKind;
   toolName?: string;
