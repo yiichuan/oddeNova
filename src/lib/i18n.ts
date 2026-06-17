@@ -15,12 +15,6 @@ const S: Record<string, readonly [string, string]> = {
   retry:        ['重试', 'Retry'],
   loading:      ['加载中…', 'Loading…'],
   play:         ['播放', 'Play'],
-  switchMode:     ['切换模式', 'Switch mode'],
-  modeCreate:     ['创作', 'Create'],
-  modeChat:       ['聊天', 'Chat'],
-  modeCreateDesc: ['生成并播放 Strudel 曲子', 'Compose and play Strudel music'],
-  modeChatDesc:   ['只聊天，不生成音乐', 'Pure chat, no music generation'],
-  composeFromChat:['切到创作并谱曲', 'Switch to create and compose'],
 
   // App status
   engineStarting:   ['音频引擎启动中，请稍后再试', 'Audio engine starting, please try again later'],
@@ -124,33 +118,5 @@ const S: Record<string, readonly [string, string]> = {
 export function t(key: string): string {
   const entry = S[key];
   if (!entry) return key;
-  return zh ? entry[0] : entry[1];
-}
-
-export const chatModeGreetings: ReadonlyArray<readonly [string, string]> = [
-  [
-    '嗨，我是 oddeNova。想聊聊今天发生了什么、心里在想的事，或者随便什么都行',
-    "Hi, I'm oddeNova. Tell me about your day, what's on your mind, or anything at all",
-  ],
-  [
-    '嗨，我在听。今天过得怎么样？',
-    "Hey, I'm listening. How's your day going?",
-  ],
-  [
-    '欢迎来聊天模式。有什么想说的，随时聊',
-    "Welcome to chat mode. Feel free to share what's on your mind",
-  ],
-  [
-    '嗨～此刻心情如何？想聊点什么都可以',
-    'Hi there~ How are you feeling right now? Let\'s talk about anything',
-  ],
-  [
-    '我在这儿。不管是琐事还是心事，都可以和我聊聊',
-    "I'm here. Whether it's small talk or something on your mind, let's chat",
-  ],
-];
-
-export function randomChatGreeting(): string {
-  const entry = chatModeGreetings[Math.floor(Math.random() * chatModeGreetings.length)];
   return zh ? entry[0] : entry[1];
 }

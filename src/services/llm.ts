@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { buildChatSystemPrompt } from '../prompts/chat';
 import { buildSystemPrompt } from '../prompts/build-system-prompt';
 import {
   runAgentLoop,
@@ -373,34 +372,6 @@ function createOpenAILLMCaller(): LLMCaller {
       };
     },
   };
-}
-
-export interface RunChatResult {
-  reply: string;
-}
-
-export async function runChat(
-  instruction: string,
-  onProgress?: (e: ProgressEvent) => void,
-  signal?: AbortSignal,
-  conversationHistory?: ConversationTurn[],
-): Promise<RunChatResult> {
-  const systemPrompt = buildChatSystemPrompt(instruction);
-  const messages: ChatMsg[] = [
-    { role: 'system', content: systemPrompt },
-    ...(conversationHistory ?? []),
-    { role: 'user', content: instruction },
-  ];
-
-  const resp = await getActiveLLMCaller().chatWithTools(
-    messages,
-    [],
-    (delta) => onProgress?.({ kind: 'assistant_text_delta', delta }),
-    undefined,
-    signal,
-  );
-
-  return { reply: resp.content?.trim() ?? '' };
 }
 
 export async function runAgent(
