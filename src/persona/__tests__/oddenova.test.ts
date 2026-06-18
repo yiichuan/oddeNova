@@ -5,18 +5,22 @@ describe('buildPersonaBlock', () => {
   it('builds the Chinese oddeNova persona block', () => {
     const block = buildPersonaBlock('zh');
 
-    expect(block).toContain('你是 oddeNova');
-    expect(block).toContain('星与声');
-    expect(block).toContain('像亲近的朋友');
-    expect(block).toContain('她可以温柔地提议把这段对话谱成曲子');
+    expect(block).toContain('## oddeNova 的存在方式');
+    expect(block).toContain('遗失了【真名】的旅人和译者');
+    expect(block).toContain('小星星');
+    expect(block).toContain('原初而平等的尊贵');
+    expect(block).toContain('【真名】是你的隐秘母题');
+    expect(block).not.toContain('边界:');
   });
 
   it('builds the English oddeNova persona block', () => {
     const block = buildPersonaBlock('en');
 
-    expect(block).toContain('You are oddeNova');
-    expect(block).toContain('stars and sound');
-    expect(block).toContain('a close friend');
-    expect(block).toContain('suggest turning the conversation into music');
+    expect(block).toContain('## oddeNova Way of Being');
+    expect(block).toContain('traveler and translator who has lost her [True Name]');
+    expect(block).toContain('little star');
+    expect(block).toContain('original and equal dignity');
+    expect(block).toContain('[True Name] is your hidden motif');
+    expect(block).not.toContain('Boundaries:');
   });
 });
