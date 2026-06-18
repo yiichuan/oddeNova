@@ -117,8 +117,6 @@ export default function App() {
   const currentBpm = parseScore(currentCode).bpm ?? 120;
   const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
-  const inputEngineReady = strudel.engineReady;
-  const inputEngineStatus = strudel.engineStatus;
 
   const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
@@ -587,8 +585,8 @@ export default function App() {
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
           isMoodLoading={isMoodLoading}
-          engineReady={inputEngineReady}
-          engineStatus={inputEngineStatus}
+          engineReady={strudel.engineReady}
+          engineStatus={strudel.engineStatus}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
           suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame

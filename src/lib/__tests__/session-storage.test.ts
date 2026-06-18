@@ -49,7 +49,7 @@ describe('normalizeSession', () => {
     const legacy = {
       id: 'legacy',
       title: '旧会话',
-      mode: 'chat',
+      ['mode']: 'chat',
       messages: [],
       code: '',
       createdAt: 1,
