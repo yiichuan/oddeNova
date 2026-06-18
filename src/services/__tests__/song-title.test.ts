@@ -105,6 +105,43 @@ describe('generateSongTitle', () => {
     expect(userPrompt).toContain('message-8');
   });
 
+  it('treats a session with only a greeting message as having no chat context', async () => {
+    mockedChatOnce.mockResolvedValue('Late Night Signals');
+
+    await generateSongTitle({
+      code: 's("bd")',
+      sessionTitle: 'Session',
+      messages: [
+        { role: 'assistant', content: '嗨，我在这儿。', timestamp: 1, isGreeting: true },
+      ],
+      locale: 'zh-CN',
+    });
+
+    const userPrompt = mockedChatOnce.mock.calls[0][1];
+    expect(userPrompt).not.toContain('嗨，我在这儿。');
+    expect(userPrompt).toContain('No chat context.');
+  });
+
+  it('excludes the greeting message from chat context when real messages follow it', async () => {
+    mockedChatOnce.mockResolvedValue('Late Night Signals');
+
+    await generateSongTitle({
+      code: 's("bd")',
+      sessionTitle: 'Session',
+      messages: [
+        { role: 'assistant', content: '嗨，我在这儿。', timestamp: 1, isGreeting: true },
+        { role: 'user', content: '做一个夜晚感的 lofi', timestamp: 2 },
+        { role: 'assistant', content: '已经加入柔和鼓组', timestamp: 3 },
+      ],
+      locale: 'zh-CN',
+    });
+
+    const userPrompt = mockedChatOnce.mock.calls[0][1];
+    expect(userPrompt).not.toContain('嗨，我在这儿。');
+    expect(userPrompt).toContain('做一个夜晚感的 lofi');
+    expect(userPrompt).toContain('已经加入柔和鼓组');
+  });
+
   it('truncates huge session titles in the prompt', async () => {
     mockedChatOnce.mockResolvedValue('Late Night Signals');
     const sessionTitle = 'Session '.repeat(40);
