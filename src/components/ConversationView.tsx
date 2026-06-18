@@ -311,23 +311,26 @@ export default function ConversationView({
                 );
               })()}
 
-              {/* Action buttons — bottom-left, always visible */}
-              <div className="absolute -bottom-5 left-0 flex items-center">
-                <button
-                  onClick={() => onRetry(msg.id)}
-                  className="text-white/60 hover:text-white p-1"
-                  title={t('retry')}
-                >
-                  <RetryIcon size={13} />
-                </button>
-                <button
-                  onClick={() => onBranch(msg.id)}
-                  className="text-white/60 hover:text-white p-1"
-                  title={t('branchFrom')}
-                >
-                  <GitBranchIcon size={13} />
-                </button>
-              </div>
+              {/* Action buttons — bottom-left, always visible. Hidden on greeting
+                  bubbles: there's no prior user turn to retry or branch from. */}
+              {!msg.isGreeting && (
+                <div className="absolute -bottom-5 left-0 flex items-center">
+                  <button
+                    onClick={() => onRetry(msg.id)}
+                    className="text-white/60 hover:text-white p-1"
+                    title={t('retry')}
+                  >
+                    <RetryIcon size={13} />
+                  </button>
+                  <button
+                    onClick={() => onBranch(msg.id)}
+                    className="text-white/60 hover:text-white p-1"
+                    title={t('branchFrom')}
+                  >
+                    <GitBranchIcon size={13} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         );

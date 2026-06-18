@@ -198,4 +198,37 @@ describe('ConversationView chat streaming', () => {
     expect(container.textContent).toContain('我是 oddeNova');
     expect(container.textContent).not.toContain('Thinking...');
   });
+
+  it('hides retry/branch actions on a greeting bubble but keeps them on a normal assistant message', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'greeting-1',
+        role: 'assistant',
+        content: '嗨，我在这儿。',
+        timestamp: 1,
+        isGreeting: true,
+      },
+      {
+        id: 'u1',
+        role: 'user',
+        content: '来段鼓点',
+        timestamp: 2,
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '已经加上了。',
+        timestamp: 3,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const retryButtons = container.querySelectorAll('button[title="Retry"]');
+    const branchButtons = container.querySelectorAll('button[title="Branch conversation from here"]');
+
+    expect(retryButtons).toHaveLength(1);
+    expect(branchButtons).toHaveLength(1);
+  });
 });
