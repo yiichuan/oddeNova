@@ -17,4 +17,8 @@ export interface ChatMessage {
   progressKind?: ProgressKind;
   toolName?: string;
   ok?: boolean;
+  // For role === 'assistant': a decorative opening line seeded when an empty
+  // session is created. Excluded from LLM history (see conversation-history.ts)
+  // and from the retry/branch actions in ConversationView.
+  isGreeting?: boolean;
 }
