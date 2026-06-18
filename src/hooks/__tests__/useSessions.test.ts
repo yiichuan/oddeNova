@@ -125,13 +125,13 @@ describe('useSessions', () => {
     act(() => {
       getHook().addUserMessage('来段普通的鼓点');
     });
-    const firstMessageId = getHook().currentSession?.messages[0].id;
+    const firstMessageId = getHook().currentSession?.messages.find((m) => m.role === 'user')?.id;
     expect(firstMessageId).toBeTruthy();
 
     act(() => {
       getHook().truncate(firstMessageId!);
     });
-    expect(getHook().currentSession?.messages).toHaveLength(0);
+    expect(getHook().currentSession?.messages).toHaveLength(1);
     expect(getHook().currentSession?.title).toBe('来段普通的鼓点');
 
     act(() => {
