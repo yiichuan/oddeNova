@@ -7,6 +7,7 @@ import {
   deleteSession as dbDeleteSession,
 } from '../lib/session-storage';
 import { t } from '../lib/i18n';
+import { pickGreeting } from '../lib/greetings';
 
 export interface TokenStats {
   promptTokens: number;
@@ -34,6 +35,20 @@ function newMessageId(): string {
   return `msg-${Date.now()}-${++messageId}`;
 }
 
+function makeGreetingMessage(): ChatMessage {
+  return {
+    id: newMessageId(),
+    role: 'assistant',
+    content: pickGreeting(),
+    timestamp: Date.now(),
+    isGreeting: true,
+  };
+}
+
+function isEffectivelyEmpty(s: Session): boolean {
+  return !s.code && s.messages.every((m) => m.isGreeting === true);
+}
+
 function deriveTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser) return t('newSessionTitle');
@@ -46,7 +61,7 @@ function makeEmptySession(): Session {
   return {
     id: newSessionId(),
     title: t('newSessionTitle'),
-    messages: [],
+    messages: [makeGreetingMessage()],
     code: '',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -79,6 +94,7 @@ export function applyRefreshEmptySessionForReuse(s: Session, now: number): Sessi
   return {
     ...s,
     title: t('newSessionTitle'),
+    messages: [makeGreetingMessage()],
     createdAt: now,
     updatedAt: now,
   };
@@ -342,7 +358,7 @@ export function useSessions() {
       const cur = prev.find((s) => s.id === id);
       // If the current session is already empty, reuse it instead of stacking
       // up another untouched "New Session".
-      if (cur && cur.messages.length === 0 && !cur.code) {
+      if (cur && isEffectivelyEmpty(cur)) {
         if (id && currentId !== id) setCurrentId(id);
         const refreshed = applyRefreshEmptySessionForReuse(cur, Date.now());
         dbPutSession(refreshed);
@@ -351,7 +367,7 @@ export function useSessions() {
       // If there's already an empty session in the list, switch to it instead
       // of creating a duplicate. This handles the case where the user starts
       // with a new session, switches to an old one, then clicks "New Session".
-      const existingEmpty = prev.find((s) => s.messages.length === 0 && !s.code);
+      const existingEmpty = prev.find((s) => isEffectivelyEmpty(s));
       if (existingEmpty) {
         setCurrentId(existingEmpty.id);
         // Refresh createdAt so the reused empty session sorts to the top.

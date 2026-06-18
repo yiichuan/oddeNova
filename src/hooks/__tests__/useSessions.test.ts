@@ -104,7 +104,7 @@ describe('useSessions', () => {
     });
 
     expect(getHook().currentSession?.title).toBe('周末广告配乐');
-    expect(getHook().currentSession?.messages[0].content).toBe('全新内容');
+    expect(getHook().currentSession?.messages.at(-1)?.content).toBe('全新内容');
   });
 
   it('default title derives on first addUserMessage', async () => {
@@ -161,6 +161,31 @@ describe('useSessions', () => {
       getHook().renameSession(sessionId, longTitle);
     });
     expect(getHook().currentSession?.title).toBe(longTitle.slice(0, 60));
+  });
+
+  it('seeds a fresh session with exactly one greeting message', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const messages = getHook().currentSession?.messages ?? [];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe('assistant');
+    expect(messages[0].isGreeting).toBe(true);
+  });
+
+  it('newSession reuses a session that only contains a greeting, instead of stacking a new one', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const initialId = getHook().currentId;
+    const initialCount = getHook().sessions.length;
+
+    act(() => {
+      getHook().newSession();
+    });
+
+    expect(getHook().sessions.length).toBe(initialCount);
+    expect(getHook().currentId).toBe(initialId);
   });
 });
 
@@ -228,15 +253,22 @@ describe('applyTruncateAndEdit', () => {
 });
 
 describe('empty session reuse helpers', () => {
-  it('refreshes reused empty sessions without adding mode state', () => {
-    const s = makeSession({ createdAt: 1, updatedAt: 1 });
-
-    expect(applyRefreshEmptySessionForReuse(s, 2)).toEqual({
-      ...s,
-      title: t('newSessionTitle'),
-      createdAt: 2,
-      updatedAt: 2,
+  it('refreshes reused empty sessions and re-rolls the greeting', () => {
+    const s = makeSession({
+      createdAt: 1,
+      updatedAt: 1,
+      messages: [{ id: 'old-greeting', role: 'assistant', content: '旧招呼', timestamp: 1, isGreeting: true }],
     });
+
+    const result = applyRefreshEmptySessionForReuse(s, 2);
+
+    expect(result.title).toBe(t('newSessionTitle'));
+    expect(result.createdAt).toBe(2);
+    expect(result.updatedAt).toBe(2);
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].role).toBe('assistant');
+    expect(result.messages[0].isGreeting).toBe(true);
+    expect(result.messages[0].id).not.toBe('old-greeting');
   });
 });
 
