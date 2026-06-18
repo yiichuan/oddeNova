@@ -222,6 +222,10 @@ function convertTools(
   }));
 }
 
+function getActiveLLMCaller(): LLMCaller {
+  return isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
+}
+
 // ===========================================================================
 // LLMCaller implementation — Anthropic path (original logic)
 // ===========================================================================
@@ -235,7 +239,7 @@ const anthropicLLMCaller: LLMCaller = {
       model: getModel(),
       system,
       messages: amsgs,
-      tools: convertTools(tools),
+      ...(tools.length > 0 ? { tools: convertTools(tools) } : {}),
       temperature: 1,
       max_tokens: 16000,
       thinking: { type: 'enabled', budget_tokens: 10000 },
@@ -299,8 +303,12 @@ function createOpenAILLMCaller(): LLMCaller {
         model: getModel(),
         // ChatMsg is already in OpenAI format, can be passed directly
         messages: messages as OpenAI.ChatCompletionMessageParam[],
-        tools: tools as OpenAI.ChatCompletionTool[],
-        tool_choice: 'auto',
+        ...(tools.length > 0
+          ? {
+              tools: tools as OpenAI.ChatCompletionTool[],
+              tool_choice: 'auto' as const,
+            }
+          : {}),
         temperature: 0.7,
         max_tokens: 16000,
         stream: true,
@@ -381,7 +389,7 @@ export async function runAgent(
   const staticScenario = resolveStaticSuggestionScenario(instruction);
 
   // Select the LLMCaller implementation corresponding to the current provider
-  const activeLLMCaller = isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
+  const activeLLMCaller = getActiveLLMCaller();
 
   const llm = staticScenario
     ? createDemoLLMCaller(staticScenario)

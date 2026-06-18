@@ -6,7 +6,14 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { t } from '../../lib/i18n';
-import { applyTruncate, applyTruncateAndEdit, useSessions } from '../useSessions';
+import {
+  applyAppendAssistantDelta,
+  applyFinalizeLastAssistantMessage,
+  applyRefreshEmptySessionForReuse,
+  applyTruncate,
+  applyTruncateAndEdit,
+  useSessions,
+} from '../useSessions';
 import type { Session } from '../useSessions';
 
 const storageMocks = vi.hoisted(() => ({
@@ -97,7 +104,7 @@ describe('useSessions', () => {
     });
 
     expect(getHook().currentSession?.title).toBe('周末广告配乐');
-    expect(getHook().currentSession?.messages[0].content).toBe('全新内容');
+    expect(getHook().currentSession?.messages.at(-1)?.content).toBe('全新内容');
   });
 
   it('default title derives on first addUserMessage', async () => {
@@ -118,13 +125,13 @@ describe('useSessions', () => {
     act(() => {
       getHook().addUserMessage('来段普通的鼓点');
     });
-    const firstMessageId = getHook().currentSession?.messages[0].id;
+    const firstMessageId = getHook().currentSession?.messages.find((m) => m.role === 'user')?.id;
     expect(firstMessageId).toBeTruthy();
 
     act(() => {
       getHook().truncate(firstMessageId!);
     });
-    expect(getHook().currentSession?.messages).toHaveLength(0);
+    expect(getHook().currentSession?.messages).toHaveLength(1);
     expect(getHook().currentSession?.title).toBe('来段普通的鼓点');
 
     act(() => {
@@ -154,6 +161,31 @@ describe('useSessions', () => {
       getHook().renameSession(sessionId, longTitle);
     });
     expect(getHook().currentSession?.title).toBe(longTitle.slice(0, 60));
+  });
+
+  it('seeds a fresh session with exactly one greeting message', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const messages = getHook().currentSession?.messages ?? [];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe('assistant');
+    expect(messages[0].isGreeting).toBe(true);
+  });
+
+  it('newSession reuses a session that only contains a greeting, instead of stacking a new one', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const initialId = getHook().currentId;
+    const initialCount = getHook().sessions.length;
+
+    act(() => {
+      getHook().newSession();
+    });
+
+    expect(getHook().sessions.length).toBe(initialCount);
+    expect(getHook().currentId).toBe(initialId);
   });
 });
 
@@ -217,6 +249,59 @@ describe('applyTruncateAndEdit', () => {
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0].id).toBe('msg-0');
     expect(result.messages[1].content).toBe('新内容');
+  });
+});
+
+describe('empty session reuse helpers', () => {
+  it('refreshes reused empty sessions and re-rolls the greeting', () => {
+    const s = makeSession({
+      createdAt: 1,
+      updatedAt: 1,
+      messages: [{ id: 'old-greeting', role: 'assistant', content: '旧招呼', timestamp: 1, isGreeting: true }],
+    });
+
+    const result = applyRefreshEmptySessionForReuse(s, 2);
+
+    expect(result.title).toBe(t('newSessionTitle'));
+    expect(result.createdAt).toBe(2);
+    expect(result.updatedAt).toBe(2);
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].role).toBe('assistant');
+    expect(result.messages[0].isGreeting).toBe(true);
+    expect(result.messages[0].id).not.toBe('old-greeting');
+  });
+});
+
+describe('assistant streaming helpers', () => {
+  it('creates and appends to one assistant message while chat text streams', () => {
+    const s = makeSession({
+      messages: [{ id: 'u1', role: 'user', content: '你是谁', timestamp: 0 }],
+    });
+
+    const first = applyAppendAssistantDelta(s, '我是 ');
+    const second = applyAppendAssistantDelta(first, 'Nova');
+
+    expect(second.messages).toHaveLength(2);
+    expect(second.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '我是 Nova',
+    });
+  });
+
+  it('finalizes the last streamed assistant message with final content', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'u1', role: 'user', content: '聊聊今晚', timestamp: 0 },
+        { id: 'a1', role: 'assistant', content: '今晚像一片蓝色湖面。', timestamp: 1 },
+      ],
+    });
+
+    const result = applyFinalizeLastAssistantMessage(s, '今晚像一片安静的蓝色湖面。');
+
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '今晚像一片安静的蓝色湖面。',
+    });
   });
 });
 

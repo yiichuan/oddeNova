@@ -199,6 +199,12 @@ export function parseNextSteps(explanation: string): string[] {
     .filter(Boolean);
 }
 
+export function stripNextSteps(explanation: string): string {
+  return explanation
+    .replace(/\n\n(?:接下来可以|Next steps)[：:][\s\S]*$/i, '')
+    .trim();
+}
+
 /**
  * Build 2 short next-step suggestions based on the current code and conversation.
  * - Empty code → static defaults.

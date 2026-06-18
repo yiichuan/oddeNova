@@ -108,7 +108,7 @@ export default function ChatInput({
         placeholder={t('inputPlaceholder')}
         rows={1}
         disabled={isLoading && replayValue === undefined}
-        className="w-full min-h-[108px] resize-none overflow-hidden rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 pr-16 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] focus:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full min-h-[108px] resize-none overflow-hidden rounded-[12px] bg-[#111111] px-4 pt-4 pb-12 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] focus:text-white disabled:cursor-not-allowed disabled:opacity-50"
         style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
       />
 
@@ -136,34 +136,36 @@ export default function ChatInput({
         </div>
       )} */}
 
-      {replayValue !== undefined ? (
-        <button
-          type="button"
-          disabled={!replayValue.trim()}
-          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-30"
-          title={t('send')}
-        >
-          <ArrowUpIcon size={18} />
-        </button>
-      ) : isLoading ? (
-        <button
-          type="button"
-          onClick={onStop}
-          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80"
-          title={t('stop')}
-        >
-          <StopIcon size={18} />
-        </button>
-      ) : (
-        <button
-          type="submit"
-          disabled={!text.trim() || engineStatus !== 'ready'}
-          className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
-          title={t('send')}
-        >
-          <ArrowUpIcon size={18} />
-        </button>
-      )}
+      <div className="absolute right-2 bottom-2 flex items-center gap-2">
+        {replayValue !== undefined ? (
+          <button
+            type="button"
+            disabled={!replayValue.trim()}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-30"
+            title={t('send')}
+          >
+            <ArrowUpIcon size={18} />
+          </button>
+        ) : isLoading ? (
+          <button
+            type="button"
+            onClick={onStop}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80"
+            title={t('stop')}
+          >
+            <StopIcon size={18} />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!text.trim()}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
+            title={t('send')}
+          >
+            <ArrowUpIcon size={18} />
+          </button>
+        )}
+      </div>
     </form>
   );
 }

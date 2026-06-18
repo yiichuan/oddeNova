@@ -20,10 +20,11 @@ export function useSuggestions(opts: {
   currentCode: string;
   hasUserMessages: boolean;
   messages: ChatMessage[];
+  enabled?: boolean;
   /** When provided (from commit explanation), use directly and skip LLM call. */
   commitSuggestions?: string[];
 }) {
-  const { key, currentCode, hasUserMessages, messages, commitSuggestions } = opts;
+  const { key, currentCode, hasUserMessages, messages, enabled = true, commitSuggestions } = opts;
   const [suggestions, setSuggestions] = useState<string[]>(() => [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2));
   const [loading, setLoading] = useState(false);
   const [prevKey, setPrevKey] = useState(key);
@@ -52,6 +53,11 @@ export function useSuggestions(opts: {
   }, [key]);
 
   useEffect(() => {
+    if (!enabled) {
+      reqIdRef.current += 1;
+      setLoading(false);
+      return;
+    }
     // No conversation yet → keep showing the static defaults.
     if (!hasUserMessages || !currentCode.trim()) {
       return;
@@ -78,7 +84,7 @@ export function useSuggestions(opts: {
       setLoading(false);
       if (chips.length > 0) setSuggestions(chips);
     });
-  }, [currentCode, hasUserMessages]);
+  }, [currentCode, enabled, hasUserMessages]);
 
   return { suggestions, loading };
 }

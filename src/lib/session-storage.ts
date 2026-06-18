@@ -12,6 +12,13 @@ const LS_CURRENT_KEY = 'vibe-sessions-current-v1';
 let db: IDBPDatabase | null = null;
 let memoryFallback = false;
 
+type StoredSession = Session & { mode?: unknown };
+
+export function normalizeSession(session: StoredSession): Session {
+  const { mode: _ignored, ...normalized } = session;
+  return normalized;
+}
+
 export async function openDB(): Promise<void> {
   try {
     db = await idbOpenDB(DB_NAME, DB_VERSION, {
@@ -32,12 +39,13 @@ async function migrateFromLocalStorage(): Promise<void> {
   const raw = localStorage.getItem(LS_SESSIONS_KEY);
   if (!raw || !db) return;
   try {
-    const sessions = JSON.parse(raw) as Session[];
-    if (!Array.isArray(sessions) || sessions.length === 0) {
+    const parsed = JSON.parse(raw) as StoredSession[];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
       localStorage.removeItem(LS_SESSIONS_KEY);
       localStorage.removeItem(LS_CURRENT_KEY);
       return;
     }
+    const sessions = parsed.map(normalizeSession);
     const tx = db.transaction(STORE_NAME, 'readwrite');
     await Promise.all(sessions.map((s) => tx.store.put(s)));
     await tx.done;
@@ -52,7 +60,7 @@ async function migrateFromLocalStorage(): Promise<void> {
 export async function getAllSessions(): Promise<Session[]> {
   if (memoryFallback || !db) return [];
   try {
-    const all = (await db.getAll(STORE_NAME)) as Session[];
+    const all = ((await db.getAll(STORE_NAME)) as StoredSession[]).map(normalizeSession);
     return all.sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];

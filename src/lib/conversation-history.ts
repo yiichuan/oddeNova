@@ -4,7 +4,7 @@ import type { ChatMessage } from '../hooks/useChat';
 type ConversationMessage = ChatMessage & { role: 'user' | 'assistant' };
 
 function isConversationMessage(message: ChatMessage): message is ConversationMessage {
-  return message.role === 'user' || message.role === 'assistant';
+  return (message.role === 'user' || message.role === 'assistant') && !message.isGreeting;
 }
 
 export function conversationHistoryFromMessages(messages: ChatMessage[]): ConversationTurn[] {

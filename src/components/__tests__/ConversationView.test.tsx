@@ -30,7 +30,12 @@ function setMobileViewport(matches: boolean) {
   });
 }
 
-function renderConversationView(messages: ChatMessage[], onRollback = vi.fn()) {
+function renderConversationView(
+  messages: ChatMessage[],
+  onRollback = vi.fn(),
+  isLoading = false,
+  showThinkingIndicator = true,
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -39,7 +44,8 @@ function renderConversationView(messages: ChatMessage[], onRollback = vi.fn()) {
     root.render(
       <ConversationView
         messages={messages}
-        isLoading={false}
+        isLoading={isLoading}
+        showThinkingIndicator={showThinkingIndicator}
         onRollback={onRollback}
         onBranch={vi.fn()}
         onRetry={vi.fn()}
@@ -151,5 +157,78 @@ describe('ConversationView mobile interactions', () => {
     });
 
     expect(buttons.every((button) => button.disabled)).toBe(true);
+  });
+});
+
+describe('ConversationView chat streaming', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('can suppress the generic thinking row while chat text streams in assistant bubbles', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: '你是谁',
+        timestamp: 1,
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '我是 oddeNova',
+        timestamp: 2,
+      },
+    ];
+    const { container, root } = renderConversationView(
+      messages,
+      vi.fn(),
+      true,
+      false,
+    );
+    roots.push(root);
+
+    expect(container.textContent).toContain('我是 oddeNova');
+    expect(container.textContent).not.toContain('Thinking...');
+  });
+
+  it('hides retry/branch actions on a greeting bubble but keeps them on a normal assistant message', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'greeting-1',
+        role: 'assistant',
+        content: '嗨，我在这儿。',
+        timestamp: 1,
+        isGreeting: true,
+      },
+      {
+        id: 'u1',
+        role: 'user',
+        content: '来段鼓点',
+        timestamp: 2,
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '已经加上了。',
+        timestamp: 3,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const retryButtons = container.querySelectorAll('button[title="Retry"]');
+    const branchButtons = container.querySelectorAll('button[title="Branch conversation from here"]');
+
+    expect(retryButtons).toHaveLength(1);
+    expect(branchButtons).toHaveLength(1);
   });
 });

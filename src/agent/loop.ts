@@ -165,6 +165,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   let explanation = '';
   let committed = false;
   let finalCode = state.code;
+  let isChatReply = false;
   // Only keep usage from the last iteration: each call accumulates the full message history,
   // so the final inputTokens reflects the true size of the current complete context.
   let lastUsage: LLMUsage | undefined;
@@ -210,8 +211,15 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     });
 
     if (resp.toolCalls.length === 0) {
-      // No tools requested — model done. Treat its text as explanation.
-      explanation = resp.content?.trim() || (isZh ? '已完成' : 'Done');
+      // No tools requested. If the model returned substantive text and did not
+      // mutate code, this is a legal chat turn in unified-agent mode.
+      const text = resp.content?.trim() || '';
+      if (text) {
+        explanation = text;
+        if (state.code === initialCode) {
+          isChatReply = true;
+        }
+      }
       break;
     }
 
@@ -354,6 +362,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
         });
         finalCode = state.code;
       }
+    } else if (isChatReply) {
+      finalCode = initialCode;
     } else {
       onProgress?.({
         kind: 'warn',
@@ -386,8 +396,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       }
     : undefined;
 
+  const resultCode = committed || finalCode !== initialCode ? finalCode : '';
+
   return {
-    code: finalCode,
+    code: resultCode,
     explanation,
     iterations,
     committed,

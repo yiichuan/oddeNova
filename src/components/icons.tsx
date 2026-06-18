@@ -252,3 +252,31 @@ export function GitBranchIcon({ size = 16, className }: IconProps) {
     </svg>
   );
 }
+
+export function ChatBubbleIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M21 11.5a8.4 8.4 0 0 1-9 8.25 8.8 8.8 0 0 1-3.8-.85L3 20l1.2-4.4A8 8 0 0 1 3 11.5C3 6.95 7.03 3.25 12 3.25s9 3.7 9 8.25Z" />
+      <path d="M8 10.5h8" />
+      <path d="M8 13.5h5" />
+    </svg>
+  );
+}
+
+export function SparklesIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 3l1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3Z" />
+      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" />
+      <path d="M5 4l.6 1.6L7 6l-1.4.4L5 8l-.6-1.6L3 6l1.4-.4L5 4Z" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}

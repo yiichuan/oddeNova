@@ -27,7 +27,7 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
-import { zh, t } from './lib/i18n';
+import { t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 
 export default function App() {
@@ -121,6 +121,7 @@ export default function App() {
   const { suggestions, loading: suggestionsLoading } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
+    enabled: true,
     // In demo mode real LLM suggestions are not needed; skip the buildSuggestions call
     hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
@@ -130,6 +131,9 @@ export default function App() {
   const demoSuggestions = isDemoMode()
     ? (demoStep < activeSet.length ? [activeSet[demoStep].prompt] : [])
     : suggestions;
+  const visibleSuggestions = demoSuggestions;
+  const showMobileCreateSuggestions =
+    !isLoading && !suggestionsLoading && visibleSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -173,8 +177,8 @@ export default function App() {
       if (e.kind === 'commit') { sessions.addProgress('commit', t('preparingToPlay'), { sessionId }); return; }
       if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
       if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
-      if (e.kind === 'assistant_text_delta') { sessions.appendToLastThinking(e.delta, sessionId); return; }
-      if (e.kind === 'assistant_text') { sessions.addProgress('thinking', e.text, { sessionId }); return; }
+      if (e.kind === 'assistant_text_delta') { sessions.appendToLastAssistant(e.delta, sessionId); return; }
+      if (e.kind === 'assistant_text') { sessions.finalizeLastAssistantMessage(e.text, sessionId); return; }
     },
     [sessions]
   );
@@ -194,15 +198,15 @@ export default function App() {
   });
 
   const handleInstruction = useCallback(
-    (text: string, options?: {
+    async (text: string, options?: {
       skipAddMessage?: boolean;
       initialCode?: string;
       history?: ConversationTurn[];
     }) => {
-      // In demo mode, if the sent text matches the current step's prompt, advance to the next step.
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
       }
+
       return runTurn({
         text,
         includeHistory: true,
@@ -211,7 +215,7 @@ export default function App() {
         suppliedHistory: options?.history,
       });
     },
-    [runTurn, activeSet, demoStep]
+    [runTurn, demoStep, activeSet]
   );
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
@@ -302,7 +306,7 @@ export default function App() {
 
   const handleMoodInstruction = useCallback(async () => {
     // Pre-flight engine check before the (potentially slow) mood fetch, so we don't
-    // fire the mood request when audio is unavailable. runTurn re-checks internally.
+    // fire the mood request when audio is unavailable.
     const engineUnavailableMessage = getEngineUnavailableMessage(strudel.engineStatus);
     if (engineUnavailableMessage) {
       strudel.setError(engineUnavailableMessage);
@@ -471,9 +475,9 @@ export default function App() {
           </div>
 
           {/* Suggestion chips — horizontal scroll */}
-          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code' && (
+          {showMobileCreateSuggestions && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
-              {demoSuggestions.map((s) => (
+              {visibleSuggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -489,17 +493,19 @@ export default function App() {
           )}
 
           {/* Input */}
-          <ChatInput
-            isLoading={isLoading}
-            engineReady={strudel.engineReady}
-            engineStatus={strudel.engineStatus}
-            onSendText={handleInstruction}
-            onStop={handleStop}
-            onReinitEngine={strudel.reinit}
-            prefill={rollbackPrefill}
-            focusTrigger={inputFocusTrigger}
-            onFocusChange={handleChatFocusChange}
-          />
+          <div className={showMobileCreateSuggestions ? '' : 'mt-3'}>
+            <ChatInput
+              isLoading={isLoading}
+              engineReady={strudel.engineReady}
+              engineStatus={strudel.engineStatus}
+              onSendText={handleInstruction}
+              onStop={handleStop}
+              onReinitEngine={strudel.reinit}
+              prefill={rollbackPrefill}
+              focusTrigger={inputFocusTrigger}
+              onFocusChange={handleChatFocusChange}
+            />
+          </div>
         </div>
 
         {/* ── History Dropdown ── */}
@@ -583,7 +589,7 @@ export default function App() {
           engineStatus={strudel.engineStatus}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
-          suggestions={isVideoMode ? [] : demoSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
+          suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
           suggestionsLoading={!isDemoMode() && suggestionsLoading}
@@ -686,18 +692,9 @@ export default function App() {
 }
 
 function formatToolCall(name: string, args: Record<string, unknown>): string {
-  const s = (key: string): string => {
-    const v = args[key];
-    return v == null ? '' : String(v);
-  };
   switch (name) {
     case 'getScore':
       return t('readScore');
-
-    case 'applyEffect':
-      return zh ? `给 ${s('layer')} 加效果 ${s('chain')}` : `Apply effect ${s('chain')} to ${s('layer')}`;
-    case 'setTempo':
-      return zh ? `设速度 ${s('bpm')} BPM` : `Set tempo ${s('bpm')} BPM`;
     case 'validate':
       return t('validateCode');
     case 'commit':

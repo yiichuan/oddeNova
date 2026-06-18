@@ -15,6 +15,7 @@ interface SidebarProps {
   title: string;
   messages: ChatMessage[];
   isLoading: boolean;
+  showThinkingIndicator?: boolean;
   isMoodLoading?: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
@@ -51,6 +52,7 @@ export default function Sidebar({
   title,
   messages,
   isLoading,
+  showThinkingIndicator = true,
   isMoodLoading = false,
   engineReady,
   engineStatus = engineReady ? 'ready' : 'initializing',
@@ -87,6 +89,8 @@ export default function Sidebar({
   const [focusTrigger, setFocusTrigger] = useState(1);
   const prevIsLoadingRef = useRef(false);
   const prevPrefillTriggerRef = useRef(prefillTrigger);
+  const canShowMoodButton = !navigator.userAgent.includes('Windows') && (airjellyAvailable || isDemoMode());
+  const canShowActionRow = suggestions.length > 0 || Boolean(fillSuggestion) || canShowMoodButton;
 
   useEffect(() => {
     if (prevIsLoadingRef.current && !isLoading) {
@@ -185,6 +189,7 @@ export default function Sidebar({
           key={currentId ?? 'default'}
           messages={messages}
           isLoading={isLoading && !isReplaying}
+          showThinkingIndicator={showThinkingIndicator}
           isVideoMode={isVideoMode}
           scrollBottom={scrollBottom}
           onRollback={onRollback}
@@ -195,7 +200,7 @@ export default function Sidebar({
 
       <div className="pl-4 pr-0 pb-2">
         {/* [video] In video mode, hide suggestion chips and the mood button to avoid obscuring the CodePanel view */}
-        {!isLoading && !suggestionsLoading && !isVideoMode && (
+        {!isLoading && !suggestionsLoading && !isVideoMode && canShowActionRow && (
           <div className="suggestion-chips flex flex-wrap gap-2 pb-2">
             <SuggestionChips suggestions={suggestions} disabled={engineStatus !== 'ready'} onPick={onSendText} />
             {fillSuggestion && (
@@ -210,7 +215,7 @@ export default function Sidebar({
                 {t('playSong')}
               </button>
             )}
-            {!navigator.userAgent.includes('Windows') && (airjellyAvailable || isDemoMode()) && (
+            {canShowMoodButton && (
               <button
                 type="button"
                 onClick={onMoodGenerate}
