@@ -12,6 +12,15 @@ type MockDb = {
   delete: ReturnType<typeof vi.fn>;
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver;
+  });
+
+  return { promise, resolve };
+}
+
 function makeMockDb({
   personas = [],
   activePersonaId,
@@ -40,6 +49,17 @@ async function importWithMockDb(db: MockDb) {
   return import('../persona-storage');
 }
 
+async function importWithUnavailableDb() {
+  vi.doMock('../session-storage', () => ({
+    getStorageDb: () => null,
+    openDB: vi.fn().mockResolvedValue(undefined),
+    PERSONA_STORE_NAME: 'personas',
+    SETTINGS_STORE_NAME: 'settings',
+  }));
+
+  return import('../persona-storage');
+}
+
 describe('persona-storage cache behavior', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -59,7 +79,7 @@ describe('persona-storage cache behavior', () => {
       getPersonaPrompt,
       putPersona,
       setActivePersonaId,
-    } = await import('../persona-storage');
+    } = await importWithUnavailableDb();
 
     await putPersona({
       id: 'persona-1',
@@ -88,7 +108,7 @@ describe('persona-storage cache behavior', () => {
   });
 
   it('updates an existing persona and keeps active cache in sync', async () => {
-    const { getActivePersonaSync, putPersona, setActivePersonaId } = await import('../persona-storage');
+    const { getActivePersonaSync, putPersona, setActivePersonaId } = await importWithUnavailableDb();
 
     await putPersona({
       id: 'persona-1',
@@ -122,7 +142,7 @@ describe('persona-storage cache behavior', () => {
       getPersonaPrompt,
       putPersona,
       setActivePersonaId,
-    } = await import('../persona-storage');
+    } = await importWithUnavailableDb();
 
     await putPersona({
       id: 'persona-1',
@@ -140,7 +160,7 @@ describe('persona-storage cache behavior', () => {
   });
 
   it('ignores attempts to delete the built-in persona', async () => {
-    const { BUILTIN_PERSONA_ID, deletePersona, getActivePersonaSync } = await import('../persona-storage');
+    const { BUILTIN_PERSONA_ID, deletePersona, getActivePersonaSync } = await importWithUnavailableDb();
 
     await deletePersona(BUILTIN_PERSONA_ID);
 
@@ -241,5 +261,199 @@ describe('persona-storage cache behavior', () => {
       key: 'activePersonaId',
       value: BUILTIN_PERSONA_ID,
     });
+  });
+
+  it('hydrates from IndexedDB before selecting a persisted persona as the first call', async () => {
+    const db = makeMockDb({
+      personas: [
+        {
+          id: 'persisted-id',
+          name: 'Persisted',
+          prompt: 'Already saved',
+          createdAt: 10,
+          updatedAt: 10,
+        },
+      ],
+    });
+    const { getActivePersonaSync, setActivePersonaId } = await importWithMockDb(db);
+
+    await setActivePersonaId('persisted-id');
+
+    expect(getActivePersonaSync()).toEqual({
+      id: 'persisted-id',
+      name: 'Persisted',
+      prompt: 'Already saved',
+    });
+    expect(db.put).toHaveBeenCalledWith('settings', {
+      key: 'activePersonaId',
+      value: 'persisted-id',
+    });
+  });
+
+  it('hydrates and merges existing IndexedDB personas before putPersona as the first call', async () => {
+    const db = makeMockDb({
+      personas: [
+        {
+          id: 'persisted-id',
+          name: 'Persisted',
+          prompt: 'Already saved',
+          createdAt: 10,
+          updatedAt: 10,
+        },
+      ],
+      activePersonaId: 'persisted-id',
+    });
+    const { getActivePersonaSync, getAllPersonas, putPersona } = await importWithMockDb(db);
+
+    await putPersona({
+      id: 'new-id',
+      name: 'New',
+      prompt: 'New prompt',
+      createdAt: 20,
+      updatedAt: 20,
+    });
+
+    expect(await getAllPersonas()).toEqual([
+      {
+        id: 'new-id',
+        name: 'New',
+        prompt: 'New prompt',
+        createdAt: 20,
+        updatedAt: 20,
+      },
+      {
+        id: 'persisted-id',
+        name: 'Persisted',
+        prompt: 'Already saved',
+        createdAt: 10,
+        updatedAt: 10,
+      },
+    ]);
+    expect(getActivePersonaSync()).toEqual({
+      id: 'persisted-id',
+      name: 'Persisted',
+      prompt: 'Already saved',
+    });
+  });
+
+  it('hydrates before deleting an active persisted persona as the first call', async () => {
+    const db = makeMockDb({
+      personas: [
+        {
+          id: 'active-id',
+          name: 'Active',
+          prompt: 'Active prompt',
+          createdAt: 10,
+          updatedAt: 30,
+        },
+        {
+          id: 'kept-id',
+          name: 'Kept',
+          prompt: 'Kept prompt',
+          createdAt: 10,
+          updatedAt: 20,
+        },
+      ],
+      activePersonaId: 'active-id',
+    });
+    const { BUILTIN_PERSONA_ID, deletePersona, getActivePersonaSync, getAllPersonas } = await importWithMockDb(db);
+
+    await deletePersona('active-id');
+
+    expect(await getAllPersonas()).toEqual([
+      {
+        id: 'kept-id',
+        name: 'Kept',
+        prompt: 'Kept prompt',
+        createdAt: 10,
+        updatedAt: 20,
+      },
+    ]);
+    expect(getActivePersonaSync()).toEqual({ id: BUILTIN_PERSONA_ID, name: 'oddeNova' });
+    expect(db.delete).toHaveBeenCalledWith('personas', 'active-id');
+    expect(db.put).toHaveBeenCalledWith('settings', {
+      key: 'activePersonaId',
+      value: BUILTIN_PERSONA_ID,
+    });
+  });
+
+  it('uses one IndexedDB hydration for concurrent cold-cache mutations', async () => {
+    const firstHydration = deferred<unknown[]>();
+    const db = makeMockDb({
+      personas: [
+        {
+          id: 'persisted-id',
+          name: 'Persisted',
+          prompt: 'Already saved',
+          createdAt: 10,
+          updatedAt: 10,
+        },
+      ],
+    });
+    db.getAll = vi
+      .fn()
+      .mockImplementationOnce(() => firstHydration.promise)
+      .mockResolvedValue([
+        {
+          id: 'persisted-id',
+          name: 'Persisted',
+          prompt: 'Already saved',
+          createdAt: 10,
+          updatedAt: 10,
+        },
+      ]);
+    const { getAllPersonas, putPersona } = await importWithMockDb(db);
+
+    const firstPut = putPersona({
+      id: 'first-id',
+      name: 'First',
+      prompt: 'First prompt',
+      createdAt: 20,
+      updatedAt: 20,
+    });
+    const secondPut = putPersona({
+      id: 'second-id',
+      name: 'Second',
+      prompt: 'Second prompt',
+      createdAt: 30,
+      updatedAt: 30,
+    });
+
+    await Promise.resolve();
+    firstHydration.resolve([
+      {
+        id: 'persisted-id',
+        name: 'Persisted',
+        prompt: 'Already saved',
+        createdAt: 10,
+        updatedAt: 10,
+      },
+    ]);
+    await Promise.all([firstPut, secondPut]);
+
+    expect(db.getAll).toHaveBeenCalledTimes(1);
+    expect(await getAllPersonas()).toEqual([
+      {
+        id: 'second-id',
+        name: 'Second',
+        prompt: 'Second prompt',
+        createdAt: 30,
+        updatedAt: 30,
+      },
+      {
+        id: 'first-id',
+        name: 'First',
+        prompt: 'First prompt',
+        createdAt: 20,
+        updatedAt: 20,
+      },
+      {
+        id: 'persisted-id',
+        name: 'Persisted',
+        prompt: 'Already saved',
+        createdAt: 10,
+        updatedAt: 10,
+      },
+    ]);
   });
 });

@@ -30,6 +30,7 @@ const ACTIVE_PERSONA_SETTING_KEY = 'activePersonaId';
 const BUILTIN_PERSONA: ActivePersona = { id: BUILTIN_PERSONA_ID, name: 'oddeNova' };
 
 let cacheInitialized = false;
+let initPromise: Promise<void> | null = null;
 let personaCache = new Map<string, CustomPersona>();
 let activePersonaId = BUILTIN_PERSONA_ID;
 
@@ -66,9 +67,7 @@ async function persistActivePersonaId(): Promise<void> {
   }
 }
 
-export async function initPersonaCache(): Promise<void> {
-  if (cacheInitialized) return;
-
+async function hydratePersonaCache(): Promise<void> {
   try {
     if (!getStorageDb()) {
       await openDB();
@@ -96,12 +95,29 @@ export async function initPersonaCache(): Promise<void> {
   }
 }
 
+export async function initPersonaCache(): Promise<void> {
+  if (cacheInitialized) return;
+  if (!initPromise) {
+    initPromise = hydratePersonaCache().finally(() => {
+      initPromise = null;
+    });
+  }
+  await initPromise;
+}
+
+async function ensureCacheReadyForMutation(): Promise<void> {
+  if (cacheInitialized) return;
+  await initPersonaCache();
+}
+
 export async function getAllPersonas(): Promise<CustomPersona[]> {
   await initPersonaCache();
   return sortPersonas(Array.from(personaCache.values()));
 }
 
 export async function putPersona(persona: CustomPersona): Promise<void> {
+  await ensureCacheReadyForMutation();
+
   if (!isCustomPersona(persona)) {
     personaCache.delete(BUILTIN_PERSONA_ID);
     activePersonaId = resolveActivePersonaId(activePersonaId);
@@ -124,6 +140,8 @@ export async function putPersona(persona: CustomPersona): Promise<void> {
 }
 
 export async function deletePersona(id: string): Promise<void> {
+  await ensureCacheReadyForMutation();
+
   if (id === BUILTIN_PERSONA_ID) {
     markInitialized();
     return;
@@ -157,6 +175,8 @@ export async function getActivePersonaId(): Promise<string> {
 }
 
 export async function setActivePersonaId(id: string): Promise<void> {
+  await ensureCacheReadyForMutation();
+
   activePersonaId = resolveActivePersonaId(id);
   markInitialized();
   await persistActivePersonaId();
@@ -181,6 +201,7 @@ export function getPersonaPrompt(id: string): string | undefined {
 
 export function resetPersonaCacheForTests(): void {
   cacheInitialized = false;
+  initPromise = null;
   personaCache = new Map();
   activePersonaId = BUILTIN_PERSONA_ID;
 }
