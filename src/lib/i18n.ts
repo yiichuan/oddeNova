@@ -94,6 +94,7 @@ const S: Record<string, readonly [string, string]> = {
   noSessions: ['暂无会话', 'No sessions'],
 
   // Sidebar
+  choosePersona: ['选择人格', 'Choose persona'],
   replaySession: ['回放会话', 'Replay session'],
   viewHistory:   ['查看历史', 'View history'],
   playSong:      ['来首曲子', 'Play me a song'],

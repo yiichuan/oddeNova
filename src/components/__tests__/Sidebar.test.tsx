@@ -59,6 +59,7 @@ function renderSidebar(props: Partial<React.ComponentProps<typeof Sidebar>> = {}
         onRollback={vi.fn()}
         onBranch={vi.fn()}
         onRetry={vi.fn()}
+        onOpenPersonaModal={vi.fn()}
         {...props}
       />,
     );
@@ -120,5 +121,20 @@ describe('Sidebar session title editing layout', () => {
     roots.push(root);
 
     expect(container.textContent).toContain(t('moodGenerate'));
+  });
+
+  it('opens persona selection when the logo is clicked', () => {
+    const onOpenPersonaModal = vi.fn();
+    const { container, root } = renderSidebar({ onOpenPersonaModal });
+    roots.push(root);
+
+    const logoButton = container.querySelector<HTMLButtonElement>('button[aria-label="Choose persona"]');
+    expect(logoButton).not.toBeNull();
+
+    act(() => {
+      logoButton?.click();
+    });
+
+    expect(onOpenPersonaModal).toHaveBeenCalledTimes(1);
   });
 });

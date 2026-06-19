@@ -45,6 +45,7 @@ interface SidebarProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  onOpenPersonaModal?: () => void;
   tokenStats?: TokenStats;
 }
 
@@ -82,6 +83,7 @@ export default function Sidebar({
   onRollback,
   onBranch,
   onRetry,
+  onOpenPersonaModal = () => {},
   tokenStats,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
@@ -115,14 +117,21 @@ export default function Sidebar({
     <aside className="w-full h-full flex flex-col">
       {/* Logo */}
       <div className="pl-5 pr-0 pt-[5px] pb-2 flex items-center">
-        <h1 className="text-[32px]" style={{
-          background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
-        }}>
-          <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
-        </h1>
+        <button
+          type="button"
+          onClick={onOpenPersonaModal}
+          aria-label={t('choosePersona')}
+          className="text-left"
+        >
+          <h1 className="text-[32px]" style={{
+            background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}>
+            <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
+          </h1>
+        </button>
       </div>
 
       {/* Title row */}
