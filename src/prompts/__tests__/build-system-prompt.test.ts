@@ -73,3 +73,17 @@ describe('buildSystemPrompt', () => {
     expect(buildSystemPrompt({ instruction: 'add a drum' })).toBe('EN_BASE\nBUILTIN_en\nvoice:oddeNova');
   });
 });
+
+describe('active system prompt export contract', () => {
+  it('exports callable factories that inject persona block and name', async () => {
+    const actual = await vi.importActual<typeof import('../system-prompt')>('../system-prompt');
+
+    expect(actual.AGENT_SYSTEM_PROMPT_OPENAI).toEqual(expect.any(Function));
+    expect(actual.AGENT_SYSTEM_PROMPT_EN).toEqual(expect.any(Function));
+
+    expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('ZH_PERSONA_BLOCK');
+    expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('你是 Nocturne');
+    expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('EN_PERSONA_BLOCK');
+    expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('You are Nocturne');
+  });
+});

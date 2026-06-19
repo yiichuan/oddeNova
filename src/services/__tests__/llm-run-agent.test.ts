@@ -3,14 +3,33 @@ import type { RunAgentOptions } from '../../agent/loop';
 import type { ConversationTurn } from '../llm';
 
 const runAgentLoopMock = vi.hoisted(() => vi.fn());
+const getActivePersonaSyncMock = vi.hoisted(() => vi.fn(() => ({
+  id: 'persona-1',
+  name: 'Nocturne',
+  prompt: 'CUSTOM_PERSONA',
+})));
 
 vi.mock('../../agent/loop', () => ({
   runAgentLoop: runAgentLoopMock,
 }));
 
 vi.mock('../../prompts/system-prompt', () => ({
-  AGENT_SYSTEM_PROMPT_OPENAI: 'zh system prompt',
-  AGENT_SYSTEM_PROMPT_EN: 'en system prompt',
+  AGENT_SYSTEM_PROMPT_OPENAI: vi.fn((personaBlock: string, personaName: string) =>
+    `zh system prompt ${personaName} ${personaBlock}`
+  ),
+  AGENT_SYSTEM_PROMPT_EN: vi.fn((personaBlock: string, personaName: string) =>
+    `en system prompt ${personaName} ${personaBlock}`
+  ),
+}));
+
+vi.mock('../../lib/persona-storage', () => ({
+  BUILTIN_PERSONA_ID: 'oddenova',
+  getActivePersonaSync: getActivePersonaSyncMock,
+  getPersonaPrompt: vi.fn(() => 'CUSTOM_PERSONA'),
+}));
+
+vi.mock('../../persona/oddenova', () => ({
+  buildPersonaBlock: vi.fn(() => 'BUILTIN_PERSONA'),
 }));
 
 vi.mock('../../agent/tools', () => ({
@@ -68,5 +87,7 @@ describe('runAgent conversationHistory pass-through', () => {
     expect(opts.instruction).toBe('still wrong');
     expect(opts.initialCode).toBe('s("hh")');
     expect(opts.conversationHistory).toBe(history);
+    expect(getActivePersonaSyncMock).toHaveBeenCalledTimes(1);
+    expect(opts.systemPrompt).toBe('en system prompt Nocturne CUSTOM_PERSONA');
   });
 });

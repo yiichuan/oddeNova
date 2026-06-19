@@ -16,6 +16,7 @@ import {
 import { getActiveModelConfig } from './llm-config';
 import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO, resolveStaticSuggestionScenario } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
+import { getActivePersonaSync } from '../lib/persona-storage';
 
 // ===========================================================================
 // Dual-provider client management.
@@ -382,7 +383,11 @@ export async function runAgent(
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
 ): Promise<RunAgentResult> {
-  const systemPrompt = buildSystemPrompt({ instruction, moodContext });
+  const systemPrompt = buildSystemPrompt({
+    instruction,
+    moodContext,
+    persona: getActivePersonaSync(),
+  });
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
   const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;

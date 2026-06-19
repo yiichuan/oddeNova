@@ -9,7 +9,6 @@ export interface BuildSystemPromptInput {
 }
 
 const DEFAULT_PERSONA: ActivePersona = { id: BUILTIN_PERSONA_ID, name: 'oddeNova' };
-type PromptFactory = (personaBlock: string, personaName: string) => string;
 
 function resolvePersonaBlock(persona: ActivePersona, lang: 'zh' | 'en'): { block: string; name: string } {
   if (persona.id === BUILTIN_PERSONA_ID) {
@@ -24,14 +23,6 @@ function resolvePersonaBlock(persona: ActivePersona, lang: 'zh' | 'en'): { block
   return { block: customPrompt, name: persona.name };
 }
 
-function renderPrompt(prompt: unknown, personaBlock: string, personaName: string): string {
-  if (typeof prompt === 'function') {
-    return (prompt as PromptFactory)(personaBlock, personaName);
-  }
-
-  return String(prompt);
-}
-
 export function buildSystemPrompt({
   instruction,
   moodContext,
@@ -40,7 +31,7 @@ export function buildSystemPrompt({
   const lang = /[一-龥]/.test(instruction) ? 'zh' : 'en';
   const { block, name } = resolvePersonaBlock(persona, lang);
   const base = lang === 'zh'
-    ? renderPrompt(AGENT_SYSTEM_PROMPT_OPENAI, block, name)
-    : renderPrompt(AGENT_SYSTEM_PROMPT_EN, block, name);
+    ? AGENT_SYSTEM_PROMPT_OPENAI(block, name)
+    : AGENT_SYSTEM_PROMPT_EN(block, name);
   return moodContext ? `${base}\n\n${moodContext}` : base;
 }
