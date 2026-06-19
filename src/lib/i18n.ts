@@ -96,7 +96,7 @@ const S: Record<string, readonly [string, string]> = {
   // Sidebar
   replaySession: ['回放会话', 'Replay session'],
   viewHistory:   ['查看历史', 'View history'],
-  playSong:      ['来首曲子', 'Play me a song'],
+  playSong:      ['来首适合演示场合的曲子', 'A song for a presentation'],
   moodTooltip:   ['根据你最近的活动感知心情生成音乐', 'Generate music based on your recent mood and activity'],
   moodGenerate:  ['根据心情生成音乐', 'Mood-based music'],
 
