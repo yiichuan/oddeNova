@@ -128,7 +128,7 @@ describe('Sidebar session title editing layout', () => {
     const { container, root } = renderSidebar({ onOpenPersonaModal });
     roots.push(root);
 
-    const logoButton = container.querySelector<HTMLButtonElement>('button[aria-label="Choose persona"]');
+    const logoButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('choosePersona')}"]`);
     expect(logoButton).not.toBeNull();
 
     act(() => {

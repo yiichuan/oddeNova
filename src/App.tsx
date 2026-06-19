@@ -44,6 +44,7 @@ export default function App() {
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
+  const [showPersonaModal, setShowPersonaModal] = useState(false);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
@@ -102,6 +103,10 @@ export default function App() {
       abortControllersRef.current.get(id)?.abort();
     }
   }, [sessions]);
+
+  const openPersonaModal = useCallback(() => {
+    setShowPersonaModal(true);
+  }, []);
 
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => {
     try { if (window.self !== window.top) return false; } catch { return false; }
@@ -577,6 +582,7 @@ export default function App() {
           required={!hasApiKeyConfigured()}
         />
       )}
+      {showPersonaModal && null}
 
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
@@ -613,6 +619,7 @@ export default function App() {
           onRollback={handleRollback}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
+          onOpenPersonaModal={openPersonaModal}
           tokenStats={current?.tokenStats}
         />
       </div>
