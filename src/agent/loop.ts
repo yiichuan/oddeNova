@@ -141,10 +141,12 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   if (initialCode) {
     const score = parseScore(initialCode);
     const { bpm, layers } = summariseScore(score);
+    const layerLabel = (l: { name: string; envelope?: string }) =>
+      l.envelope ? `${l.name}[${l.envelope}]` : l.name;
     const bpmStr = bpm != null ? `BPM: ${bpm}` : '';
     const layersStr = isZh
-      ? layers.length > 0 ? `音层: ${layers.map((l) => l.name).join(' / ')}` : '（无音层）'
-      : layers.length > 0 ? `Layers: ${layers.map((l) => l.name).join(' / ')}` : '(no layers)';
+      ? layers.length > 0 ? `音层: ${layers.map(layerLabel).join(' / ')}` : '（无音层）'
+      : layers.length > 0 ? `Layers: ${layers.map(layerLabel).join(' / ')}` : '(no layers)';
     const meta = [bpmStr, layersStr].filter(Boolean).join(isZh ? '，' : ', ');
     userTurn = isZh
       ? `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`
