@@ -80,6 +80,18 @@ const S: Record<string, readonly [string, string]> = {
   scanToJoin:   ['扫码入群', 'Scan to join'],
   freeApiKey:   ['免费领体验 API Key', 'Get a free trial API Key'],
 
+  // PersonaModal
+  builtinLabel:       ['默认', 'Default'],
+  customPersonas:     ['自定义人格', 'Custom personas'],
+  noCustomPersonas:   ['还没有自定义人格', 'No custom personas yet'],
+  newPersona:         ['新建自定义人格', 'New custom persona'],
+  editPersona:        ['编辑人格', 'Edit persona'],
+  personaName:        ['名字', 'Name'],
+  personaPrompt:      ['提示词', 'Prompt'],
+  personaNamePlaceholder:   ['例如：午夜作曲家', 'Example: Midnight Composer'],
+  personaPromptPlaceholder: ['写下这段人格提示词。它会替换 oddeNova 的人格块。', 'Write this persona prompt. It replaces the oddeNova persona block.'],
+  deletePersona:      ['删除此人格', 'Delete this persona'],
+
   // ConversationView
   startCreating: ['说点什么开始创作', 'Say something to start creating'],
   strudelCode:   ['Strudel 代码', 'Strudel code'],

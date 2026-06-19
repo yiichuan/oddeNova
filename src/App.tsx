@@ -27,6 +27,7 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
+import PersonaModal from './components/PersonaModal';
 import { t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 
@@ -582,7 +583,9 @@ export default function App() {
           required={!hasApiKeyConfigured()}
         />
       )}
-      {showPersonaModal && null}
+      {showPersonaModal && (
+        <PersonaModal onClose={() => setShowPersonaModal(false)} />
+      )}
 
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
