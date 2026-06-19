@@ -25,21 +25,33 @@ export interface ParsedScore {
 
 const LAYER_MARKER_RE = /^\s*\/\*\s*@layer\s+([A-Za-z0-9_]+)\s*\*\//;
 
-// Matches an arrangement-scale envelope: a `.method("...<...>/N...")` call where a
-// `<...>` alternation is slowed over an explicit window N. A bare `<a b>` without
-// `/N` alternates every cycle (micro-variation) and is deliberately excluded.
+// Matches a `.method("...<INNER>[/N]...")` call: captures the method name, the
+// angle-bracket INNER, and an optional trailing /N window. The window itself
+// comes from either form: `<...>/N` (slowed alternation) or `<...@a ...@b>`
+// (weighted span). A bare `<a b>` (no /N, no @) alternates every cycle
+// (micro-variation) and is deliberately excluded.
 const ENVELOPE_RE =
-  /\.?(mask|gain|lpf|hpf|bank|note|struct|n|s)\s*\(\s*["'`][^"'`]*?<[^>]*?>\s*\/\s*(\d+(?:\.\d+)?)/g;
+  /\.?(mask|gain|lpf|hpf|bank|note|struct|n|s)\s*\(\s*["'`][^"'`]*?<([^<>]*)>\s*(?:\/\s*(\d+(?:\.\d+)?))?/g;
 
-// Summarise a layer's arrangement envelope as a language-neutral "role/N" list
-// (e.g. "mask/16 s/8"). Conservative and side-effect free: returns undefined on
-// no match and never throws.
+// Sum the cycle span of an @-weighted alternation like `0@4 1@24 0@4` (= 32).
+// Returns null when there are no @ weights (so a bare `<a b>` is excluded).
+function sumAngleWeights(inner: string): number | null {
+  const weights = inner.match(/@\s*(\d+(?:\.\d+)?)/g);
+  if (!weights) return null;
+  return weights.reduce((sum, w) => sum + parseFloat(w.replace(/[@\s]/g, '')), 0);
+}
+
+// Summarise a layer's arrangement-scale envelope as a language-neutral "role/N"
+// list (e.g. "mask/16 s/8"). Conservative and side-effect free: returns
+// undefined on no match and never throws.
 function extractEnvelope(source: string): string | undefined {
   const seen = new Set<string>();
   let m: RegExpExecArray | null;
   ENVELOPE_RE.lastIndex = 0;
   while ((m = ENVELOPE_RE.exec(source)) !== null) {
-    seen.add(`${m[1]}/${m[2]}`);
+    const [, role, inner, slashN] = m;
+    const window = slashN ? parseFloat(slashN) : sumAngleWeights(inner);
+    if (window != null) seen.add(`${role}/${window}`);
   }
   return seen.size > 0 ? [...seen].join(' ') : undefined;
 }

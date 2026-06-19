@@ -133,6 +133,13 @@ describe('envelope extraction', () => {
     expect(layers[0].envelope).toContain('8');
   });
 
+  it('从 @ 权重写法 .mask("<0@4 1@24 0@4>") 提取出总窗口（权重和）', () => {
+    const code = 'setcps(0.42)\nstack(\n  /* @layer bass */\n  note("c2 g2").mask("<0@4 1@24 0@4>")\n)';
+    const { layers } = parseScore(code);
+    expect(layers[0].envelope).toBeDefined();
+    expect(layers[0].envelope).toContain('mask/32');
+  });
+
   it('静态层 envelope 为 undefined', () => {
     const code = 'setcps(0.5)\nstack(\n  /* @layer drums */\n  s("bd*4 sd")\n)';
     const { layers } = parseScore(code);
