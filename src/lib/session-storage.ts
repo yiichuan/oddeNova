@@ -1,9 +1,11 @@
 import { openDB as idbOpenDB, type IDBPDatabase } from 'idb';
 import type { Session } from '../hooks/useSessions';
 
-const DB_NAME = 'oddenova-db';
-const DB_VERSION = 1;
-const STORE_NAME = 'sessions';
+export const DB_NAME = 'oddenova-db';
+export const DB_VERSION = 2;
+export const SESSION_STORE_NAME = 'sessions';
+export const PERSONA_STORE_NAME = 'personas';
+export const SETTINGS_STORE_NAME = 'settings';
 
 // localStorage keys for one-time migration
 const LS_SESSIONS_KEY = 'vibe-sessions-v1';
@@ -19,18 +21,30 @@ export function normalizeSession(session: StoredSession): Session {
   return normalized;
 }
 
+export function getStorageDb(): IDBPDatabase | null {
+  return memoryFallback ? null : db;
+}
+
 export async function openDB(): Promise<void> {
   try {
     db = await idbOpenDB(DB_NAME, DB_VERSION, {
       upgrade(database) {
-        if (!database.objectStoreNames.contains(STORE_NAME)) {
-          database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        if (!database.objectStoreNames.contains(SESSION_STORE_NAME)) {
+          database.createObjectStore(SESSION_STORE_NAME, { keyPath: 'id' });
+        }
+        if (!database.objectStoreNames.contains(PERSONA_STORE_NAME)) {
+          database.createObjectStore(PERSONA_STORE_NAME, { keyPath: 'id' });
+        }
+        if (!database.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
+          database.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
         }
       },
     });
+    memoryFallback = false;
     await migrateFromLocalStorage();
   } catch (err) {
     console.warn('[session-storage] IndexedDB unavailable, falling back to memory mode.', err);
+    db = null;
     memoryFallback = true;
   }
 }
@@ -46,7 +60,7 @@ async function migrateFromLocalStorage(): Promise<void> {
       return;
     }
     const sessions = parsed.map(normalizeSession);
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = db.transaction(SESSION_STORE_NAME, 'readwrite');
     await Promise.all(sessions.map((s) => tx.store.put(s)));
     await tx.done;
     // Only clear localStorage after successful write
@@ -60,7 +74,7 @@ async function migrateFromLocalStorage(): Promise<void> {
 export async function getAllSessions(): Promise<Session[]> {
   if (memoryFallback || !db) return [];
   try {
-    const all = ((await db.getAll(STORE_NAME)) as StoredSession[]).map(normalizeSession);
+    const all = ((await db.getAll(SESSION_STORE_NAME)) as StoredSession[]).map(normalizeSession);
     return all.sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];
@@ -70,7 +84,7 @@ export async function getAllSessions(): Promise<Session[]> {
 export async function putSession(session: Session): Promise<void> {
   if (memoryFallback || !db) return;
   try {
-    await db.put(STORE_NAME, session);
+    await db.put(SESSION_STORE_NAME, session);
   } catch (err) {
     console.warn('[session-storage] putSession failed', err);
   }
@@ -79,7 +93,7 @@ export async function putSession(session: Session): Promise<void> {
 export async function deleteSession(id: string): Promise<void> {
   if (memoryFallback || !db) return;
   try {
-    await db.delete(STORE_NAME, id);
+    await db.delete(SESSION_STORE_NAME, id);
   } catch (err) {
     console.warn('[session-storage] deleteSession failed', err);
   }
