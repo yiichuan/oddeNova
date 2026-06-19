@@ -37,6 +37,10 @@ function sortPersonas(personas: CustomPersona[]): CustomPersona[] {
   return personas.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+function isCustomPersona(persona: CustomPersona): boolean {
+  return persona.id !== BUILTIN_PERSONA_ID;
+}
+
 function resolveActivePersonaId(id: string): string {
   if (id === BUILTIN_PERSONA_ID || personaCache.has(id)) {
     return id;
@@ -81,7 +85,7 @@ export async function initPersonaCache(): Promise<void> {
       db.get(SETTINGS_STORE_NAME, ACTIVE_PERSONA_SETTING_KEY) as Promise<StoredSetting | undefined>,
     ]);
 
-    personaCache = new Map(personas.map((persona) => [persona.id, persona]));
+    personaCache = new Map(personas.filter(isCustomPersona).map((persona) => [persona.id, persona]));
     activePersonaId = resolveActivePersonaId(setting?.value ?? BUILTIN_PERSONA_ID);
     markInitialized();
   } catch (err) {
@@ -98,6 +102,13 @@ export async function getAllPersonas(): Promise<CustomPersona[]> {
 }
 
 export async function putPersona(persona: CustomPersona): Promise<void> {
+  if (!isCustomPersona(persona)) {
+    personaCache.delete(BUILTIN_PERSONA_ID);
+    activePersonaId = resolveActivePersonaId(activePersonaId);
+    markInitialized();
+    return;
+  }
+
   personaCache.set(persona.id, persona);
   activePersonaId = resolveActivePersonaId(activePersonaId);
   markInitialized();

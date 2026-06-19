@@ -1,8 +1,49 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type StoredSetting = {
+  key: string;
+  value: string;
+};
+
+type MockDb = {
+  getAll: ReturnType<typeof vi.fn>;
+  get: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
+};
+
+function makeMockDb({
+  personas = [],
+  activePersonaId,
+}: {
+  personas?: unknown[];
+  activePersonaId?: string;
+} = {}): MockDb {
+  return {
+    getAll: vi.fn().mockResolvedValue(personas),
+    get: vi.fn().mockResolvedValue(
+      activePersonaId ? ({ key: 'activePersonaId', value: activePersonaId } satisfies StoredSetting) : undefined,
+    ),
+    put: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+async function importWithMockDb(db: MockDb) {
+  vi.doMock('../session-storage', () => ({
+    getStorageDb: () => db,
+    openDB: vi.fn().mockResolvedValue(undefined),
+    PERSONA_STORE_NAME: 'personas',
+    SETTINGS_STORE_NAME: 'settings',
+  }));
+
+  return import('../persona-storage');
+}
+
 describe('persona-storage cache behavior', () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.doUnmock('../session-storage');
   });
 
   it('returns built-in oddeNova before cache initialization', async () => {
@@ -104,5 +145,101 @@ describe('persona-storage cache behavior', () => {
     await deletePersona(BUILTIN_PERSONA_ID);
 
     expect(getActivePersonaSync()).toEqual({ id: BUILTIN_PERSONA_ID, name: 'oddeNova' });
+  });
+
+  it('does not cache or persist a custom persona using the built-in id', async () => {
+    const db = makeMockDb();
+    const { BUILTIN_PERSONA_ID, getActivePersonaSync, getAllPersonas, getPersonaPrompt, putPersona } =
+      await importWithMockDb(db);
+
+    await putPersona({
+      id: BUILTIN_PERSONA_ID,
+      name: 'Impostor',
+      prompt: 'This should never shadow the built-in persona.',
+      createdAt: 10,
+      updatedAt: 10,
+    });
+
+    expect(await getAllPersonas()).toEqual([]);
+    expect(getActivePersonaSync()).toEqual({ id: BUILTIN_PERSONA_ID, name: 'oddeNova' });
+    expect(getPersonaPrompt(BUILTIN_PERSONA_ID)).toBeUndefined();
+    expect(db.put).not.toHaveBeenCalled();
+  });
+
+  it('hydrates personas and active persona id from IndexedDB while ignoring persisted built-in records', async () => {
+    const db = makeMockDb({
+      personas: [
+        {
+          id: 'persona-old',
+          name: 'Old',
+          prompt: 'Older prompt',
+          createdAt: 10,
+          updatedAt: 20,
+        },
+        {
+          id: 'oddenova',
+          name: 'Impostor',
+          prompt: 'Persisted built-in shadow',
+          createdAt: 10,
+          updatedAt: 100,
+        },
+        {
+          id: 'persona-new',
+          name: 'New',
+          prompt: 'Newer prompt',
+          createdAt: 10,
+          updatedAt: 30,
+        },
+      ],
+      activePersonaId: 'persona-new',
+    });
+    const { getActivePersonaId, getActivePersonaSync, getAllPersonas, getPersonaPrompt } = await importWithMockDb(db);
+
+    expect(await getAllPersonas()).toEqual([
+      {
+        id: 'persona-new',
+        name: 'New',
+        prompt: 'Newer prompt',
+        createdAt: 10,
+        updatedAt: 30,
+      },
+      {
+        id: 'persona-old',
+        name: 'Old',
+        prompt: 'Older prompt',
+        createdAt: 10,
+        updatedAt: 20,
+      },
+    ]);
+    expect(await getActivePersonaId()).toBe('persona-new');
+    expect(getActivePersonaSync()).toEqual({
+      id: 'persona-new',
+      name: 'New',
+      prompt: 'Newer prompt',
+    });
+    expect(getPersonaPrompt('oddenova')).toBeUndefined();
+  });
+
+  it('persists built-in fallback setting when deleting the active custom persona from IndexedDB', async () => {
+    const db = makeMockDb();
+    const { BUILTIN_PERSONA_ID, deletePersona, putPersona, setActivePersonaId } = await importWithMockDb(db);
+
+    await putPersona({
+      id: 'persona-1',
+      name: 'Nocturne',
+      prompt: 'Prompt',
+      createdAt: 10,
+      updatedAt: 10,
+    });
+    await setActivePersonaId('persona-1');
+    db.put.mockClear();
+
+    await deletePersona('persona-1');
+
+    expect(db.delete).toHaveBeenCalledWith('personas', 'persona-1');
+    expect(db.put).toHaveBeenCalledWith('settings', {
+      key: 'activePersonaId',
+      value: BUILTIN_PERSONA_ID,
+    });
   });
 });
