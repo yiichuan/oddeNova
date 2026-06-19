@@ -204,8 +204,7 @@ export default function Sidebar({
                 type="button"
                 onClick={() => onSendText(fillSuggestion)}
                 disabled={engineStatus !== 'ready'}
-                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ fontFamily: '"GenWanMin TW", serif' }}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-text-secondary transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {t('playSong')}
               </button>
@@ -216,8 +215,7 @@ export default function Sidebar({
                 onClick={onMoodGenerate}
                 disabled={isMoodLoading || engineStatus !== 'ready'}
                 title={t('moodTooltip')}
-                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ fontFamily: '"GenWanMin TW", serif' }}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-text-secondary transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <img src="/airjelly-icon.png" alt="AirJelly" className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" /> {t('moodGenerate')}
               </button>
