@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PlayIcon, StopIcon } from './icons';
 import { t } from '../lib/i18n';
 import { strudelService } from '../services/strudel';
+import { isDemoMode } from '../demo/demo-config';
 import { parseScore } from '../agent/parser';
 import { useIsMobile } from '../hooks/useIsMobile';
 import TopActionBar from './TopActionBar';
@@ -204,7 +205,7 @@ export default function CodePanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const [gutterWidth, setGutterWidth] = useState(0);
 
-  const [volume, setVolume] = useState(0.8);
+  const [volume, setVolume] = useState(isDemoMode() ? 0.1 : 0.8);
   const [bpm, setBpm] = useState(() => parseScore(strudelService.code).bpm ?? 120);
   const [lpf, setLpf] = useState(1);
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
@@ -252,6 +253,12 @@ export default function CodePanel({
     }
   // onMount is stable (useCallback), so this fires only once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Demo mode plays at a quiet 10% by default; the master engine otherwise
+  // starts at full, so push the demo default down on mount.
+  useEffect(() => {
+    if (isDemoMode()) void strudelService.setMasterVolume(0.1);
   }, []);
 
   useEffect(() => {
