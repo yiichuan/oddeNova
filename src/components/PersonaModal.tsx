@@ -110,9 +110,6 @@ export default function PersonaModal({ onClose }: PersonaModalProps) {
               >
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-text-primary">oddeNova</span>
-                  <span className="mt-1 inline-flex text-[11px] text-text-muted border border-border rounded px-1.5 py-0.5">
-                    {t('builtinLabel')}
-                  </span>
                 </span>
                 {activeId === BUILTIN_PERSONA_ID && <CheckIcon size={18} className="text-accent shrink-0" />}
               </button>
@@ -190,7 +187,6 @@ export default function PersonaModal({ onClose }: PersonaModalProps) {
                   name="persona-name"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder={t('personaNamePlaceholder')}
                   className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
                   autoFocus
                 />
@@ -207,16 +203,6 @@ export default function PersonaModal({ onClose }: PersonaModalProps) {
                 />
               </label>
             </div>
-
-            {view.kind === 'edit' && (
-              <button
-                type="button"
-                onClick={() => void removePersona(view.persona.id)}
-                className="mt-4 text-xs text-text-muted hover:text-error transition-colors"
-              >
-                {t('deletePersona')}
-              </button>
-            )}
 
             <div className="flex gap-3 mt-6">
               <button

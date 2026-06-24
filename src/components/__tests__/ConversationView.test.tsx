@@ -231,4 +231,44 @@ describe('ConversationView chat streaming', () => {
     expect(retryButtons).toHaveLength(1);
     expect(branchButtons).toHaveLength(1);
   });
+
+  it('renders assistant markdown without exposing formatting markers', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '我是 **chay**，可以写 `lo-fi`。\n\n接下来可以：\n- 加一点 swing\n- 铺柔和钢琴',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    expect(container.textContent).toContain('我是 chay，可以写 lo-fi。');
+    expect(container.textContent).not.toContain('**chay**');
+    expect(container.querySelector('strong')?.textContent).toBe('chay');
+    expect(container.querySelector('code')?.textContent).toBe('lo-fi');
+    expect(container.querySelectorAll('li')).toHaveLength(2);
+  });
+
+  it('renders safe links and drops unsafe markdown hrefs', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '[官网](https://www.oddenova.com) [坏链接](javascript:alert(1))',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const link = container.querySelector<HTMLAnchorElement>('a');
+    expect(link?.textContent).toBe('官网');
+    expect(link?.href).toBe('https://www.oddenova.com/');
+    expect(container.textContent).toContain('坏链接');
+    expect(container.querySelectorAll('a')).toHaveLength(1);
+  });
 });

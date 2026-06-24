@@ -154,12 +154,7 @@ describe('PersonaModal', () => {
     await flush();
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('edit')} Nocturne"]`)?.click();
-    });
-    await act(async () => {
-      Array.from(container.querySelectorAll('button')).find((candidate) =>
-        candidate.textContent?.includes(t('deletePersona')),
-      )?.click();
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('delete')} Nocturne"]`)?.click();
     });
 
     expect(personas).toEqual([]);

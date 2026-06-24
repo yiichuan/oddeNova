@@ -81,16 +81,13 @@ const S: Record<string, readonly [string, string]> = {
   freeApiKey:   ['免费领体验 API Key', 'Get a free trial API Key'],
 
   // PersonaModal
-  builtinLabel:       ['默认', 'Default'],
-  customPersonas:     ['自定义人格', 'Custom personas'],
-  noCustomPersonas:   ['还没有自定义人格', 'No custom personas yet'],
-  newPersona:         ['新建自定义人格', 'New custom persona'],
-  editPersona:        ['编辑人格', 'Edit persona'],
+  customPersonas:     ['自定义人物', 'Custom personas'],
+  noCustomPersonas:   ['还没有自定义人物', 'No custom personas yet'],
+  newPersona:         ['新建自定义人物', 'New custom persona'],
+  editPersona:        ['编辑人物', 'Edit persona'],
   personaName:        ['名字', 'Name'],
-  personaPrompt:      ['提示词', 'Prompt'],
-  personaNamePlaceholder:   ['例如：午夜作曲家', 'Example: Midnight Composer'],
-  personaPromptPlaceholder: ['写下这段人格提示词。它会替换 oddeNova 的人格块。', 'Write this persona prompt. It replaces the oddeNova persona block.'],
-  deletePersona:      ['删除此人格', 'Delete this persona'],
+  personaPrompt:      ['人设', 'Persona'],
+  personaPromptPlaceholder: ['描述一下这个人物的性格和说话方式，比如它是谁、会怎么和你聊天。', "Describe this persona's character and how they talk — for example, who they are and how they'd chat with you."],
 
   // ConversationView
   startCreating: ['说点什么开始创作', 'Say something to start creating'],
@@ -106,7 +103,7 @@ const S: Record<string, readonly [string, string]> = {
   noSessions: ['暂无会话', 'No sessions'],
 
   // Sidebar
-  choosePersona: ['选择人格', 'Choose persona'],
+  choosePersona: ['选择人物', 'Choose persona'],
   replaySession: ['回放会话', 'Replay session'],
   viewHistory:   ['查看历史', 'View history'],
   playSong:      ['来首曲子', 'Play me a song'],

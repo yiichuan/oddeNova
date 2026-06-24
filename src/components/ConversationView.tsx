@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { CheckIcon, CopyIcon, GitBranchIcon, RetryIcon, RollbackIcon } from './icons';
@@ -28,6 +28,249 @@ function stripMarkdown(text: string): string {
     .replace(/^>\s+/gm, '')             // blockquotes
     .replace(/~~(.+?)~~/g, '$1')        // strikethrough
     .trim();
+}
+
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.href);
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  const pushText = (value: string) => {
+    if (value) nodes.push(value);
+  };
+
+  while (i < text.length) {
+    const codeStart = text.indexOf('`', i);
+    const boldStarStart = text.indexOf('**', i);
+    const boldUnderscoreStart = text.indexOf('__', i);
+    const italicStarStart = text.indexOf('*', i);
+    const italicUnderscoreStart = text.indexOf('_', i);
+    const linkStart = text.indexOf('[', i);
+
+    const candidates = [
+      codeStart,
+      boldStarStart,
+      boldUnderscoreStart,
+      italicStarStart,
+      italicUnderscoreStart,
+      linkStart,
+    ].filter((idx) => idx >= 0);
+
+    const next = candidates.length > 0 ? Math.min(...candidates) : -1;
+    if (next === -1) {
+      pushText(text.slice(i));
+      break;
+    }
+
+    pushText(text.slice(i, next));
+
+    if (next === codeStart) {
+      const end = text.indexOf('`', next + 1);
+      if (end === -1) {
+        pushText(text.slice(next));
+        break;
+      }
+      nodes.push(
+        <code key={`${keyPrefix}-code-${key++}`} className="rounded bg-white/10 px-1 py-0.5 font-mono text-[0.92em] text-[#B9D7FF]">
+          {text.slice(next + 1, end)}
+        </code>,
+      );
+      i = end + 1;
+      continue;
+    }
+
+    if (next === linkStart) {
+      const labelEnd = text.indexOf(']', next + 1);
+      const hrefStart = labelEnd >= 0 ? text.indexOf('(', labelEnd + 1) : -1;
+      const hrefEnd = hrefStart >= 0 ? text.indexOf(')', hrefStart + 1) : -1;
+      if (labelEnd === -1 || hrefStart !== labelEnd + 1 || hrefEnd === -1) {
+        pushText(text[next]);
+        i = next + 1;
+        continue;
+      }
+      const label = text.slice(next + 1, labelEnd);
+      const href = text.slice(hrefStart + 1, hrefEnd).trim();
+      if (!isSafeUrl(href)) {
+        pushText(label);
+      } else {
+        nodes.push(
+          <a
+            key={`${keyPrefix}-link-${key++}`}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#93C2FF] underline decoration-[#93C2FF]/40 underline-offset-2 hover:decoration-[#93C2FF]"
+          >
+            {parseInlineMarkdown(label, `${keyPrefix}-link-${key}`)}
+          </a>,
+        );
+      }
+      i = hrefEnd + 1;
+      continue;
+    }
+
+    const marker = text.startsWith('**', next) || text.startsWith('__', next)
+      ? text.slice(next, next + 2)
+      : text[next];
+    const end = text.indexOf(marker, next + marker.length);
+    if (end === -1) {
+      pushText(marker);
+      i = next + marker.length;
+      continue;
+    }
+
+    const inner = text.slice(next + marker.length, end);
+    if (marker === '**' || marker === '__') {
+      nodes.push(
+        <strong key={`${keyPrefix}-strong-${key++}`} className="font-semibold text-text-primary">
+          {parseInlineMarkdown(inner, `${keyPrefix}-strong-${key}`)}
+        </strong>,
+      );
+    } else {
+      nodes.push(
+        <em key={`${keyPrefix}-em-${key++}`} className="italic">
+          {parseInlineMarkdown(inner, `${keyPrefix}-em-${key}`)}
+        </em>,
+      );
+    }
+    i = end + marker.length;
+  }
+
+  return nodes;
+}
+
+function MarkdownText({ content }: { content: string }) {
+  const lines = content.split('\n');
+  const blocks: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  const collectParagraph = () => {
+    const paragraph: string[] = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !/^```/.test(lines[i].trim()) &&
+      !/^\s{0,3}#{1,6}\s+/.test(lines[i]) &&
+      !/^\s*([-*+])\s+/.test(lines[i]) &&
+      !/^\s*\d+\.\s+/.test(lines[i]) &&
+      !/^\s*>\s?/.test(lines[i])
+    ) {
+      paragraph.push(lines[i]);
+      i += 1;
+    }
+    return paragraph.join('\n');
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed === '') {
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith('```')) {
+      const code: string[] = [];
+      i += 1;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        code.push(lines[i]);
+        i += 1;
+      }
+      if (i < lines.length) i += 1;
+      blocks.push(
+        <pre key={`md-code-${key++}`} className="my-2 overflow-x-auto rounded-md bg-white/5 p-2 font-mono text-[11px] leading-relaxed text-[#B9D7FF]">
+          <code>{code.join('\n')}</code>
+        </pre>,
+      );
+      continue;
+    }
+
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
+    if (heading) {
+      blocks.push(
+        <div key={`md-heading-${key++}`} className="mt-1 font-semibold text-text-primary">
+          {parseInlineMarkdown(heading[2], `md-heading-${key}`)}
+        </div>,
+      );
+      i += 1;
+      continue;
+    }
+
+    const unordered = line.match(/^\s*([-*+])\s+(.+)$/);
+    if (unordered) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const item = lines[i].match(/^\s*([-*+])\s+(.+)$/);
+        if (!item) break;
+        items.push(item[2]);
+        i += 1;
+      }
+      blocks.push(
+        <ul key={`md-ul-${key++}`} className="my-1 list-disc space-y-0.5 pl-4">
+          {items.map((item, idx) => (
+            <li key={`md-ul-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ul-${key}-${idx}`)}</li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    const ordered = line.match(/^\s*\d+\.\s+(.+)$/);
+    if (ordered) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const item = lines[i].match(/^\s*\d+\.\s+(.+)$/);
+        if (!item) break;
+        items.push(item[1]);
+        i += 1;
+      }
+      blocks.push(
+        <ol key={`md-ol-${key++}`} className="my-1 list-decimal space-y-0.5 pl-4">
+          {items.map((item, idx) => (
+            <li key={`md-ol-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ol-${key}-${idx}`)}</li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
+    const quote = line.match(/^\s*>\s?(.+)$/);
+    if (quote) {
+      const quoted: string[] = [];
+      while (i < lines.length) {
+        const current = lines[i].match(/^\s*>\s?(.*)$/);
+        if (!current) break;
+        quoted.push(current[1]);
+        i += 1;
+      }
+      blocks.push(
+        <blockquote key={`md-quote-${key++}`} className="my-1 border-l border-[#93C2FF]/30 pl-3 text-text-secondary">
+          {parseInlineMarkdown(quoted.join('\n'), `md-quote-${key}`)}
+        </blockquote>,
+      );
+      continue;
+    }
+
+    const paragraph = collectParagraph();
+    blocks.push(
+      <p key={`md-p-${key++}`} className="whitespace-pre-wrap break-words">
+        {parseInlineMarkdown(paragraph, `md-p-${key}`)}
+      </p>,
+    );
+  }
+
+  return <div className="space-y-2 break-words">{blocks}</div>;
 }
 
 interface ConversationViewProps {
@@ -273,7 +516,7 @@ export default function ConversationView({
             className="flex justify-start animate-fade-in-up group mb-6"
           >
             <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-xs bg-transparent text-text-primary">
-              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+              <MarkdownText content={msg.content} />
               {msg.code && (() => {
                 const isExpanded = expandedCode.has(msg.id);
                 const code = msg.code;
