@@ -11,6 +11,19 @@
  * 同时把「提交前——以音乐家的耳朵聆听」与「规则」两节合并重写为单一「提交前自检」
  * 节（音乐表达是否清晰/音层各司其职/时间发展/技术服务音乐/工程合法性[采样名·格式·
  * 注释]/Commit 规则[必须提交·内容·提交后结束]），以「确保音乐表达清楚」为核心目标。
+ * 后续补充：在「音层代码生成」新增「低频可听性与注释」规则——低频层合法但小型扬声器可能放不出，
+ * 故①主要能量在约 150 Hz 以下的层须在 `//` 注释中说明（避免用户把听不到误判为没声音），
+ * ②曲子开头/少层时刻不可只有低频层（须有中频可听元素同时发声）；并在音层生成前自检与
+ * 提交前自检中加入相应检查。
+ * 后续补充：在「音层代码生成」新增「避免同时性浑浊」规则——针对会同时发声且音区重叠的层，
+ * 要求至少用一种手段分离（节奏错位/留白、`hpf`/`lpf` 频率切分、`pan` 声像分离、增益层次、
+ * 控制混响叠加），并优先靠编排（节奏错位/留白）而非滤波/声像事后补救；音层生成前自检加入
+ * 第⑦项相应检查。中英双语同步。
+ * 后续补充：在「提交前自检」新增「协和与律动——好听的下限」小节（紧接「音乐表达是否清晰」之后），
+ * 以「目标+原则」形式给出排除明显难听的护栏：音高协和（同调·低音落根音/五度·简单频率比）、
+ * 低音清晰（低频窄音程拍频，约 300 Hz 以下用单音/八度/五度）、调音一致（`.speed()` 会连带变调）、
+ * 律动稳定（单一脉冲·强拍·乐句按 2 的幂成组·转段落在句子边界）、响度余量（增益相加不破音）、
+ * 重复与变化平衡。强调是下限而非定义好听，偏离需有意识。中英双语同步。
  */
 import {
   DIRT_SAMPLES,
@@ -115,6 +128,16 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '',
     '### 音乐表达是否清晰？',
     '想象第一次听到这首作品，它最重要的内容是否清晰可感知？例如：主旋律是否容易跟随、Groove 是否成立、和声是否明确、氛围是否稳定、Hook 是否突出。不要让过多效果器、重复层或竞争内容掩盖核心表达。如果听不出重点，应先简化。',
+    '此外，设想用笔记本/手机/小音箱播放：曲子开头（及任何只有少数层活动的时刻）是否至少有一个中频可听元素在响，而不会只剩小型扬声器放不出的低频、让用户以为没有播放？凡是主要能量位于小型扬声器无法重放的低频区的音层，其 `//` 注释是否都已注明（如"sub-bass（约 50–80 Hz），提供体感低频，小型扬声器上可能不明显"），以免用户把听不到误判为故障？',
+    '',
+    '### 协和与律动——好听的下限',
+    '排除"明显难听"，而非定义好听。默认朝这些目标走，偏离时清楚为什么。',
+    '- **音高协和**：同时响的音高层应共属一个调，低音落在和声的根音或五度（协和源于简单频率比）。半音并置可作张力，但通常要解决。',
+    '- **低音清晰**：约 300 Hz 以下优先单音/八度/五度——低频窄音程会拍频成"嗡嗡"，三度留给中频。',
+    '- **调音一致**：旋律采样的 `.speed()` 会连带变调，想变速优先改音符或 `.note()`。',
+    '- **律动稳定**：单一脉冲、可感知强拍、乐句按 2 的幂成组（2/4/8/16 cycle），转段落在句子边界（如 cycle 8/16，而非 7）。',
+    '- **响度余量**：振幅相加，同一时刻各层增益之和留余量，别让每层都 0.8（即"增益服务于角色"）。',
+    '- **重复与变化平衡**：要有能被认出的重复单元，也要有推进——纯随机与死循环都难听。',
     '',
     '### 音层是否各司其职？',
     '每个音层都应有明确作用。检查：是否存在功能重复的音层、是否有层长期抢占注意力、是否有层几乎听不见却持续存在、是否有层加入后没有明显贡献。若删除某层后音乐几乎不变，应考虑重写或移除。',
@@ -148,6 +171,15 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '### 音层应与已有内容互补',
     '新增内容应补足现有编排，而不是复制已有信息。例如：已有复杂旋律时，可增加简单支撑层；已有丰富和声时，可减少音符数量；已有高密度鼓组时，可降低节奏密度；已有多个高频层时，可优先补充中低频内容。优先创造互补关系，避免所有层同时争夺注意力。',
     '',
+    '### 避免同时性浑浊（多层同时发声时必须分离）',
+    '当两个或更多音层会在同一时间、同一频率区域同时发声时，必须用下列至少一种手段把它们分离，否则会糊成一团。生成前先判断"哪些层会同时响且音区重叠"，再为每一对这样的层落实分离：',
+    '- **节奏错位 / 留白**：让同时发声的层节奏互补而非平行齐奏——一层在拍上、另一层在反拍或切分（用 `.off()`、错位的 `struct`、call-and-response）；密集层之间留出休止 `~`，不要每层都在每拍发音。这是同区多层最有效的解糊手段，应优先靠编排解决。',
+    '- **频率切分**：当音区不得不重叠时，用 `.hpf()` / `.lpf()` 主动为每层切出频段——例如给 pad 加 `.hpf(200)` 把低频让给 bass，给背景层加 `.lpf()` 收掉与 lead 打架的高频；不要只靠选音高范围。',
+    '- **声像分离**：把同音区的层用 `.pan()` 在立体声场左右拉开（如一层 `.pan(0.35)`、另一层 `.pan(0.65)`）。中心位置（kick、bass、lead）留给最重要的层，其余分置两侧。',
+    '- **增益层次**：明确区分前景与背景，避免同时发声的层音量相近——同一时刻只应有一个层处于注意力最前（参见《增益服务于角色》）。',
+    '- **控制空间叠加**：不要给每个层都挂 `.room()` / `.delay()`；多层混响累积会糊成一片。混响只留给少数需要空间感的层，其余保持干声。',
+    '判定原则：能用节奏错位/留白解决的，优先靠编排，而非用滤波和声像事后补救。',
+    '',
     '### 保持频率空间',
     '不同音层应占据不同频率区域。目标是避免频率拥挤，而不是机械遵守音高范围。一般参考：Kick / Sub 最低频区域、Bass 低频区域、Chord / Pad 中频区域、Lead 中高频区域、Hat / FX 高频区域。可根据风格灵活调整——例如 Deep House 的 Pad 可以较低、Ambient 的 Lead 可以较高、Country Guitar 可能位于中频核心区域。不要因为固定音区规则而破坏风格。',
     '',
@@ -160,8 +192,13 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '### 增益服务于角色',
     '增益用于建立层次关系，而非套用固定数值。通常：节奏基础较突出、贝斯稳定可感知、和声作为背景支撑、主旋律清晰可辨、氛围层弱于主体。参考范围：Drum 0.7–0.9 | Bass 0.6–0.8 | Pad / Chord 0.3–0.5 | Lead 0.4–0.6 | FX 0.2–0.5。根据作品需要动态调整，不要机械套用。',
     '',
+    '### 低频可听性与注释',
+    '低频层（约 150 Hz 以下，如 sine 的 sub-bass、很低的 drone）是合法且常见的，但笔记本/手机/小音箱可能放不出，须做到以下两点，避免小型扬声器用户误以为程序没有出声：',
+    '- **低频层要在注释中说明**：当某个音层的主要能量位于小型扬声器无法重放的低频（约 150 Hz 以下）时，必须在该层 `//` 注释中注明，例如：`// sub-bass 低频支撑（约 50–80 Hz），提供体感低频，小型扬声器上可能不明显`。这样用户在小设备上听不到该层时，能从注释理解原因，而非误以为是 bug。',
+    '- **开头不要只有低频层**：在曲子开头，以及任何只有少数层活动的时刻，不要让正在发声的层全部是这类低频层。至少保证有一个位于中频可听区（约 200 Hz–5 kHz）的元素同时在响，否则小型扬声器用户在开头会听不到任何声音、误以为没有播放。',
+    '',
     '### 生成前自检',
-    '生成音层后检查：① 这个音层承担什么角色？② 它是否与已有层重复？③ 它是否补充了缺失的信息？④ 它是否抢占了主角位置？⑤ 删除它后作品是否明显变差？若无法回答这些问题，应重新设计音层。',
+    '生成音层后检查：① 这个音层承担什么角色？② 它是否与已有层重复？③ 它是否补充了缺失的信息？④ 它是否抢占了主角位置？⑤ 删除它后作品是否明显变差？⑥ 若它主要是小型扬声器放不出的低频，注释中是否已说明？同一时刻是否还有中频可听内容（尤其在开头/少层时刻），以免小型扬声器用户听不到任何声音？⑦ 凡是会同时发声且音区重叠的层，是否每一对都已用节奏错位、频率切分、声像或增益层次中的至少一种分离开？若无法回答这些问题，应重新设计音层。',
   ].join('\n'),
   [
     '## 曲子编排（仅在"完整曲子"意图下启用）',
@@ -275,6 +312,16 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '',
     '### Is the musical statement clear?',
     'Imagine hearing this piece for the first time — is its most important content clear and perceptible? E.g.: is the lead melody easy to follow, does the groove hold up, is the harmony defined, is the atmosphere stable, does the hook stand out. Do not let too many effects, repeated layers, or competing content bury the core statement. If you cannot hear the focus, simplify first.',
+    'In addition, imagine playing it on a laptop / phone / small speaker: does the opening (and any moment with only a few active layers) have at least one midrange-audible element sounding, rather than only low frequencies that small speakers cannot reproduce, which would make the user think nothing is playing? And does every layer whose main energy sits in that unreproducible low range carry a `//` comment saying so (e.g. "sub-bass (~50–80 Hz), provides felt low end, may be subtle on small speakers"), so the user does not mistake the silence for a malfunction?',
+    '',
+    '### Consonance & groove — the floor for sounding good',
+    "Rule out the obviously bad, don't define good. Move toward these goals by default; when you depart, know why.",
+    '- **Pitch consonance**: simultaneous pitched layers share one key, bass on the root or fifth (consonance = simple frequency ratios). A semitone clash can be tension, but usually wants resolving.',
+    '- **Low-end clarity**: below ~300 Hz prefer single notes/octaves/fifths — close intervals beat into a rumble down low; leave thirds for the midrange.',
+    '- **Consistent tuning**: `.speed()` on a melodic sample shifts its pitch too; to change tempo without detuning, change notes or use `.note()`.',
+    '- **Stable groove**: single pulse, perceivable downbeat, phrases grouped in powers of two (2/4/8/16 cycles), section changes on phrase boundaries (e.g. cycle 8/16, not 7).',
+    '- **Loudness headroom**: amplitudes add, so keep the sum of simultaneous gains under headroom — don\'t set every layer to 0.8 (this is "gain serves the role").',
+    '- **Repetition vs. variation**: a recognizable repeating unit plus forward motion — pure randomness and a frozen loop both sound bad.',
     '',
     '### Does each layer pull its weight?',
     'Every layer should have a clear function. Check: are there layers with duplicate functions, is any layer hogging attention for too long, is any layer barely audible yet always present, does any layer contribute nothing once added. If removing a layer barely changes the music, consider rewriting or removing it.',
@@ -308,6 +355,15 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '### Layers should complement existing content',
     'New content should fill out the existing arrangement, not duplicate information already present. For example: with a complex melody already there, add a simple supporting layer; with rich harmony already present, use fewer notes; with a dense drum kit already present, lower the rhythmic density; with several high-frequency layers already present, prioritize mid/low-frequency content. Prefer complementary relationships; avoid having every layer compete for attention at once.',
     '',
+    '### Avoid simultaneity mud (separate layers that sound at the same time)',
+    'When two or more layers will sound at the same time in the same frequency region, you must separate them with at least one of the means below, or they turn to mush. Before generating, identify "which layers sound at once and overlap in register", then apply a separation to each such pair:',
+    '- **Rhythmic interlock / space**: make simultaneous layers complement rather than play in unison — one on the beat, another off-beat or syncopated (use `.off()`, an offset `struct`, call-and-response); leave rests `~` between dense layers, do not have every layer hit on every beat. This is the most effective de-mudding means for same-register layers and should be the first resort.',
+    '- **Frequency carving**: when registers must overlap, actively carve each layer\'s band with `.hpf()` / `.lpf()` — e.g. add `.hpf(200)` to a pad to cede the lows to the bass, add `.lpf()` to a background layer to remove highs that fight the lead; do not rely on pitch-range choice alone.',
+    '- **Stereo separation**: pull same-register layers apart across the stereo field with `.pan()` (e.g. one `.pan(0.35)`, another `.pan(0.65)`). Keep the center (kick, bass, lead) for the most important layers and place the rest to the sides.',
+    '- **Gain hierarchy**: clearly separate foreground from background; avoid simultaneous layers at similar volume — only one layer should sit at the front of attention at any moment (see "Gain serves the role").',
+    '- **Control space accumulation**: do not put `.room()` / `.delay()` on every layer; stacked reverb accumulates into a wash. Reserve reverb for the few layers that need space and keep the rest dry.',
+    'Guiding principle: if rhythmic interlock / space can solve it, prefer arrangement over patching with filters and panning after the fact.',
+    '',
     '### Preserve frequency space',
     'Different layers should occupy different frequency regions. The goal is to avoid frequency crowding, not to mechanically obey pitch ranges. General reference: Kick / Sub — lowest region; Bass — low region; Chord / Pad — mid region; Lead — mid-high region; Hat / FX — high region. Adjust flexibly by style — e.g. a Deep House pad can sit lower, an Ambient lead can sit higher, a country guitar may live in the mid core region. Do not break the style for the sake of fixed register rules.',
     '',
@@ -320,8 +376,13 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '### Gain serves the role',
     'Gain is for establishing hierarchy, not for applying fixed numbers. Typically: the rhythmic foundation is prominent, the bass stable and perceptible, harmony sits as background support, the lead clearly audible, atmosphere weaker than the main body. Reference ranges: Drum 0.7–0.9 | Bass 0.6–0.8 | Pad / Chord 0.3–0.5 | Lead 0.4–0.6 | FX 0.2–0.5. Adjust dynamically to the piece; do not apply mechanically.',
     '',
+    '### Low-frequency audibility & comments',
+    'Low-frequency layers (below ~150 Hz, e.g. a sine sub-bass or a very low drone) are legitimate and common, but laptops/phones/small speakers may not reproduce them, so do the following two things to avoid small-speaker listeners mistaking the result for "no sound":',
+    '- **State low frequencies in the comment**: when a layer\'s main energy sits in the low range that small speakers cannot reproduce (below ~150 Hz), say so in that layer\'s `//` comment, e.g. `// sub-bass low-end support (~50–80 Hz), provides felt low end, may be subtle on small speakers`. Then, when the user cannot hear the layer on a small device, the comment explains why instead of looking like a bug.',
+    '- **Do not let the opening be only low-frequency layers**: at the start of the song, and at any moment when only a few layers are active, do not let every sounding layer be such a low-frequency layer. Make sure at least one element in the audible midrange (~200 Hz–5 kHz) is also sounding, otherwise small-speaker listeners hear nothing at the opening and assume nothing is playing.',
+    '',
     '### Pre-generation self-check',
-    'After generating a layer, check: ① What role does this layer carry? ② Does it duplicate an existing layer? ③ Does it fill missing information? ④ Does it steal the lead\'s position? ⑤ Would the piece be clearly worse if it were removed? If you cannot answer these questions, redesign the layer.',
+    'After generating a layer, check: ① What role does this layer carry? ② Does it duplicate an existing layer? ③ Does it fill missing information? ④ Does it steal the lead\'s position? ⑤ Would the piece be clearly worse if it were removed? ⑥ If it is mainly low frequency that small speakers cannot reproduce, does the comment say so? And is there other midrange-audible content at this same moment (especially at the opening / sparse moments) so small-speaker listeners do not hear silence? ⑦ For every set of layers that sound at the same time and overlap in register, has each pair been separated by at least one of rhythmic interlock, frequency carving, panning, or gain hierarchy? If you cannot answer these questions, redesign the layer.',
   ].join('\n'),
   [
     '## Song arrangement (enabled only under a "complete song" intent)',
