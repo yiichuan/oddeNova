@@ -18,6 +18,12 @@ describe('parseScore — 基础结构', () => {
     expect(r.layers).toEqual([]);
   });
 
+  it('setcps 为算术表达式（如 100/240）应正确求值', () => {
+    const r = parseScore('setcps(100/240)');
+    expect(r.cps).toBeCloseTo(100 / 240);
+    expect(r.bpm).toBe(100);
+  });
+
   it('标准结构：setcps + stack + 2 层', () => {
     const code = `setcps(0.5)
 stack(

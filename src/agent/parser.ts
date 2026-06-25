@@ -239,12 +239,23 @@ function findSetcps(code: string): { cps: number; start: number; end: number } |
       const close = findMatchingClose(code, open);
       if (close < 0) continue;
       const inner = code.slice(open + 1, close).trim();
-      const num = parseFloat(inner);
-      if (isNaN(num)) continue;
+      const num = evalArithmetic(inner);
+      if (num === null || isNaN(num)) continue;
       return { cps: num, start: i, end: close + 1 };
     }
   }
   return null;
+}
+
+/** Evaluate a numeric-only arithmetic expression, e.g. "100/240". Returns null for anything else. */
+function evalArithmetic(expr: string): number | null {
+  if (!/^[0-9+\-*/.()\s]+$/.test(expr)) return null;
+  try {
+    const result = Function(`"use strict"; return (${expr});`)();
+    return typeof result === 'number' ? result : null;
+  } catch {
+    return null;
+  }
 }
 
 // Helpers used by tools.ts -----------------------------------------------------
