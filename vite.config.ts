@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { copyFileSync, mkdirSync, readFileSync, existsSync } from 'fs'
@@ -261,14 +261,25 @@ function syncAnimationHtml(): Plugin {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), syncAnimationHtml()],
-  build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        presentation: resolve(__dirname, 'presentation.html'),
+export default defineConfig(({ mode }) => {
+  // Vite only exposes VITE_-prefixed vars to import.meta.env and does not
+  // populate process.env from .env files. The dev API middlewares
+  // (officialApiDevMiddleware) read server-side keys from process.env, so
+  // load the full .env here and merge any missing keys in (shell env wins).
+  const env = loadEnv(mode, process.cwd(), '')
+  for (const key of ['OFFICIAL_API_KEY', 'VITE_API_KEY']) {
+    if (!process.env[key] && env[key]) process.env[key] = env[key]
+  }
+
+  return {
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), syncAnimationHtml()],
+    build: {
+      rollupOptions: {
+        input: {
+          main: resolve(__dirname, 'index.html'),
+          presentation: resolve(__dirname, 'presentation.html'),
+        },
       },
     },
-  },
+  }
 })
