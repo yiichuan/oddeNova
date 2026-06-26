@@ -92,6 +92,10 @@ describe('PROVIDER_PRESETS models lists', () => {
     expect(preset.models).toContain(preset.model);
   });
 
+  it('glm models list includes glm-5.2 as a selectable model', () => {
+    expect(PROVIDER_PRESETS.glm.models).toContain('glm-5.2');
+  });
+
   it('anthropic models[0] matches the built-in anthropic default', () => {
     expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-sonnet-4-6');
   });
