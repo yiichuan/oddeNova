@@ -32,6 +32,9 @@
  * （音层代码生成内，目标+手段+示例形式）：嵌套交替写长旋律、和声派生旋律/贝斯、信号连续调制、乐句级 mask；
  * 速查表新增「让线条不逐 cycle 重复」一条（嵌套 `<>` 周期=最小公倍数、欧拉密度交替、chunk/ply/every 偶发装饰）；
  * 音层生成前自检新增第⑨项（主要线条是否在多 cycle 内演化）。中英双语同步。
+ * 后续补充：实测发现 agent 学会了段落级编排却未学会单层 cycle 演化（旋律仍是固定 `<A B C D>/4` scale 短循环、与和弦脱节）。
+ * 在「让每个主要声部随时间呼吸」一节补充：命名该反例，并给出宪法式默认——有编排的曲子里旋律/主奏默认应至少满足
+ * ①从移动和声派生音高 或 ②叠一个跨 cycle 演化手段；鼓与贝斯亦可在 cycle 间演化（长曲常见），通常保留更稳内核。中英双语同步。
  */
 import {
   DIRT_SAMPLES,
@@ -209,7 +212,10 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '- **用信号做连续的音色/力度起伏**：让每个 cycle 的亮度、力度、音色略有不同（手法见速查表「信号调制快速模板」），摆脱机械感；`.clip(rand.range(.4,.8))` 还能让每次的音长不同。',
     '- **用乐句级 mask 制造有来有往**：`.mask("<0 0 1 1>/16")` 让某元素在 16-cycle 乐句里进出，形成呼应与留白，而不是从头响到尾。',
     '示例（一条源自和声、不靠段落切换就在自我演化的主旋律）：\n  chords.n("[0 <4 3 <2 5>>*2](<3 5>,8)")\n    .anchor("D5").voicing()\n    .clip(rand.range(.4,.8))\n    .lpf(sine.range(500,1000).slow(8)).lpq(5)\n    .rarely(ply("2")).chunk(4, fast(2))\n    .gain(perlin.range(.6,.9))',
-    '原则同《变化必须有意义》：优先几个精心选择、缓慢演化的参数，而不是每个 cycle 都剧烈翻新；保留可辨识的内核，同时让它持续向前。不必每一层都演化——节奏与低频根基往往要稳，重点放在旋律、主奏与起装饰作用的声部上。',
+    '反例（实测最常见的失败）：把旋律写成固定的 `n("<[..] [..] [..] [..]>/4").scale(...)`——它每 4 cycle 原样重复、且与和弦进行脱节；即便外层套了 gain/lpf 段落包络，线条本身仍在原地踏步。',
+    '所以在有编排的曲子里，旋律/主奏默认就该用上面某种手段动起来，而不是固定 scale 短循环；最该优先的是从移动的和声派生音高（`.set(chords)` / `chords.n("...")`）——它一举两得：相同级数随和弦发出不同的音（演化），又始终贴合当前和弦（协和）。',
+    '鼓与贝斯同样会演化、长曲子里尤其常见（`struct`/密度的嵌套交替、fill、贝斯过渡音），只是内核更稳、变化更克制——不必排除任何层，也不必每层都动。',
+    '原则同《变化必须有意义》：优先几个精心选择、缓慢演化的参数，而不是每个 cycle 都剧烈翻新；保留可辨识的内核，同时让它持续向前。',
     '',
     '### 低频可听性与感知补偿原则',
     '低频内容（约 150 Hz 以下，如 sub-bass、低频 drone、极低根音）在音乐中是合法且常见的，用于提供身体感、厚度与空间支撑。但由于笔记本、小型音箱或手机外放设备的物理限制，这类内容在部分播放环境中可能不可直接听见。因此本规则的目标不是限制低频使用，而是避免“信息不可感知”导致的误解。',
@@ -407,7 +413,10 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '- **Use signals for continuous timbre/dynamic motion**: make each cycle slightly different in brightness, dynamics, and color (see the cheat sheet\'s "signal modulation templates") to shed the mechanical feel; `.clip(rand.range(.4,.8))` also varies the note length each time.',
     '- **Use phrase-length masks for call-and-response**: `.mask("<0 0 1 1>/16")` lets an element come and go across a 16-cycle phrase, creating answer and space rather than sounding from start to finish.',
     'Example (a lead that is derived from the harmony and evolves on its own, without section switches):\n  chords.n("[0 <4 3 <2 5>>*2](<3 5>,8)")\n    .anchor("D5").voicing()\n    .clip(rand.range(.4,.8))\n    .lpf(sine.range(500,1000).slow(8)).lpq(5)\n    .rarely(ply("2")).chunk(4, fast(2))\n    .gain(perlin.range(.6,.9))',
-    'Same principle as "Variation must be meaningful": prefer a few well-chosen, slowly evolving parameters over violently renewing every cycle; keep a recognizable core while pushing it forward. Not every layer must evolve — the rhythmic and low-end foundation often needs to stay steady; focus the evolution on the melody, the lead, and the decorative voices.',
+    'Anti-pattern (the most common real-world failure): writing the melody as a fixed `n("<[..] [..] [..] [..]>/4").scale(...)` — it repeats identically every 4 cycles and is disconnected from the chord progression; even wrapped in an outer gain/lpf section envelope, the line itself still marks time in place.',
+    'So in an arranged piece, the melody/lead should by default come alive through one of the means above rather than a fixed scale loop; the one to reach for first is deriving its pitches from the moving harmony (`.set(chords)` / `chords.n("...")`) — it does two jobs at once: the same degrees sound different as the chords change (evolution) while always fitting the current chord (consonance).',
+    'Drums and bass evolve too — especially common over longer pieces (`struct`/density nested alternation, fills, bass passing tones) — just with a steadier core and more sparing variation; no layer is excluded, and none is forced.',
+    'Same principle as "Variation must be meaningful": prefer a few well-chosen, slowly evolving parameters over violently renewing every cycle; keep a recognizable core while pushing it forward.',
     '',
     '### Low-frequency audibility & comments',
     'Low-frequency layers (below ~150 Hz, e.g. a sine sub-bass or a very low drone) are legitimate and common, but laptops/phones/small speakers may not reproduce them, so do the following two things to avoid small-speaker listeners mistaking the result for "no sound":',
