@@ -35,6 +35,9 @@
  * 后续补充：实测发现 agent 学会了段落级编排却未学会单层 cycle 演化（旋律仍是固定 `<A B C D>/4` scale 短循环、与和弦脱节）。
  * 在「让每个主要声部随时间呼吸」一节补充：命名该反例，并给出宪法式默认——有编排的曲子里旋律/主奏默认应至少满足
  * ①从移动和声派生音高 或 ②叠一个跨 cycle 演化手段；鼓与贝斯亦可在 cycle 间演化（长曲常见），通常保留更稳内核。中英双语同步。
+ * 后续补充：按反馈精简「让每个主要声部随时间呼吸」一节——只教「嵌套交替」这一条演化手段，
+ * 移除和声派生/信号调制/乐句 mask/鼓贝斯演化等其它支线（暂不教），示例由 chords 派生改为纯 `n(...).scale()` + 嵌套交替；
+ * 自检⑨同步收窄为「是否用嵌套交替演化」。中英双语同步。
  */
 import {
   DIRT_SAMPLES,
@@ -206,16 +209,10 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '增益用于建立层次关系，而非套用固定数值。通常：节奏基础较突出、贝斯稳定可感知、和声作为背景支撑、主旋律清晰可辨、氛围层弱于主体。参考范围：Drum 0.7–0.9 | Bass 0.6–0.8 | Pad / Chord 0.3–0.5 | Lead 0.4–0.6 | FX 0.2–0.5。根据作品需要动态调整，不要机械套用。',
     '',
     '### 让每个主要声部随时间呼吸（避免逐 cycle 完全重复）',
-    '一首曲子之所以"丰富"，往往不是靠层数多，而是靠每条主要线条都在缓慢演化——既保留一个能被认出的重复内核，又不会两个 cycle 完全一样。最常见的单调来源是：单层里相同的节奏或旋律持续很多 cycle，于是即便有编排，听感仍然原地踏步。目标是把"变化"写进音层本身，让它不依赖段落切换就能呼吸。下列手段按音乐需要选用，不必全用：',
-    '- **用嵌套交替写出会演化的线条**：见速查表。旋律用 `<0 <4 3 <2 5>>*2>` 这类嵌套，鼓的 struct 与密度用 `<...>`、`(<3 5>,8)`，让线条在多个 cycle 内不重复，自然形成"长句"而非短循环。',
-    '- **让旋律/贝斯跟随移动的和声**：和声用 `chord("<Bbm9 Fm9>/4").dict("ireal")` 缓慢进行（每个和弦持续若干 cycle），旋律与贝斯用 `.set(chords)` / `chords.n("...")` + `.voicing()` + `.anchor()` 或 `.mode("root:..")` 从和弦音派生——固定的音阶级数叠在变化的和弦上，会自动得到既协和又随和声推进的旋律，这是写出有"作曲感"长旋律最可靠的方式。',
-    '- **用信号做连续的音色/力度起伏**：让每个 cycle 的亮度、力度、音色略有不同（手法见速查表「信号调制快速模板」），摆脱机械感；`.clip(rand.range(.4,.8))` 还能让每次的音长不同。',
-    '- **用乐句级 mask 制造有来有往**：`.mask("<0 0 1 1>/16")` 让某元素在 16-cycle 乐句里进出，形成呼应与留白，而不是从头响到尾。',
-    '示例（一条源自和声、不靠段落切换就在自我演化的主旋律）：\n  chords.n("[0 <4 3 <2 5>>*2](<3 5>,8)")\n    .anchor("D5").voicing()\n    .clip(rand.range(.4,.8))\n    .lpf(sine.range(500,1000).slow(8)).lpq(5)\n    .rarely(ply("2")).chunk(4, fast(2))\n    .gain(perlin.range(.6,.9))',
-    '反例（实测最常见的失败）：把旋律写成固定的 `n("<[..] [..] [..] [..]>/4").scale(...)`——它每 4 cycle 原样重复、且与和弦进行脱节；即便外层套了 gain/lpf 段落包络，线条本身仍在原地踏步。',
-    '所以在有编排的曲子里，旋律/主奏默认就该用上面某种手段动起来，而不是固定 scale 短循环；最该优先的是从移动的和声派生音高（`.set(chords)` / `chords.n("...")`）——它一举两得：相同级数随和弦发出不同的音（演化），又始终贴合当前和弦（协和）。',
-    '鼓与贝斯同样会演化、长曲子里尤其常见（`struct`/密度的嵌套交替、fill、贝斯过渡音），只是内核更稳、变化更克制——不必排除任何层，也不必每层都动。',
-    '原则同《变化必须有意义》：优先几个精心选择、缓慢演化的参数，而不是每个 cycle 都剧烈翻新；保留可辨识的内核，同时让它持续向前。',
+    '单调最常见的来源是：某条线在很多 cycle 里保持同一个节奏或旋律，于是即便有编排，听感仍原地踏步。核心解决办法是把"变化"写进音层本身——用**嵌套交替**让线条自我演化：',
+    '- **用嵌套交替写出会演化的线条**：`<a b c>` 每个 cycle 前进一步；**嵌套** `<a <b c>>` 时，内层只在轮到它时才前进，于是整条线的真实周期是各层的最小公倍数，要十几个 cycle 才重复一次，听起来像被谱写的"长句"而非短循环。旋律例：`n("[0 <4 3 <2 5>>*2](<3 5>,8)").scale("D4:minor")`。节奏疏密同理：`struct` 用 `<...>`、密度用 `*<2!3 4>`、欧拉 `(<3 5>,8)`。',
+    '所以在有编排的曲子里，承担旋律/主奏的线条默认就该用嵌套交替动起来，而不要写成固定的 `n("<[..] [..] [..] [..]>/4").scale(...)`——后者每 4 cycle 原样重复，即便外层套了 gain/lpf 段落包络，线条本身仍在原地踏步（实测最常见的失败）。',
+    '原则同《变化必须有意义》：保留一个能被认出的内核，同时让它持续向前，不必每个 cycle 都剧烈翻新。',
     '',
     '### 低频可听性与感知补偿原则',
     '低频内容（约 150 Hz 以下，如 sub-bass、低频 drone、极低根音）在音乐中是合法且常见的，用于提供身体感、厚度与空间支撑。但由于笔记本、小型音箱或手机外放设备的物理限制，这类内容在部分播放环境中可能不可直接听见。因此本规则的目标不是限制低频使用，而是避免“信息不可感知”导致的误解。',
@@ -223,7 +220,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '- **开头的感知锚点原则（避免“无可感知开场”）**：在曲子的开头，以及任何只有少量音层活动的片段中，应确保存在至少一个“可被清晰感知的听觉锚点”，用于让听众确认音乐已经开始。该锚点可以是任意类型的可识别声音，包括节奏、音高或瞬态结构，例如 drum、bass、melodic motif、pluck 或 chord。氛围类元素（如 noise、texture、pad）和极低频层可以参与开头设计，但不应成为唯一可感知的声源，因为在部分播放设备或环境中，它们可能不会形成明确的听觉提示。',
     '',
     '### 生成前自检',
-    '生成音层后检查：① 这个音层承担什么角色？② 它是否与已有层重复？③ 它是否补充了缺失的信息？④ 它是否抢占了主角位置？⑤ 删除它后作品是否明显变差？⑥ 在曲子开头以及任何只有少量音层活动的片段，是否存在至少一个可被清晰感知的听觉锚点（节奏、音高或瞬态结构，如 drum/bass/motif/pluck/chord），让听众在各类播放设备上都能确认音乐已经开始——而不是只剩氛围或极低频，在小型扬声器上可能无法形成明确的听觉提示？⑦ 若某层的主要功能依赖低频区域（约 150 Hz 以下）、缺失会让听感信息不完整，是否已在 // 注释中简要说明其听感角色与设备依赖（如在手机、小音箱上可能弱化或不明显），以免用户把听不到误判为播放异常？⑧ 凡是会同时发声且音区重叠的层，是否每一对都已用节奏错位、频率切分、声像或增益层次中的至少一种分离开？⑨ 若整体听感偏单调、线条都在逐 cycle 机械重复，承担旋律/主奏的声部是否该演化起来（嵌套交替、和声派生、信号调制或偶发变形）？若无法回答这些问题，应重新设计音层。',
+    '生成音层后检查：① 这个音层承担什么角色？② 它是否与已有层重复？③ 它是否补充了缺失的信息？④ 它是否抢占了主角位置？⑤ 删除它后作品是否明显变差？⑥ 在曲子开头以及任何只有少量音层活动的片段，是否存在至少一个可被清晰感知的听觉锚点（节奏、音高或瞬态结构，如 drum/bass/motif/pluck/chord），让听众在各类播放设备上都能确认音乐已经开始——而不是只剩氛围或极低频，在小型扬声器上可能无法形成明确的听觉提示？⑦ 若某层的主要功能依赖低频区域（约 150 Hz 以下）、缺失会让听感信息不完整，是否已在 // 注释中简要说明其听感角色与设备依赖（如在手机、小音箱上可能弱化或不明显），以免用户把听不到误判为播放异常？⑧ 凡是会同时发声且音区重叠的层，是否每一对都已用节奏错位、频率切分、声像或增益层次中的至少一种分离开？⑨ 若整体听感偏单调、线条都在逐 cycle 机械重复，承担旋律/主奏的声部是否该用嵌套交替演化起来？若无法回答这些问题，应重新设计音层。',
   ].join('\n'),
   [
     '## 曲子编排（在"完整曲子"或明确编排意图下启用）',
@@ -407,16 +404,10 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     'Gain is for establishing hierarchy, not for applying fixed numbers. Typically: the rhythmic foundation is prominent, the bass stable and perceptible, harmony sits as background support, the lead clearly audible, atmosphere weaker than the main body. Reference ranges: Drum 0.7–0.9 | Bass 0.6–0.8 | Pad / Chord 0.3–0.5 | Lead 0.4–0.6 | FX 0.2–0.5. Adjust dynamically to the piece; do not apply mechanically.',
     '',
     '### Let each main voice breathe over time (avoid repeating identically every cycle)',
-    'A piece sounds "rich" usually not because it has many layers, but because every main line slowly evolves — keeping a recognizable repeating core while no two cycles are exactly alike. The most common source of monotony is a single layer holding the same rhythm or melody for many cycles, so even with arrangement the piece marks time in place. The goal is to bake the variation into the layer itself, so it breathes without relying on section switches. Use the means below as the music needs — not all at once:',
-    '- **Write evolving lines with nested alternation**: see the cheat sheet. Nest the melody like `<0 <4 3 <2 5>>*2>`, and the drum struct/density with `<...>`, `(<3 5>,8)`, so the line does not repeat for many cycles and forms a long phrase instead of a short loop.',
-    '- **Derive melody/bass from a moving harmony**: let the harmony progress slowly with `chord("<Bbm9 Fm9>/4").dict("ireal")` (each chord lasting several cycles), and derive the melody and bass from its chord tones via `.set(chords)` / `chords.n("...")` + `.voicing()` + `.anchor()` or `.mode("root:..")` — fixed scale degrees over changing chords automatically yield a melody that is both consonant and moves with the harmony. This is the most reliable way to get a "composed", long-form melody.',
-    '- **Use signals for continuous timbre/dynamic motion**: make each cycle slightly different in brightness, dynamics, and color (see the cheat sheet\'s "signal modulation templates") to shed the mechanical feel; `.clip(rand.range(.4,.8))` also varies the note length each time.',
-    '- **Use phrase-length masks for call-and-response**: `.mask("<0 0 1 1>/16")` lets an element come and go across a 16-cycle phrase, creating answer and space rather than sounding from start to finish.',
-    'Example (a lead that is derived from the harmony and evolves on its own, without section switches):\n  chords.n("[0 <4 3 <2 5>>*2](<3 5>,8)")\n    .anchor("D5").voicing()\n    .clip(rand.range(.4,.8))\n    .lpf(sine.range(500,1000).slow(8)).lpq(5)\n    .rarely(ply("2")).chunk(4, fast(2))\n    .gain(perlin.range(.6,.9))',
-    'Anti-pattern (the most common real-world failure): writing the melody as a fixed `n("<[..] [..] [..] [..]>/4").scale(...)` — it repeats identically every 4 cycles and is disconnected from the chord progression; even wrapped in an outer gain/lpf section envelope, the line itself still marks time in place.',
-    'So in an arranged piece, the melody/lead should by default come alive through one of the means above rather than a fixed scale loop; the one to reach for first is deriving its pitches from the moving harmony (`.set(chords)` / `chords.n("...")`) — it does two jobs at once: the same degrees sound different as the chords change (evolution) while always fitting the current chord (consonance).',
-    'Drums and bass evolve too — especially common over longer pieces (`struct`/density nested alternation, fills, bass passing tones) — just with a steadier core and more sparing variation; no layer is excluded, and none is forced.',
-    'Same principle as "Variation must be meaningful": prefer a few well-chosen, slowly evolving parameters over violently renewing every cycle; keep a recognizable core while pushing it forward.',
+    'The most common source of monotony is a single line holding the same rhythm or melody for many cycles, so even with arrangement the piece marks time in place. The core fix is to bake the variation into the layer itself — use **nested alternation** to let the line evolve on its own:',
+    '- **Write evolving lines with nested alternation**: `<a b c>` advances one step per cycle; **nesting** `<a <b c>>` makes the inner step advance only when its turn comes, so the line\'s true period is the LCM of the layers — it takes a dozen-plus cycles to repeat and sounds like a composed long phrase rather than a short loop. Melody example: `n("[0 <4 3 <2 5>>*2](<3 5>,8)").scale("D4:minor")`. Same for density: `struct` with `<...>`, density `*<2!3 4>`, Euclidean `(<3 5>,8)`.',
+    'So in an arranged piece, the melody/lead line should by default come alive through nested alternation rather than a fixed `n("<[..] [..] [..] [..]>/4").scale(...)` — that repeats identically every 4 cycles, and even wrapped in an outer gain/lpf section envelope the line itself still marks time in place (the most common real-world failure).',
+    'Same principle as "Variation must be meaningful": keep a recognizable core while pushing it forward — no need to violently renew every cycle.',
     '',
     '### Low-frequency audibility & comments',
     'Low-frequency layers (below ~150 Hz, e.g. a sine sub-bass or a very low drone) are legitimate and common, but laptops/phones/small speakers may not reproduce them, so do the following two things to avoid small-speaker listeners mistaking the result for "no sound":',
@@ -424,7 +415,7 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '- **The opening must have a clearly audible foreground element**: at the start of the song, and at any moment when only a few layers are active, there must be a clearly audible foreground element — a note/chord/drum/bass with definite pitch or transient, at foreground gain (about ≥0.4), sitting in the audible midrange (~200 Hz–5 kHz). Atmosphere layers (Noise / Texture / FX) and near-silent layers (gain ≲0.2) cannot be the only thing sounding at the opening; broadband noise in particular gets masked by small speakers and ambient room noise, so it may be inaudible even when its frequency is midrange. Otherwise small-speaker listeners hear nothing at the opening and assume nothing is playing.',
     '',
     '### Pre-generation self-check',
-    'After generating a layer, check: ① What role does this layer carry? ② Does it duplicate an existing layer? ③ Does it fill missing information? ④ Does it steal the lead\'s position? ⑤ Would the piece be clearly worse if it were removed? ⑥ At the opening of the song, and at any moment when only a few layers are active, is there at least one clearly perceptible auditory anchor (a rhythmic, pitched, or transient structure such as drum/bass/motif/pluck/chord) that lets the listener confirm the music has started on all kinds of playback devices — rather than only atmosphere or very low frequencies, which may form no clear auditory cue on small speakers? ⑦ If a layer\'s main function depends on the low range (below ~150 Hz) and its absence would make the listening information incomplete, does the `//` comment briefly state its listening role and device dependence (e.g. may be weakened or imperceptible on phones / small speakers), so the user does not mistake inaudibility for a playback fault? ⑧ For every set of layers that sound at the same time and overlap in register, has each pair been separated by at least one of rhythmic interlock, frequency carving, panning, or gain hierarchy? ⑨ If the piece feels monotonous because the lines just repeat mechanically every cycle, should the melody/lead voices be made to evolve (nested alternation, harmony-derived pitches, signal modulation, or occasional transforms)? If you cannot answer these questions, redesign the layer.',
+    'After generating a layer, check: ① What role does this layer carry? ② Does it duplicate an existing layer? ③ Does it fill missing information? ④ Does it steal the lead\'s position? ⑤ Would the piece be clearly worse if it were removed? ⑥ At the opening of the song, and at any moment when only a few layers are active, is there at least one clearly perceptible auditory anchor (a rhythmic, pitched, or transient structure such as drum/bass/motif/pluck/chord) that lets the listener confirm the music has started on all kinds of playback devices — rather than only atmosphere or very low frequencies, which may form no clear auditory cue on small speakers? ⑦ If a layer\'s main function depends on the low range (below ~150 Hz) and its absence would make the listening information incomplete, does the `//` comment briefly state its listening role and device dependence (e.g. may be weakened or imperceptible on phones / small speakers), so the user does not mistake inaudibility for a playback fault? ⑧ For every set of layers that sound at the same time and overlap in register, has each pair been separated by at least one of rhythmic interlock, frequency carving, panning, or gain hierarchy? ⑨ If the piece feels monotonous because the lines just repeat mechanically every cycle, should the melody/lead voices be made to evolve via nested alternation? If you cannot answer these questions, redesign the layer.',
   ].join('\n'),
   [
     '## Song arrangement (enabled under a "complete song" or an explicit arrangement intent)',
