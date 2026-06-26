@@ -8,6 +8,7 @@ export interface ParsedLayer {
   source: string;       // layer expression text without the @layer marker, trimmed
   rawStart: number;     // absolute index in code where this layer's slot begins
   rawEnd: number;       // absolute index (exclusive) where this layer's slot ends
+  envelope?: string;    // arrangement-scale envelope summary (e.g. "mask/16 gain/16"); undefined if none
 }
 
 export interface ParsedScore {
@@ -23,6 +24,37 @@ export interface ParsedScore {
 }
 
 const LAYER_MARKER_RE = /^\s*\/\*\s*@layer\s+([A-Za-z0-9_]+)\s*\*\//;
+
+// Matches a `.method("...<INNER>[/N]...")` call: captures the method name, the
+// angle-bracket INNER, and an optional trailing /N window. The window itself
+// comes from either form: `<...>/N` (slowed alternation) or `<...@a ...@b>`
+// (weighted span). A bare `<a b>` (no /N, no @) alternates every cycle
+// (micro-variation) and is deliberately excluded.
+const ENVELOPE_RE =
+  /\.?(mask|gain|lpf|hpf|bank|note|struct|n|s)\s*\(\s*["'`][^"'`]*?<([^<>]*)>\s*(?:\/\s*(\d+(?:\.\d+)?))?/g;
+
+// Sum the cycle span of an @-weighted alternation like `0@4 1@24 0@4` (= 32).
+// Returns null when there are no @ weights (so a bare `<a b>` is excluded).
+function sumAngleWeights(inner: string): number | null {
+  const weights = inner.match(/@\s*(\d+(?:\.\d+)?)/g);
+  if (!weights) return null;
+  return weights.reduce((sum, w) => sum + parseFloat(w.replace(/[@\s]/g, '')), 0);
+}
+
+// Summarise a layer's arrangement-scale envelope as a language-neutral "role/N"
+// list (e.g. "mask/16 s/8"). Conservative and side-effect free: returns
+// undefined on no match and never throws.
+function extractEnvelope(source: string): string | undefined {
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+  ENVELOPE_RE.lastIndex = 0;
+  while ((m = ENVELOPE_RE.exec(source)) !== null) {
+    const [, role, inner, slashN] = m;
+    const window = slashN ? parseFloat(slashN) : sumAngleWeights(inner);
+    if (window != null) seen.add(`${role}/${window}`);
+  }
+  return seen.size > 0 ? [...seen].join(' ') : undefined;
+}
 
 /** Remove the common leading whitespace from all lines (dedent), then trim. */
 function dedentSource(text: string): string {
@@ -87,11 +119,13 @@ export function parseScore(code: string): ParsedScore {
             sourceText = argText;
           }
           if (!sourceText.trim()) continue;
+          const dedented = dedentSource(sourceText);
           result.layers.push({
             name,
-            source: dedentSource(sourceText),
+            source: dedented,
             rawStart: result.stackArgsStart + span.start,
             rawEnd: result.stackArgsStart + span.end,
+            envelope: extractEnvelope(dedented),
           });
         }
       }
@@ -266,13 +300,14 @@ export function bpmToCps(bpm: number): number {
 
 export function summariseScore(score: ParsedScore): {
   bpm: number | null;
-  layers: { name: string; preview: string }[];
+  layers: { name: string; preview: string; envelope?: string }[];
 } {
   return {
     bpm: score.bpm,
     layers: score.layers.map((l) => ({
       name: l.name,
       preview: l.source.length > 80 ? l.source.slice(0, 77) + '...' : l.source,
+      envelope: l.envelope,
     })),
   };
 }
