@@ -30,6 +30,7 @@ import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 
 let anthropicClient: Anthropic | null = null;
 let openaiClient: OpenAI | null = null;
+const AGENT_MAX_TOKENS = 131072;
 
 function getAnthropicClient(): Anthropic {
   if (!anthropicClient) {
@@ -237,7 +238,7 @@ const anthropicLLMCaller: LLMCaller = {
       messages: amsgs,
       tools: convertTools(tools),
       temperature: 1,
-      max_tokens: 16000,
+      max_tokens: AGENT_MAX_TOKENS,
       thinking: { type: 'enabled', budget_tokens: 10000 },
     // Type assertion needed: SDK types don't yet include `thinking` in the
     // stream params, but it works at runtime when the beta header is set.
@@ -302,7 +303,7 @@ function createOpenAILLMCaller(): LLMCaller {
         tools: tools as OpenAI.ChatCompletionTool[],
         tool_choice: 'auto',
         temperature: 0.7,
-        max_tokens: 16000,
+        max_tokens: AGENT_MAX_TOKENS,
         stream: true,
         stream_options: { include_usage: true },
       }, { signal });
