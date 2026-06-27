@@ -139,6 +139,10 @@ describe('getSelectedModel', () => {
     expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
   });
 
+  it('returns glm-5.2 as the default GLM model when no override is stored', () => {
+    expect(getSelectedModel('glm')).toBe('glm-5.2');
+  });
+
   it('returns the stored override when it is a valid model for the provider', () => {
     localStorage.setItem('vibe_model_deepseek', 'deepseek-v4-pro');
     expect(getSelectedModel('deepseek')).toBe('deepseek-v4-pro');

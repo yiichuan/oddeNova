@@ -3,9 +3,20 @@ import type { RunAgentOptions } from '../../agent/loop';
 import type { ConversationTurn } from '../llm';
 
 const runAgentLoopMock = vi.hoisted(() => vi.fn());
+const openAIChatCreateMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../agent/loop', () => ({
   runAgentLoop: runAgentLoopMock,
+}));
+
+vi.mock('openai', () => ({
+  default: vi.fn(() => ({
+    chat: {
+      completions: {
+        create: openAIChatCreateMock,
+      },
+    },
+  })),
 }));
 
 vi.mock('../../prompts/system-prompt', () => ({
@@ -47,6 +58,7 @@ import { runAgent } from '../llm';
 describe('runAgent conversationHistory pass-through', () => {
   beforeEach(() => {
     runAgentLoopMock.mockReset();
+    openAIChatCreateMock.mockReset();
     runAgentLoopMock.mockResolvedValue({
       code: 's("bd")',
       explanation: 'done',
@@ -68,5 +80,25 @@ describe('runAgent conversationHistory pass-through', () => {
     expect(opts.instruction).toBe('still wrong');
     expect(opts.initialCode).toBe('s("hh")');
     expect(opts.conversationHistory).toBe(history);
+  });
+
+  it('gives the OpenAI-compatible agent call a larger completion budget', async () => {
+    async function* stream() {
+      yield { choices: [{ delta: {} }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 1 } };
+    }
+    openAIChatCreateMock.mockResolvedValue(stream());
+
+    await runAgent('写一段热血冒险风格的 BGM', '', undefined);
+
+    const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    await opts.llm.chatWithTools([{ role: 'user', content: 'go' }], []);
+
+    expect(openAIChatCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_tokens: 131072,
+      }),
+      expect.any(Object),
+    );
   });
 });

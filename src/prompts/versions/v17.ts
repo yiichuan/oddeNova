@@ -43,6 +43,59 @@
  * 不再要求用户明确提出「长/丰富」才执行；仅在用户明确只想要静态循环或快速 jam/草稿时才保留逐 cycle 重复。
  * 同步去掉速查表的「按需使用」措辞、改写「让每个主要声部随时间呼吸」一节的引子与默认句、把自检⑨由条件式
  * （「若整体听感偏单调…」）改为默认式检查。中英双语同步。
+ * 后续补充：进一步放开「嵌套交替演化」的适用范围（参考设计原则——策略层只给方向、把边界交给模型自己判断）——
+ * 不再绑定「旋律/主奏」单一层，改为通用默认手段：由 agent 自行决定哪些层该更丰富、哪些层保留稳定内核当锚点
+ * （贝斯/和声/鼓变体/织体均可在 cycle 间演化），通常至少前景声部要动起来。速查表括注、默认句与自检⑨同步泛化。中英双语同步。
+ * 后续补充：针对「打字机感」实测问题——agent 学会了「线条不逐 cycle 重复」（轴 A：嵌套交替），但事件级仍机械
+ * （每个音音色/力度/发音/落点完全一致、严丝合缝踩网格），听感死板。在「音层代码生成」新增与「让每个主要声部随时间
+ * 呼吸」平行的一节「让每个声部"被演奏"，而非被打印」（轴 B：演奏性/事件级微观差异），按 Agent Prompt 设计原则以
+ * 宪法式默认行为偏好呈现（非条件触发、给方向不给 if-else、边界交给模型）：四个可动微观维度（力度/发音长短/音色流动/
+ * 微律动）、按角色选手段、两条护栏（保留稳定内核·风格例外如 techno/acid 机械量化感本身是审美）；音层生成前自检
+ * 新增第⑩项（前景声部事件级是否至少一项在变）。中英双语同步。
+ * 后续补充：轴 A 的演化示例此前只有旋律锚点，实测 agent 易把嵌套交替/密度交替只往旋律套、鼓与 hat 仍死板。
+ * 在「让每个主要声部随时间呼吸」一节补一个打击层锚点示例 `n("[0 <1 3>]*<2!3 4>").s("hh")`，与旋律例配成
+ * 「旋律+打击」两个示范（按设计原则——示例归纳优于加规则）。中英双语同步。
+ * 后续补充：按 Agent Prompt 设计原则（示例应引导推理而非机械套用、策略层给方向不给死模板）优化速查表的「信号调制」一行——
+ * 把「快速模板（可直接复制）」改为「按音乐目的选手段」，每个调制写明其听感作用（滤波扫动/增益呼吸/侧链律动/FM 音色演化/
+ * 立体声游移），并点明范围与速率服从音乐目的而非固定值；语法事实不变。中英双语同步。
+ * 后续补充：同上原则，把速查表「模式变换/信号/和声」三行也从平铺方法清单改为按用途分组——模式变换按「改速度方向/加密镜像/
+ * 重塑节奏骨架与进出/偶发变化/回声层」归类，信号按波形特性与「连续变化驱动参数」的用途呈现，和声点明「让音符跟随移动的和弦
+ * 进行而非孤立音高」；所有方法名与示例语法原样保留。中英双语同步。
+ * 后续补充：按 Agent Prompt 设计原则与方法论重写「让线条随时间呼吸」一节，使其作为「音层代码生成」下清晰的策略层呈现——
+ * 改为「目标 / 默认倾向 / 行为样例（正例+反例，供归纳）/ 边界由模型判断」四段式，去掉「实测最常见的失败」等补丁式防御措辞
+ * （方法论视其为过度规则化），把演化手段收敛到「嵌套交替」一条、用正反样例引导归纳而非堆规则，并明确把「哪些层更丰富、
+ * 哪些层保留稳定内核」的边界交给模型自行判断。技术内容（嵌套交替=最小公倍数周期、旋律/打击双样例、静态循环例外）保持不变。中英双语同步。
+ * 后续补充：针对「旋律用了嵌套交替却仍不和谐（在静态 scale() 上随机游走级数）」的实测问题，新增轴 C 策略「让旋律有和声落点」
+ * （音层代码生成内，置于「让线条随时间呼吸」之前，目标→默认倾向→正反样例→边界四段式）：默认从移动和弦派生音高——
+ * `let chords = chord("<...>/N").dict("ireal")` 存为共享和声源、各层用 `chords.n(...)` 选当前和弦的和弦音，使旋律天生协和并随和声换色；
+ * 正例用 chords.n 派生、反例用 n(...).scale() 随机游走，引导归纳；并明确这与轴 A（演化）正交。配套改动：①工程合法性
+ * 「不使用 let/const」碰到本策略需要共享变量，故放开唯一例外——允许在 stack(...) 之前用一行 `let chords = ...` 声明共享和声源
+ * （已用 validate 的 `new Function`+`with` dry-run 验证 let 绑定可解析）；②速查表和声行补 `chords.n(...)` 用法；
+ * ③音层生成前自检新增第⑪项（旋律音高是否有和声落点）。中英双语同步。
+ * 后续补充：按反馈重写轴 C「让旋律有和声落点」——原「默认倾向：从移动和声派生」框架使 agent 把
+ * `let chords = chord(...).dict("ireal")` + `chords.n(...)` 当必经流程、套到好几层上。参考 Agent Prompt 设计原则
+ * （策略层给方向不给套路、避免过度规则化）改为价值/方向式呈现：标题与目标改为「让音高灵活但"站得住"」，
+ * 重组为「目标 / 核心原则（让音高有依附对象，列出强拍对齐和弦音·非和弦音弱拍解决·围绕动机级进·随和声迁色·
+ * 必要时和弦派生五条按需手段）/ 重要说明（和弦派生只是手段之一、非默认范式，贝斯/副旋律/织体靠基本和声意识即可）/
+ * 关键判断标准（重点是有无清晰落点与解决路径，而非用没用 chords）/ 与《让线条随时间呼吸》正交」；
+ * 自检⑪由「`chords.n(...)` 派生为先」改为「强拍落和弦音/动机级进/和弦派生」三者并列。中英双语同步。
+ * 后续补充：重写速查表「和声」一行——原表述带倾向性（「让音符跟随移动的和弦进行，而非孤立音高…于是旋律/贝斯
+ * 天生协和」）且含唯一字面示例 `<Cm9 Fm9>/4`，易被照搬成「每次都 `/4`/m9 的固定流程」。参考 Agent Prompt 设计原则
+ * （速查表属参考层只给语法事实、不规定默认行为；示例引导归纳而非机械套用）改为多行「语法工具箱」：示例改用
+ * `chord("<...>/N")` 占位、注明和弦/时值/`N` 都自定，逐条说明 `.dict()`/`.voicing()`/`.mode()`/`.anchor()`/`chords.n()`
+ * 各做什么且各自可选，并加「关键原则」明确这些方法不是标准编配链条、可全不用，是否使用交给《让旋律有和声落点》
+ * 按旋律落点设计决定。中英双语同步。
+ * 后续补充：重新结构速查表为带 `###` 小节标题的分组（记谱法/核心结构/音色与采样/效果器/模式变换/信号与调制/
+ * 和声/让线条演化/音阶），提升可读性——把原来一条超长的「模式变换」「记谱法+禁忌」拆成逐条 `-` 子项，
+ * 并把「`every`/`sometimes`/`off`/`chunk` 回调约束 + TidalCycles 不可用」归入「模式变换」小节。
+ * 仅做分组与拆分，所有语法事实、禁止项与示例原样保留。中英双语同步。
+ * 后续补充：按 Agent Prompt 设计原则审查速查表（参考层应让模型学知识、而非照抄模版）——表内充斥具体数值/音符/
+ * 和弦/节奏型字面（`setcps(0.5)`、`sine.range(400,800).slow(8)`、`"[0 <4 3 <2 5>>*2](<3 5>,8)"` 等），易被当模版照搬。
+ * 在表头加一句总纲：本表是语法参考、重点理解每个方法「做什么/何时有用」，示例中的数值音符都是占位、按音乐目的
+ * 自定，遇表外需求依机制推导而非硬套最近示例。单点总纲覆盖全表，不逐条加占位说明（避免过度规则化）。中英双语同步。
+ * 后续补充：同上原则细化「音阶」小节——示例由 `scale("C4:minor")` 改为 `scale("...")` 占位，拆为「映射到调式空间/
+ * 调式只表组织方式不绑定 root 与 octave/可用类型仅为类别集合非推荐顺序/⚠️ 不要把带 root 的具体写法当默认模板，
+ * root 与调式组合由音乐结构决定」，避免冷启动总用同一 root+调式。中英双语同步。
  */
 import {
   DIRT_SAMPLES,
@@ -93,21 +146,54 @@ const SAMPLE_REFERENCE_SECTION = [
 
 const STRUDEL_CHEATSHEET_CONCISE = [
   '## Strudel 速查表（精简版）',
-  '- 迷你记谱法：`*N` 重复，`/N` 减速，`[]` 分组，`<>` 交替循环，`,` 并行，`~` 休止，`(k,n)` 欧拉节奏，`!N` 复制，`@N` 延长。**禁止**使用 `_`（保持步长）——在 `,` 分支开头或 `[]` 内部会导致解析错误；请用显式值或 `@N` 代替。**禁止**在 `<>` 内使用 `|`——`|` 是随机选择运算符，在尖括号交替内无效；需要交替多步分组时，请写 `<[...] [...] [...]>`。**禁止**在 `<>` 内使用 `;`——`;` 不是合法迷你记谱法；在交替中表示同时和弦组，请写 `<[n1,n2,n3] [n4,n5,n6]>` 而不是 `<n1 n2 n3; n4 n5 n6>`——`validate` 会报 Mini-notation 错误，请自行修正。',
-  '- 值模式（`.gain("...")`、`.lpf("...")`、`.speed("...")` 等）：**禁止**在其中使用 `_`——始终写出明确数字。`~` 只用于结构模式，不用于数值字符串。',
-  '- **迷你记谱法中禁用**：`[_ ...]`（括号起始处保持）、`, _ ...`（并行分支起始处保持）。这些会在运行时产生解析错误。',
-  '- 核心：`note("c3 e3 g3")`，`s("bd sd hh")`，`stack(...)`，`cat(...)`。速度在 `setCode` 的第一行用 `setcps(N)` 设置（cps = bpm / 240，例如 120 BPM → `setcps(0.5)`）。',
+  '本表是语法参考，重点在于理解每个方法"做什么、何时有用"——其中的数值、音符、和弦与节奏型都只是用于说明的占位，应按音乐目的自行决定，而不是当模版照抄。遇到表里没列的需求，依据这些机制自行推导，而不是硬套最接近的示例。',
+  '',
+  '### 记谱法',
+  '- 符号：`*N` 重复，`/N` 减速，`[]` 分组，`<>` 交替循环，`,` 并行，`~` 休止，`(k,n)` 欧拉节奏，`!N` 复制，`@N` 延长。',
+  '- **禁忌**：`_`（保持步长）在 `,` 分支开头或 `[]` 内部会导致解析错误，用显式值或 `@N` 代替；`<>` 内不能用 `|`（随机选择运算符，需交替多步分组时写 `<[...] [...] [...]>`）；`<>` 内不能用 `;`（表示同时和弦组写 `<[n1,n2,n3] [n4,n5,n6]>`，而不是 `<n1 n2 n3; n4 n5 n6>`）——`validate` 会报 Mini-notation 错误。',
+  '- 值模式（`.gain("...")`、`.lpf("...")`、`.speed("...")` 等）中**禁止** `_`，始终写明确数字；`~` 只用于结构模式、不用于数值字符串。另：`[_ ...]`（括号起始保持）与 `, _ ...`（并行分支起始保持）也会在运行时报解析错误。',
+  '',
+  '### 核心结构',
+  '- `note("c3 e3 g3")`，`s("bd sd hh")`，`stack(...)`，`cat(...)`。速度在 `setCode` 第一行用 `setcps(N)` 设置（cps = bpm / 240，例如 120 BPM → `setcps(0.5)`）。',
   '- **禁止** `.add(s("..."))` 叠加采样音层——`.add()` 是数值运算（仅用于 `.add(note("7"))` 等音高偏移），无法接受采样名称字符串，会触发运行时错误 `cannot parse as numeral: "bd"`。叠加多个 `s()` 音层请用逗号语法 `s("bd*4, ~ sd ~ sd")` 或 `stack(s("bd*4"), s("~ sd ~ sd"))`。',
-  '- 鼓组：`bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`。鼓机音色库：`.bank("RolandTR808")`——使用 `.bank()` 时，使用库专用后缀名：`bd sd hh oh cp cb lt mt ht perc rim sh cr`（注意：鼓机库中的击边鼓是 `rim`，不是 `rs`；`rs` 仅在不使用 bank 时有效）。',
-  '- 合成器：`.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`。旋律采样 / GM 音色库 / Dirt 采样 / 鼓机 Bank 的完整名称——见末尾《全量采样名称参考》节。**禁止**使用列表以外的自创名称（如 "superpad"、"rhodes"、"strings"）。',
-  '- 效果器：`.gain(0..1)`，`.lpf(Hz)`，`.lpq(N)`（低通滤波谐振 0-50；别名 `.resonance(N)`），`.hpf(Hz)`，`.hpq(N)`，`.delay(0..1)`，`.room(N)`，`.pan(0..1)`，`.attack/.decay/.sustain/.release`，`.speed(N)`，`.vowel("a e i o")`。`.lpfq` 不存在——请使用 `.lpq`。',
-  '- 模式变换：`.fast(N)`，`.slow(N)`，`.rev()`，`.jux(rev)`，`.ply(N)`，`.struct("x ~ x x")`，`.mask("<0 1 1 0>/16")`，`.every(N, fast(2))`，`.sometimes(fast(2))`，`.rarely(fn)`，`.often(fn)`，`.chunk(N, fast(2))`，`.off(0.125, x => x.add(note("7")))`。',
-  '- 信号：`sine`，`cosine`，`saw`，`tri`，`rand`，`perlin`——与 `.range(a,b).slow(N)` / `.segment(N)` 组合使用。示例：`.lpf(sine.range(500,1000).slow(8))`，`.gain(perlin.range(.6,.9))`。',
-  '- 信号调制快速模板（可直接复制）：滤波 LFO：`.lpf(sine.range(400,800).slow(8)).lpq(5)` | 增益呼吸感：`.gain(perlin.range(.5,.9))` | 侧链压缩：`.gain("<.3 1@3>*2")` | FM 进化：`.fm(sine.range(2,8).slow(4))` | 立体声：`.pan(sine.slow(4))`',
-  '- 和声：`chord("<Cm9 Fm9>/4").dict("ireal").voicing()`，`.mode("root:g2")`，`.anchor("D5")`。使用 `n("0 1").set(chords)` 将音阶级数映射到和弦音。',
-  '- 让一条线演化、不逐 cycle 重复（旋律/主奏的默认写法）：默认就把变化写进迷你记谱法本身、让线条自我演化，而不是等用户说"长一点/丰富一点"才做。`<a b c>` 每 cycle 前进一步；**嵌套** `<a <b c>>` 时内层只在轮到它时才前进，于是整条线的真实周期是各层的最小公倍数——要十几个 cycle 才重复一次，听起来像被谱写的长旋律。例：旋律 `"[0 <4 3 <2 5>>*2](<3 5>,8)"`。节奏疏密同理：`*<2!3 4>`、欧拉 `(<3 5>,8)`。偶发装饰用 `.chunk(4, fast(2))`、`.sometimes(ply("2"))`、`.every(4, rev)`',
-  '- 对于 `every`/`sometimes`/`off`/`chunk`，回调必须是真正的 Strudel 函数（`fast(N)`、`rev`、`ply(N)` 或 `x => x.something(...)`）。TidalCycles 专有 API（`by`、`sometimesBy`、`someCyclesBy`、`within`）在 Strudel 中**不可用**——`validate` 会捕获它们。',
-  '- 音阶：`n("0 1 2 3").scale("C4:minor")`。常用：major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic。',
+  '',
+  '### 音色与采样',
+  '- 合成器：`.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`。旋律采样 / GM 音色库 / Dirt 采样 / 鼓机 Bank 的完整名称见末尾《全量采样名称参考》节。**禁止**使用列表以外的自创名称（如 "superpad"、"rhodes"、"strings"）。',
+  '- 鼓组：`bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`。鼓机音色库：`.bank("RolandTR808")`——使用 `.bank()` 时用库专用后缀名 `bd sd hh oh cp cb lt mt ht perc rim sh cr`（注意：鼓机库中的击边鼓是 `rim`，不是 `rs`；`rs` 仅在不使用 bank 时有效）。',
+  '',
+  '### 效果器',
+  '- `.gain(0..1)`，`.lpf(Hz)`，`.lpq(N)`（低通滤波谐振 0-50；别名 `.resonance(N)`），`.hpf(Hz)`，`.hpq(N)`，`.delay(0..1)`，`.room(N)`，`.pan(0..1)`，`.attack/.decay/.sustain/.release`，`.speed(N)`，`.vowel("a e i o")`。`.lpfq` 不存在——请使用 `.lpq`。',
+  '',
+  '### 模式变换（按你要的变化选用，而非逐个套用）',
+  '- 改速度与方向：`.fast(N)`/`.slow(N)`/`.rev()`。',
+  '- 加密或镜像：`.ply(N)`（每个事件复制 N 份）/`.jux(rev)`（左右声道镜像处理）。',
+  '- 重塑节奏骨架与进出：`.struct("x ~ x x")`/`.mask("<0 1 1 0>/16")`。',
+  '- 制造偶发变化、打破机械感：`.every(N, fast(2))`、`.sometimes(fast(2))`/`.often(fn)`/`.rarely(fn)`、`.chunk(N, fast(2))`。',
+  '- 叠回声/对位层：`.off(0.125, x => x.add(note("7")))`。',
+  '- 回调约束：`every`/`sometimes`/`off`/`chunk` 的回调必须是真正的 Strudel 函数（`fast(N)`、`rev`、`ply(N)` 或 `x => x.something(...)`）。TidalCycles 专有 API（`by`、`sometimesBy`、`someCyclesBy`、`within`）在 Strudel 中**不可用**，`validate` 会捕获。',
+  '',
+  '### 信号与调制',
+  '- 信号源——用连续变化驱动参数，让静态值活起来：`sine`/`cosine`（平滑往复）、`saw`/`tri`（单向/三角扫动）、`rand`（随机抖动）、`perlin`（自然游走），与 `.range(a,b).slow(N)`（取值范围与周期）/ `.segment(N)`（离散成 N 步）组合。例：`.lpf(sine.range(500,1000).slow(8))` 滤波缓动、`.gain(perlin.range(.6,.9))` 增益自然起伏。',
+  '- 按听感选调制目标（不是套固定模板）：慢 `sine`/`perlin` 调 `.lpf` 做滤波扫动与起伏（`.lpf(sine.range(400,800).slow(8)).lpq(5)`）；调 `.gain` 做呼吸感或侧链律动（`.gain(perlin.range(.5,.9))`、`.gain("<.3 1@3>*2")`）；调 `.fm` 做音色演化（`.fm(sine.range(2,8).slow(4))`）；调 `.pan` 做立体声游移（`.pan(sine.slow(4))`）。范围与速率服从音乐目的，不是固定值。',
+  '',
+  '### 和声（作为一组"语法工具箱"，按需取用，而不是固定流程）',
+  '- `chord("<...>/N")` 生成和弦进行——和弦内容、数量与节奏长度完全由音乐目标决定，不要照搬示例中的和弦或时值；`/N` 只控制这段和声循环跨越多少 cycle，应根据结构自行设定。',
+  '- `.dict("ireal")` 选择和弦字典来源（仅为一种可选映射方式，不是默认标准）。',
+  '- `.voicing()` 将和弦展开为具体声部排列——是否展开取决于当前层是否需要"可演奏性"或密度控制。',
+  '- `.mode("root:g2")` 控制和弦排列/重心位置，属音区与结构调整手段。',
+  '- `.anchor("D5")` 锁定整体音域、避免声部漂移（仅在需要稳定音域时使用）。',
+  '- 可将 `chord(...).dict("ireal")` 存入 `let chords`，再用 `chords.n("0 2 4")`（或 `n("0 2 4").set(chords)`）让某条旋律线参考当前和弦的音集。',
+  '- ⚠️ 关键原则：这些方法不是标准编配流程，也不是必须组合使用的链条，只是不同层级的"和声依附手段"。实际创作中可以完全不用 `chords.n()`、可以只用 `chord()` 不展开 `voicing()`、可以只做 root motion 不做音级映射，甚至完全依赖旋律自身的落点逻辑——唯一的选择依据是：是否需要增强"音高与和声的依附关系"。',
+  '- 与《让旋律有和声落点》的关系：本段工具只提供"可能的和声支撑方式"，是否使用、用到什么程度，由旋律的落点设计决定，而不是固定规则。',
+  '',
+  '### 让线条演化（默认手段，不限定某一层）',
+  '- 默认就把变化写进迷你记谱法本身、让线条自我演化，而不是等用户说"长一点/丰富一点"才做；具体哪些层该更丰富由你判断。`<a b c>` 每 cycle 前进一步；**嵌套** `<a <b c>>` 时内层只在轮到它时才前进，于是整条线的真实周期是各层的最小公倍数——要十几个 cycle 才重复一次，听起来像被谱写的长旋律。例：旋律 `"[0 <4 3 <2 5>>*2](<3 5>,8)"`。节奏疏密同理：`*<2!3 4>`、欧拉 `(<3 5>,8)`。偶发装饰用 `.chunk(4, fast(2))`、`.sometimes(ply("2"))`、`.every(4, rev)`。',
+  '',
+  '### 音阶',
+  '- `n("0 1 2 3").scale("...")` 用于将音高映射到某种调式空间。',
+  '- 调式类型仅表示"音高组织方式"，不绑定任何固定 root 或 octave。',
+  '- 可用类型（仅作为类别集合，而非推荐顺序）：major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic。',
+  '- ⚠️ 不要将任何具体写法（如带 root 的形式）视为默认模板或标准起点。root 与调式组合应由音乐结构决定，而不是由示例决定。',
 ].join('\n');
 
 // ============================================================================
@@ -170,7 +256,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '',
     '### 工程合法性检查',
     '- **采样名称合法**：所有 `s("...")` 中的名称必须来自《全量采样名称参考》。禁止创造不存在的采样名称，禁止猜测采样名称。',
-    '- **代码格式统一**：每个音层保持单一链式表达式——不使用分号、`var`、`let`、`const`。方法链允许跨行书写，基础表达式在第一行，每个 `.method(...)` 单独一行并相对缩进 2 个空格。示例：\n  note("c3 e3 g3")\n    .s("piano")\n    .gain(0.5)',
+    '- **代码格式统一**：每个音层保持单一链式表达式——不使用分号、`var`、`let`、`const`。方法链允许跨行书写，基础表达式在第一行，每个 `.method(...)` 单独一行并相对缩进 2 个空格。示例：\n  note("c3 e3 g3")\n    .s("piano")\n    .gain(0.5)\n  **唯一例外**：可在 `stack(...)` 之前用一行 `let chords = chord("<...>/N").dict("ireal")` 声明一个共享和声源，供各层 `chords.n(...)` 派生；该行不算音层、同样不写分号。',
     '- **注释完整**：必须包含顶部注释 `// STYLE | BPM: N`（无匹配风格时写 `// BPM: N`）；每个 `/* @layer NAME */` 后另起一行，用中文注释说明音色、节奏特征或音乐意图。**当该层有进入与退出（通过 mask/gain 包络在不同时间进出）时，注释中要写明进出时机**，例如：\n  /* @layer BASS */\n  // 温暖低频贝斯线，cycle 4 进入、cycle 28 退出',
     '',
     '### Commit 规则',
@@ -205,7 +291,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '不同音层应占据不同频率区域。目标是避免频率拥挤，而不是机械遵守音高范围。一般参考：Kick / Sub 最低频区域、Bass 低频区域、Chord / Pad 中频区域、Lead 中高频区域、Hat / FX 高频区域。可根据风格灵活调整——例如 Deep House 的 Pad 可以较低、Ambient 的 Lead 可以较高、Country Guitar 可能位于中频核心区域。不要因为固定音区规则而破坏风格。',
     '',
     '### 保持调性一致',
-    '若已有旋律或和声内容，优先继承其调性与音阶。若无法判断，默认 C Minor，除非用户明确指定其它调性。',
+    '本节真正要保证的是「一首曲子内部调性统一」，而非锚定某个固定调中心。若已有旋律或和声内容，优先继承其调性与音阶。若为从零创作、无可继承内容，则根据用户描述的风格与情绪自行选择契合的调性与调式（不要每次都退回同一个调，避免冷启动作品同质化）。用户明确指定调性时以用户为准。',
     '',
     '### 控制信息密度',
     '整首作品的信息量应保持平衡。新增音层前观察：节奏是否已经拥挤、和声是否已经饱和、高频是否已经过多、是否已有明确主角。如果某个区域已经足够丰富，优先补充缺失部分，而非继续堆叠。',
@@ -213,11 +299,29 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '### 增益服务于角色',
     '增益用于建立层次关系，而非套用固定数值。通常：节奏基础较突出、贝斯稳定可感知、和声作为背景支撑、主旋律清晰可辨、氛围层弱于主体。参考范围：Drum 0.7–0.9 | Bass 0.6–0.8 | Pad / Chord 0.3–0.5 | Lead 0.4–0.6 | FX 0.2–0.5。根据作品需要动态调整，不要机械套用。',
     '',
-    '### 让每个主要声部随时间呼吸（避免逐 cycle 完全重复）',
-    '单调最常见的来源是：某条线在很多 cycle 里保持同一个节奏或旋律，于是即便有编排，听感仍原地踏步。这不是"用户要长曲、要丰富才处理"的可选项——**只要在写承担旋律/主奏的线条，默认就用嵌套交替让它自我演化**，把"变化"写进音层本身：',
-    '- **用嵌套交替写出会演化的线条**：`<a b c>` 每个 cycle 前进一步；**嵌套** `<a <b c>>` 时，内层只在轮到它时才前进，于是整条线的真实周期是各层的最小公倍数，要十几个 cycle 才重复一次，听起来像被谱写的"长句"而非短循环。旋律例：`n("[0 <4 3 <2 5>>*2](<3 5>,8)").scale("D4:minor")`。节奏疏密同理：`struct` 用 `<...>`、密度用 `*<2!3 4>`、欧拉 `(<3 5>,8)`。',
-    '承担旋律/主奏的线条默认就该用嵌套交替动起来，而不要写成固定的 `n("<[..] [..] [..] [..]>/4").scale(...)`——后者每 4 cycle 原样重复，即便外层套了 gain/lpf 段落包络，线条本身仍在原地踏步（实测最常见的失败）。只有当用户明确只想要静态循环、或在做快速 jam/草稿时，才保留逐 cycle 重复的写法。',
-    '原则同《变化必须有意义》：保留一个能被认出的内核，同时让它持续向前，不必每个 cycle 都剧烈翻新。',
+    '### 让旋律有和声落点（让音高灵活但"站得住"）',
+    '**目标**：旋律应当既灵活流动，又具备"可解决感"和稳定支撑，而不仅仅是"在调内"。`scale()` 只解决"音是否在调内"，但不保证音与和声的关系是否成立。最常见的糟糕旋律，并不是出调，而是在静态音阶中无目的游走：大跳失控、覆盖整个音域、强拍落在无依附音上。',
+    '**核心原则**：让音高"有依附对象"，而不是自由漂浮。可以从不同层级建立这种依附关系（按需选择，而非固定套路）：',
+    '- **强拍优先对齐和弦音**（稳定落点）。',
+    '- **非和弦音放在弱拍，并明确解决到和弦音**。',
+    '- **围绕小动机做级进运动**，而不是无约束跳跃。',
+    '- **跟随和声变化做音色/色彩迁移**。',
+    '- **必要时从和弦派生音高**（如 `chord("<...>/N").dict("ireal")` + `chords.n(...)`）。',
+    '**重要说明**：和弦派生只是手段之一，不是默认范式。不要把"必须跟和弦走"当成统一流程套用在所有声部上。多数情况下，贝斯（根音/五度）、副旋律、织体声部只需要基本和声意识 + 清晰的落点设计，就已经足够成立。',
+    '**关键判断标准**：不是"有没有用 chords()"，而是——旋律是否有清晰的落点与解决路径。',
+    '**与其他规则的关系**：本规则与《让线条随时间呼吸》正交——那一条管节奏、结构、时间演化；本条管音高是否"听起来成立"。两者共同决定线条是否既"活"又"稳"。',
+    '',
+    '### 让线条随时间呼吸（默认让承载兴趣的声部跨 cycle 演化）',
+    '**目标**：让承载音乐兴趣的声部听起来像被谱写的长句，而不是同一小节的无限复制。单调最常见的来源，就是各条线在很多 cycle 里保持同一个节奏或旋律——即便外层套了段落编排，线条本身仍原地踏步。',
+    '**默认倾向**：把"变化"写进迷你记谱法本身、让线条自我演化，而不是等用户说"长一点/丰富一点"才做。首选手段是**嵌套交替**：`<a b c>` 每 cycle 前进一步，而**嵌套** `<a <b c>>` 让内层只在轮到它时才前进，于是整条线的真实周期是各层的最小公倍数——要十几个 cycle 才重复一次，听感像一句被谱写的长句而非短循环。节奏疏密同理（密度 `*<2!3 4>`、欧拉 `(<3 5>,8)`）。',
+    '行为样例（用来归纳手法，而非逐字照抄）：旋律 `n("[0 <4 3 <2 5>>*2](<3 5>,8)").scale("D4:minor")`；打击 `n("[0 <1 3>]*<2!3 4>").s("hh")`（密度逐 cycle 呼吸、交替采样位——说明这条策略不只属于旋律）。反面是 `n("<[..] [..] [..] [..]>/4").scale(...)`：每 4 cycle 原样重复，听感停滞。',
+    '**边界由你判断**：哪些层该更丰富、哪些层保留稳定内核当锚点，取决于音乐需要——旋律、贝斯、和声、鼓、织体都可以在 cycle 间演化，通常至少前景声部要动起来。与《变化必须有意义》一致：保留一个能被认出的内核，同时让它持续向前，不必每个 cycle 都剧烈翻新。仅当用户明确只想要静态循环、或在做快速 jam/草稿时，才整体保留逐 cycle 重复。',
+    '',
+    '### 让每个声部"被演奏"，而非被打印（避免事件级机械感）',
+    '上一节解决"下一个音是哪个"，这一节解决"这个音怎么被演奏"——两者正交。一条永不重复的线，只要它的每个事件音色、力度、发音长短、落点都完全一致、严丝合缝踩在网格上，听感依然像打字机。默认就让承载音乐兴趣的声部在演奏维度上带微观差异，而不是等用户说"更自然/更有人味"才做。',
+    '- **四个可动的微观维度**：力度（`gain(perlin.range(.5,.9))` 而非常量）、发音长短（`clip(rand.range(.4,.85))`、断连交错）、音色随时间流动（缓动 `lpf(sine.range(...).slow(8))`、`fm(sine.range(...))`）、微律动（`late("[0 .01]*4")` 让事件不严丝落格）。前景声部默认至少有一项不是常量。',
+    '- **按角色选手段，不必每样都上**：鼓靠 velocity 重音 / ghost note 与 swing（`gain("<.4 .8 .5 1>")`、`late`），贝斯靠 accent 与发音断连，pad / 和声靠缓动滤波与慢增益，lead 靠发音随机与力度起伏。哪几样、用在哪几层，由你判断。',
+    '- **两条护栏**：①保留稳定内核——不是每个参数都加随机，否则成浆糊；锚定层（kick / sub）通常保持机械稳定当节拍参照。②风格例外——techno、acid、某些 EDM 的机械量化感本身就是审美，此时严丝合缝的对齐正是想要的，不要无脑"揉软"。',
     '',
     '### 低频可听性与感知补偿原则',
     '低频内容（约 150 Hz 以下，如 sub-bass、低频 drone、极低根音）在音乐中是合法且常见的，用于提供身体感、厚度与空间支撑。但由于笔记本、小型音箱或手机外放设备的物理限制，这类内容在部分播放环境中可能不可直接听见。因此本规则的目标不是限制低频使用，而是避免“信息不可感知”导致的误解。',
@@ -225,7 +329,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '- **开头的感知锚点原则（避免“无可感知开场”）**：在曲子的开头，以及任何只有少量音层活动的片段中，应确保存在至少一个“可被清晰感知的听觉锚点”，用于让听众确认音乐已经开始。该锚点可以是任意类型的可识别声音，包括节奏、音高或瞬态结构，例如 drum、bass、melodic motif、pluck 或 chord。氛围类元素（如 noise、texture、pad）和极低频层可以参与开头设计，但不应成为唯一可感知的声源，因为在部分播放设备或环境中，它们可能不会形成明确的听觉提示。',
     '',
     '### 生成前自检',
-    '生成音层后检查：① 这个音层承担什么角色？② 它是否与已有层重复？③ 它是否补充了缺失的信息？④ 它是否抢占了主角位置？⑤ 删除它后作品是否明显变差？⑥ 在曲子开头以及任何只有少量音层活动的片段，是否存在至少一个可被清晰感知的听觉锚点（节奏、音高或瞬态结构，如 drum/bass/motif/pluck/chord），让听众在各类播放设备上都能确认音乐已经开始——而不是只剩氛围或极低频，在小型扬声器上可能无法形成明确的听觉提示？⑦ 若某层的主要功能依赖低频区域（约 150 Hz 以下）、缺失会让听感信息不完整，是否已在 // 注释中简要说明其听感角色与设备依赖（如在手机、小音箱上可能弱化或不明显），以免用户把听不到误判为播放异常？⑧ 凡是会同时发声且音区重叠的层，是否每一对都已用节奏错位、频率切分、声像或增益层次中的至少一种分离开？⑨ 承担旋律/主奏的声部是否默认用嵌套交替演化、而非逐 cycle 原样重复（除非用户明确只想要静态循环或在做快速 jam/草稿）？若无法回答这些问题，应重新设计音层。',
+    '生成音层后检查：① 这个音层承担什么角色？② 它是否与已有层重复？③ 它是否补充了缺失的信息？④ 它是否抢占了主角位置？⑤ 删除它后作品是否明显变差？⑥ 在曲子开头以及任何只有少量音层活动的片段，是否存在至少一个可被清晰感知的听觉锚点（节奏、音高或瞬态结构，如 drum/bass/motif/pluck/chord），让听众在各类播放设备上都能确认音乐已经开始——而不是只剩氛围或极低频，在小型扬声器上可能无法形成明确的听觉提示？⑦ 若某层的主要功能依赖低频区域（约 150 Hz 以下）、缺失会让听感信息不完整，是否已在 // 注释中简要说明其听感角色与设备依赖（如在手机、小音箱上可能弱化或不明显），以免用户把听不到误判为播放异常？⑧ 凡是会同时发声且音区重叠的层，是否每一对都已用节奏错位、频率切分、声像或增益层次中的至少一种分离开？⑨ 是否避免了"各层都逐 cycle 原样重复"——至少承载音乐兴趣的声部用嵌套交替演化了起来（哪些层更丰富、哪些层保留稳定内核当锚点由你判断；除非用户明确只想要静态循环或在做快速 jam/草稿）？⑩ 前景声部里，每个事件的力度、发音长短、音色或落点是否至少有一项在变，而不是音色 / 时长 / 响度完全一致、严丝合缝踩在网格上的"打字机"（除非风格刻意要机械量化感）？⑪ 旋律/主奏的音高是否灵活又站得住、有和声落点——强拍落在和弦音上、围绕一个紧凑动机级进、或从移动和弦派生（`chords.n(...)`），而不是在静态 `scale()` 上自由游走级数（大跳、跑遍全音阶、强拍悬空）？若无法回答这些问题，应重新设计音层。',
   ].join('\n'),
   [
     '## 曲子编排（在"完整曲子"或明确编排意图下启用）',
@@ -268,21 +372,54 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
 
 const STRUDEL_CHEATSHEET_EN = [
   '## Strudel Cheat Sheet (concise)',
-  '- Mini-notation: `*N` repeat, `/N` slow, `[]` group, `<>` alternate cycle, `,` parallel, `~` rest, `(k,n)` Euclidean, `!N` replicate, `@N` stretch. **Forbidden**: `_` (hold step) — causes parse errors at the start of a `,` branch or inside `[]`; use explicit values or `@N` instead. **Forbidden inside `<>`**: `|` (random-pick operator, invalid in angle-bracket alternation; use `<[...] [...] [...]>` for multi-step groups). **Forbidden inside `<>`**: `;` — not valid mini-notation; for simultaneous chord groups write `<[n1,n2,n3] [n4,n5,n6]>` instead of `<n1 n2 n3; n4 n5 n6>` — `validate` will catch this.',
-  '- Value patterns (`.gain("...")`, `.lpf("...")`, `.speed("...")`, etc.): **forbidden** `_` inside them — always write explicit numbers. `~` is only for structural patterns, not numeric strings.',
-  '- **Forbidden in mini-notation**: `[_ ...]` (hold at bracket start), `, _ ...` (hold at parallel-branch start) — both cause runtime parse errors.',
-  '- Core: `note("c3 e3 g3")`, `s("bd sd hh")`, `stack(...)`, `cat(...)`. Tempo: set on the first line of `setCode` with `setcps(N)` (cps = bpm / 240, e.g. 120 BPM → `setcps(0.5)`).',
+  'This is a syntax reference: the point is to understand what each method does and when it helps. The numbers, notes, chords, and rhythm patterns in it are illustrative placeholders — choose them by musical intent rather than copying them as templates. For needs not listed, reason from these mechanisms instead of forcing the nearest example.',
+  '',
+  '### Mini-notation',
+  '- Symbols: `*N` repeat, `/N` slow, `[]` group, `<>` alternate cycle, `,` parallel, `~` rest, `(k,n)` Euclidean, `!N` replicate, `@N` stretch.',
+  '- **Forbidden**: `_` (hold step) causes parse errors at the start of a `,` branch or inside `[]` — use explicit values or `@N`; `|` inside `<>` (random-pick operator, invalid in angle-bracket alternation — use `<[...] [...] [...]>` for multi-step groups); `;` inside `<>` (not valid mini-notation — for simultaneous chord groups write `<[n1,n2,n3] [n4,n5,n6]>`, not `<n1 n2 n3; n4 n5 n6>`). `validate` will catch these.',
+  '- Value patterns (`.gain("...")`, `.lpf("...")`, `.speed("...")`, etc.): **forbidden** `_` inside them — always write explicit numbers; `~` is only for structural patterns, not numeric strings. Also `[_ ...]` (hold at bracket start) and `, _ ...` (hold at parallel-branch start) cause runtime parse errors.',
+  '',
+  '### Core structure',
+  '- `note("c3 e3 g3")`, `s("bd sd hh")`, `stack(...)`, `cat(...)`. Tempo: set on the first line of `setCode` with `setcps(N)` (cps = bpm / 240, e.g. 120 BPM → `setcps(0.5)`).',
   '- **Forbidden**: `.add(s("..."))` to layer samples — `.add()` is arithmetic (only for pitch offsets like `.add(note("7"))`); it cannot accept a sample-name string and will throw `cannot parse as numeral: "bd"`. To layer multiple `s()` tracks use comma syntax `s("bd*4, ~ sd ~ sd")` or `stack(s("bd*4"), s("~ sd ~ sd"))`.',
-  '- Drums: `bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`. Drum-machine banks: `.bank("RolandTR808")` — when using `.bank()`, use bank-specific suffixes: `bd sd hh oh cp cb lt mt ht perc rim sh cr` (note: the bank\'s rimshot is `rim`, not `rs`; `rs` is only valid without a bank).',
+  '',
+  '### Sounds & samples',
   '- Synths: `.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`. For full melodic / GM / Dirt / drum-machine names see the Sample Reference section. **Do not invent names** outside the list (e.g., "superpad", "rhodes", "strings").',
-  '- Effects: `.gain(0..1)`, `.lpf(Hz)`, `.lpq(N)` (low-pass resonance 0–50; alias `.resonance(N)`), `.hpf(Hz)`, `.hpq(N)`, `.delay(0..1)`, `.room(N)`, `.pan(0..1)`, `.attack/.decay/.sustain/.release`, `.speed(N)`, `.vowel("a e i o")`. `.lpfq` does not exist — use `.lpq`.',
-  '- Pattern transforms: `.fast(N)`, `.slow(N)`, `.rev()`, `.jux(rev)`, `.ply(N)`, `.struct("x ~ x x")`, `.mask("<0 1 1 0>/16")`, `.every(N, fast(2))`, `.sometimes(fast(2))`, `.rarely(fn)`, `.often(fn)`, `.chunk(N, fast(2))`, `.off(0.125, x => x.add(note("7")))`.',
-  '- Signals: `sine`, `cosine`, `saw`, `tri`, `rand`, `perlin` — combine with `.range(a,b).slow(N)` / `.segment(N)`. Examples: `.lpf(sine.range(500,1000).slow(8))`, `.gain(perlin.range(.6,.9))`.',
-  '- Signal modulation templates (copy-paste ready): Filter LFO: `.lpf(sine.range(400,800).slow(8)).lpq(5)` | Gain breathing: `.gain(perlin.range(.5,.9))` | Sidechain: `.gain("<.3 1@3>*2")` | FM evolution: `.fm(sine.range(2,8).slow(4))` | Stereo: `.pan(sine.slow(4))`',
-  '- Harmony: `chord("<Cm9 Fm9>/4").dict("ireal").voicing()`, `.mode("root:g2")`, `.anchor("D5")`. Use `n("0 1").set(chords)` to map scale degrees to chord tones.',
-  '- Make a line evolve instead of repeating every cycle (the default way to write a melody/lead): by default bake the variation into the mini-notation itself so the line evolves on its own, rather than waiting for the user to ask for something "longer / richer". `<a b c>` advances one step per cycle; **nesting** `<a <b c>>` makes the inner step advance only when its turn comes, so the line\'s true period is the LCM of the layers — it takes a dozen-plus cycles to repeat and sounds like a composed long melody. E.g. melody `"[0 <4 3 <2 5>>*2](<3 5>,8)"`. Same for density: `*<2!3 4>`, Euclidean `(<3 5>,8)`. For occasional embellishment add `.chunk(4, fast(2))`, `.sometimes(ply("2"))`, `.every(4, rev)`.',
-  '- For `every`/`sometimes`/`off`/`chunk`, callbacks must be real Strudel functions (`fast(N)`, `rev`, `ply(N)`, or `x => x.something(...)`). TidalCycles-specific APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are **not available** in Strudel — `validate` will catch them.',
-  '- Scales: `n("0 1 2 3").scale("C4:minor")`. Common: major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic.',
+  '- Drums: `bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`. Drum-machine banks: `.bank("RolandTR808")` — when using `.bank()`, use bank-specific suffixes `bd sd hh oh cp cb lt mt ht perc rim sh cr` (note: the bank\'s rimshot is `rim`, not `rs`; `rs` is only valid without a bank).',
+  '',
+  '### Effects',
+  '- `.gain(0..1)`, `.lpf(Hz)`, `.lpq(N)` (low-pass resonance 0–50; alias `.resonance(N)`), `.hpf(Hz)`, `.hpq(N)`, `.delay(0..1)`, `.room(N)`, `.pan(0..1)`, `.attack/.decay/.sustain/.release`, `.speed(N)`, `.vowel("a e i o")`. `.lpfq` does not exist — use `.lpq`.',
+  '',
+  '### Pattern transforms (pick by the change you want, do not apply them one by one)',
+  '- Change speed and direction: `.fast(N)`/`.slow(N)`/`.rev()`.',
+  '- Thicken or mirror: `.ply(N)` (replicate each event N times) / `.jux(rev)` (process a mirrored copy across the stereo channels).',
+  '- Reshape the rhythmic skeleton and entrances/exits: `.struct("x ~ x x")`/`.mask("<0 1 1 0>/16")`.',
+  '- Break mechanical sameness with occasional variation: `.every(N, fast(2))`, `.sometimes(fast(2))`/`.often(fn)`/`.rarely(fn)`, `.chunk(N, fast(2))`.',
+  '- Add an echo/counter layer: `.off(0.125, x => x.add(note("7")))`.',
+  '- Callback constraint: for `every`/`sometimes`/`off`/`chunk`, callbacks must be real Strudel functions (`fast(N)`, `rev`, `ply(N)`, or `x => x.something(...)`). TidalCycles-specific APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are **not available** in Strudel — `validate` will catch them.',
+  '',
+  '### Signals & modulation',
+  '- Signal sources — drive parameters with continuous change so static values come alive: `sine`/`cosine` (smooth back-and-forth), `saw`/`tri` (ramp / triangle sweep), `rand` (random jitter), `perlin` (natural wander); combine with `.range(a,b).slow(N)` (value range and period) / `.segment(N)` (quantize into N steps). E.g. `.lpf(sine.range(500,1000).slow(8))` for a gliding filter, `.gain(perlin.range(.6,.9))` for natural gain swell.',
+  '- Pick the modulation target by the sound you want (not a fixed template): a slow `sine`/`perlin` on `.lpf` for filter sweeps and swell (`.lpf(sine.range(400,800).slow(8)).lpq(5)`); on `.gain` for a breathing or sidechain pump (`.gain(perlin.range(.5,.9))`, `.gain("<.3 1@3>*2")`); on `.fm` for timbral evolution (`.fm(sine.range(2,8).slow(4))`); on `.pan` for stereo drift (`.pan(sine.slow(4))`). Range and rate serve the musical purpose — they are not fixed values.',
+  '',
+  '### Harmony (a "syntax toolbox", use as needed — not a fixed pipeline)',
+  '- `chord("<...>/N")` builds a chord progression — the chords, their count, and the rhythmic length are entirely set by the musical goal; do not copy the example\'s chords or note values. `/N` only controls how many cycles this harmonic loop spans, set it to the structure.',
+  '- `.dict("ireal")` selects the chord-dictionary source (just one optional mapping, not a default standard).',
+  '- `.voicing()` expands chords into a concrete voicing — whether you expand depends on whether the layer needs "playability" or density control.',
+  '- `.mode("root:g2")` controls the voicing layout / center of gravity — a register and structure adjustment.',
+  '- `.anchor("D5")` locks the overall register to avoid voice drift (use only when you need a stable register).',
+  '- You can store `chord(...).dict("ireal")` in `let chords`, then use `chords.n("0 2 4")` (or `n("0 2 4").set(chords)`) to make a melodic line reference the current chord\'s note set.',
+  '- ⚠️ Key principle: these methods are not a standard arrangement pipeline, nor a chain that must be combined — they are harmonic-attachment means at different levels. In practice you may skip `chords.n()` entirely, use `chord()` without `voicing()`, do only root motion without degree mapping, or even rely purely on the melody\'s own landing logic — the only criterion is whether you need to strengthen the "pitch-to-harmony attachment".',
+  '- Relation to "Give the melody harmonic gravity": this section only offers possible ways to support harmony; whether and how much to use them is decided by the melody\'s landing-point design, not a fixed rule.',
+  '',
+  '### Evolving lines (a default technique, not tied to any one layer)',
+  '- By default bake the variation into the mini-notation itself so the line evolves on its own, rather than waiting for the user to ask for something "longer / richer"; you decide which layers should be richer. `<a b c>` advances one step per cycle; **nesting** `<a <b c>>` makes the inner step advance only when its turn comes, so the line\'s true period is the LCM of the layers — it takes a dozen-plus cycles to repeat and sounds like a composed long melody. E.g. melody `"[0 <4 3 <2 5>>*2](<3 5>,8)"`. Same for density: `*<2!3 4>`, Euclidean `(<3 5>,8)`. For occasional embellishment add `.chunk(4, fast(2))`, `.sometimes(ply("2"))`, `.every(4, rev)`.',
+  '',
+  '### Scales',
+  '- `n("0 1 2 3").scale("...")` maps pitches into a modal space.',
+  '- A mode type only denotes a "way of organizing pitch"; it binds no fixed root or octave.',
+  '- Available types (a category set, not a recommended order): major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic.',
+  '- ⚠️ Do not treat any concrete spelling (e.g. a form with a root) as a default template or standard starting point. The root + mode combination should be decided by the musical structure, not by the example.',
 ].join('\n');
 
 const SAMPLE_REFERENCE_EN = [
@@ -365,7 +502,7 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '',
     '### Engineering legality check',
     '- **Legal sample names**: every name inside `s("...")` must come from the Sample Reference section. Do not invent sample names that do not exist; do not guess sample names.',
-    '- **Uniform code format**: keep each layer a single chained expression — no semicolons, no `var`, `let`, `const`. Method chains may span lines: base expression on the first line, each `.method(...)` on its own line indented 2 extra spaces. Example:\n  note("c3 e3 g3")\n    .s("piano")\n    .gain(0.5)',
+    '- **Uniform code format**: keep each layer a single chained expression — no semicolons, no `var`, `let`, `const`. Method chains may span lines: base expression on the first line, each `.method(...)` on its own line indented 2 extra spaces. Example:\n  note("c3 e3 g3")\n    .s("piano")\n    .gain(0.5)\n  **One exception**: you may declare a shared harmonic source on a single line before the `stack(...)` — `let chords = chord("<...>/N").dict("ireal")` — for layers to derive from via `chords.n(...)`; that line is not a layer and still takes no semicolon.',
     '- **Complete comments**: include a top comment `// STYLE | BPM: N` (write `// BPM: N` if no matching style); after each `/* @layer NAME */` add one line of English comment describing the timbre, rhythmic character, or musical intent. **When the layer has an entrance and exit (moving in/out at different times via a mask/gain envelope), state the entrance/exit timing in the comment**, e.g.:\n  /* @layer BASS */\n  // warm low-end bass line, enters at cycle 4, exits at cycle 28',
     '',
     '### Commit rules',
@@ -400,7 +537,7 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     'Different layers should occupy different frequency regions. The goal is to avoid frequency crowding, not to mechanically obey pitch ranges. General reference: Kick / Sub — lowest region; Bass — low region; Chord / Pad — mid region; Lead — mid-high region; Hat / FX — high region. Adjust flexibly by style — e.g. a Deep House pad can sit lower, an Ambient lead can sit higher, a country guitar may live in the mid core region. Do not break the style for the sake of fixed register rules.',
     '',
     '### Keep tonality consistent',
-    'If melodic or harmonic content already exists, inherit its key and scale. If it cannot be determined, default to C minor, unless the user explicitly specifies another key.',
+    'What this section actually guarantees is that the key stays unified within a single piece, not that everything anchors to one fixed key center. If melodic or harmonic content already exists, inherit its key and scale. If composing from scratch with nothing to inherit, choose a key and mode that fit the style and mood in the user\'s description (do not keep falling back to the same key — avoid homogenizing cold-start pieces). When the user explicitly specifies a key, defer to the user.',
     '',
     '### Control information density',
     'The information across the whole piece should stay balanced. Before adding a layer, observe: is the rhythm already crowded; is the harmony already saturated; are the highs already too many; is there already a clear lead. If a region is already rich enough, prioritize filling the missing part rather than continuing to stack.',
@@ -408,11 +545,29 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '### Gain serves the role',
     'Gain is for establishing hierarchy, not for applying fixed numbers. Typically: the rhythmic foundation is prominent, the bass stable and perceptible, harmony sits as background support, the lead clearly audible, atmosphere weaker than the main body. Reference ranges: Drum 0.7–0.9 | Bass 0.6–0.8 | Pad / Chord 0.3–0.5 | Lead 0.4–0.6 | FX 0.2–0.5. Adjust dynamically to the piece; do not apply mechanically.',
     '',
-    '### Let each main voice breathe over time (avoid repeating identically every cycle)',
-    'The most common source of monotony is a single line holding the same rhythm or melody for many cycles, so even with arrangement the piece marks time in place. This is not an optional "only when the user asks for a long or rich piece" treatment — **whenever you write a melody/lead line, by default use nested alternation to let it evolve on its own**, baking the variation into the layer itself:',
-    '- **Write evolving lines with nested alternation**: `<a b c>` advances one step per cycle; **nesting** `<a <b c>>` makes the inner step advance only when its turn comes, so the line\'s true period is the LCM of the layers — it takes a dozen-plus cycles to repeat and sounds like a composed long phrase rather than a short loop. Melody example: `n("[0 <4 3 <2 5>>*2](<3 5>,8)").scale("D4:minor")`. Same for density: `struct` with `<...>`, density `*<2!3 4>`, Euclidean `(<3 5>,8)`.',
-    'The melody/lead line should by default come alive through nested alternation rather than a fixed `n("<[..] [..] [..] [..]>/4").scale(...)` — that repeats identically every 4 cycles, and even wrapped in an outer gain/lpf section envelope the line itself still marks time in place (the most common real-world failure). Only when the user explicitly wants a static loop, or you are doing a quick jam/sketch, keep the cycle-identical writing.',
-    'Same principle as "Variation must be meaningful": keep a recognizable core while pushing it forward — no need to violently renew every cycle.',
+    '### Give the melody harmonic gravity (keep pitches flexible yet "grounded")',
+    '**Goal**: the melody should flow freely while also carrying a sense of resolution and stable support, not merely being "in key". `scale()` only settles whether a note is in the key — it does not guarantee that the note\'s relationship to the harmony holds up. The most common bad melody is not out of key; it is an aimless walk over a static scale: runaway leaps, covering the whole range, strong beats landing on notes with nothing to lean on.',
+    '**Core principle**: give each pitch something to attach to instead of letting it float freely. You can build that attachment at different levels (choose as needed, not as a fixed routine):',
+    '- **Align strong beats to chord tones first** (stable landing points).',
+    '- **Put non-chord tones on weak beats and resolve them clearly to chord tones**.',
+    '- **Move stepwise around a small motif**, rather than leaping without constraint.',
+    '- **Shift color/timbre as the harmony changes**.',
+    '- **Derive pitches from the chords when needed** (e.g. `chord("<...>/N").dict("ireal")` + `chords.n(...)`).',
+    '**Important**: chord derivation is just one means, not the default paradigm. Do not turn "must follow the chords" into a uniform pipeline applied to every voice. In most cases a bass (roots/fifths), a counter-melody, and texture voices need only basic harmonic awareness plus clear landing-point design to hold up.',
+    '**The key test**: not "did you use chords()", but — does the melody have clear landing points and a resolution path?',
+    '**Relation to other rules**: this rule is orthogonal to "Let lines breathe over time" — that one governs rhythm, structure, and evolution over time; this one governs whether the pitches "sound like they hold up". Together they decide whether a line is both "alive" and "stable".',
+    '',
+    '### Let lines breathe over time (by default, evolve the interest-carrying voices across cycles)',
+    '**Goal**: make the voices that carry the music\'s interest sound like a composed long phrase rather than one bar copied forever. The most common source of monotony is lines holding the same rhythm or melody for many cycles — even wrapped in section-level arrangement, the line itself marks time in place.',
+    '**Default inclination**: bake the variation into the mini-notation itself so the line evolves on its own, rather than waiting for the user to ask for something "longer / richer". The first tool to reach for is **nested alternation**: `<a b c>` advances one step per cycle, while **nesting** `<a <b c>>` lets the inner step advance only when its turn comes, so the line\'s true period is the LCM of the layers — it takes a dozen-plus cycles to repeat and sounds like a composed long phrase rather than a short loop. Same for density (`*<2!3 4>`, Euclidean `(<3 5>,8)`).',
+    'Worked examples (to induce the technique, not to copy verbatim): melody `n("[0 <4 3 <2 5>>*2](<3 5>,8)").scale("D4:minor")`; percussion `n("[0 <1 3>]*<2!3 4>").s("hh")` (the density breathes per cycle and the sample index alternates — so this strategy is not only for melody). The counter-example is `n("<[..] [..] [..] [..]>/4").scale(...)`: it repeats identically every 4 cycles and stalls.',
+    '**You judge the boundary**: which layers should be richer and which keep a stable core as an anchor depends on the music — melody, bass, harmony, drums, and texture can all evolve across cycles, and usually at least the foreground voice should move. Same principle as "Variation must be meaningful": keep a recognizable core while pushing it forward, with no need to violently renew every cycle. Only when the user explicitly wants a static loop, or you are doing a quick jam/sketch, keep everything cycle-identical.',
+    '',
+    '### Let each voice be "performed", not printed (avoid event-level mechanicalness)',
+    'The previous section answers "which note comes next"; this one answers "how each note is played" — they are orthogonal. A line that never repeats still sounds like a typewriter if every event has identical timbre, force, articulation length, and lands dead-on the grid. By default give the voices that carry the music\'s interest micro-variation in the performance dimension, rather than waiting for the user to ask for something "more natural / more human".',
+    '- **Four movable micro-dimensions**: force (`gain(perlin.range(.5,.9))` instead of a constant), articulation length (`clip(rand.range(.4,.85))`, legato/staccato interleaved), timbre flowing over time (a slow `lpf(sine.range(...).slow(8))`, `fm(sine.range(...))`), micro-timing (`late("[0 .01]*4")` so events don\'t sit exactly on the grid). A foreground voice should have at least one of these not be a constant by default.',
+    '- **Pick means by role, not all of them**: drums via velocity accents / ghost notes and swing (`gain("<.4 .8 .5 1>")`, `late`), bass via accent and articulation, pad / harmony via a slow filter and slow gain, lead via random articulation and dynamic force. Which ones, on which layers — you decide.',
+    '- **Two guardrails**: ① keep a stable core — do not randomize every parameter or it turns to mud; anchor layers (kick / sub) usually stay mechanically steady as the beat reference. ② Style exception — the mechanical, quantized feel of techno, acid, and some EDM is the aesthetic itself; there, dead-on alignment is exactly what you want, so do not blindly "soften" it.',
     '',
     '### Low-frequency audibility & comments',
     'Low-frequency layers (below ~150 Hz, e.g. a sine sub-bass or a very low drone) are legitimate and common, but laptops/phones/small speakers may not reproduce them, so do the following two things to avoid small-speaker listeners mistaking the result for "no sound":',
@@ -420,7 +575,7 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '- **The opening must have a clearly audible foreground element**: at the start of the song, and at any moment when only a few layers are active, there must be a clearly audible foreground element — a note/chord/drum/bass with definite pitch or transient, at foreground gain (about ≥0.4), sitting in the audible midrange (~200 Hz–5 kHz). Atmosphere layers (Noise / Texture / FX) and near-silent layers (gain ≲0.2) cannot be the only thing sounding at the opening; broadband noise in particular gets masked by small speakers and ambient room noise, so it may be inaudible even when its frequency is midrange. Otherwise small-speaker listeners hear nothing at the opening and assume nothing is playing.',
     '',
     '### Pre-generation self-check',
-    'After generating a layer, check: ① What role does this layer carry? ② Does it duplicate an existing layer? ③ Does it fill missing information? ④ Does it steal the lead\'s position? ⑤ Would the piece be clearly worse if it were removed? ⑥ At the opening of the song, and at any moment when only a few layers are active, is there at least one clearly perceptible auditory anchor (a rhythmic, pitched, or transient structure such as drum/bass/motif/pluck/chord) that lets the listener confirm the music has started on all kinds of playback devices — rather than only atmosphere or very low frequencies, which may form no clear auditory cue on small speakers? ⑦ If a layer\'s main function depends on the low range (below ~150 Hz) and its absence would make the listening information incomplete, does the `//` comment briefly state its listening role and device dependence (e.g. may be weakened or imperceptible on phones / small speakers), so the user does not mistake inaudibility for a playback fault? ⑧ For every set of layers that sound at the same time and overlap in register, has each pair been separated by at least one of rhythmic interlock, frequency carving, panning, or gain hierarchy? ⑨ Do the melody/lead voices evolve via nested alternation by default rather than repeating identically every cycle (unless the user explicitly wants a static loop or you are doing a quick jam/sketch)? If you cannot answer these questions, redesign the layer.',
+    'After generating a layer, check: ① What role does this layer carry? ② Does it duplicate an existing layer? ③ Does it fill missing information? ④ Does it steal the lead\'s position? ⑤ Would the piece be clearly worse if it were removed? ⑥ At the opening of the song, and at any moment when only a few layers are active, is there at least one clearly perceptible auditory anchor (a rhythmic, pitched, or transient structure such as drum/bass/motif/pluck/chord) that lets the listener confirm the music has started on all kinds of playback devices — rather than only atmosphere or very low frequencies, which may form no clear auditory cue on small speakers? ⑦ If a layer\'s main function depends on the low range (below ~150 Hz) and its absence would make the listening information incomplete, does the `//` comment briefly state its listening role and device dependence (e.g. may be weakened or imperceptible on phones / small speakers), so the user does not mistake inaudibility for a playback fault? ⑧ For every set of layers that sound at the same time and overlap in register, has each pair been separated by at least one of rhythmic interlock, frequency carving, panning, or gain hierarchy? ⑨ Have you avoided "every layer repeating identically every cycle" — does at least the voice carrying the musical interest evolve via nested alternation (you decide which layers get richer and which keep a stable core as an anchor; unless the user explicitly wants a static loop or you are doing a quick jam/sketch)? ⑩ In the foreground voices, does at least one of force, articulation length, timbre, or timing vary per event — rather than a "typewriter" with identical timbre / length / loudness landing dead-on the grid (unless the style deliberately wants a mechanical, quantized feel)? ⑪ Do the melody/lead pitches sound flexible yet grounded, with a place to land — strong beats on chord tones, stepwise motion around a compact motif, or derived from a moving progression (`chords.n(...)`) — rather than a free walk of scale degrees over a static `scale()` (big leaps, running the whole scale, strong beats left hanging)? If you cannot answer these questions, redesign the layer.',
   ].join('\n'),
   [
     '## Song arrangement (enabled under a "complete song" or an explicit arrangement intent)',
