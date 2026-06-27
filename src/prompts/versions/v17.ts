@@ -72,6 +72,13 @@
  * 「不使用 let/const」碰到本策略需要共享变量，故放开唯一例外——允许在 stack(...) 之前用一行 `let chords = ...` 声明共享和声源
  * （已用 validate 的 `new Function`+`with` dry-run 验证 let 绑定可解析）；②速查表和声行补 `chords.n(...)` 用法；
  * ③音层生成前自检新增第⑪项（旋律音高是否有和声落点）。中英双语同步。
+ * 后续补充：按反馈重写轴 C「让旋律有和声落点」——原「默认倾向：从移动和声派生」框架使 agent 把
+ * `let chords = chord(...).dict("ireal")` + `chords.n(...)` 当必经流程、套到好几层上。参考 Agent Prompt 设计原则
+ * （策略层给方向不给套路、避免过度规则化）改为价值/方向式呈现：标题与目标改为「让音高灵活但"站得住"」，
+ * 重组为「目标 / 核心原则（让音高有依附对象，列出强拍对齐和弦音·非和弦音弱拍解决·围绕动机级进·随和声迁色·
+ * 必要时和弦派生五条按需手段）/ 重要说明（和弦派生只是手段之一、非默认范式，贝斯/副旋律/织体靠基本和声意识即可）/
+ * 关键判断标准（重点是有无清晰落点与解决路径，而非用没用 chords）/ 与《让线条随时间呼吸》正交」；
+ * 自检⑪由「`chords.n(...)` 派生为先」改为「强拍落和弦音/动机级进/和弦派生」三者并列。中英双语同步。
  */
 import {
   DIRT_SAMPLES,
@@ -242,11 +249,17 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '### 增益服务于角色',
     '增益用于建立层次关系，而非套用固定数值。通常：节奏基础较突出、贝斯稳定可感知、和声作为背景支撑、主旋律清晰可辨、氛围层弱于主体。参考范围：Drum 0.7–0.9 | Bass 0.6–0.8 | Pad / Chord 0.3–0.5 | Lead 0.4–0.6 | FX 0.2–0.5。根据作品需要动态调整，不要机械套用。',
     '',
-    '### 让旋律有和声落点（音高从和声派生，而非在静态音阶上游走）',
-    '**目标**：旋律要听起来站得住、解决得了，而不只是"在调内"。`scale()` 只保证音落在调里，不保证它们与和声协和——一条单音线在没有和弦支撑时其实没有和声，只是一串音高；最常见的难听旋律，就是在静态音阶上自由游走级数（大跳、跑遍整个音阶、强拍不落和弦音）。',
-    '**默认倾向**：让旋律音高从一段**会移动的和声**派生，而不是在固定音阶上自由选级数——这样每个音天生就是当前和弦的协和音，并随和声一起换色。把和弦进行抽成一个共享源、让旋律/贝斯/和声都从它取音，整首便只有一个和声权威源，各层不会各自跑调。',
-    '行为样例（用来归纳手法，而非逐字照抄）：好——`let chords = chord("<Bbm9 Fm9>/4").dict("ireal")` 配 `chords.n("[0 <4 3 <2 5>>*2](<3 5>,8)").anchor("D5").voicing()`：迷你记谱法不变，音高却来自移动的和弦，所以好听。反面——`n("<[0 2 <4 7> <9 11> 9 7] ...>/8").scale("C5:major")`：嵌套交替、装饰一应俱全，但音高是静态音阶上的随机游走，因此不协和。这与《让线条随时间呼吸》正交：迷你记谱法管节奏与演化，`chords` 管音高对不对。',
-    '**边界由你判断**：不是每条旋律都必须挂 `chords`。若想保持单音 `scale()`，就让线条**暗示一个和弦**——强拍瞄准和弦音、之间级进连接、非和弦音落在弱拍并解决、保持一个紧凑可辨的动机而非跑遍整个音阶。只需要一条临时旋律时，也可以把 `chord(...).dict(...).n(...)` 内联进单层、不必抽出 `chords`。要点不是"必须用 chords"，而是"音高要有和声落点"。',
+    '### 让旋律有和声落点（让音高灵活但"站得住"）',
+    '**目标**：旋律应当既灵活流动，又具备"可解决感"和稳定支撑，而不仅仅是"在调内"。`scale()` 只解决"音是否在调内"，但不保证音与和声的关系是否成立。最常见的糟糕旋律，并不是出调，而是在静态音阶中无目的游走：大跳失控、覆盖整个音域、强拍落在无依附音上。',
+    '**核心原则**：让音高"有依附对象"，而不是自由漂浮。可以从不同层级建立这种依附关系（按需选择，而非固定套路）：',
+    '- **强拍优先对齐和弦音**（稳定落点）。',
+    '- **非和弦音放在弱拍，并明确解决到和弦音**。',
+    '- **围绕小动机做级进运动**，而不是无约束跳跃。',
+    '- **跟随和声变化做音色/色彩迁移**。',
+    '- **必要时从和弦派生音高**（如 `chord("<...>/N").dict("ireal")` + `chords.n(...)`）。',
+    '**重要说明**：和弦派生只是手段之一，不是默认范式。不要把"必须跟和弦走"当成统一流程套用在所有声部上。多数情况下，贝斯（根音/五度）、副旋律、织体声部只需要基本和声意识 + 清晰的落点设计，就已经足够成立。',
+    '**关键判断标准**：不是"有没有用 chords()"，而是——旋律是否有清晰的落点与解决路径。',
+    '**与其他规则的关系**：本规则与《让线条随时间呼吸》正交——那一条管节奏、结构、时间演化；本条管音高是否"听起来成立"。两者共同决定线条是否既"活"又"稳"。',
     '',
     '### 让线条随时间呼吸（默认让承载兴趣的声部跨 cycle 演化）',
     '**目标**：让承载音乐兴趣的声部听起来像被谱写的长句，而不是同一小节的无限复制。单调最常见的来源，就是各条线在很多 cycle 里保持同一个节奏或旋律——即便外层套了段落编排，线条本身仍原地踏步。',
@@ -266,7 +279,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '- **开头的感知锚点原则（避免“无可感知开场”）**：在曲子的开头，以及任何只有少量音层活动的片段中，应确保存在至少一个“可被清晰感知的听觉锚点”，用于让听众确认音乐已经开始。该锚点可以是任意类型的可识别声音，包括节奏、音高或瞬态结构，例如 drum、bass、melodic motif、pluck 或 chord。氛围类元素（如 noise、texture、pad）和极低频层可以参与开头设计，但不应成为唯一可感知的声源，因为在部分播放设备或环境中，它们可能不会形成明确的听觉提示。',
     '',
     '### 生成前自检',
-    '生成音层后检查：① 这个音层承担什么角色？② 它是否与已有层重复？③ 它是否补充了缺失的信息？④ 它是否抢占了主角位置？⑤ 删除它后作品是否明显变差？⑥ 在曲子开头以及任何只有少量音层活动的片段，是否存在至少一个可被清晰感知的听觉锚点（节奏、音高或瞬态结构，如 drum/bass/motif/pluck/chord），让听众在各类播放设备上都能确认音乐已经开始——而不是只剩氛围或极低频，在小型扬声器上可能无法形成明确的听觉提示？⑦ 若某层的主要功能依赖低频区域（约 150 Hz 以下）、缺失会让听感信息不完整，是否已在 // 注释中简要说明其听感角色与设备依赖（如在手机、小音箱上可能弱化或不明显），以免用户把听不到误判为播放异常？⑧ 凡是会同时发声且音区重叠的层，是否每一对都已用节奏错位、频率切分、声像或增益层次中的至少一种分离开？⑨ 是否避免了"各层都逐 cycle 原样重复"——至少承载音乐兴趣的声部用嵌套交替演化了起来（哪些层更丰富、哪些层保留稳定内核当锚点由你判断；除非用户明确只想要静态循环或在做快速 jam/草稿）？⑩ 前景声部里，每个事件的力度、发音长短、音色或落点是否至少有一项在变，而不是音色 / 时长 / 响度完全一致、严丝合缝踩在网格上的"打字机"（除非风格刻意要机械量化感）？⑪ 旋律/主奏的音高是否有和声落点——从移动的和弦派生（`chords.n(...)`），或至少在强拍瞄准和弦音、暗示一个和弦，而不是在静态 `scale()` 上自由游走级数（大跳、跑遍全音阶、强拍悬空）？若无法回答这些问题，应重新设计音层。',
+    '生成音层后检查：① 这个音层承担什么角色？② 它是否与已有层重复？③ 它是否补充了缺失的信息？④ 它是否抢占了主角位置？⑤ 删除它后作品是否明显变差？⑥ 在曲子开头以及任何只有少量音层活动的片段，是否存在至少一个可被清晰感知的听觉锚点（节奏、音高或瞬态结构，如 drum/bass/motif/pluck/chord），让听众在各类播放设备上都能确认音乐已经开始——而不是只剩氛围或极低频，在小型扬声器上可能无法形成明确的听觉提示？⑦ 若某层的主要功能依赖低频区域（约 150 Hz 以下）、缺失会让听感信息不完整，是否已在 // 注释中简要说明其听感角色与设备依赖（如在手机、小音箱上可能弱化或不明显），以免用户把听不到误判为播放异常？⑧ 凡是会同时发声且音区重叠的层，是否每一对都已用节奏错位、频率切分、声像或增益层次中的至少一种分离开？⑨ 是否避免了"各层都逐 cycle 原样重复"——至少承载音乐兴趣的声部用嵌套交替演化了起来（哪些层更丰富、哪些层保留稳定内核当锚点由你判断；除非用户明确只想要静态循环或在做快速 jam/草稿）？⑩ 前景声部里，每个事件的力度、发音长短、音色或落点是否至少有一项在变，而不是音色 / 时长 / 响度完全一致、严丝合缝踩在网格上的"打字机"（除非风格刻意要机械量化感）？⑪ 旋律/主奏的音高是否灵活又站得住、有和声落点——强拍落在和弦音上、围绕一个紧凑动机级进、或从移动和弦派生（`chords.n(...)`），而不是在静态 `scale()` 上自由游走级数（大跳、跑遍全音阶、强拍悬空）？若无法回答这些问题，应重新设计音层。',
   ].join('\n'),
   [
     '## 曲子编排（在"完整曲子"或明确编排意图下启用）',
@@ -449,11 +462,17 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '### Gain serves the role',
     'Gain is for establishing hierarchy, not for applying fixed numbers. Typically: the rhythmic foundation is prominent, the bass stable and perceptible, harmony sits as background support, the lead clearly audible, atmosphere weaker than the main body. Reference ranges: Drum 0.7–0.9 | Bass 0.6–0.8 | Pad / Chord 0.3–0.5 | Lead 0.4–0.6 | FX 0.2–0.5. Adjust dynamically to the piece; do not apply mechanically.',
     '',
-    '### Give the melody harmonic gravity (derive pitch from harmony, do not wander a static scale)',
-    '**Goal**: the melody should sound grounded and resolved, not merely "in key". `scale()` only guarantees the notes are in the key, not that they are consonant with the harmony — a monophonic line with no chords under it has no harmony at all, just a pitch sequence. The most common dissonant-melody failure is a free walk of scale degrees over a static scale (big leaps, running the whole scale, strong beats not landing on chord tones).',
-    '**Default inclination**: let the melody\'s pitches derive from a **moving harmony** rather than free-picking degrees over a fixed scale — then every note is a chord tone of the current chord by construction and recolors as the harmony moves. Extract the progression into one shared source that the melody/bass/harmony all draw from, so the whole piece has a single source of harmonic truth and no layer drifts out of key.',
-    'Worked examples (to induce the technique, not to copy verbatim): good — `let chords = chord("<Bbm9 Fm9>/4").dict("ireal")` with `chords.n("[0 <4 3 <2 5>>*2](<3 5>,8)").anchor("D5").voicing()`: the mini-notation is unchanged, yet the pitches come from the moving chords, so it sounds good. Counter — `n("<[0 2 <4 7> <9 11> 9 7] …>/8").scale("C5:major")`: nested alternation and embellishments aplenty, but the pitches are a random walk over a static scale and so they clash. This is orthogonal to "Let lines breathe over time": the mini-notation governs rhythm and evolution, `chords` governs whether the pitches are right.',
-    '**You judge the boundary**: not every melody must hang off `chords`. If you want to keep a monophonic `scale()` line, make it imply a chord — target chord tones on strong beats, connect them stepwise, resolve non-chord tones on weak beats, and keep a compact recognizable motif rather than running the whole scale. For a one-off melody you can also inline `chord(...).dict(...).n(...)` into the single layer instead of extracting `chords`. The point is not "always use chords" but "the pitches must have a harmonic place to land".',
+    '### Give the melody harmonic gravity (keep pitches flexible yet "grounded")',
+    '**Goal**: the melody should flow freely while also carrying a sense of resolution and stable support, not merely being "in key". `scale()` only settles whether a note is in the key — it does not guarantee that the note\'s relationship to the harmony holds up. The most common bad melody is not out of key; it is an aimless walk over a static scale: runaway leaps, covering the whole range, strong beats landing on notes with nothing to lean on.',
+    '**Core principle**: give each pitch something to attach to instead of letting it float freely. You can build that attachment at different levels (choose as needed, not as a fixed routine):',
+    '- **Align strong beats to chord tones first** (stable landing points).',
+    '- **Put non-chord tones on weak beats and resolve them clearly to chord tones**.',
+    '- **Move stepwise around a small motif**, rather than leaping without constraint.',
+    '- **Shift color/timbre as the harmony changes**.',
+    '- **Derive pitches from the chords when needed** (e.g. `chord("<...>/N").dict("ireal")` + `chords.n(...)`).',
+    '**Important**: chord derivation is just one means, not the default paradigm. Do not turn "must follow the chords" into a uniform pipeline applied to every voice. In most cases a bass (roots/fifths), a counter-melody, and texture voices need only basic harmonic awareness plus clear landing-point design to hold up.',
+    '**The key test**: not "did you use chords()", but — does the melody have clear landing points and a resolution path?',
+    '**Relation to other rules**: this rule is orthogonal to "Let lines breathe over time" — that one governs rhythm, structure, and evolution over time; this one governs whether the pitches "sound like they hold up". Together they decide whether a line is both "alive" and "stable".',
     '',
     '### Let lines breathe over time (by default, evolve the interest-carrying voices across cycles)',
     '**Goal**: make the voices that carry the music\'s interest sound like a composed long phrase rather than one bar copied forever. The most common source of monotony is lines holding the same rhythm or melody for many cycles — even wrapped in section-level arrangement, the line itself marks time in place.',
@@ -473,7 +492,7 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '- **The opening must have a clearly audible foreground element**: at the start of the song, and at any moment when only a few layers are active, there must be a clearly audible foreground element — a note/chord/drum/bass with definite pitch or transient, at foreground gain (about ≥0.4), sitting in the audible midrange (~200 Hz–5 kHz). Atmosphere layers (Noise / Texture / FX) and near-silent layers (gain ≲0.2) cannot be the only thing sounding at the opening; broadband noise in particular gets masked by small speakers and ambient room noise, so it may be inaudible even when its frequency is midrange. Otherwise small-speaker listeners hear nothing at the opening and assume nothing is playing.',
     '',
     '### Pre-generation self-check',
-    'After generating a layer, check: ① What role does this layer carry? ② Does it duplicate an existing layer? ③ Does it fill missing information? ④ Does it steal the lead\'s position? ⑤ Would the piece be clearly worse if it were removed? ⑥ At the opening of the song, and at any moment when only a few layers are active, is there at least one clearly perceptible auditory anchor (a rhythmic, pitched, or transient structure such as drum/bass/motif/pluck/chord) that lets the listener confirm the music has started on all kinds of playback devices — rather than only atmosphere or very low frequencies, which may form no clear auditory cue on small speakers? ⑦ If a layer\'s main function depends on the low range (below ~150 Hz) and its absence would make the listening information incomplete, does the `//` comment briefly state its listening role and device dependence (e.g. may be weakened or imperceptible on phones / small speakers), so the user does not mistake inaudibility for a playback fault? ⑧ For every set of layers that sound at the same time and overlap in register, has each pair been separated by at least one of rhythmic interlock, frequency carving, panning, or gain hierarchy? ⑨ Have you avoided "every layer repeating identically every cycle" — does at least the voice carrying the musical interest evolve via nested alternation (you decide which layers get richer and which keep a stable core as an anchor; unless the user explicitly wants a static loop or you are doing a quick jam/sketch)? ⑩ In the foreground voices, does at least one of force, articulation length, timbre, or timing vary per event — rather than a "typewriter" with identical timbre / length / loudness landing dead-on the grid (unless the style deliberately wants a mechanical, quantized feel)? ⑪ Do the melody/lead pitches have a harmonic place to land — derived from a moving progression (`chords.n(...)`), or at least targeting chord tones on strong beats to imply a chord — rather than a free walk of scale degrees over a static `scale()` (big leaps, running the whole scale, strong beats left hanging)? If you cannot answer these questions, redesign the layer.',
+    'After generating a layer, check: ① What role does this layer carry? ② Does it duplicate an existing layer? ③ Does it fill missing information? ④ Does it steal the lead\'s position? ⑤ Would the piece be clearly worse if it were removed? ⑥ At the opening of the song, and at any moment when only a few layers are active, is there at least one clearly perceptible auditory anchor (a rhythmic, pitched, or transient structure such as drum/bass/motif/pluck/chord) that lets the listener confirm the music has started on all kinds of playback devices — rather than only atmosphere or very low frequencies, which may form no clear auditory cue on small speakers? ⑦ If a layer\'s main function depends on the low range (below ~150 Hz) and its absence would make the listening information incomplete, does the `//` comment briefly state its listening role and device dependence (e.g. may be weakened or imperceptible on phones / small speakers), so the user does not mistake inaudibility for a playback fault? ⑧ For every set of layers that sound at the same time and overlap in register, has each pair been separated by at least one of rhythmic interlock, frequency carving, panning, or gain hierarchy? ⑨ Have you avoided "every layer repeating identically every cycle" — does at least the voice carrying the musical interest evolve via nested alternation (you decide which layers get richer and which keep a stable core as an anchor; unless the user explicitly wants a static loop or you are doing a quick jam/sketch)? ⑩ In the foreground voices, does at least one of force, articulation length, timbre, or timing vary per event — rather than a "typewriter" with identical timbre / length / loudness landing dead-on the grid (unless the style deliberately wants a mechanical, quantized feel)? ⑪ Do the melody/lead pitches sound flexible yet grounded, with a place to land — strong beats on chord tones, stepwise motion around a compact motif, or derived from a moving progression (`chords.n(...)`) — rather than a free walk of scale degrees over a static `scale()` (big leaps, running the whole scale, strong beats left hanging)? If you cannot answer these questions, redesign the layer.',
   ].join('\n'),
   [
     '## Song arrangement (enabled under a "complete song" or an explicit arrangement intent)',
