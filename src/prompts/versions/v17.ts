@@ -79,6 +79,23 @@
  * 必要时和弦派生五条按需手段）/ 重要说明（和弦派生只是手段之一、非默认范式，贝斯/副旋律/织体靠基本和声意识即可）/
  * 关键判断标准（重点是有无清晰落点与解决路径，而非用没用 chords）/ 与《让线条随时间呼吸》正交」；
  * 自检⑪由「`chords.n(...)` 派生为先」改为「强拍落和弦音/动机级进/和弦派生」三者并列。中英双语同步。
+ * 后续补充：重写速查表「和声」一行——原表述带倾向性（「让音符跟随移动的和弦进行，而非孤立音高…于是旋律/贝斯
+ * 天生协和」）且含唯一字面示例 `<Cm9 Fm9>/4`，易被照搬成「每次都 `/4`/m9 的固定流程」。参考 Agent Prompt 设计原则
+ * （速查表属参考层只给语法事实、不规定默认行为；示例引导归纳而非机械套用）改为多行「语法工具箱」：示例改用
+ * `chord("<...>/N")` 占位、注明和弦/时值/`N` 都自定，逐条说明 `.dict()`/`.voicing()`/`.mode()`/`.anchor()`/`chords.n()`
+ * 各做什么且各自可选，并加「关键原则」明确这些方法不是标准编配链条、可全不用，是否使用交给《让旋律有和声落点》
+ * 按旋律落点设计决定。中英双语同步。
+ * 后续补充：重新结构速查表为带 `###` 小节标题的分组（记谱法/核心结构/音色与采样/效果器/模式变换/信号与调制/
+ * 和声/让线条演化/音阶），提升可读性——把原来一条超长的「模式变换」「记谱法+禁忌」拆成逐条 `-` 子项，
+ * 并把「`every`/`sometimes`/`off`/`chunk` 回调约束 + TidalCycles 不可用」归入「模式变换」小节。
+ * 仅做分组与拆分，所有语法事实、禁止项与示例原样保留。中英双语同步。
+ * 后续补充：按 Agent Prompt 设计原则审查速查表（参考层应让模型学知识、而非照抄模版）——表内充斥具体数值/音符/
+ * 和弦/节奏型字面（`setcps(0.5)`、`sine.range(400,800).slow(8)`、`"[0 <4 3 <2 5>>*2](<3 5>,8)"` 等），易被当模版照搬。
+ * 在表头加一句总纲：本表是语法参考、重点理解每个方法「做什么/何时有用」，示例中的数值音符都是占位、按音乐目的
+ * 自定，遇表外需求依机制推导而非硬套最近示例。单点总纲覆盖全表，不逐条加占位说明（避免过度规则化）。中英双语同步。
+ * 后续补充：同上原则细化「音阶」小节——示例由 `scale("C4:minor")` 改为 `scale("...")` 占位，拆为「映射到调式空间/
+ * 调式只表组织方式不绑定 root 与 octave/可用类型仅为类别集合非推荐顺序/⚠️ 不要把带 root 的具体写法当默认模板，
+ * root 与调式组合由音乐结构决定」，避免冷启动总用同一 root+调式。中英双语同步。
  */
 import {
   DIRT_SAMPLES,
@@ -129,21 +146,54 @@ const SAMPLE_REFERENCE_SECTION = [
 
 const STRUDEL_CHEATSHEET_CONCISE = [
   '## Strudel 速查表（精简版）',
-  '- 迷你记谱法：`*N` 重复，`/N` 减速，`[]` 分组，`<>` 交替循环，`,` 并行，`~` 休止，`(k,n)` 欧拉节奏，`!N` 复制，`@N` 延长。**禁止**使用 `_`（保持步长）——在 `,` 分支开头或 `[]` 内部会导致解析错误；请用显式值或 `@N` 代替。**禁止**在 `<>` 内使用 `|`——`|` 是随机选择运算符，在尖括号交替内无效；需要交替多步分组时，请写 `<[...] [...] [...]>`。**禁止**在 `<>` 内使用 `;`——`;` 不是合法迷你记谱法；在交替中表示同时和弦组，请写 `<[n1,n2,n3] [n4,n5,n6]>` 而不是 `<n1 n2 n3; n4 n5 n6>`——`validate` 会报 Mini-notation 错误，请自行修正。',
-  '- 值模式（`.gain("...")`、`.lpf("...")`、`.speed("...")` 等）：**禁止**在其中使用 `_`——始终写出明确数字。`~` 只用于结构模式，不用于数值字符串。',
-  '- **迷你记谱法中禁用**：`[_ ...]`（括号起始处保持）、`, _ ...`（并行分支起始处保持）。这些会在运行时产生解析错误。',
-  '- 核心：`note("c3 e3 g3")`，`s("bd sd hh")`，`stack(...)`，`cat(...)`。速度在 `setCode` 的第一行用 `setcps(N)` 设置（cps = bpm / 240，例如 120 BPM → `setcps(0.5)`）。',
+  '本表是语法参考，重点在于理解每个方法"做什么、何时有用"——其中的数值、音符、和弦与节奏型都只是用于说明的占位，应按音乐目的自行决定，而不是当模版照抄。遇到表里没列的需求，依据这些机制自行推导，而不是硬套最接近的示例。',
+  '',
+  '### 记谱法',
+  '- 符号：`*N` 重复，`/N` 减速，`[]` 分组，`<>` 交替循环，`,` 并行，`~` 休止，`(k,n)` 欧拉节奏，`!N` 复制，`@N` 延长。',
+  '- **禁忌**：`_`（保持步长）在 `,` 分支开头或 `[]` 内部会导致解析错误，用显式值或 `@N` 代替；`<>` 内不能用 `|`（随机选择运算符，需交替多步分组时写 `<[...] [...] [...]>`）；`<>` 内不能用 `;`（表示同时和弦组写 `<[n1,n2,n3] [n4,n5,n6]>`，而不是 `<n1 n2 n3; n4 n5 n6>`）——`validate` 会报 Mini-notation 错误。',
+  '- 值模式（`.gain("...")`、`.lpf("...")`、`.speed("...")` 等）中**禁止** `_`，始终写明确数字；`~` 只用于结构模式、不用于数值字符串。另：`[_ ...]`（括号起始保持）与 `, _ ...`（并行分支起始保持）也会在运行时报解析错误。',
+  '',
+  '### 核心结构',
+  '- `note("c3 e3 g3")`，`s("bd sd hh")`，`stack(...)`，`cat(...)`。速度在 `setCode` 第一行用 `setcps(N)` 设置（cps = bpm / 240，例如 120 BPM → `setcps(0.5)`）。',
   '- **禁止** `.add(s("..."))` 叠加采样音层——`.add()` 是数值运算（仅用于 `.add(note("7"))` 等音高偏移），无法接受采样名称字符串，会触发运行时错误 `cannot parse as numeral: "bd"`。叠加多个 `s()` 音层请用逗号语法 `s("bd*4, ~ sd ~ sd")` 或 `stack(s("bd*4"), s("~ sd ~ sd"))`。',
-  '- 鼓组：`bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`。鼓机音色库：`.bank("RolandTR808")`——使用 `.bank()` 时，使用库专用后缀名：`bd sd hh oh cp cb lt mt ht perc rim sh cr`（注意：鼓机库中的击边鼓是 `rim`，不是 `rs`；`rs` 仅在不使用 bank 时有效）。',
-  '- 合成器：`.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`。旋律采样 / GM 音色库 / Dirt 采样 / 鼓机 Bank 的完整名称——见末尾《全量采样名称参考》节。**禁止**使用列表以外的自创名称（如 "superpad"、"rhodes"、"strings"）。',
-  '- 效果器：`.gain(0..1)`，`.lpf(Hz)`，`.lpq(N)`（低通滤波谐振 0-50；别名 `.resonance(N)`），`.hpf(Hz)`，`.hpq(N)`，`.delay(0..1)`，`.room(N)`，`.pan(0..1)`，`.attack/.decay/.sustain/.release`，`.speed(N)`，`.vowel("a e i o")`。`.lpfq` 不存在——请使用 `.lpq`。',
-  '- 模式变换（按你要的变化选用，而非逐个套用）：改速度与方向用 `.fast(N)`/`.slow(N)`/`.rev()`；加密或镜像用 `.ply(N)`（每个事件复制 N 份）/`.jux(rev)`（左右声道镜像处理）；重塑节奏骨架与进出用 `.struct("x ~ x x")`/`.mask("<0 1 1 0>/16")`；制造偶发变化、打破机械感用 `.every(N, fast(2))`、`.sometimes(fast(2))`/`.often(fn)`/`.rarely(fn)`、`.chunk(N, fast(2))`；叠回声/对位层用 `.off(0.125, x => x.add(note("7")))`。',
-  '- 信号——用连续变化驱动参数，让静态值活起来：`sine`/`cosine`（平滑往复）、`saw`/`tri`（单向/三角扫动）、`rand`（随机抖动）、`perlin`（自然游走），与 `.range(a,b).slow(N)`（取值范围与周期）/ `.segment(N)`（离散成 N 步）组合。例：`.lpf(sine.range(500,1000).slow(8))` 滤波缓动、`.gain(perlin.range(.6,.9))` 增益自然起伏。',
-  '- 用信号调制参数让声音随时间活起来（按你要的听感选手段，而不是套固定模板）：慢 `sine`/`perlin` 调 `.lpf` 做滤波扫动与起伏（`.lpf(sine.range(400,800).slow(8)).lpq(5)`）；调 `.gain` 做呼吸感或侧链律动（`.gain(perlin.range(.5,.9))`、`.gain("<.3 1@3>*2")`）；调 `.fm` 做音色演化（`.fm(sine.range(2,8).slow(4))`）；调 `.pan` 做立体声游移（`.pan(sine.slow(4))`）。范围与速率服从音乐目的，不是固定值。',
-  '- 和声——让音符跟随移动的和弦进行，而非孤立音高：`chord("<Cm9 Fm9>/4").dict("ireal").voicing()` 生成并自动排布和弦；`.mode("root:g2")` 控制和弦排布方式、`.anchor("D5")` 固定音域；存成 `let chords = chord(...).dict("ireal")` 后，用 `chords.n("0 2 4")`（或 `n("0 2 4").set(chords)`）让每个索引选取当前和弦的和弦音，于是旋律/贝斯天生协和并随和声演化。',
-  '- 让一条线演化、不逐 cycle 重复（默认手段，不限定某一层）：默认就把变化写进迷你记谱法本身、让线条自我演化，而不是等用户说"长一点/丰富一点"才做；具体哪些层该更丰富由你判断。`<a b c>` 每 cycle 前进一步；**嵌套** `<a <b c>>` 时内层只在轮到它时才前进，于是整条线的真实周期是各层的最小公倍数——要十几个 cycle 才重复一次，听起来像被谱写的长旋律。例：旋律 `"[0 <4 3 <2 5>>*2](<3 5>,8)"`。节奏疏密同理：`*<2!3 4>`、欧拉 `(<3 5>,8)`。偶发装饰用 `.chunk(4, fast(2))`、`.sometimes(ply("2"))`、`.every(4, rev)`',
-  '- 对于 `every`/`sometimes`/`off`/`chunk`，回调必须是真正的 Strudel 函数（`fast(N)`、`rev`、`ply(N)` 或 `x => x.something(...)`）。TidalCycles 专有 API（`by`、`sometimesBy`、`someCyclesBy`、`within`）在 Strudel 中**不可用**——`validate` 会捕获它们。',
-  '- 音阶：`n("0 1 2 3").scale("C4:minor")`。常用：major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic。',
+  '',
+  '### 音色与采样',
+  '- 合成器：`.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`。旋律采样 / GM 音色库 / Dirt 采样 / 鼓机 Bank 的完整名称见末尾《全量采样名称参考》节。**禁止**使用列表以外的自创名称（如 "superpad"、"rhodes"、"strings"）。',
+  '- 鼓组：`bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`。鼓机音色库：`.bank("RolandTR808")`——使用 `.bank()` 时用库专用后缀名 `bd sd hh oh cp cb lt mt ht perc rim sh cr`（注意：鼓机库中的击边鼓是 `rim`，不是 `rs`；`rs` 仅在不使用 bank 时有效）。',
+  '',
+  '### 效果器',
+  '- `.gain(0..1)`，`.lpf(Hz)`，`.lpq(N)`（低通滤波谐振 0-50；别名 `.resonance(N)`），`.hpf(Hz)`，`.hpq(N)`，`.delay(0..1)`，`.room(N)`，`.pan(0..1)`，`.attack/.decay/.sustain/.release`，`.speed(N)`，`.vowel("a e i o")`。`.lpfq` 不存在——请使用 `.lpq`。',
+  '',
+  '### 模式变换（按你要的变化选用，而非逐个套用）',
+  '- 改速度与方向：`.fast(N)`/`.slow(N)`/`.rev()`。',
+  '- 加密或镜像：`.ply(N)`（每个事件复制 N 份）/`.jux(rev)`（左右声道镜像处理）。',
+  '- 重塑节奏骨架与进出：`.struct("x ~ x x")`/`.mask("<0 1 1 0>/16")`。',
+  '- 制造偶发变化、打破机械感：`.every(N, fast(2))`、`.sometimes(fast(2))`/`.often(fn)`/`.rarely(fn)`、`.chunk(N, fast(2))`。',
+  '- 叠回声/对位层：`.off(0.125, x => x.add(note("7")))`。',
+  '- 回调约束：`every`/`sometimes`/`off`/`chunk` 的回调必须是真正的 Strudel 函数（`fast(N)`、`rev`、`ply(N)` 或 `x => x.something(...)`）。TidalCycles 专有 API（`by`、`sometimesBy`、`someCyclesBy`、`within`）在 Strudel 中**不可用**，`validate` 会捕获。',
+  '',
+  '### 信号与调制',
+  '- 信号源——用连续变化驱动参数，让静态值活起来：`sine`/`cosine`（平滑往复）、`saw`/`tri`（单向/三角扫动）、`rand`（随机抖动）、`perlin`（自然游走），与 `.range(a,b).slow(N)`（取值范围与周期）/ `.segment(N)`（离散成 N 步）组合。例：`.lpf(sine.range(500,1000).slow(8))` 滤波缓动、`.gain(perlin.range(.6,.9))` 增益自然起伏。',
+  '- 按听感选调制目标（不是套固定模板）：慢 `sine`/`perlin` 调 `.lpf` 做滤波扫动与起伏（`.lpf(sine.range(400,800).slow(8)).lpq(5)`）；调 `.gain` 做呼吸感或侧链律动（`.gain(perlin.range(.5,.9))`、`.gain("<.3 1@3>*2")`）；调 `.fm` 做音色演化（`.fm(sine.range(2,8).slow(4))`）；调 `.pan` 做立体声游移（`.pan(sine.slow(4))`）。范围与速率服从音乐目的，不是固定值。',
+  '',
+  '### 和声（作为一组"语法工具箱"，按需取用，而不是固定流程）',
+  '- `chord("<...>/N")` 生成和弦进行——和弦内容、数量与节奏长度完全由音乐目标决定，不要照搬示例中的和弦或时值；`/N` 只控制这段和声循环跨越多少 cycle，应根据结构自行设定。',
+  '- `.dict("ireal")` 选择和弦字典来源（仅为一种可选映射方式，不是默认标准）。',
+  '- `.voicing()` 将和弦展开为具体声部排列——是否展开取决于当前层是否需要"可演奏性"或密度控制。',
+  '- `.mode("root:g2")` 控制和弦排列/重心位置，属音区与结构调整手段。',
+  '- `.anchor("D5")` 锁定整体音域、避免声部漂移（仅在需要稳定音域时使用）。',
+  '- 可将 `chord(...).dict("ireal")` 存入 `let chords`，再用 `chords.n("0 2 4")`（或 `n("0 2 4").set(chords)`）让某条旋律线参考当前和弦的音集。',
+  '- ⚠️ 关键原则：这些方法不是标准编配流程，也不是必须组合使用的链条，只是不同层级的"和声依附手段"。实际创作中可以完全不用 `chords.n()`、可以只用 `chord()` 不展开 `voicing()`、可以只做 root motion 不做音级映射，甚至完全依赖旋律自身的落点逻辑——唯一的选择依据是：是否需要增强"音高与和声的依附关系"。',
+  '- 与《让旋律有和声落点》的关系：本段工具只提供"可能的和声支撑方式"，是否使用、用到什么程度，由旋律的落点设计决定，而不是固定规则。',
+  '',
+  '### 让线条演化（默认手段，不限定某一层）',
+  '- 默认就把变化写进迷你记谱法本身、让线条自我演化，而不是等用户说"长一点/丰富一点"才做；具体哪些层该更丰富由你判断。`<a b c>` 每 cycle 前进一步；**嵌套** `<a <b c>>` 时内层只在轮到它时才前进，于是整条线的真实周期是各层的最小公倍数——要十几个 cycle 才重复一次，听起来像被谱写的长旋律。例：旋律 `"[0 <4 3 <2 5>>*2](<3 5>,8)"`。节奏疏密同理：`*<2!3 4>`、欧拉 `(<3 5>,8)`。偶发装饰用 `.chunk(4, fast(2))`、`.sometimes(ply("2"))`、`.every(4, rev)`。',
+  '',
+  '### 音阶',
+  '- `n("0 1 2 3").scale("...")` 用于将音高映射到某种调式空间。',
+  '- 调式类型仅表示"音高组织方式"，不绑定任何固定 root 或 octave。',
+  '- 可用类型（仅作为类别集合，而非推荐顺序）：major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic。',
+  '- ⚠️ 不要将任何具体写法（如带 root 的形式）视为默认模板或标准起点。root 与调式组合应由音乐结构决定，而不是由示例决定。',
 ].join('\n');
 
 // ============================================================================
@@ -322,21 +372,54 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
 
 const STRUDEL_CHEATSHEET_EN = [
   '## Strudel Cheat Sheet (concise)',
-  '- Mini-notation: `*N` repeat, `/N` slow, `[]` group, `<>` alternate cycle, `,` parallel, `~` rest, `(k,n)` Euclidean, `!N` replicate, `@N` stretch. **Forbidden**: `_` (hold step) — causes parse errors at the start of a `,` branch or inside `[]`; use explicit values or `@N` instead. **Forbidden inside `<>`**: `|` (random-pick operator, invalid in angle-bracket alternation; use `<[...] [...] [...]>` for multi-step groups). **Forbidden inside `<>`**: `;` — not valid mini-notation; for simultaneous chord groups write `<[n1,n2,n3] [n4,n5,n6]>` instead of `<n1 n2 n3; n4 n5 n6>` — `validate` will catch this.',
-  '- Value patterns (`.gain("...")`, `.lpf("...")`, `.speed("...")`, etc.): **forbidden** `_` inside them — always write explicit numbers. `~` is only for structural patterns, not numeric strings.',
-  '- **Forbidden in mini-notation**: `[_ ...]` (hold at bracket start), `, _ ...` (hold at parallel-branch start) — both cause runtime parse errors.',
-  '- Core: `note("c3 e3 g3")`, `s("bd sd hh")`, `stack(...)`, `cat(...)`. Tempo: set on the first line of `setCode` with `setcps(N)` (cps = bpm / 240, e.g. 120 BPM → `setcps(0.5)`).',
+  'This is a syntax reference: the point is to understand what each method does and when it helps. The numbers, notes, chords, and rhythm patterns in it are illustrative placeholders — choose them by musical intent rather than copying them as templates. For needs not listed, reason from these mechanisms instead of forcing the nearest example.',
+  '',
+  '### Mini-notation',
+  '- Symbols: `*N` repeat, `/N` slow, `[]` group, `<>` alternate cycle, `,` parallel, `~` rest, `(k,n)` Euclidean, `!N` replicate, `@N` stretch.',
+  '- **Forbidden**: `_` (hold step) causes parse errors at the start of a `,` branch or inside `[]` — use explicit values or `@N`; `|` inside `<>` (random-pick operator, invalid in angle-bracket alternation — use `<[...] [...] [...]>` for multi-step groups); `;` inside `<>` (not valid mini-notation — for simultaneous chord groups write `<[n1,n2,n3] [n4,n5,n6]>`, not `<n1 n2 n3; n4 n5 n6>`). `validate` will catch these.',
+  '- Value patterns (`.gain("...")`, `.lpf("...")`, `.speed("...")`, etc.): **forbidden** `_` inside them — always write explicit numbers; `~` is only for structural patterns, not numeric strings. Also `[_ ...]` (hold at bracket start) and `, _ ...` (hold at parallel-branch start) cause runtime parse errors.',
+  '',
+  '### Core structure',
+  '- `note("c3 e3 g3")`, `s("bd sd hh")`, `stack(...)`, `cat(...)`. Tempo: set on the first line of `setCode` with `setcps(N)` (cps = bpm / 240, e.g. 120 BPM → `setcps(0.5)`).',
   '- **Forbidden**: `.add(s("..."))` to layer samples — `.add()` is arithmetic (only for pitch offsets like `.add(note("7"))`); it cannot accept a sample-name string and will throw `cannot parse as numeral: "bd"`. To layer multiple `s()` tracks use comma syntax `s("bd*4, ~ sd ~ sd")` or `stack(s("bd*4"), s("~ sd ~ sd"))`.',
-  '- Drums: `bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`. Drum-machine banks: `.bank("RolandTR808")` — when using `.bank()`, use bank-specific suffixes: `bd sd hh oh cp cb lt mt ht perc rim sh cr` (note: the bank\'s rimshot is `rim`, not `rs`; `rs` is only valid without a bank).',
+  '',
+  '### Sounds & samples',
   '- Synths: `.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`. For full melodic / GM / Dirt / drum-machine names see the Sample Reference section. **Do not invent names** outside the list (e.g., "superpad", "rhodes", "strings").',
-  '- Effects: `.gain(0..1)`, `.lpf(Hz)`, `.lpq(N)` (low-pass resonance 0–50; alias `.resonance(N)`), `.hpf(Hz)`, `.hpq(N)`, `.delay(0..1)`, `.room(N)`, `.pan(0..1)`, `.attack/.decay/.sustain/.release`, `.speed(N)`, `.vowel("a e i o")`. `.lpfq` does not exist — use `.lpq`.',
-  '- Pattern transforms (pick by the change you want, do not apply them one by one): change speed and direction with `.fast(N)`/`.slow(N)`/`.rev()`; thicken or mirror with `.ply(N)` (replicate each event N times) / `.jux(rev)` (process a mirrored copy across the stereo channels); reshape the rhythmic skeleton and entrances/exits with `.struct("x ~ x x")`/`.mask("<0 1 1 0>/16")`; break mechanical sameness with occasional variation via `.every(N, fast(2))`, `.sometimes(fast(2))`/`.often(fn)`/`.rarely(fn)`, `.chunk(N, fast(2))`; add an echo/counter layer with `.off(0.125, x => x.add(note("7")))`.',
-  '- Signals — drive parameters with continuous change so static values come alive: `sine`/`cosine` (smooth back-and-forth), `saw`/`tri` (ramp / triangle sweep), `rand` (random jitter), `perlin` (natural wander); combine with `.range(a,b).slow(N)` (value range and period) / `.segment(N)` (quantize into N steps). E.g. `.lpf(sine.range(500,1000).slow(8))` for a gliding filter, `.gain(perlin.range(.6,.9))` for natural gain swell.',
-  '- Modulate parameters with signals so the sound evolves over time (pick the means by the sound you want, not by pasting a fixed template): a slow `sine`/`perlin` on `.lpf` for filter sweeps and swell (`.lpf(sine.range(400,800).slow(8)).lpq(5)`); on `.gain` for a breathing or sidechain pump (`.gain(perlin.range(.5,.9))`, `.gain("<.3 1@3>*2")`); on `.fm` for timbral evolution (`.fm(sine.range(2,8).slow(4))`); on `.pan` for stereo drift (`.pan(sine.slow(4))`). Range and rate serve the musical purpose — they are not fixed values.',
-  '- Harmony — let notes follow the moving chord progression instead of isolated pitches: `chord("<Cm9 Fm9>/4").dict("ireal").voicing()` builds and auto-voices the chords; `.mode("root:g2")` controls the voicing layout, `.anchor("D5")` fixes the register; after `let chords = chord(...).dict("ireal")`, use `chords.n("0 2 4")` (or `n("0 2 4").set(chords)`) to make each index select a chord tone of the current chord, so a melody/bass is consonant by construction and evolves with the harmony.',
-  '- Make a line evolve instead of repeating every cycle (a default technique, not tied to any one layer): by default bake the variation into the mini-notation itself so the line evolves on its own, rather than waiting for the user to ask for something "longer / richer"; you decide which layers should be richer. `<a b c>` advances one step per cycle; **nesting** `<a <b c>>` makes the inner step advance only when its turn comes, so the line\'s true period is the LCM of the layers — it takes a dozen-plus cycles to repeat and sounds like a composed long melody. E.g. melody `"[0 <4 3 <2 5>>*2](<3 5>,8)"`. Same for density: `*<2!3 4>`, Euclidean `(<3 5>,8)`. For occasional embellishment add `.chunk(4, fast(2))`, `.sometimes(ply("2"))`, `.every(4, rev)`.',
-  '- For `every`/`sometimes`/`off`/`chunk`, callbacks must be real Strudel functions (`fast(N)`, `rev`, `ply(N)`, or `x => x.something(...)`). TidalCycles-specific APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are **not available** in Strudel — `validate` will catch them.',
-  '- Scales: `n("0 1 2 3").scale("C4:minor")`. Common: major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic.',
+  '- Drums: `bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`. Drum-machine banks: `.bank("RolandTR808")` — when using `.bank()`, use bank-specific suffixes `bd sd hh oh cp cb lt mt ht perc rim sh cr` (note: the bank\'s rimshot is `rim`, not `rs`; `rs` is only valid without a bank).',
+  '',
+  '### Effects',
+  '- `.gain(0..1)`, `.lpf(Hz)`, `.lpq(N)` (low-pass resonance 0–50; alias `.resonance(N)`), `.hpf(Hz)`, `.hpq(N)`, `.delay(0..1)`, `.room(N)`, `.pan(0..1)`, `.attack/.decay/.sustain/.release`, `.speed(N)`, `.vowel("a e i o")`. `.lpfq` does not exist — use `.lpq`.',
+  '',
+  '### Pattern transforms (pick by the change you want, do not apply them one by one)',
+  '- Change speed and direction: `.fast(N)`/`.slow(N)`/`.rev()`.',
+  '- Thicken or mirror: `.ply(N)` (replicate each event N times) / `.jux(rev)` (process a mirrored copy across the stereo channels).',
+  '- Reshape the rhythmic skeleton and entrances/exits: `.struct("x ~ x x")`/`.mask("<0 1 1 0>/16")`.',
+  '- Break mechanical sameness with occasional variation: `.every(N, fast(2))`, `.sometimes(fast(2))`/`.often(fn)`/`.rarely(fn)`, `.chunk(N, fast(2))`.',
+  '- Add an echo/counter layer: `.off(0.125, x => x.add(note("7")))`.',
+  '- Callback constraint: for `every`/`sometimes`/`off`/`chunk`, callbacks must be real Strudel functions (`fast(N)`, `rev`, `ply(N)`, or `x => x.something(...)`). TidalCycles-specific APIs (`by`, `sometimesBy`, `someCyclesBy`, `within`) are **not available** in Strudel — `validate` will catch them.',
+  '',
+  '### Signals & modulation',
+  '- Signal sources — drive parameters with continuous change so static values come alive: `sine`/`cosine` (smooth back-and-forth), `saw`/`tri` (ramp / triangle sweep), `rand` (random jitter), `perlin` (natural wander); combine with `.range(a,b).slow(N)` (value range and period) / `.segment(N)` (quantize into N steps). E.g. `.lpf(sine.range(500,1000).slow(8))` for a gliding filter, `.gain(perlin.range(.6,.9))` for natural gain swell.',
+  '- Pick the modulation target by the sound you want (not a fixed template): a slow `sine`/`perlin` on `.lpf` for filter sweeps and swell (`.lpf(sine.range(400,800).slow(8)).lpq(5)`); on `.gain` for a breathing or sidechain pump (`.gain(perlin.range(.5,.9))`, `.gain("<.3 1@3>*2")`); on `.fm` for timbral evolution (`.fm(sine.range(2,8).slow(4))`); on `.pan` for stereo drift (`.pan(sine.slow(4))`). Range and rate serve the musical purpose — they are not fixed values.',
+  '',
+  '### Harmony (a "syntax toolbox", use as needed — not a fixed pipeline)',
+  '- `chord("<...>/N")` builds a chord progression — the chords, their count, and the rhythmic length are entirely set by the musical goal; do not copy the example\'s chords or note values. `/N` only controls how many cycles this harmonic loop spans, set it to the structure.',
+  '- `.dict("ireal")` selects the chord-dictionary source (just one optional mapping, not a default standard).',
+  '- `.voicing()` expands chords into a concrete voicing — whether you expand depends on whether the layer needs "playability" or density control.',
+  '- `.mode("root:g2")` controls the voicing layout / center of gravity — a register and structure adjustment.',
+  '- `.anchor("D5")` locks the overall register to avoid voice drift (use only when you need a stable register).',
+  '- You can store `chord(...).dict("ireal")` in `let chords`, then use `chords.n("0 2 4")` (or `n("0 2 4").set(chords)`) to make a melodic line reference the current chord\'s note set.',
+  '- ⚠️ Key principle: these methods are not a standard arrangement pipeline, nor a chain that must be combined — they are harmonic-attachment means at different levels. In practice you may skip `chords.n()` entirely, use `chord()` without `voicing()`, do only root motion without degree mapping, or even rely purely on the melody\'s own landing logic — the only criterion is whether you need to strengthen the "pitch-to-harmony attachment".',
+  '- Relation to "Give the melody harmonic gravity": this section only offers possible ways to support harmony; whether and how much to use them is decided by the melody\'s landing-point design, not a fixed rule.',
+  '',
+  '### Evolving lines (a default technique, not tied to any one layer)',
+  '- By default bake the variation into the mini-notation itself so the line evolves on its own, rather than waiting for the user to ask for something "longer / richer"; you decide which layers should be richer. `<a b c>` advances one step per cycle; **nesting** `<a <b c>>` makes the inner step advance only when its turn comes, so the line\'s true period is the LCM of the layers — it takes a dozen-plus cycles to repeat and sounds like a composed long melody. E.g. melody `"[0 <4 3 <2 5>>*2](<3 5>,8)"`. Same for density: `*<2!3 4>`, Euclidean `(<3 5>,8)`. For occasional embellishment add `.chunk(4, fast(2))`, `.sometimes(ply("2"))`, `.every(4, rev)`.',
+  '',
+  '### Scales',
+  '- `n("0 1 2 3").scale("...")` maps pitches into a modal space.',
+  '- A mode type only denotes a "way of organizing pitch"; it binds no fixed root or octave.',
+  '- Available types (a category set, not a recommended order): major / minor / dorian / mixolydian / phrygian / lydian / minor pentatonic.',
+  '- ⚠️ Do not treat any concrete spelling (e.g. a form with a root) as a default template or standard starting point. The root + mode combination should be decided by the musical structure, not by the example.',
 ].join('\n');
 
 const SAMPLE_REFERENCE_EN = [
