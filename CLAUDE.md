@@ -85,12 +85,14 @@ Key modules:
   construct `new AudioContext()` — context lifecycle is owned by superdough's
   `getAudioContext()`/`setAudioContext()`.
 
-- **`src/prompts/`** — versioned system prompts. `versions/v{N}.ts` are
-  append-only history (never edit an existing version); `active.ts` is the
-  pointer to the current version; `system-prompt.ts` is a forwarding shim and
-  must never be edited directly. To change the prompt, follow
-  `.github/prompts/edit-system-prompt.prompt.md` (create `v{N+1}`, update its
-  header comment, point `active.ts` at it).
+- **`src/prompts/`** — versioned system prompts. A completed prompt version is
+  immutable history; the current in-progress prompt version for one product
+  requirement may be edited repeatedly until that requirement is finished.
+  `active.ts` is the pointer to the current version; `system-prompt.ts` is a
+  forwarding shim and must never be edited directly. To change the prompt,
+  follow `.github/prompts/edit-system-prompt.prompt.md` (create or reuse the
+  requirement's working `v{N+1}`, update its header comment, point `active.ts`
+  at it).
 
 - **`src/hooks/useSessions.ts`** + **`src/lib/session-storage.ts`** — multi-
   session state, persisted to IndexedDB (falls back to in-memory if

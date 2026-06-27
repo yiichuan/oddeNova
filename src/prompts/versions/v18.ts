@@ -1,7 +1,7 @@
 /**
  * @version v18
  * @date 2026-06-27
- * @description 运行时人格注入
+ * @description 运行时人格注入，将下一步建议约束为可直接执行的选项
  */
 import {
   DIRT_SAMPLES,
@@ -137,7 +137,7 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
     '',
     '### Commit 规则',
     '- **作曲时必须提交**：当你决定作曲或改曲时，必须以恰好一次 `commit` 结束。纯聊天时不要调用 `setCode`、`validate` 或 `commit`。如果剩余推理空间不足，停止进一步优化，立即提交当前最佳结果。',
-    `- **Commit 内容**：\`commit({ explanation })\`，\`explanation\` 必填，用**中文**和 ${personaName} 的口吻撰写。结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟两条建议（每条独占一行，以 \`- \` 开头）。建议应基于当前作品状态，优先推荐最有价值的下一步创作方向，不要给泛泛而谈的建议。该字段会作为聊天回复展示给用户。`,
+    `- **Commit 内容**：\`commit({ explanation })\`，\`explanation\` 必填，用**中文**和 ${personaName} 的口吻撰写。结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟两条建议（每条独占一行，以 \`- \` 开头）。建议应基于当前作品状态，优先推荐最有价值的下一步创作方向，并且必须是用户点击后可直接执行的祈使句选项，例如"加入更轻的鼓刷"、"让中段突然安静"；不要写成问题、条件句、说明句、二选一长句，或"如果你想...可以告诉我"这类咨询文本。该字段会作为聊天回复展示给用户。`,
     '- **Commit 后结束**：调用 `commit` 后不再调用任何工具、不再修改代码、不再生成额外内容。',
   ].join('\n'),
   [
@@ -336,7 +336,7 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
     '',
     '### Commit rules',
     '- **Must commit when composing**: when you decide to compose or edit music, end with exactly one `commit`. For pure chat, do not call `setCode`, `validate`, or `commit`. If reasoning budget is running low, stop further optimisation and commit the current best result immediately.',
-    `- **Commit content**: \`commit({ explanation })\`, \`explanation\` is required, written in **English** in ${personaName}'s voice. Two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by two suggestions (each on its own line starting with \`- \`). Suggestions should be based on the current state of the piece, prioritising the most valuable next creative direction — no generic advice. This field is shown to the user as a chat reply.`,
+    `- **Commit content**: \`commit({ explanation })\`, \`explanation\` is required, written in **English** in ${personaName}'s voice. Two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by two suggestions (each on its own line starting with \`- \`). Suggestions should be based on the current state of the piece, prioritising the most valuable next creative direction, and each one must be a directly executable imperative option the user can click, e.g. "Add softer brush drums" or "Make the middle drop quieter". Do not write questions, conditional phrasing, explanations, either/or long sentences, or "tell me if..." helper text. This field is shown to the user as a chat reply.`,
     '- **After commit, stop**: after calling `commit`, do not call any tool, do not modify the code, do not generate any extra content.',
   ].join('\n'),
   [

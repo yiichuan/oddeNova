@@ -119,6 +119,7 @@ function buildSuggestSystem(state: MusicState, styleIntent: string | null, isZh:
 - stage=developing → 可以加层，也可以调质感/节奏/速度
 - stage=full → 专注变奏、情绪变化，不要再建议加层
 - 风格方向不为"未知"时，建议内容要符合该风格特征
+- 每条必须是点击后可直接执行的祈使句选项，如"加入鼓点"、"让副歌更开阔"；不要写问题、条件句、说明句或"如果你想...可以告诉我"这类咨询文本
 - 每条 6-12 个字，自然口语，不要英文术语堆砌
 - 输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
   }
@@ -140,6 +141,7 @@ Rules:
 - stage=developing → can add layers or tweak texture/rhythm/tempo
 - stage=full → focus on variation and mood shifts, do not suggest adding more layers
 - When style direction is known, suggestions must fit that style
+- Each item must be a directly executable imperative option, e.g. "Add a drum beat" or "Make the bridge wider"; do not write questions, conditional phrasing, explanations, or "tell me if..." helper text
 - 5–10 words each, natural phrasing, avoid jargon
 - Output JSON: {"suggestions":["...","..."]}, nothing else`;
 }
@@ -159,12 +161,27 @@ function extractSuggestionsFromJSON(jsonText: string): string[] | null {
   try {
     const p = JSON.parse(jsonText) as SuggestResult;
     if (Array.isArray(p?.suggestions)) {
-      return p.suggestions.filter((s) => typeof s === 'string' && s.trim()).slice(0, 3);
+      return p.suggestions
+        .filter((s) => typeof s === 'string')
+        .map((s) => s.trim())
+        .filter(isExecutableSuggestion)
+        .slice(0, 3);
     }
   } catch {
     // fall through
   }
   return null;
+}
+
+function isExecutableSuggestion(s: string): boolean {
+  if (!s || /[?？]/.test(s)) return false;
+  const isZhSuggestion = /[一-龥]/.test(s);
+  if (isZhSuggestion) {
+    if (Array.from(s).length > 28) return false;
+    return !/(如果|或者|可以告诉我|告诉我|我可以|你想|你可以|请告诉|描述你|我会|我能|是否|要不要|想不想)/.test(s);
+  }
+  if (s.split(/\s+/).filter(Boolean).length > 12) return false;
+  return !/\b(if|when|tell me|let me know|you can|could you|would you|do you want|describe|ask me)\b/i.test(s);
 }
 
 function parseSuggestions(text: string): string[] | null {
@@ -238,7 +255,7 @@ export async function buildSuggestions(
     });
     console.debug('[suggestions] LLM responded:', text.slice(0, 300));
     const parsed = parseSuggestions(text);
-    if (parsed && parsed.length > 0) {
+    if (parsed && parsed.length >= 2) {
       console.debug('[suggestions] parsed suggestions:', parsed);
       return parsed.slice(0, 2);
     }
