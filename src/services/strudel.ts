@@ -1079,6 +1079,80 @@ function stripUIDecorations(code: string): string {
     .replace(/\._pianoroll\(\)/g, '');
 }
 
+// Small scanner helpers for validators that need to inspect method arguments
+// without treating comments or unrelated string literals as executable code.
+function readQuotedString(source: string, start: number): { value: string; end: number } | null {
+  const quote = source[start];
+  if (quote !== '"' && quote !== "'") return null;
+  let value = '';
+  let i = start + 1;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '\\') {
+      value += ch + (source[i + 1] ?? '');
+      i += 2;
+      continue;
+    }
+    if (ch === quote) return { value, end: i + 1 };
+    value += ch;
+    i++;
+  }
+  return null;
+}
+
+// Strudel's .arp() accepts a mini-notation pattern of numeric chord-tone
+// indices. A named mode like .arp("pinkyup") is syntactically valid JS, so the
+// proxy dry-run below cannot catch it; it only fails later when Strudel queries
+// the pattern and tries to index the collected chord haps with a non-number.
+function findInvalidArpArguments(code: string): string[] {
+  const invalid: string[] = [];
+  let i = 0;
+  while (i < code.length) {
+    const ch = code[i];
+    if (ch === '/' && code[i + 1] === '/') {
+      const end = code.indexOf('\n', i + 2);
+      i = end === -1 ? code.length : end + 1;
+      continue;
+    }
+    if (ch === '/' && code[i + 1] === '*') {
+      const end = code.indexOf('*/', i + 2);
+      i = end === -1 ? code.length : end + 2;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const quote = ch;
+      i++;
+      while (i < code.length) {
+        const c = code[i];
+        i++;
+        if (c === '\\') i++;
+        if (c === quote) break;
+      }
+      continue;
+    }
+    // Match only actual method calls. This avoids flagging names such as
+    // ".arpeggio" while still allowing whitespace before the opening paren.
+    if (code.startsWith('.arp', i) && !/[A-Za-z0-9_$]/.test(code[i + 4] ?? '')) {
+      let j = i + 4;
+      while (/\s/.test(code[j] ?? '')) j++;
+      if (code[j] !== '(') {
+        i++;
+        continue;
+      }
+      j++;
+      while (/\s/.test(code[j] ?? '')) j++;
+      const parsed = readQuotedString(code, j);
+      if (parsed && /[A-Za-z_]/.test(parsed.value)) {
+        invalid.push(parsed.value);
+      }
+      i = parsed?.end ?? j + 1;
+      continue;
+    }
+    i++;
+  }
+  return invalid;
+}
+
 // --- Code validation (no audio engine needed) ---
 
 /** @deprecated Use validateCodeRuntime directly. */
@@ -1118,6 +1192,17 @@ export function validateCodeRuntime(code: string): ValidationResult {
         ok: false,
         kind: 'runtime',
         error: `Unknown sample name(s): ${quoted}. Only use approved sample names (piano, arpy, bass, bd, sd, hh ...). See the quality gate in your system prompt.`,
+      };
+    }
+    // Catch Strudel API misuse that is syntactically valid but crashes during
+    // pattern query, before it reaches live playback.
+    const invalidArpArgs = findInvalidArpArguments(code);
+    if (invalidArpArgs.length > 0) {
+      const quoted = invalidArpArgs.map((s) => `"${s}"`).join(', ');
+      return {
+        ok: false,
+        kind: 'runtime',
+        error: `Invalid .arp() argument(s): ${quoted}. Strudel .arp() selects chord tones by numeric indices only, e.g. .arp("0 1 2 3") or .arp("3 2 1 0"); named modes such as "pinkyup" are not supported.`,
       };
     }
     return { ok: true };
