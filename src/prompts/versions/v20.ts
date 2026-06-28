@@ -15,6 +15,16 @@
  * ⑤《让线条随时间呼吸》边界条款改为通用硬禁令——除非用户明确要求、或风格本身以持续质感为美（ambient/drone 等），
  * 任何层都禁止做成超长铺底，默认须被再触发成可感知脉动；⑥自检 ⑨ 的 pad 子句相应从"和声/pad"泛化到"任何层"的硬
  * "必须/禁止"。（注：本条硬禁令不限和声，故不放在《和声》速查节，而置于通用的呼吸原则处。）中英双语同步。
+ * v20 再追加（原地）：另有一类"贝斯/旋律超长拖音"并非铺底、而是 Strudel 结构陷阱——`chords.n("密集节奏")` 的结构
+ * 取自左边的 `chords`，当 `chords` 和声节奏慢（如 `<Em C G D>/2`，每和弦跨 2 cycle）时，写在 `.n()` 里的密集节奏被整个
+ * 坍缩成"每和弦一个被拉满数 cycle 的长音"（agent 以为写了 ostinato、实为拖音；这是正确性错误，任何听感自检都抓不到）。
+ * 经 @strudel/core 实跑验证（`coarse.n(dense)` 只剩 2 个长 onset，`dense.set(coarse)` 才有 24 个短 onset）后，在《和声》
+ * 速查节把 `chords.n(...)`（结构取自 chords）与 `n(...).set(chords)`（结构取自节奏模式）的来源差异讲清——线条要按自己
+ * 节奏发声须用后者。中英双语同步。
+ * v20 三追加（原地）：agent 总倾向给出一个"贯穿全曲、一字不变"的层（甚至在注释里把"全程在"当优点）。现有自检 ④ 只在
+ * 集合层面说"避免所有层不变"，漏了单层层面。按方法论补一条倾向（非硬禁令、带风格例外）：编排原则新增"几乎没有东西真的
+ * 贯穿全曲一字不变——连锚点也至少给一次进出/breakdown/变形；恒定只在风格要求时才是刻意选择"，并把自检 ④ 从"所有层"
+ * 收紧到"任何单层"。中英双语同步。
  */
 import {
   DIRT_SAMPLES,
@@ -101,7 +111,7 @@ const STRUDEL_CHEATSHEET_CONCISE = [
   '- `.voicing()` 将和弦展开为具体声部排列——是否展开取决于当前层是否需要"可演奏性"或密度控制。',
   '- `.mode("root:g2")` 控制和弦排列/重心位置，属音区与结构调整手段。',
   '- `.anchor("D5")` 锁定整体音域、避免声部漂移（仅在需要稳定音域时使用）。',
-  '- 可将 `chord(...).dict("ireal")` 存入 `let chords`，再用 `chords.n("0 2 4")`（或 `n("0 2 4").set(chords)`）让某条旋律线参考当前和弦的音集。',
+  '- 可将 `chord(...).dict("ireal")` 存入 `let chords`，让某条线参考当前和弦的音集。**注意这两种写法的结构来源相反**：`chords.n("模式")` 的结构取自左边的 `chords`——当 `chords` 的和声节奏较慢（如 `<...>/2`，每和弦横跨 2 个 cycle）时，写在 `.n()` 里的密集节奏会被整个丢弃、坍缩成每和弦一个被拉满数 cycle 的长音（看着是八分 ostinato，响出来却是拖音）。**要让线条按自己的节奏发声，把节奏放左边当结构：`n("模式").set(chords)`**；`chords.n(...)` 只适合"让和弦结构驱动该层"的情形。',
   '- ⚠️ 关键原则：这些方法不是标准编配流程，也不是必须组合使用的链条，只是不同层级的"和声依附手段"。实际创作中可以完全不用 `chords.n()`、可以只用 `chord()` 不展开 `voicing()`、可以只做 root motion 不做音级映射，甚至完全依赖旋律自身的落点逻辑——唯一的选择依据是：是否需要增强"音高与和声的依附关系"。',
   '- 与《让旋律有和声落点》的关系：本段工具只提供"可能的和声支撑方式"，是否使用、用到什么程度，由旋律的落点设计决定，而不是固定规则。',
   '',
@@ -286,6 +296,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '- **用对比创造段落**：段落差异主要来自内容差异。优先改变节奏组织、和声配置、配器层次、音色选择、旋律写法、演奏密度。不要仅依赖相同内容的突然加速、加密或重复来制造段落变化。',
     '- **变化必须有意义**：每一次进入、退出、增强、削弱，都应推动音乐向前发展。不要为了变化而变化。如果删除某个变化后几乎不影响听感，那么这个变化大概率是不必要的。宁少而精。',
     '- **曲子是一条弧线**：不要把作品视为多个循环的简单叠加。应让不同层在时间上产生建立、展开、对比、强化、收束，形成整体方向感。具体段数与长度由音乐自行决定。',
+    '- **几乎没有东西真的贯穿全曲一字不变**：被编排的曲子里，连锚点层也很少从头到尾毫无进出或变形。默认给每个长期在场的层至少一次结构性事件，别把"全程在"当成优点。除非风格本身就要某元素恒定（如 drone、四踩），那是刻意选择。',
     '- **时长意识**：用户给出的时长表示作品总长度，用于规划整体发展节奏，而不是把所有乐器的入场平均铺满整首作品。核心内容应在合理时间内建立，避免因为过度拉长入场过程而导致作品长时间缺乏主体。',
     '',
     '### 编排工具（手段，不是必须执行的步骤）',
@@ -298,7 +309,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '需要精确安排进入与退出时，可计算时间窗口：`<v1 … vk>/N` 总长度 N cycle、平均分配；`<0@a 1@b 0@c>` 权重决定持续时间（无斜杠，权重=各段 cycle 数，如 `<0@4 1@24 0@4>` 在 cycle 4 入、cycle 28 出）。计算时间位置是为了实现听感目标，而不是为了满足固定编排公式。',
     '',
     '### 生成前自检',
-    '完成编排后检查：① 是否能在前半段听出作品身份？② 是否存在由简到繁的建立过程？③ 是否存在至少一次明显的能量或密度变化？④ 是否避免所有层从头到尾保持不变？⑤ 是否避免为了变化而变化？⑥ 是否形成完整的开始、发展与收束？若存在明显问题，应重新调整编排。',
+    '完成编排后检查：① 是否能在前半段听出作品身份？② 是否存在由简到繁的建立过程？③ 是否存在至少一次明显的能量或密度变化？④ 是否避免任何单层一字不变地贯穿全曲（连锚点也至少有一次进出或变形，除非风格要求该元素恒定）？⑤ 是否避免为了变化而变化？⑥ 是否形成完整的开始、发展与收束？若存在明显问题，应重新调整编排。',
   ].join('\n'),
 ].join('\n');
 
@@ -344,7 +355,7 @@ const STRUDEL_CHEATSHEET_EN = [
   '- `.voicing()` expands chords into a concrete voicing — whether you expand depends on whether the layer needs "playability" or density control.',
   '- `.mode("root:g2")` controls the voicing layout / center of gravity — a register and structure adjustment.',
   '- `.anchor("D5")` locks the overall register to avoid voice drift (use only when you need a stable register).',
-  '- You can store `chord(...).dict("ireal")` in `let chords`, then use `chords.n("0 2 4")` (or `n("0 2 4").set(chords)`) to make a melodic line reference the current chord\'s note set.',
+  '- You can store `chord(...).dict("ireal")` in `let chords` so a line references the current chord\'s notes. **Note the two forms take structure from opposite sides**: `chords.n("pattern")` takes its structure from the left (`chords`) — when `chords` is slow (e.g. `<...>/2`, each chord spanning 2 cycles), a dense rhythm written inside `.n()` is discarded and collapses to one held note per chord stretched across several cycles (looks like an eighth-note ostinato, sounds like a sustain). **To let the line sound on its own rhythm, put the rhythm on the left as structure: `n("pattern").set(chords)`**; use `chords.n(...)` only when you want the chord structure to drive the layer.',
   '- ⚠️ Key principle: these methods are not a standard arrangement pipeline, nor a chain that must be combined — they are harmonic-attachment means at different levels. In practice you may skip `chords.n()` entirely, use `chord()` without `voicing()`, do only root motion without degree mapping, or even rely purely on the melody\'s own landing logic — the only criterion is whether you need to strengthen the "pitch-to-harmony attachment".',
   '- Relation to "Give the melody harmonic gravity": this section only offers possible ways to support harmony; whether and how much to use them is decided by the melody\'s landing-point design, not a fixed rule.',
   '',
@@ -549,6 +560,7 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '- **Create sections through contrast**: sectional difference comes mainly from content difference. Prefer changing rhythmic organization, harmonic voicing, instrumentation layers, timbre choice, melodic writing, performance density. Do not rely solely on sudden acceleration, densification, or repetition of identical content to create sectional change.',
     '- **Variation must be meaningful**: every entrance, exit, intensification, or reduction should push the music forward. Do not vary for the sake of varying. If removing a variation barely affects the listening experience, that variation is probably unnecessary. Few and precise.',
     '- **A song is an arc**: do not treat the piece as a simple stack of loops. Let different layers create establishment, development, contrast, intensification, and resolution over time, forming an overall sense of direction. The exact section count and length are decided by the music itself.',
+    "- **Almost nothing truly runs the whole piece unchanged**: in an arranged piece, even an anchor layer rarely goes start-to-finish with no entrance or transformation. By default give every long-present layer at least one structural event; don't treat \"present throughout\" as a virtue. Unless the style itself wants an element constant (e.g. a drone, a four-on-the-floor) — that is a deliberate choice.",
     "- **Duration awareness**: the duration the user gives is the total length of the piece. It is for planning the overall pace of development, not for spreading every instrument's entrance evenly across the whole piece. The core material should be established within a reasonable time; avoid leaving the piece without a body for a long time by over-stretching the entrance process.",
     '',
     '### Arrangement tools (means, not mandatory steps)',
@@ -561,6 +573,6 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     'When you need to place entrances and exits precisely, compute the time windows: `<v1 … vk>/N` — total length N cycles, evenly divided; `<0@a 1@b 0@c>` — weights decide duration (no slash; weights = cycles per step, e.g. `<0@4 1@24 0@4>` enters at cycle 4, exits at cycle 28). Computing time positions serves the listening goal, not the satisfaction of a fixed arrangement formula.',
     '',
     '### Pre-generation self-check',
-    "After arranging, check: ① Can you hear the piece's identity in the first half? ② Is there a simple-to-rich build? ③ Is there at least one clear energy or density change? ④ Did you avoid every layer staying unchanged from start to finish? ⑤ Did you avoid varying for the sake of varying? ⑥ Is there a complete beginning, development, and resolution? If there are clear problems, rework the arrangement.",
+    "After arranging, check: ① Can you hear the piece's identity in the first half? ② Is there a simple-to-rich build? ③ Is there at least one clear energy or density change? ④ Did you avoid any single layer running the whole piece unchanged — does even the anchor have at least one entrance/exit/transformation (unless the style wants that element constant)? ⑤ Did you avoid varying for the sake of varying? ⑥ Is there a complete beginning, development, and resolution? If there are clear problems, rework the arrangement.",
   ].join('\n'),
 ].join('\n');
