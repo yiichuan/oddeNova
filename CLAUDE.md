@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Agent instruction design
+
+When editing prompts or agent-facing instructions, follow
+`docs/ai/agent-instruction-design.md`.
+
+Use the sequence `Goal -> Principles -> Knowledge -> Guidance -> Constraints -> Review`.
+Prefer goals, principles, examples, and self-review over procedural workflows or
+over-specific rules. Trust the model's reasoning; add hard constraints only when
+they prevent concrete failures or define non-negotiable boundaries.
+
 ## Commands
 
 ```bash

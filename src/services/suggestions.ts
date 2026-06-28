@@ -107,21 +107,46 @@ function buildSuggestSystem(state: MusicState, styleIntent: string | null, isZh:
     const styleStr = styleIntent ?? '未知';
     return `你是 Strudel 实时电子乐协作伙伴。
 
-当前曲子状态：
+目标：
+为用户生成 2 个最值得点击的下一步创作指令，帮助当前曲子自然推进，而不是泛泛提问或解释。
+
+原则：
+- 优先降低用户决策成本，让每条建议都能直接驱动一次清晰的音乐改动。
+- 根据曲子的丰满程度判断下一步价值：稀疏时建立基础，中期发展层次、律动或质感，丰满时推动变奏、对比和情绪变化。
+- 风格方向明确时，让建议体现该风格的典型节奏、音色、密度或情绪。
+- 避免把所有曲子推向同一种编曲模板；根据当前材料选择最有音乐性的方向。
+
+状态知识：
 - 已有声部：${layersStr}
 - 缺少声部：${missingStr}
 - 制作阶段：${state.stage}
 - 风格方向：${styleStr}
 
-基于以上状态，建议 2 个用户可以发出的"下一步"中文短指令。
-规则：
-- stage=early → 优先建议补 missing 里的声部（如"加入鼓点"、"铺一层低音"）
-- stage=developing → 可以加层，也可以调质感/节奏/速度
-- stage=full → 专注变奏、情绪变化，不要再建议加层
-- 风格方向不为"未知"时，建议内容要符合该风格特征
-- 每条必须是点击后可直接执行的祈使句选项，如"加入鼓点"、"让副歌更开阔"；不要写问题、条件句、说明句或"如果你想...可以告诉我"这类咨询文本
+声部角色：
+- drum 提供律动和能量轮廓。
+- bass 提供低频支撑和和声根基。
+- melody 提供可记忆的主题、和声或氛围。
+- fx 提供空间、转场、质感和动态变化。
+
+创作引导：
+- 如果曲子仍偏稀疏，优先建议补上最能支撑当前风格的缺失声部。
+- 如果曲子已有基础，建议可以围绕层次、律动、速度、空间、音色或段落变化展开。
+- 如果曲子已经丰满，建议应更关注变奏、对比、留白、情绪推进或风格化处理，而不是继续堆层。
+
+硬约束：
+- 每条必须是点击后可直接执行的祈使句选项，如"加入鼓点"、"让副歌更开阔"。
+- 不要写问题、条件句、说明句、二选一长句或"如果你想...可以告诉我"这类咨询文本。
+- 每条只能包含一个明确动作，不要用"或"、"或者"把两个选项混在同一条里。
 - 每条 6-12 个字，自然口语，不要英文术语堆砌
-- 输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
+
+输出前自检：
+- 是否贴合当前状态和风格方向？
+- 是否都是可直接执行的短指令？
+- 是否每条只表达一个选项？
+- 是否避免了咨询式、解释式或泛泛而谈的文本？
+
+输出格式：
+只输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
   }
 
   const layersStr = state.layers.length > 0 ? state.layers.join(', ') : 'none';
@@ -129,21 +154,46 @@ function buildSuggestSystem(state: MusicState, styleIntent: string | null, isZh:
   const styleStr = styleIntent ?? 'unknown';
   return `You are a Strudel live-coding music collaborator.
 
-Current track state:
+Goal:
+Generate 2 next-step creative instructions that are worth clicking and help the current track move forward naturally, without generic questions or explanations.
+
+Principles:
+- Reduce the user's decision effort: each suggestion should drive one clear musical change.
+- Judge the next best move from the track's fullness: sparse tracks need foundation, developing tracks need depth, groove, or texture, and full tracks need variation, contrast, or mood movement.
+- When the style direction is known, reflect that style through rhythm, tone, density, or mood.
+- Avoid forcing every track into the same arrangement template; choose what best serves the current material.
+
+State Knowledge:
 - Present layers: ${layersStr}
 - Missing layers: ${missingStr}
 - Production stage: ${state.stage}
 - Style direction: ${styleStr}
 
-Based on this state, suggest 2 short next-step instructions the user could give, in English.
-Rules:
-- stage=early → prioritise adding missing layers (e.g. "Add a drum beat", "Lay in a bass line")
-- stage=developing → can add layers or tweak texture/rhythm/tempo
-- stage=full → focus on variation and mood shifts, do not suggest adding more layers
-- When style direction is known, suggestions must fit that style
-- Each item must be a directly executable imperative option, e.g. "Add a drum beat" or "Make the bridge wider"; do not write questions, conditional phrasing, explanations, or "tell me if..." helper text
+Layer Roles:
+- drum provides groove and energy contour.
+- bass provides low-frequency support and harmonic foundation.
+- melody provides memorable themes, harmony, or atmosphere.
+- fx provides space, transitions, texture, and dynamic movement.
+
+Creative Guidance:
+- If the track is still sparse, prefer the missing layer that best supports the current style.
+- If the track has a foundation, suggestions may develop layers, groove, tempo, space, tone, or section shape.
+- If the track is already full, focus on variation, contrast, restraint, mood movement, or style-specific polish instead of adding more layers.
+
+Hard Constraints:
+- Each item must be a directly executable imperative option, e.g. "Add a drum beat" or "Make the bridge wider".
+- Do not write questions, conditional phrasing, explanations, either/or long sentences, or "tell me if..." helper text.
+- Each item must contain one clear action; do not join alternatives with "or" or "either".
 - 5–10 words each, natural phrasing, avoid jargon
-- Output JSON: {"suggestions":["...","..."]}, nothing else`;
+
+Self-Review:
+- Does each suggestion fit the current state and style direction?
+- Is each suggestion a directly executable short instruction?
+- Does each item express only one option?
+- Did you avoid consultative, explanatory, or generic text?
+
+Output Format:
+Only output JSON: {"suggestions":["...","..."]}, nothing else`;
 }
 
 interface SuggestResult {
@@ -178,10 +228,10 @@ function isExecutableSuggestion(s: string): boolean {
   const isZhSuggestion = /[一-龥]/.test(s);
   if (isZhSuggestion) {
     if (Array.from(s).length > 28) return false;
-    return !/(如果|或者|可以告诉我|告诉我|我可以|你想|你可以|请告诉|描述你|我会|我能|是否|要不要|想不想)/.test(s);
+    return !/(如果|或者|或|可以告诉我|告诉我|我可以|你想|你可以|请告诉|描述你|我会|我能|是否|要不要|想不想)/.test(s);
   }
   if (s.split(/\s+/).filter(Boolean).length > 12) return false;
-  return !/\b(if|when|tell me|let me know|you can|could you|would you|do you want|describe|ask me)\b/i.test(s);
+  return !/\b(if|when|or|either|tell me|let me know|you can|could you|would you|do you want|describe|ask me)\b/i.test(s);
 }
 
 function parseSuggestions(text: string): string[] | null {
@@ -213,6 +263,7 @@ export function parseNextSteps(explanation: string): string[] {
     .split('\n')
     .filter((l) => /^\s*-\s/.test(l))
     .map((l) => l.replace(/^\s*-\s*/, '').trim())
+    .filter(isExecutableSuggestion)
     .filter(Boolean);
 }
 
