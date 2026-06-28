@@ -1100,6 +1100,68 @@ function readQuotedString(source: string, start: number): { value: string; end: 
   return null;
 }
 
+function skipStringOrComment(source: string, start: number): number | null {
+  const ch = source[start];
+  if (ch === '/' && source[start + 1] === '/') {
+    const end = source.indexOf('\n', start + 2);
+    return end === -1 ? source.length : end + 1;
+  }
+  if (ch === '/' && source[start + 1] === '*') {
+    const end = source.indexOf('*/', start + 2);
+    return end === -1 ? source.length : end + 2;
+  }
+  if (ch !== '"' && ch !== "'" && ch !== '`') return null;
+
+  let i = start + 1;
+  while (i < source.length) {
+    const c = source[i];
+    i++;
+    if (c === '\\') {
+      i++;
+      continue;
+    }
+    if (c === ch) break;
+  }
+  return i;
+}
+
+function findMatchingParen(source: string, openIndex: number): number {
+  let depth = 0;
+  let i = openIndex;
+  while (i < source.length) {
+    const skipped = skipStringOrComment(source, i);
+    if (skipped !== null) {
+      i = skipped;
+      continue;
+    }
+
+    if (source[i] === '(') depth++;
+    if (source[i] === ')') {
+      depth--;
+      if (depth === 0) return i;
+    }
+    i++;
+  }
+  return -1;
+}
+
+function skipWhitespaceAndComments(source: string, start: number): number {
+  let i = start;
+  while (i < source.length) {
+    if (/\s/.test(source[i] ?? '')) {
+      i++;
+      continue;
+    }
+    const skipped = skipStringOrComment(source, i);
+    if (skipped !== null && source[i] === '/') {
+      i = skipped;
+      continue;
+    }
+    return i;
+  }
+  return i;
+}
+
 // Strudel's .arp() accepts a mini-notation pattern of numeric chord-tone
 // indices. A named mode like .arp("pinkyup") is syntactically valid JS, so the
 // proxy dry-run below cannot catch it; it only fails later when Strudel queries
@@ -1153,6 +1215,61 @@ function findInvalidArpArguments(code: string): string[] {
   return invalid;
 }
 
+// .voicing() expects chord events. note("<Cm7 ...>").dict(...).voicing() is
+// valid JavaScript and passes the proxy dry-run, but Strudel later sees no
+// chord field on the haps and throws: [voicing]: unknown chord "undefined".
+function hasNoteVoicingChain(code: string): boolean {
+  let i = 0;
+  while (i < code.length) {
+    const skipped = skipStringOrComment(code, i);
+    if (skipped !== null) {
+      i = skipped;
+      continue;
+    }
+
+    const prev = code[i - 1] ?? '';
+    const next = code[i + 4] ?? '';
+    if (
+      !code.startsWith('note', i) ||
+      /[A-Za-z0-9_$]/.test(prev) ||
+      prev === '.' ||
+      /[A-Za-z0-9_$]/.test(next)
+    ) {
+      i++;
+      continue;
+    }
+
+    let j = skipWhitespaceAndComments(code, i + 4);
+    if (code[j] !== '(') {
+      i++;
+      continue;
+    }
+    const close = findMatchingParen(code, j);
+    if (close === -1) return false;
+    j = close + 1;
+
+    while (j < code.length) {
+      j = skipWhitespaceAndComments(code, j);
+      if (code[j] !== '.') break;
+      j++;
+
+      const nameStart = j;
+      while (/[A-Za-z0-9_$]/.test(code[j] ?? '')) j++;
+      const methodName = code.slice(nameStart, j);
+      const argsStart = skipWhitespaceAndComments(code, j);
+      if (methodName === 'voicing' && code[argsStart] === '(') return true;
+      if (code[argsStart] !== '(') break;
+
+      const argsEnd = findMatchingParen(code, argsStart);
+      if (argsEnd === -1) return false;
+      j = argsEnd + 1;
+    }
+
+    i = j;
+  }
+  return false;
+}
+
 // --- Code validation (no audio engine needed) ---
 
 /** @deprecated Use validateCodeRuntime directly. */
@@ -1203,6 +1320,14 @@ export function validateCodeRuntime(code: string): ValidationResult {
         ok: false,
         kind: 'runtime',
         error: `Invalid .arp() argument(s): ${quoted}. Strudel .arp() selects chord tones by numeric indices only, e.g. .arp("0 1 2 3") or .arp("3 2 1 0"); named modes such as "pinkyup" are not supported.`,
+      };
+    }
+    // note(...).voicing() has no chord field, so Strudel later reports unknown chord "undefined".
+    if (hasNoteVoicingChain(code)) {
+      return {
+        ok: false,
+        kind: 'runtime',
+        error: 'Use chord(...) before .voicing(); note(...) produces note events, so Strudel sees no chord field and crashes with unknown chord "undefined".',
       };
     }
     return { ok: true };
