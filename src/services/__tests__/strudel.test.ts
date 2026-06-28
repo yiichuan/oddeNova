@@ -46,6 +46,38 @@ function createFakeAudioContext(state: AudioContextState | 'interrupted') {
   } as unknown as AudioContext & { state: AudioContextState | 'interrupted' };
 }
 
+describe('Strudel code validation', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('../../lib/soundfont-loader');
+    vi.doUnmock('../../lib/analytics');
+  });
+
+  it('rejects named .arp() modes before playback', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = validateCodeRuntime('({ arp() { return this } }).arp("pinkyup")');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Invalid .arp() argument');
+      expect(result.error).toContain('numeric indices');
+    }
+  });
+
+  it('allows numeric .arp() index patterns', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = validateCodeRuntime('({ arp() { return this } }).arp("0 [0,2] 1 [0,2]")');
+
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe('StrudelService initialization recovery', () => {
   afterEach(() => {
     vi.resetModules();
