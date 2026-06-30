@@ -255,6 +255,20 @@ describe('ConversationView chat streaming', () => {
     expect(branchButtons).toHaveLength(1);
   });
 
+  it('hides retry/branch while the final assistant message is still loading', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: '写一段 indie folk', timestamp: 1 },
+      { id: 'a1', role: 'assistant', content: '基础语法没问题。现在逐步加回特性。', timestamp: 2 },
+      { id: 'p1', role: 'progress', content: 'mask 的 setCode 成功了。现在 validate。', timestamp: 3, progressKind: 'thinking' },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    expect(container.querySelectorAll('button[title="Retry"]')).toHaveLength(0);
+    expect(container.querySelectorAll('button[title="Branch conversation from here"]')).toHaveLength(0);
+  });
+
   it('renders assistant markdown without exposing formatting markers', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [

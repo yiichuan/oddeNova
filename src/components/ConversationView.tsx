@@ -444,6 +444,19 @@ export default function ConversationView({
     return ids;
   }, [messages]);
 
+  const loadingTurnAssistantIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!isLoading) return ids;
+
+    const lastUserIndex = messages.findLastIndex((m) => m.role === 'user');
+    if (lastUserIndex === -1) return ids;
+
+    for (const msg of messages.slice(lastUserIndex + 1)) {
+      if (msg.role === 'assistant') ids.add(msg.id);
+    }
+    return ids;
+  }, [messages, isLoading]);
+
   // The reasoning currently being streamed (not yet absorbed by an assistant message).
   // Use findLast to get the most recent one, preventing the previous round's reasoning from being
   // cut off by a tool_call message across multiple iterations and causing reasoningPhaseActive to malfunction.
@@ -584,8 +597,8 @@ export default function ConversationView({
               {/* Action buttons — bottom-left, always visible. Hidden on greeting
                   bubbles (no prior user turn to retry/branch from) and on
                   intermediate narration (shown once per turn, on the final
-                  assistant message). */}
-              {!msg.isGreeting && turnFinalAssistantIds.has(msg.id) && (
+                  assistant message after the turn finishes). */}
+              {!msg.isGreeting && turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id) && (
                 <div className="absolute -bottom-5 left-0 flex items-center">
                   <button
                     onClick={() => onRetry(msg.id)}
