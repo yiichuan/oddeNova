@@ -275,6 +275,23 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelectorAll('li')).toHaveLength(2);
   });
 
+  it('renders a horizontal rule for thematic breaks instead of literal dashes', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '方向一\n\n---\n\n方向二',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    expect(container.querySelectorAll('hr')).toHaveLength(1);
+    expect(container.textContent).not.toContain('---');
+  });
+
   it('renders safe links and drops unsafe markdown hrefs', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [

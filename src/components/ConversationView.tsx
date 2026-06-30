@@ -163,7 +163,8 @@ function MarkdownText({ content }: { content: string }) {
       !/^\s{0,3}#{1,6}\s+/.test(lines[i]) &&
       !/^\s*([-*+])\s+/.test(lines[i]) &&
       !/^\s*\d+\.\s+/.test(lines[i]) &&
-      !/^\s*>\s?/.test(lines[i])
+      !/^\s*>\s?/.test(lines[i]) &&
+      !/^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(lines[i])
     ) {
       paragraph.push(lines[i]);
       i += 1;
@@ -203,6 +204,12 @@ function MarkdownText({ content }: { content: string }) {
           {parseInlineMarkdown(heading[2], `md-heading-${key}`)}
         </div>,
       );
+      i += 1;
+      continue;
+    }
+
+    if (/^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(line)) {
+      blocks.push(<hr key={`md-hr-${key++}`} className="my-3 border-0 border-t border-white/10" />);
       i += 1;
       continue;
     }
