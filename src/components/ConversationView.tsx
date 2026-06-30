@@ -92,7 +92,7 @@ function parseInlineMarkdown(text: string, keyPrefix: string, tone: MarkdownTone
         break;
       }
       nodes.push(
-        <code key={`${keyPrefix}-code-${key++}`} className={`rounded bg-white/10 px-1 py-0.5 font-mono text-[0.92em] ${inlineCodeToneClass[tone]}`}>
+        <code key={`${keyPrefix}-code-${key++}`} className={`rounded bg-white/10 px-1 py-0.5 font-mono text-[0.92em] [overflow-wrap:anywhere] ${inlineCodeToneClass[tone]}`}>
           {text.slice(next + 1, end)}
         </code>,
       );
@@ -344,7 +344,7 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
     );
   }
 
-  return <div className="space-y-2 break-words">{blocks}</div>;
+  return <div data-markdown-text className="min-w-0 max-w-full space-y-2 break-words [overflow-wrap:anywhere]">{blocks}</div>;
 }
 
 interface ConversationViewProps {
@@ -371,8 +371,12 @@ export default function ConversationView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
+  const userScrollIntentRef = useRef(false);
+  const userScrollIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reasoningPanelRef = useRef<HTMLDivElement>(null);
   const reasoningUserScrolledRef = useRef(false);
+  const reasoningUserScrollIntentRef = useRef(false);
+  const reasoningUserScrollIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const isMobile = useIsMobile();
@@ -385,6 +389,7 @@ export default function ConversationView({
     const el = scrollRef.current;
     if (!el) return;
     const handleScroll = () => {
+      if (!userScrollIntentRef.current) return;
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       userScrolledRef.current = distFromBottom > 80;
     };
@@ -414,6 +419,26 @@ export default function ConversationView({
       setLongPressedId(id);
     }, 500);
   };
+  const markUserScrollIntent = () => {
+    userScrollIntentRef.current = true;
+    if (userScrollIntentTimerRef.current !== null) {
+      clearTimeout(userScrollIntentTimerRef.current);
+    }
+    userScrollIntentTimerRef.current = setTimeout(() => {
+      userScrollIntentRef.current = false;
+      userScrollIntentTimerRef.current = null;
+    }, 250);
+  };
+  const markReasoningUserScrollIntent = () => {
+    reasoningUserScrollIntentRef.current = true;
+    if (reasoningUserScrollIntentTimerRef.current !== null) {
+      clearTimeout(reasoningUserScrollIntentTimerRef.current);
+    }
+    reasoningUserScrollIntentTimerRef.current = setTimeout(() => {
+      reasoningUserScrollIntentRef.current = false;
+      reasoningUserScrollIntentTimerRef.current = null;
+    }, 250);
+  };
   const getMobileRollbackBubbleProps = (id: string): HTMLAttributes<HTMLDivElement> => (
     isMobile
       ? {
@@ -436,6 +461,12 @@ export default function ConversationView({
   useEffect(() => () => {
     if (longPressTimerRef.current !== null) {
       clearTimeout(longPressTimerRef.current);
+    }
+    if (userScrollIntentTimerRef.current !== null) {
+      clearTimeout(userScrollIntentTimerRef.current);
+    }
+    if (reasoningUserScrollIntentTimerRef.current !== null) {
+      clearTimeout(reasoningUserScrollIntentTimerRef.current);
     }
   }, []);
 
@@ -547,7 +578,15 @@ export default function ConversationView({
       .every((m) => m.role === 'progress' && m.progressKind === 'reasoning');
 
   return (
-    <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative" style={{ scrollbarGutter: 'stable' }}>
+    <div
+      ref={scrollRef}
+      onWheel={markUserScrollIntent}
+      onTouchMove={markUserScrollIntent}
+      onPointerDown={markUserScrollIntent}
+      onKeyDown={markUserScrollIntent}
+      className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative"
+      style={{ scrollbarGutter: 'stable' }}
+    >
       {messages.length === 0 && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
           <span>{t('startCreating')}</span>
@@ -567,18 +606,18 @@ export default function ConversationView({
           if (msg.progressKind === 'thinking') {
             return (
               <div key={msg.id} className="flex justify-start animate-fade-in-up">
-                <div className="text-xs text-text-secondary px-1 flex items-start gap-1.5">
+                <div className="w-full min-w-0 max-w-full text-xs text-text-secondary px-1 flex items-start gap-1.5">
                   <span className="opacity-70 mt-0.5">{progressIcon(msg)}</span>
-                  <span>{stripMarkdown(msg.content)}</span>
+                  <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{stripMarkdown(msg.content)}</span>
                 </div>
               </div>
             );
           }
           return (
             <div key={msg.id} className="flex justify-start animate-fade-in-up">
-              <div className="text-[11px] text-text-muted/70 px-1 flex items-center gap-1.5">
+              <div className="w-full min-w-0 max-w-full text-[11px] text-text-muted/70 px-1 flex items-center gap-1.5">
                 <span className="opacity-60">{progressIcon(msg)}</span>
-                <span>{msg.content}</span>
+                <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{msg.content}</span>
               </div>
             </div>
           );
@@ -690,19 +729,25 @@ export default function ConversationView({
 
       {isLoading && showThinkingIndicator && (
         <div className="flex justify-start animate-fade-in-up">
-          <div className="flex items-start gap-1.5 px-1.5">
+          <div className="flex w-full min-w-0 max-w-full items-start gap-1.5 px-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse flex-shrink-0" />
-            <div className="min-w-0">
+            <div className="min-w-0 max-w-full flex-1">
               <div className="text-sm text-text-primary">{t('thinking')}</div>
               {streamingReasoningMsg && streamingReasoningMsg.content && reasoningPhaseActive && (
                 <div
+                  data-reasoning-panel
                   ref={reasoningPanelRef}
+                  onWheel={markReasoningUserScrollIntent}
+                  onTouchMove={markReasoningUserScrollIntent}
+                  onPointerDown={markReasoningUserScrollIntent}
+                  onKeyDown={markReasoningUserScrollIntent}
                   onScroll={(e) => {
+                    if (!reasoningUserScrollIntentRef.current) return;
                     const el = e.currentTarget;
                     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
                     reasoningUserScrolledRef.current = distFromBottom > 20;
                   }}
-                  className="mt-1.5 max-h-40 overflow-y-auto text-[11px] leading-relaxed text-text-muted/60"
+                  className="mt-1.5 min-w-0 max-w-full max-h-40 overflow-y-auto text-[11px] leading-relaxed text-text-muted/60"
                 >
                   <MarkdownText content={streamingReasoningMsg.content} tone="muted" />
                 </div>

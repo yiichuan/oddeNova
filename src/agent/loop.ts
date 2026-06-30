@@ -11,11 +11,11 @@ import { dispatchToolCall, type ToolCallRequest, type ToolCallOutcome } from './
 import {
   CommitSignal,
   getOpenAIToolSchemas,
+  validateCommittedCode,
   type AgentState,
   type ToolContext,
 } from './tools';
 import { parseScore, summariseScore } from './parser';
-import { validateCodeRuntime } from '../services/strudel';
 import { getErrorMessage } from '../lib/errors';
 
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
@@ -354,7 +354,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   if (!committed && !signal?.aborted) {
     const codeChanged = !!state.code && state.code !== initialCode;
     if (codeChanged) {
-      const v = validateCodeRuntime(state.code);
+      const v = validateCommittedCode(state.code, isZh);
       if (v.ok) {
         committed = true;
         finalCode = state.code;

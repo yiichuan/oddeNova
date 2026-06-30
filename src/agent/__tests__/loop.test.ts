@@ -6,7 +6,8 @@ vi.mock('../../services/strudel', () => ({
   normalizeCode: vi.fn((code: string) => code),
 }));
 
-import { runAgentLoop, type LLMCaller, type ConversationTurn } from '../loop';
+import { runAgentLoop, type LLMCaller, type ConversationTurn, type ProgressEvent } from '../loop';
+import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
 // Minimal LLMCaller that returns a commit tool call on the first invocation,
 // capturing the messages array it receives for assertion.
@@ -140,6 +141,168 @@ describe('runAgentLoop — pure chat replies', () => {
   });
 });
 
+describe('runAgentLoop — pending composition confirmation', () => {
+  const pendingConfirmationHistory: ConversationTurn[] = [
+    { role: 'user', content: '一想到上海就激动' },
+    {
+      role: 'assistant',
+      content: '可以做一首 130 BPM 的都市电子小曲。要不要我现在写出来？',
+    },
+  ];
+
+  it('keeps music tools available for the model to decide on an ambiguous reply', async () => {
+    const toolCounts: number[] = [];
+    const llm: LLMCaller = {
+      async chatWithTools(_messages, tools) {
+        toolCounts.push(tools.length);
+        return {
+          content: '懂，这更像是在补充感受。想写的话你直接说“写吧”。',
+          toolCalls: [],
+        };
+      },
+    };
+
+    const result = await runAgentLoop({
+      initialCode: '',
+      instruction: '我果然是住不了太村的地方',
+      systemPrompt: 'You are a music assistant.',
+      llm,
+      conversationHistory: pendingConfirmationHistory,
+    });
+
+    expect(toolCounts[0]).toBeGreaterThan(0);
+    expect(result).toMatchObject({
+      code: '',
+      explanation: '懂，这更像是在补充感受。想写的话你直接说“写吧”。',
+      committed: false,
+    });
+  });
+
+  it('keeps music tools available for an explicit confirmation reply', async () => {
+    const toolCounts: number[] = [];
+    const llm: LLMCaller = {
+      async chatWithTools(_messages, tools) {
+        toolCounts.push(tools.length);
+        return {
+          content: null,
+          toolCalls: [
+            {
+              id: 'tc-1',
+              name: 'setCode',
+              arguments: JSON.stringify({ code: 's("bd")' }),
+            },
+            {
+              id: 'tc-2',
+              name: 'commit',
+              arguments: JSON.stringify({ explanation: '开写。' }),
+            },
+          ],
+        };
+      },
+    };
+
+    const result = await runAgentLoop({
+      initialCode: '',
+      instruction: '写吧',
+      systemPrompt: 'You are a music assistant.',
+      llm,
+      conversationHistory: pendingConfirmationHistory,
+    });
+
+    expect(toolCounts[0]).toBeGreaterThan(0);
+    expect(result).toMatchObject({
+      code: 's("bd")',
+      explanation: '开写。',
+      committed: true,
+    });
+  });
+});
+
+describe('runAgentLoop — validates the committed state code', () => {
+  it('does not commit stale state when validate checked a different temporary code', async () => {
+    const badCode = 'stack(s("bd") s("hh"))';
+    const fixedCode = 'stack(s("bd"), s("hh"))';
+    vi.mocked(validateCodeRuntime).mockImplementation((code: string) => (
+      code === badCode
+        ? { ok: false, error: 'missing ) after argument list', kind: 'syntax' }
+        : { ok: true }
+    ));
+    vi.mocked(validateCodeTranspiler).mockReturnValue({ ok: true });
+
+    let calls = 0;
+    const events: ProgressEvent[] = [];
+    const llm: LLMCaller = {
+      async chatWithTools() {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            content: null,
+            toolCalls: [
+              {
+                id: 'tc-1',
+                name: 'setCode',
+                arguments: JSON.stringify({ code: badCode }),
+              },
+              {
+                id: 'tc-2',
+                name: 'validate',
+                arguments: JSON.stringify({ code: fixedCode }),
+              },
+              {
+                id: 'tc-3',
+                name: 'commit',
+                arguments: JSON.stringify({ explanation: 'done' }),
+              },
+            ],
+          };
+        }
+        return {
+          content: null,
+          toolCalls: [
+            {
+              id: 'tc-4',
+              name: 'setCode',
+              arguments: JSON.stringify({ code: fixedCode }),
+            },
+            {
+              id: 'tc-5',
+              name: 'validate',
+              arguments: JSON.stringify({}),
+            },
+            {
+              id: 'tc-6',
+              name: 'commit',
+              arguments: JSON.stringify({ explanation: 'fixed' }),
+            },
+          ],
+        };
+      },
+    };
+
+    const result = await runAgentLoop({
+      initialCode: '',
+      instruction: '写一段鼓',
+      systemPrompt: 'You are a music assistant.',
+      llm,
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(result).toMatchObject({
+      code: fixedCode,
+      explanation: 'fixed',
+      committed: true,
+      iterations: 2,
+    });
+    expect(events).toContainEqual({
+      kind: 'tool_result',
+      name: 'commit',
+      ok: false,
+      error: expect.stringContaining('missing ) after argument list'),
+    });
+    expect(events).toContainEqual({ kind: 'commit', code: fixedCode });
+  });
+});
+
 describe('runAgentLoop — timeout warning', () => {
   it('uses a 10 minute default timeout and describes it in minutes for Chinese instructions', async () => {
     const now = vi.spyOn(Date, 'now')
@@ -155,7 +318,7 @@ describe('runAgentLoop — timeout warning', () => {
             {
               id: 'tc-1',
               name: 'validate',
-              arguments: JSON.stringify({ code: 's("bd")' }),
+              arguments: JSON.stringify({}),
             },
           ],
         };
@@ -164,7 +327,7 @@ describe('runAgentLoop — timeout warning', () => {
 
     try {
       await runAgentLoop({
-        initialCode: '',
+        initialCode: 's("bd")',
         instruction: '写一段鼓',
         systemPrompt: 'You are a music assistant.',
         llm,
@@ -194,7 +357,7 @@ describe('runAgentLoop — timeout warning', () => {
             {
               id: 'tc-1',
               name: 'validate',
-              arguments: JSON.stringify({ code: 's("bd")' }),
+              arguments: JSON.stringify({}),
             },
           ],
         };
@@ -203,7 +366,7 @@ describe('runAgentLoop — timeout warning', () => {
 
     try {
       await runAgentLoop({
-        initialCode: '',
+        initialCode: 's("bd")',
         instruction: 'add drums',
         systemPrompt: 'You are a music assistant.',
         llm,

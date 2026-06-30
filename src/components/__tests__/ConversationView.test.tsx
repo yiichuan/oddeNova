@@ -56,6 +56,27 @@ function renderConversationView(
   return { container, root };
 }
 
+function renderConversationViewInto(
+  root: Root,
+  messages: ChatMessage[],
+  onRollback = vi.fn(),
+  isLoading = false,
+  showThinkingIndicator = true,
+) {
+  act(() => {
+    root.render(
+      <ConversationView
+        messages={messages}
+        isLoading={isLoading}
+        showThinkingIndicator={showThinkingIndicator}
+        onRollback={onRollback}
+        onBranch={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+  });
+}
+
 describe('ConversationView mobile interactions', () => {
   const roots: Root[] = [];
 
@@ -333,6 +354,117 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelector('strong')?.classList.contains('text-text-primary')).toBe(false);
     expect(container.querySelector('code')?.textContent).toBe('gm_electric_bass_finger');
     expect(container.querySelectorAll('li')).toHaveLength(2);
+  });
+
+  it('keeps streaming reasoning text constrained and wrappable inside the chat width', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: '来点好听的',
+        timestamp: 1,
+      },
+      {
+        id: 'r1',
+        role: 'progress',
+        content: '实际上我觉得这个由子的和弦进行用 scale 不太好直接表达 abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz',
+        timestamp: 2,
+        progressKind: 'reasoning',
+      },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    const reasoningPanel = container.querySelector<HTMLElement>('[data-reasoning-panel]');
+    const markdownRoot = reasoningPanel?.querySelector<HTMLElement>('[data-markdown-text]');
+
+    expect(reasoningPanel?.classList.contains('min-w-0')).toBe(true);
+    expect(reasoningPanel?.classList.contains('max-w-full')).toBe(true);
+    expect(markdownRoot?.classList.contains('min-w-0')).toBe(true);
+    expect(markdownRoot?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
+  });
+
+  it('keeps following streaming reasoning after a non-user scroll event', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: '写一段 lo-fi', timestamp: 1 },
+      {
+        id: 'r1',
+        role: 'progress',
+        content: '先定一个温暖的节奏。',
+        timestamp: 2,
+        progressKind: 'reasoning',
+      },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    const reasoningPanel = container.querySelector<HTMLElement>('[data-reasoning-panel]');
+    expect(reasoningPanel).not.toBeNull();
+    Object.defineProperty(reasoningPanel, 'scrollHeight', { configurable: true, value: 200 });
+    Object.defineProperty(reasoningPanel, 'clientHeight', { configurable: true, value: 100 });
+    reasoningPanel!.scrollTop = 60;
+
+    act(() => {
+      reasoningPanel!.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    Object.defineProperty(reasoningPanel, 'scrollHeight', { configurable: true, value: 300 });
+    renderConversationViewInto(
+      root,
+      [
+        messages[0],
+        {
+          ...messages[1],
+          content: `${messages[1].content}\n继续追加更多推理内容。`,
+        },
+      ],
+      vi.fn(),
+      true,
+    );
+
+    expect(reasoningPanel!.scrollTop).toBe(300);
+  });
+
+  it('keeps the conversation pinned after a non-user scroll event', () => {
+    setMobileViewport(false);
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: '写一段 lo-fi', timestamp: 1 },
+      {
+        id: 'r1',
+        role: 'progress',
+        content: '先定一个温暖的节奏。',
+        timestamp: 2,
+        progressKind: 'reasoning',
+      },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    const scroller = container.querySelector<HTMLElement>('.conversation-scroll');
+    expect(scroller).not.toBeNull();
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 400 });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 200 });
+    scroller!.scrollTop = 100;
+    scrollIntoView.mockClear();
+
+    act(() => {
+      scroller!.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    renderConversationViewInto(
+      root,
+      [
+        ...messages,
+        { id: 'p1', role: 'progress', content: '继续验证一下。', timestamp: 3, progressKind: 'thinking' },
+      ],
+      vi.fn(),
+      true,
+    );
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant' });
   });
 
   it('keeps ordered list items in one list when items have continuation lines', () => {

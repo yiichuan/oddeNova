@@ -46,6 +46,30 @@ export class CommitSignal extends Error {
   }
 }
 
+function validateCurrentCode(code: string, zh: boolean): ToolResult {
+  const runtime = validateCodeRuntime(code);
+  if (!runtime.ok) {
+    if (runtime.kind === 'syntax') {
+      return { ok: false, error: zh
+        ? `语法错误: ${runtime.error}`
+        : `Syntax error: ${runtime.error}` };
+    }
+    return { ok: false, error: zh
+      ? `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）`
+      : `Runtime error: ${runtime.error} (do not use TidalCycles-specific APIs such as by/sometimesBy/someCyclesBy/within; use .sometimes(fast(2)) or .every(N, fast(2)) instead)` };
+  }
+  const transpilerCheck = validateCodeTranspiler(code);
+  return transpilerCheck.ok
+    ? { ok: true, data: { valid: true } }
+    : { ok: false, error: zh
+        ? `Mini-notation 错误: ${transpilerCheck.error}`
+        : `Mini-notation error: ${transpilerCheck.error}` };
+}
+
+export function validateCommittedCode(code: string, isZh = true): ToolResult {
+  return validateCurrentCode(code, isZh);
+}
+
 // ----- tool definitions ------------------------------------------------------
 
 export const TOOLS: ToolDef[] = [
@@ -65,26 +89,12 @@ export const TOOLS: ToolDef[] = [
     },
     handler: (args, ctx) => {
       const zh = ctx.isZh ?? true;
-      const code = typeof args.code === 'string' && args.code.trim() ? args.code : ctx.state.code;
-      // validateCodeRuntime handles JS syntax check (engine not ready, kind:'syntax')
-      // and Proxy dry-run (engine ready, kind:'runtime') in a single call.
-      const runtime = validateCodeRuntime(code);
-      if (!runtime.ok) {
-        if (runtime.kind === 'syntax') {
-          return { ok: false, error: zh
-            ? `语法错误: ${runtime.error}`
-            : `Syntax error: ${runtime.error}` };
-        }
+      if (typeof args.code === 'string' && args.code.trim() && args.code.trim() !== ctx.state.code) {
         return { ok: false, error: zh
-          ? `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）`
-          : `Runtime error: ${runtime.error} (do not use TidalCycles-specific APIs such as by/sometimesBy/someCyclesBy/within; use .sometimes(fast(2)) or .every(N, fast(2)) instead)` };
+          ? 'validate 只能校验当前 setCode 写入的代码；请先用 setCode 保存修正后的完整代码，再调用 validate。'
+          : 'validate can only check the current code written by setCode; call setCode with the corrected full code before validate.' };
       }
-      const transpilerCheck = validateCodeTranspiler(code);
-      return transpilerCheck.ok
-        ? { ok: true, data: { valid: true } }
-        : { ok: false, error: zh
-            ? `Mini-notation 错误: ${transpilerCheck.error}`
-            : `Mini-notation error: ${transpilerCheck.error}` };
+      return validateCurrentCode(ctx.state.code, zh);
     },
   },
 
@@ -139,6 +149,8 @@ export const TOOLS: ToolDef[] = [
       required: ['explanation'],
     },
     handler: (_args, ctx) => {
+      const validation = validateCurrentCode(ctx.state.code, ctx.isZh ?? true);
+      if (!validation.ok) return validation;
       // Always use the tool-managed state.code — never let the LLM pass its own
       // code blob, which would bypass setcps and other accumulated edits.
       // Normalize multiline strings so Strudel's evaluator doesn't choke.

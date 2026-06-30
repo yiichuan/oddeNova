@@ -83,7 +83,11 @@ describe('active system prompt export contract', () => {
 
     expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('ZH_PERSONA_BLOCK');
     expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('你是 Nocturne');
+    expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('必须先得到用户的明确确认');
+    expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('补充感受');
     expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('EN_PERSONA_BLOCK');
     expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('You are Nocturne');
+    expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('must first receive explicit confirmation');
+    expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('adding feelings');
   });
 });
