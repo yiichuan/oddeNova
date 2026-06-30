@@ -8,10 +8,22 @@ type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
 };
 
+type MarkdownTone = 'default' | 'muted';
+
 const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
   userSelect: 'none',
   WebkitUserSelect: 'none',
   WebkitTouchCallout: 'none',
+};
+
+const inlineCodeToneClass: Record<MarkdownTone, string> = {
+  default: 'text-[#B9D7FF]',
+  muted: 'text-text-secondary/80',
+};
+
+const blockCodeToneClass: Record<MarkdownTone, string> = {
+  default: 'text-[#B9D7FF]',
+  muted: 'text-text-secondary/75',
 };
 
 function stripMarkdown(text: string): string {
@@ -39,7 +51,7 @@ function isSafeUrl(url: string): boolean {
   }
 }
 
-function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+function parseInlineMarkdown(text: string, keyPrefix: string, tone: MarkdownTone = 'default'): ReactNode[] {
   const nodes: ReactNode[] = [];
   let i = 0;
   let key = 0;
@@ -80,7 +92,7 @@ function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
         break;
       }
       nodes.push(
-        <code key={`${keyPrefix}-code-${key++}`} className="rounded bg-white/10 px-1 py-0.5 font-mono text-[0.92em] text-[#B9D7FF]">
+        <code key={`${keyPrefix}-code-${key++}`} className={`rounded bg-white/10 px-1 py-0.5 font-mono text-[0.92em] ${inlineCodeToneClass[tone]}`}>
           {text.slice(next + 1, end)}
         </code>,
       );
@@ -110,7 +122,7 @@ function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
             rel="noreferrer"
             className="text-[#93C2FF] underline decoration-[#93C2FF]/40 underline-offset-2 hover:decoration-[#93C2FF]"
           >
-            {parseInlineMarkdown(label, `${keyPrefix}-link-${key}`)}
+            {parseInlineMarkdown(label, `${keyPrefix}-link-${key}`, tone)}
           </a>,
         );
       }
@@ -132,13 +144,13 @@ function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
     if (marker === '**' || marker === '__') {
       nodes.push(
         <strong key={`${keyPrefix}-strong-${key++}`} className="font-semibold">
-          {parseInlineMarkdown(inner, `${keyPrefix}-strong-${key}`)}
+          {parseInlineMarkdown(inner, `${keyPrefix}-strong-${key}`, tone)}
         </strong>,
       );
     } else {
       nodes.push(
         <em key={`${keyPrefix}-em-${key++}`} className="italic">
-          {parseInlineMarkdown(inner, `${keyPrefix}-em-${key}`)}
+          {parseInlineMarkdown(inner, `${keyPrefix}-em-${key}`, tone)}
         </em>,
       );
     }
@@ -148,7 +160,7 @@ function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
-function MarkdownText({ content }: { content: string }) {
+function MarkdownText({ content, tone = 'default' }: { content: string; tone?: MarkdownTone }) {
   const lines = content.split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -176,6 +188,14 @@ function MarkdownText({ content }: { content: string }) {
     return paragraph.join('\n');
   };
 
+  const nextNonBlankLineIndex = (start: number) => {
+    let next = start;
+    while (next < lines.length && lines[next].trim() === '') {
+      next += 1;
+    }
+    return next;
+  };
+
   while (i < lines.length) {
     const line = lines[i];
     const trimmed = line.trim();
@@ -194,7 +214,7 @@ function MarkdownText({ content }: { content: string }) {
       }
       if (i < lines.length) i += 1;
       blocks.push(
-        <pre key={`md-code-${key++}`} className="my-2 overflow-x-auto rounded-md bg-white/5 p-2 font-mono text-[11px] leading-relaxed text-[#B9D7FF]">
+        <pre key={`md-code-${key++}`} className={`my-2 overflow-x-auto rounded-md bg-white/5 p-2 font-mono text-[11px] leading-relaxed ${blockCodeToneClass[tone]}`}>
           <code>{code.join('\n')}</code>
         </pre>,
       );
@@ -205,7 +225,7 @@ function MarkdownText({ content }: { content: string }) {
     if (heading) {
       blocks.push(
         <div key={`md-heading-${key++}`} className="mt-1 font-semibold text-text-primary">
-          {parseInlineMarkdown(heading[2], `md-heading-${key}`)}
+          {parseInlineMarkdown(heading[2], `md-heading-${key}`, tone)}
         </div>,
       );
       i += 1;
@@ -235,11 +255,17 @@ function MarkdownText({ content }: { content: string }) {
           i += 1;
         }
         items.push(parts.join('\n'));
+        if (i < lines.length && lines[i].trim() === '') {
+          const next = nextNonBlankLineIndex(i);
+          if (next < lines.length && /^\s*([-*+])\s+(.+)$/.test(lines[next])) {
+            i = next;
+          }
+        }
       }
       blocks.push(
         <ul key={`md-ul-${key++}`} className="my-1 list-disc space-y-0.5 pl-4">
           {items.map((item, idx) => (
-            <li key={`md-ul-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ul-${key}-${idx}`)}</li>
+            <li key={`md-ul-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ul-${key}-${idx}`, tone)}</li>
           ))}
         </ul>,
       );
@@ -263,11 +289,17 @@ function MarkdownText({ content }: { content: string }) {
           i += 1;
         }
         items.push(parts.join('\n'));
+        if (i < lines.length && lines[i].trim() === '') {
+          const next = nextNonBlankLineIndex(i);
+          if (next < lines.length && /^\s*\d+\.\s+(.+)$/.test(lines[next])) {
+            i = next;
+          }
+        }
       }
       blocks.push(
         <ol key={`md-ol-${key++}`} className="my-1 list-decimal space-y-0.5 pl-4">
           {items.map((item, idx) => (
-            <li key={`md-ol-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ol-${key}-${idx}`)}</li>
+            <li key={`md-ol-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ol-${key}-${idx}`, tone)}</li>
           ))}
         </ol>,
       );
@@ -285,7 +317,7 @@ function MarkdownText({ content }: { content: string }) {
       }
       blocks.push(
         <blockquote key={`md-quote-${key++}`} className="my-1 border-l border-[#93C2FF]/30 pl-3 text-text-secondary">
-          {parseInlineMarkdown(quoted.join('\n'), `md-quote-${key}`)}
+          {parseInlineMarkdown(quoted.join('\n'), `md-quote-${key}`, tone)}
         </blockquote>,
       );
       continue;
@@ -299,7 +331,7 @@ function MarkdownText({ content }: { content: string }) {
       const fallbackKey = key++;
       blocks.push(
         <p key={`md-p-${fallbackKey}`} className="whitespace-pre-wrap break-words">
-          {parseInlineMarkdown(line, `md-p-${fallbackKey}`)}
+          {parseInlineMarkdown(line, `md-p-${fallbackKey}`, tone)}
         </p>,
       );
       i += 1;
@@ -307,7 +339,7 @@ function MarkdownText({ content }: { content: string }) {
     }
     blocks.push(
       <p key={`md-p-${key++}`} className="whitespace-pre-wrap break-words">
-        {parseInlineMarkdown(paragraph, `md-p-${key}`)}
+        {parseInlineMarkdown(paragraph, `md-p-${key}`, tone)}
       </p>,
     );
   }
@@ -672,7 +704,7 @@ export default function ConversationView({
                   }}
                   className="mt-1.5 max-h-40 overflow-y-auto text-[11px] leading-relaxed text-text-muted/60"
                 >
-                  <MarkdownText content={streamingReasoningMsg.content} />
+                  <MarkdownText content={streamingReasoningMsg.content} tone="muted" />
                 </div>
               )}
             </div>

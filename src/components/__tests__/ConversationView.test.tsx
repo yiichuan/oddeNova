@@ -343,6 +343,34 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelector('ol > li')?.textContent).toContain('Kick on 1 and 3');
   });
 
+  it('keeps ordered list items in one list when blank lines separate items', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'r1',
+        role: 'progress',
+        content: [
+          '1. Bass: Bouncy, tight, synth bass line.',
+          '   Root-fifth octave jumps.',
+          '',
+          '1. Chords/Pad: Warm synth pad for harmony.',
+          '   Extended chords, bright but not cheesy.',
+          '',
+          '1. Lead/Melody: Bright synth lead.',
+          '   Catchy but not overwhelming.',
+        ].join('\n'),
+        timestamp: 1,
+        progressKind: 'reasoning',
+      },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    expect(container.querySelectorAll('ol')).toHaveLength(1);
+    expect(container.querySelectorAll('ol > li')).toHaveLength(3);
+    expect(container.querySelectorAll('ol > li')[1].textContent).toContain('Extended chords');
+  });
+
   it('keeps rendering when streaming markdown ends at an unfinished block marker', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
