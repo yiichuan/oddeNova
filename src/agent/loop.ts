@@ -116,7 +116,13 @@ export interface RunAgentResult {
 }
 
 const DEFAULT_MAX_ITER = 30;
-const DEFAULT_TIMEOUT = 300_000;
+const DEFAULT_TIMEOUT = 10 * 60_000;
+
+function formatTimeoutMinutes(timeoutMs: number, isZh: boolean): string {
+  const minutes = Math.ceil(timeoutMs / 60_000);
+  if (isZh) return `${minutes} 分钟`;
+  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+}
 
 export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResult> {
   const {
@@ -174,7 +180,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
   outer: for (let i = 0; i < maxIter; i++) {
     if (Date.now() - start > timeoutMs) {
-      onProgress?.({ kind: 'warn', message: isZh ? `超时 ${timeoutMs}ms，强制结束` : `Timed out after ${timeoutMs}ms, force-stopping` });
+      const timeoutLabel = formatTimeoutMinutes(timeoutMs, isZh);
+      onProgress?.({ kind: 'warn', message: isZh ? `超时 ${timeoutLabel}，强制结束` : `Timed out after ${timeoutLabel}, force-stopping` });
       break;
     }
     if (signal?.aborted) {

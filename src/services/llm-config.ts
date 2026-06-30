@@ -77,7 +77,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   glm: {
     label: 'GLM',
     baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-5.1',
+    model: 'glm-5.2',
     protocol: 'openai',
     models: ['glm-5.2', 'glm-5.1', 'glm-5.1-air', 'glm-5'],
   },
