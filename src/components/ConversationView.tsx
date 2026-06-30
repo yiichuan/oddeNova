@@ -17,7 +17,7 @@ const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
 };
 
 const inlineCodeToneClass: Record<MarkdownTone, string> = {
-  default: 'text-[#B9D7FF]',
+  default: 'text-text-secondary',
   muted: 'text-text-secondary/80',
 };
 

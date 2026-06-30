@@ -289,6 +289,24 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelectorAll('li')).toHaveLength(2);
   });
 
+  it('renders inline code with neutral message text instead of blue accent text', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '错误提示 `RolandTR808_noise` 状态在 `stack()` 内泄漏。',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const inlineCode = container.querySelector('code');
+    expect(inlineCode?.className).toContain('text-text-secondary');
+    expect(inlineCode?.className).not.toContain('B9D7FF');
+  });
+
   it('renders streaming reasoning markdown without exposing formatting markers', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
