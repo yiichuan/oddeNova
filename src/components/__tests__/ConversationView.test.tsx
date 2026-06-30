@@ -289,6 +289,81 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelectorAll('li')).toHaveLength(2);
   });
 
+  it('renders streaming reasoning markdown without exposing formatting markers', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: '写一段 lo-fi',
+        timestamp: 1,
+      },
+      {
+        id: 'r1',
+        role: 'progress',
+        content: '先定 **BPM**，再选 `gm_electric_bass_finger`。\n- 鼓要轻\n- 贝斯要暖',
+        timestamp: 2,
+        progressKind: 'reasoning',
+      },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    expect(container.textContent).toContain('先定 BPM，再选 gm_electric_bass_finger。');
+    expect(container.textContent).not.toContain('**BPM**');
+    expect(container.querySelector('strong')?.textContent).toBe('BPM');
+    expect(container.querySelector('strong')?.classList.contains('text-text-primary')).toBe(false);
+    expect(container.querySelector('code')?.textContent).toBe('gm_electric_bass_finger');
+    expect(container.querySelectorAll('li')).toHaveLength(2);
+  });
+
+  it('keeps ordered list items in one list when items have continuation lines', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'r1',
+        role: 'progress',
+        content: [
+          '1. **Drums** - Lo-fi, loose drum pattern.',
+          '   Kick on 1 and 3, snare on 2 and 4.',
+          '   Probably use lpf to darken the drums.',
+          '1. **Bass** - Warm melodic bass line.',
+          '   Walks through a jazzy progression.',
+          '1. **Pads** - Warm synth pad.',
+        ].join('\n'),
+        timestamp: 1,
+        progressKind: 'reasoning',
+      },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    expect(container.querySelectorAll('ol')).toHaveLength(1);
+    expect(container.querySelectorAll('ol > li')).toHaveLength(3);
+    expect(container.querySelector('ol > li')?.textContent).toContain('Kick on 1 and 3');
+  });
+
+  it('keeps rendering when streaming markdown ends at an unfinished block marker', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'r1',
+        role: 'progress',
+        content: '>\n# \n- \n1. \n正文还在继续',
+        timestamp: 1,
+        progressKind: 'reasoning',
+      },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    expect(container.textContent).toContain('>');
+    expect(container.textContent).toContain('#');
+    expect(container.textContent).toContain('-');
+    expect(container.textContent).toContain('1.');
+    expect(container.textContent).toContain('正文还在继续');
+  });
+
   it('renders a horizontal rule for thematic breaks instead of literal dashes', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [

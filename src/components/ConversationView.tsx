@@ -131,7 +131,7 @@ function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
     const inner = text.slice(next + marker.length, end);
     if (marker === '**' || marker === '__') {
       nodes.push(
-        <strong key={`${keyPrefix}-strong-${key++}`} className="font-semibold text-text-primary">
+        <strong key={`${keyPrefix}-strong-${key++}`} className="font-semibold">
           {parseInlineMarkdown(inner, `${keyPrefix}-strong-${key}`)}
         </strong>,
       );
@@ -154,17 +154,21 @@ function MarkdownText({ content }: { content: string }) {
   let i = 0;
   let key = 0;
 
+  const isBlockStart = (value: string) => (
+    /^```/.test(value.trim()) ||
+    /^\s{0,3}#{1,6}\s+/.test(value) ||
+    /^\s*([-*+])\s+/.test(value) ||
+    /^\s*\d+\.\s+/.test(value) ||
+    /^\s*>\s?/.test(value) ||
+    /^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(value)
+  );
+
   const collectParagraph = () => {
     const paragraph: string[] = [];
     while (
       i < lines.length &&
       lines[i].trim() !== '' &&
-      !/^```/.test(lines[i].trim()) &&
-      !/^\s{0,3}#{1,6}\s+/.test(lines[i]) &&
-      !/^\s*([-*+])\s+/.test(lines[i]) &&
-      !/^\s*\d+\.\s+/.test(lines[i]) &&
-      !/^\s*>\s?/.test(lines[i]) &&
-      !/^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(lines[i])
+      !isBlockStart(lines[i])
     ) {
       paragraph.push(lines[i]);
       i += 1;
@@ -220,8 +224,17 @@ function MarkdownText({ content }: { content: string }) {
       while (i < lines.length) {
         const item = lines[i].match(/^\s*([-*+])\s+(.+)$/);
         if (!item) break;
-        items.push(item[2]);
+        const parts = [item[2]];
         i += 1;
+        while (
+          i < lines.length &&
+          lines[i].trim() !== '' &&
+          !isBlockStart(lines[i])
+        ) {
+          parts.push(lines[i].trim());
+          i += 1;
+        }
+        items.push(parts.join('\n'));
       }
       blocks.push(
         <ul key={`md-ul-${key++}`} className="my-1 list-disc space-y-0.5 pl-4">
@@ -239,8 +252,17 @@ function MarkdownText({ content }: { content: string }) {
       while (i < lines.length) {
         const item = lines[i].match(/^\s*\d+\.\s+(.+)$/);
         if (!item) break;
-        items.push(item[1]);
+        const parts = [item[1]];
         i += 1;
+        while (
+          i < lines.length &&
+          lines[i].trim() !== '' &&
+          !isBlockStart(lines[i])
+        ) {
+          parts.push(lines[i].trim());
+          i += 1;
+        }
+        items.push(parts.join('\n'));
       }
       blocks.push(
         <ol key={`md-ol-${key++}`} className="my-1 list-decimal space-y-0.5 pl-4">
@@ -269,7 +291,20 @@ function MarkdownText({ content }: { content: string }) {
       continue;
     }
 
+    const paragraphStart = i;
     const paragraph = collectParagraph();
+    if (i === paragraphStart) {
+      // Streaming markdown can pause on an unfinished block marker like "> " or "- ".
+      // Treat it as plain text so the renderer always makes progress.
+      const fallbackKey = key++;
+      blocks.push(
+        <p key={`md-p-${fallbackKey}`} className="whitespace-pre-wrap break-words">
+          {parseInlineMarkdown(line, `md-p-${fallbackKey}`)}
+        </p>,
+      );
+      i += 1;
+      continue;
+    }
     blocks.push(
       <p key={`md-p-${key++}`} className="whitespace-pre-wrap break-words">
         {parseInlineMarkdown(paragraph, `md-p-${key}`)}
@@ -304,7 +339,7 @@ export default function ConversationView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
-  const reasoningPreRef = useRef<HTMLPreElement>(null);
+  const reasoningPanelRef = useRef<HTMLDivElement>(null);
   const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -395,10 +430,10 @@ export default function ConversationView({
       if (!userScrolledRef.current) {
         bottomRef.current?.scrollIntoView({ behavior: 'instant' });
       }
-      // Auto-scroll the reasoning <pre> to the bottom (follow content during streaming output)
-      const preEl = reasoningPreRef.current;
-      if (preEl && !reasoningUserScrolledRef.current) {
-        preEl.scrollTop = preEl.scrollHeight;
+      // Auto-scroll the reasoning panel to the bottom (follow content during streaming output)
+      const reasoningEl = reasoningPanelRef.current;
+      if (reasoningEl && !reasoningUserScrolledRef.current) {
+        reasoningEl.scrollTop = reasoningEl.scrollHeight;
       }
       // Reset the user-scrolled flag for the reasoning area when isLoading ends
       if (!isLoading) {
@@ -628,17 +663,17 @@ export default function ConversationView({
             <div className="min-w-0">
               <div className="text-sm text-text-primary">{t('thinking')}</div>
               {streamingReasoningMsg && streamingReasoningMsg.content && reasoningPhaseActive && (
-                <pre
-                  ref={reasoningPreRef}
+                <div
+                  ref={reasoningPanelRef}
                   onScroll={(e) => {
                     const el = e.currentTarget;
                     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
                     reasoningUserScrolledRef.current = distFromBottom > 20;
                   }}
-                  className="mt-1.5 text-[11px] text-text-muted/60 font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto leading-relaxed"
+                  className="mt-1.5 max-h-40 overflow-y-auto text-[11px] leading-relaxed text-text-muted/60"
                 >
-                  {streamingReasoningMsg.content}
-                </pre>
+                  <MarkdownText content={streamingReasoningMsg.content} />
+                </div>
               )}
             </div>
           </div>
