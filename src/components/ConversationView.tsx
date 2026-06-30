@@ -417,6 +417,26 @@ export default function ConversationView({
     return { absorbedReasoningIds };
   }, [messages]);
 
+  // Retry/branch are turn-level actions: they resend (or fork from) the user
+  // message that opened the turn. A single turn can produce several assistant
+  // bubbles — e.g. the model narrates mid-loop, then commits a final answer, and
+  // interleaved progress messages keep the two texts from merging. Render the
+  // actions once per turn, on the last assistant message before the next user
+  // message, so they don't appear on intermediate narration.
+  const turnFinalAssistantIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role !== 'assistant') continue;
+      let isFinal = true;
+      for (let j = i + 1; j < messages.length; j++) {
+        if (messages[j].role === 'user') break;
+        if (messages[j].role === 'assistant') { isFinal = false; break; }
+      }
+      if (isFinal) ids.add(messages[i].id);
+    }
+    return ids;
+  }, [messages]);
+
   // The reasoning currently being streamed (not yet absorbed by an assistant message).
   // Use findLast to get the most recent one, preventing the previous round's reasoning from being
   // cut off by a tool_call message across multiple iterations and causing reasoningPhaseActive to malfunction.
@@ -555,8 +575,10 @@ export default function ConversationView({
               })()}
 
               {/* Action buttons — bottom-left, always visible. Hidden on greeting
-                  bubbles: there's no prior user turn to retry or branch from. */}
-              {!msg.isGreeting && (
+                  bubbles (no prior user turn to retry/branch from) and on
+                  intermediate narration (shown once per turn, on the final
+                  assistant message). */}
+              {!msg.isGreeting && turnFinalAssistantIds.has(msg.id) && (
                 <div className="absolute -bottom-5 left-0 flex items-center">
                   <button
                     onClick={() => onRetry(msg.id)}

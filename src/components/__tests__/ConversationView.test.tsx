@@ -232,6 +232,29 @@ describe('ConversationView chat streaming', () => {
     expect(branchButtons).toHaveLength(1);
   });
 
+  it('shows retry/branch only on the final assistant message of a turn, not on intermediate narration', () => {
+    setMobileViewport(false);
+    // One turn where the model narrates mid-loop (an intermediate assistant
+    // bubble), then commits a final answer. Progress messages interleave, so the
+    // two assistant texts never merge. Retry/branch are turn-level actions —
+    // they must appear once, on the final message only.
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: '好', timestamp: 1 },
+      { id: 'p1', role: 'progress', content: 'setCode(...)', timestamp: 2, progressKind: 'tool_call' },
+      { id: 'a1', role: 'assistant', content: '代码各层之间漏了逗号。修正一下。', timestamp: 3 },
+      { id: 'p2', role: 'progress', content: '准备播放...', timestamp: 4, progressKind: 'commit' },
+      { id: 'a2', role: 'assistant', content: '把橘色光芒转译成了温暖的 ambient。', timestamp: 5, code: 'setcps(0.5)' },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const retryButtons = container.querySelectorAll('button[title="Retry"]');
+    const branchButtons = container.querySelectorAll('button[title="Branch conversation from here"]');
+
+    expect(retryButtons).toHaveLength(1);
+    expect(branchButtons).toHaveLength(1);
+  });
+
   it('renders assistant markdown without exposing formatting markers', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
