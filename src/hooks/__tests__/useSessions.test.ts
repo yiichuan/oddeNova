@@ -418,6 +418,39 @@ describe('assistant streaming helpers', () => {
       content: '今晚像一片安静的蓝色湖面。',
     });
   });
+
+  it('appends instead of clobbering when the last assistant message carries composed code', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'u1', role: 'user', content: '写一首歌', timestamp: 0 },
+        { id: 'a1', role: 'assistant', content: '写好了', code: 'setcps(0.5)', timestamp: 1 },
+      ],
+    });
+
+    const result = applyFinalizeLastAssistantMessage(s, '喜欢吗？');
+
+    // The composed message must be preserved untouched.
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[1]).toMatchObject({ content: '写好了', code: 'setcps(0.5)' });
+    expect(result.messages[2]).toMatchObject({ role: 'assistant', content: '喜欢吗？' });
+    expect(result.messages[2].code).toBeUndefined();
+  });
+
+  it('appends a new delta message instead of mutating a code-carrying last message', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'u1', role: 'user', content: '写一首歌', timestamp: 0 },
+        { id: 'a1', role: 'assistant', content: '写好了', code: 'setcps(0.5)', timestamp: 1 },
+      ],
+    });
+
+    const result = applyAppendAssistantDelta(s, '你觉得');
+
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[1]).toMatchObject({ content: '写好了', code: 'setcps(0.5)' });
+    expect(result.messages[2]).toMatchObject({ role: 'assistant', content: '你觉得' });
+    expect(result.messages[2].code).toBeUndefined();
+  });
 });
 
 describe('applyTruncate', () => {
