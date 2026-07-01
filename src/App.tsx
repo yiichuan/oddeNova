@@ -121,16 +121,11 @@ export default function App() {
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
   const currentBpm = parseScore(currentCode).bpm ?? 120;
-  const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
 
-  const { suggestions, loading: suggestionsLoading } = useSuggestions({
+  const { suggestions } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
-    enabled: true,
-    // In demo mode real LLM suggestions are not needed; skip the buildSuggestions call
-    hasUserMessages: isDemoMode() ? false : hasUserMessages,
-    messages,
     commitSuggestions: commitSuggestions ?? undefined,
     persisted: current?.suggestions,
     onSuggestions: (items, forCode) => sessions.setSuggestions(items, forCode, current?.id),
@@ -141,7 +136,7 @@ export default function App() {
     : suggestions;
   const visibleSuggestions = demoSuggestions;
   const showMobileCreateSuggestions =
-    !isLoading && !suggestionsLoading && visibleSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
+    !isLoading && visibleSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -603,7 +598,6 @@ export default function App() {
           suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
-          suggestionsLoading={!isDemoMode() && suggestionsLoading}
           fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
           onSendText={handleInstruction}
           onStop={handleStop}
