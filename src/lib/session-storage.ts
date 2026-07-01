@@ -15,6 +15,12 @@ let db: IDBPDatabase | null = null;
 let memoryFallback = false;
 
 type StoredSession = Session & { mode?: unknown };
+type StoredSetting = {
+  key: string;
+  value: string;
+};
+
+const CURRENT_SESSION_SETTING_KEY = 'currentSessionId';
 
 export function normalizeSession(session: StoredSession): Session {
   const { mode: _ignored, ...normalized } = session;
@@ -87,6 +93,28 @@ export async function putSession(session: Session): Promise<void> {
     await db.put(SESSION_STORE_NAME, session);
   } catch (err) {
     console.warn('[session-storage] putSession failed', err);
+  }
+}
+
+export async function getCurrentSessionId(): Promise<string | null> {
+  if (memoryFallback || !db) return null;
+  try {
+    const setting = await db.get(SETTINGS_STORE_NAME, CURRENT_SESSION_SETTING_KEY) as StoredSetting | undefined;
+    return setting?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function putCurrentSessionId(sessionId: string): Promise<void> {
+  if (memoryFallback || !db) return;
+  try {
+    await db.put(SETTINGS_STORE_NAME, {
+      key: CURRENT_SESSION_SETTING_KEY,
+      value: sessionId,
+    } satisfies StoredSetting);
+  } catch (err) {
+    console.warn('[session-storage] putCurrentSessionId failed', err);
   }
 }
 

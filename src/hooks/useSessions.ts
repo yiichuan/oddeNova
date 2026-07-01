@@ -3,7 +3,9 @@ import type { ChatMessage, ProgressKind } from './useChat';
 import {
   openDB,
   getAllSessions,
+  getCurrentSessionId,
   putSession as dbPutSession,
+  putCurrentSessionId as dbPutCurrentSessionId,
   deleteSession as dbDeleteSession,
 } from '../lib/session-storage';
 import { t } from '../lib/i18n';
@@ -157,13 +159,26 @@ export function useSessions() {
     let cancelled = false;
     (async () => {
       await openDB();
-      const loaded = await getAllSessions();
+      const [loaded, storedCurrentId] = await Promise.all([
+        getAllSessions(),
+        getCurrentSessionId(),
+      ]);
       if (cancelled) return;
 
-      // Create a new session on every startup/refresh
+      if (loaded.length > 0) {
+        const current = loaded.find((s) => s.id === storedCurrentId) || loaded[0];
+        setSessions(loaded);
+        setCurrentId(current.id);
+        setIsLoading(false);
+        return;
+      }
+
       const fresh = makeEmptySession();
-      await dbPutSession(fresh);
-      setSessions([fresh, ...loaded]);
+      await Promise.all([
+        dbPutSession(fresh),
+        dbPutCurrentSessionId(fresh.id),
+      ]);
+      setSessions([fresh]);
       setCurrentId(fresh.id);
       setIsLoading(false);
     })();
@@ -359,7 +374,10 @@ export function useSessions() {
       // If the current session is already empty, reuse it instead of stacking
       // up another untouched "New Session".
       if (cur && isEffectivelyEmpty(cur)) {
-        if (id && currentId !== id) setCurrentId(id);
+        if (id) {
+          if (currentId !== id) setCurrentId(id);
+          dbPutCurrentSessionId(id);
+        }
         const refreshed = applyRefreshEmptySessionForReuse(cur, Date.now());
         dbPutSession(refreshed);
         return prev.map((s) => s.id === cur.id ? refreshed : s);
@@ -370,6 +388,7 @@ export function useSessions() {
       const existingEmpty = prev.find((s) => isEffectivelyEmpty(s));
       if (existingEmpty) {
         setCurrentId(existingEmpty.id);
+        dbPutCurrentSessionId(existingEmpty.id);
         // Refresh createdAt so the reused empty session sorts to the top.
         const refreshed = applyRefreshEmptySessionForReuse(existingEmpty, Date.now());
         dbPutSession(refreshed);
@@ -377,6 +396,7 @@ export function useSessions() {
       }
       const fresh = makeEmptySession();
       setCurrentId(fresh.id);
+      dbPutCurrentSessionId(fresh.id);
       dbPutSession(fresh);
       return [fresh, ...prev];
     });
@@ -384,6 +404,7 @@ export function useSessions() {
 
   const switchTo = useCallback((id: string) => {
     setCurrentId(id);
+    dbPutCurrentSessionId(id);
   }, []);
 
   const renameSession = useCallback(
@@ -403,10 +424,14 @@ export function useSessions() {
         if (next.length === 0) {
           const fresh = makeEmptySession();
           setCurrentId(fresh.id);
+          dbPutCurrentSessionId(fresh.id);
           dbPutSession(fresh);
           return [fresh];
         }
-        if (id === currentId) setCurrentId(next[0].id);
+        if (id === currentId) {
+          setCurrentId(next[0].id);
+          dbPutCurrentSessionId(next[0].id);
+        }
         return next;
       });
     },
@@ -428,6 +453,7 @@ export function useSessions() {
       await dbPutSession(session);
       setSessions((prev) => [session, ...prev]);
       setCurrentId(id);
+      dbPutCurrentSessionId(id);
     },
     []
   );
@@ -457,6 +483,7 @@ export function useSessions() {
       // load but won't persist on refresh.
       setSessions((prev) => [branched, ...prev]);
       setCurrentId(id);
+      dbPutCurrentSessionId(id);
       dbPutSession(branched).catch(console.error);
     },
     [sessions, currentId]

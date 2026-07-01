@@ -18,15 +18,19 @@ import type { Session } from '../useSessions';
 
 const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
-  getAllSessions: vi.fn(async () => []),
+  getAllSessions: vi.fn(async () => [] as Session[]),
+  getCurrentSessionId: vi.fn(async () => null as string | null),
   putSession: vi.fn(async () => undefined),
+  putCurrentSessionId: vi.fn(async () => undefined),
   deleteSession: vi.fn(async () => undefined),
 }));
 
 vi.mock('../../lib/session-storage', () => ({
   openDB: storageMocks.openDB,
   getAllSessions: storageMocks.getAllSessions,
+  getCurrentSessionId: storageMocks.getCurrentSessionId,
   putSession: storageMocks.putSession,
+  putCurrentSessionId: storageMocks.putCurrentSessionId,
   deleteSession: storageMocks.deleteSession,
 }));
 
@@ -80,7 +84,9 @@ describe('useSessions', () => {
   beforeEach(() => {
     storageMocks.openDB.mockResolvedValue(undefined);
     storageMocks.getAllSessions.mockResolvedValue([]);
+    storageMocks.getCurrentSessionId.mockResolvedValue(null);
     storageMocks.putSession.mockResolvedValue(undefined);
+    storageMocks.putCurrentSessionId.mockResolvedValue(undefined);
     storageMocks.deleteSession.mockResolvedValue(undefined);
   });
 
@@ -171,6 +177,68 @@ describe('useSessions', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].role).toBe('assistant');
     expect(messages[0].isGreeting).toBe(true);
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores the latest stored session on startup instead of creating a new one', async () => {
+    const stored = makeSession({
+      id: 'stored-latest',
+      title: '今天心情有点好',
+      messages: [{ id: 'msg-1', role: 'user', content: '今天心情有点好', timestamp: 1 }],
+      code: 'stack(s("bd"))',
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([stored]);
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(getHook().currentId).toBe('stored-latest');
+    expect(getHook().sessions).toEqual([stored]);
+    expect(storageMocks.putSession).not.toHaveBeenCalled();
+  });
+
+  it('restores the persisted current session on startup even when it is not the newest session', async () => {
+    const emptyNewer = makeSession({
+      id: 'stored-empty-newer',
+      messages: [{ id: 'greeting-1', role: 'assistant', content: '你好', timestamp: 2, isGreeting: true }],
+      createdAt: 2,
+      updatedAt: 20,
+    });
+    const selectedOlder = makeSession({
+      id: 'selected-older',
+      title: '今天心情有点好',
+      messages: [{ id: 'msg-1', role: 'user', content: '今天心情有点好', timestamp: 1 }],
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([emptyNewer, selectedOlder]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('selected-older');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(getHook().currentId).toBe('selected-older');
+    expect(getHook().currentSession).toEqual(selectedOlder);
+  });
+
+  it('reuses a stored greeting-only session on startup instead of stacking another empty one', async () => {
+    const storedEmpty = makeSession({
+      id: 'stored-empty',
+      messages: [{ id: 'greeting-1', role: 'assistant', content: '你好', timestamp: 1, isGreeting: true }],
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([storedEmpty]);
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(getHook().currentId).toBe('stored-empty');
+    expect(getHook().sessions).toHaveLength(1);
+    expect(getHook().currentSession).toEqual(storedEmpty);
+    expect(storageMocks.putSession).not.toHaveBeenCalled();
   });
 
   it('newSession reuses a session that only contains a greeting, instead of stacking a new one', async () => {
@@ -186,6 +254,33 @@ describe('useSessions', () => {
 
     expect(getHook().sessions.length).toBe(initialCount);
     expect(getHook().currentId).toBe(initialId);
+  });
+
+  it('persists the selected session id when switching sessions', async () => {
+    const emptyNewer = makeSession({
+      id: 'stored-empty-newer',
+      messages: [{ id: 'greeting-1', role: 'assistant', content: '你好', timestamp: 2, isGreeting: true }],
+      createdAt: 2,
+      updatedAt: 20,
+    });
+    const target = makeSession({
+      id: 'target-session',
+      title: '今天心情有点好',
+      messages: [{ id: 'msg-1', role: 'user', content: '今天心情有点好', timestamp: 1 }],
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([emptyNewer, target]);
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().switchTo('target-session');
+    });
+
+    expect(getHook().currentId).toBe('target-session');
+    expect(storageMocks.putCurrentSessionId).toHaveBeenCalledWith('target-session');
   });
 });
 
