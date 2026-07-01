@@ -256,6 +256,26 @@ describe('useSessions', () => {
     expect(getHook().currentId).toBe(initialId);
   });
 
+  it('setSuggestions stores items with the code they were generated for and persists', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().setCurrentCode('stack(s("bd"))');
+    });
+    storageMocks.putSession.mockClear();
+
+    act(() => {
+      getHook().setSuggestions(['加入贝斯', '让鼓点更密'], 'stack(s("bd"))');
+    });
+
+    expect(getHook().currentSession?.suggestions).toEqual({
+      forCode: 'stack(s("bd"))',
+      items: ['加入贝斯', '让鼓点更密'],
+    });
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+  });
+
   it('persists the selected session id when switching sessions', async () => {
     const emptyNewer = makeSession({
       id: 'stored-empty-newer',

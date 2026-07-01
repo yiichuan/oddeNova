@@ -15,8 +15,13 @@ import { useSuggestions } from '../useSuggestions';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-function Probe(props: Partial<Parameters<typeof useSuggestions>[0]> = {}) {
-  useSuggestions({
+function Probe({
+  onValue,
+  ...props
+}: Partial<Parameters<typeof useSuggestions>[0]> & {
+  onValue?: (value: ReturnType<typeof useSuggestions>) => void;
+} = {}) {
+  const value = useSuggestions({
     key: props.key ?? 'session-1',
     currentCode: props.currentCode ?? 's("bd")',
     hasUserMessages: props.hasUserMessages ?? true,
@@ -25,10 +30,15 @@ function Probe(props: Partial<Parameters<typeof useSuggestions>[0]> = {}) {
     ],
     ...props,
   });
+  onValue?.(value);
   return null;
 }
 
-function renderProbe(props: Partial<Parameters<typeof useSuggestions>[0]> = {}) {
+function renderProbe(
+  props: Partial<Parameters<typeof useSuggestions>[0]> & {
+    onValue?: (value: ReturnType<typeof useSuggestions>) => void;
+  } = {},
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -60,5 +70,51 @@ describe('useSuggestions', () => {
     });
 
     expect(buildSuggestions).not.toHaveBeenCalled();
+  });
+
+  it('restores persisted suggestions for the current code without calling the LLM', async () => {
+    let latest: ReturnType<typeof useSuggestions> | undefined;
+    const { root } = renderProbe({
+      currentCode: 's("bd sd")',
+      persisted: { forCode: 's("bd sd")', items: ['加入贝斯', '让鼓点更密'] },
+      onValue: (v) => { latest = v; },
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(buildSuggestions).not.toHaveBeenCalled();
+    expect(latest?.suggestions).toEqual(['加入贝斯', '让鼓点更密']);
+  });
+
+  it('ignores stale persisted suggestions and fetches fresh ones', async () => {
+    const { root } = renderProbe({
+      currentCode: 's("bd sd")',
+      persisted: { forCode: 's("bd")', items: ['过期建议'] },
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(buildSuggestions).toHaveBeenCalled();
+  });
+
+  it('persists freshly fetched suggestions via onSuggestions', async () => {
+    const onSuggestions = vi.fn();
+    const { root } = renderProbe({
+      currentCode: 's("bd sd")',
+      onSuggestions,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onSuggestions).toHaveBeenCalledWith(['fresh one', 'fresh two'], 's("bd sd")');
   });
 });

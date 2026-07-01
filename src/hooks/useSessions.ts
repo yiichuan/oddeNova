@@ -23,6 +23,13 @@ export interface Session {
   messages: ChatMessage[];
   code: string;
   tokenStats?: TokenStats;
+  /**
+   * Next-step suggestion chips, bound to the code they were generated for.
+   * Persisted so a page refresh can restore them without a fresh LLM call.
+   * `forCode` guards against the commit→async-generate window: if it no longer
+   * matches the session's code, the stored chips are stale and get regenerated.
+   */
+  suggestions?: { forCode: string; items: string[] };
   createdAt: number;
   updatedAt: number;
 }
@@ -497,6 +504,14 @@ export function useSessions() {
     [getApply]
   );
 
+  const setSuggestions = useCallback(
+    (items: string[], forCode: string, sessionId?: string) => {
+      const apply = getApply(sessionId);
+      apply((s) => ({ ...s, suggestions: { forCode, items } }));
+    },
+    [getApply]
+  );
+
   return {
     sessions,
     currentSession,
@@ -519,5 +534,6 @@ export function useSessions() {
     importSession,
     branchFromMessage,
     updateTokenStats,
+    setSuggestions,
   };
 }

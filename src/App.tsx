@@ -132,6 +132,8 @@ export default function App() {
     hasUserMessages: isDemoMode() ? false : hasUserMessages,
     messages,
     commitSuggestions: commitSuggestions ?? undefined,
+    persisted: current?.suggestions,
+    onSuggestions: (items, forCode) => sessions.setSuggestions(items, forCode, current?.id),
   });
   const activeSet = getActiveDemoSet();
   const demoSuggestions = isDemoMode()
