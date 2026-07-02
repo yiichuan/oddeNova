@@ -27,6 +27,7 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
+import PersonaModal from './components/PersonaModal';
 import { t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 
@@ -44,6 +45,7 @@ export default function App() {
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
+  const [showPersonaModal, setShowPersonaModal] = useState(false);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
@@ -103,6 +105,10 @@ export default function App() {
     }
   }, [sessions]);
 
+  const openPersonaModal = useCallback(() => {
+    setShowPersonaModal(true);
+  }, []);
+
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => {
     try { if (window.self !== window.top) return false; } catch { return false; }
     return !hasApiKeyConfigured();
@@ -115,17 +121,14 @@ export default function App() {
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
   const currentBpm = parseScore(currentCode).bpm ?? 120;
-  const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
 
-  const { suggestions, loading: suggestionsLoading } = useSuggestions({
+  const { suggestions } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
-    enabled: true,
-    // In demo mode real LLM suggestions are not needed; skip the buildSuggestions call
-    hasUserMessages: isDemoMode() ? false : hasUserMessages,
-    messages,
     commitSuggestions: commitSuggestions ?? undefined,
+    persisted: current?.suggestions,
+    onSuggestions: (items, forCode) => sessions.setSuggestions(items, forCode, current?.id),
   });
   const activeSet = getActiveDemoSet();
   const demoSuggestions = isDemoMode()
@@ -133,7 +136,7 @@ export default function App() {
     : suggestions;
   const visibleSuggestions = demoSuggestions;
   const showMobileCreateSuggestions =
-    !isLoading && !suggestionsLoading && visibleSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
+    !isLoading && visibleSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -577,6 +580,9 @@ export default function App() {
           required={!hasApiKeyConfigured()}
         />
       )}
+      {showPersonaModal && (
+        <PersonaModal onClose={() => setShowPersonaModal(false)} />
+      )}
 
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
@@ -592,7 +598,6 @@ export default function App() {
           suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
-          suggestionsLoading={!isDemoMode() && suggestionsLoading}
           fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
           onSendText={handleInstruction}
           onStop={handleStop}
@@ -613,6 +618,7 @@ export default function App() {
           onRollback={handleRollback}
           onBranch={sessions.branchFromMessage}
           onRetry={handleRetry}
+          onOpenPersonaModal={openPersonaModal}
           tokenStats={current?.tokenStats}
         />
       </div>

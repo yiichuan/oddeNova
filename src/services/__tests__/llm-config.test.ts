@@ -92,6 +92,10 @@ describe('PROVIDER_PRESETS models lists', () => {
     expect(preset.models).toContain(preset.model);
   });
 
+  it('glm models list includes glm-5.2 as a selectable model', () => {
+    expect(PROVIDER_PRESETS.glm.models).toContain('glm-5.2');
+  });
+
   it('anthropic models[0] matches the built-in anthropic default', () => {
     expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-sonnet-4-6');
   });
@@ -133,6 +137,10 @@ describe('official provider API key defaults', () => {
 describe('getSelectedModel', () => {
   it('returns preset.model when no override is stored', () => {
     expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
+  });
+
+  it('returns glm-5.2 as the default GLM model when no override is stored', () => {
+    expect(getSelectedModel('glm')).toBe('glm-5.2');
   });
 
   it('returns the stored override when it is a valid model for the provider', () => {

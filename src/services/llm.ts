@@ -16,6 +16,7 @@ import {
 import { getActiveModelConfig } from './llm-config';
 import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO, resolveStaticSuggestionScenario } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
+import { getActivePersonaSync } from '../lib/persona-storage';
 
 // ===========================================================================
 // Dual-provider client management.
@@ -30,6 +31,7 @@ import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 
 let anthropicClient: Anthropic | null = null;
 let openaiClient: OpenAI | null = null;
+const AGENT_MAX_TOKENS = 131072;
 
 function getAnthropicClient(): Anthropic {
   if (!anthropicClient) {
@@ -241,7 +243,7 @@ const anthropicLLMCaller: LLMCaller = {
       messages: amsgs,
       ...(tools.length > 0 ? { tools: convertTools(tools) } : {}),
       temperature: 1,
-      max_tokens: 16000,
+      max_tokens: AGENT_MAX_TOKENS,
       thinking: { type: 'enabled', budget_tokens: 10000 },
     // Type assertion needed: SDK types don't yet include `thinking` in the
     // stream params, but it works at runtime when the beta header is set.
@@ -310,7 +312,7 @@ function createOpenAILLMCaller(): LLMCaller {
             }
           : {}),
         temperature: 0.7,
-        max_tokens: 16000,
+        max_tokens: AGENT_MAX_TOKENS,
         stream: true,
         stream_options: { include_usage: true },
       }, { signal });
@@ -382,7 +384,11 @@ export async function runAgent(
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
 ): Promise<RunAgentResult> {
-  const systemPrompt = buildSystemPrompt({ instruction, moodContext });
+  const systemPrompt = buildSystemPrompt({
+    instruction,
+    moodContext,
+    persona: getActivePersonaSync(),
+  });
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
   const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;

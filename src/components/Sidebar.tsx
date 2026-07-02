@@ -45,6 +45,7 @@ interface SidebarProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  onOpenPersonaModal: () => void;
   tokenStats?: TokenStats;
 }
 
@@ -82,6 +83,7 @@ export default function Sidebar({
   onRollback,
   onBranch,
   onRetry,
+  onOpenPersonaModal,
   tokenStats,
 }: SidebarProps) {
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
@@ -115,14 +117,20 @@ export default function Sidebar({
     <aside className="w-full h-full flex flex-col">
       {/* Logo */}
       <div className="pl-5 pr-0 pt-[5px] pb-2 flex items-center">
-        <h1 className="text-[32px]" style={{
-          background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
-        }}>
+        <button
+          type="button"
+          onClick={onOpenPersonaModal}
+          aria-label={t('choosePersona')}
+          className="text-left text-[32px]"
+          style={{
+            background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
+        >
           <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span><span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
-        </h1>
+        </button>
       </div>
 
       {/* Title row */}
@@ -209,8 +217,7 @@ export default function Sidebar({
                 type="button"
                 onClick={() => onSendText(fillSuggestion)}
                 disabled={engineStatus !== 'ready'}
-                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ fontFamily: '"GenWanMin TW", serif' }}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-text-secondary transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {t('playSong')}
               </button>
@@ -221,8 +228,7 @@ export default function Sidebar({
                 onClick={onMoodGenerate}
                 disabled={isMoodLoading || engineStatus !== 'ready'}
                 title={t('moodTooltip')}
-                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#e0e0e0] transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ fontFamily: '"GenWanMin TW", serif' }}
+                className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-text-secondary transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <img src="/airjelly-icon.png" alt="AirJelly" className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" /> {t('moodGenerate')}
               </button>

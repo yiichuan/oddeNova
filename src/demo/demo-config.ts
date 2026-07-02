@@ -69,7 +69,7 @@ const _DEMO_PAD_SCORE = makeScore('Warm Ambient Groove', 120, [
 
 const DEMO_SET: DemoScenario[] = [
   {
-    prompt: '来个底鼓',
+    prompt: '来个简单的底鼓',
     rounds: [
       {
         thinking: '4/4 拍底鼓，最经典的 four-on-the-floor 节奏。直接写完整 Strudel 代码，120 BPM，一层底鼓。',
@@ -133,96 +133,97 @@ export function resolveDemoScenario(instruction: string): DemoScenario | undefin
   return DEMO_SET.find((s) => s.prompt === instruction);
 }
 
-/** Inspire me: long prompt sent directly on click */
-export const DEMO_PREFILL =
-  '一首中速低保真电子乐曲，速度为90 BPM。曲风以流畅饱满的Fender Rhodes电钢琴为主，演奏小九和弦（Bbm9、Fm9），并辅以强烈的相位器和混响效果。深沉的贝斯线紧随根音之后。极简的IDM鼓点节奏，清脆的鼓边敲击、轻柔的沙锤声以及干脆的底鼓声，营造出独特的氛围。音色中穿插着自然的电子音效、FM合成器的啁啾声以及扫频低通滤波器，带来一种轻松、电影般的海岸风情，略带实验性。';
+/** Inspire me: prompt sent directly on click */
+export const DEMO_PREFILL = '来首适合演示场合的曲子';
 
 // ── Demo scenario dedicated to the "Inspire Me" feature ──────────────────────
-const _PF_DRUMS_INITIAL = `stack(
-  s("bd ~ ~ ~ bd ~ ~ ~")
-    .gain(0.78),
-  s("~ cp ~ cp ~ cp ~ ~")
-    .gain(0.38)
-    .pan(0.55)
-    .hpf(800),
-  s("~ hh hh ~ hh ~ hh hh")
-    .gain(0.18)
-    .lpf(6500)
-    .speed(0.8)
-    .pan(0.4)
-    .sometimes(x => x.speed(0.5))
-)
+const _PF_PIANO = `note("<[c4,e4,g4,c5] [a3,c4,e4,a4] [f3,a3,c4,f4] [g3,b3,d4,g4]>/4")
+  .s("gm_piano")
+  .gain(0.5)`;
+
+const _PF_STRINGS = `note("<[c3,g3,c4] [a2,e3,a3] [f2,c3,f3] [g2,d3,g3]>/4")
+  .s("gm_string_ensemble_1")
+  .gain(0.28)
+  .attack(0.15)
+  .release(0.4)`;
+
+const _PF_DRUMS = `s("bd ~ ~ ~")
+  .gain(0.7),
+
+  s("~ hh ~ hh")
+    .gain(0.22),
+
+  s("~ ~ cp ~")
+    .gain(0.3)`;
+
+const _PF_BELLS = `note("c5 e5 g5 c6")
+  .s("gm_music_box")
+  .gain(0.1)
+  .attack(0.02)
   .slow(2)`;
 
-const _PF_BASS = `note("<bb1 bb1 ~ bb1 f2 f2 ~ f2> <bb1 ~ ab1 bb1 f2 ~ eb2 f2>")
-  .s("gm_acoustic_bass")
-  .lpf(400)
-  .lpq(1)
-  .gain(0.7)
-  .attack(0.01)
-  .release(0.8)
-  .room(0.3)`;
+const _PREFILL_SCORE = `// WARM CINEMATIC | BPM: 105
+setcps(0.4375)
 
-const _PF_PAD = `note("<[Bb3,Db4,F4,Ab4,C5] [F3,Ab3,C4,Eb4,G4]>")
-  .s("gm_epiano1")
-  .attack(0.15)
-  .release(4)
-  .lpf(2800)
-  .lpq(1.5)
-  .phaser(6)
-  .phaserdepth(0.7)
-  .room(2)
-  .gain(0.38)`;
+stack(
+  /* @layer piano */
+  // C大调钢琴分解和弦，温暖上行
+  note("<[c4,e4,g4,c5] [a3,c4,e4,a4] [f3,a3,c4,f4] [g3,b3,d4,g4]>/4")
+    .s("gm_piano")
+    .gain(0.5),
 
-const _PF_FX = `note("<[bb5 ~ f5 ~] [~ db6 ~ ~] [~ ~ ab5 ~] [f5 ~ ~ gb5]>")
-  .s("triangle")
-  .fm("<3 5 2 7>")
-  .fmh("<1.5 2.01 0.5 3.14>")
-  .lpf(sine.range(600, 2400).slow(16))
-  .lpq(8)
-  .attack(0.01)
-  .decay("<0.08 0.15 0.05 0.2>")
-  .sustain(0)
-  .release("<0.3 0.5 0.2 0.8>")
-  .pan(sine.range(0.3, 0.7).slow(8))
-  .gain(0.3)
-  .room(0.6)
-  .delay(0.4)
-  .delaytime(0.333)
-  .delayfeedback(0.45)
-  .sometimes(x => x.speed("<2 0.5>"))`;
+  /* @layer strings */
+  // 弦乐长音铺底，温暖包裹感
+  note("<[c3,g3,c4] [a2,e3,a3] [f2,c3,f3] [g2,d3,g3]>/4")
+    .s("gm_string_ensemble_1")
+    .gain(0.28)
+    .attack(0.15)
+    .release(0.4),
 
-const _PREFILL_SCORE = makeScore('Lo-fi Electronica', 90, [
-  { name: 'drums', code: _PF_DRUMS_INITIAL, note: '极简 IDM 鼓组，干燥底鼓、rimshot 与轻柔高频。' },
-  { name: 'bass', code: _PF_BASS, note: '深沉贝斯跟随 Bb/F 根音。' },
-  { name: 'pad', code: _PF_PAD, note: 'Rhodes 小九和弦，带 phaser 和混响。' },
-  { name: 'fx', code: _PF_FX, note: 'FM chirp 与扫频低通制造 coastal 氛围。' },
-]);
+  /* @layer drums */
+  // 轻柔鼓组，安静的节奏骨架
+  s("bd ~ ~ ~")
+    .gain(0.7),
+
+  s("~ hh ~ hh")
+    .gain(0.22),
+
+  s("~ ~ cp ~")
+    .gain(0.3),
+
+  /* @layer bells */
+  // 音乐盒点缀，柔和如星尘飘落
+  note("c5 e5 g5 c6")
+    .s("gm_music_box")
+    .gain(0.1)
+    .attack(0.02)
+    .slow(2)
+)`;
 
 export const DEMO_PREFILL_SCENARIO: DemoMoodScenario = {
   roleSnippets: {
-    drums: _PF_DRUMS_INITIAL,
-    bass: _PF_BASS,
-    pad: _PF_PAD,
-    fx: _PF_FX,
+    piano: _PF_PIANO,
+    strings: _PF_STRINGS,
+    drums: _PF_DRUMS,
+    bells: _PF_BELLS,
   },
   rounds: [
     {
       thinking:
-        '我来构思这首 Lo-fi Electronica：90 BPM，coastal cinematic 氛围，Fender Rhodes minor 9th 和弦为核心，搭配深沉贝斯、极简 IDM 鼓点和有机纹理。直接写完整代码并校验。',
+        '适合演示场合的曲子——要温暖、得体、不抢话，能垫在讲解和走动之间。我想到一段 warm cinematic：105 BPM，C 大调钢琴分解和弦做主线，弦乐长音铺底带来包裹感，轻柔的鼓组只给最低限度的节奏骨架，再用音乐盒点缀几粒星尘。直接写完整代码并校验。',
       toolCalls: [
         { name: 'setCode', args: { code: _PREFILL_SCORE } },
         { name: 'validate', args: {} },
       ],
     },
     {
-      thinking: '验证通过！所有四层都就位了，让我提交最终版本。',
+      thinking: '验证通过！四层都就位，氛围温暖克制，正适合演示现场，提交播放。',
       toolCalls: [
         {
           name: 'commit',
           args: {
             explanation:
-              '搭建了一首 90 BPM Lo-fi Electronica 曲目：极简 IDM 鼓组（干燥底鼓 + clap rimshot + 细腻 hi-hat shaker）、深沉的 GM 原声贝斯跟随 Bb-F 根音、gm_epiano1 演奏 Bbm9/Fm9 和弦配以重 phaser 和混响、以及 FM 合成 chirp 氛围纹理层带有 16 拍周期的扫频低通滤波器。海岸线般的 cinematic chill 氛围。',
+              '做了一首适合演示场合的 warm cinematic 曲子（105 BPM，C 大调）：gm_piano 弹温暖上行的分解和弦做主线，gm_string_ensemble_1 弦乐长音铺底带来包裹感，轻柔的鼓组（底鼓 + hi-hat + clap）只搭一个安静的节奏骨架不抢话，最后用 gm_music_box 音乐盒点几粒柔和的星尘。整体得体耐听，垫在讲解和走动之间刚好。',
           },
         },
       ],

@@ -6,7 +6,7 @@ import { runAgent } from '../services/llm';
 import type { ConversationTurn, ProgressEvent } from '../services/llm';
 import { conversationHistoryFromMessages } from '../lib/conversation-history';
 import { commitPlayback } from '../lib/playback-commit';
-import { parseNextSteps } from '../services/suggestions';
+import { parseNextSteps, stripNextSteps } from '../services/suggestions';
 import { getActiveModelConfig } from '../services/llm-config';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from '../lib/analytics';
 import { t, zh } from '../lib/i18n';
@@ -73,11 +73,6 @@ export interface AgentTurnDeps {
 
   // analytics
   getModelConfig: () => { provider: string; model: string };
-}
-
-/** Strip the trailing "next steps" paragraph so it isn't duplicated in chat history. */
-function stripNextSteps(explanation: string): string {
-  return explanation.replace(/\n\n接下来可以[：:][^]*$/, '').trim();
 }
 
 /** Distinguish a user-triggered abort from a genuine error. */

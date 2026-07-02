@@ -46,6 +46,85 @@ function createFakeAudioContext(state: AudioContextState | 'interrupted') {
   } as unknown as AudioContext & { state: AudioContextState | 'interrupted' };
 }
 
+describe('Strudel code validation', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('../../lib/soundfont-loader');
+    vi.doUnmock('../../lib/analytics');
+  });
+
+  it('rejects named .arp() modes before playback', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = validateCodeRuntime('({ arp() { return this } }).arp("pinkyup")');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Invalid .arp() argument');
+      expect(result.error).toContain('numeric indices');
+    }
+  });
+
+  it('allows numeric .arp() index patterns', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = validateCodeRuntime('({ arp() { return this } }).arp("0 [0,2] 1 [0,2]")');
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects note patterns chained into .voicing() before playback', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = validateCodeRuntime(`
+      const chain = {
+        slow() { return this },
+        dict() { return this },
+        voicing() { return this },
+        s() { return this },
+      }
+      function note() { return chain }
+      note("<Cm7 Fm7 Ebmaj7 Dm7b5>")
+        .slow(4)
+        .dict("ireal")
+        .voicing()
+        .s("gm_pad_warm")
+    `);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Use chord(...) before .voicing()');
+    }
+  });
+
+  it('allows chord patterns chained into .voicing()', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = validateCodeRuntime(`
+      const chain = {
+        dict() { return this },
+        voicing() { return this },
+        s() { return this },
+      }
+      function chord() { return chain }
+      chord("<Cm7 Fm7 Ebmaj7 Dm7b5>")
+        .dict("ireal")
+        .voicing()
+        .s("gm_pad_warm")
+    `);
+
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe('StrudelService initialization recovery', () => {
   afterEach(() => {
     vi.resetModules();
@@ -194,6 +273,7 @@ describe('page audio recovery', () => {
     installPageAudioRecovery({
       getIsPlaying: () => true,
       getVisibilityState: () => visibilityState,
+      shouldInterruptOnHidden: () => true,
       onPlaybackInterrupted,
       requestUserResume,
       windowTarget,
@@ -208,5 +288,35 @@ describe('page audio recovery', () => {
 
     expect(onPlaybackInterrupted).toHaveBeenCalledTimes(1);
     expect(requestUserResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps playing on hidden when interruption is disabled (desktop)', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { installPageAudioRecovery } = await import('../strudel');
+    const windowTarget = createFakeEventTarget();
+    const documentTarget = createFakeEventTarget();
+    let visibilityState: DocumentVisibilityState = 'hidden';
+    const onPlaybackInterrupted = vi.fn();
+    const requestUserResume = vi.fn();
+
+    installPageAudioRecovery({
+      getIsPlaying: () => true,
+      getVisibilityState: () => visibilityState,
+      shouldInterruptOnHidden: () => false,
+      onPlaybackInterrupted,
+      requestUserResume,
+      windowTarget,
+      documentTarget,
+    });
+
+    documentTarget.emit('visibilitychange');
+    visibilityState = 'visible';
+    documentTarget.emit('visibilitychange');
+    windowTarget.emit('focus');
+
+    expect(onPlaybackInterrupted).not.toHaveBeenCalled();
+    expect(requestUserResume).not.toHaveBeenCalled();
   });
 });

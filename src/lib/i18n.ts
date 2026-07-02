@@ -80,6 +80,15 @@ const S: Record<string, readonly [string, string]> = {
   scanToJoin:   ['扫码入群', 'Scan to join'],
   freeApiKey:   ['免费领体验 API Key', 'Get a free trial API Key'],
 
+  // PersonaModal
+  customPersonas:     ['自定义人物', 'Custom personas'],
+  noCustomPersonas:   ['还没有自定义人物', 'No custom personas yet'],
+  newPersona:         ['新建自定义人物', 'New custom persona'],
+  editPersona:        ['编辑人物', 'Edit persona'],
+  personaName:        ['名字', 'Name'],
+  personaPrompt:      ['人设', 'Persona'],
+  personaPromptPlaceholder: ['描述一下这个人物的性格和说话方式，比如它是谁、会怎么和你聊天。', "Describe this persona's character and how they talk — for example, who they are and how they'd chat with you."],
+
   // ConversationView
   startCreating: ['说点什么开始创作', 'Say something to start creating'],
   strudelCode:   ['Strudel 代码', 'Strudel code'],
@@ -94,9 +103,10 @@ const S: Record<string, readonly [string, string]> = {
   noSessions: ['暂无会话', 'No sessions'],
 
   // Sidebar
+  choosePersona: ['选择人物', 'Choose persona'],
   replaySession: ['回放会话', 'Replay session'],
   viewHistory:   ['查看历史', 'View history'],
-  playSong:      ['来首曲子', 'Play me a song'],
+  playSong:      ['来首适合演示场合的曲子', 'A song for a presentation'],
   moodTooltip:   ['根据你最近的活动感知心情生成音乐', 'Generate music based on your recent mood and activity'],
   moodGenerate:  ['根据心情生成音乐', 'Mood-based music'],
 

@@ -72,6 +72,7 @@ Pre-commit hooks (via Husky + lint-staged) also run ESLint automatically on chan
 ## Prompt Changes
 
 **Do not edit `src/prompts/system-prompt.ts` directly.** See `.github/prompts/edit-system-prompt.prompt.md` for the full procedure for versioning prompt changes.
+Use one prompt version per product requirement: create the working version once, keep iterating on that same file during the requirement, and treat it as immutable history after the change is submitted.
 
 ## License
 

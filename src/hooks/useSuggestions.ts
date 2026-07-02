@@ -1,90 +1,84 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChatMessage } from './useChat';
-import { buildSuggestions, STATIC_SUGGESTIONS } from '../services/suggestions';
+import { STATIC_SUGGESTIONS } from '../services/suggestions';
+
+type Persisted = { forCode: string; items: string[] };
+
+function randomStatic(): string[] {
+  return [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2);
+}
+
+// Persisted chips are only usable when they were generated for the code we're
+// showing now; otherwise they're stale (commit writes code, then produces
+// next-steps — a refresh in that window leaves them mismatched).
+function restoredFor(persisted: Persisted | undefined, currentCode: string): string[] | null {
+  if (persisted && persisted.forCode === currentCode && persisted.items.length > 0) {
+    return persisted.items.slice(0, 2);
+  }
+  return null;
+}
 
 /**
  * Manages the "next-step" suggestion chips shown above the input box.
  *
- * Strategy (mixed):
- *   - When the conversation has no user messages yet → static defaults.
- *   - After each agent commit (i.e. current.code / session committed code changed and
- *     is non-empty) → fetch 2 fresh suggestions from the LLM with music state + style
- *     intent context. NOTE: live editor edits and BPM changes do NOT trigger a refetch;
- *     only committed code (set via sessions.setCurrentCode()) does.
+ * Chips have three sources, no separate LLM call:
+ *   - Static defaults before any code exists.
+ *   - The two next-step options the agent emits in every commit explanation
+ *     (parsed upstream, handed in via `commitSuggestions`).
+ *   - Persisted chips restored on mount / session switch, so a page refresh
+ *     brings back the last commit's options without regenerating them.
  *
- * `key` is used to bust the cache when switching sessions, so we don't
- * carry the previous session's chips into the new one.
+ * Whenever fresh (commit-provided) chips are shown, `onSuggestions` is invoked
+ * so the caller can persist them onto the session.
+ *
+ * `key` busts the cache when switching sessions, so the previous session's
+ * chips don't leak into the new one.
  */
 export function useSuggestions(opts: {
   key: string;
   currentCode: string;
-  hasUserMessages: boolean;
-  messages: ChatMessage[];
-  enabled?: boolean;
-  /** When provided (from commit explanation), use directly and skip LLM call. */
+  /** The two next-step options from the latest commit explanation. */
   commitSuggestions?: string[];
+  /** Suggestions persisted on the session from a previous page load. */
+  persisted?: Persisted;
+  /** Called with fresh suggestions + the code they were generated for, so the caller can persist them. */
+  onSuggestions?: (items: string[], forCode: string) => void;
 }) {
-  const { key, currentCode, hasUserMessages, messages, enabled = true, commitSuggestions } = opts;
-  const [suggestions, setSuggestions] = useState<string[]>(() => [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2));
-  const [loading, setLoading] = useState(false);
+  const { key, currentCode, commitSuggestions, persisted, onSuggestions } = opts;
+  const [suggestions, setSuggestions] = useState<string[]>(
+    () => restoredFor(persisted, currentCode) ?? randomStatic(),
+  );
+  const [prevCommit, setPrevCommit] = useState<string[] | undefined>(undefined);
   const [prevKey, setPrevKey] = useState(key);
-  const reqIdRef = useRef(0);
-  const lastCodeRef = useRef<string>('');
-  // Use a ref for messages so it's always fresh inside the effect without
-  // re-triggering it on every progress message update.
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-  // Always hold the latest commitSuggestions so we can read it inside the effect
-  // without adding it to the deps array (avoids spurious re-runs).
-  const commitSuggestionsRef = useRef(commitSuggestions);
-  commitSuggestionsRef.current = commitSuggestions;
+  // Read the freshest currentCode / onSuggestions inside the persist effect
+  // without adding them to its deps (they'd re-fire it on every render).
+  const currentCodeRef = useRef(currentCode);
+  const onSuggestionsRef = useRef(onSuggestions);
+  useEffect(() => {
+    currentCodeRef.current = currentCode;
+    onSuggestionsRef.current = onSuggestions;
+  });
 
-  // Reset when switching sessions.
-  if (prevKey !== key) {
-    setPrevKey(key);
-    // eslint-disable-next-line react-hooks/purity
-    setSuggestions([...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2));
-    setLoading(false);
+  // Show the latest commit's next-step options as soon as they arrive.
+  if (prevCommit !== commitSuggestions) {
+    setPrevCommit(commitSuggestions);
+    if (commitSuggestions && commitSuggestions.length > 0) {
+      setSuggestions(commitSuggestions.slice(0, 2));
+    }
   }
 
-  // Reset lastCodeRef when key changes (safe to access refs inside effects).
+  // Reset when switching sessions: restore this session's persisted chips (when
+  // they match its code) or fall back to fresh static defaults. Runs after the
+  // commit block so a session switch wins over stale commit chips.
+  if (prevKey !== key) {
+    setPrevKey(key);
+    setSuggestions(restoredFor(persisted, currentCode) ?? randomStatic());
+  }
+
+  // Persist freshly shown commit chips to the session (external system sync).
   useEffect(() => {
-    lastCodeRef.current = '';
-  }, [key]);
+    if (!commitSuggestions || commitSuggestions.length === 0) return;
+    onSuggestionsRef.current?.(commitSuggestions.slice(0, 2), currentCodeRef.current);
+  }, [commitSuggestions]);
 
-  useEffect(() => {
-    if (!enabled) {
-      reqIdRef.current += 1;
-      setLoading(false);
-      return;
-    }
-    // No conversation yet → keep showing the static defaults.
-    if (!hasUserMessages || !currentCode.trim()) {
-      return;
-    }
-    // Avoid refetching for the same code (e.g. after re-render).
-    if (lastCodeRef.current === currentCode) return;
-    lastCodeRef.current = currentCode;
-
-    // Commit-provided suggestions → use immediately, skip LLM call.
-    const override = commitSuggestionsRef.current;
-    if (override && override.length > 0) {
-      setSuggestions(override.slice(0, 2));
-      return;
-    }
-
-    // Hide current chips while fetching new ones.
-    setSuggestions([]);
-    setLoading(true);
-
-    const my = ++reqIdRef.current;
-    buildSuggestions(currentCode, messagesRef.current).then((chips) => {
-      // Drop stale responses if the user moved on already.
-      if (my !== reqIdRef.current) return;
-      setLoading(false);
-      if (chips.length > 0) setSuggestions(chips);
-    });
-  }, [currentCode, enabled, hasUserMessages]);
-
-  return { suggestions, loading };
+  return { suggestions };
 }

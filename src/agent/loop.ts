@@ -11,11 +11,11 @@ import { dispatchToolCall, type ToolCallRequest, type ToolCallOutcome } from './
 import {
   CommitSignal,
   getOpenAIToolSchemas,
+  validateCommittedCode,
   type AgentState,
   type ToolContext,
 } from './tools';
 import { parseScore, summariseScore } from './parser';
-import { validateCodeRuntime } from '../services/strudel';
 import { getErrorMessage } from '../lib/errors';
 
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
@@ -116,7 +116,13 @@ export interface RunAgentResult {
 }
 
 const DEFAULT_MAX_ITER = 30;
-const DEFAULT_TIMEOUT = 300_000;
+const DEFAULT_TIMEOUT = 10 * 60_000;
+
+function formatTimeoutMinutes(timeoutMs: number, isZh: boolean): string {
+  const minutes = Math.ceil(timeoutMs / 60_000);
+  if (isZh) return `${minutes} 分钟`;
+  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+}
 
 export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResult> {
   const {
@@ -141,10 +147,12 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   if (initialCode) {
     const score = parseScore(initialCode);
     const { bpm, layers } = summariseScore(score);
+    const layerLabel = (l: { name: string; envelope?: string }) =>
+      l.envelope ? `${l.name}[${l.envelope}]` : l.name;
     const bpmStr = bpm != null ? `BPM: ${bpm}` : '';
     const layersStr = isZh
-      ? layers.length > 0 ? `音层: ${layers.map((l) => l.name).join(' / ')}` : '（无音层）'
-      : layers.length > 0 ? `Layers: ${layers.map((l) => l.name).join(' / ')}` : '(no layers)';
+      ? layers.length > 0 ? `音层: ${layers.map(layerLabel).join(' / ')}` : '（无音层）'
+      : layers.length > 0 ? `Layers: ${layers.map(layerLabel).join(' / ')}` : '(no layers)';
     const meta = [bpmStr, layersStr].filter(Boolean).join(isZh ? '，' : ', ');
     userTurn = isZh
       ? `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`
@@ -172,7 +180,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
   outer: for (let i = 0; i < maxIter; i++) {
     if (Date.now() - start > timeoutMs) {
-      onProgress?.({ kind: 'warn', message: isZh ? `超时 ${timeoutMs}ms，强制结束` : `Timed out after ${timeoutMs}ms, force-stopping` });
+      const timeoutLabel = formatTimeoutMinutes(timeoutMs, isZh);
+      onProgress?.({ kind: 'warn', message: isZh ? `超时 ${timeoutLabel}，强制结束` : `Timed out after ${timeoutLabel}, force-stopping` });
       break;
     }
     if (signal?.aborted) {
@@ -345,7 +354,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   if (!committed && !signal?.aborted) {
     const codeChanged = !!state.code && state.code !== initialCode;
     if (codeChanged) {
-      const v = validateCodeRuntime(state.code);
+      const v = validateCommittedCode(state.code, isZh);
       if (v.ok) {
         committed = true;
         finalCode = state.code;
