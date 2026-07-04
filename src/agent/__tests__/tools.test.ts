@@ -7,7 +7,7 @@ vi.mock('../../services/strudel', () => ({
   normalizeCode: vi.fn((code: string) => code),
 }));
 
-import { CommitSignal, TOOLS, type AgentState, type ToolContext } from '../tools';
+import { CommitSignal, TOOLS, getOpenAIToolSchemas, type AgentState, type ToolContext } from '../tools';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
 // Helper: find a tool handler by name
@@ -138,6 +138,21 @@ stack(
     );
     expect(result.ok).toBe(true);
     expect(ctx.state.code).toBe('note("c4 e4 g4").s("gm_piano")');
+  });
+
+  it('requires explanation in the schema (both languages)', () => {
+    for (const isZh of [true, false]) {
+      const schema = getOpenAIToolSchemas(isZh).find((s) => s.function.name === 'setCode');
+      expect(schema, `setCode schema missing (isZh=${isZh})`).toBeDefined();
+      const params = schema!.function.parameters as {
+        properties: Record<string, { description?: string }>;
+        required: string[];
+      };
+      expect(params.properties).toHaveProperty('explanation');
+      expect(params.required).toContain('explanation');
+      // param description must be localized, not the raw ZH fallback in the EN schema
+      expect(params.properties.explanation.description).toBeTruthy();
+    }
   });
 });
 

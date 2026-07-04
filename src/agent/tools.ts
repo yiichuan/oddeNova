@@ -110,8 +110,13 @@ export const TOOLS: ToolDef[] = [
           description:
             '完整的 Strudel 代码：第一行写顶部注释 `// STYLE | BPM: N`，第二行 setcps(N)，后接 stack(...) 包含所有音层（每层 `/* @layer NAME */` 后另起一行写 `// 简短中文说明`）',
         },
+        explanation: {
+          type: 'string',
+          description:
+            '【必填】用你的人格口吻、一句话现在进行时说明这一步 setCode 在做什么，会作为进度消息展示给用户。如 "加上完整 mask 编排，intro→drop 结构" / "给 bass 加一层低通滤波"。',
+        },
       },
-      required: ['code'],
+      required: ['code', 'explanation'],
     },
     handler: (args, ctx) => {
       if (typeof args.code !== 'string' || !args.code.trim()) {
@@ -174,6 +179,7 @@ const TOOL_SCHEMAS_ZH = {
       '设置完整的 Strudel 代码，适用于从头创作或在现有代码基础上编辑（如添加/修改/删除音层、调整 BPM 等任意改动）。若已有现存代码，代码已通过系统消息传入（含 BPM 和音层摘要），直接心算读取即可。设置后请用 validate 校验，通过后再 commit。',
     params: {
       code: '完整的 Strudel 代码：第一行写顶部注释 `// STYLE | BPM: N`，第二行 setcps(N)，后接 stack(...) 包含所有音层（每层 `/* @layer NAME */` 后另起一行写 `// 简短中文说明`）',
+      explanation: '【必填】用你的人格口吻、一句话现在进行时说明这一步 setCode 在做什么，会作为进度消息展示给用户。如 "加上完整 mask 编排，intro→drop 结构" / "给 bass 加一层低通滤波"。',
     },
   },
   commit: {
@@ -199,6 +205,7 @@ const TOOL_SCHEMAS_EN = {
       'Write the complete Strudel code, for brand-new compositions or edits to existing code (add/edit/remove layers, change BPM, etc.). If existing code was provided, it was already injected via the system message (with BPM and layer summary) — read it mentally without calling any tool. After setting, call validate, then commit once it passes.',
     params: {
       code: 'Full Strudel code: first line is a top comment `// STYLE | BPM: N`, second line setcps(N), followed by stack(...) containing all layers (each `/* @layer NAME */` followed by a short English comment on the next line)',
+      explanation: '[Required] In your persona voice, one present-tense sentence describing what this setCode step is doing; shown to the user as a progress message. E.g. "Adding the full mask arrangement, intro→drop structure" / "Adding a low-pass filter to the bass".',
     },
   },
   commit: {
