@@ -169,6 +169,12 @@ export default function App() {
       if (e.kind === 'iteration') return;
       if (e.kind === 'tool_call') {
         if (e.name !== 'validate' && e.name !== 'commit') {
+          // For setCode, surface the model's persona-voice explanation as a normal
+          // assistant message above the raw tool-call line, so the user sees what
+          // each edit step does — not just the truncated JSON preview.
+          if (e.name === 'setCode' && typeof e.args.explanation === 'string' && e.args.explanation.trim()) {
+            sessions.addAssistantMessage(e.args.explanation.trim(), undefined, sessionId);
+          }
           sessions.addProgress('tool_call', formatToolCall(e.name, e.args), { toolName: e.name, sessionId });
         }
         return;
