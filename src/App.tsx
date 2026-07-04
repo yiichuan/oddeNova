@@ -165,29 +165,48 @@ export default function App() {
   // Build the agent progress→UI handler for a given session. Shared verbatim by
   // handleInstruction and handleMoodInstruction.
   const makeAgentProgressHandler = useCallback(
-    (sessionId: string) => (e: ProgressEvent) => {
-      if (e.kind === 'iteration') return;
-      if (e.kind === 'tool_call') {
-        if (e.name !== 'validate' && e.name !== 'commit') {
-          // For setCode, surface the model's persona-voice explanation as a normal
-          // assistant message above the raw tool-call line, so the user sees what
-          // each edit step does — not just the truncated JSON preview.
-          if (e.name === 'setCode' && typeof e.args.explanation === 'string' && e.args.explanation.trim()) {
-            sessions.addAssistantMessage(e.args.explanation.trim(), undefined, sessionId);
+    (sessionId: string) => {
+      // Per-iteration flag: did the model already stream a non-empty free-text
+      // reply this iteration? If so, skip setCode's explanation fallback so the
+      // user sees exactly one message before the tool-call line — the warmer
+      // free-text is preferred; explanation only fills in when the model is silent.
+      let sawAssistantTextThisIter = false;
+      return (e: ProgressEvent) => {
+        if (e.kind === 'iteration') { sawAssistantTextThisIter = false; return; }
+        if (e.kind === 'tool_call') {
+          if (e.name !== 'validate' && e.name !== 'commit') {
+            // setCode: show the persona-voice explanation only as a fallback when
+            // the model didn't already narrate in free text this iteration.
+            if (
+              e.name === 'setCode' &&
+              !sawAssistantTextThisIter &&
+              typeof e.args.explanation === 'string' &&
+              e.args.explanation.trim()
+            ) {
+              sessions.addAssistantMessage(e.args.explanation.trim(), undefined, sessionId);
+            }
+            sessions.addProgress('tool_call', formatToolCall(e.name, e.args), { toolName: e.name, sessionId });
           }
-          sessions.addProgress('tool_call', formatToolCall(e.name, e.args), { toolName: e.name, sessionId });
+          return;
         }
-        return;
-      }
-      if (e.kind === 'tool_result') {
-        if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" failed:`, e.error || 'unknown error');
-        return;
-      }
-      if (e.kind === 'commit') { sessions.addProgress('commit', t('preparingToPlay'), { sessionId }); return; }
-      if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
-      if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
-      if (e.kind === 'assistant_text_delta') { sessions.appendToLastAssistant(e.delta, sessionId); return; }
-      if (e.kind === 'assistant_text') { sessions.finalizeLastAssistantMessage(e.text, sessionId); return; }
+        if (e.kind === 'tool_result') {
+          if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" failed:`, e.error || 'unknown error');
+          return;
+        }
+        if (e.kind === 'commit') { sessions.addProgress('commit', t('preparingToPlay'), { sessionId }); return; }
+        if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
+        if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
+        if (e.kind === 'assistant_text_delta') {
+          if (e.delta.trim()) sawAssistantTextThisIter = true;
+          sessions.appendToLastAssistant(e.delta, sessionId);
+          return;
+        }
+        if (e.kind === 'assistant_text') {
+          if (e.text.trim()) sawAssistantTextThisIter = true;
+          sessions.finalizeLastAssistantMessage(e.text, sessionId);
+          return;
+        }
+      };
     },
     [sessions]
   );
