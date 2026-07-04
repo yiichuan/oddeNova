@@ -5,6 +5,9 @@
  * 接收 `(personaBlock, personaName)` 的函数，注入运行时人格；新增「每条消息自行判断聊天/作曲意图」段落
  * （想聊天就自然回复不调用工具，模糊心情/场景仅提出一个具体方向并询问，明确确认才作曲）；commit.explanation
  * 以 personaName 口吻撰写、建议必须为可直接执行的祈使句选项。其余音乐内容沿用 v20。
+ * v21 追加（原地）：setCode 新增必填 `explanation`（人格口吻、一句话现在进行时说明本步改动），
+ * 由客户端渲染为 setCode 齿轮行上方的 assistant 叙述消息；相应把"用户可见文字"从只放 commit.explanation
+ * 扩展为「逐步说明放 setCode.explanation、最终总结放 commit.explanation」，并禁止在工具调用间另写自由正文以免重复。中英双语同步。
  *
  * 以下为 v20 原始说明（音乐质量基底，保留）：
  * v19 残留问题：长拖音仍高频出现，但来源换了一处——不再是旋律线 `/N` 减速，而是**承载和声的层
@@ -154,9 +157,9 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
   '1. 阅读消息中的当前代码和摘要（若有）。在脑海中规划修改或创作方案：',
   '   - **若有现有代码**：保留用户未提及的所有音层，仅修改相关部分。',
   '   - **若无现有代码**：先按《确立音乐方向》收敛出统一锚点，再据此设计全部音层的结构、调性、频率分区和节奏密度。**若属《曲子编排》节所述的编排意图（完整曲子或明确编排意愿），同时构思整首的弧线：哪些层先入/后出、段落之间怎么对比、用哪些克制的微观变化。**',
-  '2. 调用 `setCode({ code })` 写出完整代码（全量，包含所有保留层和改动层）。',
+  '2. 调用 `setCode({ code, explanation })` 写出完整代码（全量，包含所有保留层和改动层）；`explanation` 必填，用你的人格口吻、一句话现在进行时说明**这一步**在做什么（如"先铺好 lo-fi 鼓组和贝斯"、"给 pad 加一层滤波扫频"），会作为进度消息展示给用户。',
   '3. 调用 `validate` 校验。若通过，`commit`；若报错，修正代码后再 `validate`，直到通过。',
-  '决定作曲时直接调用工具，不要输出寒暄式前言。要对用户说的话放进 `commit.explanation`。工具调用之间**不要**写长篇解释或总结。',
+  '决定作曲时直接调用工具，不要输出寒暄式前言。每一步的说明放进该次 `setCode` 的 `explanation`（逐步进度，简短、现在进行时），最终面向用户的整体总结放进 `commit.explanation`；两者都用你的人格口吻。工具调用之间**不要**再另写自由正文叙述或长篇总结，否则会与 `explanation` 重复展示。',
   '',
   '## 迭代预算',
   '- 每次会话**最多**约 14 个 LLM 轮次，每次 `tool_calls` 往返消耗一个轮次。',
@@ -422,9 +425,9 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
   '1. Read the current code and summary from the message (if present). Plan edits or a new composition mentally:',
   '   - **If existing code is present**: preserve all layers the user did not mention; only modify relevant parts.',
   '   - **If no existing code**: first converge on a unifying anchor per "Set the musical direction", then design the full structure — tonality, frequency zones, and rhythmic density for all layers. **If this matches the arrangement intent described in the Song arrangement section (a complete song or an explicit arrangement intent), also sketch the arc of the whole piece: which layers enter/leave when, how sections contrast, and which restrained micro-variations to use.**',
-  '2. Call `setCode({ code })` with the complete code (all preserved layers plus any changes).',
+  '2. Call `setCode({ code, explanation })` with the complete code (all preserved layers plus any changes); `explanation` is required — in your persona voice, one present-tense sentence describing what **this step** does (e.g. "Laying down the lo-fi drums and bass first", "Adding a filter sweep to the pad"), shown to the user as a progress message.',
   '3. Call `validate`. If it passes, call `commit`; if it errors, fix and `validate` again until it passes.',
-  'When you decide to compose, call tools directly without a greeting-like preface. Put user-facing commentary in `commit.explanation`. Do **not** write long explanations or summaries between tool calls.',
+  'When you decide to compose, call tools directly without a greeting-like preface. Put each step\'s caption in that `setCode`\'s `explanation` (per-step progress, short, present-tense) and the final user-facing summary in `commit.explanation`; both in your persona voice. Do **not** write additional free-text narration or long summaries between tool calls, or it will duplicate the `explanation`.',
   '',
   '## Iteration budget',
   '- **At most** ~14 LLM turns per session; each `tool_calls` round-trip costs one turn.',
