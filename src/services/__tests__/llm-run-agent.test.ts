@@ -72,7 +72,8 @@ vi.mock('../../demo/demo-llm', () => ({
   createDemoMoodLLMCaller: vi.fn(),
 }));
 
-import { runAgent } from '../llm';
+import { runAgent, classifyIntent } from '../llm';
+import type { LLMCaller } from '../../agent/loop';
 
 describe('runAgent conversationHistory pass-through', () => {
   beforeEach(() => {
@@ -103,6 +104,28 @@ describe('runAgent conversationHistory pass-through', () => {
     expect(opts.systemPrompt).toBe('en system prompt Nocturne CUSTOM_PERSONA');
   });
 
+  it('skips classification and enables thinking for mood generation', async () => {
+    await runAgent('根据我的心情生成音乐', '', undefined);
+
+    expect(openAIChatCreateMock).not.toHaveBeenCalled();
+    const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    expect(opts.enableThinking).toBe(true);
+  });
+
+  it('disables thinking when the classifier returns chat', async () => {
+    async function* contentStream(text: string) {
+      yield { choices: [{ delta: { content: text } }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 5, completion_tokens: 1 } };
+    }
+    openAIChatCreateMock.mockResolvedValue(contentStream('chat'));
+
+    await runAgent('你是谁呀', '', undefined);
+
+    expect(openAIChatCreateMock).toHaveBeenCalledTimes(1);
+    const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    expect(opts.enableThinking).toBe(false);
+  });
+
   it('gives the OpenAI-compatible agent call a larger completion budget', async () => {
     async function* stream() {
       yield { choices: [{ delta: {} }] };
@@ -121,5 +144,48 @@ describe('runAgent conversationHistory pass-through', () => {
       }),
       expect.any(Object),
     );
+  });
+});
+
+describe('classifyIntent parsing', () => {
+  function fakeLLM(content: string | null, throws = false): LLMCaller {
+    return {
+      async chatWithTools() {
+        if (throws) throw new Error('network');
+        return { content, toolCalls: [] };
+      },
+    };
+  }
+
+  it('returns chat when the model says chat', async () => {
+    const intent = await classifyIntent(fakeLLM('chat'), { instruction: '你好', currentCode: '' });
+    expect(intent).toBe('chat');
+  });
+
+  it('returns compose when the model says compose', async () => {
+    const intent = await classifyIntent(fakeLLM('compose'), { instruction: '写个爵士', currentCode: '' });
+    expect(intent).toBe('compose');
+  });
+
+  it('defaults to compose on unparseable output', async () => {
+    const intent = await classifyIntent(fakeLLM('¯\\_(ツ)_/¯'), { instruction: 'x', currentCode: '' });
+    expect(intent).toBe('compose');
+  });
+
+  it('defaults to compose when the classification call throws', async () => {
+    const intent = await classifyIntent(fakeLLM(null, true), { instruction: 'x', currentCode: '' });
+    expect(intent).toBe('compose');
+  });
+
+  it('disables thinking for the classification call itself', async () => {
+    const seen: Array<boolean | undefined> = [];
+    const llm: LLMCaller = {
+      async chatWithTools(_m, _t, _od, _rd, _s, enableThinking) {
+        seen.push(enableThinking);
+        return { content: 'chat', toolCalls: [] };
+      },
+    };
+    await classifyIntent(llm, { instruction: 'hi', currentCode: '' });
+    expect(seen).toEqual([false]);
   });
 });

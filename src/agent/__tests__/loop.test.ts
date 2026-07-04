@@ -76,6 +76,36 @@ describe('runAgentLoop — conversationHistory message ordering', () => {
   });
 });
 
+describe('runAgentLoop — enableThinking forwarding', () => {
+  it('passes enableThinking through to chatWithTools (defaults to true)', async () => {
+    const seen: Array<boolean | undefined> = [];
+    const llm: LLMCaller = {
+      async chatWithTools(_messages, _tools, _onTextDelta, _onReasoningDelta, _signal, enableThinking) {
+        seen.push(enableThinking);
+        return { content: 'hi', toolCalls: [] };
+      },
+    };
+
+    await runAgentLoop({
+      initialCode: '',
+      instruction: 'hello',
+      systemPrompt: 'You are a music assistant.',
+      llm,
+    });
+    expect(seen).toEqual([true]);
+
+    seen.length = 0;
+    await runAgentLoop({
+      initialCode: '',
+      instruction: 'hello',
+      systemPrompt: 'You are a music assistant.',
+      llm,
+      enableThinking: false,
+    });
+    expect(seen).toEqual([false]);
+  });
+});
+
 describe('runAgentLoop — pure chat replies', () => {
   it('returns a no-code result without warning when the model replies with text and no tools', async () => {
     const events: Array<{ kind: string; message?: string }> = [];

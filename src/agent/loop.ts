@@ -49,7 +49,9 @@ export interface LLMCaller {
     tools: ReturnType<typeof getOpenAIToolSchemas>,
     onTextDelta?: (delta: string) => void,
     onReasoningDelta?: (delta: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    /** When false, suppress the reasoning/thinking chain for this call (default true). */
+    enableThinking?: boolean
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
@@ -82,6 +84,8 @@ export interface RunAgentOptions {
   onProgress?: (e: ProgressEvent) => void;
   signal?: AbortSignal;
   conversationHistory?: ConversationTurn[];
+  /** When false, the model's reasoning/thinking chain is disabled for this run (default true). */
+  enableThinking?: boolean;
 }
 
 export interface TokenUsage {
@@ -135,6 +139,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     onProgress,
     signal,
     conversationHistory,
+    enableThinking = true,
   } = opts;
 
   const state: AgentState = {
@@ -193,7 +198,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
     const onTextDelta = makeProgressDelta(onProgress, 'assistant_text_delta');
     const onReasoningDelta = makeProgressDelta(onProgress, 'reasoning_delta');
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal);
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal, enableThinking);
     if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
