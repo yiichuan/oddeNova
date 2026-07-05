@@ -29,6 +29,7 @@ import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
+import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 
 export default function App() {
   const strudel = useStrudel();
@@ -103,11 +104,36 @@ export default function App() {
     }
   }, [sessions]);
 
-  const [showApiKeyModal, setShowApiKeyModal] = useState(() => {
-    try { if (window.self !== window.top) return false; } catch { return false; }
-    return !hasApiKeyConfigured();
+  const [apiKeyModalState, setApiKeyModalState] = useState(() => {
+    let isTopWindow = true;
+    try {
+      isTopWindow = window.self === window.top;
+    } catch {
+      // Cross-origin frame access can throw; treat it as embedded and stay quiet.
+      isTopWindow = false;
+    }
+    const shouldOpen = shouldAutoOpenApiKeyModal({
+      isTopWindow,
+      hasApiKeyConfigured: hasApiKeyConfigured(),
+      hasSeenCommunityInvite: hasSeenCommunityInvite(),
+    });
+    // autoOpened distinguishes first-entry/required prompts from manual settings opens,
+    // so closing the Settings button path does not mark the invite as seen.
+    return { open: shouldOpen, autoOpened: shouldOpen };
   });
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
+
+  const closeApiKeyModal = useCallback(() => {
+    if (apiKeyModalState.autoOpened) {
+      // Dismissal counts as exposure; avoid showing the QR invite again next visit.
+      markCommunityInviteSeen();
+    }
+    setApiKeyModalState({ open: false, autoOpened: false });
+  }, [apiKeyModalState.autoOpened]);
+
+  const openSettings = useCallback(() => {
+    setApiKeyModalState({ open: true, autoOpened: false });
+  }, []);
 
   const current = sessions.currentSession;
   const messages = isReplaying ? replayMessages : (current?.messages ?? []);
@@ -360,9 +386,9 @@ export default function App() {
   if (isMobile) {
     return (
       <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
-        {showApiKeyModal && (
+        {apiKeyModalState.open && (
           <ApiKeyModal
-            onClose={() => setShowApiKeyModal(false)}
+            onClose={closeApiKeyModal}
             onSaved={resetClient}
             required={!hasApiKeyConfigured()}
           />
@@ -401,7 +427,7 @@ export default function App() {
             <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
           </h1>
           <TopActionBar
-            onOpenSettings={() => setShowApiKeyModal(true)}
+            onOpenSettings={openSettings}
             session={sessions.currentSession}
             code={strudel.code}
             messages={messages}
@@ -444,7 +470,7 @@ export default function App() {
                 onResetExportState={strudel.resetExportState}
                 session={sessions.currentSession}
                 messages={messages}
-                onOpenSettings={() => setShowApiKeyModal(true)}
+                onOpenSettings={openSettings}
                 onEditorFocusChange={handleCodeFocusChange}
               />
             </div>
@@ -564,9 +590,9 @@ export default function App() {
       className="flex h-full w-full bg-bg-primary overflow-hidden"
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
     >
-      {showApiKeyModal && (
+      {apiKeyModalState.open && (
         <ApiKeyModal
-          onClose={() => setShowApiKeyModal(false)}
+          onClose={closeApiKeyModal}
           onSaved={resetClient}
           required={!hasApiKeyConfigured()}
         />
@@ -638,7 +664,7 @@ export default function App() {
             session={sessions.currentSession}
             messages={messages}
             topActionsContainer={topActionsRef}
-            onOpenSettings={() => setShowApiKeyModal(true)}
+            onOpenSettings={openSettings}
           />
         </div>
 
