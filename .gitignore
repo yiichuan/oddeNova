@@ -39,6 +39,7 @@ _plans/
 docs/superpowers/
 docs/research/
 .superpowers/
+.agents/
 
 # Audio files
 *.wav

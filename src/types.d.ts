@@ -8,3 +8,4 @@ declare module '@strudel/mini';
 declare module '@strudel/tonal';
 declare module '@strudel/webaudio';
 declare module '@strudel/transpiler';
+declare module 'fake-indexeddb/auto';

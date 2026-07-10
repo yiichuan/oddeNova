@@ -24,6 +24,18 @@ export interface Session {
   updatedAt: number;
 }
 
+export interface CloudSessionRepository {
+  listSessions: () => Promise<Session[]>;
+  saveSession: (session: Session) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
+}
+
+export interface UseSessionsOptions {
+  ownerKey?: string;
+  syncEnabled?: boolean;
+  cloud?: CloudSessionRepository;
+}
+
 let messageId = 0;
 
 function newSessionId(): string {
@@ -75,7 +87,10 @@ export function applyTruncate(s: Session, targetMessageId: string): Session {
   return { ...s, messages: s.messages.slice(0, index) };
 }
 
-export function useSessions() {
+export function useSessions(options: UseSessionsOptions = {}) {
+  const ownerKey = options.ownerKey ?? 'guest';
+  const syncEnabled = options.syncEnabled ?? false;
+  const cloud = options.cloud;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -84,22 +99,46 @@ export function useSessions() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setIsLoading(true);
       await openDB();
-      const loaded = await getAllSessions();
+      let loaded = await getAllSessions(ownerKey);
+      if (syncEnabled && cloud) {
+        try {
+          const remote = await cloud.listSessions();
+          if (remote.length > 0) {
+            loaded = remote;
+            await Promise.all(remote.map((s) => dbPutSession(s, ownerKey)));
+          }
+        } catch (err) {
+          console.warn('[sessions] cloud session load failed; using local cache.', err);
+        }
+      }
       if (cancelled) return;
 
       // Create a new session on every startup/refresh
       const fresh = makeEmptySession();
-      await dbPutSession(fresh);
+      await dbPutSession(fresh, ownerKey);
       setSessions([fresh, ...loaded]);
       setCurrentId(fresh.id);
       setIsLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [ownerKey, syncEnabled, cloud]);
 
   const currentSession =
     sessions.find((s) => s.id === currentId) || sessions[0] || null;
+
+  const persistSession = useCallback(
+    (session: Session) => {
+      dbPutSession(session, ownerKey);
+      if (syncEnabled && cloud && (session.messages.length > 0 || session.code)) {
+        cloud.saveSession(session).catch((err) => {
+          console.warn('[sessions] cloud session save failed.', err);
+        });
+      }
+    },
+    [ownerKey, syncEnabled, cloud]
+  );
 
   const updateCurrent = useCallback(
     (mut: (s: Session) => Session) => {
@@ -109,12 +148,12 @@ export function useSessions() {
         return prev.map((s) => {
           if (s.id !== id) return s;
           const updated = { ...mut(s), updatedAt: Date.now() };
-          dbPutSession(updated);
+          persistSession(updated);
           return updated;
         });
       });
     },
-    [currentId]
+    [currentId, persistSession]
   );
 
   const updateSession = useCallback(
@@ -123,12 +162,12 @@ export function useSessions() {
         prev.map((s) => {
           if (s.id !== sessionId) return s;
           const updated = { ...mut(s), updatedAt: Date.now() };
-          dbPutSession(updated);
+          persistSession(updated);
           return updated;
         })
       );
     },
-    []
+    [persistSession]
   );
 
   // Pick the mutator for a given session: a specific one by id, or the current
@@ -270,10 +309,10 @@ export function useSessions() {
       const cur = prev.find((s) => s.id === id);
       // If the current session is already empty, reuse it instead of stacking
       // up another untouched "New Session".
-      if (cur && cur.messages.length === 0 && !cur.code) {
+        if (cur && cur.messages.length === 0 && !cur.code) {
         if (id && currentId !== id) setCurrentId(id);
         const refreshed = { ...cur, title: t('newSessionTitle'), updatedAt: Date.now() };
-        dbPutSession(refreshed);
+        persistSession(refreshed);
         return prev.map((s) => s.id === cur.id ? refreshed : s);
       }
       // If there's already an empty session in the list, switch to it instead
@@ -284,15 +323,15 @@ export function useSessions() {
         setCurrentId(existingEmpty.id);
         // Refresh createdAt so the reused empty session sorts to the top.
         const refreshed = { ...existingEmpty, title: t('newSessionTitle'), createdAt: Date.now(), updatedAt: Date.now() };
-        dbPutSession(refreshed);
+        persistSession(refreshed);
         return prev.map((s) => s.id === existingEmpty.id ? refreshed : s);
       }
       const fresh = makeEmptySession();
       setCurrentId(fresh.id);
-      dbPutSession(fresh);
+      persistSession(fresh);
       return [fresh, ...prev];
     });
-  }, [currentId]);
+  }, [currentId, persistSession]);
 
   const switchTo = useCallback((id: string) => {
     setCurrentId(id);
@@ -311,18 +350,23 @@ export function useSessions() {
     (id: string) => {
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
-        dbDeleteSession(id);
+        dbDeleteSession(id, ownerKey);
+        if (syncEnabled && cloud) {
+          cloud.deleteSession(id).catch((err) => {
+            console.warn('[sessions] cloud session delete failed.', err);
+          });
+        }
         if (next.length === 0) {
           const fresh = makeEmptySession();
           setCurrentId(fresh.id);
-          dbPutSession(fresh);
+          persistSession(fresh);
           return [fresh];
         }
         if (id === currentId) setCurrentId(next[0].id);
         return next;
       });
     },
-    [currentId]
+    [currentId, ownerKey, syncEnabled, cloud, persistSession]
   );
 
   const importSession = useCallback(
@@ -337,11 +381,14 @@ export function useSessions() {
         createdAt: now,
         updatedAt: now,
       };
-      await dbPutSession(session);
+      await dbPutSession(session, ownerKey);
+      if (syncEnabled && cloud) {
+        await cloud.saveSession(session);
+      }
       setSessions((prev) => [session, ...prev]);
       setCurrentId(id);
     },
-    []
+    [ownerKey, syncEnabled, cloud]
   );
 
   const branchFromMessage = useCallback(
@@ -369,9 +416,9 @@ export function useSessions() {
       // load but won't persist on refresh.
       setSessions((prev) => [branched, ...prev]);
       setCurrentId(id);
-      dbPutSession(branched).catch(console.error);
+      persistSession(branched);
     },
-    [sessions, currentId]
+    [sessions, currentId, persistSession]
   );
 
   const updateTokenStats = useCallback(

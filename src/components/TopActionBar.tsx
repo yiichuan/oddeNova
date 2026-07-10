@@ -411,6 +411,8 @@ function ExportPopover({
 
 interface TopActionBarProps {
   onOpenSettings: () => void;
+  onOpenAccount: () => void;
+  accountLabel: string;
   session: Session | null;
   code: string;
   messages: ChatMessage[];
@@ -425,6 +427,8 @@ interface TopActionBarProps {
 
 export default function TopActionBar({
   onOpenSettings,
+  onOpenAccount,
+  accountLabel,
   session,
   code,
   messages,
@@ -478,6 +482,15 @@ export default function TopActionBar({
               style={{ top: 'calc(max(12px, env(safe-area-inset-top)) + 44px)' }}
               onClick={(e) => e.stopPropagation()}
             >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); onOpenAccount(); }}
+                className="mobile-menu-item"
+              >
+                <span>{accountLabel}</span>
+                <SettingsIcon size={19} />
+              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -550,6 +563,15 @@ export default function TopActionBar({
 
   return (
     <div className="h-full relative flex items-center justify-end gap-3">
+      {/* Account */}
+      <button
+        onClick={onOpenAccount}
+        className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5 max-w-[180px]"
+        title={accountLabel}
+      >
+        <span className="truncate">{accountLabel}</span>
+      </button>
+
       {/* Settings */}
       <button
         onClick={onOpenSettings}

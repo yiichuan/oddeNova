@@ -37,6 +37,8 @@ function renderCodePanel(props: Partial<Parameters<typeof CodePanel>[0]> = {}) {
     session: null,
     messages: [],
     onOpenSettings: vi.fn(),
+    onOpenAccount: vi.fn(),
+    accountLabel: 'Sign in',
   };
 
   act(() => {

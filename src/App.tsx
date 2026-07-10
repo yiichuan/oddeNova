@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import CodePanel from './components/CodePanel';
@@ -27,16 +27,33 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
+import AccountModal from './components/AccountModal';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
+import { useAuth } from './hooks/useAuth';
+import { deleteCloudSession, listCloudSessions, saveCloudSession } from './services/cloud-session-repository';
+import { getAllSessions } from './lib/session-storage';
+import { collectImportableGuestSessions, getNextImportPromptUserMarker } from './lib/session-import';
+import type { Session } from './hooks/useSessions';
 
 export default function App() {
   const strudel = useStrudel();
+  const auth = useAuth();
+  const cloudRepository = useMemo(() => ({
+    listSessions: listCloudSessions,
+    saveSession: saveCloudSession,
+    deleteSession: deleteCloudSession,
+  }), []);
+  const ownerKey = auth.user ? `user:${auth.user.id}` : 'guest';
   const { isReplaying, replayMessages, replayInputText, startReplay } = useReplay(
     (code) => { strudel.play(code); }
   );
-  const sessions = useSessions();
+  const sessions = useSessions({
+    ownerKey,
+    syncEnabled: !!auth.user,
+    cloud: cloudRepository,
+  });
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [isMoodLoading, setIsMoodLoading] = useState(false);
@@ -45,12 +62,20 @@ export default function App() {
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
+  const [guestImportError, setGuestImportError] = useState('');
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
+  const importPromptUserRef = useRef<string | null>(null);
+  const latestGuestSessionsRef = useRef<Session[]>([]);
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
   const strudelRef = useRef(strudel);
   useEffect(() => { strudelRef.current = strudel; }, [strudel]);
+  useEffect(() => {
+    if (auth.recoveringPassword) setAccountOpen(true);
+  }, [auth.recoveringPassword]);
   const { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle } = useVideoDemo(strudelRef);
 
   const {
@@ -76,6 +101,21 @@ export default function App() {
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
+
+  useEffect(() => {
+    if (!auth.user && !sessions.isLoading) {
+      latestGuestSessionsRef.current = sessions.sessions;
+    }
+  }, [auth.user, sessions.isLoading, sessions.sessions]);
+
+  useEffect(() => {
+    const nextMarker = getNextImportPromptUserMarker(auth.user?.id ?? null, importPromptUserRef.current);
+    if (nextMarker !== importPromptUserRef.current) {
+      importPromptUserRef.current = nextMarker;
+      setGuestImportError('');
+      setGuestImportSessions(null);
+    }
+  }, [auth.user]);
 
   useEffect(() => {
     const prev = prevLoadingRef.current;
@@ -135,6 +175,39 @@ export default function App() {
     setApiKeyModalState({ open: true, autoOpened: false });
   }, []);
 
+  useEffect(() => {
+    const userId = auth.user?.id;
+    if (!userId || auth.loading || importPromptUserRef.current === userId) return;
+    getAllSessions('guest').then((guestSessions) => {
+      const importable = collectImportableGuestSessions(guestSessions, latestGuestSessionsRef.current);
+      if (importable.length > 0) {
+        setGuestImportError('');
+        setGuestImportSessions(importable);
+      }
+      importPromptUserRef.current = userId;
+    }).catch((err) => {
+      console.warn('[account] failed to inspect guest sessions for import.', err);
+    });
+  }, [auth.user, auth.loading]);
+
+  const importGuestHistory = useCallback(async () => {
+    const items = guestImportSessions ?? [];
+    setGuestImportError('');
+    try {
+      for (const item of items) {
+        await sessions.importSession({
+          title: item.title,
+          code: item.code,
+          messages: item.messages,
+        });
+      }
+      setGuestImportSessions(null);
+    } catch (err) {
+      console.warn('[account] failed to import guest sessions to cloud.', err);
+      setGuestImportError(t('accountActionFailed'));
+    }
+  }, [guestImportSessions, sessions]);
+
   const current = sessions.currentSession;
   const messages = isReplaying ? replayMessages : (current?.messages ?? []);
   // Session code = last committed/played code (used as agent context)
@@ -156,6 +229,47 @@ export default function App() {
   const demoSuggestions = isDemoMode()
     ? (demoStep < activeSet.length ? [activeSet[demoStep].prompt] : [])
     : suggestions;
+
+  const accountLabel = auth.user?.email || (auth.user ? t('account') : t('signIn'));
+
+  const accountOverlays = (
+    <>
+      {accountOpen && (
+        <AccountModal
+          user={auth.user}
+          configured={auth.configured}
+          recoveringPassword={auth.recoveringPassword}
+          onClose={() => setAccountOpen(false)}
+        />
+      )}
+      {guestImportSessions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+          <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
+            <h2 className="text-lg font-semibold text-text-primary mb-2">{t('importLocalHistory')}</h2>
+            <p className="text-xs text-text-muted mb-5">{t('importLocalHistoryDesc')}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setGuestImportError('');
+                  setGuestImportSessions(null);
+                }}
+                className="flex-1 py-2.5 text-sm text-text-secondary bg-bg-tertiary rounded-lg hover:bg-border transition-colors"
+              >
+                {t('notNow')}
+              </button>
+              <button
+                onClick={() => void importGuestHistory()}
+                className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors"
+              >
+                {t('importNow')}
+              </button>
+            </div>
+            {guestImportError && <div className="text-xs text-red-300 mt-3">{guestImportError}</div>}
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -428,6 +542,8 @@ export default function App() {
           </h1>
           <TopActionBar
             onOpenSettings={openSettings}
+            onOpenAccount={() => setAccountOpen(true)}
+            accountLabel={accountLabel}
             session={sessions.currentSession}
             code={strudel.code}
             messages={messages}
@@ -471,6 +587,8 @@ export default function App() {
                 session={sessions.currentSession}
                 messages={messages}
                 onOpenSettings={openSettings}
+                onOpenAccount={() => setAccountOpen(true)}
+                accountLabel={accountLabel}
                 onEditorFocusChange={handleCodeFocusChange}
               />
             </div>
@@ -581,6 +699,7 @@ export default function App() {
             </div>
           </div>
         )}
+        {accountOverlays}
       </div>
     );
   }
@@ -597,6 +716,7 @@ export default function App() {
           required={!hasApiKeyConfigured()}
         />
       )}
+      {accountOverlays}
 
       {/* Sidebar with dynamic width */}
       <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
@@ -665,6 +785,8 @@ export default function App() {
             messages={messages}
             topActionsContainer={topActionsRef}
             onOpenSettings={openSettings}
+            onOpenAccount={() => setAccountOpen(true)}
+            accountLabel={accountLabel}
           />
         </div>
 

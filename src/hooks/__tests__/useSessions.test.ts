@@ -11,7 +11,7 @@ import type { Session } from '../useSessions';
 
 const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
-  getAllSessions: vi.fn(async () => []),
+  getAllSessions: vi.fn<() => Promise<Session[]>>(async () => []),
   putSession: vi.fn(async () => undefined),
   deleteSession: vi.fn(async () => undefined),
 }));
@@ -37,14 +37,14 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
-async function renderUseSessions(): Promise<{ root: Root; getHook: () => ReturnType<typeof useSessions> }> {
+async function renderUseSessions(options?: Parameters<typeof useSessions>[0]): Promise<{ root: Root; getHook: () => ReturnType<typeof useSessions> }> {
   let hook: ReturnType<typeof useSessions> | undefined;
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
   function Probe({ onValue }: { onValue: (value: ReturnType<typeof useSessions>) => void }) {
-    const value = useSessions();
+    const value = useSessions(options);
     useEffect(() => {
       onValue(value);
     });
@@ -109,6 +109,95 @@ describe('useSessions', () => {
     });
 
     expect(getHook().currentSession?.title).toBe('全新内容');
+  });
+
+  it('loads and writes sessions under the requested owner key', async () => {
+    storageMocks.getAllSessions.mockResolvedValueOnce([
+      makeSession({ id: 'account-session', title: 'Account', messages: [{ id: 'm', role: 'user', content: 'hi', timestamp: 1 }] }),
+    ] as Session[]);
+    const { root, getHook } = await renderUseSessions({ ownerKey: 'user:u-1' });
+    roots.push(root);
+
+    expect(storageMocks.getAllSessions).toHaveBeenCalledWith('user:u-1');
+
+    act(() => {
+      getHook().renameSession('account-session', 'Cloud Title');
+    });
+
+    expect(storageMocks.putSession).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'account-session',
+      title: 'Cloud Title',
+    }), 'user:u-1');
+  });
+
+  it('saves changed account sessions through the cloud repository when sync is enabled', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    act(() => {
+      getHook().addUserMessage('同步这段旋律');
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [expect.objectContaining({ content: '同步这段旋律' })],
+    }));
+  });
+
+  it('waits for imported sessions to be saved to the cloud when sync is enabled', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '本机历史',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+      });
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: '本机历史',
+      messages: [expect.objectContaining({ content: '本地聊天' })],
+    }));
+  });
+
+  it('rejects imported sessions when the cloud save fails', async () => {
+    const cloudError = new Error('Cloud save failed');
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => { throw cloudError; }),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    await expect(getHook().importSession({
+      title: '本机历史',
+      code: 's("bd")',
+      messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+    })).rejects.toThrow('Cloud save failed');
   });
 
   it('newSession resets the title when reusing an empty current session', async () => {

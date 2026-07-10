@@ -27,6 +27,8 @@ interface CodePanelProps {
   messages: ChatMessage[];
   topActionsContainer?: React.RefObject<HTMLDivElement | null>;
   onOpenSettings: () => void;
+  onOpenAccount: () => void;
+  accountLabel: string;
   onEditorFocusChange?: (focused: boolean) => void;
 }
 
@@ -200,6 +202,8 @@ export default function CodePanel({
   messages,
   topActionsContainer,
   onOpenSettings,
+  onOpenAccount,
+  accountLabel,
   onEditorFocusChange,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -382,6 +386,8 @@ export default function CodePanel({
       {topActionsContainer?.current && createPortal(
         <TopActionBar
           onOpenSettings={onOpenSettings}
+          onOpenAccount={onOpenAccount}
+          accountLabel={accountLabel}
           session={session}
           code={strudelService.code}
           messages={messages}
