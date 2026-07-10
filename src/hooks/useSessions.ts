@@ -57,11 +57,14 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
   const index = s.messages.findIndex((m) => m.id === targetMessageId);
   if (index === -1) return s;
   const before = s.messages.slice(0, index);
+  // Keep the original message's id: the retried/edited bubble is conceptually
+  // the same message, and reusing its id keeps React's reconciliation on the
+  // same DOM node instead of unmount+remount, which would replay the
+  // fade-in-up mount animation and flash the bubble on every retry.
   const newMsg = {
-    id: newMessageId(),
+    ...s.messages[index],
     role: 'user' as const,
     content: newContent,
-    timestamp: Date.now(),
   };
   const messages = [...before, newMsg];
   const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');

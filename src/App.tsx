@@ -11,8 +11,7 @@ import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore } from './lib/conversation-history';
-import { commitPlayback } from './lib/playback-commit';
-import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
+import { isDemoMode, getActiveDemoSet } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
@@ -39,7 +38,6 @@ export default function App() {
   const sessions = useSessions();
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
-  const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
@@ -260,22 +258,12 @@ export default function App() {
       const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
-      // Roll back to the rollback target and commit it as the session truth.
-      // A non-empty target plays + persists via commitPlayback; an empty one clears.
-      if (previousCode) {
-        if (sessions.currentId) {
-          await commitPlayback(previousCode, sessions.currentId, {
-            play: strudel.play,
-            setCurrentCode: sessions.setCurrentCode,
-          });
-        } else {
-          await strudel.play(previousCode);
-        }
-      } else {
-        strudel.stop();
-        strudel.setCode('');
-        if (sessions.currentId) sessions.setCurrentCode('', sessions.currentId);
-      }
+      // Restore the rollback target as the session truth without auto-playing:
+      // stop current audio (it belongs to the rolled-away version), put the
+      // code back in the editor, and persist it. Playback stays a user action.
+      strudel.stop();
+      strudel.setCode(previousCode);
+      if (sessions.currentId) sessions.setCurrentCode(previousCode, sessions.currentId);
 
       return { target, previousCode };
     },
@@ -337,9 +325,7 @@ export default function App() {
 
     let moodContext: string | null = null;
     if (!isDemoMode()) {
-      setIsMoodLoading(true);
       moodContext = await fetchMoodContext();
-      setIsMoodLoading(false);
     }
 
     // Mood generation is a one-off creation: deliberately no conversation history.
@@ -604,7 +590,6 @@ export default function App() {
           title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
-          isMoodLoading={isMoodLoading}
           engineReady={strudel.engineReady}
           engineStatus={strudel.engineStatus}
           sessions={sessions.sessions}
@@ -612,8 +597,6 @@ export default function App() {
           suggestions={isVideoMode ? [] : demoSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
-          suggestionsLoading={!isDemoMode() && suggestionsLoading}
-          fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
           onSendText={handleInstruction}
           onStop={handleStop}
           onNewSession={handleNewSession}
@@ -717,6 +700,9 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
     return v == null ? '' : String(v);
   };
   switch (name) {
+    case 'setCode':
+      return t('arrangeMusic');
+
     case 'getScore':
       return t('readScore');
 

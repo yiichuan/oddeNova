@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { CheckIcon, CopyIcon, GitBranchIcon, RetryIcon, RollbackIcon } from './icons';
+import { Undo2 } from 'lucide-react';
+import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, RetryIcon } from './icons';
+import { ThinkingLottie } from './ThinkingLottie';
 import { t } from '../lib/i18n';
 
 type MobileNoSelectStyle = CSSProperties & {
@@ -13,6 +15,15 @@ const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
   WebkitUserSelect: 'none',
   WebkitTouchCallout: 'none',
 };
+
+// Thinking duration: "45s" under a minute, "2m 5s" above; whole minutes drop
+// the seconds ("5m" not "5m 0s").
+function formatThinkDuration(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
+}
 
 function stripMarkdown(text: string): string {
   return text
@@ -50,31 +61,142 @@ export default function ConversationView({
   onRetry,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
+  const prevIsLoadingRef = useRef(false);
+  // Once the first turn starts (in this component's lifetime — it remounts
+  // per session, see the `key` in App.tsx), stays true so the top-anchor and
+  // the turn filler survive a turn ending — whether by completion or
+  // interrupt — without falling back to pinning the bottom. Stays false for a
+  // freshly opened past session (no turn has run yet here), so it opens
+  // pinned to the bottom of its actual last message instead of reserving
+  // filler space below it. State, not a ref: it also gates the filler's
+  // inline style, so it must trigger a render.
+  const [turnAnchorActive, setTurnAnchorActive] = useState(false);
+  // Flips turnAnchorActive the same render isLoading first turns true — the
+  // "adjust state during rendering" pattern (see React docs: storing
+  // information from previous renders), not a setState inside an effect, so
+  // the filler/anchor are already correct on the very commit that starts the
+  // turn instead of lagging a frame behind. Uses state (not a ref) to track
+  // the previous value: refs may not be read during render.
+  const [prevIsLoadingSnapshot, setPrevIsLoadingSnapshot] = useState(isLoading);
+  if (isLoading !== prevIsLoadingSnapshot) {
+    setPrevIsLoadingSnapshot(isLoading);
+    if (isLoading && !turnAnchorActive) setTurnAnchorActive(true);
+  }
+  // In-flight programmatic smooth scroll (turn-start anchoring): its target
+  // and a deadline after which it's considered interrupted/finished.
+  const autoScrollRef = useRef<{ target: number; until: number } | null>(null);
   const reasoningPreRef = useRef<HTMLPreElement>(null);
   const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
+  const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
+  const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // User-collapsed state of the live streaming reasoning window.
+  const [reasoningCollapsed, setReasoningCollapsed] = useState(false);
   const isMobile = useIsMobile();
   // On mobile, long-pressing a message reveals the rollback button (no real hover state on touch screens)
   const [longPressedId, setLongPressedId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Detect manual user scroll: stop auto-following when more than 80px from the bottom, resume when scrolled back
+  // Expanded "构思" windows whose header toggle has scrolled out above the
+  // viewport — those show a floating collapse button stuck to the bottom of
+  // the visible area so long reasoning can be dismissed mid-read.
+  const [hiddenReasoningHeaders, setHiddenReasoningHeaders] = useState<Set<string>>(new Set());
+  const reasoningHeaderObserverRef = useRef<IntersectionObserver | null>(null);
+  const observeReasoningHeader = useCallback((el: HTMLButtonElement) => {
+    if (!reasoningHeaderObserverRef.current) {
+      reasoningHeaderObserverRef.current = new IntersectionObserver(
+        (entries) => {
+          setHiddenReasoningHeaders((prev) => {
+            const next = new Set(prev);
+            for (const e of entries) {
+              const id = (e.target as HTMLElement).dataset.reasoningHeader;
+              if (!id) continue;
+              // Only when it left through the top edge — if the header is
+              // below the viewport the window hasn't been reached yet.
+              const outAbove =
+                !e.isIntersecting &&
+                e.rootBounds !== null &&
+                e.boundingClientRect.bottom <= e.rootBounds.top;
+              if (outAbove) next.add(id);
+              else next.delete(id);
+            }
+            return next;
+          });
+        },
+        { root: scrollRef.current },
+      );
+    }
+    const observer = reasoningHeaderObserverRef.current;
+    observer.observe(el);
+    return () => observer.unobserve(el);
+  }, []);
+  useEffect(() => () => reasoningHeaderObserverRef.current?.disconnect(), []);
+
+  const lastUserMsgId = useMemo(
+    () => messages.findLast((m) => m.role === 'user')?.id,
+    [messages],
+  );
+
+  // Detect manual user scroll: stop auto-following when more than 80px from
+  // the bottom, resume when scrolled back. Scroll events produced by our own
+  // smooth turn-start animation must not count as manual — its intermediate
+  // frames are >80px from the bottom and would cut the animation short — so
+  // while a programmatic scroll is in flight, only a real user gesture
+  // (wheel/touch) cancels it.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const handleScroll = () => {
+      const auto = autoScrollRef.current;
+      if (auto) {
+        if (Math.abs(el.scrollTop - auto.target) < 2) {
+          autoScrollRef.current = null; // animation arrived; don't mark manual
+          return;
+        }
+        if (performance.now() < auto.until) return;
+        autoScrollRef.current = null; // stale flight (interrupted); fall through
+      }
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       userScrolledRef.current = distFromBottom > 80;
     };
+    const handleUserScrollIntent = () => {
+      if (autoScrollRef.current) {
+        autoScrollRef.current = null;
+        userScrolledRef.current = true;
+      }
+    };
     el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => el.removeEventListener('scroll', handleScroll);
+    el.addEventListener('wheel', handleUserScrollIntent, { passive: true });
+    el.addEventListener('touchmove', handleUserScrollIntent, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      el.removeEventListener('wheel', handleUserScrollIntent);
+      el.removeEventListener('touchmove', handleUserScrollIntent);
+    };
   }, []);
 
   const toggleCode = (id: string) => {
     setExpandedCode((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleReasoning = (id: string) => {
+    setExpandedReasoning((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleActions = (id: string) => {
+    setExpandedActions((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -135,13 +257,65 @@ export default function ConversationView({
     return () => container.removeEventListener('touchstart', handler);
   }, [isMobile, longPressedId]);
 
-  useEffect(() => {
+  // Scroll management. useLayoutEffect (not useEffect): the scroll position is
+  // set before the browser paints, so the user never sees an unadjusted frame
+  // (no flicker). Once a turn starts, the view anchors that turn's user bubble
+  // to the top of the viewport via its layout offset (the turn filler
+  // guarantees enough room below from the very first commit) and keeps
+  // anchoring there — through streaming, through the turn ending normally, and
+  // through interrupts — so stopping/retrying never re-pins to the bottom and
+  // yanks the bubble to a different position. Turn start animates there
+  // smoothly — one continuous, natural glide; every commit after that keeps
+  // the position without motion. Before the first turn (e.g. a freshly opened
+  // past session) it falls back to pinning the bottom.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const turnJustStarted = isLoading && !prevIsLoadingRef.current;
+    prevIsLoadingRef.current = isLoading;
     if (isVideoMode && !scrollBottom) {
       // [video] Video mode: display from the top; only scroll to bottom when scrollBottom=true
-      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      el.scrollTop = 0;
     } else {
+      // Turn start overrides any manual scroll (the user just acted on this turn).
+      if (turnJustStarted) userScrolledRef.current = false;
       if (!userScrolledRef.current) {
-        bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+        const bottomPin = el.scrollHeight - el.clientHeight;
+        let target = bottomPin;
+        if (turnAnchorActive && lastUserMsgId) {
+          const bubble = el.querySelector<HTMLElement>(
+            `[data-rollback-bubble="${CSS.escape(lastUserMsgId)}"]`,
+          );
+          if (bubble) {
+            // Walk the offsetParent chain up to the scroll container: a plain
+            // bubble.offsetTop is unreliable because the fade-in-up animation's
+            // transform makes the freshly mounted row itself the offsetParent.
+            // offsetTop is pure layout geometry, so the summed chain is immune
+            // to in-flight transforms.
+            let top = 0;
+            let node: HTMLElement | null = bubble;
+            while (node && node !== el) {
+              top += node.offsetTop;
+              node = node.offsetParent as HTMLElement | null;
+            }
+            if (node === el) target = Math.min(bottomPin, top - 10);
+          }
+        }
+        target = Math.max(0, target);
+        const auto = autoScrollRef.current;
+        if (turnJustStarted) {
+          autoScrollRef.current = { target, until: performance.now() + 800 };
+          el.scrollTo({ top: target, behavior: 'smooth' });
+        } else if (auto && performance.now() < auto.until) {
+          // Smooth flight in progress: retarget only if layout shifted.
+          if (Math.abs(auto.target - target) > 1) {
+            auto.target = target;
+            el.scrollTo({ top: target, behavior: 'smooth' });
+          }
+        } else {
+          autoScrollRef.current = null;
+          el.scrollTop = target;
+        }
       }
       // Auto-scroll the reasoning <pre> to the bottom (follow content during streaming output)
       const preEl = reasoningPreRef.current;
@@ -153,7 +327,7 @@ export default function ConversationView({
         reasoningUserScrolledRef.current = false;
       }
     }
-  }, [messages, isLoading, isVideoMode, scrollBottom]);
+  }, [messages, isLoading, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
   const { absorbedReasoningIds } = useMemo(() => {
@@ -171,6 +345,98 @@ export default function ConversationView({
     }
     return { absorbedReasoningIds };
   }, [messages]);
+
+  // Which reasoning messages belong to the composition ("编曲") phase: those
+  // whose next tool call is `setCode` (writing/replacing the Strudel script).
+  // These are kept as a collapsed window in the stream after thinking ends;
+  // reasoning from other phases (validate/commit/read-score) disappears.
+  const { arrangeReasoningIds, reasoningDurationSec } = useMemo(() => {
+    const ids = new Set<string>();
+    // Thinking duration per reasoning message = time until the next message (the
+    // reasoning message's timestamp is when its first token streamed in; the next
+    // message is created once reasoning ends and the next phase begins).
+    const durationSec = new Map<string, number>();
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+      if (m.role !== 'progress' || m.progressKind !== 'reasoning') continue;
+      if (i + 1 < messages.length) {
+        durationSec.set(m.id, Math.max(1, Math.round((messages[i + 1].timestamp - m.timestamp) / 1000)));
+      }
+      for (let j = i + 1; j < messages.length; j++) {
+        const n = messages[j];
+        if (n.role === 'progress' && n.progressKind === 'tool_call') {
+          if (n.toolName === 'setCode') ids.add(m.id);
+          break;
+        }
+      }
+    }
+    return { arrangeReasoningIds: ids, reasoningDurationSec: durationSec };
+  }, [messages]);
+
+  // A "thinking" narration message immediately following a reasoning message
+  // renders right away, but the reasoning message itself only starts
+  // rendering (as the collapsed "构思" window above) once a tool_call has
+  // appeared after it — arrangeReasoningIds can't know whether to show it
+  // until then. Left alone, that means the narration visibly appears first
+  // and "构思" pops in above it afterward. Hold the narration back too until
+  // its preceding reasoning is resolved, so whichever of them ends up
+  // visible always appears together, in the right order. Excludes the last
+  // message: while the narration is still the newest one, it's actively
+  // streaming deltas and must keep rendering live like before — there's
+  // nothing yet to know whether it "jumped ahead" of, since no tool_call can
+  // exist after the newest message anyway. Only once something else is
+  // appended after it (streaming has actually finished) does the hold apply.
+  // Only while the turn is still loading, too: if it ends (e.g. aborted)
+  // before a tool_call ever follows the reasoning, `resolved` would never
+  // become true and the narration would stay hidden forever — once the turn
+  // is over there's nothing left to wait for, so just show it.
+  const pendingThinkingIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!isLoading) return ids;
+    for (let i = 1; i < messages.length - 1; i++) {
+      const m = messages[i];
+      if (m.role !== 'progress' || m.progressKind !== 'thinking') continue;
+      const prev = messages[i - 1];
+      if (prev.role !== 'progress' || prev.progressKind !== 'reasoning') continue;
+      const resolved = messages
+        .slice(i + 1)
+        .some((n) => n.role === 'progress' && n.progressKind === 'tool_call');
+      if (!resolved) ids.add(m.id);
+    }
+    return ids;
+  }, [messages, isLoading]);
+
+  // Group each completed turn's intermediate progress (thinking / reasoning /
+  // warnings) that precedes the final assistant summary into a collapsible
+  // "行动过程" section. A run of progress messages qualifies only if it is
+  // followed by an assistant message (the turn is done) and has visibly
+  // rendered content. actionGroupOf maps a progress message id → the group id
+  // (the run's first message id); a message is the group header when its id
+  // equals its group id.
+  const { actionGroupOf, actionGroupDurationSec } = useMemo(() => {
+    const isVisible = (m: ChatMessage) =>
+      m.progressKind === 'thinking' ||
+      m.progressKind === 'warn' ||
+      (m.progressKind === 'reasoning' && arrangeReasoningIds.has(m.id));
+    const groupOf = new Map<string, string>();
+    // Processing time per group = from the first progress message to the
+    // assistant summary that ends the turn.
+    const durationSec = new Map<string, number>();
+    for (let i = 0; i < messages.length; ) {
+      if (messages[i].role !== 'progress') { i++; continue; }
+      let j = i;
+      const run: ChatMessage[] = [];
+      while (j < messages.length && messages[j].role === 'progress') run.push(messages[j++]);
+      const followedByAssistant = j < messages.length && messages[j].role === 'assistant';
+      if (followedByAssistant && run.some(isVisible)) {
+        const gid = run[0].id;
+        for (const r of run) groupOf.set(r.id, gid);
+        durationSec.set(gid, Math.max(1, Math.round((messages[j].timestamp - run[0].timestamp) / 1000)));
+      }
+      i = j;
+    }
+    return { actionGroupOf: groupOf, actionGroupDurationSec: durationSec };
+  }, [messages, arrangeReasoningIds]);
 
   // The reasoning currently being streamed (not yet absorbed by an assistant message).
   // Use findLast to get the most recent one, preventing the previous round's reasoning from being
@@ -194,8 +460,169 @@ export default function ConversationView({
       .slice(streamingReasoningIdx + 1)
       .every((m) => m.role === 'progress' && m.progressKind === 'reasoning');
 
+  // Turn filler: the in-flight loading block and the final assistant message
+  // of the latest turn are stretched to (at least) the visible conversation
+  // height, so the current user bubble can always anchor at the top of the
+  // viewport and every swap during a turn (truncate on retry → loading
+  // indicator → final reply) is height-neutral: nothing jumps. Both blocks
+  // must reach the same OUTER height (margin included) for that to hold.
+  // Expressed in cqh (see .conversation-scroll) instead of a JS-measured
+  // height: the container resizes in the same commit a turn starts (the
+  // suggestion chips row hides), and a one-frame-stale measurement here left
+  // the filler short — visible as a two-step scroll with flicker.
+  // 68 = stack gaps (22×2) + bottom spacer (24); cqh is content-box based, so
+  // container paddings are already excluded. The assistant block additionally
+  // subtracts its mb-16 (64px, room for its hanging action buttons).
+  // The assistant block's filler only applies once turnAnchorActive (a turn
+  // has actually run in this mount) — a freshly opened past session has no
+  // in-progress turn to stay height-neutral for, and reserving this much
+  // space below its last message would just leave a dead gap and pin the
+  // scroll below the visible content instead of at it.
+  //
+  // The loading block uses a hard `height` (turnFillerHeight), not a
+  // `minHeight`: it's a flex column, and its reasoning box is `flex-1` so it
+  // fills exactly the remaining room and scrolls its own overflow. flex-grow
+  // only has "extra" space to hand out when the container's own height is
+  // definite — with a mere minHeight, the container would just keep growing
+  // to fit the reasoning text (unbounded, no internal scroll, so it can
+  // never actually catch up to new lines and any manual scroll inside it
+  // gets fought on the next render). A fixed height sidesteps that: the
+  // reasoning box is properly clipped and owns its own auto-scroll-to-bottom
+  // and manual-scroll tracking, same as it always was meant to.
+  const turnFillerHeight = 'calc(100cqh - 68px)';
+  const assistantFillerMinHeight = 'calc(100cqh - 132px)';
+
+  const lastMessageId = messages[messages.length - 1]?.id;
+
+  // Whether the live streaming reasoning window has content to show right now.
+  const reasoningWindowAvailable =
+    isLoading && !!streamingReasoningMsg?.content && reasoningPhaseActive;
+  const reasoningWindowExpanded = reasoningWindowAvailable && !reasoningCollapsed;
+
+  // Live status shown in the loading indicator. Tool-call / commit labels
+  // ("编排段落…", "准备播放…") aren't kept in the scrollback (they return null
+  // above); instead the latest one surfaces here transiently while its tool
+  // runs, falling back to the generic "thinking…" label otherwise. It vanishes
+  // with the indicator when the turn ends. Only the current in-flight turn's
+  // progress counts — completed turns keep their progress messages (for the
+  // "思考过程" group) and always end with a stale commit ("准备播放").
+  const liveStatusLabel = useMemo(() => {
+    const lastAssistantIdx = messages.findLastIndex((m) => m.role === 'assistant');
+    const last = messages.slice(lastAssistantIdx + 1).findLast((m) => m.role === 'progress');
+    if (last && (last.progressKind === 'tool_call' || last.progressKind === 'commit')) {
+      return last.content;
+    }
+    return t('thinking');
+  }, [messages]);
+
+  // Renders a single progress message's content (thinking narration, the
+  // collapsed "思考" reasoning window, or a warning). Reused both inline while
+  // a turn streams and inside the collapsed "思考过程" group once it completes.
+  const renderProgressContent = (msg: ChatMessage): ReactNode => {
+    if (msg.progressKind === 'reasoning') {
+      // Still streaming live: shown below the thinking indicator, not here.
+      if (msg.id === streamingReasoningMsg?.id && reasoningPhaseActive) {
+        return null;
+      }
+      // Finished. Composition ("编曲") reasoning stays as a collapsed
+      // window; reasoning from other phases disappears.
+      if (!arrangeReasoningIds.has(msg.id)) {
+        return null;
+      }
+      const isExpanded = expandedReasoning.has(msg.id);
+      return (
+        <div key={msg.id} className="flex justify-start animate-fade-in">
+          <div className="w-full px-2">
+            <button
+              ref={observeReasoningHeader}
+              data-reasoning-header={msg.id}
+              onClick={() => toggleReasoning(msg.id)}
+              className="flex items-center gap-1.5 text-sm text-text-secondary/60 hover:text-text-secondary transition-colors"
+            >
+              <ChevronRightIcon
+                size={14}
+                className={`flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+              />
+              <span>{t('reasoningTitle')}</span>
+              {reasoningDurationSec.get(msg.id) != null && (
+                <span>· {formatThinkDuration(reasoningDurationSec.get(msg.id)!)}</span>
+              )}
+            </button>
+            {isExpanded && (
+              <>
+                <pre className="mt-1.5 text-[12px] text-text-muted font-mono whitespace-pre-wrap break-words leading-relaxed animate-fade-in">
+                  {msg.content}
+                </pre>
+                {/* Floating collapse button, stuck to the bottom of the
+                    visible area while the header toggle is scrolled out
+                    above — lets long reasoning be dismissed mid-read */}
+                {/* Zero-height sticky anchor: the button hangs upward from
+                    the content's end, so at the bottom of the window it sits
+                    inside it, bottom-aligned, instead of below it */}
+                {hiddenReasoningHeaders.has(msg.id) && (
+                  <div className="sticky bottom-1 h-0 pointer-events-none">
+                    <button
+                      onClick={() => {
+                        toggleReasoning(msg.id);
+                        requestAnimationFrame(() => {
+                          scrollRef.current
+                            ?.querySelector(`[data-reasoning-header="${CSS.escape(msg.id)}"]`)
+                            ?.scrollIntoView({ block: 'nearest' });
+                        });
+                      }}
+                      title={t('collapse')}
+                      className="pointer-events-auto absolute bottom-0 right-0 flex items-center justify-center w-6.5 h-6.5 text-text-secondary/60 hover:text-text-secondary transition-colors bg-bg-primary/30 backdrop-blur-sm border border-border rounded-full"
+                    >
+                      <ChevronRightIcon size={16} className="-rotate-90" />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+    // Tool-call / commit labels ("编排段落…", "准备播放…") are transient
+    // status — don't keep them in the conversation stream once the tool
+    // call is done.
+    if (msg.progressKind === 'tool_call' || msg.progressKind === 'commit') {
+      return null;
+    }
+    if (msg.progressKind === 'thinking') {
+      // Held back until the reasoning right before it is resolved (see
+      // pendingThinkingIds) — otherwise this would render before "构思" does.
+      if (pendingThinkingIds.has(msg.id)) {
+        return null;
+      }
+      return (
+        <div key={msg.id} className="flex justify-start animate-fade-in">
+          <div className="w-full text-sm text-text-secondary px-2 flex items-start gap-1.5">
+            <span className="flex w-3.5 justify-center flex-shrink-0 mt-[7px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-current" />
+            </span>
+            <span>{stripMarkdown(msg.content)}</span>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div key={msg.id} className="flex justify-start animate-fade-in">
+        <div className="w-full text-sm text-text-muted/70 px-2">
+          <span>{msg.content}</span>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative" style={{ scrollbarGutter: 'stable' }}>
+    <div
+      ref={scrollRef}
+      className={`conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative${
+        reasoningWindowExpanded ? ' scrollbar-hidden' : ''
+      }`}
+      style={{ scrollbarGutter: 'stable' }}
+    >
       {messages.length === 0 && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
           <span>{t('startCreating')}</span>
@@ -204,40 +631,49 @@ export default function ConversationView({
 
       {messages.map((msg) => {
         if (msg.role === 'progress') {
-          // All progress messages always stay in the list — never suppress
-          // them, to avoid the flash of disappearing from indicator then
-          // reappearing in the list.
-          // Reasoning messages: hide from list (shown below blue dot during streaming,
-          // or in assistant bubble after completion).
-          if (msg.progressKind === 'reasoning') {
-            return null;
-          }
-          if (msg.progressKind === 'thinking') {
+          const gid = actionGroupOf.get(msg.id);
+          if (gid) {
+            // Part of a completed turn's "行动过程" group.
+            const expanded = expandedActions.has(gid);
+            const isHeader = gid === msg.id;
+            const content = expanded ? renderProgressContent(msg) : null;
+            if (!isHeader && !content) return null;
             return (
-              <div key={msg.id} className="flex justify-start animate-fade-in-up">
-                <div className="text-xs text-text-secondary px-1 flex items-start gap-1.5">
-                  <span className="opacity-70 mt-0.5">{progressIcon(msg)}</span>
-                  <span>{stripMarkdown(msg.content)}</span>
-                </div>
+              <div key={msg.id} className="animate-fade-in">
+                {isHeader && (
+                  <div className="px-2">
+                    <button
+                      onClick={() => toggleActions(gid)}
+                      className="flex items-center gap-1.5 text-sm text-text-secondary/60 hover:text-text-secondary transition-colors"
+                    >
+                      <span>{t('actionsTitle')}</span>
+                      {actionGroupDurationSec.get(gid) != null && (
+                        <span>· {formatThinkDuration(actionGroupDurationSec.get(gid)!)}</span>
+                      )}
+                      <ChevronRightIcon
+                        size={14}
+                        className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                      />
+                    </button>
+                    <div className="mt-2 border-b border-border/60" />
+                  </div>
+                )}
+                {content && <div className={isHeader ? 'mt-3' : ''}>{content}</div>}
               </div>
             );
           }
-          return (
-            <div key={msg.id} className="flex justify-start animate-fade-in-up">
-              <div className="text-[11px] text-text-muted/70 px-1 flex items-center gap-1.5">
-                <span className="opacity-60">{progressIcon(msg)}</span>
-                <span>{msg.content}</span>
-              </div>
-            </div>
-          );
+          return renderProgressContent(msg);
         }
 
         if (msg.role === 'user') {
           const rollbackButtonEnabled = !isMobile || longPressedId === msg.id;
           return (
-            <div key={msg.id} className="flex justify-end items-end gap-1.5 animate-fade-in-up group">
+            <div
+              key={msg.id}
+              className="flex justify-end items-end gap-1.5 animate-fade-in group"
+            >
               <div
-                className={`relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary${
+                className={`relative max-w-[85%] rounded-xl px-2 py-2 text-sm bg-[#1a1a1a] text-text-primary${
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}
@@ -256,7 +692,7 @@ export default function ConversationView({
                     className="w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
                     title={t('rollbackHere')}
                   >
-                    <RollbackIcon size={12} />
+                    <Undo2 size={12} />
                   </button>
                 </div>
               </div>
@@ -268,24 +704,30 @@ export default function ConversationView({
         return (
           <div
             key={msg.id}
-            className="flex justify-start animate-fade-in-up group mb-6"
+            // items-start keeps the bubble (and its hanging action buttons)
+            // at content height when the turn filler stretches the row
+            className="flex justify-start items-start animate-fade-in group mb-16"
+            style={
+              msg.id === lastMessageId && !isVideoMode && turnAnchorActive
+                ? { minHeight: assistantFillerMinHeight }
+                : undefined
+            }
           >
-            <div className="relative max-w-[85%] rounded-xl px-3 py-2 text-xs bg-transparent text-text-primary">
+            <div className="relative w-full rounded-xl px-2 py-2 text-sm bg-transparent text-text-primary">
               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
               {msg.code && (() => {
                 const isExpanded = expandedCode.has(msg.id);
                 const code = msg.code;
                 const lineCount = code.split('\n').length;
                 return (
-                  <div className="mt-2 rounded-md border border-[#93C2FF]/10 overflow-hidden">
+                  <div className="mt-4 -ml-1 rounded-md border border-[#93C2FF]/30 overflow-hidden animate-fade-in">
                     <div className="w-full flex items-center bg-bg-primary/60 text-[11px] text-[#93C2FF]/70">
                       <button
                         onClick={() => toggleCode(msg.id)}
                         className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors text-left"
                       >
-                        <span className="transition-transform duration-200" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
                         <span>{t('strudelCode')}</span>
-                        <span className="text-text-muted/50">· {lineCount} {t('lines')}</span>
+                        <span>· {lineCount} {t('lines')}</span>
                       </button>
                       <button
                         onClick={() => {
@@ -294,14 +736,14 @@ export default function ConversationView({
                             setTimeout(() => setCopiedId(null), 2000);
                           });
                         }}
-                        className="px-2 py-1.5 text-white/60 hover:text-white hover:bg-bg-primary/80 transition-colors"
+                        className="px-2 py-1.5 text-[#93C2FF]/70 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors"
                         title={t('copyCode')}
                       >
                         {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
                       </button>
                     </div>
                     {isExpanded && (
-                      <pre className="p-2 bg-bg-primary/60 text-[11px] text-[#93C2FF]/90 font-mono overflow-x-auto whitespace-pre-wrap">
+                      <pre className="p-2 bg-bg-primary/60 text-[11px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap animate-fade-in">
                         {code}
                       </pre>
                     )}
@@ -310,20 +752,20 @@ export default function ConversationView({
               })()}
 
               {/* Action buttons — bottom-left, always visible */}
-              <div className="absolute -bottom-5 left-0 flex items-center">
+              <div className="absolute -bottom-6 left-0 flex items-center gap-1.5">
                 <button
                   onClick={() => onRetry(msg.id)}
                   className="text-white/60 hover:text-white p-1"
                   title={t('retry')}
                 >
-                  <RetryIcon size={13} />
+                  <RetryIcon size={16} />
                 </button>
                 <button
                   onClick={() => onBranch(msg.id)}
                   className="text-white/60 hover:text-white p-1"
                   title={t('branchFrom')}
                 >
-                  <GitBranchIcon size={13} />
+                  <GitBranchIcon size={16} />
                 </button>
               </div>
             </div>
@@ -331,48 +773,57 @@ export default function ConversationView({
         );
       })}
 
+      {/* No bottom margin here (unlike the assistant block): the full outer
+          height goes to content, so the reasoning window can reach down —
+          turnFillerHeight keeps the swap with the final reply neutral */}
       {isLoading && (
-        <div className="flex justify-start animate-fade-in-up">
-          <div className="flex items-start gap-1.5 px-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] mt-2 animate-pulse flex-shrink-0" />
-            <div className="min-w-0">
-              <div className="text-sm text-text-primary">{t('thinking')}</div>
-              {streamingReasoningMsg && streamingReasoningMsg.content && reasoningPhaseActive && (
-                <pre
-                  ref={reasoningPreRef}
-                  onScroll={(e) => {
-                    const el = e.currentTarget;
-                    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-                    reasoningUserScrolledRef.current = distFromBottom > 20;
-                  }}
-                  className="mt-1.5 text-[11px] text-text-muted/60 font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto leading-relaxed"
-                >
-                  {streamingReasoningMsg.content}
-                </pre>
-              )}
-            </div>
+        <div
+          className="animate-fade-in flex flex-col"
+          style={!isVideoMode ? { height: turnFillerHeight } : undefined}
+        >
+          <div className="flex items-start gap-1.5 px-1.5 shrink-0">
+            <ThinkingLottie className="w-5 h-5 flex-shrink-0" />
+            <div className="min-w-0 text-sm thinking-shimmer">{liveStatusLabel}</div>
+            {reasoningWindowAvailable && (
+              <button
+                onClick={() => setReasoningCollapsed((v) => !v)}
+                className="flex-shrink-0 p-0.5 text-text-muted hover:text-text-secondary transition-colors"
+                title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
+              >
+                <ChevronRightIcon
+                  size={18}
+                  className={`transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
+                />
+              </button>
+            )}
           </div>
+          {reasoningWindowExpanded && streamingReasoningMsg && (
+            // flex-1 (rather than a calc'd height) fills exactly whatever
+            // room the fixed height above leaves after the indicator row, so
+            // the reasoning box always reaches the loading block's own
+            // bottom — which, via turnFillerHeight, is the conversation's
+            // bottom edge — with no magic-number arithmetic to keep in sync.
+            // min-h-0 lets it size below its content's natural height, which
+            // is what lets the <pre>'s own h-full resolve to a real, clipped
+            // value instead of just growing to fit the streamed text.
+            <div className="mt-3 w-full px-2 flex-1 min-h-0 animate-fade-in">
+              <pre
+                ref={reasoningPreRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+                  reasoningUserScrolledRef.current = distFromBottom > 20;
+                }}
+                className="h-full min-h-[160px] text-sm text-text-muted font-mono whitespace-pre-wrap break-words overflow-y-auto overflow-x-hidden leading-relaxed"
+              >
+                {streamingReasoningMsg.content}
+              </pre>
+            </div>
+          )}
         </div>
       )}
 
-      <div ref={bottomRef} className="h-6" />
+      <div className="h-6" />
     </div>
   );
-}
-
-function progressIcon(msg: ChatMessage): string {
-  switch (msg.progressKind) {
-    case 'thinking':
-      return '💭';
-    case 'tool_call':
-      return '⚙';
-    case 'tool_result':
-      return msg.ok === false ? '✗' : '✓';
-    case 'commit':
-      return '▶';
-    case 'warn':
-      return '⚠';
-    default:
-      return '·';
-  }
 }

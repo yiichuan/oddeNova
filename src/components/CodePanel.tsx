@@ -419,12 +419,14 @@ export default function CodePanel({
           <button
             onClick={handlePlayClick}
             disabled={!engineReady && !isPlaying}
-            className={`flex items-center justify-center transition-opacity text-[#B2370C] ${
+            className={`flex items-center justify-center w-9 h-9 transition-opacity text-[#B2370C] ${
               isPlaying ? 'hover:opacity-70' : 'hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed'
             }`}
             title={isPlaying ? t('stop') : t('play')}
           >
-            {isPlaying ? <StopIcon size={36} /> : <PlayIcon size={36} />}
+            {/* Stop renders smaller: Square fills its viewBox (18×18) while
+                Play's triangle is ~14×18, so equal sizes look unbalanced */}
+            {isPlaying ? <StopIcon size={30} /> : <PlayIcon size={36} />}
           </button>
         </div>
 
