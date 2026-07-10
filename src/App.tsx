@@ -491,7 +491,7 @@ export default function App() {
                   type="button"
                   onClick={() => handleInstruction(s)}
                   disabled={strudel.engineStatus !== 'ready'}
-                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="rounded-lg bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                 >
                   {s}
@@ -623,14 +623,14 @@ export default function App() {
       {/* Horizontal resize handle */}
       <div
         {...hDragHandlers}
-        className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-[80px] pb-3"
+        className="w-5.5 h-full shrink-0 group flex items-center justify-center pt-20 pb-3"
         style={{ cursor: 'col-resize' }}
       >
-        <div className={`w-[6px] h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+        <div className={`w-1.5 h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
       </div>
 
       <main ref={mainRef} className="flex-1 flex flex-col pr-3 pb-0 min-w-0">
-        <div ref={topActionsRef} className="h-[80px] self-stretch relative" />
+        <div ref={topActionsRef} className="h-20 self-stretch relative" />
         <div className="flex-1 min-h-0">
           <CodePanel
             error={strudel.error}
@@ -654,10 +654,10 @@ export default function App() {
         {/* Vertical resize handle */}
         <div
           {...vDragHandlers}
-          className="h-[10px] shrink-0 group flex items-center justify-center"
+          className="h-2.5 shrink-0 group flex items-center justify-center"
           style={{ cursor: 'row-resize' }}
         >
-          <div className={`h-[6px] w-full transition-colors duration-150 ${isDragging === 'v' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+          <div className={`h-1.5 w-full transition-colors duration-150 ${isDragging === 'v' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
         </div>
 
         <div style={{ height: vizHeight, flexShrink: 0 }} className="pb-3">
