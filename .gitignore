@@ -17,7 +17,6 @@ dist
 dist-electron
 dist-ssr
 release
-public/animation
 *.local
 
 # Editor directories and files
