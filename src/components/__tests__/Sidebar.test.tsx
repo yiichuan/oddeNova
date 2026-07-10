@@ -79,4 +79,15 @@ describe('Sidebar session title editing layout', () => {
     expect(input).not.toBeNull();
     expect(input?.parentElement?.className).toContain('gap-3');
   });
+
+  it('forwards the video input value to its existing chat textarea', () => {
+    const { container, root } = renderSidebar({
+      isVideoMode: true,
+      videoInputText: '清晨雾气',
+      videoInputFocusTrigger: 2,
+    });
+    roots.push(root);
+
+    expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('清晨雾气');
+  });
 });

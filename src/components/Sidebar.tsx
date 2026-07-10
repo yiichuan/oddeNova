@@ -33,6 +33,8 @@ interface SidebarProps {
   isReplaying?: boolean;
   replayInputText?: string;
   isVideoMode?: boolean;
+  videoInputText?: string;
+  videoInputFocusTrigger?: number;
   scrollBottom?: boolean;
   prefill?: string;
   prefillTrigger?: number;
@@ -66,6 +68,8 @@ export default function Sidebar({
   isReplaying = false,
   replayInputText,
   isVideoMode = false,
+  videoInputText,
+  videoInputFocusTrigger,
   scrollBottom = false,
   prefill,
   prefillTrigger,
@@ -181,7 +185,7 @@ export default function Sidebar({
       </div>
 
       <div className="pl-4 pr-0 pb-2">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={isVideoMode ? videoInputFocusTrigger : focusTrigger} replayValue={videoInputText ?? replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
       </div>
     </aside>
   );

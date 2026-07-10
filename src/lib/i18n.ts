@@ -90,7 +90,6 @@ const S: Record<string, readonly [string, string]> = {
   thinking:      ['思考中...', 'Thinking...'],
   reasoningTitle:['构思', 'Ideation'],
   collapseReasoning: ['收起推理过程', 'Collapse reasoning'],
-  collapse:          ['收起', 'Collapse'],
   expandReasoning:   ['展开推理过程', 'Expand reasoning'],
   actionsTitle:  ['思考过程', 'Process'],
   rollbackHere:  ['回滚到此处', 'Roll back to here'],
