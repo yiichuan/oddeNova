@@ -10,8 +10,6 @@ export interface VideoDemoState {
   videoDemoMsgs: ChatMessage[] | null;
   videoConvScrollBottom: boolean;
   videoTitle: string | null;
-  videoInputText: string | undefined;
-  videoInputFocusTrigger: number;
 }
 
 /**
@@ -27,10 +25,6 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
   const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
   // [video] Title override — only active when isVideoMode; no effect on normal app usage
   const [videoTitle, setVideoTitle] = useState<string | null>(null);
-  // [video] Frame-driven text for the existing ChatInput; undefined preserves normal app input behavior
-  const [videoInputText, setVideoInputText] = useState<string | undefined>(undefined);
-  // [video] Increments on focus requests so identical frame text can refocus the existing ChatInput
-  const [videoInputFocusTrigger, setVideoInputFocusTrigger] = useState(0);
   // [video] Detects whether running inside a Remotion iframe; always false in normal browser access, has no effect on any logic
   const [isVideoMode, setIsVideoMode] = useState(() => {
     try { return window.self !== window.top; } catch { return true; }
@@ -39,21 +33,12 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
   // [video] Receive VIDEO_* control messages pushed per-frame by Remotion MyVideo.tsx to drive the in-video App state
   // Normal users never send these messages; the handler is completely silent during regular browser access
   useEffect(() => {
-    const notifyParentReady = () => window.parent.postMessage({ type: 'VIDEO_DEMO_READY' }, '*');
     const handler = (e: MessageEvent) => {
-      if (e.data?.type === 'VIDEO_DEMO_REQUEST_READY') {
-        notifyParentReady();
-      }
       if (e.data?.type === 'VIDEO_DEMO_MESSAGES') {
         setVideoDemoMsgs(e.data.messages.length > 0 ? e.data.messages : null);
         setIsVideoMode(true);
         if (e.data.scrollBottom) setVideoConvScrollBottom(true);
         if (e.data.sessionTitle) setVideoTitle(e.data.sessionTitle);
-      }
-      if (e.data?.type === 'VIDEO_DEMO_INPUT' && typeof e.data.text === 'string') {
-        setVideoInputText(e.data.text);
-        setIsVideoMode(true);
-        if (e.data.focus === true) setVideoInputFocusTrigger((value) => value + 1);
       }
       if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         strudelRef.current.setCode(e.data.code);
@@ -108,16 +93,8 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
       }
     };
     window.addEventListener('message', handler);
-    notifyParentReady();
     return () => window.removeEventListener('message', handler);
   }, [strudelRef]);
 
-  return {
-    isVideoMode,
-    videoDemoMsgs,
-    videoConvScrollBottom,
-    videoTitle,
-    videoInputText,
-    videoInputFocusTrigger,
-  };
+  return { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle };
 }

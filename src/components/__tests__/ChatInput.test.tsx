@@ -145,38 +145,4 @@ describe('ChatInput engine initialization status', () => {
 
     expect(textarea.value).toBe('来一段 house');
   });
-
-  it('waits for an explicit video focus trigger before focusing replay text', () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    roots.push(root);
-
-    const baseProps = {
-      isLoading: false,
-      engineReady: true,
-      engineStatus: 'ready' as const,
-      onSendText: vi.fn(),
-      onReinitEngine: vi.fn(),
-      isVideoMode: true,
-      replayValue: '',
-    };
-
-    act(() => {
-      root.render(<ChatInput {...baseProps} focusTrigger={0} />);
-    });
-
-    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
-    if (!textarea) throw new Error('textarea not found');
-    expect(textarea.value).toBe('');
-    expect(textarea.readOnly).toBe(true);
-    expect(document.activeElement).not.toBe(textarea);
-
-    act(() => {
-      root.render(<ChatInput {...baseProps} focusTrigger={1} />);
-    });
-
-    expect(document.activeElement).toBe(textarea);
-    expect(textarea.readOnly).toBe(true);
-  });
 });

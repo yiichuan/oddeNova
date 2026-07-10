@@ -138,15 +138,11 @@ export default function ChatInput({
 
   const prevReplayRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    // Video frames may supply a read-only value before the frame that asks to
-    // focus it. Keep normal replay autofocus intact, but leave that initial
-    // video frame unfocused until its explicit focus trigger arrives.
-    const allowReplayAutofocus = !isVideoMode || (focusTrigger ?? 0) > 0;
-    if (replayValue !== undefined && prevReplayRef.current === undefined && allowReplayAutofocus) {
+    if (replayValue !== undefined && prevReplayRef.current === undefined) {
       textareaRef.current?.focus();
     }
     prevReplayRef.current = replayValue;
-  }, [replayValue, isVideoMode, focusTrigger]);
+  }, [replayValue]);
 
   useEffect(() => {
     const el = textareaRef.current;

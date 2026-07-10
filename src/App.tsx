@@ -49,7 +49,7 @@ export default function App() {
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
   const strudelRef = useRef(strudel);
   useEffect(() => { strudelRef.current = strudel; }, [strudel]);
-  const { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle, videoInputText, videoInputFocusTrigger } = useVideoDemo(strudelRef);
+  const { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle } = useVideoDemo(strudelRef);
 
   const {
     isMobile,
@@ -508,9 +508,7 @@ export default function App() {
             onStop={handleStop}
             onReinitEngine={strudel.reinit}
             prefill={rollbackPrefill}
-            focusTrigger={isVideoMode ? videoInputFocusTrigger : inputFocusTrigger}
-            replayValue={videoInputText ?? replayInputText}
-            isVideoMode={isVideoMode}
+            focusTrigger={inputFocusTrigger}
             onFocusChange={handleChatFocusChange}
           />
         </div>
@@ -612,8 +610,6 @@ export default function App() {
           onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
           isReplaying={isReplaying}
           replayInputText={replayInputText}
-          videoInputText={videoInputText}
-          videoInputFocusTrigger={videoInputFocusTrigger}
           prefill={rollbackPrefill}
           prefillTrigger={inputFocusTrigger}
           onRollback={handleRollback}
