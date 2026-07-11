@@ -32,6 +32,10 @@ release
 
 # Claude Code local settings
 .claude/
+.agents/
+
+# Supabase CLI local cache/link info
+supabase/.temp/
 
 # Local planning docs (not uploaded to GitHub)
 _plans/

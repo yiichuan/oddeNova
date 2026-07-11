@@ -139,16 +139,14 @@ export default function App() {
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
   const currentBpm = parseScore(currentCode).bpm ?? 120;
-  const hasUserMessages = messages.some((m) => m.role === 'user');
   const isLoading = !!current?.id && loadingSessions.has(current.id);
 
-  const { suggestions, loading: suggestionsLoading } = useSuggestions({
+  const { suggestions } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
-    // In demo mode real LLM suggestions are not needed; skip the buildSuggestions call
-    hasUserMessages: isDemoMode() ? false : hasUserMessages,
-    messages,
     commitSuggestions: commitSuggestions ?? undefined,
+    persisted: current?.suggestions,
+    onSuggestions: (items, forCode) => sessions.setSuggestions(items, forCode, current?.id),
   });
   const activeSet = getActiveDemoSet();
   const demoSuggestions = isDemoMode()
@@ -482,10 +480,11 @@ export default function App() {
             </button>
           </div>
 
-          {/* Suggestion chips — horizontal scroll */}
-          {!isLoading && !suggestionsLoading && demoSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code' && (
+          {/* Suggestion chips — horizontal scroll. Desktop rotates through the full
+              set as placeholder hints; mobile shows just two quick-action buttons. */}
+          {!isLoading && demoSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code' && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
-              {demoSuggestions.map((s) => (
+              {demoSuggestions.slice(0, 2).map((s) => (
                 <button
                   key={s}
                   type="button"

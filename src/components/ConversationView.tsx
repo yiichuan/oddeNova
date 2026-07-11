@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
@@ -98,41 +98,6 @@ export default function ConversationView({
   // On mobile, long-pressing a message reveals the rollback button (no real hover state on touch screens)
   const [longPressedId, setLongPressedId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Expanded "构思" windows whose header toggle has scrolled out above the
-  // viewport — those show a floating collapse button stuck to the bottom of
-  // the visible area so long reasoning can be dismissed mid-read.
-  const [hiddenReasoningHeaders, setHiddenReasoningHeaders] = useState<Set<string>>(new Set());
-  const reasoningHeaderObserverRef = useRef<IntersectionObserver | null>(null);
-  const observeReasoningHeader = useCallback((el: HTMLButtonElement) => {
-    if (!reasoningHeaderObserverRef.current) {
-      reasoningHeaderObserverRef.current = new IntersectionObserver(
-        (entries) => {
-          setHiddenReasoningHeaders((prev) => {
-            const next = new Set(prev);
-            for (const e of entries) {
-              const id = (e.target as HTMLElement).dataset.reasoningHeader;
-              if (!id) continue;
-              // Only when it left through the top edge — if the header is
-              // below the viewport the window hasn't been reached yet.
-              const outAbove =
-                !e.isIntersecting &&
-                e.rootBounds !== null &&
-                e.boundingClientRect.bottom <= e.rootBounds.top;
-              if (outAbove) next.add(id);
-              else next.delete(id);
-            }
-            return next;
-          });
-        },
-        { root: scrollRef.current },
-      );
-    }
-    const observer = reasoningHeaderObserverRef.current;
-    observer.observe(el);
-    return () => observer.unobserve(el);
-  }, []);
-  useEffect(() => () => reasoningHeaderObserverRef.current?.disconnect(), []);
 
   const lastUserMsgId = useMemo(
     () => messages.findLast((m) => m.role === 'user')?.id,
@@ -531,13 +496,41 @@ export default function ConversationView({
       }
       const isExpanded = expandedReasoning.has(msg.id);
       return (
-        <div key={msg.id} className="flex justify-start animate-fade-in">
+        // relative z-20 lifts the whole reasoning block above its sibling
+        // messages in the scroll container's stacking order. Without it the
+        // sticky header's own z-10 is scoped to this row and can't outrank a
+        // later sibling (the assistant reply text follows this in the DOM),
+        // so once the header froze at the top, that text would scroll up and
+        // paint over it — looking like it passed through. Positive z-index on
+        // the row keeps the frozen 构思 occluding whatever scrolls beneath.
+        <div key={msg.id} className="relative z-20 flex justify-start animate-fade-in">
           <div className="w-full px-2">
+            {/* Sticky header: freezes at the top of the viewport once it
+                would otherwise scroll out above, so long reasoning can always
+                be collapsed mid-read — even scrolled to the very bottom. The
+                opaque bg-bg-primary (pure black, matching the container) is
+                invisible at rest and masks the reasoning text scrolling
+                beneath it while frozen; z-10 keeps it above that <pre>.
+                The before: cap extends that mask 10px upward: sticky top-0
+                actually freezes 10px below the scroller's visible edge (its
+                py-[10px] padding insets the sticky rectangle) while overflow
+                clips at the padding box, so without the cap text scrolling
+                under the header re-emerges in that padding strip above it.
+                scroll-mt-2.5 makes the onClick scrollIntoView land the header
+                at that same 10px-inset frozen spot — without it, collapsing
+                aligns the header flush to the scrollport edge (0px) and
+                re-expanding snaps it back down to 10px, a visible jump. */}
             <button
-              ref={observeReasoningHeader}
               data-reasoning-header={msg.id}
-              onClick={() => toggleReasoning(msg.id)}
-              className="flex items-center gap-1.5 text-sm text-text-secondary/60 hover:text-text-secondary transition-colors"
+              onClick={() => {
+                toggleReasoning(msg.id);
+                requestAnimationFrame(() => {
+                  scrollRef.current
+                    ?.querySelector(`[data-reasoning-header="${CSS.escape(msg.id)}"]`)
+                    ?.scrollIntoView({ block: 'nearest' });
+                });
+              }}
+              className="sticky top-0 z-10 scroll-mt-2.5 flex w-full items-center gap-1.5 py-0.5 text-sm text-text-secondary/60 hover:text-text-secondary transition-colors bg-bg-primary before:absolute before:inset-x-0 before:-top-2.5 before:h-2.5 before:bg-bg-primary"
             >
               <ChevronRightIcon
                 size={14}
@@ -549,35 +542,9 @@ export default function ConversationView({
               )}
             </button>
             {isExpanded && (
-              <>
-                <pre className="mt-1.5 text-[12px] text-text-muted font-mono whitespace-pre-wrap break-words leading-relaxed animate-fade-in">
-                  {msg.content}
-                </pre>
-                {/* Floating collapse button, stuck to the bottom of the
-                    visible area while the header toggle is scrolled out
-                    above — lets long reasoning be dismissed mid-read */}
-                {/* Zero-height sticky anchor: the button hangs upward from
-                    the content's end, so at the bottom of the window it sits
-                    inside it, bottom-aligned, instead of below it */}
-                {hiddenReasoningHeaders.has(msg.id) && (
-                  <div className="sticky bottom-1 h-0 pointer-events-none">
-                    <button
-                      onClick={() => {
-                        toggleReasoning(msg.id);
-                        requestAnimationFrame(() => {
-                          scrollRef.current
-                            ?.querySelector(`[data-reasoning-header="${CSS.escape(msg.id)}"]`)
-                            ?.scrollIntoView({ block: 'nearest' });
-                        });
-                      }}
-                      title={t('collapse')}
-                      className="pointer-events-auto absolute bottom-0 right-0 flex items-center justify-center w-6.5 h-6.5 text-text-secondary/60 hover:text-text-secondary transition-colors bg-bg-primary/30 backdrop-blur-sm border border-border rounded-full"
-                    >
-                      <ChevronRightIcon size={16} className="-rotate-90" />
-                    </button>
-                  </div>
-                )}
-              </>
+              <pre className="mt-1.5 text-[12px] text-text-muted font-mono whitespace-pre-wrap break-words leading-relaxed animate-fade-in">
+                {msg.content}
+              </pre>
             )}
           </div>
         </div>
@@ -616,9 +583,13 @@ export default function ConversationView({
   };
 
   return (
+    // isolate scopes the z-indexes used inside the stream (the reasoning
+    // row's z-20 / its sticky header's z-10) to this container, so they
+    // rank only against each other — without it they'd leak out and paint
+    // over outside overlays like the history panel (z-10 in Sidebar).
     <div
       ref={scrollRef}
-      className={`conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative${
+      className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative${
         reasoningWindowExpanded ? ' scrollbar-hidden' : ''
       }`}
       style={{ scrollbarGutter: 'stable' }}
