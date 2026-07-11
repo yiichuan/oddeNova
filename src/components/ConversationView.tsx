@@ -589,7 +589,7 @@ export default function ConversationView({
     // over outside overlays like the history panel (z-10 in Sidebar).
     <div
       ref={scrollRef}
-      className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative${
+      className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[18px] relative${
         reasoningWindowExpanded ? ' scrollbar-hidden' : ''
       }`}
       style={{ scrollbarGutter: 'stable' }}
@@ -729,14 +729,14 @@ export default function ConversationView({
                   className="text-white/60 hover:text-white p-1"
                   title={t('retry')}
                 >
-                  <RetryIcon size={16} />
+                  <RetryIcon size={14} />
                 </button>
                 <button
                   onClick={() => onBranch(msg.id)}
                   className="text-white/60 hover:text-white p-1"
                   title={t('branchFrom')}
                 >
-                  <GitBranchIcon size={16} />
+                  <GitBranchIcon size={14} />
                 </button>
               </div>
             </div>
@@ -754,11 +754,11 @@ export default function ConversationView({
         >
           <div className="flex items-start gap-1.5 px-1.5 shrink-0">
             <ThinkingLottie className="w-5 h-5 flex-shrink-0" />
-            <div className="min-w-0 text-sm thinking-shimmer">{liveStatusLabel}</div>
+            <div className="min-w-0 text-sm text-text-primary">{liveStatusLabel}</div>
             {reasoningWindowAvailable && (
               <button
                 onClick={() => setReasoningCollapsed((v) => !v)}
-                className="flex-shrink-0 p-0.5 text-text-muted hover:text-text-secondary transition-colors"
+                className="flex-shrink-0 p-0.5 text-text-primary hover:text-text-secondary transition-colors"
                 title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
               >
                 <ChevronRightIcon

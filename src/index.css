@@ -139,40 +139,20 @@ body {
   border-right-style: solid !important;
 }
 
-/* Left-to-right shimmer over the "thinking…" live status label. Base color is
-   dimmed to text-muted so the passing text-primary highlight reads clearly.
-   Runs continuously at a constant speed — no hold/pause — so it never
-   appears to stall partway across the text (a hold to phase-lock the sweep
-   to the ThinkingLottie flash next to it was tried and looked stuck, parked
-   right on the ellipsis's last dot for the whole pause; getting an exact
-   phase-lock without either changing this speed or a hold would need a
-   ~35s super-cycle, too long to read as "synced" anyway, so that's not
-   attempted here). */
-.thinking-shimmer {
-  background-image: linear-gradient(
-    105deg,
-    var(--color-text-muted) 0%,
-    var(--color-text-muted) 40%,
-    var(--color-text-primary) 50%,
-    var(--color-text-muted) 60%,
-    var(--color-text-muted) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: thinking-shimmer 3.5s linear infinite;
-}
-@keyframes thinking-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
-}
-
 /* Size container so children can size themselves against the visible
    conversation area via cqh units — resolved by CSS within the same layout
    pass, unlike JS measurements which lag a frame behind (the turn filler
-   depends on this to be exact on the very commit a turn starts). */
-.conversation-scroll { container-type: size; }
+   depends on this to be exact on the very commit a turn starts).
+   overflow-anchor: none — scroll position here is already owned by the
+   manual bottom-pin/turn-anchor logic in ConversationView's useLayoutEffect.
+   Without this, the browser's native scroll anchoring picks its own anchor
+   node (often something below a collapsed section) and silently adjusts
+   scrollTop when that section's content changes height — e.g. expanding
+   "思考过程" (actionsTitle) inserts content below its header, but the
+   browser then shifts scrollTop to keep its chosen anchor fixed, which
+   visually shoves everything above the header upward instead of just
+   pushing what's below it down. */
+.conversation-scroll { container-type: size; overflow-anchor: none; }
 
 /* Scrollbar for conversation view */
 .conversation-scroll::-webkit-scrollbar { width: 6px; }
