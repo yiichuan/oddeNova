@@ -25,6 +25,19 @@ function formatThinkDuration(sec: number): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
+// Fades the top edge of the streaming reasoning <pre> so an auto-scroll
+// landing mid-line (its clientHeight isn't a multiple of line-height, so the
+// topmost line is almost never a clean cut) reads as an intentional fade
+// instead of a hard clip. Only applied once scrollTop > 0 — while all the
+// content still fits (scrollTop stuck at 0), there's no partial line to
+// hide, and the mask would otherwise dim the very first line for no reason.
+const REASONING_TOP_MASK = 'linear-gradient(to bottom, transparent, black 16px)';
+function syncReasoningTopMask(el: HTMLElement) {
+  const mask = el.scrollTop > 0 ? REASONING_TOP_MASK : 'none';
+  el.style.setProperty('mask-image', mask);
+  el.style.setProperty('-webkit-mask-image', mask);
+}
+
 function stripMarkdown(text: string): string {
   return text
     .replace(/#{1,6}\s+/g, '')          // headings
@@ -286,6 +299,7 @@ export default function ConversationView({
       const preEl = reasoningPreRef.current;
       if (preEl && !reasoningUserScrolledRef.current) {
         preEl.scrollTop = preEl.scrollHeight;
+        syncReasoningTopMask(preEl);
       }
       // Reset the user-scrolled flag for the reasoning area when isLoading ends
       if (!isLoading) {
@@ -784,6 +798,7 @@ export default function ConversationView({
                   const el = e.currentTarget;
                   const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
                   reasoningUserScrolledRef.current = distFromBottom > 20;
+                  syncReasoningTopMask(el);
                 }}
                 className="h-full min-h-[160px] text-sm text-text-muted font-mono whitespace-pre-wrap break-words overflow-y-auto overflow-x-hidden leading-relaxed"
               >
