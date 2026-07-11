@@ -36,11 +36,9 @@ function renderProbe(
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-
   act(() => {
     root.render(<Probe {...props} />);
   });
-
   return { root };
 }
 
@@ -55,7 +53,7 @@ describe('useSuggestions', () => {
     vi.clearAllMocks();
   });
 
-  it('restores persisted suggestions generated for the current code', async () => {
+  it('restores persisted suggestions generated for the current code', () => {
     let latest: ReturnType<typeof useSuggestions> | undefined;
     const { root } = renderProbe({
       currentCode: 's("bd sd")',
@@ -67,7 +65,7 @@ describe('useSuggestions', () => {
     expect(latest?.suggestions).toEqual(['加入贝斯', '让鼓点更密']);
   });
 
-  it('ignores stale persisted suggestions and shows static defaults', async () => {
+  it('ignores stale persisted suggestions and shows static defaults', () => {
     let latest: ReturnType<typeof useSuggestions> | undefined;
     const { root } = renderProbe({
       currentCode: 's("bd sd")',
@@ -99,5 +97,25 @@ describe('useSuggestions', () => {
 
     expect(latest?.suggestions).toEqual(['加入贝斯', '让鼓点更密']);
     expect(onSuggestions).toHaveBeenCalledWith(['加入贝斯', '让鼓点更密'], 's("bd sd")');
+  });
+
+  it('exposes up to five commit next-steps and caps the overflow', async () => {
+    const onSuggestions = vi.fn();
+    let latest: ReturnType<typeof useSuggestions> | undefined;
+    const six = ['一', '二', '三', '四', '五', '六'];
+    const { root } = renderProbe({
+      currentCode: 's("bd sd")',
+      commitSuggestions: six,
+      onSuggestions,
+      onValue: (v) => { latest = v; },
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(latest?.suggestions).toEqual(['一', '二', '三', '四', '五']);
+    expect(onSuggestions).toHaveBeenCalledWith(['一', '二', '三', '四', '五'], 's("bd sd")');
   });
 });

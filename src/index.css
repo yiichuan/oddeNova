@@ -41,7 +41,7 @@
   --color-accent-glow: rgba(108, 92, 231, 0.4);
   --color-text-primary: #D4D4D4;
   --color-text-secondary: #B8B8B8;
-  --color-text-muted: #979797;
+  --color-text-muted: #747474;
   --color-border: #323232;
   --color-success: #00b894;
   --color-error: #CC3803;
@@ -62,8 +62,8 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -71,17 +71,6 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 0;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 @keyframes slideIn {
@@ -95,8 +84,14 @@ body {
   }
 }
 
-.animate-fade-in-up {
-  animation: fadeInUp 0.3s ease-out;
+/* Plain fade, used for every mount/reveal in the conversation stream: new
+   messages arriving and content revealed by expanding a toggle alike. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
 }
 
 .animate-slide-in {
@@ -144,12 +139,35 @@ body {
   border-right-style: solid !important;
 }
 
+/* Size container so children can size themselves against the visible
+   conversation area via cqh units — resolved by CSS within the same layout
+   pass, unlike JS measurements which lag a frame behind (the turn filler
+   depends on this to be exact on the very commit a turn starts).
+   overflow-anchor: none — scroll position here is already owned by the
+   manual bottom-pin/turn-anchor logic in ConversationView's useLayoutEffect.
+   Without this, the browser's native scroll anchoring picks its own anchor
+   node (often something below a collapsed section) and silently adjusts
+   scrollTop when that section's content changes height — e.g. expanding
+   "思考过程" (actionsTitle) inserts content below its header, but the
+   browser then shifts scrollTop to keep its chosen anchor fixed, which
+   visually shoves everything above the header upward instead of just
+   pushing what's below it down. */
+.conversation-scroll { container-type: size; overflow-anchor: none; }
+
 /* Scrollbar for conversation view */
 .conversation-scroll::-webkit-scrollbar { width: 6px; }
 .conversation-scroll::-webkit-scrollbar-track { background: transparent; }
 .conversation-scroll::-webkit-scrollbar-thumb {
   background-color: var(--color-border);
   border-radius: 0;
+}
+/* Invisible (but still occupying its gutter, so content doesn't shift) while
+   the streaming reasoning window is expanded — it owns scrolling then */
+.conversation-scroll.scrollbar-hidden::-webkit-scrollbar-thumb { background-color: transparent; }
+/* Firefox only: in Chromium, setting scrollbar-color would disable the
+   ::-webkit-scrollbar styles above and change the scrollbar width */
+@supports not selector(::-webkit-scrollbar) {
+  .conversation-scroll.scrollbar-hidden { scrollbar-color: transparent transparent; }
 }
 
 .mobile-rollback-bubble-no-select,

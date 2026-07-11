@@ -10,9 +10,8 @@ import Sidebar from '../Sidebar';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock('../../services/airjelly', () => ({
-  checkAirJellyAvailable: vi.fn(async () => false),
-}));
+// lottie-web crashes at import time in happy-dom (no canvas 2D context)
+vi.mock('lottie-react', () => ({ default: () => null }));
 
 vi.mock('../../demo/demo-config', () => ({
   isDemoMode: vi.fn(() => false),
@@ -51,7 +50,6 @@ function renderSidebar(props: Partial<React.ComponentProps<typeof Sidebar>> = {}
         suggestions={[]}
         onSendText={vi.fn()}
         onNewSession={vi.fn()}
-        onMoodGenerate={vi.fn()}
         onReinitEngine={vi.fn()}
         onSwitchSession={vi.fn()}
         onDeleteSession={vi.fn()}
@@ -93,34 +91,25 @@ describe('Sidebar session title editing layout', () => {
     expect(input?.parentElement?.className).toContain('gap-3');
   });
 
-  it('keeps the fill suggestion action visible when suggestions are empty', () => {
-    const onSendText = vi.fn();
-    const { container, root } = renderSidebar({
-      suggestions: [],
-      fillSuggestion: 'make a bright intro',
-      onSendText,
-    });
-    roots.push(root);
-
-    const button = Array.from(container.querySelectorAll('button')).find((candidate) =>
-      candidate.textContent?.includes(t('playSong')),
-    );
-
-    expect(button).not.toBeUndefined();
-
-    act(() => {
-      button?.click();
-    });
-
-    expect(onSendText).toHaveBeenCalledWith('make a bright intro');
-  });
-
-  it('keeps the demo mood action visible when suggestions are empty', () => {
+  it('keeps the demo mood suggestion in the input rotation when suggestions are empty', () => {
     vi.mocked(isDemoMode).mockReturnValue(true);
-    const { container, root } = renderSidebar({ suggestions: [] });
-    roots.push(root);
+    vi.useFakeTimers();
+    try {
+      const { container, root } = renderSidebar({ suggestions: [], onMoodGenerate: vi.fn() });
+      roots.push(root);
 
-    expect(container.textContent).toContain(t('moodGenerate'));
+      // The mood entry now lives in ChatInput's placeholder carousel; let the
+      // typewriter reveal it (first token after 400ms, then 80ms per token).
+      for (let i = 0; i < 30; i++) {
+        act(() => {
+          vi.advanceTimersByTime(100);
+        });
+      }
+
+      expect(container.textContent).toContain(t('moodGenerate'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('opens persona selection when the logo is clicked', () => {

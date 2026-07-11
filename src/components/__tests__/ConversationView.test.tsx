@@ -8,6 +8,9 @@ import ConversationView from '../ConversationView';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+// lottie-web crashes at import time in happy-dom (no canvas 2D context)
+vi.mock('lottie-react', () => ({ default: () => null }));
+
 function setMobileViewport(matches: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
   Object.defineProperty(window, 'matchMedia', {
@@ -34,7 +37,6 @@ function renderConversationView(
   messages: ChatMessage[],
   onRollback = vi.fn(),
   isLoading = false,
-  showThinkingIndicator = true,
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -45,7 +47,6 @@ function renderConversationView(
       <ConversationView
         messages={messages}
         isLoading={isLoading}
-        showThinkingIndicator={showThinkingIndicator}
         onRollback={onRollback}
         onBranch={vi.fn()}
         onRetry={vi.fn()}
@@ -56,26 +57,6 @@ function renderConversationView(
   return { container, root };
 }
 
-function renderConversationViewInto(
-  root: Root,
-  messages: ChatMessage[],
-  onRollback = vi.fn(),
-  isLoading = false,
-  showThinkingIndicator = true,
-) {
-  act(() => {
-    root.render(
-      <ConversationView
-        messages={messages}
-        isLoading={isLoading}
-        showThinkingIndicator={showThinkingIndicator}
-        onRollback={onRollback}
-        onBranch={vi.fn()}
-        onRetry={vi.fn()}
-      />,
-    );
-  });
-}
 
 describe('ConversationView mobile interactions', () => {
   const roots: Root[] = [];
@@ -192,34 +173,6 @@ describe('ConversationView chat streaming', () => {
     vi.restoreAllMocks();
   });
 
-  it('can suppress the generic thinking row while chat text streams in assistant bubbles', () => {
-    setMobileViewport(false);
-    const messages: ChatMessage[] = [
-      {
-        id: 'u1',
-        role: 'user',
-        content: '你是谁',
-        timestamp: 1,
-      },
-      {
-        id: 'a1',
-        role: 'assistant',
-        content: '我是 oddeNova',
-        timestamp: 2,
-      },
-    ];
-    const { container, root } = renderConversationView(
-      messages,
-      vi.fn(),
-      true,
-      false,
-    );
-    roots.push(root);
-
-    expect(container.textContent).toContain('我是 oddeNova');
-    expect(container.textContent).not.toContain('Thinking...');
-  });
-
   it('hides retry/branch actions on a greeting bubble but keeps them on a normal assistant message', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
@@ -328,7 +281,7 @@ describe('ConversationView chat streaming', () => {
     expect(inlineCode?.className).not.toContain('B9D7FF');
   });
 
-  it('renders streaming reasoning markdown without exposing formatting markers', () => {
+  it('streams reasoning as raw text inside the live reasoning window', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
       {
@@ -348,12 +301,10 @@ describe('ConversationView chat streaming', () => {
     const { container, root } = renderConversationView(messages, vi.fn(), true);
     roots.push(root);
 
-    expect(container.textContent).toContain('先定 BPM，再选 gm_electric_bass_finger。');
-    expect(container.textContent).not.toContain('**BPM**');
-    expect(container.querySelector('strong')?.textContent).toBe('BPM');
-    expect(container.querySelector('strong')?.classList.contains('text-text-primary')).toBe(false);
-    expect(container.querySelector('code')?.textContent).toBe('gm_electric_bass_finger');
-    expect(container.querySelectorAll('li')).toHaveLength(2);
+    // The streaming window shows the reasoning verbatim (mono <pre>, no markdown pass).
+    const pre = container.querySelector('pre');
+    expect(pre).not.toBeNull();
+    expect(pre?.textContent).toContain('先定 **BPM**，再选 `gm_electric_bass_finger`。');
   });
 
   it('keeps streaming reasoning text constrained and wrappable inside the chat width', () => {
@@ -376,103 +327,21 @@ describe('ConversationView chat streaming', () => {
     const { container, root } = renderConversationView(messages, vi.fn(), true);
     roots.push(root);
 
-    const reasoningPanel = container.querySelector<HTMLElement>('[data-reasoning-panel]');
-    const markdownRoot = reasoningPanel?.querySelector<HTMLElement>('[data-markdown-text]');
-
-    expect(reasoningPanel?.classList.contains('min-w-0')).toBe(true);
-    expect(reasoningPanel?.classList.contains('max-w-full')).toBe(true);
-    expect(markdownRoot?.classList.contains('min-w-0')).toBe(true);
-    expect(markdownRoot?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
+    const pre = container.querySelector<HTMLElement>('pre');
+    expect(pre).not.toBeNull();
+    expect(pre?.classList.contains('whitespace-pre-wrap')).toBe(true);
+    expect(pre?.classList.contains('break-words')).toBe(true);
+    expect(pre?.classList.contains('overflow-x-hidden')).toBe(true);
   });
 
-  it('keeps following streaming reasoning after a non-user scroll event', () => {
-    setMobileViewport(false);
-    const messages: ChatMessage[] = [
-      { id: 'u1', role: 'user', content: '写一段 lo-fi', timestamp: 1 },
-      {
-        id: 'r1',
-        role: 'progress',
-        content: '先定一个温暖的节奏。',
-        timestamp: 2,
-        progressKind: 'reasoning',
-      },
-    ];
-    const { container, root } = renderConversationView(messages, vi.fn(), true);
-    roots.push(root);
 
-    const reasoningPanel = container.querySelector<HTMLElement>('[data-reasoning-panel]');
-    expect(reasoningPanel).not.toBeNull();
-    Object.defineProperty(reasoningPanel, 'scrollHeight', { configurable: true, value: 200 });
-    Object.defineProperty(reasoningPanel, 'clientHeight', { configurable: true, value: 100 });
-    reasoningPanel!.scrollTop = 60;
-
-    act(() => {
-      reasoningPanel!.dispatchEvent(new Event('scroll', { bubbles: true }));
-    });
-
-    Object.defineProperty(reasoningPanel, 'scrollHeight', { configurable: true, value: 300 });
-    renderConversationViewInto(
-      root,
-      [
-        messages[0],
-        {
-          ...messages[1],
-          content: `${messages[1].content}\n继续追加更多推理内容。`,
-        },
-      ],
-      vi.fn(),
-      true,
-    );
-
-    expect(reasoningPanel!.scrollTop).toBe(300);
-  });
-
-  it('keeps the conversation pinned after a non-user scroll event', () => {
-    setMobileViewport(false);
-    const scrollIntoView = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => undefined);
-    const messages: ChatMessage[] = [
-      { id: 'u1', role: 'user', content: '写一段 lo-fi', timestamp: 1 },
-      {
-        id: 'r1',
-        role: 'progress',
-        content: '先定一个温暖的节奏。',
-        timestamp: 2,
-        progressKind: 'reasoning',
-      },
-    ];
-    const { container, root } = renderConversationView(messages, vi.fn(), true);
-    roots.push(root);
-
-    const scroller = container.querySelector<HTMLElement>('.conversation-scroll');
-    expect(scroller).not.toBeNull();
-    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 400 });
-    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 200 });
-    scroller!.scrollTop = 100;
-    scrollIntoView.mockClear();
-
-    act(() => {
-      scroller!.dispatchEvent(new Event('scroll', { bubbles: true }));
-    });
-
-    renderConversationViewInto(
-      root,
-      [
-        ...messages,
-        { id: 'p1', role: 'progress', content: '继续验证一下。', timestamp: 3, progressKind: 'thinking' },
-      ],
-      vi.fn(),
-      true,
-    );
-
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant' });
-  });
 
   it('keeps ordered list items in one list when items have continuation lines', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
       {
-        id: 'r1',
-        role: 'progress',
+        id: 'a1',
+        role: 'assistant',
         content: [
           '1. **Drums** - Lo-fi, loose drum pattern.',
           '   Kick on 1 and 3, snare on 2 and 4.',
@@ -482,10 +351,9 @@ describe('ConversationView chat streaming', () => {
           '1. **Pads** - Warm synth pad.',
         ].join('\n'),
         timestamp: 1,
-        progressKind: 'reasoning',
       },
     ];
-    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    const { container, root } = renderConversationView(messages, vi.fn());
     roots.push(root);
 
     expect(container.querySelectorAll('ol')).toHaveLength(1);
@@ -497,8 +365,8 @@ describe('ConversationView chat streaming', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
       {
-        id: 'r1',
-        role: 'progress',
+        id: 'a1',
+        role: 'assistant',
         content: [
           '1. Bass: Bouncy, tight, synth bass line.',
           '   Root-fifth octave jumps.',
@@ -510,10 +378,9 @@ describe('ConversationView chat streaming', () => {
           '   Catchy but not overwhelming.',
         ].join('\n'),
         timestamp: 1,
-        progressKind: 'reasoning',
       },
     ];
-    const { container, root } = renderConversationView(messages, vi.fn(), true);
+    const { container, root } = renderConversationView(messages, vi.fn());
     roots.push(root);
 
     expect(container.querySelectorAll('ol')).toHaveLength(1);

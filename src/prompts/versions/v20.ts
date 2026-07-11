@@ -205,7 +205,7 @@ export const AGENT_SYSTEM_PROMPT_OPENAI = [
     '',
     '### Commit 规则',
     '- **必须提交**：每次会话必须以且仅以一次 `commit` 结束。编辑后未提交属于错误行为——用户将看不到任何结果。如果剩余推理空间不足，停止进一步优化，立即提交当前最佳结果。',
-    '- **Commit 内容**：`commit({ explanation })`，`explanation` 必填，使用中文。结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟两条建议（每条独占一行，以 `- ` 开头）。建议应基于当前作品状态，优先推荐最有价值的下一步创作方向，不要给泛泛而谈的建议。该字段会作为聊天回复展示给用户。',
+    '- **Commit 内容**：`commit({ explanation })`，`explanation` 必填，使用中文。结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟五条建议（每条独占一行，以 `- ` 开头）。建议应基于当前作品状态，优先推荐最有价值的下一步创作方向，不要给泛泛而谈的建议。该字段会作为聊天回复展示给用户。',
     '- **Commit 后结束**：调用 `commit` 后不再调用任何工具、不再修改代码、不再生成额外内容。',
   ].join('\n'),
   [
@@ -469,7 +469,7 @@ export const AGENT_SYSTEM_PROMPT_EN = [
     '',
     '### Commit rules',
     '- **Must commit**: every session must end with exactly one `commit`. Editing without committing is a Bug — the user will see no result. If reasoning budget is running low, stop further optimisation and commit the current best result immediately.',
-    '- **Commit content**: `commit({ explanation })`, `explanation` is required, written in **English**. Two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by two suggestions (each on its own line starting with `- `). Suggestions should be based on the current state of the piece, prioritising the most valuable next creative direction — no generic advice. This field is shown to the user as a chat reply.',
+    '- **Commit content**: `commit({ explanation })`, `explanation` is required, written in **English**. Two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by five suggestions (each on its own line starting with `- `). Suggestions should be based on the current state of the piece, prioritising the most valuable next creative direction — no generic advice. This field is shown to the user as a chat reply.',
     '- **After commit, stop**: after calling `commit`, do not call any tool, do not modify the code, do not generate any extra content.',
   ].join('\n'),
   [

@@ -11,8 +11,7 @@ import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
 import { conversationHistoryBefore } from './lib/conversation-history';
-import { commitPlayback } from './lib/playback-commit';
-import { isDemoMode, getActiveDemoSet, DEMO_PREFILL } from './demo/demo-config';
+import { isDemoMode, getActiveDemoSet } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
@@ -30,6 +29,7 @@ import TopActionBar from './components/TopActionBar';
 import PersonaModal from './components/PersonaModal';
 import { t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
+import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 
 export default function App() {
   const strudel = useStrudel();
@@ -39,7 +39,6 @@ export default function App() {
   const sessions = useSessions();
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
-  const [isMoodLoading, setIsMoodLoading] = useState(false);
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
@@ -109,11 +108,36 @@ export default function App() {
     setShowPersonaModal(true);
   }, []);
 
-  const [showApiKeyModal, setShowApiKeyModal] = useState(() => {
-    try { if (window.self !== window.top) return false; } catch { return false; }
-    return !hasApiKeyConfigured();
+  const [apiKeyModalState, setApiKeyModalState] = useState(() => {
+    let isTopWindow = true;
+    try {
+      isTopWindow = window.self === window.top;
+    } catch {
+      // Cross-origin frame access can throw; treat it as embedded and stay quiet.
+      isTopWindow = false;
+    }
+    const shouldOpen = shouldAutoOpenApiKeyModal({
+      isTopWindow,
+      hasApiKeyConfigured: hasApiKeyConfigured(),
+      hasSeenCommunityInvite: hasSeenCommunityInvite(),
+    });
+    // autoOpened distinguishes first-entry/required prompts from manual settings opens,
+    // so closing the Settings button path does not mark the invite as seen.
+    return { open: shouldOpen, autoOpened: shouldOpen };
   });
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
+
+  const closeApiKeyModal = useCallback(() => {
+    if (apiKeyModalState.autoOpened) {
+      // Dismissal counts as exposure; avoid showing the QR invite again next visit.
+      markCommunityInviteSeen();
+    }
+    setApiKeyModalState({ open: false, autoOpened: false });
+  }, [apiKeyModalState.autoOpened]);
+
+  const openSettings = useCallback(() => {
+    setApiKeyModalState({ open: true, autoOpened: false });
+  }, []);
 
   const current = sessions.currentSession;
   const messages = isReplaying ? replayMessages : (current?.messages ?? []);
@@ -266,22 +290,12 @@ export default function App() {
       const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
       const previousCode = prevAssistant?.code ?? '';
 
-      // Roll back to the rollback target and commit it as the session truth.
-      // A non-empty target plays + persists via commitPlayback; an empty one clears.
-      if (previousCode) {
-        if (sessions.currentId) {
-          await commitPlayback(previousCode, sessions.currentId, {
-            play: strudel.play,
-            setCurrentCode: sessions.setCurrentCode,
-          });
-        } else {
-          await strudel.play(previousCode);
-        }
-      } else {
-        strudel.stop();
-        strudel.setCode('');
-        if (sessions.currentId) sessions.setCurrentCode('', sessions.currentId);
-      }
+      // Restore the rollback target as the session truth without auto-playing:
+      // stop current audio (it belongs to the rolled-away version), put the
+      // code back in the editor, and persist it. Playback stays a user action.
+      strudel.stop();
+      strudel.setCode(previousCode);
+      if (sessions.currentId) sessions.setCurrentCode(previousCode, sessions.currentId);
 
       return { target, previousCode };
     },
@@ -343,9 +357,7 @@ export default function App() {
 
     let moodContext: string | null = null;
     if (!isDemoMode()) {
-      setIsMoodLoading(true);
       moodContext = await fetchMoodContext();
-      setIsMoodLoading(false);
     }
 
     // Mood generation is a one-off creation: deliberately no conversation history.
@@ -392,9 +404,9 @@ export default function App() {
   if (isMobile) {
     return (
       <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
-        {showApiKeyModal && (
+        {apiKeyModalState.open && (
           <ApiKeyModal
-            onClose={() => setShowApiKeyModal(false)}
+            onClose={closeApiKeyModal}
             onSaved={resetClient}
             required={!hasApiKeyConfigured()}
           />
@@ -433,7 +445,7 @@ export default function App() {
             <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
           </h1>
           <TopActionBar
-            onOpenSettings={() => setShowApiKeyModal(true)}
+            onOpenSettings={openSettings}
             session={sessions.currentSession}
             code={strudel.code}
             messages={messages}
@@ -476,7 +488,7 @@ export default function App() {
                 onResetExportState={strudel.resetExportState}
                 session={sessions.currentSession}
                 messages={messages}
-                onOpenSettings={() => setShowApiKeyModal(true)}
+                onOpenSettings={openSettings}
                 onEditorFocusChange={handleCodeFocusChange}
               />
             </div>
@@ -502,16 +514,17 @@ export default function App() {
             </button>
           </div>
 
-          {/* Suggestion chips — horizontal scroll */}
+          {/* Suggestion chips — horizontal scroll. Desktop rotates through the full
+              set as placeholder hints; mobile shows just two quick-action buttons. */}
           {showMobileCreateSuggestions && (
             <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
-              {visibleSuggestions.map((s) => (
+              {visibleSuggestions.slice(0, 2).map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => handleInstruction(s)}
                   disabled={strudel.engineStatus !== 'ready'}
-                  className="rounded-[8px] bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="rounded-lg bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                 >
                   {s}
@@ -598,9 +611,9 @@ export default function App() {
       className="flex h-full w-full bg-bg-primary overflow-hidden"
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
     >
-      {showApiKeyModal && (
+      {apiKeyModalState.open && (
         <ApiKeyModal
-          onClose={() => setShowApiKeyModal(false)}
+          onClose={closeApiKeyModal}
           onSaved={resetClient}
           required={!hasApiKeyConfigured()}
         />
@@ -615,7 +628,6 @@ export default function App() {
           title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
           messages={videoDemoMsgs ?? messages}
           isLoading={isLoading || isReplaying}
-          isMoodLoading={isMoodLoading}
           engineReady={strudel.engineReady}
           engineStatus={strudel.engineStatus}
           sessions={sessions.sessions}
@@ -623,7 +635,6 @@ export default function App() {
           suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
-          fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
           onSendText={handleInstruction}
           onStop={handleStop}
           onNewSession={handleNewSession}
@@ -651,14 +662,14 @@ export default function App() {
       {/* Horizontal resize handle */}
       <div
         {...hDragHandlers}
-        className="w-[22px] h-full shrink-0 group flex items-center justify-center pt-[80px] pb-3"
+        className="w-5.5 h-full shrink-0 group flex items-center justify-center pt-20 pb-3"
         style={{ cursor: 'col-resize' }}
       >
-        <div className={`w-[6px] h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+        <div className={`w-1.5 h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
       </div>
 
       <main ref={mainRef} className="flex-1 flex flex-col pr-3 pb-0 min-w-0">
-        <div ref={topActionsRef} className="h-[80px] self-stretch relative" />
+        <div ref={topActionsRef} className="h-20 self-stretch relative" />
         <div className="flex-1 min-h-0">
           <CodePanel
             error={strudel.error}
@@ -675,17 +686,17 @@ export default function App() {
             session={sessions.currentSession}
             messages={messages}
             topActionsContainer={topActionsRef}
-            onOpenSettings={() => setShowApiKeyModal(true)}
+            onOpenSettings={openSettings}
           />
         </div>
 
         {/* Vertical resize handle */}
         <div
           {...vDragHandlers}
-          className="h-[10px] shrink-0 group flex items-center justify-center"
+          className="h-2.5 shrink-0 group flex items-center justify-center"
           style={{ cursor: 'row-resize' }}
         >
-          <div className={`h-[6px] w-full transition-colors duration-150 ${isDragging === 'v' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+          <div className={`h-1.5 w-full transition-colors duration-150 ${isDragging === 'v' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
         </div>
 
         <div style={{ height: vizHeight, flexShrink: 0 }} className="pb-3">
@@ -724,6 +735,9 @@ export default function App() {
 
 function formatToolCall(name: string, args: Record<string, unknown>): string {
   switch (name) {
+    case 'setCode':
+      return t('arrangeMusic');
+
     case 'getScore':
       return t('readScore');
     case 'validate':

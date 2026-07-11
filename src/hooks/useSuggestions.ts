@@ -3,8 +3,13 @@ import { STATIC_SUGGESTIONS } from '../services/suggestions';
 
 type Persisted = { forCode: string; items: string[] };
 
+// Upper bound on how many suggestions the hook exposes. Desktop rotates through
+// all of them as placeholder chips; the mobile layout slices this down to two
+// quick-action buttons at its render site.
+const MAX_SUGGESTIONS = 5;
+
 function randomStatic(): string[] {
-  return [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, 2);
+  return [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, MAX_SUGGESTIONS);
 }
 
 // Persisted chips are only usable when they were generated for the code we're
@@ -12,7 +17,7 @@ function randomStatic(): string[] {
 // next-steps — a refresh in that window leaves them mismatched).
 function restoredFor(persisted: Persisted | undefined, currentCode: string): string[] | null {
   if (persisted && persisted.forCode === currentCode && persisted.items.length > 0) {
-    return persisted.items.slice(0, 2);
+    return persisted.items.slice(0, MAX_SUGGESTIONS);
   }
   return null;
 }
@@ -22,8 +27,8 @@ function restoredFor(persisted: Persisted | undefined, currentCode: string): str
  *
  * Chips have three sources, no separate LLM call:
  *   - Static defaults before any code exists.
- *   - The two next-step options the agent emits in every commit explanation
- *     (parsed upstream, handed in via `commitSuggestions`).
+ *   - The next-step options the agent emits in every commit explanation (up to
+ *     MAX_SUGGESTIONS, parsed upstream, handed in via `commitSuggestions`).
  *   - Persisted chips restored on mount / session switch, so a page refresh
  *     brings back the last commit's options without regenerating them.
  *
@@ -36,7 +41,7 @@ function restoredFor(persisted: Persisted | undefined, currentCode: string): str
 export function useSuggestions(opts: {
   key: string;
   currentCode: string;
-  /** The two next-step options from the latest commit explanation. */
+  /** The next-step options from the latest commit explanation (up to MAX_SUGGESTIONS). */
   commitSuggestions?: string[];
   /** Suggestions persisted on the session from a previous page load. */
   persisted?: Persisted;
@@ -62,7 +67,7 @@ export function useSuggestions(opts: {
   if (prevCommit !== commitSuggestions) {
     setPrevCommit(commitSuggestions);
     if (commitSuggestions && commitSuggestions.length > 0) {
-      setSuggestions(commitSuggestions.slice(0, 2));
+      setSuggestions(commitSuggestions.slice(0, MAX_SUGGESTIONS));
     }
   }
 
@@ -77,7 +82,7 @@ export function useSuggestions(opts: {
   // Persist freshly shown commit chips to the session (external system sync).
   useEffect(() => {
     if (!commitSuggestions || commitSuggestions.length === 0) return;
-    onSuggestionsRef.current?.(commitSuggestions.slice(0, 2), currentCodeRef.current);
+    onSuggestionsRef.current?.(commitSuggestions.slice(0, MAX_SUGGESTIONS), currentCodeRef.current);
   }, [commitSuggestions]);
 
   return { suggestions };

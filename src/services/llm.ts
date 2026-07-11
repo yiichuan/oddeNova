@@ -14,7 +14,7 @@ import {
   getOpenAIToolSchemas,
 } from '../agent/tools';
 import { getActiveModelConfig } from './llm-config';
-import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO, resolveStaticSuggestionScenario } from '../demo/demo-config';
+import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 import { getActivePersonaSync } from '../lib/persona-storage';
 import { INTENT_CLASSIFIER_PROMPT } from '../prompts/intent-classifier';
@@ -431,26 +431,23 @@ export async function runAgent(
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
   const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;
-  const staticScenario = resolveStaticSuggestionScenario(instruction);
 
   // Select the LLMCaller implementation corresponding to the current provider
   const activeLLMCaller = getActiveLLMCaller();
 
-  const llm = staticScenario
-    ? createDemoLLMCaller(staticScenario)
-    : isDemoMode()
-      ? isMoodDemo
-        ? createDemoMoodLLMCaller(DEMO_MOOD_SCENARIO)
-        : isPrefillDemo
-          ? createDemoMoodLLMCaller(DEMO_PREFILL_SCENARIO)
-          : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
-      : activeLLMCaller;
+  const llm = isDemoMode()
+    ? isMoodDemo
+      ? createDemoMoodLLMCaller(DEMO_MOOD_SCENARIO)
+      : isPrefillDemo
+        ? createDemoMoodLLMCaller(DEMO_PREFILL_SCENARIO)
+        : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
+    : activeLLMCaller;
 
   // Classify intent up front (thinking-disabled) so we only stream a reasoning
-  // chain for composition turns. Demo/static/mood-generation flows are always
+  // chain for composition turns. Demo/mood-generation flows are always
   // compositions — skip the extra call for them.
   const isMoodGeneration = instruction === '根据我的心情生成音乐';
-  const skipClassification = isDemoMode() || staticScenario != null || isMoodGeneration;
+  const skipClassification = isDemoMode() || isMoodGeneration;
   const intent: Intent = skipClassification
     ? 'compose'
     : await classifyIntent(llm, { instruction, currentCode, conversationHistory, signal });

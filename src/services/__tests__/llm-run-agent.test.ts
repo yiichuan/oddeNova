@@ -64,7 +64,6 @@ vi.mock('../../demo/demo-config', () => ({
   DEMO_MOOD_SCENARIO: { roleSnippets: {}, rounds: [] },
   DEMO_PREFILL: 'demo prefill',
   DEMO_PREFILL_SCENARIO: { roleSnippets: {}, rounds: [] },
-  resolveStaticSuggestionScenario: vi.fn(() => undefined),
 }));
 
 vi.mock('../../demo/demo-llm', () => ({
