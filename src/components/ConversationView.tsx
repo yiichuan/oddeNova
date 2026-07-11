@@ -583,9 +583,13 @@ export default function ConversationView({
   };
 
   return (
+    // isolate scopes the z-indexes used inside the stream (the reasoning
+    // row's z-20 / its sticky header's z-10) to this container, so they
+    // rank only against each other — without it they'd leak out and paint
+    // over outside overlays like the history panel (z-10 in Sidebar).
     <div
       ref={scrollRef}
-      className={`conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative${
+      className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative${
         reasoningWindowExpanded ? ' scrollbar-hidden' : ''
       }`}
       style={{ scrollbarGutter: 'stable' }}
