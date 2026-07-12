@@ -1036,12 +1036,19 @@ export default function ConversationView({
         }
 
         // assistant message:
+        // A turn can hold several assistant bubbles (mid-loop narration + the
+        // final reply). Retry/branch actions — and the mb-16 that reserves the
+        // hanging space below the bubble for them — only apply to the turn's
+        // final bubble; on intermediate narration the margin would just read
+        // as a dead gap between paragraphs.
+        const showsTurnActions =
+          !msg.isGreeting && turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id);
         return (
           <div
             key={msg.id}
             // items-start keeps the bubble (and its hanging action buttons)
             // at content height when the turn filler stretches the row
-            className="flex justify-start items-start animate-fade-in group mb-16"
+            className={`flex justify-start items-start animate-fade-in group${showsTurnActions ? ' mb-16' : ''}`}
             style={
               msg.id === lastMessageId && !isVideoMode && turnAnchorActive
                 ? { minHeight: assistantFillerMinHeight }
@@ -1090,7 +1097,7 @@ export default function ConversationView({
                   bubbles (no prior user turn to retry/branch from) and on
                   intermediate narration (shown once per turn, on the final
                   assistant message after the turn finishes). */}
-              {!msg.isGreeting && turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id) && (
+              {showsTurnActions && (
                 <div className="absolute -bottom-6 left-0 flex items-center gap-1.5">
                   <button
                     onClick={() => onRetry(msg.id)}
