@@ -912,9 +912,9 @@ export default function ConversationView({
               )}
             </button>
             {isExpanded && (
-              <pre className="mt-1.5 text-[12px] text-text-muted font-mono whitespace-pre-wrap break-words leading-relaxed animate-fade-in">
-                {msg.content}
-              </pre>
+              <div className="mt-1.5 text-[12px] text-text-muted font-mono break-words leading-relaxed animate-fade-in">
+                <MarkdownText content={msg.content} tone="muted" />
+              </div>
             )}
           </div>
         </div>

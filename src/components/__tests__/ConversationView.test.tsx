@@ -363,6 +363,56 @@ describe('ConversationView chat streaming', () => {
     expect(scrollBox?.className).toContain('overflow-y-auto');
   });
 
+  it('renders finished reasoning as markdown inside the collapsed reasoning window', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: '写一段 lo-fi',
+        timestamp: 1,
+      },
+      {
+        id: 'r1',
+        role: 'progress',
+        content: '# 思路\n先定 **BPM**，再选 `gm_electric_bass_finger`。',
+        timestamp: 2,
+        progressKind: 'reasoning',
+      },
+      {
+        id: 'p1',
+        role: 'progress',
+        content: '编排段落…',
+        timestamp: 3,
+        progressKind: 'tool_call',
+        toolName: 'setCode',
+      },
+    ];
+    const { container, root } = renderConversationView(messages, vi.fn(), false);
+    roots.push(root);
+
+    const header = container.querySelector<HTMLButtonElement>('[data-reasoning-header]');
+    expect(header).not.toBeNull();
+    act(() => header!.click());
+
+    // Markdown is rendered inside a gray mono container.
+    expect(container.textContent).not.toContain('**BPM**');
+    expect(container.querySelector('[data-markdown-text] strong')?.textContent).toBe('BPM');
+    expect(container.querySelector('[data-markdown-text] code')?.textContent).toBe(
+      'gm_electric_bass_finger',
+    );
+    const wrapper = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
+    expect(wrapper?.className).toContain('text-text-muted');
+    expect(wrapper?.className).toContain('font-mono');
+
+    // Muted headings stay gray.
+    const heading = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-markdown-text] div'),
+    ).find((el) => el.textContent === '思路');
+    expect(heading).not.toBeUndefined();
+    expect(heading?.className).not.toContain('text-text-primary');
+  });
+
 
 
   it('keeps ordered list items in one list when items have continuation lines', () => {
