@@ -39,13 +39,20 @@ interface ThinkingLottieProps {
 
 /** Looping "flash" animation shown next to the "thinking…" label while the agent runs. */
 export function ThinkingLottie({ className }: ThinkingLottieProps) {
-  const [data, setData] = useState<object | null>(cached);
+  // Each mount hands lottie its own deep clone: lottie-web mutates the
+  // animationData object in place while parsing, so re-using the shared
+  // cached object on a later mount (every turn remounts this component)
+  // can leave the animation frozen on frame 0 — which for this flash asset
+  // is blank, i.e. no visible indicator at all. The network fetch stays
+  // cached; only the object identity is per-mount.
+  const [data, setData] = useState<object | null>(() => (cached ? structuredClone(cached) : null));
 
   useEffect(() => {
+    if (data !== null) return;
     let alive = true;
     loadAnimation()
       .then((d) => {
-        if (alive) setData(d);
+        if (alive) setData(structuredClone(d));
       })
       .catch(() => {
         /* keep the fallback dot on failure */
@@ -53,6 +60,7 @@ export function ThinkingLottie({ className }: ThinkingLottieProps) {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only load; `data` is only null before it resolves
   }, []);
 
   if (!data) {
