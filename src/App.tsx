@@ -9,8 +9,9 @@ import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
-import type { ConversationTurn, ProgressEvent } from './services/llm';
+import type { ConversationTurn } from './services/llm';
 import { conversationHistoryBefore } from './lib/conversation-history';
+import { createAgentProgressHandler } from './lib/agent-progress-handler';
 import { isDemoMode, getActiveDemoSet } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
@@ -189,49 +190,7 @@ export default function App() {
   // Build the agent progress→UI handler for a given session. Shared verbatim by
   // handleInstruction and handleMoodInstruction.
   const makeAgentProgressHandler = useCallback(
-    (sessionId: string) => {
-      // Per-iteration flag: did the model already stream a non-empty free-text
-      // reply this iteration? If so, skip setCode's explanation fallback so the
-      // user sees exactly one message before the tool-call line — the warmer
-      // free-text is preferred; explanation only fills in when the model is silent.
-      let sawAssistantTextThisIter = false;
-      return (e: ProgressEvent) => {
-        if (e.kind === 'iteration') { sawAssistantTextThisIter = false; return; }
-        if (e.kind === 'tool_call') {
-          if (e.name !== 'validate' && e.name !== 'commit') {
-            // setCode: show the persona-voice explanation only as a fallback when
-            // the model didn't already narrate in free text this iteration.
-            if (
-              e.name === 'setCode' &&
-              !sawAssistantTextThisIter &&
-              typeof e.args.explanation === 'string' &&
-              e.args.explanation.trim()
-            ) {
-              sessions.addAssistantMessage(e.args.explanation.trim(), undefined, sessionId);
-            }
-            sessions.addProgress('tool_call', formatToolCall(e.name, e.args), { toolName: e.name, sessionId });
-          }
-          return;
-        }
-        if (e.kind === 'tool_result') {
-          if (!e.ok) console.error(`[agent] ❌ tool "${e.name}" failed:`, e.error || 'unknown error');
-          return;
-        }
-        if (e.kind === 'commit') { sessions.addProgress('commit', t('preparingToPlay'), { sessionId }); return; }
-        if (e.kind === 'warn') { sessions.addProgress('warn', e.message, { sessionId }); return; }
-        if (e.kind === 'reasoning_delta') { sessions.appendToLastReasoning(e.delta, sessionId); return; }
-        if (e.kind === 'assistant_text_delta') {
-          if (e.delta.trim()) sawAssistantTextThisIter = true;
-          sessions.appendToLastAssistant(e.delta, sessionId);
-          return;
-        }
-        if (e.kind === 'assistant_text') {
-          if (e.text.trim()) sawAssistantTextThisIter = true;
-          sessions.finalizeLastAssistantMessage(e.text, sessionId);
-          return;
-        }
-      };
-    },
+    (sessionId: string) => createAgentProgressHandler(sessions, sessionId),
     [sessions]
   );
 
@@ -731,20 +690,4 @@ export default function App() {
       <SpeedInsights />
     </div>
   );
-}
-
-function formatToolCall(name: string, args: Record<string, unknown>): string {
-  switch (name) {
-    case 'setCode':
-      return t('arrangeMusic');
-
-    case 'getScore':
-      return t('readScore');
-    case 'validate':
-      return t('validateCode');
-    case 'commit':
-      return t('commitAndPlay');
-    default:
-      return `${name}(${JSON.stringify(args).slice(0, 60)})`;
-  }
 }

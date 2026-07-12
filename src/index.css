@@ -139,6 +139,28 @@ body {
   border-right-style: solid !important;
 }
 
+/* Left-to-right shimmer over the live status label. */
+.thinking-shimmer {
+  background-image: linear-gradient(
+    105deg,
+    var(--color-text-muted) 0%,
+    var(--color-text-muted) 40%,
+    var(--color-text-primary) 50%,
+    var(--color-text-muted) 60%,
+    var(--color-text-muted) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 3.5s linear infinite;
+}
+
+@keyframes thinking-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
 /* Size container so children can size themselves against the visible
    conversation area via cqh units — resolved by CSS within the same layout
    pass, unlike JS measurements which lag a frame behind (the turn filler

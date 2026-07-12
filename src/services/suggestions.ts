@@ -49,9 +49,14 @@ export function parseNextSteps(explanation: string): string[] {
     .filter(Boolean);
 }
 
-/** Strip the trailing "next steps" paragraph so it isn't duplicated in chat history. */
+/**
+ * Strip the trailing "next steps" section so it isn't duplicated in chat
+ * history. The marker phrase is reserved by the commit prompt, so it is
+ * stripped wherever it appears — even when the model ignores the required
+ * blank line and glues it onto the summary paragraph.
+ */
 export function stripNextSteps(explanation: string): string {
   return explanation
-    .replace(/\n\n(?:接下来可以|Next steps)[：:][\s\S]*$/i, '')
+    .replace(/\s*(?:接下来可以|Next steps)[：:][\s\S]*$/i, '')
     .trim();
 }

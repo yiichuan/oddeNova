@@ -8,6 +8,8 @@
  * v21 追加（原地）：setCode 新增必填 `explanation`（人格口吻、一句话现在进行时说明本步改动），
  * 由客户端渲染为 setCode 齿轮行上方的 assistant 叙述消息；相应把"用户可见文字"从只放 commit.explanation
  * 扩展为「逐步说明放 setCode.explanation、最终总结放 commit.explanation」，并禁止在工具调用间另写自由正文以免重复。中英双语同步。
+ * v21 再追加（原地）：commit.explanation 的"接下来可以："建议由两条改为五条（前端 useSuggestions 的
+ * MAX_SUGGESTIONS=5，建议 chips 全部来自这里，多给选项让轮换更丰富）。中英双语同步。
  *
  * 以下为 v20 原始说明（音乐质量基底，保留）：
  * v19 残留问题：长拖音仍高频出现，但来源换了一处——不再是旋律线 `/N` 减速，而是**承载和声的层
@@ -217,7 +219,7 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
     '',
     '### Commit 规则',
     '- **作曲时必须提交**：当你决定作曲或改曲时，必须以恰好一次 `commit` 结束。纯聊天时不要调用 `setCode`、`validate` 或 `commit`。如果剩余推理空间不足，停止进一步优化，立即提交当前最佳结果。',
-    `- **Commit 内容**：\`commit({ explanation })\`，\`explanation\` 必填，用**中文**和 ${personaName} 的口吻撰写。结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟两条建议（每条独占一行，以 \`- \` 开头）。建议应基于当前作品状态，优先推荐最有价值的下一步创作方向，并且必须是用户点击后可直接执行的祈使句选项，例如"加入更轻的鼓刷"、"让中段突然安静"；不要写成问题、条件句、说明句、二选一长句，或"如果你想...可以告诉我"这类咨询文本。该字段会作为聊天回复展示给用户。`,
+    `- **Commit 内容**：\`commit({ explanation })\`，\`explanation\` 必填，用**中文**和 ${personaName} 的口吻撰写。结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟五条建议（每条独占一行，以 \`- \` 开头）。建议应基于当前作品状态，优先推荐最有价值的下一步创作方向，并且必须是用户点击后可直接执行的祈使句选项，例如"加入更轻的鼓刷"、"让中段突然安静"；不要写成问题、条件句、说明句、二选一长句，或"如果你想...可以告诉我"这类咨询文本。该字段会作为聊天回复展示给用户。`,
     '- **Commit 后结束**：调用 `commit` 后不再调用任何工具、不再修改代码、不再生成额外内容。',
   ].join('\n'),
   [
@@ -485,7 +487,7 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
     '',
     '### Commit rules',
     '- **Must commit when composing**: when you decide to compose or edit music, end with exactly one `commit`. For pure chat, do not call `setCode`, `validate`, or `commit`. If reasoning budget is running low, stop further optimisation and commit the current best result immediately.',
-    `- **Commit content**: \`commit({ explanation })\`, \`explanation\` is required, written in **English** in ${personaName}'s voice. Two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by two suggestions (each on its own line starting with \`- \`). Suggestions should be based on the current state of the piece, prioritising the most valuable next creative direction, and each one must be a directly executable imperative option the user can click, e.g. "Add softer brush drums" or "Make the middle drop quieter". Do not write questions, conditional phrasing, explanations, either/or long sentences, or "tell me if..." helper text. This field is shown to the user as a chat reply.`,
+    `- **Commit content**: \`commit({ explanation })\`, \`explanation\` is required, written in **English** in ${personaName}'s voice. Two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by five suggestions (each on its own line starting with \`- \`). Suggestions should be based on the current state of the piece, prioritising the most valuable next creative direction, and each one must be a directly executable imperative option the user can click, e.g. "Add softer brush drums" or "Make the middle drop quieter". Do not write questions, conditional phrasing, explanations, either/or long sentences, or "tell me if..." helper text. This field is shown to the user as a chat reply.`,
     '- **After commit, stop**: after calling `commit`, do not call any tool, do not modify the code, do not generate any extra content.',
   ].join('\n'),
   [
