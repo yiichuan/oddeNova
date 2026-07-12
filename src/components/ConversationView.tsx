@@ -1050,7 +1050,13 @@ export default function ConversationView({
             // at content height when the turn filler stretches the row
             className={`flex justify-start items-start animate-fade-in group${showsTurnActions ? ' mb-16' : ''}`}
             style={
-              msg.id === lastMessageId && !isVideoMode && turnAnchorActive
+              // While the turn is still running, the loading block below owns
+              // the filler (turnFillerHeight) — assistant bubbles streamed
+              // mid-turn must stay content-height, or the last one would
+              // push the loading indicator a full viewport below the fold.
+              // Only once the turn ends does the final reply take the filler
+              // over from the unmounting loading block (height-neutral swap).
+              msg.id === lastMessageId && !isVideoMode && turnAnchorActive && !isLoading
                 ? { minHeight: assistantFillerMinHeight }
                 : undefined
             }
