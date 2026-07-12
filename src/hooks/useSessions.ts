@@ -20,6 +20,13 @@ export interface Session {
   messages: ChatMessage[];
   code: string;
   tokenStats?: TokenStats;
+  /**
+   * Next-step suggestion chips, bound to the code they were generated for.
+   * Persisted so a page refresh can restore them without regenerating.
+   * `forCode` guards against the commit→async-persist window: if it no longer
+   * matches the session's code, the stored chips are stale and get discarded.
+   */
+  suggestions?: { forCode: string; items: string[] };
   createdAt: number;
   updatedAt: number;
 }
@@ -57,11 +64,14 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
   const index = s.messages.findIndex((m) => m.id === targetMessageId);
   if (index === -1) return s;
   const before = s.messages.slice(0, index);
+  // Keep the original message's id: the retried/edited bubble is conceptually
+  // the same message, and reusing its id keeps React's reconciliation on the
+  // same DOM node instead of unmount+remount, which would replay the
+  // fade-in-up mount animation and flash the bubble on every retry.
   const newMsg = {
-    id: newMessageId(),
+    ...s.messages[index],
     role: 'user' as const,
     content: newContent,
-    timestamp: Date.now(),
   };
   const messages = [...before, newMsg];
   const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
@@ -382,6 +392,14 @@ export function useSessions() {
     [getApply]
   );
 
+  const setSuggestions = useCallback(
+    (items: string[], forCode: string, sessionId?: string) => {
+      const apply = getApply(sessionId);
+      apply((s) => ({ ...s, suggestions: { forCode, items } }));
+    },
+    [getApply]
+  );
+
   return {
     sessions,
     currentSession,
@@ -402,5 +420,6 @@ export function useSessions() {
     importSession,
     branchFromMessage,
     updateTokenStats,
+    setSuggestions,
   };
 }

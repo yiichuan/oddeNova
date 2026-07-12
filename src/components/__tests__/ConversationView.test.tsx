@@ -8,6 +8,9 @@ import ConversationView from '../ConversationView';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+// lottie-web crashes at import time in happy-dom (no canvas 2D context)
+vi.mock('lottie-react', () => ({ default: () => null }));
+
 function setMobileViewport(matches: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
   Object.defineProperty(window, 'matchMedia', {

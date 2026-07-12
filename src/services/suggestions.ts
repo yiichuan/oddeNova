@@ -1,191 +1,41 @@
-import { chatOnce } from './llm';
 import { zh } from '../lib/i18n';
 
-// Model/credentials reuse the unified configuration in services/llm-config.ts;
-// single-turn requests are automatically routed to the current provider via chatOnce().
-
 const STATIC_SUGGESTIONS_ZH = [
-  '来段复古游戏机通关音乐',
-  '来段Jazz Funk',
-  '来首小提琴和钢琴',
-  '来点动感音乐',
-  '来首古典优雅钢琴曲',
+  '最近有点失眠，想做一段安静但舒缓的旋律',
+  '帮我来个140 BPM左右、情绪灰一点的Drum\'n\'Bass',
+  '我脑子里就是“咚 哒 咚咚 哒”，能按这个感觉做吗',
+  '像一个人走在废土上，孤零零但还没放弃的那种配乐',
+  '来一段Footwork，鼓点切碎',
+  '想要游乐园摩天轮升到最高处，大家突然欢呼起来的感觉',
+  '做个House吧，sidechain压得明显一点，像在呼吸',
+  '试试UK Garage，贝斯要有滑音，鼓组切得利落一点',
+  '想要一种空灵、温柔、被治愈的感觉',
+  '钢琴先铺底，弦乐慢慢进来，鼓别太满，帮我编完整一点',
 ];
 
 const STATIC_SUGGESTIONS_EN = [
-  'Play some retro game music',
-  'Play some Jazz Funk',
-  'Play violin and piano',
-  'Play some energetic music',
-  'Play a classical piano piece',
+  'I\'ve been having trouble sleeping lately, want something quiet and soothing',
+  'Could you make me a drum\'n\'bass around 140 BPM, kind of moody',
+  'It\'s just "boom tss boom-boom tss" in my head, can you make something like that',
+  'Like someone walking alone through a wasteland, lonely but not giving up yet',
+  'Give me a footwork beat, chop the drums up',
+  'That feeling when the ferris wheel hits the top and everyone suddenly cheers',
+  'Let\'s do a house track, pump the sidechain harder, make it breathe',
+  'Try a UK garage track, slide the bass around, chop the drums up cleanly',
+  'I want something ethereal, gentle, healing',
+  'Start with piano underneath, let strings ease in slowly, keep the drums sparse — help me flesh out a full piece',
 ];
 
 export const STATIC_SUGGESTIONS = zh ? STATIC_SUGGESTIONS_ZH : STATIC_SUGGESTIONS_EN;
-
-export type MusicStage = 'early' | 'developing' | 'full';
-export type MusicLayer = typeof ALL_LAYERS[number];
-
-const ALL_LAYERS = ['drum', 'bass', 'melody', 'fx'] as const;
-
-export interface MusicState {
-  layers: MusicLayer[];
-  missing: MusicLayer[];
-  stage: MusicStage;
-}
-
-/**
- * Lightweight heuristic analysis of a Strudel code snippet.
- * Returns which layers are present, which are missing, and the overall stage.
- * Does NOT call LLM — pure string analysis.
- */
-export function analyzeMusicState(code: string): MusicState {
-  if (!code) return { layers: [], missing: [...ALL_LAYERS], stage: 'early' };
-  const c = code.toLowerCase();
-  const layers: MusicLayer[] = [];
-
-  // Drum detection: common Strudel drum sample names
-  if (/\b(bd|sd|hh|oh|cp|mt|lt|ht|rim|kick|snare|hat|clap)\b/.test(c)) {
-    layers.push('drum');
-  }
-  // Bass detection
-  if (/\b(bass|sub|sawtooth|saw|square)\b/.test(c)) {
-    layers.push('bass');
-  }
-  // Melody detection: pitched synths
-  if (/\b(note|sine|piano|pluck|chord|melody|lead|pad|string)\b/.test(c)) {
-    layers.push('melody');
-  }
-  // FX detection
-  if (/\b(room|reverb|delay|echo|crush|distort|filter|lpf|hpf|pan)\b/.test(c)) {
-    layers.push('fx');
-  }
-
-  const missing = ALL_LAYERS.filter((l) => !layers.includes(l));
-  let stage: MusicStage;
-  if (layers.length <= 1) stage = 'early';
-  else if (layers.length <= 3) stage = 'developing';
-  else stage = 'full';
-
-  return { layers, missing, stage };
-}
-
-const STYLE_ALIASES: Record<string, string> = {
-  lofi: 'lo-fi',
-  'lo fi': 'lo-fi',
-  hiphop: 'hip-hop',
-  'hip hop': 'hip-hop',
-  dnb: 'drum and bass',
-  'drum and bass': 'drum and bass',
-};
-
-const STYLE_KEYWORDS = [
-  'lo-fi', 'lofi', 'house', 'techno', 'ambient', 'jazz', 'funk',
-  'drum and bass', 'dnb', 'trance', 'minimal', 'classical',
-  'hip hop', 'hiphop', 'trap', 'indie', 'folk', 'lo fi',
-];
-
-/**
- * Extract a style intent string from the first user message in the conversation.
- * Returns null if no known style keyword is found.
- */
-export function extractStyleIntent(messages: { role: string; content: string }[]): string | null {
-  const firstUser = messages.find((m) => m.role === 'user');
-  if (!firstUser) return null;
-  const text = firstUser.content.toLowerCase();
-  for (const kw of STYLE_KEYWORDS) {
-    if (text.includes(kw)) {
-      return STYLE_ALIASES[kw] ?? kw;
-    }
-  }
-  return null;
-}
-
-function buildSuggestSystem(state: MusicState, styleIntent: string | null, isZh: boolean): string {
-  if (isZh) {
-    const layersStr = state.layers.length > 0 ? state.layers.join(', ') : '无';
-    const missingStr = state.missing.length > 0 ? state.missing.join(', ') : '无';
-    const styleStr = styleIntent ?? '未知';
-    return `你是 Strudel 实时电子乐协作伙伴。
-
-当前曲子状态：
-- 已有声部：${layersStr}
-- 缺少声部：${missingStr}
-- 制作阶段：${state.stage}
-- 风格方向：${styleStr}
-
-基于以上状态，建议 2 个用户可以发出的"下一步"中文短指令。
-规则：
-- stage=early → 优先建议补 missing 里的声部（如"加入鼓点"、"铺一层低音"）
-- stage=developing → 可以加层，也可以调质感/节奏/速度
-- stage=full → 专注变奏、情绪变化，不要再建议加层
-- 风格方向不为"未知"时，建议内容要符合该风格特征
-- 每条 6-12 个字，自然口语，不要英文术语堆砌
-- 输出 JSON：{"suggestions":["...","..."]}，不要任何额外文字`;
-  }
-
-  const layersStr = state.layers.length > 0 ? state.layers.join(', ') : 'none';
-  const missingStr = state.missing.length > 0 ? state.missing.join(', ') : 'none';
-  const styleStr = styleIntent ?? 'unknown';
-  return `You are a Strudel live-coding music collaborator.
-
-Current track state:
-- Present layers: ${layersStr}
-- Missing layers: ${missingStr}
-- Production stage: ${state.stage}
-- Style direction: ${styleStr}
-
-Based on this state, suggest 2 short next-step instructions the user could give, in English.
-Rules:
-- stage=early → prioritise adding missing layers (e.g. "Add a drum beat", "Lay in a bass line")
-- stage=developing → can add layers or tweak texture/rhythm/tempo
-- stage=full → focus on variation and mood shifts, do not suggest adding more layers
-- When style direction is known, suggestions must fit that style
-- 5–10 words each, natural phrasing, avoid jargon
-- Output JSON: {"suggestions":["...","..."]}, nothing else`;
-}
-
-interface SuggestResult {
-  suggestions: string[];
-}
-
-function pickStatic(n = 2): string[] {
-  const shuffled = [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, n);
-}
-
-// Parse `jsonText` and return up to 3 non-empty string suggestions, or null if
-// it isn't valid JSON with a `suggestions` array.
-function extractSuggestionsFromJSON(jsonText: string): string[] | null {
-  try {
-    const p = JSON.parse(jsonText) as SuggestResult;
-    if (Array.isArray(p?.suggestions)) {
-      return p.suggestions.filter((s) => typeof s === 'string' && s.trim()).slice(0, 3);
-    }
-  } catch {
-    // fall through
-  }
-  return null;
-}
-
-function parseSuggestions(text: string): string[] | null {
-  if (!text) return null;
-  // Try direct JSON first.
-  const direct = extractSuggestionsFromJSON(text);
-  if (direct) return direct;
-  // Try to find a JSON object inside fences.
-  const m = text.match(/\{[\s\S]*?"suggestions"[\s\S]*?\}/);
-  if (m) {
-    const fenced = extractSuggestionsFromJSON(m[0]);
-    if (fenced) return fenced;
-  }
-  console.warn('[suggestions] parseSuggestions: could not find valid JSON in LLM response:', text.slice(0, 200));
-  return null;
-}
 
 /**
  * Extract next-step suggestion lines from a commit explanation.
  * Supports both Chinese ("接下来可以：") and English ("Next steps:") formats.
  * Returns an empty array if neither section is found.
+ *
+ * The agent's commit prompt already produces the executable options here (five
+ * by default), so these lines are the sole source of dynamic suggestion chips —
+ * there is no separate LLM call to generate them.
  */
 export function parseNextSteps(explanation: string): string[] {
   const match =
@@ -199,46 +49,9 @@ export function parseNextSteps(explanation: string): string[] {
     .filter(Boolean);
 }
 
-/**
- * Build 2 short next-step suggestions based on the current code and conversation.
- * - Empty code → static defaults.
- * - Otherwise → LLM call with music state context; failure falls back to static.
- */
-function detectIsZh(messages: { role: string; content: string }[]): boolean {
-  const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-  return lastUser ? /[一-龥]/.test(lastUser.content) : zh;
-}
-
-export async function buildSuggestions(
-  currentCode: string,
-  messages: { role: string; content: string }[],
-): Promise<string[]> {
-  if (!currentCode.trim()) {
-    return pickStatic(2);
-  }
-  try {
-    const isZh = detectIsZh(messages);
-    const state = analyzeMusicState(currentCode);
-    const styleIntent = extractStyleIntent(messages);
-    const system = buildSuggestSystem(state, styleIntent, isZh);
-    console.debug('[suggestions] calling LLM for suggestions, stage=%s style=%s isZh=%s', state.stage, styleIntent, isZh);
-
-    const userMsg = isZh
-      ? `当前曲谱：\n${currentCode}\n\n请输出 2 条建议。`
-      : `Current score:\n${currentCode}\n\nOutput 2 suggestions.`;
-    const text = await chatOnce(system, userMsg, {
-      temperature: 0.8,
-      maxTokens: 2048,
-    });
-    console.debug('[suggestions] LLM responded:', text.slice(0, 300));
-    const parsed = parseSuggestions(text);
-    if (parsed && parsed.length > 0) {
-      console.debug('[suggestions] parsed suggestions:', parsed);
-      return parsed.slice(0, 2);
-    }
-    console.warn('[suggestions] parseSuggestions returned empty, falling back to static');
-  } catch (e) {
-    console.warn('[suggestions] upstream call failed, falling back to static', e);
-  }
-  return pickStatic(2);
+/** Strip the trailing "next steps" paragraph so it isn't duplicated in chat history. */
+export function stripNextSteps(explanation: string): string {
+  return explanation
+    .replace(/\n\n(?:接下来可以|Next steps)[：:][\s\S]*$/i, '')
+    .trim();
 }

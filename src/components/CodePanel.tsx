@@ -377,6 +377,18 @@ export default function CodePanel({
           data-testid="code-panel-editor-root"
           className="h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
         />
+
+        {error && (
+          <div
+            className="absolute -bottom-px p-2.5 bg-error/10 border border-[#B2370C] text-[#B2370C] text-xs font-mono whitespace-pre-wrap wrap-break-word"
+            style={{
+              left: gutterWidth ? gutterWidth - 1 : 0,
+              maxWidth: `calc(100% - ${gutterWidth ? gutterWidth - 1 : 0}px)`,
+            }}
+          >
+            {error}
+          </div>
+        )}
       </div>
 
       {topActionsContainer?.current && createPortal(
@@ -396,12 +408,6 @@ export default function CodePanel({
         topActionsContainer.current,
       )}
 
-      {error && (
-        <div className="mx-3 mb-2 p-2.5 bg-error/10 border border-error/30 rounded-md text-error text-xs font-mono shrink-0">
-          {error}
-        </div>
-      )}
-
       {/* Footer — play button + sliders */}
       <div
         className="shrink-0 flex items-stretch border-t"
@@ -419,12 +425,14 @@ export default function CodePanel({
           <button
             onClick={handlePlayClick}
             disabled={!engineReady && !isPlaying}
-            className={`flex items-center justify-center transition-opacity text-[#B2370C] ${
+            className={`flex items-center justify-center w-9 h-9 transition-opacity text-[#B2370C] ${
               isPlaying ? 'hover:opacity-70' : 'hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed'
             }`}
             title={isPlaying ? t('stop') : t('play')}
           >
-            {isPlaying ? <StopIcon size={36} /> : <PlayIcon size={36} />}
+            {/* Stop renders smaller: Square fills its viewBox (18×18) while
+                Play's triangle is ~14×18, so equal sizes look unbalanced */}
+            {isPlaying ? <StopIcon size={30} /> : <PlayIcon size={36} />}
           </button>
         </div>
 

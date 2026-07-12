@@ -48,6 +48,8 @@
     "@vercel/blob": "^2.3.3",
     "@vercel/speed-insights": "^2.0.0",
     "idb": "^8.0.3",
+    "lottie-react": "^2.4.1",
+    "lucide-react": "^1.23.0",
     "openai": "^6.34.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

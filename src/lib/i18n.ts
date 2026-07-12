@@ -32,6 +32,7 @@ const S: Record<string, readonly [string, string]> = {
   branchSuffix:     ['（分支）', ' (branch)'],
 
   // Tool call labels (formatToolCall)
+  arrangeMusic:   ['编排段落…', 'Arranging…'],
   readScore:      ['读取当前曲谱', 'Read current score'],
   validateCode:   ['校验代码', 'Validate code'],
   commitAndPlay:  ['提交并播放', 'Commit and play'],
@@ -63,6 +64,7 @@ const S: Record<string, readonly [string, string]> = {
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
+  tabToFill:           ['按 Tab 填入', 'Tab to use'],
   notInitialized:      ['未初始化', 'Not initialized'],
   restartEngine:       ['重启引擎', 'Restart engine'],
   engineInitializing:  ['初始化中...', 'Initializing...'],
@@ -86,6 +88,10 @@ const S: Record<string, readonly [string, string]> = {
   lines:         ['行', 'lines'],
   branchFrom:    ['从此处创建分支对话', 'Branch conversation from here'],
   thinking:      ['思考中...', 'Thinking...'],
+  reasoningTitle:['构思', 'Ideation'],
+  collapseReasoning: ['收起推理过程', 'Collapse reasoning'],
+  expandReasoning:   ['展开推理过程', 'Expand reasoning'],
+  actionsTitle:  ['思考过程', 'Process'],
   rollbackHere:  ['回滚到此处', 'Roll back to here'],
   copyCode:      ['复制代码', 'Copy code'],
 

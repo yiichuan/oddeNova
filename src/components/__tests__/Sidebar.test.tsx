@@ -8,9 +8,8 @@ import Sidebar from '../Sidebar';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock('../../services/airjelly', () => ({
-  checkAirJellyAvailable: vi.fn(async () => false),
-}));
+// lottie-web crashes at import time in happy-dom (no canvas 2D context)
+vi.mock('lottie-react', () => ({ default: () => null }));
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -42,7 +41,6 @@ function renderSidebar(props: Partial<React.ComponentProps<typeof Sidebar>> = {}
         suggestions={[]}
         onSendText={vi.fn()}
         onNewSession={vi.fn()}
-        onMoodGenerate={vi.fn()}
         onReinitEngine={vi.fn()}
         onSwitchSession={vi.fn()}
         onDeleteSession={vi.fn()}

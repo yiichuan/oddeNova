@@ -14,7 +14,7 @@ import {
   getOpenAIToolSchemas,
 } from '../agent/tools';
 import { getActiveModelConfig } from './llm-config';
-import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO, resolveStaticSuggestionScenario } from '../demo/demo-config';
+import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 
 // ===========================================================================
@@ -379,20 +379,17 @@ export async function runAgent(
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
   const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;
-  const staticScenario = resolveStaticSuggestionScenario(instruction);
 
   // Select the LLMCaller implementation corresponding to the current provider
   const activeLLMCaller = isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
 
-  const llm = staticScenario
-    ? createDemoLLMCaller(staticScenario)
-    : isDemoMode()
-      ? isMoodDemo
-        ? createDemoMoodLLMCaller(DEMO_MOOD_SCENARIO)
-        : isPrefillDemo
-          ? createDemoMoodLLMCaller(DEMO_PREFILL_SCENARIO)
-          : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
-      : activeLLMCaller;
+  const llm = isDemoMode()
+    ? isMoodDemo
+      ? createDemoMoodLLMCaller(DEMO_MOOD_SCENARIO)
+      : isPrefillDemo
+        ? createDemoMoodLLMCaller(DEMO_PREFILL_SCENARIO)
+        : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
+    : activeLLMCaller;
 
   return runAgentLoop({
     instruction,
