@@ -294,7 +294,7 @@ describe('ConversationView chat streaming', () => {
     expect(inlineCode?.className).not.toContain('B9D7FF');
   });
 
-  it('streams reasoning as raw text inside the live reasoning window', () => {
+  it('renders streaming reasoning as markdown inside the live reasoning window', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
       {
@@ -306,7 +306,7 @@ describe('ConversationView chat streaming', () => {
       {
         id: 'r1',
         role: 'progress',
-        content: '先定 **BPM**，再选 `gm_electric_bass_finger`。\n- 鼓要轻\n- 贝斯要暖',
+        content: '# 编曲思路\n先定 **BPM**，再选 `gm_electric_bass_finger`。\n- 鼓要轻\n- 贝斯要暖',
         timestamp: 2,
         progressKind: 'reasoning',
       },
@@ -314,10 +314,21 @@ describe('ConversationView chat streaming', () => {
     const { container, root } = renderConversationView(messages, vi.fn(), true);
     roots.push(root);
 
-    // The streaming window shows the reasoning verbatim (mono <pre>, no markdown pass).
-    const pre = container.querySelector('pre');
-    expect(pre).not.toBeNull();
-    expect(pre?.textContent).toContain('先定 **BPM**，再选 `gm_electric_bass_finger`。');
+    // Markdown is rendered: markers disappear, elements appear.
+    expect(container.textContent).not.toContain('**BPM**');
+    expect(container.querySelector('strong')?.textContent).toBe('BPM');
+    expect(container.querySelector('[data-markdown-text] code')?.textContent).toBe(
+      'gm_electric_bass_finger',
+    );
+    expect(container.querySelectorAll('[data-markdown-text] li')).toHaveLength(2);
+
+    // Headings stay gray in the muted tone — no bright text-text-primary.
+    const heading = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-markdown-text] div'),
+    ).find((el) => el.textContent === '编曲思路');
+    expect(heading).not.toBeUndefined();
+    expect(heading?.className).toContain('font-semibold');
+    expect(heading?.className).not.toContain('text-text-primary');
   });
 
   it('keeps streaming reasoning text constrained and wrappable inside the chat width', () => {
@@ -340,11 +351,16 @@ describe('ConversationView chat streaming', () => {
     const { container, root } = renderConversationView(messages, vi.fn(), true);
     roots.push(root);
 
-    const pre = container.querySelector<HTMLElement>('pre');
-    expect(pre).not.toBeNull();
-    expect(pre?.classList.contains('whitespace-pre-wrap')).toBe(true);
-    expect(pre?.classList.contains('break-words')).toBe(true);
-    expect(pre?.classList.contains('overflow-x-hidden')).toBe(true);
+    // The scroll container keeps the gray mono style and overflow constraints.
+    const scrollBox = container.querySelector<HTMLElement>(
+      '[data-markdown-text]',
+    )?.parentElement;
+    expect(scrollBox).not.toBeNull();
+    expect(scrollBox?.className).toContain('text-text-muted');
+    expect(scrollBox?.className).toContain('font-mono');
+    expect(scrollBox?.className).toContain('break-words');
+    expect(scrollBox?.className).toContain('overflow-x-hidden');
+    expect(scrollBox?.className).toContain('overflow-y-auto');
   });
 
 

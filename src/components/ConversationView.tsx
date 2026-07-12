@@ -28,6 +28,12 @@ const blockCodeToneClass: Record<MarkdownTone, string> = {
   muted: 'text-text-secondary/75',
 };
 
+// Muted headings add no color class so they inherit the surrounding gray.
+const headingToneClass: Record<MarkdownTone, string> = {
+  default: 'text-text-primary',
+  muted: '',
+};
+
 // Thinking duration: "45s" under a minute, "2m 5s" above; whole minutes drop
 // the seconds ("5m" not "5m 0s").
 function formatThinkDuration(sec: number): string {
@@ -37,7 +43,7 @@ function formatThinkDuration(sec: number): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
-// Fades the top edge of the streaming reasoning <pre> so an auto-scroll
+// Fades the top edge of the streaming reasoning window so an auto-scroll
 // landing mid-line (its clientHeight isn't a multiple of line-height, so the
 // topmost line is almost never a clean cut) reads as an intentional fade
 // instead of a hard clip. Only applied once scrollTop > 0 — while all the
@@ -248,7 +254,7 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
     const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
     if (heading) {
       blocks.push(
-        <div key={`md-heading-${key++}`} className="mt-1 font-semibold text-text-primary">
+        <div key={`md-heading-${key++}`} className={`mt-1 font-semibold ${headingToneClass[tone]}`.trim()}>
           {parseInlineMarkdown(heading[2], `md-heading-${key}`, tone)}
         </div>,
       );
@@ -416,7 +422,7 @@ export default function ConversationView({
   // In-flight programmatic smooth scroll (turn-start anchoring): its target
   // and a deadline after which it's considered interrupted/finished.
   const autoScrollRef = useRef<{ target: number; until: number } | null>(null);
-  const reasoningPreRef = useRef<HTMLPreElement>(null);
+  const reasoningScrollRef = useRef<HTMLDivElement>(null);
   const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
@@ -613,7 +619,7 @@ export default function ConversationView({
         }
       }
       // Auto-scroll the reasoning <pre> to the bottom (follow content during streaming output)
-      const preEl = reasoningPreRef.current;
+      const preEl = reasoningScrollRef.current;
       if (preEl && !reasoningUserScrolledRef.current) {
         preEl.scrollTop = preEl.scrollHeight;
         syncReasoningTopMask(preEl);
@@ -1157,21 +1163,21 @@ export default function ConversationView({
             // bottom — which, via turnFillerHeight, is the conversation's
             // bottom edge — with no magic-number arithmetic to keep in sync.
             // min-h-0 lets it size below its content's natural height, which
-            // is what lets the <pre>'s own h-full resolve to a real, clipped
-            // value instead of just growing to fit the streamed text.
+            // is what lets the scroll box's own h-full resolve to a real,
+            // clipped value instead of just growing to fit the streamed text.
             <div className="mt-3 w-full px-2 flex-1 min-h-0 animate-fade-in">
-              <pre
-                ref={reasoningPreRef}
+              <div
+                ref={reasoningScrollRef}
                 onScroll={(e) => {
                   const el = e.currentTarget;
                   const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
                   reasoningUserScrolledRef.current = distFromBottom > 20;
                   syncReasoningTopMask(el);
                 }}
-                className="h-full min-h-[160px] text-sm text-text-muted font-mono whitespace-pre-wrap break-words overflow-y-auto overflow-x-hidden leading-relaxed"
+                className="h-full min-h-[160px] text-sm text-text-muted font-mono break-words overflow-y-auto overflow-x-hidden leading-relaxed"
               >
-                {streamingReasoningMsg.content}
-              </pre>
+                <MarkdownText content={streamingReasoningMsg.content} tone="muted" />
+              </div>
             </div>
           )}
         </div>
