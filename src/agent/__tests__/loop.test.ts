@@ -107,7 +107,7 @@ describe('runAgentLoop — enableThinking forwarding', () => {
 });
 
 describe('runAgentLoop — pure chat replies', () => {
-  it('returns a no-code result without warning when the model replies with text and no tools', async () => {
+  it('streams chat text as an assistant reply when thinking is disabled', async () => {
     const events: Array<{ kind: string; message?: string }> = [];
     const llm: LLMCaller = {
       async chatWithTools(_messages, _tools, onTextDelta) {
@@ -126,6 +126,7 @@ describe('runAgentLoop — pure chat replies', () => {
       systemPrompt: 'You are a music assistant.',
       llm,
       onProgress: (event) => events.push(event),
+      enableThinking: false,
     });
 
     expect(result).toMatchObject({
@@ -136,8 +137,8 @@ describe('runAgentLoop — pure chat replies', () => {
     });
     expect(events).toEqual([
       { kind: 'iteration', index: 1 },
-      { kind: 'assistant_text_delta', delta: '当然可以，' },
-      { kind: 'assistant_text_delta', delta: '我们先聊聊。' },
+      { kind: 'assistant_reply_delta', delta: '当然可以，' },
+      { kind: 'assistant_reply_delta', delta: '我们先聊聊。' },
     ]);
     expect(events.some((event) => event.kind === 'warn')).toBe(false);
   });

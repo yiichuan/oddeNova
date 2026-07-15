@@ -5,12 +5,23 @@ function makeSessions() {
   return {
     addProgress: vi.fn(),
     addAssistantMessage: vi.fn(),
+    appendToLastAssistant: vi.fn(),
     appendToLastThinking: vi.fn(),
     appendToLastReasoning: vi.fn(),
   };
 }
 
 describe('createAgentProgressHandler', () => {
+  it('routes streamed chat replies directly into the assistant message', () => {
+    const sessions = makeSessions();
+    const handle = createAgentProgressHandler(sessions, 'S1');
+
+    handle({ kind: 'assistant_reply_delta', delta: '你好，很高兴遇见你。' });
+
+    expect(sessions.appendToLastAssistant).toHaveBeenCalledWith('你好，很高兴遇见你。', 'S1');
+    expect(sessions.appendToLastThinking).not.toHaveBeenCalled();
+  });
+
   it('routes streamed and completed assistant narration into thinking progress', () => {
     const sessions = makeSessions();
     const handle = createAgentProgressHandler(sessions, 'S1');

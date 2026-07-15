@@ -69,6 +69,7 @@ export type ProgressEvent =
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'assistant_text_delta'; delta: string }
+  | { kind: 'assistant_reply_delta'; delta: string }
   | { kind: 'reasoning_delta'; delta: string }
   | { kind: 'warn'; message: string };
 
@@ -96,7 +97,7 @@ export interface TokenUsage {
 // Wrap a streaming-delta progress event, or undefined when there's no listener.
 function makeProgressDelta(
   onProgress: ((e: ProgressEvent) => void) | undefined,
-  kind: 'assistant_text_delta' | 'reasoning_delta',
+  kind: 'assistant_text_delta' | 'assistant_reply_delta' | 'reasoning_delta',
 ): ((delta: string) => void) | undefined {
   return onProgress ? (delta: string) => onProgress({ kind, delta }) : undefined;
 }
@@ -196,7 +197,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
-    const onTextDelta = makeProgressDelta(onProgress, 'assistant_text_delta');
+    const onTextDelta = makeProgressDelta(
+      onProgress,
+      enableThinking ? 'assistant_text_delta' : 'assistant_reply_delta',
+    );
     const onReasoningDelta = makeProgressDelta(onProgress, 'reasoning_delta');
     const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal, enableThinking);
     if (resp.usage) lastUsage = resp.usage;

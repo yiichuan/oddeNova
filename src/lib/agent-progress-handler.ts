@@ -4,7 +4,7 @@ import { t } from './i18n';
 
 type AgentProgressSessions = Pick<
   ReturnType<typeof useSessions>,
-  'addProgress' | 'appendToLastThinking' | 'appendToLastReasoning'
+  'addProgress' | 'appendToLastAssistant' | 'appendToLastThinking' | 'appendToLastReasoning'
 >;
 
 export function createAgentProgressHandler(
@@ -40,6 +40,10 @@ export function createAgentProgressHandler(
     }
     if (event.kind === 'assistant_text_delta') {
       sessions.appendToLastThinking(event.delta, sessionId);
+      return;
+    }
+    if (event.kind === 'assistant_reply_delta') {
+      sessions.appendToLastAssistant(event.delta, sessionId);
       return;
     }
     if (event.kind === 'assistant_text') {
