@@ -50,6 +50,21 @@ describe('validate', () => {
     expect(ctx.state.code).toBe('stack(s("bd") s("hh"))');
   });
 
+  it('接受与 setCode 相同但含 GM 别名的原始代码（normalize 后不应误拒）', async () => {
+    const raw = `setcps(0.5)
+stack(
+  /* @layer keys */
+  note("c3 e3").s("gm_acoustic_grand_piano")
+)`;
+    const setCode = getHandler('setCode');
+    const ctx = makeCtx('');
+    await setCode({ code: raw, explanation: 'add keys' }, ctx);
+    // state holds the normalized code (gm_piano), so it differs from raw
+    expect(ctx.state.code).not.toBe(raw);
+    const result = await validate({ code: raw }, ctx);
+    expect(result.ok).toBe(true);
+  });
+
   it('发现 "|" in <> — transpiler 返回 ok: false，error 含 Mini-notation，code 不改变', async () => {
     const badCode = 'n("<0 ~ 2 | 4 ~ 3>/2")';
     vi.mocked(validateCodeTranspiler).mockReturnValueOnce({

@@ -89,7 +89,14 @@ export const TOOLS: ToolDef[] = [
     },
     handler: (args, ctx) => {
       const zh = ctx.isZh ?? true;
-      if (typeof args.code === 'string' && args.code.trim() && args.code.trim() !== ctx.state.code) {
+      // Compare after the same normalization setCode applies, otherwise code
+      // containing GM alias names (rewritten on store) would never match and
+      // the model would loop on setCode → validate forever.
+      if (
+        typeof args.code === 'string' &&
+        args.code.trim() &&
+        normalizeGmSampleNames(args.code.trim()) !== ctx.state.code
+      ) {
         return { ok: false, error: zh
           ? 'validate 只能校验当前 setCode 写入的代码；请先用 setCode 保存修正后的完整代码，再调用 validate。'
           : 'validate can only check the current code written by setCode; call setCode with the corrected full code before validate.' };
