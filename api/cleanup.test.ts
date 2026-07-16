@@ -64,7 +64,7 @@ describe('cleanup handler', () => {
       return {
         blobs: [
           { pathname: 'daily-suggestions/2026-06-18.json', url: 'https://blob/expired', uploadedAt: new Date() },
-          { pathname: 'daily-suggestions/locks/2026-07-18.lock', url: 'https://blob/old-lock', uploadedAt: new Date('2026-07-17T03:59:59.000Z') },
+          { pathname: 'daily-suggestions/locks/2026-07-18.lock', url: 'https://blob/old-lock', etag: 'old-etag', uploadedAt: new Date('2026-07-17T03:59:59.000Z') },
         ],
       } as never;
     });
@@ -77,7 +77,8 @@ describe('cleanup handler', () => {
     expect(list).toHaveBeenCalledWith({ prefix: 'daily-suggestions/', cursor: undefined, limit: 1000 });
     expect(list).toHaveBeenCalledWith({ prefix: 'daily-suggestions/', cursor: 'daily-next', limit: 1000 });
     expect(del).toHaveBeenCalledWith(['https://blob/old-share']);
-    expect(del).toHaveBeenCalledWith(['https://blob/expired', 'https://blob/old-lock']);
+    expect(del).toHaveBeenCalledWith(['https://blob/expired']);
+    expect(del).toHaveBeenCalledWith('https://blob/old-lock', { ifMatch: 'old-etag' });
     expect(del).not.toHaveBeenCalledWith(expect.arrayContaining([
       'https://blob/retained',
       'https://blob/malformed',
@@ -103,6 +104,57 @@ describe('cleanup handler', () => {
     expect(del).toHaveBeenCalledWith(['https://blob/expired']);
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ deleted: 0, dailySuggestionsDeleted: 1, errors: ['shares'] });
+    expect(console.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a replaced expired lock when its listed ETag no longer matches', async () => {
+    vi.mocked(list).mockImplementation(async ({ prefix }) => {
+      if (prefix === 'shares/') return { blobs: [] } as never;
+      return {
+        blobs: [{
+          pathname: 'daily-suggestions/locks/2026-07-18.lock',
+          url: 'https://blob/replaced-lock',
+          etag: 'etag-a',
+          uploadedAt: new Date('2026-07-17T03:59:59.000Z'),
+        }],
+      } as never;
+    });
+    vi.mocked(del).mockImplementation(async (_url, options) => {
+      if (options?.ifMatch === 'etag-a') {
+        throw Object.assign(new Error('lock was replaced with etag-b'), {
+          name: 'BlobPreconditionFailedError',
+        });
+      }
+    });
+    const res = makeRes();
+
+    await handler(request as never, res as never);
+
+    expect(del).toHaveBeenCalledWith('https://blob/replaced-lock', { ifMatch: 'etag-a' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ deleted: 0, dailySuggestionsDeleted: 0, errors: [] });
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it('reports non-precondition lock deletion errors through daily job isolation', async () => {
+    vi.mocked(list).mockImplementation(async ({ prefix }) => {
+      if (prefix === 'shares/') return { blobs: [] } as never;
+      return {
+        blobs: [{
+          pathname: 'daily-suggestions/locks/2026-07-18.lock',
+          url: 'https://blob/broken-lock',
+          etag: 'old-etag',
+          uploadedAt: new Date('2026-07-17T03:59:59.000Z'),
+        }],
+      } as never;
+    });
+    vi.mocked(del).mockRejectedValue(new Error('blob service unavailable'));
+    const res = makeRes();
+
+    await handler(request as never, res as never);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({ deleted: 0, dailySuggestionsDeleted: 0, errors: ['dailySuggestions'] });
     expect(console.error).toHaveBeenCalledTimes(1);
   });
 

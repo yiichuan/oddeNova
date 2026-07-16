@@ -12,7 +12,16 @@ export interface DailySuggestionBatch {
   generatedAt: string;
   items: DailySuggestionItem[];
 }
-export interface DailySuggestionBlob { pathname: string; url: string; uploadedAt?: Date | string }
+export interface DailySuggestionBlob {
+  pathname: string;
+  url: string;
+  etag?: string;
+  uploadedAt?: Date | string;
+}
+export interface DailySuggestionCleanup {
+  batchUrls: string[];
+  locks: Array<{ url: string; etag: string }>;
+}
 
 export function beijingDate(now = new Date()): string {
   return new Date(now.getTime() + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
@@ -94,17 +103,32 @@ export function expiredDailySuggestionUrls(
   today: string,
   now = new Date(),
 ): string[] {
+  return expiredDailySuggestionCleanup(blobs, today, now).batchUrls;
+}
+
+export function expiredDailySuggestionCleanup(
+  blobs: DailySuggestionBlob[],
+  today: string,
+  now = new Date(),
+): DailySuggestionCleanup {
   const oldestRetainedDate = addDateDays(today, -29);
   const lockCutoff = now.getTime() - DAY_MS;
-  return blobs.flatMap((blob) => {
+  const cleanup: DailySuggestionCleanup = { batchUrls: [], locks: [] };
+  for (const blob of blobs) {
     const date = PATH_RE.exec(blob.pathname)?.[1];
-    if (date) return validDate(date) && date < oldestRetainedDate ? [blob.url] : [];
+    if (date) {
+      if (validDate(date) && date < oldestRetainedDate) cleanup.batchUrls.push(blob.url);
+      continue;
+    }
 
     const lockDate = LOCK_PATH_RE.exec(blob.pathname)?.[1];
-    if (!lockDate || !validDate(lockDate) || blob.uploadedAt === undefined) return [];
+    if (!lockDate || !validDate(lockDate) || blob.uploadedAt === undefined || !blob.etag) continue;
     const uploadedAt = blob.uploadedAt instanceof Date
       ? blob.uploadedAt.getTime()
       : Date.parse(blob.uploadedAt);
-    return Number.isFinite(uploadedAt) && uploadedAt < lockCutoff ? [blob.url] : [];
-  });
+    if (Number.isFinite(uploadedAt) && uploadedAt < lockCutoff) {
+      cleanup.locks.push({ url: blob.url, etag: blob.etag });
+    }
+  }
+  return cleanup;
 }
