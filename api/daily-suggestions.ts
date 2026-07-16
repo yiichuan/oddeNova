@@ -25,21 +25,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const requestedDate = beijingDate();
-  for (const sourceDate of readCandidateDates(requestedDate)) {
-    const batch = await readDate(sourceDate);
-    if (!batch) continue;
+  while (true) {
+    const requestedDate = beijingDate();
+    let dateChanged = false;
+    for (const sourceDate of readCandidateDates(requestedDate)) {
+      const batch = await readDate(sourceDate);
+      const responseNow = new Date();
+      if (beijingDate(responseNow) !== requestedDate) {
+        dateChanged = true;
+        break;
+      }
+      if (!batch) continue;
 
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    res.setHeader(
-      'Vercel-CDN-Cache-Control',
-      `public, max-age=${secondsUntilNextBeijingMidnight()}`,
-    );
-    res.status(200).json({ requestedDate, sourceDate, items: batch.items });
+      const midnightTtl = secondsUntilNextBeijingMidnight(responseNow);
+      res.setHeader('Cache-Control', `public, max-age=${Math.min(300, midnightTtl)}`);
+      res.setHeader('Vercel-CDN-Cache-Control', `public, max-age=${midnightTtl}`);
+      res.status(200).json({ requestedDate, sourceDate, items: batch.items });
+      return;
+    }
+    if (dateChanged) continue;
+
+    const responseNow = new Date();
+    if (beijingDate(responseNow) !== requestedDate) continue;
+    const midnightTtl = secondsUntilNextBeijingMidnight(responseNow);
+    res.setHeader('Cache-Control', `public, max-age=${Math.min(60, midnightTtl)}`);
+    res.setHeader('Vercel-CDN-Cache-Control', `public, max-age=${Math.min(300, midnightTtl)}`);
+    res.status(503).json({ error: 'Daily suggestions unavailable', requestedDate });
     return;
   }
-
-  res.setHeader('Cache-Control', 'public, max-age=60');
-  res.setHeader('Vercel-CDN-Cache-Control', 'public, max-age=300');
-  res.status(503).json({ error: 'Daily suggestions unavailable', requestedDate });
 }

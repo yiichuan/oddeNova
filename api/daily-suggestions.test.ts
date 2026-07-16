@@ -75,6 +75,36 @@ describe('daily-suggestions handler', () => {
     expect(res.body).toEqual({ requestedDate: '2026-07-18', sourceDate: '2026-07-18', items });
   });
 
+  it('restarts a pending lookup when Beijing midnight changes the requested date', async () => {
+    vi.setSystemTime('2026-07-17T15:59:59.900Z');
+    let resolveOldFetch!: (response: Response) => void;
+    let resolveNewFetch!: (response: Response) => void;
+    const oldFetch = new Promise<Response>((resolve) => { resolveOldFetch = resolve; });
+    const newFetch = new Promise<Response>((resolve) => { resolveNewFetch = resolve; });
+    vi.mocked(head)
+      .mockResolvedValueOnce({ url: 'https://blob/old-today.json' } as never)
+      .mockResolvedValueOnce({ url: 'https://blob/new-today.json' } as never);
+    vi.stubGlobal('fetch', vi.fn()
+      .mockReturnValueOnce(oldFetch)
+      .mockReturnValueOnce(newFetch));
+    const res = makeRes();
+
+    const pending = handler({ method: 'GET' } as never, res as never);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    vi.setSystemTime('2026-07-17T16:00:00.100Z');
+    resolveOldFetch(new Response(JSON.stringify(batch('2026-07-17')), { status: 200 }));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    vi.setSystemTime('2026-07-18T15:59:59.100Z');
+    resolveNewFetch(new Response(JSON.stringify(batch('2026-07-18')), { status: 200 }));
+    await pending;
+
+    expect(head).toHaveBeenNthCalledWith(1, 'daily-suggestions/2026-07-17.json');
+    expect(head).toHaveBeenNthCalledWith(2, 'daily-suggestions/2026-07-18.json');
+    expect(res.body).toEqual({ requestedDate: '2026-07-18', sourceDate: '2026-07-18', items });
+    expect(res.headers['Cache-Control']).toBe('public, max-age=1');
+    expect(res.headers['Vercel-CDN-Cache-Control']).toBe('public, max-age=1');
+  });
+
   it('falls through a corrupt today batch to the previous date', async () => {
     vi.mocked(head)
       .mockResolvedValueOnce({ url: 'https://blob/today.json' } as never)

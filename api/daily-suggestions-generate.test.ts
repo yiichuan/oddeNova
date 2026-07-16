@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { head, put } from '@vercel/blob';
+import { del, head, put } from '@vercel/blob';
 import handler from './daily-suggestions-generate';
 
-vi.mock('@vercel/blob', () => ({ head: vi.fn(), put: vi.fn() }));
+vi.mock('@vercel/blob', () => ({ del: vi.fn(), head: vi.fn(), put: vi.fn() }));
 
 const items = Array.from({ length: 10 }, (_, i) => ({
   zh: `想做一段第${i + 1}种带空间变化的电子音乐`,
@@ -101,6 +101,9 @@ describe('daily-suggestions-generate handler', () => {
 
   it('writes a valid model response to tomorrow immutable path', async () => {
     vi.mocked(head).mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' }));
+    vi.mocked(put)
+      .mockResolvedValueOnce({ etag: 'lock-etag' } as never)
+      .mockResolvedValueOnce({} as never);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify({ items }) } }],
     }), { status: 200 })));
@@ -113,11 +116,16 @@ describe('daily-suggestions-generate handler', () => {
       expect.stringContaining('"date":"2026-07-18"'),
       expect.objectContaining({ access: 'public', addRandomSuffix: false }),
     );
+    expect(del).toHaveBeenCalledWith(
+      'daily-suggestions/locks/2026-07-18.lock',
+      { ifMatch: 'lock-etag' },
+    );
     expect(res.body).toMatchObject({ status: 'created', attempts: 1 });
   });
 
   it('retries invalid output once and never stores invalid data', async () => {
     vi.mocked(head).mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' }));
+    vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: '{"items":[]}' } }],
     }), { status: 200 })));
@@ -126,7 +134,118 @@ describe('daily-suggestions-generate handler', () => {
     await handler(authorizedReq() as never, res as never);
 
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(put).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalledWith(
+      'daily-suggestions/2026-07-18.json',
+      expect.anything(),
+      expect.anything(),
+    );
     expect(res.statusCode).toBe(502);
+    expect(del).toHaveBeenCalledWith(
+      'daily-suggestions/locks/2026-07-18.lock',
+      { ifMatch: 'lock-etag' },
+    );
+  });
+
+  it('atomically claims a date so two concurrent handlers call the model at most once', async () => {
+    const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
+    vi.mocked(head).mockRejectedValue(notFound);
+    let lockClaimed = false;
+    vi.mocked(put).mockImplementation(async (pathname) => {
+      if (pathname.includes('/locks/')) {
+        if (lockClaimed) throw Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' });
+        lockClaimed = true;
+        return { etag: 'winner-etag' } as never;
+      }
+      return {} as never;
+    });
+    let resolveModel!: (response: Response) => void;
+    const modelResponse = new Promise<Response>((resolve) => { resolveModel = resolve; });
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(modelResponse));
+    const firstRes = makeRes();
+    const secondRes = makeRes();
+
+    const first = handler(authorizedReq() as never, firstRes as never);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await handler(authorizedReq() as never, secondRes as never);
+    resolveModel(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ items }) } }],
+    }), { status: 200 }));
+    await first;
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(secondRes.statusCode).toBe(202);
+    expect(secondRes.body).toEqual({ status: 'in-progress', date: '2026-07-18', attempts: 0 });
+  });
+
+  it('recovers an abandoned lock with an ETag-guarded delete', async () => {
+    const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
+    vi.mocked(head)
+      .mockRejectedValueOnce(notFound)
+      .mockRejectedValueOnce(notFound)
+      .mockResolvedValueOnce({
+        uploadedAt: new Date('2026-07-17T15:20:00.000Z'),
+        etag: 'stale-etag',
+      } as never);
+    vi.mocked(put)
+      .mockRejectedValueOnce(Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' }))
+      .mockResolvedValueOnce({ etag: 'fresh-etag' } as never)
+      .mockResolvedValueOnce({} as never);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ items }) } }],
+    }), { status: 200 })));
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    expect(del).toHaveBeenNthCalledWith(
+      1,
+      'daily-suggestions/locks/2026-07-18.lock',
+      { ifMatch: 'stale-etag' },
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(res.body).toMatchObject({ status: 'created', date: '2026-07-18' });
+  });
+
+  it('categorizes malformed model JSON as invalid output', async () => {
+    vi.mocked(head).mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' }));
+    vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '{not valid JSON' } }],
+    }), { status: 200 })));
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    expect(console.info).toHaveBeenNthCalledWith(1, 'daily_suggestions_generation_attempt', {
+      date: '2026-07-18', attempt: 1, outcome: 'invalid_output',
+    });
+    expect(console.info).toHaveBeenNthCalledWith(2, 'daily_suggestions_generation_attempt', {
+      date: '2026-07-18', attempt: 2, outcome: 'invalid_output',
+    });
+  });
+
+  it('logs sanitized attempt outcomes without model content or credentials', async () => {
+    vi.mocked(head).mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' }));
+    vi.mocked(put)
+      .mockResolvedValueOnce({ etag: 'lock-etag' } as never)
+      .mockResolvedValueOnce({} as never);
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response('upstream unavailable', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ items }) } }],
+      }), { status: 200 })));
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    expect(console.info).toHaveBeenCalledWith('daily_suggestions_generation_attempt', {
+      date: '2026-07-18', attempt: 1, outcome: 'upstream_failure',
+    });
+    expect(console.info).toHaveBeenCalledWith('daily_suggestions_generation_attempt', {
+      date: '2026-07-18', attempt: 2, outcome: 'stored',
+    });
+    const logged = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logged).not.toContain('official-api-key');
+    expect(logged).not.toContain(items[0].zh);
   });
 });
