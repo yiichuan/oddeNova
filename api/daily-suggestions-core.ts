@@ -2,6 +2,7 @@ const DAY_MS = 86_400_000;
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PATH_RE = /^daily-suggestions\/(\d{4}-\d{2}-\d{2})\.json$/;
+const LOCK_PATH_RE = /^daily-suggestions\/locks\/(\d{4}-\d{2}-\d{2})\.lock$/;
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const LIST_PREFIX_RE = /^\s*(?:[-*]|\d+[.)])\s+/;
 
@@ -11,7 +12,7 @@ export interface DailySuggestionBatch {
   generatedAt: string;
   items: DailySuggestionItem[];
 }
-export interface DailySuggestionBlob { pathname: string; url: string }
+export interface DailySuggestionBlob { pathname: string; url: string; uploadedAt?: Date | string }
 
 export function beijingDate(now = new Date()): string {
   return new Date(now.getTime() + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
@@ -88,10 +89,22 @@ export function parseStoredBatch(value: unknown, expectedDate: string): DailySug
   return items ? { date: expectedDate, generatedAt: batch.generatedAt, items } : null;
 }
 
-export function expiredDailySuggestionUrls(blobs: DailySuggestionBlob[], today: string): string[] {
+export function expiredDailySuggestionUrls(
+  blobs: DailySuggestionBlob[],
+  today: string,
+  now = new Date(),
+): string[] {
   const oldestRetainedDate = addDateDays(today, -29);
+  const lockCutoff = now.getTime() - DAY_MS;
   return blobs.flatMap((blob) => {
     const date = PATH_RE.exec(blob.pathname)?.[1];
-    return date && validDate(date) && date < oldestRetainedDate ? [blob.url] : [];
+    if (date) return validDate(date) && date < oldestRetainedDate ? [blob.url] : [];
+
+    const lockDate = LOCK_PATH_RE.exec(blob.pathname)?.[1];
+    if (!lockDate || !validDate(lockDate) || blob.uploadedAt === undefined) return [];
+    const uploadedAt = blob.uploadedAt instanceof Date
+      ? blob.uploadedAt.getTime()
+      : Date.parse(blob.uploadedAt);
+    return Number.isFinite(uploadedAt) && uploadedAt < lockCutoff ? [blob.url] : [];
   });
 }

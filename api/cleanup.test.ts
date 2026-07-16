@@ -55,12 +55,17 @@ describe('cleanup handler', () => {
           blobs: [
             { pathname: 'daily-suggestions/2026-06-19.json', url: 'https://blob/retained', uploadedAt: new Date() },
             { pathname: 'daily-suggestions/not-a-date.json', url: 'https://blob/malformed', uploadedAt: new Date() },
+            { pathname: 'daily-suggestions/locks/2026-07-19.lock', url: 'https://blob/recent-lock', uploadedAt: new Date('2026-07-18T03:00:00.000Z') },
+            { pathname: 'daily-suggestions/locks/not-a-date.lock', url: 'https://blob/malformed-lock', uploadedAt: new Date('2026-06-01T00:00:00.000Z') },
           ],
           cursor: 'daily-next',
         } as never;
       }
       return {
-        blobs: [{ pathname: 'daily-suggestions/2026-06-18.json', url: 'https://blob/expired', uploadedAt: new Date() }],
+        blobs: [
+          { pathname: 'daily-suggestions/2026-06-18.json', url: 'https://blob/expired', uploadedAt: new Date() },
+          { pathname: 'daily-suggestions/locks/2026-07-18.lock', url: 'https://blob/old-lock', uploadedAt: new Date('2026-07-17T03:59:59.000Z') },
+        ],
       } as never;
     });
     const res = makeRes();
@@ -72,10 +77,15 @@ describe('cleanup handler', () => {
     expect(list).toHaveBeenCalledWith({ prefix: 'daily-suggestions/', cursor: undefined, limit: 1000 });
     expect(list).toHaveBeenCalledWith({ prefix: 'daily-suggestions/', cursor: 'daily-next', limit: 1000 });
     expect(del).toHaveBeenCalledWith(['https://blob/old-share']);
-    expect(del).toHaveBeenCalledWith(['https://blob/expired']);
-    expect(del).not.toHaveBeenCalledWith(expect.arrayContaining(['https://blob/retained', 'https://blob/malformed']));
+    expect(del).toHaveBeenCalledWith(['https://blob/expired', 'https://blob/old-lock']);
+    expect(del).not.toHaveBeenCalledWith(expect.arrayContaining([
+      'https://blob/retained',
+      'https://blob/malformed',
+      'https://blob/recent-lock',
+      'https://blob/malformed-lock',
+    ]));
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ deleted: 1, dailySuggestionsDeleted: 1, errors: [] });
+    expect(res.body).toEqual({ deleted: 1, dailySuggestionsDeleted: 2, errors: [] });
   });
 
   it('continues daily cleanup when share listing fails', async () => {

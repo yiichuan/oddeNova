@@ -10,6 +10,7 @@ import {
 const UPSTREAM = 'https://api.deepseek.com/v1/chat/completions';
 const MODEL = 'deepseek-v4-pro';
 const LOCK_STALE_MS = 5 * 60 * 1000;
+const CLAIM_BACKOFF_MS = [100, 200, 400] as const;
 
 const DAILY_SUGGESTION_SYSTEM_PROMPT = `# Goal
 Create a fresh daily batch of entry suggestions that users can send directly to an AI music-making agent.
@@ -97,6 +98,7 @@ type ClaimResult =
 async function claimDate(date: string, finalPath: string): Promise<ClaimResult> {
   const pathname = lockPath(date);
   for (let claimAttempt = 0; claimAttempt < 2; claimAttempt += 1) {
+    if (await exists(finalPath)) return { status: 'exists' };
     try {
       const lock = await put(pathname, JSON.stringify({ date, claimedAt: new Date().toISOString() }), {
         access: 'public',
@@ -122,6 +124,20 @@ async function claimDate(date: string, finalPath: string): Promise<ClaimResult> 
   return { status: 'in-progress' };
 }
 
+async function wait(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForClaim(date: string, finalPath: string): Promise<ClaimResult> {
+  let claim = await claimDate(date, finalPath);
+  for (const backoff of CLAIM_BACKOFF_MS) {
+    if (claim.status !== 'in-progress') return claim;
+    await wait(backoff);
+    claim = await claimDate(date, finalPath);
+  }
+  return claim;
+}
+
 async function releaseClaim(claim: Extract<ClaimResult, { status: 'acquired' }>) {
   try {
     await del(claim.pathname, { ifMatch: claim.etag });
@@ -145,14 +161,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const date = tomorrowInBeijing();
   const pathname = dailySuggestionPath(date);
-  if (await exists(pathname)) return void res.status(200).json({ status: 'exists', date, attempts: 0 });
-
-  const claim = await claimDate(date, pathname);
+  const claim = await waitForClaim(date, pathname);
   if (claim.status === 'exists') {
     return void res.status(200).json({ status: 'exists', date, attempts: 0 });
   }
   if (claim.status === 'in-progress') {
-    return void res.status(202).json({ status: 'in-progress', date, attempts: 0 });
+    return void res.status(503).json({ error: 'Daily suggestion generation is still in progress', date });
   }
 
   try {

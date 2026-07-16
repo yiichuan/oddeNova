@@ -146,35 +146,134 @@ describe('daily-suggestions-generate handler', () => {
     );
   });
 
-  it('atomically claims a date so two concurrent handlers call the model at most once', async () => {
+  it('waits for a successful winner and returns exists without a second model call', async () => {
     const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
-    vi.mocked(head).mockRejectedValue(notFound);
-    let lockClaimed = false;
+    let lockEtag: string | null = null;
+    let finalStored = false;
+    vi.mocked(head).mockImplementation(async (pathname) => {
+      if (pathname.endsWith('.json') && finalStored) return { pathname } as never;
+      if (pathname.includes('/locks/') && lockEtag) {
+        return { etag: lockEtag, uploadedAt: new Date() } as never;
+      }
+      throw notFound;
+    });
     vi.mocked(put).mockImplementation(async (pathname) => {
       if (pathname.includes('/locks/')) {
-        if (lockClaimed) throw Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' });
-        lockClaimed = true;
-        return { etag: 'winner-etag' } as never;
+        if (lockEtag) throw Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' });
+        lockEtag = 'winner-etag';
+        return { etag: lockEtag } as never;
       }
+      finalStored = true;
       return {} as never;
     });
-    let resolveModel!: (response: Response) => void;
-    const modelResponse = new Promise<Response>((resolve) => { resolveModel = resolve; });
-    vi.stubGlobal('fetch', vi.fn().mockReturnValue(modelResponse));
+    vi.mocked(del).mockImplementation(async (_pathname, options) => {
+      if (options?.ifMatch === lockEtag) lockEtag = null;
+    });
+    let resolveWinner!: (response: Response) => void;
+    const winnerResponse = new Promise<Response>((resolve) => { resolveWinner = resolve; });
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(winnerResponse));
     const firstRes = makeRes();
     const secondRes = makeRes();
 
     const first = handler(authorizedReq() as never, firstRes as never);
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    await handler(authorizedReq() as never, secondRes as never);
-    resolveModel(new Response(JSON.stringify({
+    const second = handler(authorizedReq() as never, secondRes as never);
+    resolveWinner(new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify({ items }) } }],
     }), { status: 200 }));
     await first;
+    await vi.advanceTimersByTimeAsync(100);
+    await second;
 
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(secondRes.statusCode).toBe(202);
-    expect(secondRes.body).toEqual({ status: 'in-progress', date: '2026-07-18', attempts: 0 });
+    expect(secondRes.statusCode).toBe(200);
+    expect(secondRes.body).toEqual({ status: 'exists', date: '2026-07-18', attempts: 0 });
+  });
+
+  it('lets a waiting loser claim after winner failure without overlapping model calls', async () => {
+    const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
+    let lockEtag: string | null = null;
+    let lockNumber = 0;
+    let finalStored = false;
+    vi.mocked(head).mockImplementation(async (pathname) => {
+      if (pathname.endsWith('.json') && finalStored) return { pathname } as never;
+      if (pathname.includes('/locks/') && lockEtag) {
+        return { etag: lockEtag, uploadedAt: new Date() } as never;
+      }
+      throw notFound;
+    });
+    vi.mocked(put).mockImplementation(async (pathname) => {
+      if (pathname.includes('/locks/')) {
+        if (lockEtag) throw Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' });
+        lockNumber += 1;
+        lockEtag = `owner-${lockNumber}`;
+        return { etag: lockEtag } as never;
+      }
+      finalStored = true;
+      return {} as never;
+    });
+    vi.mocked(del).mockImplementation(async (_pathname, options) => {
+      if (options?.ifMatch === lockEtag) lockEtag = null;
+    });
+    const pendingResolvers: Array<(response: Response) => void> = [];
+    let activeModelCalls = 0;
+    let maxActiveModelCalls = 0;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+      activeModelCalls += 1;
+      maxActiveModelCalls = Math.max(maxActiveModelCalls, activeModelCalls);
+      return new Promise<Response>((resolve) => {
+        pendingResolvers.push((response) => {
+          activeModelCalls -= 1;
+          resolve(response);
+        });
+      });
+    }));
+    const winnerRes = makeRes();
+    const loserRes = makeRes();
+
+    const winner = handler(authorizedReq() as never, winnerRes as never);
+    await vi.waitFor(() => expect(pendingResolvers).toHaveLength(1));
+    const loser = handler(authorizedReq() as never, loserRes as never);
+    pendingResolvers.shift()!(new Response('unavailable', { status: 503 }));
+    await vi.waitFor(() => expect(pendingResolvers).toHaveLength(1));
+    pendingResolvers.shift()!(new Response('still unavailable', { status: 503 }));
+    await winner;
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => expect(pendingResolvers).toHaveLength(1));
+    pendingResolvers.shift()!(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ items }) } }],
+    }), { status: 200 }));
+    await loser;
+
+    expect(winnerRes.statusCode).toBe(502);
+    expect(loserRes.body).toMatchObject({ status: 'created', date: '2026-07-18' });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(maxActiveModelCalls).toBe(1);
+  });
+
+  it('returns an error when bounded polling expires with a valid owner', async () => {
+    const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
+    vi.mocked(head).mockImplementation(async (pathname) => {
+      if (pathname.includes('/locks/')) {
+        return { etag: 'active-owner', uploadedAt: new Date() } as never;
+      }
+      throw notFound;
+    });
+    vi.mocked(put).mockRejectedValue(
+      Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' }),
+    );
+    const res = makeRes();
+
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.runAllTimersAsync();
+    await pending;
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({
+      error: 'Daily suggestion generation is still in progress',
+      date: '2026-07-18',
+    });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('recovers an abandoned lock with an ETag-guarded delete', async () => {
@@ -185,7 +284,8 @@ describe('daily-suggestions-generate handler', () => {
       .mockResolvedValueOnce({
         uploadedAt: new Date('2026-07-17T15:20:00.000Z'),
         etag: 'stale-etag',
-      } as never);
+      } as never)
+      .mockRejectedValueOnce(notFound);
     vi.mocked(put)
       .mockRejectedValueOnce(Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' }))
       .mockResolvedValueOnce({ etag: 'fresh-etag' } as never)

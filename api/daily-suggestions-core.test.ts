@@ -55,4 +55,16 @@ describe('daily suggestion server contract', () => {
     ];
     expect(expiredDailySuggestionUrls(blobs, '2026-07-18')).toEqual(['old']);
   });
+
+  it('expires only well-formed daily locks older than 24 hours', () => {
+    const now = new Date('2026-07-18T04:00:00.000Z');
+    const blobs = [
+      { pathname: 'daily-suggestions/locks/2026-07-18.lock', url: 'old-lock', uploadedAt: new Date('2026-07-17T03:59:59.000Z') },
+      { pathname: 'daily-suggestions/locks/2026-07-19.lock', url: 'recent-lock', uploadedAt: new Date('2026-07-17T04:00:01.000Z') },
+      { pathname: 'daily-suggestions/locks/not-a-date.lock', url: 'malformed-lock', uploadedAt: new Date('2026-07-01T00:00:00.000Z') },
+      { pathname: 'daily-suggestions/locks/2026-00-00.lock', url: 'impossible-lock', uploadedAt: new Date('2026-07-01T00:00:00.000Z') },
+    ];
+
+    expect(expiredDailySuggestionUrls(blobs, '2026-07-18', now)).toEqual(['old-lock']);
+  });
 });
