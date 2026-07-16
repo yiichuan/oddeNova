@@ -41,6 +41,7 @@ describe('daily-suggestions-generate handler', () => {
     vi.stubGlobal('fetch', vi.fn());
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    delete process.env.VITE_API_KEY;
     process.env.CRON_SECRET = 'cron-secret';
     process.env.OFFICIAL_API_KEY = 'official-api-key';
   });
@@ -50,7 +51,9 @@ describe('daily-suggestions-generate handler', () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     vi.resetAllMocks();
+    delete process.env.CRON_SECRET;
     delete process.env.OFFICIAL_API_KEY;
+    delete process.env.VITE_API_KEY;
   });
 
   it('rejects a request without the Cron bearer token', async () => {
@@ -59,6 +62,30 @@ describe('daily-suggestions-generate handler', () => {
     await handler({ method: 'GET', headers: {} } as never, res as never);
 
     expect(res.statusCode).toBe(401);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects Bearer undefined when the Cron secret is not configured', async () => {
+    delete process.env.CRON_SECRET;
+    const res = makeRes();
+
+    await handler({
+      method: 'GET',
+      headers: { authorization: 'Bearer undefined' },
+    } as never, res as never);
+
+    expect(res.statusCode).toBe(401);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not use the client Vite API key for server-side generation', async () => {
+    delete process.env.OFFICIAL_API_KEY;
+    process.env.VITE_API_KEY = 'client-api-key';
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    expect(res.statusCode).toBe(500);
     expect(fetch).not.toHaveBeenCalled();
   });
 
