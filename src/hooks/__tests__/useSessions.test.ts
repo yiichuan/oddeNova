@@ -14,6 +14,8 @@ const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
   getAllSessions: vi.fn(async () => []),
   putSession: vi.fn(async (_session: unknown) => undefined),
+  putImportedSession: vi.fn(async (_session: unknown) => undefined),
+  putImportedSessionBranch: vi.fn(async (_detached: unknown, _branch: unknown) => undefined),
   deleteSession: vi.fn(async () => undefined),
   isSessionStoragePersistent: vi.fn(() => true),
 }));
@@ -22,6 +24,8 @@ vi.mock('../../lib/session-storage', () => ({
   openDB: storageMocks.openDB,
   getAllSessions: storageMocks.getAllSessions,
   putSession: storageMocks.putSession,
+  putImportedSession: storageMocks.putImportedSession,
+  putImportedSessionBranch: storageMocks.putImportedSessionBranch,
   deleteSession: storageMocks.deleteSession,
   isSessionStoragePersistent: storageMocks.isSessionStoragePersistent,
 }));
@@ -77,6 +81,8 @@ describe('useSessions', () => {
     storageMocks.openDB.mockResolvedValue(undefined);
     storageMocks.getAllSessions.mockResolvedValue([]);
     storageMocks.putSession.mockResolvedValue(undefined);
+    storageMocks.putImportedSession.mockResolvedValue(undefined);
+    storageMocks.putImportedSessionBranch.mockResolvedValue(undefined);
     storageMocks.deleteSession.mockResolvedValue(undefined);
     storageMocks.isSessionStoragePersistent.mockReturnValue(true);
   });
@@ -224,7 +230,7 @@ describe('useSessions', () => {
       .toHaveLength(1);
 
     act(() => getHook().setCurrentCode('website edit'));
-    storageMocks.putSession.mockClear();
+    storageMocks.putImportedSessionBranch.mockClear();
     await act(async () => {
       outcome = await getHook().importOddeNovaSession({ ...payload, code: 'codex update' });
     });
@@ -233,14 +239,109 @@ describe('useSessions', () => {
     expect(getHook().sessions.filter((session) => session.externalSource?.projectId === 'project-1'))
       .toHaveLength(1);
 
-    expect(storageMocks.putSession).toHaveBeenCalledTimes(2);
-    const persisted = storageMocks.putSession.mock.calls.map(([session]) => session as Session);
-    expect(persisted).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'website edit', externalSource: undefined }),
-      expect.objectContaining({ code: 'codex update' }),
-    ]));
-    expect(persisted.find((session) => session.code === 'codex update')?.externalSource).toMatchObject({
+    expect(storageMocks.putImportedSessionBranch).toHaveBeenCalledTimes(1);
+    const [detached, persistedBranch] = storageMocks.putImportedSessionBranch.mock.calls[0] as [Session, Session];
+    expect(detached).toMatchObject({ code: 'website edit', externalSource: undefined });
+    expect(persistedBranch).toMatchObject({ code: 'codex update' });
+    expect(persistedBranch.externalSource).toMatchObject({
       type: 'oddenova-strudel-skill', projectId: 'project-1',
+    });
+
+    const branchId = getHook().currentSession?.id;
+    const sessionCount = getHook().sessions.length;
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession({ ...payload, code: 'codex update' });
+    });
+    expect(outcome).toBe('updated');
+    expect(getHook().currentSession?.id).toBe(branchId);
+    expect(getHook().sessions).toHaveLength(sessionCount);
+  });
+
+  it('rejects a failed imported-session create without changing React state', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'create-failure',
+      title: 'Imported beat',
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make a beat' }],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const previousSessions = getHook().sessions;
+    const previousCurrentId = getHook().currentId;
+    storageMocks.putImportedSession.mockRejectedValueOnce(new Error('create failed'));
+
+    await act(async () => {
+      await expect(getHook().importOddeNovaSession(payload)).rejects.toThrow('create failed');
+    });
+
+    expect(getHook().sessions).toBe(previousSessions);
+    expect(getHook().currentId).toBe(previousCurrentId);
+  });
+
+  it('rejects a failed imported-session update without changing React state', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'update-failure',
+      title: 'Imported beat',
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make a beat' }],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => {
+      await getHook().importOddeNovaSession(payload);
+    });
+    const previousSessions = getHook().sessions;
+    const previousCurrentId = getHook().currentId;
+    storageMocks.putImportedSession.mockRejectedValueOnce(new Error('update failed'));
+
+    await act(async () => {
+      await expect(getHook().importOddeNovaSession({ ...payload, code: 'stack(s("sd"))' }))
+        .rejects.toThrow('update failed');
+    });
+
+    expect(getHook().sessions).toBe(previousSessions);
+    expect(getHook().currentId).toBe(previousCurrentId);
+    expect(getHook().currentSession?.code).toBe(payload.code);
+  });
+
+  it('rejects a failed atomic conflict branch without detaching or adding sessions', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'branch-failure',
+      title: 'Imported beat',
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make a beat' }],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => {
+      await getHook().importOddeNovaSession(payload);
+    });
+    act(() => getHook().setCurrentCode('website edit'));
+    const previousSessions = getHook().sessions;
+    const previousCurrentId = getHook().currentId;
+    storageMocks.putImportedSessionBranch.mockRejectedValueOnce(new Error('branch failed'));
+
+    await act(async () => {
+      await expect(getHook().importOddeNovaSession({ ...payload, code: 'codex update' }))
+        .rejects.toThrow('branch failed');
+    });
+
+    expect(getHook().sessions).toBe(previousSessions);
+    expect(getHook().currentId).toBe(previousCurrentId);
+    expect(getHook().sessions).toHaveLength(2);
+    expect(getHook().currentSession).toMatchObject({
+      id: previousCurrentId,
+      code: 'website edit',
+      externalSource: {
+        type: 'oddenova-strudel-skill',
+        projectId: 'branch-failure',
+      },
     });
   });
 });

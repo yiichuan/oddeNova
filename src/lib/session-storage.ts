@@ -72,6 +72,17 @@ export async function putSession(session: Session): Promise<void> {
   }
 }
 
+export async function putImportedSession(session: Session): Promise<void> {
+  if (memoryFallback || !db) return;
+  await db.put(STORE_NAME, session);
+}
+
+export async function putImportedSessionBranch(detached: Session, branch: Session): Promise<void> {
+  if (memoryFallback || !db) return;
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  await Promise.all([tx.store.put(detached), tx.store.put(branch), tx.done]);
+}
+
 export async function deleteSession(id: string): Promise<void> {
   if (memoryFallback || !db) return;
   try {

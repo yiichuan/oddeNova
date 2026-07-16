@@ -4,6 +4,8 @@ import {
   openDB,
   getAllSessions,
   putSession as dbPutSession,
+  putImportedSession as dbPutImportedSession,
+  putImportedSessionBranch as dbPutImportedSessionBranch,
   deleteSession as dbDeleteSession,
   isSessionStoragePersistent,
 } from '../lib/session-storage';
@@ -399,7 +401,7 @@ export function useSessions() {
         createdAt: now,
         updatedAt: now,
       };
-      await dbPutSession(created);
+      await dbPutImportedSession(created);
       setSessions((previous) => [created, ...previous]);
       setCurrentId(created.id);
       return 'created';
@@ -425,23 +427,32 @@ export function useSessions() {
         externalSource: source,
         updatedAt: now,
       };
-      await dbPutSession(updated);
+      await dbPutImportedSession(updated);
       setSessions((previous) => previous.map((session) => session.id === target.id ? updated : session));
       setCurrentId(updated.id);
       return 'updated';
     }
 
     const detached: Session = { ...target, externalSource: undefined, updatedAt: now };
+    const branchTitle = `${payload.title}${t('branchSuffix')}`;
+    const branchSource: ExternalSessionSource = {
+      ...source,
+      importedContentHash: hashImportedContent({
+        title: branchTitle,
+        code: payload.code,
+        messages: payload.messages,
+      }),
+    };
     const branch: Session = {
       id: newSessionId(),
-      title: `${payload.title}${t('branchSuffix')}`,
+      title: branchTitle,
       code: payload.code,
       messages,
-      externalSource: source,
+      externalSource: branchSource,
       createdAt: now,
       updatedAt: now,
     };
-    await Promise.all([dbPutSession(detached), dbPutSession(branch)]);
+    await dbPutImportedSessionBranch(detached, branch);
     setSessions((previous) => [
       branch,
       ...previous.map((session) => session.id === target.id ? detached : session),
