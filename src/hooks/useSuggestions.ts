@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import { pickSuggestions } from '../services/daily-suggestions';
 import { STATIC_SUGGESTIONS } from '../services/suggestions';
 
 type Persisted = { forCode: string; items: string[] };
+type SuggestionSource = 'default' | 'persisted' | 'commit';
+type SuggestionState = { source: SuggestionSource; items: string[] };
 
 // Upper bound on how many suggestions the hook exposes. Desktop rotates through
 // all of them as placeholder chips; the mobile layout slices this down to two
 // quick-action buttons at its render site.
 const MAX_SUGGESTIONS = 5;
-
-function randomStatic(): string[] {
-  return [...STATIC_SUGGESTIONS].sort(() => Math.random() - 0.5).slice(0, MAX_SUGGESTIONS);
-}
 
 // Persisted chips are only usable when they were generated for the code we're
 // showing now; otherwise they're stale (commit writes code, then produces
@@ -20,6 +19,22 @@ function restoredFor(persisted: Persisted | undefined, currentCode: string): str
     return persisted.items.slice(0, MAX_SUGGESTIONS);
   }
   return null;
+}
+
+function defaultState(defaults?: string[]): SuggestionState {
+  return {
+    source: 'default',
+    items: pickSuggestions(defaults?.length ? defaults : STATIC_SUGGESTIONS, MAX_SUGGESTIONS),
+  };
+}
+
+function initialState(
+  persisted: Persisted | undefined,
+  currentCode: string,
+  defaults?: string[],
+): SuggestionState {
+  const restored = restoredFor(persisted, currentCode);
+  return restored ? { source: 'persisted', items: restored } : defaultState(defaults);
 }
 
 /**
@@ -41,6 +56,8 @@ function restoredFor(persisted: Persisted | undefined, currentCode: string): str
 export function useSuggestions(opts: {
   key: string;
   currentCode: string;
+  /** The daily entry suggestion pool, when available. */
+  defaults?: string[];
   /** The next-step options from the latest commit explanation (up to MAX_SUGGESTIONS). */
   commitSuggestions?: string[];
   /** Suggestions persisted on the session from a previous page load. */
@@ -48,12 +65,13 @@ export function useSuggestions(opts: {
   /** Called with fresh suggestions + the code they were generated for, so the caller can persist them. */
   onSuggestions?: (items: string[], forCode: string) => void;
 }) {
-  const { key, currentCode, commitSuggestions, persisted, onSuggestions } = opts;
-  const [suggestions, setSuggestions] = useState<string[]>(
-    () => restoredFor(persisted, currentCode) ?? randomStatic(),
+  const { key, currentCode, defaults, commitSuggestions, persisted, onSuggestions } = opts;
+  const [state, setState] = useState<SuggestionState>(
+    () => initialState(persisted, currentCode, defaults),
   );
   const [prevCommit, setPrevCommit] = useState<string[] | undefined>(undefined);
   const [prevKey, setPrevKey] = useState(key);
+  const [prevDefaults, setPrevDefaults] = useState(defaults);
   // Read the freshest currentCode / onSuggestions inside the persist effect
   // without adding them to its deps (they'd re-fire it on every render).
   const currentCodeRef = useRef(currentCode);
@@ -66,8 +84,8 @@ export function useSuggestions(opts: {
   // Show the latest commit's next-step options as soon as they arrive.
   if (prevCommit !== commitSuggestions) {
     setPrevCommit(commitSuggestions);
-    if (commitSuggestions && commitSuggestions.length > 0) {
-      setSuggestions(commitSuggestions.slice(0, MAX_SUGGESTIONS));
+    if (commitSuggestions?.length) {
+      setState({ source: 'commit', items: commitSuggestions.slice(0, MAX_SUGGESTIONS) });
     }
   }
 
@@ -76,7 +94,14 @@ export function useSuggestions(opts: {
   // commit block so a session switch wins over stale commit chips.
   if (prevKey !== key) {
     setPrevKey(key);
-    setSuggestions(restoredFor(persisted, currentCode) ?? randomStatic());
+    setState(initialState(persisted, currentCode, defaults));
+  }
+
+  // A late daily response may replace bundled defaults, but never suggestions
+  // restored for code or emitted by an agent commit.
+  if (prevDefaults !== defaults) {
+    setPrevDefaults(defaults);
+    setState((current) => current.source === 'default' ? defaultState(defaults) : current);
   }
 
   // Persist freshly shown commit chips to the session (external system sync).
@@ -85,5 +110,5 @@ export function useSuggestions(opts: {
     onSuggestionsRef.current?.(commitSuggestions.slice(0, MAX_SUGGESTIONS), currentCodeRef.current);
   }, [commitSuggestions]);
 
-  return { suggestions };
+  return { suggestions: state.items };
 }

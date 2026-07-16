@@ -7,6 +7,7 @@ import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
+import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
 import type { ConversationTurn } from './services/llm';
@@ -31,7 +32,7 @@ import TopActionBar from './components/TopActionBar';
 import AccountModal from './components/AccountModal';
 import PersonaModal from './components/PersonaModal';
 import OddeNovaImportNotice from './components/OddeNovaImportNotice';
-import { t } from './lib/i18n';
+import { t, zh } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 import { useAuth } from './hooks/useAuth';
@@ -64,6 +65,7 @@ export default function App() {
     cloud: cloudRepository,
     startNewSessionToken: accountStartToken,
   });
+  const dailySuggestionDefaults = useDailySuggestions(zh);
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const oddeNovaImportResult = useOddeNovaImport(
     sessions.importOddeNovaSession,
@@ -246,6 +248,7 @@ export default function App() {
   const { suggestions } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
+    defaults: dailySuggestionDefaults,
     commitSuggestions: commitSuggestions ?? undefined,
     persisted: current?.suggestions,
     onSuggestions: (items, forCode) => sessions.setSuggestions(items, forCode, current?.id),
