@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { list, del } from '@vercel/blob';
-import { beijingDate, expiredDailySuggestionUrls } from './daily-suggestions-core';
+import { beijingDate, expiredDailySuggestionCleanup } from './daily-suggestions-core';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 async function allBlobs(prefix: string) {
-  const blobs: Array<{ pathname: string; url: string; uploadedAt: Date }> = [];
+  const blobs: Array<{ pathname: string; url: string; etag: string; uploadedAt: Date }> = [];
   let cursor: string | undefined;
   do {
     const page = await list({ prefix, cursor, limit: 1000 });
@@ -25,13 +25,23 @@ async function cleanupShares(now: Date): Promise<number> {
 }
 
 async function cleanupDailySuggestions(now: Date): Promise<number> {
-  const urls = expiredDailySuggestionUrls(
+  const cleanup = expiredDailySuggestionCleanup(
     await allBlobs('daily-suggestions/'),
     beijingDate(now),
     now,
   );
-  if (urls.length) await del(urls);
-  return urls.length;
+  if (cleanup.batchUrls.length) await del(cleanup.batchUrls);
+  let deleted = cleanup.batchUrls.length;
+  for (const lock of cleanup.locks) {
+    try {
+      await del(lock.url, { ifMatch: lock.etag });
+      deleted += 1;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'BlobPreconditionFailedError') continue;
+      throw error;
+    }
+  }
+  return deleted;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
