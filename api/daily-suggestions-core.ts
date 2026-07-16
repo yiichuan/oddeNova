@@ -2,6 +2,7 @@ const DAY_MS = 86_400_000;
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PATH_RE = /^daily-suggestions\/(\d{4}-\d{2}-\d{2})\.json$/;
+const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const LIST_PREFIX_RE = /^\s*(?:[-*]|\d+[.)])\s+/;
 
 export interface DailySuggestionItem { zh: string; en: string }
@@ -16,8 +17,14 @@ export function beijingDate(now = new Date()): string {
   return new Date(now.getTime() + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+function validDate(date: string): boolean {
+  if (!DATE_RE.test(date)) return false;
+  const timestamp = Date.parse(`${date}T00:00:00.000Z`);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === date;
+}
+
 export function addDateDays(date: string, days: number): string {
-  if (!DATE_RE.test(date)) throw new Error(`Invalid date: ${date}`);
+  if (!validDate(date)) throw new Error(`Invalid date: ${date}`);
   return new Date(Date.parse(`${date}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
@@ -26,7 +33,7 @@ export function tomorrowInBeijing(now = new Date()): string {
 }
 
 export function dailySuggestionPath(date: string): string {
-  if (!DATE_RE.test(date)) throw new Error(`Invalid date: ${date}`);
+  if (!validDate(date)) throw new Error(`Invalid date: ${date}`);
   return `daily-suggestions/${date}.json`;
 }
 
@@ -50,6 +57,12 @@ function validText(value: unknown, language: 'zh' | 'en'): value is string {
   return text.length >= min && text.length <= max && !text.includes('```') && !LIST_PREFIX_RE.test(text);
 }
 
+function validIsoUtcTimestamp(value: string): boolean {
+  if (!ISO_UTC_RE.test(value)) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
 export function parseGeneratedItems(value: unknown): DailySuggestionItem[] | null {
   if (!value || typeof value !== 'object') return null;
   const candidate = (value as { items?: unknown }).items;
@@ -70,7 +83,7 @@ export function parseStoredBatch(value: unknown, expectedDate: string): DailySug
   if (!value || typeof value !== 'object') return null;
   const batch = value as Partial<DailySuggestionBatch>;
   if (batch.date !== expectedDate || typeof batch.generatedAt !== 'string') return null;
-  if (!Number.isFinite(Date.parse(batch.generatedAt))) return null;
+  if (!validIsoUtcTimestamp(batch.generatedAt)) return null;
   const items = parseGeneratedItems({ items: batch.items });
   return items ? { date: expectedDate, generatedAt: batch.generatedAt, items } : null;
 }
@@ -79,6 +92,6 @@ export function expiredDailySuggestionUrls(blobs: DailySuggestionBlob[], today: 
   const oldestRetainedDate = addDateDays(today, -29);
   return blobs.flatMap((blob) => {
     const date = PATH_RE.exec(blob.pathname)?.[1];
-    return date && date < oldestRetainedDate ? [blob.url] : [];
+    return date && validDate(date) && date < oldestRetainedDate ? [blob.url] : [];
   });
 }
