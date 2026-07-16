@@ -1,6 +1,6 @@
 ---
 name: oddenova-strudel
-description: Use when a user asks to create or revise music with natural language, generate Strudel live-coding patterns, or open and play a generated piece in oddeNova.
+description: Use when a user asks for natural-language music creation or revision, Strudel generation, live coding, or browser playback of a generated piece in oddeNova.
 ---
 
 # oddeNova Strudel
