@@ -43,7 +43,7 @@ export function readCandidateDates(date: string): string[] {
 
 export function secondsUntilNextBeijingMidnight(now = new Date()): number {
   const shifted = now.getTime() + BEIJING_OFFSET_MS;
-  return Math.max(60, Math.ceil((DAY_MS - (shifted % DAY_MS)) / 1000));
+  return Math.max(1, Math.ceil((DAY_MS - (shifted % DAY_MS)) / 1000));
 }
 
 function normalized(value: string): string {
