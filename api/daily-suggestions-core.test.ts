@@ -42,12 +42,15 @@ describe('daily suggestion server contract', () => {
     const batch = { date: '2026-07-18', generatedAt: '2026-07-17T15:30:00.000Z', items };
     expect(parseStoredBatch(batch, '2026-07-18')).toEqual(batch);
     expect(parseStoredBatch(batch, '2026-07-19')).toBeNull();
+    expect(parseStoredBatch({ ...batch, generatedAt: '2026-07-17' }, '2026-07-18')).toBeNull();
+    expect(parseStoredBatch({ ...batch, generatedAt: 'July 17, 2026 15:30 UTC' }, '2026-07-18')).toBeNull();
   });
 
   it('keeps 30 dates and ignores malformed paths', () => {
     const blobs = [
       { pathname: 'daily-suggestions/2026-06-18.json', url: 'old' },
       { pathname: 'daily-suggestions/2026-06-19.json', url: 'keep' },
+      { pathname: 'daily-suggestions/2026-00-00.json', url: 'impossible' },
       { pathname: 'daily-suggestions/not-a-date.json', url: 'unknown' },
     ];
     expect(expiredDailySuggestionUrls(blobs, '2026-07-18')).toEqual(['old']);
