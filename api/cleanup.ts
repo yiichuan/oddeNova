@@ -28,6 +28,7 @@ async function cleanupDailySuggestions(now: Date): Promise<number> {
   const urls = expiredDailySuggestionUrls(
     await allBlobs('daily-suggestions/'),
     beijingDate(now),
+    now,
   );
   if (urls.length) await del(urls);
   return urls.length;
