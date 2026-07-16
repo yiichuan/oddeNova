@@ -18,6 +18,7 @@ import { resetClient } from './services/llm';
 import { HistoryIcon, PlusIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
+import { useOddeNovaImport } from './hooks/useOddeNovaImport';
 import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
@@ -26,6 +27,7 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
+import OddeNovaImportNotice from './components/OddeNovaImportNotice';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
@@ -37,6 +39,11 @@ export default function App() {
   );
   const sessions = useSessions();
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
+  const oddeNovaImportResult = useOddeNovaImport(
+    sessions.importOddeNovaSession,
+    !sessions.isLoading,
+    sessions.isPersistent,
+  );
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
@@ -367,8 +374,7 @@ export default function App() {
     sessions.switchTo(id);
   }, [sessions, persistLiveCodeToCurrentSession]);
 
-  if (isMobile) {
-    return (
+  const responsiveLayout = isMobile ? (
       <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
         {apiKeyModalState.open && (
           <ApiKeyModal
@@ -567,10 +573,7 @@ export default function App() {
           </div>
         )}
       </div>
-    );
-  }
-
-  return (
+    ) : (
     <div
       className="flex h-full w-full bg-bg-primary overflow-hidden"
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
@@ -690,6 +693,13 @@ export default function App() {
       <Analytics />
       <SpeedInsights />
     </div>
+  );
+
+  return (
+    <>
+      <OddeNovaImportNotice result={oddeNovaImportResult} />
+      {responsiveLayout}
+    </>
   );
 }
 
