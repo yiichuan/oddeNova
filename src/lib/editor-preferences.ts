@@ -52,6 +52,7 @@ export function setEditorTheme(theme: EditorThemeId | null): void {
   --lineHighlight: ${vars.lineHighlight} !important;
   --gutterBackground: ${vars.gutterBackground} !important;
   --gutterForeground: ${vars.gutterForeground} !important;
+  --gutterBorder: ${vars.gutterBorder} !important;
 }
 .cm-editor .cm-content { caret-color: ${vars.caret} !important; }
 .cm-editor .cm-cursor { border-left-color: ${vars.caret} !important; }
