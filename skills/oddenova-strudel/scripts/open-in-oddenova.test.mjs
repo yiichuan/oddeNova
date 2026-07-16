@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
@@ -133,4 +134,15 @@ test('runCli warns on launch failure after printing the URL and still succeeds',
   assert.equal(exitCode, 0);
   assert.equal(stdout.startsWith('https://www.oddenova.com/#oddenova='), true);
   assert.match(stderr, /Warning: Could not open browser: launcher unavailable/);
+});
+
+test('SKILL creation example is a valid protocol payload with parseable JavaScript', () => {
+  const skill = readFileSync(new URL('../SKILL.md', import.meta.url), 'utf8');
+  const exampleBlock = skill.match(/<<'JSON'\n([\s\S]*?)\nJSON/);
+
+  assert.ok(exampleBlock, 'expected a JSON here-document in SKILL.md');
+  const example = JSON.parse(exampleBlock[1]);
+  assert.equal(example.protocolVersion, 1);
+  assert.equal(example.source, 'oddenova-strudel-skill');
+  assert.doesNotThrow(() => new Function(example.code));
 });
