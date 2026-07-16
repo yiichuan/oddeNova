@@ -1,37 +1,67 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { list, del } from '@vercel/blob';
+import { beijingDate, expiredDailySuggestionUrls } from './daily-suggestions-core';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
+async function allBlobs(prefix: string) {
+  const blobs: Array<{ pathname: string; url: string; uploadedAt: Date }> = [];
+  let cursor: string | undefined;
+  do {
+    const page = await list({ prefix, cursor, limit: 1000 });
+    blobs.push(...page.blobs);
+    cursor = page.cursor;
+  } while (cursor);
+  return blobs;
+}
+
+async function cleanupShares(now: Date): Promise<number> {
+  const cutoff = now.getTime() - THIRTY_DAYS_MS;
+  const urls = (await allBlobs('shares/'))
+    .filter((blob) => new Date(blob.uploadedAt).getTime() < cutoff)
+    .map((blob) => blob.url);
+  if (urls.length) await del(urls);
+  return urls.length;
+}
+
+async function cleanupDailySuggestions(now: Date): Promise<number> {
+  const urls = expiredDailySuggestionUrls(
+    await allBlobs('daily-suggestions/'),
+    beijingDate(now),
+  );
+  if (urls.length) await del(urls);
+  return urls.length;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const authHeader = req.headers['authorization'];
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.headers['authorization'] !== `Bearer ${secret}`) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
 
-  const cutoff = Date.now() - THIRTY_DAYS_MS;
-  let cursor: string | undefined;
-  let deleted = 0;
+  const jobs = [
+    { name: 'shares', run: cleanupShares },
+    { name: 'dailySuggestions', run: cleanupDailySuggestions },
+  ] as const;
+  const now = new Date();
+  const results = await Promise.allSettled(jobs.map((job) => job.run(now)));
+  const errors: string[] = [];
 
-  do {
-    const result = await list({
-      prefix: 'shares/',
-      cursor,
-      limit: 1000,
-    });
-
-    const toDelete = result.blobs
-      .filter((b) => new Date(b.uploadedAt).getTime() < cutoff)
-      .map((b) => b.url);
-
-    if (toDelete.length > 0) {
-      await del(toDelete);
-      deleted += toDelete.length;
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      const job = jobs[index];
+      errors.push(job.name);
+      console.error(`Cleanup job failed: ${job.name}`, result.reason);
     }
+  });
 
-    cursor = result.cursor;
-  } while (cursor);
+  const deleted = results[0].status === 'fulfilled' ? results[0].value : 0;
+  const dailySuggestionsDeleted = results[1].status === 'fulfilled' ? results[1].value : 0;
 
-  res.status(200).json({ deleted });
+  res.status(errors.length ? 500 : 200).json({
+    deleted,
+    dailySuggestionsDeleted,
+    errors,
+  });
 }
