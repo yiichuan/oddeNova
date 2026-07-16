@@ -16,6 +16,8 @@ interface StrudelMirrorType {
   dispose?: () => void;
   repl: { setCode: (code: string) => void; stop: () => void; [key: string]: unknown };
   setCode: (code: string) => void;
+  setAutocompletionEnabled: (enabled: boolean) => void;
+  changeSetting: (key: 'isTabIndentationEnabled', value: boolean) => void;
   evaluate: (autostart?: boolean) => Promise<void>;
 }
 
@@ -140,6 +142,7 @@ export class StrudelService {
 
   private editorInstance: StrudelMirrorType | null = null;
   private containerElement: HTMLElement | null = null;
+  private autocompletionEnabled = false;
   private isAudioInitialized = false;
   private isInitializing = false;
 
@@ -214,6 +217,11 @@ export class StrudelService {
 
   get code(): string {
     return this._state.code;
+  }
+
+  setAutocompletionEnabled(enabled: boolean): void {
+    this.autocompletionEnabled = enabled;
+    this.editorInstance?.setAutocompletionEnabled(enabled);
   }
 
   private prebake = async (): Promise<void> => {
@@ -319,7 +327,7 @@ export class StrudelService {
 
       this.containerElement.innerHTML = '';
 
-      this.editorInstance = new StrudelMirror({
+      const editor = new StrudelMirror({
         root: this.containerElement,
         initialCode: currentCode,
         transpiler,
@@ -341,6 +349,9 @@ export class StrudelService {
         },
         prebake: this.prebake,
       });
+      this.editorInstance = editor;
+      editor.setAutocompletionEnabled(this.autocompletionEnabled);
+      editor.changeSetting('isTabIndentationEnabled', true);
 
       // Sync REPL internal state with initial code
       this.editorInstance?.repl.setCode(currentCode);
