@@ -73,10 +73,11 @@ async function generateItems(apiKey: string) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return void res.status(405).json({ error: 'Method not allowed' });
-  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || req.headers.authorization !== `Bearer ${cronSecret}`) {
     return void res.status(401).json({ error: 'Unauthorized' });
   }
-  const apiKey = process.env.OFFICIAL_API_KEY || process.env.VITE_API_KEY || '';
+  const apiKey = process.env.OFFICIAL_API_KEY || '';
   if (!apiKey) return void res.status(500).json({ error: 'Official API key is not configured' });
 
   const date = tomorrowInBeijing();
