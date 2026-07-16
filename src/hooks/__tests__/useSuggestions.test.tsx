@@ -14,11 +14,12 @@ import { useSuggestions } from '../useSuggestions';
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 function Probe({
+  props,
   onValue,
-  ...props
-}: Partial<Parameters<typeof useSuggestions>[0]> & {
+}: {
+  props: Partial<Parameters<typeof useSuggestions>[0]>;
   onValue?: (value: ReturnType<typeof useSuggestions>) => void;
-} = {}) {
+}) {
   const value = useSuggestions({
     key: props.key ?? 'session-1',
     currentCode: props.currentCode ?? 's("bd")',
@@ -36,10 +37,28 @@ function renderProbe(
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  act(() => {
-    root.render(<Probe {...props} />);
-  });
-  return { root };
+  let latest: ReturnType<typeof useSuggestions> | undefined;
+
+  const render = (next: typeof props) => {
+    act(() => {
+      root.render(
+        <Probe
+          props={next}
+          onValue={(value) => {
+            latest = value;
+            next.onValue?.(value);
+          }}
+        />,
+      );
+    });
+  };
+
+  render(props);
+  return {
+    root,
+    latest: () => latest,
+    rerender: render,
+  };
 }
 
 describe('useSuggestions', () => {
@@ -117,5 +136,51 @@ describe('useSuggestions', () => {
 
     expect(latest?.suggestions).toEqual(['一', '二', '三', '四', '五']);
     expect(onSuggestions).toHaveBeenCalledWith(['一', '二', '三', '四', '五'], 's("bd sd")');
+  });
+
+  it('replaces only bundled defaults when daily defaults arrive late', () => {
+    const view = renderProbe({ defaults: undefined, currentCode: '' });
+    roots.push(view.root);
+
+    view.rerender({ defaults: ['daily 1', 'daily 2'], currentCode: '' });
+
+    expect(view.latest()?.suggestions).toEqual(expect.arrayContaining(['daily 1', 'daily 2']));
+  });
+
+  it('does not replace restored suggestions when daily defaults arrive', () => {
+    const persisted = { forCode: 's("bd")', items: ['继续加贝斯'] };
+    const view = renderProbe({ currentCode: 's("bd")', persisted });
+    roots.push(view.root);
+
+    view.rerender({ currentCode: 's("bd")', persisted, defaults: ['daily 1'] });
+
+    expect(view.latest()?.suggestions).toEqual(['继续加贝斯']);
+  });
+
+  it('does not replace commit suggestions when daily defaults arrive', () => {
+    const view = renderProbe({ currentCode: 's("bd")', commitSuggestions: ['把鼓切碎'] });
+    roots.push(view.root);
+
+    view.rerender({
+      currentCode: 's("bd")',
+      commitSuggestions: ['把鼓切碎'],
+      defaults: ['daily 1'],
+    });
+
+    expect(view.latest()?.suggestions).toEqual(['把鼓切碎']);
+  });
+
+  it('uses the loaded daily pool after switching to an empty session', () => {
+    const view = renderProbe({
+      key: 'one',
+      currentCode: 's("bd")',
+      persisted: { forCode: 's("bd")', items: ['继续'] },
+      defaults: ['daily 1', 'daily 2'],
+    });
+    roots.push(view.root);
+
+    view.rerender({ key: 'two', currentCode: '', defaults: ['daily 1', 'daily 2'] });
+
+    expect(view.latest()?.suggestions).toEqual(expect.arrayContaining(['daily 1', 'daily 2']));
   });
 });

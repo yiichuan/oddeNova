@@ -7,6 +7,7 @@ import VizPlaceholder from './components/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
+import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
 import type { ConversationTurn, ProgressEvent } from './services/llm';
@@ -36,6 +37,7 @@ export default function App() {
     (code) => { strudel.play(code); }
   );
   const sessions = useSessions();
+  const dailySuggestionDefaults = useDailySuggestions(zh);
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
@@ -144,6 +146,7 @@ export default function App() {
   const { suggestions } = useSuggestions({
     key: current?.id ?? '',
     currentCode: current?.code ?? '',
+    defaults: dailySuggestionDefaults,
     commitSuggestions: commitSuggestions ?? undefined,
     persisted: current?.suggestions,
     onSuggestions: (items, forCode) => sessions.setSuggestions(items, forCode, current?.id),
