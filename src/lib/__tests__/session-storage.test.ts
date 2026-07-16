@@ -22,6 +22,12 @@ describe('session-storage fallback path', () => {
     expect(sessions).toEqual([]);
   });
 
+  it('openDB falls back to non-persistent storage when IndexedDB is unavailable', async () => {
+    const { openDB, isSessionStoragePersistent } = await import('../session-storage');
+    await openDB();
+    expect(isSessionStoragePersistent()).toBe(false);
+  });
+
   it('putSession 在 fallback 模式下静默忽略不抛错', async () => {
     const { openDB, putSession } = await import('../session-storage');
     await openDB();

@@ -6,14 +6,16 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { t } from '../../lib/i18n';
+import type { OddeNovaImportPayload } from '../../lib/oddenova-import';
 import { applyTruncate, applyTruncateAndEdit, useSessions } from '../useSessions';
 import type { Session } from '../useSessions';
 
 const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
   getAllSessions: vi.fn(async () => []),
-  putSession: vi.fn(async () => undefined),
+  putSession: vi.fn(async (_session: unknown) => undefined),
   deleteSession: vi.fn(async () => undefined),
+  isSessionStoragePersistent: vi.fn(() => true),
 }));
 
 vi.mock('../../lib/session-storage', () => ({
@@ -21,6 +23,7 @@ vi.mock('../../lib/session-storage', () => ({
   getAllSessions: storageMocks.getAllSessions,
   putSession: storageMocks.putSession,
   deleteSession: storageMocks.deleteSession,
+  isSessionStoragePersistent: storageMocks.isSessionStoragePersistent,
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -75,6 +78,7 @@ describe('useSessions', () => {
     storageMocks.getAllSessions.mockResolvedValue([]);
     storageMocks.putSession.mockResolvedValue(undefined);
     storageMocks.deleteSession.mockResolvedValue(undefined);
+    storageMocks.isSessionStoragePersistent.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -174,6 +178,70 @@ describe('useSessions', () => {
       items: ['加入贝斯', '让鼓点更密'],
     });
     expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes whether session storage is persistent after opening the database', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(storageMocks.isSessionStoragePersistent).toHaveBeenCalledTimes(1);
+    expect(getHook().isPersistent).toBe(true);
+  });
+
+  it('creates, updates, and conflict-branches imported oddeNova skill sessions', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'project-1',
+      title: 'Imported beat',
+      code: 'setcps(0.4)\nstack(s("bd"))',
+      messages: [
+        { role: 'user', content: 'Make a beat' },
+        { role: 'assistant', content: 'Here is a beat' },
+      ],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession(payload);
+    });
+    expect(outcome).toBe('created');
+    expect(getHook().currentSession?.externalSource).toMatchObject({
+      type: 'oddenova-strudel-skill', projectId: 'project-1',
+    });
+    expect(getHook().currentSession?.messages.map(({ role, content }) => ({ role, content }))).toEqual(payload.messages);
+
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession({
+        ...payload,
+        code: 'setcps(0.5)\nstack(s("bd"))',
+      });
+    });
+    expect(outcome).toBe('updated');
+    expect(getHook().sessions.filter((session) => session.externalSource?.projectId === 'project-1'))
+      .toHaveLength(1);
+
+    act(() => getHook().setCurrentCode('website edit'));
+    storageMocks.putSession.mockClear();
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession({ ...payload, code: 'codex update' });
+    });
+    expect(outcome).toBe('branched');
+    expect(getHook().sessions).toHaveLength(3);
+    expect(getHook().sessions.filter((session) => session.externalSource?.projectId === 'project-1'))
+      .toHaveLength(1);
+
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(2);
+    const persisted = storageMocks.putSession.mock.calls.map(([session]) => session as Session);
+    expect(persisted).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'website edit', externalSource: undefined }),
+      expect.objectContaining({ code: 'codex update' }),
+    ]));
+    expect(persisted.find((session) => session.code === 'codex update')?.externalSource).toMatchObject({
+      type: 'oddenova-strudel-skill', projectId: 'project-1',
+    });
   });
 });
 

@@ -12,6 +12,10 @@ const LS_CURRENT_KEY = 'vibe-sessions-current-v1';
 let db: IDBPDatabase | null = null;
 let memoryFallback = false;
 
+export function isSessionStoragePersistent(): boolean {
+  return !memoryFallback && db !== null;
+}
+
 export async function openDB(): Promise<void> {
   try {
     db = await idbOpenDB(DB_NAME, DB_VERSION, {
