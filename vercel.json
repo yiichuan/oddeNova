@@ -4,5 +4,8 @@
     {"source": "/s/:id", "destination": "/api/share-page?id=:id"},
     {"source": "/(.*)", "destination": "/index.html"}
   ],
-  "crons": [{"path": "/api/cleanup", "schedule": "0 0 * * *"}]
+  "crons": [
+    {"path": "/api/cleanup", "schedule": "0 0 * * *"},
+    {"path": "/api/daily-suggestions-generate", "schedule": "0 15 * * *"}
+  ]
 }
