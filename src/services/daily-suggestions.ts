@@ -52,5 +52,5 @@ export function pickSuggestions(
     const swap = Math.floor(random() * (index + 1));
     [copy[index], copy[swap]] = [copy[swap], copy[index]];
   }
-  return copy.slice(0, limit);
+  return copy.slice(0, Math.min(5, Math.max(0, limit)));
 }

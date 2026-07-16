@@ -86,4 +86,16 @@ describe('pickSuggestions', () => {
   it('returns all available unique values when the limit exceeds the pool', () => {
     expect(pickSuggestions(['one', 'one', 'two'], 5, () => 0)).toHaveLength(2);
   });
+
+  it('enforces the global maximum when the requested limit exceeds five', () => {
+    const pool = Array.from({ length: 10 }, (_, index) => String(index));
+
+    expect(pickSuggestions(pool, 10, () => 0)).toHaveLength(5);
+  });
+
+  it('returns no values when the requested limit is negative', () => {
+    const pool = Array.from({ length: 10 }, (_, index) => String(index));
+
+    expect(pickSuggestions(pool, -2, () => 0)).toEqual([]);
+  });
 });
