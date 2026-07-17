@@ -105,6 +105,9 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
                 <span className="tracking-normal text-rose-300/60">−{group.deletions}</span>
               </div>
               <div className="overflow-x-auto py-1 font-mono text-[11px] leading-[1.65]">
+                {/* w-max makes every row span the widest line, so row tints
+                    keep painting when the block is scrolled horizontally. */}
+                <div className="w-max min-w-full">
                 {group.rows.map((row, index) => {
                   if (row.kind === 'skip') {
                     return (
@@ -138,6 +141,7 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
                     </div>
                   );
                 })}
+                </div>
               </div>
             </section>
           ))}
