@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { useStrudel } from './useStrudel';
-import type { useSessions, TokenStats } from './useSessions';
+import type { useSessions, CodeRevisionDraft, TokenStats } from './useSessions';
 import { runAgent } from '../services/llm';
 import type { ConversationTurn, ProgressEvent } from '../services/llm';
 import { conversationHistoryFromMessages } from '../lib/conversation-history';
@@ -57,7 +57,12 @@ export interface AgentTurnDeps {
   getCurrentCode: () => string;
   snapshotHistory: () => ConversationTurn[];
   addUserMessage: (text: string) => void;
-  addAssistantMessage: (text: string, code: string | undefined, sessionId: string) => void;
+  addAssistantMessage: (
+    text: string,
+    code: string | undefined,
+    sessionId: string,
+    revision?: CodeRevisionDraft,
+  ) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
   updateTokenStats: (stats: TokenStats, sessionId: string) => void;
 
@@ -95,6 +100,10 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
   deps.resetSuggestions();
   deps.clearRollbackPrefill();
 
+  // The revision baseline is the editor state at turn start. Capture it once:
+  // reading live code after the async agent call would include later user edits.
+  const beforeCode = input.initialCode ?? deps.getCurrentCode();
+
   // Snapshot history BEFORE the user message is written, so the current turn is
   // not echoed back into its own history.
   const history: ConversationTurn[] | undefined = input.includeHistory
@@ -117,7 +126,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     const onProgress = deps.makeProgressHandler(sessionId);
     const result = await deps.runAgent(
       input.text,
-      input.initialCode ?? deps.getCurrentCode(),
+      beforeCode,
       onProgress,
       input.moodContext,
       signal,
@@ -148,22 +157,41 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       if (deps.isCurrentSession(sessionId)) {
         // Always persist the newest code as the session truth, run or not.
         const success = await commitPlayback(result.code, sessionId, deps);
+        const revision: CodeRevisionDraft | undefined = result.committed
+          ? {
+              beforeCode,
+              afterCode: result.code,
+              playbackStatus: success ? 'played' : 'failed',
+            }
+          : undefined;
         if (success) {
           const nextSteps = parseNextSteps(result.explanation);
           if (nextSteps.length > 0) deps.setCommitSuggestions(nextSteps);
-          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
+          if (revision) {
+            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
+          } else {
+            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
+          }
         } else {
-          deps.addAssistantMessage(
-            zh
-              ? `agent 生成完了但代码无法运行: ${deps.getStrudelError() || '未知错误'}`
-              : `Agent generated code but it failed to run: ${deps.getStrudelError() || 'unknown error'}`,
-            result.code,
-            sessionId,
-          );
+          const content = zh
+            ? `agent 生成完了但代码无法运行: ${deps.getStrudelError() || '未知错误'}`
+            : `Agent generated code but it failed to run: ${deps.getStrudelError() || 'unknown error'}`;
+          if (revision) {
+            deps.addAssistantMessage(content, result.code, sessionId, revision);
+          } else {
+            deps.addAssistantMessage(content, result.code, sessionId);
+          }
         }
       } else {
         // Background session completed: persist only, don't touch the editor or play audio.
-        deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
+        const revision: CodeRevisionDraft | undefined = result.committed
+          ? { beforeCode, afterCode: result.code, playbackStatus: 'not_attempted' }
+          : undefined;
+        if (revision) {
+          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
+        } else {
+          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
+        }
         deps.setCurrentCode(result.code, sessionId);
       }
     } else {
@@ -231,7 +259,7 @@ export function useAgentRunner(cfg: UseAgentRunnerConfig): (input: AgentTurnInpu
         getCurrentCode: () => currentCode,
         snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
         addUserMessage: (text) => sessions.addUserMessage(text),
-        addAssistantMessage: (text, code, id) => sessions.addAssistantMessage(text, code, id),
+        addAssistantMessage: (text, code, id, revision) => sessions.addAssistantMessage(text, code, id, revision),
         setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
         updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
         beginLoading: (id) => {

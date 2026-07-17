@@ -94,6 +94,10 @@ const S: Record<string, readonly [string, string]> = {
   actionsTitle:  ['思考过程', 'Process'],
   rollbackHere:  ['回滚到此处', 'Roll back to here'],
   copyCode:      ['复制代码', 'Copy code'],
+  viewChanges:   ['查看修改', 'View changes'],
+  noCodeChanges: ['本轮代码没有变化', 'No code changes in this turn'],
+  revisionPlaybackFailed: ['代码已更新 · 播放失败', 'Code updated · playback failed'],
+  unchangedLines: ['{count} 行未变化', '{count} unchanged lines'],
 
   // HistoryPanel
   history:    ['历史对话', 'History'],

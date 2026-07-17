@@ -12,6 +12,10 @@ _Avoid_: request、run、call、generation
 一条独立的对话线,持有自己的消息列表、最后一次成功的代码、标题与时间戳;持久化在 IndexedDB,不可用时降级到内存。当前激活的那条叫 current session,其余在后台完成的 Agent turn 只落库、不动编辑器、不发声。
 _Avoid_: conversation、chat、thread
 
+**Session revision**:
+一次已 commit 的 [Agent turn] 所形成的不可变代码边界:记录该 turn 开始时的代码与最终代码,并由对应 assistant 消息引用。它描述的是"这一轮 agent 改了什么",不从相邻消息推算;播放失败仍会形成 revision 并记录失败状态,因为 [Playback commit] 仍以最新代码为 [Session] 真相。
+_Avoid_: diff(仅指展示结果)、snapshot、version
+
 **Score**:
 一段 Strudel 代码解析后的结构化表示:BPM、是否有 stack、各 [Layer] 的位置与内容。由 parser 这个深模块从原始代码字符串解析得到。
 _Avoid_: pattern、track、composition
