@@ -1,14 +1,21 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
   buildImportUrl,
   fitPayloadToUrl,
+  isMainModule,
   launchImportUrl,
   runCli,
 } from './open-in-oddenova.mjs';
+
+const scriptPath = fileURLToPath(new URL('./open-in-oddenova.mjs', import.meta.url));
 
 const payload = {
   protocolVersion: 1,
@@ -134,6 +141,41 @@ test('runCli warns on launch failure after printing the URL and still succeeds',
   assert.equal(exitCode, 0);
   assert.equal(stdout.startsWith('https://www.oddenova.com/#oddenova='), true);
   assert.match(stderr, /Warning: Could not open browser: launcher unavailable/);
+});
+
+test('isMainModule matches through a symlinked entry path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oddenova-symlink-'));
+  const link = join(dir, 'open-in-oddenova.mjs');
+  try {
+    symlinkSync(scriptPath, link);
+
+    // Node resolves the symlink for import.meta.url but leaves argv[1] as the
+    // symlink path — the exact mismatch that used to make the CLI a silent no-op.
+    assert.equal(isMainModule(new URL(`file://${scriptPath}`).href, link), true);
+    assert.equal(isMainModule(new URL(`file://${scriptPath}`).href, scriptPath), true);
+    assert.equal(isMainModule(new URL(`file://${scriptPath}`).href, undefined), false);
+    assert.equal(isMainModule(new URL(`file://${scriptPath}`).href, join(dir, 'missing.mjs')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI runs end-to-end when invoked through a symlinked path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oddenova-symlink-cli-'));
+  const link = join(dir, 'open-in-oddenova.mjs');
+  try {
+    symlinkSync(scriptPath, link);
+
+    const stdout = execFileSync('node', [link, '--print-only'], {
+      input: JSON.stringify(payload),
+      encoding: 'utf8',
+    });
+
+    assert.equal(stdout.startsWith('https://www.oddenova.com/#oddenova='), true);
+    assert.deepEqual(decodeImportUrl(stdout.trim()), payload);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('SKILL creation example is a valid protocol payload with parseable JavaScript', () => {

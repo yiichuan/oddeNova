@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn as spawnProcess } from 'node:child_process';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 export const ODDENOVA_IMPORT_PROTOCOL_VERSION = 1;
 export const ODDENOVA_IMPORT_SOURCE = 'oddenova-strudel-skill';
@@ -114,9 +114,19 @@ export async function runCli(
   }
 }
 
-const isEntryPoint = process.argv[1]
-  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+// Compare real filesystem paths, not the raw URL/argv strings: the skill is
+// installed under ~/.claude/skills via a symlink, so `import.meta.url` is the
+// symlink-resolved real path while `process.argv[1]` keeps the symlink path.
+// Resolving both sides makes the check hold whichever path Node reports.
+export function isMainModule(metaUrl, entryPath = process.argv[1]) {
+  if (!entryPath) return false;
+  try {
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(entryPath);
+  } catch {
+    return false;
+  }
+}
 
-if (isEntryPoint) {
+if (isMainModule(import.meta.url)) {
   process.exitCode = await runCli();
 }
