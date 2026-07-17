@@ -32,7 +32,8 @@
     "postinstall": "patch-package",
     "prepare": "husky",
     "eval": "node --env-file=scripts/eval/.env --import=tsx/esm scripts/eval/runner.ts",
-    "eval:report": "node --env-file=scripts/eval/.env --import=tsx/esm scripts/eval/report.ts"
+    "eval:report": "node --env-file=scripts/eval/.env --import=tsx/esm scripts/eval/report.ts",
+    "gen:skill-refs": "node --import=tsx/esm scripts/generate-skill-references.ts"
   },
   "dependencies": {
     "@airjelly/sdk": "^0.1.0",
@@ -74,6 +75,7 @@
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.2.2",
+    "tsx": "4.21.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",
     "vite": "^8.0.4",

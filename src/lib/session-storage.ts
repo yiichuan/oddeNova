@@ -12,6 +12,10 @@ const LS_CURRENT_KEY = 'vibe-sessions-current-v1';
 let db: IDBPDatabase | null = null;
 let memoryFallback = false;
 
+export function isSessionStoragePersistent(): boolean {
+  return !memoryFallback && db !== null;
+}
+
 export async function openDB(): Promise<void> {
   try {
     db = await idbOpenDB(DB_NAME, DB_VERSION, {
@@ -66,6 +70,17 @@ export async function putSession(session: Session): Promise<void> {
   } catch (err) {
     console.warn('[session-storage] putSession failed', err);
   }
+}
+
+export async function putImportedSession(session: Session): Promise<void> {
+  if (memoryFallback || !db) return;
+  await db.put(STORE_NAME, session);
+}
+
+export async function putImportedSessionBranch(detached: Session, branch: Session): Promise<void> {
+  if (memoryFallback || !db) return;
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  await Promise.all([tx.store.put(detached), tx.store.put(branch), tx.done]);
 }
 
 export async function deleteSession(id: string): Promise<void> {
