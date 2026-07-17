@@ -9,7 +9,7 @@ Create the complete composition in Codex, then send it to oddeNova with the bund
 
 ## Required flow
 
-1. Read [the composition guide](references/composition-guide.md), [the supported Strudel API](references/strudel-api.md), and [the sample catalog](references/samples.md) before composing.
+1. Read the references before composing, choosing the language variant that matches the user: for Chinese use `references/composition-guide.zh.md`, `references/strudel-api.zh.md`, `references/samples.zh.md`; for English use the `.en.md` variants. These files are generated from the oddeNova app prompt — treat them as authoritative and do not edit them.
 2. Create one random `projectId` for this Codex task. Keep it unchanged for every follow-up edit in the same task so oddeNova updates the same work.
 3. Generate a complete program containing a `// STYLE | BPM: N` comment, `setcps`, one `stack`, and semantic `/* @layer NAME */` markers with a one-line intent comment after each marker.
 4. Self-review the music, API names, and samples. State only that the code was reviewed; never claim Strudel browser or runtime validation.
