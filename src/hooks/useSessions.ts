@@ -6,16 +6,28 @@ import {
   getCurrentSessionId,
   putSession as dbPutSession,
   putCurrentSessionId as dbPutCurrentSessionId,
+  putImportedSession as dbPutImportedSession,
+  putImportedSessionBranch as dbPutImportedSessionBranch,
   deleteSession as dbDeleteSession,
+  isSessionStoragePersistent,
 } from '../lib/session-storage';
 import { t } from '../lib/i18n';
 import { pickGreeting } from '../lib/greetings';
+import { hashImportedContent, type OddeNovaImportPayload } from '../lib/oddenova-import';
 
 export interface TokenStats {
   promptTokens: number;
   systemEstimate: number;
   modelId: string;
 }
+
+export interface ExternalSessionSource {
+  type: 'oddenova-strudel-skill';
+  projectId: string;
+  importedContentHash: string;
+}
+
+export type OddeNovaImportOutcome = 'created' | 'updated' | 'branched';
 
 export type PlaybackStatus = 'played' | 'failed' | 'not_attempted';
 
@@ -34,6 +46,7 @@ export interface Session {
   title: string;
   messages: ChatMessage[];
   code: string;
+  externalSource?: ExternalSessionSource;
   /** Optional for backward compatibility with sessions saved before revisions existed. */
   revisions?: CodeRevision[];
   tokenStats?: TokenStats;
@@ -188,12 +201,14 @@ export function useSessions() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPersistent, setIsPersistent] = useState(false);
 
   // Initialize: open DB (+ migrate) then load all sessions
   useEffect(() => {
     let cancelled = false;
     (async () => {
       await openDB();
+      const persistent = isSessionStoragePersistent();
       const [loaded, storedCurrentId] = await Promise.all([
         getAllSessions(),
         getCurrentSessionId(),
@@ -204,6 +219,7 @@ export function useSessions() {
         const current = loaded.find((s) => s.id === storedCurrentId) || loaded[0];
         setSessions(loaded);
         setCurrentId(current.id);
+        setIsPersistent(persistent);
         setIsLoading(false);
         return;
       }
@@ -215,6 +231,7 @@ export function useSessions() {
       ]);
       setSessions([fresh]);
       setCurrentId(fresh.id);
+      setIsPersistent(persistent);
       setIsLoading(false);
     })();
     return () => { cancelled = true; };
@@ -501,6 +518,100 @@ export function useSessions() {
     []
   );
 
+  const importOddeNovaSession = useCallback(async (
+    payload: OddeNovaImportPayload,
+  ): Promise<OddeNovaImportOutcome> => {
+    const now = Date.now();
+    const messages: ChatMessage[] = payload.messages.map((message, index) => ({
+      id: newMessageId(),
+      role: message.role,
+      content: message.content,
+      timestamp: now + index,
+    }));
+    const incomingHash = hashImportedContent(payload);
+    const source: ExternalSessionSource = {
+      type: 'oddenova-strudel-skill',
+      projectId: payload.projectId,
+      importedContentHash: incomingHash,
+    };
+    const target = sessions.find((session) =>
+      session.externalSource?.type === source.type &&
+      session.externalSource.projectId === source.projectId
+    );
+
+    if (!target) {
+      const created: Session = {
+        id: newSessionId(),
+        title: payload.title,
+        code: payload.code,
+        messages,
+        externalSource: source,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await dbPutImportedSession(created);
+      setSessions((previous) => [created, ...previous]);
+      setCurrentId(created.id);
+      dbPutCurrentSessionId(created.id);
+      return 'created';
+    }
+
+    const currentHash = hashImportedContent({
+      title: target.title,
+      code: target.code,
+      messages: target.messages
+        .filter((message) => message.role === 'user' || message.role === 'assistant')
+        .map(({ role, content }) => ({
+          role: role as 'user' | 'assistant',
+          content,
+        })),
+    });
+
+    if (currentHash === target.externalSource?.importedContentHash) {
+      const updated: Session = {
+        ...target,
+        title: payload.title,
+        code: payload.code,
+        messages,
+        externalSource: source,
+        updatedAt: now,
+      };
+      await dbPutImportedSession(updated);
+      setSessions((previous) => previous.map((session) => session.id === target.id ? updated : session));
+      setCurrentId(updated.id);
+      dbPutCurrentSessionId(updated.id);
+      return 'updated';
+    }
+
+    const detached: Session = { ...target, externalSource: undefined, updatedAt: now };
+    const branchTitle = `${payload.title}${t('branchSuffix')}`;
+    const branchSource: ExternalSessionSource = {
+      ...source,
+      importedContentHash: hashImportedContent({
+        title: branchTitle,
+        code: payload.code,
+        messages: payload.messages,
+      }),
+    };
+    const branch: Session = {
+      id: newSessionId(),
+      title: branchTitle,
+      code: payload.code,
+      messages,
+      externalSource: branchSource,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await dbPutImportedSessionBranch(detached, branch);
+    setSessions((previous) => [
+      branch,
+      ...previous.map((session) => session.id === target.id ? detached : session),
+    ]);
+    setCurrentId(branch.id);
+    dbPutCurrentSessionId(branch.id);
+    return 'branched';
+  }, [sessions]);
+
   const branchFromMessage = useCallback(
     (targetMessageId: string): void => {
       const session = sessions.find((s) => s.id === currentId) || sessions[0];
@@ -554,6 +665,7 @@ export function useSessions() {
     currentSession,
     currentId,
     isLoading,
+    isPersistent,
     addUserMessage,
     truncateAndEdit,
     truncate,
@@ -569,6 +681,7 @@ export function useSessions() {
     renameSession,
     deleteSession,
     importSession,
+    importOddeNovaSession,
     branchFromMessage,
     updateTokenStats,
     setSuggestions,

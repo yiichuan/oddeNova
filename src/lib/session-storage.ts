@@ -31,6 +31,10 @@ export function getStorageDb(): IDBPDatabase | null {
   return memoryFallback ? null : db;
 }
 
+export function isSessionStoragePersistent(): boolean {
+  return !memoryFallback && db !== null;
+}
+
 export async function openDB(): Promise<void> {
   try {
     db = await idbOpenDB(DB_NAME, DB_VERSION, {
@@ -116,6 +120,17 @@ export async function putCurrentSessionId(sessionId: string): Promise<void> {
   } catch (err) {
     console.warn('[session-storage] putCurrentSessionId failed', err);
   }
+}
+
+export async function putImportedSession(session: Session): Promise<void> {
+  if (memoryFallback || !db) return;
+  await db.put(SESSION_STORE_NAME, session);
+}
+
+export async function putImportedSessionBranch(detached: Session, branch: Session): Promise<void> {
+  if (memoryFallback || !db) return;
+  const tx = db.transaction(SESSION_STORE_NAME, 'readwrite');
+  await Promise.all([tx.store.put(detached), tx.store.put(branch), tx.done]);
 }
 
 export async function deleteSession(id: string): Promise<void> {
