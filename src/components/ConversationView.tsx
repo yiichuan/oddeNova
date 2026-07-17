@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
+import type { CodeRevision } from '../hooks/useSessions';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
 import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, RetryIcon } from './icons';
 import { ThinkingLottie } from './ThinkingLottie';
 import { t } from '../lib/i18n';
+import { CodeDiffView } from './CodeDiffView';
 
 type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
@@ -379,6 +381,7 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
 
 interface ConversationViewProps {
   messages: ChatMessage[];
+  revisions?: CodeRevision[];
   isLoading: boolean;
   isVideoMode?: boolean;
   scrollBottom?: boolean;
@@ -389,6 +392,7 @@ interface ConversationViewProps {
 
 export default function ConversationView({
   messages,
+  revisions,
   isLoading,
   isVideoMode = false,
   scrollBottom = false,
@@ -438,6 +442,10 @@ export default function ConversationView({
   const lastUserMsgId = useMemo(
     () => messages.findLast((m) => m.role === 'user')?.id,
     [messages],
+  );
+  const revisionsById = useMemo(
+    () => new Map((revisions ?? []).map((revision) => [revision.id, revision])),
+    [revisions],
   );
 
   // Detect manual user scroll: stop auto-following when more than 80px from
@@ -1069,7 +1077,15 @@ export default function ConversationView({
           >
             <div className="relative w-full rounded-xl px-2 py-2 text-sm bg-transparent text-text-primary">
               <MarkdownText content={msg.content} />
-              {msg.code && (() => {
+              {msg.code && msg.revisionId && revisionsById.has(msg.revisionId) && (
+                <CodeDiffView
+                  messageId={msg.id}
+                  revision={revisionsById.get(msg.revisionId)!}
+                  expanded={expandedCode.has(msg.id)}
+                  onToggle={() => toggleCode(msg.id)}
+                />
+              )}
+              {msg.code && (!msg.revisionId || !revisionsById.has(msg.revisionId)) && (() => {
                 const isExpanded = expandedCode.has(msg.id);
                 const code = msg.code;
                 const lineCount = code.split('\n').length;

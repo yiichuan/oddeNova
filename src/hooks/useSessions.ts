@@ -17,11 +17,25 @@ export interface TokenStats {
   modelId: string;
 }
 
+export type PlaybackStatus = 'played' | 'failed' | 'not_attempted';
+
+export interface CodeRevision {
+  id: string;
+  beforeCode: string;
+  afterCode: string;
+  playbackStatus: PlaybackStatus;
+  createdAt: number;
+}
+
+export type CodeRevisionDraft = Omit<CodeRevision, 'id' | 'createdAt'>;
+
 export interface Session {
   id: string;
   title: string;
   messages: ChatMessage[];
   code: string;
+  /** Optional for backward compatibility with sessions saved before revisions existed. */
+  revisions?: CodeRevision[];
   tokenStats?: TokenStats;
   /**
    * Next-step suggestion chips, bound to the code they were generated for.
@@ -56,6 +70,16 @@ function makeGreetingMessage(): ChatMessage {
 
 function isEffectivelyEmpty(s: Session): boolean {
   return !s.code && s.messages.every((m) => m.isGreeting === true);
+}
+
+function newRevisionId(): string {
+  return `rev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function revisionsReferencedBy(messages: ChatMessage[], revisions?: CodeRevision[]): CodeRevision[] | undefined {
+  if (!revisions) return undefined;
+  const referenced = new Set(messages.flatMap((message) => message.revisionId ? [message.revisionId] : []));
+  return revisions.filter((revision) => referenced.has(revision.id));
 }
 
 function deriveTitle(messages: ChatMessage[]): string {
@@ -93,13 +117,14 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
   const messages = [...before, newMsg];
   const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
   const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
-  return { ...s, messages, title };
+  return { ...s, messages, revisions: revisionsReferencedBy(messages, s.revisions), title };
 }
 
 export function applyTruncate(s: Session, targetMessageId: string): Session {
   const index = s.messages.findIndex((m) => m.id === targetMessageId);
   if (index === -1) return s;
-  return { ...s, messages: s.messages.slice(0, index) };
+  const messages = s.messages.slice(0, index);
+  return { ...s, messages, revisions: revisionsReferencedBy(messages, s.revisions) };
 }
 
 export function applyRefreshEmptySessionForReuse(s: Session, now: number): Session {
@@ -273,21 +298,29 @@ export function useSessions() {
   );
 
   const addAssistantMessage = useCallback(
-    (content: string, code?: string, sessionId?: string): void => {
+    (content: string, code?: string, sessionId?: string, revisionDraft?: CodeRevisionDraft): void => {
       const apply = getApply(sessionId);
-      apply((s) => ({
-        ...s,
-        messages: [
-          ...s.messages,
-          {
-            id: newMessageId(),
-            role: 'assistant' as const,
-            content,
-            code,
-            timestamp: Date.now(),
-          },
-        ],
-      }));
+      apply((s) => {
+        const now = Date.now();
+        const revision: CodeRevision | undefined = revisionDraft
+          ? { ...revisionDraft, id: newRevisionId(), createdAt: now }
+          : undefined;
+        return {
+          ...s,
+          revisions: revision ? [...(s.revisions ?? []), revision] : s.revisions,
+          messages: [
+            ...s.messages,
+            {
+              id: newMessageId(),
+              role: 'assistant' as const,
+              content,
+              code,
+              revisionId: revision?.id,
+              timestamp: now,
+            },
+          ],
+        };
+      });
     },
     [getApply]
   );
@@ -485,6 +518,7 @@ export function useSessions() {
         title: `${session.title}${t('branchSuffix')}`,
         messages: sliced,
         code,
+        revisions: revisionsReferencedBy(sliced, session.revisions),
         createdAt: now,
         updatedAt: now,
       };

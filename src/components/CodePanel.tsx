@@ -255,6 +255,10 @@ export default function CodePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    strudelService.setAutocompletionEnabled(!isMobile);
+  }, [isMobile]);
+
   // Demo mode plays at a quiet 10% by default; the master engine otherwise
   // starts at full, so push the demo default down on mount.
   useEffect(() => {

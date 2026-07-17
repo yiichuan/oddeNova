@@ -4,7 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isDemoMode } from '../../demo/demo-config';
-import type { Session } from '../../hooks/useSessions';
+import type { CodeRevision, Session } from '../../hooks/useSessions';
 import { t } from '../../lib/i18n';
 import Sidebar from '../Sidebar';
 
@@ -65,6 +65,44 @@ function renderSidebar(props: Partial<React.ComponentProps<typeof Sidebar>> = {}
 
   return { container, root };
 }
+
+describe('Sidebar code revisions', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('forwards revisions so assistant messages render the diff toggle', () => {
+    const messages: Session['messages'] = [
+      { id: 'm-1', role: 'user', content: '改鼓点', timestamp: 1 },
+      {
+        id: 'm-2',
+        role: 'assistant',
+        content: '完成',
+        code: 's("bd*2")',
+        revisionId: 'rev-1',
+        timestamp: 2,
+      },
+    ];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 's("bd")',
+      afterCode: 's("bd*2")',
+      playbackStatus: 'played',
+      createdAt: 2,
+    }];
+    const { container, root } = renderSidebar({ messages, revisions });
+    roots.push(root);
+
+    const toggle = container.querySelector('[data-code-diff-toggle="m-2"]');
+    expect(toggle).not.toBeNull();
+  });
+});
 
 describe('Sidebar session title editing layout', () => {
   const roots: Root[] = [];

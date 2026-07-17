@@ -33,6 +33,12 @@ function loadAnimation(): Promise<object> {
   return inflight;
 }
 
+// Prefetch at module load (app startup) so the animation data is already
+// cached by the time the first "thinking…" indicator mounts.
+loadAnimation().catch(() => {
+  /* placeholder stays empty; retry happens on next mount */
+});
+
 interface ThinkingLottieProps {
   className?: string;
 }
@@ -64,8 +70,9 @@ export function ThinkingLottie({ className }: ThinkingLottieProps) {
   }, []);
 
   if (!data) {
-    // Fallback while the JSON loads (or if it fails): the original breathing dot.
-    return <span className="w-1.5 h-1.5 rounded-full bg-[#93C2FF] animate-pulse" />;
+    // Empty placeholder with the same footprint so the label doesn't shift
+    // when the animation appears (no visible fallback by design).
+    return <span className={className} />;
   }
 
   return <Lottie animationData={data} loop autoplay className={className} />;

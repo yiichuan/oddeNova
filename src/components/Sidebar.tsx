@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { t } from '../lib/i18n';
-import type { Session, TokenStats } from '../hooks/useSessions';
+import type { CodeRevision, Session, TokenStats } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
@@ -12,6 +12,7 @@ import EditableSessionTitle from './EditableSessionTitle';
 interface SidebarProps {
   title: string;
   messages: ChatMessage[];
+  revisions?: CodeRevision[];
   isLoading: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
@@ -46,6 +47,7 @@ interface SidebarProps {
 export default function Sidebar({
   title,
   messages,
+  revisions,
   isLoading,
   engineReady,
   engineStatus = engineReady ? 'ready' : 'initializing',
@@ -179,6 +181,7 @@ export default function Sidebar({
         <ConversationView
           key={currentId ?? 'default'}
           messages={messages}
+          revisions={revisions}
           isLoading={isLoading && !isReplaying}
           isVideoMode={isVideoMode}
           scrollBottom={scrollBottom}

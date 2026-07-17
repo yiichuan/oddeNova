@@ -161,6 +161,103 @@ body {
   to { background-position: -200% 0; }
 }
 
+/* Strudel autocomplete — keep the upstream interaction and information
+   structure while inheriting the active oddeNova editor theme. */
+.cm-tooltip-autocomplete,
+.cm-completionInfo {
+  color: var(--foreground) !important;
+  background: var(--background) !important;
+  border: 1px solid var(--gutterBorder) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  font-family: 'ABeeZee', monospace !important;
+  font-size: 12px;
+}
+
+.cm-tooltip-autocomplete > ul {
+  min-width: 260px;
+  max-height: min(320px, 45vh) !important;
+  font-family: inherit !important;
+}
+
+.cm-tooltip-autocomplete > ul > li {
+  padding: 6px 10px !important;
+  line-height: 1.4 !important;
+}
+
+.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  color: var(--foreground) !important;
+  background: var(--selection) !important;
+}
+
+.cm-completionMatchedText {
+  color: var(--caret);
+  text-decoration: none;
+}
+
+.cm-tooltip.cm-completionInfo {
+  width: min(420px, 42vw);
+  max-width: 420px;
+  max-height: min(440px, 60vh);
+  padding: 0 !important;
+  overflow: auto;
+}
+
+.autocomplete-info-container {
+  padding: 14px;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.autocomplete-info-function-name {
+  margin: 0 0 8px;
+  color: var(--caret);
+  font-size: 14px;
+}
+
+.autocomplete-info-function-synonyms,
+.autocomplete-info-function-description {
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+}
+
+.autocomplete-info-section-title {
+  margin: 14px 0 6px;
+  color: var(--gutterForeground);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.autocomplete-info-params-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.autocomplete-info-param-item,
+.autocomplete-info-example-code {
+  margin: 0 0 6px;
+  padding: 8px;
+  color: var(--foreground);
+  background: var(--lineHighlight);
+  border-left: 1px solid var(--gutterBorder);
+}
+
+.autocomplete-info-example-code {
+  white-space: pre-wrap;
+}
+
+.autocomplete-info-param-name {
+  color: var(--caret);
+  margin-right: 8px;
+}
+
+.autocomplete-info-param-type,
+.autocomplete-info-param-desc {
+  color: var(--gutterForeground);
+}
+
 /* Size container so children can size themselves against the visible
    conversation area via cqh units — resolved by CSS within the same layout
    pass, unlike JS measurements which lag a frame behind (the turn filler

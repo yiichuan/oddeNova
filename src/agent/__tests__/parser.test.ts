@@ -47,6 +47,14 @@ stack(
     expect(r.layers[0].source).toContain('note("c4")');
   });
 
+  it('@layer 名称允许连字符与非 ASCII 字符（模型实际会生成这类名字）', () => {
+    const code = `stack(\n  /* @layer OPEN-HAT点缀 */\n  s("~ ~ ~ oh"),\n  /* @layer lead synth */\n  note("c4")\n)`;
+    const r = parseScore(code);
+    expect(r.layers[0].name).toBe('OPEN-HAT点缀');
+    expect(r.layers[0].source).not.toContain('@layer');
+    expect(r.layers[1].name).toBe('lead synth');
+  });
+
   it('无标记时自动命名 layer_0 / layer_1', () => {
     const code = `stack(\n  s("bd"),\n  s("sd")\n)`;
     const r = parseScore(code);

@@ -23,7 +23,9 @@ export interface ParsedScore {
   layers: ParsedLayer[];
 }
 
-const LAYER_MARKER_RE = /^\s*\/\*\s*@layer\s+([A-Za-z0-9_]+)\s*\*\//;
+// Layer names come from the model and are not charset-restricted (hyphens,
+// CJK, spaces all occur in practice) — accept anything up to the closing */.
+const LAYER_MARKER_RE = /^\s*\/\*\s*@layer\s+([^*]+?)\s*\*\//;
 
 // Matches a `.method("...<INNER>[/N]...")` call: captures the method name, the
 // angle-bracket INNER, and an optional trailing /N window. The window itself
