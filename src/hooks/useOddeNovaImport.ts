@@ -53,5 +53,11 @@ export function useOddeNovaImport(
       .catch(() => setResult({ status: 'error', reason: 'invalid' }));
   }, [importer, isPersistent, isReady, request]);
 
+  useEffect(() => {
+    if (result.status !== 'success' && result.status !== 'error') return;
+    const timer = window.setTimeout(() => setResult({ status: 'idle' }), 4000);
+    return () => window.clearTimeout(timer);
+  }, [result]);
+
   return result;
 }
