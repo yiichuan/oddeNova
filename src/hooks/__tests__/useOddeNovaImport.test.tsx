@@ -111,6 +111,29 @@ describe('useOddeNovaImport', () => {
     expect(hook.getResult()).toEqual({ status: 'success', outcome: 'created', persistent: true });
   });
 
+  it('imports a fragment that arrives while the app is already mounted', async () => {
+    window.history.pushState(null, '', '/compose');
+    const importer = vi.fn(async () => 'created' as const);
+    const hook = renderImportHook(importer, true, true);
+    roots.push(hook.root);
+
+    expect(hook.getResult()).toEqual({ status: 'idle' });
+    expect(importer).not.toHaveBeenCalled();
+
+    // Opening an import link while the origin is already open only changes the
+    // fragment: the document is not reloaded and the app never remounts.
+    await act(async () => {
+      window.history.pushState(null, '', `/compose${fragment(payload)}`);
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await Promise.resolve();
+    });
+
+    expect(importer).toHaveBeenCalledTimes(1);
+    expect(importer).toHaveBeenCalledWith(payload);
+    expect(window.location.hash).toBe('');
+    expect(hook.getResult()).toEqual({ status: 'success', outcome: 'created', persistent: true });
+  });
+
   it('maps unsupported protocol versions separately without invoking the importer', () => {
     window.history.pushState(null, '', `/compose${fragment({ ...payload, protocolVersion: 2 })}`);
     const importer = vi.fn(async () => 'created' as const);

@@ -18,22 +18,31 @@ export function useOddeNovaImport(
   isPersistent: boolean,
 ): OddeNovaImportResult {
   const pending = useRef<OddeNovaImportParseResult | undefined>(undefined);
-  const consumed = useRef(false);
   const imported = useRef(false);
+  const [request, setRequest] = useState(0);
   const [result, setResult] = useState<OddeNovaImportResult>({ status: 'idle' });
 
   useEffect(() => {
-    if (consumed.current) return;
-    consumed.current = true;
-    pending.current = parseOddeNovaImportHash(window.location.hash);
-    if (pending.current.kind === 'none') return;
+    // Opening an import link while this origin is already open is a same-document
+    // navigation: only the fragment changes, so consume it on hashchange too.
+    const consume = () => {
+      const parsed = parseOddeNovaImportHash(window.location.hash);
+      if (parsed.kind === 'none') return;
+      pending.current = parsed;
+      imported.current = false;
+      setRequest((previous) => previous + 1);
 
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-    if (pending.current.kind === 'error') {
-      setResult({ status: 'error', reason: pending.current.reason });
-    } else {
-      setResult({ status: 'loading' });
-    }
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      if (parsed.kind === 'error') {
+        setResult({ status: 'error', reason: parsed.reason });
+      } else {
+        setResult({ status: 'loading' });
+      }
+    };
+
+    consume();
+    window.addEventListener('hashchange', consume);
+    return () => window.removeEventListener('hashchange', consume);
   }, []);
 
   useEffect(() => {
@@ -42,7 +51,7 @@ export function useOddeNovaImport(
     void importer(pending.current.payload)
       .then((outcome) => setResult({ status: 'success', outcome, persistent: isPersistent }))
       .catch(() => setResult({ status: 'error', reason: 'invalid' }));
-  }, [importer, isPersistent, isReady]);
+  }, [importer, isPersistent, isReady, request]);
 
   return result;
 }
