@@ -12,6 +12,8 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   code?: string;
+  /** Immutable code boundary produced by this assistant turn. */
+  revisionId?: string;
   timestamp: number;
   // For role === 'progress':
   progressKind?: ProgressKind;

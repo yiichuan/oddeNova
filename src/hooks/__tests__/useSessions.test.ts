@@ -175,6 +175,40 @@ describe('useSessions', () => {
     });
     expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
   });
+
+  it('atomically stores a code revision and links it from the assistant message', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().addAssistantMessage('完成', 's("sd")', getHook().currentId!, {
+        beforeCode: 's("bd")',
+        afterCode: 's("sd")',
+        playbackStatus: 'played',
+      });
+    });
+
+    const session = getHook().currentSession!;
+    expect(session.revisions).toHaveLength(1);
+    expect(session.revisions?.[0]).toMatchObject({
+      beforeCode: 's("bd")',
+      afterCode: 's("sd")',
+      playbackStatus: 'played',
+    });
+    expect(session.messages[0].revisionId).toBe(session.revisions?.[0].id);
+  });
+
+  it('keeps ordinary assistant messages revision-free', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().addAssistantMessage('没有代码', undefined, getHook().currentId!);
+    });
+
+    expect(getHook().currentSession?.revisions).toBeUndefined();
+    expect(getHook().currentSession?.messages[0].revisionId).toBeUndefined();
+  });
 });
 
 describe('applyTruncateAndEdit', () => {
@@ -283,5 +317,24 @@ describe('applyTruncate', () => {
     });
     const result = applyTruncate(s, 'msg-1');
     expect(result.title).toBe('原标题');
+  });
+
+  it('截断消息时移除不再被引用的 revisions', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'msg-0', role: 'user', content: '第一条', timestamp: 0 },
+        { id: 'msg-1', role: 'assistant', content: '版本一', code: 's("bd")', revisionId: 'rev-1', timestamp: 1 },
+        { id: 'msg-2', role: 'user', content: '第二条', timestamp: 2 },
+        { id: 'msg-3', role: 'assistant', content: '版本二', code: 's("sd")', revisionId: 'rev-2', timestamp: 3 },
+      ],
+      revisions: [
+        { id: 'rev-1', beforeCode: '', afterCode: 's("bd")', playbackStatus: 'played', createdAt: 1 },
+        { id: 'rev-2', beforeCode: 's("bd")', afterCode: 's("sd")', playbackStatus: 'played', createdAt: 3 },
+      ],
+    });
+
+    const result = applyTruncate(s, 'msg-2');
+
+    expect(result.revisions?.map((revision) => revision.id)).toEqual(['rev-1']);
   });
 });
