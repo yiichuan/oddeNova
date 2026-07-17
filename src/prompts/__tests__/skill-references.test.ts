@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { splitSections } from '../skill-references';
+import { splitSections, extractSkillReferences, ADAPTER_PREAMBLE_ZH } from '../skill-references';
 
 describe('splitSections', () => {
   it('splits a prompt into heading/body pairs on ## lines', () => {
@@ -16,5 +16,37 @@ describe('splitSections', () => {
     const sections = splitSections(prompt);
     expect(sections.map((s) => s.heading)).toEqual(['Outer', 'Next']);
     expect(sections[0].body).toBe('x\n### Inner\ny');
+  });
+});
+
+const FAKE_ZH = [
+  '## 语言', 'lang body',
+  '## 确立音乐方向（xx）', 'direction body',
+  '## Strudel 速查表（精简版）', 'cheatsheet body',
+  '## 全量采样名称参考（单一权威来源）', 'samples body',
+  '## 提交前自检（yy）', 'selfcheck head',
+  '### Commit 规则', 'commit rule body that must be removed',
+  '### 其他', 'other subsection kept',
+  '## 音层代码生成', 'layergen body',
+  '## 曲子编排（zz）', 'arrangement body',
+].join('\n');
+
+describe('extractSkillReferences', () => {
+  it('keeps the six sections, drops the tool loop, and prepends the adapter preamble', () => {
+    const refs = extractSkillReferences(FAKE_ZH, 'zh');
+    expect(refs.guide.startsWith(ADAPTER_PREAMBLE_ZH)).toBe(true);
+    expect(refs.guide).toContain('direction body');
+    expect(refs.guide).toContain('layergen body');
+    expect(refs.guide).toContain('arrangement body');
+    expect(refs.guide).toContain('selfcheck head');
+    expect(refs.guide).toContain('other subsection kept');
+    expect(refs.guide).not.toContain('commit rule body');
+    expect(refs.guide).not.toContain('lang body');
+    expect(refs.api).toBe('cheatsheet body');
+    expect(refs.samples).toBe('samples body');
+  });
+
+  it('throws when an expected section is missing', () => {
+    expect(() => extractSkillReferences('## 语言\nx', 'zh')).toThrow(/section not found/);
   });
 });
