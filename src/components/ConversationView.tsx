@@ -1158,7 +1158,7 @@ export default function ConversationView({
         >
           <div className="flex items-start gap-1.5 px-1.5 shrink-0">
             <ThinkingLottie className="w-5 h-5 flex-shrink-0" />
-            <div className="min-w-0 text-sm thinking-shimmer">{liveStatusLabel}</div>
+            <div className="min-w-0 text-sm text-text-primary">{liveStatusLabel}</div>
             {reasoningWindowAvailable && (
               <button
                 onClick={() => setReasoningCollapsed((v) => !v)}

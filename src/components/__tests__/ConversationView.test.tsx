@@ -261,7 +261,7 @@ describe('ConversationView chat streaming', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders the live status label with the thinking shimmer', () => {
+  it('renders the live status label in the primary text color', () => {
     setMobileViewport(false);
     const { container, root } = renderConversationView([], vi.fn(), true);
     roots.push(root);
@@ -271,7 +271,7 @@ describe('ConversationView chat streaming', () => {
     );
 
     expect(statusLabel).toBeDefined();
-    expect(statusLabel?.classList.contains('thinking-shimmer')).toBe(true);
+    expect(statusLabel?.classList.contains('text-text-primary')).toBe(true);
   });
 
   it('hides retry/branch actions on a greeting bubble but keeps them on a normal assistant message', () => {
