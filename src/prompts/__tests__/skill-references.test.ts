@@ -1,4 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
+
+import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from '../active';
 import { splitSections, extractSkillReferences, ADAPTER_PREAMBLE_ZH } from '../skill-references';
 
 describe('splitSections', () => {
@@ -49,4 +54,23 @@ describe('extractSkillReferences', () => {
   it('throws when an expected section is missing', () => {
     expect(() => extractSkillReferences('## 语言\nx', 'zh')).toThrow(/section not found/);
   });
+});
+
+// Repo layout: src/prompts/__tests__ -> ../../../skills/oddenova-strudel/references
+const refsDir = fileURLToPath(new URL('../../../skills/oddenova-strudel/references/', import.meta.url));
+
+describe('committed references are in sync with the active prompt', () => {
+  const cases = [
+    { lang: 'zh' as const, prompt: AGENT_SYSTEM_PROMPT_OPENAI },
+    { lang: 'en' as const, prompt: AGENT_SYSTEM_PROMPT_EN },
+  ];
+  for (const { lang, prompt } of cases) {
+    it(`resolves all sections and matches files for ${lang}`, () => {
+      const refs = extractSkillReferences(prompt, lang); // throws if a heading is renamed
+      const onDisk = (name: string) => readFileSync(`${refsDir}${name}.${lang}.md`, 'utf8');
+      expect(onDisk('composition-guide')).toBe(`${refs.guide}\n`);
+      expect(onDisk('strudel-api')).toBe(`${refs.api}\n`);
+      expect(onDisk('samples')).toBe(`${refs.samples}\n`);
+    });
+  }
 });
