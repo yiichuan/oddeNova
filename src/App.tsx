@@ -433,7 +433,15 @@ export default function App() {
 
         {/* ── Conversation ── */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConversationView key={sessions.currentId ?? 'default'} messages={messages} isLoading={isLoading} onRollback={handleRollback} onBranch={sessions.branchFromMessage} onRetry={handleRetry} />
+          <ConversationView
+            key={sessions.currentId ?? 'default'}
+            messages={messages}
+            revisions={sessions.currentSession?.revisions}
+            isLoading={isLoading}
+            onRollback={handleRollback}
+            onBranch={sessions.branchFromMessage}
+            onRetry={handleRetry}
+          />
         </div>
 
         {/* ── Code Drawer ── */}
@@ -591,6 +599,7 @@ export default function App() {
         <Sidebar
           title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
           messages={videoDemoMsgs ?? messages}
+          revisions={current?.revisions}
           isLoading={isLoading || isReplaying}
           engineReady={strudel.engineReady}
           engineStatus={strudel.engineStatus}

@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../hooks/useChat';
+import type { CodeRevision } from '../../hooks/useSessions';
 import ConversationView from '../ConversationView';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -33,7 +34,11 @@ function setMobileViewport(matches: boolean) {
   });
 }
 
-function renderConversationView(messages: ChatMessage[], onRollback = vi.fn()) {
+function renderConversationView(
+  messages: ChatMessage[],
+  onRollback = vi.fn(),
+  revisions?: CodeRevision[],
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -42,6 +47,7 @@ function renderConversationView(messages: ChatMessage[], onRollback = vi.fn()) {
     root.render(
       <ConversationView
         messages={messages}
+        revisions={revisions}
         isLoading={false}
         onRollback={onRollback}
         onBranch={vi.fn()}
@@ -52,6 +58,92 @@ function renderConversationView(messages: ChatMessage[], onRollback = vi.fn()) {
 
   return { container, root };
 }
+
+describe('ConversationView code revisions', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('shows compact stats and expands a Layer-grouped unified diff', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '完成',
+      code: 'stack(\n/* @layer drums */\ns("bd*2")\n)',
+      revisionId: 'rev-1',
+      timestamp: 1,
+    }];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 'stack(\n/* @layer drums */\ns("bd")\n)',
+      afterCode: 'stack(\n/* @layer drums */\ns("bd*2")\n)',
+      playbackStatus: 'played',
+      createdAt: 1,
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), revisions);
+    roots.push(root);
+
+    const button = container.querySelector<HTMLButtonElement>('[data-code-diff-toggle="assistant-1"]');
+    expect(button?.textContent).toContain('View changes');
+    expect(button?.textContent).toContain('+1');
+    expect(button?.textContent).toContain('−1');
+    expect(button?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.textContent).not.toContain('DRUMS');
+
+    act(() => button?.click());
+
+    expect(button?.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain('DRUMS');
+    expect(container.querySelector('[data-diff-kind="remove"]')?.textContent).toContain('s("bd")');
+    expect(container.querySelector('[data-diff-kind="add"]')?.textContent).toContain('s("bd*2")');
+  });
+
+  it('marks a persisted revision whose playback failed', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '无法播放',
+      code: 's("sd")',
+      revisionId: 'rev-1',
+      timestamp: 1,
+    }];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 's("bd")',
+      afterCode: 's("sd")',
+      playbackStatus: 'failed',
+      createdAt: 1,
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), revisions);
+    roots.push(root);
+
+    expect(container.textContent).toContain('Code updated · playback failed');
+  });
+
+  it('keeps the full-code viewer for legacy assistant messages', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'assistant-legacy',
+      role: 'assistant',
+      content: '旧回复',
+      code: 's("bd")',
+      timestamp: 1,
+    }];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    expect(container.textContent).toContain('Strudel code');
+    expect(container.textContent).not.toContain('View changes');
+  });
+});
 
 describe('ConversationView mobile interactions', () => {
   const roots: Root[] = [];

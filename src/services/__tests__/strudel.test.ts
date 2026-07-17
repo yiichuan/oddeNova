@@ -254,6 +254,89 @@ describe('StrudelService initialization recovery', () => {
   });
 });
 
+describe('StrudelService editor preferences', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('@strudel/codemirror');
+    vi.doUnmock('@strudel/transpiler');
+    vi.doUnmock('@strudel/draw');
+    vi.doUnmock('@strudel/webaudio');
+    vi.doUnmock('../../lib/soundfont-loader');
+    vi.doUnmock('../../lib/analytics');
+  });
+
+  it('delegates autocompletion changes to StrudelMirror', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const setAutocompletionEnabled = vi.fn();
+    (service as unknown as {
+      editorInstance: {
+        setAutocompletionEnabled: (enabled: boolean) => void;
+      };
+    }).editorInstance = { setAutocompletionEnabled };
+
+    (service as unknown as {
+      setAutocompletionEnabled: (enabled: boolean) => void;
+    }).setAutocompletionEnabled(true);
+
+    expect(setAutocompletionEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it('applies the requested autocompletion state after the editor attaches', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    const setAutocompletionEnabled = vi.fn();
+    vi.doMock('@strudel/codemirror', () => ({
+      StrudelMirror: class {
+        repl = { setCode: vi.fn(), stop: vi.fn() };
+        setCode = vi.fn();
+        evaluate = vi.fn(async () => {});
+        setAutocompletionEnabled = setAutocompletionEnabled;
+        changeSetting = vi.fn();
+      },
+    }));
+    vi.doMock('@strudel/transpiler', () => ({ transpiler: vi.fn() }));
+    vi.doMock('@strudel/draw', () => ({ getDrawContext: vi.fn(() => ({})) }));
+    vi.doMock('@strudel/webaudio', () => ({ webaudioOutput: vi.fn() }));
+
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    service.setAutocompletionEnabled(true);
+
+    await service.attach(document.createElement('div'));
+
+    expect(setAutocompletionEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it('enables Tab indentation when the editor attaches', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    const changeSetting = vi.fn();
+    vi.doMock('@strudel/codemirror', () => ({
+      StrudelMirror: class {
+        repl = { setCode: vi.fn(), stop: vi.fn() };
+        setCode = vi.fn();
+        evaluate = vi.fn(async () => {});
+        setAutocompletionEnabled = vi.fn();
+        changeSetting = changeSetting;
+      },
+    }));
+    vi.doMock('@strudel/transpiler', () => ({ transpiler: vi.fn() }));
+    vi.doMock('@strudel/draw', () => ({ getDrawContext: vi.fn(() => ({})) }));
+    vi.doMock('@strudel/webaudio', () => ({ webaudioOutput: vi.fn() }));
+
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+
+    await service.attach(document.createElement('div'));
+
+    expect(changeSetting).toHaveBeenCalledWith('isTabIndentationEnabled', true);
+  });
+});
+
 describe('page audio recovery', () => {
   afterEach(() => {
     vi.resetModules();

@@ -90,7 +90,11 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
     expect(deps.play).toHaveBeenCalledWith('note("c3")');
     expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1');
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', {
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'played',
+    });
   });
 
   it('persists the code even when playback fails — latest code is always the session truth', async () => {
@@ -102,6 +106,11 @@ describe('runAgentTurn', () => {
     const call = (deps.addAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[1]).toBe('note("c3")');
     expect(String(call[0])).toContain('bad node');
+    expect(call[3]).toEqual({
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'failed',
+    });
   });
 
   it('on a background (non-current) session, persists without playing', async () => {
@@ -109,6 +118,19 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
     expect(deps.play).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', {
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'not_attempted',
+    });
+  });
+
+  it('does not create a revision when code was not committed', async () => {
+    const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ committed: false })) });
+
+    await runAgentTurn(makeInput(), deps);
+
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1');
   });
 
   it('surfaces next-step suggestions parsed from the explanation', async () => {
@@ -117,7 +139,11 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
     expect(deps.setCommitSuggestions).toHaveBeenCalledWith(['加鼓', '提速']);
     // the next-steps block is stripped from the chat message
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith('搞定', 'note("c3")', 'S1');
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('搞定', 'note("c3")', 'S1', {
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'played',
+    });
   });
 
   it('posts the explanation only when the result carries no code', async () => {
@@ -190,6 +216,11 @@ describe('runAgentTurn', () => {
     const deps = makeDeps({ runAgent, getCurrentCode: () => 'CURRENT' });
     await runAgentTurn(makeInput({ initialCode: 'OVERRIDE' }), deps);
     expect(runAgent.mock.calls[0][1]).toBe('OVERRIDE');
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', {
+      beforeCode: 'OVERRIDE',
+      afterCode: 'note("c3")',
+      playbackStatus: 'played',
+    });
   });
 
   it('forwards moodContext to runAgent', async () => {
