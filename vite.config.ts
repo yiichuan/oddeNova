@@ -8,6 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
 import sessionsHandler from './api/sessions'
 import sessionByIdHandler from './api/sessions/[id]'
+import authEmailHandler from './api/auth-email'
 
 interface AirJellyRuntime {
   port: number
@@ -332,6 +333,27 @@ function sessionsDevMiddleware(): Plugin {
   }
 }
 
+function authEmailDevMiddleware(): Plugin {
+  return {
+    name: 'auth-email-api-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use(
+        '/api/auth-email',
+        async (req: IncomingMessage, res: ServerResponse) => {
+          try {
+            const body = req.method === 'POST' ? await readJsonBody(req) : undefined
+            await runVercelHandler(authEmailHandler, req, res, {}, body)
+          } catch (error) {
+            res.statusCode = 400
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Bad request' }))
+          }
+        }
+      )
+    },
+  }
+}
+
 // Mirrors src/animation/*.html → public/animation/ so the iframe can load them
 // as static assets. Runs once on startup and again on every hot-module update.
 function syncAnimationHtml(): Plugin {
@@ -356,12 +378,12 @@ export default defineConfig(({ mode }) => {
   // (officialApiDevMiddleware) read server-side keys from process.env, so
   // load the full .env here and merge any missing keys in (shell env wins).
   const env = loadEnv(mode, process.cwd(), '')
-  for (const key of ['OFFICIAL_API_KEY', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+  for (const key of ['OFFICIAL_API_KEY', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'RESEND_API_KEY', 'EMAIL_FROM']) {
     if (!process.env[key] && env[key]) process.env[key] = env[key]
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), authEmailDevMiddleware(), syncAnimationHtml()],
     build: {
       rollupOptions: {
         input: {
