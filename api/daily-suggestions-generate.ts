@@ -93,7 +93,8 @@ function lockPath(date: string): string {
 
 type ClaimResult =
   | { status: 'acquired'; pathname: string; etag: string }
-  | { status: 'exists' | 'in-progress' };
+  | { status: 'exists' }
+  | { status: 'in-progress' };
 
 async function claimDate(date: string, finalPath: string): Promise<ClaimResult> {
   const pathname = lockPath(date);

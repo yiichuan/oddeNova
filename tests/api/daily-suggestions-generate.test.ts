@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { del, head, put } from '@vercel/blob';
-import handler from './daily-suggestions-generate';
+import handler from '../../api/daily-suggestions-generate.js';
 
 vi.mock('@vercel/blob', () => ({ del: vi.fn(), head: vi.fn(), put: vi.fn() }));
 

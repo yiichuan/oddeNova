@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import handler from './share-page';
+import handler from '../../api/share-page.js';
 import { list } from '@vercel/blob';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -74,7 +74,7 @@ describe('share-page handler', () => {
   });
 
   it('does not depend on client src modules at runtime', () => {
-    const source = readFileSync(fileURLToPath(new URL('./share-page.ts', import.meta.url)), 'utf8');
+    const source = readFileSync(fileURLToPath(new URL('../../api/share-page.ts', import.meta.url)), 'utf8');
 
     expect(source).not.toContain('../src/');
   });
