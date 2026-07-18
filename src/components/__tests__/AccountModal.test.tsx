@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import AccountModal from '../AccountModal';
 
 const authMocks = vi.hoisted(() => ({
+  signInWithGoogle: vi.fn(async () => undefined),
   signInWithPassword: vi.fn(async (_email: string, _password: string) => ({
     id: 'user-1',
     email: 'listener@example.com',
@@ -15,6 +16,7 @@ const authMocks = vi.hoisted(() => ({
 
 vi.mock('../../services/auth-service', () => ({
   resetPasswordForEmail: vi.fn(),
+  signInWithGoogle: authMocks.signInWithGoogle,
   signInWithPassword: authMocks.signInWithPassword,
   signOut: vi.fn(),
   signUpWithPassword: vi.fn(),
@@ -43,7 +45,7 @@ function renderRecoveryModal() {
   return { container, root, onClose };
 }
 
-function renderSignInModal() {
+function renderSignInModal(oauthErrorKey?: 'authErrorGoogleCancelled') {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -54,12 +56,22 @@ function renderSignInModal() {
       <AccountModal
         user={null}
         configured
+        oauthErrorKey={oauthErrorKey}
         onClose={onClose}
       />,
     );
   });
 
   return { container, root, onClose };
+}
+
+function findButton(container: HTMLElement, label: string): HTMLButtonElement {
+  const button = [...container.querySelectorAll('button')]
+    .find((candidate) => candidate.textContent === label);
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`${label} button not found`);
+  }
+  return button;
 }
 
 function setInput(input: HTMLInputElement, value: string) {
@@ -180,5 +192,68 @@ describe('AccountModal sign in errors', () => {
 
     expect(container.textContent).toContain('Action failed. Please try again later.');
     expect(container.textContent).not.toContain('Sensitive backend detail');
+  });
+});
+
+describe('AccountModal Google sign in', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  it('starts Google OAuth without closing the modal first', async () => {
+    const { container, root, onClose } = renderSignInModal();
+    roots.push(root);
+
+    await act(async () => {
+      findButton(container, 'Continue with Google').click();
+    });
+
+    expect(authMocks.signInWithGoogle).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps one Google entry point in sign-up and reset modes', () => {
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+
+    act(() => {
+      findButton(container, 'Create account').click();
+    });
+    expect(findButton(container, 'Continue with Google')).toBeInstanceOf(HTMLButtonElement);
+
+    act(() => {
+      findButton(container, 'Forgot password?').click();
+    });
+    expect(findButton(container, 'Continue with Google')).toBeInstanceOf(HTMLButtonElement);
+    expect(
+      [...container.querySelectorAll('button')]
+        .filter((button) => button.textContent === 'Continue with Google'),
+    ).toHaveLength(1);
+  });
+
+  it('localizes a Google launch failure without exposing provider details', async () => {
+    authMocks.signInWithGoogle.mockRejectedValueOnce(new Error('Sensitive provider detail'));
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+
+    await act(async () => {
+      findButton(container, 'Continue with Google').click();
+    });
+
+    expect(container.textContent).toContain('Action failed. Please try again later.');
+    expect(container.textContent).not.toContain('Sensitive provider detail');
+  });
+
+  it('shows a localized cancellation returned by OAuth', () => {
+    const { container, root } = renderSignInModal('authErrorGoogleCancelled');
+    roots.push(root);
+
+    expect(container.textContent).toContain('Google sign-in was cancelled.');
   });
 });

@@ -3,6 +3,7 @@ const AUTH_ERROR_MESSAGE_KEYS: Readonly<Record<string, string>> = {
   email_not_confirmed: 'authErrorEmailNotConfirmed',
   user_already_exists: 'authErrorUserAlreadyExists',
   email_exists: 'authErrorUserAlreadyExists',
+  identity_already_exists: 'authErrorGoogleIdentityConflict',
   weak_password: 'authErrorWeakPassword',
   email_address_invalid: 'authErrorInvalidEmail',
   over_email_send_rate_limit: 'authErrorRateLimited',

@@ -247,12 +247,16 @@ export default function App() {
 
   const accountOverlays = (
     <>
-      {accountOpen && (
+      {(accountOpen || auth.oauthErrorKey) && (
         <AccountModal
           user={auth.user}
           configured={auth.configured}
           recoveringPassword={auth.recoveringPassword}
-          onClose={() => setAccountOpen(false)}
+          oauthErrorKey={auth.oauthErrorKey}
+          onClose={() => {
+            auth.dismissOAuthError();
+            setAccountOpen(false);
+          }}
         />
       )}
       {guestImportSessions && (
