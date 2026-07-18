@@ -1,4 +1,8 @@
 import { createClient, type AuthChangeEvent, type Session as SupabaseSession, type User } from '@supabase/supabase-js';
+import {
+  clearGoogleOAuthPending,
+  markGoogleOAuthPending,
+} from '../lib/google-oauth-return';
 
 export interface AuthUser {
   id: string;
@@ -40,6 +44,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getUser();
   if (error) return null;
+  if (data.user) clearGoogleOAuthPending();
   return toAuthUser(data.user);
 }
 
@@ -65,6 +70,24 @@ export async function signInWithPassword(email: string, password: string): Promi
   return user;
 }
 
+export async function signInWithGoogle(): Promise<void> {
+  const client = requireSupabase();
+  markGoogleOAuthPending();
+  const redirectTo =
+    `${window.location.origin}${window.location.pathname}${window.location.search}`;
+  const { error } = await client.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo,
+      scopes: 'openid email profile',
+    },
+  });
+  if (error) {
+    clearGoogleOAuthPending();
+    throw error;
+  }
+}
+
 export async function signOut(): Promise<void> {
   if (!supabase) return;
   const { error } = await supabase.auth.signOut();
@@ -86,6 +109,9 @@ export async function updatePassword(password: string): Promise<void> {
 
 export function onAuthStateChange(listener: AuthListener): () => void {
   if (!supabase) return () => undefined;
-  const { data } = supabase.auth.onAuthStateChange(listener);
+  const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    if (session?.user) clearGoogleOAuthPending();
+    listener(event, session);
+  });
   return () => data.subscription.unsubscribe();
 }
