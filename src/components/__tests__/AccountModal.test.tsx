@@ -11,11 +11,12 @@ const authMocks = vi.hoisted(() => ({
     email: 'listener@example.com',
   })),
   signUpWithPassword: vi.fn(async (_email: string, _password: string) => undefined),
+  resetPasswordForEmail: vi.fn(async (_email: string) => undefined),
   updatePassword: vi.fn(async (_password: string) => undefined),
 }));
 
 vi.mock('../../services/auth-service', () => ({
-  resetPasswordForEmail: vi.fn(),
+  resetPasswordForEmail: authMocks.resetPasswordForEmail,
   signInWithPassword: authMocks.signInWithPassword,
   signOut: vi.fn(),
   signUpWithPassword: authMocks.signUpWithPassword,
@@ -246,6 +247,34 @@ describe('AccountModal sign up confirmation', () => {
       getButton(container, 'Create account').click();
     });
 
-    expect(authMocks.signUpWithPassword).toHaveBeenCalledWith('listener@example.com', 'matching-password');
+    expect(authMocks.signUpWithPassword).toHaveBeenCalledWith('listener@example.com', 'matching-password', 'en');
+  });
+});
+
+describe('AccountModal reset email', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  it('passes the active language to the reset email service', async () => {
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+    await act(async () => {
+      getButton(container, 'Forgot password?').click();
+    });
+    const [emailInput] = [...container.querySelectorAll<HTMLInputElement>('input')];
+    setInput(emailInput, 'listener@example.com');
+
+    await act(async () => {
+      getButton(container, 'Send reset email').click();
+    });
+
+    expect(authMocks.resetPasswordForEmail).toHaveBeenCalledWith('listener@example.com', 'en');
   });
 });

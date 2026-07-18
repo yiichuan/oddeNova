@@ -11,6 +11,7 @@ export interface AuthState {
 }
 
 type AuthListener = (event: AuthChangeEvent, session: SupabaseSession | null) => void;
+type AuthEmailLanguage = 'zh' | 'en';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -50,10 +51,22 @@ export async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-export async function signUpWithPassword(email: string, password: string): Promise<void> {
-  const client = requireSupabase();
-  const { error } = await client.auth.signUp({ email, password });
-  if (error) throw error;
+async function requestAuthEmail(body: {
+  type: 'confirmation' | 'recovery';
+  email: string;
+  password?: string;
+  language: AuthEmailLanguage;
+}): Promise<void> {
+  const response = await fetch('/api/auth-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error('Unable to send authentication email');
+}
+
+export function signUpWithPassword(email: string, password: string, language: AuthEmailLanguage): Promise<void> {
+  return requestAuthEmail({ type: 'confirmation', email, password, language });
 }
 
 export async function signInWithPassword(email: string, password: string): Promise<AuthUser> {
@@ -71,11 +84,8 @@ export async function signOut(): Promise<void> {
   if (error) throw error;
 }
 
-export async function resetPasswordForEmail(email: string): Promise<void> {
-  const client = requireSupabase();
-  const redirectTo = `${window.location.origin}${window.location.pathname}`;
-  const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
-  if (error) throw error;
+export function resetPasswordForEmail(email: string, language: AuthEmailLanguage): Promise<void> {
+  return requestAuthEmail({ type: 'recovery', email, language });
 }
 
 export async function updatePassword(password: string): Promise<void> {

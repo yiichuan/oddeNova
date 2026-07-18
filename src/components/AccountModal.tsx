@@ -8,7 +8,7 @@ import {
   type AuthUser,
 } from '../services/auth-service';
 import { getAuthErrorMessageKey } from '../lib/auth-error';
-import { t } from '../lib/i18n';
+import { t, zh } from '../lib/i18n';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
 
@@ -66,7 +66,7 @@ export default function AccountModal({
         return;
       }
       void run(async () => {
-        await signUpWithPassword(trimmedEmail, password);
+        await signUpWithPassword(trimmedEmail, password, zh ? 'zh' : 'en');
         setPassword('');
         setPasswordConfirmation('');
         setMessage(t('confirmEmailSent'));
@@ -76,7 +76,7 @@ export default function AccountModal({
     }
 
     void run(async () => {
-      await resetPasswordForEmail(trimmedEmail);
+      await resetPasswordForEmail(trimmedEmail, zh ? 'zh' : 'en');
       setMessage(t('passwordResetSent'));
       setMode('sign-in');
     });
