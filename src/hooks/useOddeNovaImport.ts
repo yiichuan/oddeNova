@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import {
+  ODDENOVA_IMPORT_HASH_PREFIX,
   parseOddeNovaImportHash,
   type OddeNovaImportParseResult,
   type OddeNovaImportPayload,
@@ -26,18 +27,22 @@ export function useOddeNovaImport(
     // Opening an import link while this origin is already open is a same-document
     // navigation: only the fragment changes, so consume it on hashchange too.
     const consume = () => {
-      const parsed = parseOddeNovaImportHash(window.location.hash);
-      if (parsed.kind === 'none') return;
-      pending.current = parsed;
-      imported.current = false;
-      setRequest((previous) => previous + 1);
+      const hash = window.location.hash;
+      if (!hash.startsWith(ODDENOVA_IMPORT_HASH_PREFIX)) return;
 
+      // Strip the fragment synchronously so a reload never re-imports, then
+      // decode asynchronously (decompression is a streaming API).
       history.replaceState(null, '', window.location.pathname + window.location.search);
-      if (parsed.kind === 'error') {
-        setResult({ status: 'error', reason: parsed.reason });
-      } else {
-        setResult({ status: 'loading' });
-      }
+      setResult({ status: 'loading' });
+      void parseOddeNovaImportHash(hash).then((parsed) => {
+        if (parsed.kind === 'none') return;
+        pending.current = parsed;
+        imported.current = false;
+        setRequest((previous) => previous + 1);
+        if (parsed.kind === 'error') {
+          setResult({ status: 'error', reason: parsed.reason });
+        }
+      });
     };
 
     consume();
