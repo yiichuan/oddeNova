@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { renderAuthEmail } from '../../../api/auth-email-templates';
 
 const repoRoot = resolve(__dirname, '../../..');
 const configPath = resolve(repoRoot, 'supabase/config.toml');
@@ -45,5 +46,18 @@ describe('Supabase auth email templates', () => {
     expect(html).toContain('href="{{ .ConfirmationURL }}"');
     expect(html).toContain('{{ .ConfirmationURL }}');
     expect(html).toContain('{{ .Email }}');
+  });
+
+  test.each(['zh', 'en'] as const)('renders a %s recovery email with an action CTA and fallback URL', (language) => {
+    const { html } = renderAuthEmail({
+      type: 'recovery',
+      language,
+      email: 'user@example.com',
+      actionLink: 'https://auth.example/action',
+    });
+
+    expect(html).toContain('href="https://auth.example/action"');
+    expect(html).toContain('https://auth.example/action');
+    expect(html).toContain('user@example.com');
   });
 });
