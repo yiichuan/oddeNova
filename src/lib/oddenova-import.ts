@@ -27,12 +27,28 @@ function isMessage(value: unknown): value is OddeNovaImportMessage {
   return (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string';
 }
 
-export function parseOddeNovaImportHash(hash: string): OddeNovaImportParseResult {
-  if (!hash.startsWith('#oddenova=')) return { kind: 'none' };
+export const ODDENOVA_IMPORT_HASH_PREFIX = '#oddenova=';
+
+function decodeBase64Url(encoded: string): Uint8Array {
+  const normalized = encoded.replaceAll('-', '+').replaceAll('_', '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+}
+
+async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+export async function parseOddeNovaImportHash(hash: string): Promise<OddeNovaImportParseResult> {
+  if (!hash.startsWith(ODDENOVA_IMPORT_HASH_PREFIX)) return { kind: 'none' };
   try {
-    const encoded = hash.slice('#oddenova='.length).replaceAll('-', '+').replaceAll('_', '/');
-    const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=');
-    const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+    const encoded = hash.slice(ODDENOVA_IMPORT_HASH_PREFIX.length);
+    // `z:` marks a deflate-raw compressed payload; the bare base64url form is
+    // the legacy uncompressed encoding from older helper versions.
+    const bytes = encoded.startsWith('z:')
+      ? await inflateRaw(decodeBase64Url(encoded.slice(2)))
+      : decodeBase64Url(encoded);
     const value = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
     if (typeof value.protocolVersion !== 'number') {
       return { kind: 'error', reason: 'invalid' };
