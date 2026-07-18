@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import AccountModal from '../AccountModal';
 
 const authMocks = vi.hoisted(() => ({
-  signInWithGoogle: vi.fn(async () => undefined),
+  signInWithGoogle: vi.fn(async (): Promise<void> => undefined),
   signInWithPassword: vi.fn(async (_email: string, _password: string) => ({
     id: 'user-1',
     email: 'listener@example.com',
@@ -216,6 +216,30 @@ describe('AccountModal Google sign in', () => {
 
     expect(authMocks.signInWithGoogle).toHaveBeenCalledOnce();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('disables every account control while Google OAuth is launching', async () => {
+    let finishOAuth: (() => void) | undefined;
+    authMocks.signInWithGoogle.mockReturnValueOnce(new Promise<void>((resolve) => {
+      finishOAuth = resolve;
+    }));
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+
+    await act(async () => {
+      findButton(container, 'Continue with Google').click();
+    });
+
+    for (const button of container.querySelectorAll('button')) {
+      expect(button.disabled).toBe(true);
+    }
+    for (const input of container.querySelectorAll('input')) {
+      expect(input.disabled).toBe(true);
+    }
+
+    await act(async () => {
+      finishOAuth?.();
+    });
   });
 
   it('keeps one Google entry point in sign-up and reset modes', () => {

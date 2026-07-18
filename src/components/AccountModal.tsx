@@ -118,7 +118,13 @@ export default function AccountModal({
             <h2 className="text-lg font-semibold text-text-primary">{t('account')}</h2>
             <p className="text-xs text-text-muted mt-1">{t('accountDesc')}</p>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-sm">{t('close')}</button>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="text-text-muted hover:text-text-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {t('close')}
+          </button>
         </div>
 
         {!configured ? (
@@ -130,6 +136,7 @@ export default function AccountModal({
               <input
                 type="password"
                 value={password}
+                disabled={busy}
                 onChange={(e) => setPassword(e.currentTarget.value)}
                 className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
                 autoFocus
@@ -140,6 +147,7 @@ export default function AccountModal({
               <input
                 type="password"
                 value={passwordConfirmation}
+                disabled={busy}
                 onChange={(e) => setPasswordConfirmation(e.currentTarget.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handlePasswordUpdate()}
                 className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
@@ -198,6 +206,7 @@ export default function AccountModal({
               <input
                 type="email"
                 value={email}
+                disabled={busy}
                 onChange={(e) => setEmail(e.currentTarget.value)}
                 className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
                 autoFocus
@@ -209,6 +218,7 @@ export default function AccountModal({
                 <input
                   type="password"
                   value={password}
+                  disabled={busy}
                   onChange={(e) => setPassword(e.currentTarget.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submit()}
                   className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
@@ -229,14 +239,16 @@ export default function AccountModal({
 
             <div className="flex items-center justify-between text-xs">
               <button
+                disabled={busy}
                 onClick={() => { setMode(mode === 'sign-up' ? 'sign-in' : 'sign-up'); setError(''); setMessage(''); }}
-                className="text-text-muted hover:text-text-primary"
+                className="text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {mode === 'sign-up' ? t('haveAccount') : t('needAccount')}
               </button>
               <button
+                disabled={busy}
                 onClick={() => { setMode(mode === 'reset' ? 'sign-in' : 'reset'); setError(''); setMessage(''); }}
-                className="text-text-muted hover:text-text-primary"
+                className="text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {mode === 'reset' ? t('backToSignIn') : t('forgotPassword')}
               </button>

@@ -15,6 +15,15 @@ export function clearGoogleOAuthPending(): void {
   window.sessionStorage.removeItem(PENDING_KEY);
 }
 
+function getHashSegmentKey(segment: string): string {
+  const rawKey = segment.split('=', 1)[0].replace(/\+/g, ' ');
+  try {
+    return decodeURIComponent(rawKey);
+  } catch {
+    return rawKey;
+  }
+}
+
 function hasFreshPendingMarker(): boolean {
   const raw = window.sessionStorage.getItem(PENDING_KEY);
   const startedAt = raw ? Number(raw) : Number.NaN;
@@ -31,20 +40,20 @@ export function consumeGoogleOAuthReturn(): GoogleOAuthErrorKey | null {
   if (!hasFreshPendingMarker()) return null;
 
   const url = new URL(window.location.href);
-  const hashParams = new URLSearchParams(
-    url.hash.startsWith('#') ? url.hash.slice(1) : url.hash,
-  );
-  const error = url.searchParams.get('error') ?? hashParams.get('error');
-  const errorCode = url.searchParams.get('error_code') ?? hashParams.get('error_code');
+  const rawHash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+  const hashParams = new URLSearchParams(rawHash);
+  const error = hashParams.get('error');
+  const errorCode = hashParams.get('error_code');
   if (!error && !errorCode) return null;
 
   clearGoogleOAuthPending();
-  for (const key of OAUTH_ERROR_KEYS) {
-    url.searchParams.delete(key);
-    hashParams.delete(key);
-  }
-
-  const remainingHash = hashParams.toString();
+  const remainingHash = rawHash
+    .split('&')
+    .filter((segment) => {
+      const key = getHashSegmentKey(segment);
+      return !OAUTH_ERROR_KEYS.some((oauthKey) => oauthKey === key);
+    })
+    .join('&');
   url.hash = remainingHash ? `#${remainingHash}` : '';
   window.history.replaceState(
     window.history.state,

@@ -26,16 +26,33 @@ describe('Google OAuth return state', () => {
     expect(location.pathname + location.search + location.hash).toBe('/compose?demo=true');
   });
 
-  it('preserves an unrelated oddeNova import fragment while removing an OAuth error', () => {
+  it('preserves pre-existing query errors and opaque fragments while removing an OAuth error', () => {
     markGoogleOAuthPending();
     history.replaceState(
       null,
       '',
-      '/#oddenova=payload&error=server_error&error_description=secret',
+      '/compose?error=app-state&error_code=app-code#section%2Fone&error=server_error&error_description=secret',
     );
 
     expect(consumeGoogleOAuthReturn()).toBe('authErrorGoogleFailed');
-    expect(location.hash).toBe('#oddenova=payload');
+    expect(location.pathname + location.search).toBe(
+      '/compose?error=app-state&error_code=app-code',
+    );
+    expect(location.hash).toBe('#section%2Fone');
+  });
+
+  it('does not classify a pre-existing query error as an OAuth failure', () => {
+    markGoogleOAuthPending();
+    history.replaceState(
+      null,
+      '',
+      '/compose?error=app-state&error_code=app-code',
+    );
+
+    expect(consumeGoogleOAuthReturn()).toBeNull();
+    expect(location.pathname + location.search).toBe(
+      '/compose?error=app-state&error_code=app-code',
+    );
   });
 
   it('ignores OAuth-looking parameters without a pending marker', () => {
