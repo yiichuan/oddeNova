@@ -5,7 +5,7 @@ import {
   parseGeneratedItems,
   tomorrowInBeijing,
   type DailySuggestionBatch,
-} from './daily-suggestions-core';
+} from './daily-suggestions-core.js';
 
 const UPSTREAM = 'https://api.deepseek.com/v1/chat/completions';
 const MODEL = 'deepseek-v4-pro';
