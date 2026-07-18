@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { del, list } from '@vercel/blob';
-import handler from './cleanup';
+import handler from '../../api/cleanup.js';
 
 vi.mock('@vercel/blob', () => ({ del: vi.fn(), list: vi.fn() }));
 

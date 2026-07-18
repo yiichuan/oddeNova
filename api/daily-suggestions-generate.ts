@@ -5,7 +5,7 @@ import {
   parseGeneratedItems,
   tomorrowInBeijing,
   type DailySuggestionBatch,
-} from './daily-suggestions-core';
+} from './daily-suggestions-core.js';
 
 const UPSTREAM = 'https://api.deepseek.com/v1/chat/completions';
 const MODEL = 'deepseek-v4-pro';
@@ -93,7 +93,8 @@ function lockPath(date: string): string {
 
 type ClaimResult =
   | { status: 'acquired'; pathname: string; etag: string }
-  | { status: 'exists' | 'in-progress' };
+  | { status: 'exists' }
+  | { status: 'in-progress' };
 
 async function claimDate(date: string, finalPath: string): Promise<ClaimResult> {
   const pathname = lockPath(date);
