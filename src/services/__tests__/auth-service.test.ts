@@ -5,27 +5,33 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const supabaseMocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   signInWithOAuth: vi.fn(),
+  signUp: vi.fn(),
+  resetPasswordForEmail: vi.fn(),
 }));
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: supabaseMocks.createClient.mockImplementation(() => ({
     auth: {
       signInWithOAuth: supabaseMocks.signInWithOAuth,
+      signUp: supabaseMocks.signUp,
+      resetPasswordForEmail: supabaseMocks.resetPasswordForEmail,
     },
   })),
 }));
 
-describe('Google authentication service', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://preview.supabase.co');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'preview-anon-key');
-    supabaseMocks.createClient.mockClear();
-    supabaseMocks.signInWithOAuth.mockReset();
-    sessionStorage.clear();
-    history.replaceState(null, '', '/compose?demo=true#import-payload');
-  });
+beforeEach(() => {
+  vi.resetModules();
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://preview.supabase.co');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'preview-anon-key');
+  supabaseMocks.createClient.mockClear();
+  supabaseMocks.signInWithOAuth.mockReset();
+  supabaseMocks.signUp.mockReset();
+  supabaseMocks.resetPasswordForEmail.mockReset();
+  sessionStorage.clear();
+  history.replaceState(null, '', '/compose?demo=true#import-payload');
+});
 
+describe('Google authentication service', () => {
   it('starts Google OAuth for the current page without including its fragment', async () => {
     supabaseMocks.signInWithOAuth.mockResolvedValue({ data: {}, error: null });
     const { signInWithGoogle } = await import('../auth-service');
@@ -50,5 +56,31 @@ describe('Google authentication service', () => {
     await expect(signInWithGoogle()).rejects.toBe(error);
 
     expect(sessionStorage.getItem('oddenova_google_oauth_pending_at')).toBeNull();
+  });
+});
+
+describe('auth email requests', () => {
+  it('stores the selected language in sign-up metadata', async () => {
+    supabaseMocks.signUp.mockResolvedValue({ error: null });
+    const { signUpWithPassword } = await import('../auth-service');
+
+    await signUpWithPassword('user@example.com', 'password1', 'zh');
+
+    expect(supabaseMocks.signUp).toHaveBeenCalledWith({
+      email: 'user@example.com',
+      password: 'password1',
+      options: { data: { language: 'zh' } },
+    });
+  });
+
+  it('uses Supabase native password recovery delivery', async () => {
+    supabaseMocks.resetPasswordForEmail.mockResolvedValue({ error: null });
+    const { resetPasswordForEmail } = await import('../auth-service');
+
+    await resetPasswordForEmail('user@example.com', 'en');
+
+    expect(supabaseMocks.resetPasswordForEmail).toHaveBeenCalledWith('user@example.com', {
+      redirectTo: `${window.location.origin}${window.location.pathname}`,
+    });
   });
 });

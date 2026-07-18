@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { renderAuthEmail } from '../../../api/auth-email-templates';
 
 const repoRoot = resolve(__dirname, '../../..');
 const configPath = resolve(repoRoot, 'supabase/config.toml');
@@ -15,10 +14,10 @@ describe('Supabase auth email templates', () => {
     const config = readFileSync(configPath, 'utf8');
 
     expect(config).toContain('[auth.email.template.confirmation]');
-    expect(config).toContain('subject = "Confirm your oddeNova email"');
+    expect(config).toContain('subject = "{{ if eq .Data.language \\"zh\\" }}确认你的 oddeNova 邮箱{{ else }}Confirm your oddeNova email{{ end }}"');
     expect(config).toContain('content_path = "./supabase/templates/confirmation.html"');
     expect(config).toContain('[auth.email.template.recovery]');
-    expect(config).toContain('subject = "Reset your oddeNova password"');
+    expect(config).toContain('subject = "{{ if eq .Data.language \\"zh\\" }}重置你的 oddeNova 密码{{ else }}Reset your oddeNova password{{ end }}"');
     expect(config).toContain('content_path = "./supabase/templates/recovery.html"');
   });
 
@@ -48,16 +47,14 @@ describe('Supabase auth email templates', () => {
     expect(html).toContain('{{ .Email }}');
   });
 
-  test.each(['zh', 'en'] as const)('renders a %s recovery email with an action CTA and fallback URL', (language) => {
-    const { html } = renderAuthEmail({
-      type: 'recovery',
-      language,
-      email: 'user@example.com',
-      actionLink: 'https://auth.example/action',
-    });
+  test.each([
+    ['./supabase/templates/confirmation.html', '确认邮箱', 'Confirm email address'],
+    ['./supabase/templates/recovery.html', '重置密码', 'Reset password'],
+  ])('uses metadata language to choose the localized copy in %s', (templatePath, chineseCta, englishCta) => {
+    const html = readTemplate(templatePath);
 
-    expect(html).toContain('href="https://auth.example/action"');
-    expect(html).toContain('https://auth.example/action');
-    expect(html).toContain('user@example.com');
+    expect(html).toContain('{{ if eq .Data.language "zh" }}');
+    expect(html).toContain(chineseCta);
+    expect(html).toContain(englishCta);
   });
 });

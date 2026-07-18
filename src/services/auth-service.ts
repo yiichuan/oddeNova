@@ -56,22 +56,14 @@ export async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-async function requestAuthEmail(body: {
-  type: 'confirmation' | 'recovery';
-  email: string;
-  password?: string;
-  language: AuthEmailLanguage;
-}): Promise<void> {
-  const response = await fetch('/api/auth-email', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+export async function signUpWithPassword(email: string, password: string, language: AuthEmailLanguage): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.auth.signUp({
+    email,
+    password,
+    options: { data: { language } },
   });
-  if (!response.ok) throw new Error('Unable to send authentication email');
-}
-
-export function signUpWithPassword(email: string, password: string, language: AuthEmailLanguage): Promise<void> {
-  return requestAuthEmail({ type: 'confirmation', email, password, language });
+  if (error) throw error;
 }
 
 export async function signInWithPassword(email: string, password: string): Promise<AuthUser> {
@@ -107,8 +99,11 @@ export async function signOut(): Promise<void> {
   if (error) throw error;
 }
 
-export function resetPasswordForEmail(email: string, language: AuthEmailLanguage): Promise<void> {
-  return requestAuthEmail({ type: 'recovery', email, language });
+export async function resetPasswordForEmail(email: string, _language: AuthEmailLanguage): Promise<void> {
+  const client = requireSupabase();
+  const redirectTo = `${window.location.origin}${window.location.pathname}`;
+  const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) throw error;
 }
 
 export async function updatePassword(password: string): Promise<void> {

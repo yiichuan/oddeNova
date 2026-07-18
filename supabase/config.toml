@@ -252,11 +252,11 @@ otp_expiry = 3600
 # content_path = "./supabase/templates/invite.html"
 
 [auth.email.template.confirmation]
-subject = "Confirm your oddeNova email"
+subject = "{{ if eq .Data.language \"zh\" }}确认你的 oddeNova 邮箱{{ else }}Confirm your oddeNova email{{ end }}"
 content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.recovery]
-subject = "Reset your oddeNova password"
+subject = "{{ if eq .Data.language \"zh\" }}重置你的 oddeNova 密码{{ else }}Reset your oddeNova password{{ end }}"
 content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize notification email template
