@@ -60,11 +60,14 @@ function normalized(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 }
 
-function validText(value: unknown, language: 'zh' | 'en'): value is string {
+// Length is guided by the generation prompt, not gated here — an occasional
+// over-length item degrades chip display but is not worth discarding a whole
+// valid batch. Only structural garbage (empty, code fences, list numbering) is
+// rejected.
+function validText(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const text = value.trim();
-  const [min, max] = language === 'zh' ? [8, 80] : [16, 180];
-  return text.length >= min && text.length <= max && !text.includes('```') && !LIST_PREFIX_RE.test(text);
+  return text.length > 0 && !text.includes('```') && !LIST_PREFIX_RE.test(text);
 }
 
 function validIsoUtcTimestamp(value: string): boolean {
@@ -81,7 +84,7 @@ export function parseGeneratedItems(value: unknown): DailySuggestionItem[] | nul
   for (const item of candidate) {
     if (!item || typeof item !== 'object') return null;
     const { zh, en } = item as { zh?: unknown; en?: unknown };
-    if (!validText(zh, 'zh') || !validText(en, 'en')) return null;
+    if (!validText(zh) || !validText(en)) return null;
     items.push({ zh: zh.trim(), en: en.trim() });
   }
   if (new Set(items.map((item) => normalized(item.zh))).size !== 10) return null;

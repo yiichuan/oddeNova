@@ -29,7 +29,7 @@ Return 10 objects. Mix accessible ideas with a few specific electronic-music or 
 # Constraints
 - Output strict JSON only in this shape: {"items":[{"zh":"...","en":"..."}]}.
 - Include exactly 10 items.
-- Chinese values must be 8-80 characters; English values must be 16-180 characters.
+- Chinese values must be 8-24 characters; English values must be 16-70 characters, so each fits on one compact suggestion chip without overflowing.
 - Do not use Markdown, list prefixes, numbering, or commentary.
 - Do not repeat or lightly paraphrase an item within either language.
 

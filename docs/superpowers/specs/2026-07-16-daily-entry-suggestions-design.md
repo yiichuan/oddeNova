@@ -76,10 +76,15 @@ The server accepts a batch only when:
 
 - it contains exactly 10 objects;
 - every object has non-empty `zh` and `en` strings;
-- values fit configured length limits;
 - neither language contains duplicate normalized values;
 - values do not contain list numbering, Markdown fences, or surrounding commentary;
 - the payload date matches the date being generated.
+
+Length is guided by the generation prompt (Chinese 8-24, English 16-70
+characters, sized to fit one suggestion chip) but is **not** validated. An
+occasional over-length item degrades chip display without discarding an
+otherwise valid daily batch; enforcing length in code would throw away the
+whole batch and fall back to a stale day instead.
 
 Validation is implemented as pure functions so malformed model output cannot be published. If both generation attempts fail, the endpoint reports failure and leaves all existing batches untouched.
 
