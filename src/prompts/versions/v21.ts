@@ -14,6 +14,9 @@
  * 旧措辞"chords 较慢时才坍缩"是误导（真实机制与快慢无关，只看 `.n()` 模式是否比 chords 换弦更密）；且《呼吸》节
  * 自己的"正例"仍用 `chords.n(...)`，自我矛盾。本次：删去"较慢"限定语并补充该案例；把 `chords.n(密集节奏)` 由软措辞
  * 升级为**禁止**（比照 `.add(s())`）；文档内所有残留的 `chords.n(...)` 示例统一改写为 `n(...).set(chords)`。中英双语同步。
+ * v21 四追加（原地，自 main 移植）：把《演奏微观维度》里会触发 validate 问题的
+ * `late("[0 .01]*4")` 改为讲解能力本身：用 `late()` 给事件一个不恒为 0 的小偏移；偏移可以固定，
+ * 也可以随时间变化。以 `late(0.02)` 与 `late(sine.range(0,.02).slow(4))` 为并列示例，明确它们不是唯一写法。中英双语同步。
  *
  * 以下为 v20 原始说明（音乐质量基底，保留）：
  * v19 残留问题：长拖音仍高频出现，但来源换了一处——不再是旋律线 `/N` 减速，而是**承载和声的层
@@ -283,7 +286,7 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
     '',
     '### 让每个声部"被演奏"，而非被打印（避免事件级机械感）',
     '上一节解决"下一个音是哪个"，这一节解决"这个音怎么被演奏"——两者正交。一条永不重复的线，只要它的每个事件音色、力度、发音长短、落点都完全一致、严丝合缝踩在网格上，听感依然像打字机。默认就让承载音乐兴趣的声部在演奏维度上带微观差异，而不是等用户说"更自然/更有人味"才做。',
-    '- **四个可动的微观维度**：力度（`gain(perlin.range(.5,.9))` 而非常量）、发音长短（`clip(rand.range(.4,.85))`、断连交错）、音色随时间流动（缓动 `lpf(sine.range(...).slow(8))`、`fm(sine.range(...))`）、微律动（`late("[0 .01]*4")` 让事件不严丝落格）。前景声部默认至少有一项不是常量。',
+    '- **四个可动的微观维度**：力度（`gain(perlin.range(.5,.9))` 而非常量）、发音长短（`clip(rand.range(.4,.85))`、断连交错）、音色随时间流动（缓动 `lpf(sine.range(...).slow(8))`、`fm(sine.range(...))`）、微律动（用 `late()` 给事件一个不恒为 0 的小偏移，让它不严丝落格；偏移可以固定、也可以让偏移量本身随时间起伏，如 `late(0.02)` 或 `late(sine.range(0,.02).slow(4))`——这只是两种写法示例，不是唯一形式）。前景声部默认至少有一项不是常量。',
     '- **按角色选手段，不必每样都上**：鼓靠 velocity 重音 / ghost note 与 swing（`gain("<.4 .8 .5 1>")`、`late`），贝斯靠 accent 与发音断连，pad / 和声靠缓动滤波与慢增益，lead 靠发音随机与力度起伏。哪几样、用在哪几层，由你判断。',
     '- **两条护栏**：①保留稳定内核——不是每个参数都加随机，否则成浆糊；锚定层（kick / sub）通常保持机械稳定当节拍参照。②风格例外——techno、acid、某些 EDM 的机械量化感本身就是审美，此时严丝合缝的对齐正是想要的，不要无脑"揉软"。',
     '',
@@ -551,7 +554,7 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
     '',
     '### Let each voice be "performed", not printed (avoid event-level mechanicalness)',
     'The previous section answers "which note comes next"; this one answers "how each note is played" — they are orthogonal. A line that never repeats still sounds like a typewriter if every event has identical timbre, force, articulation length, and lands dead-on the grid. By default give the voices that carry the music\'s interest micro-variation in the performance dimension, rather than waiting for the user to ask for something "more natural / more human".',
-    '- **Four movable micro-dimensions**: force (`gain(perlin.range(.5,.9))` instead of a constant), articulation length (`clip(rand.range(.4,.85))`, legato/staccato interleaved), timbre flowing over time (a slow `lpf(sine.range(...).slow(8))`, `fm(sine.range(...))`), micro-timing (`late("[0 .01]*4")` so events don\'t sit exactly on the grid). A foreground voice should have at least one of these not be a constant by default.',
+    '- **Four movable micro-dimensions**: force (`gain(perlin.range(.5,.9))` instead of a constant), articulation length (`clip(rand.range(.4,.85))`, legato/staccato interleaved), timbre flowing over time (a slow `lpf(sine.range(...).slow(8))`, `fm(sine.range(...))`), micro-timing (give events a small non-zero offset via `late()` so they don\'t sit exactly on the grid; the offset can be fixed or itself vary over time, e.g. `late(0.02)` or `late(sine.range(0,.02).slow(4))` — these are just two example forms, not the only ones). A foreground voice should have at least one of these not be a constant by default.',
     '- **Pick means by role, not all of them**: drums via velocity accents / ghost notes and swing (`gain("<.4 .8 .5 1>")`, `late`), bass via accent and articulation, pad / harmony via a slow filter and slow gain, lead via random articulation and dynamic force. Which ones, on which layers — you decide.',
     '- **Two guardrails**: ① keep a stable core — do not randomize every parameter or it turns to mud; anchor layers (kick / sub) usually stay mechanically steady as the beat reference. ② Style exception — the mechanical, quantized feel of techno, acid, and some EDM is the aesthetic itself; there, dead-on alignment is exactly what you want, so do not blindly "soften" it.',
     '',

@@ -1,18 +1,23 @@
 #!/usr/bin/env node
 
 import { spawn as spawnProcess } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { realpathSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deflateRawSync } from 'node:zlib';
 
 export const ODDENOVA_IMPORT_PROTOCOL_VERSION = 1;
 export const ODDENOVA_IMPORT_SOURCE = 'oddenova-strudel-skill';
 export const DEFAULT_BASE_URL = 'https://www.oddenova.com';
 export const MAX_IMPORT_URL_BYTES = 32 * 1024;
 
+// `z:` marks a deflate-raw compressed payload; the app also accepts the legacy
+// uncompressed base64url form for links minted by older helper versions.
 export function buildImportUrl(payload, baseUrl = DEFAULT_BASE_URL) {
   const root = baseUrl.replace(/[?#].*$/, '').replace(/\/+$/, '');
-  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  return `${root}/#oddenova=${encoded}`;
+  const compressed = deflateRawSync(Buffer.from(JSON.stringify(payload), 'utf8'), { level: 9 });
+  return `${root}/#oddenova=z:${compressed.toString('base64url')}`;
 }
 
 export function fitPayloadToUrl(payload, baseUrl = DEFAULT_BASE_URL) {
@@ -57,6 +62,29 @@ export function launchImportUrl(
   }
 }
 
+function escapeHtml(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+// The full import URL is several KiB of encoded text, so the CLI keeps it out
+// of the terminal by default and stores it in a clickable redirect file the
+// user can open when the automatic browser launch fails.
+export function writeFallbackLinkFile(url, projectId, { directory = tmpdir(), writeFile = writeFileSync } = {}) {
+  const safeId = projectId.replace(/[^A-Za-z0-9._-]/g, '-');
+  const path = join(directory, `oddenova-import-${safeId}.html`);
+  const escaped = escapeHtml(url);
+  writeFile(
+    path,
+    `<!doctype html>\n<meta charset="utf-8">\n<meta http-equiv="refresh" content="0;url=${escaped}">\n<title>oddeNova import</title>\n<p><a href="${escaped}">Open in oddeNova</a></p>\n`,
+    'utf8',
+  );
+  return path;
+}
+
 function parseArguments(argv) {
   let baseUrl = DEFAULT_BASE_URL;
   let printOnly = false;
@@ -97,16 +125,22 @@ export async function runCli(
   try {
     const { baseUrl, printOnly } = parseArguments(argv);
     const payload = JSON.parse(await readInput(stdin));
-    const { url } = fitPayloadToUrl(payload, baseUrl);
-    stdout.write(`${url}\n`);
+    const { payload: fitted, url } = fitPayloadToUrl(payload, baseUrl);
 
-    if (!printOnly) {
-      launchImportUrl(url, {
-        platform,
-        spawn,
-        warn: (message) => stderr.write(`${message}\n`),
-      });
+    if (printOnly) {
+      stdout.write(`${url}\n`);
+      return 0;
     }
+
+    const fallbackPath = writeFallbackLinkFile(url, fitted.projectId);
+    const sizeKiB = (Buffer.byteLength(url, 'utf8') / 1024).toFixed(1);
+    stdout.write(`Opening oddeNova import in the browser (project ${fitted.projectId}, URL ${sizeKiB} KiB).\n`);
+    stdout.write(`If the browser did not open, open this file: ${fallbackPath}\n`);
+    launchImportUrl(url, {
+      platform,
+      spawn,
+      warn: (message) => stderr.write(`${message}\n`),
+    });
     return 0;
   } catch (error) {
     stderr.write(`${error.message}\n`);
