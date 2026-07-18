@@ -93,7 +93,7 @@ const S: Record<string, readonly [string, string]> = {
   authErrorInvalidCredentials:['邮箱或密码不正确，请检查后重试。', 'Incorrect email or password. Please check and try again.'],
   authErrorEmailNotConfirmed:['请先完成邮箱验证，再登录。', 'Please verify your email before signing in.'],
   authErrorUserAlreadyExists:['该邮箱已注册，请直接登录或重置密码。', 'An account with this email already exists. Sign in or reset your password.'],
-  authErrorWeakPassword:['密码强度不足，请使用更长且更复杂的密码。', 'Your password is too weak. Use a longer, more complex password.'],
+  authErrorWeakPassword:['密码至少需要 8 个字符。', 'Your password must be at least 8 characters.'],
   authErrorInvalidEmail:['邮箱格式不正确，请检查后重试。', 'Enter a valid email address and try again.'],
   authErrorRateLimited:['操作过于频繁，请稍后再试。', 'Too many attempts. Please wait a moment and try again.'],
   authErrorSignupDisabled:['当前暂不支持注册新账号。', 'New account registration is currently unavailable.'],

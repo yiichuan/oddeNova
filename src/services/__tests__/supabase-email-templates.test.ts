@@ -21,6 +21,19 @@ describe('Supabase auth email templates', () => {
     expect(config).toContain('content_path = "./supabase/templates/recovery.html"');
   });
 
+  test('requires passwords of at least eight characters without composition rules', () => {
+    const config = readFileSync(configPath, 'utf8');
+
+    expect(config).toContain('minimum_password_length = 8');
+    expect(config).toContain('password_requirements = ""');
+  });
+
+  test('documents the configured weak-password rule in both UI languages', () => {
+    const translations = readTemplate('./src/lib/i18n.ts');
+
+    expect(translations).toContain("authErrorWeakPassword:['密码至少需要 8 个字符。', 'Your password must be at least 8 characters.']");
+  });
+
   test.each([
     ['confirmation', './supabase/templates/confirmation.html', 'Confirm email address'],
     ['recovery', './supabase/templates/recovery.html', 'Reset password'],
