@@ -189,8 +189,10 @@ export default function App() {
 
   useEffect(() => {
     const userId = auth.user?.id;
-    if (!userId || auth.loading || importPromptUserRef.current === userId) return;
+    if (!userId || auth.loading || auth.recoveringPassword || importPromptUserRef.current === userId) return;
+    let cancelled = false;
     getAllSessions('guest').then((guestSessions) => {
+      if (cancelled) return;
       const importable = collectImportableGuestSessions(guestSessions, latestGuestSessionsRef.current);
       if (importable.length > 0) {
         setGuestImportError('');
@@ -200,7 +202,8 @@ export default function App() {
     }).catch((err) => {
       console.warn('[account] failed to inspect guest sessions for import.', err);
     });
-  }, [auth.user, auth.loading]);
+    return () => { cancelled = true; };
+  }, [auth.user, auth.loading, auth.recoveringPassword]);
 
   const importGuestHistory = useCallback(async () => {
     const items = guestImportSessions ?? [];

@@ -10,6 +10,7 @@ const authMocks = vi.hoisted(() => ({
     id: 'user-1',
     email: 'listener@example.com',
   })),
+  signUpWithPassword: vi.fn(async (_email: string, _password: string) => undefined),
   updatePassword: vi.fn(async (_password: string) => undefined),
 }));
 
@@ -17,7 +18,7 @@ vi.mock('../../services/auth-service', () => ({
   resetPasswordForEmail: vi.fn(),
   signInWithPassword: authMocks.signInWithPassword,
   signOut: vi.fn(),
-  signUpWithPassword: vi.fn(),
+  signUpWithPassword: authMocks.signUpWithPassword,
   updatePassword: authMocks.updatePassword,
 }));
 
@@ -78,6 +79,15 @@ function getSubmitButton(container: HTMLElement): HTMLButtonElement {
     .find((candidate) => candidate.textContent === 'Update password');
   if (!(button instanceof HTMLButtonElement)) {
     throw new Error('update password button not found');
+  }
+  return button;
+}
+
+function getButton(container: HTMLElement, text: string): HTMLButtonElement {
+  const button = [...container.querySelectorAll('button')]
+    .find((candidate) => candidate.textContent === text);
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`${text} button not found`);
   }
   return button;
 }
@@ -180,5 +190,62 @@ describe('AccountModal sign in errors', () => {
 
     expect(container.textContent).toContain('Action failed. Please try again later.');
     expect(container.textContent).not.toContain('Sensitive backend detail');
+  });
+});
+
+describe('AccountModal sign up confirmation', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  it('rejects mismatched password confirmation without signing up', async () => {
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+    await act(async () => {
+      getButton(container, 'Create account').click();
+    });
+    const inputs = [...container.querySelectorAll<HTMLInputElement>('input')];
+
+    expect(inputs).toHaveLength(3);
+    if (inputs.length !== 3) return;
+    const [emailInput, passwordInput, confirmationInput] = inputs;
+    setInput(emailInput, 'listener@example.com');
+    setInput(passwordInput, 'first-password');
+    setInput(confirmationInput, 'different-password');
+
+    await act(async () => {
+      getButton(container, 'Create account').click();
+    });
+
+    expect(container.textContent).toContain('Passwords do not match');
+    expect(authMocks.signUpWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('submits matching passwords to the registration service', async () => {
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+    await act(async () => {
+      getButton(container, 'Create account').click();
+    });
+    const inputs = [...container.querySelectorAll<HTMLInputElement>('input')];
+
+    expect(inputs).toHaveLength(3);
+    if (inputs.length !== 3) return;
+    const [emailInput, passwordInput, confirmationInput] = inputs;
+    setInput(emailInput, 'listener@example.com');
+    setInput(passwordInput, 'matching-password');
+    setInput(confirmationInput, 'matching-password');
+
+    await act(async () => {
+      getButton(container, 'Create account').click();
+    });
+
+    expect(authMocks.signUpWithPassword).toHaveBeenCalledWith('listener@example.com', 'matching-password');
   });
 });

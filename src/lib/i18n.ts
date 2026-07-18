@@ -18,6 +18,7 @@ const S: Record<string, readonly [string, string]> = {
   account:      ['账号', 'Account'],
   email:        ['邮箱', 'Email'],
   password:     ['密码', 'Password'],
+  confirmPassword: ['确认密码', 'Confirm password'],
 
   // App status
   engineStarting:   ['音频引擎启动中，请稍后再试', 'Audio engine starting, please try again later'],
@@ -88,7 +89,7 @@ const S: Record<string, readonly [string, string]> = {
   confirmNewPassword:   ['确认新密码', 'Confirm new password'],
   updatePassword:       ['更新密码', 'Update password'],
   passwordsDoNotMatch:  ['两次输入的密码不一致', 'Passwords do not match'],
-  confirmEmailSent:     ['确认邮件已发送。请先完成邮箱确认，再回来登录开启云同步。', 'Confirmation email sent. Confirm your email, then sign in to enable cloud sync.'],
+  confirmEmailSent:     ['确认邮件已发送。请先完成邮箱确认。', 'Confirmation email sent. Confirm your email.'],
   passwordResetSent:    ['密码重置邮件已发送。', 'Password reset email sent.'],
   authErrorInvalidCredentials:['邮箱或密码不正确，请检查后重试。', 'Incorrect email or password. Please check and try again.'],
   authErrorEmailNotConfirmed:['请先完成邮箱验证，再登录。', 'Please verify your email before signing in.'],

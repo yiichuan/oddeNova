@@ -60,10 +60,15 @@ export default function AccountModal({
     }
 
     if (mode === 'sign-up') {
-      if (!password) return;
+      if (!password || !passwordConfirmation) return;
+      if (password !== passwordConfirmation) {
+        setError(t('passwordsDoNotMatch'));
+        return;
+      }
       void run(async () => {
         await signUpWithPassword(trimmedEmail, password);
         setPassword('');
+        setPasswordConfirmation('');
         setMessage(t('confirmEmailSent'));
         setMode('sign-in');
       });
@@ -187,13 +192,25 @@ export default function AccountModal({
                 />
               </div>
             )}
+            {mode === 'sign-up' && (
+              <div>
+                <label className="text-xs text-text-secondary mb-1 block">{t('confirmPassword')}</label>
+                <input
+                  type="password"
+                  value={passwordConfirmation}
+                  onChange={(e) => setPasswordConfirmation(e.currentTarget.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && submit()}
+                  className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
+                />
+              </div>
+            )}
 
             {message && <div className="text-xs text-green-300">{message}</div>}
             {error && <div className="text-xs text-red-300">{error}</div>}
 
             <button
               onClick={submit}
-              disabled={busy || !email.trim() || (mode !== 'reset' && !password)}
+              disabled={busy || !email.trim() || (mode !== 'reset' && !password) || (mode === 'sign-up' && !passwordConfirmation)}
               className="w-full py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {busy ? t('loading') : primaryLabel}
