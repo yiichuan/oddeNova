@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatMessage, ProgressKind } from './useChat';
 import {
   openDB,
@@ -71,6 +71,7 @@ export interface UseSessionsOptions {
   ownerKey?: string;
   syncEnabled?: boolean;
   cloud?: CloudSessionRepository;
+  startNewSessionToken?: number;
 }
 
 let messageId = 0;
@@ -213,10 +214,13 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const ownerKey = options.ownerKey ?? 'guest';
   const syncEnabled = options.syncEnabled ?? false;
   const cloud = options.cloud;
+  const startNewSessionToken = options.startNewSessionToken ?? 0;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPersistent, setIsPersistent] = useState(false);
+  const [loadedOwnerKey, setLoadedOwnerKey] = useState(ownerKey);
+  const consumedStartNewSessionTokenRef = useRef(0);
 
   // Initialize: open DB (+ migrate) then load all sessions
   useEffect(() => {
@@ -240,11 +244,29 @@ export function useSessions(options: UseSessionsOptions = {}) {
       }
       if (cancelled) return;
 
+      const shouldStartNewSession = startNewSessionToken > consumedStartNewSessionTokenRef.current;
+      if (shouldStartNewSession) {
+        consumedStartNewSessionTokenRef.current = startNewSessionToken;
+        const fresh = makeEmptySession();
+        await Promise.all([
+          dbPutSession(fresh, ownerKey),
+          dbPutCurrentSessionId(fresh.id, ownerKey),
+        ]);
+        if (cancelled) return;
+        setSessions([fresh, ...loaded]);
+        setCurrentId(fresh.id);
+        setIsPersistent(persistent);
+        setLoadedOwnerKey(ownerKey);
+        setIsLoading(false);
+        return;
+      }
+
       if (loaded.length > 0) {
         const current = loaded.find((s) => s.id === storedCurrentId) || loaded[0];
         setSessions(loaded);
         setCurrentId(current.id);
         setIsPersistent(persistent);
+        setLoadedOwnerKey(ownerKey);
         setIsLoading(false);
         return;
       }
@@ -257,13 +279,16 @@ export function useSessions(options: UseSessionsOptions = {}) {
       setSessions([fresh]);
       setCurrentId(fresh.id);
       setIsPersistent(persistent);
+      setLoadedOwnerKey(ownerKey);
       setIsLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [ownerKey, syncEnabled, cloud]);
+  }, [ownerKey, syncEnabled, cloud, startNewSessionToken]);
 
+  const sessionsForOwner = loadedOwnerKey === ownerKey ? sessions : [];
+  const currentIdForOwner = loadedOwnerKey === ownerKey ? currentId : null;
   const currentSession =
-    sessions.find((s) => s.id === currentId) || sessions[0] || null;
+    sessionsForOwner.find((s) => s.id === currentIdForOwner) || sessionsForOwner[0] || null;
 
   const persistSession = useCallback(
     (session: Session) => {
@@ -706,9 +731,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   return {
-    sessions,
+    sessions: sessionsForOwner,
     currentSession,
-    currentId,
+    currentId: currentIdForOwner,
     isLoading,
     isPersistent,
     addUserMessage,

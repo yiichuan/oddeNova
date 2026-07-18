@@ -8,6 +8,8 @@ import type { Session } from '../hooks/useSessions';
 
 const mocks = vi.hoisted(() => ({
   getAllSessions: vi.fn(),
+  deleteSession: vi.fn(async () => undefined),
+  importSession: vi.fn(async () => undefined),
   auth: {
     user: { id: 'user-1', email: 'listener@example.com' },
     configured: true,
@@ -45,7 +47,7 @@ vi.mock('../hooks/useSessions', () => ({
     sessions: [],
     currentId: null,
     currentSession: null,
-    importSession: vi.fn(),
+    importSession: mocks.importSession,
     importOddeNovaSession: vi.fn(),
     setSuggestions: vi.fn(),
     setCurrentCode: vi.fn(),
@@ -72,7 +74,10 @@ vi.mock('../hooks/useLayout', () => ({
     handleChatFocusChange: vi.fn(), handleCodeFocusChange: vi.fn(),
   }),
 }));
-vi.mock('../lib/session-storage', () => ({ getAllSessions: mocks.getAllSessions }));
+vi.mock('../lib/session-storage', () => ({
+  getAllSessions: mocks.getAllSessions,
+  deleteSession: mocks.deleteSession,
+}));
 vi.mock('../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
 vi.mock('../services/llm-config', () => ({ hasApiKeyConfigured: () => true }));
 vi.mock('../services/llm', () => ({ resetClient: vi.fn() }));
@@ -167,5 +172,41 @@ describe('App password recovery', () => {
     });
 
     expect(container.textContent).not.toContain('Sync local history?');
+  });
+
+  it('removes a guest source after importing it to the signed-in account', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+    });
+
+    const importButton = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Import and sync');
+    expect(importButton).toBeDefined();
+
+    await act(async () => {
+      importButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.importSession).toHaveBeenCalledWith({
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+    });
+    expect(mocks.deleteSession).toHaveBeenCalledWith('guest-session', 'guest');
   });
 });

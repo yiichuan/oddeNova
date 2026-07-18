@@ -36,8 +36,12 @@ import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 import { useAuth } from './hooks/useAuth';
 import { deleteCloudSession, listCloudSessions, saveCloudSession } from './services/cloud-session-repository';
-import { getAllSessions } from './lib/session-storage';
-import { collectImportableGuestSessions, getNextImportPromptUserMarker } from './lib/session-import';
+import { deleteSession, getAllSessions } from './lib/session-storage';
+import {
+  collectImportableGuestSessions,
+  getNextImportPromptUserMarker,
+  importGuestSessions,
+} from './lib/session-import';
 import type { Session } from './hooks/useSessions';
 
 export default function App() {
@@ -49,6 +53,8 @@ export default function App() {
     deleteSession: deleteCloudSession,
   }), []);
   const ownerKey = auth.user ? `user:${auth.user.id}` : 'guest';
+  const [accountStartToken, setAccountStartToken] = useState(0);
+  const lastAuthUserIdRef = useRef<string | null>(null);
   const { isReplaying, replayMessages, replayInputText, startReplay } = useReplay(
     (code) => { strudel.play(code); }
   );
@@ -56,6 +62,7 @@ export default function App() {
     ownerKey,
     syncEnabled: !!auth.user,
     cloud: cloudRepository,
+    startNewSessionToken: accountStartToken,
   });
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const oddeNovaImportResult = useOddeNovaImport(
@@ -109,6 +116,14 @@ export default function App() {
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
+
+  useEffect(() => {
+    const userId = auth.user?.id ?? null;
+    if (userId && userId !== lastAuthUserIdRef.current) {
+      setAccountStartToken((token) => token + 1);
+    }
+    lastAuthUserIdRef.current = userId;
+  }, [auth.user?.id]);
 
   useEffect(() => {
     if (!auth.user && !sessions.isLoading) {
@@ -208,17 +223,14 @@ export default function App() {
   const importGuestHistory = useCallback(async () => {
     const items = guestImportSessions ?? [];
     setGuestImportError('');
-    try {
-      for (const item of items) {
-        await sessions.importSession({
-          title: item.title,
-          code: item.code,
-          messages: item.messages,
-        });
-      }
-      setGuestImportSessions(null);
-    } catch (err) {
-      console.warn('[account] failed to import guest sessions to cloud.', err);
+    const result = await importGuestSessions(
+      items,
+      (item) => sessions.importSession(item),
+      (id) => deleteSession(id, 'guest'),
+    );
+    setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
+    if (result.error) {
+      console.warn('[account] failed to import guest sessions to cloud.', result.error);
       setGuestImportError(t('accountActionFailed'));
     }
   }, [guestImportSessions, sessions]);

@@ -55,14 +55,24 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
-async function renderUseSessions(options?: Parameters<typeof useSessions>[0]): Promise<{ root: Root; getHook: () => ReturnType<typeof useSessions> }> {
+async function renderUseSessions(options?: Parameters<typeof useSessions>[0]): Promise<{
+  root: Root;
+  getHook: () => ReturnType<typeof useSessions>;
+  rerender: (nextOptions?: Parameters<typeof useSessions>[0]) => Promise<void>;
+}> {
   let hook: ReturnType<typeof useSessions> | undefined;
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
-  function Probe({ onValue }: { onValue: (value: ReturnType<typeof useSessions>) => void }) {
-    const value = useSessions(options);
+  function Probe({
+    onValue,
+    options: probeOptions,
+  }: {
+    onValue: (value: ReturnType<typeof useSessions>) => void;
+    options?: Parameters<typeof useSessions>[0];
+  }) {
+    const value = useSessions(probeOptions);
     useEffect(() => {
       onValue(value);
     });
@@ -70,7 +80,7 @@ async function renderUseSessions(options?: Parameters<typeof useSessions>[0]): P
   }
 
   await act(async () => {
-    root.render(createElement(Probe, { onValue: (value) => { hook = value; } }));
+    root.render(createElement(Probe, { onValue: (value) => { hook = value; }, options }));
   });
   await act(async () => {
     await Promise.resolve();
@@ -81,6 +91,11 @@ async function renderUseSessions(options?: Parameters<typeof useSessions>[0]): P
     getHook: () => {
       if (!hook) throw new Error('useSessions hook was not rendered');
       return hook;
+    },
+    rerender: async (nextOptions) => {
+      await act(async () => {
+        root.render(createElement(Probe, { onValue: (value) => { hook = value; }, options: nextOptions }));
+      });
     },
   };
 }
@@ -151,6 +166,55 @@ describe('useSessions', () => {
       id: 'account-session',
       title: 'Cloud Title',
     }), 'user:u-1');
+  });
+
+  it('does not expose guest sessions while an account owner is loading', async () => {
+    const guestSession = makeSession({ id: 'guest-session' });
+    let resolveAccountSessions!: (sessions: Session[]) => void;
+    storageMocks.getAllSessions
+      .mockResolvedValueOnce([guestSession])
+      .mockImplementationOnce(() => new Promise<Session[]>((resolve) => {
+        resolveAccountSessions = resolve;
+      }));
+    const { root, getHook, rerender } = await renderUseSessions({ ownerKey: 'guest' });
+    roots.push(root);
+
+    expect(getHook().sessions).toEqual([guestSession]);
+
+    await rerender({ ownerKey: 'user:u-1' });
+
+    expect(getHook().sessions).toEqual([]);
+    expect(getHook().currentSession).toBeNull();
+
+    await act(async () => {
+      resolveAccountSessions([]);
+    });
+  });
+
+  it('opens a fresh session after a guest user signs in instead of selecting the latest account history', async () => {
+    const accountSession = makeSession({
+      id: 'latest-account-session',
+      title: 'Latest account history',
+      messages: [{ id: 'm-1', role: 'user', content: '已有聊天', timestamp: 1 }],
+    });
+    const cloud = {
+      listSessions: vi.fn(async () => [accountSession]),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+      startNewSessionToken: 1,
+    });
+    roots.push(root);
+
+    expect(getHook().currentId).not.toBe('latest-account-session');
+    expect(getHook().currentSession?.messages).toEqual([
+      expect.objectContaining({ isGreeting: true }),
+    ]);
+    expect(getHook().sessions).toContainEqual(accountSession);
   });
 
   it('saves changed account sessions through the cloud repository when sync is enabled', async () => {

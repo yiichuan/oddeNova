@@ -1,7 +1,7 @@
 import type { Session } from '../hooks/useSessions';
 
 function hasImportableContent(session: Session): boolean {
-  return session.messages.length > 0 || Boolean(session.code);
+  return session.messages.some((message) => !message.isGreeting) || Boolean(session.code);
 }
 
 export function collectImportableGuestSessions(
@@ -18,6 +18,27 @@ export function collectImportableGuestSessions(
   }
 
   return out;
+}
+
+export async function importGuestSessions(
+  items: Session[],
+  importSession: (payload: Pick<Session, 'title' | 'code' | 'messages'>) => Promise<void>,
+  deleteGuestSession: (id: string) => Promise<void>,
+): Promise<{ remaining: Session[]; error: unknown | null }> {
+  for (const [index, item] of items.entries()) {
+    try {
+      await importSession({
+        title: item.title,
+        code: item.code,
+        messages: item.messages,
+      });
+      await deleteGuestSession(item.id);
+    } catch (error) {
+      return { remaining: items.slice(index), error };
+    }
+  }
+
+  return { remaining: [], error: null };
 }
 
 export function getNextImportPromptUserMarker(
