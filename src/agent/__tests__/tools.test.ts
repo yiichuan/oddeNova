@@ -7,7 +7,7 @@ vi.mock('../../services/strudel', () => ({
   normalizeCode: vi.fn((code: string) => code),
 }));
 
-import { TOOLS, type AgentState, type ToolContext } from '../tools';
+import { CommitSignal, TOOLS, getOpenAIToolSchemas, type AgentState, type ToolContext } from '../tools';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
 // Helper: find a tool handler by name
@@ -40,6 +40,29 @@ describe('validate', () => {
     const result = await validate({}, ctx);
     expect(result.ok).toBe(true);
     expect((result.data as { valid: boolean }).valid).toBe(true);
+  });
+
+  it('拒绝校验不同于当前状态的临时代码，避免提交旧代码', async () => {
+    const ctx = makeCtx('stack(s("bd") s("hh"))');
+    const result = await validate({ code: 'stack(s("bd"), s("hh"))' }, ctx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/setCode/);
+    expect(ctx.state.code).toBe('stack(s("bd") s("hh"))');
+  });
+
+  it('接受与 setCode 相同但含 GM 别名的原始代码（normalize 后不应误拒）', async () => {
+    const raw = `setcps(0.5)
+stack(
+  /* @layer keys */
+  note("c3 e3").s("gm_acoustic_grand_piano")
+)`;
+    const setCode = getHandler('setCode');
+    const ctx = makeCtx('');
+    await setCode({ code: raw, explanation: 'add keys' }, ctx);
+    // state holds the normalized code (gm_piano), so it differs from raw
+    expect(ctx.state.code).not.toBe(raw);
+    const result = await validate({ code: raw }, ctx);
+    expect(result.ok).toBe(true);
   });
 
   it('发现 "|" in <> — transpiler 返回 ok: false，error 含 Mini-notation，code 不改变', async () => {
@@ -174,5 +197,41 @@ stack(
     );
     expect(result.ok).toBe(true);
     expect(ctx.state.code).toBe('note("c4 e4 g4").s("gm_piano")');
+  });
+
+  it('requires explanation in the schema (both languages)', () => {
+    for (const isZh of [true, false]) {
+      const schema = getOpenAIToolSchemas(isZh).find((s) => s.function.name === 'setCode');
+      expect(schema, `setCode schema missing (isZh=${isZh})`).toBeDefined();
+      const params = schema!.function.parameters as {
+        properties: Record<string, { description?: string }>;
+        required: string[];
+      };
+      expect(params.properties).toHaveProperty('explanation');
+      expect(params.required).toContain('explanation');
+      // param description must be localized, not the raw ZH fallback in the EN schema
+      expect(params.properties.explanation.description).toBeTruthy();
+    }
+  });
+});
+
+describe('commit', () => {
+  const commit = getHandler('commit');
+
+  it('当前状态代码语法错误时返回失败，不提交', async () => {
+    vi.mocked(validateCodeRuntime).mockReturnValueOnce({
+      ok: false,
+      error: 'missing ) after argument list',
+      kind: 'syntax',
+    });
+    const ctx = makeCtx('stack(s("bd") s("hh"))');
+    const result = await commit({ explanation: 'done' }, ctx);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/missing \) after argument list/);
+  });
+
+  it('当前状态代码合法时仍发出 CommitSignal', () => {
+    const ctx = makeCtx('stack(s("bd"), s("hh"))');
+    expect(() => commit({ explanation: 'done' }, ctx)).toThrow(CommitSignal);
   });
 });

@@ -43,6 +43,7 @@ function makeDeps(over: Partial<AgentTurnDeps> = {}): AgentTurnDeps {
     snapshotHistory: () => [],
     addUserMessage: vi.fn(),
     addAssistantMessage: vi.fn(),
+    finalizeLastAssistantMessage: vi.fn(),
     setCurrentCode: vi.fn(),
     updateTokenStats: vi.fn(),
     beginLoading: (id) => {
@@ -66,11 +67,13 @@ function makeInput(over: Partial<AgentTurnInput> = {}): AgentTurnInput {
 describe('runAgentTurn', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('aborts early when the engine is unavailable, without calling runAgent', async () => {
+  it('does not block the unified turn while the engine is still initializing', async () => {
     const deps = makeDeps({ engineStatus: () => 'initializing' });
+
     await runAgentTurn(makeInput(), deps);
-    expect(deps.setStrudelError).toHaveBeenCalled();
-    expect(deps.runAgent).not.toHaveBeenCalled();
+
+    expect(deps.setStrudelError).not.toHaveBeenCalled();
+    expect(deps.runAgent).toHaveBeenCalled();
   });
 
   it('adds the user message by default', async () => {
@@ -146,17 +149,18 @@ describe('runAgentTurn', () => {
     });
   });
 
-  it('posts the explanation only when the result carries no code', async () => {
+  it('finalizes the streamed assistant message when the result carries no code', async () => {
     const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ code: '', explanation: 'hmm' })) });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith('hmm', undefined, 'S1');
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith('hmm', 'S1');
+    expect(deps.addAssistantMessage).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).not.toHaveBeenCalled();
   });
 
   it('falls back to the agentNoCode label when there is neither code nor explanation', async () => {
     const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ code: '', explanation: '' })) });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith(t('agentNoCode'), undefined, 'S1');
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('agentNoCode'), 'S1');
   });
 
   it('on abort, posts the interrupted message and skips playback', async () => {
@@ -169,7 +173,7 @@ describe('runAgentTurn', () => {
       }),
     });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith(t('interrupted'), undefined, 'S1');
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('interrupted'), 'S1');
     expect(deps.play).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).not.toHaveBeenCalled();
   });
@@ -185,7 +189,7 @@ describe('runAgentTurn', () => {
       }),
     });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).not.toHaveBeenCalled();
+    expect(deps.finalizeLastAssistantMessage).not.toHaveBeenCalled();
   });
 
   it('passes undefined history to runAgent when includeHistory is false', async () => {
@@ -234,7 +238,7 @@ describe('runAgentTurn', () => {
     const deps = makeDeps({ runAgent: vi.fn(async () => { throw new Error('boom'); }) });
     await runAgentTurn(makeInput(), deps);
     expect(deps.setStrudelError).toHaveBeenCalledWith('boom');
-    const call = (deps.addAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0];
+    const call = (deps.finalizeLastAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(String(call[0])).toContain('boom');
   });
 

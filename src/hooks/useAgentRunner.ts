@@ -7,7 +7,6 @@ import type { ConversationTurn, ProgressEvent } from '../services/llm';
 import { conversationHistoryFromMessages } from '../lib/conversation-history';
 import { commitPlayback } from '../lib/playback-commit';
 import { parseNextSteps, stripNextSteps } from '../services/suggestions';
-import { getEngineUnavailableMessage } from '../lib/engine-status';
 import { getActiveModelConfig } from '../services/llm-config';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from '../lib/analytics';
 import { t, zh } from '../lib/i18n';
@@ -63,6 +62,7 @@ export interface AgentTurnDeps {
     sessionId: string,
     revision?: CodeRevisionDraft,
   ) => void;
+  finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
   updateTokenStats: (stats: TokenStats, sessionId: string) => void;
 
@@ -81,7 +81,7 @@ export interface AgentTurnDeps {
 }
 
 /** Distinguish a user-triggered abort from a genuine error. */
-function isUserAbort(error: unknown, signal?: AbortSignal): boolean {
+export function isUserAbort(error: unknown, signal?: AbortSignal): boolean {
   if (signal?.aborted) return true;
   if (error instanceof DOMException && error.name === 'AbortError') return true;
   if (error instanceof Error) {
@@ -91,12 +91,6 @@ function isUserAbort(error: unknown, signal?: AbortSignal): boolean {
 }
 
 export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): Promise<void> {
-  const unavailable = getEngineUnavailableMessage(deps.engineStatus());
-  if (unavailable) {
-    deps.setStrudelError(unavailable);
-    return;
-  }
-
   deps.resetSuggestions();
   deps.clearRollbackPrefill();
 
@@ -135,7 +129,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
 
     if (signal.aborted) {
       if (deps.isCurrentController(sessionId, controller)) {
-        deps.addAssistantMessage(t('interrupted'), undefined, sessionId);
+        deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
       trackAgentAbort();
       return;
@@ -195,17 +189,17 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
         deps.setCurrentCode(result.code, sessionId);
       }
     } else {
-      deps.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
+      deps.finalizeLastAssistantMessage(result.explanation || t('agentNoCode'), sessionId);
     }
   } catch (e: unknown) {
     if (isUserAbort(e, signal)) {
       if (deps.isCurrentController(sessionId, controller)) {
-        deps.addAssistantMessage(t('interrupted'), undefined, sessionId);
+        deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
       trackAgentAbort();
     } else {
       const errMsg = e instanceof Error ? e.message : t('requestFailed');
-      deps.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
+      deps.finalizeLastAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, sessionId);
       deps.setStrudelError(errMsg);
       trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
     }
@@ -260,6 +254,7 @@ export function useAgentRunner(cfg: UseAgentRunnerConfig): (input: AgentTurnInpu
         snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
         addUserMessage: (text) => sessions.addUserMessage(text),
         addAssistantMessage: (text, code, id, revision) => sessions.addAssistantMessage(text, code, id, revision),
+        finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
         setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
         updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
         beginLoading: (id) => {

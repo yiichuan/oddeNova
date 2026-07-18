@@ -69,6 +69,30 @@ describe('session-storage fallback path', () => {
   });
 });
 
+describe('normalizeSession', () => {
+  it('ignores legacy mode fields when reading saved sessions', async () => {
+    const { normalizeSession } = await import('../session-storage');
+    const legacy = {
+      id: 'legacy',
+      title: '旧会话',
+      ['mode']: 'chat',
+      messages: [],
+      code: '',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    expect(normalizeSession(legacy)).toEqual({
+      id: 'legacy',
+      title: '旧会话',
+      messages: [],
+      code: '',
+      createdAt: 1,
+      updatedAt: 2,
+    });
+  });
+});
+
 describe('session-storage strict import writes', () => {
   beforeEach(() => {
     vi.resetModules();

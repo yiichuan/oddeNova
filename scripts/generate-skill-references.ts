@@ -4,13 +4,16 @@ import { fileURLToPath } from 'node:url';
 
 import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from '../src/prompts/active';
 import { extractSkillReferences } from '../src/prompts/skill-references';
+import { buildPersonaBlock } from '../src/persona/oddenova';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const refsDir = resolve(here, '../skills/oddenova-strudel/references');
 
+// References are persona-independent, so render with the built-in default
+// persona — the same one buildSystemPrompt falls back to.
 const targets = [
-  { lang: 'zh' as const, prompt: AGENT_SYSTEM_PROMPT_OPENAI },
-  { lang: 'en' as const, prompt: AGENT_SYSTEM_PROMPT_EN },
+  { lang: 'zh' as const, prompt: AGENT_SYSTEM_PROMPT_OPENAI(buildPersonaBlock('zh'), 'oddeNova') },
+  { lang: 'en' as const, prompt: AGENT_SYSTEM_PROMPT_EN(buildPersonaBlock('en'), 'oddeNova') },
 ];
 
 export function main(): void {

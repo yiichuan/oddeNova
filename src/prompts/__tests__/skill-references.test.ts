@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from '../active';
 import { splitSections, extractSkillReferences, ADAPTER_PREAMBLE_ZH } from '../skill-references';
+import { buildPersonaBlock } from '../../persona/oddenova';
 
 describe('splitSections', () => {
   it('splits a prompt into heading/body pairs on ## lines', () => {
@@ -60,9 +61,10 @@ describe('extractSkillReferences', () => {
 const refsDir = fileURLToPath(new URL('../../../skills/oddenova-strudel/references/', import.meta.url));
 
 describe('committed references are in sync with the active prompt', () => {
+  // Same default-persona rendering as scripts/generate-skill-references.ts.
   const cases = [
-    { lang: 'zh' as const, prompt: AGENT_SYSTEM_PROMPT_OPENAI },
-    { lang: 'en' as const, prompt: AGENT_SYSTEM_PROMPT_EN },
+    { lang: 'zh' as const, prompt: AGENT_SYSTEM_PROMPT_OPENAI(buildPersonaBlock('zh'), 'oddeNova') },
+    { lang: 'en' as const, prompt: AGENT_SYSTEM_PROMPT_EN(buildPersonaBlock('en'), 'oddeNova') },
   ];
   for (const { lang, prompt } of cases) {
     it(`resolves all sections and matches files for ${lang}`, () => {

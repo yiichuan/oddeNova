@@ -11,11 +11,11 @@ import { dispatchToolCall, type ToolCallRequest, type ToolCallOutcome } from './
 import {
   CommitSignal,
   getOpenAIToolSchemas,
+  validateCommittedCode,
   type AgentState,
   type ToolContext,
 } from './tools';
 import { parseScore, summariseScore } from './parser';
-import { validateCodeRuntime } from '../services/strudel';
 import { getErrorMessage } from '../lib/errors';
 
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
@@ -49,7 +49,9 @@ export interface LLMCaller {
     tools: ReturnType<typeof getOpenAIToolSchemas>,
     onTextDelta?: (delta: string) => void,
     onReasoningDelta?: (delta: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    /** When false, suppress the reasoning/thinking chain for this call (default true). */
+    enableThinking?: boolean
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
@@ -67,6 +69,7 @@ export type ProgressEvent =
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'assistant_text_delta'; delta: string }
+  | { kind: 'assistant_reply_delta'; delta: string }
   | { kind: 'reasoning_delta'; delta: string }
   | { kind: 'warn'; message: string };
 
@@ -82,6 +85,8 @@ export interface RunAgentOptions {
   onProgress?: (e: ProgressEvent) => void;
   signal?: AbortSignal;
   conversationHistory?: ConversationTurn[];
+  /** When false, the model's reasoning/thinking chain is disabled for this run (default true). */
+  enableThinking?: boolean;
 }
 
 export interface TokenUsage {
@@ -92,7 +97,7 @@ export interface TokenUsage {
 // Wrap a streaming-delta progress event, or undefined when there's no listener.
 function makeProgressDelta(
   onProgress: ((e: ProgressEvent) => void) | undefined,
-  kind: 'assistant_text_delta' | 'reasoning_delta',
+  kind: 'assistant_text_delta' | 'assistant_reply_delta' | 'reasoning_delta',
 ): ((delta: string) => void) | undefined {
   return onProgress ? (delta: string) => onProgress({ kind, delta }) : undefined;
 }
@@ -135,6 +140,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     onProgress,
     signal,
     conversationHistory,
+    enableThinking = true,
   } = opts;
 
   const state: AgentState = {
@@ -173,6 +179,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   let explanation = '';
   let committed = false;
   let finalCode = state.code;
+  let isChatReply = false;
   // Only keep usage from the last iteration: each call accumulates the full message history,
   // so the final inputTokens reflects the true size of the current complete context.
   let lastUsage: LLMUsage | undefined;
@@ -190,9 +197,12 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
-    const onTextDelta = makeProgressDelta(onProgress, 'assistant_text_delta');
+    const onTextDelta = makeProgressDelta(
+      onProgress,
+      enableThinking ? 'assistant_text_delta' : 'assistant_reply_delta',
+    );
     const onReasoningDelta = makeProgressDelta(onProgress, 'reasoning_delta');
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal);
+    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal, enableThinking);
     if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
@@ -219,8 +229,15 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     });
 
     if (resp.toolCalls.length === 0) {
-      // No tools requested — model done. Treat its text as explanation.
-      explanation = resp.content?.trim() || (isZh ? '已完成' : 'Done');
+      // No tools requested. If the model returned substantive text and did not
+      // mutate code, this is a legal chat turn in unified-agent mode.
+      const text = resp.content?.trim() || '';
+      if (text) {
+        explanation = text;
+        if (state.code === initialCode) {
+          isChatReply = true;
+        }
+      }
       break;
     }
 
@@ -346,7 +363,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   if (!committed && !signal?.aborted) {
     const codeChanged = !!state.code && state.code !== initialCode;
     if (codeChanged) {
-      const v = validateCodeRuntime(state.code);
+      const v = validateCommittedCode(state.code, isZh);
       if (v.ok) {
         committed = true;
         finalCode = state.code;
@@ -363,6 +380,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
         });
         finalCode = state.code;
       }
+    } else if (isChatReply) {
+      finalCode = initialCode;
     } else {
       onProgress?.({
         kind: 'warn',
@@ -395,8 +414,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       }
     : undefined;
 
+  const resultCode = committed || finalCode !== initialCode ? finalCode : '';
+
   return {
-    code: finalCode,
+    code: resultCode,
     explanation,
     iterations,
     committed,

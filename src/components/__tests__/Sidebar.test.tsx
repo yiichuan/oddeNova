@@ -3,7 +3,9 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { isDemoMode } from '../../demo/demo-config';
 import type { CodeRevision, Session } from '../../hooks/useSessions';
+import { t } from '../../lib/i18n';
 import Sidebar from '../Sidebar';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -11,7 +13,14 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 // lottie-web crashes at import time in happy-dom (no canvas 2D context)
 vi.mock('lottie-react', () => ({ default: () => null }));
 
-function makeSession(overrides: Partial<Session> = {}): Session {
+vi.mock('../../demo/demo-config', () => ({
+  isDemoMode: vi.fn(() => false),
+  isPresentationMode: vi.fn(() => false),
+}));
+
+type SidebarTestSession = Omit<Session, 'mode'>;
+
+function makeSession(overrides: Partial<SidebarTestSession> = {}): SidebarTestSession {
   return {
     id: 's-1',
     title: '+++快节奏鼓点++++++++++++',
@@ -36,7 +45,7 @@ function renderSidebar(props: Partial<React.ComponentProps<typeof Sidebar>> = {}
         messages={session.messages}
         isLoading={false}
         engineReady={true}
-        sessions={[session]}
+        sessions={[session as Session]}
         currentId={session.id}
         suggestions={[]}
         onSendText={vi.fn()}
@@ -48,6 +57,7 @@ function renderSidebar(props: Partial<React.ComponentProps<typeof Sidebar>> = {}
         onRollback={vi.fn()}
         onBranch={vi.fn()}
         onRetry={vi.fn()}
+        onOpenPersonaModal={vi.fn()}
         {...props}
       />,
     );
@@ -103,6 +113,7 @@ describe('Sidebar session title editing layout', () => {
     }
     document.body.innerHTML = '';
     vi.restoreAllMocks();
+    vi.mocked(isDemoMode).mockReturnValue(false);
   });
 
   it('keeps space between the edit input and the history actions', () => {
@@ -116,5 +127,41 @@ describe('Sidebar session title editing layout', () => {
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
     expect(input).not.toBeNull();
     expect(input?.parentElement?.className).toContain('gap-3');
+  });
+
+  it('keeps the demo mood suggestion in the input rotation when suggestions are empty', () => {
+    vi.mocked(isDemoMode).mockReturnValue(true);
+    vi.useFakeTimers();
+    try {
+      const { container, root } = renderSidebar({ suggestions: [], onMoodGenerate: vi.fn() });
+      roots.push(root);
+
+      // The mood entry now lives in ChatInput's placeholder carousel; let the
+      // typewriter reveal it (first token after 400ms, then 80ms per token).
+      for (let i = 0; i < 30; i++) {
+        act(() => {
+          vi.advanceTimersByTime(100);
+        });
+      }
+
+      expect(container.textContent).toContain(t('moodGenerate'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens persona selection when the logo is clicked', () => {
+    const onOpenPersonaModal = vi.fn();
+    const { container, root } = renderSidebar({ onOpenPersonaModal });
+    roots.push(root);
+
+    const logoButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('choosePersona')}"]`);
+    expect(logoButton).not.toBeNull();
+
+    act(() => {
+      logoButton?.click();
+    });
+
+    expect(onOpenPersonaModal).toHaveBeenCalledTimes(1);
   });
 });

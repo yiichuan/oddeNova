@@ -12,10 +12,28 @@ type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
 };
 
+type MarkdownTone = 'default' | 'muted';
+
 const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
   userSelect: 'none',
   WebkitUserSelect: 'none',
   WebkitTouchCallout: 'none',
+};
+
+const inlineCodeToneClass: Record<MarkdownTone, string> = {
+  default: 'text-text-secondary',
+  muted: 'text-text-secondary/80',
+};
+
+const blockCodeToneClass: Record<MarkdownTone, string> = {
+  default: 'text-[#B9D7FF]',
+  muted: 'text-text-secondary/75',
+};
+
+// Muted headings add no color class so they inherit the surrounding gray.
+const headingToneClass: Record<MarkdownTone, string> = {
+  default: 'text-text-primary',
+  muted: '',
 };
 
 // Thinking duration: "45s" under a minute, "2m 5s" above; whole minutes drop
@@ -27,7 +45,7 @@ function formatThinkDuration(sec: number): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
-// Fades the top edge of the streaming reasoning <pre> so an auto-scroll
+// Fades the top edge of the streaming reasoning window so an auto-scroll
 // landing mid-line (its clientHeight isn't a multiple of line-height, so the
 // topmost line is almost never a clean cut) reads as an intentional fade
 // instead of a hard clip. Only applied once scrollTop > 0 — while all the
@@ -54,6 +72,311 @@ function stripMarkdown(text: string): string {
     .replace(/^>\s+/gm, '')             // blockquotes
     .replace(/~~(.+?)~~/g, '$1')        // strikethrough
     .trim();
+}
+
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.href);
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function parseInlineMarkdown(text: string, keyPrefix: string, tone: MarkdownTone = 'default'): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  const pushText = (value: string) => {
+    if (value) nodes.push(value);
+  };
+
+  while (i < text.length) {
+    const codeStart = text.indexOf('`', i);
+    const boldStarStart = text.indexOf('**', i);
+    const boldUnderscoreStart = text.indexOf('__', i);
+    const italicStarStart = text.indexOf('*', i);
+    const italicUnderscoreStart = text.indexOf('_', i);
+    const linkStart = text.indexOf('[', i);
+
+    const candidates = [
+      codeStart,
+      boldStarStart,
+      boldUnderscoreStart,
+      italicStarStart,
+      italicUnderscoreStart,
+      linkStart,
+    ].filter((idx) => idx >= 0);
+
+    const next = candidates.length > 0 ? Math.min(...candidates) : -1;
+    if (next === -1) {
+      pushText(text.slice(i));
+      break;
+    }
+
+    pushText(text.slice(i, next));
+
+    if (next === codeStart) {
+      const end = text.indexOf('`', next + 1);
+      if (end === -1) {
+        pushText(text.slice(next));
+        break;
+      }
+      nodes.push(
+        <code key={`${keyPrefix}-code-${key++}`} className={`rounded bg-white/10 px-1 py-0.5 font-mono text-[0.92em] [overflow-wrap:anywhere] ${inlineCodeToneClass[tone]}`}>
+          {text.slice(next + 1, end)}
+        </code>,
+      );
+      i = end + 1;
+      continue;
+    }
+
+    if (next === linkStart) {
+      const labelEnd = text.indexOf(']', next + 1);
+      const hrefStart = labelEnd >= 0 ? text.indexOf('(', labelEnd + 1) : -1;
+      const hrefEnd = hrefStart >= 0 ? text.indexOf(')', hrefStart + 1) : -1;
+      if (labelEnd === -1 || hrefStart !== labelEnd + 1 || hrefEnd === -1) {
+        pushText(text[next]);
+        i = next + 1;
+        continue;
+      }
+      const label = text.slice(next + 1, labelEnd);
+      const href = text.slice(hrefStart + 1, hrefEnd).trim();
+      if (!isSafeUrl(href)) {
+        pushText(label);
+      } else {
+        nodes.push(
+          <a
+            key={`${keyPrefix}-link-${key++}`}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#93C2FF] underline decoration-[#93C2FF]/40 underline-offset-2 hover:decoration-[#93C2FF]"
+          >
+            {parseInlineMarkdown(label, `${keyPrefix}-link-${key}`, tone)}
+          </a>,
+        );
+      }
+      i = hrefEnd + 1;
+      continue;
+    }
+
+    const marker = text.startsWith('**', next) || text.startsWith('__', next)
+      ? text.slice(next, next + 2)
+      : text[next];
+    const end = text.indexOf(marker, next + marker.length);
+    if (end === -1) {
+      pushText(marker);
+      i = next + marker.length;
+      continue;
+    }
+
+    const inner = text.slice(next + marker.length, end);
+    if (marker === '**' || marker === '__') {
+      nodes.push(
+        <strong key={`${keyPrefix}-strong-${key++}`} className="font-semibold">
+          {parseInlineMarkdown(inner, `${keyPrefix}-strong-${key}`, tone)}
+        </strong>,
+      );
+    } else {
+      nodes.push(
+        <em key={`${keyPrefix}-em-${key++}`} className="italic">
+          {parseInlineMarkdown(inner, `${keyPrefix}-em-${key}`, tone)}
+        </em>,
+      );
+    }
+    i = end + marker.length;
+  }
+
+  return nodes;
+}
+
+function MarkdownText({ content, tone = 'default' }: { content: string; tone?: MarkdownTone }) {
+  const lines = content.split('\n');
+  const blocks: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  const isBlockStart = (value: string) => (
+    /^```/.test(value.trim()) ||
+    /^\s{0,3}#{1,6}\s+/.test(value) ||
+    /^\s*([-*+])\s+/.test(value) ||
+    /^\s*\d+\.\s+/.test(value) ||
+    /^\s*>\s?/.test(value) ||
+    /^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(value)
+  );
+
+  const collectParagraph = () => {
+    const paragraph: string[] = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !isBlockStart(lines[i])
+    ) {
+      paragraph.push(lines[i]);
+      i += 1;
+    }
+    return paragraph.join('\n');
+  };
+
+  const nextNonBlankLineIndex = (start: number) => {
+    let next = start;
+    while (next < lines.length && lines[next].trim() === '') {
+      next += 1;
+    }
+    return next;
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed === '') {
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith('```')) {
+      const code: string[] = [];
+      i += 1;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        code.push(lines[i]);
+        i += 1;
+      }
+      if (i < lines.length) i += 1;
+      blocks.push(
+        <pre key={`md-code-${key++}`} className={`my-2 overflow-x-auto rounded-md bg-white/5 p-2 font-mono text-[11px] leading-relaxed ${blockCodeToneClass[tone]}`}>
+          <code>{code.join('\n')}</code>
+        </pre>,
+      );
+      continue;
+    }
+
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
+    if (heading) {
+      blocks.push(
+        <div key={`md-heading-${key++}`} className={`mt-1 font-semibold ${headingToneClass[tone]}`.trim()}>
+          {parseInlineMarkdown(heading[2], `md-heading-${key}`, tone)}
+        </div>,
+      );
+      i += 1;
+      continue;
+    }
+
+    if (/^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(line)) {
+      blocks.push(<hr key={`md-hr-${key++}`} className="my-3 border-0 border-t border-white/10" />);
+      i += 1;
+      continue;
+    }
+
+    const unordered = line.match(/^\s*([-*+])\s+(.+)$/);
+    if (unordered) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const item = lines[i].match(/^\s*([-*+])\s+(.+)$/);
+        if (!item) break;
+        const parts = [item[2]];
+        i += 1;
+        while (
+          i < lines.length &&
+          lines[i].trim() !== '' &&
+          !isBlockStart(lines[i])
+        ) {
+          parts.push(lines[i].trim());
+          i += 1;
+        }
+        items.push(parts.join('\n'));
+        if (i < lines.length && lines[i].trim() === '') {
+          const next = nextNonBlankLineIndex(i);
+          if (next < lines.length && /^\s*([-*+])\s+(.+)$/.test(lines[next])) {
+            i = next;
+          }
+        }
+      }
+      blocks.push(
+        <ul key={`md-ul-${key++}`} className="my-1 list-disc space-y-0.5 pl-4">
+          {items.map((item, idx) => (
+            <li key={`md-ul-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ul-${key}-${idx}`, tone)}</li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    const ordered = line.match(/^\s*\d+\.\s+(.+)$/);
+    if (ordered) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const item = lines[i].match(/^\s*\d+\.\s+(.+)$/);
+        if (!item) break;
+        const parts = [item[1]];
+        i += 1;
+        while (
+          i < lines.length &&
+          lines[i].trim() !== '' &&
+          !isBlockStart(lines[i])
+        ) {
+          parts.push(lines[i].trim());
+          i += 1;
+        }
+        items.push(parts.join('\n'));
+        if (i < lines.length && lines[i].trim() === '') {
+          const next = nextNonBlankLineIndex(i);
+          if (next < lines.length && /^\s*\d+\.\s+(.+)$/.test(lines[next])) {
+            i = next;
+          }
+        }
+      }
+      blocks.push(
+        <ol key={`md-ol-${key++}`} className="my-1 list-decimal space-y-0.5 pl-4">
+          {items.map((item, idx) => (
+            <li key={`md-ol-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ol-${key}-${idx}`, tone)}</li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
+    const quote = line.match(/^\s*>\s?(.+)$/);
+    if (quote) {
+      const quoted: string[] = [];
+      while (i < lines.length) {
+        const current = lines[i].match(/^\s*>\s?(.*)$/);
+        if (!current) break;
+        quoted.push(current[1]);
+        i += 1;
+      }
+      blocks.push(
+        <blockquote key={`md-quote-${key++}`} className="my-1 border-l border-[#93C2FF]/30 pl-3 text-text-secondary">
+          {parseInlineMarkdown(quoted.join('\n'), `md-quote-${key}`, tone)}
+        </blockquote>,
+      );
+      continue;
+    }
+
+    const paragraphStart = i;
+    const paragraph = collectParagraph();
+    if (i === paragraphStart) {
+      // Streaming markdown can pause on an unfinished block marker like "> " or "- ".
+      // Treat it as plain text so the renderer always makes progress.
+      const fallbackKey = key++;
+      blocks.push(
+        <p key={`md-p-${fallbackKey}`} className="whitespace-pre-wrap break-words">
+          {parseInlineMarkdown(line, `md-p-${fallbackKey}`, tone)}
+        </p>,
+      );
+      i += 1;
+      continue;
+    }
+    blocks.push(
+      <p key={`md-p-${key++}`} className="whitespace-pre-wrap break-words">
+        {parseInlineMarkdown(paragraph, `md-p-${key}`, tone)}
+      </p>,
+    );
+  }
+
+  return <div data-markdown-text className="min-w-0 max-w-full space-y-2 break-words [overflow-wrap:anywhere]">{blocks}</div>;
 }
 
 interface ConversationViewProps {
@@ -103,7 +426,7 @@ export default function ConversationView({
   // In-flight programmatic smooth scroll (turn-start anchoring): its target
   // and a deadline after which it's considered interrupted/finished.
   const autoScrollRef = useRef<{ target: number; until: number } | null>(null);
-  const reasoningPreRef = useRef<HTMLPreElement>(null);
+  const reasoningScrollRef = useRef<HTMLDivElement>(null);
   const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
@@ -304,7 +627,7 @@ export default function ConversationView({
         }
       }
       // Auto-scroll the reasoning <pre> to the bottom (follow content during streaming output)
-      const preEl = reasoningPreRef.current;
+      const preEl = reasoningScrollRef.current;
       if (preEl && !reasoningUserScrolledRef.current) {
         preEl.scrollTop = preEl.scrollHeight;
         syncReasoningTopMask(preEl);
@@ -332,6 +655,39 @@ export default function ConversationView({
     }
     return { absorbedReasoningIds };
   }, [messages]);
+
+  // Retry/branch are turn-level actions: they resend (or fork from) the user
+  // message that opened the turn. A single turn can produce several assistant
+  // bubbles — e.g. the model narrates mid-loop, then commits a final answer, and
+  // interleaved progress messages keep the two texts from merging. Render the
+  // actions once per turn, on the last assistant message before the next user
+  // message, so they don't appear on intermediate narration.
+  const turnFinalAssistantIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role !== 'assistant') continue;
+      let isFinal = true;
+      for (let j = i + 1; j < messages.length; j++) {
+        if (messages[j].role === 'user') break;
+        if (messages[j].role === 'assistant') { isFinal = false; break; }
+      }
+      if (isFinal) ids.add(messages[i].id);
+    }
+    return ids;
+  }, [messages]);
+
+  const loadingTurnAssistantIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!isLoading) return ids;
+
+    const lastUserIndex = messages.findLastIndex((m) => m.role === 'user');
+    if (lastUserIndex === -1) return ids;
+
+    for (const msg of messages.slice(lastUserIndex + 1)) {
+      if (msg.role === 'assistant') ids.add(msg.id);
+    }
+    return ids;
+  }, [messages, isLoading]);
 
   // Which reasoning messages belong to the composition ("编曲") phase: those
   // whose next tool call is `setCode` (writing/replacing the Strudel script).
@@ -564,9 +920,9 @@ export default function ConversationView({
               )}
             </button>
             {isExpanded && (
-              <pre className="mt-1.5 text-[12px] text-text-muted font-mono whitespace-pre-wrap break-words leading-relaxed animate-fade-in">
-                {msg.content}
-              </pre>
+              <div className="mt-1.5 text-[12px] text-text-muted font-mono break-words leading-relaxed animate-fade-in">
+                <MarkdownText content={msg.content} tone="muted" />
+              </div>
             )}
           </div>
         </div>
@@ -694,20 +1050,33 @@ export default function ConversationView({
         }
 
         // assistant message:
+        // A turn can hold several assistant bubbles (mid-loop narration + the
+        // final reply). Retry/branch actions — and the mb-16 that reserves the
+        // hanging space below the bubble for them — only apply to the turn's
+        // final bubble; on intermediate narration the margin would just read
+        // as a dead gap between paragraphs.
+        const showsTurnActions =
+          !msg.isGreeting && turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id);
         return (
           <div
             key={msg.id}
             // items-start keeps the bubble (and its hanging action buttons)
             // at content height when the turn filler stretches the row
-            className="flex justify-start items-start animate-fade-in group mb-16"
+            className={`flex justify-start items-start animate-fade-in group${showsTurnActions ? ' mb-16' : ''}`}
             style={
-              msg.id === lastMessageId && !isVideoMode && turnAnchorActive
+              // While the turn is still running, the loading block below owns
+              // the filler (turnFillerHeight) — assistant bubbles streamed
+              // mid-turn must stay content-height, or the last one would
+              // push the loading indicator a full viewport below the fold.
+              // Only once the turn ends does the final reply take the filler
+              // over from the unmounting loading block (height-neutral swap).
+              msg.id === lastMessageId && !isVideoMode && turnAnchorActive && !isLoading
                 ? { minHeight: assistantFillerMinHeight }
                 : undefined
             }
           >
             <div className="relative w-full rounded-xl px-2 py-2 text-sm bg-transparent text-text-primary">
-              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+              <MarkdownText content={msg.content} />
               {msg.code && msg.revisionId && revisionsById.has(msg.revisionId) && (
                 <CodeDiffView
                   messageId={msg.id}
@@ -752,23 +1121,28 @@ export default function ConversationView({
                 );
               })()}
 
-              {/* Action buttons — bottom-left, always visible */}
-              <div className="absolute -bottom-6 left-0 flex items-center gap-1.5">
-                <button
-                  onClick={() => onRetry(msg.id)}
-                  className="text-white/60 hover:text-white p-1"
-                  title={t('retry')}
-                >
-                  <RetryIcon size={14} />
-                </button>
-                <button
-                  onClick={() => onBranch(msg.id)}
-                  className="text-white/60 hover:text-white p-1"
-                  title={t('branchFrom')}
-                >
-                  <GitBranchIcon size={14} />
-                </button>
-              </div>
+              {/* Action buttons — bottom-left, always visible. Hidden on greeting
+                  bubbles (no prior user turn to retry/branch from) and on
+                  intermediate narration (shown once per turn, on the final
+                  assistant message after the turn finishes). */}
+              {showsTurnActions && (
+                <div className="absolute -bottom-6 left-0 flex items-center gap-1.5">
+                  <button
+                    onClick={() => onRetry(msg.id)}
+                    className="text-white/60 hover:text-white p-1"
+                    title={t('retry')}
+                  >
+                    <RetryIcon size={14} />
+                  </button>
+                  <button
+                    onClick={() => onBranch(msg.id)}
+                    className="text-white/60 hover:text-white p-1"
+                    title={t('branchFrom')}
+                  >
+                    <GitBranchIcon size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -805,21 +1179,21 @@ export default function ConversationView({
             // bottom — which, via turnFillerHeight, is the conversation's
             // bottom edge — with no magic-number arithmetic to keep in sync.
             // min-h-0 lets it size below its content's natural height, which
-            // is what lets the <pre>'s own h-full resolve to a real, clipped
-            // value instead of just growing to fit the streamed text.
+            // is what lets the scroll box's own h-full resolve to a real,
+            // clipped value instead of just growing to fit the streamed text.
             <div className="mt-3 w-full px-2 flex-1 min-h-0 animate-fade-in">
-              <pre
-                ref={reasoningPreRef}
+              <div
+                ref={reasoningScrollRef}
                 onScroll={(e) => {
                   const el = e.currentTarget;
                   const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
                   reasoningUserScrolledRef.current = distFromBottom > 20;
                   syncReasoningTopMask(el);
                 }}
-                className="h-full min-h-[160px] text-sm text-text-muted font-mono whitespace-pre-wrap break-words overflow-y-auto overflow-x-hidden leading-relaxed"
+                className="h-full min-h-[160px] text-sm text-text-muted font-mono break-words overflow-y-auto overflow-x-hidden leading-relaxed"
               >
-                {streamingReasoningMsg.content}
-              </pre>
+                <MarkdownText content={streamingReasoningMsg.content} tone="muted" />
+              </div>
             </div>
           )}
         </div>

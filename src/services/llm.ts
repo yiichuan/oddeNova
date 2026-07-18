@@ -16,6 +16,8 @@ import {
 import { getActiveModelConfig } from './llm-config';
 import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
+import { getActivePersonaSync } from '../lib/persona-storage';
+import { INTENT_CLASSIFIER_PROMPT } from '../prompts/intent-classifier';
 
 // ===========================================================================
 // Dual-provider client management.
@@ -223,12 +225,16 @@ function convertTools(
   }));
 }
 
+function getActiveLLMCaller(): LLMCaller {
+  return isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
+}
+
 // ===========================================================================
 // LLMCaller implementation — Anthropic path (original logic)
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true) {
     const anthropic = getAnthropicClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
@@ -236,10 +242,11 @@ const anthropicLLMCaller: LLMCaller = {
       model: getModel(),
       system,
       messages: amsgs,
-      tools: convertTools(tools),
+      ...(tools.length > 0 ? { tools: convertTools(tools) } : {}),
       temperature: 1,
       max_tokens: AGENT_MAX_TOKENS,
-      thinking: { type: 'enabled', budget_tokens: 10000 },
+      // Omit `thinking` entirely when disabled so no reasoning tokens are generated.
+      ...(enableThinking ? { thinking: { type: 'enabled', budget_tokens: 10000 } } : {}),
     // Type assertion needed: SDK types don't yet include `thinking` in the
     // stream params, but it works at runtime when the beta header is set.
     } as Parameters<typeof anthropic.messages.stream>[0], { signal });
@@ -293,15 +300,19 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller(): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal) {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true) {
       const oai = getOpenAIClient();
 
       const stream = await oai.chat.completions.create({
         model: getModel(),
         // ChatMsg is already in OpenAI format, can be passed directly
         messages: messages as OpenAI.ChatCompletionMessageParam[],
-        tools: tools as OpenAI.ChatCompletionTool[],
-        tool_choice: 'auto',
+        ...(tools.length > 0
+          ? {
+              tools: tools as OpenAI.ChatCompletionTool[],
+              tool_choice: 'auto' as const,
+            }
+          : {}),
         temperature: 0.7,
         max_tokens: AGENT_MAX_TOKENS,
         stream: true,
@@ -324,7 +335,9 @@ function createOpenAILLMCaller(): LLMCaller {
         if (delta.reasoning_content) {
           reasoningContent += delta.reasoning_content;
           // Fire streaming callback so callers can show reasoning in real time.
-          onReasoningDelta?.(delta.reasoning_content);
+          // DeepSeek reasoner always emits reasoning_content (can't be disabled
+          // via the API), so when thinking is off we simply don't forward it.
+          if (enableThinking) onReasoningDelta?.(delta.reasoning_content);
         }
 
         if (delta.content) {
@@ -367,6 +380,41 @@ function createOpenAILLMCaller(): LLMCaller {
   };
 }
 
+type Intent = 'compose' | 'chat';
+
+// Lightweight, thinking-disabled classification call. Decides whether this turn
+// should stream a reasoning chain (compose) or stay silent (chat). Runs before
+// the main agent loop; fails open to `compose` so a misfire never hides a real
+// composition's reasoning.
+export async function classifyIntent(
+  llm: LLMCaller,
+  opts: {
+    instruction: string;
+    currentCode: string;
+    conversationHistory?: ConversationTurn[];
+    signal?: AbortSignal;
+  },
+): Promise<Intent> {
+  const { instruction, currentCode, conversationHistory, signal } = opts;
+  const hasCode = currentCode.trim().length > 0;
+  const codeNote = hasCode
+    ? '(a track is currently playing / 当前已有一首曲子在播放)'
+    : '(no track yet / 当前还没有曲子)';
+  const messages: ChatMsg[] = [
+    { role: 'system', content: INTENT_CLASSIFIER_PROMPT },
+    ...(conversationHistory ?? []),
+    { role: 'user', content: `${codeNote}\nuser latest message / 用户最新消息: ${instruction}` },
+  ];
+  try {
+    const resp = await llm.chatWithTools(messages, [], undefined, undefined, signal, false);
+    const out = (resp.content ?? '').toLowerCase();
+    if (out.includes('chat') && !out.includes('compose')) return 'chat';
+    return 'compose';
+  } catch {
+    return 'compose';
+  }
+}
+
 export async function runAgent(
   instruction: string,
   currentCode: string,
@@ -375,13 +423,17 @@ export async function runAgent(
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
 ): Promise<RunAgentResult> {
-  const systemPrompt = buildSystemPrompt({ instruction, moodContext });
+  const systemPrompt = buildSystemPrompt({
+    instruction,
+    moodContext,
+    persona: getActivePersonaSync(),
+  });
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
   const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;
 
   // Select the LLMCaller implementation corresponding to the current provider
-  const activeLLMCaller = isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
+  const activeLLMCaller = getActiveLLMCaller();
 
   const llm = isDemoMode()
     ? isMoodDemo
@@ -391,6 +443,15 @@ export async function runAgent(
         : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
     : activeLLMCaller;
 
+  // Classify intent up front (thinking-disabled) so we only stream a reasoning
+  // chain for composition turns. Demo/mood-generation flows are always
+  // compositions — skip the extra call for them.
+  const isMoodGeneration = instruction === '根据我的心情生成音乐';
+  const skipClassification = isDemoMode() || isMoodGeneration;
+  const intent: Intent = skipClassification
+    ? 'compose'
+    : await classifyIntent(llm, { instruction, currentCode, conversationHistory, signal });
+
   return runAgentLoop({
     instruction,
     initialCode: currentCode,
@@ -399,6 +460,7 @@ export async function runAgent(
     onProgress,
     signal,
     conversationHistory,
+    enableThinking: intent === 'compose',
   });
 }
 
