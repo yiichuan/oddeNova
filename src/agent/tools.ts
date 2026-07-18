@@ -46,6 +46,32 @@ export class CommitSignal extends Error {
   }
 }
 
+// The Proxy dry-run in validateCodeRuntime throws `${name} is not defined` for
+// any undefined global. Only attach the TidalCycles-substitute hint when the
+// undefined name is actually one of these — otherwise the hint is a red
+// herring that misdirects fixes toward unrelated code (e.g. `.late()`, which
+// is a real, patternified Strudel API).
+const TIDAL_ONLY_API_ERROR = /^(by|sometimesBy|someCyclesBy|within) is not defined$/;
+
+// A runtime error message alone doesn't say which stack layer threw it. Re-run
+// the dry-run against each named layer standalone; a layer only counts as a
+// match if the *exact same* error reproduces in isolation — a different error
+// usually just means that layer depends on something defined outside it (e.g.
+// a shared variable), not that it's the culprit. This keeps false positives
+// out: we'd rather report no location than a confidently wrong one.
+function findFailingLayers(code: string, errorMessage: string): string[] {
+  const score = parseScore(code);
+  if (!score.hasStack || score.layers.length < 2) return [];
+  const matches: string[] = [];
+  for (const layer of score.layers) {
+    const result = validateCodeRuntime(layer.source);
+    if (!result.ok && result.kind === 'runtime' && result.error === errorMessage) {
+      matches.push(layer.name);
+    }
+  }
+  return matches;
+}
+
 // ----- tool definitions ------------------------------------------------------
 
 export const TOOLS: ToolDef[] = [
@@ -75,9 +101,15 @@ export const TOOLS: ToolDef[] = [
             ? `语法错误: ${runtime.error}`
             : `Syntax error: ${runtime.error}` };
         }
+        const isTidalOnlyApi = TIDAL_ONLY_API_ERROR.test(runtime.error ?? '');
+        const hintZh = isTidalOnlyApi ? '（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）' : '';
+        const hintEn = isTidalOnlyApi ? ' (do not use TidalCycles-specific APIs such as by/sometimesBy/someCyclesBy/within; use .sometimes(fast(2)) or .every(N, fast(2)) instead)' : '';
+        const failingLayers = findFailingLayers(code, runtime.error ?? '');
+        const locationZh = failingLayers.length > 0 ? `（错误位于 @layer ${failingLayers.join(', ')}）` : '';
+        const locationEn = failingLayers.length > 0 ? ` (error originates in @layer ${failingLayers.join(', ')})` : '';
         return { ok: false, error: zh
-          ? `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）`
-          : `Runtime error: ${runtime.error} (do not use TidalCycles-specific APIs such as by/sometimesBy/someCyclesBy/within; use .sometimes(fast(2)) or .every(N, fast(2)) instead)` };
+          ? `运行时错误: ${runtime.error}${locationZh}${hintZh}`
+          : `Runtime error: ${runtime.error}${locationEn}${hintEn}` };
       }
       const transpilerCheck = validateCodeTranspiler(code);
       return transpilerCheck.ok
