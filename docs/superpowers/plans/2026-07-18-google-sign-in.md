@@ -354,7 +354,6 @@ Add these rows to `src/lib/__tests__/auth-error.test.ts`:
 
 ```ts
 ['identity_already_exists', 'authErrorGoogleIdentityConflict'],
-['email_exists', 'authErrorGoogleIdentityConflict'],
 ```
 
 Run:
@@ -367,7 +366,9 @@ Expected: FAIL because the new keys are not mapped.
 
 - [ ] **Step 2: Add stable mappings and localized copy**
 
-Add mappings in `src/lib/auth-error.ts` and add bilingual strings in
+Keep the existing `email_exists → authErrorUserAlreadyExists` mapping for
+email registration. Add the identity-specific mapping in
+`src/lib/auth-error.ts` and add bilingual strings in
 `src/lib/i18n.ts`:
 
 ```ts

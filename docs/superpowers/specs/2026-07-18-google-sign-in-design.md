@@ -116,7 +116,8 @@ configuration and do not store OAuth secrets in git.
 `signInWithOAuth` with:
 
 - `provider: 'google'`
-- `redirectTo` set to the current origin plus pathname
+- `redirectTo` set to the current origin, pathname, and query string; the
+  current fragment is excluded
 
 The function records a short-lived pending marker in `sessionStorage` before
 redirecting. It does not request offline access, provider refresh tokens, or
