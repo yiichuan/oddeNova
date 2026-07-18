@@ -14,10 +14,10 @@ Create the complete composition in Codex, then send it to oddeNova with the bund
 3. Generate a complete program containing a `// STYLE | BPM: N` comment, `setcps`, one `stack`, and semantic `/* @layer NAME */` markers with a one-line intent comment after each marker.
 4. Self-review the music, API names, and samples. State only that the code was reviewed; never claim Strudel browser or runtime validation.
 5. Build the protocol payload below. Keep `messages` to music requests and compact assistant change summaries; omit reasoning, tool traces, and unrelated conversation. Match `locale`, summaries, and code comments to the user's language.
-6. Resolve `scripts/open-in-oddenova.mjs` relative to this file and send the JSON over stdin. Invoke it without flags for production. Add `--base-url` only when the user names a non-production target. The helper prints the URL before attempting to open it.
-7. Return the printed URL when automatic browser opening is unavailable. Tell the user to press oddeNova's play control; never autoplay.
+6. Resolve `scripts/open-in-oddenova.mjs` relative to this file and send the JSON over stdin. Invoke it without flags for production. Add `--base-url` only when the user names a non-production target. By default the helper compresses the payload, opens the browser, and prints a short summary plus the path of a local fallback link file — it does not print the URL (only `--print-only` does).
+7. Tell the user the piece opened in their browser and to press oddeNova's play control; never autoplay. If the helper warned that the browser could not open, point the user to the fallback file path from the helper output instead.
 
-Do not create project files unless the user explicitly asks for an output file. Do not call `/api/share`. Do not copy or run oddeNova's internal agent loop.
+Never paste the full import URL — or any long base64/encoded blob — into the conversation; refer to the fallback file path instead. Do not create project files unless the user explicitly asks for an output file. Do not call `/api/share`. Do not copy or run oddeNova's internal agent loop.
 
 ## Creation and import example
 

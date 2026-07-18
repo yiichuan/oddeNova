@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { inflateRawSync } from 'node:zlib';
 
 import {
   buildImportUrl,
@@ -13,6 +15,7 @@ import {
   isMainModule,
   launchImportUrl,
   runCli,
+  writeFallbackLinkFile,
 } from './open-in-oddenova.mjs';
 
 const scriptPath = fileURLToPath(new URL('./open-in-oddenova.mjs', import.meta.url));
@@ -32,13 +35,14 @@ const payload = {
 
 function decodeImportUrl(url) {
   const encoded = new URL(url).hash.slice('#oddenova='.length);
-  return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+  assert.equal(encoded.startsWith('z:'), true, 'expected a compressed z: fragment');
+  return JSON.parse(inflateRawSync(Buffer.from(encoded.slice(2), 'base64url')).toString('utf8'));
 }
 
-test('buildImportUrl preserves Unicode protocol payloads with Base64URL', () => {
+test('buildImportUrl compresses Unicode protocol payloads behind the z: marker', () => {
   const url = buildImportUrl(payload);
 
-  assert.match(url, /^https:\/\/www\.oddenova\.com\/#oddenova=[A-Za-z0-9_-]+$/);
+  assert.match(url, /^https:\/\/www\.oddenova\.com\/#oddenova=z:[A-Za-z0-9_-]+$/);
   assert.deepEqual(decodeImportUrl(url), payload);
 });
 
@@ -49,10 +53,12 @@ test('buildImportUrl normalizes an overridden base URL', () => {
   assert.deepEqual(decodeImportUrl(url), payload);
 });
 
+// Random base64 keeps the fixtures incompressible so they still overflow the
+// URL budget now that buildImportUrl deflates the payload.
 test('fitPayloadToUrl trims oldest messages but retains the latest two', () => {
   const messages = Array.from({ length: 4 }, (_, index) => ({
     role: index % 2 === 0 ? 'user' : 'assistant',
-    content: `${index}:${'x'.repeat(9_000)}`,
+    content: `${index}:${randomBytes(12_000).toString('base64')}`,
   }));
   const original = { ...payload, messages };
 
@@ -65,13 +71,14 @@ test('fitPayloadToUrl trims oldest messages but retains the latest two', () => {
 });
 
 test('fitPayloadToUrl refuses to truncate oversized Strudel code', () => {
-  const oversized = { ...payload, code: 'x'.repeat(25_000), messages: [] };
+  const code = randomBytes(30_000).toString('base64');
+  const oversized = { ...payload, code, messages: [] };
 
   assert.throws(
     () => fitPayloadToUrl(oversized),
     new Error('Import URL exceeds 32 KiB without truncating Strudel code'),
   );
-  assert.equal(oversized.code.length, 25_000);
+  assert.equal(oversized.code, code);
 });
 
 test('launchImportUrl selects the platform browser command and detaches it', () => {
@@ -126,7 +133,7 @@ test('runCli prints the overridden URL and print-only skips browser launch', asy
   assert.equal(spawnCalled, false);
 });
 
-test('runCli warns on launch failure after printing the URL and still succeeds', async () => {
+test('runCli default output is a summary with a fallback file, never the full URL', async () => {
   let stdout = '';
   let stderr = '';
 
@@ -139,8 +146,30 @@ test('runCli warns on launch failure after printing the URL and still succeeds',
   });
 
   assert.equal(exitCode, 0);
-  assert.equal(stdout.startsWith('https://www.oddenova.com/#oddenova='), true);
+  assert.equal(stdout.includes('#oddenova='), false);
+  assert.match(stdout, /Opening oddeNova import in the browser \(project project-1, URL [\d.]+ KiB\)\./);
+  assert.match(stdout, /If the browser did not open, open this file: .*oddenova-import-project-1\.html/);
   assert.match(stderr, /Warning: Could not open browser: launcher unavailable/);
+
+  const fallbackPath = stdout.match(/open this file: (.*)\n/)[1];
+  const html = readFileSync(fallbackPath, 'utf8');
+  const href = html.match(/<a href="([^"]+)">/)[1];
+  assert.deepEqual(decodeImportUrl(href), payload);
+  rmSync(fallbackPath, { force: true });
+});
+
+test('writeFallbackLinkFile sanitizes the project id and escapes the URL', () => {
+  const writes = [];
+  const path = writeFallbackLinkFile('https://example.com/#oddenova=z:abc"<>&', 'a/b:c', {
+    directory: '/fake',
+    writeFile: (...args) => writes.push(args),
+  });
+
+  assert.equal(path, join('/fake', 'oddenova-import-a-b-c.html'));
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][0], path);
+  assert.equal(writes[0][1].includes('z:abc&quot;&lt;&gt;&amp;'), true);
+  assert.equal(writes[0][1].includes('z:abc"'), false);
 });
 
 test('isMainModule matches through a symlinked entry path', () => {

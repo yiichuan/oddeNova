@@ -134,22 +134,30 @@ describe('useOddeNovaImport', () => {
     expect(hook.getResult()).toEqual({ status: 'success', outcome: 'created', persistent: true });
   });
 
-  it('maps unsupported protocol versions separately without invoking the importer', () => {
+  it('maps unsupported protocol versions separately without invoking the importer', async () => {
     window.history.pushState(null, '', `/compose${fragment({ ...payload, protocolVersion: 2 })}`);
     const importer = vi.fn(async () => 'created' as const);
     const hook = renderImportHook(importer, true, true);
     roots.push(hook.root);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(hook.getResult()).toEqual({ status: 'error', reason: 'unsupported-version' });
     expect(importer).not.toHaveBeenCalled();
     expect(window.location.hash).toBe('');
   });
 
-  it('maps malformed payloads to invalid without invoking the importer', () => {
+  it('maps malformed payloads to invalid without invoking the importer', async () => {
     window.history.pushState(null, '', '/compose#oddenova=%%%');
     const importer = vi.fn(async () => 'created' as const);
     const hook = renderImportHook(importer, true, true);
     roots.push(hook.root);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(hook.getResult()).toEqual({ status: 'error', reason: 'invalid' });
     expect(importer).not.toHaveBeenCalled();
