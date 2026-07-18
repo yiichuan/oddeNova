@@ -1,24 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   getCurrentUser,
   isAuthConfigured,
   onAuthStateChange,
   type AuthUser,
 } from '../services/auth-service';
+import {
+  consumeGoogleOAuthReturn,
+  type GoogleOAuthErrorKey,
+} from '../lib/google-oauth-return';
 
 export interface UseAuthState {
   user: AuthUser | null;
   configured: boolean;
   loading: boolean;
   recoveringPassword: boolean;
+  oauthErrorKey: GoogleOAuthErrorKey | null;
+  dismissOAuthError: () => void;
 }
 
 export function useAuth(): UseAuthState {
-  const [state, setState] = useState<UseAuthState>({
+  const [state, setState] = useState<Omit<UseAuthState, 'dismissOAuthError'>>({
     user: null,
     configured: isAuthConfigured(),
     loading: true,
     recoveringPassword: false,
+    oauthErrorKey: consumeGoogleOAuthReturn(),
   });
 
   useEffect(() => {
@@ -31,17 +38,19 @@ export function useAuth(): UseAuthState {
           configured: isAuthConfigured(),
           loading: false,
           recoveringPassword: current.recoveringPassword,
+          oauthErrorKey: current.oauthErrorKey,
         }));
       }
     });
 
     const unsubscribe = onAuthStateChange((event, session) => {
-      setState({
+      setState((current) => ({
         user: session?.user ? { id: session.user.id, email: session.user.email ?? null } : null,
         configured: isAuthConfigured(),
         loading: false,
         recoveringPassword: event === 'PASSWORD_RECOVERY',
-      });
+        oauthErrorKey: current.oauthErrorKey,
+      }));
     });
 
     return () => {
@@ -50,5 +59,9 @@ export function useAuth(): UseAuthState {
     };
   }, []);
 
-  return state;
+  const dismissOAuthError = useCallback(() => {
+    setState((current) => ({ ...current, oauthErrorKey: null }));
+  }, []);
+
+  return { ...state, dismissOAuthError };
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   resetPasswordForEmail,
+  signInWithGoogle,
   signInWithPassword,
   signOut,
   signUpWithPassword,
@@ -9,6 +10,7 @@ import {
 } from '../services/auth-service';
 import { getAuthErrorMessageKey } from '../lib/auth-error';
 import { t, zh } from '../lib/i18n';
+import type { GoogleOAuthErrorKey } from '../lib/google-oauth-return';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
 
@@ -16,6 +18,7 @@ interface AccountModalProps {
   user: AuthUser | null;
   configured: boolean;
   recoveringPassword?: boolean;
+  oauthErrorKey?: GoogleOAuthErrorKey | null;
   onClose: () => void;
 }
 
@@ -23,6 +26,7 @@ export default function AccountModal({
   user,
   configured,
   recoveringPassword = false,
+  oauthErrorKey = null,
   onClose,
 }: AccountModalProps) {
   const [mode, setMode] = useState<Mode>('sign-in');
@@ -31,7 +35,7 @@ export default function AccountModal({
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => oauthErrorKey ? t(oauthErrorKey) : '');
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -89,6 +93,10 @@ export default function AccountModal({
     });
   };
 
+  const handleGoogleSignIn = () => {
+    void run(signInWithGoogle);
+  };
+
   const handlePasswordUpdate = () => {
     if (!password || !passwordConfirmation) return;
     if (password !== passwordConfirmation) {
@@ -115,7 +123,13 @@ export default function AccountModal({
             <h2 className="text-lg font-semibold text-text-primary">{t('account')}</h2>
             <p className="text-xs text-text-muted mt-1">{t('accountDesc')}</p>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-sm">{t('close')}</button>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="text-text-muted hover:text-text-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {t('close')}
+          </button>
         </div>
 
         {!configured ? (
@@ -127,6 +141,7 @@ export default function AccountModal({
               <input
                 type="password"
                 value={password}
+                disabled={busy}
                 onChange={(e) => setPassword(e.currentTarget.value)}
                 className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
                 autoFocus
@@ -137,6 +152,7 @@ export default function AccountModal({
               <input
                 type="password"
                 value={passwordConfirmation}
+                disabled={busy}
                 onChange={(e) => setPasswordConfirmation(e.currentTarget.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handlePasswordUpdate()}
                 className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
@@ -170,11 +186,32 @@ export default function AccountModal({
           </div>
         ) : (
           <div className="space-y-4">
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={busy}
+              className="w-full py-2.5 px-4 text-sm font-medium text-text-primary bg-white/5 border border-border rounded-lg hover:bg-white/10 hover:border-white/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4 shrink-0">
+                <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.55h3.24c1.9-1.75 2.98-4.33 2.98-7.42Z" />
+                <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.35l-3.24-2.55c-.9.6-2.05.96-3.38.96-2.61 0-4.82-1.76-5.61-4.13H3.04v2.62A10 10 0 0 0 12 22Z" />
+                <path fill="#FBBC05" d="M6.39 13.93A6 6 0 0 1 6.08 12c0-.67.12-1.32.31-1.93V7.45H3.04A10 10 0 0 0 2 12c0 1.61.38 3.14 1.04 4.55l3.35-2.62Z" />
+                <path fill="#EA4335" d="M12 5.94c1.47 0 2.79.51 3.83 1.5l2.87-2.88A9.62 9.62 0 0 0 12 2a10 10 0 0 0-8.96 5.45l3.35 2.62C7.18 7.7 9.39 5.94 12 5.94Z" />
+              </svg>
+              {busy ? t('loading') : t('continueWithGoogle')}
+            </button>
+
+            <div className="flex items-center gap-3 text-[11px] text-text-muted">
+              <span className="h-px flex-1 bg-border" />
+              <span>{t('orUseEmail')}</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
             <div>
               <label className="text-xs text-text-secondary mb-1 block">{t('email')}</label>
               <input
                 type="email"
                 value={email}
+                disabled={busy}
                 onChange={(e) => setEmail(e.currentTarget.value)}
                 className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
                 autoFocus
@@ -186,6 +223,7 @@ export default function AccountModal({
                 <input
                   type="password"
                   value={password}
+                  disabled={busy}
                   onChange={(e) => setPassword(e.currentTarget.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submit()}
                   className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
@@ -198,6 +236,7 @@ export default function AccountModal({
                 <input
                   type="password"
                   value={passwordConfirmation}
+                  disabled={busy}
                   onChange={(e) => setPasswordConfirmation(e.currentTarget.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submit()}
                   className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
@@ -218,14 +257,16 @@ export default function AccountModal({
 
             <div className="flex items-center justify-between text-xs">
               <button
+                disabled={busy}
                 onClick={() => { setMode(mode === 'sign-up' ? 'sign-in' : 'sign-up'); setError(''); setMessage(''); }}
-                className="text-text-muted hover:text-text-primary"
+                className="text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {mode === 'sign-up' ? t('haveAccount') : t('needAccount')}
               </button>
               <button
+                disabled={busy}
                 onClick={() => { setMode(mode === 'reset' ? 'sign-in' : 'reset'); setError(''); setMessage(''); }}
-                className="text-text-muted hover:text-text-primary"
+                className="text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {mode === 'reset' ? t('backToSignIn') : t('forgotPassword')}
               </button>
