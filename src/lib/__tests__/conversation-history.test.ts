@@ -54,4 +54,17 @@ describe('conversation history helpers', () => {
 
     expect(conversationHistoryBefore(messages, 'missing')).toEqual([]);
   });
+
+  it('excludes greeting messages from history', () => {
+    const messages: ChatMessage[] = [
+      msg({ id: 'g1', role: 'assistant', content: '嗨，我在这儿。', isGreeting: true }),
+      msg({ id: 'u1', role: 'user', content: '来段鼓点' }),
+      msg({ id: 'a1', role: 'assistant', content: '已经加上了。' }),
+    ];
+
+    expect(conversationHistoryFromMessages(messages)).toEqual([
+      { role: 'user', content: '来段鼓点' },
+      { role: 'assistant', content: '已经加上了。' },
+    ]);
+  });
 });

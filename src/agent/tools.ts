@@ -46,6 +46,30 @@ export class CommitSignal extends Error {
   }
 }
 
+function validateCurrentCode(code: string, zh: boolean): ToolResult {
+  const runtime = validateCodeRuntime(code);
+  if (!runtime.ok) {
+    if (runtime.kind === 'syntax') {
+      return { ok: false, error: zh
+        ? `语法错误: ${runtime.error}`
+        : `Syntax error: ${runtime.error}` };
+    }
+    return { ok: false, error: zh
+      ? `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）`
+      : `Runtime error: ${runtime.error} (do not use TidalCycles-specific APIs such as by/sometimesBy/someCyclesBy/within; use .sometimes(fast(2)) or .every(N, fast(2)) instead)` };
+  }
+  const transpilerCheck = validateCodeTranspiler(code);
+  return transpilerCheck.ok
+    ? { ok: true, data: { valid: true } }
+    : { ok: false, error: zh
+        ? `Mini-notation 错误: ${transpilerCheck.error}`
+        : `Mini-notation error: ${transpilerCheck.error}` };
+}
+
+export function validateCommittedCode(code: string, isZh = true): ToolResult {
+  return validateCurrentCode(code, isZh);
+}
+
 // ----- tool definitions ------------------------------------------------------
 
 export const TOOLS: ToolDef[] = [
@@ -65,26 +89,19 @@ export const TOOLS: ToolDef[] = [
     },
     handler: (args, ctx) => {
       const zh = ctx.isZh ?? true;
-      const code = typeof args.code === 'string' && args.code.trim() ? args.code : ctx.state.code;
-      // validateCodeRuntime handles JS syntax check (engine not ready, kind:'syntax')
-      // and Proxy dry-run (engine ready, kind:'runtime') in a single call.
-      const runtime = validateCodeRuntime(code);
-      if (!runtime.ok) {
-        if (runtime.kind === 'syntax') {
-          return { ok: false, error: zh
-            ? `语法错误: ${runtime.error}`
-            : `Syntax error: ${runtime.error}` };
-        }
+      // Compare after the same normalization setCode applies, otherwise code
+      // containing GM alias names (rewritten on store) would never match and
+      // the model would loop on setCode → validate forever.
+      if (
+        typeof args.code === 'string' &&
+        args.code.trim() &&
+        normalizeGmSampleNames(args.code.trim()) !== ctx.state.code
+      ) {
         return { ok: false, error: zh
-          ? `运行时错误: ${runtime.error}（请勿使用 TidalCycles 专有 API，如 by/sometimesBy/someCyclesBy/within；改用 .sometimes(fast(2)) 或 .every(N, fast(2)) 形式）`
-          : `Runtime error: ${runtime.error} (do not use TidalCycles-specific APIs such as by/sometimesBy/someCyclesBy/within; use .sometimes(fast(2)) or .every(N, fast(2)) instead)` };
+          ? 'validate 只能校验当前 setCode 写入的代码；请先用 setCode 保存修正后的完整代码，再调用 validate。'
+          : 'validate can only check the current code written by setCode; call setCode with the corrected full code before validate.' };
       }
-      const transpilerCheck = validateCodeTranspiler(code);
-      return transpilerCheck.ok
-        ? { ok: true, data: { valid: true } }
-        : { ok: false, error: zh
-            ? `Mini-notation 错误: ${transpilerCheck.error}`
-            : `Mini-notation error: ${transpilerCheck.error}` };
+      return validateCurrentCode(ctx.state.code, zh);
     },
   },
 
@@ -100,8 +117,13 @@ export const TOOLS: ToolDef[] = [
           description:
             '完整的 Strudel 代码：第一行写顶部注释 `// STYLE | BPM: N`，第二行 setcps(N)，后接 stack(...) 包含所有音层（每层 `/* @layer NAME */` 后另起一行写 `// 简短中文说明`）',
         },
+        explanation: {
+          type: 'string',
+          description:
+            '【必填】用你的人格口吻、一句话现在进行时说明这一步 setCode 在做什么，会作为进度消息展示给用户。如 "加上完整 mask 编排，intro→drop 结构" / "给 bass 加一层低通滤波"。',
+        },
       },
-      required: ['code'],
+      required: ['code', 'explanation'],
     },
     handler: (args, ctx) => {
       if (typeof args.code !== 'string' || !args.code.trim()) {
@@ -139,6 +161,8 @@ export const TOOLS: ToolDef[] = [
       required: ['explanation'],
     },
     handler: (_args, ctx) => {
+      const validation = validateCurrentCode(ctx.state.code, ctx.isZh ?? true);
+      if (!validation.ok) return validation;
       // Always use the tool-managed state.code — never let the LLM pass its own
       // code blob, which would bypass setcps and other accumulated edits.
       // Normalize multiline strings so Strudel's evaluator doesn't choke.
@@ -162,6 +186,7 @@ const TOOL_SCHEMAS_ZH = {
       '设置完整的 Strudel 代码，适用于从头创作或在现有代码基础上编辑（如添加/修改/删除音层、调整 BPM 等任意改动）。若已有现存代码，代码已通过系统消息传入（含 BPM 和音层摘要），直接心算读取即可。设置后请用 validate 校验，通过后再 commit。',
     params: {
       code: '完整的 Strudel 代码：第一行写顶部注释 `// STYLE | BPM: N`，第二行 setcps(N)，后接 stack(...) 包含所有音层（每层 `/* @layer NAME */` 后另起一行写 `// 简短中文说明`）',
+      explanation: '【必填】用你的人格口吻、一句话现在进行时说明这一步 setCode 在做什么，会作为进度消息展示给用户。如 "加上完整 mask 编排，intro→drop 结构" / "给 bass 加一层低通滤波"。',
     },
   },
   commit: {
@@ -187,6 +212,7 @@ const TOOL_SCHEMAS_EN = {
       'Write the complete Strudel code, for brand-new compositions or edits to existing code (add/edit/remove layers, change BPM, etc.). If existing code was provided, it was already injected via the system message (with BPM and layer summary) — read it mentally without calling any tool. After setting, call validate, then commit once it passes.',
     params: {
       code: 'Full Strudel code: first line is a top comment `// STYLE | BPM: N`, second line setcps(N), followed by stack(...) containing all layers (each `/* @layer NAME */` followed by a short English comment on the next line)',
+      explanation: '[Required] In your persona voice, one present-tense sentence describing what this setCode step is doing; shown to the user as a progress message. E.g. "Adding the full mask arrangement, intro→drop structure" / "Adding a low-pass filter to the bass".',
     },
   },
   commit: {

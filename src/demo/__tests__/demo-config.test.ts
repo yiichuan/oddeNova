@@ -11,7 +11,6 @@ import {
   DEMO_MOOD_SCENARIO,
   DEMO_PREFILL_SCENARIO,
   getActiveDemoSet,
-  STATIC_SUGGESTION_SCENARIOS,
   type DemoMoodScenario,
   type DemoScenario,
 } from '../demo-config';
@@ -30,7 +29,6 @@ describe('demo tool calls', () => {
       ...getActiveDemoSet(),
       DEMO_PREFILL_SCENARIO,
       DEMO_MOOD_SCENARIO,
-      ...STATIC_SUGGESTION_SCENARIOS,
     ]);
 
     const unknownToolNames = [...new Set(usedToolNames.filter((name) => !availableToolNames.has(name)))];

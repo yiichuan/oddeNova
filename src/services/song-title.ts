@@ -4,7 +4,7 @@ import type { ChatMessage } from '../hooks/useChat';
 export interface GenerateSongTitleParams {
   code: string;
   sessionTitle?: string;
-  messages?: Pick<ChatMessage, 'role' | 'content' | 'timestamp'>[];
+  messages?: Pick<ChatMessage, 'role' | 'content' | 'timestamp' | 'isGreeting'>[];
   locale: 'zh-CN' | 'en';
 }
 
@@ -44,7 +44,10 @@ export function sanitizeSongTitle(raw: string): string {
 function summarizeMessages(messages: GenerateSongTitleParams['messages']): string {
   if (!messages || messages.length === 0) return 'No chat context.';
 
-  return messages
+  const realMessages = messages.filter((message) => !message.isGreeting);
+  if (realMessages.length === 0) return 'No chat context.';
+
+  return realMessages
     .slice(-MAX_CONTEXT_MESSAGES)
     .map((message) => {
       const content = message.content.replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE_CHARS);

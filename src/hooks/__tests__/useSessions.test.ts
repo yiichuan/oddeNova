@@ -6,21 +6,39 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { t } from '../../lib/i18n';
-import { applyTruncate, applyTruncateAndEdit, useSessions } from '../useSessions';
+import type { OddeNovaImportPayload } from '../../lib/oddenova-import';
+import {
+  applyAppendAssistantDelta,
+  applyFinalizeLastAssistantMessage,
+  applyRefreshEmptySessionForReuse,
+  applyTruncate,
+  applyTruncateAndEdit,
+  useSessions,
+} from '../useSessions';
 import type { Session } from '../useSessions';
 
 const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
-  getAllSessions: vi.fn<() => Promise<Session[]>>(async () => []),
+  getAllSessions: vi.fn(async () => [] as Session[]),
+  getCurrentSessionId: vi.fn(async () => null as string | null),
   putSession: vi.fn(async () => undefined),
+  putCurrentSessionId: vi.fn(async () => undefined),
+  putImportedSession: vi.fn(async (_session: unknown) => undefined),
+  putImportedSessionBranch: vi.fn(async (_detached: unknown, _branch: unknown) => undefined),
   deleteSession: vi.fn(async () => undefined),
+  isSessionStoragePersistent: vi.fn(() => true),
 }));
 
 vi.mock('../../lib/session-storage', () => ({
   openDB: storageMocks.openDB,
   getAllSessions: storageMocks.getAllSessions,
+  getCurrentSessionId: storageMocks.getCurrentSessionId,
   putSession: storageMocks.putSession,
+  putCurrentSessionId: storageMocks.putCurrentSessionId,
+  putImportedSession: storageMocks.putImportedSession,
+  putImportedSessionBranch: storageMocks.putImportedSessionBranch,
   deleteSession: storageMocks.deleteSession,
+  isSessionStoragePersistent: storageMocks.isSessionStoragePersistent,
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -73,8 +91,13 @@ describe('useSessions', () => {
   beforeEach(() => {
     storageMocks.openDB.mockResolvedValue(undefined);
     storageMocks.getAllSessions.mockResolvedValue([]);
+    storageMocks.getCurrentSessionId.mockResolvedValue(null);
     storageMocks.putSession.mockResolvedValue(undefined);
+    storageMocks.putCurrentSessionId.mockResolvedValue(undefined);
+    storageMocks.putImportedSession.mockResolvedValue(undefined);
+    storageMocks.putImportedSessionBranch.mockResolvedValue(undefined);
     storageMocks.deleteSession.mockResolvedValue(undefined);
+    storageMocks.isSessionStoragePersistent.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -97,7 +120,7 @@ describe('useSessions', () => {
     });
 
     expect(getHook().currentSession?.title).toBe('周末广告配乐');
-    expect(getHook().currentSession?.messages[0].content).toBe('全新内容');
+    expect(getHook().currentSession?.messages.at(-1)?.content).toBe('全新内容');
   });
 
   it('default title derives on first addUserMessage', async () => {
@@ -148,7 +171,9 @@ describe('useSessions', () => {
     });
 
     expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
-      messages: [expect.objectContaining({ content: '同步这段旋律' })],
+      messages: expect.arrayContaining([
+        expect.objectContaining({ content: '同步这段旋律' }),
+      ]),
     }));
   });
 
@@ -207,13 +232,13 @@ describe('useSessions', () => {
     act(() => {
       getHook().addUserMessage('来段普通的鼓点');
     });
-    const firstMessageId = getHook().currentSession?.messages[0].id;
+    const firstMessageId = getHook().currentSession?.messages.find((m) => m.role === 'user')?.id;
     expect(firstMessageId).toBeTruthy();
 
     act(() => {
       getHook().truncate(firstMessageId!);
     });
-    expect(getHook().currentSession?.messages).toHaveLength(0);
+    expect(getHook().currentSession?.messages).toHaveLength(1);
     expect(getHook().currentSession?.title).toBe('来段普通的鼓点');
 
     act(() => {
@@ -243,6 +268,333 @@ describe('useSessions', () => {
       getHook().renameSession(sessionId, longTitle);
     });
     expect(getHook().currentSession?.title).toBe(longTitle.slice(0, 60));
+  });
+
+  it('seeds a fresh session with exactly one greeting message', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const messages = getHook().currentSession?.messages ?? [];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe('assistant');
+    expect(messages[0].isGreeting).toBe(true);
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores the latest stored session on startup instead of creating a new one', async () => {
+    const stored = makeSession({
+      id: 'stored-latest',
+      title: '今天心情有点好',
+      messages: [{ id: 'msg-1', role: 'user', content: '今天心情有点好', timestamp: 1 }],
+      code: 'stack(s("bd"))',
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([stored]);
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(getHook().currentId).toBe('stored-latest');
+    expect(getHook().sessions).toEqual([stored]);
+    expect(storageMocks.putSession).not.toHaveBeenCalled();
+  });
+
+  it('restores the persisted current session on startup even when it is not the newest session', async () => {
+    const emptyNewer = makeSession({
+      id: 'stored-empty-newer',
+      messages: [{ id: 'greeting-1', role: 'assistant', content: '你好', timestamp: 2, isGreeting: true }],
+      createdAt: 2,
+      updatedAt: 20,
+    });
+    const selectedOlder = makeSession({
+      id: 'selected-older',
+      title: '今天心情有点好',
+      messages: [{ id: 'msg-1', role: 'user', content: '今天心情有点好', timestamp: 1 }],
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([emptyNewer, selectedOlder]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('selected-older');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(getHook().currentId).toBe('selected-older');
+    expect(getHook().currentSession).toEqual(selectedOlder);
+  });
+
+  it('reuses a stored greeting-only session on startup instead of stacking another empty one', async () => {
+    const storedEmpty = makeSession({
+      id: 'stored-empty',
+      messages: [{ id: 'greeting-1', role: 'assistant', content: '你好', timestamp: 1, isGreeting: true }],
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([storedEmpty]);
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(getHook().currentId).toBe('stored-empty');
+    expect(getHook().sessions).toHaveLength(1);
+    expect(getHook().currentSession).toEqual(storedEmpty);
+    expect(storageMocks.putSession).not.toHaveBeenCalled();
+  });
+
+  it('newSession reuses a session that only contains a greeting, instead of stacking a new one', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const initialId = getHook().currentId;
+    const initialCount = getHook().sessions.length;
+
+    act(() => {
+      getHook().newSession();
+    });
+
+    expect(getHook().sessions.length).toBe(initialCount);
+    expect(getHook().currentId).toBe(initialId);
+  });
+
+  it('setSuggestions stores items with the code they were generated for and persists', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().setCurrentCode('stack(s("bd"))');
+    });
+    storageMocks.putSession.mockClear();
+
+    act(() => {
+      getHook().setSuggestions(['加入贝斯', '让鼓点更密'], 'stack(s("bd"))');
+    });
+
+    expect(getHook().currentSession?.suggestions).toEqual({
+      forCode: 'stack(s("bd"))',
+      items: ['加入贝斯', '让鼓点更密'],
+    });
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists the selected session id when switching sessions', async () => {
+    const emptyNewer = makeSession({
+      id: 'stored-empty-newer',
+      messages: [{ id: 'greeting-1', role: 'assistant', content: '你好', timestamp: 2, isGreeting: true }],
+      createdAt: 2,
+      updatedAt: 20,
+    });
+    const target = makeSession({
+      id: 'target-session',
+      title: '今天心情有点好',
+      messages: [{ id: 'msg-1', role: 'user', content: '今天心情有点好', timestamp: 1 }],
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([emptyNewer, target]);
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().switchTo('target-session');
+    });
+
+    expect(getHook().currentId).toBe('target-session');
+    expect(storageMocks.putCurrentSessionId).toHaveBeenCalledWith('target-session', 'guest');
+  });
+
+  it('exposes whether session storage is persistent after opening the database', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(storageMocks.isSessionStoragePersistent).toHaveBeenCalledTimes(1);
+    expect(getHook().isPersistent).toBe(true);
+  });
+
+  it('creates, updates, and conflict-branches imported oddeNova skill sessions', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'project-1',
+      title: 'Imported beat',
+      code: 'setcps(0.4)\nstack(s("bd"))',
+      messages: [
+        { role: 'user', content: 'Make a beat' },
+        { role: 'assistant', content: 'Here is a beat' },
+      ],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession(payload);
+    });
+    expect(outcome).toBe('created');
+    expect(getHook().currentSession?.externalSource).toMatchObject({
+      type: 'oddenova-strudel-skill', projectId: 'project-1',
+    });
+    expect(getHook().currentSession?.messages.map(({ role, content }) => ({ role, content }))).toEqual(payload.messages);
+
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession({
+        ...payload,
+        code: 'setcps(0.5)\nstack(s("bd"))',
+      });
+    });
+    expect(outcome).toBe('updated');
+    expect(getHook().sessions.filter((session) => session.externalSource?.projectId === 'project-1'))
+      .toHaveLength(1);
+
+    act(() => getHook().setCurrentCode('website edit'));
+    storageMocks.putImportedSessionBranch.mockClear();
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession({ ...payload, code: 'codex update' });
+    });
+    expect(outcome).toBe('branched');
+    expect(getHook().sessions).toHaveLength(3);
+    expect(getHook().sessions.filter((session) => session.externalSource?.projectId === 'project-1'))
+      .toHaveLength(1);
+
+    expect(storageMocks.putImportedSessionBranch).toHaveBeenCalledTimes(1);
+    const [detached, persistedBranch] = storageMocks.putImportedSessionBranch.mock.calls[0] as [Session, Session];
+    expect(detached).toMatchObject({ code: 'website edit', externalSource: undefined });
+    expect(persistedBranch).toMatchObject({ code: 'codex update' });
+    expect(persistedBranch.externalSource).toMatchObject({
+      type: 'oddenova-strudel-skill', projectId: 'project-1',
+    });
+
+    const branchId = getHook().currentSession?.id;
+    const sessionCount = getHook().sessions.length;
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession({ ...payload, code: 'codex update' });
+    });
+    expect(outcome).toBe('updated');
+    expect(getHook().currentSession?.id).toBe(branchId);
+    expect(getHook().sessions).toHaveLength(sessionCount);
+  });
+
+  it('rejects a failed imported-session create without changing React state', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'create-failure',
+      title: 'Imported beat',
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make a beat' }],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const previousSessions = getHook().sessions;
+    const previousCurrentId = getHook().currentId;
+    storageMocks.putImportedSession.mockRejectedValueOnce(new Error('create failed'));
+
+    await act(async () => {
+      await expect(getHook().importOddeNovaSession(payload)).rejects.toThrow('create failed');
+    });
+
+    expect(getHook().sessions).toBe(previousSessions);
+    expect(getHook().currentId).toBe(previousCurrentId);
+  });
+
+  it('rejects a failed imported-session update without changing React state', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'update-failure',
+      title: 'Imported beat',
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make a beat' }],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => {
+      await getHook().importOddeNovaSession(payload);
+    });
+    const previousSessions = getHook().sessions;
+    const previousCurrentId = getHook().currentId;
+    storageMocks.putImportedSession.mockRejectedValueOnce(new Error('update failed'));
+
+    await act(async () => {
+      await expect(getHook().importOddeNovaSession({ ...payload, code: 'stack(s("sd"))' }))
+        .rejects.toThrow('update failed');
+    });
+
+    expect(getHook().sessions).toBe(previousSessions);
+    expect(getHook().currentId).toBe(previousCurrentId);
+    expect(getHook().currentSession?.code).toBe(payload.code);
+  });
+
+  it('rejects a failed atomic conflict branch without detaching or adding sessions', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'branch-failure',
+      title: 'Imported beat',
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make a beat' }],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => {
+      await getHook().importOddeNovaSession(payload);
+    });
+    act(() => getHook().setCurrentCode('website edit'));
+    const previousSessions = getHook().sessions;
+    const previousCurrentId = getHook().currentId;
+    storageMocks.putImportedSessionBranch.mockRejectedValueOnce(new Error('branch failed'));
+
+    await act(async () => {
+      await expect(getHook().importOddeNovaSession({ ...payload, code: 'codex update' }))
+        .rejects.toThrow('branch failed');
+    });
+
+    expect(getHook().sessions).toBe(previousSessions);
+    expect(getHook().currentId).toBe(previousCurrentId);
+    expect(getHook().sessions).toHaveLength(2);
+    expect(getHook().currentSession).toMatchObject({
+      id: previousCurrentId,
+      code: 'website edit',
+      externalSource: {
+        type: 'oddenova-strudel-skill',
+        projectId: 'branch-failure',
+      },
+    });
+  });
+
+  it('atomically stores a code revision and links it from the assistant message', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().addAssistantMessage('完成', 's("sd")', getHook().currentId!, {
+        beforeCode: 's("bd")',
+        afterCode: 's("sd")',
+        playbackStatus: 'played',
+      });
+    });
+
+    const session = getHook().currentSession!;
+    expect(session.revisions).toHaveLength(1);
+    expect(session.revisions?.[0]).toMatchObject({
+      beforeCode: 's("bd")',
+      afterCode: 's("sd")',
+      playbackStatus: 'played',
+    });
+    expect(session.messages.at(-1)?.revisionId).toBe(session.revisions?.[0].id);
+  });
+
+  it('keeps ordinary assistant messages revision-free', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().addAssistantMessage('没有代码', undefined, getHook().currentId!);
+    });
+
+    expect(getHook().currentSession?.revisions).toBeUndefined();
+    expect(getHook().currentSession?.messages.at(-1)?.revisionId).toBeUndefined();
   });
 });
 
@@ -309,6 +661,92 @@ describe('applyTruncateAndEdit', () => {
   });
 });
 
+describe('empty session reuse helpers', () => {
+  it('refreshes reused empty sessions and re-rolls the greeting', () => {
+    const s = makeSession({
+      createdAt: 1,
+      updatedAt: 1,
+      messages: [{ id: 'old-greeting', role: 'assistant', content: '旧招呼', timestamp: 1, isGreeting: true }],
+    });
+
+    const result = applyRefreshEmptySessionForReuse(s, 2);
+
+    expect(result.title).toBe(t('newSessionTitle'));
+    expect(result.createdAt).toBe(2);
+    expect(result.updatedAt).toBe(2);
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].role).toBe('assistant');
+    expect(result.messages[0].isGreeting).toBe(true);
+    expect(result.messages[0].id).not.toBe('old-greeting');
+  });
+});
+
+describe('assistant streaming helpers', () => {
+  it('creates and appends to one assistant message while chat text streams', () => {
+    const s = makeSession({
+      messages: [{ id: 'u1', role: 'user', content: '你是谁', timestamp: 0 }],
+    });
+
+    const first = applyAppendAssistantDelta(s, '我是 ');
+    const second = applyAppendAssistantDelta(first, 'Nova');
+
+    expect(second.messages).toHaveLength(2);
+    expect(second.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '我是 Nova',
+    });
+  });
+
+  it('finalizes the last streamed assistant message with final content', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'u1', role: 'user', content: '聊聊今晚', timestamp: 0 },
+        { id: 'a1', role: 'assistant', content: '今晚像一片蓝色湖面。', timestamp: 1 },
+      ],
+    });
+
+    const result = applyFinalizeLastAssistantMessage(s, '今晚像一片安静的蓝色湖面。');
+
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '今晚像一片安静的蓝色湖面。',
+    });
+  });
+
+  it('appends instead of clobbering when the last assistant message carries composed code', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'u1', role: 'user', content: '写一首歌', timestamp: 0 },
+        { id: 'a1', role: 'assistant', content: '写好了', code: 'setcps(0.5)', timestamp: 1 },
+      ],
+    });
+
+    const result = applyFinalizeLastAssistantMessage(s, '喜欢吗？');
+
+    // The composed message must be preserved untouched.
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[1]).toMatchObject({ content: '写好了', code: 'setcps(0.5)' });
+    expect(result.messages[2]).toMatchObject({ role: 'assistant', content: '喜欢吗？' });
+    expect(result.messages[2].code).toBeUndefined();
+  });
+
+  it('appends a new delta message instead of mutating a code-carrying last message', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'u1', role: 'user', content: '写一首歌', timestamp: 0 },
+        { id: 'a1', role: 'assistant', content: '写好了', code: 'setcps(0.5)', timestamp: 1 },
+      ],
+    });
+
+    const result = applyAppendAssistantDelta(s, '你觉得');
+
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[1]).toMatchObject({ content: '写好了', code: 'setcps(0.5)' });
+    expect(result.messages[2]).toMatchObject({ role: 'assistant', content: '你觉得' });
+    expect(result.messages[2].code).toBeUndefined();
+  });
+});
+
 describe('applyTruncate', () => {
   it('targetMessageId 不存在时返回同一个 session 对象不变', () => {
     const s = makeSession({
@@ -352,5 +790,24 @@ describe('applyTruncate', () => {
     });
     const result = applyTruncate(s, 'msg-1');
     expect(result.title).toBe('原标题');
+  });
+
+  it('截断消息时移除不再被引用的 revisions', () => {
+    const s = makeSession({
+      messages: [
+        { id: 'msg-0', role: 'user', content: '第一条', timestamp: 0 },
+        { id: 'msg-1', role: 'assistant', content: '版本一', code: 's("bd")', revisionId: 'rev-1', timestamp: 1 },
+        { id: 'msg-2', role: 'user', content: '第二条', timestamp: 2 },
+        { id: 'msg-3', role: 'assistant', content: '版本二', code: 's("sd")', revisionId: 'rev-2', timestamp: 3 },
+      ],
+      revisions: [
+        { id: 'rev-1', beforeCode: '', afterCode: 's("bd")', playbackStatus: 'played', createdAt: 1 },
+        { id: 'rev-2', beforeCode: 's("bd")', afterCode: 's("sd")', playbackStatus: 'played', createdAt: 3 },
+      ],
+    });
+
+    const result = applyTruncate(s, 'msg-2');
+
+    expect(result.revisions?.map((revision) => revision.id)).toEqual(['rev-1']);
   });
 });

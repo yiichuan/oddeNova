@@ -43,6 +43,7 @@ function makeDeps(over: Partial<AgentTurnDeps> = {}): AgentTurnDeps {
     snapshotHistory: () => [],
     addUserMessage: vi.fn(),
     addAssistantMessage: vi.fn(),
+    finalizeLastAssistantMessage: vi.fn(),
     setCurrentCode: vi.fn(),
     updateTokenStats: vi.fn(),
     beginLoading: (id) => {
@@ -66,11 +67,13 @@ function makeInput(over: Partial<AgentTurnInput> = {}): AgentTurnInput {
 describe('runAgentTurn', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('aborts early when the engine is unavailable, without calling runAgent', async () => {
+  it('does not block the unified turn while the engine is still initializing', async () => {
     const deps = makeDeps({ engineStatus: () => 'initializing' });
+
     await runAgentTurn(makeInput(), deps);
-    expect(deps.setStrudelError).toHaveBeenCalled();
-    expect(deps.runAgent).not.toHaveBeenCalled();
+
+    expect(deps.setStrudelError).not.toHaveBeenCalled();
+    expect(deps.runAgent).toHaveBeenCalled();
   });
 
   it('adds the user message by default', async () => {
@@ -90,7 +93,11 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
     expect(deps.play).toHaveBeenCalledWith('note("c3")');
     expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1');
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', {
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'played',
+    });
   });
 
   it('persists the code even when playback fails — latest code is always the session truth', async () => {
@@ -102,6 +109,11 @@ describe('runAgentTurn', () => {
     const call = (deps.addAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[1]).toBe('note("c3")');
     expect(String(call[0])).toContain('bad node');
+    expect(call[3]).toEqual({
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'failed',
+    });
   });
 
   it('on a background (non-current) session, persists without playing', async () => {
@@ -109,6 +121,19 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
     expect(deps.play).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', {
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'not_attempted',
+    });
+  });
+
+  it('does not create a revision when code was not committed', async () => {
+    const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ committed: false })) });
+
+    await runAgentTurn(makeInput(), deps);
+
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1');
   });
 
   it('surfaces next-step suggestions parsed from the explanation', async () => {
@@ -117,20 +142,25 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
     expect(deps.setCommitSuggestions).toHaveBeenCalledWith(['加鼓', '提速']);
     // the next-steps block is stripped from the chat message
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith('搞定', 'note("c3")', 'S1');
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('搞定', 'note("c3")', 'S1', {
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'played',
+    });
   });
 
-  it('posts the explanation only when the result carries no code', async () => {
+  it('finalizes the streamed assistant message when the result carries no code', async () => {
     const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ code: '', explanation: 'hmm' })) });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith('hmm', undefined, 'S1');
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith('hmm', 'S1');
+    expect(deps.addAssistantMessage).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).not.toHaveBeenCalled();
   });
 
   it('falls back to the agentNoCode label when there is neither code nor explanation', async () => {
     const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ code: '', explanation: '' })) });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith(t('agentNoCode'), undefined, 'S1');
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('agentNoCode'), 'S1');
   });
 
   it('on abort, posts the interrupted message and skips playback', async () => {
@@ -143,7 +173,7 @@ describe('runAgentTurn', () => {
       }),
     });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith(t('interrupted'), undefined, 'S1');
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('interrupted'), 'S1');
     expect(deps.play).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).not.toHaveBeenCalled();
   });
@@ -159,7 +189,7 @@ describe('runAgentTurn', () => {
       }),
     });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).not.toHaveBeenCalled();
+    expect(deps.finalizeLastAssistantMessage).not.toHaveBeenCalled();
   });
 
   it('passes undefined history to runAgent when includeHistory is false', async () => {
@@ -190,6 +220,11 @@ describe('runAgentTurn', () => {
     const deps = makeDeps({ runAgent, getCurrentCode: () => 'CURRENT' });
     await runAgentTurn(makeInput({ initialCode: 'OVERRIDE' }), deps);
     expect(runAgent.mock.calls[0][1]).toBe('OVERRIDE');
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', {
+      beforeCode: 'OVERRIDE',
+      afterCode: 'note("c3")',
+      playbackStatus: 'played',
+    });
   });
 
   it('forwards moodContext to runAgent', async () => {
@@ -203,7 +238,7 @@ describe('runAgentTurn', () => {
     const deps = makeDeps({ runAgent: vi.fn(async () => { throw new Error('boom'); }) });
     await runAgentTurn(makeInput(), deps);
     expect(deps.setStrudelError).toHaveBeenCalledWith('boom');
-    const call = (deps.addAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0];
+    const call = (deps.finalizeLastAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(String(call[0])).toContain('boom');
   });
 

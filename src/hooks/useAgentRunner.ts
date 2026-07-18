@@ -1,13 +1,12 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { useStrudel } from './useStrudel';
-import type { useSessions, TokenStats } from './useSessions';
+import type { useSessions, CodeRevisionDraft, TokenStats } from './useSessions';
 import { runAgent } from '../services/llm';
 import type { ConversationTurn, ProgressEvent } from '../services/llm';
 import { conversationHistoryFromMessages } from '../lib/conversation-history';
 import { commitPlayback } from '../lib/playback-commit';
-import { parseNextSteps } from '../services/suggestions';
-import { getEngineUnavailableMessage } from '../lib/engine-status';
+import { parseNextSteps, stripNextSteps } from '../services/suggestions';
 import { getActiveModelConfig } from '../services/llm-config';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from '../lib/analytics';
 import { t, zh } from '../lib/i18n';
@@ -57,7 +56,13 @@ export interface AgentTurnDeps {
   getCurrentCode: () => string;
   snapshotHistory: () => ConversationTurn[];
   addUserMessage: (text: string) => void;
-  addAssistantMessage: (text: string, code: string | undefined, sessionId: string) => void;
+  addAssistantMessage: (
+    text: string,
+    code: string | undefined,
+    sessionId: string,
+    revision?: CodeRevisionDraft,
+  ) => void;
+  finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
   updateTokenStats: (stats: TokenStats, sessionId: string) => void;
 
@@ -75,13 +80,8 @@ export interface AgentTurnDeps {
   getModelConfig: () => { provider: string; model: string };
 }
 
-/** Strip the trailing "next steps" paragraph so it isn't duplicated in chat history. */
-function stripNextSteps(explanation: string): string {
-  return explanation.replace(/\n\n接下来可以[：:][^]*$/, '').trim();
-}
-
 /** Distinguish a user-triggered abort from a genuine error. */
-function isUserAbort(error: unknown, signal?: AbortSignal): boolean {
+export function isUserAbort(error: unknown, signal?: AbortSignal): boolean {
   if (signal?.aborted) return true;
   if (error instanceof DOMException && error.name === 'AbortError') return true;
   if (error instanceof Error) {
@@ -91,14 +91,12 @@ function isUserAbort(error: unknown, signal?: AbortSignal): boolean {
 }
 
 export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): Promise<void> {
-  const unavailable = getEngineUnavailableMessage(deps.engineStatus());
-  if (unavailable) {
-    deps.setStrudelError(unavailable);
-    return;
-  }
-
   deps.resetSuggestions();
   deps.clearRollbackPrefill();
+
+  // The revision baseline is the editor state at turn start. Capture it once:
+  // reading live code after the async agent call would include later user edits.
+  const beforeCode = input.initialCode ?? deps.getCurrentCode();
 
   // Snapshot history BEFORE the user message is written, so the current turn is
   // not echoed back into its own history.
@@ -122,7 +120,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     const onProgress = deps.makeProgressHandler(sessionId);
     const result = await deps.runAgent(
       input.text,
-      input.initialCode ?? deps.getCurrentCode(),
+      beforeCode,
       onProgress,
       input.moodContext,
       signal,
@@ -131,7 +129,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
 
     if (signal.aborted) {
       if (deps.isCurrentController(sessionId, controller)) {
-        deps.addAssistantMessage(t('interrupted'), undefined, sessionId);
+        deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
       trackAgentAbort();
       return;
@@ -153,36 +151,55 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       if (deps.isCurrentSession(sessionId)) {
         // Always persist the newest code as the session truth, run or not.
         const success = await commitPlayback(result.code, sessionId, deps);
+        const revision: CodeRevisionDraft | undefined = result.committed
+          ? {
+              beforeCode,
+              afterCode: result.code,
+              playbackStatus: success ? 'played' : 'failed',
+            }
+          : undefined;
         if (success) {
           const nextSteps = parseNextSteps(result.explanation);
           if (nextSteps.length > 0) deps.setCommitSuggestions(nextSteps);
-          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
+          if (revision) {
+            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
+          } else {
+            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
+          }
         } else {
-          deps.addAssistantMessage(
-            zh
-              ? `agent 生成完了但代码无法运行: ${deps.getStrudelError() || '未知错误'}`
-              : `Agent generated code but it failed to run: ${deps.getStrudelError() || 'unknown error'}`,
-            result.code,
-            sessionId,
-          );
+          const content = zh
+            ? `agent 生成完了但代码无法运行: ${deps.getStrudelError() || '未知错误'}`
+            : `Agent generated code but it failed to run: ${deps.getStrudelError() || 'unknown error'}`;
+          if (revision) {
+            deps.addAssistantMessage(content, result.code, sessionId, revision);
+          } else {
+            deps.addAssistantMessage(content, result.code, sessionId);
+          }
         }
       } else {
         // Background session completed: persist only, don't touch the editor or play audio.
-        deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
+        const revision: CodeRevisionDraft | undefined = result.committed
+          ? { beforeCode, afterCode: result.code, playbackStatus: 'not_attempted' }
+          : undefined;
+        if (revision) {
+          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
+        } else {
+          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
+        }
         deps.setCurrentCode(result.code, sessionId);
       }
     } else {
-      deps.addAssistantMessage(result.explanation || t('agentNoCode'), undefined, sessionId);
+      deps.finalizeLastAssistantMessage(result.explanation || t('agentNoCode'), sessionId);
     }
   } catch (e: unknown) {
     if (isUserAbort(e, signal)) {
       if (deps.isCurrentController(sessionId, controller)) {
-        deps.addAssistantMessage(t('interrupted'), undefined, sessionId);
+        deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
       trackAgentAbort();
     } else {
       const errMsg = e instanceof Error ? e.message : t('requestFailed');
-      deps.addAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, undefined, sessionId);
+      deps.finalizeLastAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, sessionId);
       deps.setStrudelError(errMsg);
       trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
     }
@@ -236,7 +253,8 @@ export function useAgentRunner(cfg: UseAgentRunnerConfig): (input: AgentTurnInpu
         getCurrentCode: () => currentCode,
         snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
         addUserMessage: (text) => sessions.addUserMessage(text),
-        addAssistantMessage: (text, code, id) => sessions.addAssistantMessage(text, code, id),
+        addAssistantMessage: (text, code, id, revision) => sessions.addAssistantMessage(text, code, id, revision),
+        finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
         setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
         updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
         beginLoading: (id) => {

@@ -12,9 +12,15 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   code?: string;
+  /** Immutable code boundary produced by this assistant turn. */
+  revisionId?: string;
   timestamp: number;
   // For role === 'progress':
   progressKind?: ProgressKind;
   toolName?: string;
   ok?: boolean;
+  // For role === 'assistant': a decorative opening line seeded when an empty
+  // session is created. Excluded from LLM history (see conversation-history.ts)
+  // and from the retry/branch actions in ConversationView.
+  isGreeting?: boolean;
 }

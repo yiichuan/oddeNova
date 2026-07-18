@@ -27,6 +27,12 @@ const S: Record<string, readonly [string, string]> = {
   requestFailed:    ['请求失败', 'Request failed'],
   loadingShare:     ['正在载入分享内容…', 'Loading shared content…'],
   shareLoadFailed:  ['分享内容加载失败', 'Failed to load shared content'],
+  importSucceeded:  ['导入成功', 'Imported successfully'],
+  importUpdated:    ['已更新', 'Updated'],
+  importBranched:   ['当前版本已保留，新导入的更新已创建为新分支', 'The current version was preserved and the imported update was created as a new branch'],
+  importUnsupported:['导入链接版本不受支持，请更新 oddeNova 或 oddenova-strudel skill', 'This import link version is unsupported. Update oddeNova or the oddenova-strudel skill'],
+  importInvalid:    ['导入链接无效', 'Invalid import link'],
+  importMemoryWarning: ['当前无法持久保存，刷新后可能丢失', 'Persistent storage is unavailable; this import may be lost after refresh'],
   collapseCode:     ['收起代码 ↓', 'Collapse ↓'],
   viewCode:         ['查看代码 ↑', 'View code ↑'],
   newSession:       ['新建会话', 'New session'],
@@ -35,6 +41,7 @@ const S: Record<string, readonly [string, string]> = {
   branchSuffix:     ['（分支）', ' (branch)'],
 
   // Tool call labels (formatToolCall)
+  arrangeMusic:   ['编排段落…', 'Arranging…'],
   readScore:      ['读取当前曲谱', 'Read current score'],
   validateCode:   ['校验代码', 'Validate code'],
   commitAndPlay:  ['提交并播放', 'Commit and play'],
@@ -100,6 +107,7 @@ const S: Record<string, readonly [string, string]> = {
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
+  tabToFill:           ['按 Tab 填入', 'Tab to use'],
   notInitialized:      ['未初始化', 'Not initialized'],
   restartEngine:       ['重启引擎', 'Restart engine'],
   engineInitializing:  ['初始化中...', 'Initializing...'],
@@ -117,20 +125,38 @@ const S: Record<string, readonly [string, string]> = {
   scanToJoin:   ['扫码入群', 'Scan to join'],
   freeApiKey:   ['免费领体验 API Key', 'Get a free trial API Key'],
 
+  // PersonaModal
+  customPersonas:     ['自定义人物', 'Custom personas'],
+  noCustomPersonas:   ['还没有自定义人物', 'No custom personas yet'],
+  newPersona:         ['新建自定义人物', 'New custom persona'],
+  editPersona:        ['编辑人物', 'Edit persona'],
+  personaName:        ['名字', 'Name'],
+  personaPrompt:      ['人设', 'Persona'],
+  personaPromptPlaceholder: ['描述一下这个人物的性格和说话方式，比如它是谁、会怎么和你聊天。', "Describe this persona's character and how they talk — for example, who they are and how they'd chat with you."],
+
   // ConversationView
   startCreating: ['说点什么开始创作', 'Say something to start creating'],
   strudelCode:   ['Strudel 代码', 'Strudel code'],
   lines:         ['行', 'lines'],
   branchFrom:    ['从此处创建分支对话', 'Branch conversation from here'],
   thinking:      ['思考中...', 'Thinking...'],
+  reasoningTitle:['构思', 'Ideation'],
+  collapseReasoning: ['收起推理过程', 'Collapse reasoning'],
+  expandReasoning:   ['展开推理过程', 'Expand reasoning'],
+  actionsTitle:  ['思考过程', 'Process'],
   rollbackHere:  ['回滚到此处', 'Roll back to here'],
   copyCode:      ['复制代码', 'Copy code'],
+  viewChanges:   ['查看修改', 'View changes'],
+  noCodeChanges: ['本轮代码没有变化', 'No code changes in this turn'],
+  revisionPlaybackFailed: ['代码已更新 · 播放失败', 'Code updated · playback failed'],
+  unchangedLines: ['{count} 行未变化', '{count} unchanged lines'],
 
   // HistoryPanel
   history:    ['历史对话', 'History'],
   noSessions: ['暂无会话', 'No sessions'],
 
   // Sidebar
+  choosePersona: ['选择人物', 'Choose persona'],
   replaySession: ['回放会话', 'Replay session'],
   viewHistory:   ['查看历史', 'View history'],
   playSong:      ['来首适合演示场合的曲子', 'A song for a presentation'],

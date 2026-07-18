@@ -11,12 +11,33 @@ vi.mock('../../services/strudel', () => ({
     setMasterLPF: vi.fn().mockResolvedValue(undefined),
     setMasterVolume: vi.fn().mockResolvedValue(undefined),
     setTempo: vi.fn(),
+    setAutocompletionEnabled: vi.fn(),
   },
 }));
 
 import CodePanel from '../CodePanel';
+import { strudelService } from '../../services/strudel';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+function installMatchMedia(initialMatches: boolean) {
+  let matches = initialMatches;
+  const listeners = new Set<(event: MediaQueryListEvent) => void>();
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn(() => ({
+      get matches() { return matches; },
+      addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+    })),
+  });
+
+  return (nextMatches: boolean) => {
+    matches = nextMatches;
+    const event = { matches } as MediaQueryListEvent;
+    listeners.forEach((listener) => listener(event));
+  };
+}
 
 function renderCodePanel(props: Partial<Parameters<typeof CodePanel>[0]> = {}) {
   const container = document.createElement('div');
@@ -57,6 +78,7 @@ describe('CodePanel editor focus reporting', () => {
     }
     document.body.innerHTML = '';
     vi.useRealTimers();
+    vi.clearAllMocks();
   });
 
   it('reports focus entering and leaving the editor mount', () => {
@@ -102,5 +124,35 @@ describe('CodePanel editor focus reporting', () => {
 
     expect(onEditorFocusChange).toHaveBeenCalledTimes(1);
     expect(onEditorFocusChange).toHaveBeenCalledWith(true);
+  });
+
+  it('enables autocompletion by default on desktop', () => {
+    installMatchMedia(false);
+
+    const { root } = renderCodePanel();
+    roots.push(root);
+
+    expect(strudelService.setAutocompletionEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it('disables autocompletion on mobile', () => {
+    installMatchMedia(true);
+
+    const { root } = renderCodePanel();
+    roots.push(root);
+
+    expect(strudelService.setAutocompletionEnabled).toHaveBeenCalledWith(false);
+  });
+
+  it('updates autocompletion when the layout crosses the mobile breakpoint', () => {
+    const setMobile = installMatchMedia(false);
+    const { root } = renderCodePanel();
+    roots.push(root);
+
+    act(() => setMobile(true));
+    expect(strudelService.setAutocompletionEnabled).toHaveBeenLastCalledWith(false);
+
+    act(() => setMobile(false));
+    expect(strudelService.setAutocompletionEnabled).toHaveBeenLastCalledWith(true);
   });
 });

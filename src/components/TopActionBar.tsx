@@ -28,14 +28,15 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
 
   async function handleShare() {
     const shareCode = session?.code || code || '';
-    if (!shareCode) return;
+    const shareMessages = session?.messages ?? messages ?? [];
+    if (!shareCode && shareMessages.length === 0) return;
     setState('loading');
     try {
       const title = session?.title?.trim() || t('newSessionTitle');
       const shareId = await uploadShare({
         title,
         code: shareCode,
-        messages: session?.messages ?? messages ?? [],
+        messages: shareMessages,
         locale: zh ? 'zh-CN' : 'en',
       });
       const url = `${window.location.origin}/s/${shareId}`;
@@ -444,7 +445,10 @@ export default function TopActionBar({
   const [menuOpen, setMenuOpen] = useState(false);
   const isMobile = useIsMobile();
   const actionDisabled = !engineReady || !hasCode;
-  const shareDisabled = actionDisabled || !session || exportState.status === 'exporting';
+  const shareCode = session?.code || code || '';
+  const shareMessages = session?.messages ?? messages ?? [];
+  const canShare = !!session && (shareCode.trim().length > 0 || shareMessages.length > 0);
+  const shareDisabled = !canShare || exportState.status === 'exporting';
   const exportDisabled = actionDisabled || exportState.status === 'exporting';
 
   const handleExport = async (params: ExportParams) => {
