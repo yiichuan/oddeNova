@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { del, head, put } from '@vercel/blob';
+import { BlobNotFoundError, BlobPreconditionFailedError, del, head, put } from '@vercel/blob';
 import handler from '../../api/daily-suggestions-generate.js';
 
-vi.mock('@vercel/blob', () => ({ del: vi.fn(), head: vi.fn(), put: vi.fn() }));
+vi.mock('@vercel/blob', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@vercel/blob')>();
+  return { ...actual, del: vi.fn(), head: vi.fn(), put: vi.fn() };
+});
 
 const items = Array.from({ length: 10 }, (_, i) => ({
   zh: `想做一段第${i + 1}种带空间变化的电子音乐`,
@@ -100,7 +103,7 @@ describe('daily-suggestions-generate handler', () => {
   });
 
   it('writes a valid model response to tomorrow immutable path', async () => {
-    vi.mocked(head).mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' }));
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
     vi.mocked(put)
       .mockResolvedValueOnce({ etag: 'lock-etag' } as never)
       .mockResolvedValueOnce({} as never);
@@ -124,7 +127,7 @@ describe('daily-suggestions-generate handler', () => {
   });
 
   it('retries invalid output once and never stores invalid data', async () => {
-    vi.mocked(head).mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' }));
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
     vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: '{"items":[]}' } }],
@@ -147,7 +150,7 @@ describe('daily-suggestions-generate handler', () => {
   });
 
   it('waits for a successful winner and returns exists without a second model call', async () => {
-    const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
+    const notFound = new BlobNotFoundError();
     let lockEtag: string | null = null;
     let finalStored = false;
     vi.mocked(head).mockImplementation(async (pathname) => {
@@ -159,7 +162,7 @@ describe('daily-suggestions-generate handler', () => {
     });
     vi.mocked(put).mockImplementation(async (pathname) => {
       if (pathname.includes('/locks/')) {
-        if (lockEtag) throw Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' });
+        if (lockEtag) throw new BlobPreconditionFailedError();
         lockEtag = 'winner-etag';
         return { etag: lockEtag } as never;
       }
@@ -191,7 +194,7 @@ describe('daily-suggestions-generate handler', () => {
   });
 
   it('lets a waiting loser claim after winner failure without overlapping model calls', async () => {
-    const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
+    const notFound = new BlobNotFoundError();
     let lockEtag: string | null = null;
     let lockNumber = 0;
     let finalStored = false;
@@ -204,7 +207,7 @@ describe('daily-suggestions-generate handler', () => {
     });
     vi.mocked(put).mockImplementation(async (pathname) => {
       if (pathname.includes('/locks/')) {
-        if (lockEtag) throw Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' });
+        if (lockEtag) throw new BlobPreconditionFailedError();
         lockNumber += 1;
         lockEtag = `owner-${lockNumber}`;
         return { etag: lockEtag } as never;
@@ -252,7 +255,7 @@ describe('daily-suggestions-generate handler', () => {
   });
 
   it('returns an error when bounded polling expires with a valid owner', async () => {
-    const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
+    const notFound = new BlobNotFoundError();
     vi.mocked(head).mockImplementation(async (pathname) => {
       if (pathname.includes('/locks/')) {
         return { etag: 'active-owner', uploadedAt: new Date() } as never;
@@ -260,7 +263,7 @@ describe('daily-suggestions-generate handler', () => {
       throw notFound;
     });
     vi.mocked(put).mockRejectedValue(
-      Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' }),
+      new BlobPreconditionFailedError(),
     );
     const res = makeRes();
 
@@ -277,7 +280,7 @@ describe('daily-suggestions-generate handler', () => {
   });
 
   it('recovers an abandoned lock with an ETag-guarded delete', async () => {
-    const notFound = Object.assign(new Error('not found'), { name: 'BlobNotFoundError' });
+    const notFound = new BlobNotFoundError();
     vi.mocked(head)
       .mockRejectedValueOnce(notFound)
       .mockRejectedValueOnce(notFound)
@@ -287,7 +290,7 @@ describe('daily-suggestions-generate handler', () => {
       } as never)
       .mockRejectedValueOnce(notFound);
     vi.mocked(put)
-      .mockRejectedValueOnce(Object.assign(new Error('already exists'), { name: 'BlobPreconditionFailedError' }))
+      .mockRejectedValueOnce(new BlobPreconditionFailedError())
       .mockResolvedValueOnce({ etag: 'fresh-etag' } as never)
       .mockResolvedValueOnce({} as never);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
@@ -307,7 +310,7 @@ describe('daily-suggestions-generate handler', () => {
   });
 
   it('categorizes malformed model JSON as invalid output', async () => {
-    vi.mocked(head).mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' }));
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
     vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: '{not valid JSON' } }],
@@ -325,7 +328,7 @@ describe('daily-suggestions-generate handler', () => {
   });
 
   it('logs sanitized attempt outcomes without model content or credentials', async () => {
-    vi.mocked(head).mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' }));
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
     vi.mocked(put)
       .mockResolvedValueOnce({ etag: 'lock-etag' } as never)
       .mockResolvedValueOnce({} as never);
