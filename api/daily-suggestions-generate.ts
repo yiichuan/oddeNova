@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { del, head, put } from '@vercel/blob';
+import { BlobNotFoundError, del, head, put } from '@vercel/blob';
 import {
   dailySuggestionPath,
   parseGeneratedItems,
@@ -41,7 +41,7 @@ async function exists(pathname: string): Promise<boolean> {
     await head(pathname);
     return true;
   } catch (error) {
-    if (error instanceof Error && error.name === 'BlobNotFoundError') return false;
+    if (error instanceof BlobNotFoundError) return false;
     throw error;
   }
 }
@@ -51,7 +51,7 @@ type GenerationResult =
   | { outcome: 'upstream_failure' | 'invalid_output' };
 
 function isNotFound(error: unknown): boolean {
-  return error instanceof Error && error.name === 'BlobNotFoundError';
+  return error instanceof BlobNotFoundError;
 }
 
 async function generateItems(apiKey: string): Promise<GenerationResult> {

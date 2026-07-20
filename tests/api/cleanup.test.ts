@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { del, list } from '@vercel/blob';
+import { BlobPreconditionFailedError, del, list } from '@vercel/blob';
 import handler from '../../api/cleanup.js';
 
-vi.mock('@vercel/blob', () => ({ del: vi.fn(), list: vi.fn() }));
+vi.mock('@vercel/blob', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@vercel/blob')>();
+  return { ...actual, del: vi.fn(), list: vi.fn() };
+});
 
 function makeRes() {
   return {
@@ -121,9 +124,7 @@ describe('cleanup handler', () => {
     });
     vi.mocked(del).mockImplementation(async (_url, options) => {
       if (options?.ifMatch === 'etag-a') {
-        throw Object.assign(new Error('lock was replaced with etag-b'), {
-          name: 'BlobPreconditionFailedError',
-        });
+        throw new BlobPreconditionFailedError();
       }
     });
     const res = makeRes();

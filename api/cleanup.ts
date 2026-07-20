@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { list, del } from '@vercel/blob';
+import { BlobPreconditionFailedError, list, del } from '@vercel/blob';
 import { beijingDate, expiredDailySuggestionCleanup } from './daily-suggestions-core.js';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -37,7 +37,7 @@ async function cleanupDailySuggestions(now: Date): Promise<number> {
       await del(lock.url, { ifMatch: lock.etag });
       deleted += 1;
     } catch (error) {
-      if (error instanceof Error && error.name === 'BlobPreconditionFailedError') continue;
+      if (error instanceof BlobPreconditionFailedError) continue;
       throw error;
     }
   }
