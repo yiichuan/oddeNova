@@ -37,6 +37,13 @@ export function isSessionStoragePersistent(): boolean {
 
 export async function openDB(): Promise<void> {
   try {
+    // Ask the browser not to evict this data under storage pressure. Without
+    // this, IndexedDB is "best-effort" and can be cleared without warning
+    // even though the object stores get silently recreated empty on next
+    // open, making data loss look like the site just "forgot everything".
+    if (navigator.storage?.persist) {
+      await navigator.storage.persist();
+    }
     db = await idbOpenDB(DB_NAME, DB_VERSION, {
       upgrade(database) {
         if (!database.objectStoreNames.contains(SESSION_STORE_NAME)) {
