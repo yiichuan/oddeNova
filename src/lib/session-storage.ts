@@ -36,14 +36,22 @@ export function isSessionStoragePersistent(): boolean {
 }
 
 export async function openDB(): Promise<void> {
+  // Ask the browser not to evict this data under storage pressure. Without
+  // this, IndexedDB is "best-effort" and can be cleared without warning even
+  // though the object stores get silently recreated empty on next open,
+  // making data loss look like the site just "forgot everything". This is
+  // best-effort itself: a missing `navigator` (SSR/tests) or a rejected
+  // persist() request (unsupported/denied) must not prevent the actual
+  // IndexedDB connection below from being attempted.
   try {
-    // Ask the browser not to evict this data under storage pressure. Without
-    // this, IndexedDB is "best-effort" and can be cleared without warning
-    // even though the object stores get silently recreated empty on next
-    // open, making data loss look like the site just "forgot everything".
-    if (navigator.storage?.persist) {
+    if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
       await navigator.storage.persist();
     }
+  } catch (err) {
+    console.warn('[session-storage] storage.persist() request failed', err);
+  }
+
+  try {
     db = await idbOpenDB(DB_NAME, DB_VERSION, {
       upgrade(database) {
         if (!database.objectStoreNames.contains(SESSION_STORE_NAME)) {
