@@ -4,44 +4,48 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="x-apple-disable-message-reformatting">
+    <meta name="color-scheme" content="dark">
+    <meta name="supported-color-schemes" content="dark">
     <title>{{ if eq .Data.language "zh" }}确认你的 oddeNova 邮箱{{ else }}Confirm your oddeNova email{{ end }}</title>
   </head>
-  <body style="margin:0; padding:0; background:#f4f7fb; color:#17202a; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;">
+  <body style="margin:0; padding:0; background:#000000; color:#d4d4d4; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;" bgcolor="#000000">
     <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
       {{ if eq .Data.language "zh" }}确认 {{ .Email }}，完成 oddeNova 账号注册。{{ else }}Confirm {{ .Email }} to finish setting up your oddeNova account.{{ end }}
     </div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background:#f4f7fb;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background:#000000;" bgcolor="#000000">
       <tr>
         <td align="center" style="padding:40px 16px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; width:100%; max-width:600px;">
             <tr>
-              <td style="padding:0 0 18px;">
-                <div style="font-size:22px; line-height:1; font-weight:800; letter-spacing:0; color:#121a24;">oddeNova</div>
-                <div style="margin-top:8px; font-size:13px; line-height:20px; color:#667085;">{{ if eq .Data.language "zh" }}即兴创作你的音乐{{ else }}Vibe Your Music, Live{{ end }}</div>
+              <td style="padding:0 0 22px;">
+                <div style="font-size:24px; line-height:1; letter-spacing:0; color:#f5f5f5;">
+                  <span style="font-family:Georgia, 'Times New Roman', serif; font-style:italic; font-weight:400;">odde</span><span style="font-family:-apple-system, 'Segoe UI', Arial, sans-serif; font-weight:800;">Nova</span>
+                </div>
+                <div style="margin-top:8px; font-size:13px; line-height:20px; color:#747474;">{{ if eq .Data.language "zh" }}即兴创作你的音乐{{ else }}Vibe Your Music, Live{{ end }}</div>
               </td>
             </tr>
             <tr>
-              <td style="background:#ffffff; border:1px solid #dde5ee; border-radius:8px; padding:38px 36px;">
-                <div style="font-size:13px; line-height:20px; font-weight:700; color:#2864d8; text-transform:uppercase; letter-spacing:.08em;">{{ if eq .Data.language "zh" }}邮箱确认{{ else }}Email confirmation{{ end }}</div>
-                <h1 style="margin:14px 0 14px; font-size:30px; line-height:38px; font-weight:800; color:#121a24;">{{ if eq .Data.language "zh" }}确认你的邮箱{{ else }}Confirm your email address{{ end }}</h1>
-                <p style="margin:0; font-size:16px; line-height:26px; color:#364152;">
-                  {{ if eq .Data.language "zh" }}欢迎来到 oddeNova。确认 <strong style="color:#121a24;">{{ .Email }}</strong>，完成账号注册。{{ else }}Welcome to oddeNova. Confirm <strong style="color:#121a24;">{{ .Email }}</strong> to finish creating your account.{{ end }}
+              <td style="background:#000000; border:1px solid #323232; border-radius:16px; padding:38px 36px;" bgcolor="#000000">
+                <div style="font-size:12px; line-height:18px; font-weight:700; color:#747474; text-transform:uppercase; letter-spacing:.08em;">{{ if eq .Data.language "zh" }}邮箱确认{{ else }}Email confirmation{{ end }}</div>
+                <h1 style="margin:14px 0 14px; font-size:26px; line-height:34px; font-weight:700; color:#f5f5f5;">{{ if eq .Data.language "zh" }}确认你的邮箱{{ else }}Confirm your email address{{ end }}</h1>
+                <p style="margin:0; font-size:16px; line-height:26px; color:#b8b8b8;">
+                  {{ if eq .Data.language "zh" }}欢迎来到 oddeNova。确认 <strong style="color:#f5f5f5;">{{ .Email }}</strong>，完成账号注册。{{ else }}Welcome to oddeNova. Confirm <strong style="color:#f5f5f5;">{{ .Email }}</strong> to finish creating your account.{{ end }}
                 </p>
                 <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse; margin:30px 0 26px;">
                   <tr>
-                    <td bgcolor="#2864d8" style="border-radius:6px;">
-                      <a href="{{ .ConfirmationURL }}" style="display:inline-block; padding:14px 22px; font-size:16px; line-height:20px; font-weight:800; color:#ffffff; text-decoration:none; border-radius:6px;">{{ if eq .Data.language "zh" }}确认邮箱{{ else }}Confirm email address{{ end }}</a>
+                    <td bgcolor="#434343" style="border-radius:8px;">
+                      <a href="{{ .ConfirmationURL }}" style="display:inline-block; padding:14px 22px; font-size:16px; line-height:20px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:8px;">{{ if eq .Data.language "zh" }}确认邮箱{{ else }}Confirm email address{{ end }}</a>
                     </td>
                   </tr>
                 </table>
-                <p style="margin:0 0 10px; font-size:14px; line-height:22px; color:#667085;">{{ if eq .Data.language "zh" }}如果按钮无法打开，请复制下方链接到浏览器：{{ else }}If the button does not work, copy and paste this link into your browser:{{ end }}</p>
+                <p style="margin:0 0 10px; font-size:14px; line-height:22px; color:#747474;">{{ if eq .Data.language "zh" }}如果按钮无法打开，请复制下方链接到浏览器：{{ else }}If the button does not work, copy and paste this link into your browser:{{ end }}</p>
                 <p style="margin:0; font-size:13px; line-height:21px; word-break:break-all;">
-                  <a href="{{ .ConfirmationURL }}" style="color:#2864d8; text-decoration:underline;">{{ .ConfirmationURL }}</a>
+                  <a href="{{ .ConfirmationURL }}" style="color:#b8b8b8; text-decoration:underline;">{{ .ConfirmationURL }}</a>
                 </p>
               </td>
             </tr>
             <tr>
-              <td style="padding:22px 2px 0; font-size:13px; line-height:21px; color:#667085;">
+              <td style="padding:22px 2px 0; font-size:13px; line-height:21px; color:#747474;">
                 {{ if eq .Data.language "zh" }}你收到这封邮件，是因为有人使用 {{ .Email }} 注册 oddeNova。如果不是你本人操作，可以忽略此邮件。{{ else }}You received this email because someone signed up for oddeNova with {{ .Email }}. If this was not you, you can ignore this email.{{ end }}
               </td>
             </tr>
