@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getStringQuery, requireUser, sessionToRow, type ApiSession } from '../session-utils';
+import { getStringQuery, requireUser, sessionToRow, type ApiSession } from '../session-utils.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const id = getStringQuery(req, 'id');

@@ -40,7 +40,7 @@ describe('sessions API auth', () => {
   });
 
   it('rejects requests without a Bearer token', async () => {
-    const { default: handler } = await import('./sessions');
+    const { default: handler } = await import('../../api/sessions.js');
     const res = makeResponse();
 
     await handler({ method: 'GET', headers: {} } as never, res as never);
@@ -71,7 +71,7 @@ describe('sessions API auth', () => {
     const select = vi.fn(() => ({ order }));
     supabaseMocks.from.mockReturnValue({ select });
 
-    const { default: handler } = await import('./sessions');
+    const { default: handler } = await import('../../api/sessions.js');
     const res = makeResponse();
 
     await handler({
@@ -113,7 +113,7 @@ describe('sessions API auth', () => {
     const select = vi.fn(() => ({ order }));
     supabaseMocks.from.mockReturnValue({ select });
 
-    const { default: handler } = await import('./sessions');
+    const { default: handler } = await import('../../api/sessions.js');
     const res = makeResponse();
 
     await handler({
@@ -145,7 +145,7 @@ describe('sessions API auth', () => {
     const upsert = vi.fn().mockResolvedValue({ error: null });
     supabaseMocks.from.mockReturnValue({ upsert });
 
-    const { default: handler } = await import('./sessions/[id]');
+    const { default: handler } = await import('../../api/sessions/[id].js');
     const res = makeResponse();
 
     await handler({
@@ -186,7 +186,7 @@ describe('sessions API auth', () => {
     const deleteFn = vi.fn(() => ({ eq: sessionEq }));
     supabaseMocks.from.mockReturnValue({ delete: deleteFn });
 
-    const { default: handler } = await import('./sessions/[id]');
+    const { default: handler } = await import('../../api/sessions/[id].js');
     const res = makeResponse();
 
     await handler({
