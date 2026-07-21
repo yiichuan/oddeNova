@@ -48,3 +48,5 @@ docs/research/
 
 # Video recordings
 videos/
+.vercel
+.env*
