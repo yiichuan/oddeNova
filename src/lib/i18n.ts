@@ -19,6 +19,13 @@ const S: Record<string, readonly [string, string]> = {
   email:        ['邮箱', 'Email'],
   password:     ['密码', 'Password'],
   confirmPassword: ['确认密码', 'Confirm password'],
+  emailPlaceholder:            ['you@example.com', 'you@example.com'],
+  passwordPlaceholder:         ['输入密码', 'Enter your password'],
+  confirmPasswordPlaceholder:  ['再次输入密码', 'Confirm your password'],
+  newPasswordPlaceholder:      ['输入新密码', 'Enter new password'],
+  confirmNewPasswordPlaceholder: ['再次输入新密码', 'Confirm new password'],
+  showPassword: ['显示密码', 'Show password'],
+  hidePassword: ['隐藏密码', 'Hide password'],
 
   // App status
   engineStarting:   ['音频引擎启动中，请稍后再试', 'Audio engine starting, please try again later'],

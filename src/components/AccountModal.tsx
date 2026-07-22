@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import {
   resetPasswordForEmail,
   signInWithGoogle,
@@ -13,6 +13,64 @@ import { t, zh } from '../lib/i18n';
 import type { GoogleOAuthErrorKey } from '../lib/google-oauth-return';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
+
+function PasswordField({
+  label,
+  value,
+  onChange,
+  onKeyDown,
+  disabled,
+  placeholder,
+  autoFocus,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  disabled: boolean;
+  placeholder: string;
+  autoFocus?: boolean;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div>
+      <label className="text-xs text-text-secondary mb-1 block">{label}</label>
+      <div className="relative">
+        <input
+          type={show ? 'text' : 'password'}
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50"
+          autoFocus={autoFocus}
+        />
+        <button
+          type="button"
+          onClick={() => setShow((v) => !v)}
+          disabled={disabled}
+          tabIndex={-1}
+          aria-label={show ? t('hidePassword') : t('showPassword')}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {show ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+              <line x1="1" y1="1" x2="23" y2="23" />
+            </svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface AccountModalProps {
   user: AuthUser | null;
@@ -136,28 +194,22 @@ export default function AccountModal({
           <div className="text-sm text-red-300">{t('supabaseNotConfigured')}</div>
         ) : recoveringPassword ? (
           <div className="space-y-4">
-            <div>
-              <label className="text-xs text-text-secondary mb-1 block">{t('newPassword')}</label>
-              <input
-                type="password"
-                value={password}
-                disabled={busy}
-                onChange={(e) => setPassword(e.currentTarget.value)}
-                className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="text-xs text-text-secondary mb-1 block">{t('confirmNewPassword')}</label>
-              <input
-                type="password"
-                value={passwordConfirmation}
-                disabled={busy}
-                onChange={(e) => setPasswordConfirmation(e.currentTarget.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handlePasswordUpdate()}
-                className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
-              />
-            </div>
+            <PasswordField
+              label={t('newPassword')}
+              value={password}
+              onChange={setPassword}
+              disabled={busy}
+              placeholder={t('newPasswordPlaceholder')}
+              autoFocus
+            />
+            <PasswordField
+              label={t('confirmNewPassword')}
+              value={passwordConfirmation}
+              onChange={setPasswordConfirmation}
+              onKeyDown={(e) => e.key === 'Enter' && handlePasswordUpdate()}
+              disabled={busy}
+              placeholder={t('confirmNewPasswordPlaceholder')}
+            />
 
             {error && <div className="text-xs text-red-300">{error}</div>}
 
@@ -213,35 +265,30 @@ export default function AccountModal({
                 value={email}
                 disabled={busy}
                 onChange={(e) => setEmail(e.currentTarget.value)}
+                placeholder={t('emailPlaceholder')}
                 className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
                 autoFocus
               />
             </div>
             {mode !== 'reset' && (
-              <div>
-                <label className="text-xs text-text-secondary mb-1 block">{t('password')}</label>
-                <input
-                  type="password"
-                  value={password}
-                  disabled={busy}
-                  onChange={(e) => setPassword(e.currentTarget.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
-                />
-              </div>
+              <PasswordField
+                label={t('password')}
+                value={password}
+                onChange={setPassword}
+                onKeyDown={(e) => e.key === 'Enter' && submit()}
+                disabled={busy}
+                placeholder={t('passwordPlaceholder')}
+              />
             )}
             {mode === 'sign-up' && (
-              <div>
-                <label className="text-xs text-text-secondary mb-1 block">{t('confirmPassword')}</label>
-                <input
-                  type="password"
-                  value={passwordConfirmation}
-                  disabled={busy}
-                  onChange={(e) => setPasswordConfirmation(e.currentTarget.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
-                />
-              </div>
+              <PasswordField
+                label={t('confirmPassword')}
+                value={passwordConfirmation}
+                onChange={setPasswordConfirmation}
+                onKeyDown={(e) => e.key === 'Enter' && submit()}
+                disabled={busy}
+                placeholder={t('confirmPasswordPlaceholder')}
+              />
             )}
 
             {message && <div className="text-xs text-green-300">{message}</div>}
