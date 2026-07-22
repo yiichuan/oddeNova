@@ -21,4 +21,13 @@ describe('Vercel API layout', () => {
       }
     }
   });
+
+  it('keeps the SPA fallback from rewriting API requests', async () => {
+    const config = JSON.parse(await readFile('vercel.json', 'utf8')) as {
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+    const spaFallback = config.rewrites.find((rewrite) => rewrite.destination === '/index.html');
+
+    expect(spaFallback?.source).toBe('/((?!api/).*)');
+  });
 });
