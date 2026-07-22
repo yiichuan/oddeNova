@@ -46,9 +46,12 @@ async function exists(pathname: string): Promise<boolean> {
   }
 }
 
+type InvalidOutputReason = 'missing_content' | 'json_parse_failed' | 'validation_failed';
+
 type GenerationResult =
   | { outcome: 'valid'; items: DailySuggestionBatch['items'] }
-  | { outcome: 'upstream_failure' | 'invalid_output' };
+  | { outcome: 'upstream_failure' }
+  | { outcome: 'invalid_output'; reason: InvalidOutputReason };
 
 function isNotFound(error: unknown): boolean {
   return error instanceof BlobNotFoundError;
@@ -76,15 +79,24 @@ async function generateItems(apiKey: string): Promise<GenerationResult> {
     return { outcome: 'upstream_failure' };
   }
   if (!response.ok) return { outcome: 'upstream_failure' };
+  let json: { choices?: Array<{ message?: { content?: string } }> };
   try {
-    const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) return { outcome: 'invalid_output' };
-    const items = parseGeneratedItems(JSON.parse(content));
-    return items ? { outcome: 'valid', items } : { outcome: 'invalid_output' };
+    json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
   } catch {
-    return { outcome: 'invalid_output' };
+    return { outcome: 'invalid_output', reason: 'json_parse_failed' };
   }
+  const content = json.choices?.[0]?.message?.content;
+  if (!content) return { outcome: 'invalid_output', reason: 'missing_content' };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return { outcome: 'invalid_output', reason: 'json_parse_failed' };
+  }
+  const items = parseGeneratedItems(parsed);
+  return items
+    ? { outcome: 'valid', items }
+    : { outcome: 'invalid_output', reason: 'validation_failed' };
 }
 
 function lockPath(date: string): string {
@@ -147,8 +159,16 @@ async function releaseClaim(claim: Extract<ClaimResult, { status: 'acquired' }>)
   }
 }
 
-function logAttempt(date: string, attempt: number, outcome: string) {
-  console.info('daily_suggestions_generation_attempt', { date, attempt, outcome });
+function logAttempt(
+  date: string,
+  attempt: number,
+  outcome: string,
+  reason?: InvalidOutputReason,
+) {
+  console.info(
+    'daily_suggestions_generation_attempt',
+    reason ? { date, attempt, outcome, reason } : { date, attempt, outcome },
+  );
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -174,7 +194,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (let attempts = 1; attempts <= 2; attempts += 1) {
       const generated = await generateItems(apiKey);
       if (generated.outcome !== 'valid') {
-        logAttempt(date, attempts, generated.outcome);
+        logAttempt(
+          date,
+          attempts,
+          generated.outcome,
+          generated.outcome === 'invalid_output' ? generated.reason : undefined,
+        );
         continue;
       }
       const batch: DailySuggestionBatch = {

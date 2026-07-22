@@ -320,11 +320,28 @@ describe('daily-suggestions-generate handler', () => {
     await handler(authorizedReq() as never, res as never);
 
     expect(console.info).toHaveBeenNthCalledWith(1, 'daily_suggestions_generation_attempt', {
-      date: '2026-07-18', attempt: 1, outcome: 'invalid_output',
+      date: '2026-07-18', attempt: 1, outcome: 'invalid_output', reason: 'json_parse_failed',
     });
     expect(console.info).toHaveBeenNthCalledWith(2, 'daily_suggestions_generation_attempt', {
-      date: '2026-07-18', attempt: 2, outcome: 'invalid_output',
+      date: '2026-07-18', attempt: 2, outcome: 'invalid_output', reason: 'json_parse_failed',
     });
+  });
+
+  it('logs validation failure without model content', async () => {
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
+    vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
+    const invalidContent = '{"items":[]}';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: invalidContent } }],
+    }), { status: 200 })));
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    expect(console.info).toHaveBeenCalledWith('daily_suggestions_generation_attempt', {
+      date: '2026-07-18', attempt: 1, outcome: 'invalid_output', reason: 'validation_failed',
+    });
+    expect(JSON.stringify(vi.mocked(console.info).mock.calls)).not.toContain(invalidContent);
   });
 
   it('logs sanitized attempt outcomes without model content or credentials', async () => {
