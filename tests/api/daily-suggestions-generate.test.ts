@@ -344,6 +344,28 @@ describe('daily-suggestions-generate handler', () => {
     expect(JSON.stringify(vi.mocked(console.info).mock.calls)).not.toContain(invalidContent);
   });
 
+  it('retries a null response envelope as missing content without logging model details', async () => {
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
+    vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(
+      new Response('null', { status: 200 }),
+    )));
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    expect(console.info).toHaveBeenNthCalledWith(1, 'daily_suggestions_generation_attempt', {
+      date: '2026-07-18', attempt: 1, outcome: 'invalid_output', reason: 'missing_content',
+    });
+    expect(console.info).toHaveBeenNthCalledWith(2, 'daily_suggestions_generation_attempt', {
+      date: '2026-07-18', attempt: 2, outcome: 'invalid_output', reason: 'missing_content',
+    });
+    expect(res.statusCode).toBe(502);
+    const logged = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logged).not.toContain('deepseek-v4-pro');
+    expect(logged).not.toContain('official-api-key');
+  });
+
   it('logs sanitized attempt outcomes without model content or credentials', async () => {
     vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
     vi.mocked(put)

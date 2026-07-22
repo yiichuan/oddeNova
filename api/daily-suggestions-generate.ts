@@ -79,13 +79,17 @@ async function generateItems(apiKey: string): Promise<GenerationResult> {
     return { outcome: 'upstream_failure' };
   }
   if (!response.ok) return { outcome: 'upstream_failure' };
-  let json: { choices?: Array<{ message?: { content?: string } }> };
+  let json: unknown;
   try {
-    json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    json = await response.json();
   } catch {
     return { outcome: 'invalid_output', reason: 'json_parse_failed' };
   }
-  const content = json.choices?.[0]?.message?.content;
+  if (!json || typeof json !== 'object') {
+    return { outcome: 'invalid_output', reason: 'missing_content' };
+  }
+  const content = (json as { choices?: Array<{ message?: { content?: string } }> })
+    .choices?.[0]?.message?.content;
   if (!content) return { outcome: 'invalid_output', reason: 'missing_content' };
   let parsed: unknown;
   try {
