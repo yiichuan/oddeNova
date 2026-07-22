@@ -37,6 +37,12 @@ npm run eval          # node --import=tsx/esm scripts/eval/runner.ts
 npm run eval:report
 ```
 
+## UI changes
+
+Do not start the dev server or drive a browser to verify UI/frontend changes.
+Type-check, lint, and the test suite are the bar for "done" — the developer
+reviews visual results themselves.
+
 ## Architecture
 
 oddeNova is a browser-only (no backend except a thin Vercel proxy) AI agent
