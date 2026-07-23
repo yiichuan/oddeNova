@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { shareUrl } from '../share-target';
+import { t } from '../../lib/i18n';
 
 describe('shareUrl', () => {
   afterEach(() => {
@@ -135,6 +136,6 @@ describe('shareUrl', () => {
     vi.stubGlobal('prompt', prompt);
 
     await expect(shareUrl('http://192.168.0.112/s/abc123')).resolves.toBe('shown');
-    expect(prompt).toHaveBeenCalledWith('Copy share link', 'http://192.168.0.112/s/abc123');
+    expect(prompt).toHaveBeenCalledWith(t('copyShareLink'), 'http://192.168.0.112/s/abc123');
   });
 });

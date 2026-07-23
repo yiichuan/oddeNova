@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getCommunityInviteText, isApiKeyRequiredForProvider } from '../apiKeyModalUtils';
+import { zh } from '../../lib/i18n';
 
 describe('ApiKeyModal official provider behavior', () => {
   it('does not require an API key for official provider', () => {
@@ -13,9 +14,10 @@ describe('ApiKeyModal official provider behavior', () => {
   });
 
   it('uses community-oriented QR copy', () => {
-    expect(getCommunityInviteText()).toEqual({
-      alt: 'Join the oddeNova music community',
-      title: 'Join our music creation community',
-    });
+    expect(getCommunityInviteText()).toEqual(
+      zh
+        ? { alt: '欢迎加入 oddeNova 音乐制作社群', title: '欢迎加入我们的音乐制作社群' }
+        : { alt: 'Join the oddeNova music community', title: 'Join our music creation community' },
+    );
   });
 });
