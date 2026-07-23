@@ -90,6 +90,20 @@ export { AGENT_SYSTEM_PROMPT, AGENT_SYSTEM_PROMPT_OPENAI, IMPROVISE_SYSTEM_PROMP
 
 ### 6. 验证
 
+提示词的音乐创作指导会同步提供给 Codex skill `skills/oddenova-strudel/`。每次修改当前提示词版本或切换 `active.ts` 后，**必须**先重新生成该 skill 的参考提示词；不要手动编辑生成的 reference 文件：
+
+```bash
+npm run gen:skill-refs
+```
+
+该命令会从当前 active prompt 更新以下中英文参考文件：
+
+- `skills/oddenova-strudel/references/composition-guide.{zh,en}.md`
+- `skills/oddenova-strudel/references/strudel-api.{zh,en}.md`
+- `skills/oddenova-strudel/references/samples.{zh,en}.md`
+
+随后运行验证。`skill-references` 测试会逐字节检查已提交的 reference 文件与当前 active prompt 是否同步：
+
 ```bash
 npx tsc --noEmit -p tsconfig.app.json   # 必须零错误
 npm test -- --run                        # 必须所有测试通过
@@ -98,7 +112,8 @@ npm test -- --run                        # 必须所有测试通过
 ### 7. 提交
 
 ```bash
-git add src/prompts/versions/v{N+1}.ts src/prompts/active.ts
+git add src/prompts/versions/v{N+1}.ts src/prompts/active.ts \
+  skills/oddenova-strudel/references/
 git commit -m "prompts: strengthen music style guidance"  # 根据实际改动替换引号内的描述
 ```
 

@@ -100,7 +100,7 @@ Key modules:
   requirement may be edited repeatedly until that requirement is finished.
   `active.ts` is the pointer to the current version; `system-prompt.ts` is a
   forwarding shim and must never be edited directly. To change the prompt,
-  follow `.github/prompts/edit-system-prompt.prompt.md` (create or reuse the
+  follow `docs/ai/edit-system-prompt.md` (create or reuse the
   requirement's working `v{N+1}`, update its header comment, point `active.ts`
   at it).
 
