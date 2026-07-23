@@ -5,7 +5,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
 import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, RetryIcon } from './icons';
 import { ThinkingLottie } from './ThinkingLottie';
-import { t } from '../lib/i18n';
+import { t, zh } from '../lib/i18n';
 import { CodeDiffView } from './CodeDiffView';
 
 type MobileNoSelectStyle = CSSProperties & {
@@ -443,6 +443,11 @@ export default function ConversationView({
     () => messages.findLast((m) => m.role === 'user')?.id,
     [messages],
   );
+  // The greeting bubble only ever occupies a fresh session (one message, the
+  // greeting itself) — once a real turn has happened it stays out of the
+  // scrollback entirely rather than sitting inline as a normal reply.
+  const greetingMsg = messages.find((m) => m.isGreeting);
+  const hasConversationMessages = messages.some((m) => !m.isGreeting);
   const revisionsById = useMemo(
     () => new Map((revisions ?? []).map((revision) => [revision.id, revision])),
     [revisions],
@@ -972,13 +977,30 @@ export default function ConversationView({
       }`}
       style={{ scrollbarGutter: 'stable' }}
     >
-      {messages.length === 0 && !isLoading && (
+      {greetingMsg && !hasConversationMessages && !isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center px-8">
+          <p
+            // Keyed by the greeting's own id (not just conditionally mounted):
+            // reusing an empty session re-rolls the greeting into a new
+            // message id without unmounting this block, so the key is what
+            // forces a fresh node — and with it, the mount animation to replay.
+            key={greetingMsg.id}
+            className={`animate-blur-fade-in text-center text-[#969696] leading-relaxed ${
+              zh ? 'font-jinghua-laosongti tracking-wider text-sm' : 'font-eb-garamond text-base'
+            }`}
+          >
+            {greetingMsg.content}
+          </p>
+        </div>
+      )}
+      {!greetingMsg && messages.length === 0 && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
           <span>{t('startCreating')}</span>
         </div>
       )}
 
       {messages.map((msg) => {
+        if (msg.isGreeting) return null;
         if (msg.role === 'progress') {
           const gid = actionGroupOf.get(msg.id);
           if (gid) {
@@ -1056,7 +1078,7 @@ export default function ConversationView({
         // final bubble; on intermediate narration the margin would just read
         // as a dead gap between paragraphs.
         const showsTurnActions =
-          !msg.isGreeting && turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id);
+          turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id);
         return (
           <div
             key={msg.id}
@@ -1121,8 +1143,7 @@ export default function ConversationView({
                 );
               })()}
 
-              {/* Action buttons — bottom-left, always visible. Hidden on greeting
-                  bubbles (no prior user turn to retry/branch from) and on
+              {/* Action buttons — bottom-left, always visible. Hidden on
                   intermediate narration (shown once per turn, on the final
                   assistant message after the turn finishes). */}
               {showsTurnActions && (

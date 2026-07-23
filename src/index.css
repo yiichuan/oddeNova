@@ -1,14 +1,6 @@
 @import "tailwindcss";
 
 @font-face {
-  font-family: 'GenWanMin TW';
-  src: url('/fonts/GenWanMinTW.ttc') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
   font-family: 'ABeeZee';
   src: url('/fonts/ABeeZee-Regular.ttf') format('truetype');
   font-weight: normal;
@@ -32,6 +24,22 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: '京華老宋体';
+  src: url('/fonts/京華老宋体v3.0.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'EB Garamond';
+  src: url('/fonts/EBGaramond-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-bg-primary: #000000;
   --color-bg-secondary: #000000;
@@ -46,6 +54,9 @@
   --color-success: #00b894;
   --color-error: #CC3803;
   --color-warning: #7E936F;
+
+  --font-jinghua-laosongti: '京華老宋体', serif;
+  --font-eb-garamond: 'EB Garamond', serif;
 }
 
 body {
@@ -96,6 +107,21 @@ body {
 
 .animate-slide-in {
   animation: slideIn 0.2s ease-out;
+}
+
+/* Greeting bubble entrance: fades in while sharpening from a blur. */
+@keyframes blurFadeIn {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+.animate-blur-fade-in {
+  animation: blurFadeIn 1.5s ease-out;
 }
 
 /* =============================================
