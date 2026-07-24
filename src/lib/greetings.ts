@@ -9,18 +9,21 @@ export const GREETINGS_ZH: readonly string[] = [
   '临时插播：一段未经许可的旋律。正在经过本频道',
   '信号亮起。今天听什么？',
   '你来得正好。',
-  '先选出一条 正在靠近 的。',
-  '是你吗？',
+  '"先选出一条 正在靠近 的。"',
+  '是你吗 ？',
 ];
 
 export const GREETINGS_EN: readonly string[] = [
-  "Hey, I'm here. Want to start from a feeling, or just hum me a melody?",
-  "Hey, Say anything — we'll turn it into sound together.",
-  "A fresh page. Toss me a word, I'll take it from there.",
-  'Hey, Want to chat, or jump straight into music?',
-  "Tell me what's playing in your head right now.",
-  "I'm listening. Even one sentence can grow into a song.",
-  'Here we go. Want to talk first, or just give me a beat?',
+  'Time to vibe a track — one that is all yours.',
+  "Let's hear it. What's on your mind right now?",
+  'Always here. Stay curious.',
+  'Incoming: an unruly beat, about to land.',
+  'A new voice is waiting in the wings. Care to say why you\'re here?',
+  'Breaking in — an unlicensed melody, passing through this channel.',
+  "Signal's live. What are we listening to today?",
+  "You're right on time.",
+  'Pick the one that is already on its way.',
+  'Is that you?',
 ];
 
 export function pickGreeting(): string {

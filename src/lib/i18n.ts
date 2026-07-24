@@ -161,6 +161,8 @@ const S: Record<string, readonly [string, string]> = {
   expandReasoning:   ['展开推理过程', 'Expand reasoning'],
   actionsTitle:  ['思考过程', 'Process'],
   rollbackHere:  ['回滚到此处', 'Roll back to here'],
+  showMore:      ['显示更多', 'Show more'],
+  showLess:      ['显示更少', 'Show less'],
   copyCode:      ['复制代码', 'Copy code'],
   viewChanges:   ['查看修改', 'View changes'],
   noCodeChanges: ['本轮代码没有变化', 'No code changes in this turn'],

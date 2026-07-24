@@ -2,28 +2,28 @@ import { zh } from '../lib/i18n';
 
 const STATIC_SUGGESTIONS_ZH = [
   '最近有点失眠，想做一段安静但舒缓的旋律',
-  '帮我来个140 BPM左右、情绪灰一点的Drum\'n\'Bass',
-  '我脑子里就是“咚 哒 咚咚 哒”，能按这个感觉做吗',
-  '像一个人走在废土上，孤零零但还没放弃的那种配乐',
+  '140 BPM左右、情绪灰一点的Drum\'n\'Bass',
+  '鼓是“咚 哒 咚咚 哒”，按这个感觉',
+  '像走在废土上，在荒芜中前进的那种配乐',
   '来一段Footwork，鼓点切碎',
-  '想要游乐园摩天轮升到最高处，大家突然欢呼起来的感觉',
-  '做个House吧，sidechain压得明显一点，像在呼吸',
+  '游乐园摩天轮升到最高处，大家突然欢呼起来',
+  '一段 House 吧，sidechain压得明显一点，像在呼吸',
   '试试UK Garage，贝斯要有滑音，鼓组切得利落一点',
   '想要一种空灵、温柔、被治愈的感觉',
-  '钢琴先铺底，弦乐慢慢进来，鼓别太满，帮我编完整一点',
+  '从简单的旋律，开始创作',
 ];
 
 const STATIC_SUGGESTIONS_EN = [
   'I\'ve been having trouble sleeping lately, want something quiet and soothing',
-  'Could you make me a drum\'n\'bass around 140 BPM, kind of moody',
-  'It\'s just "boom tss boom-boom tss" in my head, can you make something like that',
-  'Like someone walking alone through a wasteland, lonely but not giving up yet',
+  'A drum\'n\'bass around 140 BPM, kind of moody',
+  'The drums go "boom tss boom-boom tss," something like that',
+  'Like walking through a wasteland, pushing forward through the emptiness',
   'Give me a footwork beat, chop the drums up',
-  'That feeling when the ferris wheel hits the top and everyone suddenly cheers',
-  'Let\'s do a house track, pump the sidechain harder, make it breathe',
+  'The ferris wheel hits the top and everyone suddenly cheers',
+  'A house track, pump the sidechain harder, make it breathe',
   'Try a UK garage track, slide the bass around, chop the drums up cleanly',
   'I want something ethereal, gentle, healing',
-  'Start with piano underneath, let strings ease in slowly, keep the drums sparse — help me flesh out a full piece',
+  'Start with a simple melody, build it out from there',
 ];
 
 export const STATIC_SUGGESTIONS = zh ? STATIC_SUGGESTIONS_ZH : STATIC_SUGGESTIONS_EN;

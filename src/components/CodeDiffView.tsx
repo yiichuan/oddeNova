@@ -43,7 +43,7 @@ function highlightedText(text: string, counterpart: string | undefined, kind: 'a
   return (
     <>
       {text.slice(0, prefix)}
-      <span className={kind === 'add' ? 'bg-emerald-300/20' : 'bg-rose-300/20'}>{changed}</span>
+      <span className={kind === 'add' ? 'bg-diff-add/20' : 'bg-diff-remove/20'}>{changed}</span>
       {text.slice(changedEnd)}
     </>
   );
@@ -57,22 +57,22 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
   );
 
   return (
-    <div className="mt-4 -ml-1 overflow-hidden rounded-md border border-[#93C2FF]/30 bg-bg-primary/35 animate-fade-in">
-      <div className="flex w-full items-stretch bg-bg-primary/60 text-[11px] text-[#93C2FF]/70">
+    <div className="mt-4 -ml-1 overflow-hidden rounded-md border-1 border-diff-accent/50 bg-bg-primary/35 animate-fade-in">
+      <div className="flex w-full items-stretch bg-bg-primary/60 text-[11px] text-diff-accent/70">
         <button
           type="button"
           data-code-diff-toggle={messageId}
           aria-expanded={expanded}
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-bg-primary/80 hover:text-[#93C2FF]/90"
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-bg-primary/80 hover:text-diff-accent/90"
         >
           <ChevronRightIcon
             size={12}
             className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
           />
           <span>{t('viewChanges')}</span>
-          <span className="text-emerald-300/75">+{diff.additions}</span>
-          <span className="text-rose-300/75">−{diff.deletions}</span>
+          <span className="text-diff-add/75">+{diff.additions}</span>
+          <span className="text-diff-remove/75">−{diff.deletions}</span>
           {revision.playbackStatus === 'failed' && (
             <span className="ml-1 truncate text-amber-300/70">{t('revisionPlaybackFailed')}</span>
           )}
@@ -85,7 +85,7 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
               setTimeout(() => setCopied(false), 2000);
             });
           }}
-          className="px-2 py-1.5 transition-colors hover:bg-bg-primary/80 hover:text-[#93C2FF]/90"
+          className="px-2 py-1.5 transition-colors hover:bg-bg-primary/80 hover:text-diff-accent/90"
           title={t('copyCode')}
         >
           {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
@@ -93,7 +93,7 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
       </div>
 
       {expanded && (
-        <div className="border-t border-[#93C2FF]/15 bg-[#080a0d] py-1 animate-fade-in">
+        <div className="border-t border-diff-accent/15 bg-[#080a0d] py-1 animate-fade-in">
           {diff.groups.length === 0 && (
             <div className="px-3 py-3 text-[11px] text-text-muted">{t('noCodeChanges')}</div>
           )}
@@ -101,8 +101,8 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
             <section key={group.key} data-diff-group={group.name} className="py-1.5 first:pt-0 last:pb-0">
               <div className="sticky top-0 z-[1] flex items-center gap-2 border-y border-white/[0.055] bg-[#101319] px-2.5 py-1 font-mono text-[10px] tracking-[0.16em] text-white/55">
                 <span>{group.name.toUpperCase()}</span>
-                <span className="tracking-normal text-emerald-300/60">+{group.additions}</span>
-                <span className="tracking-normal text-rose-300/60">−{group.deletions}</span>
+                <span className="tracking-normal text-diff-add/60">+{group.additions}</span>
+                <span className="tracking-normal text-diff-remove/60">−{group.deletions}</span>
               </div>
               <div className="overflow-x-auto py-1 font-mono text-[11px] leading-[1.65]">
                 {/* w-max makes every row span the widest line, so row tints
@@ -118,9 +118,9 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
                     );
                   }
                   const tone = row.kind === 'add'
-                    ? 'bg-emerald-400/[0.075] text-emerald-50/80'
+                    ? 'bg-diff-add/[0.075] text-white/60'
                     : row.kind === 'remove'
-                      ? 'bg-rose-400/[0.075] text-rose-50/75'
+                      ? 'bg-diff-remove/[0.075] text-white/60'
                       : 'text-white/42';
                   const sign = row.kind === 'add' ? '+' : row.kind === 'remove' ? '−' : ' ';
                   const counterpart = counterpartFor(group.rows, index);

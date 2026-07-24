@@ -12,6 +12,18 @@ function tokenizeForTyping(s: string): string[] {
   return s.match(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]|[^\u3000-\u303f\u4e00-\u9fff\uff00-\uffef\s]+\s*|\s+/g) ?? [];
 }
 
+// Cap on the auto-grow height (px) of the textarea itself (excludes the
+// card's top padding and the footer row below it) before it switches to an
+// internal scrollbar instead of pushing the layout further down.
+const MAX_TEXTAREA_HEIGHT = 180;
+
+function resizeTextarea(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  const next = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT);
+  el.style.height = `${next}px`;
+  el.style.overflowY = el.scrollHeight > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden';
+}
+
 interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
@@ -147,17 +159,13 @@ export default function ChatInput({
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+    resizeTextarea(el);
   }, [text]);
 
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    const recalc = () => {
-      el.style.height = 'auto';
-      el.style.height = `${el.scrollHeight}px`;
-    };
+    const recalc = () => resizeTextarea(el);
     window.addEventListener('resize', recalc);
     return () => window.removeEventListener('resize', recalc);
   }, []);
@@ -186,122 +194,138 @@ export default function ChatInput({
     textareaRef.current?.focus();
   };
 
+  const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
+
   return (
-    <form onSubmit={handleSubmit} onClick={handleCardClick} className="relative w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      <textarea
-        ref={textareaRef}
-        value={replayValue !== undefined ? replayValue : text}
-        onChange={replayValue !== undefined ? undefined : (e) => setText(e.target.value)}
-        readOnly={replayValue !== undefined}
-        onFocus={() => onFocusChange?.(true)}
-        onBlur={() => onFocusChange?.(false)}
-        onKeyDown={(e) => {
-          if (replayValue !== undefined) return;
-          if (e.key === 'Tab' && !e.shiftKey && suggestionActive && currentSuggestion) {
-            e.preventDefault();
-            setText(currentSuggestion);
-            return;
-          }
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            handleSubmit(e);
-          }
-        }}
-        placeholder={suggestionActive ? '' : t('inputPlaceholder')}
-        rows={1}
-        disabled={(isLoading || moodPending) && replayValue === undefined}
-        className="w-full min-h-[108px] resize-none overflow-hidden rounded-[12px] bg-[#111111] px-4 pt-3 pb-8 pr-10 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none transition duration-200 focus:ring-1 focus:ring-[#323232] focus:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
-      />
-
-      {/* Rotating suggestion shown in place of the native placeholder (which
-          can't animate or carry a styled hint). The text types out unit by
-          unit; the Tab hint rides along a fixed distance right of the typed
-          end. Mirrors the textarea's text position/size; pointer-events-none
-          so clicks focus the input. */}
-      {suggestionActive && (
-        <div className="pointer-events-none absolute left-4 top-3 right-10 bottom-8 overflow-hidden line-clamp-3 text-base md:text-sm text-[#666666]">
-          {/* Only the suggestion text blurs/fades between rotations — blur
-              runs first, then opacity fades in on its heels (sequential, not
-              simultaneous), via an explicit transition-delay on opacity.
-              Padding + matching negative margin gives the filter's own layer
-              room to blur into without being hard-clipped at the element's
-              box edge (a visible rectangle otherwise, since CSS filter
-              clips at the border box) — net zero visual displacement. */}
-          <span
-            className="inline-block -m-1.5 p-1.5"
-            style={{
-              filter: suggestionFading ? 'blur(1.5px)' : 'blur(0px)',
-              opacity: suggestionFading ? 0 : 1,
-              transition: 'filter 200ms ease, opacity 250ms ease 100ms',
+    <form onSubmit={handleSubmit} onClick={handleCardClick} className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* Card: textarea on top, footer (hint + send button) below it in normal
+          flow — a real layout row, not an overlay, so it always reserves its
+          own space regardless of how tall/scrolled the textarea gets. */}
+      <div
+        className={`rounded-[12px] bg-[#111111] pt-3 transition duration-200 focus-within:ring-1 focus-within:ring-[#323232] ${inputDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
+      >
+        {/* Wraps just the textarea so the suggestion overlay below can be
+            positioned absolute against its box, not the card as a whole
+            (which also includes the footer). Top padding lives on the card
+            above, not here — inside the textarea it would be scrolled out of
+            view (and off the top of the visible box) once content overflows
+            past MAX_TEXTAREA_HEIGHT, same reasoning as the footer below. */}
+        {/* pr-2 insets the textarea's right edge (where the scrollbar rides)
+            from the card edge, giving the scrollbar an 8px gap. The textarea's
+            own pr below is reduced by the same 8px so the text position is
+            unchanged. */}
+        <div className="relative pr-3">
+          <textarea
+            ref={textareaRef}
+            value={replayValue !== undefined ? replayValue : text}
+            onChange={replayValue !== undefined ? undefined : (e) => setText(e.target.value)}
+            readOnly={replayValue !== undefined}
+            onFocus={() => onFocusChange?.(true)}
+            onBlur={() => onFocusChange?.(false)}
+            onKeyDown={(e) => {
+              if (replayValue !== undefined) return;
+              if (e.key === 'Tab' && !e.shiftKey && suggestionActive && currentSuggestion) {
+                e.preventDefault();
+                setText(currentSuggestion);
+                return;
+              }
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                handleSubmit(e);
+              }
             }}
-          >
-            {typedPlaceholder}
-          </span>
-        </div>
-      )}
+            placeholder={suggestionActive ? '' : t('inputPlaceholder')}
+            rows={1}
+            disabled={inputDisabled}
+            className="w-full min-h-[54px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none focus:text-white disabled:cursor-not-allowed"
+            style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
+          />
 
-      {/* Tab hint — bottom-left, the spot the engine-status indicator uses;
-          only rendered when that indicator is absent (engine ready) */}
-      {suggestionActive && engineStatus === 'ready' && (
-        <div className="pointer-events-none absolute left-4 bottom-3 text-[12px] text-[#666666]">
-          {t('tabToFill')}
-        </div>
-      )}
-
-      {engineStatus !== 'ready' && (
-        <div className="absolute left-4 bottom-3 flex items-center gap-2 text-[12px] text-[#888888]">
-          <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-[#B2370C]' : 'bg-[#666666]'}`} />
-          <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
-          {engineStatus === 'failed' && (
-            <button
-              type="button"
-              onClick={onReinitEngine}
-              className="text-[18px] font-thin text-[#e0e0e0]/60 hover:text-[#e0e0e0] transition-colors leading-none relative -top-[2px]"
-              title={t('restartEngine')}
-            >
-              ↺
-            </button>
+          {/* Rotating suggestion shown in place of the native placeholder
+              (which can't animate or carry a styled hint). The text types
+              out unit by unit. Mirrors the textarea's own padding exactly;
+              pointer-events-none so clicks focus the input. */}
+          {suggestionActive && (
+            <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-[#666666]">
+              {/* Only the suggestion text blurs/fades between rotations — blur
+                  runs first, then opacity fades in on its heels (sequential, not
+                  simultaneous), via an explicit transition-delay on opacity.
+                  Padding + matching negative margin gives the filter's own layer
+                  room to blur into without being hard-clipped at the element's
+                  box edge (a visible rectangle otherwise, since CSS filter
+                  clips at the border box) — net zero visual displacement. */}
+              <span
+                className="inline-block -m-1.5 p-1.5"
+                style={{
+                  filter: suggestionFading ? 'blur(1.5px)' : 'blur(0px)',
+                  opacity: suggestionFading ? 0 : 1,
+                  transition: 'filter 200ms ease, opacity 250ms ease 100ms',
+                }}
+              >
+                {typedPlaceholder}
+              </span>
+            </div>
           )}
         </div>
-      )}
 
-      {/* Context window indicator hidden for now — still far from the limit; kept for future prompt optimisation review*/
-      /* {engineReady && tokenStats && (
-        <div className="absolute left-3 bottom-3">
-          <ContextWindowIndicator tokenStats={tokenStats} />
+        {/* Footer row — hint/status on the left, send button on the right.
+            Real layout, always visible regardless of textarea scroll state. */}
+        <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
+          <div className="min-w-0">
+            {engineStatus !== 'ready' ? (
+              <div className="flex items-center gap-2 text-[12px] text-[#888888]">
+                <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-[#B2370C]' : 'bg-[#666666]'}`} />
+                <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
+                {engineStatus === 'failed' && (
+                  <button
+                    type="button"
+                    onClick={onReinitEngine}
+                    className="text-[18px] font-thin text-[#e0e0e0]/60 hover:text-[#e0e0e0] transition-colors leading-none relative -top-[2px]"
+                    title={t('restartEngine')}
+                  >
+                    ↺
+                  </button>
+                )}
+              </div>
+            ) : suggestionActive ? (
+              <div className="pointer-events-none text-[12px] text-[#666666]">{t('tabToFill')}</div>
+            ) : null}
+          </div>
+
+          {/* Context window indicator hidden for now — still far from the limit; kept for future prompt optimisation review*/
+          /* {engineReady && tokenStats && <ContextWindowIndicator tokenStats={tokenStats} />} */}
+
+          <div className="flex items-center gap-2 shrink-0">
+            {replayValue !== undefined ? (
+              <button
+                type="button"
+                disabled={!replayValue.trim()}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-30"
+                title={t('send')}
+              >
+                <ArrowUpIcon size={18} />
+              </button>
+            ) : isLoading ? (
+              <button
+                type="button"
+                onClick={onStop}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80"
+                title={t('stop')}
+              >
+                <StopIcon size={18} />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!text.trim()}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
+                title={t('send')}
+              >
+                <ArrowUpIcon size={18} />
+              </button>
+            )}
+          </div>
         </div>
-      )} */}
-
-      <div className="absolute right-2 bottom-2 flex items-center gap-2">
-        {replayValue !== undefined ? (
-          <button
-            type="button"
-            disabled={!replayValue.trim()}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-30"
-            title={t('send')}
-          >
-            <ArrowUpIcon size={18} />
-          </button>
-        ) : isLoading ? (
-          <button
-            type="button"
-            onClick={onStop}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80"
-            title={t('stop')}
-          >
-            <StopIcon size={18} />
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={!text.trim()}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
-            title={t('send')}
-          >
-            <ArrowUpIcon size={18} />
-          </button>
-        )}
       </div>
     </form>
   );
