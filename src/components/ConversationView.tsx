@@ -152,7 +152,7 @@ function parseInlineMarkdown(text: string, keyPrefix: string, tone: MarkdownTone
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="text-[#93C2FF] underline decoration-[#93C2FF]/40 underline-offset-2 hover:decoration-[#93C2FF]"
+            className="text-diff-accent underline decoration-diff-accent/40 underline-offset-2 hover:decoration-diff-accent"
           >
             {parseInlineMarkdown(label, `${keyPrefix}-link-${key}`, tone)}
           </a>,
@@ -348,7 +348,7 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
         i += 1;
       }
       blocks.push(
-        <blockquote key={`md-quote-${key++}`} className="my-1 border-l border-[#93C2FF]/30 pl-3 text-text-secondary">
+        <blockquote key={`md-quote-${key++}`} className="my-1 border-l border-diff-accent/30 pl-3 text-text-secondary">
           {parseInlineMarkdown(quoted.join('\n'), `md-quote-${key}`, tone)}
         </blockquote>,
       );
@@ -1235,11 +1235,11 @@ export default function ConversationView({
                 const code = msg.code;
                 const lineCount = code.split('\n').length;
                 return (
-                  <div className="mt-4 -ml-1 rounded-md border border-[#93C2FF]/30 overflow-hidden animate-fade-in">
-                    <div className="w-full flex items-center bg-bg-primary/60 text-[11px] text-[#93C2FF]/70">
+                  <div className="mt-4 -ml-1 rounded-md border border-diff-accent/70 overflow-hidden animate-fade-in">
+                    <div className="w-full flex items-center bg-bg-primary/60 text-[11px] text-diff-accent/70">
                       <button
                         onClick={() => toggleCode(msg.id)}
-                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors text-left"
+                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
                       >
                         <span>{t('strudelCode')}</span>
                         <span>· {lineCount} {t('lines')}</span>
@@ -1251,7 +1251,7 @@ export default function ConversationView({
                             setTimeout(() => setCopiedId(null), 2000);
                           });
                         }}
-                        className="px-2 py-1.5 text-[#93C2FF]/70 hover:text-[#93C2FF]/90 hover:bg-bg-primary/80 transition-colors"
+                        className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
                         title={t('copyCode')}
                       >
                         {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
