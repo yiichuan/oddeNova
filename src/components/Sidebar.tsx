@@ -191,7 +191,7 @@ export default function Sidebar({
         />
       </div>
 
-      <div className="pl-4 pr-0 pb-2">
+      <div className="pl-4 pr-0 pb-3">
         <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
       </div>
     </aside>
