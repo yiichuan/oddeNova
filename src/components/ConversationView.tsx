@@ -379,6 +379,75 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
   return <div data-markdown-text className="min-w-0 max-w-full space-y-2 break-words [overflow-wrap:anywhere]">{blocks}</div>;
 }
 
+// User message text with a "show more / less" affordance. Long messages are
+// clamped to five lines with the fifth faded into the bubble background; the
+// "show more" control reveals on hover (and stays visible on touch, which has
+// no hover), and once expanded a "show less" control collapses it again.
+function UserMessageBubble({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const textRef = useRef<HTMLParagraphElement>(null);
+
+  // Measure overflow while the <p> is clamped (line-clamp-5 is applied for the
+  // whole collapsed state, a no-op for short text), so scrollHeight exceeding
+  // the clamped clientHeight means there's a 6th+ line hidden. useLayoutEffect
+  // + a synchronous state update means the clamp/fade are already correct on
+  // first paint — no flash of the full text. Re-measures on width changes via
+  // ResizeObserver. Skipped while expanded (the box is unclamped then, so the
+  // check can't run); the last collapsed measurement stays valid.
+  useLayoutEffect(() => {
+    if (expanded) return;
+    const el = textRef.current;
+    if (!el) return;
+    const measure = () => setOverflowing(el.scrollHeight - el.clientHeight > 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [content, expanded]);
+
+  const clamped = !expanded && overflowing;
+
+  return (
+    <>
+      {/* When clamped, extend the bubble's bottom (pb-5) so the fade region has
+          extra room below the fifth line and the "show more" control can sit
+          lower, clear of the text. Adjust this pb-* to grow/shrink that gap. */}
+      <div className={`relative${clamped ? ' pb-6' : ''}`}>
+        <p
+          ref={textRef}
+          className={`whitespace-pre-wrap break-words${expanded ? '' : ' line-clamp-5'}`}
+        >
+          {content}
+        </p>
+        {clamped && (
+          <>
+            {/* Taller fade of the fifth line + the added space into the bubble
+                background (#1a1a1a). */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-[#1a1a1a] via-[#1a1a1a]/80 to-transparent" />
+            {/* Sits low over the fade, always visible. Gray a shade dimmer
+                than the bubble text (text-primary). */}
+            <button
+              onClick={() => setExpanded(true)}
+              className="absolute inset-x-0 bottom-0 flex justify-start pb-0 text-[11px] font-medium text-text-muted transition-colors hover:text-text-secondary"
+            >
+              {t('showMore')}
+            </button>
+          </>
+        )}
+      </div>
+      {expanded && overflowing && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="mt-1 flex w-full justify-start text-[11px] font-medium text-text-muted transition-colors hover:text-text-secondary"
+        >
+          {t('showLess')}
+        </button>
+      )}
+    </>
+  );
+}
+
 interface ConversationViewProps {
   messages: ChatMessage[];
   revisions?: CodeRevision[];
@@ -426,6 +495,17 @@ export default function ConversationView({
   // In-flight programmatic smooth scroll (turn-start anchoring): its target
   // and a deadline after which it's considered interrupted/finished.
   const autoScrollRef = useRef<{ target: number; until: number } | null>(null);
+  // The scroll position the layout effect last anchored to — the top of the
+  // current turn's user bubble in turn-anchor mode, or the bottom pin
+  // otherwise. Manual-scroll detection measures deviation from THIS, not from
+  // the bottom: with a user bubble taller than the viewport, the anchor sits
+  // near the top while the streaming reasoning window sits below the fold, so
+  // scrolling down to read it moves the view *toward* the bottom — a
+  // bottom-distance test would read that as "still following" and the next
+  // streamed delta would yank the bubble back to the top. null before the
+  // first layout pass and in video mode (falls back to the bottom-distance
+  // test).
+  const anchorTargetRef = useRef<number | null>(null);
   const reasoningScrollRef = useRef<HTMLDivElement>(null);
   const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
@@ -472,8 +552,17 @@ export default function ConversationView({
         if (performance.now() < auto.until) return;
         autoScrollRef.current = null; // stale flight (interrupted); fall through
       }
-      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      userScrolledRef.current = distFromBottom > 80;
+      const anchorTarget = anchorTargetRef.current;
+      if (anchorTarget != null) {
+        // Turn-anchor mode: the view is pinned near the top (bubble anchored),
+        // so a real takeover is moving away from that anchor in *either*
+        // direction — most importantly, scrolling down past it to reach the
+        // reasoning window below the fold. A bottom-distance test misfires here.
+        userScrolledRef.current = Math.abs(el.scrollTop - anchorTarget) > 80;
+      } else {
+        const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        userScrolledRef.current = distFromBottom > 80;
+      }
     };
     const handleUserScrollIntent = () => {
       if (autoScrollRef.current) {
@@ -590,6 +679,7 @@ export default function ConversationView({
     if (isVideoMode && !scrollBottom) {
       // [video] Video mode: display from the top; only scroll to bottom when scrollBottom=true
       el.scrollTop = 0;
+      anchorTargetRef.current = null;
     } else {
       // Turn start overrides any manual scroll (the user just acted on this turn).
       if (turnJustStarted) userScrolledRef.current = false;
@@ -615,7 +705,32 @@ export default function ConversationView({
             if (node === el) target = Math.min(bottomPin, top - 10);
           }
         }
+        // Reveal the live reasoning window. A user bubble taller than the
+        // viewport pushes the streaming reasoning box below the fold at the
+        // top-anchor position above, so it would never be seen. Measure the
+        // box's own bottom (it's mounted only while reasoning streams) and, if
+        // it sits below the visible area, scroll down just enough to bring
+        // that bottom — the last streamed line, which the box's own internal
+        // scroll tracks — into view. Only ever scrolls further down than the
+        // top anchor (revealTarget > target), so short bubbles that already
+        // show the box keep it pinned at the top, untouched.
+        const preEl = reasoningScrollRef.current;
+        if (preEl) {
+          let rBottom = preEl.offsetHeight;
+          let walk: HTMLElement | null = preEl;
+          while (walk && walk !== el) {
+            rBottom += walk.offsetTop;
+            walk = walk.offsetParent as HTMLElement | null;
+          }
+          if (walk === el) {
+            const revealTarget = rBottom - el.clientHeight + 16;
+            if (revealTarget > target) target = Math.min(bottomPin, revealTarget);
+          }
+        }
         target = Math.max(0, target);
+        // Record where we're anchoring so manual-scroll detection can measure
+        // deviation from it (see handleScroll / anchorTargetRef).
+        anchorTargetRef.current = target;
         const auto = autoScrollRef.current;
         if (turnJustStarted) {
           autoScrollRef.current = { target, until: performance.now() + 800 };
@@ -626,7 +741,15 @@ export default function ConversationView({
             auto.target = target;
             el.scrollTo({ top: target, behavior: 'smooth' });
           }
+        } else if (Math.abs(el.scrollTop - target) > 8) {
+          // Target moved without a fresh turn — the reasoning window just
+          // appeared (or vanished) and the anchor needs to shift. Glide there
+          // smoothly, marking the flight so the scroll handler doesn't read
+          // its intermediate frames as a manual takeover.
+          autoScrollRef.current = { target, until: performance.now() + 800 };
+          el.scrollTo({ top: target, behavior: 'smooth' });
         } else {
+          // Already in place (the common per-delta case): set exactly, no motion.
           autoScrollRef.current = null;
           el.scrollTop = target;
         }
@@ -1044,13 +1167,13 @@ export default function ConversationView({
               className="flex justify-end items-end gap-1.5 animate-fade-in group"
             >
               <div
-                className={`relative max-w-[85%] rounded-xl px-2 py-2 text-sm bg-[#1a1a1a] text-text-primary${
+                className={`relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary${
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}
                 {...getMobileRollbackBubbleProps(msg.id)}
               >
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                <UserMessageBubble content={msg.content} />
                 {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
                 <div className={`absolute -top-2.5 -right-2.5 transition-opacity ${
                   isMobile
