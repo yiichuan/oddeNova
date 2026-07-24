@@ -11,6 +11,7 @@ const authMocks = vi.hoisted(() => ({
     id: 'user-1',
     email: 'listener@example.com',
   })),
+  signOut: vi.fn(async (): Promise<void> => undefined),
   signUpWithPassword: vi.fn(async (_email: string, _password: string) => undefined),
   resetPasswordForEmail: vi.fn(async (_email: string) => undefined),
   updatePassword: vi.fn(async (_password: string) => undefined),
@@ -20,7 +21,7 @@ vi.mock('../../services/auth-service', () => ({
   resetPasswordForEmail: authMocks.resetPasswordForEmail,
   signInWithGoogle: authMocks.signInWithGoogle,
   signInWithPassword: authMocks.signInWithPassword,
-  signOut: vi.fn(),
+  signOut: authMocks.signOut,
   signUpWithPassword: authMocks.signUpWithPassword,
   updatePassword: authMocks.updatePassword,
 }));
@@ -59,6 +60,26 @@ function renderSignInModal(oauthErrorKey?: 'authErrorGoogleCancelled') {
         user={null}
         configured
         oauthErrorKey={oauthErrorKey}
+        onClose={onClose}
+      />,
+    );
+  });
+
+  return { container, root, onClose };
+}
+
+function renderSignedInModal(beforeSignOut?: () => Promise<void>) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+
+  act(() => {
+    root.render(
+      <AccountModal
+        user={{ id: 'user-1', email: 'listener@example.com' }}
+        configured
+        beforeSignOut={beforeSignOut}
         onClose={onClose}
       />,
     );
@@ -288,6 +309,71 @@ describe('AccountModal reset email', () => {
     });
 
     expect(authMocks.resetPasswordForEmail).toHaveBeenCalledWith('listener@example.com', 'en');
+  });
+});
+
+describe('AccountModal sign out', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  it('waits for pending cloud saves before ending the auth session', async () => {
+    const callOrder: string[] = [];
+    let releaseCloudSaves!: () => void;
+    const beforeSignOut = vi.fn(() => new Promise<void>((resolve) => {
+      releaseCloudSaves = () => {
+        callOrder.push('flush');
+        resolve();
+      };
+    }));
+    const { container, root, onClose } = renderSignedInModal(beforeSignOut);
+    roots.push(root);
+    authMocks.signOut.mockImplementationOnce(async () => {
+      callOrder.push('signOut');
+    });
+    onClose.mockImplementationOnce(() => {
+      callOrder.push('onClose');
+    });
+
+    await act(async () => {
+      findButton(container, 'Sign out').click();
+    });
+
+    expect(beforeSignOut).toHaveBeenCalledOnce();
+    expect(authMocks.signOut).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseCloudSaves();
+      await Promise.resolve();
+    });
+
+    expect(authMocks.signOut).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(callOrder).toEqual(['flush', 'signOut', 'onClose']);
+  });
+
+  it('keeps the user signed in when pending cloud saves cannot be flushed', async () => {
+    const beforeSignOut = vi.fn(async () => {
+      throw new Error('Cloud save failed');
+    });
+    const { container, root, onClose } = renderSignedInModal(beforeSignOut);
+    roots.push(root);
+
+    await act(async () => {
+      findButton(container, 'Sign out').click();
+      await Promise.resolve();
+    });
+
+    expect(beforeSignOut).toHaveBeenCalledOnce();
+    expect(authMocks.signOut).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 

@@ -1,8 +1,8 @@
 import type { Session } from '../hooks/useSessions';
 import { getAccessToken } from './auth-service';
 
-async function authHeaders(contentType = false): Promise<HeadersInit> {
-  const token = await getAccessToken();
+async function authHeaders(contentType = false, expectedUserId?: string): Promise<HeadersInit> {
+  const token = await getAccessToken(expectedUserId);
   if (!token) throw new Error('Not signed in');
   return {
     Authorization: `Bearer ${token}`,
@@ -19,29 +19,29 @@ async function parseError(res: Response): Promise<Error> {
   }
 }
 
-export async function listCloudSessions(): Promise<Session[]> {
+export async function listCloudSessions(expectedUserId?: string): Promise<Session[]> {
   const res = await fetch('/api/sessions', {
     method: 'GET',
-    headers: await authHeaders(),
+    headers: await authHeaders(false, expectedUserId),
   });
   if (!res.ok) throw await parseError(res);
   const body = await res.json() as { sessions: Session[] };
   return body.sessions;
 }
 
-export async function saveCloudSession(session: Session): Promise<void> {
+export async function saveCloudSession(session: Session, expectedUserId?: string): Promise<void> {
   const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
     method: 'PUT',
-    headers: await authHeaders(true),
+    headers: await authHeaders(true, expectedUserId),
     body: JSON.stringify(session),
   });
   if (!res.ok) throw await parseError(res);
 }
 
-export async function deleteCloudSession(id: string): Promise<void> {
+export async function deleteCloudSession(id: string, expectedUserId?: string): Promise<void> {
   const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    headers: await authHeaders(),
+    headers: await authHeaders(false, expectedUserId),
   });
   if (!res.ok) throw await parseError(res);
 }

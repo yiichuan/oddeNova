@@ -238,7 +238,141 @@ describe('useSessions', () => {
       messages: expect.arrayContaining([
         expect.objectContaining({ content: '同步这段旋律' }),
       ]),
-    }));
+    }), 'u-1');
+  });
+
+  it('flushes the latest complete turn instead of racing an earlier reasoning snapshot', async () => {
+    let releaseFirstSave!: () => void;
+    const saveSession = vi.fn<(session: Session) => Promise<void>>()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => {
+        releaseFirstSave = resolve;
+      }))
+      .mockResolvedValue(undefined);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession,
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+
+    act(() => {
+      getHook().addUserMessage('来个简单的鼓点', sessionId);
+    });
+    act(() => {
+      getHook().appendToLastReasoning('先构思四四拍鼓点。', sessionId);
+      getHook().addProgress('tool_call', '编排段落…', {
+        toolName: 'setCode',
+        sessionId,
+      });
+      getHook().addAssistantMessage(
+        '一个简单干净的四四拍鼓点。',
+        's("bd sd")',
+        sessionId,
+        {
+          beforeCode: '',
+          afterCode: 's("bd sd")',
+          playbackStatus: 'played',
+        },
+      );
+    });
+
+    expect(saveSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      releaseFirstSave();
+      await getHook().flushCloudSaves();
+    });
+
+    const finalSnapshot = saveSession.mock.calls.at(-1)?.[0];
+    const finalMessage = finalSnapshot?.messages.at(-1);
+    expect(finalMessage).toMatchObject({
+      role: 'assistant',
+      content: '一个简单干净的四四拍鼓点。',
+      code: 's("bd sd")',
+    });
+    expect(finalSnapshot?.revisions).toHaveLength(1);
+    expect(finalMessage?.revisionId).toBe(finalSnapshot?.revisions?.[0].id);
+  });
+
+  it('does not retry one account owner cloud failure after switching to another owner', async () => {
+    const saveSession = vi.fn()
+      .mockRejectedValueOnce(new Error('account A save failed'))
+      .mockResolvedValue(undefined);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession,
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook, rerender } = await renderUseSessions({
+      ownerKey: 'user:account-a',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    act(() => {
+      getHook().addUserMessage('A 的私密会话');
+    });
+    await act(async () => {
+      await expect(getHook().flushCloudSaves()).rejects.toThrow('account A save failed');
+    });
+
+    await rerender({ ownerKey: 'guest', cloud, syncEnabled: false });
+    await rerender({ ownerKey: 'user:account-b', cloud, syncEnabled: true });
+    await act(async () => {
+      await getHook().flushCloudSaves();
+    });
+
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    expect(saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ messages: expect.arrayContaining([
+        expect.objectContaining({ content: 'A 的私密会话' }),
+      ]) }),
+      'account-a',
+    );
+  });
+
+  it('does not resurrect a failed cloud snapshot after deleting its session', async () => {
+    const saveSession = vi.fn()
+      .mockRejectedValueOnce(new Error('save failed before delete'))
+      .mockResolvedValue(undefined);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession,
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const deletedId = getHook().currentId!;
+
+    act(() => {
+      getHook().addUserMessage('删除这段会话');
+    });
+    await act(async () => {
+      await expect(getHook().flushCloudSaves()).rejects.toThrow('save failed before delete');
+    });
+
+    act(() => {
+      getHook().deleteSession(deletedId);
+    });
+    await vi.waitFor(() => {
+      expect(cloud.deleteSession).toHaveBeenCalledWith(deletedId, 'u-1');
+    });
+    await act(async () => {
+      await getHook().flushCloudSaves();
+    });
+
+    expect(saveSession.mock.calls.filter(([session]) => session.id === deletedId)).toHaveLength(1);
   });
 
   it('waits for imported sessions to be saved to the cloud when sync is enabled', async () => {
@@ -265,7 +399,7 @@ describe('useSessions', () => {
     expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
       title: '本机历史',
       messages: [expect.objectContaining({ content: '本地聊天' })],
-    }));
+    }), 'u-1');
   });
 
   it('rejects imported sessions when the cloud save fails', async () => {
@@ -538,6 +672,137 @@ describe('useSessions', () => {
     expect(getHook().currentSession?.id).toBe(branchId);
     expect(getHook().sessions).toHaveLength(sessionCount);
   });
+
+  it('cloud-saves oddeNova skill creates, updates, and both sides of a conflict branch', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'cloud-project',
+      title: 'Cloud imported beat',
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make a cloud beat' }],
+    };
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importOddeNovaSession(payload);
+    });
+    const importedId = getHook().currentId!;
+    expect(cloud.saveSession).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: importedId,
+      code: payload.code,
+      externalSource: expect.objectContaining({ projectId: 'cloud-project' }),
+    }), 'u-1');
+
+    await act(async () => {
+      await getHook().importOddeNovaSession({ ...payload, code: 'stack(s("sd"))' });
+    });
+    expect(cloud.saveSession).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: importedId,
+      code: 'stack(s("sd"))',
+      externalSource: expect.objectContaining({ projectId: 'cloud-project' }),
+    }), 'u-1');
+
+    act(() => getHook().setCurrentCode('website edit'));
+    cloud.saveSession.mockClear();
+    await act(async () => {
+      await getHook().importOddeNovaSession({ ...payload, code: 'stack(s("hh"))' });
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledTimes(2);
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
+      id: importedId,
+      code: 'website edit',
+      externalSource: undefined,
+    }), 'u-1');
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'stack(s("hh"))',
+      externalSource: expect.objectContaining({ projectId: 'cloud-project' }),
+    }), 'u-1');
+  });
+
+  it.each(['detached', 'branch'] as const)(
+    'keeps local branch state consistent and awaits both cloud saves when the %s save fails',
+    async (failedSide) => {
+      const payload: OddeNovaImportPayload = {
+        protocolVersion: 1,
+        source: 'oddenova-strudel-skill',
+        projectId: `partial-${failedSide}`,
+        title: 'Partial cloud branch',
+        code: 'stack(s("bd"))',
+        messages: [{ role: 'user', content: 'Make a beat' }],
+      };
+      const cloud = {
+        listSessions: vi.fn(async () => []),
+        saveSession: vi.fn<(_session: Session, _expectedUserId?: string) => Promise<void>>(
+          async () => undefined,
+        ),
+        deleteSession: vi.fn(async () => undefined),
+      };
+      const { root, getHook } = await renderUseSessions({
+        ownerKey: 'user:u-1',
+        cloud,
+        syncEnabled: true,
+      });
+      roots.push(root);
+
+      await act(async () => {
+        await getHook().importOddeNovaSession(payload);
+      });
+      act(() => getHook().setCurrentCode('website edit'));
+      await act(async () => {
+        await getHook().flushCloudSaves();
+      });
+
+      let releaseOther!: () => void;
+      cloud.saveSession.mockImplementation((session) => {
+        const side = session.externalSource ? 'branch' : 'detached';
+        if (side === failedSide) {
+          return Promise.reject(new Error(`${failedSide} cloud save failed`));
+        }
+        return new Promise<void>((resolve) => {
+          releaseOther = resolve;
+        });
+      });
+      cloud.saveSession.mockClear();
+
+      let settled = false;
+      let importPromise!: Promise<string>;
+      await act(async () => {
+        importPromise = getHook().importOddeNovaSession({
+          ...payload,
+          code: 'stack(s("hh"))',
+        });
+        void importPromise.then(
+          () => { settled = true; },
+          () => { settled = true; },
+        );
+        await Promise.resolve();
+      });
+
+      expect(cloud.saveSession).toHaveBeenCalledTimes(2);
+      expect(settled).toBe(false);
+      expect(getHook().currentSession).toMatchObject({
+        code: 'stack(s("hh"))',
+        externalSource: expect.objectContaining({ projectId: payload.projectId }),
+      });
+
+      await act(async () => {
+        releaseOther();
+        await expect(importPromise).rejects.toThrow(`${failedSide} cloud save failed`);
+      });
+    },
+  );
 
   it('rejects a failed imported-session create without changing React state', async () => {
     const payload: OddeNovaImportPayload = {

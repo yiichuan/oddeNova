@@ -77,6 +77,7 @@ interface AccountModalProps {
   configured: boolean;
   recoveringPassword?: boolean;
   oauthErrorKey?: GoogleOAuthErrorKey | null;
+  beforeSignOut?: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -85,6 +86,7 @@ export default function AccountModal({
   configured,
   recoveringPassword = false,
   oauthErrorKey = null,
+  beforeSignOut,
   onClose,
 }: AccountModalProps) {
   const [mode, setMode] = useState<Mode>('sign-in');
@@ -146,6 +148,7 @@ export default function AccountModal({
 
   const handleSignOut = () => {
     void run(async () => {
+      await beforeSignOut?.();
       await signOut();
       onClose();
     });

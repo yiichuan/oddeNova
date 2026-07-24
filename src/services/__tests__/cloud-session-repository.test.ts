@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../../hooks/useSessions';
 
 const authMocks = vi.hoisted(() => ({
-  getAccessToken: vi.fn<() => Promise<string | null>>(),
+  getAccessToken: vi.fn<(_expectedUserId?: string) => Promise<string | null>>(),
 }));
 
 vi.mock('../auth-service', () => ({
@@ -35,7 +35,7 @@ describe('cloud-session-repository', () => {
     } as Response);
 
     const { saveCloudSession } = await import('../cloud-session-repository');
-    await saveCloudSession(makeSession());
+    await saveCloudSession(makeSession(), 'user-1');
 
     expect(fetch).toHaveBeenCalledWith('/api/sessions/s-1', expect.objectContaining({
       method: 'PUT',
@@ -44,6 +44,7 @@ describe('cloud-session-repository', () => {
         'Content-Type': 'application/json',
       },
     }));
+    expect(authMocks.getAccessToken).toHaveBeenCalledWith('user-1');
   });
 
   it('throws before calling the API when no login token is available', async () => {

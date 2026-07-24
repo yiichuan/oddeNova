@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage, ProgressKind } from './useChat';
 import {
   openDB,
@@ -14,6 +14,7 @@ import {
 import { t } from '../lib/i18n';
 import { pickGreeting } from '../lib/greetings';
 import { hashImportedContent, type OddeNovaImportPayload } from '../lib/oddenova-import';
+import { createLatestSaveQueue } from '../lib/latest-save-queue';
 
 export interface TokenStats {
   promptTokens: number;
@@ -62,9 +63,9 @@ export interface Session {
 }
 
 export interface CloudSessionRepository {
-  listSessions: () => Promise<Session[]>;
-  saveSession: (session: Session) => Promise<void>;
-  deleteSession: (id: string) => Promise<void>;
+  listSessions: (expectedUserId?: string) => Promise<Session[]>;
+  saveSession: (session: Session, expectedUserId?: string) => Promise<void>;
+  deleteSession: (id: string, expectedUserId?: string) => Promise<void>;
 }
 
 export interface UseSessionsOptions {
@@ -215,12 +216,24 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const syncEnabled = options.syncEnabled ?? false;
   const cloud = options.cloud;
   const startNewSessionToken = options.startNewSessionToken ?? 0;
+  const cloudOwnerId = ownerKey.startsWith('user:') ? ownerKey.slice('user:'.length) : undefined;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPersistent, setIsPersistent] = useState(false);
   const [loadedOwnerKey, setLoadedOwnerKey] = useState(ownerKey);
   const consumedStartNewSessionTokenRef = useRef(0);
+  const cloudSaveQueue = useMemo(
+    () => cloud
+      ? createLatestSaveQueue<Session>(
+          (session) => cloud.saveSession(session, cloudOwnerId),
+          (err) => {
+            console.warn('[sessions] cloud session save failed.', err);
+          },
+        )
+      : null,
+    [cloud, cloudOwnerId],
+  );
 
   // Initialize: open DB (+ migrate) then load all sessions
   useEffect(() => {
@@ -233,7 +246,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       let loaded = await getAllSessions(ownerKey);
       if (syncEnabled && cloud) {
         try {
-          const remote = await cloud.listSessions();
+          const remote = await cloud.listSessions(cloudOwnerId);
           if (remote.length > 0) {
             loaded = remote;
             await Promise.all(remote.map((s) => dbPutSession(s, ownerKey)));
@@ -283,7 +296,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       setIsLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [ownerKey, syncEnabled, cloud, startNewSessionToken]);
+  }, [ownerKey, syncEnabled, cloud, cloudOwnerId, startNewSessionToken]);
 
   const sessionsForOwner = loadedOwnerKey === ownerKey ? sessions : [];
   const currentIdForOwner = loadedOwnerKey === ownerKey ? currentId : null;
@@ -293,14 +306,16 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const persistSession = useCallback(
     (session: Session) => {
       dbPutSession(session, ownerKey);
-      if (syncEnabled && cloud && (session.messages.length > 0 || session.code)) {
-        cloud.saveSession(session).catch((err) => {
-          console.warn('[sessions] cloud session save failed.', err);
-        });
+      if (syncEnabled && cloudSaveQueue && (session.messages.length > 0 || session.code)) {
+        void cloudSaveQueue.enqueue(session);
       }
     },
-    [ownerKey, syncEnabled, cloud]
+    [ownerKey, syncEnabled, cloudSaveQueue]
   );
+
+  const flushCloudSaves = useCallback(async (): Promise<void> => {
+    await cloudSaveQueue?.flush();
+  }, [cloudSaveQueue]);
 
   const updateCurrent = useCallback(
     (mut: (s: Session) => Session) => {
@@ -544,7 +559,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
         const next = prev.filter((s) => s.id !== id);
         dbDeleteSession(id, ownerKey);
         if (syncEnabled && cloud) {
-          cloud.deleteSession(id).catch((err) => {
+          void (async () => {
+            await cloudSaveQueue?.discard(id);
+            await cloud.deleteSession(id, cloudOwnerId);
+          })().catch((err) => {
             console.warn('[sessions] cloud session delete failed.', err);
           });
         }
@@ -562,7 +580,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         return next;
       });
     },
-    [currentId, ownerKey, syncEnabled, cloud, persistSession]
+    [currentId, ownerKey, syncEnabled, cloud, cloudOwnerId, cloudSaveQueue, persistSession]
   );
 
   const importSession = useCallback(
@@ -578,14 +596,14 @@ export function useSessions(options: UseSessionsOptions = {}) {
         updatedAt: now,
       };
       await dbPutSession(session, ownerKey);
-      if (syncEnabled && cloud) {
-        await cloud.saveSession(session);
+      if (syncEnabled && cloudSaveQueue) {
+        await cloudSaveQueue.enqueue(session);
       }
       setSessions((prev) => [session, ...prev]);
       setCurrentId(id);
       dbPutCurrentSessionId(id, ownerKey);
     },
-    [ownerKey, syncEnabled, cloud]
+    [ownerKey, syncEnabled, cloudSaveQueue]
   );
 
   const importOddeNovaSession = useCallback(async (
@@ -620,6 +638,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
         updatedAt: now,
       };
       await dbPutImportedSession(created, ownerKey);
+      if (syncEnabled && cloudSaveQueue) {
+        await cloudSaveQueue.enqueue(created);
+      }
       setSessions((previous) => [created, ...previous]);
       setCurrentId(created.id);
       dbPutCurrentSessionId(created.id, ownerKey);
@@ -647,6 +668,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
         updatedAt: now,
       };
       await dbPutImportedSession(updated, ownerKey);
+      if (syncEnabled && cloudSaveQueue) {
+        await cloudSaveQueue.enqueue(updated);
+      }
       setSessions((previous) => previous.map((session) => session.id === target.id ? updated : session));
       setCurrentId(updated.id);
       dbPutCurrentSessionId(updated.id, ownerKey);
@@ -679,8 +703,17 @@ export function useSessions(options: UseSessionsOptions = {}) {
     ]);
     setCurrentId(branch.id);
     dbPutCurrentSessionId(branch.id, ownerKey);
+
+    if (syncEnabled && cloudSaveQueue) {
+      const results = await Promise.allSettled([
+        cloudSaveQueue.enqueue(detached),
+        cloudSaveQueue.enqueue(branch),
+      ]);
+      const rejected = results.find((result) => result.status === 'rejected');
+      if (rejected?.status === 'rejected') throw rejected.reason;
+    }
     return 'branched';
-  }, [ownerKey, sessions]);
+  }, [ownerKey, sessions, syncEnabled, cloudSaveQueue]);
 
   const branchFromMessage = useCallback(
     (targetMessageId: string): void => {
@@ -755,5 +788,6 @@ export function useSessions(options: UseSessionsOptions = {}) {
     branchFromMessage,
     updateTokenStats,
     setSuggestions,
+    flushCloudSaves,
   };
 }

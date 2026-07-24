@@ -7,6 +7,7 @@ const supabaseMocks = vi.hoisted(() => ({
   signInWithOAuth: vi.fn(),
   signUp: vi.fn(),
   resetPasswordForEmail: vi.fn(),
+  getSession: vi.fn(),
 }));
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -15,6 +16,7 @@ vi.mock('@supabase/supabase-js', () => ({
       signInWithOAuth: supabaseMocks.signInWithOAuth,
       signUp: supabaseMocks.signUp,
       resetPasswordForEmail: supabaseMocks.resetPasswordForEmail,
+      getSession: supabaseMocks.getSession,
     },
   })),
 }));
@@ -27,6 +29,7 @@ beforeEach(() => {
   supabaseMocks.signInWithOAuth.mockReset();
   supabaseMocks.signUp.mockReset();
   supabaseMocks.resetPasswordForEmail.mockReset();
+  supabaseMocks.getSession.mockReset();
   sessionStorage.clear();
   history.replaceState(null, '', '/compose?demo=true#import-payload');
 });
@@ -82,5 +85,23 @@ describe('auth email requests', () => {
     expect(supabaseMocks.resetPasswordForEmail).toHaveBeenCalledWith('user@example.com', {
       redirectTo: `${window.location.origin}${window.location.pathname}`,
     });
+  });
+});
+
+describe('auth access tokens', () => {
+  it('returns a token only for the expected account owner', async () => {
+    supabaseMocks.getSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'token-a',
+          user: { id: 'user-a' },
+        },
+      },
+      error: null,
+    });
+    const { getAccessToken } = await import('../auth-service');
+
+    await expect(getAccessToken('user-a')).resolves.toBe('token-a');
+    await expect(getAccessToken('user-b')).resolves.toBeNull();
   });
 });

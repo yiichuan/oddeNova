@@ -271,6 +271,7 @@ export default function App() {
           configured={auth.configured}
           recoveringPassword={auth.recoveringPassword}
           oauthErrorKey={auth.oauthErrorKey}
+          beforeSignOut={sessions.flushCloudSaves}
           onClose={() => {
             auth.dismissOAuthError();
             setAccountOpen(false);

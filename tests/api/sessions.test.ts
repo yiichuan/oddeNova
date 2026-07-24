@@ -93,6 +93,22 @@ describe('sessions API auth', () => {
   });
 
   it('lists only sessions for the authenticated user and maps session_id to id', async () => {
+    const revision = {
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 's("bd")',
+      playbackStatus: 'played',
+      createdAt: 3,
+    };
+    const suggestions = {
+      forCode: 's("bd")',
+      items: ['加贝斯'],
+    };
+    const externalSource = {
+      type: 'oddenova-strudel-skill',
+      projectId: 'p-1',
+      importedContentHash: 'hash-1',
+    };
     supabaseMocks.getUser.mockResolvedValue({
       data: { user: { id: 'u-1', email: 'user@example.com' } },
       error: null,
@@ -104,6 +120,9 @@ describe('sessions API auth', () => {
         code: 's("bd")',
         messages: [],
         token_stats: null,
+        revisions: [revision],
+        suggestions,
+        external_source: externalSource,
         created_at: '2026-07-07T00:00:00.000Z',
         updated_at: '2026-07-07T00:00:01.000Z',
       }],
@@ -121,7 +140,9 @@ describe('sessions API auth', () => {
       headers: { authorization: 'Bearer token-123' },
     } as never, res as never);
 
-    expect(select).toHaveBeenCalledWith('session_id,title,code,messages,token_stats,created_at,updated_at');
+    expect(select).toHaveBeenCalledWith(
+      'session_id,title,code,messages,token_stats,revisions,suggestions,external_source,created_at,updated_at',
+    );
     expect(eq).toHaveBeenCalledWith('user_id', 'u-1');
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
@@ -131,6 +152,9 @@ describe('sessions API auth', () => {
         code: 's("bd")',
         messages: [],
         tokenStats: undefined,
+        revisions: [revision],
+        suggestions,
+        externalSource,
         createdAt: 1783382400000,
         updatedAt: 1783382401000,
       }],
@@ -138,6 +162,22 @@ describe('sessions API auth', () => {
   });
 
   it('saves sessions with the authenticated user and user-scoped conflict target', async () => {
+    const revision = {
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 's("bd")',
+      playbackStatus: 'played',
+      createdAt: 3,
+    };
+    const suggestions = {
+      forCode: 's("bd")',
+      items: ['加贝斯'],
+    };
+    const externalSource = {
+      type: 'oddenova-strudel-skill',
+      projectId: 'p-1',
+      importedContentHash: 'hash-1',
+    };
     supabaseMocks.getUser.mockResolvedValue({
       data: { user: { id: 'u-1', email: 'user@example.com' } },
       error: null,
@@ -158,6 +198,9 @@ describe('sessions API auth', () => {
         title: 'Song',
         code: 's("bd")',
         messages: [],
+        revisions: [revision],
+        suggestions,
+        externalSource,
         createdAt: 1,
         updatedAt: 2,
       },
@@ -170,6 +213,9 @@ describe('sessions API auth', () => {
       messages: [],
       code: 's("bd")',
       token_stats: null,
+      revisions: [revision],
+      suggestions,
+      external_source: externalSource,
       created_at: '1970-01-01T00:00:00.001Z',
       updated_at: '1970-01-01T00:00:00.002Z',
     }, { onConflict: 'user_id,session_id' });

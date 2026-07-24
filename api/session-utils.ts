@@ -7,6 +7,9 @@ export interface ApiSession {
   messages: unknown[];
   code: string;
   tokenStats?: unknown;
+  revisions?: unknown[];
+  suggestions?: unknown;
+  externalSource?: unknown;
   createdAt: number;
   updatedAt: number;
 }
@@ -17,6 +20,9 @@ interface SessionRow {
   messages: unknown[];
   code: string;
   token_stats: unknown;
+  revisions: unknown[] | null;
+  suggestions: unknown;
+  external_source: unknown;
   created_at: string | number;
   updated_at: string | number;
 }
@@ -67,6 +73,9 @@ export function rowToSession(row: SessionRow): ApiSession {
     messages: row.messages || [],
     code: row.code || '',
     tokenStats: row.token_stats ?? undefined,
+    revisions: Array.isArray(row.revisions) ? row.revisions : undefined,
+    suggestions: row.suggestions ?? undefined,
+    externalSource: row.external_source ?? undefined,
     createdAt: toEpochMillis(row.created_at),
     updatedAt: toEpochMillis(row.updated_at),
   };
@@ -80,6 +89,9 @@ export function sessionToRow(session: ApiSession, userId: string): SessionRow & 
     messages: Array.isArray(session.messages) ? session.messages : [],
     code: session.code || '',
     token_stats: session.tokenStats ?? null,
+    revisions: Array.isArray(session.revisions) ? session.revisions : null,
+    suggestions: session.suggestions ?? null,
+    external_source: session.externalSource ?? null,
     created_at: new Date(session.createdAt).toISOString(),
     updated_at: new Date(session.updatedAt).toISOString(),
   };

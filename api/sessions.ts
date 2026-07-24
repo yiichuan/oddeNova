@@ -13,7 +13,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { data, error } = await auth.supabase
       .from('sessions')
-      .select('session_id,title,code,messages,token_stats,created_at,updated_at')
+      .select('session_id,title,code,messages,token_stats,revisions,suggestions,external_source,created_at,updated_at')
       .order('updated_at', { ascending: false })
       .eq('user_id', auth.user.id);
 

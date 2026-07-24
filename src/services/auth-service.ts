@@ -49,10 +49,11 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   return toAuthUser(data.user);
 }
 
-export async function getAccessToken(): Promise<string | null> {
+export async function getAccessToken(expectedUserId?: string): Promise<string | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getSession();
   if (error) return null;
+  if (expectedUserId && data.session?.user.id !== expectedUserId) return null;
   return data.session?.access_token ?? null;
 }
 
