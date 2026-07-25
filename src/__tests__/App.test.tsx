@@ -370,6 +370,32 @@ describe('App session sync boundaries', () => {
     expect(mocks.sessions.newSession).toHaveBeenCalledOnce();
   });
 
+  it('waits for the outgoing flush before creating a new session', async () => {
+    let releaseFlush!: () => void;
+    mocks.sessions.flushCloudSaves.mockImplementationOnce(
+      () => new Promise<undefined>((resolve) => {
+        releaseFlush = () => resolve(undefined);
+      }),
+    );
+    mocks.isMobile = false;
+    await renderApp();
+
+    let transition!: Promise<void>;
+    act(() => {
+      transition = (mocks.sidebarProps?.onNewSession as (() => Promise<void>))();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mocks.sessions.newSession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseFlush();
+      await transition;
+    });
+    expect(mocks.sessions.newSession).toHaveBeenCalledOnce();
+  });
+
   it('persists and flushes the outgoing code when switching sessions', async () => {
     mocks.isMobile = false;
     await renderApp();
@@ -386,6 +412,32 @@ describe('App session sync boundaries', () => {
 
     expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("hh")', 's-1');
     expect(mocks.sessions.flushCloudSaves).toHaveBeenCalledWith('s-1');
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith('s-2');
+  });
+
+  it('waits for the outgoing flush before switching sessions', async () => {
+    let releaseFlush!: () => void;
+    mocks.sessions.flushCloudSaves.mockImplementationOnce(
+      () => new Promise<undefined>((resolve) => {
+        releaseFlush = () => resolve(undefined);
+      }),
+    );
+    mocks.isMobile = false;
+    await renderApp();
+
+    let transition!: Promise<void>;
+    act(() => {
+      transition = (mocks.sidebarProps?.onSwitchSession as ((id: string) => Promise<void>))('s-2');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mocks.sessions.switchTo).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseFlush();
+      await transition;
+    });
     expect(mocks.sessions.switchTo).toHaveBeenCalledWith('s-2');
   });
 

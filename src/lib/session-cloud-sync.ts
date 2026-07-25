@@ -14,11 +14,15 @@ export interface SessionCloudSync {
   debounce: (session: Session) => void;
   checkpoint: (session: Session) => Promise<void>;
   flush: (sessionId?: string) => Promise<void>;
-  deleteSession: (sessionId: string) => Promise<void>;
+  deleteSession: (
+    sessionId: string,
+    deleteLocal?: () => Promise<void>,
+  ) => Promise<void>;
   hydrate: (
     sessions: Session[],
     pendingSyncIds: Set<string>,
     pendingDeleteIds: Set<string>,
+    cloudSessionIds?: Set<string>,
   ) => void;
   notifyOnline: () => void;
   getStatus: (sessionId: string) => SessionSyncStatus | undefined;
@@ -32,7 +36,11 @@ interface SyncRecord {
   markerWrite?: Promise<void>;
   debounceTimer?: ReturnType<typeof setTimeout>;
   retryTimer?: ReturnType<typeof setTimeout>;
+  markerRetryTimer?: ReturnType<typeof setTimeout>;
   retryIndex: number;
+  markerRetryIndex: number;
+  hasCloudCopy: boolean;
+  saveRequested: boolean;
 }
 
 interface SaveEnvelope {
@@ -44,6 +52,10 @@ interface SaveEnvelope {
 interface DeleteRecord {
   retryIndex: number;
   retryTimer?: ReturnType<typeof setTimeout>;
+  deleteLocal?: () => Promise<void>;
+  markerWritten: boolean;
+  syncDiscarded: boolean;
+  localDeleted: boolean;
 }
 
 interface CheckpointRun {
@@ -54,6 +66,10 @@ interface CheckpointRun {
 
 const MANUAL_DEBOUNCE_MS = 2000;
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000] as const;
+
+function isEffectivelyEmpty(session: Session): boolean {
+  return !session.code && session.messages.every((message) => message.isGreeting === true);
+}
 
 export function createSessionCloudSync(options: {
   ownerKey: string;
@@ -87,7 +103,7 @@ export function createSessionCloudSync(options: {
 
   const clearRecordTimer = (
     record: SyncRecord,
-    key: 'debounceTimer' | 'retryTimer',
+    key: 'debounceTimer' | 'retryTimer' | 'markerRetryTimer',
   ): void => {
     const timer = record[key];
     if (timer !== undefined) clearTimer(timer);
@@ -96,7 +112,11 @@ export function createSessionCloudSync(options: {
 
   const ensureDirtyMarker = (id: string, record: SyncRecord): Promise<void> => {
     if (!record.markerWrite) {
-      record.markerWrite = markPendingSessionSync(ownerKey, id);
+      const markerWrite = markPendingSessionSync(ownerKey, id);
+      record.markerWrite = markerWrite;
+      void markerWrite.catch(() => {
+        if (record.markerWrite === markerWrite) record.markerWrite = undefined;
+      });
     }
     return record.markerWrite;
   };
@@ -108,11 +128,25 @@ export function createSessionCloudSync(options: {
       latest: session,
       status: isOnline() ? 'dirty' : 'offline',
       retryIndex: 0,
+      markerRetryIndex: 0,
+      hasCloudCopy: false,
+      saveRequested: false,
     };
     record.version += 1;
     record.latest = session;
+    record.saveRequested = false;
+    clearRecordTimer(record, 'retryTimer');
     records.set(session.id, record);
-    void ensureDirtyMarker(session.id, record);
+    void ensureDirtyMarker(session.id, record)
+      .then(() => {
+        record.markerRetryIndex = 0;
+        clearRecordTimer(record, 'markerRetryTimer');
+      })
+      .catch(() => {
+        if (disposed || records.get(session.id) !== record) return;
+        emitStatus(session.id, record, isOnline() ? 'retrying' : 'offline');
+        scheduleMarkerRetry(session.id);
+      });
     const status = isOnline() ? 'dirty' : 'offline';
     if (existing) emitStatus(session.id, record, status);
     else onStatus(session.id, status);
@@ -125,15 +159,41 @@ export function createSessionCloudSync(options: {
   const scheduleSaveRetry = (id: string, immediate = false): void => {
     if (disposed) return;
     const record = records.get(id);
-    if (!record || record.retryTimer !== undefined) return;
+    if (!record || !record.saveRequested || record.retryTimer !== undefined) return;
     if (!isOnline()) {
       emitStatus(id, record, 'offline');
       return;
     }
     const delay = immediate ? 0 : retryDelay(record.retryIndex++);
+    const requestedVersion = record.version;
     record.retryTimer = setTimer(() => {
       delete record.retryTimer;
+      if (!record.saveRequested || record.version !== requestedVersion) return;
       void checkpoint(record.latest);
+    }, delay);
+  };
+
+  const scheduleMarkerRetry = (id: string, immediate = false): void => {
+    if (disposed) return;
+    const record = records.get(id);
+    if (!record || record.markerRetryTimer !== undefined) return;
+    if (!isOnline()) {
+      emitStatus(id, record, 'offline');
+      return;
+    }
+    const delay = immediate ? 0 : retryDelay(record.markerRetryIndex++);
+    record.markerRetryTimer = setTimer(() => {
+      delete record.markerRetryTimer;
+      void ensureDirtyMarker(id, record)
+        .then(() => {
+          record.markerRetryIndex = 0;
+          emitStatus(id, record, record.saveRequested ? 'retrying' : 'dirty');
+          if (record.saveRequested) scheduleSaveRetry(id, true);
+        })
+        .catch(() => {
+          emitStatus(id, record, isOnline() ? 'retrying' : 'offline');
+          scheduleMarkerRetry(id);
+        });
     }, delay);
   };
 
@@ -148,8 +208,12 @@ export function createSessionCloudSync(options: {
     const record = records.get(envelope.id);
     if (!record) return;
     record.retryIndex = 0;
+    record.markerRetryIndex = 0;
+    record.hasCloudCopy = true;
     clearRecordTimer(record, 'retryTimer');
+    clearRecordTimer(record, 'markerRetryTimer');
     if (record.version !== envelope.version) {
+      record.saveRequested = false;
       emitStatus(envelope.id, record, isOnline() ? 'dirty' : 'offline');
       return;
     }
@@ -159,6 +223,7 @@ export function createSessionCloudSync(options: {
 
     if (record.version === envelope.version) {
       record.markerWrite = undefined;
+      record.saveRequested = false;
       emitStatus(envelope.id, record, 'synced');
       return;
     }
@@ -171,13 +236,17 @@ export function createSessionCloudSync(options: {
     const record = records.get(envelope.id);
     if (!record) return;
     emitStatus(envelope.id, record, isOnline() ? 'retrying' : 'offline');
-    scheduleSaveRetry(envelope.id);
+    if (record.saveRequested) scheduleSaveRetry(envelope.id);
   });
 
   const checkpoint = (session: Session): Promise<void> => {
     if (disposed) return Promise.resolve();
     let record = records.get(session.id);
+    if (isEffectivelyEmpty(session) && (!record || (!record.hasCloudCopy && record.version === 0))) {
+      return Promise.resolve();
+    }
     if (!record || record.latest !== session) record = markDirty(session);
+    record.saveRequested = true;
     clearRecordTimer(record, 'debounceTimer');
     clearRecordTimer(record, 'retryTimer');
     if (!isOnline()) {
@@ -199,8 +268,16 @@ export function createSessionCloudSync(options: {
           session: record.latest,
         });
       } catch {
-        // The queue callback records retry/offline state. Creative flows keep
-        // their local result; explicit flush() is the strict error surface.
+        // Marker failures happen before the queue callback. Treat them like
+        // save failures so a transient IndexedDB error cannot permanently
+        // strand the session.
+        if (record.saveRequested && record.version === version) {
+          emitStatus(session.id, record, isOnline() ? 'retrying' : 'offline');
+          clearRecordTimer(record, 'markerRetryTimer');
+          scheduleSaveRetry(session.id);
+        } else {
+          emitStatus(session.id, record, isOnline() ? 'dirty' : 'offline');
+        }
       } finally {
         if (checkpointRuns.get(session.id)?.token === token) {
           checkpointRuns.delete(session.id);
@@ -227,22 +304,38 @@ export function createSessionCloudSync(options: {
   };
 
   const flushOne = async (id: string): Promise<void> => {
-    const record = records.get(id);
+    let record = records.get(id);
     if (!record || record.status === 'synced') return;
+    if (isEffectivelyEmpty(record.latest) && !record.hasCloudCopy && record.version === 0) return;
+
+    const activeCheckpoint = checkpointRuns.get(id);
+    if (activeCheckpoint?.version === record.version) {
+      await activeCheckpoint.promise;
+      record = records.get(id);
+      if (!record || record.status === 'synced') return;
+    }
+
     clearRecordTimer(record, 'debounceTimer');
     clearRecordTimer(record, 'retryTimer');
+    record.saveRequested = true;
     if (!isOnline()) {
       emitStatus(id, record, 'offline');
       throw new Error('Session cloud sync is offline');
     }
-    await ensureDirtyMarker(id, record);
-    const run = queue.enqueue({
-      id,
-      version: record.version,
-      session: record.latest,
-    });
-    await run;
-    await queue.flush(id);
+    try {
+      await ensureDirtyMarker(id, record);
+      const run = queue.enqueue({
+        id,
+        version: record.version,
+        session: record.latest,
+      });
+      await run;
+      await queue.flush(id);
+    } catch (error) {
+      emitStatus(id, record, isOnline() ? 'retrying' : 'offline');
+      scheduleSaveRetry(id);
+      throw error;
+    }
   };
 
   const flush = async (sessionId?: string): Promise<void> => {
@@ -264,7 +357,7 @@ export function createSessionCloudSync(options: {
   const scheduleDeleteRetry = (id: string, immediate = false): void => {
     if (disposed) return;
     const record = deletes.get(id);
-    if (!record || record.retryTimer !== undefined || !isOnline()) return;
+    if (!record || record.retryTimer !== undefined) return;
     const delay = immediate ? 0 : retryDelay(record.retryIndex++);
     record.retryTimer = setTimer(() => {
       delete record.retryTimer;
@@ -272,42 +365,67 @@ export function createSessionCloudSync(options: {
     }, delay);
   };
 
-  const attemptDelete = async (id: string): Promise<void> => {
+  const attemptDelete = async (id: string, surfaceError = false): Promise<void> => {
     const record = deletes.get(id);
     if (!record || disposed) return;
-    if (!isOnline()) return;
     try {
+      if (!record.markerWritten) {
+        await markPendingSessionDelete(ownerKey, id);
+        record.markerWritten = true;
+      }
+      if (!record.syncDiscarded) {
+        await clearPendingSessionSync(ownerKey, id);
+        await queue.discard(id);
+        record.syncDiscarded = true;
+      }
+      if (!record.localDeleted) {
+        await record.deleteLocal?.();
+        record.localDeleted = true;
+      }
+      if (!isOnline()) return;
       await repository.deleteSession(id, expectedUserId);
       clearDeleteTimer(record);
       await clearPendingSessionDelete(ownerKey, id);
       deletes.delete(id);
-    } catch {
+    } catch (error) {
       scheduleDeleteRetry(id);
+      if (surfaceError) throw error;
     }
   };
 
-  const deleteSession = async (id: string): Promise<void> => {
+  const deleteSession = async (
+    id: string,
+    deleteLocal?: () => Promise<void>,
+  ): Promise<void> => {
     if (disposed) return;
-    await markPendingSessionDelete(ownerKey, id);
-    const deleteRecord = deletes.get(id) ?? { retryIndex: 0 };
+    const deleteRecord = deletes.get(id) ?? {
+      retryIndex: 0,
+      deleteLocal,
+      markerWritten: false,
+      syncDiscarded: false,
+      localDeleted: deleteLocal === undefined,
+    };
+    if (!deleteRecord.localDeleted && deleteLocal) {
+      deleteRecord.deleteLocal = deleteLocal;
+    }
     deletes.set(id, deleteRecord);
 
     const record = records.get(id);
     if (record) {
       clearRecordTimer(record, 'debounceTimer');
       clearRecordTimer(record, 'retryTimer');
+      clearRecordTimer(record, 'markerRetryTimer');
     }
     records.delete(id);
     onStatus(id, undefined);
-    await clearPendingSessionSync(ownerKey, id);
-    await queue.discard(id);
-    await attemptDelete(id);
+    await attemptDelete(id, true);
   };
 
   const hydrate = (
     sessions: Session[],
     pendingSyncIds: Set<string>,
     pendingDeleteIds: Set<string>,
+    cloudSessionIds = new Set<string>(),
   ): void => {
     if (disposed) return;
     for (const session of sessions) {
@@ -318,13 +436,23 @@ export function createSessionCloudSync(options: {
         status: pending ? (isOnline() ? 'dirty' : 'offline') : 'synced',
         markerWrite: pending ? Promise.resolve() : undefined,
         retryIndex: 0,
+        markerRetryIndex: 0,
+        hasCloudCopy: cloudSessionIds.has(session.id),
+        saveRequested: pending,
       };
       records.set(session.id, record);
       onStatus(session.id, record.status);
       if (pending && isOnline()) scheduleSaveRetry(session.id, true);
     }
     for (const id of pendingDeleteIds) {
-      deletes.set(id, { retryIndex: 0 });
+      if (!deletes.has(id)) {
+        deletes.set(id, {
+          retryIndex: 0,
+          markerWritten: true,
+          syncDiscarded: false,
+          localDeleted: true,
+        });
+      }
       if (isOnline()) scheduleDeleteRetry(id, true);
     }
   };
@@ -333,7 +461,8 @@ export function createSessionCloudSync(options: {
     if (disposed || !isOnline()) return;
     for (const [id, record] of records) {
       if (record.status === 'dirty' || record.status === 'offline' || record.status === 'retrying') {
-        scheduleSaveRetry(id, true);
+        if (record.saveRequested) scheduleSaveRetry(id, true);
+        else scheduleMarkerRetry(id, true);
       }
     }
     for (const id of deletes.keys()) scheduleDeleteRetry(id, true);
@@ -344,6 +473,7 @@ export function createSessionCloudSync(options: {
     for (const record of records.values()) {
       clearRecordTimer(record, 'debounceTimer');
       clearRecordTimer(record, 'retryTimer');
+      clearRecordTimer(record, 'markerRetryTimer');
     }
     for (const record of deletes.values()) clearDeleteTimer(record);
   };

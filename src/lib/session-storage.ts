@@ -221,11 +221,18 @@ export async function deleteSession(
   id: string,
   ownerKey = GUEST_OWNER_KEY,
 ): Promise<void> {
-  await openDB();
-  if (memoryFallback || !db) return;
   try {
-    await db.delete(SESSION_STORE_NAME, [ownerKey, id]);
+    await deleteSessionStrict(id, ownerKey);
   } catch (err) {
     console.warn('[session-storage] deleteSession failed', err);
   }
+}
+
+export async function deleteSessionStrict(
+  id: string,
+  ownerKey = GUEST_OWNER_KEY,
+): Promise<void> {
+  await openDB();
+  if (memoryFallback || !db) return;
+  await db.delete(SESSION_STORE_NAME, [ownerKey, id]);
 }

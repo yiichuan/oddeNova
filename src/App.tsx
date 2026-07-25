@@ -509,12 +509,15 @@ export default function App() {
     });
   }, [strudel, runTurn]);
 
-  const persistAndFlushOutgoingSession = useCallback((id: string, code: string) => {
-    void setManualCode(code, id)
-      .then(() => flushCloudSaves(id))
-      .catch((error) => {
-        console.warn('[sessions] outgoing session flush failed.', error);
-      });
+  const persistAndFlushOutgoingSession = useCallback(async (id: string, code: string) => {
+    try {
+      await setManualCode(code, id);
+      await flushCloudSaves(id);
+    } catch (error) {
+      // Local persistence and the durable pending marker remain authoritative;
+      // the coordinator will retry while the user continues navigating.
+      console.warn('[sessions] outgoing session flush failed.', error);
+    }
   }, [flushCloudSaves, setManualCode]);
 
   const handlePlay = useCallback(async () => {
@@ -525,19 +528,19 @@ export default function App() {
     await strudel.play();
   }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
 
-  const handleNewSession = useCallback(() => {
+  const handleNewSession = useCallback(async () => {
     if (sessions.currentId) {
-      persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
     }
     strudel.stop();
     sessions.newSession();
     if (isDemoMode()) setDemoStep(0);
   }, [strudel, sessions, persistAndFlushOutgoingSession]);
 
-  const handleSwitchSession = useCallback((id: string) => {
+  const handleSwitchSession = useCallback(async (id: string) => {
     if (sessions.currentId !== id) {
       if (sessions.currentId) {
-        persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+        await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
       }
     }
     setCommitSuggestions(null);

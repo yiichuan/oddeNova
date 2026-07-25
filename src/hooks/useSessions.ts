@@ -9,6 +9,7 @@ import {
   putImportedSession as dbPutImportedSession,
   putImportedSessionBranch as dbPutImportedSessionBranch,
   deleteSession as dbDeleteSession,
+  deleteSessionStrict as dbDeleteSessionStrict,
   isSessionStoragePersistent,
 } from '../lib/session-storage';
 import { t } from '../lib/i18n';
@@ -291,18 +292,58 @@ export function useSessions(options: UseSessionsOptions = {}) {
         syncIds: new Set(),
         deleteIds: new Set(),
       };
+      let cloudSessionIds = new Set<string>();
+      let pendingOperationsKnown = false;
       if (syncEnabled && cloud && sessionCloudSync) {
         try {
           pending = await readPendingSessionOperations(ownerKey);
-          const remote = await cloud.listSessions(cloudOwnerId);
-          loaded = reconcileSessions(loaded, remote, pending);
-          await Promise.all(loaded.map((session) => dbPutSession(session, ownerKey)));
+          pendingOperationsKnown = true;
         } catch (err) {
-          console.warn('[sessions] cloud session load failed; using local cache.', err);
+          console.warn('[sessions] pending cloud operations could not be read.', err);
+        }
+
+        if (pendingOperationsKnown && pending.deleteIds.size > 0) {
+          const tombstonedIds = pending.deleteIds;
+          loaded = loaded.filter((session) => !tombstonedIds.has(session.id));
+          const purgeResults = await Promise.allSettled(
+            [...tombstonedIds].map((id) => sessionCloudSync.deleteSession(
+              id,
+              () => dbDeleteSessionStrict(id, ownerKey),
+            )),
+          );
+          pending = {
+            ...pending,
+            deleteIds: new Set(
+              [...tombstonedIds].filter((_, index) => purgeResults[index].status === 'rejected'),
+            ),
+          };
+        }
+
+        if (pendingOperationsKnown) {
+          try {
+            const remote = await cloud.listSessions(cloudOwnerId);
+            cloudSessionIds = new Set(remote.map((session) => session.id));
+            const localBeforeReconcile = loaded;
+            loaded = reconcileSessions(loaded, remote, pending);
+            const retainedIds = new Set(loaded.map((session) => session.id));
+            const removedLocalSessions = localBeforeReconcile
+              .filter((session) => !retainedIds.has(session.id));
+            await Promise.all([
+              ...loaded.map((session) => dbPutSession(session, ownerKey)),
+              ...removedLocalSessions.map((session) => sessionCloudSync.deleteSession(
+                session.id,
+                () => dbDeleteSessionStrict(session.id, ownerKey),
+              )),
+            ]);
+          } catch (err) {
+            console.warn('[sessions] cloud session load failed; using local cache.', err);
+          }
         }
       }
       if (cancelled) return;
-      sessionCloudSync?.hydrate(loaded, pending.syncIds, pending.deleteIds);
+      if (pendingOperationsKnown) {
+        sessionCloudSync?.hydrate(loaded, pending.syncIds, pending.deleteIds, cloudSessionIds);
+      }
 
       const shouldStartNewSession = startNewSessionToken > consumedStartNewSessionTokenRef.current;
       if (shouldStartNewSession) {
@@ -680,11 +721,15 @@ export function useSessions(options: UseSessionsOptions = {}) {
     (id: string) => {
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
-        dbDeleteSession(id, ownerKey);
         if (sessionCloudSync) {
-          void sessionCloudSync.deleteSession(id).catch((err) => {
+          void sessionCloudSync.deleteSession(
+            id,
+            () => dbDeleteSessionStrict(id, ownerKey),
+          ).catch((err) => {
             console.warn('[sessions] cloud session delete failed.', err);
           });
+        } else {
+          void dbDeleteSession(id, ownerKey);
         }
         if (next.length === 0) {
           const fresh = makeEmptySession();

@@ -26,6 +26,7 @@ const storageMocks = vi.hoisted(() => ({
   putImportedSession: vi.fn(async (_session: unknown) => undefined),
   putImportedSessionBranch: vi.fn(async (_detached: unknown, _branch: unknown) => undefined),
   deleteSession: vi.fn(async () => undefined),
+  deleteSessionStrict: vi.fn(async () => undefined),
   isSessionStoragePersistent: vi.fn(() => true),
 }));
 
@@ -49,6 +50,7 @@ vi.mock('../../lib/session-storage', () => ({
   putImportedSession: storageMocks.putImportedSession,
   putImportedSessionBranch: storageMocks.putImportedSessionBranch,
   deleteSession: storageMocks.deleteSession,
+  deleteSessionStrict: storageMocks.deleteSessionStrict,
   isSessionStoragePersistent: storageMocks.isSessionStoragePersistent,
 }));
 
@@ -125,6 +127,7 @@ describe('useSessions', () => {
     storageMocks.putImportedSession.mockResolvedValue(undefined);
     storageMocks.putImportedSessionBranch.mockResolvedValue(undefined);
     storageMocks.deleteSession.mockResolvedValue(undefined);
+    storageMocks.deleteSessionStrict.mockResolvedValue(undefined);
     storageMocks.isSessionStoragePersistent.mockReturnValue(true);
     syncStorageMocks.readPendingSessionOperations.mockResolvedValue({
       syncIds: new Set(),
@@ -336,6 +339,61 @@ describe('useSessions', () => {
     expect(storageMocks.putSession).toHaveBeenCalledWith(local, 'user:u-1');
   });
 
+  it('keeps the local cache untouched when pending operation markers cannot be read', async () => {
+    const local = makeSession({
+      id: 'local-unknown',
+      code: 'local possibly dirty',
+      messages: [{ id: 'user', role: 'user', content: '保留我', timestamp: 1 }],
+    });
+    storageMocks.getAllSessions.mockResolvedValueOnce([local]);
+    syncStorageMocks.readPendingSessionOperations.mockRejectedValueOnce(
+      new Error('settings store unavailable'),
+    );
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    expect(getHook().sessions).toEqual([local]);
+    expect(cloud.listSessions).not.toHaveBeenCalled();
+    expect(storageMocks.deleteSessionStrict).not.toHaveBeenCalled();
+  });
+
+  it('purges a tombstoned local row even when the cloud cannot be listed', async () => {
+    const deleted = makeSession({
+      id: 'deleted',
+      messages: [{ id: 'user', role: 'user', content: '删除我', timestamp: 1 }],
+    });
+    storageMocks.getAllSessions.mockResolvedValueOnce([deleted]);
+    syncStorageMocks.readPendingSessionOperations.mockResolvedValueOnce({
+      syncIds: new Set(),
+      deleteIds: new Set(['deleted']),
+    });
+    const cloud = {
+      listSessions: vi.fn(async () => { throw new Error('offline'); }),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    expect(storageMocks.deleteSessionStrict).toHaveBeenCalledWith('deleted', 'user:u-1');
+    expect(getHook().sessions.some((item) => item.id === 'deleted')).toBe(false);
+  });
+
   it('does not upload a greeting-only session', async () => {
     const cloud = {
       listSessions: vi.fn(async () => []),
@@ -356,6 +414,30 @@ describe('useSessions', () => {
       expect.objectContaining({ isGreeting: true }),
     ]);
     expect(cloud.saveSession).not.toHaveBeenCalled();
+  });
+
+  it('does not upload a greeting-only session after it is renamed', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    act(() => {
+      getHook().renameSession(getHook().currentId!, '只有标题');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+    expect(syncStorageMocks.markPendingSessionSync).not.toHaveBeenCalled();
   });
 
   it('checkpoints the latest complete turn without uploading an earlier reasoning snapshot', async () => {
@@ -497,6 +579,37 @@ describe('useSessions', () => {
     });
 
     expect(saveSession.mock.calls.filter(([session]) => session.id === deletedId)).toHaveLength(1);
+  });
+
+  it('keeps the delete tombstone when strict local deletion fails', async () => {
+    storageMocks.deleteSessionStrict.mockRejectedValueOnce(new Error('IDB delete failed'));
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const deletedId = getHook().currentId!;
+
+    act(() => {
+      getHook().deleteSession(deletedId);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(syncStorageMocks.markPendingSessionDelete).toHaveBeenCalledWith(
+      'user:u-1',
+      deletedId,
+    );
+    expect(cloud.deleteSession).not.toHaveBeenCalled();
+    expect(syncStorageMocks.clearPendingSessionDelete).not.toHaveBeenCalled();
   });
 
   it('waits for imported sessions to be saved to the cloud when sync is enabled', async () => {

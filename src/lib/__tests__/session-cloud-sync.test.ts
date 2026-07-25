@@ -139,6 +139,24 @@ describe('createSessionCloudSync', () => {
     expect(repository.saveSession).toHaveBeenCalledTimes(1);
   });
 
+  it('lets flush reuse an in-flight checkpoint for the same local version', async () => {
+    const activeSave = deferred();
+    const { repository, sync } = setup();
+    repository.saveSession.mockImplementationOnce(() => activeSave.promise);
+    const snapshot = session('same terminal version');
+
+    sync.noteLocal(snapshot);
+    const checkpoint = sync.checkpoint(snapshot);
+    await Promise.resolve();
+    const flush = sync.flush('s-1');
+
+    expect(repository.saveSession).toHaveBeenCalledTimes(1);
+    activeSave.resolve();
+    await Promise.all([checkpoint, flush]);
+
+    expect(repository.saveSession).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps work offline and checkpoints it when connectivity returns', async () => {
     const { repository, statuses, sync, setOnline } = setup({ online: false });
 
@@ -168,6 +186,59 @@ describe('createSessionCloudSync', () => {
     await expect(sync.flush('s-1')).rejects.toBe(error);
   });
 
+  it('cancels an old terminal save retry when a newer streamed version arrives', async () => {
+    const { repository, sync } = setup();
+    repository.saveSession
+      .mockRejectedValueOnce(new Error('temporary outage'))
+      .mockResolvedValue(undefined);
+
+    const completedTurn = session('completed turn', 1);
+    sync.noteLocal(completedTurn);
+    await sync.checkpoint(completedTurn);
+    expect(repository.saveSession).toHaveBeenCalledTimes(1);
+
+    sync.noteLocal(session('next turn partial reasoning', 2));
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(repository.saveSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed durable marker write before saving the snapshot', async () => {
+    const markerError = new Error('IndexedDB quota');
+    markerMocks.markPendingSessionSync
+      .mockRejectedValueOnce(markerError)
+      .mockResolvedValue(undefined);
+    const { repository, statuses, sync } = setup();
+    const snapshot = session('latest');
+
+    sync.noteLocal(snapshot);
+    await expect(sync.checkpoint(snapshot)).resolves.toBeUndefined();
+
+    expect(repository.saveSession).not.toHaveBeenCalled();
+    expect(statuses.get('s-1')).toBe('retrying');
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(markerMocks.markPendingSessionSync).toHaveBeenCalledTimes(2);
+    expect(repository.saveSession).toHaveBeenCalledWith(snapshot, 'user-1');
+    expect(statuses.get('s-1')).toBe('synced');
+  });
+
+  it('retries a streamed snapshot marker without turning it into a cloud checkpoint', async () => {
+    markerMocks.markPendingSessionSync
+      .mockRejectedValueOnce(new Error('IndexedDB busy'))
+      .mockResolvedValue(undefined);
+    const { repository, statuses, sync } = setup();
+
+    sync.noteLocal(session('partial reasoning'));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(markerMocks.markPendingSessionSync).toHaveBeenCalledTimes(2);
+    expect(repository.saveSession).not.toHaveBeenCalled();
+    expect(statuses.get('s-1')).toBe('dirty');
+  });
+
   it('persists a delete tombstone before waiting for an active save and clears it only after delete succeeds', async () => {
     const activeSave = deferred();
     const { repository, sync } = setup();
@@ -189,6 +260,61 @@ describe('createSessionCloudSync', () => {
     activeSave.resolve();
     await deletion;
 
+    expect(repository.deleteSession).toHaveBeenCalledWith('s-1', 'user-1');
+    expect(markerMocks.clearPendingSessionDelete).toHaveBeenCalledWith(
+      'user:user-1',
+      's-1',
+    );
+  });
+
+  it('deletes the local row after the tombstone and before clearing the remote delete', async () => {
+    const { repository, sync } = setup();
+    const deleteLocal = vi.fn(async () => undefined);
+
+    await sync.deleteSession('s-1', deleteLocal);
+
+    expect(markerMocks.markPendingSessionDelete.mock.invocationCallOrder[0])
+      .toBeLessThan(deleteLocal.mock.invocationCallOrder[0]);
+    expect(deleteLocal.mock.invocationCallOrder[0])
+      .toBeLessThan(repository.deleteSession.mock.invocationCallOrder[0]);
+    expect(repository.deleteSession.mock.invocationCallOrder[0])
+      .toBeLessThan(markerMocks.clearPendingSessionDelete.mock.invocationCallOrder[0]);
+  });
+
+  it('retries strict local deletion before ever deleting the remote row', async () => {
+    const { repository, sync } = setup();
+    const deleteLocal = vi.fn(async () => {
+      throw new Error('IndexedDB delete failed');
+    });
+
+    await expect(sync.deleteSession('s-1', deleteLocal)).rejects.toThrow(
+      'IndexedDB delete failed',
+    );
+    sync.notifyOnline();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(deleteLocal.mock.calls.length).toBeGreaterThan(1);
+    expect(repository.deleteSession).not.toHaveBeenCalled();
+    expect(markerMocks.clearPendingSessionDelete).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed delete marker before deleting local or remote state', async () => {
+    markerMocks.markPendingSessionDelete
+      .mockRejectedValueOnce(new Error('settings store busy'))
+      .mockResolvedValue(undefined);
+    const { repository, sync } = setup();
+    const deleteLocal = vi.fn(async () => undefined);
+
+    await expect(sync.deleteSession('s-1', deleteLocal)).rejects.toThrow(
+      'settings store busy',
+    );
+    expect(deleteLocal).not.toHaveBeenCalled();
+    expect(repository.deleteSession).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(markerMocks.markPendingSessionDelete).toHaveBeenCalledTimes(2);
+    expect(deleteLocal).toHaveBeenCalledOnce();
     expect(repository.deleteSession).toHaveBeenCalledWith('s-1', 'user-1');
     expect(markerMocks.clearPendingSessionDelete).toHaveBeenCalledWith(
       'user:user-1',

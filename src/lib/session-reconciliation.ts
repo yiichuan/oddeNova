@@ -1,6 +1,10 @@
 import type { Session } from '../hooks/useSessions';
 import type { PendingSessionOperations } from './session-sync-storage';
 
+function isEffectivelyEmpty(session: Session): boolean {
+  return !session.code && session.messages.every((message) => message.isGreeting === true);
+}
+
 export function reconcileSessions(
   local: Session[],
   remote: Session[],
@@ -19,7 +23,7 @@ export function reconcileSessions(
 
       if (pending.syncIds.has(id) && localSession) return [localSession];
       if (!localSession) return remoteSession ? [remoteSession] : [];
-      if (!remoteSession) return [localSession];
+      if (!remoteSession) return isEffectivelyEmpty(localSession) ? [localSession] : [];
       return [remoteSession.updatedAt > localSession.updatedAt ? remoteSession : localSession];
     })
     .sort((a, b) => b.updatedAt - a.updatedAt);

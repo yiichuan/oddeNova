@@ -13,6 +13,13 @@ function session(id: string, updatedAt: number, title: string): Session {
   };
 }
 
+function meaningfulSession(id: string, updatedAt: number, title: string): Session {
+  return {
+    ...session(id, updatedAt, title),
+    messages: [{ id: `${id}-user`, role: 'user', content: title, timestamp: updatedAt }],
+  };
+}
+
 describe('reconcileSessions', () => {
   it('keeps a pending local snapshot even when the cloud copy has a newer timestamp', () => {
     const result = reconcileSessions(
@@ -26,11 +33,11 @@ describe('reconcileSessions', () => {
     ]);
   });
 
-  it('chooses the newer clean snapshot and retains local-only and remote-only sessions', () => {
+  it('chooses the newer clean snapshot, drops cloud-deleted local rows, and retains remote-only sessions', () => {
     const result = reconcileSessions(
       [
         session('shared', 20, 'local older'),
-        session('local-only', 40, 'empty local draft'),
+        meaningfulSession('local-only', 40, 'deleted on another device'),
       ],
       [
         session('shared', 30, 'remote newer'),
@@ -40,10 +47,28 @@ describe('reconcileSessions', () => {
     );
 
     expect(result.map(({ id, title }) => ({ id, title }))).toEqual([
-      { id: 'local-only', title: 'empty local draft' },
       { id: 'remote-only', title: 'remote only' },
       { id: 'shared', title: 'remote newer' },
     ]);
+  });
+
+  it('retains a local-only greeting draft that has never been uploaded', () => {
+    const draft = {
+      ...session('draft', 40, 'New Session'),
+      messages: [{
+        id: 'greeting',
+        role: 'assistant' as const,
+        content: '你好',
+        timestamp: 40,
+        isGreeting: true,
+      }],
+    };
+
+    expect(reconcileSessions(
+      [draft],
+      [],
+      { syncIds: new Set(), deleteIds: new Set() },
+    )).toEqual([draft]);
   });
 
   it('lets a pending delete tombstone suppress both local and remote copies', () => {
