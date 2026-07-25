@@ -68,9 +68,11 @@ export type ProgressEvent =
   | { kind: 'tool_result'; name: string; ok: boolean; error?: string }
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
-  | { kind: 'assistant_text_delta'; delta: string }
-  | { kind: 'assistant_reply_delta'; delta: string }
-  | { kind: 'reasoning_delta'; delta: string }
+  | { kind: 'assistant_text_delta'; delta: string; attemptId?: string }
+  | { kind: 'assistant_reply_delta'; delta: string; attemptId?: string }
+  | { kind: 'reasoning_delta'; delta: string; attemptId?: string }
+  | { kind: 'request_attempt_discarded'; attemptId: string }
+  | { kind: 'request_attempt_succeeded'; attemptId: string }
   | { kind: 'warn'; message: string };
 
 export type ConversationTurn = { role: 'user' | 'assistant'; content: string };

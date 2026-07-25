@@ -9,7 +9,10 @@ import { t } from '../../lib/i18n';
 import type { OddeNovaImportPayload } from '../../lib/oddenova-import';
 import {
   applyAppendAssistantDelta,
+  applyAppendProgressDelta,
+  applyDiscardAgentAttempt,
   applyFinalizeLastAssistantMessage,
+  applyFinalizeAgentAttempt,
   applyRefreshEmptySessionForReuse,
   applyTruncate,
   applyTruncateAndEdit,
@@ -653,6 +656,77 @@ describe('assistant streaming helpers', () => {
     expect(result.messages[1]).toMatchObject({ content: '写好了', code: 'setcps(0.5)' });
     expect(result.messages[2]).toMatchObject({ role: 'assistant', content: '你觉得' });
     expect(result.messages[2].code).toBeUndefined();
+  });
+
+  it('isolates streamed deltas by request attempt', () => {
+    const first = applyAppendAssistantDelta(makeSession(), 'old partial', 'attempt-1');
+    const second = applyAppendAssistantDelta(first, 'new partial', 'attempt-2');
+
+    expect(second.messages).toMatchObject([
+      { content: 'old partial', agentAttemptId: 'attempt-1' },
+      { content: 'new partial', agentAttemptId: 'attempt-2' },
+    ]);
+  });
+
+  it('keeps reasoning deltas from different attempts in separate messages', () => {
+    const first = applyAppendProgressDelta(
+      makeSession(),
+      'old reasoning',
+      'reasoning',
+      'attempt-1',
+    );
+    const second = applyAppendProgressDelta(
+      first,
+      'new reasoning',
+      'reasoning',
+      'attempt-2',
+    );
+
+    expect(second.messages).toMatchObject([
+      { content: 'old reasoning', agentAttemptId: 'attempt-1' },
+      { content: 'new reasoning', agentAttemptId: 'attempt-2' },
+    ]);
+  });
+
+  it('discards only messages from the failed request attempt', () => {
+    const session = makeSession({
+      messages: [
+        { id: 'user', role: 'user', content: '写一段鼓', timestamp: 1 },
+        {
+          id: 'reasoning',
+          role: 'progress',
+          progressKind: 'reasoning',
+          content: 'partial',
+          timestamp: 2,
+          agentAttemptId: 'attempt-1',
+        },
+        {
+          id: 'reply',
+          role: 'assistant',
+          content: 'retry output',
+          timestamp: 3,
+          agentAttemptId: 'attempt-2',
+        },
+      ],
+    });
+
+    expect(applyDiscardAgentAttempt(session, 'attempt-1').messages.map((message) => message.id))
+      .toEqual(['user', 'reply']);
+  });
+
+  it('finalizes successful streamed messages by removing transient markers', () => {
+    const session = makeSession({
+      messages: [{
+        id: 'reply',
+        role: 'assistant',
+        content: 'done',
+        timestamp: 1,
+        agentAttemptId: 'attempt-2',
+      }],
+    });
+
+    expect(applyFinalizeAgentAttempt(session, 'attempt-2').messages[0])
+      .not.toHaveProperty('agentAttemptId');
   });
 });
 

@@ -150,10 +150,18 @@ export function applyRefreshEmptySessionForReuse(s: Session, now: number): Sessi
   };
 }
 
-export function applyAppendAssistantDelta(s: Session, delta: string): Session {
+export function applyAppendAssistantDelta(
+  s: Session,
+  delta: string,
+  agentAttemptId?: string,
+): Session {
   const messages = [...s.messages];
   const last = messages[messages.length - 1];
-  if (last?.role === 'assistant' && !last.code) {
+  if (
+    last?.role === 'assistant'
+    && !last.code
+    && last.agentAttemptId === agentAttemptId
+  ) {
     messages[messages.length - 1] = { ...last, content: last.content + delta };
     return { ...s, messages };
   }
@@ -166,8 +174,60 @@ export function applyAppendAssistantDelta(s: Session, delta: string): Session {
         role: 'assistant' as const,
         content: delta,
         timestamp: Date.now(),
+        agentAttemptId,
       },
     ],
+  };
+}
+
+export function applyAppendProgressDelta(
+  s: Session,
+  delta: string,
+  kind: 'thinking' | 'reasoning',
+  agentAttemptId?: string,
+): Session {
+  const messages = [...s.messages];
+  const last = messages[messages.length - 1];
+  if (
+    last?.role === 'progress'
+    && last.progressKind === kind
+    && last.agentAttemptId === agentAttemptId
+  ) {
+    messages[messages.length - 1] = { ...last, content: last.content + delta };
+    return { ...s, messages };
+  }
+  return {
+    ...s,
+    messages: [
+      ...messages,
+      {
+        id: newMessageId(),
+        role: 'progress' as const,
+        content: delta,
+        timestamp: Date.now(),
+        progressKind: kind,
+        agentAttemptId,
+      },
+    ],
+  };
+}
+
+export function applyDiscardAgentAttempt(s: Session, attemptId: string): Session {
+  return {
+    ...s,
+    messages: s.messages.filter((message) => message.agentAttemptId !== attemptId),
+  };
+}
+
+export function applyFinalizeAgentAttempt(s: Session, attemptId: string): Session {
+  return {
+    ...s,
+    messages: s.messages.map((message) => {
+      if (message.agentAttemptId !== attemptId) return message;
+      const finalized = { ...message };
+      delete finalized.agentAttemptId;
+      return finalized;
+    }),
   };
 }
 
@@ -366,47 +426,50 @@ export function useSessions() {
 
   // Stream-append progress text: if the last message is already the same progress kind, append in-place; otherwise create a new one
   const appendToLastProgress = useCallback(
-    (delta: string, kind: 'thinking' | 'reasoning', sessionId?: string): void => {
+    (
+      delta: string,
+      kind: 'thinking' | 'reasoning',
+      sessionId?: string,
+      agentAttemptId?: string,
+    ): void => {
       const apply = getApply(sessionId);
-      apply((s) => {
-        const messages = [...s.messages];
-        const last = messages[messages.length - 1];
-        if (last?.role === 'progress' && last.progressKind === kind) {
-          messages[messages.length - 1] = { ...last, content: last.content + delta };
-          return { ...s, messages };
-        }
-        return {
-          ...s,
-          messages: [
-            ...messages,
-            {
-              id: newMessageId(),
-              role: 'progress' as const,
-              content: delta,
-              timestamp: Date.now(),
-              progressKind: kind,
-            },
-          ],
-        };
-      });
+      apply((s) => applyAppendProgressDelta(s, delta, kind, agentAttemptId));
     },
     [getApply]
   );
 
   const appendToLastThinking = useCallback(
-    (delta: string, sessionId?: string): void => appendToLastProgress(delta, 'thinking', sessionId),
+    (delta: string, sessionId?: string, agentAttemptId?: string): void =>
+      appendToLastProgress(delta, 'thinking', sessionId, agentAttemptId),
     [appendToLastProgress]
   );
 
   const appendToLastReasoning = useCallback(
-    (delta: string, sessionId?: string): void => appendToLastProgress(delta, 'reasoning', sessionId),
+    (delta: string, sessionId?: string, agentAttemptId?: string): void =>
+      appendToLastProgress(delta, 'reasoning', sessionId, agentAttemptId),
     [appendToLastProgress]
   );
 
   const appendToLastAssistant = useCallback(
-    (delta: string, sessionId?: string): void => {
+    (delta: string, sessionId?: string, agentAttemptId?: string): void => {
       const apply = getApply(sessionId);
-      apply((s) => applyAppendAssistantDelta(s, delta));
+      apply((s) => applyAppendAssistantDelta(s, delta, agentAttemptId));
+    },
+    [getApply]
+  );
+
+  const discardAgentAttempt = useCallback(
+    (attemptId: string, sessionId?: string): void => {
+      const apply = getApply(sessionId);
+      apply((s) => applyDiscardAgentAttempt(s, attemptId));
+    },
+    [getApply]
+  );
+
+  const finalizeAgentAttempt = useCallback(
+    (attemptId: string, sessionId?: string): void => {
+      const apply = getApply(sessionId);
+      apply((s) => applyFinalizeAgentAttempt(s, attemptId));
     },
     [getApply]
   );
@@ -674,6 +737,8 @@ export function useSessions() {
     appendToLastThinking,
     appendToLastReasoning,
     appendToLastAssistant,
+    discardAgentAttempt,
+    finalizeAgentAttempt,
     finalizeLastAssistantMessage,
     setCurrentCode,
     newSession,
