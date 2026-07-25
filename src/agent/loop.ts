@@ -16,7 +16,13 @@ import {
   type ToolContext,
 } from './tools';
 import { parseScore, summariseScore } from './parser';
-import { getErrorMessage } from '../lib/errors';
+import {
+  getErrorMessage,
+  getErrorStatus,
+  getRetryDelayMs,
+  isRetryableRequestError,
+  waitForRetryDelay,
+} from '../lib/errors';
 
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
 export type ThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
@@ -68,9 +74,11 @@ export type ProgressEvent =
   | { kind: 'tool_result'; name: string; ok: boolean; error?: string }
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
-  | { kind: 'assistant_text_delta'; delta: string }
-  | { kind: 'assistant_reply_delta'; delta: string }
-  | { kind: 'reasoning_delta'; delta: string }
+  | { kind: 'assistant_text_delta'; delta: string; attemptId?: string }
+  | { kind: 'assistant_reply_delta'; delta: string; attemptId?: string }
+  | { kind: 'reasoning_delta'; delta: string; attemptId?: string }
+  | { kind: 'request_attempt_discarded'; attemptId: string }
+  | { kind: 'request_attempt_succeeded'; attemptId: string }
   | { kind: 'warn'; message: string };
 
 export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
@@ -101,12 +109,108 @@ export class EmptyAgentResponseError extends Error {
   }
 }
 
+const MAX_REQUEST_ATTEMPTS = 3;
+let requestAttemptSequence = 0;
+
+function nextRequestAttemptId(iteration: number, attempt: number): string {
+  requestAttemptSequence += 1;
+  return `agent-${Date.now()}-${iteration}-${attempt}-${requestAttemptSequence}`;
+}
+
 // Wrap a streaming-delta progress event, or undefined when there's no listener.
 function makeProgressDelta(
   onProgress: ((e: ProgressEvent) => void) | undefined,
   kind: 'assistant_text_delta' | 'assistant_reply_delta' | 'reasoning_delta',
+  attemptId: string,
+  onDelta: () => void,
 ): ((delta: string) => void) | undefined {
-  return onProgress ? (delta: string) => onProgress({ kind, delta }) : undefined;
+  return onProgress
+    ? (delta: string) => {
+        onDelta();
+        onProgress({ kind, delta, attemptId });
+      }
+    : undefined;
+}
+
+type LLMResponse = Awaited<ReturnType<LLMCaller['chatWithTools']>>;
+
+interface ChatWithToolsRetryOptions {
+  llm: LLMCaller;
+  messages: ChatMsg[];
+  tools: ReturnType<typeof getOpenAIToolSchemas>;
+  iteration: number;
+  onProgress?: (event: ProgressEvent) => void;
+  signal?: AbortSignal;
+  enableThinking: boolean;
+}
+
+async function chatWithToolsWithRetry(
+  opts: ChatWithToolsRetryOptions,
+): Promise<LLMResponse> {
+  const {
+    llm,
+    messages,
+    tools,
+    iteration,
+    onProgress,
+    signal,
+    enableThinking,
+  } = opts;
+
+  for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt++) {
+    const attemptId = nextRequestAttemptId(iteration, attempt);
+    let receivedPartial = false;
+    const markPartial = () => {
+      receivedPartial = true;
+    };
+
+    try {
+      const response = await llm.chatWithTools(
+        messages,
+        tools,
+        makeProgressDelta(
+          onProgress,
+          enableThinking ? 'assistant_text_delta' : 'assistant_reply_delta',
+          attemptId,
+          markPartial,
+        ),
+        makeProgressDelta(onProgress, 'reasoning_delta', attemptId, markPartial),
+        signal,
+        enableThinking,
+      );
+
+      if (!response.content?.trim() && response.toolCalls.length === 0) {
+        throw new EmptyAgentResponseError();
+      }
+
+      onProgress?.({ kind: 'request_attempt_succeeded', attemptId });
+      return response;
+    } catch (error) {
+      onProgress?.({ kind: 'request_attempt_discarded', attemptId });
+      if (
+        attempt === MAX_REQUEST_ATTEMPTS
+        || !isRetryableRequestError(error, signal)
+      ) {
+        throw error;
+      }
+
+      const retryAttempt = attempt as 1 | 2;
+      const delayMs = getRetryDelayMs(retryAttempt);
+      console.warn('[agent] Retrying request', {
+        iteration,
+        retryAttempt,
+        maxRetries: MAX_REQUEST_ATTEMPTS - 1,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: getErrorMessage(error),
+        status: getErrorStatus(error),
+        delayMs,
+        receivedPartial,
+      });
+      await waitForRetryDelay(delayMs, signal);
+    }
+  }
+
+  throw new Error('Agent request retry loop exited unexpectedly');
 }
 
 // Count CJK code points (≈1 token/char) for the system-prompt token estimate.
@@ -204,12 +308,15 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
-    const onTextDelta = makeProgressDelta(
+    const resp = await chatWithToolsWithRetry({
+      llm,
+      messages,
+      tools,
+      iteration: iterations,
       onProgress,
-      enableThinking ? 'assistant_text_delta' : 'assistant_reply_delta',
-    );
-    const onReasoningDelta = makeProgressDelta(onProgress, 'reasoning_delta');
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal, enableThinking);
+      signal,
+      enableThinking,
+    });
     if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
@@ -236,18 +343,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     });
 
     if (resp.toolCalls.length === 0) {
-      // No tools requested. If the model returned substantive text and did not
-      // mutate code, this is a legal chat turn in unified-agent mode.
+      // No tools requested. A substantive text response is a legal chat turn
+      // in unified-agent mode; empty responses were rejected by the request
+      // retry boundary before reaching this point.
       const text = resp.content?.trim() || '';
-      if (!text && state.code === initialCode) {
-        console.warn('[agent] Empty model response', {
-          iteration: iterations,
-          enableThinking,
-          hasReasoning: !!(resp.reasoning_content || resp.thinking_blocks?.length),
-          hasUsage: !!resp.usage,
-        });
-        throw new EmptyAgentResponseError();
-      }
       if (text) {
         explanation = text;
         if (state.code === initialCode) {

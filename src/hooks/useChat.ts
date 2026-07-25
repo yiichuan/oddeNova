@@ -14,6 +14,8 @@ export interface ChatMessage {
   code?: string;
   /** Immutable code boundary produced by this assistant turn. */
   revisionId?: string;
+  /** Present only while an LLM stream attempt is incomplete. */
+  agentAttemptId?: string;
   timestamp: number;
   // For role === 'progress':
   progressKind?: ProgressKind;

@@ -11,6 +11,7 @@ import { getActiveModelConfig } from '../services/llm-config';
 import { trackAgentRun, trackAgentError, trackAgentAbort } from '../lib/analytics';
 import { t, zh } from '../lib/i18n';
 import type { StrudelState } from '../services/strudel';
+import { isAbortError } from '../lib/errors';
 
 // ── Pure agent-turn logic (testable in isolation) ────────────────────────────
 //
@@ -82,12 +83,7 @@ export interface AgentTurnDeps {
 
 /** Distinguish a user-triggered abort from a genuine error. */
 export function isUserAbort(error: unknown, signal?: AbortSignal): boolean {
-  if (signal?.aborted) return true;
-  if (error instanceof DOMException && error.name === 'AbortError') return true;
-  if (error instanceof Error) {
-    return /abort(ed)?/i.test(error.name) || /request was aborted\.?/i.test(error.message);
-  }
-  return false;
+  return isAbortError(error, signal);
 }
 
 export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): Promise<void> {
