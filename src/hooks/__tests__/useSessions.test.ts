@@ -301,6 +301,47 @@ describe('useSessions', () => {
     ]);
   });
 
+  it('clears leftover untouched sessions on sign-in', async () => {
+    const greeting = { id: 'g-1', role: 'assistant' as const, content: '你好', timestamp: 1, isGreeting: true };
+    const untouched = makeSession({
+      id: 'untouched-session',
+      title: t('newSessionTitle'),
+      messages: [greeting],
+      updatedAt: 30,
+    });
+    const leftover = makeSession({
+      id: 'leftover-session',
+      title: t('newSessionTitle'),
+      messages: [greeting],
+      updatedAt: 20,
+    });
+    const history = makeSession({
+      id: 'history-session',
+      title: '来个简单的鼓点',
+      messages: [{ id: 'm-1', role: 'user', content: '来个简单的鼓点', timestamp: 1 }],
+      code: 's("bd")',
+      updatedAt: 10,
+    });
+    const cloud = {
+      listSessions: vi.fn(async () => [history]),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    storageMocks.getAllSessions.mockResolvedValue([untouched, leftover, history]);
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+      startNewSessionToken: 1,
+    });
+    roots.push(root);
+
+    expect(getHook().sessions.map((session) => session.id))
+      .toEqual(['untouched-session', 'history-session']);
+    expect(storageMocks.deleteSessionStrict).toHaveBeenCalledWith('leftover-session', 'user:u-1');
+    expect(cloud.deleteSession).toHaveBeenCalledWith('leftover-session', 'u-1');
+  });
+
   it('keeps streamed changes local until a terminal checkpoint saves one latest snapshot', async () => {
     const cloud = {
       listSessions: vi.fn(async () => []),

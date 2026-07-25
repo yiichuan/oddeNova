@@ -470,12 +470,22 @@ export function useSessions(options: UseSessionsOptions = {}) {
         const fresh = reusable
           ? applyRefreshEmptySessionForReuse(reusable, Date.now())
           : makeEmptySession();
-        const rest = reusable
-          ? loaded.filter((session) => session.id !== reusable.id)
-          : loaded;
+        const rest = loaded.filter((session) => !isEffectivelyEmpty(session));
+        // Anything untouched beyond the one being reused is debris from an
+        // earlier sign-in that stacked them up. It holds no code and no
+        // messages, so drop it instead of letting it pile up forever.
+        const leftovers = loaded.filter(
+          (session) => isEffectivelyEmpty(session) && session.id !== reusable?.id,
+        );
         await Promise.all([
           dbPutSession(fresh, ownerKey),
           dbPutCurrentSessionId(fresh.id, ownerKey),
+          ...leftovers.map((session) => sessionCloudSync
+            ? sessionCloudSync.deleteSession(
+              session.id,
+              () => dbDeleteSessionStrict(session.id, ownerKey),
+            )
+            : dbDeleteSession(session.id, ownerKey)),
         ]);
         if (cancelled) return;
         setSessions([fresh, ...rest]);
