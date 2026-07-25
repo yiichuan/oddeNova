@@ -6,13 +6,14 @@ export interface LatestSaveQueue<T extends { id: string }> {
 
 export function createLatestSaveQueue<T extends { id: string }>(
   save: (value: T) => Promise<void>,
-  onError: (error: unknown) => void = () => undefined,
+  onError: (error: unknown, value: T) => void = () => undefined,
 ): LatestSaveQueue<T> {
   const pending = new Map<string, T>();
   const active = new Map<string, Promise<void>>();
   const failed = new Map<string, { value: T; error: unknown }>();
 
   const start = (id: string): Promise<void> => {
+    let terminalFailureValue: T | undefined;
     const run = (async () => {
       while (pending.has(id)) {
         const next = pending.get(id)!;
@@ -25,6 +26,7 @@ export function createLatestSaveQueue<T extends { id: string }>(
           // successful latest save makes this intermediate failure irrelevant.
           if (pending.has(id)) continue;
           failed.set(id, { value: next, error });
+          terminalFailureValue = next;
           throw error;
         }
       }
@@ -34,7 +36,9 @@ export function createLatestSaveQueue<T extends { id: string }>(
     });
 
     active.set(id, run);
-    void run.catch(onError);
+    void run.catch((error) => {
+      if (terminalFailureValue) onError(error, terminalFailureValue);
+    });
     return run;
   };
 

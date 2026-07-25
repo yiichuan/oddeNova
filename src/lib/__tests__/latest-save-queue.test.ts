@@ -86,4 +86,19 @@ describe('createLatestSaveQueue', () => {
 
     expect(save).toHaveBeenCalledTimes(1);
   });
+
+  it('reports the exact latest snapshot that reached a terminal save failure', async () => {
+    const failed = { id: 's-1', content: '最终快照' };
+    const error = new Error('offline');
+    const onError = vi.fn();
+    const queue = createLatestSaveQueue(
+      vi.fn<(value: Snapshot) => Promise<void>>().mockRejectedValue(error),
+      onError,
+    );
+
+    await expect(queue.enqueue(failed)).rejects.toBe(error);
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith(error, failed);
+  });
 });
