@@ -59,12 +59,11 @@ export function waitForRetryDelay(delayMs: number, signal?: AbortSignal): Promis
   if (signal?.aborted) return Promise.reject(makeAbortError());
 
   return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout>;
-    const onAbort = () => {
+    function onAbort() {
       clearTimeout(timer);
       reject(makeAbortError());
-    };
-    timer = setTimeout(() => {
+    }
+    const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       resolve();
     }, delayMs);
