@@ -699,6 +699,9 @@ describe('useSessions', () => {
     act(() => {
       getHook().setSuggestions(['加入贝斯', '让鼓点更密'], 'stack(s("bd"))');
     });
+    act(() => {
+      getHook().setSuggestions(['加入贝斯', '让鼓点更密'], 'stack(s("bd"))');
+    });
 
     expect(getHook().currentSession?.suggestions).toEqual({
       forCode: 'stack(s("bd"))',

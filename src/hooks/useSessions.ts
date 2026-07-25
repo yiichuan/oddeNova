@@ -868,7 +868,17 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const setSuggestions = useCallback(
     (items: string[], forCode: string, sessionId?: string) => {
       const apply = getApply(sessionId);
-      apply((s) => ({ ...s, suggestions: { forCode, items } }));
+      apply((s) => {
+        const current = s.suggestions;
+        if (
+          current?.forCode === forCode
+          && current.items.length === items.length
+          && current.items.every((item, index) => item === items[index])
+        ) {
+          return s;
+        }
+        return { ...s, suggestions: { forCode, items } };
+      });
     },
     [getApply]
   );
