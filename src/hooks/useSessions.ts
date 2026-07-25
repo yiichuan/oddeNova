@@ -319,6 +319,18 @@ export function useSessions(options: UseSessionsOptions = {}) {
     statuses: Record<string, SessionSyncStatus>;
   }>({ ownerKey, statuses: {} });
   const consumedStartNewSessionTokenRef = useRef(0);
+  // Sessions created while a load is in flight. The load applies the list it
+  // read when it started, so without this an import confirmed mid-load would
+  // vanish from the UI until the next page load.
+  const createdDuringLoadRef = useRef<{ ownerKey: string; ids: Set<string> }>({
+    ownerKey,
+    ids: new Set(),
+  });
+
+  const noteCreatedSession = useCallback((sessionId: string): void => {
+    const tracked = createdDuringLoadRef.current;
+    if (tracked.ownerKey === ownerKey) tracked.ids.add(sessionId);
+  }, [ownerKey]);
 
   const manualSyncPresentation = useMemo(
     () => createManualSyncPresentation({
@@ -397,6 +409,21 @@ export function useSessions(options: UseSessionsOptions = {}) {
   // Initialize: open DB (+ migrate) then load all sessions
   useEffect(() => {
     let cancelled = false;
+    createdDuringLoadRef.current = { ownerKey, ids: new Set() };
+    // Apply a loaded list without dropping what was created since the load
+    // started. Sessions that predate the load are not carried over: this load
+    // is the authority on those, including the ones reconciliation deleted.
+    const commitSessions = (next: Session[]): void => {
+      const tracked = createdDuringLoadRef.current;
+      const nextIds = new Set(next.map((session) => session.id));
+      setSessions((previous) => {
+        if (tracked.ownerKey !== ownerKey || tracked.ids.size === 0) return next;
+        const created = previous.filter(
+          (session) => tracked.ids.has(session.id) && !nextIds.has(session.id),
+        );
+        return created.length > 0 ? [...created, ...next] : next;
+      });
+    };
     (async () => {
       setIsLoading(true);
       await openDB();
@@ -488,7 +515,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
             : dbDeleteSession(session.id, ownerKey)),
         ]);
         if (cancelled) return;
-        setSessions([fresh, ...rest]);
+        commitSessions([fresh, ...rest]);
         setCurrentId(fresh.id);
         setIsPersistent(persistent);
         setLoadedOwnerKey(ownerKey);
@@ -498,7 +525,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
 
       if (loaded.length > 0) {
         const current = loaded.find((s) => s.id === storedCurrentId) || loaded[0];
-        setSessions(loaded);
+        commitSessions(loaded);
         setCurrentId(current.id);
         setIsPersistent(persistent);
         setLoadedOwnerKey(ownerKey);
@@ -511,7 +538,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         dbPutSession(fresh, ownerKey),
         dbPutCurrentSessionId(fresh.id, ownerKey),
       ]);
-      setSessions([fresh]);
+      commitSessions([fresh]);
       setCurrentId(fresh.id);
       setIsPersistent(persistent);
       setLoadedOwnerKey(ownerKey);
@@ -838,12 +865,13 @@ export function useSessions(options: UseSessionsOptions = {}) {
         return prev.map((s) => s.id === existingEmpty.id ? refreshed : s);
       }
       const fresh = makeEmptySession();
+      noteCreatedSession(fresh.id);
       setCurrentId(fresh.id);
       dbPutCurrentSessionId(fresh.id, ownerKey);
       persistLocalSession(fresh);
       return [fresh, ...prev];
     });
-  }, [currentId, ownerKey, persistLocalSession]);
+  }, [currentId, ownerKey, noteCreatedSession, persistLocalSession]);
 
   const switchTo = useCallback((id: string) => {
     setCurrentId(id);
@@ -879,6 +907,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         }
         if (next.length === 0) {
           const fresh = makeEmptySession();
+          noteCreatedSession(fresh.id);
           setCurrentId(fresh.id);
           dbPutCurrentSessionId(fresh.id, ownerKey);
           persistLocalSession(fresh);
@@ -891,7 +920,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         return next;
       });
     },
-    [currentId, ownerKey, persistLocalSession, sessionCloudSync],
+    [currentId, noteCreatedSession, ownerKey, persistLocalSession, sessionCloudSync],
   );
 
   const importSession = useCallback(
@@ -913,6 +942,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         updatedAt: now,
       };
       await dbPutSession(session, ownerKey);
+      noteCreatedSession(id);
       setSessions((prev) => [session, ...prev]);
       if (options.activate ?? true) {
         setCurrentId(id);
@@ -920,7 +950,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       }
       await sessionCloudSync?.checkpoint(session);
     },
-    [ownerKey, sessionCloudSync],
+    [noteCreatedSession, ownerKey, sessionCloudSync],
   );
 
   const importOddeNovaSession = useCallback(async (
@@ -955,6 +985,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         updatedAt: now,
       };
       await dbPutImportedSession(created, ownerKey);
+      noteCreatedSession(created.id);
       setSessions((previous) => [created, ...previous]);
       setCurrentId(created.id);
       dbPutCurrentSessionId(created.id, ownerKey);
@@ -1010,6 +1041,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       updatedAt: now,
     };
     await dbPutImportedSessionBranch(detached, branch, ownerKey);
+    noteCreatedSession(branch.id);
     setSessions((previous) => [
       branch,
       ...previous.map((session) => session.id === target.id ? detached : session),
@@ -1022,7 +1054,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       sessionCloudSync?.checkpoint(branch),
     ]);
     return 'branched';
-  }, [ownerKey, sessions, sessionCloudSync]);
+  }, [noteCreatedSession, ownerKey, sessions, sessionCloudSync]);
 
   const branchFromMessage = useCallback(
     (targetMessageId: string): void => {
@@ -1048,12 +1080,13 @@ export function useSessions(options: UseSessionsOptions = {}) {
       // Optimistic update: UI reflects immediately; DB write is fire-and-forget.
       // If dbPutSession fails, the session exists in memory for the current page
       // load but won't persist on refresh.
+      noteCreatedSession(id);
       setSessions((prev) => [branched, ...prev]);
       setCurrentId(id);
       dbPutCurrentSessionId(id, ownerKey);
       persistSession(branched, 'checkpoint');
     },
-    [sessions, currentId, ownerKey, persistSession]
+    [sessions, currentId, noteCreatedSession, ownerKey, persistSession]
   );
 
   const updateTokenStats = useCallback(

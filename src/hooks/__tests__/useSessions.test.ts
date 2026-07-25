@@ -891,6 +891,39 @@ describe('useSessions', () => {
     );
   });
 
+  it('keeps a session imported while the account load is still in flight', async () => {
+    let resolveList!: (sessions: Session[]) => void;
+    const cloud = {
+      listSessions: vi.fn(() => new Promise<Session[]>((resolve) => { resolveList = resolve; })),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+      startNewSessionToken: 1,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '来个简单的鼓点',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '来个简单的鼓点', timestamp: 1 }],
+      }, { activate: false });
+    });
+
+    // The load replaces the list with the snapshot it started from, which was
+    // taken before the import existed.
+    await act(async () => {
+      resolveList([]);
+    });
+
+    expect(getHook().sessions.map((session) => session.title))
+      .toContain('来个简单的鼓点');
+  });
+
   it('keeps the code revisions of an imported session', async () => {
     const cloud = {
       listSessions: vi.fn(async () => []),
