@@ -2,7 +2,7 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Session } from '../hooks/useSessions';
 
@@ -10,6 +10,54 @@ const mocks = vi.hoisted(() => ({
   getAllSessions: vi.fn(),
   deleteSession: vi.fn(async () => undefined),
   importSession: vi.fn(async () => undefined),
+  strudel: {
+    code: '',
+    play: vi.fn(async () => true),
+    stop: vi.fn(),
+    setCode: vi.fn(),
+    setRoot: vi.fn(),
+    isPlaying: false,
+    engineReady: true,
+    engineStatus: 'ready',
+    error: '',
+    exportState: { status: 'idle', progress: 0 },
+    exportWav: vi.fn(),
+    resetExportState: vi.fn(),
+    setError: vi.fn(),
+  },
+  session: {
+    id: 's-1',
+    title: 'Session',
+    code: 's("bd")',
+    messages: [],
+    createdAt: 1,
+    updatedAt: 1,
+  } as Session,
+  sessions: {
+    isLoading: false,
+    isPersistent: true,
+    sessions: [] as Session[],
+    currentId: 's-1' as string | null,
+    currentSession: null as Session | null,
+    importSession: vi.fn(async () => undefined),
+    importOddeNovaSession: vi.fn(),
+    setSuggestions: vi.fn(),
+    setCurrentCode: vi.fn(),
+    setManualCode: vi.fn(async () => undefined),
+    checkpointSession: vi.fn(async () => undefined),
+    flushCloudSaves: vi.fn(async () => undefined),
+    newSession: vi.fn(),
+    switchTo: vi.fn(),
+    branchFromMessage: vi.fn(),
+    truncateAndEdit: vi.fn(),
+    truncate: vi.fn(),
+    deleteSession: vi.fn(),
+    renameSession: vi.fn(),
+  },
+  codePanelProps: null as Record<string, unknown> | null,
+  sidebarProps: null as Record<string, unknown> | null,
+  agentRunnerConfig: null as Record<string, unknown> | null,
+  isMobile: true,
   auth: {
     user: { id: 'user-1', email: 'listener@example.com' },
     configured: true,
@@ -23,51 +71,27 @@ vi.mock('../hooks/useAuth', () => ({
 }));
 
 vi.mock('../hooks/useStrudel', () => ({
-  useStrudel: () => ({
-    code: '',
-    play: vi.fn(),
-    stop: vi.fn(),
-    setCode: vi.fn(),
-    setRoot: vi.fn(),
-    isPlaying: false,
-    engineReady: true,
-    engineStatus: 'ready',
-    error: '',
-    exportState: 'idle',
-    exportWav: vi.fn(),
-    resetExportState: vi.fn(),
-    setError: vi.fn(),
-  }),
+  useStrudel: () => mocks.strudel,
 }));
 
 vi.mock('../hooks/useSessions', () => ({
-  useSessions: () => ({
-    isLoading: false,
-    isPersistent: true,
-    sessions: [],
-    currentId: null,
-    currentSession: null,
-    importSession: mocks.importSession,
-    importOddeNovaSession: vi.fn(),
-    setSuggestions: vi.fn(),
-    setCurrentCode: vi.fn(),
-    newSession: vi.fn(),
-    switchTo: vi.fn(),
-    branchFromMessage: vi.fn(),
-    truncateAndEdit: vi.fn(),
-    truncate: vi.fn(),
-  }),
+  useSessions: () => mocks.sessions,
 }));
 
 vi.mock('../hooks/useSuggestions', () => ({ useSuggestions: () => ({ suggestions: [] }) }));
 vi.mock('../hooks/useImportShare', () => ({ useImportShare: () => ({ status: 'idle' }) }));
 vi.mock('../hooks/useOddeNovaImport', () => ({ useOddeNovaImport: () => ({ status: 'idle' }) }));
 vi.mock('../hooks/useReplay', () => ({ useReplay: () => ({ isReplaying: false, replayMessages: [], replayInputText: '', startReplay: vi.fn() }) }));
-vi.mock('../hooks/useAgentRunner', () => ({ useAgentRunner: () => vi.fn() }));
+vi.mock('../hooks/useAgentRunner', () => ({
+  useAgentRunner: (config: Record<string, unknown>) => {
+    mocks.agentRunnerConfig = config;
+    return vi.fn();
+  },
+}));
 vi.mock('../hooks/useVideoDemo', () => ({ useVideoDemo: () => ({ isVideoMode: false, videoDemoMsgs: [], videoConvScrollBottom: false, videoTitle: '' }) }));
 vi.mock('../hooks/useLayout', () => ({
   useLayout: () => ({
-    isMobile: true, keyboardHeight: 0, sidebarWidth: 0, vizHeight: 0, isDragging: false,
+    isMobile: mocks.isMobile, keyboardHeight: 0, sidebarWidth: 0, vizHeight: 0, isDragging: false,
     mainRef: { current: null }, topActionsRef: { current: null }, hDragHandlers: {}, vDragHandlers: {},
     historyOpen: false, setHistoryOpen: vi.fn(), drawerOpen: false, setDrawerOpen: vi.fn(),
     mobileFocusedArea: null, shouldLiftBottomBar: false, mobileDrawerHeight: 0,
@@ -87,8 +111,18 @@ vi.mock('../lib/community-invite', () => ({
   shouldAutoOpenApiKeyModal: () => false,
 }));
 
-vi.mock('../components/CodePanel', () => ({ default: () => null }));
-vi.mock('../components/Sidebar', () => ({ default: () => null }));
+vi.mock('../components/CodePanel', () => ({
+  default: (props: Record<string, unknown>) => {
+    mocks.codePanelProps = props;
+    return null;
+  },
+}));
+vi.mock('../components/Sidebar', () => ({
+  default: (props: Record<string, unknown>) => {
+    mocks.sidebarProps = props;
+    return null;
+  },
+}));
 vi.mock('../components/VizPlaceholder', () => ({ default: () => null }));
 vi.mock('../components/ApiKeyModal', () => ({ default: () => null }));
 vi.mock('../components/ConversationView', () => ({ default: () => null }));
@@ -105,6 +139,21 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 describe('App password recovery', () => {
   let root: Root | undefined;
+
+  beforeEach(() => {
+    mocks.strudel.code = '';
+    mocks.session.code = 's("bd")';
+    mocks.session.messages = [];
+    mocks.sessions.currentId = 's-1';
+    mocks.sessions.currentSession = mocks.session;
+    mocks.sessions.sessions = [mocks.session];
+    mocks.sessions.isLoading = false;
+    mocks.sessions.importSession = mocks.importSession;
+    mocks.codePanelProps = null;
+    mocks.sidebarProps = null;
+    mocks.agentRunnerConfig = null;
+    mocks.isMobile = true;
+  });
 
   afterEach(() => {
     if (root) act(() => root?.unmount());
@@ -208,5 +257,148 @@ describe('App password recovery', () => {
       messages: [],
     });
     expect(mocks.deleteSession).toHaveBeenCalledWith('guest-session', 'guest');
+  });
+});
+
+describe('App session sync boundaries', () => {
+  let root: Root | undefined;
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    mocks.strudel.code = 's("bd")';
+    mocks.session.code = 's("bd")';
+    mocks.session.messages = [];
+    mocks.sessions.currentId = 's-1';
+    mocks.sessions.currentSession = mocks.session;
+    mocks.sessions.sessions = [mocks.session];
+    mocks.sessions.isLoading = false;
+    mocks.codePanelProps = null;
+    mocks.sidebarProps = null;
+    mocks.agentRunnerConfig = null;
+    mocks.isMobile = true;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    if (root) act(() => root?.unmount());
+    root = undefined;
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  async function renderApp(): Promise<void> {
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+    });
+  }
+
+  it.each(['s("bd sd")', ''])(
+    'routes a manual editor change (%s) through setManualCode',
+    async (code) => {
+      await renderApp();
+      mocks.sessions.setManualCode.mockClear();
+      mocks.strudel.code = code;
+
+      await renderApp();
+
+      expect(mocks.sessions.setManualCode).toHaveBeenCalledWith(code, 's-1');
+    },
+  );
+
+  it('does not route editor changes through the manual path while the Agent is loading', async () => {
+    await renderApp();
+    const setLoadingSessions = mocks.agentRunnerConfig?.setLoadingSessions as
+      | ((value: Set<string>) => void)
+      | undefined;
+    expect(setLoadingSessions).toBeDefined();
+
+    act(() => {
+      setLoadingSessions?.(new Set(['s-1']));
+    });
+    mocks.sessions.setManualCode.mockClear();
+    mocks.strudel.code = 's("hh")';
+    await renderApp();
+
+    expect(mocks.sessions.setManualCode).not.toHaveBeenCalled();
+  });
+
+  it('persists and flushes the latest editor code before playing', async () => {
+    await renderApp();
+    mocks.strudel.code = 's("bd sd")';
+    await renderApp();
+    mocks.sessions.setManualCode.mockClear();
+    mocks.sessions.flushCloudSaves.mockClear();
+    mocks.strudel.play.mockClear();
+
+    await act(async () => {
+      await (mocks.codePanelProps?.onPlay as (() => Promise<void>))();
+    });
+
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("bd sd")', 's-1');
+    expect(mocks.sessions.flushCloudSaves).toHaveBeenCalledWith('s-1');
+    const manualOrder = mocks.sessions.setManualCode.mock.invocationCallOrder[0];
+    const flushOrder = mocks.sessions.flushCloudSaves.mock.invocationCallOrder[0];
+    const playOrder = mocks.strudel.play.mock.invocationCallOrder[0];
+    expect(manualOrder).toBeLessThan(flushOrder);
+    expect(flushOrder).toBeLessThan(playOrder);
+  });
+
+  it('persists and flushes the outgoing code when creating a new session', async () => {
+    mocks.isMobile = false;
+    await renderApp();
+    mocks.strudel.code = '';
+    await renderApp();
+    mocks.sessions.setManualCode.mockClear();
+
+    act(() => {
+      (mocks.sidebarProps?.onNewSession as (() => void))();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('', 's-1');
+    expect(mocks.sessions.flushCloudSaves).toHaveBeenCalledWith('s-1');
+    expect(mocks.sessions.newSession).toHaveBeenCalledOnce();
+  });
+
+  it('persists and flushes the outgoing code when switching sessions', async () => {
+    mocks.isMobile = false;
+    await renderApp();
+    mocks.strudel.code = 's("hh")';
+    await renderApp();
+    mocks.sessions.setManualCode.mockClear();
+
+    act(() => {
+      (mocks.sidebarProps?.onSwitchSession as ((id: string) => void))('s-2');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("hh")', 's-1');
+    expect(mocks.sessions.flushCloudSaves).toHaveBeenCalledWith('s-1');
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith('s-2');
+  });
+
+  it('checkpoints rollback after restoring code and truncating messages', async () => {
+    mocks.isMobile = false;
+    mocks.session.messages = [
+      { id: 'assistant-code', role: 'assistant', content: 'old', code: 's("bd")', timestamp: 1 },
+      { id: 'user-turn', role: 'user', content: 'change it', timestamp: 2 },
+    ];
+    await renderApp();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onRollback as ((id: string) => Promise<void>))('user-turn');
+    });
+
+    expect(mocks.sessions.truncate).toHaveBeenCalledWith('user-turn');
+    expect(mocks.sessions.checkpointSession).toHaveBeenCalledWith('s-1');
+    expect(mocks.sessions.truncate.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.sessions.checkpointSession.mock.invocationCallOrder[0]);
   });
 });

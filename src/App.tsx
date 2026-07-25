@@ -84,6 +84,7 @@ export default function App() {
   const [showPersonaModal, setShowPersonaModal] = useState(false);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
+  const skipNextManualSyncSessionRef = useRef<string | null>(null);
   const prevLoadingRef = useRef<Set<string>>(new Set());
   const importPromptUserRef = useRef<string | null>(null);
   const latestGuestSessionsRef = useRef<Session[]>([]);
@@ -310,10 +311,31 @@ export default function App() {
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
     if (!current) return;
+    skipNextManualSyncSessionRef.current = current.id;
     strudel.setCode(current.code);
     strudel.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
   }, [current?.id]);
+
+  const setManualCode = sessions.setManualCode;
+  const flushCloudSaves = sessions.flushCloudSaves;
+  useEffect(() => {
+    if (!current?.id || isLoading || isReplaying || isVideoMode) return;
+    if (skipNextManualSyncSessionRef.current === current.id) {
+      skipNextManualSyncSessionRef.current = null;
+      return;
+    }
+    if (strudel.code === current.code) return;
+    void setManualCode(strudel.code, current.id);
+  }, [
+    current?.id,
+    current?.code,
+    isLoading,
+    isReplaying,
+    isVideoMode,
+    setManualCode,
+    strudel.code,
+  ]);
 
   // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
   useEffect(() => {
@@ -425,10 +447,14 @@ export default function App() {
 
   const handleRollback = useCallback(
     async (messageId: string) => {
+      const currentSessionId = sessions.currentId;
       const rewound = await rewindBeforeMessage(messageId);
       if (!rewound) return;
 
       sessions.truncate(messageId);
+      if (currentSessionId) {
+        await sessions.checkpointSession(currentSessionId);
+      }
 
       // Prefill the input with the message content and focus
       setRollbackPrefill(rewound.target.content);
@@ -471,28 +497,36 @@ export default function App() {
     });
   }, [strudel, runTurn]);
 
-  // Persist any unsaved manual edits in the editor to the outgoing session
-  // before switching/creating, so they aren't overwritten by the next
-  // session's code. Skip when strudel.code is empty or unchanged to avoid
-  // clobbering a session's stored code with stale/empty editor state
-  // (e.g. before the editor has synced on initial mount) and to avoid
-  // redundant writes when nothing changed.
-  const persistLiveCodeToCurrentSession = useCallback(() => {
-    if (sessions.currentId && strudel.code && strudel.code !== current?.code) {
-      sessions.setCurrentCode(strudel.code, sessions.currentId);
+  const persistAndFlushOutgoingSession = useCallback((id: string, code: string) => {
+    void setManualCode(code, id)
+      .then(() => flushCloudSaves(id))
+      .catch((error) => {
+        console.warn('[sessions] outgoing session flush failed.', error);
+      });
+  }, [flushCloudSaves, setManualCode]);
+
+  const handlePlay = useCallback(async () => {
+    if (sessions.currentId) {
+      await setManualCode(strudel.code, sessions.currentId);
+      await flushCloudSaves(sessions.currentId);
     }
-  }, [sessions, strudel, current?.code]);
+    await strudel.play();
+  }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
 
   const handleNewSession = useCallback(() => {
-    persistLiveCodeToCurrentSession();
+    if (sessions.currentId) {
+      persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+    }
     strudel.stop();
     sessions.newSession();
     if (isDemoMode()) setDemoStep(0);
-  }, [strudel, sessions, persistLiveCodeToCurrentSession]);
+  }, [strudel, sessions, persistAndFlushOutgoingSession]);
 
   const handleSwitchSession = useCallback((id: string) => {
     if (sessions.currentId !== id) {
-      persistLiveCodeToCurrentSession();
+      if (sessions.currentId) {
+        persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      }
     }
     setCommitSuggestions(null);
     setUnreadSessions((prev) => {
@@ -502,7 +536,7 @@ export default function App() {
       return next;
     });
     sessions.switchTo(id);
-  }, [sessions, persistLiveCodeToCurrentSession]);
+  }, [sessions, persistAndFlushOutgoingSession, strudel.code]);
 
   const responsiveLayout = isMobile ? (
       <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
@@ -592,7 +626,7 @@ export default function App() {
                 engineReady={strudel.engineReady}
                 hasCode={!!strudel.code}
                 onMount={strudel.setRoot}
-                onPlay={() => strudel.play()}
+                onPlay={handlePlay}
                 onStop={strudel.stop}
                 exportState={strudel.exportState}
                 onExport={strudel.exportWav}
@@ -791,7 +825,7 @@ export default function App() {
             engineReady={strudel.engineReady}
             hasCode={!!strudel.code}
             onMount={strudel.setRoot}
-            onPlay={() => strudel.play()}
+            onPlay={handlePlay}
             onStop={strudel.stop}
             exportState={strudel.exportState}
             onExport={strudel.exportWav}
