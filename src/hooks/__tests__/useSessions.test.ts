@@ -238,6 +238,34 @@ describe('useSessions', () => {
     expect(getHook().sessions).toContainEqual(accountSession);
   });
 
+  it('reuses an untouched session on sign-in instead of stacking up another new session', async () => {
+    const untouched = makeSession({
+      id: 'untouched-session',
+      title: t('newSessionTitle'),
+      messages: [{ id: 'g-1', role: 'assistant', content: '你好', timestamp: 1, isGreeting: true }],
+      updatedAt: 10,
+    });
+    const cloud = {
+      listSessions: vi.fn(async () => [untouched]),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    storageMocks.getAllSessions.mockResolvedValue([untouched]);
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+      startNewSessionToken: 1,
+    });
+    roots.push(root);
+
+    expect(getHook().sessions).toHaveLength(1);
+    expect(getHook().currentId).toBe('untouched-session');
+    expect(getHook().currentSession?.messages).toEqual([
+      expect.objectContaining({ isGreeting: true }),
+    ]);
+  });
+
   it('keeps streamed changes local until a terminal checkpoint saves one latest snapshot', async () => {
     const cloud = {
       listSessions: vi.fn(async () => []),

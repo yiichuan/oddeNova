@@ -463,13 +463,22 @@ export function useSessions(options: UseSessionsOptions = {}) {
       const shouldStartNewSession = startNewSessionToken > consumedStartNewSessionTokenRef.current;
       if (shouldStartNewSession) {
         consumedStartNewSessionTokenRef.current = startNewSessionToken;
-        const fresh = makeEmptySession();
+        // Reuse an untouched session the same way newSession() does. Without
+        // this every sign-in leaves another "New session" behind, since an
+        // empty session never reaches the cloud and never gets cleaned up.
+        const reusable = loaded.find(isEffectivelyEmpty);
+        const fresh = reusable
+          ? applyRefreshEmptySessionForReuse(reusable, Date.now())
+          : makeEmptySession();
+        const rest = reusable
+          ? loaded.filter((session) => session.id !== reusable.id)
+          : loaded;
         await Promise.all([
           dbPutSession(fresh, ownerKey),
           dbPutCurrentSessionId(fresh.id, ownerKey),
         ]);
         if (cancelled) return;
-        setSessions([fresh, ...loaded]);
+        setSessions([fresh, ...rest]);
         setCurrentId(fresh.id);
         setIsPersistent(persistent);
         setLoadedOwnerKey(ownerKey);
