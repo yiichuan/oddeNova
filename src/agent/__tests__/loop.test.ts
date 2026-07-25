@@ -37,6 +37,22 @@ function makeCapturingLLM(commitCode = 's("bd")') {
   return { llm, calls };
 }
 
+async function runWithTimers<T>(operation: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers();
+  try {
+    const settled = operation().then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    await vi.runAllTimersAsync();
+    const outcome = await settled;
+    if (!outcome.ok) throw outcome.error;
+    return outcome.value;
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 describe('runAgentLoop — conversationHistory message ordering', () => {
   it('inserts history between system prompt and user turn', async () => {
     const history: ConversationTurn[] = [
@@ -143,16 +159,30 @@ describe('runAgentLoop — pure chat replies', () => {
     });
     expect(events).toEqual([
       { kind: 'iteration', index: 1 },
-      { kind: 'assistant_reply_delta', delta: '当然可以，' },
-      { kind: 'assistant_reply_delta', delta: '我们先聊聊。' },
+      {
+        kind: 'assistant_reply_delta',
+        delta: '当然可以，',
+        attemptId: expect.any(String),
+      },
+      {
+        kind: 'assistant_reply_delta',
+        delta: '我们先聊聊。',
+        attemptId: expect.any(String),
+      },
+      {
+        kind: 'request_attempt_succeeded',
+        attemptId: expect.any(String),
+      },
     ]);
     expect(events.some((event) => event.kind === 'warn')).toBe(false);
   });
 
   it('throws a diagnosable error when the model returns no tools and no useful text', async () => {
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let calls = 0;
     const llm: LLMCaller = {
       async chatWithTools() {
+        calls += 1;
         return {
           content: '',
           reasoning_content: 'unfinished reasoning',
@@ -162,20 +192,189 @@ describe('runAgentLoop — pure chat replies', () => {
       },
     };
 
-    await expect(runAgentLoop({
+    await expect(runWithTimers(() => runAgentLoop({
       initialCode: 'setcps(0.5)\nstack(s("bd"))',
       instruction: '更新一下',
       systemPrompt: 'You are a music assistant.',
       llm,
-    })).rejects.toBeInstanceOf(EmptyAgentResponseError);
+    }))).rejects.toBeInstanceOf(EmptyAgentResponseError);
 
-    expect(consoleWarn).toHaveBeenCalledWith('[agent] Empty model response', {
+    expect(calls).toBe(3);
+    expect(consoleWarn).toHaveBeenCalledTimes(2);
+    consoleWarn.mockRestore();
+  });
+});
+
+describe('runAgentLoop — request retries', () => {
+  it('retries a partial network stream and executes the successful tool once', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let calls = 0;
+    const events: ProgressEvent[] = [];
+    const llm: LLMCaller = {
+      async chatWithTools(_messages, _tools, onTextDelta, onReasoningDelta) {
+        calls += 1;
+        if (calls === 1) {
+          onReasoningDelta?.('discarded reasoning');
+          onTextDelta?.('discarded text');
+          throw new TypeError('network error');
+        }
+        return {
+          content: null,
+          toolCalls: [
+            {
+              id: 'set-code-1',
+              name: 'setCode',
+              arguments: JSON.stringify({ code: 's("bd")' }),
+            },
+            {
+              id: 'commit-1',
+              name: 'commit',
+              arguments: JSON.stringify({ explanation: 'done' }),
+            },
+          ],
+        };
+      },
+    };
+
+    const result = await runWithTimers(() => runAgentLoop({
+      initialCode: '',
+      instruction: 'add drums',
+      systemPrompt: 'system',
+      llm,
+      onProgress: (event) => events.push(event),
+    }));
+
+    expect(calls).toBe(2);
+    expect(result).toMatchObject({ code: 's("bd")', committed: true });
+    expect(events.filter((event) => event.kind === 'commit')).toHaveLength(1);
+    expect(events.filter((event) => event.kind === 'tool_call')).toHaveLength(2);
+    expect(events).toContainEqual({
+      kind: 'request_attempt_discarded',
+      attemptId: expect.any(String),
+    });
+    expect(consoleWarn).toHaveBeenCalledWith(
+      '[agent] Retrying request',
+      expect.objectContaining({
+        iteration: 1,
+        retryAttempt: 1,
+        maxRetries: 2,
+        errorName: 'TypeError',
+        errorMessage: 'network error',
+        receivedPartial: true,
+      }),
+    );
+    consoleWarn.mockRestore();
+  });
+
+  it('stops after the initial attempt and two retries', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const llm: LLMCaller = {
+      chatWithTools: vi.fn(async () => {
+        throw new TypeError('network error');
+      }),
+    };
+
+    await expect(runWithTimers(() => runAgentLoop({
+      initialCode: '',
+      instruction: 'add drums',
+      systemPrompt: 'system',
+      llm,
+    }))).rejects.toThrow('network error');
+
+    expect(llm.chatWithTools).toHaveBeenCalledTimes(3);
+    expect(consoleWarn).toHaveBeenCalledTimes(2);
+    consoleWarn.mockRestore();
+  });
+
+  it('retries empty responses and logs safe retry metadata', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let calls = 0;
+    const llm: LLMCaller = {
+      async chatWithTools() {
+        calls += 1;
+        return calls === 1
+          ? {
+              content: '',
+              reasoning_content: 'partial',
+              toolCalls: [],
+            }
+          : {
+              content: 'recovered',
+              toolCalls: [],
+            };
+      },
+    };
+
+    const result = await runWithTimers(() => runAgentLoop({
+      initialCode: '',
+      instruction: 'hello',
+      systemPrompt: 'system',
+      llm,
+    }));
+
+    expect(result.explanation).toBe('recovered');
+    expect(consoleWarn).toHaveBeenCalledWith('[agent] Retrying request', {
       iteration: 1,
-      enableThinking: true,
-      hasReasoning: true,
-      hasUsage: true,
+      retryAttempt: 1,
+      maxRetries: 2,
+      errorName: 'EmptyAgentResponseError',
+      errorMessage: 'Model returned no text or tool calls',
+      status: undefined,
+      delayMs: expect.any(Number),
+      receivedPartial: false,
     });
     consoleWarn.mockRestore();
+  });
+
+  it('does not retry a non-transient 401', async () => {
+    const error = Object.assign(new Error('Unauthorized'), { status: 401 });
+    const llm: LLMCaller = {
+      chatWithTools: vi.fn(async () => {
+        throw error;
+      }),
+    };
+
+    await expect(runAgentLoop({
+      initialCode: '',
+      instruction: 'hello',
+      systemPrompt: 'system',
+      llm,
+    })).rejects.toBe(error);
+
+    expect(llm.chatWithTools).toHaveBeenCalledOnce();
+  });
+
+  it('aborts during backoff without starting another request', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const llm: LLMCaller = {
+        chatWithTools: vi.fn(async () => {
+          throw new TypeError('network error');
+        }),
+      };
+      const settled = runAgentLoop({
+        initialCode: '',
+        instruction: 'hello',
+        systemPrompt: 'system',
+        llm,
+        signal: controller.signal,
+      }).then(
+        () => ({ error: undefined }),
+        (error: unknown) => ({ error }),
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort();
+
+      const outcome = await settled;
+      expect(outcome.error).toMatchObject({ name: 'AbortError' });
+      expect(llm.chatWithTools).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      consoleWarn.mockRestore();
+    }
   });
 });
 
