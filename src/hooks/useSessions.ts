@@ -517,20 +517,29 @@ export function useSessions(options: UseSessionsOptions = {}) {
     sessionCloudSync,
   ]);
 
-  const sessionsForOwner = loadedOwnerKey === ownerKey ? sessions : [];
-  const currentIdForOwner = loadedOwnerKey === ownerKey ? currentId : null;
+  // False between an owner key change (sign-in / sign-out) and the new owner's
+  // sessions finishing loading: the sessions held in memory still belong to the
+  // previous owner.
+  const ownerLoaded = loadedOwnerKey === ownerKey;
+  const sessionsForOwner = ownerLoaded ? sessions : [];
+  const currentIdForOwner = ownerLoaded ? currentId : null;
   const currentSession =
     sessionsForOwner.find((s) => s.id === currentIdForOwner) || sessionsForOwner[0] || null;
 
   const persistLocalSession = useCallback(
     (session: Session) => {
+      // A late writer (suggestion chips, a finishing agent turn) can fire during
+      // that window. Persisting then would file the previous owner's session
+      // under the new owner — leaking account history into the guest list.
+      if (!ownerLoaded) return;
       void dbPutSession(session, ownerKey);
     },
-    [ownerKey],
+    [ownerLoaded, ownerKey],
   );
 
   const persistSession = useCallback(
     (session: Session, intent: CloudIntent = 'deferred') => {
+      if (!ownerLoaded) return;
       persistLocalSession(session);
       if (!sessionCloudSync) return;
       if (intent === 'checkpoint') {
@@ -543,7 +552,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         sessionCloudSync.noteLocal(session);
       }
     },
-    [persistLocalSession, sessionCloudSync, manualSyncPresentation],
+    [ownerLoaded, persistLocalSession, sessionCloudSync, manualSyncPresentation],
   );
 
   const flushCloudSaves = useCallback(async (sessionId?: string): Promise<void> => {

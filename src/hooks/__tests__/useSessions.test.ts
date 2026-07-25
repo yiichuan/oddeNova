@@ -212,6 +212,41 @@ describe('useSessions', () => {
     });
   });
 
+  it('does not copy the previous owner\'s session into the new owner while it loads', async () => {
+    const accountSession = makeSession({
+      id: 'account-session',
+      title: '来个简单的贝斯',
+      messages: [{ id: 'm-1', role: 'user', content: '来个简单的贝斯', timestamp: 1 }],
+      code: 's("bd")',
+    });
+    let resolveGuestSessions!: (sessions: Session[]) => void;
+    storageMocks.getAllSessions
+      .mockResolvedValueOnce([accountSession])
+      .mockImplementationOnce(() => new Promise<Session[]>((resolve) => {
+        resolveGuestSessions = resolve;
+      }));
+    const { root, getHook, rerender } = await renderUseSessions({ ownerKey: 'user:u-1' });
+    roots.push(root);
+
+    // Signing out flips the owner key while the account session is still the
+    // one held in memory; a late writer must not persist it as a guest session.
+    await rerender({ ownerKey: 'guest' });
+    storageMocks.putSession.mockClear();
+
+    act(() => {
+      getHook().setSuggestions(['换个音色'], 's("bd")');
+    });
+
+    expect(storageMocks.putSession).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'account-session' }),
+      'guest',
+    );
+
+    await act(async () => {
+      resolveGuestSessions([]);
+    });
+  });
+
   it('opens a fresh session after a guest user signs in instead of selecting the latest account history', async () => {
     const accountSession = makeSession({
       id: 'latest-account-session',
