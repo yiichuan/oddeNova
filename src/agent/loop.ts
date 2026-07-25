@@ -94,6 +94,13 @@ export interface TokenUsage {
   systemEstimate: number;
 }
 
+export class EmptyAgentResponseError extends Error {
+  constructor() {
+    super('Model returned no text or tool calls');
+    this.name = 'EmptyAgentResponseError';
+  }
+}
+
 // Wrap a streaming-delta progress event, or undefined when there's no listener.
 function makeProgressDelta(
   onProgress: ((e: ProgressEvent) => void) | undefined,
@@ -232,6 +239,15 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       // No tools requested. If the model returned substantive text and did not
       // mutate code, this is a legal chat turn in unified-agent mode.
       const text = resp.content?.trim() || '';
+      if (!text && state.code === initialCode) {
+        console.warn('[agent] Empty model response', {
+          iteration: iterations,
+          enableThinking,
+          hasReasoning: !!(resp.reasoning_content || resp.thinking_blocks?.length),
+          hasUsage: !!resp.usage,
+        });
+        throw new EmptyAgentResponseError();
+      }
       if (text) {
         explanation = text;
         if (state.code === initialCode) {

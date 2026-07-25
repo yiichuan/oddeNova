@@ -132,4 +132,45 @@ describe('/api/official/v1/chat/completions', () => {
     expect(res.sentHeaders['content-type']).toBe('text/event-stream');
     expect(res.chunks.join('')).toContain('data: {"ok":true}');
   });
+
+  it('preserves and safely logs an upstream error for streaming requests', async () => {
+    process.env.OFFICIAL_API_KEY = 'sk-official';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errorBody = JSON.stringify({
+      error: {
+        message: 'Rate limit reached',
+        type: 'rate_limit_error',
+        code: 'rate_limit',
+      },
+      private_detail: 'must not be logged',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers({
+        'content-type': 'application/json',
+        'x-request-id': 'req-123',
+      }),
+      text: () => Promise.resolve(errorBody),
+    }));
+    const res = makeRes();
+
+    await handler(makeReq('POST', {
+      stream: true,
+      messages: [{ role: 'user', content: 'private prompt' }],
+    }), res as unknown as VercelResponse);
+
+    expect(res.statusCodeValue).toBe(429);
+    expect(res.sentHeaders['content-type']).toBe('application/json');
+    expect(res.chunks.join('')).toBe(errorBody);
+    expect(consoleError).toHaveBeenCalledWith('[official-proxy] Upstream request failed', {
+      status: 429,
+      contentType: 'application/json',
+      requestId: 'req-123',
+      errorType: 'rate_limit_error',
+      errorCode: 'rate_limit',
+      errorMessage: 'Rate limit reached',
+    });
+    consoleError.mockRestore();
+  });
 });

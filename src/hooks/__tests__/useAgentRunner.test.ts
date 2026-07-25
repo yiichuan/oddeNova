@@ -234,12 +234,21 @@ describe('runAgentTurn', () => {
     expect(runAgent.mock.calls[0][3]).toBe('feeling blue');
   });
 
-  it('on a non-abort error, posts an error message and surfaces it to strudel', async () => {
+  it('on a non-abort error, shows a retryable message and logs diagnostic details', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const deps = makeDeps({ runAgent: vi.fn(async () => { throw new Error('boom'); }) });
+
     await runAgentTurn(makeInput(), deps);
+
     expect(deps.setStrudelError).toHaveBeenCalledWith('boom');
-    const call = (deps.finalizeLastAssistantMessage as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(String(call[0])).toContain('boom');
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('agentResponseFailed'), 'S1');
+    expect(consoleError).toHaveBeenCalledWith('[agent] Request failed', {
+      provider: 'p',
+      model: 'm',
+      errorName: 'Error',
+      errorMessage: 'boom',
+    });
+    consoleError.mockRestore();
   });
 
   it('always ends the loading lifecycle with the controller it began', async () => {
