@@ -14,7 +14,15 @@ import {
 import { t } from '../lib/i18n';
 import { pickGreeting } from '../lib/greetings';
 import { hashImportedContent, type OddeNovaImportPayload } from '../lib/oddenova-import';
-import { createLatestSaveQueue } from '../lib/latest-save-queue';
+import {
+  createSessionCloudSync,
+  type SessionSyncStatus,
+} from '../lib/session-cloud-sync';
+import { reconcileSessions } from '../lib/session-reconciliation';
+import {
+  readPendingSessionOperations,
+  type PendingSessionOperations,
+} from '../lib/session-sync-storage';
 
 export interface TokenStats {
   promptTokens: number;
@@ -74,6 +82,8 @@ export interface UseSessionsOptions {
   cloud?: CloudSessionRepository;
   startNewSessionToken?: number;
 }
+
+type CloudIntent = 'deferred' | 'debounced' | 'checkpoint';
 
 let messageId = 0;
 
@@ -222,18 +232,51 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const [isLoading, setIsLoading] = useState(true);
   const [isPersistent, setIsPersistent] = useState(false);
   const [loadedOwnerKey, setLoadedOwnerKey] = useState(ownerKey);
+  const [syncState, setSyncState] = useState<{
+    ownerKey: string;
+    statuses: Record<string, SessionSyncStatus>;
+  }>({ ownerKey, statuses: {} });
   const consumedStartNewSessionTokenRef = useRef(0);
-  const cloudSaveQueue = useMemo(
-    () => cloud
-      ? createLatestSaveQueue<Session>(
-          (session) => cloud.saveSession(session, cloudOwnerId),
-          (err) => {
-            console.warn('[sessions] cloud session save failed.', err);
+  const sessionCloudSync = useMemo(
+    () => syncEnabled && cloud && cloudOwnerId
+      ? createSessionCloudSync({
+          ownerKey,
+          repository: cloud,
+          onStatus: (sessionId, status) => {
+            setSyncState((previousState) => {
+              const previous = previousState.ownerKey === ownerKey
+                ? previousState.statuses
+                : {};
+              if (status === undefined) {
+                if (!(sessionId in previous)) {
+                  return { ownerKey, statuses: previous };
+                }
+                const next = { ...previous };
+                delete next[sessionId];
+                return { ownerKey, statuses: next };
+              }
+              if (previous[sessionId] === status) {
+                return { ownerKey, statuses: previous };
+              }
+              return {
+                ownerKey,
+                statuses: { ...previous, [sessionId]: status },
+              };
+            });
           },
-        )
+        })
       : null,
-    [cloud, cloudOwnerId],
+    [syncEnabled, cloud, cloudOwnerId, ownerKey],
   );
+
+  useEffect(() => () => sessionCloudSync?.dispose(), [sessionCloudSync]);
+
+  useEffect(() => {
+    if (!sessionCloudSync) return;
+    const notifyOnline = () => sessionCloudSync.notifyOnline();
+    window.addEventListener('online', notifyOnline);
+    return () => window.removeEventListener('online', notifyOnline);
+  }, [sessionCloudSync]);
 
   // Initialize: open DB (+ migrate) then load all sessions
   useEffect(() => {
@@ -244,18 +287,22 @@ export function useSessions(options: UseSessionsOptions = {}) {
       const persistent = isSessionStoragePersistent();
       const storedCurrentId = await getCurrentSessionId(ownerKey);
       let loaded = await getAllSessions(ownerKey);
-      if (syncEnabled && cloud) {
+      let pending: PendingSessionOperations = {
+        syncIds: new Set(),
+        deleteIds: new Set(),
+      };
+      if (syncEnabled && cloud && sessionCloudSync) {
         try {
+          pending = await readPendingSessionOperations(ownerKey);
           const remote = await cloud.listSessions(cloudOwnerId);
-          if (remote.length > 0) {
-            loaded = remote;
-            await Promise.all(remote.map((s) => dbPutSession(s, ownerKey)));
-          }
+          loaded = reconcileSessions(loaded, remote, pending);
+          await Promise.all(loaded.map((session) => dbPutSession(session, ownerKey)));
         } catch (err) {
           console.warn('[sessions] cloud session load failed; using local cache.', err);
         }
       }
       if (cancelled) return;
+      sessionCloudSync?.hydrate(loaded, pending.syncIds, pending.deleteIds);
 
       const shouldStartNewSession = startNewSessionToken > consumedStartNewSessionTokenRef.current;
       if (shouldStartNewSession) {
@@ -296,36 +343,57 @@ export function useSessions(options: UseSessionsOptions = {}) {
       setIsLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [ownerKey, syncEnabled, cloud, cloudOwnerId, startNewSessionToken]);
+  }, [
+    ownerKey,
+    syncEnabled,
+    cloud,
+    cloudOwnerId,
+    startNewSessionToken,
+    sessionCloudSync,
+  ]);
 
   const sessionsForOwner = loadedOwnerKey === ownerKey ? sessions : [];
   const currentIdForOwner = loadedOwnerKey === ownerKey ? currentId : null;
   const currentSession =
     sessionsForOwner.find((s) => s.id === currentIdForOwner) || sessionsForOwner[0] || null;
 
-  const persistSession = useCallback(
+  const persistLocalSession = useCallback(
     (session: Session) => {
-      dbPutSession(session, ownerKey);
-      if (syncEnabled && cloudSaveQueue && (session.messages.length > 0 || session.code)) {
-        void cloudSaveQueue.enqueue(session);
-      }
+      void dbPutSession(session, ownerKey);
     },
-    [ownerKey, syncEnabled, cloudSaveQueue]
+    [ownerKey],
   );
 
-  const flushCloudSaves = useCallback(async (): Promise<void> => {
-    await cloudSaveQueue?.flush();
-  }, [cloudSaveQueue]);
+  const persistSession = useCallback(
+    (session: Session, intent: CloudIntent = 'deferred') => {
+      persistLocalSession(session);
+      if (!sessionCloudSync) return;
+      if (intent === 'checkpoint') {
+        void sessionCloudSync.checkpoint(session);
+      } else if (intent === 'debounced') {
+        sessionCloudSync.debounce(session);
+      } else {
+        sessionCloudSync.noteLocal(session);
+      }
+    },
+    [persistLocalSession, sessionCloudSync],
+  );
+
+  const flushCloudSaves = useCallback(async (sessionId?: string): Promise<void> => {
+    await sessionCloudSync?.flush(sessionId);
+  }, [sessionCloudSync]);
 
   const updateCurrent = useCallback(
-    (mut: (s: Session) => Session) => {
+    (mut: (s: Session) => Session, intent: CloudIntent = 'deferred') => {
       setSessions((prev) => {
         const id = currentId || prev[0]?.id;
         if (!id) return prev;
         return prev.map((s) => {
           if (s.id !== id) return s;
-          const updated = { ...mut(s), updatedAt: Date.now() };
-          persistSession(updated);
+          const mutated = mut(s);
+          if (mutated === s) return s;
+          const updated = { ...mutated, updatedAt: Date.now() };
+          persistSession(updated, intent);
           return updated;
         });
       });
@@ -334,12 +402,18 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const updateSession = useCallback(
-    (sessionId: string, mut: (s: Session) => Session) => {
+    (
+      sessionId: string,
+      mut: (s: Session) => Session,
+      intent: CloudIntent = 'deferred',
+    ) => {
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
-          const updated = { ...mut(s), updatedAt: Date.now() };
-          persistSession(updated);
+          const mutated = mut(s);
+          if (mutated === s) return s;
+          const updated = { ...mutated, updatedAt: Date.now() };
+          persistSession(updated, intent);
           return updated;
         })
       );
@@ -504,6 +578,51 @@ export function useSessions(options: UseSessionsOptions = {}) {
     [getApply]
   );
 
+  const setManualCode = useCallback(
+    (code: string, sessionId?: string): Promise<void> =>
+      new Promise((resolve) => {
+        setSessions((previous) => {
+          const id = sessionId ?? currentId ?? previous[0]?.id;
+          if (!id) {
+            resolve();
+            return previous;
+          }
+          return previous.map((session) => {
+            if (session.id !== id) return session;
+            if (session.code === code) {
+              resolve();
+              return session;
+            }
+            const updated = { ...session, code, updatedAt: Date.now() };
+            persistSession(updated, 'debounced');
+            resolve();
+            return updated;
+          });
+        });
+      }),
+    [currentId, persistSession],
+  );
+
+  const checkpointSession = useCallback(
+    (sessionId: string): Promise<void> =>
+      new Promise((resolve) => {
+        if (!sessionCloudSync) {
+          resolve();
+          return;
+        }
+        setSessions((previous) => {
+          const snapshot = previous.find((session) => session.id === sessionId);
+          if (!snapshot) {
+            resolve();
+            return previous;
+          }
+          void sessionCloudSync.checkpoint(snapshot).finally(resolve);
+          return previous;
+        });
+      }),
+    [sessionCloudSync],
+  );
+
   const newSession = useCallback(() => {
     setSessions((prev) => {
       const id = currentId || prev[0]?.id;
@@ -516,7 +635,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           dbPutCurrentSessionId(id, ownerKey);
         }
         const refreshed = applyRefreshEmptySessionForReuse(cur, Date.now());
-        persistSession(refreshed);
+        persistLocalSession(refreshed);
         return prev.map((s) => s.id === cur.id ? refreshed : s);
       }
       // If there's already an empty session in the list, switch to it instead
@@ -528,16 +647,16 @@ export function useSessions(options: UseSessionsOptions = {}) {
         dbPutCurrentSessionId(existingEmpty.id, ownerKey);
         // Refresh createdAt so the reused empty session sorts to the top.
         const refreshed = applyRefreshEmptySessionForReuse(existingEmpty, Date.now());
-        persistSession(refreshed);
+        persistLocalSession(refreshed);
         return prev.map((s) => s.id === existingEmpty.id ? refreshed : s);
       }
       const fresh = makeEmptySession();
       setCurrentId(fresh.id);
       dbPutCurrentSessionId(fresh.id, ownerKey);
-      persistSession(fresh);
+      persistLocalSession(fresh);
       return [fresh, ...prev];
     });
-  }, [currentId, ownerKey, persistSession]);
+  }, [currentId, ownerKey, persistLocalSession]);
 
   const switchTo = useCallback((id: string) => {
     setCurrentId(id);
@@ -548,7 +667,11 @@ export function useSessions(options: UseSessionsOptions = {}) {
     (sessionId: string, title: string): void => {
       const nextTitle = title.trim();
       if (!nextTitle) return;
-      updateSession(sessionId, (s) => ({ ...s, title: nextTitle.slice(0, 60) }));
+      updateSession(
+        sessionId,
+        (s) => ({ ...s, title: nextTitle.slice(0, 60) }),
+        'checkpoint',
+      );
     },
     [updateSession]
   );
@@ -558,11 +681,8 @@ export function useSessions(options: UseSessionsOptions = {}) {
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
         dbDeleteSession(id, ownerKey);
-        if (syncEnabled && cloud) {
-          void (async () => {
-            await cloudSaveQueue?.discard(id);
-            await cloud.deleteSession(id, cloudOwnerId);
-          })().catch((err) => {
+        if (sessionCloudSync) {
+          void sessionCloudSync.deleteSession(id).catch((err) => {
             console.warn('[sessions] cloud session delete failed.', err);
           });
         }
@@ -570,7 +690,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           const fresh = makeEmptySession();
           setCurrentId(fresh.id);
           dbPutCurrentSessionId(fresh.id, ownerKey);
-          persistSession(fresh);
+          persistLocalSession(fresh);
           return [fresh];
         }
         if (id === currentId) {
@@ -580,7 +700,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         return next;
       });
     },
-    [currentId, ownerKey, syncEnabled, cloud, cloudOwnerId, cloudSaveQueue, persistSession]
+    [currentId, ownerKey, persistLocalSession, sessionCloudSync],
   );
 
   const importSession = useCallback(
@@ -596,14 +716,12 @@ export function useSessions(options: UseSessionsOptions = {}) {
         updatedAt: now,
       };
       await dbPutSession(session, ownerKey);
-      if (syncEnabled && cloudSaveQueue) {
-        await cloudSaveQueue.enqueue(session);
-      }
       setSessions((prev) => [session, ...prev]);
       setCurrentId(id);
       dbPutCurrentSessionId(id, ownerKey);
+      await sessionCloudSync?.checkpoint(session);
     },
-    [ownerKey, syncEnabled, cloudSaveQueue]
+    [ownerKey, sessionCloudSync],
   );
 
   const importOddeNovaSession = useCallback(async (
@@ -638,12 +756,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
         updatedAt: now,
       };
       await dbPutImportedSession(created, ownerKey);
-      if (syncEnabled && cloudSaveQueue) {
-        await cloudSaveQueue.enqueue(created);
-      }
       setSessions((previous) => [created, ...previous]);
       setCurrentId(created.id);
       dbPutCurrentSessionId(created.id, ownerKey);
+      await sessionCloudSync?.checkpoint(created);
       return 'created';
     }
 
@@ -668,12 +784,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
         updatedAt: now,
       };
       await dbPutImportedSession(updated, ownerKey);
-      if (syncEnabled && cloudSaveQueue) {
-        await cloudSaveQueue.enqueue(updated);
-      }
       setSessions((previous) => previous.map((session) => session.id === target.id ? updated : session));
       setCurrentId(updated.id);
       dbPutCurrentSessionId(updated.id, ownerKey);
+      await sessionCloudSync?.checkpoint(updated);
       return 'updated';
     }
 
@@ -704,16 +818,12 @@ export function useSessions(options: UseSessionsOptions = {}) {
     setCurrentId(branch.id);
     dbPutCurrentSessionId(branch.id, ownerKey);
 
-    if (syncEnabled && cloudSaveQueue) {
-      const results = await Promise.allSettled([
-        cloudSaveQueue.enqueue(detached),
-        cloudSaveQueue.enqueue(branch),
-      ]);
-      const rejected = results.find((result) => result.status === 'rejected');
-      if (rejected?.status === 'rejected') throw rejected.reason;
-    }
+    await Promise.all([
+      sessionCloudSync?.checkpoint(detached),
+      sessionCloudSync?.checkpoint(branch),
+    ]);
     return 'branched';
-  }, [ownerKey, sessions, syncEnabled, cloudSaveQueue]);
+  }, [ownerKey, sessions, sessionCloudSync]);
 
   const branchFromMessage = useCallback(
     (targetMessageId: string): void => {
@@ -742,7 +852,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       setSessions((prev) => [branched, ...prev]);
       setCurrentId(id);
       dbPutCurrentSessionId(id, ownerKey);
-      persistSession(branched);
+      persistSession(branched, 'checkpoint');
     },
     [sessions, currentId, ownerKey, persistSession]
   );
@@ -766,6 +876,13 @@ export function useSessions(options: UseSessionsOptions = {}) {
   return {
     sessions: sessionsForOwner,
     currentSession,
+    currentSyncStatus: currentSession
+      ? (
+          syncState.ownerKey === ownerKey
+            ? syncState.statuses[currentSession.id]
+            : undefined
+        ) ?? sessionCloudSync?.getStatus(currentSession.id)
+      : undefined,
     currentId: currentIdForOwner,
     isLoading,
     isPersistent,
@@ -779,6 +896,8 @@ export function useSessions(options: UseSessionsOptions = {}) {
     appendToLastAssistant,
     finalizeLastAssistantMessage,
     setCurrentCode,
+    setManualCode,
+    checkpointSession,
     newSession,
     switchTo,
     renameSession,

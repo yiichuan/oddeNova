@@ -122,6 +122,23 @@ describe('createSessionCloudSync', () => {
     expect(markerMocks.clearPendingSessionSync).not.toHaveBeenCalled();
   });
 
+  it('coalesces duplicate checkpoints for the same local version', async () => {
+    const activeSave = deferred();
+    const { repository, sync } = setup();
+    repository.saveSession.mockImplementationOnce(() => activeSave.promise);
+    const snapshot = session('same version');
+
+    sync.noteLocal(snapshot);
+    const first = sync.checkpoint(snapshot);
+    const duplicate = sync.checkpoint(snapshot);
+    await Promise.resolve();
+
+    activeSave.resolve();
+    await Promise.all([first, duplicate]);
+
+    expect(repository.saveSession).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps work offline and checkpoints it when connectivity returns', async () => {
     const { repository, statuses, sync, setOnline } = setup({ online: false });
 

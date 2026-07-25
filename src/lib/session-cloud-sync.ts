@@ -46,6 +46,12 @@ interface DeleteRecord {
   retryTimer?: ReturnType<typeof setTimeout>;
 }
 
+interface CheckpointRun {
+  version: number;
+  promise: Promise<void>;
+  token: symbol;
+}
+
 const MANUAL_DEBOUNCE_MS = 2000;
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000] as const;
 
@@ -70,6 +76,7 @@ export function createSessionCloudSync(options: {
     : undefined;
   const records = new Map<string, SyncRecord>();
   const deletes = new Map<string, DeleteRecord>();
+  const checkpointRuns = new Map<string, CheckpointRun>();
   let disposed = false;
 
   const emitStatus = (id: string, record: SyncRecord, status: SessionSyncStatus): void => {
@@ -167,29 +174,41 @@ export function createSessionCloudSync(options: {
     scheduleSaveRetry(envelope.id);
   });
 
-  const checkpoint = async (session: Session): Promise<void> => {
-    if (disposed) return;
+  const checkpoint = (session: Session): Promise<void> => {
+    if (disposed) return Promise.resolve();
     let record = records.get(session.id);
     if (!record || record.latest !== session) record = markDirty(session);
     clearRecordTimer(record, 'debounceTimer');
     clearRecordTimer(record, 'retryTimer');
     if (!isOnline()) {
       emitStatus(session.id, record, 'offline');
-      return;
+      return Promise.resolve();
     }
 
-    await ensureDirtyMarker(session.id, record);
-    const envelope: SaveEnvelope = {
-      id: session.id,
-      version: record.version,
-      session: record.latest,
-    };
-    try {
-      await queue.enqueue(envelope);
-    } catch {
-      // The queue callback records retry/offline state. Creative flows keep
-      // their local result; explicit flush() is the strict error surface.
-    }
+    const existingRun = checkpointRuns.get(session.id);
+    if (existingRun?.version === record.version) return existingRun.promise;
+
+    const version = record.version;
+    const token = Symbol('checkpoint');
+    const promise = (async () => {
+      try {
+        await ensureDirtyMarker(session.id, record);
+        await queue.enqueue({
+          id: session.id,
+          version,
+          session: record.latest,
+        });
+      } catch {
+        // The queue callback records retry/offline state. Creative flows keep
+        // their local result; explicit flush() is the strict error surface.
+      } finally {
+        if (checkpointRuns.get(session.id)?.token === token) {
+          checkpointRuns.delete(session.id);
+        }
+      }
+    })();
+    checkpointRuns.set(session.id, { version, promise, token });
+    return promise;
   };
 
   const debounce = (session: Session): void => {

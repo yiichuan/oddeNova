@@ -29,6 +29,17 @@ const storageMocks = vi.hoisted(() => ({
   isSessionStoragePersistent: vi.fn(() => true),
 }));
 
+const syncStorageMocks = vi.hoisted(() => ({
+  readPendingSessionOperations: vi.fn(async () => ({
+    syncIds: new Set<string>(),
+    deleteIds: new Set<string>(),
+  })),
+  markPendingSessionSync: vi.fn(async () => undefined),
+  clearPendingSessionSync: vi.fn(async () => undefined),
+  markPendingSessionDelete: vi.fn(async () => undefined),
+  clearPendingSessionDelete: vi.fn(async () => undefined),
+}));
+
 vi.mock('../../lib/session-storage', () => ({
   openDB: storageMocks.openDB,
   getAllSessions: storageMocks.getAllSessions,
@@ -40,6 +51,8 @@ vi.mock('../../lib/session-storage', () => ({
   deleteSession: storageMocks.deleteSession,
   isSessionStoragePersistent: storageMocks.isSessionStoragePersistent,
 }));
+
+vi.mock('../../lib/session-sync-storage', () => syncStorageMocks);
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -113,6 +126,10 @@ describe('useSessions', () => {
     storageMocks.putImportedSessionBranch.mockResolvedValue(undefined);
     storageMocks.deleteSession.mockResolvedValue(undefined);
     storageMocks.isSessionStoragePersistent.mockReturnValue(true);
+    syncStorageMocks.readPendingSessionOperations.mockResolvedValue({
+      syncIds: new Set(),
+      deleteIds: new Set(),
+    });
   });
 
   afterEach(() => {
@@ -217,7 +234,7 @@ describe('useSessions', () => {
     expect(getHook().sessions).toContainEqual(accountSession);
   });
 
-  it('saves changed account sessions through the cloud repository when sync is enabled', async () => {
+  it('keeps streamed changes local until a terminal checkpoint saves one latest snapshot', async () => {
     const cloud = {
       listSessions: vi.fn(async () => []),
       saveSession: vi.fn(async () => undefined),
@@ -232,16 +249,116 @@ describe('useSessions', () => {
 
     act(() => {
       getHook().addUserMessage('同步这段旋律');
+      getHook().appendToLastReasoning('先保留完整推理。');
+      getHook().addAssistantMessage('完成', 's("bd")');
     });
 
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+
+    let checkpoint!: Promise<void>;
+    act(() => {
+      checkpoint = getHook().checkpointSession(getHook().currentId!);
+    });
+    await act(async () => {
+      await checkpoint;
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledTimes(1);
     expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
       messages: expect.arrayContaining([
         expect.objectContaining({ content: '同步这段旋律' }),
+        expect.objectContaining({ content: '先保留完整推理。' }),
+        expect.objectContaining({ content: '完成' }),
       ]),
     }), 'u-1');
   });
 
-  it('flushes the latest complete turn instead of racing an earlier reasoning snapshot', async () => {
+  it('debounces manual code edits for two seconds before saving the latest code', async () => {
+    vi.useFakeTimers();
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = getHook().setManualCode('s("bd")');
+      second = getHook().setManualCode('s("bd sd")');
+    });
+    await act(async () => {
+      await Promise.all([first, second]);
+      await vi.advanceTimersByTimeAsync(1999);
+    });
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledTimes(1);
+    expect(cloud.saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 's("bd sd")' }),
+      'u-1',
+    );
+    vi.useRealTimers();
+  });
+
+  it('keeps a pending local snapshot over a newer cloud row during startup reconciliation', async () => {
+    const local = makeSession({ id: 'shared', code: 'local dirty', updatedAt: 10 });
+    const remote = makeSession({ id: 'shared', code: 'remote newer', updatedAt: 20 });
+    storageMocks.getAllSessions.mockResolvedValueOnce([local]);
+    syncStorageMocks.readPendingSessionOperations.mockResolvedValueOnce({
+      syncIds: new Set(['shared']),
+      deleteIds: new Set(),
+    });
+    const cloud = {
+      listSessions: vi.fn(async () => [remote]),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    expect(getHook().currentSession?.code).toBe('local dirty');
+    expect(storageMocks.putSession).toHaveBeenCalledWith(local, 'user:u-1');
+  });
+
+  it('does not upload a greeting-only session', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    act(() => getHook().newSession());
+    await Promise.resolve();
+
+    expect(getHook().currentSession?.messages).toEqual([
+      expect.objectContaining({ isGreeting: true }),
+    ]);
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+  });
+
+  it('checkpoints the latest complete turn without uploading an earlier reasoning snapshot', async () => {
     let releaseFirstSave!: () => void;
     const saveSession = vi.fn<(session: Session) => Promise<void>>()
       .mockImplementationOnce(() => new Promise<void>((resolve) => {
@@ -282,11 +399,18 @@ describe('useSessions', () => {
       );
     });
 
+    expect(saveSession).not.toHaveBeenCalled();
+    let checkpoint!: Promise<void>;
+    act(() => {
+      checkpoint = getHook().checkpointSession(sessionId);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(saveSession).toHaveBeenCalledTimes(1);
-
     await act(async () => {
       releaseFirstSave();
-      await getHook().flushCloudSaves();
+      await checkpoint;
     });
 
     const finalSnapshot = saveSession.mock.calls.at(-1)?.[0];
@@ -402,7 +526,7 @@ describe('useSessions', () => {
     }), 'u-1');
   });
 
-  it('rejects imported sessions when the cloud save fails', async () => {
+  it('keeps an imported session locally and retries when the cloud save fails', async () => {
     const cloudError = new Error('Cloud save failed');
     const cloud = {
       listSessions: vi.fn(async () => []),
@@ -416,11 +540,19 @@ describe('useSessions', () => {
     });
     roots.push(root);
 
-    await expect(getHook().importSession({
+    await act(async () => {
+      await expect(getHook().importSession({
+        title: '本机历史',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+      })).resolves.toBeUndefined();
+    });
+
+    expect(getHook().currentSession).toMatchObject({
       title: '本机历史',
       code: 's("bd")',
-      messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
-    })).rejects.toThrow('Cloud save failed');
+    });
+    expect(getHook().currentSyncStatus).toBe('retrying');
   });
 
   it('newSession resets the title when reusing an empty current session', async () => {
@@ -732,7 +864,7 @@ describe('useSessions', () => {
   });
 
   it.each(['detached', 'branch'] as const)(
-    'keeps local branch state consistent and awaits both cloud saves when the %s save fails',
+    'keeps local branch state and schedules retry when the %s cloud save fails',
     async (failedSide) => {
       const payload: OddeNovaImportPayload = {
         protocolVersion: 1,
@@ -799,8 +931,15 @@ describe('useSessions', () => {
 
       await act(async () => {
         releaseOther();
-        await expect(importPromise).rejects.toThrow(`${failedSide} cloud save failed`);
+        await expect(importPromise).resolves.toBe('branched');
       });
+      expect(getHook().sessions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'website edit', externalSource: undefined }),
+        expect.objectContaining({
+          code: 'stack(s("hh"))',
+          externalSource: expect.objectContaining({ projectId: payload.projectId }),
+        }),
+      ]));
     },
   );
 
