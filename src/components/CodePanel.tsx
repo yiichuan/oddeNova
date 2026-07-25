@@ -10,6 +10,8 @@ import TopActionBar from './TopActionBar';
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
 import type { GenerateTitleParams } from './TopActionBar';
+import SessionSyncStatus from './SessionSyncStatus';
+import type { SessionSyncStatus as SyncStatus } from '../lib/session-cloud-sync';
 
 interface CodePanelProps {
   error: string | null;
@@ -30,6 +32,8 @@ interface CodePanelProps {
   onOpenAccount: () => void;
   accountLabel: string;
   onEditorFocusChange?: (focused: boolean) => void;
+  syncStatus?: SyncStatus;
+  showSyncStatus?: boolean;
 }
 
 // Log scale: slider 0–1 → frequency 200Hz–20kHz
@@ -205,6 +209,8 @@ export default function CodePanel({
   onOpenAccount,
   accountLabel,
   onEditorFocusChange,
+  syncStatus,
+  showSyncStatus = false,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gutterWidth, setGutterWidth] = useState(0);
@@ -417,6 +423,12 @@ export default function CodePanel({
         />,
         topActionsContainer.current,
       )}
+
+      <SessionSyncStatus
+        status={syncStatus}
+        visible={isMobile && showSyncStatus}
+        className="px-2 border-t border-[#323232] bg-black"
+      />
 
       {/* Footer — play button + sliders */}
       <div

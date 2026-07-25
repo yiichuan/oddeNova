@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
     sessions: [] as Session[],
     currentId: 's-1' as string | null,
     currentSession: null as Session | null,
+    currentSyncStatus: 'synced' as 'synced' | 'dirty' | 'saving' | 'offline' | 'retrying',
     importSession: vi.fn(async () => undefined),
     importOddeNovaSession: vi.fn(),
     setSuggestions: vi.fn(),
@@ -148,6 +149,8 @@ describe('App password recovery', () => {
     mocks.sessions.currentSession = mocks.session;
     mocks.sessions.sessions = [mocks.session];
     mocks.sessions.isLoading = false;
+    mocks.sessions.isPersistent = true;
+    mocks.sessions.currentSyncStatus = 'synced';
     mocks.sessions.importSession = mocks.importSession;
     mocks.codePanelProps = null;
     mocks.sidebarProps = null;
@@ -272,6 +275,8 @@ describe('App session sync boundaries', () => {
     mocks.sessions.currentSession = mocks.session;
     mocks.sessions.sessions = [mocks.session];
     mocks.sessions.isLoading = false;
+    mocks.sessions.isPersistent = true;
+    mocks.sessions.currentSyncStatus = 'synced';
     mocks.codePanelProps = null;
     mocks.sidebarProps = null;
     mocks.agentRunnerConfig = null;
@@ -400,5 +405,16 @@ describe('App session sync boundaries', () => {
     expect(mocks.sessions.checkpointSession).toHaveBeenCalledWith('s-1');
     expect(mocks.sessions.truncate.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.sessions.checkpointSession.mock.invocationCallOrder[0]);
+  });
+
+  it('passes visible sync state for meaningful account sessions without overstating fallback storage', async () => {
+    mocks.sessions.currentSyncStatus = 'offline';
+    mocks.sessions.isPersistent = false;
+    await renderApp();
+
+    expect(mocks.codePanelProps).toMatchObject({
+      syncStatus: 'retrying',
+      showSyncStatus: true,
+    });
   });
 });

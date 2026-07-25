@@ -126,7 +126,20 @@ describe('Sidebar session title editing layout', () => {
 
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
     expect(input).not.toBeNull();
-    expect(input?.parentElement?.className).toContain('gap-3');
+    expect(input?.closest('.gap-3')).not.toBeNull();
+  });
+
+  it('shows cloud save status beside the current session title', () => {
+    const { container, root } = renderSidebar({
+      syncStatus: 'offline',
+      showSyncStatus: true,
+    });
+    roots.push(root);
+
+    const status = container.querySelector('[data-session-sync-status="offline"]');
+    const title = container.querySelector('[data-session-title-edit]');
+    expect(status).not.toBeNull();
+    expect(status?.parentElement).toBe(title?.parentElement);
   });
 
   it('keeps the demo mood suggestion in the input rotation when suggestions are empty', () => {

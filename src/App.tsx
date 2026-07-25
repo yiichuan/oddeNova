@@ -239,6 +239,18 @@ export default function App() {
   }, [guestImportSessions, sessions]);
 
   const current = sessions.currentSession;
+  const showSessionSyncStatus = Boolean(
+    auth.user
+    && current
+    && (
+      current.code
+      || current.messages.some((message) => !message.isGreeting)
+    ),
+  );
+  const visibleSyncStatus = !sessions.isPersistent
+    && sessions.currentSyncStatus === 'offline'
+    ? 'retrying'
+    : sessions.currentSyncStatus;
   const messages = isReplaying ? replayMessages : (current?.messages ?? []);
   // Session code = last committed/played code (used as agent context)
   // Fall back to live editor code so manually-pasted code is visible to the agent.
@@ -638,6 +650,8 @@ export default function App() {
                 onOpenAccount={() => setAccountOpen(true)}
                 accountLabel={accountLabel}
                 onEditorFocusChange={handleCodeFocusChange}
+                syncStatus={visibleSyncStatus}
+                showSyncStatus={showSessionSyncStatus}
               />
             </div>
           </div>
@@ -804,6 +818,8 @@ export default function App() {
           onRetry={handleRetry}
           onOpenPersonaModal={openPersonaModal}
           tokenStats={current?.tokenStats}
+          syncStatus={visibleSyncStatus}
+          showSyncStatus={showSessionSyncStatus}
         />
       </div>
 
@@ -837,6 +853,8 @@ export default function App() {
             onOpenSettings={openSettings}
             onOpenAccount={() => setAccountOpen(true)}
             accountLabel={accountLabel}
+            syncStatus={visibleSyncStatus}
+            showSyncStatus={showSessionSyncStatus}
           />
         </div>
 

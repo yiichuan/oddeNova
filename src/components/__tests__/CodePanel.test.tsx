@@ -155,4 +155,17 @@ describe('CodePanel editor focus reporting', () => {
     act(() => setMobile(false));
     expect(strudelService.setAutocompletionEnabled).toHaveBeenLastCalledWith(true);
   });
+
+  it('shows a fixed-height cloud save status line on mobile', () => {
+    installMatchMedia(true);
+    const { container, root } = renderCodePanel({
+      syncStatus: 'saving',
+      showSyncStatus: true,
+    });
+    roots.push(root);
+
+    const status = container.querySelector('[data-session-sync-status="saving"]');
+    expect(status).not.toBeNull();
+    expect(status?.className).toContain('h-4');
+  });
 });

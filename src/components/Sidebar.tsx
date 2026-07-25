@@ -8,6 +8,8 @@ import ChatInput from './ChatInput';
 import { isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
+import SessionSyncStatus from './SessionSyncStatus';
+import type { SessionSyncStatus as SyncStatus } from '../lib/session-cloud-sync';
 
 interface SidebarProps {
   title: string;
@@ -42,6 +44,8 @@ interface SidebarProps {
   onRetry: (messageId: string) => void;
   onOpenPersonaModal: () => void;
   tokenStats?: TokenStats;
+  syncStatus?: SyncStatus;
+  showSyncStatus?: boolean;
 }
 
 export default function Sidebar({
@@ -77,6 +81,8 @@ export default function Sidebar({
   onRetry,
   onOpenPersonaModal,
   tokenStats,
+  syncStatus,
+  showSyncStatus = false,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(1);
@@ -120,16 +126,22 @@ export default function Sidebar({
 
       {/* Title row */}
       <div className="pl-5 pr-0 pt-[20px] pb-3 flex items-center justify-between gap-3">
-        <EditableSessionTitle
-          title={title}
-          canEdit={!!currentId && messages.length > 0}
-          className="min-w-0 flex-1 text-left"
-          titleTextClassName="block min-w-0 text-base font-bold text-text-secondary truncate"
-          inputClassName="min-w-0 flex-1 bg-transparent border border-border px-1 py-0.5 text-base font-bold text-text-primary outline-none focus:border-accent/60"
-          onRename={(nextTitle) => {
-            if (currentId) onRenameSession(currentId, nextTitle);
-          }}
-        />
+        <div className="min-w-0 flex-1">
+          <EditableSessionTitle
+            title={title}
+            canEdit={!!currentId && messages.length > 0}
+            className="min-w-0 w-full text-left"
+            titleTextClassName="block min-w-0 text-base font-bold text-text-secondary truncate"
+            inputClassName="min-w-0 w-full bg-transparent border border-border px-1 py-0.5 text-base font-bold text-text-primary outline-none focus:border-accent/60"
+            onRename={(nextTitle) => {
+              if (currentId) onRenameSession(currentId, nextTitle);
+            }}
+          />
+          <SessionSyncStatus
+            status={syncStatus}
+            visible={showSyncStatus}
+          />
+        </div>
         <div className="flex items-center gap-3 shrink-0">
           {isPresentationMode() && onReplay && !isReplaying && (
             <button
