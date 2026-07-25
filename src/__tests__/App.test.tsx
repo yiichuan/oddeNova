@@ -342,11 +342,12 @@ describe('App password recovery', () => {
       await Promise.resolve();
     });
 
+    // Syncing guest history must not pull the user off the session they are on.
     expect(mocks.importSession).toHaveBeenCalledWith({
       title: 'Guest history',
       code: 'sound("bd")',
       messages: [],
-    });
+    }, { activate: false });
     expect(mocks.deleteSession).toHaveBeenCalledWith('guest-session', 'guest');
   });
 });

@@ -895,7 +895,12 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const importSession = useCallback(
-    async (payload: { title: string; code: string; messages: ChatMessage[] }): Promise<void> => {
+    async (
+      payload: { title: string; code: string; messages: ChatMessage[] },
+      // Opening a shared link should land on what was imported; syncing guest
+      // history in bulk should leave the user where they were.
+      options: { activate?: boolean } = {},
+    ): Promise<void> => {
       const id = newSessionId();
       const now = Date.now();
       const session: Session = {
@@ -908,8 +913,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
       };
       await dbPutSession(session, ownerKey);
       setSessions((prev) => [session, ...prev]);
-      setCurrentId(id);
-      dbPutCurrentSessionId(id, ownerKey);
+      if (options.activate ?? true) {
+        setCurrentId(id);
+        dbPutCurrentSessionId(id, ownerKey);
+      }
       await sessionCloudSync?.checkpoint(session);
     },
     [ownerKey, sessionCloudSync],

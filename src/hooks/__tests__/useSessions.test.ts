@@ -858,6 +858,39 @@ describe('useSessions', () => {
     }), 'u-1');
   });
 
+  it('stays on the current session when importing without activating', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const currentIdBeforeImport = getHook().currentId;
+    storageMocks.putCurrentSessionId.mockClear();
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '来个简单的鼓点',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '来个简单的鼓点', timestamp: 1 }],
+      }, { activate: false });
+    });
+
+    expect(getHook().currentId).toBe(currentIdBeforeImport);
+    expect(storageMocks.putCurrentSessionId).not.toHaveBeenCalled();
+    expect(getHook().sessions.map((session) => session.title))
+      .toContain('来个简单的鼓点');
+    expect(cloud.saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '来个简单的鼓点' }),
+      'u-1',
+    );
+  });
+
   it('keeps an imported session locally and retries when the cloud save fails', async () => {
     const cloudError = new Error('Cloud save failed');
     const cloud = {

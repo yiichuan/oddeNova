@@ -247,7 +247,7 @@ export default function App() {
     try {
       const result = await importGuestSessions(
         items,
-        (item) => sessions.importSession(item),
+        (item) => sessions.importSession(item, { activate: false }),
         (id) => deleteSession(id, 'guest'),
       );
       setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
