@@ -21,7 +21,7 @@ const S: Record<string, readonly [string, string]> = {
   preparingToPlay:  ['准备播放…', 'Preparing to play…'],
   interrupted:      ['已中断', 'Interrupted'],
   agentNoCode:      ['agent 没有产出代码', 'Agent produced no code'],
-  agentResponseFailed: ['未收到有效结果，请重试', 'No valid response received. Please retry'],
+  agentResponseFailed: ['网络发生错误，请重试', 'A network error occurred. Please retry'],
   requestFailed:    ['请求失败', 'Request failed'],
   loadingShare:     ['正在载入分享内容…', 'Loading shared content…'],
   shareLoadFailed:  ['分享内容加载失败', 'Failed to load shared content'],
