@@ -896,7 +896,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
 
   const importSession = useCallback(
     async (
-      payload: { title: string; code: string; messages: ChatMessage[] },
+      payload: { title: string; code: string; messages: ChatMessage[]; revisions?: CodeRevision[] },
       // Opening a shared link should land on what was imported; syncing guest
       // history in bulk should leave the user where they were.
       options: { activate?: boolean } = {},
@@ -908,6 +908,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         title: `${payload.title}`,
         messages: payload.messages,
         code: payload.code,
+        revisions: revisionsReferencedBy(payload.messages, payload.revisions),
         createdAt: now,
         updatedAt: now,
       };

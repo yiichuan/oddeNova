@@ -891,6 +891,42 @@ describe('useSessions', () => {
     );
   });
 
+  it('keeps the code revisions of an imported session', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const revision = {
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 's("bd")',
+      playbackStatus: 'played' as const,
+      createdAt: 1,
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '来个简单的鼓点',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'assistant', content: '好了', code: 's("bd")', revisionId: 'rev-1', timestamp: 1 }],
+        revisions: [revision],
+      });
+    });
+
+    expect(getHook().currentSession?.revisions).toEqual([revision]);
+    expect(cloud.saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ revisions: [revision] }),
+      'u-1',
+    );
+  });
+
   it('keeps an imported session locally and retries when the cloud save fails', async () => {
     const cloudError = new Error('Cloud save failed');
     const cloud = {

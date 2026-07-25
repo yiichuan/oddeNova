@@ -95,6 +95,30 @@ describe('importGuestSessions', () => {
     expect(deleteGuestSession).toHaveBeenNthCalledWith(2, 'guest-2');
   });
 
+  it('carries code revisions over so imported turns keep their diffs', async () => {
+    const revision = {
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 's("bd")',
+      playbackStatus: 'played' as const,
+      createdAt: 1,
+    };
+    const guest = makeSession({
+      id: 'guest-1',
+      code: 's("bd")',
+      messages: [{ id: 'm-1', role: 'assistant', content: '好了', code: 's("bd")', revisionId: 'rev-1', timestamp: 1 }],
+      revisions: [revision],
+    });
+    const importSession = vi.fn(async () => undefined);
+    const deleteGuestSession = vi.fn(async () => undefined);
+
+    await importGuestSessions([guest], importSession, deleteGuestSession);
+
+    expect(importSession).toHaveBeenCalledWith(expect.objectContaining({
+      revisions: [revision],
+    }));
+  });
+
   it('stops after a failed import and leaves the failed and later guest sources for retry', async () => {
     const first = makeSession({ id: 'guest-1' });
     const failed = makeSession({ id: 'guest-2' });

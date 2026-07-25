@@ -22,7 +22,9 @@ export function collectImportableGuestSessions(
 
 export async function importGuestSessions(
   items: Session[],
-  importSession: (payload: Pick<Session, 'title' | 'code' | 'messages'>) => Promise<void>,
+  importSession: (
+    payload: Pick<Session, 'title' | 'code' | 'messages' | 'revisions'>,
+  ) => Promise<void>,
   deleteGuestSession: (id: string) => Promise<void>,
 ): Promise<{ remaining: Session[]; error: unknown | null }> {
   for (const [index, item] of items.entries()) {
@@ -31,6 +33,10 @@ export async function importGuestSessions(
         title: item.title,
         code: item.code,
         messages: item.messages,
+        // Without these the imported turns lose their diffs: a message points
+        // at a revision by id, and an unresolved id falls back to a plain
+        // code badge.
+        revisions: item.revisions,
       });
       await deleteGuestSession(item.id);
     } catch (error) {
