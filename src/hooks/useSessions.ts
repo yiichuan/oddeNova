@@ -86,6 +86,83 @@ export interface UseSessionsOptions {
 
 type CloudIntent = 'deferred' | 'debounced' | 'checkpoint';
 
+interface ManualSyncPresentation {
+  markPending: (sessionId: string) => void;
+  clear: (sessionId: string) => void;
+  handleStatus: (sessionId: string, status: SessionSyncStatus | undefined) => void;
+  dispose: () => void;
+}
+
+function createManualSyncPresentation(options: {
+  onStatus: (sessionId: string, status: SessionSyncStatus | undefined) => void;
+}): ManualSyncPresentation {
+  const pending = new Set<string>();
+  const active = new Set<string>();
+  const syncedTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const clear = (sessionId: string): void => {
+    pending.delete(sessionId);
+    active.delete(sessionId);
+    const timer = syncedTimers.get(sessionId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      syncedTimers.delete(sessionId);
+    }
+    options.onStatus(sessionId, undefined);
+  };
+
+  const markPending = (sessionId: string): void => {
+    clear(sessionId);
+    pending.add(sessionId);
+  };
+
+  const handleStatus = (
+    sessionId: string,
+    status: SessionSyncStatus | undefined,
+  ): void => {
+    if (status === undefined) {
+      clear(sessionId);
+      return;
+    }
+
+    const isActive = active.has(sessionId);
+    if (status === 'saving' && pending.has(sessionId)) {
+      active.add(sessionId);
+    } else if (status === 'dirty' && isActive) {
+      active.delete(sessionId);
+      options.onStatus(sessionId, undefined);
+      return;
+    } else if (!isActive) {
+      return;
+    }
+
+    options.onStatus(sessionId, status);
+    if (status !== 'synced') return;
+
+    pending.delete(sessionId);
+    active.delete(sessionId);
+    const previousTimer = syncedTimers.get(sessionId);
+    if (previousTimer !== undefined) clearTimeout(previousTimer);
+    const timer = setTimeout(() => {
+      syncedTimers.delete(sessionId);
+      options.onStatus(sessionId, undefined);
+    }, 2000);
+    syncedTimers.set(sessionId, timer);
+  };
+
+  return {
+    markPending,
+    clear,
+    handleStatus,
+    dispose: () => {
+      for (const timer of syncedTimers.values()) clearTimeout(timer);
+      syncedTimers.clear();
+      pending.clear();
+      active.clear();
+    },
+  };
+}
+
 let messageId = 0;
 
 function newSessionId(): string {
@@ -237,7 +314,40 @@ export function useSessions(options: UseSessionsOptions = {}) {
     ownerKey: string;
     statuses: Record<string, SessionSyncStatus>;
   }>({ ownerKey, statuses: {} });
+  const [manualSyncState, setManualSyncState] = useState<{
+    ownerKey: string;
+    statuses: Record<string, SessionSyncStatus>;
+  }>({ ownerKey, statuses: {} });
   const consumedStartNewSessionTokenRef = useRef(0);
+
+  const manualSyncPresentation = useMemo(
+    () => createManualSyncPresentation({
+      onStatus: (sessionId, status) => {
+        setManualSyncState((previousState) => {
+          const previous = previousState.ownerKey === ownerKey
+            ? previousState.statuses
+            : {};
+          if (status === undefined) {
+            if (!(sessionId in previous)) {
+              return previousState.ownerKey === ownerKey
+                ? previousState
+                : { ownerKey, statuses: {} };
+            }
+            const next = { ...previous };
+            delete next[sessionId];
+            return { ownerKey, statuses: next };
+          }
+          if (previous[sessionId] === status) return previousState;
+          return {
+            ownerKey,
+            statuses: { ...previous, [sessionId]: status },
+          };
+        });
+      },
+    }),
+    [ownerKey],
+  );
+
   const sessionCloudSync = useMemo(
     () => syncEnabled && cloud && cloudOwnerId
       ? createSessionCloudSync({
@@ -264,13 +374,18 @@ export function useSessions(options: UseSessionsOptions = {}) {
                 statuses: { ...previous, [sessionId]: status },
               };
             });
+            manualSyncPresentation.handleStatus(sessionId, status);
           },
         })
       : null,
-    [syncEnabled, cloud, cloudOwnerId, ownerKey],
+    [syncEnabled, cloud, cloudOwnerId, ownerKey, manualSyncPresentation],
   );
 
   useEffect(() => () => sessionCloudSync?.dispose(), [sessionCloudSync]);
+  useEffect(
+    () => () => manualSyncPresentation.dispose(),
+    [manualSyncPresentation],
+  );
 
   useEffect(() => {
     if (!sessionCloudSync) return;
@@ -410,14 +525,16 @@ export function useSessions(options: UseSessionsOptions = {}) {
       persistLocalSession(session);
       if (!sessionCloudSync) return;
       if (intent === 'checkpoint') {
+        manualSyncPresentation.clear(session.id);
         void sessionCloudSync.checkpoint(session);
       } else if (intent === 'debounced') {
         sessionCloudSync.debounce(session);
       } else {
+        manualSyncPresentation.clear(session.id);
         sessionCloudSync.noteLocal(session);
       }
     },
-    [persistLocalSession, sessionCloudSync],
+    [persistLocalSession, sessionCloudSync, manualSyncPresentation],
   );
 
   const flushCloudSaves = useCallback(async (sessionId?: string): Promise<void> => {
@@ -635,13 +752,14 @@ export function useSessions(options: UseSessionsOptions = {}) {
               return session;
             }
             const updated = { ...session, code, updatedAt: Date.now() };
+            if (sessionCloudSync) manualSyncPresentation.markPending(id);
             persistSession(updated, 'debounced');
             resolve();
             return updated;
           });
         });
       }),
-    [currentId, persistSession],
+    [currentId, sessionCloudSync, manualSyncPresentation, persistSession],
   );
 
   const checkpointSession = useCallback(
@@ -937,6 +1055,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
             ? syncState.statuses[currentSession.id]
             : undefined
         ) ?? sessionCloudSync?.getStatus(currentSession.id)
+      : undefined,
+    currentManualSyncStatus: currentSession && manualSyncState.ownerKey === ownerKey
+      ? manualSyncState.statuses[currentSession.id]
       : undefined,
     currentId: currentIdForOwner,
     isLoading,

@@ -239,24 +239,22 @@ export default function App() {
   }, [guestImportSessions, sessions]);
 
   const current = sessions.currentSession;
-  const showSessionSyncStatus = Boolean(
-    auth.user
-    && current
-    && (
-      current.code
-      || current.messages.some((message) => !message.isGreeting)
-    ),
-  );
   const visibleSyncStatus = !sessions.isPersistent
-    && sessions.currentSyncStatus === 'offline'
+    && sessions.currentManualSyncStatus === 'offline'
     ? 'retrying'
-    : sessions.currentSyncStatus;
+    : sessions.currentManualSyncStatus;
   const messages = isReplaying ? replayMessages : (current?.messages ?? []);
   // Session code = last committed/played code (used as agent context)
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
   const currentBpm = parseScore(currentCode).bpm ?? 120;
   const isLoading = !!current?.id && loadingSessions.has(current.id);
+  const showSessionSyncStatus = Boolean(
+    auth.user
+    && current
+    && !isLoading
+    && visibleSyncStatus,
+  );
 
   const { suggestions } = useSuggestions({
     key: current?.id ?? '',
@@ -821,8 +819,6 @@ export default function App() {
           onRetry={handleRetry}
           onOpenPersonaModal={openPersonaModal}
           tokenStats={current?.tokenStats}
-          syncStatus={visibleSyncStatus}
-          showSyncStatus={showSessionSyncStatus}
         />
       </div>
 

@@ -168,4 +168,15 @@ describe('CodePanel editor focus reporting', () => {
     expect(status).not.toBeNull();
     expect(status?.className).toContain('h-4');
   });
+
+  it('shows cloud save status in Code Plane on desktop', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel({
+      syncStatus: 'saving',
+      showSyncStatus: true,
+    });
+    roots.push(root);
+
+    expect(container.querySelector('[data-session-sync-status="saving"]')).not.toBeNull();
+  });
 });

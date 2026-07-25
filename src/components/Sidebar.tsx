@@ -8,8 +8,6 @@ import ChatInput from './ChatInput';
 import { isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
-import SessionSyncStatus from './SessionSyncStatus';
-import type { SessionSyncStatus as SyncStatus } from '../lib/session-cloud-sync';
 
 interface SidebarProps {
   title: string;
@@ -44,8 +42,6 @@ interface SidebarProps {
   onRetry: (messageId: string) => void;
   onOpenPersonaModal: () => void;
   tokenStats?: TokenStats;
-  syncStatus?: SyncStatus;
-  showSyncStatus?: boolean;
 }
 
 export default function Sidebar({
@@ -81,8 +77,6 @@ export default function Sidebar({
   onRetry,
   onOpenPersonaModal,
   tokenStats,
-  syncStatus,
-  showSyncStatus = false,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(1);
@@ -136,10 +130,6 @@ export default function Sidebar({
             onRename={(nextTitle) => {
               if (currentId) onRenameSession(currentId, nextTitle);
             }}
-          />
-          <SessionSyncStatus
-            status={syncStatus}
-            visible={showSyncStatus}
           />
         </div>
         <div className="flex items-center gap-3 shrink-0">

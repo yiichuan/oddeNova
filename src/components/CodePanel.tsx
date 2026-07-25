@@ -426,7 +426,7 @@ export default function CodePanel({
 
       <SessionSyncStatus
         status={syncStatus}
-        visible={isMobile && showSyncStatus}
+        visible={showSyncStatus}
         className="px-2 border-t border-[#323232] bg-black"
       />
 

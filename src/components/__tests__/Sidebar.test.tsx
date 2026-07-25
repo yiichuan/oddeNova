@@ -129,17 +129,15 @@ describe('Sidebar session title editing layout', () => {
     expect(input?.closest('.gap-3')).not.toBeNull();
   });
 
-  it('shows cloud save status beside the current session title', () => {
-    const { container, root } = renderSidebar({
+  it('does not show cloud save status beside the current session title', () => {
+    const legacySyncProps = {
       syncStatus: 'offline',
       showSyncStatus: true,
-    });
+    } as unknown as Partial<React.ComponentProps<typeof Sidebar>>;
+    const { container, root } = renderSidebar(legacySyncProps);
     roots.push(root);
 
-    const status = container.querySelector('[data-session-sync-status="offline"]');
-    const title = container.querySelector('[data-session-title-edit]');
-    expect(status).not.toBeNull();
-    expect(status?.parentElement).toBe(title?.parentElement);
+    expect(container.querySelector('[data-session-sync-status]')).toBeNull();
   });
 
   it('keeps the demo mood suggestion in the input rotation when suggestions are empty', () => {

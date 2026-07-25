@@ -141,6 +141,7 @@ describe('useSessions', () => {
     }
     document.body.innerHTML = '';
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   it('custom title survives first addUserMessage', async () => {
@@ -311,6 +312,120 @@ describe('useSessions', () => {
       expect.objectContaining({ code: 's("bd sd")' }),
       'u-1',
     );
+    vi.useRealTimers();
+  });
+
+  it('surfaces manual save status only when the cloud request starts and clears success after two seconds', async () => {
+    vi.useFakeTimers();
+    let resolveSave!: () => void;
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(() => new Promise<void>((resolve) => {
+        resolveSave = resolve;
+      })),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    let manualSave!: Promise<void>;
+    act(() => {
+      manualSave = getHook().setManualCode('s("bd")');
+    });
+    await act(async () => {
+      await manualSave;
+      await vi.advanceTimersByTimeAsync(1999);
+    });
+    expect(getHook().currentManualSyncStatus).toBeUndefined();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getHook().currentManualSyncStatus).toBe('saving');
+
+    await act(async () => {
+      resolveSave();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getHook().currentManualSyncStatus).toBe('synced');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1999);
+    });
+    expect(getHook().currentManualSyncStatus).toBe('synced');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getHook().currentManualSyncStatus).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it('keeps a failed manual cloud request visible for retry', async () => {
+    vi.useFakeTimers();
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => {
+        throw new Error('Cloud save failed');
+      }),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    let manualSave!: Promise<void>;
+    act(() => {
+      manualSave = getHook().setManualCode('s("bd")');
+    });
+    await act(async () => {
+      await manualSave;
+      await vi.advanceTimersByTimeAsync(2000);
+      await Promise.resolve();
+    });
+
+    expect(getHook().currentManualSyncStatus).toBe('retrying');
+    vi.useRealTimers();
+  });
+
+  it('does not surface a later Agent checkpoint as a manual save', async () => {
+    vi.useFakeTimers();
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    let manualSave!: Promise<void>;
+    await act(async () => {
+      manualSave = getHook().setManualCode('s("bd")');
+    });
+    await act(async () => {
+      await manualSave;
+    });
+    act(() => {
+      getHook().addUserMessage('继续调整');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledTimes(1);
+    expect(getHook().currentManualSyncStatus).toBeUndefined();
     vi.useRealTimers();
   });
 
