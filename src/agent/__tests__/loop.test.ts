@@ -6,7 +6,13 @@ vi.mock('../../services/strudel', () => ({
   normalizeCode: vi.fn((code: string) => code),
 }));
 
-import { runAgentLoop, type LLMCaller, type ConversationTurn, type ProgressEvent } from '../loop';
+import {
+  EmptyAgentResponseError,
+  runAgentLoop,
+  type LLMCaller,
+  type ConversationTurn,
+  type ProgressEvent,
+} from '../loop';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
 // Minimal LLMCaller that returns a commit tool call on the first invocation,
@@ -143,32 +149,33 @@ describe('runAgentLoop — pure chat replies', () => {
     expect(events.some((event) => event.kind === 'warn')).toBe(false);
   });
 
-  it('still warns when the model returns no tools and no useful text', async () => {
-    const events: Array<{ kind: string; message?: string }> = [];
+  it('throws a diagnosable error when the model returns no tools and no useful text', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const llm: LLMCaller = {
       async chatWithTools() {
         return {
           content: '',
+          reasoning_content: 'unfinished reasoning',
           toolCalls: [],
+          usage: { inputTokens: 12, outputTokens: 4 },
         };
       },
     };
 
-    const result = await runAgentLoop({
+    await expect(runAgentLoop({
       initialCode: 'setcps(0.5)\nstack(s("bd"))',
       instruction: '更新一下',
       systemPrompt: 'You are a music assistant.',
       llm,
-      onProgress: (event) => events.push(event),
-    });
+    })).rejects.toBeInstanceOf(EmptyAgentResponseError);
 
-    expect(result.code).toBe('');
-    expect(result.committed).toBe(false);
-    expect(result.explanation).toBe('未生成新代码');
-    expect(events).toContainEqual({
-      kind: 'warn',
-      message: 'agent 未产出任何代码改动',
+    expect(consoleWarn).toHaveBeenCalledWith('[agent] Empty model response', {
+      iteration: 1,
+      enableThinking: true,
+      hasReasoning: true,
+      hasUsage: true,
     });
+    consoleWarn.mockRestore();
   });
 });
 

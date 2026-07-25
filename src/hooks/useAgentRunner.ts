@@ -199,7 +199,13 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       trackAgentAbort();
     } else {
       const errMsg = e instanceof Error ? e.message : t('requestFailed');
-      deps.finalizeLastAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, sessionId);
+      console.error('[agent] Request failed', {
+        provider,
+        model,
+        errorName: e instanceof Error ? e.name : typeof e,
+        errorMessage: errMsg,
+      });
+      deps.finalizeLastAssistantMessage(t('agentResponseFailed'), sessionId);
       deps.setStrudelError(errMsg);
       trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
     }
