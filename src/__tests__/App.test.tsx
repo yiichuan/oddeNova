@@ -159,6 +159,7 @@ describe('App password recovery', () => {
     mocks.sessions.isPersistent = true;
     mocks.sessions.currentSyncStatus = 'synced';
     mocks.sessions.currentManualSyncStatus = undefined;
+    mocks.importSession.mockImplementation(async () => undefined);
     mocks.sessions.importSession = mocks.importSession;
     mocks.codePanelProps = null;
     mocks.sidebarProps = null;
@@ -232,6 +233,85 @@ describe('App password recovery', () => {
     });
 
     expect(container.textContent).not.toContain('Sync local history?');
+  });
+
+  it('waits for the account sessions to load before offering the guest import', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    mocks.sessions.isLoading = true;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+    });
+
+    // Importing into a half-loaded account drops the imported session: the
+    // in-flight load replaces the session list once it lands.
+    expect(container.textContent).not.toContain('Sync local history?');
+
+    mocks.sessions.isLoading = false;
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Sync local history?');
+  });
+
+  it('imports a guest source once when the confirm button is clicked twice', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: '来个简单的鼓点',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    let finishImport!: () => void;
+    mocks.importSession.mockImplementation(
+      () => new Promise<undefined>((resolve) => { finishImport = () => resolve(undefined); }),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+    });
+
+    const importButton = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Import and sync');
+    expect(importButton).toBeDefined();
+
+    // The cloud save keeps the dialog up for as long as the request takes, so
+    // an impatient second click must not import the same history twice.
+    await act(async () => {
+      importButton?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      importButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(mocks.importSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishImport();
+      await Promise.resolve();
+    });
   });
 
   it('removes a guest source after importing it to the signed-in account', async () => {

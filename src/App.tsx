@@ -81,6 +81,8 @@ export default function App() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
   const [guestImportError, setGuestImportError] = useState('');
+  const [importingGuestHistory, setImportingGuestHistory] = useState(false);
+  const guestImportRunningRef = useRef(false);
   const [showPersonaModal, setShowPersonaModal] = useState(false);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
@@ -207,7 +209,16 @@ export default function App() {
 
   useEffect(() => {
     const userId = auth.user?.id;
-    if (!userId || auth.loading || auth.recoveringPassword || importPromptUserRef.current === userId) return;
+    // Wait for the account's own sessions to finish loading, like the share and
+    // oddeNova import entry points do: importing into a half-loaded account
+    // drops the imported session when the in-flight load replaces the list.
+    if (
+      !userId
+      || auth.loading
+      || auth.recoveringPassword
+      || sessions.isLoading
+      || importPromptUserRef.current === userId
+    ) return;
     let cancelled = false;
     getAllSessions('guest').then((guestSessions) => {
       if (cancelled) return;
@@ -221,20 +232,32 @@ export default function App() {
       console.warn('[account] failed to inspect guest sessions for import.', err);
     });
     return () => { cancelled = true; };
-  }, [auth.user, auth.loading, auth.recoveringPassword]);
+  }, [auth.user, auth.loading, auth.recoveringPassword, sessions.isLoading]);
 
   const importGuestHistory = useCallback(async () => {
+    // The cloud save keeps the dialog up for as long as the request takes. A
+    // second click would import the same history again under a fresh id, so
+    // guard on a ref: it is set before the first await, unlike the state the
+    // disabled button reads.
+    if (guestImportRunningRef.current) return;
+    guestImportRunningRef.current = true;
+    setImportingGuestHistory(true);
     const items = guestImportSessions ?? [];
     setGuestImportError('');
-    const result = await importGuestSessions(
-      items,
-      (item) => sessions.importSession(item),
-      (id) => deleteSession(id, 'guest'),
-    );
-    setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
-    if (result.error) {
-      console.warn('[account] failed to import guest sessions to cloud.', result.error);
-      setGuestImportError(t('accountActionFailed'));
+    try {
+      const result = await importGuestSessions(
+        items,
+        (item) => sessions.importSession(item),
+        (id) => deleteSession(id, 'guest'),
+      );
+      setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
+      if (result.error) {
+        console.warn('[account] failed to import guest sessions to cloud.', result.error);
+        setGuestImportError(t('accountActionFailed'));
+      }
+    } finally {
+      guestImportRunningRef.current = false;
+      setImportingGuestHistory(false);
     }
   }, [guestImportSessions, sessions]);
 
@@ -300,13 +323,15 @@ export default function App() {
                   setGuestImportError('');
                   setGuestImportSessions(null);
                 }}
-                className="flex-1 py-2.5 text-sm text-text-secondary bg-bg-tertiary rounded-lg hover:bg-border transition-colors"
+                disabled={importingGuestHistory}
+                className="flex-1 py-2.5 text-sm text-text-secondary bg-bg-tertiary rounded-lg hover:bg-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {t('notNow')}
               </button>
               <button
                 onClick={() => void importGuestHistory()}
-                className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors"
+                disabled={importingGuestHistory}
+                className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {t('importNow')}
               </button>
