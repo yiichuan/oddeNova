@@ -47,9 +47,7 @@ const S: Record<string, readonly [string, string]> = {
   sessionHistory:   ['会话历史', 'Session history'],
   newSessionTitle:  ['新会话', 'New session'],
   branchSuffix:     ['（分支）', ' (branch)'],
-  sessionSyncSaving:  ['保存中…', 'Saving…'],
-  sessionSyncSaved:   ['已保存', 'Saved'],
-  sessionSyncOffline: ['已保存到本机，联网后同步', 'Saved locally; will sync when online'],
+  sessionSyncOffline: ['未同步到云端 · 联网后自动上传', 'Not synced to cloud · uploads when online'],
   sessionSyncRetrying:['同步失败，正在重试', 'Sync failed; retrying'],
 
   // Tool call labels (formatToolCall)

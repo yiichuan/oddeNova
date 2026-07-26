@@ -156,27 +156,52 @@ describe('CodePanel editor focus reporting', () => {
     expect(strudelService.setAutocompletionEnabled).toHaveBeenLastCalledWith(true);
   });
 
-  it('shows a fixed-height cloud save status line on mobile', () => {
-    installMatchMedia(true);
+  it.each([true, false])('stays silent while cloud sync is healthy (mobile: %s)', (mobile) => {
+    installMatchMedia(mobile);
     const { container, root } = renderCodePanel({
       syncStatus: 'saving',
       showSyncStatus: true,
     });
     roots.push(root);
 
-    const status = container.querySelector('[data-session-sync-status="saving"]');
-    expect(status).not.toBeNull();
-    expect(status?.className).toContain('h-4');
+    expect(container.querySelector('[data-session-sync-status]')).toBeNull();
   });
 
-  it('shows cloud save status in Code Plane on desktop', () => {
+  it('floats an unsynced warning over the code without taking layout height', () => {
     installMatchMedia(false);
     const { container, root } = renderCodePanel({
-      syncStatus: 'saving',
+      syncStatus: 'offline',
       showSyncStatus: true,
     });
     roots.push(root);
 
-    expect(container.querySelector('[data-session-sync-status="saving"]')).not.toBeNull();
+    const status = container.querySelector('[data-session-sync-status="offline"]');
+    expect(status).not.toBeNull();
+    expect(status?.closest('.absolute')).not.toBeNull();
+  });
+
+  it('anchors the sync warning independently of the error banner', () => {
+    installMatchMedia(false);
+    const withError = renderCodePanel({
+      error: 'boom',
+      syncStatus: 'offline',
+      showSyncStatus: true,
+    });
+    const withoutError = renderCodePanel({
+      syncStatus: 'offline',
+      showSyncStatus: true,
+    });
+    roots.push(withError.root, withoutError.root);
+
+    const capsuleOf = (c: HTMLElement) => c.querySelector('[data-session-sync-status="offline"]');
+    const overlay = capsuleOf(withError.container)?.parentElement;
+    expect(overlay).not.toBeNull();
+    // Banner and capsule share one bottom-aligned row, not a stack.
+    expect(withError.container.querySelector('.bg-error\\/10')?.parentElement).toBe(overlay);
+    expect(overlay?.className).not.toContain('flex-col');
+    // Capsule stays the trailing item either way, so it never shifts.
+    expect(overlay?.lastElementChild).toBe(capsuleOf(withError.container));
+    expect(capsuleOf(withoutError.container)?.parentElement?.lastElementChild)
+      .toBe(capsuleOf(withoutError.container));
   });
 });

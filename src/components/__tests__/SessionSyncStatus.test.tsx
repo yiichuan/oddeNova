@@ -6,9 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 const copy = {
-  sessionSyncSaving: ['保存中…', 'Saving…'],
-  sessionSyncSaved: ['已保存', 'Saved'],
-  sessionSyncOffline: ['已保存到本机，联网后同步', 'Saved locally; will sync when online'],
+  sessionSyncOffline: ['未同步到云端 · 联网后自动上传', 'Not synced to cloud · uploads when online'],
   sessionSyncRetrying: ['同步失败，正在重试', 'Sync failed; retrying'],
 } as const;
 
@@ -40,29 +38,36 @@ describe('SessionSyncStatus', () => {
   });
 
   it.each([
-    ['dirty', '保存中…'],
-    ['saving', '保存中…'],
-    ['synced', '已保存'],
-    ['offline', '已保存到本机，联网后同步'],
+    ['offline', '未同步到云端 · 联网后自动上传'],
     ['retrying', '同步失败，正在重试'],
   ] as const)('renders Chinese copy for %s', (status, expected) => {
     const view = renderStatus({ status, visible: true });
     roots.push(view.root);
 
     expect(view.container.textContent).toBe(expected);
-    expect(view.container.querySelector('[aria-live="polite"]')).not.toBeNull();
+    expect(view.container.querySelector('[role="status"][aria-live="polite"]')).not.toBeNull();
   });
+
+  it.each(['dirty', 'saving', 'synced'] as const)(
+    'stays silent while sync is healthy (%s)',
+    (status) => {
+      const view = renderStatus({ status, visible: true });
+      roots.push(view.root);
+
+      expect(view.container.textContent).toBe('');
+    },
+  );
 
   it('renders the English offline copy', () => {
     locale.language = 'en';
     const view = renderStatus({ status: 'offline', visible: true });
     roots.push(view.root);
 
-    expect(view.container.textContent).toBe('Saved locally; will sync when online');
+    expect(view.container.textContent).toBe('Not synced to cloud · uploads when online');
   });
 
   it('renders nothing when hidden or when status is unavailable', () => {
-    const hidden = renderStatus({ status: 'synced', visible: false });
+    const hidden = renderStatus({ status: 'offline', visible: false });
     const missing = renderStatus({ visible: true });
     roots.push(hidden.root, missing.root);
 
