@@ -72,7 +72,10 @@ describe('daily-suggestions-repair handler', () => {
     });
     expect(del).toHaveBeenCalledWith(
       'daily-suggestions/locks/2026-07-18.lock',
-      { ifMatch: 'lock-etag' },
+      expect.objectContaining({
+        ifMatch: 'lock-etag',
+        abortSignal: expect.any(AbortSignal),
+      }),
     );
     const runCall = vi.mocked(put).mock.calls.find(([pathname]) =>
       pathname === 'daily-suggestions/runs/2026-07-18/repair.json');

@@ -1,5 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { BlobNotFoundError, del, head, put } from '@vercel/blob';
+import {
+  BlobNotFoundError,
+  BlobPreconditionFailedError,
+  del,
+  head,
+  put,
+} from '@vercel/blob';
+import { waitUntil } from '@vercel/functions';
 import {
   dailySuggestionPath,
   dailySuggestionRunPath,
@@ -17,6 +24,9 @@ const MAX_MODEL_ATTEMPTS = 5;
 const MAX_STORE_ATTEMPTS = 3;
 const MODEL_REQUEST_TIMEOUT_MS = 20_000;
 const GENERATION_BUDGET_MS = 50_000;
+const STORE_BUDGET_MS = 56_000;
+const RELEASE_BUDGET_MS = 57_000;
+const HANDLER_BUDGET_MS = 58_000;
 const MODEL_BACKOFF_MS = [500, 1_000, 2_000, 4_000] as const;
 const INVALID_OUTPUT_CORRECTION =
   'The previous response was invalid. Generate a fresh response and return strict JSON only.';
@@ -45,9 +55,9 @@ Return 10 objects. Mix accessible ideas with a few specific electronic-music or 
 # Review
 Before responding, verify the JSON shape, count, bilingual intent alignment, length limits, diversity, and uniqueness.`;
 
-async function exists(pathname: string): Promise<boolean> {
+async function exists(pathname: string, abortSignal?: AbortSignal): Promise<boolean> {
   try {
-    await head(pathname);
+    await head(pathname, { abortSignal });
     return true;
   } catch (error) {
     if (error instanceof BlobNotFoundError) return false;
@@ -75,9 +85,8 @@ async function generateItems(
 ): Promise<GenerationResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
   try {
-    response = await fetch(UPSTREAM, {
+    const response = await fetch(UPSTREAM, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       signal: controller.signal,
@@ -98,22 +107,23 @@ async function generateItems(
         ],
       }),
     });
-  } catch {
-    return {
-      outcome: 'upstream_failure',
-      failure: { category: controller.signal.aborted ? 'timeout' : 'network' },
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-  if (!response.ok) {
-    return {
-      outcome: 'upstream_failure',
-      failure: { category: 'http', status: response.status },
-    };
-  }
-  try {
-    const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    if (!response.ok) {
+      return {
+        outcome: 'upstream_failure',
+        failure: { category: 'http', status: response.status },
+      };
+    }
+    let json: { choices?: Array<{ message?: { content?: string } }> };
+    try {
+      json = await response.json() as typeof json;
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return { outcome: 'upstream_failure', failure: { category: 'timeout' } };
+      }
+      return error instanceof SyntaxError
+        ? { outcome: 'invalid_output', failure: { category: 'invalid_output' } }
+        : { outcome: 'upstream_failure', failure: { category: 'network' } };
+    }
     const content = json.choices?.[0]?.message?.content;
     if (!content) {
       return {
@@ -121,7 +131,16 @@ async function generateItems(
         failure: { category: 'invalid_output' },
       };
     }
-    const items = parseGeneratedItems(JSON.parse(content));
+    let parsedContent: unknown;
+    try {
+      parsedContent = JSON.parse(content);
+    } catch {
+      return {
+        outcome: 'invalid_output',
+        failure: { category: 'invalid_output' },
+      };
+    }
+    const items = parseGeneratedItems(parsedContent);
     return items
       ? { outcome: 'valid', items }
       : {
@@ -130,9 +149,11 @@ async function generateItems(
       };
   } catch {
     return {
-      outcome: 'invalid_output',
-      failure: { category: 'invalid_output' },
+      outcome: 'upstream_failure',
+      failure: { category: controller.signal.aborted ? 'timeout' : 'network' },
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -145,52 +166,112 @@ type ClaimResult =
   | { status: 'exists' }
   | { status: 'in-progress' };
 
-async function claimDate(date: string, finalPath: string): Promise<ClaimResult> {
+async function claimDate(
+  date: string,
+  finalPath: string,
+  abortSignal: AbortSignal,
+): Promise<ClaimResult> {
   const pathname = lockPath(date);
   for (let claimAttempt = 0; claimAttempt < 2; claimAttempt += 1) {
-    if (await exists(finalPath)) return { status: 'exists' };
+    if (await exists(finalPath, abortSignal)) return { status: 'exists' };
     try {
       const lock = await put(pathname, JSON.stringify({ date, claimedAt: new Date().toISOString() }), {
         access: 'public',
+        abortSignal,
         addRandomSuffix: false,
         allowOverwrite: false,
         contentType: 'application/json',
         cacheControlMaxAge: 60,
       });
       return { status: 'acquired', pathname, etag: lock.etag };
-    } catch {
-      if (await exists(finalPath)) return { status: 'exists' };
+    } catch (claimError) {
+      if (await exists(finalPath, abortSignal)) return { status: 'exists' };
       try {
-        const lock = await head(pathname);
+        const lock = await head(pathname, { abortSignal });
         if (Date.now() - lock.uploadedAt.getTime() <= LOCK_STALE_MS) {
           return { status: 'in-progress' };
         }
-        await del(pathname, { ifMatch: lock.etag });
+        await del(pathname, { ifMatch: lock.etag, abortSignal });
       } catch (error) {
-        if (!isNotFound(error)) return { status: 'in-progress' };
+        if (isNotFound(error)) {
+          if (claimError instanceof BlobPreconditionFailedError) continue;
+          throw claimError;
+        }
+        if (error instanceof BlobPreconditionFailedError) return { status: 'in-progress' };
+        throw error;
       }
     }
   }
   return { status: 'in-progress' };
 }
 
-async function wait(milliseconds: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+class DeadlineExceededError extends Error {}
+
+async function wait(milliseconds: number, abortSignal?: AbortSignal): Promise<void> {
+  if (!abortSignal) {
+    await new Promise((resolve) => setTimeout(resolve, milliseconds));
+    return;
+  }
+  if (abortSignal.aborted) throw new DeadlineExceededError();
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      abortSignal.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    function onAbort() {
+      clearTimeout(timeout);
+      reject(new DeadlineExceededError());
+    }
+    abortSignal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
-async function waitForClaim(date: string, finalPath: string): Promise<ClaimResult> {
-  let claim = await claimDate(date, finalPath);
+async function beforeDeadline<T>(
+  task: (abortSignal: AbortSignal) => Promise<T>,
+  deadline: number,
+): Promise<T> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) throw new DeadlineExceededError();
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      task(controller.signal),
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(new DeadlineExceededError());
+        }, remainingMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function waitForClaim(
+  date: string,
+  finalPath: string,
+  abortSignal: AbortSignal,
+): Promise<ClaimResult> {
+  let claim = await claimDate(date, finalPath, abortSignal);
   for (const backoff of CLAIM_BACKOFF_MS) {
     if (claim.status !== 'in-progress') return claim;
-    await wait(backoff);
-    claim = await claimDate(date, finalPath);
+    await wait(backoff, abortSignal);
+    claim = await claimDate(date, finalPath, abortSignal);
   }
   return claim;
 }
 
-async function releaseClaim(claim: Extract<ClaimResult, { status: 'acquired' }>) {
+async function releaseClaim(
+  claim: Extract<ClaimResult, { status: 'acquired' }>,
+  deadline: number,
+) {
   try {
-    await del(claim.pathname, { ifMatch: claim.etag });
+    await beforeDeadline(
+      (abortSignal) => del(claim.pathname, { ifMatch: claim.etag, abortSignal }),
+      deadline,
+    );
   } catch {
     // A stale-recovery winner may already have replaced this lock. Never delete without ETag ownership.
   }
@@ -202,20 +283,31 @@ function logAttempt(date: string, attempt: number, outcome: string) {
 
 type StoreResult = 'created' | 'exists' | 'store_failed';
 
-async function storeBatch(pathname: string, payload: string): Promise<StoreResult> {
+async function storeBatch(
+  pathname: string,
+  payload: string,
+  deadline: number,
+): Promise<StoreResult> {
   for (let storeAttempt = 1; storeAttempt <= MAX_STORE_ATTEMPTS; storeAttempt += 1) {
     try {
-      await put(pathname, payload, {
-        access: 'public',
-        addRandomSuffix: false,
-        allowOverwrite: false,
-        contentType: 'application/json',
-        cacheControlMaxAge: 2_678_400,
-      });
+      await beforeDeadline(
+        (abortSignal) => put(pathname, payload, {
+          access: 'public',
+          abortSignal,
+          addRandomSuffix: false,
+          allowOverwrite: false,
+          contentType: 'application/json',
+          cacheControlMaxAge: 2_678_400,
+        }),
+        deadline,
+      );
       return 'created';
     } catch {
       try {
-        if (await exists(pathname)) return 'exists';
+        if (await beforeDeadline(
+          (abortSignal) => exists(pathname, abortSignal),
+          deadline,
+        )) return 'exists';
       } catch {
         // A failed existence check is treated as another transient Blob failure.
       }
@@ -234,15 +326,26 @@ interface RunResult {
   failure?: RunFailure;
 }
 
-async function persistRunRecord(record: DailySuggestionRunRecord): Promise<void> {
+async function persistRunRecord(
+  record: DailySuggestionRunRecord,
+  deadline: number,
+): Promise<void> {
   try {
-    await put(dailySuggestionRunPath(record.date, record.trigger), JSON.stringify(record), {
-      access: 'public',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: 'application/json',
-      cacheControlMaxAge: 2_678_400,
-    });
+    await beforeDeadline(
+      (abortSignal) => put(
+        dailySuggestionRunPath(record.date, record.trigger),
+        JSON.stringify(record),
+        {
+          access: 'public',
+          abortSignal,
+          addRandomSuffix: false,
+          allowOverwrite: true,
+          contentType: 'application/json',
+          cacheControlMaxAge: 60,
+        },
+      ),
+      deadline,
+    );
   } catch {
     console.error('daily_suggestions_run_record_failed', {
       date: record.date,
@@ -251,13 +354,13 @@ async function persistRunRecord(record: DailySuggestionRunRecord): Promise<void>
   }
 }
 
-async function respondWithRunRecord(
+function respondWithRunRecord(
   res: VercelResponse,
   trigger: DailySuggestionTrigger,
   date: string,
   startedAt: number,
   result: RunResult,
-): Promise<void> {
+): void {
   const finishedAt = Date.now();
   const record: DailySuggestionRunRecord = {
     date,
@@ -269,7 +372,7 @@ async function respondWithRunRecord(
     outcome: result.outcome,
     ...(result.failure ? { failure: result.failure } : {}),
   };
-  await persistRunRecord(record);
+  waitUntil(persistRunRecord(record, startedAt + HANDLER_BUDGET_MS));
   res.status(result.statusCode).json(result.body);
 }
 
@@ -292,7 +395,7 @@ export function createDailySuggestionsHandler({
     const date = targetDate(new Date(startedAt));
     const apiKey = process.env.OFFICIAL_API_KEY || '';
     if (!apiKey) {
-      await respondWithRunRecord(res, trigger, date, startedAt, {
+      respondWithRunRecord(res, trigger, date, startedAt, {
         statusCode: 500,
         body: { error: 'Official API key is not configured' },
         attempts: 0,
@@ -303,9 +406,25 @@ export function createDailySuggestionsHandler({
     }
 
     const pathname = dailySuggestionPath(date);
-    const claim = await waitForClaim(date, pathname);
+    const generationDeadline = startedAt + GENERATION_BUDGET_MS;
+    let claim: ClaimResult;
+    try {
+      claim = await beforeDeadline(
+        (abortSignal) => waitForClaim(date, pathname, abortSignal),
+        generationDeadline,
+      );
+    } catch {
+      respondWithRunRecord(res, trigger, date, startedAt, {
+        statusCode: 502,
+        body: { error: 'Failed to claim daily suggestion generation', date },
+        attempts: 0,
+        outcome: 'store_failed',
+        failure: { category: 'store' },
+      });
+      return;
+    }
     if (claim.status === 'exists') {
-      await respondWithRunRecord(res, trigger, date, startedAt, {
+      respondWithRunRecord(res, trigger, date, startedAt, {
         statusCode: 200,
         body: { status: 'exists', date, attempts: 0 },
         attempts: 0,
@@ -314,7 +433,7 @@ export function createDailySuggestionsHandler({
       return;
     }
     if (claim.status === 'in-progress') {
-      await respondWithRunRecord(res, trigger, date, startedAt, {
+      respondWithRunRecord(res, trigger, date, startedAt, {
         statusCode: 503,
         body: { error: 'Daily suggestion generation is still in progress', date },
         attempts: 0,
@@ -327,7 +446,6 @@ export function createDailySuggestionsHandler({
     let actualAttempts = 0;
     let lastFailure: RunFailure | undefined;
     try {
-      const generationDeadline = startedAt + GENERATION_BUDGET_MS;
       let correctInvalidOutput = false;
       for (let attempts = 1; attempts <= MAX_MODEL_ATTEMPTS; attempts += 1) {
         const remainingMs = generationDeadline - Date.now();
@@ -354,7 +472,11 @@ export function createDailySuggestionsHandler({
           generatedAt: new Date().toISOString(),
           items: generated.items,
         };
-        const stored = await storeBatch(pathname, JSON.stringify(batch));
+        const stored = await storeBatch(
+          pathname,
+          JSON.stringify(batch),
+          startedAt + STORE_BUDGET_MS,
+        );
         if (stored === 'created') {
           logAttempt(date, attempts, 'stored');
           runResult = {
@@ -392,9 +514,9 @@ export function createDailySuggestionsHandler({
         ...(lastFailure ? { failure: lastFailure } : {}),
       };
     } finally {
-      await releaseClaim(claim);
+      await releaseClaim(claim, startedAt + RELEASE_BUDGET_MS);
     }
 
-    await respondWithRunRecord(res, trigger, date, startedAt, runResult);
+    respondWithRunRecord(res, trigger, date, startedAt, runResult);
   };
 }
