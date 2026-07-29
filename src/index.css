@@ -139,6 +139,27 @@ body {
   border-right-style: solid !important;
 }
 
+/* Playable inline code examples on /learn (src/learn/components.tsx CodeBlock).
+   The rules above size the gutter for the main composing editor, where lines
+   can run into double/triple digits — way oversized for 1-4 line docs
+   snippets. Override with a tight gutter matching strudel.cc's own docs style. */
+.mini-repl-code .cm-lineNumbers {
+  width: auto !important;
+  min-width: 28px !important;
+}
+
+.mini-repl-code .cm-lineNumbers .cm-gutterElement {
+  width: auto !important;
+  min-width: 28px !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+  text-align: right !important;
+}
+
+.mini-repl-code .cm-content {
+  padding-left: 8px !important;
+}
+
 /* Strudel autocomplete — keep the upstream interaction and information
    structure while inheriting the active oddeNova editor theme. */
 .cm-tooltip-autocomplete,
@@ -335,3 +356,29 @@ canvas[id*="_widget__spectrum_"] {
 .mobile-menu-item:active {
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* Static (non-playable) docs code blocks — src/learn/components.tsx
+   StaticCode, tokenized via src/learn/static-highlight.ts. Palette matches
+   strudel.cc's own docs (Shiki "github-dark" theme) so runnable and static
+   snippets read as one consistent style. */
+.static-code .tok-comment { color: #6a737d; font-style: italic; }
+.static-code .tok-string,
+.static-code .tok-string2,
+.static-code .tok-regexp { color: #9ecbff; }
+.static-code .tok-number,
+.static-code .tok-atom,
+.static-code .tok-bool { color: #79b8ff; }
+.static-code .tok-keyword,
+.static-code .tok-operatorKeyword,
+.static-code .tok-controlKeyword,
+.static-code .tok-moduleKeyword { color: #f97583; }
+.static-code .tok-propertyName,
+.static-code .tok-attributeName { color: #79b8ff; }
+.static-code .tok-function,
+.static-code .tok-variableName2 { color: #b392f0; }
+.static-code .tok-typeName,
+.static-code .tok-className,
+.static-code .tok-namespace { color: #ffab70; }
+.static-code .tok-variableName,
+.static-code .tok-definition { color: #e1e4e8; }
+.static-code .tok-invalid { color: #f97583; text-decoration: underline wavy; }

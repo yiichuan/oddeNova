@@ -1,5 +1,6 @@
 import {
   ChevronRight,
+  ChevronLeft,
   Play,
   Square,
   Clock,
@@ -40,6 +41,7 @@ export function LogoIcon({ size = 16, className }: IconProps) {
 // names, default sizes, and { size, className } prop shape so call sites stay
 // unchanged. Play/Stop keep their filled look via fill="currentColor".
 export const ChevronRightIcon = ({ size = 16, className }: IconProps) => <ChevronRight size={size} className={className} />;
+export const ChevronLeftIcon = ({ size = 16, className }: IconProps) => <ChevronLeft size={size} className={className} />;
 export const PlayIcon = ({ size = 18, className }: IconProps) => <Play size={size} className={className} fill="currentColor" />;
 export const StopIcon = ({ size = 16, className }: IconProps) => <Square size={size} className={className} fill="currentColor" />;
 export const HistoryIcon = ({ size = 16, className }: IconProps) => <Clock size={size} className={className} />;
