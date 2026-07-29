@@ -84,12 +84,25 @@ describe('daily-suggestions-generate handler', () => {
   it('does not use the client Vite API key for server-side generation', async () => {
     delete process.env.OFFICIAL_API_KEY;
     process.env.VITE_API_KEY = 'client-api-key';
+    vi.mocked(put).mockResolvedValue({} as never);
     const res = makeRes();
 
-    await handler(authorizedReq() as never, res as never);
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.runAllTimersAsync();
+    await pending;
 
     expect(res.statusCode).toBe(500);
     expect(fetch).not.toHaveBeenCalled();
+    const runCall = vi.mocked(put).mock.calls.find(([pathname]) =>
+      pathname === 'daily-suggestions/runs/2026-07-18/primary.json');
+    expect(runCall).toBeDefined();
+    expect(JSON.parse(runCall?.[1] as string)).toMatchObject({
+      date: '2026-07-18',
+      trigger: 'primary',
+      attempts: 0,
+      outcome: 'configuration_error',
+      failure: { category: 'configuration' },
+    });
   });
 
   it('returns exists without calling the model when tomorrow is stored', async () => {
@@ -126,7 +139,7 @@ describe('daily-suggestions-generate handler', () => {
     expect(res.body).toMatchObject({ status: 'created', attempts: 1 });
   });
 
-  it('retries invalid output once and never stores invalid data', async () => {
+  it('retries invalid output up to five total calls and never stores invalid data', async () => {
     vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
     vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
@@ -134,9 +147,11 @@ describe('daily-suggestions-generate handler', () => {
     }), { status: 200 })));
     const res = makeRes();
 
-    await handler(authorizedReq() as never, res as never);
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.runAllTimersAsync();
+    await pending;
 
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(5);
     expect(put).not.toHaveBeenCalledWith(
       'daily-suggestions/2026-07-18.json',
       expect.anything(),
@@ -193,7 +208,7 @@ describe('daily-suggestions-generate handler', () => {
     expect(secondRes.body).toEqual({ status: 'exists', date: '2026-07-18', attempts: 0 });
   });
 
-  it('lets a waiting loser claim after winner failure without overlapping model calls', async () => {
+  it('keeps a waiting loser out and lets a later invocation claim after winner failure', async () => {
     const notFound = new BlobNotFoundError();
     let lockEtag: string | null = null;
     let lockNumber = 0;
@@ -212,8 +227,12 @@ describe('daily-suggestions-generate handler', () => {
         lockEtag = `owner-${lockNumber}`;
         return { etag: lockEtag } as never;
       }
-      finalStored = true;
-      return {} as never;
+      if (pathname === 'daily-suggestions/2026-07-18.json') {
+        finalStored = true;
+        return {} as never;
+      }
+      if (pathname.includes('/runs/')) return {} as never;
+      throw new Error(`Unexpected Blob path: ${pathname}`);
     });
     vi.mocked(del).mockImplementation(async (_pathname, options) => {
       if (options?.ifMatch === lockEtag) lockEtag = null;
@@ -232,25 +251,34 @@ describe('daily-suggestions-generate handler', () => {
       });
     }));
     const winnerRes = makeRes();
-    const loserRes = makeRes();
+    const waitingLoserRes = makeRes();
+    const retryRes = makeRes();
 
     const winner = handler(authorizedReq() as never, winnerRes as never);
     await vi.waitFor(() => expect(pendingResolvers).toHaveLength(1));
-    const loser = handler(authorizedReq() as never, loserRes as never);
-    pendingResolvers.shift()!(new Response('unavailable', { status: 503 }));
-    await vi.waitFor(() => expect(pendingResolvers).toHaveLength(1));
-    pendingResolvers.shift()!(new Response('still unavailable', { status: 503 }));
+    const waitingLoser = handler(authorizedReq() as never, waitingLoserRes as never);
+    const retryBackoffs = [500, 1_000, 2_000, 4_000];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      pendingResolvers.shift()!(new Response('unavailable', { status: 503 }));
+      if (attempt < retryBackoffs.length) {
+        await vi.advanceTimersByTimeAsync(retryBackoffs[attempt]);
+        await vi.waitFor(() => expect(pendingResolvers).toHaveLength(1));
+      }
+    }
     await winner;
-    await vi.advanceTimersByTimeAsync(100);
+    await waitingLoser;
+
+    const retry = handler(authorizedReq() as never, retryRes as never);
     await vi.waitFor(() => expect(pendingResolvers).toHaveLength(1));
     pendingResolvers.shift()!(new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify({ items }) } }],
     }), { status: 200 }));
-    await loser;
+    await retry;
 
     expect(winnerRes.statusCode).toBe(502);
-    expect(loserRes.body).toMatchObject({ status: 'created', date: '2026-07-18' });
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(waitingLoserRes.statusCode).toBe(503);
+    expect(retryRes.body).toMatchObject({ status: 'created', date: '2026-07-18' });
+    expect(fetch).toHaveBeenCalledTimes(6);
     expect(maxActiveModelCalls).toBe(1);
   });
 
@@ -298,7 +326,9 @@ describe('daily-suggestions-generate handler', () => {
     }), { status: 200 })));
     const res = makeRes();
 
-    await handler(authorizedReq() as never, res as never);
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.runAllTimersAsync();
+    await pending;
 
     expect(del).toHaveBeenNthCalledWith(
       1,
@@ -317,13 +347,15 @@ describe('daily-suggestions-generate handler', () => {
     }), { status: 200 })));
     const res = makeRes();
 
-    await handler(authorizedReq() as never, res as never);
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.runAllTimersAsync();
+    await pending;
 
     expect(console.info).toHaveBeenNthCalledWith(1, 'daily_suggestions_generation_attempt', {
       date: '2026-07-18', attempt: 1, outcome: 'invalid_output',
     });
-    expect(console.info).toHaveBeenNthCalledWith(2, 'daily_suggestions_generation_attempt', {
-      date: '2026-07-18', attempt: 2, outcome: 'invalid_output',
+    expect(console.info).toHaveBeenNthCalledWith(5, 'daily_suggestions_generation_attempt', {
+      date: '2026-07-18', attempt: 5, outcome: 'invalid_output',
     });
   });
 
@@ -339,7 +371,9 @@ describe('daily-suggestions-generate handler', () => {
       }), { status: 200 })));
     const res = makeRes();
 
-    await handler(authorizedReq() as never, res as never);
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.runAllTimersAsync();
+    await pending;
 
     expect(console.info).toHaveBeenCalledWith('daily_suggestions_generation_attempt', {
       date: '2026-07-18', attempt: 1, outcome: 'upstream_failure',
@@ -350,5 +384,176 @@ describe('daily-suggestions-generate handler', () => {
     const logged = JSON.stringify(vi.mocked(console.info).mock.calls);
     expect(logged).not.toContain('official-api-key');
     expect(logged).not.toContain(items[0].zh);
+  });
+
+  it('retries every upstream HTTP status five total times with exponential backoff', async () => {
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
+    vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 })));
+    const res = makeRes();
+    const startedAt = Date.now();
+
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.runAllTimersAsync();
+    await pending;
+
+    expect(fetch).toHaveBeenCalledTimes(5);
+    expect(Date.now() - startedAt).toBe(7_500);
+    expect(res.statusCode).toBe(502);
+    const runCall = vi.mocked(put).mock.calls.find(([pathname]) =>
+      pathname === 'daily-suggestions/runs/2026-07-18/primary.json');
+    expect(JSON.parse(runCall?.[1] as string)).toMatchObject({
+      date: '2026-07-18',
+      trigger: 'primary',
+      attempts: 5,
+      outcome: 'generation_failed',
+      durationMs: 7_500,
+      failure: { category: 'http', status: 401 },
+    });
+  });
+
+  it('adds a correction only after an invalid model output', async () => {
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
+    vi.mocked(put)
+      .mockResolvedValueOnce({ etag: 'lock-etag' } as never)
+      .mockResolvedValueOnce({} as never);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: '{"items":[]}' } }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ items }) } }],
+      }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = makeRes();
+
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.runAllTimersAsync();
+    await pending;
+
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1]?.body as string) as {
+      messages: Array<{ content: string }>;
+    };
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1]?.body as string) as {
+      messages: Array<{ content: string }>;
+    };
+    expect(JSON.stringify(firstBody.messages)).not.toContain('previous response was invalid');
+    expect(JSON.stringify(secondBody.messages)).toContain('previous response was invalid');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(res.body).toMatchObject({ status: 'created', attempts: 2 });
+  });
+
+  it('uses per-call abort signals and stops at the fifty-second generation budget', async () => {
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
+    vi.mocked(put).mockResolvedValueOnce({ etag: 'lock-etag' } as never);
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      if (!init?.signal) return Promise.reject(new Error('missing abort signal'));
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const res = makeRes();
+    const startedAt = Date.now();
+
+    const pending = handler(authorizedReq() as never, res as never);
+    await vi.advanceTimersByTimeAsync(50_000);
+    await pending;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.every((call) => call[1]?.signal instanceof AbortSignal)).toBe(true);
+    expect(Date.now() - startedAt).toBe(50_000);
+    expect(res.statusCode).toBe(502);
+  });
+
+  it('reuses one valid batch across three Blob write attempts', async () => {
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
+    const finalPayloads: string[] = [];
+    vi.mocked(put).mockImplementation(async (pathname, body) => {
+      if (pathname.includes('/locks/')) return { etag: 'lock-etag' } as never;
+      if (pathname === 'daily-suggestions/2026-07-18.json') {
+        finalPayloads.push(body as string);
+        if (finalPayloads.length < 3) throw new Error('temporary Blob failure');
+        return {} as never;
+      }
+      throw new Error(`Unexpected Blob path: ${pathname}`);
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ items }) } }],
+    }), { status: 200 })));
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(finalPayloads).toHaveLength(3);
+    expect(new Set(finalPayloads).size).toBe(1);
+    expect(res.body).toMatchObject({ status: 'created', attempts: 1 });
+  });
+
+  it('stores a sanitized primary run record', async () => {
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
+    vi.mocked(put).mockImplementation(async (pathname) => {
+      if (pathname.includes('/locks/')) return { etag: 'lock-etag' } as never;
+      return {} as never;
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ items }) } }],
+    }), { status: 200 })));
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    const runCall = vi.mocked(put).mock.calls.find(([pathname]) =>
+      pathname === 'daily-suggestions/runs/2026-07-18/primary.json');
+    expect(runCall).toBeDefined();
+    expect(runCall?.[2]).toEqual(expect.objectContaining({
+      access: 'public',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: 'application/json',
+    }));
+    const record = JSON.parse(runCall?.[1] as string);
+    expect(record).toMatchObject({
+      date: '2026-07-18',
+      trigger: 'primary',
+      attempts: 1,
+      outcome: 'created',
+      durationMs: 0,
+    });
+    expect(record.startedAt).toBe('2026-07-17T15:30:00.000Z');
+    expect(record.finishedAt).toBe('2026-07-17T15:30:00.000Z');
+    const serializedRecord = JSON.stringify(record);
+    expect(serializedRecord).not.toContain('official-api-key');
+    expect(serializedRecord).not.toContain(items[0].zh);
+    expect(res.body).toMatchObject({ status: 'created', attempts: 1 });
+  });
+
+  it('keeps a created response when the best-effort run record write fails', async () => {
+    vi.mocked(head).mockRejectedValue(new BlobNotFoundError());
+    vi.mocked(put).mockImplementation(async (pathname) => {
+      if (pathname.includes('/locks/')) return { etag: 'lock-etag' } as never;
+      if (pathname === 'daily-suggestions/2026-07-18.json') return {} as never;
+      if (pathname.includes('/runs/')) throw new Error('run record unavailable');
+      throw new Error(`Unexpected Blob path: ${pathname}`);
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ items }) } }],
+    }), { status: 200 })));
+    const res = makeRes();
+
+    await handler(authorizedReq() as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ status: 'created', date: '2026-07-18', attempts: 1 });
+    expect(console.error).toHaveBeenCalledWith('daily_suggestions_run_record_failed', {
+      date: '2026-07-18',
+      trigger: 'primary',
+    });
+    const logged = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(logged).not.toContain('run record unavailable');
+    expect(logged).not.toContain('official-api-key');
   });
 });
