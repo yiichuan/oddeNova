@@ -33,16 +33,16 @@ describe('Vercel API layout', () => {
         destination: '/api/share-page?id=:id',
       },
       {
-        source: '/_nova/static/:path*',
-        destination: 'https://us-assets.i.posthog.com/static/:path*',
+        source: '/_nova/static/:path(.*)',
+        destination: 'https://us-assets.i.posthog.com/static/:path',
       },
       {
-        source: '/_nova/array/:path*',
-        destination: 'https://us.i.posthog.com/array/:path*',
+        source: '/_nova/array/:path(.*)',
+        destination: 'https://us-assets.i.posthog.com/array/:path',
       },
       {
-        source: '/_nova/:path*',
-        destination: 'https://us.i.posthog.com/:path*',
+        source: '/_nova/:path(.*)',
+        destination: 'https://us.i.posthog.com/:path',
       },
       {
         source: '/(.*)',
