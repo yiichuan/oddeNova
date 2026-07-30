@@ -4,6 +4,9 @@ import type { TokenStats } from '../hooks/useSessions';
 import { t } from '../lib/i18n';
 import { checkAirJellyAvailable } from '../services/airjelly';
 import { isDemoMode } from '../demo/demo-config';
+import type { AgentEntryPoint } from '../lib/analytics';
+
+type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 
 // Split text into typewriter units: CJK (and fullwidth punctuation) reveal
 // character by character, latin script word by word (a run of non-CJK,
@@ -28,7 +31,7 @@ interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
-  onSendText: (text: string) => void;
+  onSendText: (text: string, entryPoint: ChatEntryPoint) => void;
   onReinitEngine: () => void;
   onStop?: () => void;
   prefill?: string;
@@ -67,6 +70,7 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const adoptedSuggestionRef = useRef<string | null>(null);
 
   // AirJelly reachability, checked once on mount — same gating the removed
   // mood button used: Windows is excluded (AirJelly Desktop doesn't support
@@ -141,7 +145,10 @@ export default function ChatInput({
       : '';
 
   useEffect(() => {
-    if (prefill) setText(prefill);
+    if (prefill) {
+      adoptedSuggestionRef.current = null;
+      setText(prefill);
+    }
   }, [prefill, focusTrigger]);
 
   useEffect(() => {
@@ -174,13 +181,16 @@ export default function ChatInput({
     if (replayValue !== undefined) return;
     const value = text.trim();
     if (!value || isLoading || moodPending) return;
+    const entryPoint: ChatEntryPoint =
+      adoptedSuggestionRef.current === value ? 'suggestion' : 'text';
+    adoptedSuggestionRef.current = null;
     setText('');
     if (moodSuggestionActive && value === moodSuggestion) {
       setMoodPending(true);
       Promise.resolve(onMoodGenerate!()).finally(() => setMoodPending(false));
       return;
     }
-    onSendText(value);
+    onSendText(value, entryPoint);
   };
 
   const handleSubmit = (e: { preventDefault(): void }) => {
@@ -218,7 +228,10 @@ export default function ChatInput({
           <textarea
             ref={textareaRef}
             value={replayValue !== undefined ? replayValue : text}
-            onChange={replayValue !== undefined ? undefined : (e) => setText(e.target.value)}
+            onChange={replayValue !== undefined ? undefined : (e) => {
+              adoptedSuggestionRef.current = null;
+              setText(e.target.value);
+            }}
             readOnly={replayValue !== undefined}
             onFocus={() => onFocusChange?.(true)}
             onBlur={() => onFocusChange?.(false)}
@@ -226,6 +239,7 @@ export default function ChatInput({
               if (replayValue !== undefined) return;
               if (e.key === 'Tab' && !e.shiftKey && suggestionActive && currentSuggestion) {
                 e.preventDefault();
+                adoptedSuggestionRef.current = currentSuggestion;
                 setText(currentSuggestion);
                 return;
               }

@@ -12,13 +12,6 @@ vi.mock('../../services/strudel', () => ({
   normalizeCode: vi.fn((code: string) => code),
 }));
 
-// Analytics fires PostHog side-effects; stub it out so the decision tree runs clean.
-vi.mock('../../lib/analytics', () => ({
-  trackAgentRun: vi.fn(),
-  trackAgentError: vi.fn(),
-  trackAgentAbort: vi.fn(),
-}));
-
 function makeResult(over: Partial<RunAgentResult> = {}): RunAgentResult {
   return { code: 'note("c3")', explanation: 'done', iterations: 1, committed: true, ...over };
 }
@@ -56,12 +49,14 @@ function makeDeps(over: Partial<AgentTurnDeps> = {}): AgentTurnDeps {
     setCommitSuggestions: vi.fn(),
     clearRollbackPrefill: vi.fn(),
     getModelConfig: () => ({ provider: 'p', model: 'm' }),
+    trackAgentTurnStarted: vi.fn(),
+    trackAgentTurnFinished: vi.fn(),
     ...over,
   };
 }
 
 function makeInput(over: Partial<AgentTurnInput> = {}): AgentTurnInput {
-  return { text: 'make a beat', includeHistory: true, ...over };
+  return { text: 'make a beat', entryPoint: 'text', includeHistory: true, ...over };
 }
 
 describe('runAgentTurn', () => {
@@ -263,5 +258,125 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
     expect(deps.runAgent).not.toHaveBeenCalled();
     expect(deps.endLoading).not.toHaveBeenCalled();
+    expect(deps.trackAgentTurnStarted).not.toHaveBeenCalled();
+    expect(deps.trackAgentTurnFinished).not.toHaveBeenCalled();
+  });
+
+  it('captures one started event before the agent request with safe turn context', async () => {
+    const priorHistory: ConversationTurn[] = [{ role: 'user', content: 'old turn' }];
+    const trackAgentTurnStarted = vi.fn();
+    const runAgent = vi.fn(async () => {
+      expect(trackAgentTurnStarted).toHaveBeenCalledOnce();
+      return makeResult();
+    });
+    const deps = makeDeps({
+      runAgent,
+      snapshotHistory: () => priorHistory,
+      trackAgentTurnStarted,
+    });
+
+    await runAgentTurn(makeInput({ entryPoint: 'suggestion' }), deps);
+
+    expect(trackAgentTurnStarted).toHaveBeenCalledWith({
+      entry_point: 'suggestion',
+      provider: 'p',
+      model: 'm',
+      has_existing_code: true,
+      has_history: true,
+    });
+  });
+
+  it('captures played exactly once after a committed current-session playback succeeds', async () => {
+    const dateNow = vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(1_000)
+      .mockReturnValue(1_450);
+    const deps = makeDeps();
+
+    await runAgentTurn(makeInput(), deps);
+
+    expect(deps.trackAgentTurnFinished).toHaveBeenCalledOnce();
+    expect(deps.trackAgentTurnFinished).toHaveBeenCalledWith({
+      entry_point: 'text',
+      provider: 'p',
+      model: 'm',
+      has_existing_code: true,
+      has_history: false,
+      outcome: 'played',
+      duration_ms: 450,
+      iterations: 1,
+    });
+    dateNow.mockRestore();
+  });
+
+  it.each([
+    {
+      outcome: 'generated',
+      overrides: {
+        isCurrentSession: () => false,
+      },
+    },
+    {
+      outcome: 'playback_failed',
+      overrides: {
+        play: vi.fn(async () => false),
+      },
+    },
+    {
+      outcome: 'not_committed',
+      overrides: {
+        runAgent: vi.fn(async () => makeResult({ committed: false })),
+      },
+    },
+    {
+      outcome: 'agent_failed',
+      overrides: {
+        runAgent: vi.fn(async () => { throw new Error('boom'); }),
+      },
+    },
+  ] as const)('captures $outcome exactly once', async ({ outcome, overrides }) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = makeDeps(overrides);
+
+    await runAgentTurn(makeInput({ entryPoint: 'retry' }), deps);
+
+    expect(deps.trackAgentTurnFinished).toHaveBeenCalledOnce();
+    expect(deps.trackAgentTurnFinished).toHaveBeenCalledWith(expect.objectContaining({
+      entry_point: 'retry',
+      outcome,
+      iterations: outcome === 'agent_failed' ? 0 : 1,
+    }));
+    consoleError.mockRestore();
+  });
+
+  it('captures aborted exactly once when the completed request observes an aborted signal', async () => {
+    const controller = new AbortController();
+    const deps = makeDeps({
+      beginLoading: () => controller,
+      runAgent: vi.fn(async () => {
+        controller.abort();
+        return makeResult();
+      }),
+    });
+
+    await runAgentTurn(makeInput({ entryPoint: 'mood', includeHistory: false }), deps);
+
+    expect(deps.trackAgentTurnFinished).toHaveBeenCalledOnce();
+    expect(deps.trackAgentTurnFinished).toHaveBeenCalledWith(expect.objectContaining({
+      entry_point: 'mood',
+      outcome: 'aborted',
+      iterations: 1,
+    }));
+  });
+
+  it('keeps Agent playback and persistence successful when analytics throws', async () => {
+    const deps = makeDeps({
+      trackAgentTurnStarted: vi.fn(() => { throw new Error('analytics start failed'); }),
+      trackAgentTurnFinished: vi.fn(() => { throw new Error('analytics finish failed'); }),
+    });
+
+    await expect(runAgentTurn(makeInput(), deps)).resolves.toBeUndefined();
+
+    expect(deps.play).toHaveBeenCalledWith('note("c3")');
+    expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
   });
 });

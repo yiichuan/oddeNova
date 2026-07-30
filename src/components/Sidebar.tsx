@@ -8,6 +8,7 @@ import ChatInput from './ChatInput';
 import { isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
+import type { AgentEntryPoint } from '../lib/analytics';
 
 interface SidebarProps {
   title: string;
@@ -19,7 +20,10 @@ interface SidebarProps {
   sessions: Session[];
   currentId: string | null;
   suggestions: string[];
-  onSendText: (text: string) => void;
+  onSendText: (
+    text: string,
+    entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>,
+  ) => void;
   onStop?: () => void;
   onNewSession: () => void;
   onMoodGenerate?: () => Promise<void> | void;

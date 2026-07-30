@@ -2,7 +2,7 @@ import { getErrorMessage } from '../lib/errors';
 import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
-import { trackWavExport } from '../lib/analytics';
+import { trackWavExportCompleted } from '../lib/analytics';
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
 
@@ -823,7 +823,7 @@ export class StrudelService {
       const renderedBuffer = await offlineCtx.startRendering();
       const wav = audioBufferToWav16(renderedBuffer);
       downloadWav(wav, filename);
-      trackWavExport();
+      trackWavExportCompleted();
 
       setAudioContext(null);
       setSuperdoughAudioController(null);

@@ -21,4 +21,33 @@ describe('Vercel API layout', () => {
       }
     }
   });
+
+  it('proxies PostHog ingestion before the SPA fallback without breaking share pages', async () => {
+    const config = JSON.parse(await readFile('vercel.json', 'utf8')) as {
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+
+    expect(config.rewrites).toEqual([
+      {
+        source: '/s/:id',
+        destination: '/api/share-page?id=:id',
+      },
+      {
+        source: '/_nova/static/:path*',
+        destination: 'https://us-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/_nova/array/:path*',
+        destination: 'https://us.i.posthog.com/array/:path*',
+      },
+      {
+        source: '/_nova/:path*',
+        destination: 'https://us.i.posthog.com/:path*',
+      },
+      {
+        source: '/(.*)',
+        destination: '/index.html',
+      },
+    ]);
+  });
 });
