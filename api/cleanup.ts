@@ -30,8 +30,9 @@ async function cleanupDailySuggestions(now: Date): Promise<number> {
     beijingDate(now),
     now,
   );
-  if (cleanup.batchUrls.length) await del(cleanup.batchUrls);
-  let deleted = cleanup.batchUrls.length;
+  const artifactUrls = [...cleanup.batchUrls, ...cleanup.runUrls];
+  if (artifactUrls.length) await del(artifactUrls);
+  let deleted = artifactUrls.length;
   for (const lock of cleanup.locks) {
     try {
       await del(lock.url, { ifMatch: lock.etag });

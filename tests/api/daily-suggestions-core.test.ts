@@ -3,6 +3,7 @@ import {
   addDateDays,
   beijingDate,
   dailySuggestionPath,
+  dailySuggestionRunPath,
   expiredDailySuggestionCleanup,
   expiredDailySuggestionUrls,
   parseGeneratedItems,
@@ -28,6 +29,10 @@ describe('daily suggestion server contract', () => {
   it('does calendar-safe date arithmetic and deterministic paths', () => {
     expect(addDateDays('2026-03-01', -1)).toBe('2026-02-28');
     expect(dailySuggestionPath('2026-07-18')).toBe('daily-suggestions/2026-07-18.json');
+    expect(dailySuggestionRunPath('2026-07-18', 'primary'))
+      .toBe('daily-suggestions/runs/2026-07-18/primary.json');
+    expect(dailySuggestionRunPath('2026-07-18', 'repair'))
+      .toBe('daily-suggestions/runs/2026-07-18/repair.json');
     expect(readCandidateDates('2026-07-18')).toHaveLength(8);
     expect(readCandidateDates('2026-07-18').at(-1)).toBe('2026-07-11');
   });
@@ -68,7 +73,25 @@ describe('daily suggestion server contract', () => {
 
     expect(expiredDailySuggestionCleanup(blobs, '2026-07-18', now)).toEqual({
       batchUrls: [],
+      runUrls: [],
       locks: [{ url: 'old-lock', etag: 'old-etag' }],
+    });
+  });
+
+  it('keeps 30 dates of well-formed primary and repair run records', () => {
+    const blobs = [
+      { pathname: 'daily-suggestions/runs/2026-06-18/primary.json', url: 'old-primary' },
+      { pathname: 'daily-suggestions/runs/2026-06-18/repair.json', url: 'old-repair' },
+      { pathname: 'daily-suggestions/runs/2026-06-19/primary.json', url: 'keep-primary' },
+      { pathname: 'daily-suggestions/runs/2026-00-00/repair.json', url: 'impossible' },
+      { pathname: 'daily-suggestions/runs/2026-06-18/unknown.json', url: 'unknown-trigger' },
+      { pathname: 'daily-suggestions/runs/not-a-date/primary.json', url: 'unknown-date' },
+    ];
+
+    expect(expiredDailySuggestionCleanup(blobs, '2026-07-18')).toEqual({
+      batchUrls: [],
+      runUrls: ['old-primary', 'old-repair'],
+      locks: [],
     });
   });
 });

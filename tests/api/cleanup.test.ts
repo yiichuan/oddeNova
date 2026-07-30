@@ -60,6 +60,8 @@ describe('cleanup handler', () => {
             { pathname: 'daily-suggestions/not-a-date.json', url: 'https://blob/malformed', uploadedAt: new Date() },
             { pathname: 'daily-suggestions/locks/2026-07-19.lock', url: 'https://blob/recent-lock', uploadedAt: new Date('2026-07-18T03:00:00.000Z') },
             { pathname: 'daily-suggestions/locks/not-a-date.lock', url: 'https://blob/malformed-lock', uploadedAt: new Date('2026-06-01T00:00:00.000Z') },
+            { pathname: 'daily-suggestions/runs/2026-06-19/repair.json', url: 'https://blob/retained-run', uploadedAt: new Date() },
+            { pathname: 'daily-suggestions/runs/2026-06-18/unknown.json', url: 'https://blob/malformed-run', uploadedAt: new Date() },
           ],
           cursor: 'daily-next',
         } as never;
@@ -68,6 +70,7 @@ describe('cleanup handler', () => {
         blobs: [
           { pathname: 'daily-suggestions/2026-06-18.json', url: 'https://blob/expired', uploadedAt: new Date() },
           { pathname: 'daily-suggestions/locks/2026-07-18.lock', url: 'https://blob/old-lock', etag: 'old-etag', uploadedAt: new Date('2026-07-17T03:59:59.000Z') },
+          { pathname: 'daily-suggestions/runs/2026-06-18/primary.json', url: 'https://blob/expired-run', uploadedAt: new Date() },
         ],
       } as never;
     });
@@ -80,16 +83,18 @@ describe('cleanup handler', () => {
     expect(list).toHaveBeenCalledWith({ prefix: 'daily-suggestions/', cursor: undefined, limit: 1000 });
     expect(list).toHaveBeenCalledWith({ prefix: 'daily-suggestions/', cursor: 'daily-next', limit: 1000 });
     expect(del).toHaveBeenCalledWith(['https://blob/old-share']);
-    expect(del).toHaveBeenCalledWith(['https://blob/expired']);
+    expect(del).toHaveBeenCalledWith(['https://blob/expired', 'https://blob/expired-run']);
     expect(del).toHaveBeenCalledWith('https://blob/old-lock', { ifMatch: 'old-etag' });
     expect(del).not.toHaveBeenCalledWith(expect.arrayContaining([
       'https://blob/retained',
       'https://blob/malformed',
       'https://blob/recent-lock',
       'https://blob/malformed-lock',
+      'https://blob/retained-run',
+      'https://blob/malformed-run',
     ]));
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ deleted: 1, dailySuggestionsDeleted: 2, errors: [] });
+    expect(res.body).toEqual({ deleted: 1, dailySuggestionsDeleted: 3, errors: [] });
   });
 
   it('continues daily cleanup when share listing fails', async () => {
