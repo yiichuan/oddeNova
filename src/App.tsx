@@ -17,7 +17,7 @@ import { isDemoMode, getActiveDemoSet } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
-import { HistoryIcon, PlusIcon } from './components/icons';
+import { HistoryIcon, PlayIcon, PlusIcon, StopIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useOddeNovaImport } from './hooks/useOddeNovaImport';
@@ -77,7 +77,6 @@ export default function App() {
     setHistoryOpen,
     drawerOpen,
     setDrawerOpen,
-    mobileFocusedArea,
     shouldLiftBottomBar,
     mobileDrawerHeight,
     handleChatFocusChange,
@@ -113,6 +112,19 @@ export default function App() {
       abortControllersRef.current.get(id)?.abort();
     }
   }, [sessions]);
+
+  // Mobile transport toggle next to the code pill. Mirrors CodePanel's footer
+  // play button, which mobile no longer renders.
+  const handleMobileTransportClick = useCallback(() => {
+    if (strudel.isPlaying) {
+      strudel.stop();
+    } else if (strudel.engineReady && strudel.code) {
+      void strudel.play();
+    }
+  }, [strudel]);
+  // Dimmed until there's something to play — but never while playing, or the
+  // stop action would become unreachable.
+  const mobileTransportDisabled = !strudel.isPlaying && (!strudel.engineReady || !strudel.code);
 
   const openPersonaModal = useCallback(() => {
     setShowPersonaModal(true);
@@ -170,8 +182,6 @@ export default function App() {
     ? (demoStep < activeSet.length ? [activeSet[demoStep].prompt] : [])
     : suggestions;
   const visibleSuggestions = demoSuggestions;
-  const showMobileCreateSuggestions =
-    !isLoading && visibleSuggestions.length > 0 && !isVideoMode && mobileFocusedArea !== 'code';
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
@@ -428,7 +438,10 @@ export default function App() {
         </div>
 
         {/* ── Conversation ── */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        {/* mb-3 keeps the stream from clipping flush against the rule below —
+            this is where messages get cut off as they scroll, so butting it
+            straight up to the line read as cramped. */}
+        <div className="flex-1 min-h-0 overflow-hidden mb-5">
           <ConversationView
             key={sessions.currentId ?? 'default'}
             messages={messages}
@@ -441,10 +454,24 @@ export default function App() {
         </div>
 
         {/* ── Code Drawer ── */}
+        {/* No border of its own: CodePanel already draws a full border, and a
+            border-t here would survive the 0-height collapsed state as a stray
+            line 6px below the rule. */}
         <div
-          className="shrink-0 overflow-hidden border-t border-border"
+          className="shrink-0 overflow-hidden"
           style={{
             height: mobileDrawerHeight,
+            // Lands CodePanel's bottom border exactly on the rule the bottom bar
+            // draws at -6px, so the two are the same row of pixels and read as
+            // one line. The border sits in the last 1px *inside* the drawer's
+            // box, so the box has to stop at -5, not -6.
+            //
+            // Constant, never animated: while this transitioned alongside height
+            // the border travelled from 0 to its resting place and showed as a
+            // second line for the length of the animation. Only height moves now,
+            // so the border stays pinned to the rule throughout. The conversation
+            // above is flex-1, so it gives up the 5px and the bar doesn't move.
+            marginBottom: 5,
             transition: 'height 0.3s cubic-bezier(0.4,0,0.2,1)',
           }}
         >
@@ -473,44 +500,58 @@ export default function App() {
 
         {/* ── Bottom Bar ── */}
         <div
-          className="relative shrink-0 px-3 pt-3 border-t border-border"
+          className="relative shrink-0 px-3 pt-3"
           style={{
             paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
             transform: shouldLiftBottomBar ? `translateY(-${keyboardHeight}px)` : undefined,
             transition: 'transform 0.3s ease-out',
           }}
         >
-          {/* Code pill toggle — rides on the border-t line */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
+          {/* The rule the row below straddles, drawn 6px above this bar rather
+              than as its border-t so it lands on the row's centre line in both
+              drawer states. Kept inside the bar so it still rides along when the
+              keyboard lifts it; a sibling of the drawer would stay behind. */}
+          <div className="absolute -top-1.5 left-0 right-0 border-t border-border" />
+
+          {/* Transport and code pill both ride the rule above, positioned
+              independently: the transport flush left, the pill centred in the
+              bar. Both are 28px tall so they straddle the rule and hide the
+              stretch behind them with their own background. The transport lives
+              here rather than in CodePanel's footer so it stays reachable
+              whether or not the code drawer is open.
+
+              Only the pill is centred; the transport hangs off its left edge via
+              right-full rather than an offset of its own, so the 20px gap holds
+              when the label swaps between 查看代码 / 收起代码 and changes width. */}
+          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 -translate-y-1/2 h-7">
+            <button
+              onClick={handleMobileTransportClick}
+              disabled={mobileTransportDisabled}
+              // Dimmed by darkening the glyph itself, not by opacity: the icons
+              // fill from currentColor, so only the triangle/square goes down in
+              // brightness while the ring and background stay put.
+              className={`absolute right-full top-0 mr-3 flex w-7 h-7 items-center justify-center rounded-full border border-border bg-bg-primary disabled:cursor-not-allowed ${
+                mobileTransportDisabled ? 'text-[#591C06]' : 'text-[#B2370C]'
+              }`}
+              aria-label={strudel.isPlaying ? t('stop') : t('play')}
+              title={strudel.isPlaying ? t('stop') : t('play')}
+            >
+              {/* Stop renders smaller: Square fills its viewBox while Play's
+                  triangle is narrower, so equal sizes look unbalanced */}
+              {strudel.isPlaying ? <StopIcon size={12} /> : <PlayIcon size={14} />}
+            </button>
             <button
               onClick={() => setDrawerOpen((v) => !v)}
-              className="rounded-full border border-border bg-bg-primary px-4 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+              className="flex h-7 items-center rounded-full border border-border bg-bg-primary px-4 text-[12px] text-text-secondary hover:text-text-primary transition-colors"
             >
               {drawerOpen ? t('collapseCode') : t('viewCode')}
             </button>
           </div>
 
-          {/* Suggestion chips — horizontal scroll. Desktop rotates through the full
-              set as placeholder hints; mobile shows just two quick-action buttons. */}
-          {showMobileCreateSuggestions && (
-            <div className="suggestion-chips flex overflow-x-auto gap-2 pb-2 mt-3 no-scrollbar">
-              {visibleSuggestions.slice(0, 2).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => handleInstruction(s)}
-                  disabled={strudel.engineStatus !== 'ready'}
-                  className="rounded-lg bg-transparent border border-border px-3 py-1.5 text-[11px] text-[#cccccc] whitespace-nowrap shrink-0 transition hover:border-accent/50 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Input */}
-          <div className={showMobileCreateSuggestions ? '' : 'mt-3'}>
+          {/* Input. Suggestions ride inside it as the animated placeholder, same
+              as desktop — mobile adopts one by focusing the field rather than
+              with Tab, so no separate chip row. */}
+          <div className="mt-3">
             <ChatInput
               isLoading={isLoading}
               engineReady={strudel.engineReady}
@@ -521,6 +562,8 @@ export default function App() {
               prefill={rollbackPrefill}
               focusTrigger={inputFocusTrigger}
               onFocusChange={handleChatFocusChange}
+              suggestions={isVideoMode ? [] : visibleSuggestions}
+              isVideoMode={isVideoMode}
             />
           </div>
         </div>

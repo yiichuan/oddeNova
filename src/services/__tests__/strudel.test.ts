@@ -295,6 +295,7 @@ describe('StrudelService editor preferences', () => {
         setCode = vi.fn();
         evaluate = vi.fn(async () => {});
         setAutocompletionEnabled = setAutocompletionEnabled;
+        setLineWrappingEnabled = vi.fn();
         changeSetting = vi.fn();
       },
     }));
@@ -321,6 +322,7 @@ describe('StrudelService editor preferences', () => {
         setCode = vi.fn();
         evaluate = vi.fn(async () => {});
         setAutocompletionEnabled = vi.fn();
+        setLineWrappingEnabled = vi.fn();
         changeSetting = changeSetting;
       },
     }));

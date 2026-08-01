@@ -318,6 +318,34 @@ body {
   .cm-editor .cm-lineNumbers .cm-gutterElement { font-size: 16px !important; }
 }
 
+/* Narrow the gutter below the mobile breakpoint (matches useIsMobile, i.e. the
+   widths where the editor lives in the drawer): the desktop 72px costs too much
+   of the line. 32px of content still fits a 3-digit number at the 16px above. */
+@media (max-width: 768px) {
+  .cm-editor .cm-lineNumbers {
+    width: 44px !important;
+    min-width: 44px !important;
+  }
+
+  .cm-editor .cm-lineNumbers .cm-gutterElement {
+    width: 44px !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+
+  /* Hanging indent for wrapped lines (wrapping itself is turned on via
+     StrudelMirror's setLineWrappingEnabled, see CodePanel). CodeMirror starts a
+     continuation row at column 0, which reads as a new statement; the negative
+     text-indent pulls the *first* row back out by the same amount the padding
+     pushes the block in, so the first row lands where it always did and only
+     continuation rows are inset. Padding keeps CodeMirror's own 6px on
+     .cm-line, otherwise the caret sits flush against the gutter border. */
+  .cm-editor .cm-line {
+    padding-left: calc(6px + 3ch);
+    text-indent: -3ch;
+  }
+}
+
 /* Strudel full-page visualizer canvas (pianoroll, scope等) 浮于编辑器上层，pointer-events:none 不影响操作 */
 /* z-index 生效依赖 strudel 在 JS 中内联设置的 position:fixed（见 @strudel/draw draw.mjs getDrawContext）*/
 canvas#test-canvas {
