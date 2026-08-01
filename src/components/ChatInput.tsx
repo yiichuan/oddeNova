@@ -4,6 +4,7 @@ import type { TokenStats } from '../hooks/useSessions';
 import { t } from '../lib/i18n';
 import { checkAirJellyAvailable } from '../services/airjelly';
 import { isDemoMode } from '../demo/demo-config';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 // Split text into typewriter units: CJK (and fullwidth punctuation) reveal
 // character by character, latin script word by word (a run of non-CJK,
@@ -67,6 +68,9 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Mobile has no Tab key, so the suggestion is adopted by focusing the field
+  // instead, and the "press Tab" hint has nothing to point at.
+  const isMobile = useIsMobile();
 
   // AirJelly reachability, checked once on mount — same gating the removed
   // mood button used: Windows is excluded (AirJelly Desktop doesn't support
@@ -188,10 +192,20 @@ export default function ChatInput({
     doSubmit();
   };
 
+  // What Tab does on desktop. Adopts the whole suggestion, not just the part
+  // typed out so far, so a mid-reveal trigger doesn't yield half a sentence.
+  const adoptSuggestion = () => {
+    if (suggestionActive && currentSuggestion) setText(currentSuggestion);
+  };
+
   const handleCardClick = (e: React.MouseEvent<HTMLFormElement>) => {
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
     textareaRef.current?.focus();
+    // Keyed to the tap on this card rather than to onFocus: focus also arrives
+    // programmatically (mount's focusTrigger, rollback prefill, replay), and
+    // those must not adopt the suggestion.
+    if (isMobile) adoptSuggestion();
   };
 
   const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
@@ -224,9 +238,10 @@ export default function ChatInput({
             onBlur={() => onFocusChange?.(false)}
             onKeyDown={(e) => {
               if (replayValue !== undefined) return;
+              // Guarded so Tab still moves focus out when there's nothing to adopt.
               if (e.key === 'Tab' && !e.shiftKey && suggestionActive && currentSuggestion) {
                 e.preventDefault();
-                setText(currentSuggestion);
+                adoptSuggestion();
                 return;
               }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -244,7 +259,10 @@ export default function ChatInput({
           {/* Rotating suggestion shown in place of the native placeholder
               (which can't animate or carry a styled hint). The text types
               out unit by unit. Mirrors the textarea's own padding exactly;
-              pointer-events-none so clicks focus the input. */}
+              pointer-events-none so clicks focus the input. Type scale tracks
+              the textarea's, including its 16px on mobile — that size is there
+              to stop iOS auto-zoom on focus and can't be lowered, so the
+              overlay matches it to avoid a jump when a suggestion is adopted. */}
           {suggestionActive && (
             <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-[#666666]">
               {/* Only the suggestion text blurs/fades between rotations — blur
@@ -287,7 +305,7 @@ export default function ChatInput({
                   </button>
                 )}
               </div>
-            ) : suggestionActive ? (
+            ) : suggestionActive && !isMobile ? (
               <div className="pointer-events-none text-[12px] text-[#666666]">{t('tabToFill')}</div>
             ) : null}
           </div>
