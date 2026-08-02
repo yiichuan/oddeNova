@@ -9,6 +9,7 @@
   ],
   "crons": [
     {"path": "/api/cleanup", "schedule": "0 0 * * *"},
-    {"path": "/api/daily-suggestions-generate", "schedule": "0 15 * * *"}
+    {"path": "/api/daily-suggestions-generate", "schedule": "0 13 * * *"},
+    {"path": "/api/daily-suggestions-repair", "schedule": "0 16 * * *"}
   ]
 }

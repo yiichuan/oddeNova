@@ -3,14 +3,44 @@ const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PATH_RE = /^daily-suggestions\/(\d{4}-\d{2}-\d{2})\.json$/;
 const LOCK_PATH_RE = /^daily-suggestions\/locks\/(\d{4}-\d{2}-\d{2})\.lock$/;
+const RUN_PATH_RE =
+  /^daily-suggestions\/runs\/(\d{4}-\d{2}-\d{2})\/(primary|repair)\.json$/;
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const LIST_PREFIX_RE = /^\s*(?:[-*]|\d+[.)])\s+/;
 
 export interface DailySuggestionItem { zh: string; en: string }
+export type DailySuggestionTrigger = 'primary' | 'repair';
+export type DailySuggestionRunOutcome =
+  | 'created'
+  | 'exists'
+  | 'in_progress'
+  | 'configuration_error'
+  | 'generation_failed'
+  | 'store_failed';
+export type DailySuggestionFailureCategory =
+  | 'configuration'
+  | 'http'
+  | 'network'
+  | 'timeout'
+  | 'invalid_output'
+  | 'store';
 export interface DailySuggestionBatch {
   date: string;
   generatedAt: string;
   items: DailySuggestionItem[];
+}
+export interface DailySuggestionRunRecord {
+  date: string;
+  trigger: DailySuggestionTrigger;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  attempts: number;
+  outcome: DailySuggestionRunOutcome;
+  failure?: {
+    category: DailySuggestionFailureCategory;
+    status?: number;
+  };
 }
 export interface DailySuggestionBlob {
   pathname: string;
@@ -20,6 +50,7 @@ export interface DailySuggestionBlob {
 }
 export interface DailySuggestionCleanup {
   batchUrls: string[];
+  runUrls: string[];
   locks: Array<{ url: string; etag: string }>;
 }
 
@@ -45,6 +76,14 @@ export function tomorrowInBeijing(now = new Date()): string {
 export function dailySuggestionPath(date: string): string {
   if (!validDate(date)) throw new Error(`Invalid date: ${date}`);
   return `daily-suggestions/${date}.json`;
+}
+
+export function dailySuggestionRunPath(
+  date: string,
+  trigger: DailySuggestionTrigger,
+): string {
+  if (!validDate(date)) throw new Error(`Invalid date: ${date}`);
+  return `daily-suggestions/runs/${date}/${trigger}.json`;
 }
 
 export function readCandidateDates(date: string): string[] {
@@ -116,11 +155,17 @@ export function expiredDailySuggestionCleanup(
 ): DailySuggestionCleanup {
   const oldestRetainedDate = addDateDays(today, -29);
   const lockCutoff = now.getTime() - DAY_MS;
-  const cleanup: DailySuggestionCleanup = { batchUrls: [], locks: [] };
+  const cleanup: DailySuggestionCleanup = { batchUrls: [], runUrls: [], locks: [] };
   for (const blob of blobs) {
     const date = PATH_RE.exec(blob.pathname)?.[1];
     if (date) {
       if (validDate(date) && date < oldestRetainedDate) cleanup.batchUrls.push(blob.url);
+      continue;
+    }
+
+    const runDate = RUN_PATH_RE.exec(blob.pathname)?.[1];
+    if (runDate) {
+      if (validDate(runDate) && runDate < oldestRetainedDate) cleanup.runUrls.push(blob.url);
       continue;
     }
 

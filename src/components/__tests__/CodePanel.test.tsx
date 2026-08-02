@@ -12,6 +12,7 @@ vi.mock('../../services/strudel', () => ({
     setMasterVolume: vi.fn().mockResolvedValue(undefined),
     setTempo: vi.fn(),
     setAutocompletionEnabled: vi.fn(),
+    setLineWrappingEnabled: vi.fn(),
   },
 }));
 
@@ -152,5 +153,31 @@ describe('CodePanel editor focus reporting', () => {
 
     act(() => setMobile(false));
     expect(strudelService.setAutocompletionEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it('wraps long lines on mobile but not on desktop', () => {
+    installMatchMedia(true);
+    const { root } = renderCodePanel();
+    roots.push(root);
+
+    expect(strudelService.setLineWrappingEnabled).toHaveBeenCalledWith(true);
+
+    installMatchMedia(false);
+    const second = renderCodePanel();
+    roots.push(second.root);
+
+    expect(strudelService.setLineWrappingEnabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it('updates line wrapping when the layout crosses the mobile breakpoint', () => {
+    const setMobile = installMatchMedia(false);
+    const { root } = renderCodePanel();
+    roots.push(root);
+
+    act(() => setMobile(true));
+    expect(strudelService.setLineWrappingEnabled).toHaveBeenLastCalledWith(true);
+
+    act(() => setMobile(false));
+    expect(strudelService.setLineWrappingEnabled).toHaveBeenLastCalledWith(false);
   });
 });
