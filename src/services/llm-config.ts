@@ -12,6 +12,9 @@
 // ===========================================================================
 
 import { t } from '../lib/i18n';
+import type { ThinkingLevel } from '../agent/loop';
+
+export type { ThinkingLevel };
 
 /** Provider protocol type; determines which SDK to use. */
 export type Protocol = 'anthropic' | 'openai';
@@ -145,6 +148,28 @@ export function getSelectedModel(provider: ProviderType): string {
     return envModel || 'claude-sonnet-4-6';
   }
   return preset.model;
+}
+
+// ---------------------------------------------------------------------------
+// Thinking level (see CONTEXT.md: Thinking level)
+// ---------------------------------------------------------------------------
+
+export const THINKING_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'extreme'];
+
+const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'medium';
+
+const THINKING_LEVEL_STORAGE_KEY = 'vibe_thinking_level';
+
+/** Global user preference, persisted like provider/model — not session-scoped. */
+export function getSelectedThinkingLevel(): ThinkingLevel {
+  const stored = localStorage.getItem(THINKING_LEVEL_STORAGE_KEY);
+  return (THINKING_LEVELS as readonly string[]).includes(stored ?? '')
+    ? (stored as ThinkingLevel)
+    : DEFAULT_THINKING_LEVEL;
+}
+
+export function setSelectedThinkingLevel(level: ThinkingLevel): void {
+  localStorage.setItem(THINKING_LEVEL_STORAGE_KEY, level);
 }
 
 // ---------------------------------------------------------------------------

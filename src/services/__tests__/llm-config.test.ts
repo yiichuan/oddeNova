@@ -1,5 +1,14 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { getActiveModelConfig, getSelectedModel, hasApiKeyConfigured, normalizeProvider, PROVIDER_PRESETS } from '../llm-config';
+import {
+  getActiveModelConfig,
+  getSelectedModel,
+  getSelectedThinkingLevel,
+  setSelectedThinkingLevel,
+  hasApiKeyConfigured,
+  normalizeProvider,
+  PROVIDER_PRESETS,
+  THINKING_LEVELS,
+} from '../llm-config';
 
 function installLocalStorage(): void {
   const store = new Map<string, string>();
@@ -199,5 +208,33 @@ describe('getActiveModelConfig with model overrides', () => {
     localStorage.setItem('vibe_api_key', 'sk-test');
 
     expect(getActiveModelConfig().model).toBe('kimi-k2.6');
+  });
+});
+
+describe('getSelectedThinkingLevel / setSelectedThinkingLevel', () => {
+  it('defaults to medium when nothing is stored', () => {
+    expect(getSelectedThinkingLevel()).toBe('medium');
+  });
+
+  it('returns the stored level when valid', () => {
+    localStorage.setItem('vibe_thinking_level', 'high');
+    expect(getSelectedThinkingLevel()).toBe('high');
+  });
+
+  it('falls back to medium for an invalid stored value', () => {
+    localStorage.setItem('vibe_thinking_level', 'ultra');
+    expect(getSelectedThinkingLevel()).toBe('medium');
+  });
+
+  it('setSelectedThinkingLevel persists a level that getSelectedThinkingLevel then returns', () => {
+    setSelectedThinkingLevel('extreme');
+    expect(localStorage.setItem).toHaveBeenCalledWith('vibe_thinking_level', 'extreme');
+    expect(getSelectedThinkingLevel()).toBe('extreme');
+  });
+});
+
+describe('THINKING_LEVELS', () => {
+  it('lists all four levels in low-to-extreme order', () => {
+    expect(THINKING_LEVELS).toEqual(['low', 'medium', 'high', 'extreme']);
   });
 });
