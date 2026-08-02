@@ -80,12 +80,20 @@ export default function ChapterLayout({ section, chapter, prev, next, onNavigate
     <div className="flex gap-8 max-w-[980px] mx-auto px-6 py-10">
       <article className="max-w-[720px] min-w-0 flex-1" style={{ fontFamily: "'ABeeZee', monospace" }}>
         <div className="text-[12px] text-white/40 mb-2">{zh ? section.titleZh : section.titleEn}</div>
-        <h1 className="text-[24px] text-white font-bold mb-6">{zh ? chapter.titleZh : chapter.titleEn}</h1>
+        <h1 className="text-[24px] text-[#e0e0e0] font-bold mb-4">{zh ? chapter.titleZh : chapter.titleEn}</h1>
+
+        <div className="mb-8 pb-4 border-b border-[#232323] text-[12px] text-white/35">
+          {t('translatedOn')} {chapter.translatedDate} ·{' '}
+          <a href={originalUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-white/60">
+            {t('viewOriginal')}
+          </a>
+          <span className="ml-1">(strudel.cc, AGPL-3.0)</span>
+        </div>
 
         {zh ? (
           <div
             ref={contentRef}
-            className="text-[14px] leading-[1.8] text-white/85 [&_h2]:text-[18px] [&_h2]:text-white [&_h2]:font-bold [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:scroll-mt-4 [&_h3]:text-[16px] [&_h3]:text-white [&_h3]:font-bold [&_h3]:mt-6 [&_h3]:mb-2 [&_p]:mb-4 [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-[1.625em] [&_ol]:pl-[1.625em] [&_ul]:mb-4 [&_ol]:mb-4 [&_li]:pl-[0.375em] [&_li]:mb-1 [&_li_ul]:my-[0.75em] [&_li_ol]:my-[0.75em] [&_code]:bg-[#1a1a1a] [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[13px] [&_pre]:bg-[#111] [&_pre]:border [&_pre]:border-[#323232] [&_pre]:p-3 [&_pre]:mb-4 [&_pre]:overflow-x-auto [&_a]:underline [&_a]:text-white"
+            className="text-[14px] leading-[1.8] text-[#c0c0c0] [&_h2]:text-[18px] [&_h2]:text-[#e0e0e0] [&_h2]:font-bold [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:scroll-mt-4 [&_h3]:text-[16px] [&_h3]:text-[#e0e0e0] [&_h3]:font-bold [&_h3]:mt-6 [&_h3]:mb-2 [&_p]:mb-4 [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-[1.625em] [&_ol]:pl-[1.625em] [&_ul]:mb-4 [&_ol]:mb-4 [&_li]:pl-[0.375em] [&_li]:mb-1 [&_li_ul]:my-[0.75em] [&_li_ol]:my-[0.75em] [&_code]:bg-[#1a1a1a] [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[13px] [&_pre]:bg-[#111] [&_pre]:border [&_pre]:border-[#323232] [&_pre]:p-3 [&_pre]:mb-4 [&_pre]:overflow-x-auto [&_a]:underline [&_a]:text-white"
           >
             {children}
           </div>
@@ -102,14 +110,6 @@ export default function ChapterLayout({ section, chapter, prev, next, onNavigate
             </a>
           </div>
         )}
-
-        <div className="mt-8 pt-4 border-t border-[#232323] text-[12px] text-white/35">
-          {t('translatedOn')} {chapter.translatedDate} ·{' '}
-          <a href={originalUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-white/60">
-            {t('viewOriginal')}
-          </a>
-          <span className="ml-1">(strudel.cc, AGPL-3.0)</span>
-        </div>
 
         <div className="mt-8 flex items-center justify-between gap-3">
           {prev ? (
