@@ -115,6 +115,19 @@ describe('ThinkingLevelControl', () => {
     expect(localStorage.getItem('vibe_thinking_level')).toBeNull();
   });
 
+  it('shows the current level as text on the trigger, updating after a selection changes it', () => {
+    const { container, root } = renderControl();
+    roots.push(root);
+
+    expect(getTrigger(container).textContent).toContain('Medium');
+
+    act(() => getTrigger(container).click());
+    const items = container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
+    act(() => items[2].click()); // High
+
+    expect(getTrigger(container).textContent).toContain('High');
+  });
+
   it('disables the trigger button when disabled=true', () => {
     const { container, root } = renderControl({ disabled: true });
     roots.push(root);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckIcon, GaugeIcon } from './icons';
+import { CheckIcon, ChevronDownIcon } from './icons';
 import { t } from '../lib/i18n';
 import {
   getSelectedThinkingLevel,
@@ -19,10 +19,12 @@ interface ThinkingLevelControlProps {
   disabled?: boolean;
 }
 
-// Icon button + popover next to the send button (see CONTEXT.md: Thinking
-// level). Reads/writes the global localStorage preference directly — no
-// prop threading through ChatInput/App, matching how provider/model are
-// resolved directly from llm-config.ts wherever they're needed.
+// Text-label trigger + popover next to the send button (see CONTEXT.md:
+// Thinking level) — shows the current level directly (e.g. "中") rather
+// than behind an icon, so it's readable at a glance. Reads/writes the
+// global localStorage preference directly — no prop threading through
+// ChatInput/App, matching how provider/model are resolved directly from
+// llm-config.ts wherever they're needed.
 export default function ThinkingLevelControl({ disabled = false }: ThinkingLevelControlProps) {
   const [level, setLevel] = useState<ThinkingLevel>(() => getSelectedThinkingLevel());
   const [open, setOpen] = useState(false);
@@ -49,17 +51,18 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#888888] transition duration-200 hover:text-[#e0e0e0] disabled:cursor-not-allowed disabled:opacity-30"
+        className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] text-[#888888] transition duration-200 hover:text-[#e0e0e0] disabled:cursor-not-allowed disabled:opacity-30"
         title={t('thinkingLevel')}
         aria-label={t('thinkingLevel')}
       >
-        <GaugeIcon size={16} />
+        <span>{t(LABEL_KEYS[level])}</span>
+        <ChevronDownIcon size={12} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full right-0 mb-2 w-28 overflow-hidden rounded-[10px] border border-[#2a2a2a] bg-[#181818] py-1 shadow-lg"
+          className="absolute bottom-full right-0 mb-2 w-20 overflow-hidden rounded-[10px] border border-[#2a2a2a] bg-[#181818] py-1 shadow-lg"
         >
           {THINKING_LEVELS.map((lvl) => (
             <button
