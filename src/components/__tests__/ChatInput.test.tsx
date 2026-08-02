@@ -211,3 +211,37 @@ describe('ChatInput engine initialization status', () => {
     expect(onSendText).toHaveBeenCalledWith('Try a sparse jazz groove with brushes', 'text');
   });
 });
+
+describe('ChatInput Thinking level control', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    localStorage.clear();
+  });
+
+  it('renders next to the send button when not in replay mode', () => {
+    const { container, root } = renderChatInput();
+    roots.push(root);
+
+    expect(container.querySelector('button[title="Thinking level"]')).not.toBeNull();
+  });
+
+  it('is disabled while the agent is loading, same as the rest of the input', () => {
+    const { container, root } = renderChatInput({ isLoading: true });
+    roots.push(root);
+
+    const trigger = container.querySelector<HTMLButtonElement>('button[title="Thinking level"]');
+    expect(trigger?.disabled).toBe(true);
+  });
+
+  it('is not rendered during replay', () => {
+    const { container, root } = renderChatInput({ replayValue: 's("bd")' });
+    roots.push(root);
+
+    expect(container.querySelector('button[title="Thinking level"]')).toBeNull();
+  });
+});
