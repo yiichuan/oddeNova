@@ -59,12 +59,18 @@ describe('resolveOpenAIThinkingParams — openai', () => {
 describe('resolveOpenAIThinkingParams — glm', () => {
   it('glm-5.2: low/medium/high collapse to reasoning_effort "high"', () => {
     for (const level of ['low', 'medium', 'high'] as const) {
-      expect(resolveOpenAIThinkingParams('glm', 'glm-5.2', level)).toEqual({ reasoning_effort: 'high' });
+      expect(resolveOpenAIThinkingParams('glm', 'glm-5.2', level)).toEqual({
+        thinking: { type: 'enabled' },
+        reasoning_effort: 'high',
+      });
     }
   });
 
   it('glm-5.2: extreme maps to reasoning_effort "max"', () => {
-    expect(resolveOpenAIThinkingParams('glm', 'glm-5.2', 'extreme')).toEqual({ reasoning_effort: 'max' });
+    expect(resolveOpenAIThinkingParams('glm', 'glm-5.2', 'extreme')).toEqual({
+      thinking: { type: 'enabled' },
+      reasoning_effort: 'max',
+    });
   });
 
   it.each(['glm-5.1', 'glm-5.1-air', 'glm-5'] as const)('%s only exposes the boolean thinking switch', (model) => {

@@ -50,14 +50,28 @@ export function resolveOpenAIThinkingParams(
       return { reasoning_effort: level };
     }
     case 'glm':
-      // reasoning_effort is only documented for glm-5.2 (two-tier: high/max);
-      // glm-5.1 / glm-5.1-air / glm-5 only expose the boolean thinking switch.
+      // glm-5.2 supports reasoning_effort (two-tier: high/max) and, per Z.ai's
+      // docs, thinking is on by default — but we send `thinking: { type:
+      // 'enabled' }` explicitly anyway (like deepseek/official) rather than
+      // relying on that default, since GLM (unlike Kimi) doesn't reject the two
+      // fields sent together.
+      // glm-5.1 / glm-5.1-air / glm-5 only expose the boolean thinking switch,
+      // no reasoning_effort.
       if (model === 'glm-5.2') {
-        return { reasoning_effort: level === 'extreme' ? 'max' : 'high' };
+        return {
+          thinking: { type: 'enabled' },
+          reasoning_effort: level === 'extreme' ? 'max' : 'high',
+        };
       }
       return { thinking: { type: 'enabled' } };
-    default:
-      // 'anthropic' never reaches this function (it uses resolveAnthropicThinkingParam).
+    case 'anthropic':
+      // Anthropic never reaches this function (it uses resolveAnthropicThinkingParam) —
+      // this case exists only so TypeScript's exhaustiveness check catches a future
+      // ProviderType addition that forgets to handle Thinking level here.
       return {};
+    default: {
+      const _exhaustive: never = provider;
+      return _exhaustive;
+    }
   }
 }
