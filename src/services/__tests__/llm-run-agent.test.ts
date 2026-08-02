@@ -47,14 +47,24 @@ vi.mock('../../agent/tools', () => ({
   getOpenAIToolSchemas: vi.fn(() => []),
 }));
 
+const officialModelConfig = {
+  provider: 'official' as const,
+  protocol: 'openai' as const,
+  model: 'test-model',
+  apiKey: 'official-proxy',
+  baseURL: '/api/official/v1',
+};
+const getActiveModelConfigMock = vi.hoisted(() => vi.fn());
+const getSelectedThinkingLevelMock = vi.hoisted(() => vi.fn(() => 'medium'));
+
 vi.mock('../llm-config', () => ({
-  getActiveModelConfig: vi.fn(() => ({
-    provider: 'official',
-    protocol: 'openai',
-    model: 'test-model',
-    apiKey: 'official-proxy',
-    baseURL: '/api/official/v1',
-  })),
+  getActiveModelConfig: getActiveModelConfigMock,
+  getSelectedThinkingLevel: getSelectedThinkingLevelMock,
+}));
+
+const anthropicStreamMock = vi.hoisted(() => vi.fn());
+vi.mock('@anthropic-ai/sdk', () => ({
+  default: vi.fn(() => ({ messages: { stream: anthropicStreamMock } })),
 }));
 
 vi.mock('../../demo/demo-config', () => ({
@@ -83,6 +93,15 @@ describe('runAgent conversationHistory pass-through', () => {
       explanation: 'done',
       iterations: 1,
       committed: true,
+    });
+    getActiveModelConfigMock.mockReset().mockReturnValue(officialModelConfig);
+    getSelectedThinkingLevelMock.mockReset().mockReturnValue('medium');
+    anthropicStreamMock.mockReset().mockReturnValue({
+      on: vi.fn(),
+      finalMessage: vi.fn(async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      })),
     });
   });
 
@@ -186,5 +205,101 @@ describe('classifyIntent parsing', () => {
     };
     await classifyIntent(llm, { instruction: 'hi', currentCode: '' });
     expect(seen).toEqual([false]);
+  });
+});
+
+describe('createOpenAILLMCaller thinking params', () => {
+  beforeEach(() => {
+    runAgentLoopMock.mockReset();
+    openAIChatCreateMock.mockReset();
+    runAgentLoopMock.mockResolvedValue({ code: '', explanation: 'done', iterations: 1, committed: true });
+    getActiveModelConfigMock.mockReset().mockReturnValue(officialModelConfig);
+    getSelectedThinkingLevelMock.mockReset().mockReturnValue('medium');
+  });
+
+  async function captureLLM() {
+    async function* stream() {
+      yield { choices: [{ delta: {} }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 1, completion_tokens: 1 } };
+    }
+    openAIChatCreateMock.mockResolvedValue(stream());
+    await runAgent('go', '', undefined);
+    const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    return opts.llm;
+  }
+
+  it('merges resolved thinking params into the request when thinking is enabled', async () => {
+    const llm = await captureLLM();
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'extreme');
+
+    expect(openAIChatCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ thinking: { type: 'enabled' }, reasoning_effort: 'max' }),
+      expect.any(Object),
+    );
+  });
+
+  it('omits thinking params entirely when thinking is disabled (chat intent, unchanged from today)', async () => {
+    const llm = await captureLLM();
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, false);
+
+    const body = openAIChatCreateMock.mock.calls[0][0];
+    expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body).not.toHaveProperty('thinking');
+  });
+
+  it('defaults thinkingLevel to medium when the caller omits it', async () => {
+    const llm = await captureLLM();
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true);
+
+    expect(openAIChatCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoning_effort: 'high' }),
+      expect.any(Object),
+    );
+  });
+});
+
+describe('anthropicLLMCaller thinking params', () => {
+  beforeEach(() => {
+    runAgentLoopMock.mockReset();
+    runAgentLoopMock.mockResolvedValue({ code: '', explanation: 'done', iterations: 1, committed: true });
+    getActiveModelConfigMock.mockReset().mockReturnValue({
+      provider: 'anthropic' as const,
+      protocol: 'anthropic' as const,
+      model: 'claude-sonnet-4-6',
+      apiKey: 'sk-ant-test',
+      baseURL: 'https://api.anthropic.com',
+    });
+    getSelectedThinkingLevelMock.mockReset().mockReturnValue('medium');
+    anthropicStreamMock.mockReset().mockReturnValue({
+      on: vi.fn(),
+      finalMessage: vi.fn(async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      })),
+    });
+  });
+
+  async function captureLLM() {
+    await runAgent('go', '', undefined);
+    const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    return opts.llm;
+  }
+
+  it('maps the requested level to the matching budget_tokens', async () => {
+    const llm = await captureLLM();
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'high');
+
+    expect(anthropicStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ thinking: { type: 'enabled', budget_tokens: 32000 } }),
+      expect.any(Object),
+    );
+  });
+
+  it('omits the thinking field entirely when thinking is disabled', async () => {
+    const llm = await captureLLM();
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, false);
+
+    const body = anthropicStreamMock.mock.calls[0][0];
+    expect(body).not.toHaveProperty('thinking');
   });
 });

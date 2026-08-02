@@ -9,11 +9,13 @@ import {
   type ProgressEvent,
   type RunAgentResult,
   type ThinkingBlock,
+  type ThinkingLevel,
 } from '../agent/loop';
 import {
   getOpenAIToolSchemas,
 } from '../agent/tools';
-import { getActiveModelConfig } from './llm-config';
+import { getActiveModelConfig, getSelectedThinkingLevel } from './llm-config';
+import { resolveAnthropicThinkingParam, resolveOpenAIThinkingParams } from './thinking-params';
 import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 import { getActivePersonaSync } from '../lib/persona-storage';
@@ -234,7 +236,7 @@ function getActiveLLMCaller(): LLMCaller {
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
     const anthropic = getAnthropicClient();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
@@ -246,7 +248,7 @@ const anthropicLLMCaller: LLMCaller = {
       temperature: 1,
       max_tokens: AGENT_MAX_TOKENS,
       // Omit `thinking` entirely when disabled so no reasoning tokens are generated.
-      ...(enableThinking ? { thinking: { type: 'enabled', budget_tokens: 10000 } } : {}),
+      ...(enableThinking ? { thinking: resolveAnthropicThinkingParam(thinkingLevel) } : {}),
     // Type assertion needed: SDK types don't yet include `thinking` in the
     // stream params, but it works at runtime when the beta header is set.
     } as Parameters<typeof anthropic.messages.stream>[0], { signal });
@@ -300,8 +302,12 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller(): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true) {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
       const oai = getOpenAIClient();
+      const cfg = getActiveModelConfig();
+      const thinkingParams = enableThinking
+        ? resolveOpenAIThinkingParams(cfg.provider, cfg.model, thinkingLevel)
+        : {};
 
       const stream = await oai.chat.completions.create({
         model: getModel(),
@@ -317,7 +323,11 @@ function createOpenAILLMCaller(): LLMCaller {
         max_tokens: AGENT_MAX_TOKENS,
         stream: true,
         stream_options: { include_usage: true },
-      }, { signal });
+        ...thinkingParams,
+      // Type assertion needed: `thinking`/`reasoning_effort` are provider-specific
+      // fields accepted at runtime by DeepSeek/Kimi/GLM's OpenAI-compatible
+      // endpoints but aren't in the OpenAI SDK's own param types.
+      } as OpenAI.ChatCompletionCreateParamsStreaming, { signal });
 
       let text = '';
       let reasoningContent = '';
@@ -461,6 +471,7 @@ export async function runAgent(
     signal,
     conversationHistory,
     enableThinking: intent === 'compose',
+    thinkingLevel: getSelectedThinkingLevel(),
   });
 }
 
