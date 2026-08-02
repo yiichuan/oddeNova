@@ -142,6 +142,13 @@ const S: Record<string, readonly [string, string]> = {
   clickToResume:   ['点击播放继续', 'Click to resume'],
   emptyCode:       ['代码为空', 'Code is empty'],
   copyShareLink:   ['复制分享链接', 'Copy share link'],
+
+  // Thinking level
+  thinkingLevel:        ['思考强度', 'Thinking level'],
+  thinkingLevelLow:     ['低', 'Low'],
+  thinkingLevelMedium:  ['中', 'Medium'],
+  thinkingLevelHigh:    ['高', 'High'],
+  thinkingLevelExtreme: ['极高', 'Extreme'],
 };
 
 export function t(key: string): string {

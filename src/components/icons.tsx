@@ -18,6 +18,7 @@ import {
   X,
   RefreshCw,
   Split,
+  Gauge,
 } from 'lucide-react';
 
 interface IconProps {
@@ -58,3 +59,4 @@ export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={siz
 export const XIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;
 export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 export const GitBranchIcon = ({ size = 16, className }: IconProps) => <Split size={size} className={className} />;
+export const GaugeIcon = ({ size = 16, className }: IconProps) => <Gauge size={size} className={className} />;
