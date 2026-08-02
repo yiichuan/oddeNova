@@ -106,13 +106,6 @@ Open your browser at `http://localhost:5173`. On first use, select a provider an
 
 > LLM API keys are entered in the in-app UI. For the cron cleanup feature, configure `CRON_SECRET` in your Vercel project settings.
 
-#### Optional: PostHog business analytics
-
-- Set the Production project's `VITE_POSTHOG_KEY` only in Vercel Production. Leave it blank locally and in CI. For Preview acceptance, use a separate Test project token.
-- Browser events use the same-origin `/_nova` proxy to PostHog US Cloud. The app sends only five manual business events; autocapture, page events, replay, heatmaps, exceptions, and performance capture are disabled.
-- Disable IP/GeoIP in PostHog project settings and set raw-event retention to 12 months. Filter the dashboard to `schema_version = 1` and exclude `surface = demo` from core metrics.
-- To exclude an internal production device, run `localStorage.setItem('oddenova_analytics_disabled', '1')` in its console and reload. Remove the key and reload to restore analytics.
-
 ## How It Works
 
 Every text message you send triggers an AI Agent inference loop:

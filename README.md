@@ -107,13 +107,6 @@ npm run dev
 
 > LLM API Key 在应用内界面填写。如需 cron 清理功能，在 Vercel 项目设置中配置 `CRON_SECRET`。
 
-#### 可选：PostHog 业务分析
-
-- 仅在 Vercel Production 配置 Production 项目的 `VITE_POSTHOG_KEY`；本地与 CI 留空。需要 Preview 验收时，只配置独立 Test 项目的 token。
-- 浏览器事件经同源 `/_nova` 转发到 PostHog US Cloud。应用只手动发送 5 个业务事件；自动采集、页面事件、录屏、热力图、异常和性能采集均关闭。
-- 在 PostHog 项目设置中关闭 IP/GeoIP，并把原始事件保留期设为 12 个月。Dashboard 统一过滤 `schema_version = 1`，核心指标排除 `surface = demo`。
-- 内部生产设备可在控制台执行 `localStorage.setItem('oddenova_analytics_disabled', '1')` 后刷新来停用采集；删除该 key 并刷新即可恢复。
-
 ## 工作原理
 
 你输入的每一条文字都会触发一个 AI Agent 推理循环：
