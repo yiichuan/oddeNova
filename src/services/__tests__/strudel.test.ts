@@ -55,7 +55,7 @@ describe('Strudel code validation', () => {
 
   it('rejects named .arp() modes before playback', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
     const result = validateCodeRuntime('({ arp() { return this } }).arp("pinkyup")');
@@ -69,7 +69,7 @@ describe('Strudel code validation', () => {
 
   it('allows numeric .arp() index patterns', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
     const result = validateCodeRuntime('({ arp() { return this } }).arp("0 [0,2] 1 [0,2]")');
@@ -79,7 +79,7 @@ describe('Strudel code validation', () => {
 
   it('rejects note patterns chained into .voicing() before playback', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
     const result = validateCodeRuntime(`
@@ -105,7 +105,7 @@ describe('Strudel code validation', () => {
 
   it('allows chord patterns chained into .voicing()', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
     const result = validateCodeRuntime(`
@@ -136,7 +136,7 @@ describe('StrudelService initialization recovery', () => {
 
   it('keeps the mount container so reinit can retry after an early attach failure', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
     vi.doMock('@strudel/codemirror', () => {
       throw new Error('codemirror import failed');
     });
@@ -152,7 +152,7 @@ describe('StrudelService initialization recovery', () => {
 
   it('rebuilds the live audio graph when Safari leaves AudioContext interrupted after resume', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     let audioContext = createFakeAudioContext('interrupted');
     const replacementContext = createFakeAudioContext('running');
@@ -205,7 +205,7 @@ describe('StrudelService initialization recovery', () => {
 
   it('surfaces the recovery retry error when playback still fails after rebuilding audio', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     let audioContext = createFakeAudioContext('running');
     const replacementContext = createFakeAudioContext('running');
@@ -267,7 +267,7 @@ describe('StrudelService editor preferences', () => {
 
   it('delegates autocompletion changes to StrudelMirror', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { StrudelService } = await import('../strudel');
     const service = new StrudelService();
@@ -287,7 +287,7 @@ describe('StrudelService editor preferences', () => {
 
   it('applies the requested autocompletion state after the editor attaches', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
     const setAutocompletionEnabled = vi.fn();
     vi.doMock('@strudel/codemirror', () => ({
       StrudelMirror: class {
@@ -314,7 +314,7 @@ describe('StrudelService editor preferences', () => {
 
   it('enables Tab indentation when the editor attaches', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
     const changeSetting = vi.fn();
     vi.doMock('@strudel/codemirror', () => ({
       StrudelMirror: class {
@@ -346,7 +346,7 @@ describe('page audio recovery', () => {
 
   it('prompts for a user gesture when the page becomes visible again', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { installPageAudioRecovery } = await import('../strudel');
     const windowTarget = createFakeEventTarget();
@@ -377,7 +377,7 @@ describe('page audio recovery', () => {
 
   it('keeps playing on hidden when interruption is disabled (desktop)', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExport: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { installPageAudioRecovery } = await import('../strudel');
     const windowTarget = createFakeEventTarget();

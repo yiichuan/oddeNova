@@ -4,7 +4,10 @@ import type { TokenStats } from '../hooks/useSessions';
 import { t } from '../lib/i18n';
 import { checkAirJellyAvailable } from '../services/airjelly';
 import { isDemoMode } from '../demo/demo-config';
+import type { AgentEntryPoint } from '../lib/analytics';
 import { useIsMobile } from '../hooks/useIsMobile';
+
+type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 
 // Split text into typewriter units: CJK (and fullwidth punctuation) reveal
 // character by character, latin script word by word (a run of non-CJK,
@@ -29,7 +32,7 @@ interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
-  onSendText: (text: string) => void;
+  onSendText: (text: string, entryPoint: ChatEntryPoint) => void;
   onReinitEngine: () => void;
   onStop?: () => void;
   prefill?: string;
@@ -68,6 +71,7 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const adoptedSuggestionRef = useRef<string | null>(null);
   // Mobile has no Tab key, so the suggestion is adopted by focusing the field
   // instead, and the "press Tab" hint has nothing to point at.
   const isMobile = useIsMobile();
@@ -145,7 +149,10 @@ export default function ChatInput({
       : '';
 
   useEffect(() => {
-    if (prefill) setText(prefill);
+    if (prefill) {
+      adoptedSuggestionRef.current = null;
+      setText(prefill);
+    }
   }, [prefill, focusTrigger]);
 
   useEffect(() => {
@@ -178,13 +185,16 @@ export default function ChatInput({
     if (replayValue !== undefined) return;
     const value = text.trim();
     if (!value || isLoading || moodPending) return;
+    const entryPoint: ChatEntryPoint =
+      adoptedSuggestionRef.current === value ? 'suggestion' : 'text';
+    adoptedSuggestionRef.current = null;
     setText('');
     if (moodSuggestionActive && value === moodSuggestion) {
       setMoodPending(true);
       Promise.resolve(onMoodGenerate!()).finally(() => setMoodPending(false));
       return;
     }
-    onSendText(value);
+    onSendText(value, entryPoint);
   };
 
   const handleSubmit = (e: { preventDefault(): void }) => {
@@ -195,7 +205,10 @@ export default function ChatInput({
   // What Tab does on desktop. Adopts the whole suggestion, not just the part
   // typed out so far, so a mid-reveal trigger doesn't yield half a sentence.
   const adoptSuggestion = () => {
-    if (suggestionActive && currentSuggestion) setText(currentSuggestion);
+    if (suggestionActive && currentSuggestion) {
+      adoptedSuggestionRef.current = currentSuggestion;
+      setText(currentSuggestion);
+    }
   };
 
   const handleCardClick = (e: React.MouseEvent<HTMLFormElement>) => {
@@ -232,7 +245,10 @@ export default function ChatInput({
           <textarea
             ref={textareaRef}
             value={replayValue !== undefined ? replayValue : text}
-            onChange={replayValue !== undefined ? undefined : (e) => setText(e.target.value)}
+            onChange={replayValue !== undefined ? undefined : (e) => {
+              adoptedSuggestionRef.current = null;
+              setText(e.target.value);
+            }}
             readOnly={replayValue !== undefined}
             onFocus={() => onFocusChange?.(true)}
             onBlur={() => onFocusChange?.(false)}

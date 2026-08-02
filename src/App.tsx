@@ -34,6 +34,7 @@ import OddeNovaImportNotice from './components/OddeNovaImportNotice';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
+import type { AgentEntryPoint } from './lib/analytics';
 
 export default function App() {
   const strudel = useStrudel();
@@ -230,6 +231,7 @@ export default function App() {
 
   const handleInstruction = useCallback(
     async (text: string, options?: {
+      entryPoint?: AgentEntryPoint;
       skipAddMessage?: boolean;
       initialCode?: string;
       history?: ConversationTurn[];
@@ -240,6 +242,7 @@ export default function App() {
 
       return runTurn({
         text,
+        entryPoint: options?.entryPoint ?? 'text',
         includeHistory: true,
         skipAddMessage: options?.skipAddMessage,
         initialCode: options?.initialCode,
@@ -247,6 +250,12 @@ export default function App() {
       });
     },
     [runTurn, demoStep, activeSet]
+  );
+
+  const handleChatInstruction = useCallback(
+    (text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>) =>
+      handleInstruction(text, { entryPoint }),
+    [handleInstruction],
   );
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
@@ -291,6 +300,7 @@ export default function App() {
 
       sessions.truncateAndEdit(messageId, newContent);
       await handleInstruction(newContent, {
+        entryPoint: 'retry',
         skipAddMessage: true,
         initialCode: rewound.previousCode,
         history,
@@ -342,6 +352,7 @@ export default function App() {
     // Mood generation is a one-off creation: deliberately no conversation history.
     await runTurn({
       text: '根据我的心情生成音乐',
+      entryPoint: 'mood',
       moodContext: moodContext ?? undefined,
       includeHistory: false,
     });
@@ -556,7 +567,7 @@ export default function App() {
               isLoading={isLoading}
               engineReady={strudel.engineReady}
               engineStatus={strudel.engineStatus}
-              onSendText={handleInstruction}
+              onSendText={handleChatInstruction}
               onStop={handleStop}
               onReinitEngine={strudel.reinit}
               prefill={rollbackPrefill}
@@ -652,7 +663,7 @@ export default function App() {
           suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
-          onSendText={handleInstruction}
+          onSendText={handleChatInstruction}
           onStop={handleStop}
           onNewSession={handleNewSession}
           onMoodGenerate={handleMoodInstruction}

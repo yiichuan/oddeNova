@@ -149,4 +149,65 @@ describe('ChatInput engine initialization status', () => {
 
     expect(textarea.value).toBe('来一段 house');
   });
+
+  it('reports a Tab-adopted suggestion as the suggestion entry point', () => {
+    const onSendText = vi.fn();
+    const { container, root } = renderChatInput({
+      onSendText,
+      suggestions: ['Try a sparse jazz groove'],
+    });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+    expect(textarea.value).toBe('Try a sparse jazz groove');
+
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onSendText).toHaveBeenCalledWith('Try a sparse jazz groove', 'suggestion');
+  });
+
+  it('reports manually edited text as the text entry point', () => {
+    const onSendText = vi.fn();
+    const { container, root } = renderChatInput({
+      onSendText,
+      suggestions: ['Try a sparse jazz groove'],
+    });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(textarea), 'value')?.set;
+
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true,
+      }));
+      setter?.call(textarea, 'Try a sparse jazz groove with brushes');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onSendText).toHaveBeenCalledWith('Try a sparse jazz groove with brushes', 'text');
+  });
 });

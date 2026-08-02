@@ -10,6 +10,7 @@ import TopActionBar from '../TopActionBar';
 
 const uploadShareMock = vi.hoisted(() => vi.fn());
 const shareUrlMock = vi.hoisted(() => vi.fn());
+const trackShareCompletedMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/share', () => ({
   uploadShare: uploadShareMock,
@@ -20,7 +21,7 @@ vi.mock('../../services/share-target', () => ({
 }));
 
 vi.mock('../../lib/analytics', () => ({
-  trackShare: vi.fn(),
+  trackShareCompleted: trackShareCompletedMock,
 }));
 
 vi.mock('../../hooks/useIsMobile', () => ({ useIsMobile: () => false }));
@@ -93,6 +94,7 @@ describe('TopActionBar mobile menu', () => {
     vi.restoreAllMocks();
     uploadShareMock.mockReset();
     shareUrlMock.mockReset();
+    trackShareCompletedMock.mockReset();
   });
 
   it('keeps the requested mobile menu actions in order', () => {
@@ -128,6 +130,50 @@ describe('TopActionBar mobile menu', () => {
       messages: session.messages,
       locale: 'en',
     });
+    expect(trackShareCompletedMock).toHaveBeenCalledWith({
+      share_method: 'clipboard',
+    });
+  });
+
+  it.each([
+    ['shared', 'native'],
+    ['shown', 'prompt'],
+  ] as const)('maps the %s share result to %s', async (shareResult, shareMethod) => {
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockResolvedValueOnce(shareResult);
+    const session = makeSession();
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(trackShareCompletedMock).toHaveBeenCalledWith({
+      share_method: shareMethod,
+    });
+  });
+
+  it('does not capture share_completed when opening the share target fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockRejectedValueOnce(new Error('share target failed'));
+    const session = makeSession();
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(trackShareCompletedMock).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });
 

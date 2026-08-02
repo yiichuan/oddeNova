@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { uploadShare } from '../services/share';
 import { shareUrl } from '../services/share-target';
-import { trackShare } from '../lib/analytics';
+import { trackShareCompleted, type ShareMethod } from '../lib/analytics';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon, SparkleIcon } from './icons';
 import type { Session } from '../hooks/useSessions';
@@ -40,8 +40,13 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
         locale: zh ? 'zh-CN' : 'en',
       });
       const url = `${window.location.origin}/s/${shareId}`;
-      await shareUrl(url);
-      trackShare();
+      const shareResult = await shareUrl(url);
+      const shareMethod: ShareMethod = shareResult === 'shared'
+        ? 'native'
+        : shareResult === 'shown'
+          ? 'prompt'
+          : 'clipboard';
+      trackShareCompleted({ share_method: shareMethod });
       setState('done');
       onShared?.();
       setTimeout(() => setState('idle'), 2000);
