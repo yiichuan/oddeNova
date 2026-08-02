@@ -174,7 +174,7 @@ describe('getSelectedModel', () => {
 
   it('returns preset.model for official regardless of any stored override', () => {
     localStorage.setItem('vibe_model_official', 'whatever');
-    expect(getSelectedModel('official')).toBe('deepseek-v4-pro');
+    expect(getSelectedModel('official')).toBe('deepseek-v4-flash');
   });
 });
 
