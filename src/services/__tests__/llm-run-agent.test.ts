@@ -130,6 +130,15 @@ describe('runAgent conversationHistory pass-through', () => {
     expect(opts.enableThinking).toBe(true);
   });
 
+  it('threads getSelectedThinkingLevel() into RunAgentOptions.thinkingLevel', async () => {
+    getSelectedThinkingLevelMock.mockReturnValue('extreme');
+
+    await runAgent('go', '', undefined);
+
+    const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    expect(opts.thinkingLevel).toBe('extreme');
+  });
+
   it('disables thinking when the classifier returns chat', async () => {
     async function* contentStream(text: string) {
       yield { choices: [{ delta: { content: text } }] };
