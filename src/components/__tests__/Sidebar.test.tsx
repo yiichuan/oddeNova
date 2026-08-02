@@ -10,6 +10,22 @@ import Sidebar from '../Sidebar';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+// Provide localStorage mock for happy-dom (Sidebar renders ChatInput, which
+// mounts ThinkingLevelControl and reads localStorage on mount)
+if (!globalThis.localStorage) {
+  const store: Record<string, string> = {};
+  Object.assign(globalThis, {
+    localStorage: {
+      getItem: (key: string) => store[key] ?? null,
+      setItem: (key: string, value: string) => { store[key] = value; },
+      removeItem: (key: string) => { delete store[key]; },
+      clear: () => { Object.keys(store).forEach(k => delete store[k]); },
+      key: (index: number) => Object.keys(store)[index] ?? null,
+      length: () => Object.keys(store).length,
+    },
+  });
+}
+
 // lottie-web crashes at import time in happy-dom (no canvas 2D context)
 vi.mock('lottie-react', () => ({ default: () => null }));
 
