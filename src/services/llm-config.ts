@@ -71,7 +71,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   official: {
     label: t('officialLabel'),
     baseURL: '/api/official/v1',
-    model: 'deepseek-v4-pro',
+    model: 'deepseek-v4-flash',
     protocol: 'openai',
   },
   glm: {
