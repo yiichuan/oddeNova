@@ -137,6 +137,12 @@ export default function Samples() {
         </a>{' '}
         里的 <code>sounds</code> 标签页。
       </p>
+      <Callout>
+        <p>
+          💡 本节后文提到的 <code>sounds</code>、<code>import-sounds</code>、<code>user</code>{' '}
+          标签页，都是官方 Strudel REPL（strudel.cc）侧边栏里的功能，oddeNova 目前没有对应的界面入口。
+        </p>
+      </Callout>
       <p>
         你还可以用 <code>soundAlias</code> 函数为已有的声音创建自定义别名：
       </p>

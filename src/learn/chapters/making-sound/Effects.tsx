@@ -115,7 +115,7 @@ export default function Effects() {
       <h2>Orbit（声轨）</h2>
       <p>
         orbit 是 Strudel 处理输出的方式，它还决定了干信号所对应的延迟和混响发送通道。默认情况下，所有 orbit
-        都会混合输出到 <code>1</code>、<code>2</code> 两个立体声通道；不过如果在设置里（右侧「Settings」下）打开「Multi
+        都会混合输出到 <code>1</code>、<code>2</code> 两个立体声通道；不过如果在 Strudel REPL 设置里（右侧「Settings」下）打开「Multi
         Channel Orbits」，你也可以把它们当作独立的双声道立体声输出使用（orbit <code>i</code> 会映射到通道{' '}
         <code>2i</code> 和 <code>2i + 1</code>）。这样你就可以用类似 Blackhole 16 的路由工具，把所有通道接入 DAW 做后期处理。
       </p>

@@ -63,7 +63,7 @@ export default function Faq() {
       <h2>怎么录制或导出音频？</h2>
       <p>Strudel 不是数字音频工作站（DAW），运作原理和大多数传统音频软件不太一样。不过还是有多种方式可以录下 Strudel 的音频（和视频）输出：</p>
       <ul>
-        <li>使用「export」标签页，把作品渲染并下载为音频文件。</li>
+        <li>使用 Strudel REPL 的「export」标签页，把作品渲染并下载为音频文件。</li>
         <li>直接捕获浏览器输出的原始立体声信号，这需要借助外部音频编辑器/DAW，比如 Reaper、Audacity、Ardour 等。</li>
         <li>使用替代的 SuperDirt 音频引擎（详见输入输出相关章节）。</li>
         <li>
@@ -109,7 +109,7 @@ export default function Faq() {
       <h2>怎么使用自己的采样？</h2>
       <p>有多种方式导入你自己的采样集合，有些适合快速试验，有些更适合和其他音乐人分享你的音频库：</p>
       <ul>
-        <li>从界面导入文件夹，样本会存储在浏览器本地，不会被上传。</li>
+        <li>从 Strudel REPL 界面导入文件夹，样本会存储在浏览器本地，不会被上传。</li>
         <li>用 Strudel 的「sampler」命令行工具在本地起一个采样服务器，这种方式最可靠，但需要安装 Node.js。</li>
         <li>把音频库托管到网上，然后通过 URL 加载它们。</li>
       </ul>
@@ -141,7 +141,7 @@ export default function Faq() {
       <p>在 strudel.cc 打开右侧的侧边栏（右边那个小小的白色 &lt; 符号），里面有个「reference」标签页，列出了 Strudel 的所有函数。</p>
 
       <h2>哪里能看到所有的采样和合成器？</h2>
-      <p>同样打开右侧边栏，有个「sounds」标签页，列出了当前加载的所有鼓机、采样和合成器。</p>
+      <p>同样打开 Strudel REPL 右侧边栏，有个「sounds」标签页，列出了当前加载的所有鼓机、采样和合成器。</p>
 
       <h2>怎么把它完全当 DAW 来用？</h2>
       <p>

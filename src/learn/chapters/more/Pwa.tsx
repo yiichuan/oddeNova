@@ -1,6 +1,13 @@
+import { Callout } from '../../components';
+
 export default function Pwa() {
   return (
     <>
+      <Callout>
+        <p>
+          💡 本章介绍的是官方 Strudel REPL（strudel.cc）的离线缓存与 PWA 安装功能，oddeNova 目前不支持安装为独立应用。
+        </p>
+      </Callout>
       <p>
         即使没有网络，你也可以使用 Strudel！第一次访问{' '}
         <a href="https://strudel.cc/" target="_blank" rel="noopener noreferrer">

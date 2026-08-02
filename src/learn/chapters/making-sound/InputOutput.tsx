@@ -313,7 +313,7 @@ $: note("c a f e").sysexid(id).sysexdata(data).midi();`}
         寻求帮助。
       </p>
       <p>
-        注意：如果你在设置里把「Audio Engine Target」设为「OSC」，就不需要在代码末尾再加 <code>.osc()</code> 了。
+        注意：如果你在 Strudel REPL 设置里把「Audio Engine Target」设为「OSC」，就不需要在代码末尾再加 <code>.osc()</code> 了。
       </p>
 
       <h3>osc</h3>
