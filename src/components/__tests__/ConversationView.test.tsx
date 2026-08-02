@@ -612,4 +612,194 @@ describe('ConversationView chat streaming', () => {
     expect(container.textContent).toContain('坏链接');
     expect(container.querySelectorAll('a')).toHaveLength(1);
   });
+
+  it('renders list items and blockquotes with whitespace-pre-wrap so continuation lines stay visible', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: [
+          '1. **Drums** - Lo-fi, loose drum pattern.',
+          '   Kick on 1 and 3, snare on 2 and 4.',
+          '> a quoted line',
+          '> a continuation line',
+        ].join('\n'),
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const li = container.querySelector('ol > li');
+    expect(li?.className).toContain('whitespace-pre-wrap');
+    const blockquote = container.querySelector('blockquote');
+    expect(blockquote?.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('normalizes runs of 3+ newlines on copy so multi-block selections do not paste with excess blank lines', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'first paragraph\n\nsecond paragraph\n\nthird paragraph',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const markdownRoot = container.querySelector<HTMLDivElement>('[data-markdown-text]');
+    expect(markdownRoot).not.toBeNull();
+
+    const getSelectionSpy = vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => 'first paragraph\n\n\nsecond paragraph\n\n\nthird paragraph',
+    } as unknown as Selection);
+
+    const setData = vi.fn();
+    const event = new Event('copy', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent;
+    Object.defineProperty(event, 'clipboardData', { value: { setData } });
+
+    act(() => {
+      markdownRoot!.dispatchEvent(event);
+    });
+
+    expect(setData).toHaveBeenCalledWith('text/plain', 'first paragraph\n\nsecond paragraph\n\nthird paragraph');
+    expect(event.defaultPrevented).toBe(true);
+
+    getSelectionSpy.mockRestore();
+  });
+
+  it('leaves ordinary copies alone when the selection has no excess newlines', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'just one line',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const markdownRoot = container.querySelector<HTMLDivElement>('[data-markdown-text]');
+    const getSelectionSpy = vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => 'just one line',
+    } as unknown as Selection);
+
+    const setData = vi.fn();
+    const event = new Event('copy', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent;
+    Object.defineProperty(event, 'clipboardData', { value: { setData } });
+
+    act(() => {
+      markdownRoot!.dispatchEvent(event);
+    });
+
+    expect(setData).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+
+    getSelectionSpy.mockRestore();
+  });
+
+  it('strips a spurious trailing newline the browser adds when copying a user message bubble', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: '来个简单的鼓点',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const bubble = container.querySelector<HTMLDivElement>('[data-rollback-bubble]');
+    expect(bubble).not.toBeNull();
+
+    // The stored content itself has no newlines (ChatInput.doSubmit trims
+    // before storage) — this simulates the browser's own clipboard
+    // serialization appending trailing blank lines past the last block.
+    const getSelectionSpy = vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => '来个简单的鼓点\n\n\n',
+    } as unknown as Selection);
+
+    const setData = vi.fn();
+    const event = new Event('copy', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent;
+    Object.defineProperty(event, 'clipboardData', { value: { setData } });
+
+    act(() => {
+      bubble!.dispatchEvent(event);
+    });
+
+    expect(setData).toHaveBeenCalledWith('text/plain', '来个简单的鼓点');
+    expect(event.defaultPrevented).toBe(true);
+
+    getSelectionSpy.mockRestore();
+  });
+
+  it('preserves interior newlines in a multi-line user message when stripping the copy', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'line one\nline two',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const bubble = container.querySelector<HTMLDivElement>('[data-rollback-bubble]');
+    const getSelectionSpy = vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => '\nline one\nline two\n\n',
+    } as unknown as Selection);
+
+    const setData = vi.fn();
+    const event = new Event('copy', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent;
+    Object.defineProperty(event, 'clipboardData', { value: { setData } });
+
+    act(() => {
+      bubble!.dispatchEvent(event);
+    });
+
+    expect(setData).toHaveBeenCalledWith('text/plain', 'line one\nline two');
+
+    getSelectionSpy.mockRestore();
+  });
+
+  it('leaves an ordinary user-bubble copy alone when there is no leading/trailing newline to strip', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: '来个简单的鼓点',
+        timestamp: 1,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const bubble = container.querySelector<HTMLDivElement>('[data-rollback-bubble]');
+    const getSelectionSpy = vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => '来个简单的鼓点',
+    } as unknown as Selection);
+
+    const setData = vi.fn();
+    const event = new Event('copy', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent;
+    Object.defineProperty(event, 'clipboardData', { value: { setData } });
+
+    act(() => {
+      bubble!.dispatchEvent(event);
+    });
+
+    expect(setData).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+
+    getSelectionSpy.mockRestore();
+  });
 });
