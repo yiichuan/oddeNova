@@ -13,20 +13,27 @@ describe('resolveAnthropicThinkingParam', () => {
 });
 
 describe('resolveOpenAIThinkingParams — deepseek / official', () => {
-  it.each(['deepseek', 'official'] as const)('%s: low/medium/high all collapse to reasoning_effort "high"', (provider) => {
-    for (const level of ['low', 'medium', 'high'] as const) {
+  it.each([
+    ['low', 'low'],
+    ['medium', 'high'],
+    ['high', 'xhigh'],
+    ['extreme', 'max'],
+  ] as const)('%s maps to reasoning_effort %s (DeepSeek\'s 4 real request-level values)', (level, effort) => {
+    for (const provider of ['deepseek', 'official'] as const) {
       expect(resolveOpenAIThinkingParams(provider, 'deepseek-v4-flash', level)).toEqual({
         thinking: { type: 'enabled' },
-        reasoning_effort: 'high',
+        reasoning_effort: effort,
       });
     }
   });
 
-  it.each(['deepseek', 'official'] as const)('%s: extreme maps to reasoning_effort "max"', (provider) => {
-    expect(resolveOpenAIThinkingParams(provider, 'deepseek-v4-flash', 'extreme')).toEqual({
-      thinking: { type: 'enabled' },
-      reasoning_effort: 'max',
-    });
+  it('the mapping is identical regardless of which deepseek model is passed (DeepSeek remaps per-model server-side)', () => {
+    for (const model of ['deepseek-v4-flash', 'deepseek-v4-pro']) {
+      expect(resolveOpenAIThinkingParams('deepseek', model, 'high')).toEqual({
+        thinking: { type: 'enabled' },
+        reasoning_effort: 'xhigh',
+      });
+    }
   });
 });
 
@@ -39,13 +46,12 @@ describe('resolveOpenAIThinkingParams — kimi', () => {
 });
 
 describe('resolveOpenAIThinkingParams — openai', () => {
-  it('gpt-5.5 maps extreme to reasoning_effort "xhigh"', () => {
-    expect(resolveOpenAIThinkingParams('openai', 'gpt-5.5', 'extreme')).toEqual({ reasoning_effort: 'xhigh' });
-  });
-
-  it('gpt-5.5-mini maps extreme to reasoning_effort "xhigh"', () => {
-    expect(resolveOpenAIThinkingParams('openai', 'gpt-5.5-mini', 'extreme')).toEqual({ reasoning_effort: 'xhigh' });
-  });
+  it.each(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.5-mini'] as const)(
+    '%s maps extreme to reasoning_effort "xhigh" (not "max", even though gpt-5.6 documents a max tier)',
+    (model) => {
+      expect(resolveOpenAIThinkingParams('openai', model, 'extreme')).toEqual({ reasoning_effort: 'xhigh' });
+    },
+  );
 
   it.each(['gpt-5.1', 'gpt-5'] as const)('%s collapses extreme to reasoning_effort "high" (no xhigh support)', (model) => {
     expect(resolveOpenAIThinkingParams('openai', model, 'extreme')).toEqual({ reasoning_effort: 'high' });

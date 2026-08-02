@@ -62,7 +62,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     baseURL: 'https://api.openai.com/v1',
     model: 'gpt-5.5',           // current flagship model, supports Chat Completions API + function calling
     protocol: 'openai',
-    models: ['gpt-5.5', 'gpt-5.5-mini', 'gpt-5.1', 'gpt-5'],
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.5-mini', 'gpt-5.1', 'gpt-5'],
   },
   anthropic: {
     label: 'Anthropic',

@@ -15,6 +15,19 @@ export const ANTHROPIC_THINKING_BUDGET: Record<ThinkingLevel, number> = {
   extreme: 60000,
 };
 
+// DeepSeek's reasoning_effort accepts 4 real request-level values — low/high/
+// xhigh/max, not low/medium/high — which its backend then remaps per-model
+// server-side (e.g. deepseek-v4-pro collapses low->high and xhigh->max,
+// deepseek-v4-flash keeps low/high/max distinct and only folds xhigh into
+// high). We only need to send the request-level value; DeepSeek does the
+// per-model collapsing on their end, so no model branching is needed here.
+const DEEPSEEK_EFFORT: Record<ThinkingLevel, string> = {
+  low: 'low',
+  medium: 'high',
+  high: 'xhigh',
+  extreme: 'max',
+};
+
 export function resolveAnthropicThinkingParam(
   level: ThinkingLevel,
 ): { type: 'enabled'; budget_tokens: number } {
@@ -30,12 +43,11 @@ export function resolveOpenAIThinkingParams(
   switch (provider) {
     case 'deepseek':
     case 'official':
-      // DeepSeek's reasoning_effort only distinguishes 'high' and 'max' natively;
-      // low/medium are accepted but silently mapped to 'high' server-side.
-      // https://api-docs.deepseek.com/guides/thinking_mode/
+      // See DEEPSEEK_EFFORT above for how the 4 UI levels map to DeepSeek's
+      // 4 real request-level effort values.
       return {
         thinking: { type: 'enabled' },
-        reasoning_effort: level === 'extreme' ? 'max' : 'high',
+        reasoning_effort: DEEPSEEK_EFFORT[level],
       };
     case 'kimi':
       // kimi-k2.x (what this app ships — not k3) has no effort dial, and
@@ -43,18 +55,24 @@ export function resolveOpenAIThinkingParams(
       // together, so every level just enables thinking.
       return { thinking: { type: 'enabled' } };
     case 'openai': {
-      // gpt-5.5 / gpt-5.5-mini document an 'xhigh' tier above 'high'; gpt-5.1 /
-      // gpt-5 only document low/medium/high.
-      const supportsXHigh = model === 'gpt-5.5' || model === 'gpt-5.5-mini';
+      // gpt-5.6-sol/terra/luna and gpt-5.5 / gpt-5.5-mini all document an
+      // 'xhigh' tier above 'high' (gpt-5.6's model cards additionally confirm
+      // a 'max' tier above that, but we deliberately don't use it — 'xhigh' is
+      // the ceiling 'extreme' maps to here). gpt-5.1 / gpt-5 only document
+      // low/medium/high.
+      const supportsXHigh =
+        model === 'gpt-5.6-sol' || model === 'gpt-5.6-terra' || model === 'gpt-5.6-luna' ||
+        model === 'gpt-5.5' || model === 'gpt-5.5-mini';
       if (level === 'extreme') return { reasoning_effort: supportsXHigh ? 'xhigh' : 'high' };
       return { reasoning_effort: level };
     }
     case 'glm':
-      // glm-5.2 supports reasoning_effort (two-tier: high/max) and, per Z.ai's
-      // docs, thinking is on by default — but we send `thinking: { type:
-      // 'enabled' }` explicitly anyway (like deepseek/official) rather than
-      // relying on that default, since GLM (unlike Kimi) doesn't reject the two
-      // fields sent together.
+      // Confirmed against Z.ai's own effort-mapping table: glm-5.2 only has 2
+      // real tiers — low/medium/high all land on 'high', xhigh/max/ultracode
+      // all land on 'max'. We send `thinking: { type: 'enabled' }` alongside
+      // reasoning_effort (like deepseek/official) rather than relying on
+      // thinking-on-by-default, since GLM (unlike Kimi) doesn't reject the
+      // two fields sent together.
       // glm-5.1 / glm-5.1-air / glm-5 only expose the boolean thinking switch,
       // no reasoning_effort.
       if (model === 'glm-5.2') {
