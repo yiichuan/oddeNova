@@ -9,7 +9,12 @@ export interface VideoDemoState {
   isVideoMode: boolean;
   videoDemoMsgs: ChatMessage[] | null;
   videoConvScrollBottom: boolean;
+  videoConvScrollProgress: number | null;
   videoTitle: string | null;
+  videoInputText: string | undefined;
+  videoInputFocusTrigger: number;
+  videoInputButtonScale: number;
+  videoInputSubmitted: boolean;
 }
 
 /**
@@ -23,8 +28,20 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
   const [videoDemoMsgs, setVideoDemoMsgs] = useState<ChatMessage[] | null>(null);
   // [video] Remotion emits scrollBottom:true on scene transitions to scroll ConversationView to the bottom
   const [videoConvScrollBottom, setVideoConvScrollBottom] = useState(false);
+  // [video] Frame-driven conversation scroll (scrollTop = maxScrollTop * progress); null keeps the
+  // conversation pinned to the top, which is where video mode starts every scene
+  const [videoConvScrollProgress, setVideoConvScrollProgress] = useState<number | null>(null);
   // [video] Title override — only active when isVideoMode; no effect on normal app usage
   const [videoTitle, setVideoTitle] = useState<string | null>(null);
+  // [video] Frame-driven text for the existing ChatInput; undefined preserves normal app input behavior
+  const [videoInputText, setVideoInputText] = useState<string | undefined>(undefined);
+  // [video] Increments on focus requests so identical frame text can refocus the existing ChatInput
+  const [videoInputFocusTrigger, setVideoInputFocusTrigger] = useState(0);
+  // [video] Send-button press animation, driven per frame by the fake cursor's click
+  const [videoInputButtonScale, setVideoInputButtonScale] = useState(1);
+  // [video] True between the fake click and the reply streaming in, so the send button shows
+  // the same stop state a real send would
+  const [videoInputSubmitted, setVideoInputSubmitted] = useState(false);
   // [video] Detects whether running inside a Remotion iframe; always false in normal browser access, has no effect on any logic
   const [isVideoMode, setIsVideoMode] = useState(() => {
     try { return window.self !== window.top; } catch { return true; }
@@ -38,7 +55,15 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
         setVideoDemoMsgs(e.data.messages.length > 0 ? e.data.messages : null);
         setIsVideoMode(true);
         if (e.data.scrollBottom) setVideoConvScrollBottom(true);
+        if (typeof e.data.scrollProgress === 'number') setVideoConvScrollProgress(e.data.scrollProgress);
         if (e.data.sessionTitle) setVideoTitle(e.data.sessionTitle);
+      }
+      if (e.data?.type === 'VIDEO_DEMO_INPUT' && typeof e.data.text === 'string') {
+        setVideoInputText(e.data.text);
+        setIsVideoMode(true);
+        if (e.data.focus === true) setVideoInputFocusTrigger((value) => value + 1);
+        if (typeof e.data.buttonScale === 'number') setVideoInputButtonScale(e.data.buttonScale);
+        setVideoInputSubmitted(e.data.submitted === true);
       }
       if (e.data?.type === 'VIDEO_SET_CODE' && typeof e.data.code === 'string') {
         strudelRef.current.setCode(e.data.code);
@@ -93,8 +118,24 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
       }
     };
     window.addEventListener('message', handler);
+    // [video] Remotion holds frame 0 on a delayRender() until this lands, then pushes the
+    // initial frame state; sent only from inside an iframe, so a normal tab never posts it
+    // to itself. Safe to repeat — the renderer clears its handle once.
+    if (window.self !== window.top) {
+      window.parent.postMessage({ type: 'VIDEO_READY' }, '*');
+    }
     return () => window.removeEventListener('message', handler);
   }, [strudelRef]);
 
-  return { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle };
+  return {
+    isVideoMode,
+    videoDemoMsgs,
+    videoConvScrollBottom,
+    videoConvScrollProgress,
+    videoTitle,
+    videoInputText,
+    videoInputFocusTrigger,
+    videoInputButtonScale,
+    videoInputSubmitted,
+  };
 }

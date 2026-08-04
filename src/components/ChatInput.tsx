@@ -14,6 +14,10 @@ interface ChatInputProps {
   focusTrigger?: number;
   replayValue?: string;
   isVideoMode?: boolean;
+  /** [video] Send-button press scale, driven per frame by the video's fake cursor. */
+  videoButtonScale?: number;
+  /** [video] Renders the post-send stop state while a video turn is in flight. */
+  videoSubmitted?: boolean;
   tokenStats?: TokenStats;
   onFocusChange?: (focused: boolean) => void;
 }
@@ -29,6 +33,8 @@ export default function ChatInput({
   focusTrigger,
   replayValue,
   isVideoMode = false,
+  videoButtonScale = 1,
+  videoSubmitted = false,
   tokenStats: _tokenStats,
   onFocusChange,
 }: ChatInputProps) {
@@ -46,11 +52,15 @@ export default function ChatInput({
 
   const prevReplayRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (replayValue !== undefined && prevReplayRef.current === undefined) {
+    // Video frames may supply a read-only value before the frame that asks to
+    // focus it. Keep normal replay autofocus intact, but leave that initial
+    // video frame unfocused until its explicit focus trigger arrives.
+    const allowReplayAutofocus = !isVideoMode || (focusTrigger ?? 0) > 0;
+    if (replayValue !== undefined && prevReplayRef.current === undefined && allowReplayAutofocus) {
       textareaRef.current?.focus();
     }
     prevReplayRef.current = replayValue;
-  }, [replayValue]);
+  }, [replayValue, isVideoMode, focusTrigger]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -137,13 +147,16 @@ export default function ChatInput({
       )} */}
 
       {replayValue !== undefined ? (
+        // [video] While a video turn is submitted the text is already cleared, so the
+        // button keeps the enabled stop look a real send would show instead of fading out.
         <button
           type="button"
-          disabled={!replayValue.trim()}
+          disabled={!videoSubmitted && !replayValue.trim()}
+          style={videoButtonScale === 1 ? undefined : { transform: `scale(${videoButtonScale})` }}
           className="absolute right-2 bottom-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-30"
-          title={t('send')}
+          title={videoSubmitted ? t('stop') : t('send')}
         >
-          <ArrowUpIcon size={18} />
+          {videoSubmitted ? <StopIcon size={18} /> : <ArrowUpIcon size={18} />}
         </button>
       ) : isLoading ? (
         <button

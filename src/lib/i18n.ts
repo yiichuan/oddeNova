@@ -1,5 +1,12 @@
 export const zh: boolean = (() => {
-  try { return navigator.language.startsWith('zh'); } catch { return false; }
+  try {
+    // ?lang= pins the language regardless of the browser's own. The Remotion
+    // renderer uses it so a recording's language is a property of the video
+    // rather than of whichever machine renders it.
+    const forced = new URLSearchParams(window.location.search).get('lang');
+    if (forced) return forced.startsWith('zh');
+    return navigator.language.startsWith('zh');
+  } catch { return false; }
 })();
 
 const S: Record<string, readonly [string, string]> = {

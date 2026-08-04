@@ -38,7 +38,12 @@ interface SidebarProps {
   isReplaying?: boolean;
   replayInputText?: string;
   isVideoMode?: boolean;
+  videoInputText?: string;
+  videoInputFocusTrigger?: number;
+  videoInputButtonScale?: number;
+  videoInputSubmitted?: boolean;
   scrollBottom?: boolean;
+  scrollProgress?: number | null;
   prefill?: string;
   prefillTrigger?: number;
   onRollback: (messageId: string) => void;
@@ -74,7 +79,12 @@ export default function Sidebar({
   isReplaying = false,
   replayInputText,
   isVideoMode = false,
+  videoInputText,
+  videoInputFocusTrigger,
+  videoInputButtonScale,
+  videoInputSubmitted,
   scrollBottom = false,
+  scrollProgress = null,
   prefill,
   prefillTrigger,
   onRollback,
@@ -187,6 +197,7 @@ export default function Sidebar({
           isLoading={isLoading && !isReplaying}
           isVideoMode={isVideoMode}
           scrollBottom={scrollBottom}
+          scrollProgress={scrollProgress}
           onRollback={onRollback}
           onBranch={onBranch}
           onRetry={onRetry}
@@ -224,7 +235,7 @@ export default function Sidebar({
             )}
           </div>
         )}
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={isVideoMode ? videoInputFocusTrigger : focusTrigger} replayValue={videoInputText ?? replayInputText} isVideoMode={isVideoMode} videoButtonScale={videoInputButtonScale} videoSubmitted={videoInputSubmitted} tokenStats={tokenStats} />
       </div>
     </aside>
   );

@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ChatInput from '../ChatInput';
+import { t } from '../../lib/i18n';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -144,5 +145,68 @@ describe('ChatInput engine initialization status', () => {
     });
 
     expect(textarea.value).toBe('来一段 house');
+  });
+
+  it('waits for an explicit video focus trigger before focusing replay text', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+
+    const baseProps = {
+      isLoading: false,
+      engineReady: true,
+      engineStatus: 'ready' as const,
+      onSendText: vi.fn(),
+      onReinitEngine: vi.fn(),
+      isVideoMode: true,
+      replayValue: '',
+    };
+
+    act(() => {
+      root.render(<ChatInput {...baseProps} focusTrigger={0} />);
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+    expect(textarea.value).toBe('');
+    expect(textarea.readOnly).toBe(true);
+    expect(document.activeElement).not.toBe(textarea);
+
+    act(() => {
+      root.render(<ChatInput {...baseProps} focusTrigger={1} />);
+    });
+
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.readOnly).toBe(true);
+  });
+
+  it('scales its send button with the video cursor press', () => {
+    const { container, root } = renderChatInput({
+      isVideoMode: true,
+      replayValue: '清晨雾气',
+      videoButtonScale: 1.18,
+    });
+    roots.push(root);
+
+    const button = container.querySelector<HTMLButtonElement>(`button[title="${t('send')}"]`);
+    if (!button) throw new Error('send button not found');
+    expect(button.style.transform).toBe('scale(1.18)');
+    expect(button.disabled).toBe(false);
+  });
+
+  it('keeps the send button active as a stop button while a video turn is submitted', () => {
+    const { container, root } = renderChatInput({
+      isVideoMode: true,
+      // A submitted frame has already cleared the input text.
+      replayValue: '',
+      videoSubmitted: true,
+    });
+    roots.push(root);
+
+    const button = container.querySelector<HTMLButtonElement>(`button[title="${t('stop')}"]`);
+    if (!button) throw new Error('stop button not found');
+    expect(button.disabled).toBe(false);
+    expect(container.querySelector(`button[title="${t('send')}"]`)).toBeNull();
   });
 });

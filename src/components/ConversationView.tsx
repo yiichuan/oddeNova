@@ -35,6 +35,11 @@ interface ConversationViewProps {
   isLoading: boolean;
   isVideoMode?: boolean;
   scrollBottom?: boolean;
+  /**
+   * [video] Frame-driven scroll position as a fraction of the maximum scrollTop.
+   * null keeps video mode pinned to the top.
+   */
+  scrollProgress?: number | null;
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
@@ -45,6 +50,7 @@ export default function ConversationView({
   isLoading,
   isVideoMode = false,
   scrollBottom = false,
+  scrollProgress = null,
   onRollback,
   onBranch,
   onRetry,
@@ -137,8 +143,14 @@ export default function ConversationView({
 
   useEffect(() => {
     if (isVideoMode && !scrollBottom) {
-      // [video] Video mode: display from the top; only scroll to bottom when scrollBottom=true
-      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      // [video] Video mode: display from the top; only scroll to bottom when scrollBottom=true.
+      // scrollProgress, when the renderer drives it, positions the scroll per frame so the
+      // scroll speed follows video time instead of wall-clock easing.
+      const el = scrollRef.current;
+      if (el) {
+        const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+        el.scrollTop = scrollProgress === null ? 0 : maxScrollTop * scrollProgress;
+      }
     } else {
       if (!userScrolledRef.current) {
         bottomRef.current?.scrollIntoView({ behavior: 'instant' });
@@ -153,7 +165,7 @@ export default function ConversationView({
         reasoningUserScrolledRef.current = false;
       }
     }
-  }, [messages, isLoading, isVideoMode, scrollBottom]);
+  }, [messages, isLoading, isVideoMode, scrollBottom, scrollProgress]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
   const { absorbedReasoningIds } = useMemo(() => {
@@ -193,6 +205,14 @@ export default function ConversationView({
     messages
       .slice(streamingReasoningIdx + 1)
       .every((m) => m.role === 'progress' && m.progressKind === 'reasoning');
+
+  // An assistant reply that is still arriving shows no retry/branch actions —
+  // they only make sense once there is a finished answer to act on. A live turn
+  // is the trailing message while isLoading; the video renderer, which has no
+  // real turn, marks the message it is still typing out itself.
+  const lastMsgId = messages[messages.length - 1]?.id;
+  const isReplyStreaming = (msg: ChatMessage) =>
+    msg.streaming === true || (isLoading && msg.id === lastMsgId);
 
   return (
     <div ref={scrollRef} className="conversation-scroll h-full overflow-y-auto px-4 py-[10px] space-y-[22px] relative" style={{ scrollbarGutter: 'stable' }}>
@@ -309,23 +329,25 @@ export default function ConversationView({
                 );
               })()}
 
-              {/* Action buttons — bottom-left, always visible */}
-              <div className="absolute -bottom-5 left-0 flex items-center">
-                <button
-                  onClick={() => onRetry(msg.id)}
-                  className="text-white/60 hover:text-white p-1"
-                  title={t('retry')}
-                >
-                  <RetryIcon size={13} />
-                </button>
-                <button
-                  onClick={() => onBranch(msg.id)}
-                  className="text-white/60 hover:text-white p-1"
-                  title={t('branchFrom')}
-                >
-                  <GitBranchIcon size={13} />
-                </button>
-              </div>
+              {/* Action buttons — bottom-left, visible once the reply is complete */}
+              {!isReplyStreaming(msg) && (
+                <div className="absolute -bottom-5 left-0 flex items-center">
+                  <button
+                    onClick={() => onRetry(msg.id)}
+                    className="text-white/60 hover:text-white p-1"
+                    title={t('retry')}
+                  >
+                    <RetryIcon size={13} />
+                  </button>
+                  <button
+                    onClick={() => onBranch(msg.id)}
+                    className="text-white/60 hover:text-white p-1"
+                    title={t('branchFrom')}
+                  >
+                    <GitBranchIcon size={13} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         );

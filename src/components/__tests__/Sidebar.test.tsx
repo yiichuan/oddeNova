@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../../hooks/useSessions';
+import { t } from '../../lib/i18n';
 import Sidebar from '../Sidebar';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -80,5 +81,31 @@ describe('Sidebar session title editing layout', () => {
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
     expect(input).not.toBeNull();
     expect(input?.parentElement?.className).toContain('gap-3');
+  });
+
+  it('forwards the video input value to its existing chat textarea', () => {
+    const { container, root } = renderSidebar({
+      isVideoMode: true,
+      videoInputText: '清晨雾气',
+      videoInputFocusTrigger: 2,
+    });
+    roots.push(root);
+
+    expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('清晨雾气');
+  });
+
+  it('forwards the video send-button state to its existing chat input', () => {
+    const { container, root } = renderSidebar({
+      isVideoMode: true,
+      videoInputText: '',
+      videoInputFocusTrigger: 2,
+      videoInputButtonScale: 1.18,
+      videoInputSubmitted: true,
+    });
+    roots.push(root);
+
+    const button = container.querySelector<HTMLButtonElement>(`button[title="${t('stop')}"]`);
+    expect(button).not.toBeNull();
+    expect(button?.style.transform).toBe('scale(1.18)');
   });
 });

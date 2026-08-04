@@ -50,7 +50,17 @@ export default function App() {
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
   const strudelRef = useRef(strudel);
   useEffect(() => { strudelRef.current = strudel; }, [strudel]);
-  const { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle } = useVideoDemo(strudelRef);
+  const {
+    isVideoMode,
+    videoDemoMsgs,
+    videoConvScrollBottom,
+    videoConvScrollProgress,
+    videoTitle,
+    videoInputText,
+    videoInputFocusTrigger,
+    videoInputButtonScale,
+    videoInputSubmitted,
+  } = useVideoDemo(strudelRef);
 
   const {
     isMobile,
@@ -134,6 +144,11 @@ export default function App() {
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
     if (!current) return;
+    // [video] The renderer owns the editor in video mode and pushes each code
+    // version exactly once. Startup opens IndexedDB asynchronously and only
+    // then creates the empty session this effect would restore, so whenever
+    // that lands after a push it would blank code that never gets re-sent.
+    if (isVideoMode) return;
     strudel.setCode(current.code);
     strudel.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
@@ -318,7 +333,7 @@ export default function App() {
 
     // Mood generation is a one-off creation: deliberately no conversation history.
     await runTurn({
-      text: '根据我的心情生成音乐',
+      text: zh ? '根据我的心情生成音乐' : 'Generate music that matches my mood',
       moodContext: moodContext ?? undefined,
       includeHistory: false,
     });
@@ -585,7 +600,12 @@ export default function App() {
           currentId={sessions.currentId}
           suggestions={isVideoMode ? [] : demoSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
+          videoInputText={videoInputText}
+          videoInputFocusTrigger={videoInputFocusTrigger}
+          videoInputButtonScale={videoInputButtonScale}
+          videoInputSubmitted={videoInputSubmitted}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
+          scrollProgress={videoConvScrollProgress}  // [video] Forward the per-frame conversation scroll position
           suggestionsLoading={!isDemoMode() && suggestionsLoading}
           fillSuggestion={isDemoMode() ? DEMO_PREFILL : undefined}
           onSendText={handleInstruction}

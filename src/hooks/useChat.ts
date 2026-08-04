@@ -13,6 +13,11 @@ export interface ChatMessage {
   content: string;
   code?: string;
   timestamp: number;
+  // True while an assistant reply is still arriving, so per-message actions
+  // (retry/branch) stay hidden until it has finished. Set by the Remotion
+  // renderer, which types replies out frame by frame without a real turn
+  // running; the live app infers the same state from isLoading instead.
+  streaming?: boolean;
   // For role === 'progress':
   progressKind?: ProgressKind;
   toolName?: string;
