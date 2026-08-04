@@ -399,26 +399,9 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
     );
   }
 
-  // Each paragraph/list-item/blockquote above is its own block-level sibling
-  // (that's what lets a single line re-render as its own element while
-  // streaming), so selecting across more than one of them makes the browser
-  // insert a newline at every block boundary on top of the blank lines the
-  // parser already consumed into CSS spacing — copying three short list
-  // items can otherwise paste back with far more blank lines than were ever
-  // visible. Cap runs of 3+ newlines down to a paragraph break instead of
-  // rewriting the DOM into one flat text node (which would break the
-  // per-line streaming re-render this parser relies on).
-  const handleCopy = (e: ClipboardEvent<HTMLDivElement>) => {
-    const selected = window.getSelection()?.toString();
-    if (!selected || !/\n{3,}/.test(selected)) return;
-    e.preventDefault();
-    e.clipboardData.setData('text/plain', selected.replace(/\n{3,}/g, '\n\n'));
-  };
-
   return (
     <div
       data-markdown-text
-      onCopy={handleCopy}
       className="min-w-0 max-w-full space-y-2 break-words [overflow-wrap:anywhere]"
     >
       {blocks}
