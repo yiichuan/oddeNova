@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAnthropicThinkingParam, resolveOpenAIThinkingParams } from '../thinking-params';
+import {
+  clampThinkingLevel,
+  getSupportedThinkingLevels,
+  resolveAnthropicThinkingParam,
+  resolveOpenAIThinkingParams,
+} from '../thinking-params';
 
 describe('resolveAnthropicThinkingParam', () => {
   it.each([
@@ -89,5 +94,53 @@ describe('resolveOpenAIThinkingParams — glm', () => {
 describe('resolveOpenAIThinkingParams — anthropic (unreachable in practice)', () => {
   it('returns an empty object rather than throwing', () => {
     expect(resolveOpenAIThinkingParams('anthropic', 'claude-sonnet-4-6', 'medium')).toEqual({});
+  });
+});
+
+describe('getSupportedThinkingLevels', () => {
+  it.each(['anthropic', 'deepseek', 'official'] as const)('%s always supports all 4 levels', (provider) => {
+    expect(getSupportedThinkingLevels(provider, 'any-model')).toEqual(['low', 'medium', 'high', 'extreme']);
+  });
+
+  it('kimi has no tiering — no supported levels', () => {
+    expect(getSupportedThinkingLevels('kimi', 'kimi-k2.6')).toEqual([]);
+  });
+
+  it.each(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.5-mini'] as const)(
+    'openai %s supports all 4 levels',
+    (model) => {
+      expect(getSupportedThinkingLevels('openai', model)).toEqual(['low', 'medium', 'high', 'extreme']);
+    },
+  );
+
+  it.each(['gpt-5.1', 'gpt-5'] as const)('openai %s only supports low/medium/high (no xhigh)', (model) => {
+    expect(getSupportedThinkingLevels('openai', model)).toEqual(['low', 'medium', 'high']);
+  });
+
+  it('glm-5.2 only has 2 real tiers: high and extreme', () => {
+    expect(getSupportedThinkingLevels('glm', 'glm-5.2')).toEqual(['high', 'extreme']);
+  });
+
+  it.each(['glm-5.1', 'glm-5.1-air', 'glm-5'] as const)('glm %s has no tiering — no supported levels', (model) => {
+    expect(getSupportedThinkingLevels('glm', model)).toEqual([]);
+  });
+});
+
+describe('clampThinkingLevel', () => {
+  it('returns the level unchanged if it is already supported', () => {
+    expect(clampThinkingLevel('high', ['low', 'medium', 'high', 'extreme'])).toBe('high');
+  });
+
+  it('returns the level unchanged if nothing is supported (no tiering to clamp to)', () => {
+    expect(clampThinkingLevel('extreme', [])).toBe('extreme');
+  });
+
+  it('clamps down to the nearest lower supported level when the exact level is unsupported', () => {
+    expect(clampThinkingLevel('extreme', ['low', 'medium', 'high'])).toBe('high');
+  });
+
+  it('clamps up to the nearest higher supported level when nothing lower is supported', () => {
+    expect(clampThinkingLevel('low', ['high', 'extreme'])).toBe('high');
+    expect(clampThinkingLevel('medium', ['high', 'extreme'])).toBe('high');
   });
 });

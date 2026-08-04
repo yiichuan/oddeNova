@@ -33,7 +33,7 @@ function renderControl(props: Partial<Parameters<typeof ThinkingLevelControl>[0]
 }
 
 function getTrigger(container: HTMLElement): HTMLButtonElement {
-  const button = container.querySelector<HTMLButtonElement>('button[title="Thinking level"]');
+  const button = container.querySelector<HTMLButtonElement>('button');
   if (!button) throw new Error('trigger button not found');
   return button;
 }
@@ -133,5 +133,62 @@ describe('ThinkingLevelControl', () => {
     roots.push(root);
 
     expect(getTrigger(container).disabled).toBe(true);
+  });
+
+  it('only offers levels the selected model actually supports (openai gpt-5.1 has no xhigh)', () => {
+    localStorage.setItem('vibe_provider', 'openai');
+    localStorage.setItem('vibe_model_openai', 'gpt-5.1');
+    const { container, root } = renderControl();
+    roots.push(root);
+
+    act(() => getTrigger(container).click());
+    const items = container.querySelectorAll('[role="menuitemradio"]');
+    expect(items).toHaveLength(3);
+    expect(Array.from(items).map((el) => el.textContent)).toEqual(['Low', 'Medium', 'High']);
+  });
+
+  it('glm-5.2 only offers High and Extreme', () => {
+    localStorage.setItem('vibe_provider', 'glm');
+    localStorage.setItem('vibe_model_glm', 'glm-5.2');
+    const { container, root } = renderControl();
+    roots.push(root);
+
+    act(() => getTrigger(container).click());
+    const items = container.querySelectorAll('[role="menuitemradio"]');
+    expect(Array.from(items).map((el) => el.textContent)).toEqual(['High', 'Extreme']);
+  });
+
+  it('clamps a stored level unsupported by the current model down to the nearest one, without overwriting storage', () => {
+    localStorage.setItem('vibe_thinking_level', 'extreme');
+    localStorage.setItem('vibe_provider', 'openai');
+    localStorage.setItem('vibe_model_openai', 'gpt-5.1');
+    const { container, root } = renderControl();
+    roots.push(root);
+
+    expect(getTrigger(container).textContent).toContain('High');
+    expect(localStorage.getItem('vibe_thinking_level')).toBe('extreme');
+  });
+
+  it('disables the control and shows a fixed label for models with no tiering (kimi)', () => {
+    localStorage.setItem('vibe_provider', 'kimi');
+    const { container, root } = renderControl();
+    roots.push(root);
+
+    const trigger = getTrigger(container);
+    expect(trigger.disabled).toBe(true);
+    expect(trigger.textContent).toContain('On');
+    act(() => trigger.click());
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('disables the control for glm models without an effort dial (glm-5.1)', () => {
+    localStorage.setItem('vibe_provider', 'glm');
+    localStorage.setItem('vibe_model_glm', 'glm-5.1');
+    const { container, root } = renderControl();
+    roots.push(root);
+
+    const trigger = getTrigger(container);
+    expect(trigger.disabled).toBe(true);
+    expect(trigger.textContent).toContain('On');
   });
 });

@@ -1,9 +1,9 @@
 // Maps the user-facing Thinking level (see CONTEXT.md) to each provider's real
 // request parameters. Providers differ sharply in what they can actually
 // distinguish — see docs/superpowers/plans/2026-08-01-thinking-level-control.md
-// for the research this table is based on. Where a provider/model can't
-// distinguish a level, multiple UI levels intentionally collapse to the same
-// wire behavior; the UI still always shows all four levels.
+// for the research this table is based on. getSupportedThinkingLevels() below
+// mirrors this collapsing so the UI only offers levels that produce a
+// genuinely different request for the selected provider/model.
 
 import type { ThinkingLevel } from '../agent/loop';
 import type { ProviderType } from './llm-config';
@@ -27,6 +27,16 @@ const DEEPSEEK_EFFORT: Record<ThinkingLevel, string> = {
   high: 'xhigh',
   extreme: 'max',
 };
+
+// gpt-5.6-sol/terra/luna and gpt-5.5 / gpt-5.5-mini all document an 'xhigh'
+// tier above 'high'; gpt-5.1 / gpt-5 only document low/medium/high. Shared
+// between resolveOpenAIThinkingParams and getSupportedThinkingLevels so the
+// two never drift apart.
+const OPENAI_XHIGH_MODELS = new Set([
+  'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.5-mini',
+]);
+
+const ALL_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'extreme'];
 
 export function resolveAnthropicThinkingParam(
   level: ThinkingLevel,
@@ -55,15 +65,10 @@ export function resolveOpenAIThinkingParams(
       // together, so every level just enables thinking.
       return { thinking: { type: 'enabled' } };
     case 'openai': {
-      // gpt-5.6-sol/terra/luna and gpt-5.5 / gpt-5.5-mini all document an
-      // 'xhigh' tier above 'high' (gpt-5.6's model cards additionally confirm
-      // a 'max' tier above that, but we deliberately don't use it — 'xhigh' is
-      // the ceiling 'extreme' maps to here). gpt-5.1 / gpt-5 only document
-      // low/medium/high.
-      const supportsXHigh =
-        model === 'gpt-5.6-sol' || model === 'gpt-5.6-terra' || model === 'gpt-5.6-luna' ||
-        model === 'gpt-5.5' || model === 'gpt-5.5-mini';
-      if (level === 'extreme') return { reasoning_effort: supportsXHigh ? 'xhigh' : 'high' };
+      // gpt-5.6's model cards additionally confirm a 'max' tier above 'xhigh',
+      // but we deliberately don't use it — 'xhigh' is the ceiling 'extreme'
+      // maps to here. See OPENAI_XHIGH_MODELS above for which models get it.
+      if (level === 'extreme') return { reasoning_effort: OPENAI_XHIGH_MODELS.has(model) ? 'xhigh' : 'high' };
       return { reasoning_effort: level };
     }
     case 'glm':
@@ -92,4 +97,49 @@ export function resolveOpenAIThinkingParams(
       return _exhaustive;
     }
   }
+}
+
+/**
+ * Which Thinking levels are actually distinct for this provider/model, mirroring the
+ * collapsing documented in resolveOpenAIThinkingParams/resolveAnthropicThinkingParam
+ * above — the UI should only offer levels that produce a different real request.
+ * An empty array means the provider has no effort dial at all (thinking is a plain
+ * on/off switch), so the UI shouldn't offer a choice.
+ */
+export function getSupportedThinkingLevels(provider: ProviderType, model: string): readonly ThinkingLevel[] {
+  switch (provider) {
+    case 'anthropic':
+    case 'deepseek':
+    case 'official':
+      return ALL_LEVELS;
+    case 'kimi':
+      return [];
+    case 'openai':
+      return OPENAI_XHIGH_MODELS.has(model) ? ALL_LEVELS : ['low', 'medium', 'high'];
+    case 'glm':
+      return model === 'glm-5.2' ? ['high', 'extreme'] : [];
+    default: {
+      const _exhaustive: never = provider;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * Clamp `level` to the closest level actually offered for the current provider/model
+ * (nearest lower first, then nearest higher), so a globally-stored preference like
+ * 'extreme' still displays sensibly against a model that collapses it down to 'high'.
+ * Returns `level` unchanged if `supported` is empty (no tiering to clamp to) or already
+ * contains it.
+ */
+export function clampThinkingLevel(level: ThinkingLevel, supported: readonly ThinkingLevel[]): ThinkingLevel {
+  if (supported.length === 0 || supported.includes(level)) return level;
+  const idx = ALL_LEVELS.indexOf(level);
+  for (let i = idx - 1; i >= 0; i--) {
+    if (supported.includes(ALL_LEVELS[i])) return ALL_LEVELS[i];
+  }
+  for (let i = idx + 1; i < ALL_LEVELS.length; i++) {
+    if (supported.includes(ALL_LEVELS[i])) return ALL_LEVELS[i];
+  }
+  return level;
 }

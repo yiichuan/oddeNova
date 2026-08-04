@@ -149,6 +149,8 @@ const S: Record<string, readonly [string, string]> = {
   thinkingLevelMedium:  ['中', 'Medium'],
   thinkingLevelHigh:    ['高', 'High'],
   thinkingLevelExtreme: ['极高', 'Extreme'],
+  thinkingLevelFixedLabel:     ['开启', 'On'],
+  thinkingLevelUnsupportedHint: ['当前模型不支持调整思考强度', "This model doesn't support adjusting thinking intensity"],
 };
 
 export function t(key: string): string {

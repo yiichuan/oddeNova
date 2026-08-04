@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckIcon, ChevronDownIcon } from './icons';
 import { t } from '../lib/i18n';
 import {
+  getSelectedModel,
   getSelectedThinkingLevel,
+  normalizeProvider,
   setSelectedThinkingLevel,
-  THINKING_LEVELS,
   type ThinkingLevel,
 } from '../services/llm-config';
+import { clampThinkingLevel, getSupportedThinkingLevels } from '../services/thinking-params';
 
 const LABEL_KEYS: Record<ThinkingLevel, string> = {
   low: 'thinkingLevelLow',
@@ -30,6 +32,15 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  // Re-read the active provider/model on every render (cheap localStorage lookups,
+  // no context/event plumbing) so switching provider in ApiKeyModal is reflected
+  // here without prop threading — see the file-level comment above.
+  const provider = normalizeProvider(localStorage.getItem('vibe_provider'));
+  const model = getSelectedModel(provider);
+  const supportedLevels = getSupportedThinkingLevels(provider, model);
+  const adjustable = supportedLevels.length > 0;
+  const effectiveLevel = adjustable ? clampThinkingLevel(level, supportedLevels) : level;
+
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: MouseEvent) => {
@@ -45,38 +56,42 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
     setOpen(false);
   };
 
+  const isDisabled = disabled || !adjustable;
+
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        disabled={disabled}
+        disabled={isDisabled}
         onClick={() => setOpen((o) => !o)}
         className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] text-[#888888] transition duration-200 hover:text-[#e0e0e0] disabled:cursor-not-allowed disabled:opacity-30"
-        title={t('thinkingLevel')}
+        title={adjustable ? t('thinkingLevel') : t('thinkingLevelUnsupportedHint')}
         aria-label={t('thinkingLevel')}
       >
-        <span>{t(LABEL_KEYS[level])}</span>
-        <ChevronDownIcon size={12} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        <span>{adjustable ? t(LABEL_KEYS[effectiveLevel]) : t('thinkingLevelFixedLabel')}</span>
+        {adjustable && (
+          <ChevronDownIcon size={12} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        )}
       </button>
 
-      {open && (
+      {open && adjustable && (
         <div
           role="menu"
           className="absolute bottom-full right-0 mb-2 w-20 overflow-hidden rounded-[10px] border border-[#2a2a2a] bg-[#181818] py-1 shadow-lg"
         >
-          {THINKING_LEVELS.map((lvl) => (
+          {supportedLevels.map((lvl) => (
             <button
               key={lvl}
               type="button"
               role="menuitemradio"
-              aria-checked={lvl === level}
+              aria-checked={lvl === effectiveLevel}
               onClick={() => select(lvl)}
               className={`flex w-full items-center justify-between px-3 py-1.5 text-[13px] transition-colors ${
-                lvl === level ? 'text-white' : 'text-[#888888] hover:text-[#cccccc]'
+                lvl === effectiveLevel ? 'text-white' : 'text-[#888888] hover:text-[#cccccc]'
               }`}
             >
               {t(LABEL_KEYS[lvl])}
-              {lvl === level && <CheckIcon size={12} />}
+              {lvl === effectiveLevel && <CheckIcon size={12} />}
             </button>
           ))}
         </div>
