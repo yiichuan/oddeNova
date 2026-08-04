@@ -47,16 +47,20 @@
   --color-accent: #434343;
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
-  --color-text-primary: #C0C0C0;
+  --color-text-primary: #D6D6D6;
   --color-text-secondary: #B8B8B8;
   --color-text-muted: #747474;
   --color-border: #323232;
   --color-success: #00b894;
   --color-error: #CC3803;
   --color-warning: #7E936F;
-  --color-diff-accent: #5295EB;
-  --color-diff-add: #28AB42;
-  --color-diff-remove: #DE573F;
+  --color-diff-accent: #434343;
+  --color-diff-add: #5CB957;
+  --color-diff-remove: #ED4F4F;
+
+  --radius-region: 6px;
+  --spacing-region: 10px;
+  --spacing-divider: 6px;
 
   --font-jinghua-laosongti: '京華老宋体', serif;
   --font-eb-garamond: 'EB Garamond', serif;
@@ -68,6 +72,53 @@ body {
   color: var(--color-text-primary);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overflow: hidden;
+}
+
+.surface-glow {
+  --surface-glow-angle: 145deg;
+  background:
+    linear-gradient(
+      var(--surface-glow-angle),
+      rgba(236, 238, 241, 0.12) 0%,
+      rgba(157, 161, 167, 0.035) 34%,
+      rgba(8, 8, 9, 0) 58%,
+      rgba(225, 228, 232, 0.09) 100%
+    ),
+    rgba(11, 11, 12, 0.68);
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+}
+
+.surface-glow-input {
+  --surface-glow-angle: -5deg;
+}
+
+.surface-glow-outline {
+  position: relative;
+}
+
+.surface-glow-outline::before {
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    var(--surface-glow-angle),
+    rgba(236, 238, 241, 0.18) 0%,
+    rgba(157, 161, 167, 0.1) 34%,
+    rgba(50, 50, 50, 0.82) 58%,
+    rgba(225, 228, 232, 0.2) 100%
+  );
+  content: '';
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
 }
 
 #root {

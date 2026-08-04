@@ -49,6 +49,9 @@ describe('EditableSessionTitle', () => {
   it('enters edit mode when editable title is clicked', () => {
     const { container, root } = renderTitle();
     roots.push(root);
+    const shellBefore = container.querySelector('[data-session-title-shell]');
+    expect(shellBefore?.className).toContain('h-8');
+    expect(container.querySelector('[data-session-title-edit-icon]')).not.toBeNull();
 
     act(() => {
       container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
@@ -57,6 +60,12 @@ describe('EditableSessionTitle', () => {
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
     expect(input).not.toBeNull();
     expect(input?.value).toBe('原始标题');
+    expect(container.querySelector('[data-session-title-shell]')).toBe(shellBefore);
+    expect(shellBefore?.getAttribute('data-editing')).toBe('true');
+    expect(container.querySelector('[data-session-title-edit-icon]')).toBeNull();
+    expect(input?.className).toContain('h-8');
+    expect(input?.className).toContain('absolute inset-0');
+    expect(input?.className).toContain('w-full');
   });
 
   it('saves the trimmed title on Enter', () => {

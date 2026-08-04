@@ -3,9 +3,9 @@ import type { Dispatch, PointerEventHandler, RefObject, SetStateAction } from 'r
 import { useIsMobile } from './useIsMobile';
 import { useKeyboardHeight } from './useKeyboardHeight';
 
-const SIDEBAR_RATIO_DEFAULT = 0.22;
-const SIDEBAR_RATIO_MIN = 0.15;
-const SIDEBAR_RATIO_MAX = 0.45;
+const SIDEBAR_RATIO_DEFAULT = 0.25;
+const SIDEBAR_RATIO_MIN = 0.20;
+const SIDEBAR_RATIO_MAX = 0.40;
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
 const VIZ_RATIO_MIN = 0.15;
 const VIZ_RATIO_MAX = 0.45;
@@ -23,7 +23,6 @@ export interface UseLayoutReturn {
   vizHeight: number;
   isDragging: 'h' | 'v' | null;
   mainRef: RefObject<HTMLDivElement | null>;
-  topActionsRef: RefObject<HTMLDivElement | null>;
   hDragHandlers: PointerDragHandlers;
   vDragHandlers: PointerDragHandlers;
   historyOpen: boolean;
@@ -91,7 +90,6 @@ export function useLayout(): UseLayoutReturn {
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
-  const topActionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (mainRef.current) {
@@ -149,7 +147,6 @@ export function useLayout(): UseLayoutReturn {
     vizHeight,
     isDragging,
     mainRef,
-    topActionsRef,
     hDragHandlers: { onPointerDown: startHDrag, onPointerMove: moveHDrag, onPointerUp: endHDrag },
     vDragHandlers: { onPointerDown: startVDrag, onPointerMove: moveVDrag, onPointerUp: endVDrag },
     historyOpen,

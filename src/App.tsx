@@ -29,8 +29,8 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
-import PersonaModal from './components/PersonaModal';
 import OddeNovaImportNotice from './components/OddeNovaImportNotice';
+import PrimaryNav, { type PrimaryNavItem } from './components/PrimaryNav';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
@@ -55,7 +55,7 @@ export default function App() {
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
-  const [showPersonaModal, setShowPersonaModal] = useState(false);
+  const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
@@ -71,7 +71,6 @@ export default function App() {
     vizHeight,
     isDragging,
     mainRef,
-    topActionsRef,
     hDragHandlers,
     vDragHandlers,
     historyOpen,
@@ -126,10 +125,6 @@ export default function App() {
   // Dimmed until there's something to play — but never while playing, or the
   // stop action would become unreachable.
   const mobileTransportDisabled = !strudel.isPlaying && (!strudel.engineReady || !strudel.code);
-
-  const openPersonaModal = useCallback(() => {
-    setShowPersonaModal(true);
-  }, []);
 
   const [apiKeyModalState, setApiKeyModalState] = useState(() => {
     let isTopWindow = true;
@@ -635,7 +630,7 @@ export default function App() {
       </div>
     ) : (
     <div
-      className="flex h-full w-full bg-bg-primary overflow-hidden"
+      className="flex h-full w-full overflow-hidden bg-bg-primary p-region"
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
     >
       {apiKeyModalState.open && (
@@ -645,92 +640,92 @@ export default function App() {
           required={!hasApiKeyConfigured()}
         />
       )}
-      {showPersonaModal && (
-        <PersonaModal onClose={() => setShowPersonaModal(false)} />
-      )}
+      <PrimaryNav selectedItem={primaryNavItem} onSelect={setPrimaryNavItem} />
 
-      {/* Sidebar with dynamic width */}
-      <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
-        <Sidebar
-          title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
-          messages={videoDemoMsgs ?? messages}
-          revisions={current?.revisions}
-          isLoading={isLoading || isReplaying}
-          engineReady={strudel.engineReady}
-          engineStatus={strudel.engineStatus}
-          sessions={sessions.sessions}
-          currentId={sessions.currentId}
-          suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
-          isVideoMode={isVideoMode}
-          scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
-          onSendText={handleChatInstruction}
-          onStop={handleStop}
-          onNewSession={handleNewSession}
-          onMoodGenerate={handleMoodInstruction}
-          onReinitEngine={strudel.reinit}
-          loadingSessions={loadingSessions}
-          unreadSessions={unreadSessions}
-          onSwitchSession={handleSwitchSession}
-          onDeleteSession={sessions.deleteSession}
-          onRenameSession={sessions.renameSession}
-          isHistoryLoading={sessions.isLoading}
-          onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
-          isReplaying={isReplaying}
-          replayInputText={replayInputText}
-          prefill={rollbackPrefill}
-          prefillTrigger={inputFocusTrigger}
-          onRollback={handleRollback}
-          onBranch={sessions.branchFromMessage}
-          onRetry={handleRetry}
-          onOpenPersonaModal={openPersonaModal}
-          tokenStats={current?.tokenStats}
-        />
-      </div>
-
-      {/* Horizontal resize handle */}
-      <div
-        {...hDragHandlers}
-        className="w-5.5 h-full shrink-0 group flex items-center justify-center pt-20 pb-3"
-        style={{ cursor: 'col-resize' }}
-      >
-        <div className={`w-1.5 h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
-      </div>
-
-      <main ref={mainRef} className="flex-1 flex flex-col pr-3 pb-0 min-w-0">
-        <div ref={topActionsRef} className="h-20 self-stretch relative" />
-        <div className="flex-1 min-h-0">
-          <CodePanel
-            error={strudel.error}
-            isPlaying={strudel.isPlaying}
-            engineReady={strudel.engineReady}
-            hasCode={!!strudel.code}
-            onMount={strudel.setRoot}
-            onPlay={() => strudel.play()}
-            onStop={strudel.stop}
-            exportState={strudel.exportState}
-            onExport={strudel.exportWav}
-            onGenerateTitle={generateSongTitle}
-            onResetExportState={strudel.resetExportState}
-            session={sessions.currentSession}
-            messages={messages}
-            topActionsContainer={topActionsRef}
-            onOpenSettings={openSettings}
-          />
+      <>
+        {/* Primary content keeps its width while non-home destinations are blank.
+            The Sidebar stays mounted so drafts and local UI state survive a switch. */}
+        <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
+          <div className={primaryNavItem === 'home' ? 'h-full' : 'hidden'}>
+            <Sidebar
+              title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
+              messages={videoDemoMsgs ?? messages}
+              revisions={current?.revisions}
+              isLoading={isLoading || isReplaying}
+              engineReady={strudel.engineReady}
+              engineStatus={strudel.engineStatus}
+              sessions={sessions.sessions}
+              currentId={sessions.currentId}
+              suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
+              isVideoMode={isVideoMode}
+              scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
+              onSendText={handleChatInstruction}
+              onStop={handleStop}
+              onNewSession={handleNewSession}
+              onMoodGenerate={handleMoodInstruction}
+              onReinitEngine={strudel.reinit}
+              loadingSessions={loadingSessions}
+              unreadSessions={unreadSessions}
+              onSwitchSession={handleSwitchSession}
+              onDeleteSession={sessions.deleteSession}
+              onRenameSession={sessions.renameSession}
+              isHistoryLoading={sessions.isLoading}
+              onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
+              isReplaying={isReplaying}
+              replayInputText={replayInputText}
+              prefill={rollbackPrefill}
+              prefillTrigger={inputFocusTrigger}
+              onRollback={handleRollback}
+              onBranch={sessions.branchFromMessage}
+              onRetry={handleRetry}
+              tokenStats={current?.tokenStats}
+            />
+          </div>
         </div>
 
-        {/* Vertical resize handle */}
+        {/* Horizontal resize handle */}
         <div
-          {...vDragHandlers}
-          className="h-2.5 shrink-0 group flex items-center justify-center"
-          style={{ cursor: 'row-resize' }}
+          {...hDragHandlers}
+          className="group flex h-full w-divider shrink-0 items-center justify-center"
+          style={{ cursor: 'col-resize' }}
         >
-          <div className={`h-1.5 w-full transition-colors duration-150 ${isDragging === 'v' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+          <div className={`w-1.5 h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
         </div>
 
-        <div style={{ height: vizHeight, flexShrink: 0 }} className="pb-3">
-          <VizPlaceholder isPlaying={strudel.isPlaying} />
-        </div>
-      </main>
+        <main ref={mainRef} className="flex min-w-0 flex-1 flex-col">
+          <div className="flex-1 min-h-0">
+            <CodePanel
+              error={strudel.error}
+              isPlaying={strudel.isPlaying}
+              engineReady={strudel.engineReady}
+              hasCode={!!strudel.code}
+              onMount={strudel.setRoot}
+              onPlay={() => strudel.play()}
+              onStop={strudel.stop}
+              exportState={strudel.exportState}
+              onExport={strudel.exportWav}
+              onGenerateTitle={generateSongTitle}
+              onResetExportState={strudel.resetExportState}
+              session={sessions.currentSession}
+              messages={messages}
+              onOpenSettings={openSettings}
+            />
+          </div>
+
+          {/* Vertical resize handle */}
+          <div
+            {...vDragHandlers}
+            className="group flex h-divider shrink-0 items-center justify-center"
+            style={{ cursor: 'row-resize' }}
+          >
+            <div className={`h-1.5 w-full transition-colors duration-150 ${isDragging === 'v' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+          </div>
+
+          <div style={{ height: vizHeight, flexShrink: 0 }}>
+            <VizPlaceholder isPlaying={strudel.isPlaying} />
+          </div>
+        </main>
+      </>
       {importStatus === 'loading' && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
           <span className="text-text-secondary text-sm">{t('loadingShare')}</span>

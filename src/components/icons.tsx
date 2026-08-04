@@ -4,6 +4,7 @@ import {
   Square,
   Clock,
   Plus,
+  MessageCirclePlus,
   Sparkles,
   Settings,
   Menu,
@@ -44,6 +45,7 @@ export const PlayIcon = ({ size = 18, className }: IconProps) => <Play size={siz
 export const StopIcon = ({ size = 16, className }: IconProps) => <Square size={size} className={className} fill="currentColor" />;
 export const HistoryIcon = ({ size = 16, className }: IconProps) => <Clock size={size} className={className} />;
 export const PlusIcon = ({ size = 16, className }: IconProps) => <Plus size={size} className={className} />;
+export const MessageCirclePlusIcon = ({ size = 16, className }: IconProps) => <MessageCirclePlus size={size} className={className} />;
 export const SparkleIcon = ({ size = 16, className }: IconProps) => <Sparkles size={size} className={className} />;
 export const SettingsIcon = ({ size = 16, className }: IconProps) => <Settings size={size} className={className} />;
 export const MenuIcon = ({ size = 16, className }: IconProps) => <Menu size={size} className={className} />;

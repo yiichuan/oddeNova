@@ -18,6 +18,7 @@ vi.mock('../../services/strudel', () => ({
 
 import CodePanel from '../CodePanel';
 import { strudelService } from '../../services/strudel';
+import { t } from '../../lib/i18n';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -132,6 +133,20 @@ describe('CodePanel editor focus reporting', () => {
     roots.push(root);
 
     expect(strudelService.setAutocompletionEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it('renders the desktop action bar inside the code panel region', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel();
+    roots.push(root);
+
+    const panel = container.firstElementChild;
+    const settingsButton = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent === t('settings'));
+
+    expect(panel).not.toBeNull();
+    expect(settingsButton).not.toBeUndefined();
+    expect(panel?.contains(settingsButton ?? null)).toBe(true);
   });
 
   it('disables autocompletion on mobile', () => {

@@ -112,6 +112,19 @@ describe('ChatInput engine initialization status', () => {
     expect(onFocusChange).toHaveBeenCalledWith(false);
   });
 
+  it('always draws the input outline inside the card', () => {
+    const { container, root } = renderChatInput();
+    roots.push(root);
+
+    const inputCard = container.querySelector('form')?.firstElementChild;
+    expect(inputCard?.className).toContain('surface-glow');
+    expect(inputCard?.className).toContain('surface-glow-input');
+    expect(inputCard?.className).toContain('surface-glow-outline');
+    expect(inputCard?.className).toContain('rounded-t-none');
+    expect(inputCard?.className).toContain('rounded-b-region');
+    expect(inputCard?.className).not.toContain('ring-[#323232]');
+  });
+
   it('focusTrigger 变化时即使 prefill 内容相同也会重新回填输入框', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

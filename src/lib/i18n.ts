@@ -16,6 +16,16 @@ const S: Record<string, readonly [string, string]> = {
   loading:      ['加载中…', 'Loading…'],
   play:         ['播放', 'Play'],
 
+  // Primary navigation
+  primaryNavigation: ['一级菜单', 'Primary navigation'],
+  navHome:       ['主页', 'Home'],
+  navFeatured:   ['精选', 'Featured'],
+  navMore:       ['更多', 'More'],
+  navSettings:   ['设置', 'Settings'],
+  navAccount:    ['账号', 'Account'],
+  expandNavigation:   ['展开导航栏', 'Expand navigation'],
+  collapseNavigation: ['收起导航栏', 'Collapse navigation'],
+
   // App status
   engineStarting:   ['音频引擎启动中，请稍后再试', 'Audio engine starting, please try again later'],
   preparingToPlay:  ['准备播放…', 'Preparing to play…'],

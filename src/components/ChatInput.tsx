@@ -229,7 +229,7 @@ export default function ChatInput({
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
       <div
-        className={`rounded-[12px] bg-[#111111] pt-3 transition duration-200 focus-within:ring-1 focus-within:ring-[#323232] ${inputDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
+        className={`surface-glow surface-glow-input surface-glow-outline rounded-t-none rounded-b-region pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
       >
         {/* Wraps just the textarea so the suggestion overlay below can be
             positioned absolute against its box, not the card as a whole

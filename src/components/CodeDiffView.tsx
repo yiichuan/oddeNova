@@ -57,22 +57,22 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
   );
 
   return (
-    <div className="mt-4 -ml-1 overflow-hidden rounded-md border-1 border-diff-accent/50 bg-bg-primary/35 animate-fade-in">
-      <div className="flex w-full items-stretch bg-bg-primary/60 text-[11px] text-diff-accent/70">
+    <div className="mt-4 -ml-1 overflow-hidden rounded-md bg-[#1a1a1a] animate-fade-in">
+      <div className="flex w-full items-stretch bg-[#1a1a1a] text-[11px] text-[#d6d6d6]">
         <button
           type="button"
           data-code-diff-toggle={messageId}
           aria-expanded={expanded}
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-bg-primary/80 hover:text-diff-accent/90"
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-white/[0.06] hover:text-[#f5f5f5]"
         >
           <ChevronRightIcon
-            size={12}
+            size={14}
             className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
           />
           <span>{t('viewChanges')}</span>
-          <span className="text-diff-add/75">+{diff.additions}</span>
-          <span className="text-diff-remove/75">−{diff.deletions}</span>
+          <span className="text-diff-add">+{diff.additions}</span>
+          <span className="text-diff-remove">−{diff.deletions}</span>
           {revision.playbackStatus === 'failed' && (
             <span className="ml-1 truncate text-amber-300/70">{t('revisionPlaybackFailed')}</span>
           )}
@@ -85,7 +85,7 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
               setTimeout(() => setCopied(false), 2000);
             });
           }}
-          className="px-2 py-1.5 transition-colors hover:bg-bg-primary/80 hover:text-diff-accent/90"
+          className="px-2 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-[#f5f5f5]"
           title={t('copyCode')}
         >
           {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
@@ -93,7 +93,7 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
       </div>
 
       {expanded && (
-        <div className="border-t border-diff-accent/15 bg-[#080a0d] py-1 animate-fade-in">
+        <div className="border-t border-white/10 bg-[#080a0d] py-1 animate-fade-in">
           {diff.groups.length === 0 && (
             <div className="px-3 py-3 text-[11px] text-text-muted">{t('noCodeChanges')}</div>
           )}

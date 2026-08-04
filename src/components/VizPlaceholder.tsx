@@ -4,7 +4,7 @@ interface VizPlaceholderProps {
 
 export default function VizPlaceholder({ isPlaying: _isPlaying }: VizPlaceholderProps) {
   return (
-    <div className="h-full overflow-hidden border border-border">
+    <div className="h-full overflow-hidden rounded-region border border-border">
       <iframe
         src="/animation/galaxy.html"
         title="galaxy visualizer"

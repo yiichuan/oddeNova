@@ -1095,7 +1095,7 @@ export default function ConversationView({
     // over outside overlays like the history panel (z-10 in Sidebar).
     <div
       ref={scrollRef}
-      className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[18px] relative${
+      className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[32px] relative${
         reasoningWindowExpanded ? ' scrollbar-hidden' : ''
       }`}
       style={{ scrollbarGutter: 'stable' }}
@@ -1167,7 +1167,7 @@ export default function ConversationView({
               className="flex justify-end items-end gap-1.5 animate-fade-in group"
             >
               <div
-                className={`relative max-w-[85%] rounded-xl px-3 py-2 text-sm bg-[#1a1a1a] text-text-primary${
+                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-[#242424] text-text-primary${
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}

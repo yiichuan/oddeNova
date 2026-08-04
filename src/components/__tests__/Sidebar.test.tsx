@@ -57,7 +57,6 @@ function renderSidebar(props: Partial<React.ComponentProps<typeof Sidebar>> = {}
         onRollback={vi.fn()}
         onBranch={vi.fn()}
         onRetry={vi.fn()}
-        onOpenPersonaModal={vi.fn()}
         {...props}
       />,
     );
@@ -126,7 +125,8 @@ describe('Sidebar session title editing layout', () => {
 
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]');
     expect(input).not.toBeNull();
-    expect(input?.parentElement?.className).toContain('gap-3');
+    expect(input?.closest('[data-session-title-shell]')).not.toBeNull();
+    expect(input?.closest('[data-session-title-shell]')?.parentElement?.className).toContain('flex-1');
   });
 
   it('keeps the demo mood suggestion in the input rotation when suggestions are empty', () => {
@@ -150,18 +150,18 @@ describe('Sidebar session title editing layout', () => {
     }
   });
 
-  it('opens persona selection when the logo is clicked', () => {
-    const onOpenPersonaModal = vi.fn();
-    const { container, root } = renderSidebar({ onOpenPersonaModal });
+  it('ends the Sidebar outline at the top edge of ChatInput', () => {
+    const { container, root } = renderSidebar();
     roots.push(root);
 
-    const logoButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('choosePersona')}"]`);
-    expect(logoButton).not.toBeNull();
-
-    act(() => {
-      logoButton?.click();
-    });
-
-    expect(onOpenPersonaModal).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(`button[aria-label="${t('choosePersona')}"]`)).toBeNull();
+    const messageRegion = container.querySelector('[data-sidebar-message-region]');
+    expect(messageRegion?.className).toContain('rounded-t-region');
+    expect(messageRegion?.className).toContain('rounded-b-none');
+    expect(messageRegion?.className).toContain('border');
+    expect(container.querySelector('form')?.parentElement?.className).toContain('-mt-px');
+    expect(container.querySelector('form')?.parentElement?.className).toContain('w-full');
+    expect(container.querySelector('form')?.parentElement?.className).not.toContain('px-region');
+    expect(container.querySelector('form')?.parentElement?.className).not.toContain('pb-3');
   });
 });

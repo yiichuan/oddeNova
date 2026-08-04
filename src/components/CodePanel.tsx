@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { PlayIcon, StopIcon } from './icons';
 import { t } from '../lib/i18n';
 import { strudelService } from '../services/strudel';
@@ -25,7 +24,6 @@ interface CodePanelProps {
   onResetExportState: () => void;
   session: Session | null;
   messages: ChatMessage[];
-  topActionsContainer?: React.RefObject<HTMLDivElement | null>;
   onOpenSettings: () => void;
   onEditorFocusChange?: (focused: boolean) => void;
 }
@@ -130,7 +128,6 @@ export default function CodePanel({
   onResetExportState,
   session,
   messages,
-  topActionsContainer,
   onOpenSettings,
   onEditorFocusChange,
 }: CodePanelProps) {
@@ -271,7 +268,7 @@ export default function CodePanel({
   };
 
   return (
-    <div className="h-full flex flex-col border border-border">
+    <div className="h-full flex flex-col rounded-region border border-border">
       <style>{`
         .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; background: transparent; }
         .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -6px; }
@@ -282,6 +279,24 @@ export default function CodePanel({
         @keyframes cmFadeIn { from { opacity: 0; } to { opacity: 1; } }
         .video-fade-in { animation: cmFadeIn 0.6s ease-out forwards; }
       `}</style>
+
+      {!isMobile && (
+        <div className="h-20 shrink-0 px-region">
+          <TopActionBar
+            onOpenSettings={onOpenSettings}
+            session={session}
+            code={strudelService.code}
+            messages={messages}
+            engineReady={engineReady}
+            hasCode={hasCode}
+            exportState={exportState}
+            onExport={handleExport}
+            onGenerateTitle={onGenerateTitle}
+            onResetExportState={onResetExportState}
+            bpm={bpm}
+          />
+        </div>
+      )}
 
       {/* StrudelMirror mounts here */}
       <div className="relative flex-1 min-h-0">
@@ -303,23 +318,6 @@ export default function CodePanel({
           </div>
         )}
       </div>
-
-      {topActionsContainer?.current && createPortal(
-        <TopActionBar
-          onOpenSettings={onOpenSettings}
-          session={session}
-          code={strudelService.code}
-          messages={messages}
-          engineReady={engineReady}
-          hasCode={hasCode}
-          exportState={exportState}
-          onExport={handleExport}
-          onGenerateTitle={onGenerateTitle}
-          onResetExportState={onResetExportState}
-          bpm={bpm}
-        />,
-        topActionsContainer.current,
-      )}
 
       {/* Footer — play button + sliders. Desktop only: on mobile the drawer shows
           nothing but code, and transport lives next to App's code-pill toggle. */}
