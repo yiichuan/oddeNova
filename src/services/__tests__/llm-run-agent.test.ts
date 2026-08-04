@@ -274,7 +274,7 @@ describe('anthropicLLMCaller thinking params', () => {
     getActiveModelConfigMock.mockReset().mockReturnValue({
       provider: 'anthropic' as const,
       protocol: 'anthropic' as const,
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       apiKey: 'sk-ant-test',
       baseURL: 'https://api.anthropic.com',
     });

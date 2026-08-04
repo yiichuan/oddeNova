@@ -106,7 +106,7 @@ describe('PROVIDER_PRESETS models lists', () => {
   });
 
   it('anthropic models[0] matches the built-in anthropic default', () => {
-    expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-sonnet-4-6');
+    expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-opus-5');
   });
 });
 
@@ -163,12 +163,12 @@ describe('getSelectedModel', () => {
   });
 
   it('falls back to the built-in anthropic default when no override is stored', () => {
-    expect(getSelectedModel('anthropic')).toBe('claude-sonnet-4-6');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-5');
   });
 
   it('uses the exact VITE_LLM_MODEL value for anthropic when it is set', () => {
-    vi.stubEnv('VITE_LLM_MODEL', 'claude-opus-4-8');
-    expect(getSelectedModel('anthropic')).toBe('claude-opus-4-8');
+    vi.stubEnv('VITE_LLM_MODEL', 'claude-opus-5');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-5');
   });
 
   it('does not map legacy anthropic aliases from VITE_LLM_MODEL', () => {
@@ -177,8 +177,8 @@ describe('getSelectedModel', () => {
   });
 
   it('returns a valid stored override for anthropic', () => {
-    localStorage.setItem('vibe_model_anthropic', 'claude-opus-4-8');
-    expect(getSelectedModel('anthropic')).toBe('claude-opus-4-8');
+    localStorage.setItem('vibe_model_anthropic', 'claude-opus-5');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-5');
   });
 
   it('returns preset.model for official regardless of any stored override', () => {

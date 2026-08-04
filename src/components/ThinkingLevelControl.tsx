@@ -26,20 +26,12 @@ interface ThinkingLevelControlProps {
 // than behind an icon, so it's readable at a glance. Reads/writes the
 // global localStorage preference directly — no prop threading through
 // ChatInput/App, matching how provider/model are resolved directly from
-// llm-config.ts wherever they're needed.
+// llm-config.ts wherever they're needed. Renders nothing at all when the
+// active model has no effort dial (getSupportedThinkingLevels returns []).
 export default function ThinkingLevelControl({ disabled = false }: ThinkingLevelControlProps) {
   const [level, setLevel] = useState<ThinkingLevel>(() => getSelectedThinkingLevel());
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-
-  // Re-read the active provider/model on every render (cheap localStorage lookups,
-  // no context/event plumbing) so switching provider in ApiKeyModal is reflected
-  // here without prop threading — see the file-level comment above.
-  const provider = normalizeProvider(localStorage.getItem('vibe_provider'));
-  const model = getSelectedModel(provider);
-  const supportedLevels = getSupportedThinkingLevels(provider, model);
-  const adjustable = supportedLevels.length > 0;
-  const effectiveLevel = adjustable ? clampThinkingLevel(level, supportedLevels) : level;
 
   useEffect(() => {
     if (!open) return;
@@ -50,31 +42,37 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, [open]);
 
+  // Re-read the active provider/model on every render (cheap localStorage lookups,
+  // no context/event plumbing) so switching provider in ApiKeyModal is reflected
+  // here without prop threading — see the file-level comment above.
+  const provider = normalizeProvider(localStorage.getItem('vibe_provider'));
+  const model = getSelectedModel(provider);
+  const supportedLevels = getSupportedThinkingLevels(provider, model);
+  if (supportedLevels.length === 0) return null;
+
+  const effectiveLevel = clampThinkingLevel(level, supportedLevels);
+
   const select = (next: ThinkingLevel) => {
     setSelectedThinkingLevel(next);
     setLevel(next);
     setOpen(false);
   };
 
-  const isDisabled = disabled || !adjustable;
-
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        disabled={isDisabled}
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] text-[#888888] transition duration-200 hover:text-[#e0e0e0] disabled:cursor-not-allowed disabled:opacity-30"
-        title={adjustable ? t('thinkingLevel') : t('thinkingLevelUnsupportedHint')}
+        title={t('thinkingLevel')}
         aria-label={t('thinkingLevel')}
       >
-        <span>{adjustable ? t(LABEL_KEYS[effectiveLevel]) : t('thinkingLevelFixedLabel')}</span>
-        {adjustable && (
-          <ChevronDownIcon size={12} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
-        )}
+        <span>{t(LABEL_KEYS[effectiveLevel])}</span>
+        <ChevronDownIcon size={12} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && adjustable && (
+      {open && (
         <div
           role="menu"
           className="absolute bottom-full right-0 mb-2 w-20 overflow-hidden rounded-[10px] border border-[#2a2a2a] bg-[#181818] py-1 shadow-lg"

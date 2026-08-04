@@ -21,9 +21,9 @@ describe('resolveOpenAIThinkingParams — deepseek / official', () => {
   it.each([
     ['low', 'low'],
     ['medium', 'high'],
-    ['high', 'xhigh'],
+    ['high', 'high'],
     ['extreme', 'max'],
-  ] as const)('%s maps to reasoning_effort %s (DeepSeek\'s 4 real request-level values)', (level, effort) => {
+  ] as const)('%s maps to reasoning_effort %s (DeepSeek\'s 3 real request-level values)', (level, effort) => {
     for (const provider of ['deepseek', 'official'] as const) {
       expect(resolveOpenAIThinkingParams(provider, 'deepseek-v4-flash', level)).toEqual({
         thinking: { type: 'enabled' },
@@ -36,7 +36,7 @@ describe('resolveOpenAIThinkingParams — deepseek / official', () => {
     for (const model of ['deepseek-v4-flash', 'deepseek-v4-pro']) {
       expect(resolveOpenAIThinkingParams('deepseek', model, 'high')).toEqual({
         thinking: { type: 'enabled' },
-        reasoning_effort: 'xhigh',
+        reasoning_effort: 'high',
       });
     }
   });
@@ -51,15 +51,22 @@ describe('resolveOpenAIThinkingParams — kimi', () => {
 });
 
 describe('resolveOpenAIThinkingParams — openai', () => {
-  it.each(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.5-mini'] as const)(
-    '%s maps extreme to reasoning_effort "xhigh" (not "max", even though gpt-5.6 documents a max tier)',
+  it.each(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const)(
+    '%s maps extreme to reasoning_effort "max" (full ladder incl. xhigh/max documented)',
+    (model) => {
+      expect(resolveOpenAIThinkingParams('openai', model, 'extreme')).toEqual({ reasoning_effort: 'max' });
+    },
+  );
+
+  it.each(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'] as const)(
+    '%s maps extreme to reasoning_effort "xhigh" (caps at xhigh, no max)',
     (model) => {
       expect(resolveOpenAIThinkingParams('openai', model, 'extreme')).toEqual({ reasoning_effort: 'xhigh' });
     },
   );
 
-  it.each(['gpt-5.1', 'gpt-5'] as const)('%s collapses extreme to reasoning_effort "high" (no xhigh support)', (model) => {
-    expect(resolveOpenAIThinkingParams('openai', model, 'extreme')).toEqual({ reasoning_effort: 'high' });
+  it('unknown openai models collapse extreme to reasoning_effort "high" (no xhigh support)', () => {
+    expect(resolveOpenAIThinkingParams('openai', 'gpt-unknown', 'extreme')).toEqual({ reasoning_effort: 'high' });
   });
 
   it.each(['low', 'medium', 'high'] as const)('%s maps 1:1 to reasoning_effort', (level) => {
@@ -98,23 +105,39 @@ describe('resolveOpenAIThinkingParams — anthropic (unreachable in practice)', 
 });
 
 describe('getSupportedThinkingLevels', () => {
-  it.each(['anthropic', 'deepseek', 'official'] as const)('%s always supports all 4 levels', (provider) => {
-    expect(getSupportedThinkingLevels(provider, 'any-model')).toEqual(['low', 'medium', 'high', 'extreme']);
+  it.each(['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5'] as const)(
+    'anthropic %s supports all 4 levels (effort ladder incl. xhigh/max)',
+    (model) => {
+      expect(getSupportedThinkingLevels('anthropic', model)).toEqual(['low', 'medium', 'high', 'extreme']);
+    },
+  );
+
+  it('anthropic claude-haiku-4-5 has no effort dial — no supported levels', () => {
+    expect(getSupportedThinkingLevels('anthropic', 'claude-haiku-4-5')).toEqual([]);
+  });
+
+  it('deepseek-v4-flash supports low/high/extreme (medium folds into high)', () => {
+    expect(getSupportedThinkingLevels('deepseek', 'deepseek-v4-flash')).toEqual(['low', 'high', 'extreme']);
+    expect(getSupportedThinkingLevels('official', 'deepseek-v4-flash')).toEqual(['low', 'high', 'extreme']);
+  });
+
+  it('deepseek-v4-pro only supports high/extreme (low folds into high server-side)', () => {
+    expect(getSupportedThinkingLevels('deepseek', 'deepseek-v4-pro')).toEqual(['high', 'extreme']);
   });
 
   it('kimi has no tiering — no supported levels', () => {
     expect(getSupportedThinkingLevels('kimi', 'kimi-k2.6')).toEqual([]);
   });
 
-  it.each(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.5-mini'] as const)(
+  it.each(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'] as const)(
     'openai %s supports all 4 levels',
     (model) => {
       expect(getSupportedThinkingLevels('openai', model)).toEqual(['low', 'medium', 'high', 'extreme']);
     },
   );
 
-  it.each(['gpt-5.1', 'gpt-5'] as const)('openai %s only supports low/medium/high (no xhigh)', (model) => {
-    expect(getSupportedThinkingLevels('openai', model)).toEqual(['low', 'medium', 'high']);
+  it('unknown openai models only support low/medium/high (no xhigh)', () => {
+    expect(getSupportedThinkingLevels('openai', 'gpt-unknown')).toEqual(['low', 'medium', 'high']);
   });
 
   it('glm-5.2 only has 2 real tiers: high and extreme', () => {
@@ -142,5 +165,10 @@ describe('clampThinkingLevel', () => {
   it('clamps up to the nearest higher supported level when nothing lower is supported', () => {
     expect(clampThinkingLevel('low', ['high', 'extreme'])).toBe('high');
     expect(clampThinkingLevel('medium', ['high', 'extreme'])).toBe('high');
+  });
+
+  it('clamps a stored medium down/up onto deepseek-v4-flash\'s ladder (low/high/extreme)', () => {
+    expect(clampThinkingLevel('medium', ['low', 'high', 'extreme'])).toBe('high');
+    expect(clampThinkingLevel('extreme', ['low', 'high', 'extreme'])).toBe('extreme');
   });
 });

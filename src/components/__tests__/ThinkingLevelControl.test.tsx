@@ -60,7 +60,7 @@ describe('ThinkingLevelControl', () => {
     expect(container.querySelector('[role="menu"]')).toBeNull();
   });
 
-  it('opens a 4-item menu on click, with the default "Medium" level checked', () => {
+  it('opens a menu on click, with the default "Medium" level clamped onto the official ladder (deepseek-v4-flash: low/high/extreme)', () => {
     const { container, root } = renderControl();
     roots.push(root);
 
@@ -69,8 +69,9 @@ describe('ThinkingLevelControl', () => {
     const menu = container.querySelector('[role="menu"]');
     expect(menu).not.toBeNull();
     const items = container.querySelectorAll('[role="menuitemradio"]');
-    expect(items).toHaveLength(4);
-    expect(items[1].textContent).toContain('Medium');
+    expect(items).toHaveLength(3);
+    expect(Array.from(items).map((el) => el.textContent)).toEqual(['Low', 'High', 'Extreme']);
+    expect(items[1].textContent).toContain('High');
     expect(items[1].getAttribute('aria-checked')).toBe('true');
   });
 
@@ -80,14 +81,14 @@ describe('ThinkingLevelControl', () => {
 
     act(() => getTrigger(container).click());
     const items = container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
-    act(() => items[3].click()); // Extreme
+    act(() => items[2].click()); // Extreme
 
     expect(localStorage.getItem('vibe_thinking_level')).toBe('extreme');
     expect(container.querySelector('[role="menu"]')).toBeNull();
 
     act(() => getTrigger(container).click());
     const reopened = container.querySelectorAll('[role="menuitemradio"]');
-    expect(reopened[3].getAttribute('aria-checked')).toBe('true');
+    expect(reopened[2].getAttribute('aria-checked')).toBe('true');
   });
 
   it('reads a previously stored level on mount', () => {
@@ -97,7 +98,7 @@ describe('ThinkingLevelControl', () => {
 
     act(() => getTrigger(container).click());
     const items = container.querySelectorAll('[role="menuitemradio"]');
-    expect(items[2].getAttribute('aria-checked')).toBe('true');
+    expect(items[1].getAttribute('aria-checked')).toBe('true');
   });
 
   it('closes the menu on an outside click without changing the stored level', () => {
@@ -119,13 +120,14 @@ describe('ThinkingLevelControl', () => {
     const { container, root } = renderControl();
     roots.push(root);
 
-    expect(getTrigger(container).textContent).toContain('Medium');
+    // default medium clamps onto the official ladder as High
+    expect(getTrigger(container).textContent).toContain('High');
 
     act(() => getTrigger(container).click());
     const items = container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
-    act(() => items[2].click()); // High
+    act(() => items[2].click()); // Extreme
 
-    expect(getTrigger(container).textContent).toContain('High');
+    expect(getTrigger(container).textContent).toContain('Extreme');
   });
 
   it('disables the trigger button when disabled=true', () => {
@@ -135,16 +137,16 @@ describe('ThinkingLevelControl', () => {
     expect(getTrigger(container).disabled).toBe(true);
   });
 
-  it('only offers levels the selected model actually supports (openai gpt-5.1 has no xhigh)', () => {
+  it('offers all 4 levels for every selectable openai model (gpt-5.4-mini)', () => {
     localStorage.setItem('vibe_provider', 'openai');
-    localStorage.setItem('vibe_model_openai', 'gpt-5.1');
+    localStorage.setItem('vibe_model_openai', 'gpt-5.4-mini');
     const { container, root } = renderControl();
     roots.push(root);
 
     act(() => getTrigger(container).click());
     const items = container.querySelectorAll('[role="menuitemradio"]');
-    expect(items).toHaveLength(3);
-    expect(Array.from(items).map((el) => el.textContent)).toEqual(['Low', 'Medium', 'High']);
+    expect(items).toHaveLength(4);
+    expect(Array.from(items).map((el) => el.textContent)).toEqual(['Low', 'Medium', 'High', 'Extreme']);
   });
 
   it('glm-5.2 only offers High and Extreme', () => {
@@ -159,36 +161,41 @@ describe('ThinkingLevelControl', () => {
   });
 
   it('clamps a stored level unsupported by the current model down to the nearest one, without overwriting storage', () => {
-    localStorage.setItem('vibe_thinking_level', 'extreme');
-    localStorage.setItem('vibe_provider', 'openai');
-    localStorage.setItem('vibe_model_openai', 'gpt-5.1');
+    localStorage.setItem('vibe_thinking_level', 'low');
+    localStorage.setItem('vibe_provider', 'glm');
+    localStorage.setItem('vibe_model_glm', 'glm-5.2');
     const { container, root } = renderControl();
     roots.push(root);
 
     expect(getTrigger(container).textContent).toContain('High');
-    expect(localStorage.getItem('vibe_thinking_level')).toBe('extreme');
+    expect(localStorage.getItem('vibe_thinking_level')).toBe('low');
   });
 
-  it('disables the control and shows a fixed label for models with no tiering (kimi)', () => {
+  it('does not render anything for models with no effort dial (kimi)', () => {
     localStorage.setItem('vibe_provider', 'kimi');
     const { container, root } = renderControl();
     roots.push(root);
 
-    const trigger = getTrigger(container);
-    expect(trigger.disabled).toBe(true);
-    expect(trigger.textContent).toContain('On');
-    act(() => trigger.click());
+    expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('[role="menu"]')).toBeNull();
   });
 
-  it('disables the control for glm models without an effort dial (glm-5.1)', () => {
+  it('does not render anything for glm models without an effort dial (glm-5.1)', () => {
     localStorage.setItem('vibe_provider', 'glm');
     localStorage.setItem('vibe_model_glm', 'glm-5.1');
     const { container, root } = renderControl();
     roots.push(root);
 
-    const trigger = getTrigger(container);
-    expect(trigger.disabled).toBe(true);
-    expect(trigger.textContent).toContain('On');
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('does not render anything for anthropic haiku-4-5 (no effort dial)', () => {
+    localStorage.setItem('vibe_provider', 'anthropic');
+    localStorage.setItem('vibe_model_anthropic', 'claude-haiku-4-5');
+    const { container, root } = renderControl();
+    roots.push(root);
+
+    expect(container.querySelector('button')).toBeNull();
   });
 });
