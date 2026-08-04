@@ -8,6 +8,7 @@
 // at all. There is deliberately no "off" level anywhere: thinking is always on.
 
 import type { ThinkingLevel } from '../agent/loop';
+import { THINKING_LEVELS as ALL_LEVELS } from './llm-config';
 import type { ProviderType } from './llm-config';
 
 export const ANTHROPIC_THINKING_BUDGET: Record<ThinkingLevel, number> = {
@@ -35,8 +36,6 @@ const DEEPSEEK_EFFORT: Record<ThinkingLevel, string> = {
 // drift apart.
 const OPENAI_MAX_MODELS = new Set(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
 const OPENAI_XHIGH_MODELS = new Set(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini']);
-
-const ALL_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'extreme'];
 
 export function resolveAnthropicThinkingParam(
   level: ThinkingLevel,
@@ -113,13 +112,9 @@ export function getSupportedThinkingLevels(provider: ProviderType, model: string
   switch (provider) {
     case 'anthropic':
       // Official models (docs.anthropic.com/en/docs/about-claude/models):
-      // fable-5 / opus-5 / sonnet-5 all support the effort ladder; haiku-4-5
-      // has no effort dial at all. Unknown model ids keep the full dial — the
-      // legacy budget_tokens wire path still works for them.
-      if (model.startsWith('claude-fable-5') || model.startsWith('claude-opus-5') ||
-          model.startsWith('claude-sonnet-5')) {
-        return ALL_LEVELS;
-      }
+      // fable-5 / opus-5 / sonnet-5 all support the effort ladder; only
+      // haiku-4-5 has no effort dial. Unknown model ids keep the full dial —
+      // the legacy budget_tokens wire path still works for them.
       if (model.startsWith('claude-haiku-4-5')) return [];
       return ALL_LEVELS;
     case 'deepseek':
