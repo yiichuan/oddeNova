@@ -72,9 +72,12 @@ export default function ChatInput({
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const adoptedSuggestionRef = useRef<string | null>(null);
-  // Mobile has no Tab key, so the suggestion is adopted by focusing the field
-  // instead, and the "press Tab" hint has nothing to point at.
+  // Mobile has no Tab key, so the return key adopts the suggestion instead
+  // (see onKeyDown), and the footer hint points at that key rather than Tab.
   const isMobile = useIsMobile();
+  // Drives the mobile "return to fill" hint, which is only actionable once the
+  // on-screen keyboard is up.
+  const [focused, setFocused] = useState(false);
 
   // AirJelly reachability, checked once on mount — same gating the removed
   // mood button used: Windows is excluded (AirJelly Desktop doesn't support
@@ -202,8 +205,9 @@ export default function ChatInput({
     doSubmit();
   };
 
-  // What Tab does on desktop. Adopts the whole suggestion, not just the part
-  // typed out so far, so a mid-reveal trigger doesn't yield half a sentence.
+  // What Tab does on desktop / the return key on mobile. Adopts the whole
+  // suggestion, not just the part typed out so far, so a mid-reveal trigger
+  // doesn't yield half a sentence.
   const adoptSuggestion = () => {
     if (suggestionActive && currentSuggestion) {
       adoptedSuggestionRef.current = currentSuggestion;
@@ -215,10 +219,6 @@ export default function ChatInput({
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
     textareaRef.current?.focus();
-    // Keyed to the tap on this card rather than to onFocus: focus also arrives
-    // programmatically (mount's focusTrigger, rollback prefill, replay), and
-    // those must not adopt the suggestion.
-    if (isMobile) adoptSuggestion();
   };
 
   const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
@@ -250,8 +250,14 @@ export default function ChatInput({
               setText(e.target.value);
             }}
             readOnly={replayValue !== undefined}
-            onFocus={() => onFocusChange?.(true)}
-            onBlur={() => onFocusChange?.(false)}
+            onFocus={() => {
+              setFocused(true);
+              onFocusChange?.(true);
+            }}
+            onBlur={() => {
+              setFocused(false);
+              onFocusChange?.(false);
+            }}
             onKeyDown={(e) => {
               if (replayValue !== undefined) return;
               // Guarded so Tab still moves focus out when there's nothing to adopt.
@@ -261,6 +267,17 @@ export default function ChatInput({
                 return;
               }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                // Mobile: the return key stands in for Tab, but only while the
+                // field is still empty (suggestionActive). Once the user is
+                // typing it falls through as a plain newline — sending is the
+                // send button's job there, not the keyboard's.
+                if (isMobile) {
+                  if (suggestionActive && currentSuggestion) {
+                    e.preventDefault();
+                    adoptSuggestion();
+                  }
+                  return;
+                }
                 e.preventDefault();
                 handleSubmit(e);
               }
@@ -321,8 +338,10 @@ export default function ChatInput({
                   </button>
                 )}
               </div>
-            ) : suggestionActive && !isMobile ? (
-              <div className="pointer-events-none text-[12px] text-[#666666]">{t('tabToFill')}</div>
+            ) : suggestionActive && (!isMobile || focused) ? (
+              <div className="pointer-events-none text-[12px] text-[#666666]">
+                {isMobile ? t('enterToFill') : t('tabToFill')}
+              </div>
             ) : null}
           </div>
 
