@@ -424,7 +424,6 @@ export async function runAgent(
   conversationHistory?: ConversationTurn[],
 ): Promise<RunAgentResult> {
   const systemPrompt = buildSystemPrompt({
-    instruction,
     moodContext,
     persona: getActivePersonaSync(),
   });

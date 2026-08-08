@@ -1,9 +1,9 @@
 import { AGENT_SYSTEM_PROMPT_OPENAI, AGENT_SYSTEM_PROMPT_EN } from './system-prompt';
 import { buildPersonaBlock } from '../persona/oddenova';
 import { BUILTIN_PERSONA_ID, getPersonaPrompt, type ActivePersona } from '../lib/persona-storage';
+import { isZh } from '../lib/i18n';
 
 export interface BuildSystemPromptInput {
-  instruction: string;
   moodContext?: string;
   persona?: ActivePersona;
 }
@@ -24,11 +24,10 @@ function resolvePersonaBlock(persona: ActivePersona, lang: 'zh' | 'en'): { block
 }
 
 export function buildSystemPrompt({
-  instruction,
   moodContext,
   persona = DEFAULT_PERSONA,
 }: BuildSystemPromptInput): string {
-  const lang = /[一-龥]/.test(instruction) ? 'zh' : 'en';
+  const lang = isZh() ? 'zh' : 'en';
   const { block, name } = resolvePersonaBlock(persona, lang);
   const base = lang === 'zh'
     ? AGENT_SYSTEM_PROMPT_OPENAI(block, name)

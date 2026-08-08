@@ -1,6 +1,8 @@
-export const zh: boolean = (() => {
+export function isZh(): boolean {
   try { return navigator.language.startsWith('zh'); } catch { return false; }
-})();
+}
+
+export const zh: boolean = isZh();
 
 const S: Record<string, readonly [string, string]> = {
   // Common
