@@ -1,161 +1,161 @@
-# Model Settings Workspace Design
+# 模型设置工作区设计
 
-Date: 2026-08-08
+日期：2026-08-08
 
-## Goal
+## 目标
 
-Turn the desktop PrimaryNav settings action into a dedicated model-configuration workspace. The new workspace replaces the home conversation and music surfaces in place, while preserving the established navigation rail, split proportions, and the user's unfinished settings draft.
+将桌面端 PrimaryNav 的设置操作改造成独立的模型配置工作区。新工作区在原位替换主页的会话与音乐创作区域，同时保留现有导航栏、分栏比例以及用户尚未保存的设置草稿。
 
-## Scope
+## 范围
 
-This change covers the desktop settings workspace for five providers:
+本次改动覆盖以下五个服务商的桌面端设置工作区：
 
-- oddeNova official service
+- oddeNova 官方服务
 - DeepSeek
 - GLM
 - Anthropic
 - OpenAI
 
-The existing first-run and missing-credential `ApiKeyModal` remains available. Mobile continues to use the existing modal in this iteration. Kimi remains supported by the configuration layer but is not exposed in the new settings workspace.
+现有的首次进入和缺少凭证时使用的 `ApiKeyModal` 继续保留。移动端在本次迭代中继续使用现有弹窗。Kimi 仍由底层配置模块支持，但不在新的设置工作区中展示。
 
-## Workspace Navigation
+## 工作区导航
 
-`PrimaryNav` remains the owner of top-level workspace selection.
+`PrimaryNav` 继续负责顶层工作区切换。
 
-- Selecting `settings` shows the model settings workspace.
-- Selecting `home` restores the existing conversation Sidebar and the CodePanel/galaxy main area.
-- Switching away from settings does not discard unsaved drafts.
-- Returning to settings restores the selected provider and every provider's in-memory draft.
-- Refreshing or closing the page discards unsaved changes because drafts are not persisted.
+- 选择 `settings` 时显示模型设置工作区。
+- 选择 `home` 时恢复原有会话 Sidebar 与 CodePanel/星空主区域。
+- 离开设置页不会丢弃未保存草稿。
+- 再次进入设置页时，恢复上次选中的服务商和各服务商的内存草稿。
+- 刷新或关闭页面时丢弃未保存内容，因为草稿不会持久化。
 
-The settings button no longer opens `ApiKeyModal` on desktop. The modal continues to serve required first-run and missing-key flows. On mobile, the settings action retains the modal until a mobile settings workspace is designed separately.
+桌面端设置按钮不再打开 `ApiKeyModal`。该弹窗继续负责首次进入和缺少必要 Key 的强制引导。在单独设计移动端设置工作区之前，移动端设置入口仍沿用弹窗。
 
-## Layout and Visual Direction
+## 布局与视觉方向
 
-The settings workspace preserves the current desktop shell and split ratio.
+设置工作区保留当前桌面端外壳和分栏比例。
 
-### Provider sidebar
+### 服务商侧栏
 
-The area normally occupied by `Sidebar` becomes `ProviderSidebar`. It lists the five in-scope providers in the same localized order used by the current modal. The selected provider uses a clear surface change and keyboard focus state.
+原 `Sidebar` 区域替换为 `ProviderSidebar`，按照当前设置弹窗的本地化顺序展示五个服务商。选中的服务商使用清晰的表面变化和键盘焦点样式。
 
-Each row may show two distinct statuses:
+每一行可以展示两种彼此独立的状态：
 
-- `Currently in use` reflects the persisted active provider.
-- `Unsaved changes` reflects a draft that differs from persisted configuration.
+- “正在使用”表示已经持久化并实际生效的服务商。
+- “有未保存修改”表示草稿与已保存配置存在差异。
 
-These signals must remain distinguishable so browsing a provider is never confused with activating it.
+两种状态必须清晰区分，避免用户误以为仅仅浏览某个服务商就已经完成切换。
 
-### Settings panel
+### 设置主面板
 
-The area normally occupied by CodePanel and the galaxy visualization becomes `ModelSettingsPanel`. It is a restrained single-column form aligned to the project's dark, grid-led visual system. The panel includes:
+原 CodePanel 与星空动画区域整体替换为 `ModelSettingsPanel`。面板采用克制的单列表单，延续项目深色、网格化的视觉体系，包含：
 
-- provider name and concise connection guidance;
-- model version selection;
-- API Key input where required;
-- local-storage and credential-safety guidance;
-- inline validation and status feedback;
-- a single `Save settings` action.
+- 服务商名称与简短连接说明；
+- 模型版本选择；
+- 需要时显示的 API Key 输入框；
+- 本地存储与凭证安全说明；
+- 就地验证与状态反馈；
+- 单一的“保存设置”操作。
 
-The layout stays flat and avoids nested cards or a secondary modal. Workspace transitions use a short opacity/transform treatment with a static `prefers-reduced-motion` alternative.
+布局保持扁平，不嵌套多层卡片，也不再弹出二级模态框。工作区切换采用短促的透明度与位移动效，并为 `prefers-reduced-motion` 提供无动画替代。
 
-## Draft Model
+## 草稿状态模型
 
-A dedicated `useModelSettingsDraft` hook, or an equivalently isolated state unit owned by `App`, manages settings state. It initializes once from persisted configuration and holds:
+由独立的 `useModelSettingsDraft` Hook，或由 `App` 持有的等价隔离状态单元，统一管理设置状态。它只在初始化时读取一次持久化配置，并维护：
 
-- the provider currently being inspected;
-- a model draft for each provider;
-- an API Key draft for each third-party provider;
-- the persisted snapshot used for dirty comparisons;
-- save status and inline validation state.
+- 当前正在查看的服务商；
+- 每个服务商各自的模型草稿；
+- 每个第三方服务商各自的 API Key 草稿；
+- 用于脏值比较的已保存配置快照；
+- 保存状态与就地验证状态。
 
-Provider switching changes only the inspected provider. It does not write to storage, reset the model client, or change the active provider. Drafts are retained independently for all five providers during the current page lifetime.
+切换服务商只改变当前查看对象，不会写入存储、重置模型客户端或改变实际使用的服务商。在当前页面生命周期中，五个服务商的草稿彼此独立并持续保留。
 
-The UI derives dirty state by comparing each provider draft against the persisted snapshot. `Save settings` is emphasized and enabled only when the inspected provider has a valid change. It is disabled when there is no change or when a required API Key is empty.
+界面通过比较服务商草稿与已保存快照计算脏值。只有当前服务商存在有效修改时，“保存设置”按钮才进入强调态并允许点击；没有修改或必填 API Key 为空时按钮禁用。
 
-## Provider Behavior
+## 各服务商行为
 
-### Official service
+### 官方服务
 
-The official service panel displays `deepseek-v4-flash` as the current managed model and explains that no API Key is required because credentials are hosted by the platform. Saving selects the official provider and preserves the same unified save interaction used by third-party providers.
+官方服务面板显示当前托管模型 `deepseek-v4-flash`，并说明凭证由平台托管，无需用户填写 API Key。保存操作会将官方服务设为当前服务商，同时保留与第三方服务商一致的统一保存体验。
 
-### Third-party providers
+### 第三方服务商
 
-DeepSeek, GLM, Anthropic, and OpenAI display:
+DeepSeek、GLM、Anthropic 与 OpenAI 显示：
 
-- a model selector populated from `PROVIDER_PRESETS[provider].models`;
-- a password-masked API Key field;
-- a show/hide control with an accessible label;
-- an explanation that the key is stored only in the local browser.
+- 由 `PROVIDER_PRESETS[provider].models` 提供选项的模型下拉框；
+- 密码形式遮蔽的 API Key 输入框；
+- 具有无障碍名称的显示/隐藏按钮；
+- “Key 仅保存在本地浏览器中”的说明。
 
-The saved key is loaded into the draft but remains masked by default. It is never rendered in summaries, status messages, analytics, or logs.
+已保存的 Key 会载入草稿，但默认保持遮蔽。Key 不得出现在摘要、状态提示、分析事件或日志中。
 
-## Saving and Runtime Activation
+## 保存与运行时生效
 
-Saving applies the inspected provider as one atomic user action.
+保存操作会以一次原子化用户动作应用当前查看的服务商。
 
-For third-party providers, save writes:
+第三方服务商保存时写入：
 
-- `vibe_provider`;
-- `vibe_model_{provider}`;
-- `vibe_api_key_{provider}`;
-- the compatibility field `vibe_api_key`.
+- `vibe_provider`；
+- `vibe_model_{provider}`；
+- `vibe_api_key_{provider}`；
+- 兼容字段 `vibe_api_key`。
 
-For the official provider, save writes `vibe_provider`, retains its managed model behavior, and removes the compatibility `vibe_api_key` value so stale third-party credentials are not treated as active.
+官方服务保存时写入 `vibe_provider`，保留其托管模型行为，并删除兼容字段 `vibe_api_key`，避免旧的第三方凭证被误认为仍处于激活状态。
 
-Every save removes legacy `vibe_base_url` and `vibe_model` overrides, calls `resetClient()`, updates the persisted snapshot, clears dirty state for the saved provider, and shows a short inline `Settings saved` confirmation. The user remains in the settings workspace after save.
+每次保存都会删除旧的 `vibe_base_url` 与 `vibe_model` 覆盖值，调用 `resetClient()`，更新已保存配置快照，清除当前服务商的脏值，并短暂显示“设置已保存”的就地反馈。保存后用户继续停留在设置工作区。
 
-Saved credentials for non-active providers remain available in their provider-specific storage keys. Switching the active provider updates the compatibility key from the selected provider's saved draft.
+非当前服务商的已保存凭证继续保留在对应的服务商专属存储字段中。切换实际使用的服务商时，从所选服务商的已保存草稿更新兼容 Key。
 
-## Validation and Error Handling
+## 验证与错误处理
 
-- Official service is always valid without a user key.
-- A third-party provider cannot be saved with an empty or whitespace-only API Key.
-- The selected model must be one of that provider's configured model options.
-- Validation appears next to the relevant field and is announced to assistive technology.
-- Storage or activation failures keep the draft intact and show an inline error; they do not close the workspace or silently report success.
-- Save feedback is textual and does not rely on color alone.
+- 官方服务无需用户 Key，始终满足凭证要求。
+- 第三方服务商的 API Key 为空或仅包含空白时不可保存。
+- 所选模型必须属于该服务商配置的模型列表。
+- 验证信息显示在对应字段附近，并能由辅助技术朗读。
+- 存储或激活失败时保留当前草稿并显示就地错误，不关闭设置工作区，也不静默显示成功。
+- 保存反馈必须包含文字，不能只依赖颜色传达状态。
 
-## Accessibility
+## 无障碍要求
 
-- Provider navigation is reachable and operable by keyboard.
-- The selected provider and persisted active provider are exposed semantically.
-- Model selection, API Key visibility, and save controls have explicit accessible names.
-- Focus remains predictable when switching providers and after saving.
-- Focus indicators meet readable contrast requirements.
-- Motion respects `prefers-reduced-motion`.
+- 服务商导航可通过键盘访问和操作。
+- 当前选中的服务商与已经生效的服务商都要通过语义状态表达。
+- 模型选择、API Key 显隐和保存操作都有明确的无障碍名称。
+- 切换服务商和保存后的焦点位置应保持可预期。
+- 焦点样式满足可读对比度要求。
+- 动效遵守 `prefers-reduced-motion`。
 
-## Component Boundaries
+## 组件边界
 
-- `App`: selects the home or settings workspace and preserves draft state across workspace switches.
-- `PrimaryNav`: emits workspace selection and visually reflects the active item; it does not own settings data.
-- `ProviderSidebar`: renders provider navigation and active/dirty statuses.
-- `ModelSettingsPanel`: renders the selected provider form and save feedback.
-- `useModelSettingsDraft`: owns initialization, per-provider drafts, validation, dirty comparison, and save orchestration.
-- `ApiKeyModal`: remains responsible for required first-run or missing-key flows and the mobile settings fallback.
-- `llm-config`: remains the source of provider metadata and valid models; shared persistence helpers may be extracted here or into a focused settings-storage module to prevent the modal and workspace from drifting.
+- `App`：选择主页或设置工作区，并在工作区切换时保留草稿状态。
+- `PrimaryNav`：发出工作区选择事件并反映当前选中项，不持有设置数据。
+- `ProviderSidebar`：渲染服务商导航以及生效中/有修改状态。
+- `ModelSettingsPanel`：渲染当前服务商表单与保存反馈。
+- `useModelSettingsDraft`：负责初始化、分服务商草稿、验证、脏值比较与保存编排。
+- `ApiKeyModal`：继续负责首次进入、缺少 Key 的强制流程以及移动端设置入口。
+- `llm-config`：继续作为服务商元数据和有效模型列表的来源；可在这里或独立的设置存储模块中提取共享持久化函数，避免弹窗与设置工作区的行为产生漂移。
 
-## Testing Strategy
+## 测试策略
 
-Component and hook tests will cover:
+组件和 Hook 测试覆盖：
 
-1. PrimaryNav settings selection shows the settings workspace, and home restores the existing workspace.
-2. Provider switching changes the visible form without activating or persisting the provider.
-3. Unsaved drafts survive provider switches and home/settings workspace switches.
-4. Unsaved drafts do not survive a page reload.
-5. Only an explicit save writes storage and calls `resetClient()`.
-6. Saving writes the provider-specific model and key plus required compatibility fields.
-7. Official service requires no key; third-party providers reject an empty key.
-8. Dirty, active, success, and error states are rendered accurately.
-9. API Keys remain masked by default and do not appear in status text.
-10. The existing first-run `ApiKeyModal` behavior remains intact.
+1. 点击 PrimaryNav 设置项显示设置工作区，点击主页恢复原有工作区。
+2. 切换服务商只改变可见表单，不激活或持久化服务商。
+3. 未保存草稿在服务商切换以及主页/设置工作区切换后仍然保留。
+4. 未保存草稿不会跨页面刷新保留。
+5. 只有明确点击保存才会写入存储并调用 `resetClient()`。
+6. 保存时正确写入服务商专属模型、Key 以及必要的兼容字段。
+7. 官方服务无需 Key；第三方服务商拒绝空 Key。
+8. 未保存修改、正在使用、保存成功与保存失败状态均准确渲染。
+9. API Key 默认遮蔽，并且不会出现在状态文本中。
+10. 现有首次进入 `ApiKeyModal` 流程不发生回归。
 
-The implementation must pass the repository's type check, lint, and test suite. Per repository guidance, browser-driven visual verification is not part of the completion bar for UI changes.
+实现必须通过仓库的类型检查、Lint 和测试套件。依照仓库约定，浏览器驱动的视觉验证不属于 UI 改动的完成标准。
 
-## Out of Scope
+## 不在本次范围内
 
-- A redesigned mobile settings workspace.
-- Adding Kimi to the visible provider list.
-- Custom provider URLs or arbitrary model names.
-- Remote credential synchronization or server-side key storage.
-- Live API credential testing or model availability probes.
-- Removing the existing first-run `ApiKeyModal`.
+- 重新设计移动端设置工作区。
+- 在可见服务商列表中加入 Kimi。
+- 自定义服务商 URL 或任意模型名称。
+- 远程同步凭证或在服务端存储用户 Key。
+- 实时测试 API 凭证或探测模型可用性。
+- 删除现有的首次进入 `ApiKeyModal`。
