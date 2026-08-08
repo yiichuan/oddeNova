@@ -29,6 +29,49 @@ const STATIC_SUGGESTIONS_EN = [
 export const STATIC_SUGGESTIONS = zh ? STATIC_SUGGESTIONS_ZH : STATIC_SUGGESTIONS_EN;
 
 /**
+ * Recognize the numbered option block emitted by stepwise choice mode.
+ * The surrounding summary/question and reply invitation are required so an
+ * incidental numbered list in an ordinary explanation is not enough.
+ */
+export function isStepwiseChoice(explanation: string): boolean {
+  if (parseNextSteps(explanation).length > 0) return false;
+
+  const lines = explanation.split('\n');
+  for (let start = 0; start < lines.length; start += 1) {
+    if (!/^\s*1\.\s+\S/.test(lines[start])) continue;
+
+    const optionNumbers: number[] = [];
+    let end = start;
+    while (end < lines.length) {
+      const match = lines[end].match(/^\s*(\d+)\.\s+\S/);
+      if (!match) break;
+      optionNumbers.push(Number(match[1]));
+      end += 1;
+    }
+
+    const consecutive = optionNumbers.every((number, index) => number === index + 1);
+    const leadIn = lines.slice(0, Math.max(0, start - 1)).findLast((line) => line.trim().length > 0);
+    const hasQuestion = leadIn !== undefined && /[?？]\s*$/.test(leadIn);
+    const separatedFromLeadIn = start > 0 && lines[start - 1].trim() === '';
+    const separatedFromInvitation = end < lines.length && lines[end].trim() === '';
+    const hasInvitation = lines.slice(end + 1).some((line) => line.trim().length > 0);
+    if (
+      optionNumbers.length >= 2
+      && optionNumbers.length <= 4
+      && consecutive
+      && hasQuestion
+      && separatedFromLeadIn
+      && separatedFromInvitation
+      && hasInvitation
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Extract next-step suggestion lines from a commit explanation.
  * Supports both Chinese ("接下来可以：") and English ("Next steps:") formats.
  * Returns an empty array if neither section is found.

@@ -150,6 +150,17 @@ describe('Sidebar session title editing layout', () => {
     }
   });
 
+  it('forwards choice input mode to the composer', () => {
+    const { container, root } = renderSidebar({
+      inputMode: 'choice',
+      suggestions: ['Try a sparse jazz groove'],
+    });
+    roots.push(root);
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    expect(textarea?.placeholder).toBe('Reply with a number or describe your idea...');
+  });
+
   it('opens persona selection when the logo is clicked', () => {
     const onOpenPersonaModal = vi.fn();
     const { container, root } = renderSidebar({ onOpenPersonaModal });

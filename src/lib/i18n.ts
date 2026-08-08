@@ -73,6 +73,7 @@ const S: Record<string, readonly [string, string]> = {
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
+  choiceInputPlaceholder: ['回复序号，或直接说出你的想法...', 'Reply with a number or describe your idea...'],
   tabToFill:           ['按 Tab 填入', 'Tab to use'],
   notInitialized:      ['未初始化', 'Not initialized'],
   restartEngine:       ['重启引擎', 'Restart engine'],

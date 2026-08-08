@@ -210,4 +210,27 @@ describe('ChatInput engine initialization status', () => {
 
     expect(onSendText).toHaveBeenCalledWith('Try a sparse jazz groove with brushes', 'text');
   });
+
+  it('shows dedicated copy and disables the suggestion carousel in choice mode', () => {
+    const { container, root } = renderChatInput({
+      inputMode: 'choice',
+      suggestions: ['Try a sparse jazz groove'],
+    });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+
+    expect(textarea.placeholder).toBe('Reply with a number or describe your idea...');
+    expect(container.textContent).not.toContain('Tab to use');
+
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(textarea.value).toBe('');
+  });
 });
