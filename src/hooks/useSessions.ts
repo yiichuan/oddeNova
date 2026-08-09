@@ -97,6 +97,30 @@ function revisionsReferencedBy(messages: ChatMessage[], revisions?: CodeRevision
   return revisions.filter((revision) => referenced.has(revision.id));
 }
 
+function importedRevisions(messages: ChatMessage[], revisions?: CodeRevision[]): CodeRevision[] | undefined {
+  if (revisions !== undefined) return revisionsReferencedBy(messages, revisions);
+
+  let beforeCode = '';
+  const reconstructed: CodeRevision[] = [];
+  const seen = new Set<string>();
+  for (const message of messages) {
+    if (message.role !== 'assistant' || message.code === undefined) continue;
+    if (message.revisionId && !seen.has(message.revisionId)) {
+      reconstructed.push({
+        id: message.revisionId,
+        beforeCode,
+        afterCode: message.code,
+        playbackStatus: 'not_attempted',
+        createdAt: message.timestamp,
+      });
+      seen.add(message.revisionId);
+    }
+    beforeCode = message.code;
+  }
+
+  return reconstructed.length > 0 ? reconstructed : undefined;
+}
+
 function inputModeReferencedBy(messages: ChatMessage[]): InputMode {
   return [...messages].reverse().find(
     (message) => message.role === 'assistant' && message.inputMode !== undefined,
@@ -592,7 +616,7 @@ export function useSessions() {
   );
 
   const importSession = useCallback(
-    async (payload: { title: string; code: string; messages: ChatMessage[] }): Promise<void> => {
+    async (payload: { title: string; code: string; messages: ChatMessage[]; revisions?: CodeRevision[] }): Promise<void> => {
       const id = newSessionId();
       const now = Date.now();
       const session: Session = {
@@ -600,6 +624,7 @@ export function useSessions() {
         title: `${payload.title}`,
         messages: payload.messages,
         code: payload.code,
+        revisions: importedRevisions(payload.messages, payload.revisions),
         createdAt: now,
         updatedAt: now,
       };

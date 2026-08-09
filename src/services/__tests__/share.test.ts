@@ -17,6 +17,13 @@ describe('uploadShare', () => {
       title: 'My Session',
       code: 'note "c5"',
       messages: [],
+      revisions: [{
+        id: 'rev-1',
+        beforeCode: '',
+        afterCode: 'note "c5"',
+        playbackStatus: 'played',
+        createdAt: 1,
+      }],
       locale: 'zh-CN',
     });
 
@@ -30,6 +37,13 @@ describe('uploadShare', () => {
     expect(body.version).toBe(1);
     expect(body.title).toBe('My Session');
     expect(body.code).toBe('note "c5"');
+    expect(body.revisions).toEqual([{
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 'note "c5"',
+      playbackStatus: 'played',
+      createdAt: 1,
+    }]);
     expect(body.locale).toBe('zh-CN');
     expect(typeof body.sharedAt).toBe('number');
     expect(shareId).toBe(mockShareId);

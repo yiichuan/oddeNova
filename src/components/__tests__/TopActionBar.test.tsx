@@ -135,6 +135,44 @@ describe('TopActionBar mobile menu', () => {
     });
   });
 
+  it('shares the code revisions referenced by conversation messages', async () => {
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockResolvedValueOnce('copied');
+    const revision = {
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 's("bd")',
+      playbackStatus: 'played' as const,
+      createdAt: 1,
+    };
+    const session = makeSession({
+      code: 's("bd")',
+      messages: [{
+        id: 'm-1',
+        role: 'assistant',
+        content: '完成',
+        code: 's("bd")',
+        revisionId: revision.id,
+        timestamp: 1,
+      }],
+      revisions: [revision],
+    });
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(uploadShareMock).toHaveBeenCalledWith(expect.objectContaining({
+      messages: session.messages,
+      revisions: [revision],
+    }));
+  });
+
   it.each([
     ['shared', 'native'],
     ['shown', 'prompt'],
