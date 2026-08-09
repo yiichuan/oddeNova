@@ -117,9 +117,8 @@ describe('ChatInput engine initialization status', () => {
     roots.push(root);
 
     const inputCard = container.querySelector('form')?.firstElementChild;
-    expect(inputCard?.className).toContain('surface-glow');
-    expect(inputCard?.className).toContain('surface-glow-input');
-    expect(inputCard?.className).toContain('surface-glow-outline');
+    expect(inputCard?.className).toContain('chat-input-surface');
+    expect(inputCard?.className).toContain('chat-input-outline');
     expect(inputCard?.className).toContain('rounded-t-none');
     expect(inputCard?.className).toContain('rounded-b-region');
     expect(inputCard?.className).not.toContain('ring-[#323232]');

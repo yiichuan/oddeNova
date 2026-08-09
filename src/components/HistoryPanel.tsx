@@ -61,16 +61,13 @@ export default function HistoryPanel({
 
   return (
     <div className="flex flex-col">
-      <div className="px-4 pt-3 pb-2 shrink-0">
-        <h3 className="text-base font-semibold text-text-primary">{t('history')}</h3>
-      </div>
       <div>
         {isLoading ? (
           <div className="px-4 pb-4 text-xs text-text-muted">{t('loading')}</div>
         ) : ordered.length === 0 ? (
           <div className="px-4 pb-4 text-xs text-text-muted">{t('noSessions')}</div>
         ) : (
-          <ul className="pt-1 pb-3 space-y-1">
+          <ul className="space-y-1 py-2">
             {ordered.map((s) => {
               const active = s.id === currentId;
               const isEditing = editingId === s.id;
@@ -78,10 +75,10 @@ export default function HistoryPanel({
               return (
                 <li key={s.id} className="px-2">
                   <div
-                    className={`group flex items-stretch gap-2 px-2 cursor-pointer transition-colors ${
+                    className={`group flex items-stretch gap-2 rounded-[4px] border px-2 cursor-pointer transition-colors ${
                       active
-                        ? 'bg-[#1e2d3d] text-text-secondary'
-                        : 'text-text-secondary hover:bg-[#2a2a2a]'
+                        ? 'border-transparent bg-[#346691] text-text-primary'
+                        : 'border-border bg-[#0D0D0D] text-text-secondary hover:text-text-primary'
                     }`}
                     onClick={() => onSwitch(s.id)}
                   >
@@ -111,7 +108,7 @@ export default function HistoryPanel({
                             cancel(s);
                           }
                         }}
-                        className="flex-1 min-w-0 my-[5px] bg-transparent border border-border px-1 py-0.5 text-xs leading-none text-text-primary outline-none focus:border-accent/60"
+                        className="my-[5px] min-w-0 flex-1 rounded-region border border-border bg-[#0D0D0D] px-1 py-0.5 text-xs leading-none text-text-primary outline-none focus:border-accent/60"
                       />
                     ) : (
                       <button

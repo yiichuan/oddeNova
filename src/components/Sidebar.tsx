@@ -101,13 +101,13 @@ export default function Sidebar({
   }, [prefillTrigger]);
 
   return (
-    <aside className="w-full h-full flex flex-col">
+    <aside className="w-full h-full flex flex-col bg-conversation-surface">
       <div
         data-sidebar-message-region
         className="w-full flex-1 min-h-0 flex flex-col overflow-hidden rounded-t-region rounded-b-none border border-border"
       >
         {/* Title row */}
-        <div className="pl-2 pr-2 pt-4 pb-3 flex items-center justify-between gap-3">
+        <div className="pl-2 pr-2 pt-[10px] pb-3 flex items-center justify-between gap-3">
           <EditableSessionTitle
             title={title}
             canEdit={!!currentId && messages.length > 0}
@@ -148,11 +148,11 @@ export default function Sidebar({
         </div>
 
         {/* Conversation flow + history overlay */}
-        <div className="flex-1 min-h-0 flex flex-col pt-[10px] pb-[50px] relative">
+        <div className="flex-1 min-h-0 flex flex-col pt-[10px] pb-[20px] relative">
           {showHistory && (
             <>
               <div className="fixed inset-0 z-[9]" onClick={() => setShowHistory(false)} />
-              <div className="absolute top-0 left-5 right-0 max-h-[33.333%] z-10 bg-bg-primary border border-border overflow-y-auto">
+              <div className="history-panel-surface absolute top-0 left-3 right-3 max-h-[33.333%] z-10 overflow-y-auto rounded-region border border-border bg-[#0D0D0D]">
                 <HistoryPanel
                   sessions={sessions}
                   currentId={currentId}

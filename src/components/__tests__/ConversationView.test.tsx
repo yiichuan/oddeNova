@@ -417,6 +417,89 @@ describe('ConversationView chat streaming', () => {
     expect(heading).not.toBeUndefined();
     expect(heading?.className).toContain('font-semibold');
     expect(heading?.className).not.toContain('text-text-primary');
+
+    const toggle = container.querySelector<HTMLButtonElement>('[data-live-reasoning-toggle]');
+    const label = toggle?.querySelector<HTMLElement>('[data-live-reasoning-label]');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(label).not.toBeNull();
+
+    act(() => label?.click());
+
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('[data-markdown-text]')).toBeNull();
+  });
+
+  it('uses the dedicated divider-to-body gap for a collapsed process group', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'thinking-1',
+        role: 'progress',
+        content: '正在整理编曲思路',
+        timestamp: 1,
+        progressKind: 'thinking',
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正文回复',
+        timestamp: 2,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const processGroup = container.querySelector<HTMLElement>(
+      '[style*="spacing-action-divider-to-body"]',
+    );
+    expect(processGroup?.style.marginBlockEnd).toBe(
+      'var(--spacing-action-divider-to-body)',
+    );
+    expect(container.querySelector('.text-text-primary.pt-0')).not.toBeNull();
+  });
+
+  it('uses one dedicated gap between every expanded process content block', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [
+      {
+        id: 'thinking-1',
+        role: 'progress',
+        content: '第一段总结',
+        timestamp: 1,
+        progressKind: 'thinking',
+      },
+      {
+        id: 'thinking-2',
+        role: 'progress',
+        content: '第二段总结',
+        timestamp: 2,
+        progressKind: 'thinking',
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正文回复',
+        timestamp: 3,
+      },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-action-process-toggle]')?.click();
+    });
+
+    const expandedBlocks = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[style*="spacing-action-expanded-content-gap"]',
+      ),
+    );
+    expect(expandedBlocks).toHaveLength(2);
+    for (const block of expandedBlocks) {
+      expect(block.style.marginBlockEnd).toBe(
+        'var(--spacing-action-expanded-content-gap)',
+      );
+    }
   });
 
   it('keeps streaming reasoning text constrained and wrappable inside the chat width', () => {
@@ -444,11 +527,36 @@ describe('ConversationView chat streaming', () => {
       '[data-markdown-text]',
     )?.parentElement;
     expect(scrollBox).not.toBeNull();
-    expect(scrollBox?.className).toContain('text-text-muted');
+    expect(scrollBox?.className).toContain('text-text-reasoning');
     expect(scrollBox?.className).toContain('font-mono');
     expect(scrollBox?.className).toContain('break-words');
     expect(scrollBox?.className).toContain('overflow-x-hidden');
     expect(scrollBox?.className).toContain('overflow-y-auto');
+  });
+
+  it('renders always-visible top and bottom fades around the conversation viewport', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView([
+      { id: 'a1', role: 'assistant', content: '正文回复', timestamp: 1 },
+    ]);
+    roots.push(root);
+
+    expect(container.querySelector('.conversation-scroll-shell')).not.toBeNull();
+    expect(container.querySelector('[data-conversation-edge-fade="top"]')).not.toBeNull();
+    expect(container.querySelector('[data-conversation-edge-fade="bottom"]')).not.toBeNull();
+  });
+
+  it('aligns assistant turn action icons with the reply text', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView([
+      { id: 'assistant-1', role: 'assistant', content: '正文回复', timestamp: 1 },
+    ]);
+    roots.push(root);
+
+    const actions = container.querySelector<HTMLElement>('[data-assistant-turn-actions]');
+    expect(actions).not.toBeNull();
+    expect(actions?.className).toContain('left-1');
+    expect(actions?.className).not.toContain('left-0');
   });
 
   it('renders finished reasoning as markdown inside the collapsed reasoning window', () => {
@@ -481,7 +589,14 @@ describe('ConversationView chat streaming', () => {
 
     const header = container.querySelector<HTMLButtonElement>('[data-reasoning-header]');
     expect(header).not.toBeNull();
+    expect(header?.className).toContain('bg-conversation-surface');
+    expect(header?.className).toContain('before:bg-conversation-surface');
+    expect(header?.className).toContain('-mx-2');
+    expect(header?.className).toContain('w-[calc(100%+1rem)]');
+    expect(header?.className).toContain('px-2');
+    expect(header?.className).not.toContain('reasoning-header--expanded');
     act(() => header!.click());
+    expect(header?.className).toContain('reasoning-header--expanded');
 
     // Markdown is rendered inside a gray mono container.
     expect(container.textContent).not.toContain('**BPM**');
@@ -490,7 +605,7 @@ describe('ConversationView chat streaming', () => {
       'gm_electric_bass_finger',
     );
     const wrapper = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
-    expect(wrapper?.className).toContain('text-text-muted');
+    expect(wrapper?.className).toContain('text-text-reasoning');
     expect(wrapper?.className).toContain('font-mono');
 
     // Muted headings stay gray.

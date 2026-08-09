@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>SPIRAL — Strudel Live</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; }
+        body { margin: 0; overflow: hidden; background: #0C0C0C; }
         #camBtn {
             position: absolute; top: 12px; left: 12px; z-index: 10;
             width: 30px; height: 30px; padding: 0;
@@ -130,6 +130,7 @@
             scene    = new THREE.Scene();
             camera   = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setClearColor(0x010101, 1);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
@@ -304,7 +305,7 @@
             const renderScene = new RenderPass(scene, camera);
             bloomPass = new UnrealBloomPass(
                 new THREE.Vector2(window.innerWidth, window.innerHeight),
-                1.8, 0.5, 0.08
+                1.8, 0.5, 0.22
             );
             composer = new EffectComposer(renderer);
             composer.addPass(renderScene);
@@ -408,7 +409,7 @@
             vortex.material.uniforms.uChaos.value = simChaos !== null ? simChaos : chaosLevel;
             vortex.material.uniforms.uScale.value = vpScale;
 
-            bloomPass.strength = 1.1 * Math.max(vpScale, 0.5);
+            bloomPass.strength = 0.65 * Math.max(vpScale, 0.5);
             bloomPass.radius   = 0.5 * Math.min(vpScale, 1.0);
 
             // Apply chaos offset in vertex shader via uniform (position blending)

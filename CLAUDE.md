@@ -12,6 +12,13 @@ Prefer goals, principles, examples, and self-review over procedural workflows or
 over-specific rules. Trust the model's reasoning; add hard constraints only when
 they prevent concrete failures or define non-negotiable boundaries.
 
+## Skill usage
+
+When a request is explicit and its implementation scope is clear, proceed directly
+without invoking the brainstorming skill. Use brainstorming only when requirements
+are ambiguous, the work needs substantial feature design, or meaningful design or
+architecture trade-offs require user input.
+
 ## Commands
 
 ```bash

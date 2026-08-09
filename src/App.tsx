@@ -31,10 +31,13 @@ import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
 import OddeNovaImportNotice from './components/OddeNovaImportNotice';
 import PrimaryNav, { type PrimaryNavItem } from './components/PrimaryNav';
+import ProviderSidebar from './components/ProviderSidebar';
+import ModelSettingsPanel from './components/ModelSettingsPanel';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 import type { AgentEntryPoint } from './lib/analytics';
+import { useModelSettingsDraft } from './hooks/useModelSettingsDraft';
 
 export default function App() {
   const strudel = useStrudel();
@@ -56,6 +59,7 @@ export default function App() {
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
+  const modelSettings = useModelSettingsDraft(resetClient);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const prevLoadingRef = useRef<Set<string>>(new Set());
@@ -681,48 +685,66 @@ export default function App() {
               tokenStats={current?.tokenStats}
             />
           </div>
+          <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>
+            <ProviderSidebar
+              activeProvider={modelSettings.activeProvider}
+              onSelect={modelSettings.selectProvider}
+              selectedProvider={modelSettings.selectedProvider}
+            />
+          </div>
         </div>
 
         {/* Horizontal resize handle */}
         <div
           {...hDragHandlers}
-          className="group flex h-full w-divider shrink-0 items-center justify-center"
+          data-resize-handle="horizontal"
+          className="h-full w-divider shrink-0"
           style={{ cursor: 'col-resize' }}
-        >
-          <div className={`w-1.5 h-full transition-colors duration-150 ${isDragging === 'h' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
-        </div>
+        />
 
         <main ref={mainRef} className="flex min-w-0 flex-1 flex-col">
-          <div className="flex-1 min-h-0">
-            <CodePanel
-              error={strudel.error}
-              isPlaying={strudel.isPlaying}
-              engineReady={strudel.engineReady}
-              hasCode={!!strudel.code}
-              onMount={strudel.setRoot}
-              onPlay={() => strudel.play()}
-              onStop={strudel.stop}
-              exportState={strudel.exportState}
-              onExport={strudel.exportWav}
-              onGenerateTitle={generateSongTitle}
-              onResetExportState={strudel.resetExportState}
-              session={sessions.currentSession}
-              messages={messages}
-              onOpenSettings={openSettings}
+          <div className={primaryNavItem === 'settings' ? 'hidden' : 'flex h-full min-h-0 flex-col'}>
+            <div className="flex-1 min-h-0">
+              <CodePanel
+                error={strudel.error}
+                isPlaying={strudel.isPlaying}
+                engineReady={strudel.engineReady}
+                hasCode={!!strudel.code}
+                onMount={strudel.setRoot}
+                onPlay={() => strudel.play()}
+                onStop={strudel.stop}
+                exportState={strudel.exportState}
+                onExport={strudel.exportWav}
+                onGenerateTitle={generateSongTitle}
+                onResetExportState={strudel.resetExportState}
+                session={sessions.currentSession}
+                messages={messages}
+                onOpenSettings={openSettings}
+              />
+            </div>
+
+            {/* Vertical resize handle */}
+            <div
+              {...vDragHandlers}
+              data-resize-handle="vertical"
+              className="h-divider shrink-0"
+              style={{ cursor: 'row-resize' }}
             />
-          </div>
 
-          {/* Vertical resize handle */}
-          <div
-            {...vDragHandlers}
-            className="group flex h-divider shrink-0 items-center justify-center"
-            style={{ cursor: 'row-resize' }}
-          >
-            <div className={`h-1.5 w-full transition-colors duration-150 ${isDragging === 'v' ? 'bg-white/40' : 'bg-transparent group-hover:bg-white/40'}`} />
+            <div style={{ height: vizHeight, flexShrink: 0 }}>
+              <VizPlaceholder isPlaying={strudel.isPlaying} />
+            </div>
           </div>
-
-          <div style={{ height: vizHeight, flexShrink: 0 }}>
-            <VizPlaceholder isPlaying={strudel.isPlaying} />
+          <div className={primaryNavItem === 'settings' ? 'h-full min-h-0' : 'hidden'}>
+            <ModelSettingsPanel
+              key={modelSettings.selectedProvider}
+              draft={modelSettings.draft}
+              isDirty={modelSettings.selectedIsDirty}
+              onSave={modelSettings.saveSelectedProvider}
+              onUpdate={(patch) => modelSettings.updateDraft(modelSettings.selectedProvider, patch)}
+              provider={modelSettings.selectedProvider}
+              saveStatus={modelSettings.saveStatus}
+            />
           </div>
         </main>
       </>

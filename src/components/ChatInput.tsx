@@ -229,7 +229,7 @@ export default function ChatInput({
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
       <div
-        className={`surface-glow surface-glow-input surface-glow-outline rounded-t-none rounded-b-region pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
+        className={`chat-input-surface chat-input-outline rounded-t-none rounded-b-region pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
       >
         {/* Wraps just the textarea so the suggestion overlay below can be
             positioned absolute against its box, not the card as a whole
@@ -268,7 +268,7 @@ export default function ChatInput({
             placeholder={suggestionActive ? '' : t('inputPlaceholder')}
             rows={1}
             disabled={inputDisabled}
-            className="w-full min-h-[54px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none focus:text-white disabled:cursor-not-allowed"
+            className="w-full min-h-[54px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-[#cccccc] placeholder:text-[#5A5A5A] outline-none focus:text-white disabled:cursor-not-allowed"
             style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
           />
 
@@ -280,7 +280,7 @@ export default function ChatInput({
               to stop iOS auto-zoom on focus and can't be lowered, so the
               overlay matches it to avoid a jump when a suggestion is adopted. */}
           {suggestionActive && (
-            <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-[#666666]">
+            <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-[#5A5A5A]">
               {/* Only the suggestion text blurs/fades between rotations — blur
                   runs first, then opacity fades in on its heels (sequential, not
                   simultaneous), via an explicit transition-delay on opacity.
@@ -322,7 +322,7 @@ export default function ChatInput({
                 )}
               </div>
             ) : suggestionActive && !isMobile ? (
-              <div className="pointer-events-none text-[12px] text-[#666666]">{t('tabToFill')}</div>
+              <div className="pointer-events-none text-[12px] text-[#5A5A5A]">{t('tabToFill')}</div>
             ) : null}
           </div>
 
@@ -334,7 +334,7 @@ export default function ChatInput({
               <button
                 type="button"
                 disabled={!replayValue.trim()}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-30"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#D8D8D8] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-50"
                 title={t('send')}
               >
                 <ArrowUpIcon size={18} />
@@ -343,7 +343,7 @@ export default function ChatInput({
               <button
                 type="button"
                 onClick={onStop}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#D8D8D8] text-black transition duration-200 hover:bg-[#D8D8D8]/80"
                 title={t('stop')}
               >
                 <StopIcon size={18} />
@@ -352,7 +352,7 @@ export default function ChatInput({
               <button
                 type="submit"
                 disabled={!text.trim()}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#d0d0d0] text-black transition duration-200 hover:bg-[#d0d0d0]/80 disabled:cursor-not-allowed disabled:opacity-30"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#D8D8D8] text-black transition duration-200 hover:bg-[#D8D8D8]/80 disabled:cursor-not-allowed disabled:opacity-50"
                 title={t('send')}
               >
                 <ArrowUpIcon size={18} />

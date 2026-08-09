@@ -7,8 +7,7 @@ import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, Shar
 import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
 import { zh, t } from '../lib/i18n';
-const learnUrl = 'https://strudel.cc/workshop/getting-started/';
-const githubUrl = 'https://github.com/yiichuan/oddeNova';
+import { GITHUB_URL as githubUrl, LEARN_URL as learnUrl } from '../lib/external-links';
 
 // ─── Share ───────────────────────────────────────────────────────────────────
 

@@ -44,13 +44,16 @@
   --color-bg-primary: #000000;
   --color-bg-secondary: #000000;
   --color-bg-tertiary: #000000;
+  --color-conversation-surface: #0D0D0D;
   --color-accent: #434343;
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
   --color-text-primary: #D6D6D6;
   --color-text-secondary: #B8B8B8;
   --color-text-muted: #747474;
-  --color-border: #323232;
+  --color-text-reasoning: #949494;
+  --color-border: #242424;
+  --color-scrollbar-thumb-hover: #4A4A4A;
   --color-success: #00b894;
   --color-error: #CC3803;
   --color-warning: #7E936F;
@@ -61,6 +64,12 @@
   --radius-region: 6px;
   --spacing-region: 10px;
   --spacing-divider: 6px;
+  --spacing-action-divider-to-body: 20px;
+  --spacing-action-expanded-content-gap: 20px;
+  --spacing-conversation-edge-fade: 8px;
+  --spacing-reasoning-content-fade: 8px;
+  --shadow-menu-overlay: 0 0 15px rgba(0, 0, 0, 0.7);
+  --shadow-history-overlay: 0 0 18px rgba(0, 0, 0, 0.9);
 
   --font-jinghua-laosongti: '京華老宋体', serif;
   --font-eb-garamond: 'EB Garamond', serif;
@@ -74,40 +83,182 @@ body {
   overflow: hidden;
 }
 
-.surface-glow {
-  --surface-glow-angle: 145deg;
+.chat-input-surface {
+  --chat-input-glow-angle: -10deg;
   background:
     linear-gradient(
-      var(--surface-glow-angle),
-      rgba(236, 238, 241, 0.12) 0%,
-      rgba(157, 161, 167, 0.035) 34%,
-      rgba(8, 8, 9, 0) 58%,
-      rgba(225, 228, 232, 0.09) 100%
+      var(--chat-input-glow-angle),
+      rgba(58, 58, 58, 0.6) -10%,
+      rgba(36, 36, 36, 0.3) 30%,
+      rgba(36, 36, 36, 0.3) 68%,
+      rgba(78, 78, 78, 0.6) 120%
     ),
-    rgba(11, 11, 12, 0.68);
+    #0D0D0D;
   backdrop-filter: blur(20px) saturate(120%);
   -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
 
-.surface-glow-input {
-  --surface-glow-angle: -5deg;
+.primary-nav-surface {
+  --primary-nav-glow-angle: 115deg;
+  background:
+    linear-gradient(
+      var(--primary-nav-glow-angle),
+      rgba(78, 78, 78, 0.6) -10%,
+      rgba(36, 36, 36, 0.3) 40%,
+      rgba(36, 36, 36, 0.3) 75%,
+      rgba(78, 78, 78, 0.6) 120%
+    ),
+    #0D0D0D;
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
 
-.surface-glow-outline {
+[data-expanded='true'] .primary-nav-surface {
+  background: #0D0D0D;
+}
+
+.primary-nav-more-menu {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  background: #0D0D0D;
+  box-shadow: var(--shadow-menu-overlay);
+  opacity: 0;
+  transform: translateY(4px);
+  transform-origin: bottom center;
+  transition:
+    opacity 160ms cubic-bezier(0.25, 1, 0.5, 1),
+    transform 200ms cubic-bezier(0.25, 1, 0.5, 1),
+    display 200ms allow-discrete,
+    overlay 200ms allow-discrete;
+}
+
+.history-panel-surface {
+  box-shadow: var(--shadow-history-overlay);
+}
+
+.primary-nav-more-menu::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border: 1px solid var(--color-border);
+  border-radius: inherit;
+  pointer-events: none;
+  content: '';
+}
+
+.primary-nav-more-menu:popover-open,
+.primary-nav-more-menu[data-open='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.primary-nav-tooltip {
+  max-width: 180px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: #181818;
+  padding: 4px 7px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: primary-nav-tooltip-in 160ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+.settings-panel-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(to bottom right, rgba(0, 0, 0, 0.8), transparent 72%);
+}
+
+.primary-nav-github-logo {
+  display: block;
+  flex: none;
+  background-color: currentColor;
+  -webkit-mask: url('/logo/GitHub_Invertocat_Black.svg') center / contain no-repeat;
+  mask: url('/logo/GitHub_Invertocat_Black.svg') center / contain no-repeat;
+}
+
+@keyframes primary-nav-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateX(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@starting-style {
+  .primary-nav-more-menu:popover-open {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-nav-more-menu,
+  .primary-nav-tooltip {
+    transform: none;
+    animation-duration: 0.01ms;
+    transition-duration: 0.01ms;
+  }
+}
+
+.primary-nav-outline {
   position: relative;
 }
 
-.surface-glow-outline::before {
+.primary-nav-outline::before {
   position: absolute;
   inset: 0;
   padding: 1px;
   border-radius: inherit;
   background: linear-gradient(
-    var(--surface-glow-angle),
-    rgba(236, 238, 241, 0.18) 0%,
-    rgba(157, 161, 167, 0.1) 34%,
-    rgba(50, 50, 50, 0.82) 58%,
-    rgba(225, 228, 232, 0.2) 100%
+    var(--primary-nav-glow-angle),
+    rgba(64, 64, 64, 0.5) 0%,
+    rgba(58, 58, 58, 0.4) 35%,
+    rgba(58, 58, 58, 0.4) 70%,
+    rgba(74, 74, 74, 0.5) 110%
+  );
+  content: '';
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.chat-input-outline {
+  position: relative;
+}
+
+.chat-input-outline::before {
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    var(--chat-input-glow-angle),
+    rgba(64, 64, 64, 0.5) 0%,
+    rgba(70, 70, 70, 0.4) 24%,
+    rgba(80, 80, 80, 0.5) 68%,
+    rgba(74, 74, 74, 0.5) 110%
   );
   content: '';
   pointer-events: none;
@@ -329,7 +480,45 @@ body {
    browser then shifts scrollTop to keep its chosen anchor fixed, which
    visually shoves everything above the header upward instead of just
    pushing what's below it down. */
+.conversation-scroll-shell {
+  position: relative;
+  isolation: isolate;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .conversation-scroll { container-type: size; overflow-anchor: none; }
+
+.conversation-edge-fade {
+  position: absolute;
+  z-index: 30;
+  right: 6px;
+  left: 0;
+  height: var(--spacing-conversation-edge-fade);
+  pointer-events: none;
+}
+
+.conversation-edge-fade--top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--color-conversation-surface), transparent);
+}
+
+.conversation-edge-fade--bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--color-conversation-surface), transparent);
+}
+
+.reasoning-header--expanded::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: var(--spacing-reasoning-content-fade);
+  background: linear-gradient(to bottom, var(--color-conversation-surface), transparent);
+  pointer-events: none;
+  content: '';
+}
 
 /* Scrollbar for conversation view */
 .conversation-scroll::-webkit-scrollbar { width: 6px; }
@@ -362,6 +551,12 @@ body {
   border-radius: 0;
 }
 .cm-editor .cm-scroller::-webkit-scrollbar-corner { background: transparent; }
+
+::-webkit-scrollbar-thumb:hover,
+.conversation-scroll:not(.scrollbar-hidden)::-webkit-scrollbar-thumb:hover,
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
 
 /* Mobile: prevent iOS Safari auto-zoom on editor focus (font-size < 16px triggers zoom) */
 @media (pointer: coarse) {

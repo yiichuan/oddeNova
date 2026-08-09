@@ -45,19 +45,6 @@ function formatThinkDuration(sec: number): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
-// Fades the top edge of the streaming reasoning window so an auto-scroll
-// landing mid-line (its clientHeight isn't a multiple of line-height, so the
-// topmost line is almost never a clean cut) reads as an intentional fade
-// instead of a hard clip. Only applied once scrollTop > 0 — while all the
-// content still fits (scrollTop stuck at 0), there's no partial line to
-// hide, and the mask would otherwise dim the very first line for no reason.
-const REASONING_TOP_MASK = 'linear-gradient(to bottom, transparent, black 16px)';
-function syncReasoningTopMask(el: HTMLElement) {
-  const mask = el.scrollTop > 0 ? REASONING_TOP_MASK : 'none';
-  el.style.setProperty('mask-image', mask);
-  el.style.setProperty('-webkit-mask-image', mask);
-}
-
 function stripMarkdown(text: string): string {
   return text
     .replace(/#{1,6}\s+/g, '')          // headings
@@ -758,7 +745,6 @@ export default function ConversationView({
       const preEl = reasoningScrollRef.current;
       if (preEl && !reasoningUserScrolledRef.current) {
         preEl.scrollTop = preEl.scrollHeight;
-        syncReasoningTopMask(preEl);
       }
       // Reset the user-scrolled flag for the reasoning area when isLoading ends
       if (!isLoading) {
@@ -1013,15 +999,10 @@ export default function ConversationView({
           <div className="w-full px-2">
             {/* Sticky header: freezes at the top of the viewport once it
                 would otherwise scroll out above, so long reasoning can always
-                be collapsed mid-read — even scrolled to the very bottom. The
-                opaque bg-bg-primary (pure black, matching the container) is
-                invisible at rest and masks the reasoning text scrolling
-                beneath it while frozen; z-10 keeps it above that <pre>.
-                The before: cap extends that mask 10px upward: sticky top-0
-                actually freezes 10px below the scroller's visible edge (its
-                py-[10px] padding insets the sticky rectangle) while overflow
-                clips at the padding box, so without the cap text scrolling
-                under the header re-emerges in that padding strip above it.
+                be collapsed mid-read — even scrolled to the very bottom. Its
+                opaque surface matches the conversation area and masks the
+                reasoning text that scrolls beneath it. The before cap covers
+                the scrollport padding above the sticky row for the same reason.
                 scroll-mt-2.5 makes the onClick scrollIntoView land the header
                 at that same 10px-inset frozen spot — without it, collapsing
                 aligns the header flush to the scrollport edge (0px) and
@@ -1036,7 +1017,9 @@ export default function ConversationView({
                     ?.scrollIntoView({ block: 'nearest' });
                 });
               }}
-              className="sticky top-0 z-10 scroll-mt-2.5 flex w-full items-center gap-1.5 py-0.5 text-sm text-text-secondary/60 hover:text-text-secondary transition-colors bg-bg-primary before:absolute before:inset-x-0 before:-top-2.5 before:h-2.5 before:bg-bg-primary"
+              className={`sticky top-0 z-10 -mx-2 scroll-mt-2.5 flex w-[calc(100%+1rem)] items-center gap-1.5 bg-conversation-surface px-2 py-0.5 text-sm text-text-secondary/60 transition-colors hover:text-text-secondary before:absolute before:inset-x-0 before:-top-2.5 before:h-2.5 before:bg-conversation-surface${
+                isExpanded ? ' reasoning-header--expanded' : ''
+              }`}
             >
               <ChevronRightIcon
                 size={14}
@@ -1048,7 +1031,7 @@ export default function ConversationView({
               )}
             </button>
             {isExpanded && (
-              <div className="mt-1.5 text-[12px] text-text-muted font-mono break-words leading-relaxed animate-fade-in">
+              <div className="mt-1.5 text-[12px] text-text-reasoning font-mono break-words leading-relaxed animate-fade-in">
                 <MarkdownText content={msg.content} tone="muted" />
               </div>
             )}
@@ -1089,17 +1072,18 @@ export default function ConversationView({
   };
 
   return (
-    // isolate scopes the z-indexes used inside the stream (the reasoning
-    // row's z-20 / its sticky header's z-10) to this container, so they
-    // rank only against each other — without it they'd leak out and paint
-    // over outside overlays like the history panel (z-10 in Sidebar).
-    <div
-      ref={scrollRef}
-      className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[32px] relative${
-        reasoningWindowExpanded ? ' scrollbar-hidden' : ''
-      }`}
-      style={{ scrollbarGutter: 'stable' }}
-    >
+    <div className="conversation-scroll-shell">
+      {/* isolate scopes the z-indexes used inside the stream (the reasoning
+          row's z-20 / its sticky header's z-10) to this container, so they
+          rank only against each other — without it they'd leak out and paint
+          over outside overlays like the history panel (z-10 in Sidebar). */}
+      <div
+        ref={scrollRef}
+        className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[40px] relative${
+          reasoningWindowExpanded ? ' scrollbar-hidden' : ''
+        }`}
+        style={{ scrollbarGutter: 'stable' }}
+      >
       {greetingMsg && !hasConversationMessages && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center px-8">
           <p
@@ -1122,7 +1106,7 @@ export default function ConversationView({
         </div>
       )}
 
-      {messages.map((msg) => {
+      {messages.map((msg, messageIndex) => {
         if (msg.isGreeting) return null;
         if (msg.role === 'progress') {
           const gid = actionGroupOf.get(msg.id);
@@ -1133,10 +1117,19 @@ export default function ConversationView({
             const content = expanded ? renderProgressContent(msg) : null;
             if (!isHeader && !content) return null;
             return (
-              <div key={msg.id} className="animate-fade-in">
+              <div
+                key={msg.id}
+                className="animate-fade-in"
+                style={{
+                  marginBlockEnd: expanded
+                    ? 'var(--spacing-action-expanded-content-gap)'
+                    : 'var(--spacing-action-divider-to-body)',
+                }}
+              >
                 {isHeader && (
                   <div className="px-2">
                     <button
+                      data-action-process-toggle={gid}
                       onClick={() => toggleActions(gid)}
                       className="flex items-center gap-1.5 text-sm text-text-secondary/60 hover:text-text-secondary transition-colors"
                     >
@@ -1202,25 +1195,28 @@ export default function ConversationView({
         // as a dead gap between paragraphs.
         const showsTurnActions =
           turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id);
+        const previousMessage = messages[messageIndex - 1];
+        const previousActionGroupId = previousMessage
+          ? actionGroupOf.get(previousMessage.id)
+          : undefined;
+        const followsCollapsedActionGroup =
+          previousActionGroupId !== undefined && !expandedActions.has(previousActionGroupId);
+        const assistantStyle: CSSProperties = {
+          ...(msg.id === lastMessageId && !isVideoMode && turnAnchorActive && !isLoading
+            ? { minHeight: assistantFillerMinHeight }
+            : {}),
+        };
         return (
           <div
             key={msg.id}
             // items-start keeps the bubble (and its hanging action buttons)
             // at content height when the turn filler stretches the row
             className={`flex justify-start items-start animate-fade-in group${showsTurnActions ? ' mb-16' : ''}`}
-            style={
-              // While the turn is still running, the loading block below owns
-              // the filler (turnFillerHeight) — assistant bubbles streamed
-              // mid-turn must stay content-height, or the last one would
-              // push the loading indicator a full viewport below the fold.
-              // Only once the turn ends does the final reply take the filler
-              // over from the unmounting loading block (height-neutral swap).
-              msg.id === lastMessageId && !isVideoMode && turnAnchorActive && !isLoading
-                ? { minHeight: assistantFillerMinHeight }
-                : undefined
-            }
+            style={assistantStyle}
           >
-            <div className="relative w-full rounded-xl px-2 py-2 text-sm bg-transparent text-text-primary">
+            <div className={`relative w-full rounded-xl px-2 pb-2 text-sm bg-transparent text-text-primary ${
+              followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
+            }`}>
               <MarkdownText content={msg.content} />
               {msg.code && msg.revisionId && revisionsById.has(msg.revisionId) && (
                 <CodeDiffView
@@ -1270,7 +1266,10 @@ export default function ConversationView({
                   intermediate narration (shown once per turn, on the final
                   assistant message after the turn finishes). */}
               {showsTurnActions && (
-                <div className="absolute -bottom-6 left-0 flex items-center gap-1.5">
+                <div
+                  data-assistant-turn-actions
+                  className="absolute -bottom-6 left-1 flex items-center gap-1.5"
+                >
                   <button
                     onClick={() => onRetry(msg.id)}
                     className="text-white/60 hover:text-white p-1"
@@ -1302,18 +1301,22 @@ export default function ConversationView({
         >
           <div className="flex items-start gap-1.5 px-1.5 shrink-0">
             <ThinkingLottie className="w-5 h-5 flex-shrink-0" />
-            <div className="min-w-0 text-sm text-text-primary">{liveStatusLabel}</div>
-            {reasoningWindowAvailable && (
+            {reasoningWindowAvailable ? (
               <button
+                data-live-reasoning-toggle
                 onClick={() => setReasoningCollapsed((v) => !v)}
-                className="flex-shrink-0 p-0.5 text-text-primary hover:text-text-secondary transition-colors"
+                aria-expanded={reasoningWindowExpanded}
+                className="flex min-w-0 items-center gap-1.5 text-left text-sm text-text-primary transition-colors hover:text-text-secondary"
                 title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
               >
+                <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
                 <ChevronRightIcon
                   size={18}
-                  className={`transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
+                  className={`flex-shrink-0 transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
                 />
               </button>
+            ) : (
+              <div className="min-w-0 text-sm text-text-primary">{liveStatusLabel}</div>
             )}
           </div>
           {reasoningWindowExpanded && streamingReasoningMsg && (
@@ -1332,9 +1335,8 @@ export default function ConversationView({
                   const el = e.currentTarget;
                   const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
                   reasoningUserScrolledRef.current = distFromBottom > 20;
-                  syncReasoningTopMask(el);
                 }}
-                className="h-full min-h-[160px] text-sm text-text-muted font-mono break-words overflow-y-auto overflow-x-hidden leading-relaxed"
+                className="h-full min-h-[160px] text-sm text-text-reasoning font-mono break-words overflow-y-auto overflow-x-hidden leading-relaxed"
               >
                 <MarkdownText content={streamingReasoningMsg.content} tone="muted" />
               </div>
@@ -1344,6 +1346,15 @@ export default function ConversationView({
       )}
 
       <div className="h-6" />
+      </div>
+      <div
+        data-conversation-edge-fade="top"
+        className="conversation-edge-fade conversation-edge-fade--top"
+      />
+      <div
+        data-conversation-edge-fade="bottom"
+        className="conversation-edge-fade conversation-edge-fade--bottom"
+      />
     </div>
   );
 }

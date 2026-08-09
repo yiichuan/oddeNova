@@ -36,6 +36,8 @@ export interface ProviderPreset {
   protocol: Protocol;
   /** User-selectable models for this provider; first item is the default. Omitted for providers without manual model selection (official). */
   models?: string[];
+  /** Non-secret example showing the provider's API key shape. */
+  apiKeyPlaceholder?: string;
 }
 
 /** Built-in configuration for each provider; Base URL is not visible to the user. */
@@ -46,6 +48,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     model: 'deepseek-v4-flash', // current official model, supports function calling
     protocol: 'openai',
     models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    apiKeyPlaceholder: 'sk-…',
   },
   kimi: {
     label: 'Kimi',
@@ -60,6 +63,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     model: 'gpt-5.5',           // current flagship model, supports Chat Completions API + function calling
     protocol: 'openai',
     models: ['gpt-5.5', 'gpt-5.5-mini', 'gpt-5.1', 'gpt-5'],
+    apiKeyPlaceholder: 'sk-…',
   },
   anthropic: {
     label: 'Anthropic',
@@ -67,6 +71,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     model: 'claude-opus-4-6',             // display only; actual model uses LEGACY_MODELS
     protocol: 'anthropic',
     models: ['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-haiku-4-5'],
+    apiKeyPlaceholder: 'sk-ant-api…',
   },
   official: {
     label: t('officialLabel'),
@@ -80,6 +85,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     model: 'glm-5.2',
     protocol: 'openai',
     models: ['glm-5.2', 'glm-5.1', 'glm-5.1-air', 'glm-5'],
+    apiKeyPlaceholder: 'id.secret',
   },
 };
 
