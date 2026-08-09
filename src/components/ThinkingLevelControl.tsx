@@ -75,8 +75,12 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full right-0 mb-2 w-20 overflow-hidden rounded-[10px] border border-[#2a2a2a] bg-[#181818] py-1 shadow-lg"
+          aria-label={t('thinkingLevel')}
+          className="absolute bottom-full right-0 mb-2 w-24 overflow-hidden rounded-[10px] border border-[#2a2a2a] bg-[#181818] py-1 shadow-lg"
         >
+          <div className="px-3 pb-1 pt-1.5 text-[13px] font-medium leading-4 text-[#666666]">
+            {t('thinkingLevel')}
+          </div>
           {supportedLevels.map((lvl) => (
             <button
               key={lvl}

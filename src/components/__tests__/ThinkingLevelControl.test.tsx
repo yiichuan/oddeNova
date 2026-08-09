@@ -75,6 +75,17 @@ describe('ThinkingLevelControl', () => {
     expect(items[1].getAttribute('aria-checked')).toBe('true');
   });
 
+  it('shows a Thinking level heading above the menu options at the option text size', () => {
+    const { container, root } = renderControl();
+    roots.push(root);
+
+    act(() => getTrigger(container).click());
+
+    const menu = container.querySelector('[role="menu"]');
+    expect(menu?.firstElementChild?.textContent).toBe('Thinking level');
+    expect(menu?.firstElementChild?.classList).toContain('text-[13px]');
+  });
+
   it('selecting a level persists it, updates the check mark, and closes the menu', () => {
     const { container, root } = renderControl();
     roots.push(root);
