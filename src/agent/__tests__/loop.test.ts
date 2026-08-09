@@ -54,6 +54,38 @@ async function runWithTimers<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 describe('runAgentLoop — conversationHistory message ordering', () => {
+  it('uses the supplied Chinese locale for a numeric reply', async () => {
+    let userTurn = '';
+    let commitDescription = '';
+    const llm: LLMCaller = {
+      async chatWithTools(messages, tools) {
+        userTurn = messages.at(-1)?.content ?? '';
+        commitDescription = tools.find((tool) => tool.function.name === 'commit')?.function.description ?? '';
+        return {
+          content: null,
+          toolCalls: [
+            {
+              id: 'tc-1',
+              name: 'commit',
+              arguments: JSON.stringify({ explanation: '已更新' }),
+            },
+          ],
+        };
+      },
+    };
+
+    await runAgentLoop({
+      initialCode: 's("bd")',
+      instruction: '1',
+      locale: 'zh',
+      systemPrompt: '中文系统提示词',
+      llm,
+    });
+
+    expect(userTurn).toContain('用户指令: 1');
+    expect(commitDescription).toContain('终止本次 agent 循环');
+  });
+
   it('inserts history between system prompt and user turn', async () => {
     const history: ConversationTurn[] = [
       { role: 'user', content: 'previous user message' },
@@ -65,6 +97,7 @@ describe('runAgentLoop — conversationHistory message ordering', () => {
     await runAgentLoop({
       initialCode: '',
       instruction: 'add drums',
+      locale: 'en',
       systemPrompt: 'You are a music assistant.',
       llm,
       conversationHistory: history,
@@ -86,6 +119,7 @@ describe('runAgentLoop — conversationHistory message ordering', () => {
     await runAgentLoop({
       initialCode: '',
       instruction: 'add bass',
+      locale: 'en',
       systemPrompt: 'You are a music assistant.',
       llm,
       conversationHistory: [],
@@ -111,6 +145,7 @@ describe('runAgentLoop — enableThinking forwarding', () => {
     await runAgentLoop({
       initialCode: '',
       instruction: 'hello',
+      locale: 'en',
       systemPrompt: 'You are a music assistant.',
       llm,
     });
@@ -120,6 +155,7 @@ describe('runAgentLoop — enableThinking forwarding', () => {
     await runAgentLoop({
       initialCode: '',
       instruction: 'hello',
+      locale: 'en',
       systemPrompt: 'You are a music assistant.',
       llm,
       enableThinking: false,
@@ -145,6 +181,7 @@ describe('runAgentLoop — pure chat replies', () => {
     const result = await runAgentLoop({
       initialCode: 'setcps(0.5)\nstack(s("bd"))',
       instruction: '你是谁',
+      locale: 'zh',
       systemPrompt: 'You are a music assistant.',
       llm,
       onProgress: (event) => events.push(event),
@@ -195,6 +232,7 @@ describe('runAgentLoop — pure chat replies', () => {
     await expect(runWithTimers(() => runAgentLoop({
       initialCode: 'setcps(0.5)\nstack(s("bd"))',
       instruction: '更新一下',
+      locale: 'zh',
       systemPrompt: 'You are a music assistant.',
       llm,
     }))).rejects.toBeInstanceOf(EmptyAgentResponseError);
@@ -239,6 +277,7 @@ describe('runAgentLoop — request retries', () => {
     const result = await runWithTimers(() => runAgentLoop({
       initialCode: '',
       instruction: 'add drums',
+      locale: 'en',
       systemPrompt: 'system',
       llm,
       onProgress: (event) => events.push(event),
@@ -277,6 +316,7 @@ describe('runAgentLoop — request retries', () => {
     await expect(runWithTimers(() => runAgentLoop({
       initialCode: '',
       instruction: 'add drums',
+      locale: 'en',
       systemPrompt: 'system',
       llm,
     }))).rejects.toThrow('network error');
@@ -308,6 +348,7 @@ describe('runAgentLoop — request retries', () => {
     const result = await runWithTimers(() => runAgentLoop({
       initialCode: '',
       instruction: 'hello',
+      locale: 'en',
       systemPrompt: 'system',
       llm,
     }));
@@ -337,6 +378,7 @@ describe('runAgentLoop — request retries', () => {
     await expect(runAgentLoop({
       initialCode: '',
       instruction: 'hello',
+      locale: 'en',
       systemPrompt: 'system',
       llm,
     })).rejects.toBe(error);
@@ -357,6 +399,7 @@ describe('runAgentLoop — request retries', () => {
       const settled = runAgentLoop({
         initialCode: '',
         instruction: 'hello',
+        locale: 'en',
         systemPrompt: 'system',
         llm,
         signal: controller.signal,
@@ -402,6 +445,7 @@ describe('runAgentLoop — pending composition confirmation', () => {
     const result = await runAgentLoop({
       initialCode: '',
       instruction: '我果然是住不了太村的地方',
+      locale: 'zh',
       systemPrompt: 'You are a music assistant.',
       llm,
       conversationHistory: pendingConfirmationHistory,
@@ -441,6 +485,7 @@ describe('runAgentLoop — pending composition confirmation', () => {
     const result = await runAgentLoop({
       initialCode: '',
       instruction: '写吧',
+      locale: 'zh',
       systemPrompt: 'You are a music assistant.',
       llm,
       conversationHistory: pendingConfirmationHistory,
@@ -519,6 +564,7 @@ describe('runAgentLoop — validates the committed state code', () => {
     const result = await runAgentLoop({
       initialCode: '',
       instruction: '写一段鼓',
+      locale: 'zh',
       systemPrompt: 'You are a music assistant.',
       llm,
       onProgress: (event) => events.push(event),
@@ -566,6 +612,7 @@ describe('runAgentLoop — timeout warning', () => {
       await runAgentLoop({
         initialCode: 's("bd")',
         instruction: '写一段鼓',
+        locale: 'zh',
         systemPrompt: 'You are a music assistant.',
         llm,
         onProgress,
@@ -605,6 +652,7 @@ describe('runAgentLoop — timeout warning', () => {
       await runAgentLoop({
         initialCode: 's("bd")',
         instruction: 'add drums',
+        locale: 'en',
         systemPrompt: 'You are a music assistant.',
         llm,
         timeoutMs: 120_000,

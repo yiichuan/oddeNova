@@ -17,6 +17,7 @@ import { getActiveModelConfig } from './llm-config';
 import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO } from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 import { getActivePersonaSync } from '../lib/persona-storage';
+import { isZh } from '../lib/i18n';
 import { INTENT_CLASSIFIER_PROMPT } from '../prompts/intent-classifier';
 
 // ===========================================================================
@@ -423,9 +424,11 @@ export async function runAgent(
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
 ): Promise<RunAgentResult> {
+  const locale = isZh() ? 'zh' : 'en';
   const systemPrompt = buildSystemPrompt({
     moodContext,
     persona: getActivePersonaSync(),
+    locale,
   });
 
   const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
@@ -454,6 +457,7 @@ export async function runAgent(
   return runAgentLoop({
     instruction,
     initialCode: currentCode,
+    locale,
     systemPrompt,
     llm,
     onProgress,

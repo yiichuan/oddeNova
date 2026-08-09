@@ -50,19 +50,22 @@ export function isStepwiseChoice(explanation: string): boolean {
     }
 
     const consecutive = optionNumbers.every((number, index) => number === index + 1);
-    const leadIn = lines.slice(0, Math.max(0, start - 1)).findLast((line) => line.trim().length > 0);
-    const hasQuestion = leadIn !== undefined && /[?？]\s*$/.test(leadIn);
-    const separatedFromLeadIn = start > 0 && lines[start - 1].trim() === '';
-    const separatedFromInvitation = end < lines.length && lines[end].trim() === '';
-    const hasInvitation = lines.slice(end + 1).some((line) => line.trim().length > 0);
+    const leadIn = lines.slice(0, start).filter((line) => line.trim().length > 0);
+    const invitation = lines.slice(end).filter((line) => line.trim().length > 0);
+    const questionBeforeOptions = /[?？]\s*$/.test(leadIn.at(-1) ?? '');
+    const questionAfterOptions = /[?？]\s*$/.test(invitation[0] ?? '');
+    const structuredQuestionBefore = questionBeforeOptions
+      && start > 0
+      && lines[start - 1].trim() === ''
+      && end < lines.length
+      && lines[end].trim() === '';
     if (
       optionNumbers.length >= 2
       && optionNumbers.length <= 4
       && consecutive
-      && hasQuestion
-      && separatedFromLeadIn
-      && separatedFromInvitation
-      && hasInvitation
+      && leadIn.length > 0
+      && invitation.length > 0
+      && (questionAfterOptions || structuredQuestionBefore)
     ) {
       return true;
     }

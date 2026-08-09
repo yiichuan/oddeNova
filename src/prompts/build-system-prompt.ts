@@ -6,6 +6,7 @@ import { isZh } from '../lib/i18n';
 export interface BuildSystemPromptInput {
   moodContext?: string;
   persona?: ActivePersona;
+  locale?: 'zh' | 'en';
 }
 
 const DEFAULT_PERSONA: ActivePersona = { id: BUILTIN_PERSONA_ID, name: 'oddeNova' };
@@ -26,8 +27,9 @@ function resolvePersonaBlock(persona: ActivePersona, lang: 'zh' | 'en'): { block
 export function buildSystemPrompt({
   moodContext,
   persona = DEFAULT_PERSONA,
+  locale,
 }: BuildSystemPromptInput): string {
-  const lang = isZh() ? 'zh' : 'en';
+  const lang = locale ?? (isZh() ? 'zh' : 'en');
   const { block, name } = resolvePersonaBlock(persona, lang);
   const base = lang === 'zh'
     ? AGENT_SYSTEM_PROMPT_OPENAI(block, name)

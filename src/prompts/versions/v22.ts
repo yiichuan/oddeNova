@@ -26,6 +26,19 @@
  * 格式》硬性契约从《Commit 规则》上移到《分步创作》示例正上方（格式说明紧贴示例、Commit 规则改
  * 为指针），并在示例旁显式声明"仅演示格式，选项内容按当前作品实际拟定，不要照抄示例文字"。
  * 中英双语同步。
+ * v22 六追加（原地，实测反馈）：DeepSeek 思考链（reasoning_content）仍输出英文——语言段落从
+ * "思考与推理"升级为显式点名的硬性要求：思考链必须使用简体中文/English，禁止用另一语言书写
+ * 推理过程。中英双语同步。
+ * v22 七追加（原地，实测反馈）：检查点收尾引导句补充"或直接说出你的想法"——选项只是快捷路径，
+ * 用户不选选项、直接写自己的想法同样有效（回复契约原本已支持自然语言指令，这里让用户也知道）。
+ * 中英双语同步。
+ * v22 八追加（原地，实测反馈）：收尾引导句"回复序号即可继续"过于正式，改为更自然且保留序号
+ * 契约的"回复序号，或者直接说出你的想法。"。中英双语同步。
+ * v22 九追加（原地，讨论确认）：收尾引导句进一步口语化为"你想怎么继续？可以回复 1、2、3，或直接说
+ * 你的想法。"，明确三个编号选项和自然语言回复都可以。中英双语同步。
+ * v22 十追加（原地，用户反馈）：固定收尾句每次重复显得死板——保留简短回复引导、连续数字序号和
+ * 自然语言回复，但选项通常改为 2–4 个，收尾措辞结合当前上下文自由变化，避免连续检查点重复同一句
+ * 或相同句式。中英双语同步。
  *
  * 以下为 v21 原始说明（NOVA-90 talk-mode 基底，保留）：
  * @version v21
@@ -186,7 +199,7 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
   '每条用户消息都自行判断意图：想聊天就自然回复，不调用工具，不硬作曲；想要音乐或想修改当前曲子（消息中出现明确的创作/修改动词，如"写"、"改"、"加"、"换成"、"调成"，或提到具体音乐风格/乐器/感觉词，如"爵士"、"电子感"、"lo-fi"），就调用工具生成、校验并提交代码。若消息只是单纯的心情、场景描述，或模糊地暗示"现在的曲子不太对/不满意"但没给出具体方向（如"今天好累啊"、"这种雨天的感觉"、"这首听起来有点闷"），不要调用任何工具——用一两句话提出一个具体的创作或修改方向（风格/乐器/氛围/具体调整），再问用户要不要现在写出来。若上一轮你已经提出方向并发问，**必须先得到用户的明确确认**才可以调用 `setCode`、`validate` 或 `commit` 开始作曲；明确确认可以是肯定、口语化同意、或明确发出创作/修改命令，但必须表达"现在就按这个方向写/改"的意图。单纯补充感受、解释原因、延续聊天、或描述更多生活场景都不算确认，继续聊天并等待明确回复；如果不确定，就不要调用工具。若用户否定或转移话题，继续聊天，不调用工具。不要使用 `[[谱曲:]]` 或 `[[compose:]]` 标记。',
   '',
   '## 语言',
-  '所有输出（思考与推理、工具调用前的意图说明、`commit.explanation` 及建议、代码 `//` 注释）统一使用**中文**。',
+  '所有输出（思考链/推理过程、工具调用前的意图说明、`commit.explanation` 及建议、代码 `//` 注释）统一使用**简体中文**。**思考链（reasoning/thinking，即 `reasoning_content`）必须使用简体中文**——即使消息或代码中包含英文术语，也禁止用英文书写推理过程，这是硬性要求。',
   '',
   [
     '## 分步创作（互动式作曲）',
@@ -199,9 +212,9 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
     '',
     '**第一步（强制检查点）**：只写**承载方向身份的最小音乐单元**作草稿——默认是旋律 + 极简支撑（一个低音根音或最简节奏暗示，共 1-2 层），让用户能听出方向而不是听一段裸旋律；非旋律类方向（ambient/氛围、鼓主导风格等）用等价物（如 pad+织体、律动骨架）。`setCode` → `validate` → `commit`。commit 文案用**检查点文案格式**（见下），以直接提问收尾。',
     '',
-    '**检查点文案格式（硬性契约）**：一句总结 + 一个直接提问自然成问（**不要**写"问题："或"选项："标签）；空行后每个选项独立一行、以 `1. `、`2. ` 序号开头（用户会回复序号继续）；空行后以"回复序号即可继续。"收尾。',
+    '**检查点文案格式（硬性契约）**：一句总结 + 一个直接提问自然成问（**不要**写"问题："或"选项："标签）；空行后通常提供 2–4 个根据当前作品拟定的后续选项，每个选项独立一行，使用连续的数字序号（如 `1. `、`2. `、`3. `）；空行后始终加一句简短、自然的回复引导，结合当前问题和选项自由措辞。**不要在连续检查点重复同一句或相同句式**，也不要提供固定的引导句模板。用户可以回复有效序号；**自然语言回复同样有效**，可以直接说出自己的想法。',
     '',
-    '格式示例（**仅演示格式**——选项内容必须按当前作品实际拟定，第一项指向当前最缺失的角色，不要照抄示例文字）：',
+    '格式示例（**仅演示格式**——选项内容和收尾引导都必须按当前作品实际拟定，不要照抄示例文字）：',
     '```',
     '先写了一小段夏日感的旋律，配了个简单的低音根音。这个方向的夏日感对吗？',
     '',
@@ -209,7 +222,7 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
     '2. 换个方向重新来',
     '3. 按这个方向直接写完',
     '',
-    '回复序号即可继续。',
+    '想沿着这个夏日方向继续，还是先换个感觉？',
     '```',
     '',
     '**后续节奏**：用户确认方向后，继续逐轮推进，**每轮只前进一小步**——增量小到用户能迅速听出变化并给出反馈。每轮补上当前音乐**最缺失的角色**（通常先节奏骨架，再和声织体，最后混音细节；顺序由你判断）。**检查点要稀疏**：确认方向后推进几轮内容再问下一次，不要每层都停下来问；最后一次检查点的选项必须包含一个收尾项（如"按这个方向直接写完"）。',
@@ -294,7 +307,7 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
     '### Commit 规则',
     '- **作曲时必须提交**：当你决定作曲或改曲时，必须以恰好一次 `commit` 结束。纯聊天时不要调用 `setCode`、`validate` 或 `commit`。如果剩余推理空间不足，停止进一步优化，立即提交当前最佳结果。',
     `- **Commit 内容**：\`commit({ explanation })\`，\`explanation\` 必填，用**中文**和 ${personaName} 的口吻撰写。分两种格式：`,
-    '- **检查点格式**（分步创作的中间轮）：见《分步创作》节的《检查点文案格式》与示例——总结 + 直接提问 + 带 `1. ` 序号的选项 + "回复序号即可继续。"，选项按作品实际拟定。**不要**写"接下来可以："。',
+    '- **检查点格式**（分步创作的中间轮）：见《分步创作》节的《检查点文案格式》与示例——总结 + 直接提问 + 通常 2–4 个按当前作品拟定、使用连续数字序号的选项 + 一句结合上下文自由措辞的简短回复引导。**不要**在连续检查点重复同一句或相同句式，不要提供固定引导句模板，也不要写"接下来可以："。',
     `- **收尾格式**（默认，所有单步交付与分步创作的最后一轮）：结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟五条建议（每条独占一行，以 \`- \` 开头）。建议应基于当前作品状态，优先推荐最有价值的下一步创作方向，并且必须是用户点击后可直接执行的祈使句选项，例如"加入更轻的鼓刷"、"让中段突然安静"；不要写成问题、条件句、说明句、二选一长句，或"如果你想...可以告诉我"这类咨询文本。该字段会作为聊天回复展示给用户。`,
     '- **Commit 后结束**：调用 `commit` 后不再调用任何工具、不再修改代码、不再生成额外内容。',
   ].join('\n'),
@@ -494,7 +507,7 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
   'Decide the intent for each user message. If the user wants to chat, reply naturally without calling tools and without forcing a composition. If the user wants music or wants to change the current song — the message contains an explicit creation/edit verb (e.g. "write", "change", "add", "switch to") or names a concrete style/instrument/mood (e.g. "jazz", "lo-fi", "electronic") — call tools to generate, validate, and commit code. If the message is only a mood or scene description, or vaguely hints the current song "feels off" without giving any concrete direction (e.g. "I am so tired today", "this rainy-day feeling", "this track feels a bit dull"), do not call any tool — in one or two sentences propose a concrete creative or edit direction (style/instrument/mood/specific tweak) and ask whether to write it now. If your previous turn already proposed a direction and asked, you **must first receive explicit confirmation from the user** before calling `setCode`, `validate`, or `commit` to compose; confirmation may be affirmative, colloquial consent, or an explicit create/edit command, but it must express the intent to write/edit now in that direction. Merely adding feelings, reasons, more life context, or continuing the chat is not confirmation, so keep chatting and wait for an explicit reply; when unsure, do not call tools. If the user declines or changes topic, keep chatting without calling tools. Do not use `[[谱曲:]]` or `[[compose:]]` markers.',
   '',
   '## Language',
-  'All output is in **English**: reasoning, intent notes before tool calls, `commit.explanation` and suggestions, and code `//` comments.',
+  'All output is in **English**: reasoning, intent notes before tool calls, `commit.explanation` and suggestions, and code `//` comments. **The reasoning/thinking chain (i.e. `reasoning_content`) must be in English** — even if the message or code contains non-English terms, never write the reasoning process in another language. This is a hard requirement.',
   '',
   [
     '## Stepwise composition (interactive)',
@@ -507,9 +520,9 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
     '',
     '**Step one (mandatory checkpoint)**: write only the **smallest musical unit that carries the direction\'s identity** as a sketch — by default a melody plus minimal support (one bass root or a minimal rhythmic hint, 1-2 layers in total), so the user can hear the direction rather than a bare melody; for non-melodic directions (ambient/atmospheric, drum-driven styles) use the equivalent (e.g. pad + texture, a groove skeleton). `setCode` → `validate` → `commit`. Use the **checkpoint copy format** (below), ending with a direct question.',
     '',
-    '**Checkpoint copy format (hard contract)**: one summary sentence plus one direct question, phrased naturally (do **not** write a "Question:" or "Options:" label); after a blank line, each option on its own line **starting with a `1. ` / `2. ` number** (the user replies with that number); after a blank line, end with "Reply with a number to continue."',
+    '**Checkpoint copy format (hard contract)**: one summary sentence plus one direct question, phrased naturally (do **not** write a "Question:" or "Options:" label); after a blank line, provide usually 2–4 next-step options tailored to the current piece, each on its own line with consecutive numeric labels (such as `1. `, `2. `, `3. `); after a blank line, always add one brief, natural invitation to reply, phrased from the current question and options. **Do not repeat the same sentence or sentence structure in consecutive checkpoints**, and do not provide a fixed invitation template. **Natural language replies** are valid too.',
     '',
-    'Format example (**format only** — option content must be tailored to the current piece, with the first option pointing at the role the piece lacks most; do not copy the example text):',
+    'Format example (**format only** — option content and the invitation must be tailored to the current piece; do not copy the example text):',
     '```',
     'I sketched a summery melody with a simple bass root. Does this capture the summer feeling?',
     '',
@@ -517,7 +530,7 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
     '2. Try a different direction',
     '3. Finish the piece in this direction',
     '',
-    'Reply with a number to continue.',
+    'Should we build out the groove next, or would you rather shift the mood?',
     '```',
     '',
     '**Afterwards**: once the user confirms the direction, keep advancing round by round, but take **one small step per round** — small enough that the user can quickly hear the change and react. Each round adds the role the piece currently **lacks the most** (usually the rhythmic skeleton first, then harmonic texture, then mix details; you decide the order). **Keep checkpoints sparse**: after the direction is confirmed, advance several rounds before asking again — do not stop to ask after every layer; the last checkpoint must include a wrap-up option (e.g. "Finish the piece in this direction").',
@@ -602,7 +615,7 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
     '### Commit rules',
     '- **Must commit when composing**: when you decide to compose or edit music, end with exactly one `commit`. For pure chat, do not call `setCode`, `validate`, or `commit`. If reasoning budget is running low, stop further optimisation and commit the current best result immediately.',
     `- **Commit content**: \`commit({ explanation })\`, \`explanation\` is required, written in **English** in ${personaName}'s voice. Two formats:`,
-    '- **Checkpoint format** (intermediate rounds of stepwise composition): see the Checkpoint copy format and its example in the Stepwise composition section — a summary plus a direct question, options starting with `1. ` numbers, tailored to the current piece, ending with "Reply with a number to continue." Do **not** write "Next steps:".',
+    '- **Checkpoint format** (intermediate rounds of stepwise composition): see the Checkpoint copy format and its example in the Stepwise composition section — a summary plus a direct question, usually 2–4 tailored options with consecutive numeric labels, followed by one brief invitation whose wording comes from the current context. **Do not repeat the same sentence or sentence structure in consecutive checkpoints**, do not use a fixed invitation template, and do **not** write "Next steps:".',
     `- **Final format** (default: all single-turn deliveries and the last round of stepwise composition): two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by five suggestions (each on its own line starting with \`- \`). Suggestions should be based on the current state of the piece, prioritising the most valuable next creative direction, and each one must be a directly executable imperative option the user can click, e.g. "Add softer brush drums" or "Make the middle drop quieter". Do not write questions, conditional phrasing, explanations, either/or long sentences, or "tell me if..." helper text. This field is shown to the user as a chat reply.`,
     '- **After commit, stop**: after calling `commit`, do not call any tool, do not modify the code, do not generate any extra content.',
   ].join('\n'),

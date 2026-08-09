@@ -26,6 +26,16 @@ describe('next-step helpers', () => {
     ].join('\n'))).toBe(true);
   });
 
+  it('recognizes numbered choices when the question follows the options without blank lines', () => {
+    expect(isStepwiseChoice([
+      '配上轻快鼓组和律动贝斯，阳光感的骨架已经立起来了。',
+      '1. 加一层清爽的和声背景，让中频更饱满',
+      '2. 给旋律加一段呼应的过门，让它有起伏',
+      '3. 就按现在这个完整度直接写完收尾',
+      '想继续往饱满里走，还是就在这里收个尾？',
+    ].join('\n'))).toBe(true);
+  });
+
   it('does not mistake final next-step suggestions for choice mode', () => {
     expect(isStepwiseChoice('完成了整首作品。\n\n接下来可以：\n- 加快速度\n- 减少鼓点')).toBe(false);
   });
@@ -36,6 +46,15 @@ describe('next-step helpers', () => {
       '1. 收紧底鼓',
       '2. 降低贝斯',
       '3. 简化旋律',
+      '整体现在更清楚。',
+    ].join('\n'))).toBe(false);
+  });
+
+  it('does not mistake a question-led numbered change summary for choice mode', () => {
+    expect(isStepwiseChoice([
+      '我调整了哪些地方？',
+      '1. 收紧底鼓',
+      '2. 降低贝斯',
       '整体现在更清楚。',
     ].join('\n'))).toBe(false);
   });

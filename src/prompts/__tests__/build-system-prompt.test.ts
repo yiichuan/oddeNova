@@ -98,7 +98,12 @@ describe('active system prompt export contract', () => {
     expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('必须先得到用户的明确确认');
     expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('补充感受');
     expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('分步创作');
-    expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('回复序号即可继续');
+    const zhPrompt = actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne');
+    expect(zhPrompt).toContain('通常提供 2–4 个');
+    expect(zhPrompt).toContain('连续的数字序号');
+    expect(zhPrompt).toContain('不要在连续检查点重复同一句或相同句式');
+    expect(zhPrompt).toContain('自然语言回复');
+    expect(zhPrompt).not.toContain('你想怎么继续？可以回复 1、2、3，或直接说你的想法');
     expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('根据我的心情生成音乐');
     expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('检查点格式');
     expect(actual.AGENT_SYSTEM_PROMPT_OPENAI('ZH_PERSONA_BLOCK', 'Nocturne')).toContain('收尾格式');
@@ -107,7 +112,12 @@ describe('active system prompt export contract', () => {
     expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('must first receive explicit confirmation');
     expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('adding feelings');
     expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('Stepwise composition');
-    expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('Reply with a number to continue');
+    const enPrompt = actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne');
+    expect(enPrompt).toContain('usually 2–4');
+    expect(enPrompt).toContain('consecutive numeric labels');
+    expect(enPrompt).toContain('Do not repeat the same sentence or sentence structure');
+    expect(enPrompt).toContain('Natural language replies');
+    expect(enPrompt).not.toContain('How do you want to continue? You can reply 1, 2, or 3');
     expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('根据我的心情生成音乐');
     expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('Checkpoint format');
     expect(actual.AGENT_SYSTEM_PROMPT_EN('EN_PERSONA_BLOCK', 'Nocturne')).toContain('Final format');
