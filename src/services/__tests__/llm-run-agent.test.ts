@@ -43,6 +43,10 @@ vi.mock('../../persona/oddenova', () => ({
   buildPersonaBlock: vi.fn(() => 'BUILTIN_PERSONA'),
 }));
 
+vi.mock('../../lib/i18n', () => ({
+  isZh: vi.fn(() => false),
+}));
+
 vi.mock('../../agent/tools', () => ({
   getOpenAIToolSchemas: vi.fn(() => []),
 }));
@@ -83,11 +87,14 @@ vi.mock('../../demo/demo-llm', () => ({
 
 import { runAgent, classifyIntent } from '../llm';
 import type { LLMCaller } from '../../agent/loop';
+import { isZh } from '../../lib/i18n';
 
 describe('runAgent conversationHistory pass-through', () => {
   beforeEach(() => {
     runAgentLoopMock.mockReset();
     openAIChatCreateMock.mockReset();
+    getActivePersonaSyncMock.mockClear();
+    vi.mocked(isZh).mockReturnValue(false);
     runAgentLoopMock.mockResolvedValue({
       code: 's("bd")',
       explanation: 'done',
@@ -103,6 +110,16 @@ describe('runAgent conversationHistory pass-through', () => {
         usage: { input_tokens: 1, output_tokens: 1 },
       })),
     });
+  });
+
+  it('passes the browser locale to the system prompt and agent loop', async () => {
+    vi.mocked(isZh).mockReturnValue(true);
+
+    await runAgent('1', 's("hh")');
+
+    const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    expect(opts.locale).toBe('zh');
+    expect(opts.systemPrompt).toBe('zh system prompt Nocturne CUSTOM_PERSONA');
   });
 
   it('passes conversationHistory to runAgentLoop', async () => {

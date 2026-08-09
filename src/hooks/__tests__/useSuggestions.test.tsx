@@ -84,7 +84,7 @@ describe('useSuggestions', () => {
     expect(latest?.suggestions).toEqual(['加入贝斯', '让鼓点更密']);
   });
 
-  it('ignores stale persisted suggestions and shows static defaults', () => {
+  it('ignores stale persisted suggestions without reviving initial defaults for existing code', () => {
     let latest: ReturnType<typeof useSuggestions> | undefined;
     const { root } = renderProbe({
       currentCode: 's("bd sd")',
@@ -93,10 +93,18 @@ describe('useSuggestions', () => {
     });
     roots.push(root);
 
-    expect(latest?.suggestions).not.toContain('过期建议');
-    for (const s of latest?.suggestions ?? []) {
-      expect(STATIC_SUGGESTIONS).toContain(s);
-    }
+    expect(latest?.suggestions).toEqual([]);
+  });
+
+  it('stops showing initial defaults when the first generated code arrives without next-steps', () => {
+    const view = renderProbe({ currentCode: '' });
+    roots.push(view.root);
+
+    expect(view.latest()?.suggestions).toEqual(expect.arrayContaining(STATIC_SUGGESTIONS));
+
+    view.rerender({ currentCode: 's("bd sd")' });
+
+    expect(view.latest()?.suggestions).toEqual([]);
   });
 
   it('shows and persists the latest commit next-steps', async () => {
@@ -168,6 +176,18 @@ describe('useSuggestions', () => {
     });
 
     expect(view.latest()?.suggestions).toEqual(['把鼓切碎']);
+  });
+
+  it('drops commit suggestions when rollback changes the code they belong to', () => {
+    const commitSuggestions = ['把鼓切碎'];
+    const view = renderProbe({ currentCode: 's("bd sd")', commitSuggestions });
+    roots.push(view.root);
+
+    expect(view.latest()?.suggestions).toEqual(commitSuggestions);
+
+    view.rerender({ currentCode: 's("bd")', commitSuggestions });
+
+    expect(view.latest()?.suggestions).toEqual([]);
   });
 
   it('uses the loaded daily pool after switching to an empty session', () => {

@@ -1,6 +1,8 @@
-export const zh: boolean = (() => {
+export function isZh(): boolean {
   try { return navigator.language.startsWith('zh'); } catch { return false; }
-})();
+}
+
+export const zh: boolean = isZh();
 
 const S: Record<string, readonly [string, string]> = {
   // Common
@@ -71,7 +73,9 @@ const S: Record<string, readonly [string, string]> = {
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
+  choiceInputPlaceholder: ['回复序号，或直接说出你的想法...', 'Reply with a number or describe your idea...'],
   tabToFill:           ['按 Tab 填入', 'Tab to use'],
+  enterToFill:         ['按 ⏎ 填入', '⏎ to use'],
   notInitialized:      ['未初始化', 'Not initialized'],
   restartEngine:       ['重启引擎', 'Restart engine'],
   engineInitializing:  ['初始化中...', 'Initializing...'],

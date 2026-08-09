@@ -4,6 +4,7 @@
 // store.
 
 export type ChatRole = 'user' | 'assistant' | 'progress';
+export type InputMode = 'normal' | 'choice';
 
 export type ProgressKind = 'tool_call' | 'tool_result' | 'commit' | 'warn' | 'iteration' | 'thinking' | 'reasoning';
 
@@ -14,6 +15,8 @@ export interface ChatMessage {
   code?: string;
   /** Immutable code boundary produced by this assistant turn. */
   revisionId?: string;
+  /** Input behavior established by this completed assistant turn. */
+  inputMode?: InputMode;
   /** Present only while an LLM stream attempt is incomplete. */
   agentAttemptId?: string;
   timestamp: number;

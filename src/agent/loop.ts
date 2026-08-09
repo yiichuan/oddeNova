@@ -91,6 +91,7 @@ export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
 export interface RunAgentOptions {
   initialCode: string;
   instruction: string;
+  locale: 'zh' | 'en';
   systemPrompt: string;
   llm: LLMCaller;
   maxIter?: number;
@@ -254,6 +255,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   const {
     initialCode,
     instruction,
+    locale,
     systemPrompt,
     llm,
     maxIter = DEFAULT_MAX_ITER,
@@ -269,7 +271,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     code: initialCode || '',
     finalCode: null,
   };
-  const isZh = /[一-龥]/.test(instruction);
+  const isZh = locale === 'zh';
   const ctx: ToolContext = { state, isZh };
   let userTurn: string;
   if (initialCode) {
