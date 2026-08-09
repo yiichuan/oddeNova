@@ -164,6 +164,38 @@ describe('runAgentLoop — enableThinking forwarding', () => {
   });
 });
 
+describe('runAgentLoop — thinkingLevel forwarding', () => {
+  it('passes thinkingLevel through to chatWithTools (defaults to medium)', async () => {
+    const seen: Array<string | undefined> = [];
+    const llm: LLMCaller = {
+      async chatWithTools(_messages, _tools, _onTextDelta, _onReasoningDelta, _signal, _enableThinking, thinkingLevel) {
+        seen.push(thinkingLevel);
+        return { content: 'hi', toolCalls: [] };
+      },
+    };
+
+    await runAgentLoop({
+      initialCode: '',
+      instruction: 'hello',
+      locale: 'en',
+      systemPrompt: 'You are a music assistant.',
+      llm,
+    });
+    expect(seen).toEqual(['medium']);
+
+    seen.length = 0;
+    await runAgentLoop({
+      initialCode: '',
+      instruction: 'hello',
+      locale: 'en',
+      systemPrompt: 'You are a music assistant.',
+      llm,
+      thinkingLevel: 'extreme',
+    });
+    expect(seen).toEqual(['extreme']);
+  });
+});
+
 describe('runAgentLoop — pure chat replies', () => {
   it('streams chat text as an assistant reply when thinking is disabled', async () => {
     const events: Array<{ kind: string; message?: string }> = [];

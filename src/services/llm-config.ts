@@ -12,6 +12,9 @@
 // ===========================================================================
 
 import { t } from '../lib/i18n';
+import type { ThinkingLevel } from '../agent/loop';
+
+export type { ThinkingLevel };
 
 /** Provider protocol type; determines which SDK to use. */
 export type Protocol = 'anthropic' | 'openai';
@@ -59,14 +62,14 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     baseURL: 'https://api.openai.com/v1',
     model: 'gpt-5.5',           // current flagship model, supports Chat Completions API + function calling
     protocol: 'openai',
-    models: ['gpt-5.5', 'gpt-5.5-mini', 'gpt-5.1', 'gpt-5'],
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
   },
   anthropic: {
     label: 'Anthropic',
     baseURL: 'https://api.anthropic.com',
-    model: 'claude-opus-4-6',             // display only; actual model uses LEGACY_MODELS
+    model: 'claude-opus-5',             // display only; actual model uses LEGACY_MODELS
     protocol: 'anthropic',
-    models: ['claude-sonnet-4-6', 'claude-opus-4-8', 'claude-haiku-4-5'],
+    models: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'],
   },
   official: {
     label: t('officialLabel'),
@@ -142,9 +145,31 @@ export function getSelectedModel(provider: ProviderType): string {
   }
   if (provider === 'anthropic') {
     const envModel = import.meta.env.VITE_LLM_MODEL as string | undefined;
-    return envModel || 'claude-sonnet-4-6';
+    return envModel || 'claude-opus-5';
   }
   return preset.model;
+}
+
+// ---------------------------------------------------------------------------
+// Thinking level (see CONTEXT.md: Thinking level)
+// ---------------------------------------------------------------------------
+
+export const THINKING_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'extreme'];
+
+const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'medium';
+
+const THINKING_LEVEL_STORAGE_KEY = 'vibe_thinking_level';
+
+/** Global user preference, persisted like provider/model — not session-scoped. */
+export function getSelectedThinkingLevel(): ThinkingLevel {
+  const stored = localStorage.getItem(THINKING_LEVEL_STORAGE_KEY);
+  return (THINKING_LEVELS as readonly string[]).includes(stored ?? '')
+    ? (stored as ThinkingLevel)
+    : DEFAULT_THINKING_LEVEL;
+}
+
+export function setSelectedThinkingLevel(level: ThinkingLevel): void {
+  localStorage.setItem(THINKING_LEVEL_STORAGE_KEY, level);
 }
 
 // ---------------------------------------------------------------------------

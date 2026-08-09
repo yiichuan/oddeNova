@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from './icons';
+import ThinkingLevelControl from './ThinkingLevelControl';
 import type { TokenStats } from '../hooks/useSessions';
 import { t } from '../lib/i18n';
 import { checkAirJellyAvailable } from '../services/airjelly';
@@ -359,6 +360,7 @@ export default function ChatInput({
           /* {engineReady && tokenStats && <ContextWindowIndicator tokenStats={tokenStats} />} */}
 
           <div className="flex items-center gap-2 shrink-0">
+            {replayValue === undefined && <ThinkingLevelControl disabled={inputDisabled} />}
             {replayValue !== undefined ? (
               <button
                 type="button"
