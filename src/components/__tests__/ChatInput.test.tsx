@@ -7,6 +7,11 @@ import ChatInput from '../ChatInput';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+const mobileState = vi.hoisted(() => ({ value: false }));
+vi.mock('../../hooks/useIsMobile', () => ({
+  useIsMobile: () => mobileState.value,
+}));
+
 function renderChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -40,6 +45,7 @@ describe('ChatInput engine initialization status', () => {
       act(() => root.unmount());
     }
     document.body.innerHTML = '';
+    mobileState.value = false;
   });
 
   it('shows initializing status without retry and keeps send available for text', () => {
@@ -209,5 +215,97 @@ describe('ChatInput engine initialization status', () => {
     });
 
     expect(onSendText).toHaveBeenCalledWith('Try a sparse jazz groove with brushes', 'text');
+  });
+
+  it('focuses without adopting the suggestion when the input card is tapped on mobile', () => {
+    mobileState.value = true;
+    const { container, root } = renderChatInput({
+      suggestions: ['Try a sparse jazz groove'],
+    });
+    roots.push(root);
+    const form = container.querySelector<HTMLFormElement>('form');
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!form || !textarea) throw new Error('chat input not found');
+
+    act(() => form.click());
+
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.value).toBe('');
+    expect(container.textContent).toContain('⏎ to use');
+  });
+
+  it('adopts instead of sending the suggestion when Enter is pressed on an empty mobile input', () => {
+    mobileState.value = true;
+    const onSendText = vi.fn();
+    const { container, root } = renderChatInput({
+      onSendText,
+      suggestions: ['Try a sparse jazz groove'],
+    });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+
+    act(() => textarea.focus());
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(textarea.value).toBe('Try a sparse jazz groove');
+    expect(onSendText).not.toHaveBeenCalled();
+  });
+
+  it('leaves mobile Enter for text entry instead of submitting choice input', () => {
+    mobileState.value = true;
+    const onSendText = vi.fn();
+    const { container, root } = renderChatInput({
+      inputMode: 'choice',
+      onSendText,
+      suggestions: ['Try a sparse jazz groove'],
+    });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(textarea), 'value')?.set;
+
+    act(() => {
+      setter?.call(textarea, '1');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => textarea.dispatchEvent(enter));
+
+    expect(enter.defaultPrevented).toBe(false);
+    expect(onSendText).not.toHaveBeenCalled();
+  });
+
+  it('shows dedicated copy and disables the suggestion carousel in choice mode', () => {
+    const { container, root } = renderChatInput({
+      inputMode: 'choice',
+      suggestions: ['Try a sparse jazz groove'],
+    });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+
+    expect(textarea.placeholder).toBe('Reply with a number or describe your idea...');
+    expect(container.textContent).not.toContain('Tab to use');
+
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(textarea.value).toBe('');
   });
 });

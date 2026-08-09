@@ -5,6 +5,7 @@ import { t } from '../lib/i18n';
 import { checkAirJellyAvailable } from '../services/airjelly';
 import { isDemoMode } from '../demo/demo-config';
 import type { AgentEntryPoint } from '../lib/analytics';
+import type { InputMode } from '../hooks/useChat';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
@@ -41,6 +42,8 @@ interface ChatInputProps {
   isVideoMode?: boolean;
   tokenStats?: TokenStats;
   onFocusChange?: (focused: boolean) => void;
+  /** Normal suggestion carousel, or a stepwise numbered-choice response. */
+  inputMode?: InputMode;
   /** Guidance suggestions, rotated as placeholder text; Tab adopts the current one. */
   suggestions?: string[];
   /**
@@ -66,6 +69,7 @@ export default function ChatInput({
   isVideoMode = false,
   tokenStats: _tokenStats,
   onFocusChange,
+  inputMode = 'normal',
   suggestions,
   onMoodGenerate,
 }: ChatInputProps) {
@@ -111,7 +115,11 @@ export default function ChatInput({
   const [typing, setTyping] = useState<{ sug: string | null; count: number }>({ sug: null, count: 0 });
   // Fade-out phase between dwell and the next suggestion (blur + opacity).
   const [suggestionFading, setSuggestionFading] = useState(false);
-  const suggestionList = moodSuggestionActive ? [...(suggestions ?? []), moodSuggestion] : (suggestions ?? []);
+  const suggestionList = inputMode === 'choice'
+    ? []
+    : moodSuggestionActive
+      ? [...(suggestions ?? []), moodSuggestion]
+      : (suggestions ?? []);
   const currentSuggestion = suggestionList.length > 0 ? suggestionList[suggestionIdx % suggestionList.length] : null;
   const suggestionActive =
     currentSuggestion !== null && text === '' && replayValue === undefined && !isLoading && !isVideoMode && !moodPending;
@@ -282,7 +290,9 @@ export default function ChatInput({
                 handleSubmit(e);
               }
             }}
-            placeholder={suggestionActive ? '' : t('inputPlaceholder')}
+            placeholder={suggestionActive
+              ? ''
+              : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
             rows={1}
             disabled={inputDisabled}
             className="w-full min-h-[54px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-[#cccccc] placeholder:text-[#888888] outline-none focus:text-white disabled:cursor-not-allowed"

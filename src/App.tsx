@@ -573,6 +573,7 @@ export default function App() {
               prefill={rollbackPrefill}
               focusTrigger={inputFocusTrigger}
               onFocusChange={handleChatFocusChange}
+              inputMode={current?.inputMode ?? 'normal'}
               suggestions={isVideoMode ? [] : visibleSuggestions}
               isVideoMode={isVideoMode}
             />
@@ -660,6 +661,7 @@ export default function App() {
           engineStatus={strudel.engineStatus}
           sessions={sessions.sessions}
           currentId={sessions.currentId}
+          inputMode={current?.inputMode ?? 'normal'}
           suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
           isVideoMode={isVideoMode}
           scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
