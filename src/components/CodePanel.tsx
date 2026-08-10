@@ -5,6 +5,8 @@ import { strudelService } from '../services/strudel';
 import { isDemoMode } from '../demo/demo-config';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { formatPlaybackTime, getStrudelLoopDurationSeconds } from '../lib/strudel-timing';
+import SessionSyncStatus from './SessionSyncStatus';
+import type { SessionSyncStatus as SyncStatus } from '../lib/session-cloud-sync';
 
 interface CodePanelProps {
   code: string;
@@ -15,6 +17,8 @@ interface CodePanelProps {
   onPlay: () => void;
   onStop: () => void;
   onEditorFocusChange?: (focused: boolean) => void;
+  syncStatus?: SyncStatus;
+  showSyncStatus?: boolean;
 }
 
 interface Metaball {
@@ -149,6 +153,8 @@ export default function CodePanel({
   onPlay,
   onStop,
   onEditorFocusChange,
+  syncStatus,
+  showSyncStatus = false,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gutterWidth, setGutterWidth] = useState(0);
@@ -276,17 +282,29 @@ export default function CodePanel({
           className="h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
         />
 
-        {error && (
-          <div
-            className="absolute -bottom-px p-2.5 bg-error/10 border border-[#B2370C] text-[#B2370C] text-xs font-mono whitespace-pre-wrap wrap-break-word"
-            style={{
-              left: gutterWidth ? gutterWidth - 1 : 0,
-              maxWidth: `calc(100% - ${gutterWidth ? gutterWidth - 1 : 0}px)`,
-            }}
-          >
-            {error}
-          </div>
-        )}
+        {/* Bottom overlay — floats over the code, never resizes it. Error
+            banner and sync status share one bottom-aligned row: the banner
+            yields width rather than pushing the capsule around, so the
+            capsule's position never depends on whether code is broken. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end">
+          {error && (
+            <div
+              className="pointer-events-auto min-w-0 -mb-px p-2.5 bg-error/10 border border-[#B2370C] text-[#B2370C] text-xs font-mono whitespace-pre-wrap wrap-break-word"
+              style={{
+                marginLeft: gutterWidth ? gutterWidth - 1 : 0,
+                maxWidth: `calc(100% - ${gutterWidth ? gutterWidth - 1 : 0}px)`,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <SessionSyncStatus
+            status={syncStatus}
+            visible={!!showSyncStatus}
+            className="ml-auto shrink-0 mr-3 mb-2"
+          />
+        </div>
       </div>
 
       {/* Footer — desktop playback control. On mobile transport lives next to

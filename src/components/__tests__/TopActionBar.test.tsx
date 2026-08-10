@@ -66,6 +66,8 @@ function renderShareBar(session: Session) {
     root.render(
       <TopActionBar
         onOpenSettings={vi.fn()}
+        onOpenAccount={vi.fn()}
+        accountLabel="Account"
         session={session}
         code=""
         messages={session.messages}
@@ -201,6 +203,8 @@ function renderTopActionBar(overrides: Partial<Parameters<typeof TopActionBar>[0
   const root = createRoot(container);
   const props: Parameters<typeof TopActionBar>[0] = {
     onOpenSettings: vi.fn(),
+    onOpenAccount: vi.fn(),
+    accountLabel: 'Sign in',
     session,
     code: session.code,
     messages,

@@ -74,6 +74,12 @@ export interface AgentTurnDeps {
   finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
   updateTokenStats: (stats: TokenStats, sessionId: string) => void;
+  setSessionSuggestions: (
+    items: string[],
+    forCode: string,
+    sessionId: string,
+  ) => void;
+  checkpointSession: (sessionId: string) => Promise<void>;
 
   // loading / abort lifecycle (owned by App's controller map + loading set)
   beginLoading: (sessionId: string) => AbortController;
@@ -181,7 +187,10 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
           : undefined;
         if (success) {
           const nextSteps = parseNextSteps(result.explanation);
-          if (nextSteps.length > 0) deps.setCommitSuggestions(nextSteps);
+          if (nextSteps.length > 0) {
+            deps.setCommitSuggestions(nextSteps);
+            deps.setSessionSuggestions(nextSteps, result.code, sessionId);
+          }
           if (revision) {
             deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
           } else {
@@ -240,6 +249,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       iterations,
     };
     safelyTrackAnalytics(() => deps.trackAgentTurnFinished(finishedProperties));
+    await deps.checkpointSession(sessionId);
     deps.endLoading(sessionId, controller);
   }
 }
@@ -293,6 +303,8 @@ export function useAgentRunner(cfg: UseAgentRunnerConfig): (input: AgentTurnInpu
         finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
         setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
         updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
+        setSessionSuggestions: (items, code, id) => sessions.setSuggestions(items, code, id),
+        checkpointSession: (id) => sessions.checkpointSession(id),
         beginLoading: (id) => {
           setLoadingSessions((prev) => new Set(prev).add(id));
           const controller = new AbortController();

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { Window } from 'happy-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   hasProviderDraftChanges,
   isProviderSettingsDirty,
@@ -9,7 +10,14 @@ import {
 } from '../model-settings';
 
 describe('model settings persistence', () => {
-  beforeEach(() => localStorage.clear());
+  const storage = new Window().localStorage;
+
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', storage);
+    storage.clear();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
 
   it('loads the active provider and provider-specific drafts', () => {
     localStorage.setItem('vibe_provider', 'deepseek');

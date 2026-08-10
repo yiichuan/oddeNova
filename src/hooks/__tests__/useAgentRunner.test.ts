@@ -39,6 +39,8 @@ function makeDeps(over: Partial<AgentTurnDeps> = {}): AgentTurnDeps {
     finalizeLastAssistantMessage: vi.fn(),
     setCurrentCode: vi.fn(),
     updateTokenStats: vi.fn(),
+    setSessionSuggestions: vi.fn(),
+    checkpointSession: vi.fn(async () => undefined),
     beginLoading: (id) => {
       void id;
       return new AbortController();
@@ -93,6 +95,8 @@ describe('runAgentTurn', () => {
       afterCode: 'note("c3")',
       playbackStatus: 'played',
     });
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
+    expect(deps.checkpointSession).toHaveBeenCalledWith('S1');
   });
 
   it('persists the code even when playback fails — latest code is always the session truth', async () => {
@@ -109,6 +113,7 @@ describe('runAgentTurn', () => {
       afterCode: 'note("c3")',
       playbackStatus: 'failed',
     });
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
   it('on a background (non-current) session, persists without playing', async () => {
@@ -121,6 +126,7 @@ describe('runAgentTurn', () => {
       afterCode: 'note("c3")',
       playbackStatus: 'not_attempted',
     });
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
   it('does not create a revision when code was not committed', async () => {
@@ -150,6 +156,7 @@ describe('runAgentTurn', () => {
     expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith('hmm', 'S1');
     expect(deps.addAssistantMessage).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).not.toHaveBeenCalled();
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
   it('falls back to the agentNoCode label when there is neither code nor explanation', async () => {
@@ -171,6 +178,7 @@ describe('runAgentTurn', () => {
     expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('interrupted'), 'S1');
     expect(deps.play).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).not.toHaveBeenCalled();
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
   it('suppresses the interrupted message when the controller is stale', async () => {
@@ -243,7 +251,29 @@ describe('runAgentTurn', () => {
       errorName: 'Error',
       errorMessage: 'boom',
     });
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
     consoleError.mockRestore();
+  });
+
+  it('persists terminal metadata and messages before checkpointing', async () => {
+    const deps = makeDeps({
+      runAgent: vi.fn(async () => makeResult({
+        explanation: '完成\n\n接下来可以：\n- 加贝斯',
+        tokenUsage: { promptTokens: 12, systemEstimate: 3 },
+      })),
+    });
+
+    await runAgentTurn(makeInput(), deps);
+
+    const checkpointOrder = (
+      deps.checkpointSession as ReturnType<typeof vi.fn>
+    ).mock.invocationCallOrder[0];
+    expect((deps.updateTokenStats as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+      .toBeLessThan(checkpointOrder);
+    expect((deps.setSessionSuggestions as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+      .toBeLessThan(checkpointOrder);
+    expect((deps.addAssistantMessage as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+      .toBeLessThan(checkpointOrder);
   });
 
   it('always ends the loading lifecycle with the controller it began', async () => {

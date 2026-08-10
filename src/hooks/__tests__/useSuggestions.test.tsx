@@ -118,6 +118,24 @@ describe('useSuggestions', () => {
     expect(onSuggestions).toHaveBeenCalledWith(['加入贝斯', '让鼓点更密'], 's("bd sd")');
   });
 
+  it('does not persist commit suggestions again when the session already has the same items', async () => {
+    const onSuggestions = vi.fn();
+    const items = ['加入贝斯', '让鼓点更密'];
+    const { root } = renderProbe({
+      currentCode: 's("bd sd")',
+      commitSuggestions: items,
+      persisted: { forCode: 's("bd sd")', items },
+      onSuggestions,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onSuggestions).not.toHaveBeenCalled();
+  });
+
   it('exposes up to five commit next-steps and caps the overflow', async () => {
     const onSuggestions = vi.fn();
     let latest: ReturnType<typeof useSuggestions> | undefined;

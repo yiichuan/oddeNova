@@ -6,6 +6,8 @@ import { resolve, join } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
+import sessionsHandler from './api/sessions'
+import sessionByIdHandler from './api/sessions/[id]'
 
 interface AirJellyRuntime {
   port: number
@@ -243,6 +245,93 @@ function shareDevMiddleware(): Plugin {
   }
 }
 
+function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+    req.on('error', reject)
+    req.on('end', () => {
+      if (!body) {
+        resolve(undefined)
+        return
+      }
+      try {
+        resolve(JSON.parse(body))
+      } catch (error) {
+        reject(error)
+      }
+    })
+  })
+}
+
+function runVercelHandler(
+  handler: typeof sessionsHandler,
+  req: IncomingMessage,
+  res: ServerResponse,
+  query: Record<string, string> = {},
+  body?: unknown,
+): Promise<void> {
+  return new Promise((resolve) => {
+    const response = {
+      status(code: number) {
+        res.statusCode = code
+        return response
+      },
+      json(payload: unknown) {
+        if (!res.headersSent) res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify(payload))
+        resolve()
+        return response
+      },
+    }
+
+    void Promise.resolve(handler({
+      method: req.method,
+      headers: req.headers,
+      query,
+      body,
+    } as never, response as never)).then(() => {
+      if (!res.writableEnded) resolve()
+    }).catch((error) => {
+      if (!res.writableEnded) {
+        res.statusCode = 500
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }))
+      }
+      resolve()
+    })
+  })
+}
+
+function sessionsDevMiddleware(): Plugin {
+  return {
+    name: 'sessions-api-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use(
+        '/api/sessions',
+        async (req: IncomingMessage, res: ServerResponse) => {
+          const pathname = new URL(req.url ?? '', 'http://localhost').pathname
+
+          try {
+            if (pathname === '/' || pathname === '') {
+              await runVercelHandler(sessionsHandler, req, res)
+              return
+            }
+
+            const id = decodeURIComponent(pathname.replace(/^\//, ''))
+            const body = req.method === 'PUT' ? await readJsonBody(req) : undefined
+            await runVercelHandler(sessionByIdHandler, req, res, { id }, body)
+          } catch (error) {
+            res.statusCode = 400
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Bad request' }))
+          }
+        }
+      )
+    },
+  }
+}
+
 // Mirrors src/animation/*.html → public/animation/ so the iframe can load them
 // as static assets. Runs once on startup and again on every hot-module update.
 function syncAnimationHtml(): Plugin {
@@ -267,12 +356,12 @@ export default defineConfig(({ mode }) => {
   // (officialApiDevMiddleware) read server-side keys from process.env, so
   // load the full .env here and merge any missing keys in (shell env wins).
   const env = loadEnv(mode, process.cwd(), '')
-  for (const key of ['OFFICIAL_API_KEY', 'VITE_API_KEY']) {
+  for (const key of ['OFFICIAL_API_KEY', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
     if (!process.env[key] && env[key]) process.env[key] = env[key]
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), syncAnimationHtml()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml()],
     build: {
       rollupOptions: {
         input: {

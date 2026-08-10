@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import CodePanel from './components/CodePanel';
@@ -29,6 +29,7 @@ import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
 import TopActionBar from './components/TopActionBar';
+import AccountModal from './components/AccountModal';
 import OddeNovaImportNotice from './components/OddeNovaImportNotice';
 import PrimaryNav, { type PrimaryNavItem } from './components/PrimaryNav';
 import ProviderSidebar from './components/ProviderSidebar';
@@ -38,13 +39,36 @@ import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 import type { AgentEntryPoint } from './lib/analytics';
 import { useModelSettingsDraft } from './hooks/useModelSettingsDraft';
+import { useAuth } from './hooks/useAuth';
+import { deleteCloudSession, listCloudSessions, saveCloudSession } from './services/cloud-session-repository';
+import { deleteSession, getAllSessions } from './lib/session-storage';
+import {
+  collectImportableGuestSessions,
+  getNextImportPromptUserMarker,
+  importGuestSessions,
+} from './lib/session-import';
+import type { Session } from './hooks/useSessions';
 
 export default function App() {
   const strudel = useStrudel();
+  const auth = useAuth();
+  const cloudRepository = useMemo(() => ({
+    listSessions: listCloudSessions,
+    saveSession: saveCloudSession,
+    deleteSession: deleteCloudSession,
+  }), []);
+  const ownerKey = auth.user ? `user:${auth.user.id}` : 'guest';
+  const [accountStartToken, setAccountStartToken] = useState(0);
+  const lastAuthUserIdRef = useRef<string | null>(null);
   const { isReplaying, replayMessages, replayInputText, startReplay } = useReplay(
     (code) => { strudel.play(code); }
   );
-  const sessions = useSessions();
+  const sessions = useSessions({
+    ownerKey,
+    syncEnabled: !!auth.user,
+    cloud: cloudRepository,
+    startNewSessionToken: accountStartToken,
+  });
   const dailySuggestionDefaults = useDailySuggestions(zh);
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const oddeNovaImportResult = useOddeNovaImport(
@@ -60,12 +84,23 @@ export default function App() {
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
   const modelSettings = useModelSettingsDraft(resetClient);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
+  const [guestImportError, setGuestImportError] = useState('');
+  const [importingGuestHistory, setImportingGuestHistory] = useState(false);
+  const guestImportRunningRef = useRef(false);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
+  const skipNextManualSyncSessionRef = useRef<string | null>(null);
   const prevLoadingRef = useRef<Set<string>>(new Set());
+  const importPromptUserRef = useRef<string | null>(null);
+  const latestGuestSessionsRef = useRef<Session[]>([]);
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
   const strudelRef = useRef(strudel);
   useEffect(() => { strudelRef.current = strudel; }, [strudel]);
+  useEffect(() => {
+    if (auth.recoveringPassword) setAccountOpen(true);
+  }, [auth.recoveringPassword]);
   const { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle } = useVideoDemo(strudelRef);
 
   const {
@@ -89,6 +124,29 @@ export default function App() {
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
+
+  useEffect(() => {
+    const userId = auth.user?.id ?? null;
+    if (userId && userId !== lastAuthUserIdRef.current) {
+      setAccountStartToken((token) => token + 1);
+    }
+    lastAuthUserIdRef.current = userId;
+  }, [auth.user?.id]);
+
+  useEffect(() => {
+    if (!auth.user && !sessions.isLoading) {
+      latestGuestSessionsRef.current = sessions.sessions;
+    }
+  }, [auth.user, sessions.isLoading, sessions.sessions]);
+
+  useEffect(() => {
+    const nextMarker = getNextImportPromptUserMarker(auth.user?.id ?? null, importPromptUserRef.current);
+    if (nextMarker !== importPromptUserRef.current) {
+      importPromptUserRef.current = nextMarker;
+      setGuestImportError('');
+      setGuestImportSessions(null);
+    }
+  }, [auth.user]);
 
   useEffect(() => {
     const prev = prevLoadingRef.current;
@@ -161,13 +219,85 @@ export default function App() {
     setApiKeyModalState({ open: true, autoOpened: false });
   }, []);
 
+  const handlePrimaryNavSelect = useCallback((item: PrimaryNavItem) => {
+    if (item === 'account') {
+      setAccountOpen(true);
+      return;
+    }
+    setPrimaryNavItem(item);
+  }, []);
+
+  useEffect(() => {
+    const userId = auth.user?.id;
+    // Wait for the account's own sessions to finish loading, like the share and
+    // oddeNova import entry points do: importing into a half-loaded account
+    // drops the imported session when the in-flight load replaces the list.
+    if (
+      !userId
+      || auth.loading
+      || auth.recoveringPassword
+      || sessions.isLoading
+      || importPromptUserRef.current === userId
+    ) return;
+    let cancelled = false;
+    getAllSessions('guest').then((guestSessions) => {
+      if (cancelled) return;
+      const importable = collectImportableGuestSessions(guestSessions, latestGuestSessionsRef.current);
+      if (importable.length > 0) {
+        setGuestImportError('');
+        setGuestImportSessions(importable);
+      }
+      importPromptUserRef.current = userId;
+    }).catch((err) => {
+      console.warn('[account] failed to inspect guest sessions for import.', err);
+    });
+    return () => { cancelled = true; };
+  }, [auth.user, auth.loading, auth.recoveringPassword, sessions.isLoading]);
+
+  const importGuestHistory = useCallback(async () => {
+    // The cloud save keeps the dialog up for as long as the request takes. A
+    // second click would import the same history again under a fresh id, so
+    // guard on a ref: it is set before the first await, unlike the state the
+    // disabled button reads.
+    if (guestImportRunningRef.current) return;
+    guestImportRunningRef.current = true;
+    setImportingGuestHistory(true);
+    const items = guestImportSessions ?? [];
+    setGuestImportError('');
+    try {
+      const result = await importGuestSessions(
+        items,
+        (item) => sessions.importSession(item, { activate: false }),
+        (id) => deleteSession(id, 'guest'),
+      );
+      setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
+      if (result.error) {
+        console.warn('[account] failed to import guest sessions to cloud.', result.error);
+        setGuestImportError(t('accountActionFailed'));
+      }
+    } finally {
+      guestImportRunningRef.current = false;
+      setImportingGuestHistory(false);
+    }
+  }, [guestImportSessions, sessions]);
+
   const current = sessions.currentSession;
+  const visibleSyncStatus = !sessions.isPersistent
+    && sessions.currentManualSyncStatus === 'offline'
+    ? 'retrying'
+    : sessions.currentManualSyncStatus;
   const messages = isReplaying ? replayMessages : (current?.messages ?? []);
   // Session code = last committed/played code (used as agent context)
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
   const currentBpm = parseScore(currentCode).bpm ?? 120;
   const isLoading = !!current?.id && loadingSessions.has(current.id);
+  const showSessionSyncStatus = Boolean(
+    auth.user
+    && current
+    && !isLoading
+    && visibleSyncStatus,
+  );
 
   const { suggestions } = useSuggestions({
     key: current?.id ?? '',
@@ -183,13 +313,82 @@ export default function App() {
     : suggestions;
   const visibleSuggestions = demoSuggestions;
 
+  const accountLabel = auth.user?.email || (auth.user ? t('account') : t('signIn'));
+
+  const accountOverlays = (
+    <>
+      {(accountOpen || auth.oauthErrorKey) && (
+        <AccountModal
+          user={auth.user}
+          configured={auth.configured}
+          recoveringPassword={auth.recoveringPassword}
+          oauthErrorKey={auth.oauthErrorKey}
+          beforeSignOut={sessions.flushCloudSaves}
+          onClose={() => {
+            auth.dismissOAuthError();
+            setAccountOpen(false);
+          }}
+        />
+      )}
+      {guestImportSessions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+          <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
+            <h2 className="text-lg font-semibold text-text-primary mb-2">{t('importLocalHistory')}</h2>
+            <p className="text-xs text-text-muted mb-5">{t('importLocalHistoryDesc')}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setGuestImportError('');
+                  setGuestImportSessions(null);
+                }}
+                disabled={importingGuestHistory}
+                className="flex-1 py-2.5 text-sm text-text-secondary bg-bg-tertiary rounded-lg hover:bg-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('notNow')}
+              </button>
+              <button
+                onClick={() => void importGuestHistory()}
+                disabled={importingGuestHistory}
+                className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('importNow')}
+              </button>
+            </div>
+            {guestImportError && <div className="text-xs text-red-300 mt-3">{guestImportError}</div>}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
     if (!current) return;
+    skipNextManualSyncSessionRef.current = current.id;
     strudel.setCode(current.code);
     strudel.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
   }, [current?.id]);
+
+  const setManualCode = sessions.setManualCode;
+  const flushCloudSaves = sessions.flushCloudSaves;
+  useEffect(() => {
+    if (!current?.id || isLoading || isReplaying || isVideoMode) return;
+    if (skipNextManualSyncSessionRef.current === current.id) {
+      skipNextManualSyncSessionRef.current = null;
+      return;
+    }
+    if (strudel.code === current.code) return;
+    void setManualCode(strudel.code, current.id);
+  }, [
+    current?.id,
+    current?.code,
+    isLoading,
+    isReplaying,
+    isVideoMode,
+    setManualCode,
+    strudel.code,
+  ]);
 
   // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
   useEffect(() => {
@@ -310,10 +509,14 @@ export default function App() {
 
   const handleRollback = useCallback(
     async (messageId: string) => {
+      const currentSessionId = sessions.currentId;
       const rewound = await rewindBeforeMessage(messageId);
       if (!rewound) return;
 
       sessions.truncate(messageId);
+      if (currentSessionId) {
+        await sessions.checkpointSession(currentSessionId);
+      }
 
       // Prefill the input with the message content and focus
       setRollbackPrefill(rewound.target.content);
@@ -357,28 +560,39 @@ export default function App() {
     });
   }, [strudel, runTurn]);
 
-  // Persist any unsaved manual edits in the editor to the outgoing session
-  // before switching/creating, so they aren't overwritten by the next
-  // session's code. Skip when strudel.code is empty or unchanged to avoid
-  // clobbering a session's stored code with stale/empty editor state
-  // (e.g. before the editor has synced on initial mount) and to avoid
-  // redundant writes when nothing changed.
-  const persistLiveCodeToCurrentSession = useCallback(() => {
-    if (sessions.currentId && strudel.code && strudel.code !== current?.code) {
-      sessions.setCurrentCode(strudel.code, sessions.currentId);
+  const persistAndFlushOutgoingSession = useCallback(async (id: string, code: string) => {
+    try {
+      await setManualCode(code, id);
+      await flushCloudSaves(id);
+    } catch (error) {
+      // Local persistence and the durable pending marker remain authoritative;
+      // the coordinator will retry while the user continues navigating.
+      console.warn('[sessions] outgoing session flush failed.', error);
     }
-  }, [sessions, strudel, current?.code]);
+  }, [flushCloudSaves, setManualCode]);
 
-  const handleNewSession = useCallback(() => {
-    persistLiveCodeToCurrentSession();
+  const handlePlay = useCallback(async () => {
+    if (sessions.currentId) {
+      await setManualCode(strudel.code, sessions.currentId);
+      await flushCloudSaves(sessions.currentId);
+    }
+    await strudel.play();
+  }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
+
+  const handleNewSession = useCallback(async () => {
+    if (sessions.currentId) {
+      await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+    }
     strudel.stop();
     sessions.newSession();
     if (isDemoMode()) setDemoStep(0);
-  }, [strudel, sessions, persistLiveCodeToCurrentSession]);
+  }, [strudel, sessions, persistAndFlushOutgoingSession]);
 
-  const handleSwitchSession = useCallback((id: string) => {
+  const handleSwitchSession = useCallback(async (id: string) => {
     if (sessions.currentId !== id) {
-      persistLiveCodeToCurrentSession();
+      if (sessions.currentId) {
+        await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      }
     }
     setCommitSuggestions(null);
     setUnreadSessions((prev) => {
@@ -388,7 +602,7 @@ export default function App() {
       return next;
     });
     sessions.switchTo(id);
-  }, [sessions, persistLiveCodeToCurrentSession]);
+  }, [sessions, persistAndFlushOutgoingSession, strudel.code]);
 
   const responsiveLayout = isMobile ? (
       <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
@@ -434,6 +648,8 @@ export default function App() {
           </h1>
           <TopActionBar
             onOpenSettings={openSettings}
+            onOpenAccount={() => setAccountOpen(true)}
+            accountLabel={accountLabel}
             session={sessions.currentSession}
             code={strudel.code}
             messages={messages}
@@ -493,9 +709,11 @@ export default function App() {
                 isPlaying={strudel.isPlaying}
                 engineReady={strudel.engineReady}
                 onMount={strudel.setRoot}
-                onPlay={() => strudel.play()}
+                onPlay={handlePlay}
                 onStop={strudel.stop}
                 onEditorFocusChange={handleCodeFocusChange}
+                syncStatus={visibleSyncStatus}
+                showSyncStatus={showSessionSyncStatus}
               />
             </div>
           </div>
@@ -624,6 +842,7 @@ export default function App() {
             </div>
           </div>
         )}
+        {accountOverlays}
       </div>
     ) : (
     <div
@@ -637,7 +856,8 @@ export default function App() {
           required={!hasApiKeyConfigured()}
         />
       )}
-      <PrimaryNav selectedItem={primaryNavItem} onSelect={setPrimaryNavItem} />
+      {accountOverlays}
+      <PrimaryNav selectedItem={primaryNavItem} onSelect={handlePrimaryNavSelect} />
 
       <>
         {/* Primary content keeps its width while non-home destinations are blank.
@@ -704,8 +924,10 @@ export default function App() {
                 isPlaying={strudel.isPlaying}
                 engineReady={strudel.engineReady}
                 onMount={strudel.setRoot}
-                onPlay={() => strudel.play()}
+                onPlay={handlePlay}
                 onStop={strudel.stop}
+                syncStatus={visibleSyncStatus}
+                showSyncStatus={showSessionSyncStatus}
               />
             </div>
 

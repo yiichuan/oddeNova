@@ -107,8 +107,14 @@ export function useSuggestions(opts: {
   // Persist freshly shown commit chips to the session (external system sync).
   useEffect(() => {
     if (!commitSuggestions || commitSuggestions.length === 0) return;
-    onSuggestionsRef.current?.(commitSuggestions.slice(0, MAX_SUGGESTIONS), currentCodeRef.current);
-  }, [commitSuggestions]);
+    const items = commitSuggestions.slice(0, MAX_SUGGESTIONS);
+    const alreadyPersisted = persisted?.forCode === currentCodeRef.current
+      && persisted.items.length === items.length
+      && persisted.items.every((item, index) => item === items[index]);
+    if (!alreadyPersisted) {
+      onSuggestionsRef.current?.(items, currentCodeRef.current);
+    }
+  }, [commitSuggestions, persisted]);
 
   return { suggestions: state.items };
 }

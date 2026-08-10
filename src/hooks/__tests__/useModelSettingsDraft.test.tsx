@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { Window } from 'happy-dom';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,12 +21,17 @@ function Probe({
 
 describe('useModelSettingsDraft', () => {
   const roots: Root[] = [];
+  const storage = new Window().localStorage;
 
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', storage);
+    storage.clear();
+  });
 
   afterEach(() => {
     for (const root of roots.splice(0)) act(() => root.unmount());
     document.body.innerHTML = '';
+    vi.unstubAllGlobals();
   });
 
   it('retains independent drafts while switching providers', () => {
