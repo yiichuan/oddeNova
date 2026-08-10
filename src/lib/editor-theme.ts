@@ -39,7 +39,7 @@ export const EDITOR_THEME_VARS: Record<
   }
 > = {
   "oddenova-dark": {
-    background: "#000000",
+    background: "#0D0D0D",
     foreground: "#e2e8f0",
     caret: "#91a3e0",
     selection: "rgba(172, 185, 225, 0.25)",

@@ -1,155 +1,160 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlayIcon, StopIcon } from './icons';
 import { t } from '../lib/i18n';
 import { strudelService } from '../services/strudel';
 import { isDemoMode } from '../demo/demo-config';
-import { parseScore } from '../agent/parser';
 import { useIsMobile } from '../hooks/useIsMobile';
-import TopActionBar from './TopActionBar';
-import type { Session } from '../hooks/useSessions';
-import type { ChatMessage } from '../hooks/useChat';
-import type { GenerateTitleParams } from './TopActionBar';
+import { formatPlaybackTime, getStrudelLoopDurationSeconds } from '../lib/strudel-timing';
 
 interface CodePanelProps {
+  code: string;
   error: string | null;
   isPlaying: boolean;
   engineReady: boolean;
-  hasCode: boolean;
   onMount: (el: HTMLDivElement) => void;
   onPlay: () => void;
   onStop: () => void;
-  exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
-  onExport: (p: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => Promise<boolean>;
-  onGenerateTitle: (p: GenerateTitleParams) => Promise<string>;
-  onResetExportState: () => void;
-  session: Session | null;
-  messages: ChatMessage[];
-  onOpenSettings: () => void;
   onEditorFocusChange?: (focused: boolean) => void;
 }
 
-// Log scale: slider 0–1 → frequency 200Hz–20kHz
-const lpfSliderToHz = (v: number) => 200 * Math.pow(100, v);
-const formatLpf = (v: number) => {
-  const hz = lpfSliderToHz(v);
-  if (hz >= 10000) return `${Math.round(hz / 1000)}k`;
-  if (hz >= 1000) return `${(hz / 1000).toFixed(1)}k`;
-  return `${Math.round(hz)}`;
-};
-
-type Tooltip = { key: string; label: string; pct: number };
-
-interface SliderColumnProps {
-  label: string;
-  sliderKey: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  tooltip: Tooltip | null;
-  formatValue: (v: number) => string;
-  onChange: (v: number) => void;
-  onTooltip: (t: Tooltip | null) => void;
-  borderRight?: boolean;
+interface Metaball {
+  cx: number;
+  cy: number;
+  r: number;
+  x: readonly number[];
+  y: readonly number[];
+  duration: number;
+  delay: number;
 }
 
-function SliderColumn({
-  label,
-  sliderKey,
-  value,
-  min,
-  max,
-  step,
-  tooltip,
-  formatValue,
-  onChange,
-  onTooltip,
-  borderRight = false,
-}: SliderColumnProps) {
-  const pct = (value - min) / (max - min);
-  const active = tooltip?.key === sliderKey;
+interface MetaballGroup {
+  balls: readonly Metaball[];
+  motionScale?: number;
+}
+
+const ORGANIC_LIGHT_GROUPS: readonly MetaballGroup[] = [
+  { balls: [
+    { cx: 70, cy: 80, r: 46, x: [0, 24, 60, 38, -14, -8, 0], y: [0, -18, 6, 22, 13, -9, 0], duration: 8.6, delay: -4.1 },
+    { cx: 130, cy: 80, r: 44, x: [0, -22, -60, -34, 16, 9, 0], y: [0, 17, -5, -20, -12, 11, 0], duration: 9.1, delay: -5.3 },
+  ] },
+  { balls: [
+    { cx: 100, cy: 54, r: 43, x: [0, -20, 8, 22, 13, -15, 0], y: [0, 24, 54, 35, -13, -9, 0], duration: 8.9, delay: -5.2 },
+    { cx: 100, cy: 108, r: 47, x: [0, 18, -9, -20, -12, 14, 0], y: [0, -22, -54, -32, 15, 10, 0], duration: 9.4, delay: -2.8 },
+  ] },
+  { balls: [
+    { cx: 68, cy: 59, r: 45, x: [0, 29, 64, 43, -13, -8, 0], y: [0, 5, 42, 54, 18, -16, 0], duration: 9.2, delay: -4.5 },
+    { cx: 132, cy: 101, r: 48, x: [0, -27, -64, -40, 15, 9, 0], y: [0, -7, -42, -51, -16, 18, 0], duration: 9.8, delay: -5.4 },
+  ] },
+  { motionScale: 1.25, balls: [
+    { cx: 100, cy: 45, r: 41, x: [0, -18, -38, 0, 38, 20, 0], y: [0, 25, 60, 53, 61, 28, 0], duration: 9.7, delay: -3.6 },
+    { cx: 62, cy: 105, r: 45, x: [0, 34, 76, 57, 38, 14, 0], y: [0, -12, 1, -29, -60, -32, 0], duration: 10.1, delay: -4.8 },
+    { cx: 138, cy: 106, r: 43, x: [0, -18, -38, -57, -76, -38, 0], y: [0, -28, -61, -33, -1, 14, 0], duration: 10.5, delay: -6.2 },
+  ] },
+  { motionScale: 1.25, balls: [
+    { cx: 47, cy: 82, r: 41, x: [0, 24, 53, 78, 106, 49, 0], y: [0, -18, -5, 13, 1, 17, 0], duration: 9.3, delay: -3.7 },
+    { cx: 100, cy: 77, r: 37, x: [0, 28, 53, 25, -53, -27, 0], y: [0, 16, 6, -15, 5, -14, 0], duration: 9.8, delay: -6.1 },
+    { cx: 153, cy: 83, r: 40, x: [0, -27, -53, -80, -106, -51, 0], y: [0, -15, -6, 14, -1, 16, 0], duration: 10.2, delay: -2.2 },
+  ] },
+  { motionScale: 1.25, balls: [
+    { cx: 66, cy: 52, r: 41, x: [0, 7, 2, 35, 64, 30, 0], y: [0, 31, 59, 62, 53, 19, 0], duration: 9.6, delay: -5.4 },
+    { cx: 68, cy: 111, r: 45, x: [0, 31, 62, 31, -2, -12, 0], y: [0, -18, -6, -35, -59, -28, 0], duration: 10, delay: -4.9 },
+    { cx: 130, cy: 105, r: 42, x: [0, -32, -64, -63, -62, -30, 0], y: [0, -26, -53, -25, 6, 15, 0], duration: 10.4, delay: -7.3 },
+  ] },
+] as const;
+
+const METABALL_KEY_TIMES = '0;0.16;0.33;0.5;0.67;0.84;1';
+const METABALL_KEY_SPLINES = Array(6).fill('0.37 0 0.63 1').join(';');
+// Scale each metaball's area to 1.5× its previous size: √2 × √1.5 = √3.
+const METABALL_LINEAR_SCALE = Math.sqrt(3);
+const METABALL_DURATION_SCALE = 1.4;
+const COMPOSITE_LIGHT_GROUP_ORDER = [0, 3, 1, 4, 2, 5] as const;
+
+function buildBallAxisValues(origin: number, offsets: Metaball['x'], motionScale = 1) {
+  return offsets.map((offset) => origin + offset * motionScale).join(';');
+}
+
+function usePrefersReducedMotion() {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!media) return;
+    const handleChange = (event: MediaQueryListEvent) => setPrefersReducedMotion(event.matches);
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
+  return prefersReducedMotion;
+}
+
+function PlaybackProgress({ code, isPlaying }: { code: string; isPlaying: boolean }) {
+  const totalSeconds = useMemo(() => getStrudelLoopDurationSeconds(code), [code]);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!isPlaying || totalSeconds <= 0) return;
+
+    const startedAt = performance.now();
+    let frame = 0;
+    const update = (now: number) => {
+      setElapsedSeconds(((now - startedAt) / 1000) % totalSeconds);
+      frame = window.requestAnimationFrame(update);
+    };
+    frame = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPlaying, totalSeconds]);
+
+  const progress = isPlaying && totalSeconds > 0 ? elapsedSeconds / totalSeconds : 0;
+  const elapsedLabel = formatPlaybackTime(elapsedSeconds);
+  const totalLabel = formatPlaybackTime(totalSeconds);
 
   return (
     <div
-      className="flex-1 min-w-0 flex items-center px-[30px] gap-[30px]"
-      style={borderRight ? { borderRight: '1px solid #323232' } : undefined}
+      data-testid="code-panel-playback-progress"
+      className="relative z-10 flex min-w-0 flex-1 items-center gap-3 pl-3 pr-5"
     >
-      <span className="text-[14px] text-white/70 shrink-0 select-none">{label}</span>
-
-      {/* Slider wrapper — relative so tooltip is anchored here */}
-      <div className="relative flex-1 min-w-0 flex items-center">
-        {active && tooltip && (
-          <div
-            className="absolute z-50 text-[10px] text-white/90 bg-black border border-white/10 rounded px-1.5 py-[2px] pointer-events-none whitespace-nowrap"
-            style={{
-              bottom: 'calc(100% + 10px)',
-              left: `${tooltip.pct * 100}%`,
-              transform: 'translateX(-50%)',
-            }}
-          >
-            {tooltip.label}
-          </div>
-        )}
-
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onPointerDown={() => {
-            onTooltip({ key: sliderKey, label: formatValue(value), pct });
-          }}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            const newPct = (v - min) / (max - min);
-            onTooltip({ key: sliderKey, label: formatValue(v), pct: newPct });
-            onChange(v);
-          }}
-          className="aj-slider flex-1 min-w-0"
-          style={{ height: '20px', ['--fill-pct' as string]: `${pct * 100}%` }}
+      <div
+        className="relative h-[2px] w-[100px] shrink-0 overflow-hidden rounded-full bg-current text-text-primary"
+        role="progressbar"
+        aria-label={t('playbackProgress')}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress * 100)}
+        aria-valuetext={`${elapsedLabel}/${totalLabel}`}
+      >
+        <span
+          data-testid="code-panel-playback-progress-fill"
+          className="absolute inset-0 origin-left rounded-full bg-[#EE6A2C]"
+          style={{ transform: `scaleX(${progress})` }}
         />
       </div>
+      <span
+        data-testid="code-panel-playback-time"
+        className="shrink-0 text-[11px] leading-none tabular-nums text-text-primary"
+      >
+        {elapsedLabel}/{totalLabel}
+      </span>
     </div>
   );
 }
 
 export default function CodePanel({
+  code,
   error,
   isPlaying,
   engineReady,
-  hasCode,
   onMount,
   onPlay,
   onStop,
-  exportState,
-  onExport,
-  onGenerateTitle,
-  onResetExportState,
-  session,
-  messages,
-  onOpenSettings,
   onEditorFocusChange,
 }: CodePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [gutterWidth, setGutterWidth] = useState(0);
 
-  const [volume, setVolume] = useState(isDemoMode() ? 0.1 : 0.8);
-  const [bpm, setBpm] = useState(() => parseScore(strudelService.code).bpm ?? 120);
-  const [lpf, setLpf] = useState(1);
-  const [tooltip, setTooltip] = useState<Tooltip | null>(null);
-  // true while the slider itself is updating the code, so the state subscription skips it
-  const bpmFromSlider = useRef(false);
-
   const isMobile = useIsMobile();
-
-  const handleExport = async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => {
-    const ok = await onExport(params);
-    // exportWav resets master volume/LPF — re-apply current UI values.
-    await strudelService.setMasterVolume(volume);
-    await strudelService.setMasterLPF(lpfSliderToHz(lpf));
-    return ok;
-  };
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     if (containerRef.current) {
@@ -211,7 +216,7 @@ export default function CodePanel({
     };
   }, [onEditorFocusChange]);
 
-  // Track .cm-gutters width so the footer divider aligns with the editor's gutter border.
+  // Track .cm-gutters width so editor errors start after the gutter.
   // Keep MutationObserver alive so reinit (which clears + remounts the editor) is handled.
   useEffect(() => {
     const container = containerRef.current;
@@ -243,22 +248,6 @@ export default function CodePanel({
     };
   }, []);
 
-  // Sync BPM slider when agent or external code changes update setcps(...)
-  useEffect(() => {
-    return strudelService.onStateChange((state) => {
-      if (bpmFromSlider.current) return;
-      const parsed = parseScore(state.code);
-      if (parsed.bpm !== null) setBpm(parsed.bpm);
-    });
-  }, []);
-
-  // Hide tooltip on pointer release anywhere
-  useEffect(() => {
-    const hide = () => setTooltip(null);
-    window.addEventListener('pointerup', hide);
-    return () => window.removeEventListener('pointerup', hide);
-  }, []);
-
   const handlePlayClick = () => {
     if (isPlaying) {
       onStop();
@@ -267,39 +256,20 @@ export default function CodePanel({
     }
   };
 
+  const hasPlayableCode = code.trim().length > 0;
+
   return (
-    <div className="h-full flex flex-col rounded-region border border-border">
+    <div className="h-full flex flex-col overflow-hidden rounded-region">
       <style>{`
-        .aj-slider { -webkit-appearance: none; appearance: none; outline: none; cursor: pointer; background: transparent; }
-        .aj-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; margin-top: -6px; }
-        .aj-slider::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: #000000; border: 1.5px solid #888888; cursor: pointer; }
-        .aj-slider::-webkit-slider-runnable-track { height: 1px; background: linear-gradient(to right, rgba(255,255,255,0.35) var(--fill-pct, 0%), #323232 var(--fill-pct, 0%)); }
-        .aj-slider::-moz-range-track { height: 1px; background: #323232; }
-        .aj-slider::-moz-range-progress { height: 1px; background: rgba(255,255,255,0.35); }
         @keyframes cmFadeIn { from { opacity: 0; } to { opacity: 1; } }
         .video-fade-in { animation: cmFadeIn 0.6s ease-out forwards; }
       `}</style>
 
-      {!isMobile && (
-        <div className="h-20 shrink-0 px-region">
-          <TopActionBar
-            onOpenSettings={onOpenSettings}
-            session={session}
-            code={strudelService.code}
-            messages={messages}
-            engineReady={engineReady}
-            hasCode={hasCode}
-            exportState={exportState}
-            onExport={handleExport}
-            onGenerateTitle={onGenerateTitle}
-            onResetExportState={onResetExportState}
-            bpm={bpm}
-          />
-        </div>
-      )}
-
       {/* StrudelMirror mounts here */}
-      <div className="relative flex-1 min-h-0">
+      <div
+        data-testid="code-panel-code-layer"
+        className="relative z-0 flex-1 min-h-0 overflow-hidden rounded-t-region border border-border bg-conversation-surface"
+      >
         <div
           ref={containerRef}
           data-testid="code-panel-editor-root"
@@ -319,87 +289,95 @@ export default function CodePanel({
         )}
       </div>
 
-      {/* Footer — play button + sliders. Desktop only: on mobile the drawer shows
-          nothing but code, and transport lives next to App's code-pill toggle. */}
+      {/* Footer — desktop playback control. On mobile transport lives next to
+          App's code-pill toggle. */}
       {!isMobile && (
         <div
-          className="shrink-0 flex items-stretch border-t"
-          style={{ background: '#000', borderColor: '#323232', fontFamily: "'ABeeZee', monospace" }}
+          data-testid="code-panel-controls-layer"
+          className="code-panel-controls-glass relative z-10 -mt-px -ml-px flex h-12 w-[calc(100%+2px)] shrink-0 items-stretch rounded-b-region border bg-conversation-surface"
+          style={{ borderColor: 'transparent', fontFamily: "'ABeeZee', monospace" }}
         >
-          {/* Play button, width matches .cm-gutters */}
           <div
-            className="flex items-center justify-center py-[6px]"
-            style={{
-              width: gutterWidth || undefined,
-              minWidth: gutterWidth || undefined,
-              borderRight: gutterWidth ? '1px solid #323232' : undefined,
-            }}
+            data-testid="code-panel-light-field"
+            className="code-panel-light-field"
+            aria-hidden="true"
+          >
+            {COMPOSITE_LIGHT_GROUP_ORDER.map((groupIndex, index) => {
+              const group = ORGANIC_LIGHT_GROUPS[groupIndex];
+              return (
+                <span className="code-panel-light-blob" key={groupIndex}>
+                  <svg viewBox="0 0 200 160" preserveAspectRatio="none" focusable="false">
+                  <defs>
+                    <filter id={`code-panel-metaball-${index}`} x="-35%" y="-35%" width="170%" height="170%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="7.5" result="blur" />
+                      <feColorMatrix
+                        in="blur"
+                        mode="matrix"
+                        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"
+                      />
+                    </filter>
+                  </defs>
+                  <g
+                    filter={`url(#code-panel-metaball-${index})`}
+                    transform={`translate(100 80) scale(${METABALL_LINEAR_SCALE}) translate(-100 -80)`}
+                  >
+                    {group.balls.map((ball, ballIndex) => (
+                      <circle key={ballIndex} cx={ball.cx} cy={ball.cy} r={ball.r}>
+                        {!prefersReducedMotion && (
+                          <>
+                            <animate
+                              attributeName="cx"
+                              values={buildBallAxisValues(ball.cx, ball.x, group.motionScale)}
+                              dur={`${ball.duration * METABALL_DURATION_SCALE}s`}
+                              begin={`${ball.delay}s`}
+                              repeatCount="indefinite"
+                              calcMode="spline"
+                              keyTimes={METABALL_KEY_TIMES}
+                              keySplines={METABALL_KEY_SPLINES}
+                            />
+                            <animate
+                              attributeName="cy"
+                              values={buildBallAxisValues(ball.cy, ball.y, group.motionScale)}
+                              dur={`${ball.duration * METABALL_DURATION_SCALE}s`}
+                              begin={`${ball.delay}s`}
+                              repeatCount="indefinite"
+                              calcMode="spline"
+                              keyTimes={METABALL_KEY_TIMES}
+                              keySplines={METABALL_KEY_SPLINES}
+                            />
+                          </>
+                        )}
+                      </circle>
+                    ))}
+                  </g>
+                  </svg>
+                </span>
+              );
+            })}
+          </div>
+
+          <span
+            data-testid="code-panel-controls-light-border"
+            className="code-panel-controls-light-border"
+            aria-hidden="true"
+          />
+
+          {/* Playback position is anchored to the controls boundary, not CodeMirror's gutter. */}
+          <div
+            data-testid="code-panel-play-control"
+            className="relative z-10 flex items-center justify-center py-[6px]"
+            style={{ marginLeft: 'var(--code-panel-play-button-offset)' }}
           >
             <button
               onClick={handlePlayClick}
-              disabled={!engineReady && !isPlaying}
-              className={`flex items-center justify-center w-9 h-9 transition-opacity text-[#B2370C] ${
-                isPlaying ? 'hover:opacity-70' : 'hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed'
-              }`}
+              disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
+              className="flex items-center justify-center w-7 h-7 rounded-full bg-[#050505] text-text-primary transition-colors transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:bg-[#2A2A2A] disabled:text-[#686868] disabled:opacity-100"
               title={isPlaying ? t('stop') : t('play')}
             >
-              {/* Stop renders smaller: Square fills its viewBox (18×18) while
-                  Play's triangle is ~14×18, so equal sizes look unbalanced */}
-              {isPlaying ? <StopIcon size={30} /> : <PlayIcon size={36} />}
+              {isPlaying ? <StopIcon size={14} /> : <PlayIcon size={16} />}
             </button>
           </div>
-
-          <SliderColumn
-            label="Volume"
-            sliderKey="volume"
-            value={volume}
-            min={0}
-            max={1}
-            step={0.01}
-            tooltip={tooltip}
-            formatValue={(v) => `${Math.round(v * 100)}%`}
-            onChange={(v) => {
-              setVolume(v);
-              void strudelService.setMasterVolume(v);
-            }}
-            onTooltip={setTooltip}
-            borderRight
-          />
-
-          <SliderColumn
-            label="BPM"
-            sliderKey="bpm"
-            value={bpm}
-            min={60}
-            max={240}
-            step={1}
-            tooltip={tooltip}
-            formatValue={(v) => `${v}`}
-            onChange={(v) => {
-              setBpm(v);
-              bpmFromSlider.current = true;
-              strudelService.setTempo(v);
-              bpmFromSlider.current = false;
-            }}
-            onTooltip={setTooltip}
-            borderRight
-          />
-
-          <SliderColumn
-            label="LPF"
-            sliderKey="lpf"
-            value={lpf}
-            min={0}
-            max={1}
-            step={0.005}
-            tooltip={tooltip}
-            formatValue={formatLpf}
-            onChange={(v) => {
-              setLpf(v);
-              void strudelService.setMasterLPF(lpfSliderToHz(v));
-            }}
-            onTooltip={setTooltip}
-          />
+          <PlaybackProgress key={`${isPlaying}:${code}`} code={code} isPlaying={isPlaying} />
         </div>
       )}
     </div>

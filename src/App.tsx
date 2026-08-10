@@ -488,20 +488,13 @@ export default function App() {
           <div className="h-full flex flex-col">
             <div className="flex-1 min-h-0">
               <CodePanel
+                code={strudel.code}
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 engineReady={strudel.engineReady}
-                hasCode={!!strudel.code}
                 onMount={strudel.setRoot}
                 onPlay={() => strudel.play()}
                 onStop={strudel.stop}
-                exportState={strudel.exportState}
-                onExport={strudel.exportWav}
-                onGenerateTitle={generateSongTitle}
-                onResetExportState={strudel.resetExportState}
-                session={sessions.currentSession}
-                messages={messages}
-                onOpenSettings={openSettings}
                 onEditorFocusChange={handleCodeFocusChange}
               />
             </div>
@@ -706,20 +699,13 @@ export default function App() {
           <div className={primaryNavItem === 'settings' ? 'hidden' : 'flex h-full min-h-0 flex-col'}>
             <div className="flex-1 min-h-0">
               <CodePanel
+                code={strudel.code}
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 engineReady={strudel.engineReady}
-                hasCode={!!strudel.code}
                 onMount={strudel.setRoot}
                 onPlay={() => strudel.play()}
                 onStop={strudel.stop}
-                exportState={strudel.exportState}
-                onExport={strudel.exportWav}
-                onGenerateTitle={generateSongTitle}
-                onResetExportState={strudel.resetExportState}
-                session={sessions.currentSession}
-                messages={messages}
-                onOpenSettings={openSettings}
               />
             </div>
 

@@ -155,6 +155,9 @@ describe('Sidebar session title editing layout', () => {
     roots.push(root);
 
     expect(container.querySelector(`button[aria-label="${t('choosePersona')}"]`)).toBeNull();
+    const sidebar = container.querySelector('aside');
+    expect(sidebar?.className).toContain('rounded-region');
+    expect(sidebar?.className).toContain('overflow-hidden');
     const messageRegion = container.querySelector('[data-sidebar-message-region]');
     expect(messageRegion?.className).toContain('rounded-t-region');
     expect(messageRegion?.className).toContain('rounded-b-none');

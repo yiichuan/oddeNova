@@ -46,20 +46,13 @@ function renderCodePanel(props: Partial<Parameters<typeof CodePanel>[0]> = {}) {
   document.body.appendChild(container);
   const root = createRoot(container);
   const defaultProps: Parameters<typeof CodePanel>[0] = {
+    code: 'setcps(0.5)\ns("bd sd").mask("<1 0>/16")',
     error: null,
     isPlaying: false,
     engineReady: true,
-    hasCode: true,
     onMount: vi.fn(),
     onPlay: vi.fn(),
     onStop: vi.fn(),
-    exportState: { status: 'idle', progress: 0 },
-    onExport: vi.fn().mockResolvedValue(true),
-    onGenerateTitle: vi.fn().mockResolvedValue('Generated title'),
-    onResetExportState: vi.fn(),
-    session: null,
-    messages: [],
-    onOpenSettings: vi.fn(),
   };
 
   act(() => {
@@ -135,18 +128,107 @@ describe('CodePanel editor focus reporting', () => {
     expect(strudelService.setAutocompletionEnabled).toHaveBeenCalledWith(true);
   });
 
-  it('renders the desktop action bar inside the code panel region', () => {
+  it('does not render the desktop action bar inside the code panel region', () => {
     installMatchMedia(false);
     const { container, root } = renderCodePanel();
     roots.push(root);
 
-    const panel = container.firstElementChild;
     const settingsButton = [...container.querySelectorAll('button')]
       .find((button) => button.textContent === t('settings'));
 
-    expect(panel).not.toBeNull();
-    expect(settingsButton).not.toBeUndefined();
-    expect(panel?.contains(settingsButton ?? null)).toBe(true);
+    expect(settingsButton).toBeUndefined();
+  });
+
+  it('separates the desktop code and playback controls into matching sidebar surfaces', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel();
+    roots.push(root);
+
+    const codeLayer = container.querySelector('[data-testid="code-panel-code-layer"]');
+    const controlsLayer = container.querySelector('[data-testid="code-panel-controls-layer"]');
+
+    expect(codeLayer).not.toBeNull();
+    expect(controlsLayer).not.toBeNull();
+    expect(codeLayer?.classList.contains('bg-conversation-surface')).toBe(true);
+    expect(codeLayer?.classList.contains('border')).toBe(true);
+    expect(codeLayer?.classList.contains('border-border')).toBe(true);
+    expect(codeLayer?.classList.contains('overflow-hidden')).toBe(true);
+    expect(controlsLayer?.classList.contains('bg-conversation-surface')).toBe(true);
+    expect(controlsLayer?.classList.contains('code-panel-controls-glass')).toBe(true);
+    expect(controlsLayer?.classList.contains('border')).toBe(true);
+    expect(controlsLayer?.classList.contains('-mt-px')).toBe(true);
+    expect(controlsLayer?.classList.contains('-ml-px')).toBe(true);
+    expect(controlsLayer?.classList.contains('w-[calc(100%+2px)]')).toBe(true);
+    expect(controlsLayer?.classList.contains('z-10')).toBe(true);
+    expect(controlsLayer?.classList.contains('h-12')).toBe(true);
+    expect(controlsLayer?.querySelector('[data-testid="code-panel-controls-light-border"]')).not.toBeNull();
+    const playControl = controlsLayer?.querySelector<HTMLElement>('[data-testid="code-panel-play-control"]');
+    expect(playControl?.style.marginLeft).toBe('var(--code-panel-play-button-offset)');
+    expect(playControl?.style.width).toBe('');
+    expect(playControl?.style.minWidth).toBe('');
+    const lightBlobs = controlsLayer?.querySelectorAll('.code-panel-light-blob') ?? [];
+    expect(lightBlobs).toHaveLength(6);
+    expect(controlsLayer?.querySelectorAll('.code-panel-light-blob circle')).toHaveLength(15);
+    expect(controlsLayer?.querySelectorAll('.code-panel-light-blob filter')).toHaveLength(6);
+    expect(controlsLayer?.querySelectorAll('.code-panel-light-blob animate')).toHaveLength(30);
+    lightBlobs.forEach((blob) => {
+      expect(blob.querySelectorAll('circle').length).toBeGreaterThanOrEqual(2);
+      expect(blob.querySelectorAll('circle').length).toBeLessThanOrEqual(3);
+    });
+  });
+
+  it('keeps the playback button and timeline in the desktop controls layer', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel();
+    roots.push(root);
+
+    const controlsLayer = container.querySelector('[data-testid="code-panel-controls-layer"]');
+    const playButton = controlsLayer?.querySelector<HTMLButtonElement>('button');
+
+    expect(controlsLayer?.querySelectorAll('button')).toHaveLength(1);
+    expect(playButton?.classList.contains('bg-[#050505]')).toBe(true);
+    expect(playButton?.classList.contains('text-text-primary')).toBe(true);
+    expect(playButton?.classList.contains('w-7')).toBe(true);
+    expect(playButton?.classList.contains('h-7')).toBe(true);
+    expect(playButton?.querySelector('.lucide-play')).not.toBeNull();
+    expect(controlsLayer?.querySelector('input[type="range"]')).toBeNull();
+    const progress = controlsLayer?.querySelector<HTMLElement>('[role="progressbar"]');
+    expect(progress?.getAttribute('aria-valuenow')).toBe('0');
+    expect(progress?.classList.contains('text-text-primary')).toBe(true);
+    expect(progress?.classList.contains('w-[100px]')).toBe(true);
+    expect(controlsLayer?.querySelector('[data-testid="code-panel-playback-progress-fill"]')).not.toBeNull();
+    expect(controlsLayer?.querySelector('[data-testid="code-panel-playback-time"]')?.textContent).toBe('00:00/00:32');
+    expect(controlsLayer?.textContent).not.toContain('Volume');
+    expect(controlsLayer?.textContent).not.toContain('BPM');
+    expect(controlsLayer?.textContent).not.toContain('LPF');
+    expect(controlsLayer?.querySelector<HTMLElement>(':scope > div')?.style.borderRight).toBe('');
+  });
+
+  it('uses the same circular background with a Lucide square while playing', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel({ isPlaying: true });
+    roots.push(root);
+
+    const stopButton = container.querySelector<HTMLButtonElement>('[data-testid="code-panel-controls-layer"] button');
+
+    expect(stopButton?.classList.contains('rounded-full')).toBe(true);
+    expect(stopButton?.classList.contains('bg-[#050505]')).toBe(true);
+    expect(stopButton?.classList.contains('text-text-primary')).toBe(true);
+    expect(stopButton?.querySelector('.lucide-square')).not.toBeNull();
+  });
+
+  it('disables and grays the play button with a zero duration when code is empty', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel({ code: '' });
+    roots.push(root);
+
+    const playButton = container.querySelector<HTMLButtonElement>('[data-testid="code-panel-controls-layer"] button');
+    const time = container.querySelector('[data-testid="code-panel-playback-time"]');
+
+    expect(playButton?.disabled).toBe(true);
+    expect(playButton?.classList.contains('disabled:bg-[#2A2A2A]')).toBe(true);
+    expect(playButton?.classList.contains('disabled:text-[#686868]')).toBe(true);
+    expect(time?.textContent).toBe('00:00/00:00');
   });
 
   it('disables autocompletion on mobile', () => {

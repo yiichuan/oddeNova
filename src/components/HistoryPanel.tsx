@@ -78,7 +78,7 @@ export default function HistoryPanel({
                     className={`group flex items-stretch gap-2 rounded-[4px] border px-2 cursor-pointer transition-colors ${
                       active
                         ? 'border-transparent bg-[#346691] text-text-primary'
-                        : 'border-border bg-[#0D0D0D] text-text-secondary hover:text-text-primary'
+                        : 'border-transparent bg-[#0D0D0D] text-text-secondary hover:text-text-primary'
                     }`}
                     onClick={() => onSwitch(s.id)}
                   >
@@ -121,7 +121,7 @@ export default function HistoryPanel({
                       </button>
                     )}
                     {/* Status indicator + delete button */}
-                    <span className="flex items-center gap-2 shrink-0">
+                    <span className="flex items-center gap-1.5 shrink-0">
                       {loadingSessions.has(s.id) ? (
                         <span className="w-1.5 h-1.5 rounded-full animate-spin shrink-0" style={{ border: '1.5px solid transparent', borderTopColor: 'var(--color-text-primary)', display: 'inline-block' }} />
                       ) : unreadSessions.has(s.id) ? (
@@ -132,20 +132,24 @@ export default function HistoryPanel({
                           e.stopPropagation();
                           startEditing(s);
                         }}
-                        className="self-stretch flex items-center opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary transition-opacity"
+                        className={`self-stretch flex items-center opacity-0 group-hover:opacity-100 transition-[opacity,color] ${
+                          active ? 'text-white/75 hover:text-white' : 'text-text-muted hover:text-text-primary'
+                        }`}
                         title={t('edit')}
                       >
-                        <EditIcon size={16} />
+                        <EditIcon size={14} />
                       </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           onDelete(s.id);
                         }}
-                        className="self-stretch flex items-center opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-opacity"
+                        className={`self-stretch flex items-center opacity-0 group-hover:opacity-100 transition-[opacity,color] ${
+                          active ? 'text-white/75 hover:text-[#B42F2F]' : 'text-text-muted hover:text-error'
+                        }`}
                         title={t('delete')}
                       >
-                        <TrashIcon size={20} />
+                        <TrashIcon size={16} />
                       </button>
                     </span>
                   </div>

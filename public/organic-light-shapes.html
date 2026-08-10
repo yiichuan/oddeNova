@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>oddeNova · Organic Light Shapes</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "ABeeZee", system-ui, sans-serif;
+      background: #0d0d0d;
+      color: #d6d6d6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: #0d0d0d;
+    }
+
+    main {
+      width: min(1500px, 100%);
+      margin: 0 auto;
+      padding: 40px;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid #242424;
+      padding-bottom: 18px;
+    }
+
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(24px, 3vw, 42px); font-weight: 400; letter-spacing: -0.035em; }
+    h2 { margin-bottom: 14px; font-size: 14px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; }
+    p { max-width: 660px; color: #8f8f8f; font-size: 12px; line-height: 1.6; }
+
+    .specimen-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(260px, 1fr));
+      gap: 10px;
+    }
+
+    .specimen {
+      min-width: 0;
+      border: 1px solid #242424;
+      background: #080808;
+    }
+
+    .specimen-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid #242424;
+      padding: 10px 12px;
+      color: #8f8f8f;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+    }
+
+    .specimen-stage {
+      display: flex;
+      height: 280px;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background:
+        linear-gradient(#141414 1px, transparent 1px),
+        linear-gradient(90deg, #141414 1px, transparent 1px),
+        #080808;
+      background-size: 40px 40px;
+    }
+
+    .blob {
+      position: relative;
+      display: block;
+      flex: none;
+      color: rgba(248, 248, 244, 0.82);
+      transform-origin: center;
+      animation:
+        blob-drift var(--blob-duration) cubic-bezier(0.37, 0, 0.63, 1) var(--blob-delay) infinite,
+        light-pulse var(--light-duration) cubic-bezier(0.37, 0, 0.63, 1) var(--light-delay) infinite;
+      will-change: transform;
+    }
+
+    .blob svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      filter: drop-shadow(0 0 18px rgba(255, 255, 252, 0.32));
+    }
+
+    .blob circle {
+      fill: currentColor;
+    }
+
+    .blob-1 {
+      width: 156px; height: 96px; opacity: 0.74;
+      --blob-duration: 26.2s; --blob-delay: -11.2s;
+      --light-duration: 6.7s; --light-delay: -2.4s; --light-base: 0.74; --light-high: 0.8; --light-low: 0.53; --light-mid: 0.67;
+      --blob-x-a: 42px; --blob-y-a: -10px; --blob-rotate-a: 14deg; --blob-scale-a: 1.08;
+      --blob-x-b: -12px; --blob-y-b: 18px; --blob-rotate-b: -9deg; --blob-scale-b: 0.94;
+    }
+    .blob-2 {
+      width: 112px; height: 148px; opacity: 0.38;
+      --blob-duration: 32.8s; --blob-delay: -4.8s;
+      --light-duration: 9.3s; --light-delay: -7.1s; --light-base: 0.38; --light-high: 0.51; --light-low: 0.22; --light-mid: 0.34;
+      --blob-x-a: -38px; --blob-y-a: 22px; --blob-rotate-a: -18deg; --blob-scale-a: 0.91;
+      --blob-x-b: 48px; --blob-y-b: 5px; --blob-rotate-b: 11deg; --blob-scale-b: 1.12;
+    }
+    .blob-3 {
+      width: 174px; height: 108px; opacity: 0.58;
+      --blob-duration: 28.1s; --blob-delay: -16.6s;
+      --light-duration: 7.8s; --light-delay: -4.6s; --light-base: 0.58; --light-high: 0.7; --light-low: 0.37; --light-mid: 0.54;
+      --blob-x-a: 51px; --blob-y-a: 17px; --blob-rotate-a: 10deg; --blob-scale-a: 1.1;
+      --blob-x-b: -44px; --blob-y-b: -8px; --blob-rotate-b: -16deg; --blob-scale-b: 0.9;
+    }
+    .blob-4 {
+      width: 126px; height: 156px; opacity: 0.7;
+      --blob-duration: 35.3s; --blob-delay: -8.3s;
+      --light-duration: 10.6s; --light-delay: -8.8s; --light-base: 0.7; --light-high: 0.78; --light-low: 0.48; --light-mid: 0.64;
+      --blob-x-a: -46px; --blob-y-a: 12px; --blob-rotate-a: -12deg; --blob-scale-a: 0.93;
+      --blob-x-b: 36px; --blob-y-b: 24px; --blob-rotate-b: 17deg; --blob-scale-b: 1.09;
+    }
+    .blob-5 {
+      width: 160px; height: 94px; opacity: 0.45;
+      --blob-duration: 30.5s; --blob-delay: -13.7s;
+      --light-duration: 8.5s; --light-delay: -1.9s; --light-base: 0.45; --light-high: 0.58; --light-low: 0.26; --light-mid: 0.39;
+      --blob-x-a: 35px; --blob-y-a: -16px; --blob-rotate-a: 19deg; --blob-scale-a: 1.13;
+      --blob-x-b: -53px; --blob-y-b: 14px; --blob-rotate-b: -8deg; --blob-scale-b: 0.92;
+    }
+    .blob-6 {
+      width: 118px; height: 142px; opacity: 0.64;
+      --blob-duration: 27.4s; --blob-delay: -6.1s;
+      --light-duration: 5.9s; --light-delay: -5.2s; --light-base: 0.64; --light-high: 0.75; --light-low: 0.42; --light-mid: 0.58;
+      --blob-x-a: -49px; --blob-y-a: 20px; --blob-rotate-a: -15deg; --blob-scale-a: 0.89;
+      --blob-x-b: 18px; --blob-y-b: -11px; --blob-rotate-b: 13deg; --blob-scale-b: 1.11;
+    }
+
+    @keyframes blob-drift {
+      0%, 100% {
+        transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+      }
+      34% {
+        transform: translate3d(var(--blob-x-a), var(--blob-y-a), 0) rotate(var(--blob-rotate-a)) scale(var(--blob-scale-a));
+      }
+      67% {
+        transform: translate3d(var(--blob-x-b), var(--blob-y-b), 0) rotate(var(--blob-rotate-b)) scale(var(--blob-scale-b));
+      }
+    }
+
+    @keyframes light-pulse {
+      0%, 100% { opacity: var(--light-base); }
+      19% { opacity: var(--light-high); }
+      47% { opacity: var(--light-low); }
+      73% { opacity: var(--light-mid); }
+    }
+
+    .composite-section { margin-top: 36px; }
+
+    .composite-viewport {
+      height: 300px;
+      overflow: hidden;
+      border: 1px solid #242424;
+      background: #080808;
+      padding: 104px 110px 76px;
+    }
+
+    .composite-field {
+      position: relative;
+      height: 120px;
+      filter: blur(16px) contrast(10);
+      mix-blend-mode: screen;
+      opacity: 0.64;
+    }
+
+    .composite-field .blob { position: absolute; }
+    .composite-field .blob-1 {
+      left: -48px; top: -18px;
+      --blob-x-a: 76px; --blob-x-b: -34px;
+    }
+    .composite-field .blob-2 {
+      left: 40%; top: -30px;
+      --blob-x-a: 96px; --blob-x-b: -82px;
+    }
+    .composite-field .blob-3 {
+      left: 79%; top: -21px;
+      --blob-x-a: 70px; --blob-x-b: -98px;
+    }
+    .composite-field .blob-4 {
+      left: 18%; top: -52px;
+      --blob-x-a: -72px; --blob-x-b: 88px;
+    }
+    .composite-field .blob-5 {
+      left: 62%; top: -58px;
+      --blob-x-a: -86px; --blob-x-b: 72px;
+    }
+    .composite-field .blob-6 {
+      left: calc(100% - 45px); top: -46px;
+      --blob-x-a: -92px; --blob-x-b: 46px;
+    }
+
+    @media (max-width: 900px) {
+      main { padding: 24px; }
+      header { align-items: start; flex-direction: column; }
+      .specimen-grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+      .composite-viewport { padding-inline: 80px; }
+    }
+
+    @media (max-width: 600px) {
+      .specimen-grid { grid-template-columns: 1fr; }
+      .composite-viewport { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .blob {
+        animation: none;
+        transform: none;
+        will-change: auto;
+      }
+
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Organic light shapes</h1>
+      <p>每个形体由两至三个隐形球构成。三球组拥有更大的最大分离距离；组合栏按二球与三球交替排列，凹颈、凸瓣和跨组粘连均由球距自然生成。</p>
+    </header>
+
+    <section class="specimen-grid" aria-label="六个有机光源形体">
+      <article class="specimen"><div class="specimen-meta"><span>2-ball · horizontal</span><span>156 × 96 · 74%</span></div><div class="specimen-stage"><span class="blob blob-1"></span></div></article>
+      <article class="specimen"><div class="specimen-meta"><span>2-ball · vertical</span><span>112 × 148 · 38%</span></div><div class="specimen-stage"><span class="blob blob-2"></span></div></article>
+      <article class="specimen"><div class="specimen-meta"><span>2-ball · diagonal</span><span>174 × 108 · 58%</span></div><div class="specimen-stage"><span class="blob blob-3"></span></div></article>
+      <article class="specimen"><div class="specimen-meta"><span>3-ball · triangle</span><span>126 × 156 · 70%</span></div><div class="specimen-stage"><span class="blob blob-4"></span></div></article>
+      <article class="specimen"><div class="specimen-meta"><span>3-ball · chain</span><span>160 × 94 · 45%</span></div><div class="specimen-stage"><span class="blob blob-5"></span></div></article>
+      <article class="specimen"><div class="specimen-meta"><span>3-ball · L-cluster</span><span>118 × 142 · 64%</span></div><div class="specimen-stage"><span class="blob blob-6"></span></div></article>
+    </section>
+
+    <section class="composite-section">
+      <h2>Metaball composite</h2>
+      <div class="composite-viewport">
+        <div class="composite-field" aria-label="融球组合预览">
+          <span class="blob blob-1"></span><span class="blob blob-4"></span><span class="blob blob-2"></span>
+          <span class="blob blob-5"></span><span class="blob blob-3"></span><span class="blob blob-6"></span>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    const blobs = [
+      { balls: [
+        { cx: 70, cy: 80, r: 46, x: [0, 24, 60, 38, -14, -8, 0], y: [0, -18, 6, 22, 13, -9, 0], duration: 8.6, delay: -4.1 },
+        { cx: 130, cy: 80, r: 44, x: [0, -22, -60, -34, 16, 9, 0], y: [0, 17, -5, -20, -12, 11, 0], duration: 9.1, delay: -5.3 },
+      ] },
+      { balls: [
+        { cx: 100, cy: 54, r: 43, x: [0, -20, 8, 22, 13, -15, 0], y: [0, 24, 54, 35, -13, -9, 0], duration: 8.9, delay: -5.2 },
+        { cx: 100, cy: 108, r: 47, x: [0, 18, -9, -20, -12, 14, 0], y: [0, -22, -54, -32, 15, 10, 0], duration: 9.4, delay: -2.8 },
+      ] },
+      { balls: [
+        { cx: 68, cy: 59, r: 45, x: [0, 29, 64, 43, -13, -8, 0], y: [0, 5, 42, 54, 18, -16, 0], duration: 9.2, delay: -4.5 },
+        { cx: 132, cy: 101, r: 48, x: [0, -27, -64, -40, 15, 9, 0], y: [0, -7, -42, -51, -16, 18, 0], duration: 9.8, delay: -5.4 },
+      ] },
+      { motionScale: 1.25, balls: [
+        { cx: 100, cy: 45, r: 41, x: [0, -18, -38, 0, 38, 20, 0], y: [0, 25, 60, 53, 61, 28, 0], duration: 9.7, delay: -3.6 },
+        { cx: 62, cy: 105, r: 45, x: [0, 34, 76, 57, 38, 14, 0], y: [0, -12, 1, -29, -60, -32, 0], duration: 10.1, delay: -4.8 },
+        { cx: 138, cy: 106, r: 43, x: [0, -18, -38, -57, -76, -38, 0], y: [0, -28, -61, -33, -1, 14, 0], duration: 10.5, delay: -6.2 },
+      ] },
+      { motionScale: 1.25, balls: [
+        { cx: 47, cy: 82, r: 41, x: [0, 24, 53, 78, 106, 49, 0], y: [0, -18, -5, 13, 1, 17, 0], duration: 9.3, delay: -3.7 },
+        { cx: 100, cy: 77, r: 37, x: [0, 28, 53, 25, -53, -27, 0], y: [0, 16, 6, -15, 5, -14, 0], duration: 9.8, delay: -6.1 },
+        { cx: 153, cy: 83, r: 40, x: [0, -27, -53, -80, -106, -51, 0], y: [0, -15, -6, 14, -1, 16, 0], duration: 10.2, delay: -2.2 },
+      ] },
+      { motionScale: 1.25, balls: [
+        { cx: 66, cy: 52, r: 41, x: [0, 7, 2, 35, 64, 30, 0], y: [0, 31, 59, 62, 53, 19, 0], duration: 9.6, delay: -5.4 },
+        { cx: 68, cy: 111, r: 45, x: [0, 31, 62, 31, -2, -12, 0], y: [0, -18, -6, -35, -59, -28, 0], duration: 10, delay: -4.9 },
+        { cx: 130, cy: 105, r: 42, x: [0, -32, -64, -63, -62, -30, 0], y: [0, -26, -53, -25, 6, 15, 0], duration: 10.4, delay: -7.3 },
+      ] },
+    ];
+
+    const metaballKeyTimes = '0;0.16;0.33;0.5;0.67;0.84;1';
+    const metaballKeySplines = Array(6).fill('0.37 0 0.63 1').join(';');
+    const metaballLinearScale = Math.SQRT2;
+    const metaballDurationScale = 1.4;
+    const buildAxisValues = (origin, offsets, motionScale = 1) => (
+      offsets.map((offset) => origin + offset * motionScale).join(';')
+    );
+
+    document.querySelectorAll('.blob').forEach((blob) => {
+      const svg = document.createElementNS(svgNamespace, 'svg');
+      svg.setAttribute('viewBox', '0 0 200 160');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      svg.setAttribute('focusable', 'false');
+      const shapeClass = [...blob.classList].find((token) => /^blob-[1-6]$/.test(token));
+      const shapeIndex = Number(shapeClass?.split('-')[1] ?? 1) - 1;
+      const config = blobs[shapeIndex];
+      const instanceIndex = [...document.querySelectorAll('.blob')].indexOf(blob);
+      const filterId = `preview-metaball-${instanceIndex}`;
+      const definitions = document.createElementNS(svgNamespace, 'defs');
+      const filter = document.createElementNS(svgNamespace, 'filter');
+      filter.setAttribute('id', filterId);
+      filter.setAttribute('x', '-35%');
+      filter.setAttribute('y', '-35%');
+      filter.setAttribute('width', '170%');
+      filter.setAttribute('height', '170%');
+      const blur = document.createElementNS(svgNamespace, 'feGaussianBlur');
+      blur.setAttribute('in', 'SourceGraphic');
+      blur.setAttribute('stdDeviation', '7.5');
+      blur.setAttribute('result', 'blur');
+      const matrix = document.createElementNS(svgNamespace, 'feColorMatrix');
+      matrix.setAttribute('in', 'blur');
+      matrix.setAttribute('mode', 'matrix');
+      matrix.setAttribute('values', '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10');
+      filter.append(blur, matrix);
+      definitions.append(filter);
+      svg.append(definitions);
+
+      const group = document.createElementNS(svgNamespace, 'g');
+      group.setAttribute('filter', `url(#${filterId})`);
+      group.setAttribute('transform', `translate(100 80) scale(${metaballLinearScale}) translate(-100 -80)`);
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      config.balls.forEach((ball) => {
+        const circle = document.createElementNS(svgNamespace, 'circle');
+        circle.setAttribute('cx', ball.cx);
+        circle.setAttribute('cy', ball.cy);
+        circle.setAttribute('r', ball.r);
+
+        if (!reduceMotion) {
+          ['x', 'y'].forEach((axis) => {
+            const animate = document.createElementNS(svgNamespace, 'animate');
+            const origin = axis === 'x' ? ball.cx : ball.cy;
+            animate.setAttribute('attributeName', axis === 'x' ? 'cx' : 'cy');
+            animate.setAttribute('values', buildAxisValues(origin, ball[axis], config.motionScale));
+            animate.setAttribute('dur', `${ball.duration * metaballDurationScale}s`);
+            animate.setAttribute('begin', `${ball.delay}s`);
+            animate.setAttribute('repeatCount', 'indefinite');
+            animate.setAttribute('calcMode', 'spline');
+            animate.setAttribute('keyTimes', metaballKeyTimes);
+            animate.setAttribute('keySplines', metaballKeySplines);
+            circle.append(animate);
+          });
+        }
+        group.append(circle);
+      });
+
+      svg.append(group);
+      blob.append(svg);
+    });
+  </script>
+</body>
+</html>

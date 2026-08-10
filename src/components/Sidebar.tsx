@@ -101,7 +101,7 @@ export default function Sidebar({
   }, [prefillTrigger]);
 
   return (
-    <aside className="w-full h-full flex flex-col bg-conversation-surface">
+    <aside className="w-full h-full flex flex-col overflow-hidden rounded-region bg-conversation-surface">
       <div
         data-sidebar-message-region
         className="w-full flex-1 min-h-0 flex flex-col overflow-hidden rounded-t-region rounded-b-none border border-border"

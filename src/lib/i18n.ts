@@ -15,6 +15,7 @@ const S: Record<string, readonly [string, string]> = {
   retry:        ['重试', 'Retry'],
   loading:      ['加载中…', 'Loading…'],
   play:         ['播放', 'Play'],
+  playbackProgress: ['播放进度', 'Playback progress'],
 
   // Primary navigation
   primaryNavigation: ['一级菜单', 'Primary navigation'],
