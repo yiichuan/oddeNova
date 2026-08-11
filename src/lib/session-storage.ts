@@ -1,5 +1,6 @@
 import { openDB as idbOpenDB, type IDBPDatabase } from 'idb';
 import type { Session } from '../hooks/useSessions';
+import { isStepwiseChoice } from '../services/suggestions';
 
 export const DB_NAME = 'oddenova-db';
 export const DB_VERSION = 3;
@@ -29,7 +30,32 @@ function currentSessionSettingKey(ownerKey: string): string {
 
 export function normalizeSession(session: StoredSession): Session {
   const { mode: _ignoredMode, ownerKey: _ignoredOwner, ...normalized } = session;
-  return normalized;
+  const failedRevisionIds = new Set(
+    normalized.revisions
+      ?.filter((revision) => revision.playbackStatus === 'failed')
+      .map((revision) => revision.id) ?? [],
+  );
+  const messages = normalized.messages.map((message) => {
+    if (
+      message.role !== 'assistant'
+      || !message.code
+      || message.inputMode !== undefined
+      || (message.revisionId !== undefined && failedRevisionIds.has(message.revisionId))
+    ) {
+      return message;
+    }
+    return {
+      ...message,
+      inputMode: isStepwiseChoice(message.content) ? 'choice' as const : 'normal' as const,
+    };
+  });
+  const inferredInputMode = [...messages].reverse().find(
+    (message) => message.role === 'assistant' && message.inputMode !== undefined,
+  )?.inputMode;
+
+  return inferredInputMode === undefined
+    ? normalized
+    : { ...normalized, messages, inputMode: normalized.inputMode ?? inferredInputMode };
 }
 
 function withOwner(session: Session, ownerKey: string): StoredSession {

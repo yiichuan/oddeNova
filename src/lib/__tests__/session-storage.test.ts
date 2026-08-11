@@ -228,6 +228,83 @@ describe('session-storage owner namespaces', () => {
 });
 
 describe('normalizeSession', () => {
+  it('migrates an older numbered-option response into persisted choice mode', async () => {
+    const { normalizeSession } = await import('../session-storage');
+    const legacy = {
+      id: 'legacy-choice',
+      title: '夏日旋律',
+      messages: [{
+        id: 'assistant-1',
+        role: 'assistant' as const,
+        content: [
+          '先写了一小段夏日旋律。这个方向对吗？',
+          '',
+          '1. 加入鼓和贝斯',
+          '2. 换个方向',
+          '3. 按这个方向写完',
+          '',
+          '回复序号，或者直接说出你的想法。',
+        ].join('\n'),
+        code: 'note("c3")',
+        timestamp: 1,
+      }],
+      code: 'note("c3")',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    const normalized = normalizeSession(legacy);
+
+    expect(normalized.inputMode).toBe('choice');
+    expect(normalized.messages[0].inputMode).toBe('choice');
+  });
+
+  it('does not let a later playback failure override a migrated choice mode', async () => {
+    const { normalizeSession } = await import('../session-storage');
+    const legacy = {
+      id: 'legacy-choice-failure',
+      title: '夏日旋律',
+      messages: [
+        {
+          id: 'assistant-choice',
+          role: 'assistant' as const,
+          content: [
+            '先写了一小段夏日旋律。这个方向对吗？',
+            '',
+            '1. 加入鼓和贝斯',
+            '2. 换个方向',
+            '',
+            '回复序号，或者直接说出你的想法。',
+          ].join('\n'),
+          code: 'note("c3")',
+          revisionId: 'rev-choice',
+          timestamp: 1,
+        },
+        {
+          id: 'assistant-failed',
+          role: 'assistant' as const,
+          content: '代码无法运行',
+          code: 'note(bad)',
+          revisionId: 'rev-failed',
+          timestamp: 2,
+        },
+      ],
+      revisions: [
+        { id: 'rev-choice', beforeCode: '', afterCode: 'note("c3")', playbackStatus: 'played' as const, createdAt: 1 },
+        { id: 'rev-failed', beforeCode: 'note("c3")', afterCode: 'note(bad)', playbackStatus: 'failed' as const, createdAt: 2 },
+      ],
+      code: 'note(bad)',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    const normalized = normalizeSession(legacy);
+
+    expect(normalized.inputMode).toBe('choice');
+    expect(normalized.messages[0].inputMode).toBe('choice');
+    expect(normalized.messages[1].inputMode).toBeUndefined();
+  });
+
   it('ignores legacy mode fields when reading saved sessions', async () => {
     const { normalizeSession } = await import('../session-storage');
     const legacy = {

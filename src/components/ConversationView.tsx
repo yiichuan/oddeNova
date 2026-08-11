@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import type { CodeRevision } from '../hooks/useSessions';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -179,6 +179,25 @@ function parseInlineMarkdown(text: string, keyPrefix: string, tone: MarkdownTone
   return nodes;
 }
 
+// ChatInput.doSubmit() always .trim()s before a user message is stored, so a
+// stored user message's content can never legitimately start or end with a
+// newline. Confirmed live (checked the actual DOM text of a reported bubble):
+// the stored content has zero embedded `\n`, yet a native double-click +
+// Ctrl+C from the rendered bubble still pastes with trailing blank lines —
+// browsers serialize a copied Selection to plain text by walking block-level
+// element boundaries, not by reading the text node verbatim, and add a
+// trailing break past the end of the last block. Strip only leading/trailing
+// newline runs (never interior ones — a Shift+Enter multi-line message must
+// still copy with its real line breaks intact).
+function handleUserBubbleCopy(e: ClipboardEvent<HTMLElement>) {
+  const selected = window.getSelection()?.toString();
+  if (!selected) return;
+  const trimmed = selected.replace(/^\n+/, '').replace(/\n+$/, '');
+  if (trimmed === selected) return;
+  e.preventDefault();
+  e.clipboardData.setData('text/plain', trimmed);
+}
+
 function MarkdownText({ content, tone = 'default' }: { content: string; tone?: MarkdownTone }) {
   const lines = content.split('\n');
   const blocks: ReactNode[] = [];
@@ -284,7 +303,9 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
       blocks.push(
         <ul key={`md-ul-${key++}`} className="my-1 list-disc space-y-0.5 pl-4">
           {items.map((item, idx) => (
-            <li key={`md-ul-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ul-${key}-${idx}`, tone)}</li>
+            <li key={`md-ul-${key}-${idx}`} className="whitespace-pre-wrap break-words">
+              {parseInlineMarkdown(item, `md-ul-${key}-${idx}`, tone)}
+            </li>
           ))}
         </ul>,
       );
@@ -318,7 +339,9 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
       blocks.push(
         <ol key={`md-ol-${key++}`} className="my-1 list-decimal space-y-0.5 pl-4">
           {items.map((item, idx) => (
-            <li key={`md-ol-${key}-${idx}`}>{parseInlineMarkdown(item, `md-ol-${key}-${idx}`, tone)}</li>
+            <li key={`md-ol-${key}-${idx}`} className="whitespace-pre-wrap break-words">
+              {parseInlineMarkdown(item, `md-ol-${key}-${idx}`, tone)}
+            </li>
           ))}
         </ol>,
       );
@@ -335,7 +358,7 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
         i += 1;
       }
       blocks.push(
-        <blockquote key={`md-quote-${key++}`} className="my-1 border-l border-diff-accent/30 pl-3 text-text-secondary">
+        <blockquote key={`md-quote-${key++}`} className="my-1 whitespace-pre-wrap break-words border-l border-diff-accent/30 pl-3 text-text-secondary">
           {parseInlineMarkdown(quoted.join('\n'), `md-quote-${key}`, tone)}
         </blockquote>,
       );
@@ -363,7 +386,14 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
     );
   }
 
-  return <div data-markdown-text className="min-w-0 max-w-full space-y-2 break-words [overflow-wrap:anywhere]">{blocks}</div>;
+  return (
+    <div
+      data-markdown-text
+      className="min-w-0 max-w-full space-y-2 break-words [overflow-wrap:anywhere]"
+    >
+      {blocks}
+    </div>
+  );
 }
 
 // User message text with a "show more / less" affordance. Long messages are
@@ -1164,6 +1194,7 @@ export default function ConversationView({
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}
+                onCopy={handleUserBubbleCopy}
                 {...getMobileRollbackBubbleProps(msg.id)}
               >
                 <UserMessageBubble content={msg.content} />

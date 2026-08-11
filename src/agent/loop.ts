@@ -27,6 +27,9 @@ import {
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
 export type ThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
 
+/** User-selected reasoning depth for a compose-intent turn (see CONTEXT.md: Thinking level). */
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'extreme';
+
 // OpenAI ChatCompletion message shape (only the bits we use).
 export interface ChatMsg {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -57,7 +60,9 @@ export interface LLMCaller {
     onReasoningDelta?: (delta: string) => void,
     signal?: AbortSignal,
     /** When false, suppress the reasoning/thinking chain for this call (default true). */
-    enableThinking?: boolean
+    enableThinking?: boolean,
+    /** How deep to think when enabled; ignored when enableThinking is false (default 'medium'). */
+    thinkingLevel?: ThinkingLevel
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
@@ -86,6 +91,7 @@ export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
 export interface RunAgentOptions {
   initialCode: string;
   instruction: string;
+  locale: 'zh' | 'en';
   systemPrompt: string;
   llm: LLMCaller;
   maxIter?: number;
@@ -95,6 +101,8 @@ export interface RunAgentOptions {
   conversationHistory?: ConversationTurn[];
   /** When false, the model's reasoning/thinking chain is disabled for this run (default true). */
   enableThinking?: boolean;
+  /** How deep to think when enabled; ignored when enableThinking is false (default 'medium'). */
+  thinkingLevel?: ThinkingLevel;
 }
 
 export interface TokenUsage {
@@ -142,6 +150,7 @@ interface ChatWithToolsRetryOptions {
   onProgress?: (event: ProgressEvent) => void;
   signal?: AbortSignal;
   enableThinking: boolean;
+  thinkingLevel: ThinkingLevel;
 }
 
 async function chatWithToolsWithRetry(
@@ -155,6 +164,7 @@ async function chatWithToolsWithRetry(
     onProgress,
     signal,
     enableThinking,
+    thinkingLevel,
   } = opts;
 
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt++) {
@@ -177,6 +187,7 @@ async function chatWithToolsWithRetry(
         makeProgressDelta(onProgress, 'reasoning_delta', attemptId, markPartial),
         signal,
         enableThinking,
+        thinkingLevel,
       );
 
       if (!response.content?.trim() && response.toolCalls.length === 0) {
@@ -244,6 +255,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   const {
     initialCode,
     instruction,
+    locale,
     systemPrompt,
     llm,
     maxIter = DEFAULT_MAX_ITER,
@@ -252,13 +264,14 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     signal,
     conversationHistory,
     enableThinking = true,
+    thinkingLevel = 'medium',
   } = opts;
 
   const state: AgentState = {
     code: initialCode || '',
     finalCode: null,
   };
-  const isZh = /[一-龥]/.test(instruction);
+  const isZh = locale === 'zh';
   const ctx: ToolContext = { state, isZh };
   let userTurn: string;
   if (initialCode) {
@@ -316,6 +329,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       onProgress,
       signal,
       enableThinking,
+      thinkingLevel,
     });
     if (resp.usage) lastUsage = resp.usage;
 

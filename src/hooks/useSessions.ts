@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChatMessage, ProgressKind } from './useChat';
+import type { ChatMessage, InputMode, ProgressKind } from './useChat';
 import {
   openDB,
   getAllSessions,
@@ -56,6 +56,8 @@ export interface Session {
   title: string;
   messages: ChatMessage[];
   code: string;
+  /** Input behavior established by the latest successful Agent turn. */
+  inputMode?: InputMode;
   externalSource?: ExternalSessionSource;
   /** Optional for backward compatibility with sessions saved before revisions existed. */
   revisions?: CodeRevision[];
@@ -197,6 +199,36 @@ function revisionsReferencedBy(messages: ChatMessage[], revisions?: CodeRevision
   return revisions.filter((revision) => referenced.has(revision.id));
 }
 
+function importedRevisions(messages: ChatMessage[], revisions?: CodeRevision[]): CodeRevision[] | undefined {
+  if (revisions !== undefined) return revisionsReferencedBy(messages, revisions);
+
+  let beforeCode = '';
+  const reconstructed: CodeRevision[] = [];
+  const seen = new Set<string>();
+  for (const message of messages) {
+    if (message.role !== 'assistant' || message.code === undefined) continue;
+    if (message.revisionId && !seen.has(message.revisionId)) {
+      reconstructed.push({
+        id: message.revisionId,
+        beforeCode,
+        afterCode: message.code,
+        playbackStatus: 'not_attempted',
+        createdAt: message.timestamp,
+      });
+      seen.add(message.revisionId);
+    }
+    beforeCode = message.code;
+  }
+
+  return reconstructed.length > 0 ? reconstructed : undefined;
+}
+
+function inputModeReferencedBy(messages: ChatMessage[]): InputMode {
+  return [...messages].reverse().find(
+    (message) => message.role === 'assistant' && message.inputMode !== undefined,
+  )?.inputMode ?? 'normal';
+}
+
 function deriveTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser) return t('newSessionTitle');
@@ -211,6 +243,7 @@ function makeEmptySession(): Session {
     title: t('newSessionTitle'),
     messages: [makeGreetingMessage()],
     code: '',
+    inputMode: 'normal',
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -232,14 +265,25 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
   const messages = [...before, newMsg];
   const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
   const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
-  return { ...s, messages, revisions: revisionsReferencedBy(messages, s.revisions), title };
+  return {
+    ...s,
+    messages,
+    revisions: revisionsReferencedBy(messages, s.revisions),
+    inputMode: inputModeReferencedBy(messages),
+    title,
+  };
 }
 
 export function applyTruncate(s: Session, targetMessageId: string): Session {
   const index = s.messages.findIndex((m) => m.id === targetMessageId);
   if (index === -1) return s;
   const messages = s.messages.slice(0, index);
-  return { ...s, messages, revisions: revisionsReferencedBy(messages, s.revisions) };
+  return {
+    ...s,
+    messages,
+    revisions: revisionsReferencedBy(messages, s.revisions),
+    inputMode: inputModeReferencedBy(messages),
+  };
 }
 
 export function applyRefreshEmptySessionForReuse(s: Session, now: number): Session {
@@ -247,6 +291,8 @@ export function applyRefreshEmptySessionForReuse(s: Session, now: number): Sessi
     ...s,
     title: t('newSessionTitle'),
     messages: [makeGreetingMessage()],
+    inputMode: 'normal',
+    suggestions: undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -739,7 +785,13 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const addAssistantMessage = useCallback(
-    (content: string, code?: string, sessionId?: string, revisionDraft?: CodeRevisionDraft): void => {
+    (
+      content: string,
+      code?: string,
+      sessionId?: string,
+      revisionDraft?: CodeRevisionDraft,
+      inputMode?: InputMode,
+    ): void => {
       const apply = getApply(sessionId);
       apply((s) => {
         const now = Date.now();
@@ -748,6 +800,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           : undefined;
         return {
           ...s,
+          inputMode: inputMode ?? s.inputMode,
           revisions: revision ? [...(s.revisions ?? []), revision] : s.revisions,
           messages: [
             ...s.messages,
@@ -757,6 +810,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
               content,
               code,
               revisionId: revision?.id,
+              inputMode,
               timestamp: now,
             },
           ],
@@ -1000,7 +1054,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         title: `${payload.title}`,
         messages: payload.messages,
         code: payload.code,
-        revisions: revisionsReferencedBy(payload.messages, payload.revisions),
+        revisions: importedRevisions(payload.messages, payload.revisions),
         createdAt: now,
         updatedAt: now,
       };
@@ -1136,6 +1190,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         title: `${session.title}${t('branchSuffix')}`,
         messages: sliced,
         code,
+        inputMode: inputModeReferencedBy(sliced),
         revisions: revisionsReferencedBy(sliced, session.revisions),
         createdAt: now,
         updatedAt: now,

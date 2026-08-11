@@ -4,12 +4,13 @@ const SHARE_TITLE = 'oddeNova | Vibe Your Music, Live';
 const SHARE_IMAGE = 'https://www.oddenova.com/oddenova-og.png?v=c1189f30';
 
 const SHARE_DESCRIPTIONS: Record<ShareLocale, string> = {
-  'zh-CN': '即兴 vibe 音乐，让灵感，自由发声',
-  en: 'Plain text → Rich music',
+  'zh-CN': 'oddeNova 即兴 vibe 音乐，让灵感，自由发声',
+  en: 'oddeNova Plain text → Rich music',
 };
 
 interface RenderShareHtmlOptions {
   locale?: ShareLocale;
+  title?: string;
   url: string;
 }
 
@@ -38,15 +39,16 @@ function replaceMeta(html: string, selector: string, value: string): string {
 export function renderShareHtml(html: string, options: RenderShareHtmlOptions): string {
   const locale = normalizeLocale(options.locale);
   const description = SHARE_DESCRIPTIONS[locale];
+  const title = options.title?.trim() || SHARE_TITLE;
 
   let out = html.replace(/<html\b[^>]*>/i, `<html lang="${locale}">`);
-  out = out.replace(/<title>.*?<\/title>/i, `<title>${SHARE_TITLE}</title>`);
+  out = out.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlAttr(title)}</title>`);
   out = replaceMeta(out, 'name="description"', description);
-  out = replaceMeta(out, 'property="og:title"', SHARE_TITLE);
+  out = replaceMeta(out, 'property="og:title"', title);
   out = replaceMeta(out, 'property="og:description"', description);
   out = replaceMeta(out, 'property="og:url"', options.url);
   out = replaceMeta(out, 'property="og:image"', SHARE_IMAGE);
-  out = replaceMeta(out, 'name="twitter:title"', SHARE_TITLE);
+  out = replaceMeta(out, 'name="twitter:title"', title);
   out = replaceMeta(out, 'name="twitter:description"', description);
   out = replaceMeta(out, 'name="twitter:image"', SHARE_IMAGE);
   return out;

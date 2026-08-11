@@ -11,7 +11,7 @@ import { GITHUB_URL as githubUrl, LEARN_URL as learnUrl } from '../lib/external-
 
 // ─── Share ───────────────────────────────────────────────────────────────────
 
-type ShareState = 'idle' | 'loading' | 'done' | 'error';
+type ShareState = 'idle' | 'loading' | 'copied' | 'shared' | 'error';
 
 interface ShareButtonProps {
   session: Session | null;
@@ -36,17 +36,29 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
         title,
         code: shareCode,
         messages: shareMessages,
+        revisions: session?.revisions,
         locale: zh ? 'zh-CN' : 'en',
       });
       const url = `${window.location.origin}/s/${shareId}`;
-      const shareResult = await shareUrl(url);
+      const sessionTitle = session?.title?.trim();
+      const sharedTitle = sessionTitle && sessionTitle !== t('newSessionTitle')
+        ? sessionTitle
+        : t('sharedMusicCreation');
+      const brandedTitle = zh
+        ? `【oddeNova】${sharedTitle}`
+        : `[oddeNova] ${sharedTitle}`;
+      const shareResult = await shareUrl(url, brandedTitle);
+      if (shareResult === 'cancelled') {
+        setState('idle');
+        return;
+      }
       const shareMethod: ShareMethod = shareResult === 'shared'
         ? 'native'
         : shareResult === 'shown'
           ? 'prompt'
           : 'clipboard';
       trackShareCompleted({ share_method: shareMethod });
-      setState('done');
+      setState(shareResult === 'shared' ? 'shared' : 'copied');
       onShared?.();
       setTimeout(() => setState('idle'), 2000);
     } catch (error) {
@@ -85,10 +97,10 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
       >
         {t('share')}
       </button>
-      {state === 'done' && (
+      {(state === 'copied' || state === 'shared') && (
         <div className="absolute right-0 top-7 z-50">
           <span className="text-text-secondary text-xs whitespace-nowrap">
-            {t('linkCopied')}
+            {state === 'shared' ? t('shared') : t('shareDetailsCopied')}
           </span>
         </div>
       )}

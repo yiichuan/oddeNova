@@ -19,7 +19,9 @@ jobs:
         with:
           script: |
             // 保护分支（不删除）
-            const PROTECTED = new Set(['main', 'release_preview']);
+            // video/version0 固定指向录制 chapter-01 视频所用的 App 版本，
+            // 按设计长期停留在历史提交上，因此始终会满足"90 天无活动"的删除条件
+            const PROTECTED = new Set(['main', 'release_preview', 'video/version0']);
 
             const cutoff = new Date();
             cutoff.setDate(cutoff.getDate() - 90);

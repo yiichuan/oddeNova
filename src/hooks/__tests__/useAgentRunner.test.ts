@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { runAgentTurn } from '../useAgentRunner';
-import type { AgentTurnDeps, AgentTurnInput } from '../useAgentRunner';
+import { createAgentTurnDeps, runAgentTurn } from '../useAgentRunner';
+import type { AgentTurnDeps, AgentTurnInput, UseAgentRunnerConfig } from '../useAgentRunner';
 import type { RunAgentResult, ConversationTurn } from '../../services/llm';
 import { t } from '../../lib/i18n';
 
@@ -94,7 +94,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    });
+    }, 'normal');
     expect(deps.checkpointSession).toHaveBeenCalledOnce();
     expect(deps.checkpointSession).toHaveBeenCalledWith('S1');
   });
@@ -125,7 +125,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'not_attempted',
-    });
+    }, 'normal');
     expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
@@ -147,7 +147,29 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    });
+    }, 'normal');
+  });
+
+  it('marks a successful stepwise numbered response as choice input mode', async () => {
+    const explanation = [
+      '先写了一段明亮的旋律。这个方向对吗？',
+      '',
+      '1. 加入鼓和贝斯',
+      '2. 换个方向',
+      '3. 按这个方向写完',
+      '',
+      '回复序号，或者直接说出你的想法。',
+    ].join('\n');
+    const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ explanation })) });
+
+    await runAgentTurn(makeInput(), deps);
+
+    expect(deps.setCommitSuggestions).not.toHaveBeenCalled();
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith(explanation, 'note("c3")', 'S1', {
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'played',
+    }, 'choice');
   });
 
   it('finalizes the streamed assistant message when the result carries no code', async () => {
@@ -227,7 +249,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'OVERRIDE',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    });
+    }, 'normal');
   });
 
   it('forwards moodContext to runAgent', async () => {
@@ -408,5 +430,33 @@ describe('runAgentTurn', () => {
 
     expect(deps.play).toHaveBeenCalledWith('note("c3")');
     expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
+  });
+});
+
+describe('useAgentRunner production adapter', () => {
+  it('forwards the successful response input mode into session persistence', () => {
+    const addAssistantMessage = vi.fn();
+    const config = {
+      strudel: {},
+      sessions: { addAssistantMessage },
+      currentCode: '',
+      abortControllersRef: { current: new Map() },
+      currentIdRef: { current: 'S1' },
+      setLoadingSessions: vi.fn(),
+      setCommitSuggestions: vi.fn(),
+      setRollbackPrefill: vi.fn(),
+      makeProgressHandler: () => () => {},
+    } as unknown as UseAgentRunnerConfig;
+
+    const deps = createAgentTurnDeps(config);
+    deps.addAssistantMessage('请选择', 'note("c3")', 'S1', undefined, 'choice');
+
+    expect(addAssistantMessage).toHaveBeenCalledWith(
+      '请选择',
+      'note("c3")',
+      'S1',
+      undefined,
+      'choice',
+    );
   });
 });

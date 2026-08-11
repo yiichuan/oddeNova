@@ -1,6 +1,8 @@
-export const zh: boolean = (() => {
+export function isZh(): boolean {
   try { return navigator.language.startsWith('zh'); } catch { return false; }
-})();
+}
+
+export const zh: boolean = isZh();
 
 const S: Record<string, readonly [string, string]> = {
   // Common
@@ -77,7 +79,9 @@ const S: Record<string, readonly [string, string]> = {
   sharing:         ['分享中…', 'Sharing…'],
   shareFailed:     ['分享失败', 'Share failed'],
   shareFailedRetry:['分享失败，请重试', 'Share failed, please retry'],
-  linkCopied:      ['链接已复制', 'Link copied'],
+  shareDetailsCopied: ['分享信息已复制', 'Share details copied'],
+  shared:          ['已分享', 'Shared'],
+  sharedMusicCreation: ['分享了一段音乐创作', 'Shared a music creation'],
   export:          ['导出', 'Export'],
   exportWav:       ['导出 WAV', 'Export WAV'],
   learn:           ['学习', 'Learn'],
@@ -140,7 +144,9 @@ const S: Record<string, readonly [string, string]> = {
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
+  choiceInputPlaceholder: ['回复序号，或直接说出你的想法...', 'Reply with a number or describe your idea...'],
   tabToFill:           ['按 Tab 填入', 'Tab to use'],
+  enterToFill:         ['按 ⏎ 填入', '⏎ to use'],
   notInitialized:      ['未初始化', 'Not initialized'],
   restartEngine:       ['重启引擎', 'Restart engine'],
   engineInitializing:  ['初始化中...', 'Initializing...'],
@@ -232,6 +238,13 @@ const S: Record<string, readonly [string, string]> = {
   clickToResume:   ['点击播放继续', 'Click to resume'],
   emptyCode:       ['代码为空', 'Code is empty'],
   copyShareLink:   ['复制分享链接', 'Copy share link'],
+
+  // Thinking level
+  thinkingLevel:        ['思考强度', 'Thinking level'],
+  thinkingLevelLow:     ['低', 'Low'],
+  thinkingLevelMedium:  ['中', 'Medium'],
+  thinkingLevelHigh:    ['高', 'High'],
+  thinkingLevelExtreme: ['极高', 'Extreme'],
 };
 
 export function t(key: string): string {

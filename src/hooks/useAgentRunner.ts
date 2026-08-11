@@ -4,9 +4,10 @@ import type { useStrudel } from './useStrudel';
 import type { useSessions, CodeRevisionDraft, TokenStats } from './useSessions';
 import { runAgent } from '../services/llm';
 import type { ConversationTurn, ProgressEvent } from '../services/llm';
+import type { InputMode } from './useChat';
 import { conversationHistoryFromMessages } from '../lib/conversation-history';
 import { commitPlayback } from '../lib/playback-commit';
-import { parseNextSteps, stripNextSteps } from '../services/suggestions';
+import { isStepwiseChoice, parseNextSteps, stripNextSteps } from '../services/suggestions';
 import { getActiveModelConfig } from '../services/llm-config';
 import {
   trackAgentTurnFinished,
@@ -70,6 +71,7 @@ export interface AgentTurnDeps {
     code: string | undefined,
     sessionId: string,
     revision?: CodeRevisionDraft,
+    inputMode?: InputMode,
   ) => void;
   finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
@@ -191,8 +193,9 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
             deps.setCommitSuggestions(nextSteps);
             deps.setSessionSuggestions(nextSteps, result.code, sessionId);
           }
+          const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
           if (revision) {
-            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
+            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode);
           } else {
             deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
           }
@@ -213,7 +216,8 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
           ? { beforeCode, afterCode: result.code, playbackStatus: 'not_attempted' }
           : undefined;
         if (revision) {
-          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
+          const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
+          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode);
         } else {
           deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
         }
@@ -268,6 +272,67 @@ export interface UseAgentRunnerConfig {
   makeProgressHandler: (sessionId: string) => (e: ProgressEvent) => void;
 }
 
+export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
+  const {
+    strudel,
+    sessions,
+    currentCode,
+    abortControllersRef,
+    currentIdRef,
+    setLoadingSessions,
+    setCommitSuggestions,
+    setRollbackPrefill,
+    makeProgressHandler,
+  } = cfg;
+
+  return {
+    runAgent,
+    makeProgressHandler,
+    play: (code) => strudel.play(code),
+    getStrudelError: () => strudel.error,
+    setStrudelError: (msg) => strudel.setError(msg),
+    engineStatus: () => strudel.engineStatus,
+    getCurrentId: () => sessions.currentId,
+    isCurrentSession: (id) => id === currentIdRef.current,
+    getCurrentCode: () => currentCode,
+    snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
+    addUserMessage: (text) => sessions.addUserMessage(text),
+    addAssistantMessage: (text, code, id, revision, inputMode) =>
+      sessions.addAssistantMessage(text, code, id, revision, inputMode),
+    finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
+    setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
+    updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
+    setSessionSuggestions: (items, code, id) => sessions.setSuggestions(items, code, id),
+    checkpointSession: (id) => sessions.checkpointSession(id),
+    beginLoading: (id) => {
+      setLoadingSessions((prev) => new Set(prev).add(id));
+      const controller = new AbortController();
+      abortControllersRef.current.set(id, controller);
+      return controller;
+    },
+    endLoading: (id, controller) => {
+      if (abortControllersRef.current.get(id) === controller) {
+        abortControllersRef.current.delete(id);
+        setLoadingSessions((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    isCurrentController: (id, controller) => abortControllersRef.current.get(id) === controller,
+    resetSuggestions: () => setCommitSuggestions(null),
+    setCommitSuggestions: (steps) => setCommitSuggestions(steps),
+    clearRollbackPrefill: () => setRollbackPrefill(''),
+    getModelConfig: () => {
+      const c = getActiveModelConfig();
+      return { provider: c.provider, model: c.model };
+    },
+    trackAgentTurnStarted,
+    trackAgentTurnFinished,
+  };
+}
+
 /**
  * Captures the stateful collaborators once and exposes a narrow `run(input)`.
  * Mirrors the pure-core + thin-hook split used by useReplay.
@@ -287,51 +352,17 @@ export function useAgentRunner(cfg: UseAgentRunnerConfig): (input: AgentTurnInpu
 
   return useCallback(
     (input: AgentTurnInput) => {
-      const deps: AgentTurnDeps = {
-        runAgent,
+      const deps = createAgentTurnDeps({
+        strudel,
+        sessions,
+        currentCode,
+        abortControllersRef,
+        currentIdRef,
+        setLoadingSessions,
+        setCommitSuggestions,
+        setRollbackPrefill,
         makeProgressHandler,
-        play: (code) => strudel.play(code),
-        getStrudelError: () => strudel.error,
-        setStrudelError: (msg) => strudel.setError(msg),
-        engineStatus: () => strudel.engineStatus,
-        getCurrentId: () => sessions.currentId,
-        isCurrentSession: (id) => id === currentIdRef.current,
-        getCurrentCode: () => currentCode,
-        snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
-        addUserMessage: (text) => sessions.addUserMessage(text),
-        addAssistantMessage: (text, code, id, revision) => sessions.addAssistantMessage(text, code, id, revision),
-        finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
-        setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
-        updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
-        setSessionSuggestions: (items, code, id) => sessions.setSuggestions(items, code, id),
-        checkpointSession: (id) => sessions.checkpointSession(id),
-        beginLoading: (id) => {
-          setLoadingSessions((prev) => new Set(prev).add(id));
-          const controller = new AbortController();
-          abortControllersRef.current.set(id, controller);
-          return controller;
-        },
-        endLoading: (id, controller) => {
-          if (abortControllersRef.current.get(id) === controller) {
-            abortControllersRef.current.delete(id);
-            setLoadingSessions((prev) => {
-              const next = new Set(prev);
-              next.delete(id);
-              return next;
-            });
-          }
-        },
-        isCurrentController: (id, controller) => abortControllersRef.current.get(id) === controller,
-        resetSuggestions: () => setCommitSuggestions(null),
-        setCommitSuggestions: (steps) => setCommitSuggestions(steps),
-        clearRollbackPrefill: () => setRollbackPrefill(''),
-        getModelConfig: () => {
-          const c = getActiveModelConfig();
-          return { provider: c.provider, model: c.model };
-        },
-        trackAgentTurnStarted,
-        trackAgentTurnFinished,
-      };
+      });
       return runAgentTurn(input, deps);
     },
     [

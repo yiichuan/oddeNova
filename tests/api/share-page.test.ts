@@ -73,6 +73,37 @@ describe('share-page handler', () => {
     expect(res.body).toContain('content="oddeNova | Vibe Your Music, Live"');
   });
 
+  it('renders the shared session title and localized description from the blob payload', async () => {
+    vi.mocked(list).mockResolvedValue({
+      blobs: [{ url: 'https://blob.example/shares/share123.json' }],
+    } as never);
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      if (String(input) === 'https://blob.example/shares/share123.json') {
+        return Response.json({
+          version: 1,
+          title: '雨夜里的松弛 Lo-fi',
+          code: 's("bd")',
+          messages: [],
+          sharedAt: 1_754_665_200_000,
+          locale: 'zh-CN',
+        });
+      }
+      return new Response(appShell, { status: 200 });
+    }));
+    const res = makeResponse();
+
+    await handler({
+      method: 'GET',
+      query: { id: 'share123' },
+      headers: { host: 'www.oddenova.com', 'x-forwarded-proto': 'https' },
+    } as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('property="og:title" content="雨夜里的松弛 Lo-fi"');
+    expect(res.body).toContain('property="og:description" content="oddeNova 即兴 vibe 音乐，让灵感，自由发声"');
+    expect(res.body).toContain('<title>雨夜里的松弛 Lo-fi</title>');
+  });
+
   it('does not depend on client src modules at runtime', () => {
     const source = readFileSync(fileURLToPath(new URL('../../api/share-page.ts', import.meta.url)), 'utf8');
 
