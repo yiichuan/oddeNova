@@ -25,12 +25,6 @@ import {
   type PendingSessionOperations,
 } from '../lib/session-sync-storage';
 
-export interface TokenStats {
-  promptTokens: number;
-  systemEstimate: number;
-  modelId: string;
-}
-
 export interface ExternalSessionSource {
   type: 'oddenova-strudel-skill';
   projectId: string;
@@ -61,7 +55,6 @@ export interface Session {
   externalSource?: ExternalSessionSource;
   /** Optional for backward compatibility with sessions saved before revisions existed. */
   revisions?: CodeRevision[];
-  tokenStats?: TokenStats;
   /**
    * Next-step suggestion chips, bound to the code they were generated for.
    * Persisted so a page refresh can restore them without regenerating.
@@ -168,8 +161,18 @@ function createManualSyncPresentation(options: {
 let messageId = 0;
 
 function newSessionId(): string {
-  return `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  throw new Error('crypto.randomUUID is unavailable');
 }
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+export type SessionImportPayload = Pick<Session, 'title' | 'code' | 'messages'> &
+  Partial<Pick<Session, 'id' | 'inputMode' | 'revisions' | 'suggestions' | 'externalSource' | 'createdAt' | 'updatedAt'>>;
 
 function newMessageId(): string {
   return `msg-${Date.now()}-${++messageId}`;
@@ -687,7 +690,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       if (!sessionCloudSync) return;
       if (intent === 'checkpoint') {
         manualSyncPresentation.clear(session.id);
-        void sessionCloudSync.checkpoint(session);
+        void sessionCloudSync.checkpoint(session).catch(() => undefined);
       } else if (intent === 'debounced') {
         sessionCloudSync.debounce(session);
       } else {
@@ -947,7 +950,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
             resolve();
             return previous;
           }
-          void sessionCloudSync.checkpoint(snapshot).finally(resolve);
+          void sessionCloudSync.checkpoint(snapshot).then(resolve, resolve);
           return previous;
         });
       }),
@@ -1042,30 +1045,41 @@ export function useSessions(options: UseSessionsOptions = {}) {
 
   const importSession = useCallback(
     async (
-      payload: { title: string; code: string; messages: ChatMessage[]; revisions?: CodeRevision[] },
+      payload: SessionImportPayload,
       // Opening a shared link should land on what was imported; syncing guest
       // history in bulk should leave the user where they were.
-      options: { activate?: boolean } = {},
+      options: { activate?: boolean; awaitCloud?: boolean } = {},
     ): Promise<void> => {
-      const id = newSessionId();
+      const id = payload.id && isUuid(payload.id) ? payload.id : newSessionId();
       const now = Date.now();
       const session: Session = {
         id,
         title: `${payload.title}`,
         messages: payload.messages,
         code: payload.code,
+        inputMode: payload.inputMode ?? inputModeReferencedBy(payload.messages),
         revisions: importedRevisions(payload.messages, payload.revisions),
-        createdAt: now,
-        updatedAt: now,
+        suggestions: payload.suggestions,
+        externalSource: payload.externalSource,
+        createdAt: payload.createdAt ?? now,
+        updatedAt: payload.updatedAt ?? now,
       };
       await dbPutSession(session, ownerKey);
       noteCreatedSession(id);
-      setSessions((prev) => [session, ...prev]);
+      setSessions((prev) => [session, ...prev.filter((existing) => existing.id !== id)]);
       if (options.activate ?? true) {
         setCurrentId(id);
         dbPutCurrentSessionId(id, ownerKey);
       }
-      await sessionCloudSync?.checkpoint(session);
+      if (options.awaitCloud) {
+        if (!sessionCloudSync) {
+          throw new Error('Session cloud sync is unavailable');
+        }
+        await sessionCloudSync.checkpoint(session);
+        await sessionCloudSync.flush(id);
+      } else {
+        await sessionCloudSync?.checkpoint(session);
+      }
     },
     [noteCreatedSession, ownerKey, sessionCloudSync],
   );
@@ -1207,14 +1221,6 @@ export function useSessions(options: UseSessionsOptions = {}) {
     [sessions, currentId, noteCreatedSession, ownerKey, persistSession]
   );
 
-  const updateTokenStats = useCallback(
-    (stats: TokenStats, sessionId?: string) => {
-      const apply = getApply(sessionId);
-      apply((s) => ({ ...s, tokenStats: stats }));
-    },
-    [getApply]
-  );
-
   const setSuggestions = useCallback(
     (items: string[], forCode: string, sessionId?: string) => {
       const apply = getApply(sessionId);
@@ -1270,7 +1276,6 @@ export function useSessions(options: UseSessionsOptions = {}) {
     importSession,
     importOddeNovaSession,
     branchFromMessage,
-    updateTokenStats,
     setSuggestions,
     flushCloudSaves,
   };

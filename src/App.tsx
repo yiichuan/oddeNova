@@ -269,7 +269,7 @@ export default function App() {
     try {
       const result = await importGuestSessions(
         items,
-        (item) => sessions.importSession(item, { activate: false }),
+        (item) => sessions.importSession(item, { activate: false, awaitCloud: true }),
         (id) => deleteSession(id, 'guest'),
       );
       setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
@@ -905,7 +905,6 @@ export default function App() {
               onRollback={handleRollback}
               onBranch={sessions.branchFromMessage}
               onRetry={handleRetry}
-              tokenStats={current?.tokenStats}
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>

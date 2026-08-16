@@ -186,6 +186,14 @@ describe('createSessionCloudSync', () => {
     await expect(sync.flush('s-1')).rejects.toBe(error);
   });
 
+  it('rejects a checkpoint after disposal without creating an unhandled retry', async () => {
+    const { sync } = setup();
+    sync.dispose();
+
+    await expect(sync.checkpoint(session('disposed')))
+      .rejects.toThrow('disposed');
+  });
+
   it('cancels an old terminal save retry when a newer streamed version arrives', async () => {
     const { repository, sync } = setup();
     repository.saveSession

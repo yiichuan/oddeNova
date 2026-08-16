@@ -61,7 +61,6 @@ describe('sessions API auth', () => {
         title: 'Song',
         code: 's("bd")',
         messages: [],
-        token_stats: null,
         created_at: '2026-07-07T00:00:00.000Z',
         updated_at: '2026-07-07T00:00:01.000Z',
       }],
@@ -92,7 +91,7 @@ describe('sessions API auth', () => {
     );
   });
 
-  it('lists only sessions for the authenticated user and maps session_id to id', async () => {
+  it('lists only sessions for the authenticated user and maps the UUID id', async () => {
     const revision = {
       id: 'rev-1',
       beforeCode: '',
@@ -115,11 +114,11 @@ describe('sessions API auth', () => {
     });
     const eq = vi.fn().mockResolvedValue({
       data: [{
-        session_id: 's-1',
+        id: '00000000-0000-4000-8000-000000000001',
         title: 'Song',
         code: 's("bd")',
         messages: [],
-        token_stats: null,
+        input_mode: 'choice',
         revisions: [revision],
         suggestions,
         external_source: externalSource,
@@ -141,17 +140,17 @@ describe('sessions API auth', () => {
     } as never, res as never);
 
     expect(select).toHaveBeenCalledWith(
-      'session_id,title,code,messages,token_stats,revisions,suggestions,external_source,created_at,updated_at',
+      'id,title,code,messages,input_mode,revisions,suggestions,external_source,created_at,updated_at',
     );
     expect(eq).toHaveBeenCalledWith('user_id', 'u-1');
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
       sessions: [{
-        id: 's-1',
+        id: '00000000-0000-4000-8000-000000000001',
         title: 'Song',
         code: 's("bd")',
         messages: [],
-        tokenStats: undefined,
+        inputMode: 'choice',
         revisions: [revision],
         suggestions,
         externalSource,
@@ -190,14 +189,15 @@ describe('sessions API auth', () => {
 
     await handler({
       method: 'PUT',
-      query: { id: 's-1' },
+      query: { id: '00000000-0000-4000-8000-000000000001' },
       headers: { authorization: 'Bearer token-123' },
       body: {
-        id: 's-1',
+        id: '00000000-0000-4000-8000-000000000001',
         user_id: 'attacker',
         title: 'Song',
         code: 's("bd")',
         messages: [],
+        inputMode: 'choice',
         revisions: [revision],
         suggestions,
         externalSource,
@@ -207,22 +207,22 @@ describe('sessions API auth', () => {
     } as never, res as never);
 
     expect(upsert).toHaveBeenCalledWith({
-      session_id: 's-1',
+      id: '00000000-0000-4000-8000-000000000001',
       user_id: 'u-1',
       title: 'Song',
       messages: [],
       code: 's("bd")',
-      token_stats: null,
+      input_mode: 'choice',
       revisions: [revision],
       suggestions,
       external_source: externalSource,
       created_at: '1970-01-01T00:00:00.001Z',
       updated_at: '1970-01-01T00:00:00.002Z',
-    }, { onConflict: 'user_id,session_id' });
+    }, { onConflict: 'id' });
     expect(res.statusCode).toBe(200);
   });
 
-  it('deletes sessions by session_id and authenticated user id', async () => {
+  it('deletes sessions by UUID id and authenticated user id', async () => {
     supabaseMocks.getUser.mockResolvedValue({
       data: { user: { id: 'u-1', email: 'user@example.com' } },
       error: null,
@@ -237,11 +237,11 @@ describe('sessions API auth', () => {
 
     await handler({
       method: 'DELETE',
-      query: { id: 's-1' },
+      query: { id: '00000000-0000-4000-8000-000000000001' },
       headers: { authorization: 'Bearer token-123' },
     } as never, res as never);
 
-    expect(sessionEq).toHaveBeenCalledWith('session_id', 's-1');
+    expect(sessionEq).toHaveBeenCalledWith('id', '00000000-0000-4000-8000-000000000001');
     expect(userEq).toHaveBeenCalledWith('user_id', 'u-1');
     expect(res.statusCode).toBe(200);
   });

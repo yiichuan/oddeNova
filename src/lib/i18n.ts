@@ -237,10 +237,6 @@ const S: Record<string, readonly [string, string]> = {
   releaseToStop:     ['松开停止', 'Release to stop'],
   holdToSpeak:       ['按住说话', 'Hold to speak'],
 
-  // ContextWindowIndicator
-  contextWindow: ['上下文窗口', 'Context window'],
-  tokens:        ['个令牌', 'tokens'],
-
   // strudel / engine
   clickToResume:   ['点击播放继续', 'Click to resume'],
   emptyCode:       ['代码为空', 'Code is empty'],

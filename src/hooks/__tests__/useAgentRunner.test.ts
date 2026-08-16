@@ -38,7 +38,6 @@ function makeDeps(over: Partial<AgentTurnDeps> = {}): AgentTurnDeps {
     addAssistantMessage: vi.fn(),
     finalizeLastAssistantMessage: vi.fn(),
     setCurrentCode: vi.fn(),
-    updateTokenStats: vi.fn(),
     setSessionSuggestions: vi.fn(),
     checkpointSession: vi.fn(async () => undefined),
     beginLoading: (id) => {
@@ -277,7 +276,7 @@ describe('runAgentTurn', () => {
     consoleError.mockRestore();
   });
 
-  it('persists terminal metadata and messages before checkpointing', async () => {
+  it('persists terminal messages before checkpointing without writing token stats to the session', async () => {
     const deps = makeDeps({
       runAgent: vi.fn(async () => makeResult({
         explanation: '完成\n\n接下来可以：\n- 加贝斯',
@@ -290,8 +289,6 @@ describe('runAgentTurn', () => {
     const checkpointOrder = (
       deps.checkpointSession as ReturnType<typeof vi.fn>
     ).mock.invocationCallOrder[0];
-    expect((deps.updateTokenStats as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
-      .toBeLessThan(checkpointOrder);
     expect((deps.setSessionSuggestions as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
       .toBeLessThan(checkpointOrder);
     expect((deps.addAssistantMessage as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])

@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const { error } = await auth.supabase
         .from('sessions')
-        .upsert(sessionToRow(session, auth.user.id), { onConflict: 'user_id,session_id' });
+        .upsert(sessionToRow(session, auth.user.id), { onConflict: 'id' });
 
       if (error) {
         res.status(500).json({ error: error.message });
@@ -36,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { error } = await auth.supabase
         .from('sessions')
         .delete()
-        .eq('session_id', id)
+        .eq('id', id)
         .eq('user_id', auth.user.id);
 
       if (error) {

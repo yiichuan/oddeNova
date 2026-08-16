@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { useStrudel } from './useStrudel';
-import type { useSessions, CodeRevisionDraft, TokenStats } from './useSessions';
+import type { useSessions, CodeRevisionDraft } from './useSessions';
 import { runAgent } from '../services/llm';
 import type { ConversationTurn, ProgressEvent } from '../services/llm';
 import type { InputMode } from './useChat';
@@ -75,7 +75,6 @@ export interface AgentTurnDeps {
   ) => void;
   finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
-  updateTokenStats: (stats: TokenStats, sessionId: string) => void;
   setSessionSuggestions: (
     items: string[],
     forCode: string,
@@ -167,10 +166,6 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
         deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
       return;
-    }
-
-    if (result.tokenUsage) {
-      deps.updateTokenStats({ ...result.tokenUsage, modelId: model }, sessionId);
     }
 
     if (result.code) {
@@ -301,7 +296,6 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
       sessions.addAssistantMessage(text, code, id, revision, inputMode),
     finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
     setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
-    updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
     setSessionSuggestions: (items, code, id) => sessions.setSuggestions(items, code, id),
     checkpointSession: (id) => sessions.checkpointSession(id),
     beginLoading: (id) => {

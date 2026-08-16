@@ -6,7 +6,7 @@ export interface ApiSession {
   title: string;
   messages: unknown[];
   code: string;
-  tokenStats?: unknown;
+  inputMode?: 'normal' | 'choice';
   revisions?: unknown[];
   suggestions?: unknown;
   externalSource?: unknown;
@@ -15,11 +15,11 @@ export interface ApiSession {
 }
 
 interface SessionRow {
-  session_id: string;
+  id: string;
   title: string;
   messages: unknown[];
   code: string;
-  token_stats: unknown;
+  input_mode: unknown;
   revisions: unknown[] | null;
   suggestions: unknown;
   external_source: unknown;
@@ -67,12 +67,15 @@ export async function requireUser(req: VercelRequest, res: VercelResponse): Prom
 }
 
 export function rowToSession(row: SessionRow): ApiSession {
+  const inputMode = row.input_mode === 'normal' || row.input_mode === 'choice'
+    ? row.input_mode
+    : undefined;
   return {
-    id: row.session_id,
+    id: row.id,
     title: row.title,
     messages: row.messages || [],
     code: row.code || '',
-    tokenStats: row.token_stats ?? undefined,
+    ...(inputMode ? { inputMode } : {}),
     revisions: Array.isArray(row.revisions) ? row.revisions : undefined,
     suggestions: row.suggestions ?? undefined,
     externalSource: row.external_source ?? undefined,
@@ -83,12 +86,12 @@ export function rowToSession(row: SessionRow): ApiSession {
 
 export function sessionToRow(session: ApiSession, userId: string): SessionRow & { user_id: string } {
   return {
-    session_id: session.id,
+    id: session.id,
     user_id: userId,
     title: session.title,
     messages: Array.isArray(session.messages) ? session.messages : [],
     code: session.code || '',
-    token_stats: session.tokenStats ?? null,
+    input_mode: session.inputMode ?? null,
     revisions: Array.isArray(session.revisions) ? session.revisions : null,
     suggestions: session.suggestions ?? null,
     external_source: session.externalSource ?? null,

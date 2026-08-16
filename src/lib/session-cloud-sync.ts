@@ -169,7 +169,7 @@ export function createSessionCloudSync(options: {
     record.retryTimer = setTimer(() => {
       delete record.retryTimer;
       if (!record.saveRequested || record.version !== requestedVersion) return;
-      void checkpoint(record.latest);
+      void checkpoint(record.latest).catch(() => undefined);
     }, delay);
   };
 
@@ -240,7 +240,7 @@ export function createSessionCloudSync(options: {
   });
 
   const checkpoint = (session: Session): Promise<void> => {
-    if (disposed) return Promise.resolve();
+    if (disposed) return Promise.reject(new Error('Session cloud sync is disposed'));
     let record = records.get(session.id);
     if (isEffectivelyEmpty(session) && (!record || (!record.hasCloudCopy && record.version === 0))) {
       return Promise.resolve();
@@ -294,7 +294,7 @@ export function createSessionCloudSync(options: {
     clearRecordTimer(record, 'debounceTimer');
     record.debounceTimer = setTimer(() => {
       delete record.debounceTimer;
-      void checkpoint(record.latest);
+      void checkpoint(record.latest).catch(() => undefined);
     }, MANUAL_DEBOUNCE_MS);
   };
 
@@ -305,7 +305,8 @@ export function createSessionCloudSync(options: {
 
   const flushOne = async (id: string): Promise<void> => {
     let record = records.get(id);
-    if (!record || record.status === 'synced') return;
+    if (!record) throw new Error('Session cloud sync has no pending save');
+    if (record.status === 'synced') return;
     if (isEffectivelyEmpty(record.latest) && !record.hasCloudCopy && record.version === 0) return;
 
     const activeCheckpoint = checkpointRuns.get(id);
