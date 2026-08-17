@@ -5,7 +5,7 @@
     {"source": "/_nova/static/:path(.*)", "destination": "https://us-assets.i.posthog.com/static/:path"},
     {"source": "/_nova/array/:path(.*)", "destination": "https://us-assets.i.posthog.com/array/:path"},
     {"source": "/_nova/:path(.*)", "destination": "https://us.i.posthog.com/:path"},
-    {"source": "/(.*)", "destination": "/index.html"}
+    {"source": "/((?!api/).*)", "destination": "/index.html"}
   ],
   "crons": [
     {"path": "/api/cleanup", "schedule": "0 0 * * *"},

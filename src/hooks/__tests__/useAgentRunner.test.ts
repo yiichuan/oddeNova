@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { runAgentTurn } from '../useAgentRunner';
-import type { AgentTurnDeps, AgentTurnInput } from '../useAgentRunner';
+import { createAgentTurnDeps, runAgentTurn } from '../useAgentRunner';
+import type { AgentTurnDeps, AgentTurnInput, UseAgentRunnerConfig } from '../useAgentRunner';
 import type { RunAgentResult, ConversationTurn } from '../../services/llm';
 import { t } from '../../lib/i18n';
 
@@ -39,6 +39,8 @@ function makeDeps(over: Partial<AgentTurnDeps> = {}): AgentTurnDeps {
     finalizeLastAssistantMessage: vi.fn(),
     setCurrentCode: vi.fn(),
     updateTokenStats: vi.fn(),
+    setSessionSuggestions: vi.fn(),
+    checkpointSession: vi.fn(async () => undefined),
     beginLoading: (id) => {
       void id;
       return new AbortController();
@@ -92,7 +94,9 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    });
+    }, 'normal');
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
+    expect(deps.checkpointSession).toHaveBeenCalledWith('S1');
   });
 
   it('persists the code even when playback fails — latest code is always the session truth', async () => {
@@ -109,6 +113,7 @@ describe('runAgentTurn', () => {
       afterCode: 'note("c3")',
       playbackStatus: 'failed',
     });
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
   it('on a background (non-current) session, persists without playing', async () => {
@@ -120,7 +125,8 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'not_attempted',
-    });
+    }, 'normal');
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
   it('does not create a revision when code was not committed', async () => {
@@ -141,7 +147,29 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    });
+    }, 'normal');
+  });
+
+  it('marks a successful stepwise numbered response as choice input mode', async () => {
+    const explanation = [
+      '先写了一段明亮的旋律。这个方向对吗？',
+      '',
+      '1. 加入鼓和贝斯',
+      '2. 换个方向',
+      '3. 按这个方向写完',
+      '',
+      '回复序号，或者直接说出你的想法。',
+    ].join('\n');
+    const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ explanation })) });
+
+    await runAgentTurn(makeInput(), deps);
+
+    expect(deps.setCommitSuggestions).not.toHaveBeenCalled();
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith(explanation, 'note("c3")', 'S1', {
+      beforeCode: 'CURRENT',
+      afterCode: 'note("c3")',
+      playbackStatus: 'played',
+    }, 'choice');
   });
 
   it('finalizes the streamed assistant message when the result carries no code', async () => {
@@ -150,6 +178,7 @@ describe('runAgentTurn', () => {
     expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith('hmm', 'S1');
     expect(deps.addAssistantMessage).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).not.toHaveBeenCalled();
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
   it('falls back to the agentNoCode label when there is neither code nor explanation', async () => {
@@ -171,6 +200,7 @@ describe('runAgentTurn', () => {
     expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('interrupted'), 'S1');
     expect(deps.play).not.toHaveBeenCalled();
     expect(deps.setCurrentCode).not.toHaveBeenCalled();
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
   it('suppresses the interrupted message when the controller is stale', async () => {
@@ -219,7 +249,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'OVERRIDE',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    });
+    }, 'normal');
   });
 
   it('forwards moodContext to runAgent', async () => {
@@ -243,7 +273,29 @@ describe('runAgentTurn', () => {
       errorName: 'Error',
       errorMessage: 'boom',
     });
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
     consoleError.mockRestore();
+  });
+
+  it('persists terminal metadata and messages before checkpointing', async () => {
+    const deps = makeDeps({
+      runAgent: vi.fn(async () => makeResult({
+        explanation: '完成\n\n接下来可以：\n- 加贝斯',
+        tokenUsage: { promptTokens: 12, systemEstimate: 3 },
+      })),
+    });
+
+    await runAgentTurn(makeInput(), deps);
+
+    const checkpointOrder = (
+      deps.checkpointSession as ReturnType<typeof vi.fn>
+    ).mock.invocationCallOrder[0];
+    expect((deps.updateTokenStats as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+      .toBeLessThan(checkpointOrder);
+    expect((deps.setSessionSuggestions as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+      .toBeLessThan(checkpointOrder);
+    expect((deps.addAssistantMessage as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+      .toBeLessThan(checkpointOrder);
   });
 
   it('always ends the loading lifecycle with the controller it began', async () => {
@@ -378,5 +430,33 @@ describe('runAgentTurn', () => {
 
     expect(deps.play).toHaveBeenCalledWith('note("c3")');
     expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
+  });
+});
+
+describe('useAgentRunner production adapter', () => {
+  it('forwards the successful response input mode into session persistence', () => {
+    const addAssistantMessage = vi.fn();
+    const config = {
+      strudel: {},
+      sessions: { addAssistantMessage },
+      currentCode: '',
+      abortControllersRef: { current: new Map() },
+      currentIdRef: { current: 'S1' },
+      setLoadingSessions: vi.fn(),
+      setCommitSuggestions: vi.fn(),
+      setRollbackPrefill: vi.fn(),
+      makeProgressHandler: () => () => {},
+    } as unknown as UseAgentRunnerConfig;
+
+    const deps = createAgentTurnDeps(config);
+    deps.addAssistantMessage('请选择', 'note("c3")', 'S1', undefined, 'choice');
+
+    expect(addAssistantMessage).toHaveBeenCalledWith(
+      '请选择',
+      'note("c3")',
+      'S1',
+      undefined,
+      'choice',
+    );
   });
 });

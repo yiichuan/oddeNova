@@ -639,4 +639,56 @@ describe('CodePanel editor focus reporting', () => {
     act(() => setMobile(false));
     expect(strudelService.setLineWrappingEnabled).toHaveBeenLastCalledWith(false);
   });
+
+  it.each([true, false])('stays silent while cloud sync is healthy (mobile: %s)', (mobile) => {
+    installMatchMedia(mobile);
+    const { container, root } = renderCodePanel({
+      syncStatus: 'saving',
+      showSyncStatus: true,
+    });
+    roots.push(root);
+
+    expect(container.querySelector('[data-session-sync-status]')).toBeNull();
+  });
+
+  it('floats an unsynced warning over the code without taking layout height', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel({
+      syncStatus: 'offline',
+      showSyncStatus: true,
+    });
+    roots.push(root);
+
+    const status = container.querySelector('[data-session-sync-status="offline"]');
+    expect(status).not.toBeNull();
+    expect(status?.closest('.absolute')).not.toBeNull();
+  });
+
+  it('anchors the sync warning independently of the error banner', () => {
+    installMatchMedia(false);
+    const withError = renderCodePanel({
+      error: 'boom',
+      syncStatus: 'offline',
+      showSyncStatus: true,
+    });
+    const withoutError = renderCodePanel({
+      syncStatus: 'offline',
+      showSyncStatus: true,
+    });
+    roots.push(withError.root, withoutError.root);
+
+    const capsuleOf = (c: HTMLElement) => c.querySelector('[data-session-sync-status="offline"]');
+    const overlay = capsuleOf(withError.container)?.parentElement;
+    expect(overlay).not.toBeNull();
+    // The error banner is a top-right popover, so it shares no row with the
+    // capsule and cannot push it around: the capsule is the bottom overlay's
+    // only child whether or not the code is broken.
+    const banner = withError.container.querySelector('[data-testid="code-panel-runtime-error"]');
+    expect(banner).not.toBeNull();
+    expect(overlay?.contains(banner)).toBe(false);
+    expect(overlay?.childElementCount).toBe(1);
+    const overlayWithoutError = capsuleOf(withoutError.container)?.parentElement;
+    expect(overlayWithoutError?.childElementCount).toBe(1);
+    expect(overlayWithoutError?.className).toBe(overlay?.className);
+  });
 });

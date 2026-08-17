@@ -16,7 +16,7 @@ export type { ExportParams } from '../hooks/useExportPopoverController';
 
 // ─── Share ───────────────────────────────────────────────────────────────────
 
-type ShareState = 'idle' | 'loading' | 'done' | 'error';
+type ShareState = 'idle' | 'loading' | 'copied' | 'shared' | 'error';
 
 export interface ShareButtonProps {
   session: Session | null;
@@ -43,17 +43,29 @@ export function ShareButton({ session, code, messages, disabled, variant = 'inli
         title,
         code: shareCode,
         messages: shareMessages,
+        revisions: session?.revisions,
         locale: zh ? 'zh-CN' : 'en',
       });
       const url = `${window.location.origin}/s/${shareId}`;
-      const shareResult = await shareUrl(url);
+      const sessionTitle = session?.title?.trim();
+      const sharedTitle = sessionTitle && sessionTitle !== t('newSessionTitle')
+        ? sessionTitle
+        : t('sharedMusicCreation');
+      const brandedTitle = zh
+        ? `【oddeNova】${sharedTitle}`
+        : `[oddeNova] ${sharedTitle}`;
+      const shareResult = await shareUrl(url, brandedTitle);
+      if (shareResult === 'cancelled') {
+        setState('idle');
+        return;
+      }
       const shareMethod: ShareMethod = shareResult === 'shared'
         ? 'native'
         : shareResult === 'shown'
           ? 'prompt'
           : 'clipboard';
       trackShareCompleted({ share_method: shareMethod });
-      setState('done');
+      setState(shareResult === 'shared' ? 'shared' : 'copied');
       onShared?.();
       setTimeout(() => setState('idle'), 2000);
     } catch (error) {
@@ -84,8 +96,11 @@ export function ShareButton({ session, code, messages, disabled, variant = 'inli
   }
 
   if (variant === 'icon') {
-    const feedback = state === 'done'
-      ? { label: t('linkCopied'), className: 'text-text-secondary' }
+    const feedback = state === 'copied' || state === 'shared'
+      ? {
+          label: state === 'shared' ? t('shared') : t('shareDetailsCopied'),
+          className: 'text-text-secondary',
+        }
       : state === 'error'
         ? { label: t('shareFailedRetry'), className: 'text-red-400' }
         : null;
@@ -147,10 +162,10 @@ export function ShareButton({ session, code, messages, disabled, variant = 'inli
       >
         {t('share')}
       </button>
-      {state === 'done' && (
+      {(state === 'copied' || state === 'shared') && (
         <div className="absolute right-0 top-7 z-50">
           <span className="text-text-secondary text-xs whitespace-nowrap">
-            {t('linkCopied')}
+            {state === 'shared' ? t('shared') : t('shareDetailsCopied')}
           </span>
         </div>
       )}
@@ -529,6 +544,8 @@ export function ExportPopover({
 
 interface TopActionBarProps {
   onOpenSettings: () => void;
+  onOpenAccount: () => void;
+  accountLabel: string;
   session: Session | null;
   code: string;
   messages: ChatMessage[];
@@ -543,6 +560,8 @@ interface TopActionBarProps {
 
 export default function TopActionBar({
   onOpenSettings,
+  onOpenAccount,
+  accountLabel,
   session,
   code,
   messages,
@@ -588,6 +607,15 @@ export default function TopActionBar({
               style={{ top: 'calc(max(12px, env(safe-area-inset-top)) + 44px)' }}
               onClick={(e) => e.stopPropagation()}
             >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); onOpenAccount(); }}
+                className="mobile-menu-item"
+              >
+                <span>{accountLabel}</span>
+                <SettingsIcon size={19} />
+              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -660,6 +688,15 @@ export default function TopActionBar({
 
   return (
     <div className="h-full relative flex items-center justify-end gap-3">
+      {/* Account */}
+      <button
+        onClick={onOpenAccount}
+        className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5 max-w-[180px]"
+        title={accountLabel}
+      >
+        <span className="truncate">{accountLabel}</span>
+      </button>
+
       {/* Settings */}
       <button
         onClick={onOpenSettings}

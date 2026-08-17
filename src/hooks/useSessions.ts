@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { ChatMessage, ProgressKind } from './useChat';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChatMessage, InputMode, ProgressKind } from './useChat';
 import {
   openDB,
   getAllSessions,
@@ -9,11 +9,21 @@ import {
   putImportedSession as dbPutImportedSession,
   putImportedSessionBranch as dbPutImportedSessionBranch,
   deleteSession as dbDeleteSession,
+  deleteSessionStrict as dbDeleteSessionStrict,
   isSessionStoragePersistent,
 } from '../lib/session-storage';
 import { t } from '../lib/i18n';
 import { pickGreeting } from '../lib/greetings';
 import { hashImportedContent, type OddeNovaImportPayload } from '../lib/oddenova-import';
+import {
+  createSessionCloudSync,
+  type SessionSyncStatus,
+} from '../lib/session-cloud-sync';
+import { reconcileSessions } from '../lib/session-reconciliation';
+import {
+  readPendingSessionOperations,
+  type PendingSessionOperations,
+} from '../lib/session-sync-storage';
 
 export interface TokenStats {
   promptTokens: number;
@@ -46,6 +56,8 @@ export interface Session {
   title: string;
   messages: ChatMessage[];
   code: string;
+  /** Input behavior established by the latest successful Agent turn. */
+  inputMode?: InputMode;
   externalSource?: ExternalSessionSource;
   /** Optional for backward compatibility with sessions saved before revisions existed. */
   revisions?: CodeRevision[];
@@ -59,6 +71,98 @@ export interface Session {
   suggestions?: { forCode: string; items: string[] };
   createdAt: number;
   updatedAt: number;
+}
+
+export interface CloudSessionRepository {
+  listSessions: (expectedUserId?: string) => Promise<Session[]>;
+  saveSession: (session: Session, expectedUserId?: string) => Promise<void>;
+  deleteSession: (id: string, expectedUserId?: string) => Promise<void>;
+}
+
+export interface UseSessionsOptions {
+  ownerKey?: string;
+  syncEnabled?: boolean;
+  cloud?: CloudSessionRepository;
+  startNewSessionToken?: number;
+}
+
+type CloudIntent = 'deferred' | 'debounced' | 'checkpoint';
+
+interface ManualSyncPresentation {
+  markPending: (sessionId: string) => void;
+  clear: (sessionId: string) => void;
+  handleStatus: (sessionId: string, status: SessionSyncStatus | undefined) => void;
+  dispose: () => void;
+}
+
+function createManualSyncPresentation(options: {
+  onStatus: (sessionId: string, status: SessionSyncStatus | undefined) => void;
+}): ManualSyncPresentation {
+  const pending = new Set<string>();
+  const active = new Set<string>();
+  const syncedTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const clear = (sessionId: string): void => {
+    pending.delete(sessionId);
+    active.delete(sessionId);
+    const timer = syncedTimers.get(sessionId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      syncedTimers.delete(sessionId);
+    }
+    options.onStatus(sessionId, undefined);
+  };
+
+  const markPending = (sessionId: string): void => {
+    clear(sessionId);
+    pending.add(sessionId);
+  };
+
+  const handleStatus = (
+    sessionId: string,
+    status: SessionSyncStatus | undefined,
+  ): void => {
+    if (status === undefined) {
+      clear(sessionId);
+      return;
+    }
+
+    const isActive = active.has(sessionId);
+    if (status === 'saving' && pending.has(sessionId)) {
+      active.add(sessionId);
+    } else if (status === 'dirty' && isActive) {
+      active.delete(sessionId);
+      options.onStatus(sessionId, undefined);
+      return;
+    } else if (!isActive) {
+      return;
+    }
+
+    options.onStatus(sessionId, status);
+    if (status !== 'synced') return;
+
+    pending.delete(sessionId);
+    active.delete(sessionId);
+    const previousTimer = syncedTimers.get(sessionId);
+    if (previousTimer !== undefined) clearTimeout(previousTimer);
+    const timer = setTimeout(() => {
+      syncedTimers.delete(sessionId);
+      options.onStatus(sessionId, undefined);
+    }, 2000);
+    syncedTimers.set(sessionId, timer);
+  };
+
+  return {
+    markPending,
+    clear,
+    handleStatus,
+    dispose: () => {
+      for (const timer of syncedTimers.values()) clearTimeout(timer);
+      syncedTimers.clear();
+      pending.clear();
+      active.clear();
+    },
+  };
 }
 
 let messageId = 0;
@@ -95,6 +199,36 @@ function revisionsReferencedBy(messages: ChatMessage[], revisions?: CodeRevision
   return revisions.filter((revision) => referenced.has(revision.id));
 }
 
+function importedRevisions(messages: ChatMessage[], revisions?: CodeRevision[]): CodeRevision[] | undefined {
+  if (revisions !== undefined) return revisionsReferencedBy(messages, revisions);
+
+  let beforeCode = '';
+  const reconstructed: CodeRevision[] = [];
+  const seen = new Set<string>();
+  for (const message of messages) {
+    if (message.role !== 'assistant' || message.code === undefined) continue;
+    if (message.revisionId && !seen.has(message.revisionId)) {
+      reconstructed.push({
+        id: message.revisionId,
+        beforeCode,
+        afterCode: message.code,
+        playbackStatus: 'not_attempted',
+        createdAt: message.timestamp,
+      });
+      seen.add(message.revisionId);
+    }
+    beforeCode = message.code;
+  }
+
+  return reconstructed.length > 0 ? reconstructed : undefined;
+}
+
+function inputModeReferencedBy(messages: ChatMessage[]): InputMode {
+  return [...messages].reverse().find(
+    (message) => message.role === 'assistant' && message.inputMode !== undefined,
+  )?.inputMode ?? 'normal';
+}
+
 function deriveTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser) return t('newSessionTitle');
@@ -109,6 +243,7 @@ function makeEmptySession(): Session {
     title: t('newSessionTitle'),
     messages: [makeGreetingMessage()],
     code: '',
+    inputMode: 'normal',
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -130,14 +265,25 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
   const messages = [...before, newMsg];
   const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
   const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
-  return { ...s, messages, revisions: revisionsReferencedBy(messages, s.revisions), title };
+  return {
+    ...s,
+    messages,
+    revisions: revisionsReferencedBy(messages, s.revisions),
+    inputMode: inputModeReferencedBy(messages),
+    title,
+  };
 }
 
 export function applyTruncate(s: Session, targetMessageId: string): Session {
   const index = s.messages.findIndex((m) => m.id === targetMessageId);
   if (index === -1) return s;
   const messages = s.messages.slice(0, index);
-  return { ...s, messages, revisions: revisionsReferencedBy(messages, s.revisions) };
+  return {
+    ...s,
+    messages,
+    revisions: revisionsReferencedBy(messages, s.revisions),
+    inputMode: inputModeReferencedBy(messages),
+  };
 }
 
 export function applyRefreshEmptySessionForReuse(s: Session, now: number): Session {
@@ -145,6 +291,8 @@ export function applyRefreshEmptySessionForReuse(s: Session, now: number): Sessi
     ...s,
     title: t('newSessionTitle'),
     messages: [makeGreetingMessage()],
+    inputMode: 'normal',
+    suggestions: undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -257,77 +405,339 @@ export function applyFinalizeLastAssistantMessage(
   };
 }
 
-export function useSessions() {
+export function useSessions(options: UseSessionsOptions = {}) {
+  const ownerKey = options.ownerKey ?? 'guest';
+  const syncEnabled = options.syncEnabled ?? false;
+  const cloud = options.cloud;
+  const startNewSessionToken = options.startNewSessionToken ?? 0;
+  const cloudOwnerId = ownerKey.startsWith('user:') ? ownerKey.slice('user:'.length) : undefined;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPersistent, setIsPersistent] = useState(false);
+  const [loadedOwnerKey, setLoadedOwnerKey] = useState(ownerKey);
+  const [syncState, setSyncState] = useState<{
+    ownerKey: string;
+    statuses: Record<string, SessionSyncStatus>;
+  }>({ ownerKey, statuses: {} });
+  const [manualSyncState, setManualSyncState] = useState<{
+    ownerKey: string;
+    statuses: Record<string, SessionSyncStatus>;
+  }>({ ownerKey, statuses: {} });
+  const consumedStartNewSessionTokenRef = useRef(0);
+  // Sessions created while a load is in flight. The load applies the list it
+  // read when it started, so without this an import confirmed mid-load would
+  // vanish from the UI until the next page load.
+  const createdDuringLoadRef = useRef<{ ownerKey: string; ids: Set<string> }>({
+    ownerKey,
+    ids: new Set(),
+  });
+
+  const noteCreatedSession = useCallback((sessionId: string): void => {
+    const tracked = createdDuringLoadRef.current;
+    if (tracked.ownerKey === ownerKey) tracked.ids.add(sessionId);
+  }, [ownerKey]);
+
+  const manualSyncPresentation = useMemo(
+    () => createManualSyncPresentation({
+      onStatus: (sessionId, status) => {
+        setManualSyncState((previousState) => {
+          const previous = previousState.ownerKey === ownerKey
+            ? previousState.statuses
+            : {};
+          if (status === undefined) {
+            if (!(sessionId in previous)) {
+              return previousState.ownerKey === ownerKey
+                ? previousState
+                : { ownerKey, statuses: {} };
+            }
+            const next = { ...previous };
+            delete next[sessionId];
+            return { ownerKey, statuses: next };
+          }
+          if (previous[sessionId] === status) return previousState;
+          return {
+            ownerKey,
+            statuses: { ...previous, [sessionId]: status },
+          };
+        });
+      },
+    }),
+    [ownerKey],
+  );
+
+  const sessionCloudSync = useMemo(
+    () => syncEnabled && cloud && cloudOwnerId
+      ? createSessionCloudSync({
+          ownerKey,
+          repository: cloud,
+          onStatus: (sessionId, status) => {
+            setSyncState((previousState) => {
+              const previous = previousState.ownerKey === ownerKey
+                ? previousState.statuses
+                : {};
+              if (status === undefined) {
+                if (!(sessionId in previous)) {
+                  return { ownerKey, statuses: previous };
+                }
+                const next = { ...previous };
+                delete next[sessionId];
+                return { ownerKey, statuses: next };
+              }
+              if (previous[sessionId] === status) {
+                return { ownerKey, statuses: previous };
+              }
+              return {
+                ownerKey,
+                statuses: { ...previous, [sessionId]: status },
+              };
+            });
+            manualSyncPresentation.handleStatus(sessionId, status);
+          },
+        })
+      : null,
+    [syncEnabled, cloud, cloudOwnerId, ownerKey, manualSyncPresentation],
+  );
+
+  useEffect(() => () => sessionCloudSync?.dispose(), [sessionCloudSync]);
+  useEffect(
+    () => () => manualSyncPresentation.dispose(),
+    [manualSyncPresentation],
+  );
+
+  useEffect(() => {
+    if (!sessionCloudSync) return;
+    const notifyOnline = () => sessionCloudSync.notifyOnline();
+    window.addEventListener('online', notifyOnline);
+    return () => window.removeEventListener('online', notifyOnline);
+  }, [sessionCloudSync]);
 
   // Initialize: open DB (+ migrate) then load all sessions
   useEffect(() => {
     let cancelled = false;
+    createdDuringLoadRef.current = { ownerKey, ids: new Set() };
+    // Apply a loaded list without dropping what was created since the load
+    // started. Sessions that predate the load are not carried over: this load
+    // is the authority on those, including the ones reconciliation deleted.
+    const commitSessions = (next: Session[]): void => {
+      const tracked = createdDuringLoadRef.current;
+      const nextIds = new Set(next.map((session) => session.id));
+      setSessions((previous) => {
+        if (tracked.ownerKey !== ownerKey || tracked.ids.size === 0) return next;
+        const created = previous.filter(
+          (session) => tracked.ids.has(session.id) && !nextIds.has(session.id),
+        );
+        return created.length > 0 ? [...created, ...next] : next;
+      });
+    };
     (async () => {
+      setIsLoading(true);
       await openDB();
       const persistent = isSessionStoragePersistent();
-      const [loaded, storedCurrentId] = await Promise.all([
-        getAllSessions(),
-        getCurrentSessionId(),
-      ]);
+      const storedCurrentId = await getCurrentSessionId(ownerKey);
+      let loaded = await getAllSessions(ownerKey);
+      let pending: PendingSessionOperations = {
+        syncIds: new Set(),
+        deleteIds: new Set(),
+      };
+      let cloudSessionIds = new Set<string>();
+      let pendingOperationsKnown = false;
+      if (syncEnabled && cloud && sessionCloudSync) {
+        try {
+          pending = await readPendingSessionOperations(ownerKey);
+          pendingOperationsKnown = true;
+        } catch (err) {
+          console.warn('[sessions] pending cloud operations could not be read.', err);
+        }
+
+        if (pendingOperationsKnown && pending.deleteIds.size > 0) {
+          const tombstonedIds = pending.deleteIds;
+          loaded = loaded.filter((session) => !tombstonedIds.has(session.id));
+          const purgeResults = await Promise.allSettled(
+            [...tombstonedIds].map((id) => sessionCloudSync.deleteSession(
+              id,
+              () => dbDeleteSessionStrict(id, ownerKey),
+            )),
+          );
+          pending = {
+            ...pending,
+            deleteIds: new Set(
+              [...tombstonedIds].filter((_, index) => purgeResults[index].status === 'rejected'),
+            ),
+          };
+        }
+
+        if (pendingOperationsKnown) {
+          try {
+            const remote = await cloud.listSessions(cloudOwnerId);
+            cloudSessionIds = new Set(remote.map((session) => session.id));
+            const localBeforeReconcile = loaded;
+            loaded = reconcileSessions(loaded, remote, pending);
+            const retainedIds = new Set(loaded.map((session) => session.id));
+            const removedLocalSessions = localBeforeReconcile
+              .filter((session) => !retainedIds.has(session.id));
+            await Promise.all([
+              ...loaded.map((session) => dbPutSession(session, ownerKey)),
+              ...removedLocalSessions.map((session) => sessionCloudSync.deleteSession(
+                session.id,
+                () => dbDeleteSessionStrict(session.id, ownerKey),
+              )),
+            ]);
+          } catch (err) {
+            console.warn('[sessions] cloud session load failed; using local cache.', err);
+          }
+        }
+      }
       if (cancelled) return;
+      if (pendingOperationsKnown) {
+        sessionCloudSync?.hydrate(loaded, pending.syncIds, pending.deleteIds, cloudSessionIds);
+      }
+
+      const shouldStartNewSession = startNewSessionToken > consumedStartNewSessionTokenRef.current;
+      if (shouldStartNewSession) {
+        consumedStartNewSessionTokenRef.current = startNewSessionToken;
+        // Reuse an untouched session the same way newSession() does. Without
+        // this every sign-in leaves another "New session" behind, since an
+        // empty session never reaches the cloud and never gets cleaned up.
+        const reusable = loaded.find(isEffectivelyEmpty);
+        const fresh = reusable
+          ? applyRefreshEmptySessionForReuse(reusable, Date.now())
+          : makeEmptySession();
+        const rest = loaded.filter((session) => !isEffectivelyEmpty(session));
+        // Anything untouched beyond the one being reused is debris from an
+        // earlier sign-in that stacked them up. It holds no code and no
+        // messages, so drop it instead of letting it pile up forever.
+        const leftovers = loaded.filter(
+          (session) => isEffectivelyEmpty(session) && session.id !== reusable?.id,
+        );
+        await Promise.all([
+          dbPutSession(fresh, ownerKey),
+          dbPutCurrentSessionId(fresh.id, ownerKey),
+          ...leftovers.map((session) => sessionCloudSync
+            ? sessionCloudSync.deleteSession(
+              session.id,
+              () => dbDeleteSessionStrict(session.id, ownerKey),
+            )
+            : dbDeleteSession(session.id, ownerKey)),
+        ]);
+        if (cancelled) return;
+        commitSessions([fresh, ...rest]);
+        setCurrentId(fresh.id);
+        setIsPersistent(persistent);
+        setLoadedOwnerKey(ownerKey);
+        setIsLoading(false);
+        return;
+      }
 
       if (loaded.length > 0) {
         const current = loaded.find((s) => s.id === storedCurrentId) || loaded[0];
-        setSessions(loaded);
+        commitSessions(loaded);
         setCurrentId(current.id);
         setIsPersistent(persistent);
+        setLoadedOwnerKey(ownerKey);
         setIsLoading(false);
         return;
       }
 
       const fresh = makeEmptySession();
       await Promise.all([
-        dbPutSession(fresh),
-        dbPutCurrentSessionId(fresh.id),
+        dbPutSession(fresh, ownerKey),
+        dbPutCurrentSessionId(fresh.id, ownerKey),
       ]);
-      setSessions([fresh]);
+      commitSessions([fresh]);
       setCurrentId(fresh.id);
       setIsPersistent(persistent);
+      setLoadedOwnerKey(ownerKey);
       setIsLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [
+    ownerKey,
+    syncEnabled,
+    cloud,
+    cloudOwnerId,
+    startNewSessionToken,
+    sessionCloudSync,
+  ]);
 
+  // False between an owner key change (sign-in / sign-out) and the new owner's
+  // sessions finishing loading: the sessions held in memory still belong to the
+  // previous owner.
+  const ownerLoaded = loadedOwnerKey === ownerKey;
+  const sessionsForOwner = ownerLoaded ? sessions : [];
+  const currentIdForOwner = ownerLoaded ? currentId : null;
   const currentSession =
-    sessions.find((s) => s.id === currentId) || sessions[0] || null;
+    sessionsForOwner.find((s) => s.id === currentIdForOwner) || sessionsForOwner[0] || null;
+
+  const persistLocalSession = useCallback(
+    (session: Session) => {
+      // A late writer (suggestion chips, a finishing agent turn) can fire during
+      // that window. Persisting then would file the previous owner's session
+      // under the new owner — leaking account history into the guest list.
+      if (!ownerLoaded) return;
+      void dbPutSession(session, ownerKey);
+    },
+    [ownerLoaded, ownerKey],
+  );
+
+  const persistSession = useCallback(
+    (session: Session, intent: CloudIntent = 'deferred') => {
+      if (!ownerLoaded) return;
+      persistLocalSession(session);
+      if (!sessionCloudSync) return;
+      if (intent === 'checkpoint') {
+        manualSyncPresentation.clear(session.id);
+        void sessionCloudSync.checkpoint(session);
+      } else if (intent === 'debounced') {
+        sessionCloudSync.debounce(session);
+      } else {
+        manualSyncPresentation.clear(session.id);
+        sessionCloudSync.noteLocal(session);
+      }
+    },
+    [ownerLoaded, persistLocalSession, sessionCloudSync, manualSyncPresentation],
+  );
+
+  const flushCloudSaves = useCallback(async (sessionId?: string): Promise<void> => {
+    await sessionCloudSync?.flush(sessionId);
+  }, [sessionCloudSync]);
 
   const updateCurrent = useCallback(
-    (mut: (s: Session) => Session) => {
+    (mut: (s: Session) => Session, intent: CloudIntent = 'deferred') => {
       setSessions((prev) => {
         const id = currentId || prev[0]?.id;
         if (!id) return prev;
         return prev.map((s) => {
           if (s.id !== id) return s;
-          const updated = { ...mut(s), updatedAt: Date.now() };
-          dbPutSession(updated);
+          const mutated = mut(s);
+          if (mutated === s) return s;
+          const updated = { ...mutated, updatedAt: Date.now() };
+          persistSession(updated, intent);
           return updated;
         });
       });
     },
-    [currentId]
+    [currentId, persistSession]
   );
 
   const updateSession = useCallback(
-    (sessionId: string, mut: (s: Session) => Session) => {
+    (
+      sessionId: string,
+      mut: (s: Session) => Session,
+      intent: CloudIntent = 'deferred',
+    ) => {
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
-          const updated = { ...mut(s), updatedAt: Date.now() };
-          dbPutSession(updated);
+          const mutated = mut(s);
+          if (mutated === s) return s;
+          const updated = { ...mutated, updatedAt: Date.now() };
+          persistSession(updated, intent);
           return updated;
         })
       );
     },
-    []
+    [persistSession]
   );
 
   // Pick the mutator for a given session: a specific one by id, or the current
@@ -375,7 +785,13 @@ export function useSessions() {
   );
 
   const addAssistantMessage = useCallback(
-    (content: string, code?: string, sessionId?: string, revisionDraft?: CodeRevisionDraft): void => {
+    (
+      content: string,
+      code?: string,
+      sessionId?: string,
+      revisionDraft?: CodeRevisionDraft,
+      inputMode?: InputMode,
+    ): void => {
       const apply = getApply(sessionId);
       apply((s) => {
         const now = Date.now();
@@ -384,6 +800,7 @@ export function useSessions() {
           : undefined;
         return {
           ...s,
+          inputMode: inputMode ?? s.inputMode,
           revisions: revision ? [...(s.revisions ?? []), revision] : s.revisions,
           messages: [
             ...s.messages,
@@ -393,6 +810,7 @@ export function useSessions() {
               content,
               code,
               revisionId: revision?.id,
+              inputMode,
               timestamp: now,
             },
           ],
@@ -490,6 +908,52 @@ export function useSessions() {
     [getApply]
   );
 
+  const setManualCode = useCallback(
+    (code: string, sessionId?: string): Promise<void> =>
+      new Promise((resolve) => {
+        setSessions((previous) => {
+          const id = sessionId ?? currentId ?? previous[0]?.id;
+          if (!id) {
+            resolve();
+            return previous;
+          }
+          return previous.map((session) => {
+            if (session.id !== id) return session;
+            if (session.code === code) {
+              resolve();
+              return session;
+            }
+            const updated = { ...session, code, updatedAt: Date.now() };
+            if (sessionCloudSync) manualSyncPresentation.markPending(id);
+            persistSession(updated, 'debounced');
+            resolve();
+            return updated;
+          });
+        });
+      }),
+    [currentId, sessionCloudSync, manualSyncPresentation, persistSession],
+  );
+
+  const checkpointSession = useCallback(
+    (sessionId: string): Promise<void> =>
+      new Promise((resolve) => {
+        if (!sessionCloudSync) {
+          resolve();
+          return;
+        }
+        setSessions((previous) => {
+          const snapshot = previous.find((session) => session.id === sessionId);
+          if (!snapshot) {
+            resolve();
+            return previous;
+          }
+          void sessionCloudSync.checkpoint(snapshot).finally(resolve);
+          return previous;
+        });
+      }),
+    [sessionCloudSync],
+  );
+
   const newSession = useCallback(() => {
     setSessions((prev) => {
       const id = currentId || prev[0]?.id;
@@ -499,10 +963,10 @@ export function useSessions() {
       if (cur && isEffectivelyEmpty(cur)) {
         if (id) {
           if (currentId !== id) setCurrentId(id);
-          dbPutCurrentSessionId(id);
+          dbPutCurrentSessionId(id, ownerKey);
         }
         const refreshed = applyRefreshEmptySessionForReuse(cur, Date.now());
-        dbPutSession(refreshed);
+        persistLocalSession(refreshed);
         return prev.map((s) => s.id === cur.id ? refreshed : s);
       }
       // If there's already an empty session in the list, switch to it instead
@@ -511,30 +975,35 @@ export function useSessions() {
       const existingEmpty = prev.find((s) => isEffectivelyEmpty(s));
       if (existingEmpty) {
         setCurrentId(existingEmpty.id);
-        dbPutCurrentSessionId(existingEmpty.id);
+        dbPutCurrentSessionId(existingEmpty.id, ownerKey);
         // Refresh createdAt so the reused empty session sorts to the top.
         const refreshed = applyRefreshEmptySessionForReuse(existingEmpty, Date.now());
-        dbPutSession(refreshed);
+        persistLocalSession(refreshed);
         return prev.map((s) => s.id === existingEmpty.id ? refreshed : s);
       }
       const fresh = makeEmptySession();
+      noteCreatedSession(fresh.id);
       setCurrentId(fresh.id);
-      dbPutCurrentSessionId(fresh.id);
-      dbPutSession(fresh);
+      dbPutCurrentSessionId(fresh.id, ownerKey);
+      persistLocalSession(fresh);
       return [fresh, ...prev];
     });
-  }, [currentId]);
+  }, [currentId, ownerKey, noteCreatedSession, persistLocalSession]);
 
   const switchTo = useCallback((id: string) => {
     setCurrentId(id);
-    dbPutCurrentSessionId(id);
-  }, []);
+    dbPutCurrentSessionId(id, ownerKey);
+  }, [ownerKey]);
 
   const renameSession = useCallback(
     (sessionId: string, title: string): void => {
       const nextTitle = title.trim();
       if (!nextTitle) return;
-      updateSession(sessionId, (s) => ({ ...s, title: nextTitle.slice(0, 60) }));
+      updateSession(
+        sessionId,
+        (s) => ({ ...s, title: nextTitle.slice(0, 60) }),
+        'checkpoint',
+      );
     },
     [updateSession]
   );
@@ -543,26 +1012,41 @@ export function useSessions() {
     (id: string) => {
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
-        dbDeleteSession(id);
+        if (sessionCloudSync) {
+          void sessionCloudSync.deleteSession(
+            id,
+            () => dbDeleteSessionStrict(id, ownerKey),
+          ).catch((err) => {
+            console.warn('[sessions] cloud session delete failed.', err);
+          });
+        } else {
+          void dbDeleteSession(id, ownerKey);
+        }
         if (next.length === 0) {
           const fresh = makeEmptySession();
+          noteCreatedSession(fresh.id);
           setCurrentId(fresh.id);
-          dbPutCurrentSessionId(fresh.id);
-          dbPutSession(fresh);
+          dbPutCurrentSessionId(fresh.id, ownerKey);
+          persistLocalSession(fresh);
           return [fresh];
         }
         if (id === currentId) {
           setCurrentId(next[0].id);
-          dbPutCurrentSessionId(next[0].id);
+          dbPutCurrentSessionId(next[0].id, ownerKey);
         }
         return next;
       });
     },
-    [currentId]
+    [currentId, noteCreatedSession, ownerKey, persistLocalSession, sessionCloudSync],
   );
 
   const importSession = useCallback(
-    async (payload: { title: string; code: string; messages: ChatMessage[] }): Promise<void> => {
+    async (
+      payload: { title: string; code: string; messages: ChatMessage[]; revisions?: CodeRevision[] },
+      // Opening a shared link should land on what was imported; syncing guest
+      // history in bulk should leave the user where they were.
+      options: { activate?: boolean } = {},
+    ): Promise<void> => {
       const id = newSessionId();
       const now = Date.now();
       const session: Session = {
@@ -570,15 +1054,20 @@ export function useSessions() {
         title: `${payload.title}`,
         messages: payload.messages,
         code: payload.code,
+        revisions: importedRevisions(payload.messages, payload.revisions),
         createdAt: now,
         updatedAt: now,
       };
-      await dbPutSession(session);
+      await dbPutSession(session, ownerKey);
+      noteCreatedSession(id);
       setSessions((prev) => [session, ...prev]);
-      setCurrentId(id);
-      dbPutCurrentSessionId(id);
+      if (options.activate ?? true) {
+        setCurrentId(id);
+        dbPutCurrentSessionId(id, ownerKey);
+      }
+      await sessionCloudSync?.checkpoint(session);
     },
-    []
+    [noteCreatedSession, ownerKey, sessionCloudSync],
   );
 
   const importOddeNovaSession = useCallback(async (
@@ -612,10 +1101,12 @@ export function useSessions() {
         createdAt: now,
         updatedAt: now,
       };
-      await dbPutImportedSession(created);
+      await dbPutImportedSession(created, ownerKey);
+      noteCreatedSession(created.id);
       setSessions((previous) => [created, ...previous]);
       setCurrentId(created.id);
-      dbPutCurrentSessionId(created.id);
+      dbPutCurrentSessionId(created.id, ownerKey);
+      await sessionCloudSync?.checkpoint(created);
       return 'created';
     }
 
@@ -639,10 +1130,11 @@ export function useSessions() {
         externalSource: source,
         updatedAt: now,
       };
-      await dbPutImportedSession(updated);
+      await dbPutImportedSession(updated, ownerKey);
       setSessions((previous) => previous.map((session) => session.id === target.id ? updated : session));
       setCurrentId(updated.id);
-      dbPutCurrentSessionId(updated.id);
+      dbPutCurrentSessionId(updated.id, ownerKey);
+      await sessionCloudSync?.checkpoint(updated);
       return 'updated';
     }
 
@@ -665,15 +1157,21 @@ export function useSessions() {
       createdAt: now,
       updatedAt: now,
     };
-    await dbPutImportedSessionBranch(detached, branch);
+    await dbPutImportedSessionBranch(detached, branch, ownerKey);
+    noteCreatedSession(branch.id);
     setSessions((previous) => [
       branch,
       ...previous.map((session) => session.id === target.id ? detached : session),
     ]);
     setCurrentId(branch.id);
-    dbPutCurrentSessionId(branch.id);
+    dbPutCurrentSessionId(branch.id, ownerKey);
+
+    await Promise.all([
+      sessionCloudSync?.checkpoint(detached),
+      sessionCloudSync?.checkpoint(branch),
+    ]);
     return 'branched';
-  }, [sessions]);
+  }, [noteCreatedSession, ownerKey, sessions, sessionCloudSync]);
 
   const branchFromMessage = useCallback(
     (targetMessageId: string): void => {
@@ -692,6 +1190,7 @@ export function useSessions() {
         title: `${session.title}${t('branchSuffix')}`,
         messages: sliced,
         code,
+        inputMode: inputModeReferencedBy(sliced),
         revisions: revisionsReferencedBy(sliced, session.revisions),
         createdAt: now,
         updatedAt: now,
@@ -699,12 +1198,13 @@ export function useSessions() {
       // Optimistic update: UI reflects immediately; DB write is fire-and-forget.
       // If dbPutSession fails, the session exists in memory for the current page
       // load but won't persist on refresh.
+      noteCreatedSession(id);
       setSessions((prev) => [branched, ...prev]);
       setCurrentId(id);
-      dbPutCurrentSessionId(id);
-      dbPutSession(branched).catch(console.error);
+      dbPutCurrentSessionId(id, ownerKey);
+      persistSession(branched, 'checkpoint');
     },
-    [sessions, currentId]
+    [sessions, currentId, noteCreatedSession, ownerKey, persistSession]
   );
 
   const updateTokenStats = useCallback(
@@ -718,15 +1218,35 @@ export function useSessions() {
   const setSuggestions = useCallback(
     (items: string[], forCode: string, sessionId?: string) => {
       const apply = getApply(sessionId);
-      apply((s) => ({ ...s, suggestions: { forCode, items } }));
+      apply((s) => {
+        const current = s.suggestions;
+        if (
+          current?.forCode === forCode
+          && current.items.length === items.length
+          && current.items.every((item, index) => item === items[index])
+        ) {
+          return s;
+        }
+        return { ...s, suggestions: { forCode, items } };
+      });
     },
     [getApply]
   );
 
   return {
-    sessions,
+    sessions: sessionsForOwner,
     currentSession,
-    currentId,
+    currentSyncStatus: currentSession
+      ? (
+          syncState.ownerKey === ownerKey
+            ? syncState.statuses[currentSession.id]
+            : undefined
+        ) ?? sessionCloudSync?.getStatus(currentSession.id)
+      : undefined,
+    currentManualSyncStatus: currentSession && manualSyncState.ownerKey === ownerKey
+      ? manualSyncState.statuses[currentSession.id]
+      : undefined,
+    currentId: currentIdForOwner,
     isLoading,
     isPersistent,
     addUserMessage,
@@ -741,6 +1261,8 @@ export function useSessions() {
     finalizeAgentAttempt,
     finalizeLastAssistantMessage,
     setCurrentCode,
+    setManualCode,
+    checkpointSession,
     newSession,
     switchTo,
     renameSession,
@@ -750,5 +1272,6 @@ export function useSessions() {
     branchFromMessage,
     updateTokenStats,
     setSuggestions,
+    flushCloudSaves,
   };
 }

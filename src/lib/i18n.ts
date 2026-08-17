@@ -1,6 +1,8 @@
-export const zh: boolean = (() => {
+export function isZh(): boolean {
   try { return navigator.language.startsWith('zh'); } catch { return false; }
-})();
+}
+
+export const zh: boolean = isZh();
 
 const S: Record<string, readonly [string, string]> = {
   // Common
@@ -34,6 +36,19 @@ const S: Record<string, readonly [string, string]> = {
   expandNavigation:   ['展开导航栏', 'Expand navigation'],
   collapseNavigation: ['收起导航栏', 'Collapse navigation'],
 
+  // Account
+  account:      ['账号', 'Account'],
+  email:        ['邮箱', 'Email'],
+  password:     ['密码', 'Password'],
+  confirmPassword: ['确认密码', 'Confirm password'],
+  emailPlaceholder:            ['you@example.com', 'you@example.com'],
+  passwordPlaceholder:         ['输入密码', 'Enter your password'],
+  confirmPasswordPlaceholder:  ['再次输入密码', 'Confirm your password'],
+  newPasswordPlaceholder:      ['输入新密码', 'Enter new password'],
+  confirmNewPasswordPlaceholder: ['再次输入新密码', 'Confirm new password'],
+  showPassword: ['显示密码', 'Show password'],
+  hidePassword: ['隐藏密码', 'Hide password'],
+
   // App status
   engineStarting:   ['音频引擎启动中，请稍后再试', 'Audio engine starting, please try again later'],
   preparingToPlay:  ['准备播放…', 'Preparing to play…'],
@@ -55,6 +70,8 @@ const S: Record<string, readonly [string, string]> = {
   sessionHistory:   ['会话历史', 'Session history'],
   newSessionTitle:  ['新会话', 'New session'],
   branchSuffix:     ['（分支）', ' (branch)'],
+  sessionSyncOffline: ['未同步到云端 · 联网后自动上传', 'Not synced to cloud · uploads when online'],
+  sessionSyncRetrying:['同步失败，正在重试', 'Sync failed; retrying'],
 
   // Tool call labels (formatToolCall)
   arrangeMusic:   ['编排段落…', 'Arranging…'],
@@ -68,7 +85,9 @@ const S: Record<string, readonly [string, string]> = {
   sharing:         ['分享中…', 'Sharing…'],
   shareFailed:     ['分享失败', 'Share failed'],
   shareFailedRetry:['分享失败，请重试', 'Share failed, please retry'],
-  linkCopied:      ['链接已复制', 'Link copied'],
+  shareDetailsCopied: ['分享信息已复制', 'Share details copied'],
+  shared:          ['已分享', 'Shared'],
+  sharedMusicCreation: ['分享了一段音乐创作', 'Shared a music creation'],
   export:          ['导出', 'Export'],
   download:        ['下载', 'Download'],
   exportWav:       ['导出 WAV', 'Export WAV'],
@@ -88,9 +107,53 @@ const S: Record<string, readonly [string, string]> = {
   sampleRate:      ['采样率', 'Sample rate'],
   setUpLater:      ['稍后设置', 'Set up later'],
 
+  // Account
+  accountDesc:          ['登录后可将对话记录同步到云端。', 'Sign in to sync conversation history to the cloud.'],
+  accountActionFailed:  ['操作失败，请稍后重试。', 'Action failed. Please try again later.'],
+  supabaseNotConfigured:['Supabase 尚未配置，当前只能以游客模式使用。', 'Supabase is not configured. Guest mode is still available.'],
+  signIn:               ['登录', 'Sign in'],
+  continueWithGoogle:   ['使用 Google 继续', 'Continue with Google'],
+  orUseEmail:           ['或使用邮箱', 'or use email'],
+  signOut:              ['退出登录', 'Sign out'],
+  signedInAs:           ['当前登录', 'Signed in as'],
+  createAccount:        ['注册账号', 'Create account'],
+  needAccount:          ['注册账号', 'Create account'],
+  haveAccount:          ['已有账号，去登录', 'Already have an account'],
+  forgotPassword:       ['忘记密码？', 'Forgot password?'],
+  backToSignIn:         ['返回登录', 'Back to sign in'],
+  sendResetEmail:       ['发送重置邮件', 'Send reset email'],
+  newPassword:          ['新密码', 'New password'],
+  confirmNewPassword:   ['确认新密码', 'Confirm new password'],
+  updatePassword:       ['更新密码', 'Update password'],
+  passwordsDoNotMatch:  ['两次输入的密码不一致', 'Passwords do not match'],
+  confirmEmailSent:     ['确认邮件已发送。请先完成邮箱确认。', 'Confirmation email sent. Confirm your email.'],
+  passwordResetSent:    ['密码重置邮件已发送。', 'Password reset email sent.'],
+  authErrorInvalidCredentials:['邮箱或密码不正确，请检查后重试。', 'Incorrect email or password. Please check and try again.'],
+  authErrorEmailNotConfirmed:['请先完成邮箱验证，再登录。', 'Please verify your email before signing in.'],
+  authErrorUserAlreadyExists:['该邮箱已注册，请直接登录或重置密码。', 'An account with this email already exists. Sign in or reset your password.'],
+  authErrorWeakPassword:['密码至少需要 8 个字符。', 'Your password must be at least 8 characters.'],
+  authErrorInvalidEmail:['邮箱格式不正确，请检查后重试。', 'Enter a valid email address and try again.'],
+  authErrorRateLimited:['操作过于频繁，请稍后再试。', 'Too many attempts. Please wait a moment and try again.'],
+  authErrorSignupDisabled:['当前暂不支持注册新账号。', 'New account registration is currently unavailable.'],
+  authErrorSamePassword:['新密码不能与当前密码相同。', 'Your new password must be different from your current password.'],
+  authErrorSessionExpired:['登录状态已失效，请重新登录后再试。', 'Your session has expired. Please sign in and try again.'],
+  authErrorNetwork:['网络连接失败，请检查网络后重试。', 'Unable to connect. Check your network and try again.'],
+  authErrorGoogleCancelled:['已取消 Google 登录。', 'Google sign-in was cancelled.'],
+  authErrorGoogleFailed:['Google 登录失败，请重试。', 'Google sign-in failed. Please try again.'],
+  authErrorGoogleIdentityConflict:[
+    '该邮箱已有账号，请先使用邮箱密码登录后再重试。',
+    'An account already uses this email. Sign in with email and password, then try again.',
+  ],
+  importLocalHistory:   ['同步本机历史？', 'Sync local history?'],
+  importLocalHistoryDesc:['检测到本机游客模式下已有对话记录。要导入到当前账号并开启云同步吗？', 'Local guest conversations were found. Import them into this account and enable cloud sync?'],
+  importNow:            ['导入并同步', 'Import and sync'],
+  notNow:               ['暂不', 'Not now'],
+
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
+  choiceInputPlaceholder: ['回复序号，或直接说出你的想法...', 'Reply with a number or describe your idea...'],
   tabToFill:           ['按 Tab 填入', 'Tab to use'],
+  enterToFill:         ['按 ⏎ 填入', '⏎ to use'],
   notInitialized:      ['未初始化', 'Not initialized'],
   restartEngine:       ['重启引擎', 'Restart engine'],
   engineInitializing:  ['初始化中...', 'Initializing...'],
@@ -182,6 +245,13 @@ const S: Record<string, readonly [string, string]> = {
   clickToResume:   ['点击播放继续', 'Click to resume'],
   emptyCode:       ['代码为空', 'Code is empty'],
   copyShareLink:   ['复制分享链接', 'Copy share link'],
+
+  // Thinking level
+  thinkingLevel:        ['思考强度', 'Thinking level'],
+  thinkingLevelLow:     ['低', 'Low'],
+  thinkingLevelMedium:  ['中', 'Medium'],
+  thinkingLevelHigh:    ['高', 'High'],
+  thinkingLevelExtreme: ['极高', 'Extreme'],
 };
 
 export function t(key: string): string {

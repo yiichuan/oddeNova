@@ -28,6 +28,8 @@ import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
 import ControlHoverLabel, { type ControlHoverLabelAnchor } from './ControlHoverLabel';
 import ControlBarParticles from './ControlBarParticles';
+import SessionSyncStatus from './SessionSyncStatus';
+import type { SessionSyncStatus as SyncStatus } from '../lib/session-cloud-sync';
 
 interface CodePanelProps {
   code: string;
@@ -50,6 +52,8 @@ interface CodePanelProps {
   vizCollapsed?: boolean;
   /** Collapses/expands that pane; the footer then sits at the page bottom. */
   onToggleViz?: () => void;
+  syncStatus?: SyncStatus;
+  showSyncStatus?: boolean;
 }
 
 interface Metaball {
@@ -275,6 +279,8 @@ export default function CodePanel({
   onEditorFocusChange,
   vizCollapsed = false,
   onToggleViz,
+  syncStatus,
+  showSyncStatus = false,
 }: CodePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -505,6 +511,17 @@ export default function CodePanel({
             {error}
           </div>
         )}
+
+        {/* Sync status floats over the code without resizing it. The error
+            banner lives at the top-right, so the capsule's position can never
+            depend on whether the code is broken. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end">
+          <SessionSyncStatus
+            status={syncStatus}
+            visible={!!showSyncStatus}
+            className="ml-auto shrink-0 mr-3 mb-2"
+          />
+        </div>
       </div>
 
       {/* Footer — desktop playback control. On mobile transport lives next to

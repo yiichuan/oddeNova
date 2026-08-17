@@ -43,8 +43,10 @@ supabase/.temp/
 # Local planning docs (not uploaded to GitHub)
 _plans/
 docs/superpowers/
+.worktrees/
 docs/research/
 .superpowers/
+.agents/
 
 # Audio files
 *.wav

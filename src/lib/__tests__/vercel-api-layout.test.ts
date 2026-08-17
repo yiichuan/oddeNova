@@ -21,7 +21,6 @@ describe('Vercel API layout', () => {
       }
     }
   });
-
   it('proxies PostHog ingestion before the SPA fallback without breaking share pages', async () => {
     const config = JSON.parse(await readFile('vercel.json', 'utf8')) as {
       rewrites: Array<{ source: string; destination: string }>;
@@ -45,7 +44,7 @@ describe('Vercel API layout', () => {
         destination: 'https://us.i.posthog.com/:path',
       },
       {
-        source: '/(.*)',
+        source: '/((?!api/).*)',
         destination: '/index.html',
       },
     ]);
@@ -68,5 +67,14 @@ describe('Vercel API layout', () => {
         schedule: '0 16 * * *',
       },
     ]));
+  });
+
+  it('keeps the SPA fallback from rewriting API requests', async () => {
+    const config = JSON.parse(await readFile('vercel.json', 'utf8')) as {
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+    const spaFallback = config.rewrites.find((rewrite) => rewrite.destination === '/index.html');
+
+    expect(spaFallback?.source).toBe('/((?!api/).*)');
   });
 });
