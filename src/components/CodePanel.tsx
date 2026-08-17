@@ -1,20 +1,55 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { PlayIcon, StopIcon } from './icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  DownloadIcon,
+  MutedVolumeIcon,
+  PanelBottomCloseIcon,
+  PanelBottomOpenIcon,
+  PauseIcon,
+  PlayIcon,
+  VolumeIcon,
+} from './icons';
 import { t } from '../lib/i18n';
 import { strudelService } from '../services/strudel';
 import { isDemoMode } from '../demo/demo-config';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { formatPlaybackTime, getStrudelLoopDurationSeconds } from '../lib/strudel-timing';
+import {
+  formatPlaybackTime,
+  getStrudelLoopCycles,
+  getStrudelLoopDurationSeconds,
+} from '../lib/strudel-timing';
+import {
+  ExportPopover,
+  ShareButton,
+  type GenerateTitleParams,
+} from './TopActionBar';
+import { useExportPopoverController, type ExportParams } from '../hooks/useExportPopoverController';
+import type { Session } from '../hooks/useSessions';
+import type { ChatMessage } from '../hooks/useChat';
+import ControlHoverLabel, { type ControlHoverLabelAnchor } from './ControlHoverLabel';
+import ControlBarParticles from './ControlBarParticles';
 
 interface CodePanelProps {
   code: string;
   error: string | null;
   isPlaying: boolean;
+  isPaused: boolean;
   engineReady: boolean;
+  session: Session | null;
+  messages: ChatMessage[];
+  exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
+  onExport: (params: ExportParams) => Promise<boolean>;
+  onGenerateTitle: (params: GenerateTitleParams) => Promise<string>;
+  onResetExportState: () => void;
+  bpm: number;
   onMount: (el: HTMLDivElement) => void;
   onPlay: () => void;
-  onStop: () => void;
+  onPause: () => void;
   onEditorFocusChange?: (focused: boolean) => void;
+  /** Whether the visualizer pane below this panel is currently collapsed. */
+  vizCollapsed?: boolean;
+  /** Collapses/expands that pane; the footer then sits at the page bottom. */
+  onToggleViz?: () => void;
 }
 
 interface Metaball {
@@ -66,7 +101,7 @@ const METABALL_KEY_TIMES = '0;0.16;0.33;0.5;0.67;0.84;1';
 const METABALL_KEY_SPLINES = Array(6).fill('0.37 0 0.63 1').join(';');
 // Scale each metaball's area to 1.5× its previous size: √2 × √1.5 = √3.
 const METABALL_LINEAR_SCALE = Math.sqrt(3);
-const METABALL_DURATION_SCALE = 1.4;
+const METABALL_DURATION_SCALE = 2;
 const COMPOSITE_LIGHT_GROUP_ORDER = [0, 3, 1, 4, 2, 5] as const;
 
 function buildBallAxisValues(origin: number, offsets: Metaball['x'], motionScale = 1) {
@@ -89,50 +124,131 @@ function usePrefersReducedMotion() {
   return prefersReducedMotion;
 }
 
-function PlaybackProgress({ code, isPlaying }: { code: string; isPlaying: boolean }) {
+function PlaybackProgress({ code, isPlaying, isPaused }: { code: string; isPlaying: boolean; isPaused: boolean }) {
   const totalSeconds = useMemo(() => getStrudelLoopDurationSeconds(code), [code]);
+  const loopCycles = useMemo(() => code.trim() ? getStrudelLoopCycles(code) : 0, [code]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const elapsedRef = useRef(0);
+  const seekInputRef = useRef<HTMLInputElement>(null);
+  const pointerFocusedRef = useRef(false);
+  const playbackOriginRef = useRef({ elapsedSeconds: 0, startedAt: 0 });
+  const wasPlayingRef = useRef(false);
+
+  const updateElapsedSeconds = useCallback((seconds: number) => {
+    elapsedRef.current = seconds;
+    setElapsedSeconds(seconds);
+  }, []);
+
+  // Stopping (unlike pausing) rewinds the playhead, and so does losing a
+  // playable duration. Adjusted on the transition during render rather than in
+  // an effect, which would cost a cascading render.
+  const isRewound = (!isPlaying || totalSeconds <= 0) && !isPaused;
+  const [wasRewound, setWasRewound] = useState(isRewound);
+  if (isRewound !== wasRewound) {
+    setWasRewound(isRewound);
+    if (isRewound) setElapsedSeconds(0);
+  }
 
   useEffect(() => {
-    if (!isPlaying || totalSeconds <= 0) return;
+    if (!isPlaying || totalSeconds <= 0) {
+      // Rewinding the resume origin belongs here: refs cannot be written during render.
+      if (!isPaused) elapsedRef.current = 0;
+      wasPlayingRef.current = false;
+      return;
+    }
 
-    const startedAt = performance.now();
+    wasPlayingRef.current = true;
+    playbackOriginRef.current = {
+      elapsedSeconds: elapsedRef.current,
+      startedAt: performance.now(),
+    };
     let frame = 0;
     const update = (now: number) => {
-      setElapsedSeconds(((now - startedAt) / 1000) % totalSeconds);
+      const origin = playbackOriginRef.current;
+      updateElapsedSeconds((origin.elapsedSeconds + (now - origin.startedAt) / 1000) % totalSeconds);
       frame = window.requestAnimationFrame(update);
     };
     frame = window.requestAnimationFrame(update);
     return () => window.cancelAnimationFrame(frame);
-  }, [isPlaying, totalSeconds]);
+  }, [code, isPaused, isPlaying, totalSeconds, updateElapsedSeconds]);
 
-  const progress = isPlaying && totalSeconds > 0 ? elapsedSeconds / totalSeconds : 0;
+  const progress = totalSeconds > 0 ? elapsedSeconds / totalSeconds : 0;
   const elapsedLabel = formatPlaybackTime(elapsedSeconds);
   const totalLabel = formatPlaybackTime(totalSeconds);
+  const seekDisabled = totalSeconds <= 0 || loopCycles <= 0;
+
+  const handleSeek = (nextProgress: number) => {
+    if (seekDisabled) return;
+    const normalizedProgress = Math.min(1, Math.max(0, nextProgress));
+    const nextElapsedSeconds = normalizedProgress * totalSeconds;
+    updateElapsedSeconds(nextElapsedSeconds);
+    playbackOriginRef.current = {
+      elapsedSeconds: nextElapsedSeconds,
+      startedAt: performance.now(),
+    };
+    strudelService.seekPlayback(normalizedProgress, loopCycles);
+  };
 
   return (
     <div
       data-testid="code-panel-playback-progress"
-      className="relative z-10 flex min-w-0 flex-1 items-center gap-3 pl-3 pr-5"
+      className="code-panel-playback-layout relative z-10 flex min-w-0 flex-1 items-center"
     >
       <div
-        className="relative h-[2px] w-[100px] shrink-0 overflow-hidden rounded-full bg-current text-text-primary"
-        role="progressbar"
-        aria-label={t('playbackProgress')}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(progress * 100)}
-        aria-valuetext={`${elapsedLabel}/${totalLabel}`}
+        className="group relative flex h-6 min-w-0 flex-1 items-center"
+        onPointerLeave={() => {
+          if (isDragging || !pointerFocusedRef.current) return;
+          seekInputRef.current?.blur();
+          pointerFocusedRef.current = false;
+        }}
       >
-        <span
-          data-testid="code-panel-playback-progress-fill"
-          className="absolute inset-0 origin-left rounded-full bg-[#EE6A2C]"
-          style={{ transform: `scaleX(${progress})` }}
+        <div
+          data-testid="code-panel-playback-track"
+          className={`relative w-full rounded-full bg-current text-text-primary transition-[height] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-[4px] group-focus-within:h-[4px] ${isDragging ? 'h-[4px]' : 'h-[2px]'}`}
+        >
+          <span
+            data-testid="code-panel-playback-progress-fill"
+            className="absolute inset-y-0 left-0 rounded-full bg-[#CD5633]"
+            style={{ width: `${progress * 100}%` }}
+          />
+          <span
+            data-testid="code-panel-playback-progress-thumb"
+            className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-current bg-[#CD5633] text-text-primary transition-[width,height,opacity] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-4 group-hover:w-4 group-hover:opacity-100 group-focus-within:h-4 group-focus-within:w-4 group-focus-within:opacity-100 ${isDragging ? 'h-4 w-4 opacity-100' : 'h-[10px] w-[10px] opacity-0'}`}
+            style={{ left: `${progress * 100}%` }}
+          />
+        </div>
+        <input
+          ref={seekInputRef}
+          data-testid="code-panel-playback-seek"
+          type="range"
+          min={0}
+          max={1000}
+          step={1}
+          value={Math.round(progress * 1000)}
+          disabled={seekDisabled}
+          onChange={(event) => handleSeek(Number(event.target.value) / 1000)}
+          onPointerDown={() => {
+            pointerFocusedRef.current = true;
+            setIsDragging(true);
+          }}
+          onPointerUp={() => setIsDragging(false)}
+          onPointerCancel={() => {
+            pointerFocusedRef.current = false;
+            setIsDragging(false);
+          }}
+          onBlur={() => {
+            pointerFocusedRef.current = false;
+            setIsDragging(false);
+          }}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+          aria-label={t('playbackProgress')}
+          aria-valuetext={`${elapsedLabel}/${totalLabel}`}
         />
       </div>
       <span
         data-testid="code-panel-playback-time"
-        className="shrink-0 text-[11px] leading-none tabular-nums text-text-primary"
+        className="shrink-0 text-[12px] leading-none tabular-nums text-text-primary"
       >
         {elapsedLabel}/{totalLabel}
       </span>
@@ -144,17 +260,83 @@ export default function CodePanel({
   code,
   error,
   isPlaying,
+  isPaused,
   engineReady,
+  session,
+  messages,
+  exportState,
+  onExport,
+  onGenerateTitle,
+  onResetExportState,
+  bpm,
   onMount,
   onPlay,
-  onStop,
+  onPause,
   onEditorFocusChange,
+  vizCollapsed = false,
+  onToggleViz,
 }: CodePanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [gutterWidth, setGutterWidth] = useState(0);
+  const volumeButtonRef = useRef<HTMLButtonElement>(null);
+  const volumePopoverRef = useRef<HTMLDivElement>(null);
+  const volumeCloseTimerRef = useRef<number | null>(null);
+  const [volume, setVolume] = useState(() => isDemoMode() ? 0.1 : 1);
+  const lastNonzeroVolumeRef = useRef(volume > 0 ? volume : 1);
+  const [volumeOpen, setVolumeOpen] = useState(false);
+  const [volumeAnchor, setVolumeAnchor] = useState<{ right: number; bottom: number } | null>(null);
+  const [exportAnchor, setExportAnchor] = useState<{ right: number; top: number } | null>(null);
+  const [exportHoverAnchor, setExportHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+  const [vizHoverAnchor, setVizHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
 
   const isMobile = useIsMobile();
   const prefersReducedMotion = usePrefersReducedMotion();
+
+  const exportWithVolumeRestore = useCallback(async (params: ExportParams) => {
+    const ok = await onExport(params);
+    await strudelService.setMasterVolume(volume);
+    return ok;
+  }, [onExport, volume]);
+  const { exportOpen, setExportOpen, handleExport } = useExportPopoverController(
+    exportWithVolumeRestore,
+    onResetExportState,
+  );
+
+  const clearVolumeCloseTimer = useCallback(() => {
+    if (volumeCloseTimerRef.current === null) return;
+    window.clearTimeout(volumeCloseTimerRef.current);
+    volumeCloseTimerRef.current = null;
+  }, []);
+
+  const openVolumePopover = useCallback((element: HTMLElement) => {
+    clearVolumeCloseTimer();
+    const rect = element.getBoundingClientRect();
+    setVolumeAnchor({
+      right: window.innerWidth - rect.right - 6,
+      bottom: window.innerHeight - rect.top + 8,
+    });
+    setVolumeOpen(true);
+  }, [clearVolumeCloseTimer]);
+
+  const scheduleVolumeClose = useCallback(() => {
+    clearVolumeCloseTimer();
+    volumeCloseTimerRef.current = window.setTimeout(() => {
+      volumeCloseTimerRef.current = null;
+      setVolumeOpen(false);
+    }, 150);
+  }, [clearVolumeCloseTimer]);
+
+  const setMasterVolume = useCallback((nextVolume: number) => {
+    if (nextVolume > 0) lastNonzeroVolumeRef.current = nextVolume;
+    setVolume(nextVolume);
+    void strudelService.setMasterVolume(nextVolume).catch(() => {});
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setMasterVolume(volume > 0 ? 0 : lastNonzeroVolumeRef.current);
+  }, [setMasterVolume, volume]);
+
+  useEffect(() => clearVolumeCloseTimer, [clearVolumeCloseTimer]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -175,6 +357,20 @@ export default function CodePanel({
   useEffect(() => {
     if (isDemoMode()) void strudelService.setMasterVolume(0.1);
   }, []);
+
+  useEffect(() => {
+    if (!volumeOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (volumeButtonRef.current?.contains(target) || volumePopoverRef.current?.contains(target)) return;
+      setVolumeOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [volumeOpen]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -216,50 +412,74 @@ export default function CodePanel({
     };
   }, [onEditorFocusChange]);
 
-  // Track .cm-gutters width so editor errors start after the gutter.
-  // Keep MutationObserver alive so reinit (which clears + remounts the editor) is handled.
+  // Keep the bottom fade above the horizontal scrollbar only when that
+  // scrollbar actually exists. Without overflow, the fade reaches the edge.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    let ro: ResizeObserver | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    let scroller: HTMLElement | null = null;
 
-    const attachRo = (gutters: HTMLElement) => {
-      ro?.disconnect();
-      setGutterWidth(gutters.offsetWidth);
-      ro = new ResizeObserver(() => setGutterWidth(gutters.offsetWidth));
-      ro.observe(gutters);
+    const updateScrollbarState = () => {
+      if (!scroller) return;
+      const editor = scroller.closest<HTMLElement>('.cm-editor');
+      if (!editor) return;
+      editor.dataset.hasHorizontalScrollbar = String(scroller.scrollWidth > scroller.clientWidth + 1);
     };
 
-    const mo = new MutationObserver(() => {
-      const gutters = container.querySelector('.cm-gutters') as HTMLElement | null;
-      if (gutters) attachRo(gutters);
+    const attachScroller = (nextScroller: HTMLElement) => {
+      if (scroller === nextScroller) {
+        updateScrollbarState();
+        return;
+      }
+      resizeObserver?.disconnect();
+      scroller = nextScroller;
+      resizeObserver = new ResizeObserver(updateScrollbarState);
+      resizeObserver.observe(nextScroller);
+      const content = nextScroller.querySelector('.cm-content');
+      if (content instanceof HTMLElement) resizeObserver.observe(content);
+      updateScrollbarState();
+    };
+
+    const mutationObserver = new MutationObserver(() => {
+      const nextScroller = container.querySelector('.cm-scroller');
+      if (nextScroller instanceof HTMLElement) attachScroller(nextScroller);
     });
+    mutationObserver.observe(container, { childList: true, subtree: true, characterData: true });
 
-    mo.observe(container, { childList: true, subtree: true });
-
-    // Handle the case where gutters already exist on mount
-    const existing = container.querySelector('.cm-gutters') as HTMLElement | null;
-    if (existing) attachRo(existing);
+    const existingScroller = container.querySelector('.cm-scroller');
+    if (existingScroller instanceof HTMLElement) attachScroller(existingScroller);
 
     return () => {
-      mo.disconnect();
-      ro?.disconnect();
+      mutationObserver.disconnect();
+      resizeObserver?.disconnect();
     };
   }, []);
 
   const handlePlayClick = () => {
     if (isPlaying) {
-      onStop();
+      onPause();
     } else if (engineReady) {
       onPlay();
     }
   };
 
+  // Hover labels are portalled to <body>, so they need viewport coordinates:
+  // centred on the control, sitting just above it.
+  const anchorAbove = (element: HTMLElement): ControlHoverLabelAnchor => {
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left + rect.width / 2,
+      bottom: window.innerHeight - rect.top + 8,
+    };
+  };
+
   const hasPlayableCode = code.trim().length > 0;
+  const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
 
   return (
-    <div className="h-full flex flex-col overflow-hidden rounded-region">
+    <div ref={panelRef} className="h-full flex flex-col overflow-hidden rounded-region">
       <style>{`
         @keyframes cmFadeIn { from { opacity: 0; } to { opacity: 1; } }
         .video-fade-in { animation: cmFadeIn 0.6s ease-out forwards; }
@@ -278,11 +498,9 @@ export default function CodePanel({
 
         {error && (
           <div
-            className="absolute -bottom-px p-2.5 bg-error/10 border border-[#B2370C] text-[#B2370C] text-xs font-mono whitespace-pre-wrap wrap-break-word"
-            style={{
-              left: gutterWidth ? gutterWidth - 1 : 0,
-              maxWidth: `calc(100% - ${gutterWidth ? gutterWidth - 1 : 0}px)`,
-            }}
+            data-testid="code-panel-runtime-error"
+            className="absolute right-[8px] top-[8px] z-20 w-fit rounded-[4px] border border-[#E01A1A] bg-[#E01A1A]/10 p-2.5 text-xs text-[#E01A1A] font-mono whitespace-pre-wrap wrap-break-word"
+            style={{ maxWidth: 'min(420px, calc(100% - 24px))' }}
           >
             {error}
           </div>
@@ -294,7 +512,7 @@ export default function CodePanel({
       {!isMobile && (
         <div
           data-testid="code-panel-controls-layer"
-          className="code-panel-controls-glass relative z-10 -mt-px -ml-px flex h-12 w-[calc(100%+2px)] shrink-0 items-stretch rounded-b-region border bg-conversation-surface"
+          className="code-panel-controls relative z-10 -mt-px -ml-px flex h-12 w-[calc(100%+2px)] shrink-0 items-stretch rounded-b-region border bg-conversation-surface"
           style={{ borderColor: 'transparent', fontFamily: "'ABeeZee', monospace" }}
         >
           <div
@@ -356,6 +574,16 @@ export default function CodePanel({
             })}
           </div>
 
+          {/* Stands in for the visualizer while it is collapsed: ASCII
+              characters falling through the bar like snow, a shifting few of
+              them burning orange on the beat while a piece plays. */}
+          <ControlBarParticles
+            active={vizCollapsed}
+            isPlaying={isPlaying}
+            bpm={bpm}
+            motionless={prefersReducedMotion}
+          />
+
           <span
             data-testid="code-panel-controls-light-border"
             className="code-panel-controls-light-border"
@@ -371,14 +599,162 @@ export default function CodePanel({
             <button
               onClick={handlePlayClick}
               disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
-              className="flex items-center justify-center w-7 h-7 rounded-full bg-[#050505] text-text-primary transition-colors transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:bg-[#2A2A2A] disabled:text-[#686868] disabled:opacity-100"
-              title={isPlaying ? t('stop') : t('play')}
+              className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#A8A8A8] transition-colors hover:text-[#C8C8C8] disabled:cursor-not-allowed disabled:text-[#686868] disabled:opacity-100"
+              aria-label={isPlaying ? t('pause') : t('play')}
             >
-              {isPlaying ? <StopIcon size={14} /> : <PlayIcon size={16} />}
+              {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={18} />}
             </button>
           </div>
-          <PlaybackProgress key={`${isPlaying}:${code}`} code={code} isPlaying={isPlaying} />
+          {/* Keyed on the code so a new script remounts with a fresh playhead;
+              deliberately not on the play state, so a pause keeps its position. */}
+          <PlaybackProgress key={code} code={code} isPlaying={isPlaying} isPaused={isPaused} />
+
+          <div
+            data-testid="code-panel-right-actions"
+            className="code-panel-right-actions relative z-10 ml-auto flex shrink-0 items-center"
+          >
+            <button
+              ref={volumeButtonRef}
+              type="button"
+              onClick={() => {
+                clearVolumeCloseTimer();
+                toggleMute();
+              }}
+              onMouseEnter={(event) => openVolumePopover(event.currentTarget)}
+              onMouseLeave={scheduleVolumeClose}
+              onFocus={(event) => openVolumePopover(event.currentTarget)}
+              onBlur={scheduleVolumeClose}
+              className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
+              aria-label={volume > 0 ? t('mute') : t('unmute')}
+              aria-expanded={volumeOpen}
+              aria-pressed={volume === 0}
+            >
+              {volume > 0 ? <VolumeIcon size={18} /> : <MutedVolumeIcon size={18} />}
+            </button>
+
+            <div
+              data-testid="code-panel-share-export-capsule"
+              className="control-button-surface control-button-capsule flex h-8 w-28 items-center justify-between px-1 rounded-full"
+            >
+              <div
+                className="flex h-8 w-8 items-center justify-center"
+                onMouseEnter={(event) => setVizHoverAnchor(anchorAbove(event.currentTarget))}
+                onMouseLeave={() => setVizHoverAnchor(null)}
+                onFocusCapture={(event) => setVizHoverAnchor(anchorAbove(event.currentTarget))}
+                onBlurCapture={() => setVizHoverAnchor(null)}
+              >
+                <button
+                  type="button"
+                  onClick={onToggleViz}
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
+                  aria-label={vizCollapsed ? t('expandViz') : t('collapseViz')}
+                  aria-pressed={vizCollapsed}
+                >
+                  {vizCollapsed ? <PanelBottomOpenIcon size={18} /> : <PanelBottomCloseIcon size={18} />}
+                </button>
+                <ControlHoverLabel
+                  anchor={vizHoverAnchor}
+                  label={vizCollapsed ? t('expandViz') : t('collapseViz')}
+                  testId="code-panel-viz-toggle-hover-label"
+                />
+              </div>
+
+              <ShareButton
+                session={session}
+                code={code}
+                messages={messages}
+                disabled={!session || !hasPlayableCode || exportState.status === 'exporting'}
+                variant="icon"
+              />
+
+              <div
+                className="flex h-8 w-8 items-center justify-center"
+                onMouseEnter={(event) => setExportHoverAnchor(anchorAbove(event.currentTarget))}
+                onMouseLeave={() => setExportHoverAnchor(null)}
+                onFocusCapture={(event) => setExportHoverAnchor(anchorAbove(event.currentTarget))}
+                onBlurCapture={() => setExportHoverAnchor(null)}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rect = panelRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    setExportAnchor({
+                      right: window.innerWidth - rect.right,
+                      top: rect.top,
+                    });
+                    setExportOpen((open) => !open);
+                  }}
+                  disabled={actionDisabled}
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center text-[#A8A8A8] transition-colors hover:text-[#C8C8C8] disabled:cursor-not-allowed disabled:text-[#686868] disabled:opacity-100"
+                  aria-label={t('download')}
+                  aria-expanded={exportOpen}
+                >
+                  <DownloadIcon size={18} />
+                </button>
+                <ControlHoverLabel
+                  anchor={exportHoverAnchor}
+                  label={t('download')}
+                  testId="code-panel-export-hover-label"
+                />
+              </div>
+
+              <ExportPopover
+                open={exportOpen}
+                onClose={() => setExportOpen(false)}
+                exportState={exportState}
+                onResetState={onResetExportState}
+                onExport={handleExport}
+                code={code}
+                sessionTitle={session?.title}
+                messages={messages}
+                onGenerateTitle={onGenerateTitle}
+                bpm={bpm}
+                placement="above"
+                anchorPosition={exportAnchor ?? undefined}
+              />
+            </div>
+          </div>
         </div>
+      )}
+
+      {volumeOpen && volumeAnchor && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={volumePopoverRef}
+          data-testid="code-panel-volume-popover"
+          className="fixed z-50 flex w-[44px] flex-col items-center gap-1 rounded-[6px] border border-[#323232] bg-[#111] px-2 py-2 shadow-[0_6px_18px_rgba(0,0,0,0.9)]"
+          onMouseEnter={clearVolumeCloseTimer}
+          onMouseLeave={scheduleVolumeClose}
+          onFocusCapture={clearVolumeCloseTimer}
+          onBlurCapture={scheduleVolumeClose}
+          style={{
+            ...volumeAnchor,
+            fontFamily: "'ABeeZee', monospace",
+          }}
+        >
+          <span className="text-[10px] tabular-nums text-text-primary">{Math.round(volume * 100)}%</span>
+          <input
+            data-testid="code-panel-volume-slider"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round(volume * 100)}
+            onChange={(event) => {
+              const nextVolume = Number(event.target.value) / 100;
+              setMasterVolume(nextVolume);
+            }}
+            aria-label={t('volume')}
+            aria-orientation="vertical"
+            className="code-panel-volume-slider h-20 w-4 cursor-pointer"
+            style={{
+              writingMode: 'vertical-lr',
+              direction: 'rtl',
+              '--volume-progress': `${Math.round(volume * 100)}%`,
+            } as React.CSSProperties}
+          />
+        </div>,
+        document.body,
       )}
     </div>
   );

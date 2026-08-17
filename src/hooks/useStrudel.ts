@@ -10,6 +10,7 @@ export function useStrudel() {
   const [state, setState] = useState<StrudelState>(() => ({
     code: '',
     isPlaying: false,
+    isPaused: false,
     error: null,
     engineReady: false,
     engineStatus: 'initializing',
@@ -61,6 +62,10 @@ export function useStrudel() {
 
   const stop = useCallback(() => {
     strudelService.stop();
+  }, []);
+
+  const pause = useCallback(() => {
+    strudelService.pause();
   }, []);
 
   const setCode = useCallback((code: string) => {
@@ -118,12 +123,14 @@ export function useStrudel() {
     code: state.code,
     currentCode: state.code,
     isPlaying: state.isPlaying,
+    isPaused: state.isPaused,
     engineReady: state.engineReady,
     engineStatus: state.engineStatus,
     error: state.error,
     canUndo,
     setRoot,
     play,
+    pause,
     stop,
     setCode,
     setError,

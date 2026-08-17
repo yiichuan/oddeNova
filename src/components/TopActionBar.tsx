@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { uploadShare } from '../services/share';
 import { shareUrl } from '../services/share-target';
 import { trackShareCompleted, type ShareMethod } from '../lib/analytics';
@@ -8,22 +9,28 @@ import type { Session } from '../hooks/useSessions';
 import type { ChatMessage } from '../hooks/useChat';
 import { zh, t } from '../lib/i18n';
 import { GITHUB_URL as githubUrl, LEARN_URL as learnUrl } from '../lib/external-links';
+import { useExportPopoverController, type ExportParams } from '../hooks/useExportPopoverController';
+import ControlHoverLabel, { type ControlHoverLabelAnchor } from './ControlHoverLabel';
+
+export type { ExportParams } from '../hooks/useExportPopoverController';
 
 // ─── Share ───────────────────────────────────────────────────────────────────
 
 type ShareState = 'idle' | 'loading' | 'done' | 'error';
 
-interface ShareButtonProps {
+export interface ShareButtonProps {
   session: Session | null;
   code?: string;
   messages?: ChatMessage[];
   disabled?: boolean;
-  variant?: 'inline' | 'menu';
+  variant?: 'inline' | 'menu' | 'icon';
   onShared?: () => void;
 }
 
-function ShareButton({ session, code, messages, disabled, variant = 'inline', onShared }: ShareButtonProps) {
+export function ShareButton({ session, code, messages, disabled, variant = 'inline', onShared }: ShareButtonProps) {
   const [state, setState] = useState<ShareState>('idle');
+  const [feedbackAnchor, setFeedbackAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+  const [hoverAnchor, setHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
 
   async function handleShare() {
     const shareCode = session?.code || code || '';
@@ -76,6 +83,61 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
     );
   }
 
+  if (variant === 'icon') {
+    const feedback = state === 'done'
+      ? { label: t('linkCopied'), className: 'text-text-secondary' }
+      : state === 'error'
+        ? { label: t('shareFailedRetry'), className: 'text-red-400' }
+        : null;
+    return (
+      <div
+        className="relative flex h-8 w-8 items-center justify-center"
+        onMouseEnter={(event) => {
+          if (state !== 'idle') return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          setHoverAnchor({
+            left: rect.left + rect.width / 2,
+            bottom: window.innerHeight - rect.top + 8,
+          });
+        }}
+        onMouseLeave={() => setHoverAnchor(null)}
+        onFocusCapture={(event) => {
+          if (state !== 'idle') return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          setHoverAnchor({
+            left: rect.left + rect.width / 2,
+            bottom: window.innerHeight - rect.top + 8,
+          });
+        }}
+        onBlurCapture={() => setHoverAnchor(null)}
+      >
+        <button
+          type="button"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setHoverAnchor(null);
+            setFeedbackAnchor({
+              left: rect.left + rect.width / 2,
+              bottom: window.innerHeight - rect.top + 8,
+            });
+            void handleShare();
+          }}
+          disabled={disabled || state === 'loading'}
+          className="flex h-8 w-8 cursor-pointer items-center justify-center text-[#A8A8A8] transition-colors hover:text-[#C8C8C8] disabled:cursor-not-allowed disabled:text-[#686868] disabled:opacity-100"
+          aria-label={t('share')}
+        >
+          <ShareIcon size={18} />
+        </button>
+        <ControlHoverLabel
+          anchor={feedback ? feedbackAnchor : state === 'idle' ? hoverAnchor : null}
+          label={feedback?.label ?? t('share')}
+          testId={feedback ? 'code-panel-share-feedback-label' : 'code-panel-share-hover-label'}
+          className={feedback?.className}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="relative">
       <button
@@ -105,13 +167,6 @@ function ShareButton({ session, code, messages, disabled, variant = 'inline', on
 
 // ─── Export popover ───────────────────────────────────────────────────────────
 
-interface ExportParams {
-  filename: string;
-  beginCycle: number;
-  endCycle: number;
-  sampleRate: number;
-}
-
 export interface GenerateTitleParams {
   code: string;
   sessionTitle?: string;
@@ -119,7 +174,7 @@ export interface GenerateTitleParams {
   locale: 'zh-CN' | 'en';
 }
 
-interface ExportPopoverProps {
+export interface ExportPopoverProps {
   open: boolean;
   onClose: () => void;
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
@@ -130,6 +185,8 @@ interface ExportPopoverProps {
   messages: ChatMessage[];
   onGenerateTitle: (p: GenerateTitleParams) => Promise<string>;
   bpm: number;
+  placement?: 'above' | 'below';
+  anchorPosition?: { right: number; top?: number; bottom?: number };
 }
 
 function defaultFilename() {
@@ -163,7 +220,7 @@ function CycleInput({
     onCommit(next);
   };
   return (
-    <div className="flex w-full border border-[#323232] overflow-hidden focus-within:border-white/30 bg-black">
+    <div className="flex w-full overflow-hidden rounded-[6px] border border-[#323232] bg-black focus-within:border-white/30">
       <input
         type="text"
         inputMode="numeric"
@@ -211,7 +268,7 @@ interface TitleFormState {
   activeGenerateTitleRequest: symbol | null;
 }
 
-function ExportPopover({
+export function ExportPopover({
   open,
   onClose,
   exportState,
@@ -222,6 +279,8 @@ function ExportPopover({
   messages,
   onGenerateTitle,
   bpm,
+  placement = 'below',
+  anchorPosition,
 }: ExportPopoverProps) {
   const isMobile = useIsMobile();
   const [titleForm, setTitleForm] = useState<TitleFormState>({
@@ -235,12 +294,14 @@ function ExportPopover({
   const [beginCycleStr, setBeginCycleStr] = useState('0');
   const [endCycleStr, setEndCycleStr] = useState('4');
   const [sampleRate, setSampleRate] = useState(48000);
+  const [sampleRateOpen, setSampleRateOpen] = useState(false);
   const [prevOpen, setPrevOpen] = useState(false);
   const { filename, filenamePlaceholder, generateTitleState } = titleForm;
 
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (open) {
+      setSampleRateOpen(false);
       setTitleForm({
         filename: '',
         filenamePlaceholder: defaultFilename(),
@@ -325,18 +386,18 @@ function ExportPopover({
       {exportState.status === 'exporting' ? (
         <>
           <div className="text-[13px] text-white/70">{t('rendering')} {Math.round(exportState.progress * 100)}%</div>
-          <div className="h-[3px] w-full bg-[#323232] overflow-hidden">
+          <div className="h-[3px] w-full overflow-hidden rounded-[6px] bg-[#323232]">
             <div className="h-full bg-white/70 transition-[width] duration-100 ease-linear" style={{ width: `${Math.round(exportState.progress * 100)}%` }} />
           </div>
           <div className="flex justify-end">
-            <button onClick={onClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">{t('cancel')}</button>
+            <button onClick={onClose} className="rounded-[6px] border border-[#323232] px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90">{t('cancel')}</button>
           </div>
         </>
       ) : exportState.status === 'error' ? (
         <>
           <div className="text-[12px] text-red-400 break-words">{exportState.error || t('exportFailed')}</div>
           <div className="flex justify-end">
-            <button onClick={handleErrorClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">{t('close')}</button>
+            <button onClick={handleErrorClose} className="rounded-[6px] border border-[#323232] px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90">{t('close')}</button>
           </div>
         </>
       ) : (
@@ -344,7 +405,7 @@ function ExportPopover({
           <Field label={t('filename')}>
             <div className="relative w-full">
               <input type="text" value={filename} onChange={(e) => handleFilenameChange(e.target.value)} placeholder={filenamePlaceholder}
-                className="w-full bg-black border border-[#323232] px-2 py-1.5 pr-9 text-[12px] text-white/90 outline-none focus:border-white/30 placeholder:text-white/30"
+                className="w-full rounded-[6px] border border-[#323232] bg-black px-2 py-1.5 pr-9 text-[12px] text-white/90 outline-none placeholder:text-white/30 focus:border-white/30"
                 style={{ fontFamily: "'ABeeZee', monospace" }} />
               <button
                 type="button"
@@ -368,21 +429,62 @@ function ExportPopover({
           {durationStr && (
             <div className="flex items-center justify-between text-[12px]">
               <span className="text-white/50">{t('estDuration')}</span>
-              <span className="text-white/80" style={{ fontFamily: "'ABeeZee', monospace" }}>{durationStr}</span>
+              <span className="pr-[2px] text-white/80" style={{ fontFamily: "'ABeeZee', monospace" }}>{durationStr}</span>
             </div>
           )}
           {!canExport && <div className="text-[12px] text-red-400">{t('cycleError')}</div>}
           <Field label={t('sampleRate')}>
-            <select value={sampleRate} onChange={(e) => setSampleRate(Number(e.target.value))}
-              className="w-full bg-black border border-[#323232] px-2 py-1.5 text-[12px] text-white/90 outline-none focus:border-white/30"
-              style={{ fontFamily: "'ABeeZee', monospace" }}>
-              <option value={44100}>44100 Hz</option>
-              <option value={48000}>48000 Hz</option>
-            </select>
+            <div
+              className="relative"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setSampleRateOpen(false);
+              }}
+            >
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={sampleRateOpen}
+                onClick={() => setSampleRateOpen((current) => !current)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setSampleRateOpen(false);
+                }}
+                className="flex w-full items-center justify-between rounded-[6px] border border-[#323232] bg-black py-1.5 pl-2 pr-2 text-left text-[12px] text-white/90 outline-none focus:border-white/30"
+                style={{ fontFamily: "'ABeeZee', monospace" }}
+              >
+                <span>{sampleRate} Hz</span>
+                <svg className={`transition-transform ${sampleRateOpen ? 'rotate-180' : ''}`} width="8" height="5" viewBox="0 0 8 5" fill="none" aria-hidden="true">
+                  <path d="M0.5 0.5L4 4.5L7.5 0.5" stroke="currentColor" />
+                </svg>
+              </button>
+              {sampleRateOpen && (
+                <div
+                  role="listbox"
+                  aria-label={t('sampleRate')}
+                  className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 overflow-hidden rounded-[6px] border border-[#323232] bg-[#111] p-1 shadow-[0_6px_18px_rgba(0,0,0,0.9)]"
+                >
+                  {[44100, 48000].map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      role="option"
+                      aria-selected={sampleRate === rate}
+                      onClick={() => {
+                        setSampleRate(rate);
+                        setSampleRateOpen(false);
+                      }}
+                      className={`w-full rounded-[4px] px-2 py-1.5 text-left text-[12px] transition-colors ${sampleRate === rate ? 'bg-[var(--color-selected-item-bg)] text-white' : 'text-white/90 hover:bg-white/10'}`}
+                      style={{ fontFamily: "'ABeeZee', monospace" }}
+                    >
+                      {rate} Hz
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </Field>
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onClose} className="px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90 border border-[#323232]">{t('cancel')}</button>
-            <button onClick={handleExport} disabled={!canExport} className="px-3 py-1.5 text-[12px] text-white border border-white/30 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed">{t('export')}</button>
+            <button onClick={onClose} className="rounded-[6px] border border-[#323232] px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90">{t('cancel')}</button>
+            <button onClick={handleExport} disabled={!canExport} className="rounded-[6px] border border-white/30 px-3 py-1.5 text-[12px] text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40">{t('download')}</button>
           </div>
         </>
       )}
@@ -393,7 +495,7 @@ function ExportPopover({
     return (
       <div className="fixed inset-0 z-50" onClick={handleCloseSafe}>
         <div className="absolute inset-0 bg-black/50" />
-        <div className="absolute bottom-0 left-0 right-0 bg-[#111] border-t border-[#323232] px-6 py-6" onClick={(e) => e.stopPropagation()}>
+        <div className="absolute bottom-0 left-0 right-0 rounded-t-[6px] border-t border-[#323232] bg-[#111] px-6 py-6" onClick={(e) => e.stopPropagation()}>
           <div className="text-[14px] text-white/90 font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
           {body}
         </div>
@@ -401,15 +503,26 @@ function ExportPopover({
     );
   }
 
-  return (
+  const desktopPopover = (
     <>
       <div className="fixed inset-0 z-40" onClick={handleCloseSafe} />
-      <div className="absolute top-full right-0 z-50 w-[280px] bg-[#111] border border-[#323232] shadow-xl p-3" onClick={(e) => e.stopPropagation()}>
+      <div
+        data-testid="export-popover"
+        className={`right-0 z-50 w-[280px] rounded-[6px] border border-[#323232] bg-[#111] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.9)] ${anchorPosition ? 'fixed' : 'absolute'} ${!anchorPosition && (placement === 'above' ? 'bottom-[calc(100%+8px)]' : 'top-full')}`}
+        style={anchorPosition}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="text-[12px] text-white/90 font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
         {body}
       </div>
     </>
   );
+
+  if (anchorPosition && typeof document !== 'undefined') {
+    return createPortal(desktopPopover, document.body);
+  }
+
+  return desktopPopover;
 }
 
 // ─── TopActionBar (default export) ───────────────────────────────────────────
@@ -441,7 +554,7 @@ export default function TopActionBar({
   onResetExportState,
   bpm,
 }: TopActionBarProps) {
-  const [exportOpen, setExportOpen] = useState(false);
+  const { exportOpen, setExportOpen, handleExport } = useExportPopoverController(onExport, onResetExportState);
   const [menuOpen, setMenuOpen] = useState(false);
   const isMobile = useIsMobile();
   const actionDisabled = !engineReady || !hasCode;
@@ -450,17 +563,6 @@ export default function TopActionBar({
   const canShare = !!session && (shareCode.trim().length > 0 || shareMessages.length > 0);
   const shareDisabled = !canShare || exportState.status === 'exporting';
   const exportDisabled = actionDisabled || exportState.status === 'exporting';
-
-  const handleExport = async (params: ExportParams) => {
-    const ok = await onExport(params);
-    if (ok) {
-      setTimeout(() => {
-        setExportOpen(false);
-        onResetExportState();
-      }, 800);
-    }
-    return ok;
-  };
 
   if (isMobile) {
     return (

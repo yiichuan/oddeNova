@@ -3,6 +3,8 @@ import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExportCompleted } from '../lib/analytics';
+import { installOddenovaDarkSyntaxHighlight } from '../lib/oddenova-dark-syntax-highlight';
+import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
 
@@ -14,7 +16,27 @@ type StrudelReplState = {
 
 interface StrudelMirrorType {
   dispose?: () => void;
-  repl: { setCode: (code: string) => void; stop: () => void; [key: string]: unknown };
+  editor?: {
+    dispatch: (transaction: { effects: unknown }) => void;
+  };
+  repl: {
+    setCode: (code: string) => void;
+    stop: () => void;
+    scheduler?: {
+      started?: boolean;
+      now?: () => number;
+      pause?: () => void;
+      stop?: () => void;
+      setCycle?: (cycle: number) => void;
+      getTime?: () => number;
+      lastBegin?: number;
+      lastEnd?: number;
+      num_cycles_at_cps_change?: number;
+      num_ticks_since_cps_change?: number;
+      seconds_at_cps_change?: number;
+    };
+    [key: string]: unknown;
+  };
   setCode: (code: string) => void;
   setAutocompletionEnabled: (enabled: boolean) => void;
   setLineWrappingEnabled: (enabled: boolean) => void;
@@ -25,6 +47,7 @@ interface StrudelMirrorType {
 export type StrudelState = {
   code: string;
   isPlaying: boolean;
+  isPaused: boolean;
   error: string | null;
   engineReady: boolean;
   engineStatus: 'initializing' | 'ready' | 'failed';
@@ -165,10 +188,12 @@ export class StrudelService {
   // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
+  private pendingSeekCycle: number | null = null;
   private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
     code: '',
     isPlaying: false,
+    isPaused: false,
     error: null,
     engineReady: false,
     engineStatus: 'initializing',
@@ -191,9 +216,10 @@ export class StrudelService {
         shouldInterruptOnHidden: isTouchDevice,
         onPlaybackInterrupted: () => {
           this.editorInstance?.repl.stop();
-          this.notify({ isPlaying: false });
+          this.pendingSeekCycle = null;
+          this.notify({ isPlaying: false, isPaused: false });
         },
-        requestUserResume: () => this.notify({ error: USER_RESUME_PROMPT, isPlaying: false }),
+        requestUserResume: () => this.notify({ error: USER_RESUME_PROMPT, isPlaying: false, isPaused: false }),
         windowTarget: window,
         documentTarget: document,
       });
@@ -305,7 +331,7 @@ export class StrudelService {
     this.isInitializing = true;
     this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     try {
-      const { StrudelMirror } = await import('@strudel/codemirror');
+      const { StrudelMirror, compartments } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
       cachedTranspiler = transpiler;
       const { getDrawContext } = await import('@strudel/draw');
@@ -345,9 +371,13 @@ export class StrudelService {
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
           const error = evalError ? getErrorMessage(evalError) : null;
+          const nextCode = state.code ?? this._state.code;
+          const didCodeChange = nextCode !== this._state.code;
+          if (didCodeChange) this.pendingSeekCycle = null;
           this.notify({
-            code: state.code ?? this._state.code,
+            code: nextCode,
             isPlaying: state.started ?? false,
+            isPaused: didCodeChange || state.started ? false : this._state.isPaused,
             error,
           });
         },
@@ -360,6 +390,10 @@ export class StrudelService {
       editor.setAutocompletionEnabled(this.autocompletionEnabled);
       editor.setLineWrappingEnabled(this.lineWrappingEnabled);
       editor.changeSetting('isTabIndentationEnabled', true);
+      if (editor.editor) {
+        installOddenovaDarkSyntaxHighlight(editor.editor, compartments.theme);
+        installCodeEditorScrollMargins(editor.editor);
+      }
 
       // Sync REPL internal state with initial code
       this.editorInstance?.repl.setCode(currentCode);
@@ -536,7 +570,9 @@ export class StrudelService {
   };
 
   setCode = (code: string): void => {
-    this._state = { ...this._state, code };
+    const didChange = code !== this._state.code;
+    if (didChange) this.pendingSeekCycle = null;
+    this._state = { ...this._state, code, ...(didChange ? { isPaused: false } : {}) };
     if (this.editorInstance) {
       // Skip the full-document replace when content is unchanged — a redundant
       // setCode clears all CodeMirror decorations (miniLocation highlight boxes)
@@ -548,12 +584,64 @@ export class StrudelService {
     }
   };
 
+  private applySeekCycle(cycle: number): boolean {
+    const scheduler = this.editorInstance?.repl.scheduler;
+    if (!scheduler || !Number.isFinite(cycle)) return false;
+
+    if (typeof scheduler.setCycle === 'function') {
+      scheduler.setCycle(cycle);
+      return true;
+    }
+
+    // Cyclist does not expose setCycle(), but its next tick takes its cycle
+    // origin from lastEnd when the tick counter is reset.
+    scheduler.lastBegin = cycle;
+    scheduler.lastEnd = cycle;
+    scheduler.num_cycles_at_cps_change = cycle;
+    scheduler.num_ticks_since_cps_change = 0;
+    scheduler.seconds_at_cps_change = scheduler.getTime?.() ?? 0;
+    return true;
+  }
+
+  seekPlayback = (progress: number, loopCycles: number): boolean => {
+    if (!Number.isFinite(progress) || !Number.isFinite(loopCycles) || loopCycles <= 0) return false;
+    const targetCycle = Math.min(1, Math.max(0, progress)) * loopCycles;
+
+    if (!this._state.isPlaying) {
+      this.pendingSeekCycle = targetCycle;
+      return true;
+    }
+
+    return this.applySeekCycle(targetCycle);
+  };
+
+  private applyPendingSeek(): void {
+    if (this.pendingSeekCycle === null) return;
+    if (this.applySeekCycle(this.pendingSeekCycle)) this.pendingSeekCycle = null;
+  }
+
+  pause = (): boolean => {
+    const scheduler = this.editorInstance?.repl.scheduler;
+    if (!scheduler || !this._state.isPlaying) return false;
+
+    const currentCycle = scheduler.now?.();
+    if (Number.isFinite(currentCycle)) this.pendingSeekCycle = currentCycle as number;
+
+    if (typeof scheduler.pause === 'function') scheduler.pause();
+    else if (typeof scheduler.stop === 'function') scheduler.stop();
+    else this.editorInstance?.repl.stop();
+
+    this.notify({ isPlaying: false, isPaused: true });
+    return true;
+  };
+
   play = async (): Promise<void> => {
     if (!this.editorInstance) throw new Error('Engine not initialized');
     this.notify({ error: null });
     try {
       await this.ensurePlayableAudioGraph();
       await this.editorInstance.evaluate();
+      this.applyPendingSeek();
       this.pageAudioRecovery?.clearResumeIntent();
       void this.setupMasterChain();
     } catch (error) {
@@ -561,6 +649,7 @@ export class StrudelService {
         try {
           await this.resetLiveAudioGraph();
           await this.editorInstance.evaluate();
+          this.applyPendingSeek();
           this.pageAudioRecovery?.clearResumeIntent();
           void this.setupMasterChain();
           return;
@@ -578,7 +667,9 @@ export class StrudelService {
 
   stop = (): void => {
     this.pageAudioRecovery?.clearResumeIntent();
+    this.pendingSeekCycle = null;
     this.editorInstance?.repl.stop();
+    this.notify({ isPlaying: false, isPaused: false });
   };
 
   scrollCodeToBottom = (): void => {

@@ -130,8 +130,8 @@ export default function Sidebar({
             )}
             <button
               onClick={() => setShowHistory(v => !v)}
-              className={`w-7 h-7 transition-colors flex items-center justify-center ${
-                showHistory ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'
+              className={`flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition-colors ${
+                showHistory ? 'bg-[#242424]' : 'hover:bg-[#242424]'
               }`}
               title={t('viewHistory')}
             >
@@ -139,7 +139,7 @@ export default function Sidebar({
             </button>
             <button
               onClick={() => { onNewSession(); setFocusTrigger(v => v + 1); }}
-              className="w-7 h-7 text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center"
+              className="flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition-colors hover:bg-[#242424]"
               title={t('newSession')}
             >
               <MessageCirclePlusIcon size={18} />

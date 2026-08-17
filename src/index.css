@@ -24,9 +24,14 @@
   font-display: swap;
 }
 
+/* Greeting-only subset — carries just the characters used by GREETINGS_ZH, so
+   this face must not be applied to any other text (missing glyphs would fall
+   back to `serif` one character at a time). The full 33 MB source lives in
+   assets/fonts/; `npm run fonts:greetings` regenerates this file whenever the
+   greeting pool changes, and a test fails the build if it goes stale. */
 @font-face {
   font-family: '京華老宋体';
-  src: url('/fonts/京華老宋体v3.0.ttf') format('truetype');
+  src: url('/fonts/jinghua-laosongti-greetings.woff2') format('woff2');
   font-weight: normal;
   font-style: normal;
   font-display: swap;
@@ -41,7 +46,7 @@
 }
 
 @theme {
-  --color-bg-primary: #000000;
+  --color-bg-primary: #070707;
   --color-bg-secondary: #000000;
   --color-bg-tertiary: #000000;
   --color-conversation-surface: #0D0D0D;
@@ -59,7 +64,8 @@
   --color-warning: #7E936F;
   --color-diff-accent: #434343;
   --color-diff-add: #5CB957;
-  --color-diff-remove: #ED4F4F;
+  --color-diff-remove: #E01A1A;
+  --color-selected-item-bg: #BC4E2D;
 
   --radius-region: 6px;
   --spacing-region: 10px;
@@ -113,8 +119,13 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
 
-.code-panel-controls-glass {
+.code-panel-controls {
   --code-panel-play-button-offset: 20px;
+  --code-panel-play-to-progress-gap: 24px;
+  --code-panel-progress-to-time-gap: 24px;
+  --code-panel-time-to-volume-gap: 72px;
+  --code-panel-volume-to-actions-gap: 20px;
+  --code-panel-actions-to-edge-gap: 20px;
 
   position: relative;
   isolation: isolate;
@@ -124,7 +135,72 @@ body {
   -webkit-backdrop-filter: blur(18px) saturate(112%);
 }
 
-.code-panel-controls-glass::before {
+.code-panel-playback-layout {
+  gap: var(--code-panel-progress-to-time-gap);
+  padding-left: var(--code-panel-play-to-progress-gap);
+  padding-right: var(--code-panel-time-to-volume-gap);
+}
+
+.code-panel-right-actions {
+  gap: var(--code-panel-volume-to-actions-gap);
+  padding-right: var(--code-panel-actions-to-edge-gap);
+}
+
+.code-panel-volume-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+.code-panel-volume-slider::-webkit-slider-runnable-track {
+  width: 2px;
+  height: 100%;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    to bottom,
+    #D6D6D6 0,
+    #D6D6D6 calc(100% - var(--volume-progress)),
+    #CD5633 calc(100% - var(--volume-progress)),
+    #CD5633 100%
+  );
+}
+
+.code-panel-volume-slider::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-left: -5px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: #CD5633;
+}
+
+.code-panel-volume-slider::-moz-range-track {
+  width: 2px;
+  height: 100%;
+  border: 0;
+  border-radius: 999px;
+  background: #D6D6D6;
+}
+
+.code-panel-volume-slider::-moz-range-progress {
+  width: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: #CD5633;
+}
+
+.code-panel-volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #CD5633;
+}
+
+.code-panel-controls::before {
   position: absolute;
   z-index: 0;
   inset: -16px -4%;
@@ -137,6 +213,18 @@ body {
   pointer-events: none;
 }
 
+.control-button-surface {
+  background: #000;
+}
+
+/* Apple-style continuous capsule: the curve begins more gradually than a
+   semicircular border-radius, smoothing the transition into the straight run.
+   Sized for the 112×32 three-button capsule (path() takes no percentages, so
+   this has to be re-cut if the button count changes). */
+.control-button-capsule {
+  clip-path: path('M 16 0 H 96 C 106.8 0 112 5.2 112 16 C 112 26.8 106.8 32 96 32 H 16 C 5.2 32 0 26.8 0 16 C 0 5.2 5.2 0 16 0 Z');
+}
+
 .code-panel-light-field {
   position: absolute;
   z-index: 0;
@@ -144,6 +232,24 @@ body {
   filter: blur(16px) contrast(10);
   mix-blend-mode: screen;
   opacity: 0.64;
+  pointer-events: none;
+}
+
+/* The collapsed-state particle layer: ASCII characters falling through the bar
+   like snow. Screens rather than paints, so they read as catching the light
+   rather than sitting on top of it.
+
+   No opacity transition here on purpose. Appearing and leaving are animated per
+   flake on the canvas — each one fades on its own curve while it settles in or
+   sinks out — and a layer-wide fade on top of that would flatten the staggering
+   back out. An idle layer is a cleared canvas, which needs no hiding. */
+.code-panel-particle-field {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: screen;
   pointer-events: none;
 }
 
@@ -185,44 +291,44 @@ body {
 }
 
 .code-panel-light-blob:nth-child(1) {
-  width: 156px; height: 96px; left: -48px; top: -18px; opacity: 0.74;
-  --blob-duration: 34.9s; --blob-delay: -11.2s;
-  --light-duration: 6.7s; --light-delay: -2.4s; --light-base: 0.74; --light-high: 0.8; --light-low: 0.53; --light-mid: 0.67;
+  width: 156px; height: 96px; left: -48px; top: -18px; opacity: 0.64;
+  --blob-duration: 48.9s; --blob-delay: -11.2s;
+  --light-duration: 6.7s; --light-delay: -2.4s; --light-base: 0.64; --light-high: 0.65; --light-low: 0.43; --light-mid: 0.57;
   --blob-x-a: 76px; --blob-y-a: -10px; --blob-rotate-a: 14deg; --blob-scale-a: 1.08;
   --blob-x-b: -34px; --blob-y-b: 18px; --blob-rotate-b: -9deg; --blob-scale-b: 0.94;
 }
 .code-panel-light-blob:nth-child(2) {
-  width: 112px; height: 148px; left: 18%; top: -52px; opacity: 0.38;
-  --blob-duration: 43.7s; --blob-delay: -4.8s;
-  --light-duration: 9.3s; --light-delay: -7.1s; --light-base: 0.38; --light-high: 0.51; --light-low: 0.22; --light-mid: 0.34;
+  width: 112px; height: 148px; left: 18%; top: -52px; opacity: 0.28;
+  --blob-duration: 61.2s; --blob-delay: -4.8s;
+  --light-duration: 9.3s; --light-delay: -7.1s; --light-base: 0.28; --light-high: 0.36; --light-low: 0.12; --light-mid: 0.24;
   --blob-x-a: -72px; --blob-y-a: 22px; --blob-rotate-a: -18deg; --blob-scale-a: 0.91;
   --blob-x-b: 88px; --blob-y-b: 5px; --blob-rotate-b: 11deg; --blob-scale-b: 1.12;
 }
 .code-panel-light-blob:nth-child(3) {
-  width: 174px; height: 108px; left: 40%; top: -30px; opacity: 0.58;
-  --blob-duration: 37.5s; --blob-delay: -16.6s;
-  --light-duration: 7.8s; --light-delay: -4.6s; --light-base: 0.58; --light-high: 0.7; --light-low: 0.37; --light-mid: 0.54;
+  width: 174px; height: 108px; left: 40%; top: -30px; opacity: 0.48;
+  --blob-duration: 52.5s; --blob-delay: -16.6s;
+  --light-duration: 7.8s; --light-delay: -4.6s; --light-base: 0.48; --light-high: 0.55; --light-low: 0.27; --light-mid: 0.44;
   --blob-x-a: 96px; --blob-y-a: 17px; --blob-rotate-a: 10deg; --blob-scale-a: 1.1;
   --blob-x-b: -82px; --blob-y-b: -8px; --blob-rotate-b: -16deg; --blob-scale-b: 0.9;
 }
 .code-panel-light-blob:nth-child(4) {
-  width: 126px; height: 156px; left: 62%; top: -58px; opacity: 0.7;
-  --blob-duration: 47.1s; --blob-delay: -8.3s;
-  --light-duration: 10.6s; --light-delay: -8.8s; --light-base: 0.7; --light-high: 0.78; --light-low: 0.48; --light-mid: 0.64;
+  width: 126px; height: 156px; left: 62%; top: -58px; opacity: 0.6;
+  --blob-duration: 65.9s; --blob-delay: -8.3s;
+  --light-duration: 10.6s; --light-delay: -8.8s; --light-base: 0.6; --light-high: 0.63; --light-low: 0.38; --light-mid: 0.54;
   --blob-x-a: -86px; --blob-y-a: 12px; --blob-rotate-a: -12deg; --blob-scale-a: 0.93;
   --blob-x-b: 72px; --blob-y-b: 24px; --blob-rotate-b: 17deg; --blob-scale-b: 1.09;
 }
 .code-panel-light-blob:nth-child(5) {
-  width: 160px; height: 94px; left: 79%; top: -21px; opacity: 0.45;
-  --blob-duration: 40.7s; --blob-delay: -13.7s;
-  --light-duration: 8.5s; --light-delay: -1.9s; --light-base: 0.45; --light-high: 0.58; --light-low: 0.26; --light-mid: 0.39;
+  width: 160px; height: 94px; left: 79%; top: -21px; opacity: 0.35;
+  --blob-duration: 57s; --blob-delay: -13.7s;
+  --light-duration: 8.5s; --light-delay: -1.9s; --light-base: 0.35; --light-high: 0.43; --light-low: 0.16; --light-mid: 0.29;
   --blob-x-a: 70px; --blob-y-a: -16px; --blob-rotate-a: 19deg; --blob-scale-a: 1.13;
   --blob-x-b: -98px; --blob-y-b: 14px; --blob-rotate-b: -8deg; --blob-scale-b: 0.92;
 }
 .code-panel-light-blob:nth-child(6) {
-  width: 118px; height: 142px; left: calc(100% - 45px); top: -46px; opacity: 0.64;
-  --blob-duration: 36.5s; --blob-delay: -6.1s;
-  --light-duration: 5.9s; --light-delay: -5.2s; --light-base: 0.64; --light-high: 0.75; --light-low: 0.42; --light-mid: 0.58;
+  width: 118px; height: 142px; left: calc(100% - 45px); top: -46px; opacity: 0.54;
+  --blob-duration: 51.1s; --blob-delay: -6.1s;
+  --light-duration: 5.9s; --light-delay: -5.2s; --light-base: 0.54; --light-high: 0.6; --light-low: 0.32; --light-mid: 0.48;
   --blob-x-a: -92px; --blob-y-a: 20px; --blob-rotate-a: -15deg; --blob-scale-a: 0.89;
   --blob-x-b: 46px; --blob-y-b: -11px; --blob-rotate-b: 13deg; --blob-scale-b: 1.11;
 }
@@ -254,7 +360,7 @@ body {
   }
 }
 
-.code-panel-controls-glass::after {
+.code-panel-controls::after {
   position: absolute;
   z-index: 1;
   inset: 0;
@@ -435,7 +541,6 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
@@ -489,13 +594,22 @@ body {
    ============================================= */
 
 .cm-editor {
+  --code-editor-gutter-width: 72px;
+  --code-editor-bottom-gap: 14px;
+  --code-editor-horizontal-scrollbar-height: 0px;
+
   height: 100%;
+  position: relative;
+}
+
+.cm-editor[data-has-horizontal-scrollbar='true'] {
+  --code-editor-horizontal-scrollbar-height: 6px;
 }
 
 /* Fixed-width gutter — prevents expansion when line numbers gain digits */
 .cm-editor .cm-lineNumbers {
-  width: 72px !important;
-  min-width: 72px !important;
+  width: var(--code-editor-gutter-width) !important;
+  min-width: var(--code-editor-gutter-width) !important;
 }
 
 .cm-editor .cm-lineNumbers .cm-gutterElement {
@@ -510,17 +624,54 @@ body {
 }
 
 .cm-editor .cm-content {
-  padding-left: 10px !important;
+  padding-left: 0px !important;
+  padding-top: var(--code-editor-bottom-gap) !important;
+  padding-bottom: calc(var(--code-editor-bottom-gap) + var(--spacing-conversation-edge-fade)) !important;
   font-size: 13px !important;
   font-family: 'ABeeZee', monospace !important;
   line-height: 2.0 !important;
   letter-spacing: 0.1em !important;
 }
 
-/* Visible divider between gutter and code */
-.cm-editor .cm-gutters {
-  border-right-width: 1px !important;
-  border-right-style: solid !important;
+/* Keep the line-number gutter visually continuous with the code area. */
+.cm-editor .cm-scroller > .cm-gutters {
+  left: 0;
+  background-color: var(--background) !important;
+  border-right: 0 !important;
+}
+
+/* Match the permanent bottom breathing space to CodeMirror's natural 4px top
+   padding. The top edge reuses the conversation flow's 8px fade, and the mask
+   spans both line numbers and code. */
+.cm-editor::before {
+  position: absolute;
+  z-index: 240;
+  right: 6px;
+  bottom: var(--code-editor-horizontal-scrollbar-height);
+  left: 0;
+  height: calc(var(--code-editor-bottom-gap) + var(--spacing-conversation-edge-fade));
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--color-conversation-surface) var(--spacing-conversation-edge-fade)
+  );
+  content: '';
+  pointer-events: none;
+}
+
+/* CodeMirror keeps gutters vertically synchronized inside the shared scroller.
+   This mask makes the horizontal scrollbar belong visually to the code area
+   while leaving the vertical scrollbar and gutter synchronization untouched. */
+.cm-editor::after {
+  position: absolute;
+  z-index: 250;
+  bottom: 0;
+  left: 0;
+  width: var(--code-editor-gutter-width);
+  height: var(--code-editor-horizontal-scrollbar-height);
+  background: var(--background);
+  content: '';
+  pointer-events: none;
 }
 
 /* Strudel autocomplete — keep the upstream interaction and information
@@ -721,9 +872,13 @@ body {
    widths where the editor lives in the drawer): the desktop 72px costs too much
    of the line. 32px of content still fits a 3-digit number at the 16px above. */
 @media (max-width: 768px) {
+  .cm-editor {
+    --code-editor-gutter-width: 44px;
+  }
+
   .cm-editor .cm-lineNumbers {
-    width: 44px !important;
-    min-width: 44px !important;
+    width: var(--code-editor-gutter-width) !important;
+    min-width: var(--code-editor-gutter-width) !important;
   }
 
   .cm-editor .cm-lineNumbers .cm-gutterElement {

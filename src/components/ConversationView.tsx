@@ -1272,14 +1272,14 @@ export default function ConversationView({
                 >
                   <button
                     onClick={() => onRetry(msg.id)}
-                    className="text-white/60 hover:text-white p-1"
+                    className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[#9E9E9E] transition-colors hover:bg-[#242424]"
                     title={t('retry')}
                   >
                     <RetryIcon size={14} />
                   </button>
                   <button
                     onClick={() => onBranch(msg.id)}
-                    className="text-white/60 hover:text-white p-1"
+                    className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[#9E9E9E] transition-colors hover:bg-[#242424]"
                     title={t('branchFrom')}
                   >
                     <GitBranchIcon size={14} />

@@ -47,8 +47,18 @@ npm run eval:report
 ## UI changes
 
 Do not start the dev server or drive a browser to verify UI/frontend changes.
-Type-check, lint, and the test suite are the bar for "done" — the developer
-reviews visual results themselves.
+Scale verification to the risk of the change:
+
+- Pure CSS, color, spacing, typography, copy, or design-token tweaks: do not run
+  the full test suite, full-project lint, type-check, or production build by
+  default. Inspect the diff and optionally run `git diff --check`; the developer
+  reviews visual results.
+- Localized JSX markup or class changes without behavior changes: run only a
+  focused test or lint check when it adds value.
+- Interaction, state, data-flow, shared-component, dependency, or build changes:
+  run targeted tests and the appropriate type/lint checks in proportion to risk.
+- Run full tests and a production build for broad or high-risk changes, before a
+  requested commit/push/release, or when explicitly requested.
 
 ## Architecture
 

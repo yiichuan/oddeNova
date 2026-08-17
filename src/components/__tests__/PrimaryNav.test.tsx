@@ -112,9 +112,9 @@ describe('PrimaryNav', () => {
 
     expect(navContainer?.dataset.expanded).toBe('false');
     expect(navContainer?.className).toContain('mr-region');
-    expect(navContainer?.className).toContain('w-[48px]');
+    expect(navContainer?.className).toContain('w-[60px]');
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle?.className).toContain('w-[34px]');
+    expect(toggle?.className).toContain('w-[40px]');
 
     act(() => toggle?.click());
 

@@ -1,6 +1,7 @@
 import {
   ChevronRight,
   Play,
+  Pause,
   Square,
   Clock,
   Plus,
@@ -19,6 +20,10 @@ import {
   X,
   RefreshCw,
   Split,
+  Volume2,
+  VolumeX,
+  PanelBottomClose,
+  PanelBottomOpen,
 } from 'lucide-react';
 
 interface IconProps {
@@ -42,6 +47,7 @@ export function LogoIcon({ size = 16, className }: IconProps) {
 // unchanged. Play/Stop keep their filled look via fill="currentColor".
 export const ChevronRightIcon = ({ size = 16, className }: IconProps) => <ChevronRight size={size} className={className} />;
 export const PlayIcon = ({ size = 18, className }: IconProps) => <Play size={size} className={className} fill="currentColor" />;
+export const PauseIcon = ({ size = 16, className }: IconProps) => <Pause size={size} className={className} fill="currentColor" />;
 export const StopIcon = ({ size = 16, className }: IconProps) => <Square size={size} className={className} fill="currentColor" />;
 export const HistoryIcon = ({ size = 16, className }: IconProps) => <Clock size={size} className={className} />;
 export const PlusIcon = ({ size = 16, className }: IconProps) => <Plus size={size} className={className} />;
@@ -60,3 +66,7 @@ export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={siz
 export const XIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;
 export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 export const GitBranchIcon = ({ size = 16, className }: IconProps) => <Split size={size} className={className} />;
+export const VolumeIcon = ({ size = 16, className }: IconProps) => <Volume2 size={size} className={className} />;
+export const MutedVolumeIcon = ({ size = 16, className }: IconProps) => <VolumeX size={size} className={className} />;
+export const PanelBottomCloseIcon = ({ size = 16, className }: IconProps) => <PanelBottomClose size={size} className={className} />;
+export const PanelBottomOpenIcon = ({ size = 16, className }: IconProps) => <PanelBottomOpen size={size} className={className} />;

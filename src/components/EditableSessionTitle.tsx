@@ -46,11 +46,25 @@ export default function EditableSessionTitle({
     setIsEditing(false);
   };
 
+  // Read-only titles mirror the editable shell's box — same wrapper, same 1px
+  // transparent border, same px-2 — so the text sits at one offset regardless of
+  // whether renaming happens to be available. A bare span here used to pull the
+  // title 9px left and collapse the row's 32px height the moment canEdit
+  // flipped. The edit icon's pr-7 is deliberately not mirrored: there is no icon
+  // to leave room for, so reserving the space would only truncate early.
   if (!canEdit) {
     return (
-      <span className={titleTextClassName} title={displayTitle}>
-        {displayTitle}
-      </span>
+      <div className={className}>
+        <div
+          data-session-title-shell
+          className="flex h-8 w-fit overflow-hidden rounded-[6px] border border-transparent"
+          style={{ maxWidth: 'calc(100% - 16px)' }}
+        >
+          <span className="flex h-8 w-full min-w-0 items-center px-2 text-left" title={displayTitle}>
+            <span className={`min-w-0 truncate ${titleTextClassName}`}>{displayTitle}</span>
+          </span>
+        </div>
+      </div>
     );
   }
 

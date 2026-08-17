@@ -6,7 +6,7 @@ export default function VizPlaceholder({ isPlaying: _isPlaying }: VizPlaceholder
   return (
     <div className="h-full overflow-hidden rounded-region border border-border">
       <iframe
-        src="/animation/galaxy.html"
+        src="/animation/galaxy-ascii.html"
         title="galaxy visualizer"
         style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
         allow="autoplay"

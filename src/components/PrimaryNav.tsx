@@ -9,11 +9,11 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Disc3,
   Ellipsis,
   Home,
   PanelLeft,
   Settings,
-  Sparkles,
   User,
   type LucideIcon,
 } from 'lucide-react';
@@ -36,7 +36,7 @@ interface NavItem {
 
 const TOP_ITEMS: NavItem[] = [
   { id: 'home', labelKey: 'navHome', icon: Home },
-  { id: 'featured', labelKey: 'navFeatured', icon: Sparkles },
+  { id: 'featured', labelKey: 'navFeatured', icon: Disc3 },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
@@ -162,7 +162,7 @@ function MoreMenu({
     }
   };
 
-  const linkClass = `flex h-8 w-full items-center overflow-hidden rounded-[6px] text-text-muted transition-colors hover:bg-white/5 hover:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white/40 ${
+  const linkClass = `flex h-10 w-full items-center overflow-hidden rounded-[6px] text-text-muted transition-colors hover:bg-white/5 hover:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white/40 ${
     expanded ? 'text-left' : 'justify-center'
   }`;
 
@@ -176,14 +176,14 @@ function MoreMenu({
         aria-expanded={open}
         onClick={toggleMenu}
         {...getTooltipTriggerProps(t('navMore'))}
-        className={`flex h-8 w-full items-center overflow-hidden rounded-[6px] text-left transition-colors ${
+        className={`flex h-10 w-full items-center overflow-hidden rounded-[6px] text-left transition-colors ${
           open
             ? 'bg-white/10 text-text-primary'
             : 'text-text-muted hover:bg-white/5 hover:text-text-secondary'
         }`}
       >
-        <span className="flex size-8 shrink-0 items-center justify-center">
-          <Ellipsis size={17} strokeWidth={1.6} aria-hidden="true" />
+        <span className="flex size-10 shrink-0 items-center justify-center">
+          <Ellipsis size={21} strokeWidth={1.6} aria-hidden="true" />
         </span>
         <span
           aria-hidden={!expanded}
@@ -218,8 +218,8 @@ function MoreMenu({
           {...getTooltipTriggerProps(t('navLearnStrudel'))}
           className={linkClass}
         >
-          <span className="flex size-8 shrink-0 items-center justify-center">
-            <BookOpenIcon size={17} />
+          <span className="flex size-10 shrink-0 items-center justify-center">
+            <BookOpenIcon size={21} />
           </span>
           <span aria-hidden={!expanded} className={expanded ? 'ml-2 whitespace-nowrap text-sm' : 'sr-only'}>
             {t('navLearnStrudel')}
@@ -238,8 +238,8 @@ function MoreMenu({
           {...getTooltipTriggerProps('GitHub')}
           className={linkClass}
         >
-          <span className="flex size-8 shrink-0 items-center justify-center">
-            <span className="primary-nav-github-logo size-[17px]" aria-hidden="true" />
+          <span className="flex size-10 shrink-0 items-center justify-center">
+            <span className="primary-nav-github-logo size-[21px]" aria-hidden="true" />
           </span>
           <span aria-hidden={!expanded} className={expanded ? 'ml-2 whitespace-nowrap text-sm' : 'sr-only'}>
             GitHub
@@ -270,7 +270,7 @@ function NavGroup({
   return (
     <div
       className={`flex w-full flex-col gap-2 transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
-        expanded ? 'px-2' : 'px-[7px]'
+        expanded ? 'px-2' : 'px-[10px]'
       }`}
       data-testid={testId}
     >
@@ -293,14 +293,14 @@ function NavGroup({
               onSelect(id);
             }}
             {...getTooltipTriggerProps(label)}
-            className={`flex h-8 w-full items-center overflow-hidden rounded-[6px] text-left transition-colors ${
+            className={`flex h-10 w-full items-center overflow-hidden rounded-[6px] text-left transition-colors ${
               selected
                 ? 'bg-white/10 text-text-primary'
                 : 'text-text-muted hover:bg-white/5 hover:text-text-secondary'
             }`}
           >
-            <span className="flex size-8 shrink-0 items-center justify-center">
-              <Icon size={17} strokeWidth={1.6} aria-hidden="true" />
+            <span className="flex size-10 shrink-0 items-center justify-center">
+              <Icon size={21} strokeWidth={1.6} aria-hidden="true" />
             </span>
             <span
               aria-hidden={!expanded}
@@ -374,7 +374,7 @@ export default function PrimaryNav({ selectedItem, onSelect }: PrimaryNavProps) 
     <>
       <div
         className={`mr-region h-full shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
-          expanded ? 'w-[188px]' : 'w-[48px]'
+          expanded ? 'w-[188px]' : 'w-[60px]'
         }`}
         data-expanded={expanded}
       >
@@ -383,7 +383,9 @@ export default function PrimaryNav({ selectedItem, onSelect }: PrimaryNavProps) 
           className="primary-nav-surface primary-nav-outline flex h-full flex-col justify-between overflow-hidden rounded-region py-3"
         >
           <div className="w-full">
-            <div className="relative h-9 w-full">
+            {/* -5px lifts the logo/toggle centre line to 27px from the column top,
+                matching the Sidebar title row (1px border + 10px pt + half of h-8). */}
+            <div className="relative -mt-[5px] h-10 w-full">
               <div
                 aria-hidden="true"
                 className={`absolute left-3 top-1/2 -translate-y-1/2 whitespace-nowrap transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
@@ -405,7 +407,7 @@ export default function PrimaryNav({ selectedItem, onSelect }: PrimaryNavProps) 
                     maskPosition: 'center',
                     maskRepeat: 'no-repeat',
                     maskSize: 'contain',
-                    transform: 'translateY(-4px)',
+                    transform: 'translateY(-1px)',
                   }}
                 />
               </div>
@@ -416,11 +418,11 @@ export default function PrimaryNav({ selectedItem, onSelect }: PrimaryNavProps) 
                 aria-expanded={expanded}
                 onClick={toggleExpanded}
                 {...getTooltipTriggerProps(expanded ? t('collapseNavigation') : t('expandNavigation'))}
-                className="group absolute left-[7px] top-0 flex h-8 w-[34px] items-center justify-center rounded-[6px] text-text-secondary transition-[transform,background-color,color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/10 hover:text-text-primary motion-reduce:transition-none"
-                style={{ transform: expanded ? 'translateX(140px)' : 'translateX(0)' }}
+                className="group absolute left-[10px] top-0 flex h-10 w-[40px] items-center justify-center rounded-[6px] text-text-secondary transition-[transform,background-color,color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/10 hover:text-text-primary motion-reduce:transition-none"
+                style={{ transform: expanded ? 'translateX(128px)' : 'translateX(0)' }}
               >
                 {expanded ? (
-                  <PanelLeft size={17} strokeWidth={1.6} aria-hidden="true" />
+                  <PanelLeft size={21} strokeWidth={1.6} aria-hidden="true" />
                 ) : (
                   <>
                     <span
@@ -444,7 +446,7 @@ export default function PrimaryNav({ selectedItem, onSelect }: PrimaryNavProps) 
                       />
                     </span>
                     <PanelLeft
-                      size={17}
+                      size={21}
                       strokeWidth={1.6}
                       aria-hidden="true"
                       className="absolute inset-0 m-auto opacity-0 transition-opacity duration-150 group-hover:opacity-100 motion-reduce:transition-none"
@@ -454,7 +456,8 @@ export default function PrimaryNav({ selectedItem, onSelect }: PrimaryNavProps) 
               </button>
             </div>
 
-            <div className="mt-4">
+            {/* 25px = the original 16px gap plus the 9px the shorter, lifted header row gives back. */}
+            <div className="mt-[25px]">
               <NavGroup
                 items={TOP_ITEMS}
                 selectedItem={selectedItem}

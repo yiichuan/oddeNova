@@ -9,6 +9,8 @@ const SIDEBAR_RATIO_MAX = 0.40;
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
 const VIZ_RATIO_MIN = 0.15;
 const VIZ_RATIO_MAX = 0.45;
+/** Height of the vertical resize handle — `--spacing-divider` in index.css. */
+export const VIZ_DIVIDER_HEIGHT = 6;
 
 export interface PointerDragHandlers {
   onPointerDown: PointerEventHandler<HTMLDivElement>;
@@ -21,6 +23,8 @@ export interface UseLayoutReturn {
   keyboardHeight: number;
   sidebarWidth: number;
   vizHeight: number;
+  vizCollapsed: boolean;
+  toggleVizCollapsed: () => void;
   isDragging: 'h' | 'v' | null;
   mainRef: RefObject<HTMLDivElement | null>;
   hDragHandlers: PointerDragHandlers;
@@ -86,6 +90,12 @@ export function useLayout(): UseLayoutReturn {
   // ── Desktop split ──────────────────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState(() => window.innerWidth * SIDEBAR_RATIO_DEFAULT);
   const [vizHeight, setVizHeight] = useState(() => window.innerHeight * VIZ_RATIO_DEFAULT);
+  // Collapsing hides the viz pane without forgetting its dragged height, so
+  // expanding again restores the split the user last chose. The pane itself
+  // stays mounted throughout — it's an iframe whose galaxy is generated once
+  // from unseeded randomness, so remounting it would hand back a different
+  // one. It idles instead: galaxy-ascii.html skips its frame at zero size.
+  const [vizCollapsed, setVizCollapsed] = useState(false);
   const [isDragging, setIsDragging] = useState<'h' | 'v' | null>(null);
   const hDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -134,6 +144,8 @@ export function useLayout(): UseLayoutReturn {
     const h = mainRef.current?.offsetHeight ?? window.innerHeight;
     setVizHeight(Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, vDragRef.current.startHeight - delta)));
   }, []);
+  const toggleVizCollapsed = useCallback(() => setVizCollapsed((v) => !v), []);
+
   const endVDrag = useCallback<PointerEventHandler<HTMLDivElement>>((e) => {
     e.currentTarget.releasePointerCapture(e.pointerId);
     vDragRef.current = null;
@@ -145,6 +157,8 @@ export function useLayout(): UseLayoutReturn {
     keyboardHeight,
     sidebarWidth,
     vizHeight,
+    vizCollapsed,
+    toggleVizCollapsed,
     isDragging,
     mainRef,
     hDragHandlers: { onPointerDown: startHDrag, onPointerMove: moveHDrag, onPointerUp: endHDrag },

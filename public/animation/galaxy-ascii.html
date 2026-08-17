@@ -1,0 +1,1667 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASCII GALAXY — Strudel Live</title>
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #080908;
+        }
+        #asciiScreen {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="asciiScreen" aria-label="随音乐运动的二维 ASCII 银河动画"></canvas>
+
+    <script>
+        (() => {
+            // Ordered by how much ink the glyph puts in a cell, darkest first. Index 0
+            // is the "nothing here" sentinel and index 1 is never assigned (the base
+            // grid clamps to 2), so 24 of these 26 are ever drawn.
+            //
+            // The middle is carried by Greek lowercase, which packs many distinguishable
+            // ink weights into the range where the arm-to-gap gradient lives — that
+            // gradient now spans roughly twice as many steps as it did, so the arms fade
+            // out instead of stepping down. The heavy end is Greek capitals rather than
+            // '#' and '@'. The squarish ones carry it — Ξ, Σ, Π, Θ fill their cell corner
+            // to corner where a round or triangular glyph leaves the corners empty, which
+            // is what lets the top of the ramp still read as solid after the ASCII
+            // heavyweights were dropped. ∇ and Δ sit just below them: a triangle covers
+            // real area but vacates two corners, so it reads as a rung between the open
+            // lowercase and the solid capitals.
+            //
+            // Anything keyed off a fixed number of steps from either end of this array
+            // (the arm-ridge threshold and the peripheral-dot band in drawAscii) is
+            // expressed as a fraction of its length, not a constant — lengthening the
+            // ramp otherwise silently narrows those bands.
+            //
+            // Every glyph is drawn through fillText's maxWidth argument, which condenses
+            // anything wider than one cell, so a symbol the font renders wide (or that
+            // falls back to another face entirely) is squeezed to fit instead of
+            // overlapping its neighbour.
+            const ASCII_RAMP = [
+                ' ', ' ',
+                '·', '.', 'ι', '*', '+', '/', 'τ', 'γ', 'ν', 'λ',
+                '=', 'σ', 'π', 'μ', '∇', 'Δ', 'Ξ',
+                '%', 'Σ', 'Φ', 'Ψ', 'Π', 'Θ', 'Ω',
+            ];
+            // Share of the usable ramp that counts as an arm ridge — the band the burst
+            // accent is allowed to strike. Judged against what counts as bright *there*:
+            // a single threshold is met almost only by the inner disk, so the band widens
+            // toward the rim. Fractions, not step counts, so lengthening the ramp doesn't
+            // quietly shrink the band.
+            const ARM_RIDGE_BAND_INNER = 0.38;
+            const ARM_RIDGE_BAND_OUTER = 0.77;
+            // Share of the usable ramp that reads as a lone speck in the periphery and is
+            // eligible for culling, so the rim thins out instead of turning to static.
+            const PERIPHERAL_DOT_BAND = 0.15;
+            // Cell density at which a cell reaches the full gap-opacity floor. Below
+            // it the cell fades out of that floor rather than sitting on it, so an
+            // arm's skirt grades into the gap instead of ending on a plateau. In the
+            // weight units projectGalaxy accumulates, where one star in the outer
+            // disk is worth roughly 0.04 and an arm ridge cell lands near 1.
+            const SPARSE_FADE_DENSITY = 0.15;
+            const isCompactCanvas = window.innerHeight < 420;
+            const STAR_COUNT = isCompactCanvas ? 30000 : 56000;
+            const TARGET_COLUMNS = 178;
+            const TARGET_FPS = 30;
+            const FRAME_INTERVAL = 1000 / TARGET_FPS;
+            const FOV = 50 * Math.PI / 180;
+            const SPIRAL_ROTATION_SPEED = 0.06;
+            // Lower winding = the spiral opens up faster, so successive passes of an arm
+            // sit further apart radially (arm width is set separately by ARM_THICKNESS).
+            const SPIRAL_WINDING = 5.5;
+            const ARM_WIDTH_SCALE = isCompactCanvas ? 0.68 : 1;
+            const BRIDGE_THRESHOLD = isCompactCanvas ? 0.72 : 0.82;
+            const ARM_SHARE = 0.62;
+            // Lowest fraction of arm stars that still commit to the arm. Lower = softer
+            // edge but a weaker spiral; below ~0.7 the arms stop reading as arms.
+            const ARM_COHERENCE_MIN = 0.91;
+            // Arm width in world units, inner disk -> outer disk. Independent of
+            // SPIRAL_WINDING, so spacing and width can be tuned separately.
+            const ARM_THICKNESS_INNER = 2.7;
+            const ARM_THICKNESS_OUTER = 5.6;
+            // Radius where stars stop being a random bulge and fully follow the arms.
+            // This is what sets the size of the bright central blob.
+            const CORE_RADIUS = 1.15;
+            // ── Inter-arm gaps ─────────────────────────────────────────────────
+            // What fills the space between the arms is the unstructured half of
+            // the disk: the random-angle stars and the bridge wash. Sampled flat
+            // in radius it reads as haze the arms have to compete with, and the
+            // competition is worst at the rim, where the arms are thinnest and a
+            // gap and an arm come out nearly the same shade. So the fill is
+            // rationed instead — one flat share across the whole disk, cleared
+            // entirely at the rim so the outer turns are cut against bare
+            // background.
+            const GAP_DENSITY = 0.08;
+            // The bulge keeps its fill: there are no arms down there for anything
+            // to sit between, and rationing it would just thin the nucleus. The
+            // taper runs out by the radius the arms have formed at.
+            const GAP_CORE_TAPER_END = 5;
+            // Held flat out to GAP_FADE_START, gone by GAP_FADE_END. Ordinary disk
+            // stars reach 28 and the outer turns start at 27, so the clearing is
+            // the band the arms make their last pass through. The short ramp
+            // between the two is only there to keep the clearing from reading as a
+            // hard-edged ring.
+            const GAP_FADE_START = 20;
+            const GAP_FADE_END = 24;
+            // Brightness gain at the hub vs. at the rim; widen the gap to make the
+            // inward-dark / outward-bright gradient more pronounced.
+            const RADIAL_EXPOSURE_INNER = 0.1;
+            const RADIAL_EXPOSURE_OUTER = 1.8;
+            const RADIAL_EXPOSURE_SPAN = 22;
+            const OUTER_TURN_SHARE = 0.36;
+            const OUTER_TURN_START = 27;
+            const OUTER_TURN_SPAN = 14;
+            const OUTER_TURN_COUNT = 3;
+            const OUTER_TURN_EXTRA_ANGLE = Math.PI * 2 * OUTER_TURN_COUNT
+                - Math.log((OUTER_TURN_START + OUTER_TURN_SPAN + 1) / (OUTER_TURN_START + 1)) * SPIRAL_WINDING;
+            // The idle value the old audio-driven scatter settled at. Baked into the
+            // star positions so the galaxy keeps the shape it always rests in, instead
+            // of every drum hit shoving the stars around.
+            const RESTING_SCATTER = 0.2;
+            // ── Drum response ──────────────────────────────────────────────────
+            // Percussion drives the projection surface, never the galaxy itself — the
+            // one thing that moves the stars is sustained material, further down. One
+            // band owns one effect, and no effect is shared, so which part of the kit
+            // is playing is readable from the screen alone:
+            //
+            //   sub   30–140 Hz    kick        → shockwave ring: the front pushes cells
+            //                                    up the ASCII ramp, lifts their opacity
+            //                                    and draws them one size larger
+            //   body  160–700 Hz   tom / body  → oversized #CD5633 glyphs grown out
+            //                                    of the arm ridges
+            //   crack 1.5–3.5 kHz  snare/clap  → meteors: cool-white streaks cutting
+            //   air   7–16 kHz     hat/cymbal    across the frame from upper left to
+            //                                    lower right at 45°, random in place
+            //                                    and count
+            //
+            // The two high bands are the one pair that shares an effect, because
+            // frequency cannot separate them reliably. Decay does the splitting instead,
+            // and it grades the meteor rather than swapping it: a hit that rings throws
+            // a shower, a short closed one (hat, shaker, rim) gets a single dim streak,
+            // rationed so a 16th-note pattern cannot crowd out the snare's.
+            //
+            // The gaps are deliberate. 700–1500 Hz holds leads, vocals and mud, which
+            // would fire something on nearly every note; 3.5–7 kHz is where snare noise
+            // and hat noise overlap most, and listening to it makes the two
+            // indistinguishable.
+            const AUDIO_FLOOR = 0.015;
+            // Narrow bands, in Hz, resolved against the real sample rate. A wide
+            // "everything under 1.4kHz" band tracks the bass line, chords and vocals
+            // as much as the kick, so once an arrangement fills in the glitch fires on
+            // notes rather than on the beat and stops reading as synced.
+            const SUB_BAND_HZ = [30, 140];
+            const BODY_BAND_HZ = [160, 700];
+            const CRACK_BAND_HZ = [1500, 3500];
+            const AIR_BAND_HZ = [7000, 16000];
+            // Onsets are detected on how fast a band is *rising* (units per second),
+            // not on its level: sustained layers add level but no rise, so a kick keeps
+            // standing out no matter how dense the mix gets.
+            const ONSET_RATIO = 1.5;
+            const ONSET_FLOOR = 1;
+            // How long the arbitration stays open once a hit starts, and how long the
+            // winner then owns the screen. Every visual lands one window after the
+            // sound, so this is a direct latency cost — kept as short as it can be
+            // while still outlasting the spread between a drum's bands.
+            const HIT_WINDOW = 0.02;
+            const VOICE_LOCK = 0.03;
+            // Rarity ladder. Effects differ enormously in how much of the screen they
+            // claim, so how often each is allowed to appear is graded by how much the
+            // hit stands out from the music around it — its peak against a running
+            // reference of recent hits. A ring is the largest gesture there is and has
+            // to be earned; the big glyphs are one step down; the meteor is the
+            // everyday response and carries no accent requirement at all.
+            const RING_ACCENT = 1.55;
+            // Floors, so a lone accent inside a quiet passage can't buy the big gestures.
+            const RING_MIN_LEVEL = 0.22;
+            const ACCENT_FLOOR = 4;
+            // How fast the reference chases the hits it sees. Fast enough that a steady
+            // pattern settles at accent 1 and stays in one tier — a gate the measurement
+            // noise keeps crossing is exactly the flicker this ladder must not reintroduce.
+            const HIT_REFERENCE_MIX = 0.3;
+            // Share of a hit still sounding one window later. Below this it was a short,
+            // closed sound (hat, shaker, rim); above it the hit is still ringing (snare,
+            // clap, open hat). Both get the meteor — the difference is how much of one.
+            const SHORT_HIT_DECAY = 0.58;
+            // Short hits fold into the meteor rather than owning an effect. A ringing
+            // hit throws a shower; a closed one gets a single streak at a fraction of
+            // the strength, which the shared `bias` turns into something short, slow and
+            // dim. Same vocabulary, different weight — a hat reads as the frame being
+            // stirred, a snare as something thrown across it.
+            const SHORT_HIT_METEOR_SCALE = 0.4;
+            // And it has to be rationed. The meteor is a travelling object, so unlike
+            // the figure that used to answer these hits it cannot be held for a share of
+            // the gap between them — a 16th-note hat line would keep the meteor pool
+            // permanently full and bury the snare's own streaks under weather. Roughly
+            // five a second, so a dense pattern stirs the frame without filling it.
+            const SHORT_HIT_REFRACTORY = 0.19;
+            // ── Sustained response ─────────────────────────────────────────────
+            // Held material — a bowed line, a piano chord under the pedal, a pad —
+            // has no attack for the onset detector and rightly fires nothing. It gets
+            // its own continuous channel instead, because anything discrete fired at a
+            // long note lands at an arbitrary moment and reads as out of time, while
+            // following the envelope is in time by construction.
+            //
+            // The measurement is the *lower envelope* of each band: it falls instantly
+            // and rises slowly, so a 20–40ms drum spike cannot lift it while a note
+            // held past half a second brings it up to the note's own level. That is the
+            // cheapest useful transient/harmonic split an FFT alone affords, and it
+            // keeps percussion out of this channel by construction — the old measure
+            // was the peak level across all bands, which a busy kit pinned high enough
+            // that strings coming in moved nothing.
+            const SUSTAIN_RISE = 0.6;
+            // Normalised against a slowly falling peak hold of the band's level, not
+            // against a chasing mean. Dividing by a maximum is a volume calibration and
+            // holds a 30-second drone at full value; subtracting a mean is a *change*
+            // detector, and a change detector by construction sends any held note to
+            // zero the longer it is held — which is exactly why long notes used to fade
+            // out of the picture.
+            const SUSTAIN_REFERENCE_FALL = 20;
+            const SUSTAIN_REFERENCE_MIN = 0.02;
+            const SUSTAIN_CONTRAST = 1.4;
+            // Final smoothing on the per-band result. A hit still bumps the envelope
+            // for the ~150ms it sounds; over a quarter second that bump disappears
+            // while a bow swell passes through untouched.
+            const SUSTAIN_SMOOTH = 0.25;
+            // Register maps to radius. Each band lights the zone of the disk that suits
+            // its pitch, so a cello drone glows in the core and a high violin line
+            // lights the rim — which is the information the old single global swell
+            // threw away, since it made every held note look the same. Zones are given
+            // in world units and overlap, so a chord spanning the registers fills the
+            // disk smoothly instead of drawing four separate rings.
+            const SUSTAIN_ZONE_CENTER = [3, 12, 22, 33];
+            const SUSTAIN_ZONE_WIDTH = [6, 8, 9, 11];
+            const SUSTAIN_RADIAL_LIFT = 1.5;
+            // The zones overlap on purpose, which means a full-spectrum drone can stack
+            // four bumps onto the same radius. Capped so that case lifts the exposure by
+            // a bounded amount rather than saturating the disk to solid '@' and erasing
+            // the arm structure underneath — which is exactly what a dense arrangement
+            // does, since every extra track puts sustained energy in another band and
+            // they all pile onto the same cells. The cap is what a busy mix runs into,
+            // so it, not the gain, is the knob for how heavy a full track looks.
+            const SUSTAIN_BOOST_MAX = 0.7;
+            const SUSTAIN_LUT_SIZE = 48;
+            const SUSTAIN_MAX_RADIUS = 44;
+            // How far sustained material swells the disk's ambient undulation. Geometry
+            // is a dimension no drum accent uses, so bowed material can read as the
+            // whole disk breathing without touching anything the kit owns. Held down
+            // for the same reason as the cap above: the wave spreads stars in Y, and
+            // under the top-down camera that thickens the arms, so a dense mix reads as
+            // swollen and crowded rather than as breathing.
+            const SUSTAIN_WAVE_LIFT = 1;
+            // The old global swell stays as a faint overall body. Kept small: a
+            // brightness lift with no shape competes with the radial ramp and the
+            // accents for the same dimension, and given room it just washes the frame out.
+            const SUSTAIN_GAIN = 4;
+            const SUSTAIN_LIFT = 0.12;
+            // Meteors. A true 45° on screen is not 45° on the grid: cells are about
+            // twice as tall as they are wide, so the path advances ~1.8 columns per
+            // row and the trail comes out as the staircase a diagonal line actually
+            // is at this cell aspect. Speed and length are given as fractions of the
+            // frame so the gesture looks the same whatever the panel size.
+            const METEOR_LIMIT = 12;
+            const METEOR_PER_HIT = 3;
+            // Frame widths per second, and trail length as a share of frame width.
+            // The two are tied: at 30fps even the fastest meteor advances well under
+            // half its own trail per frame, so consecutive frames overlap and the
+            // streak reads as one object travelling rather than as a strobing dash.
+            const METEOR_SPEED_MIN = 0.55;
+            const METEOR_SPEED_MAX = 1.15;
+            const METEOR_TAIL_MIN = 0.1;
+            const METEOR_TAIL_MAX = 0.26;
+            // How far a meteor travels before it is gone, as a share of frame width —
+            // roughly a third of the width and half the height, never the full window.
+            // A streak that runs corner to corner takes about a second and turns into a
+            // background element; a short passage that fades out where it happens reads
+            // as one strike and leaves room for the next. With the envelope below, a
+            // flight lasts between a fifth of a second and about two thirds.
+            const METEOR_RANGE_MIN = 0.24;
+            const METEOR_RANGE_MAX = 0.38;
+            // Shares of that travel spent fading in and out. Both ends have to be soft:
+            // a meteor that pops into existence at full brightness reads as a glitch,
+            // and one that vanishes mid-flight looks like a dropped frame.
+            const METEOR_FADE_IN = 0.14;
+            const METEOR_FADE_OUT = 0.4;
+            // Share of the trail held at full weight before the taper starts. A streak
+            // has to point somewhere; an evenly lit bar reads as a scratch instead.
+            const METEOR_HEAD_SHARE = 0.14;
+            const METEOR_LEVELS = 5;
+            const SUB_REFRACTORY = 0.11;
+            const BODY_REFRACTORY = 0.14;
+            const CRACK_REFRACTORY = 0.13;
+            const AIR_REFRACTORY = 0.07;
+            // Shockwave: world units per second, and the width of its bright front.
+            // At 42/s a ring crosses the visible disk in a little under a second, so
+            // consecutive kicks stack into a travelling pulse train rather than
+            // overwriting each other.
+            const RING_SPEED = 42;
+            // Gaussian sigma of the front, in world units. Narrow: a wide front stops
+            // reading as a wavefront and starts reading as the whole disk brightening,
+            // which is both less legible and much heavier on screen.
+            const RING_WIDTH = 1.9;
+            const RING_MAX_RADIUS = 44;
+            const RING_LIMIT = 4;
+            const RING_LUT_SIZE = 180;
+            // How hard the front lifts what it crosses. The glyph lift pushes cells up
+            // the ASCII ramp so the pulse reads as a band of denser characters; the
+            // opacity lift makes that band burn through the arms it is crossing. The
+            // ring is the rarest, largest gesture in the piece — it has to arrive.
+            const RING_GLYPH_LIFT = 1.15;
+            const RING_OPACITY_LIFT = 0.45;
+            // Alpha of the enlarged wavefront glyphs, from a faint ring to a peak hit.
+            const RING_ACCENT_ALPHA_MIN = 0.42;
+            const RING_ACCENT_ALPHA_MAX = 0.72;
+            // Struck onto the arm ridges at twice the base size, so these are picked for
+            // weight and for having a silhouette that survives being scaled up. Drawn
+            // without a maxWidth, unlike the base grid — the burst is meant to overflow
+            // its cell.
+            const BURST_GLYPHS = ['Ω', 'Φ', 'Ψ', 'Θ', '∇', 'Δ', 'Σ', 'Ξ'];
+            // Share of arm-ridge cells a full-strength hit claims, before the outward
+            // bias tilts it. These glyphs are drawn at twice the base size and in the
+            // only colour on screen, so each one carries far more weight than its cell
+            // count suggests — a scattering of them reads as a strike, a crowd of them
+            // reads as a second galaxy laid over the first.
+            const BURST_CELL_RATE = 0.01;
+            // Accent tiers, drawn over the base grid. Higher tier wins a cell.
+            const ACCENT_NONE = 0;
+            const ACCENT_RING = 1;
+            const ACCENT_BURST = 2;
+            const ACCENT_METEOR = 3;
+            // Neutral grey-white — no hue at all, so the warm burst stays the only
+            // colour on screen. Quantised so a whole trail is painted with a handful of
+            // fillStyle changes.
+            const METEOR_COLORS = Array.from({ length: METEOR_LEVELS }, (unused, index) =>
+                `rgba(228, 228, 228, ${(0.22 + 0.78 * (index + 1) / METEOR_LEVELS).toFixed(3)})`);
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            const canvas = document.getElementById('asciiScreen');
+            const context = canvas.getContext('2d', { alpha: false });
+
+            const stars = createGalaxy();
+            // One detector per drum voice. Levels are only lightly smoothed: onset
+            // detection needs every hit to still read as a peak, so the release has to
+            // fall back between beats.
+            const subBand = createBand(SUB_BAND_HZ, SUB_REFRACTORY, 0.5, 1.4);
+            const bodyBand = createBand(BODY_BAND_HZ, BODY_REFRACTORY, 0.45, 1.3);
+            const crackBand = createBand(CRACK_BAND_HZ, CRACK_REFRACTORY, 0.4, 1.7);
+            const airBand = createBand(AIR_BAND_HZ, AIR_REFRACTORY, 0.35, 1.2);
+            const bands = [subBand, bodyBand, crackBand, airBand];
+            // Fixed top-down camera. The galaxy's own rotation supplies the motion.
+            const cameraPosition = { x: 0, y: 22.5, z: 13.5 };
+            const cameraUp = { x: 0, y: 0, z: -1 };
+
+            let densityBuffer = new Float32Array(0);
+            let radiusBuffer = new Float32Array(0);
+            let glyphBuffer = new Uint8Array(0);
+            let opacityBuffer = new Uint8Array(0);
+            let gridColumns = 0;
+            let gridRows = 0;
+            let cellWidth = 0;
+            let cellHeight = 0;
+            let fontSize = 0;
+            // Projection scale is anchored to the layout the panel first loads with.
+            // Dragging the splitter changes how much of the galaxy is visible, never
+            // how big it is drawn, so the arms keep their default shape instead of
+            // being squeezed. Only a width change rescales it, which keeps the galaxy
+            // in step with the glyph size (which is derived from width as well).
+            let referenceWidth = 0;
+            let referenceHeight = 0;
+            let projectionRows = 0;
+            let analyser = null;
+            let analyserSource = null;
+            let dataArray = null;
+            let audioConnected = false;
+            let simAudio = null;
+            let simTime = null;
+            let lastFrameTime = -Infinity;
+            let lastVisualTime = null;
+            let resizePending = false;
+            // Meteors in flight, travelling down-right across the cell grid.
+            const meteors = [];
+            // Cells the live meteors currently occupy, collected while marking so the
+            // draw pass touches only the trail instead of rescanning the whole grid.
+            const meteorCells = [];
+            // Kick shockwaves, expanding outward through the disk in world units.
+            const rings = [];
+            let accentBuffer = new Uint8Array(0);
+            // Per-cell meteor weight, 0..1, driving both glyph and opacity.
+            let meteorBuffer = new Float32Array(0);
+            // Ring brightness sampled per radius, rebuilt once a frame so the per-cell
+            // lookup is an array index instead of one exp() per ring per cell.
+            const ringLut = new Float32Array(RING_LUT_SIZE);
+            let ringLutActive = false;
+            let ringPeak = 0;
+            // Sustained brightness sampled per radius, same trick as the ring table.
+            const sustainLut = new Float32Array(SUSTAIN_LUT_SIZE);
+            let sustainTotal = 0;
+            let accentColumnLimit = 0;
+            let accentRowLimit = 0;
+            let silentFor = 1; // starts "silent" so the first audio frame seeds the followers
+            let sawAudio = false;
+            let burstEnergy = 0;
+            let accentSeed = 1;
+            let voiceLock = 0;
+            let hitOpen = false;
+            let hitTimer = 0;
+            const hitPeak = [0, 0, 0, 0];
+            const hitRawPeak = [0, 0, 0, 0];
+            const hitFloor = [0, 0, 0, 0];
+            let voiceDecay = 1;
+            let voicePeakFlux = 0;
+            let sustainLevel = 0;
+            let sustainBaseline = 0;
+            let sinceShortHit = 0;
+            let hitReference = 0;
+
+            window.addEventListener('message', (event) => {
+                if (event.data?.type === 'AUDIO_SIM') {
+                    simAudio = {
+                        low: event.data.low || 0,
+                        mid: event.data.mid || 0,
+                        high: event.data.high || 0
+                    };
+                }
+                if (event.data?.type === 'GALAXY_TIME' && typeof event.data.time === 'number') {
+                    simTime = event.data.time;
+                }
+            });
+
+            // Resizing the canvas clears it, so never do it outside the render frame:
+            // a splitter drag fires resize far more often than the 30fps redraw, and
+            // every clear that isn't repainted in the same task shows up as a black
+            // flash. The flag defers the work to animate(), which resizes and repaints
+            // back to back within one frame.
+            window.addEventListener('resize', () => { resizePending = true; });
+
+            resize();
+            requestAnimationFrame(animate);
+
+            function createGalaxy() {
+                // STAR_COUNT is a budget, not a length: the gap fill is rationed
+                // by dropping stars outright rather than by moving them, which
+                // would only pile the haze up somewhere else in the disk.
+                const result = [];
+
+                for (let index = 0; index < STAR_COUNT; index += 1) {
+                    const distribution = Math.random();
+                    const isOuterTurn = Math.random() < OUTER_TURN_SHARE;
+                    const isArm = isOuterTurn || distribution < ARM_SHARE;
+                    const isBridge = !isOuterTurn && distribution < BRIDGE_THRESHOLD;
+                    const isCoreSample = !isOuterTurn && Math.random() < 0.008;
+                    const radius = isOuterTurn
+                        ? OUTER_TURN_START + Math.pow(Math.random(), 0.82) * OUTER_TURN_SPAN
+                        : isCoreSample
+                            ? 0.02 + Math.pow(Math.random(), 1.6) * 1.1
+                            : diskRadius();
+                    // Everything that isn't following an arm ends up between them,
+                    // so this is where the gaps get their density — see GAP_*.
+                    if (!isArm && !isCoreSample && Math.random() > gapKeepAt(radius)) continue;
+
+                    const outerTurnProgress = isOuterTurn
+                        ? (radius - OUTER_TURN_START) / OUTER_TURN_SPAN
+                        : 0;
+                    const spiralAngle = Math.log(radius + 1) * SPIRAL_WINDING
+                        + outerTurnProgress * OUTER_TURN_EXTRA_ANGLE;
+                    const innerBlend = isOuterTurn
+                        ? 1
+                        : Math.pow(Math.min(1, radius / CORE_RADIUS), 1.25);
+                    // Hold the arm structure almost all the way to the disk edge; the old
+                    // falloff dissolved it into a random disk right after the second turn.
+                    const outerBlend = isOuterTurn
+                        ? 1
+                        : Math.max(0, 1 - Math.pow(Math.max(0, radius - 24) / 10, 1.35));
+                    const armBlend = innerBlend * outerBlend;
+                    const edgeScatter = isOuterTurn ? 0.03 : Math.max(0, (radius - 20) / 22);
+                    const randomAngle = Math.random() * Math.PI * 2;
+                    let finalAngle;
+                    let armOffset;
+
+                    if (isArm) {
+                        const armAngle = (index % 2) * Math.PI;
+                        // Bell-shaped profile with a long tail: dense ridge at the arm
+                        // centre fading smoothly into the gap, instead of a uniform band
+                        // that ends at a hard edge.
+                        armOffset = bellRandom() * (1 + Math.pow(Math.random(), 3.2) * 2);
+                        const cappedRadius = Math.min(radius, 28);
+                        // Arm width is defined in world units and converted to an angle, so
+                        // the arm stays a coherent lane instead of fanning out; successive
+                        // windings then remain separated far out into the disk.
+                        const armThickness = lerp(
+                            ARM_THICKNESS_INNER,
+                            ARM_THICKNESS_OUTER,
+                            clamp(cappedRadius / 28, 0, 1)
+                        );
+                        const spread = isOuterTurn
+                            ? 0.3
+                            : (armThickness / (cappedRadius + 1.8)) * ARM_WIDTH_SCALE;
+                        // The diffuse skirt around the ridge. Scaled down with
+                        // ARM_THICKNESS: left at its old value it would survive the
+                        // narrowing and the arm would read just as wide, only fuzzier.
+                        const jitter = isOuterTurn
+                            ? (Math.random() - 0.5) * 0.16
+                            : bellRandom() * 2.2 / (cappedRadius + 2.4) * ARM_WIDTH_SCALE;
+                        // Radius-coherent meander: neighbouring stars share it, so the arm
+                        // centreline wanders as a whole rather than tracing a perfect
+                        // logarithmic curve. Amplitude is in world units, like the width.
+                        const armPhase = (index % 2) * 3.1;
+                        const meander = (Math.sin(radius * 0.42 + armPhase) * 1.8
+                            + Math.sin(radius * 1.07 + armPhase * 2.3) * 0.7)
+                            / (cappedRadius + 1.8);
+                        const structured = armAngle + spiralAngle + armOffset * spread + jitter
+                            + meander + (Math.random() - 0.5) * edgeScatter * 1.2;
+                        // Vary how strongly each star commits to the arm. Stragglers land
+                        // partway toward a random angle, giving the arm a diffuse skirt
+                        // that blends into the gap instead of a defined boundary.
+                        const coherence = armBlend
+                            * lerp(ARM_COHERENCE_MIN, 1, Math.pow(Math.random(), 0.6));
+                        finalAngle = randomAngle * (1 - coherence) + structured * coherence;
+                    } else if (isBridge) {
+                        const bridgeAngle = ((index % 2) + 0.5) * Math.PI;
+                        armOffset = bellRandom() * (1 + Math.pow(Math.random(), 3) * 2.6);
+                        const cappedRadius = Math.min(radius, 28);
+                        const spread = (7.6 / (cappedRadius + 2.2)) * ARM_WIDTH_SCALE;
+                        const jitter = bellRandom() * 3.5
+                            / (cappedRadius + 2.4) * ARM_WIDTH_SCALE;
+                        const meander = Math.sin(radius * 0.42 + (index % 2) * 3.1) * 2
+                            / (cappedRadius + 2.2);
+                        const structured = bridgeAngle + spiralAngle + armOffset * spread + jitter
+                            + meander + (Math.random() - 0.5) * edgeScatter * 1.5;
+                        // The bridge sits halfway between the two arms, so a strong blend
+                        // halves the apparent arm spacing — it is the single biggest
+                        // influence on how far apart the arms look, ahead of the winding.
+                        // Keep it as a faint wash.
+                        const bridgeBlend = armBlend * Math.min(1, radius / 8) * 0.15;
+                        finalAngle = randomAngle * (1 - bridgeBlend) + structured * bridgeBlend;
+                    } else {
+                        armOffset = 0;
+                        finalAngle = randomAngle;
+                    }
+
+                    if (isCoreSample) finalAngle = randomAngle;
+
+                    // A large outward radial smear erases the ring spacing, so keep it
+                    // small and confined to the outermost band.
+                    const edgeFade = Math.max(0, (radius - 22) / 16);
+                    const finalRadius = isOuterTurn
+                        ? radius + (Math.random() - 0.5) * 1.4
+                        : radius + edgeFade * Math.pow(Math.random(), 0.5) * 5;
+                    const coreCompression = isCompactCanvas
+                        ? lerp(0.62, 1, clamp(radius / 4, 0, 1))
+                        : 1;
+                    const visualRadius = finalRadius * coreCompression;
+                    const normalizedRadius = Math.min(radius, 28) / 28;
+                    const yBase = Math.pow(normalizedRadius, 2) * 3.2;
+                    const ySpread = isArm
+                        ? 0.1 + Math.pow(normalizedRadius, 1.3) * 2.5
+                        : 0.15 + normalizedRadius * 1.8;
+                    const scatterDirection = Math.random() * Math.PI * 2;
+                    const scatterMagnitude = (isOuterTurn
+                        ? visualRadius * 0.08 + 0.8
+                        : visualRadius * 0.22 + 0.8) * RESTING_SCATTER;
+
+                    result.push({
+                        x: Math.cos(finalAngle) * visualRadius * 1.6
+                            + Math.cos(scatterDirection) * scatterMagnitude,
+                        y: yBase + (Math.random() - 0.5) * ySpread,
+                        z: Math.sin(finalAngle) * visualRadius
+                            + Math.sin(scatterDirection) * scatterMagnitude,
+                        radius,
+                        displayRadius: visualRadius,
+                        seed: 0.5 + Math.random()
+                    });
+                }
+
+                return result;
+            }
+
+            // Radius of an ordinary disk star. A flatter exponent moves stars out of
+            // the bulge into the disk, so the centre reads as a compact nucleus
+            // rather than a large glowing mass.
+            function diskRadius() {
+                return 0.02 + Math.pow((Math.random() + Math.random()) / 2, 1.12) * 27.98;
+            }
+
+            // Share of the inter-arm fill kept at a given radius: all of it through
+            // the bulge, a flat GAP_DENSITY across the disk, nothing past the rim.
+            function gapKeepAt(radius) {
+                const formed = clamp((radius - CORE_RADIUS) / (GAP_CORE_TAPER_END - CORE_RADIUS), 0, 1);
+                const cleared = clamp((radius - GAP_FADE_START) / (GAP_FADE_END - GAP_FADE_START), 0, 1);
+                return lerp(1, GAP_DENSITY, formed) * (1 - cleared);
+            }
+
+            function resize() {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                const pixelRatio = Math.min(window.devicePixelRatio, 2);
+
+                const bufferWidth = Math.round(width * pixelRatio);
+                const bufferHeight = Math.round(height * pixelRatio);
+                // Assigning width/height wipes the canvas even when the value is
+                // unchanged, so only do it on a real size change.
+                if (canvas.width !== bufferWidth || canvas.height !== bufferHeight) {
+                    canvas.width = bufferWidth;
+                    canvas.height = bufferHeight;
+                    canvas.style.width = `${width}px`;
+                    canvas.style.height = `${height}px`;
+                }
+                context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+                fontSize = clamp(width / (TARGET_COLUMNS * 0.62), 8, 15);
+                context.font = `600 ${fontSize}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
+                context.textBaseline = 'top';
+                cellWidth = context.measureText('@').width;
+                cellHeight = fontSize * 1.08;
+                // Round up: the projection spans exactly gridColumns x gridRows cells, so
+                // flooring would leave an unpainted strip of up to one cell at the right
+                // and bottom edges. The overhanging cell is clipped by the canvas.
+                gridColumns = Math.max(1, Math.ceil(width / cellWidth));
+                gridRows = Math.max(1, Math.ceil(height / cellHeight));
+                // The grid rounds up so the projection covers the whole panel, which
+                // leaves the last row and column hanging over the edge, painted only in
+                // part. A dim base glyph fades out there unnoticed, but a bright accent
+                // sliced in half reads as a hard line of dots pinned to the edge — so
+                // accents stop at the last fully visible cell.
+                accentColumnLimit = Math.max(0, Math.floor(width / cellWidth) - 1);
+                accentRowLimit = Math.max(0, Math.floor(height / cellHeight) - 1);
+
+                if (referenceWidth === 0 && width > 0 && height > 0) {
+                    referenceWidth = width;
+                    referenceHeight = height;
+                }
+                const projectionHeight = referenceWidth > 0
+                    ? referenceHeight * (width / referenceWidth)
+                    : height;
+                projectionRows = projectionHeight / cellHeight;
+
+                const cellCount = gridColumns * gridRows;
+                if (densityBuffer.length !== cellCount) {
+                    densityBuffer = new Float32Array(cellCount);
+                    radiusBuffer = new Float32Array(cellCount);
+                    glyphBuffer = new Uint8Array(cellCount);
+                    opacityBuffer = new Uint8Array(cellCount);
+                    accentBuffer = new Uint8Array(cellCount);
+                    meteorBuffer = new Float32Array(cellCount);
+                }
+            }
+
+            function tryConnectAudio() {
+                if (audioConnected) return;
+                try {
+                    const hostWindow = window.parent && window.parent !== window ? window.parent : window;
+                    const getAudioContext = hostWindow.getAudioContext;
+                    const getController = hostWindow.getSuperdoughAudioController;
+                    if (typeof getAudioContext !== 'function' || typeof getController !== 'function') return;
+
+                    const audioContext = getAudioContext();
+                    const tapNode = getController()?.output?.destinationGain;
+                    if (!audioContext || !tapNode) return;
+
+                    analyser = audioContext.createAnalyser();
+                    // 1024 puts the bin width near 47Hz at 48k, enough to separate the
+                    // kick from the rest of the low end.
+                    analyser.fftSize = 1024;
+                    // No analyser-side smoothing: it would blur exactly the transients
+                    // the onset detector measures. The followers below smooth instead.
+                    analyser.smoothingTimeConstant = 0;
+                    tapNode.connect(analyser);
+                    analyserSource = tapNode;
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                    const binHz = audioContext.sampleRate / analyser.fftSize;
+                    const lastBin = analyser.frequencyBinCount - 1;
+                    for (let index = 0; index < bands.length; index += 1) {
+                        const band = bands[index];
+                        // Round inward, never outward: rounding to nearest lets two
+                        // neighbouring bands claim the same bin, and a shared bin means
+                        // one hit fires both of their effects.
+                        // Skip bin 0 as well: it holds the DC offset, not audio.
+                        band.binStart = clamp(Math.ceil(band.hz[0] / binHz), 1, lastBin);
+                        band.binEnd = clamp(Math.floor(band.hz[1] / binHz), band.binStart, lastBin);
+                    }
+                    audioConnected = true;
+                } catch {
+                    // The parent audio engine may not be ready yet; retry on the next frame.
+                }
+            }
+
+            function dropAudioConnection() {
+                if (analyserSource && analyser) {
+                    try {
+                        analyserSource.disconnect(analyser);
+                    } catch {
+                        // Already torn down with its context; nothing to release.
+                    }
+                }
+                analyser = null;
+                analyserSource = null;
+                dataArray = null;
+                audioConnected = false;
+            }
+
+            function createBand(hz, refractory, dominance, weight) {
+                return {
+                    hz,
+                    refractory,
+                    // Tips the winner-take-all arbitration when two voices land on the
+                    // same beat. Low percussion anchors a groove, and the upper bands
+                    // are also where a lower drum's bleed lands, so they yield.
+                    weight,
+                    // Share of the band's own recent peak a rise has to reach to count.
+                    // The ratio-to-average test alone passes anything that moves, and a
+                    // bass line living in the kick band moves constantly; requiring a
+                    // hit to be in the same league as the loudest recent hit is what
+                    // separates the drum from the notes around it.
+                    dominance,
+                    binStart: 0,
+                    binEnd: 0,
+                    level: 0,
+                    previousLevel: 0,
+                    // Unsmoothed, so the shape of the hit's decay survives. The
+                    // follower's release would flatten every hit to its own curve.
+                    rawLevel: 0,
+                    previousRaw: 0,
+                    flux: 0,
+                    previousFlux: 0,
+                    rising: false,
+                    fluxAverage: 0,
+                    fluxPeak: 0,
+                    cooldown: 0,
+                    // Lower envelope of the level, the peak-hold it is normalised
+                    // against, and the result the visuals read. See the sustain
+                    // constants.
+                    floor: 0,
+                    sustainReference: 0,
+                    sustain: 0
+                };
+            }
+
+            function updateAudio(delta) {
+                let hasSpectrum = false;
+                if (!simAudio && analyser) {
+                    if (analyser.context.state === 'closed') {
+                        dropAudioConnection();
+                    } else {
+                        analyser.getByteFrequencyData(dataArray);
+                        hasSpectrum = true;
+                    }
+                }
+
+                for (let index = 0; index < bands.length; index += 1) {
+                    const band = bands[index];
+                    let target = 0;
+                    if (simAudio) {
+                        // The video renderer only sends three scalars; spread them over
+                        // the four bands, blending for the two that share the mids so
+                        // they don't fire in lockstep.
+                        target = band === subBand ? simAudio.low
+                            : band === bodyBand ? simAudio.mid
+                                : band === crackBand ? simAudio.mid * 0.6 + simAudio.high * 0.4
+                                    : simAudio.high;
+                    } else if (hasSpectrum) {
+                        target = bandLevel(band.binStart, band.binEnd);
+                    }
+                    // With no source at all the target stays at zero, so the followers
+                    // decay into the silence branch instead of freezing mid-beat.
+                    updateBand(band, target, delta);
+                }
+            }
+
+            function updateBand(band, target, delta) {
+                band.rawLevel = target;
+                // Followers are expressed as time constants rather than per-frame
+                // fractions, so a dropped frame rate — which is exactly what a dense,
+                // busy track causes — changes the detector's timing, not its response.
+                band.level = follow(band.level, target, target > band.level ? 0.02 : 0.11, delta);
+
+                // Rise rate of the smoothed level, in band units per second. Smoothing
+                // first keeps FFT/quantisation noise out of the derivative.
+                const rise = Math.max(0, band.level - band.previousLevel) / Math.max(delta, 1 / 240);
+                band.previousLevel = band.level;
+                band.flux = follow(band.flux, rise, rise > band.flux ? 0.01 : 0.05, delta);
+
+                // Lower envelope, tracked on the smoothed level so vibrato and the
+                // FFT's own frame-to-frame wobble don't keep dragging it down. Falling
+                // instantly is what stops it ratcheting: it can never sit above the
+                // quietest moment between two hits, so a steady kick pattern leaves it
+                // where the gaps are rather than climbing beat by beat.
+                band.floor = band.level < band.floor
+                    ? band.level
+                    : follow(band.floor, band.level, SUSTAIN_RISE, delta);
+                // Reference is the peak of the *level*, not of the floor. Dividing the
+                // floor by its own peak asks "is the floor steady", which a drum
+                // pattern answers yes to — its inter-hit residual is perfectly steady,
+                // and a plain kick loop measured that way reads 0.38. Against the level
+                // peak the question becomes "how much of the loudest thing in this band
+                // is present continuously", which is the harmonic/percussive ratio
+                // itself: the same loop reads 0.04, a held note 1.0.
+                band.sustainReference = band.level > band.sustainReference
+                    ? band.level
+                    : follow(band.sustainReference, band.level, SUSTAIN_REFERENCE_FALL, delta);
+                const sustainTarget = band.sustainReference > SUSTAIN_REFERENCE_MIN
+                    ? Math.pow(clamp(band.floor / band.sustainReference, 0, 1), SUSTAIN_CONTRAST)
+                    : 0;
+                band.sustain = follow(band.sustain, sustainTarget, SUSTAIN_SMOOTH, delta);
+            }
+
+            /**
+             * A band's level, blended half from its mean bin and half from its loudest.
+             *
+             * A pure mean penalises wide bands: a hi-hat occupies a slice of the 7–16kHz
+             * range, so averaging across all ~210 of its bins divides that energy by the
+             * empty ones, while the 47-bin crack band next door keeps nearly all of its
+             * own. The arbitration then hands every hat to crack and the hat's effect
+             * never appears at all. Mixing the peak in makes the measure roughly
+             * independent of how wide the band happens to be; keeping half the mean
+             * stops a single narrow tone from reading as a full-band hit.
+             */
+            function bandLevel(startBin, endBin) {
+                let total = 0;
+                let peak = 0;
+                for (let index = startBin; index <= endBin; index += 1) {
+                    const value = dataArray[index];
+                    total += value;
+                    if (value > peak) peak = value;
+                }
+                const mean = total / (endBin - startBin + 1);
+                return (mean * 0.5 + peak * 0.5) / 255;
+            }
+
+            // Runs every frame, silence included: a pattern with real gaps between hits
+            // would otherwise freeze its own references mid-decay and never clear the
+            // threshold again.
+            function trackBand(band, delta) {
+                band.cooldown = Math.max(0, band.cooldown - delta);
+                // Only a rising edge can be an onset. Without this, the tail of a hit
+                // that lost the arbitration fires its own effect the moment the voice
+                // lock expires, which is how one hit ended up answered twice.
+                band.rising = band.flux >= band.previousFlux * 0.995;
+                band.previousFlux = band.flux;
+                band.fluxAverage = follow(band.fluxAverage, band.flux, 1, delta);
+                // Peak tracks the loudest hit of the last few seconds: instant attack,
+                // slow release, so it stays a meaningful reference between beats.
+                band.fluxPeak = band.flux > band.fluxPeak
+                    ? band.flux
+                    : follow(band.fluxPeak, band.flux, 2.5, delta);
+            }
+
+            /**
+             * Picks the one band that owns this frame's transient, or -1 for none.
+             *
+             * A single drum is not a single band. A kick sample carries a beater click
+             * that reaches all the way into the treble, so every band sees the same
+             * hit at once and — since all the thresholds here are relative to each
+             * band's own history — every band clears them. Judged independently, one
+             * `s("bd*4")` lights all four effects at once.
+             *
+             * So candidacy stays per-band (each must beat its own average, its own
+             * peak, and its own refractory), but only the strongest candidate speaks.
+             * Raw flux decides it, because that is literally how much of the hit landed
+             * in that band: a kick moves the sub band far more than its click moves the
+             * treble, a hat the reverse.
+             *
+             * The decision cannot be taken on the first qualifying frame, though. A
+             * drum's bands do not peak together — a kick's click speaks immediately
+             * while its fundamental needs ~10ms to develop under the pitch envelope —
+             * and the frame grid drifts against the beat, landing at a different point
+             * inside the attack every time. Deciding immediately therefore hands the
+             * hit to whichever band happened to be ahead at that instant, and one
+             * repeated sample flickers between two different effects.
+             *
+             * So the first qualifying band only opens a window. Every band's best flux
+             * is collected across it, and the winner is chosen once the whole attack
+             * has been seen. The cost is one window of latency before the visual lands.
+             */
+            function pickVoice(delta) {
+                voiceLock = Math.max(0, voiceLock - delta);
+
+                for (let index = 0; index < bands.length; index += 1) {
+                    const band = bands[index];
+                    if (band.cooldown > 0 || !band.rising) continue;
+                    if (band.flux <= band.fluxAverage * ONSET_RATIO + ONSET_FLOOR) continue;
+                    if (band.flux < band.fluxPeak * band.dominance) continue;
+                    if (!hitOpen) {
+                        if (voiceLock > 0) continue; // still inside the previous hit
+                        hitOpen = true;
+                        hitTimer = HIT_WINDOW;
+                        // Snapshot what each band was carrying before the hit landed,
+                        // so the decay below measures the hit itself and not the bed of
+                        // sustained material underneath it.
+                        for (let other = 0; other < bands.length; other += 1) {
+                            hitFloor[other] = bands[other].previousRaw;
+                        }
+                    }
+                    if (band.flux > hitPeak[index]) hitPeak[index] = band.flux;
+                }
+
+                if (hitOpen) {
+                    for (let index = 0; index < bands.length; index += 1) {
+                        if (bands[index].rawLevel > hitRawPeak[index]) {
+                            hitRawPeak[index] = bands[index].rawLevel;
+                        }
+                    }
+                }
+                for (let index = 0; index < bands.length; index += 1) {
+                    bands[index].previousRaw = bands[index].rawLevel;
+                }
+
+                if (!hitOpen) return -1;
+                hitTimer -= delta;
+                if (hitTimer > 0) return -1;
+
+                let winner = -1;
+                let bestScore = 0;
+                let bestFlux = 0;
+                for (let index = 0; index < bands.length; index += 1) {
+                    const peak = hitPeak[index];
+                    const score = peak * bands[index].weight;
+                    hitPeak[index] = 0;
+                    if (score <= bestScore) continue;
+                    bestScore = score;
+                    bestFlux = peak;
+                    winner = index;
+                }
+                hitOpen = false;
+
+                // How much of the hit is left one window later, above whatever was
+                // already sounding. A closed hi-hat is gone in ~25ms and a snare rings
+                // for ~90ms, which is the only thing that still separates them once a
+                // dark, band-limited hat sits in the same frequency range as the snare.
+                if (winner >= 0) {
+                    const excessPeak = hitRawPeak[winner] - hitFloor[winner];
+                    const excessNow = bands[winner].rawLevel - hitFloor[winner];
+                    voiceDecay = excessPeak > 0.002
+                        ? clamp(excessNow / excessPeak, 0, 1)
+                        : 1;
+                }
+                for (let index = 0; index < bands.length; index += 1) hitRawPeak[index] = 0;
+
+                if (winner < 0) return -1;
+                bands[winner].cooldown = bands[winner].refractory;
+                voiceLock = VOICE_LOCK;
+                // The live flux has already decayed by the time the window closes, so
+                // weight the effect by the peak the hit actually reached.
+                voicePeakFlux = bestFlux;
+                return winner;
+            }
+
+            function onsetStrength() {
+                return clamp((voicePeakFlux - 4) / 14, 0.25, 1);
+            }
+
+            /**
+             * Drives the glitch layer. Each effect — ring, big glyph, meteor — belongs
+             * to one part of the spectrum and nothing is shared, so two different parts
+             * of the kit can never produce the same motion.
+             *
+             * All three fire on a band's rise rate measured against that band's own
+             * slow average, so the response tracks whatever the music is doing rather
+             * than an absolute level. Every trigger is rate-limited by its own
+             * refractory period — an ungated per-frame chance turns into a constant
+             * shimmer once a busy hi-hat pattern comes in, which reads as noise
+             * rather than as rhythm.
+             */
+            function updateGlitch(delta) {
+                const slope = meteorSlope();
+                for (let index = meteors.length - 1; index >= 0; index -= 1) {
+                    const meteor = meteors[index];
+                    const step = meteor.speed * delta;
+                    meteor.travel += step;
+                    meteor.column += step;
+                    meteor.row += step / slope;
+                    // Spent its travel, or left the frame early — the second check keeps
+                    // a meteor that happened to fade off the edge from holding a slot.
+                    if (meteor.travel >= meteor.range
+                        || meteor.column - meteor.tail > gridColumns
+                        || meteor.row - meteor.tail / slope > gridRows) {
+                        meteors.splice(index, 1);
+                    }
+                }
+                for (let index = rings.length - 1; index >= 0; index -= 1) {
+                    rings[index].radius += RING_SPEED * delta;
+                    if (rings[index].radius > RING_MAX_RADIUS) rings.splice(index, 1);
+                }
+                // Decay rate sets how long the big-glyph flash reads for: a hard hit.
+                burstEnergy = Math.max(0, burstEnergy - delta * 1.8);
+                if (prefersReducedMotion) return;
+
+                let loudest = 0;
+                for (let index = 0; index < bands.length; index += 1) {
+                    trackBand(bands[index], delta);
+                    if (bands[index].level > loudest) loudest = bands[index].level;
+                }
+                // The sustained channel proper is measured per band in updateBand() and
+                // drawn as the radial resonance; this pair is only the faint overall
+                // breath that rides under it, and unlike that channel it does see the
+                // drums, since it is following the whole mix rather than held notes.
+                sinceShortHit += delta;
+                sustainLevel = follow(sustainLevel, loudest, loudest > sustainLevel ? 0.15 : 0.5, delta);
+                // Measured against its own slow baseline rather than absolutely: a mix
+                // that is simply loud throughout should look no different, only one that
+                // rises and falls should breathe.
+                sustainBaseline = follow(sustainBaseline, sustainLevel, 6, delta);
+                if (loudest < AUDIO_FLOOR) {
+                    silentFor += delta;
+                    // Audio that was playing and then flatlined means the tap node died
+                    // under us — the engine rebuilds its master chain after a WAV
+                    // export. Drop it so the next frame re-attaches to the live one.
+                    // Gated on having heard something, so a session that simply isn't
+                    // playing doesn't rebuild an analyser every few seconds forever.
+                    if (silentFor > 2.5 && sawAudio && audioConnected && !simAudio) {
+                        dropAudioConnection();
+                        sawAudio = false;
+                        silentFor = 0;
+                    }
+                    return;
+                }
+                sawAudio = true;
+                silentFor = 0;
+
+                const voice = pickVoice(delta);
+                if (voice >= 0) {
+                    const strength = onsetStrength();
+                    // How far this hit rises above the recent ones. Averaged over hits
+                    // rather than over time, so it measures accent — a pattern of
+                    // identical kicks sits at 1 no matter how loud it is, and only a
+                    // genuine swell moves it.
+                    const accent = voicePeakFlux / Math.max(hitReference, ACCENT_FLOOR);
+                    hitReference = lerp(hitReference, voicePeakFlux, HIT_REFERENCE_MIX);
+
+                    if (voice >= 2) {
+                        // The two high voices are split by how long the hit lasts, not
+                        // by which band caught it. Frequency cannot tell a dark,
+                        // band-limited hi-hat from a snare — plenty of sample packs put
+                        // both around 2–5kHz — but a closed hat is gone in a moment and
+                        // a snare rings on, and that difference is unmistakable. It now
+                        // sets how much meteor the hit earns rather than which effect
+                        // it gets.
+                        if (voiceDecay >= SHORT_HIT_DECAY) {
+                            spawnMeteors(strength);
+                        } else if (sinceShortHit >= SHORT_HIT_REFRACTORY) {
+                            sinceShortHit = 0;
+                            spawnMeteor(strength * SHORT_HIT_METEOR_SCALE, true);
+                        }
+                    } else if (voice === 0 && accent >= RING_ACCENT && loudest >= RING_MIN_LEVEL) {
+                        // A low hit that genuinely towers over its neighbours.
+                        spawnRing(strength);
+                    } else {
+                        // Every other low hit. The ring is the only accent-gated tier:
+                        // repeated identical hits measure several tens of a percent
+                        // apart, so a second gate lower down would sit inside that noise
+                        // and alternate the effect from beat to beat — the same flicker
+                        // the arbitration window exists to remove. 1.55 clears it.
+                        burstEnergy = Math.max(burstEnergy, strength);
+                        // Re-seed so each hit lights a different set of cells.
+                        accentSeed = (Math.imul(accentSeed, 1103515245) + 12345) & 0x7fffffff;
+                    }
+                }
+                // No idle pulse any more. Firing an accent every couple of seconds just
+                // because nothing was detected is unsynced by definition, and it is
+                // exactly what read as flashing against a held chord; the swell above
+                // covers those passages instead.
+            }
+
+            // Columns per row for a 45° screen angle: cells are far taller than they
+            // are wide, so the horizontal step is the larger one. Read live rather than
+            // stored per meteor, so a resize mid-flight bends the path to the new cell
+            // aspect instead of leaving it at the old angle.
+            function meteorSlope() {
+                return cellWidth > 0 ? cellHeight / cellWidth : 1.8;
+            }
+
+            /**
+             * Launches one meteor along the fixed down-right diagonal.
+             *
+             * Because a meteor only covers a short stretch, it is placed by where that
+             * stretch happens rather than by an edge it enters through: the midpoint of
+             * the flight is picked uniformly over the frame and the start is backed out
+             * from it. Spawning on the top and left edges instead — which is what a
+             * meteor crossing the whole window needs — would leave every short flight
+             * clustered in the upper left.
+             */
+            function spawnMeteor(strength, yieldWhenFull) {
+                if (meteors.length >= METEOR_LIMIT) {
+                    // A short hit takes leftover capacity only. Evicting to make room
+                    // would be a hat cutting the snare's streak in half mid-flight —
+                    // the pool is small, and whoever gets dropped is whoever the eye
+                    // was already following.
+                    if (yieldWhenFull) return;
+                    meteors.shift();
+                }
+                const slope = meteorSlope();
+                // Louder hits lean long and fast, but every hit still draws from the
+                // whole range, so a burst of meteors is never uniform.
+                const bias = 0.35 + strength * 0.65;
+                const tail = gridColumns
+                    * lerp(METEOR_TAIL_MIN, METEOR_TAIL_MAX, Math.random() * bias);
+                const speed = gridColumns
+                    * lerp(METEOR_SPEED_MIN, METEOR_SPEED_MAX, Math.random() * bias);
+                const range = gridColumns
+                    * lerp(METEOR_RANGE_MIN, METEOR_RANGE_MAX, Math.random() * bias);
+                const midColumn = Math.random() * gridColumns;
+                const midRow = Math.random() * gridRows;
+                meteors.push({
+                    column: midColumn - range / 2,
+                    row: midRow - range / (2 * slope),
+                    travel: 0,
+                    range,
+                    tail,
+                    speed,
+                    power: 0.45 + strength * 0.55
+                });
+            }
+
+            // Envelope over the flight, so the streak swells in and dies away where it
+            // happens instead of being cut off.
+            function meteorFade(meteor) {
+                const progress = clamp(meteor.travel / meteor.range, 0, 1);
+                const rise = clamp(progress / METEOR_FADE_IN, 0, 1);
+                const fall = clamp((1 - progress) / METEOR_FADE_OUT, 0, 1);
+                return Math.min(rise, fall * fall);
+            }
+
+            // One hit throws a small shower rather than a single streak, so the
+            // response scales with how hard the snare lands without any one meteor
+            // having to grow out of proportion.
+            function spawnMeteors(strength) {
+                const count = 1 + Math.floor(Math.random() * (1 + strength * METEOR_PER_HIT));
+                for (let index = 0; index < count; index += 1) spawnMeteor(strength);
+            }
+
+            /**
+             * Walks each live meteor's trail onto the accent grid.
+             *
+             * Sampled one column at a time — the fine axis — so consecutive samples
+             * land in adjacent cells and the streak stays unbroken; stepping by rows
+             * instead would leave a dotted line with ~two-column gaps.
+             */
+            function markMeteors() {
+                meteorCells.length = 0;
+                const slope = meteorSlope();
+                for (let index = 0; index < meteors.length; index += 1) {
+                    const meteor = meteors[index];
+                    const weight = meteor.power * meteorFade(meteor);
+                    if (weight <= 0) continue;
+                    // The trail can only be as long as the meteor has actually flown,
+                    // so it draws itself out behind the head instead of appearing
+                    // full-length in mid-air the instant the meteor is born.
+                    const steps = Math.max(1, Math.ceil(Math.min(meteor.tail, meteor.travel)));
+                    for (let step = 0; step <= steps; step += 1) {
+                        const column = Math.round(meteor.column - step);
+                        if (column < 0 || column > accentColumnLimit) continue;
+                        const row = Math.round(meteor.row - step / slope);
+                        if (row < 0 || row > accentRowLimit) continue;
+                        const progress = step / steps;
+                        const taper = progress <= METEOR_HEAD_SHARE
+                            ? 1
+                            : Math.pow(1 - (progress - METEOR_HEAD_SHARE) / (1 - METEOR_HEAD_SHARE), 1.6);
+                        const intensity = taper * weight;
+                        const cellIndex = row * gridColumns + column;
+                        // Where two trails cross, the brighter one owns the cell.
+                        if (intensity <= meteorBuffer[cellIndex]) continue;
+                        if (accentBuffer[cellIndex] !== ACCENT_METEOR) meteorCells.push(cellIndex);
+                        meteorBuffer[cellIndex] = intensity;
+                        accentBuffer[cellIndex] = ACCENT_METEOR;
+                    }
+                }
+            }
+
+            // True while the cell is fully inside the painted area. See resize().
+            function canAccent(cellIndex) {
+                const row = Math.floor(cellIndex / gridColumns);
+                if (row > accentRowLimit) return false;
+                return cellIndex - row * gridColumns <= accentColumnLimit;
+            }
+
+            function spawnRing(strength) {
+                if (rings.length >= RING_LIMIT) rings.shift();
+                // Starts just inside the core and fades as it expands, so the front
+                // stays readable against the bright hub but doesn't outshine the rim.
+                rings.push({ radius: 1.5, power: strength });
+            }
+
+            /**
+             * Rebuilds the per-radius shockwave brightness table. Sampling it once per
+             * frame keeps the per-cell cost to a single array lookup no matter how many
+             * rings are in flight.
+             */
+            function buildRingLut() {
+                ringLutActive = rings.length > 0;
+                ringPeak = 0;
+                if (!ringLutActive) return;
+
+                const step = RING_MAX_RADIUS / RING_LUT_SIZE;
+                ringLut.fill(0);
+                for (let index = 0; index < rings.length; index += 1) {
+                    const ring = rings[index];
+                    const fade = 1 - ring.radius / RING_MAX_RADIUS;
+                    const amplitude = ring.power * fade * fade;
+                    if (amplitude > ringPeak) ringPeak = amplitude;
+                    const first = Math.max(0, Math.floor((ring.radius - RING_WIDTH * 2.5) / step));
+                    const last = Math.min(RING_LUT_SIZE - 1, Math.ceil((ring.radius + RING_WIDTH * 2.5) / step));
+                    for (let slot = first; slot <= last; slot += 1) {
+                        const offset = (slot * step - ring.radius) / RING_WIDTH;
+                        ringLut[slot] += amplitude * Math.exp(-offset * offset);
+                    }
+                }
+            }
+
+            function ringBoostAt(radius) {
+                if (!ringLutActive) return 0;
+                const slot = Math.floor(radius / RING_MAX_RADIUS * RING_LUT_SIZE);
+                if (slot < 0 || slot >= RING_LUT_SIZE) return 0;
+                return ringLut[slot];
+            }
+
+            /**
+             * Rebuilds the per-radius resonance table: every band's sustained level
+             * raises the zone of the disk that matches its register. Same one-lookup-
+             * per-cell trick as the shockwave table, and cheap to build — four bands
+             * over 48 slots, once a drawn frame.
+             *
+             * It shares the radial axis with the shockwave and cannot be confused with
+             * it: a ring is a narrow front travelling outward, this is a wide zone that
+             * sits still and holds for as long as the note does.
+             */
+            function buildSustainLut() {
+                sustainLut.fill(0);
+                let total = 0;
+                const step = SUSTAIN_MAX_RADIUS / SUSTAIN_LUT_SIZE;
+                for (let index = 0; index < bands.length; index += 1) {
+                    const amount = bands[index].sustain;
+                    if (amount <= 0.01) continue;
+                    total += amount;
+                    const center = SUSTAIN_ZONE_CENTER[index];
+                    const width = SUSTAIN_ZONE_WIDTH[index];
+                    for (let slot = 0; slot < SUSTAIN_LUT_SIZE; slot += 1) {
+                        const offset = (slot * step - center) / width;
+                        sustainLut[slot] += amount * Math.exp(-offset * offset);
+                    }
+                }
+                if (total > 0) {
+                    for (let slot = 0; slot < SUSTAIN_LUT_SIZE; slot += 1) {
+                        if (sustainLut[slot] > SUSTAIN_BOOST_MAX) sustainLut[slot] = SUSTAIN_BOOST_MAX;
+                    }
+                }
+                sustainTotal = clamp(total / bands.length, 0, 1);
+            }
+
+            function sustainBoostAt(radius) {
+                const slot = Math.floor(radius / SUSTAIN_MAX_RADIUS * SUSTAIN_LUT_SIZE);
+                // Clamped rather than zeroed: the outermost stars scatter past the
+                // table's range, and dropping them to nothing would cut a dark ring
+                // around a lit rim.
+                if (slot < 0) return sustainLut[0];
+                if (slot >= SUSTAIN_LUT_SIZE) return sustainLut[SUSTAIN_LUT_SIZE - 1];
+                return sustainLut[slot];
+            }
+
+            function projectGalaxy(time) {
+                densityBuffer.fill(0);
+                radiusBuffer.fill(0);
+                // Built here rather than in drawAscii so the geometry below and the
+                // shading afterwards read the same table in the same frame.
+                buildSustainLut();
+
+                const cameraLength = Math.hypot(cameraPosition.x, cameraPosition.y, cameraPosition.z) || 1;
+                const forwardX = -cameraPosition.x / cameraLength;
+                const forwardY = -cameraPosition.y / cameraLength;
+                const forwardZ = -cameraPosition.z / cameraLength;
+
+                let rightX = forwardY * cameraUp.z - forwardZ * cameraUp.y;
+                let rightY = forwardZ * cameraUp.x - forwardX * cameraUp.z;
+                let rightZ = forwardX * cameraUp.y - forwardY * cameraUp.x;
+                const rightLength = Math.hypot(rightX, rightY, rightZ) || 1;
+                rightX /= rightLength;
+                rightY /= rightLength;
+                rightZ /= rightLength;
+
+                const upX = rightY * forwardZ - rightZ * forwardY;
+                const upY = rightZ * forwardX - rightX * forwardZ;
+                const upZ = rightX * forwardY - rightY * forwardX;
+                // Scale from the frozen projection height, not the live grid, so a
+                // shorter panel crops the view instead of shrinking the galaxy.
+                const focalY = projectionRows / (2 * Math.tan(FOV / 2));
+                const focalX = focalY * (cellHeight / cellWidth);
+                const rotation = prefersReducedMotion ? 0 : -time * SPIRAL_ROTATION_SPEED;
+                const cosRotation = Math.cos(rotation);
+                const sinRotation = Math.sin(rotation);
+                // Sustained material swells the disk's standing wave. Percussion is
+                // already filtered out of this measure, so what makes the galaxy heave
+                // is bowed and held playing and nothing else — and because the
+                // amplitude follows the envelope, it is in time by construction.
+                const waveAmplitude = prefersReducedMotion
+                    ? 0.5
+                    : 0.5 + sustainTotal * SUSTAIN_WAVE_LIFT;
+
+                for (let index = 0; index < stars.length; index += 1) {
+                    const star = stars[index];
+                    const worldX = star.x * cosRotation + star.z * sinRotation;
+                    const worldZ = -star.x * sinRotation + star.z * cosRotation;
+                    const worldY = star.y
+                        + Math.sin(star.radius * 0.3 + time * 0.15 + star.seed * 1.2) * waveAmplitude;
+
+                    const relativeX = worldX - cameraPosition.x;
+                    const relativeY = worldY - cameraPosition.y;
+                    const relativeZ = worldZ - cameraPosition.z;
+                    const depth = relativeX * forwardX + relativeY * forwardY + relativeZ * forwardZ;
+                    if (depth <= 0.2) continue;
+
+                    const viewX = relativeX * rightX + relativeY * rightY + relativeZ * rightZ;
+                    const viewY = relativeX * upX + relativeY * upY + relativeZ * upZ;
+                    const column = Math.floor(gridColumns * 0.5 + viewX / depth * focalX);
+                    const row = Math.floor(gridRows * 0.5 - viewY / depth * focalY);
+                    if (column < 0 || column >= gridColumns || row < 0 || row >= gridRows) continue;
+
+                    const cellIndex = row * gridColumns + column;
+                    // Flatter falloff than 1/r: outer stars keep more of their weight, so
+                    // the disk edge has enough density left to be driven bright.
+                    const radialLight = 1.5 / Math.pow(star.radius + 1.5, 0.78);
+                    const depthLight = clamp(18 / depth, 0.28, 2.2);
+                    const weight = (0.55 + star.seed * 0.32) * radialLight * depthLight;
+                    densityBuffer[cellIndex] += weight;
+                    radiusBuffer[cellIndex] += star.displayRadius * weight;
+                }
+            }
+
+            function drawAscii(time) {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                context.fillStyle = '#080908';
+                context.fillRect(0, 0, width, height);
+                context.font = `600 ${fontSize}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
+                context.textBaseline = 'top';
+
+                const tick = Math.floor(time * 3);
+                const rampMax = ASCII_RAMP.length - 1;
+                // Indices 2..rampMax are the ones the base grid can assign. The two
+                // bands below are fractions of this, so they keep their share of the
+                // ramp whenever glyphs are added or removed.
+                const usableRampSpan = rampMax - 1;
+                const peripheralDotMaxGlyph = 1 + Math.round(PERIPHERAL_DOT_BAND * usableRampSpan);
+                // Lower exposure keeps more cells off the saturated end of the ramp, so the
+                // arm-to-gap transition spans several glyphs instead of snapping on/off.
+                // Tuned for the top-down camera, which sits further out than the old
+                // cinematic one and so packs more stars into each cell.
+                //
+                // A faint overall breath rides on top. The shape of the sustained
+                // response lives in the radial resonance below, not here — this is only
+                // enough body to keep the frame from feeling flat between the two.
+                const swell = clamp((sustainLevel - sustainBaseline) * SUSTAIN_GAIN, -0.6, 1);
+                const exposure = 1.15 * (1 + swell * SUSTAIN_LIFT);
+                const opacityLevels = [0.06, 0.12, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.98, 1];
+                // Per-cell chance, gated on the same threshold drawAccents uses so a
+                // cell is never claimed by a tier that won't be painted. Hashed against
+                // a seed rather than rolled per frame, so a hit lights a stable set of
+                // cells for its whole decay instead of crawling.
+                const burstChance = burstEnergy > 0.02 ? burstEnergy * BURST_CELL_RATE : 0;
+                buildRingLut();
+                // Size up only the leading edge, measured against the strongest ring in
+                // flight, so a soft kick still shows a wavefront instead of nothing at
+                // all — just a narrower and dimmer one.
+                const ringAccentFloor = Math.max(0.08, ringPeak * 0.55);
+
+                for (let cellIndex = 0; cellIndex < densityBuffer.length; cellIndex += 1) {
+                    const density = densityBuffer[cellIndex];
+                    glyphBuffer[cellIndex] = 0;
+                    opacityBuffer[cellIndex] = 0;
+                    accentBuffer[cellIndex] = ACCENT_NONE;
+                    meteorBuffer[cellIndex] = 0;
+                    if (density <= 0) continue;
+
+                    const averageRadius = radiusBuffer[cellIndex] / density;
+                    const peripheralProgress = clamp(
+                        (averageRadius - 24) / (OUTER_TURN_START + OUTER_TURN_SPAN - 24),
+                        0,
+                        1
+                    );
+                    const minimumPeripheralDensity = Math.pow(peripheralProgress, 1.35) * 0.04;
+                    if (density < minimumPeripheralDensity) continue;
+
+                    // Radial brightness ramp: heavily suppress the crowded inner disk and
+                    // boost the sparse outer disk, so the arms read dark at the hub and
+                    // bright at the rim instead of the other way round.
+                    const radialExposure = lerp(
+                        RADIAL_EXPOSURE_INNER,
+                        RADIAL_EXPOSURE_OUTER,
+                        Math.pow(clamp(averageRadius / RADIAL_EXPOSURE_SPAN, 0, 1), 1.1)
+                    );
+                    // The kick's shockwave rides on top of the static radial ramp: the
+                    // front pushes whatever it crosses several glyphs up the ASCII
+                    // scale, so the pulse is visible as a band of denser characters
+                    // travelling out along the arms.
+                    const ringBoost = ringBoostAt(averageRadius);
+                    // Held notes light the band of the disk that matches their register,
+                    // so which part of the galaxy is glowing says which register is
+                    // sounding: a cello drone in the core, a high violin line at the rim.
+                    const sustainBoost = sustainBoostAt(averageRadius);
+                    const brightness = 1 - Math.exp(
+                        -density * exposure * radialExposure
+                            * (1 + sustainBoost * SUSTAIN_RADIAL_LIFT)
+                            * (1 + ringBoost * RING_GLYPH_LIFT)
+                    );
+                    let glyphIndex = Math.floor(brightness * rampMax);
+                    // Ambient twinkle, independent of the music. Two steps, not one:
+                    // on the longer ramp a single step is half the brightness jump it
+                    // used to be, and the twinkle stops registering as one.
+                    if (hash01(cellIndex + tick * 131) > 0.82) glyphIndex += 2;
+                    const resolvedGlyphIndex = clamp(glyphIndex, 2, rampMax);
+                    const isPeripheralDot = averageRadius > 24
+                        && resolvedGlyphIndex <= peripheralDotMaxGlyph;
+                    const peripheralDotCull = peripheralProgress * 0.15;
+                    if (isPeripheralDot && hash01(cellIndex * 31 + 17) < peripheralDotCull) continue;
+                    glyphBuffer[cellIndex] = resolvedGlyphIndex;
+
+                    // ── Accent tiers, highest wins the cell ─────────────────────
+                    // Both accents are biased outward. Picking uniformly concentrates
+                    // them in the inner disk, which holds most of the bright, densely
+                    // packed cells, and the rim ends up bare; this tilts the odds far
+                    // enough that the outer arms carry their share.
+                    const radialProgress = clamp(averageRadius / 34, 0, 1);
+                    const radialSpread = 0.25 + 2.2 * radialProgress;
+                    // Arm ridges, widening toward the rim — see ARM_RIDGE_BAND_*.
+                    const isArmRidge = resolvedGlyphIndex >= rampMax + 1 - Math.round(
+                        lerp(ARM_RIDGE_BAND_INNER, ARM_RIDGE_BAND_OUTER, radialProgress) * usableRampSpan
+                    );
+                    if (isArmRidge && burstChance > 0
+                        && hash01(cellIndex * 29 + accentSeed) < burstChance * radialSpread
+                        && canAccent(cellIndex)) {
+                        accentBuffer[cellIndex] = ACCENT_BURST;
+                    } else if (ringBoost > ringAccentFloor && canAccent(cellIndex)) {
+                        accentBuffer[cellIndex] = ACCENT_RING;
+                    }
+                    const opacityContrast = Math.pow(brightness, 0.9);
+                    const radialOpacityProgress = clamp(
+                        averageRadius / (OUTER_TURN_START + OUTER_TURN_SPAN),
+                        0,
+                        1
+                    );
+                    // Both the floor and the ceiling of the opacity range rise with radius,
+                    // so even a saturated inner cell stays dimmer than an outer one.
+                    const armGapOpacity = lerp(0.12, 0.42, radialOpacityProgress);
+                    const acceleratedArmProgress = Math.pow(radialOpacityProgress, 1.4);
+                    const armTargetOpacity = lerp(0.3, 1, acceleratedArmProgress);
+                    let opacity = clamp(
+                        lerp(armGapOpacity, armTargetOpacity, opacityContrast),
+                        armGapOpacity,
+                        opacityLevels.at(-1)
+                    );
+                    // That floor pins every faint cell to one value, so the wash
+                    // between the arms came out flat and met the arm at a step. Fade
+                    // the sparsest cells out of the floor instead, on density rather
+                    // than on brightness — density is what actually thins away from a
+                    // ridge, while brightness has already been through the radial
+                    // exposure ramp and would carry that gradient in here a second
+                    // time. Smoothstep so the fade has no edge of its own.
+                    const sparseFade = clamp(density / SPARSE_FADE_DENSITY, 0, 1);
+                    opacity *= sparseFade * sparseFade * (3 - 2 * sparseFade);
+                    const centerRandom = hash01(cellIndex * 73 + 41);
+                    if (averageRadius < 3.5 && centerRandom > 0.58) {
+                        const centerFalloff = 1 - clamp(averageRadius / 3.5, 0, 1);
+                        const randomReduction = lerp(
+                            0.08,
+                            0.5,
+                            hash01(cellIndex * 17 + 3)
+                        );
+                        opacity *= 1 - randomReduction * centerFalloff;
+                    }
+                    if (isPeripheralDot) {
+                        opacity *= lerp(1, 0.55, peripheralProgress);
+                    }
+                    // Opacity lift belongs to the shockwave front alone.
+                    if (ringBoost > 0) {
+                        opacity = clamp(opacity * (1 + ringBoost * RING_OPACITY_LIFT), 0, 1);
+                    }
+                    let closestOpacityIndex = 0;
+                    let closestOpacityDistance = Infinity;
+                    for (let index = 0; index < opacityLevels.length; index += 1) {
+                        const distance = Math.abs(opacity - opacityLevels[index]);
+                        if (distance >= closestOpacityDistance) continue;
+                        closestOpacityDistance = distance;
+                        closestOpacityIndex = index;
+                    }
+                    opacityBuffer[cellIndex] = closestOpacityIndex + 1;
+                }
+
+                // Last, so a streak crossing a ring or a burst stays whole: the meteor
+                // is the only accent that moves, and a hole punched in it breaks the
+                // line the eye is following.
+                markMeteors();
+
+                for (let opacityIndex = 0; opacityIndex < opacityLevels.length; opacityIndex += 1) {
+                    context.fillStyle = `rgba(194, 197, 194, ${opacityLevels[opacityIndex]})`;
+                    for (let cellIndex = 0; cellIndex < glyphBuffer.length; cellIndex += 1) {
+                        const glyphIndex = glyphBuffer[cellIndex];
+                        if (glyphIndex === 0 || opacityBuffer[cellIndex] !== opacityIndex + 1) continue;
+                        // Accented cells are redrawn at size below; painting the base
+                        // glyph too would just leave a smaller ghost underneath.
+                        if (accentBuffer[cellIndex] !== ACCENT_NONE) continue;
+                        const row = Math.floor(cellIndex / gridColumns);
+                        context.fillText(
+                            ASCII_RAMP[glyphIndex],
+                            (cellIndex % gridColumns) * cellWidth,
+                            row * cellHeight,
+                            cellWidth
+                        );
+                    }
+                }
+
+                drawAccents();
+            }
+
+            /**
+             * Repaints the accented cells. Each tier is one pass, so its font and
+             * colour are set once, and each tier changes a different property — that
+             * separation is what keeps the three voices from looking alike:
+             *
+             *   ring     size + colour — the wavefront, one size up, pale
+             *   burst    size + colour — oversized and warm #CD5633, the only colour
+             *                            on screen, grown out of the arm ridges
+             *   meteor   motion        — base size, cool blue-white, a diagonal trail
+             *                            travelling across the frame; it is the only
+             *                            accent that moves, which is what tells it
+             *                            apart from the two static tiers
+             */
+            function drawAccents() {
+                // Painted over empty space as readily as over stars: a streak that
+                // broke wherever the galaxy is thin would stop reading as one object.
+                for (let index = 0; index < meteorCells.length; index += 1) {
+                    const cellIndex = meteorCells[index];
+                    if (accentBuffer[cellIndex] !== ACCENT_METEOR) continue;
+                    const intensity = meteorBuffer[cellIndex];
+                    const level = clamp(Math.ceil(intensity * METEOR_LEVELS) - 1, 0, METEOR_LEVELS - 1);
+                    context.fillStyle = METEOR_COLORS[level];
+                    const row = Math.floor(cellIndex / gridColumns);
+                    context.fillText(
+                        ASCII_RAMP[clamp(
+                            Math.round(2 + intensity * (ASCII_RAMP.length - 3)),
+                            2,
+                            ASCII_RAMP.length - 1
+                        )],
+                        (cellIndex % gridColumns) * cellWidth,
+                        row * cellHeight,
+                        cellWidth
+                    );
+                }
+
+                if (!ringLutActive && burstEnergy <= 0.02) return;
+
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+
+                for (let tier = ACCENT_RING; tier <= ACCENT_BURST; tier += 1) {
+                    const isRing = tier === ACCENT_RING;
+                    if (isRing ? !ringLutActive : burstEnergy <= 0.02) continue;
+                    const scale = isRing ? 1.4 + ringPeak * 0.6 : 2.1 + burstEnergy * 0.9;
+                    context.font = `700 ${fontSize * scale}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
+                    context.fillStyle = isRing
+                        ? `rgba(200, 208, 202, ${lerp(RING_ACCENT_ALPHA_MIN, RING_ACCENT_ALPHA_MAX, clamp(ringPeak, 0, 1))})`
+                        : `rgba(205, 86, 51, ${lerp(0.6, 1, burstEnergy)})`;
+
+                    for (let cellIndex = 0; cellIndex < accentBuffer.length; cellIndex += 1) {
+                        if (accentBuffer[cellIndex] !== tier) continue;
+                        const glyphIndex = glyphBuffer[cellIndex];
+                        if (glyphIndex === 0) continue;
+                        const row = Math.floor(cellIndex / gridColumns);
+                        // The wavefront keeps each cell's own glyph so it reads as the
+                        // galaxy swelling; the burst swaps in heavy glyphs so it reads
+                        // as something struck onto it.
+                        const glyph = isRing
+                            ? ASCII_RAMP[glyphIndex]
+                            : BURST_GLYPHS[
+                                Math.floor(hash01(cellIndex * 13 + accentSeed) * BURST_GLYPHS.length)
+                                    % BURST_GLYPHS.length
+                            ];
+                        context.fillText(
+                            glyph,
+                            (cellIndex % gridColumns + 0.5) * cellWidth,
+                            (row + 0.5) * cellHeight
+                        );
+                    }
+                }
+
+                context.textAlign = 'left';
+                context.textBaseline = 'top';
+            }
+
+            function animate(timestamp) {
+                requestAnimationFrame(animate);
+                // Collapsed to nothing by the host layout. The loop has to stay
+                // alive — the star field is built once from unseeded randomness,
+                // so tearing the document down and back up would return a
+                // different galaxy — but the projection is the expensive half of
+                // the frame and there is nowhere to put it. resizePending is left
+                // set, so the first frame after reappearing re-measures.
+                if (window.innerWidth === 0 || window.innerHeight === 0) return;
+                if (resizePending) {
+                    resizePending = false;
+                    resize();
+                    // The resize blanked the canvas; bypass the frame throttle so this
+                    // same frame repaints it.
+                    lastFrameTime = -Infinity;
+                }
+                const time = simTime !== null ? simTime : timestamp * 0.001;
+                // Step the audio from the same clock that drives the visuals, so an
+                // offline video render flies meteors at the rendered rate, not wall time.
+                const delta = lastVisualTime === null
+                    ? FRAME_INTERVAL / 1000
+                    : clamp(time - lastVisualTime, 0, 0.25);
+                lastVisualTime = time;
+
+                // Listen every frame, draw at 30fps. Sampling the spectrum only on
+                // drawn frames costs half the temporal resolution of the beat
+                // detection, and loses more as a heavier track drags the frame rate
+                // down — the visuals slide off the music exactly when it gets busy.
+                if (!audioConnected) tryConnectAudio();
+                updateAudio(delta);
+                updateGlitch(delta);
+
+                if (simTime === null && timestamp - lastFrameTime < FRAME_INTERVAL) return;
+                lastFrameTime = timestamp;
+
+                const visualTime = prefersReducedMotion ? 0 : time;
+                projectGalaxy(visualTime);
+                drawAscii(visualTime);
+            }
+
+            function lerp(from, to, amount) {
+                return from + (to - from) * amount;
+            }
+
+            // Exponential follower with a time constant in seconds, so its behaviour
+            // doesn't change when the frame rate does.
+            function follow(from, to, timeConstant, delta) {
+                return lerp(from, to, 1 - Math.exp(-delta / timeConstant));
+            }
+
+            // Roughly Gaussian in [-1.35, 1.35] (std ~0.45): gives scattered structures a
+            // soft density falloff instead of a uniformly filled band.
+            function bellRandom() {
+                return (Math.random() + Math.random() + Math.random() - 1.5) * 0.9;
+            }
+
+            function clamp(value, minimum, maximum) {
+                return Math.max(minimum, Math.min(maximum, value));
+            }
+
+            function hash01(value) {
+                let hash = value | 0;
+                hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b);
+                hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b);
+                hash ^= hash >>> 16;
+                return (hash >>> 0) / 4294967295;
+            }
+        })();
+    </script>
+</body>
+</html>

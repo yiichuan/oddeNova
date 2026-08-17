@@ -268,7 +268,7 @@ export default function ChatInput({
             placeholder={suggestionActive ? '' : t('inputPlaceholder')}
             rows={1}
             disabled={inputDisabled}
-            className="w-full min-h-[54px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-[#cccccc] placeholder:text-[#5A5A5A] outline-none focus:text-white disabled:cursor-not-allowed"
+            className="w-full min-h-[63px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-[#cccccc] placeholder:text-[#5A5A5A] outline-none focus:text-white disabled:cursor-not-allowed"
             style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
           />
 

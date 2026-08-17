@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../hooks/useChat';
 import type { Session } from '../../hooks/useSessions';
 import { MOBILE_TOP_ACTIONS } from '../mobileTopActions';
-import TopActionBar from '../TopActionBar';
+import TopActionBar, { ShareButton } from '../TopActionBar';
 
 const uploadShareMock = vi.hoisted(() => vi.fn());
 const shareUrlMock = vi.hoisted(() => vi.fn());
@@ -78,6 +78,18 @@ function renderShareBar(session: Session) {
         bpm={120}
       />,
     );
+  });
+
+  return { container, root };
+}
+
+function renderIconShareButton(session: Session) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(<ShareButton session={session} variant="icon" />);
   });
 
   return { container, root };
@@ -174,6 +186,42 @@ describe('TopActionBar mobile menu', () => {
 
     expect(trackShareCompletedMock).not.toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it('replaces the icon hover title with styled copy feedback after sharing', async () => {
+    setDesktopViewport();
+    let resolveUpload: ((shareId: string) => void) | undefined;
+    uploadShareMock.mockImplementationOnce(() => new Promise<string>((resolve) => {
+      resolveUpload = resolve;
+    }));
+    shareUrlMock.mockResolvedValueOnce('copied');
+    const { container, root } = renderIconShareButton(makeSession({ code: 's("bd")' }));
+    roots.push(root);
+    const shareButton = container.querySelector<HTMLButtonElement>('button[aria-label="Share"]');
+
+    act(() => {
+      shareButton?.parentElement?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(document.querySelector('[data-testid="code-panel-share-hover-label"]')?.textContent).toBe('Share');
+
+    act(() => shareButton?.click());
+    expect(document.querySelector('[data-testid="code-panel-share-hover-label"]')).toBeNull();
+    expect(document.querySelector('[data-testid="code-panel-share-feedback-label"]')).toBeNull();
+
+    await act(async () => {
+      resolveUpload?.('share123');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const feedback = document.querySelector<HTMLElement>('[data-testid="code-panel-share-feedback-label"]');
+    expect(feedback?.textContent).toBe('Link copied');
+    expect(feedback?.classList.contains('primary-nav-tooltip')).toBe(true);
+
+    act(() => {
+      shareButton?.parentElement?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(document.querySelector('[data-testid="code-panel-share-hover-label"]')).toBeNull();
   });
 });
 
@@ -328,7 +376,7 @@ describe('TopActionBar export title generation', () => {
     });
     changeInput(getFilenameInput(container), 'manual-title');
     await act(async () => {
-      getLastButton(container, 'Export').click();
+      getLastButton(container, 'Download').click();
     });
 
     expect(onExport).toHaveBeenCalledWith({

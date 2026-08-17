@@ -163,4 +163,29 @@ describe('EditableSessionTitle', () => {
     expect(container.querySelector('input')).toBeNull();
     expect(container.textContent).toContain('原始标题');
   });
+
+  // The title must not shift when canEdit flips — a read-only title used to
+  // render as a bare span, landing 9px further left and 32px shorter.
+  it('keeps the title box identical whether or not it is editable', () => {
+    const shellOf = (canEdit: boolean) => {
+      const { container, root } = renderTitle({ canEdit, className: 'min-w-0 flex-1 text-left' });
+      roots.push(root);
+      return container.querySelector('[data-session-title-shell]');
+    };
+
+    const editable = shellOf(true);
+    const readOnly = shellOf(false);
+
+    // The shell owns the box; the control inside it owns the horizontal inset.
+    // Together they put the first glyph at the same offset in both branches.
+    for (const cls of ['h-8', 'w-fit', 'border', 'border-transparent', 'rounded-[6px]']) {
+      expect(readOnly?.className).toContain(cls);
+      expect(editable?.className).toContain(cls);
+    }
+    expect(readOnly?.firstElementChild?.className).toContain('px-2');
+    expect(editable?.firstElementChild?.className).toContain('px-2');
+    expect(readOnly?.getAttribute('style')).toBe(editable?.getAttribute('style'));
+    // Both branches hand the caller's layout classes to the same wrapper depth.
+    expect(readOnly?.parentElement?.className).toBe(editable?.parentElement?.className);
+  });
 });

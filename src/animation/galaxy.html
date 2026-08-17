@@ -169,7 +169,13 @@
 
                 const u1 = Math.random(), u2 = Math.random();
                 const skewed = Math.pow((u1 + u2) / 2, 1.6);
-                const radius = 0.5 + skewed * 27.5;
+                // Let the spiral reach almost all the way to the origin. A small
+                // center-biased sample keeps the innermost turns continuous
+                // without adding a separate glowing core.
+                const isCoreSample = Math.random() < 0.008;
+                const radius = isCoreSample
+                    ? 0.02 + Math.pow(Math.random(), 1.6) * 2.8
+                    : 0.02 + skewed * 27.98;
 
                 const spiralAngle  = Math.log(radius + 1) * 7.0;
                 const innerBlend   = Math.pow(Math.min(1.0, radius / 4.5), 1.5);
@@ -202,6 +208,11 @@
                     off = 0.0;
                     finalAngle = randomAngle;
                 }
+
+                // The dedicated core sample stays evenly distributed in angle.
+                // The regular particles still gain spiral structure gradually,
+                // so the arms dissolve into a soft elliptical center without gaps.
+                if (isCoreSample) finalAngle = randomAngle;
 
                 const edgeFade    = Math.max(0.0, (radius - 14.0) / 14.0);
                 const finalRadius = radius + edgeFade * Math.pow(Math.random(), 0.5) * 12.0;
@@ -278,8 +289,10 @@
                         float d = distance(gl_PointCoord, vec2(0.5));
                         if (d > 0.5) discard;
 
-                        float alpha     = pow(1.0 - d * 2.0, 4.0);
-                        float intensity = clamp(vBrightness, 0.5, 0.9);
+                        float alpha         = pow(1.0 - d * 2.0, 4.0);
+                        float baseIntensity = clamp(vBrightness, 0.5, 0.9);
+                        float coreFade      = 1.0 - smoothstep(0.0, 12.0, vRadius);
+                        float intensity     = mix(baseIntensity, 0.28, coreFade);
 
                         vec3 coreColor = vec3(1.0,  0.97, 0.92);
                         vec3 armColor  = vec3(0.65, 0.82, 1.0);

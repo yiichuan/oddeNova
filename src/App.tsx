@@ -17,14 +17,14 @@ import { isDemoMode, getActiveDemoSet } from './demo/demo-config';
 import ApiKeyModal from './components/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
-import { HistoryIcon, PlayIcon, PlusIcon, StopIcon } from './components/icons';
+import { HistoryIcon, PauseIcon, PlayIcon, PlusIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useOddeNovaImport } from './hooks/useOddeNovaImport';
 import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
-import { useLayout } from './hooks/useLayout';
+import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
 import ConversationView from './components/ConversationView';
 import HistoryPanel from './components/HistoryPanel';
 import ChatInput from './components/ChatInput';
@@ -73,6 +73,8 @@ export default function App() {
     keyboardHeight,
     sidebarWidth,
     vizHeight,
+    vizCollapsed,
+    toggleVizCollapsed,
     isDragging,
     mainRef,
     hDragHandlers,
@@ -121,13 +123,13 @@ export default function App() {
   // play button, which mobile no longer renders.
   const handleMobileTransportClick = useCallback(() => {
     if (strudel.isPlaying) {
-      strudel.stop();
+      strudel.pause();
     } else if (strudel.engineReady && strudel.code) {
       void strudel.play();
     }
   }, [strudel]);
   // Dimmed until there's something to play — but never while playing, or the
-  // stop action would become unreachable.
+  // pause action would become unreachable.
   const mobileTransportDisabled = !strudel.isPlaying && (!strudel.engineReady || !strudel.code);
 
   const [apiKeyModalState, setApiKeyModalState] = useState(() => {
@@ -197,7 +199,7 @@ export default function App() {
       if (e.altKey && e.code === 'Period' && e.key !== '.') {
         e.preventDefault();
         if (strudelRef.current.isPlaying) {
-          strudelRef.current.stop();
+          strudelRef.current.pause();
         } else if (strudelRef.current.engineReady) {
           void strudelRef.current.play();
         }
@@ -491,10 +493,18 @@ export default function App() {
                 code={strudel.code}
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
+                isPaused={strudel.isPaused}
                 engineReady={strudel.engineReady}
+                session={sessions.currentSession}
+                messages={messages}
+                exportState={strudel.exportState}
+                onExport={strudel.exportWav}
+                onGenerateTitle={generateSongTitle}
+                onResetExportState={strudel.resetExportState}
+                bpm={currentBpm}
                 onMount={strudel.setRoot}
                 onPlay={() => strudel.play()}
-                onStop={strudel.stop}
+                onPause={strudel.pause}
                 onEditorFocusChange={handleCodeFocusChange}
               />
             </div>
@@ -536,12 +546,10 @@ export default function App() {
               className={`absolute right-full top-0 mr-3 flex w-7 h-7 items-center justify-center rounded-full border border-border bg-bg-primary disabled:cursor-not-allowed ${
                 mobileTransportDisabled ? 'text-[#591C06]' : 'text-[#B2370C]'
               }`}
-              aria-label={strudel.isPlaying ? t('stop') : t('play')}
-              title={strudel.isPlaying ? t('stop') : t('play')}
+              aria-label={strudel.isPlaying ? t('pause') : t('play')}
+              title={strudel.isPlaying ? t('pause') : t('play')}
             >
-              {/* Stop renders smaller: Square fills its viewBox while Play's
-                  triangle is narrower, so equal sizes look unbalanced */}
-              {strudel.isPlaying ? <StopIcon size={12} /> : <PlayIcon size={14} />}
+              {strudel.isPlaying ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
             </button>
             <button
               onClick={() => setDrawerOpen((v) => !v)}
@@ -702,23 +710,51 @@ export default function App() {
                 code={strudel.code}
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
+                isPaused={strudel.isPaused}
                 engineReady={strudel.engineReady}
+                session={sessions.currentSession}
+                messages={messages}
+                exportState={strudel.exportState}
+                onExport={strudel.exportWav}
+                onGenerateTitle={generateSongTitle}
+                onResetExportState={strudel.resetExportState}
+                bpm={currentBpm}
                 onMount={strudel.setRoot}
                 onPlay={() => strudel.play()}
-                onStop={strudel.stop}
+                onPause={strudel.pause}
+                vizCollapsed={vizCollapsed}
+                onToggleViz={toggleVizCollapsed}
               />
             </div>
 
-            {/* Vertical resize handle */}
-            <div
-              {...vDragHandlers}
-              data-resize-handle="vertical"
-              className="h-divider shrink-0"
-              style={{ cursor: 'row-resize' }}
-            />
+            {/* Resize handle + viz pane slide shut together, so CodePanel's
+                footer travels down to the bottom edge of the window with them.
+                The handle rides inside the animated box rather than beside it;
+                clipped to zero height it also stops being grabbable.
 
-            <div style={{ height: vizHeight, flexShrink: 0 }}>
-              <VizPlaceholder isPlaying={strudel.isPlaying} />
+                The transition is dropped mid-drag: there, every pointer move
+                sets a new height, and easing would trail the cursor. */}
+            <div
+              data-testid="viz-pane"
+              className={`flex shrink-0 flex-col overflow-hidden ${
+                isDragging === 'v'
+                  ? ''
+                  : 'transition-[height] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none'
+              }`}
+              style={{ height: vizCollapsed ? 0 : vizHeight + VIZ_DIVIDER_HEIGHT }}
+            >
+              <div
+                {...vDragHandlers}
+                data-resize-handle="vertical"
+                className="h-divider shrink-0"
+                style={{ cursor: 'row-resize' }}
+              />
+
+              {/* Always mounted, even collapsed: remounting rebuilds the
+                  galaxy from scratch, so it would come back a different one. */}
+              <div className="min-h-0 flex-1">
+                <VizPlaceholder isPlaying={strudel.isPlaying} />
+              </div>
             </div>
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full min-h-0' : 'hidden'}>

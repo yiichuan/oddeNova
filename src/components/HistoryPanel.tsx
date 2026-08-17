@@ -63,9 +63,9 @@ export default function HistoryPanel({
     <div className="flex flex-col">
       <div>
         {isLoading ? (
-          <div className="px-4 pb-4 text-xs text-text-muted">{t('loading')}</div>
+          <div className="px-4 py-6 text-center text-xs text-text-muted">{t('loading')}</div>
         ) : ordered.length === 0 ? (
-          <div className="px-4 pb-4 text-xs text-text-muted">{t('noSessions')}</div>
+          <div className="px-4 py-6 text-center text-xs text-text-muted">{t('noSessions')}</div>
         ) : (
           <ul className="space-y-1 py-2">
             {ordered.map((s) => {
@@ -77,7 +77,7 @@ export default function HistoryPanel({
                   <div
                     className={`group flex items-stretch gap-2 rounded-[4px] border px-2 cursor-pointer transition-colors ${
                       active
-                        ? 'border-transparent bg-[#346691] text-text-primary'
+                        ? 'border-transparent bg-[var(--color-selected-item-bg)] text-text-primary'
                         : 'border-transparent bg-[#0D0D0D] text-text-secondary hover:text-text-primary'
                     }`}
                     onClick={() => onSwitch(s.id)}
