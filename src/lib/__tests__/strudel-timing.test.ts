@@ -32,6 +32,21 @@ note("<c3 e3 g3>").mask("<0@2 1@4 0@2>")
     expect(getStrudelLoopCycles(code)).toBe(24);
   });
 
+  it('multiplies @ weights by a trailing /N rather than letting either one win', () => {
+    // The weights on their own already decide the span: 6+2+6+2 = 16 cycles.
+    expect(getStrudelLoopCycles('s("noise").gain("<0@6 0.22@2 0@6 0.32@2>")')).toBe(16);
+    // A `/16` on top stretches every weighted slot 16× again. This is the shape
+    // that dragged one 174 BPM piece's loop out to 5:53 off a single sweep layer,
+    // opening with 96 cycles of silence — the prompt used to describe `/N` as the
+    // total span, which reads as if the weights and the slash were the same knob.
+    expect(getStrudelLoopCycles('s("noise").gain("<0@6 0.22@2 0@6 0.32@2>/16")')).toBe(256);
+    expect(
+      formatPlaybackTime(
+        getStrudelLoopDurationSeconds('setcps(0.725)\ns("noise").gain("<0@6 0.22@2 0@6 0.32@2>/16")'),
+      ),
+    ).toBe('05:53');
+  });
+
   it('counts ! replication and multiplies nested alternations', () => {
     expect(getStrudelLoopCycles('note("<a!4 b!4 c!8>")')).toBe(16);
     expect(getStrudelLoopCycles('note("<[a b]!2 c ! d>")')).toBe(5);
