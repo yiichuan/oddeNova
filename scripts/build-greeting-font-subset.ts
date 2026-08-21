@@ -19,7 +19,7 @@
  *
  * Run: npm run fonts:greetings   (also wired into predev / prebuild)
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,7 +59,10 @@ function readManifest(): SubsetManifest | null {
 export async function main(): Promise<void> {
   const text = greetingSubsetText();
 
-  if (readManifest()?.charset === text) {
+  // The manifest alone is not proof: the font it describes has to still be
+  // there. Trusting it on its own means a deleted subset stays deleted through
+  // every prebuild, and the greeting silently falls back to `serif`.
+  if (readManifest()?.charset === text && existsSync(OUTPUT_FONT)) {
     console.log(`greeting font subset: up to date (${[...text].length} chars)`);
     return;
   }
@@ -69,7 +72,14 @@ export async function main(): Promise<void> {
   const { default: subsetFont } = await import('subset-font');
 
   const source = readFileSync(SOURCE_FONT);
-  const subset = await subsetFont(source, text, { targetFormat: 'woff2' });
+  // The licence for this face is the author's own declaration, and the only
+  // copy of it that travels with the app is what the file carries: harfbuzz
+  // keeps the copyright by default but drops the trademark record, so ask for
+  // it back. See public/fonts/LICENSES.md.
+  const subset = await subsetFont(source, text, {
+    targetFormat: 'woff2',
+    preserveNameIds: [7],
+  });
 
   mkdirSync(dirname(OUTPUT_FONT), { recursive: true });
   writeFileSync(OUTPUT_FONT, subset);

@@ -1,7 +1,8 @@
 /**
- * Characters falling through the control bar like snow.
+ * Characters — or motes, when the particle galaxy is the chosen visual —
+ * falling through the control bar like snow.
  *
- * One glyph is one flake. Four things carry the illusion:
+ * One mark is one flake. Four things carry the illusion:
  *
  *   fall      a slow, steady descent that wraps — the dominant motion, so the
  *             eye reads gravity rather than a scrolling marquee
@@ -48,7 +49,7 @@ export function resolveParticleField(barWidth: number, barHeight: number): Parti
   };
 }
 
-export const PARTICLE_COUNT = 64;
+export const PARTICLE_COUNT = 48;
 
 /**
  * The visualizer's full ASCII ramp minus its two blank sentinels — all 24
@@ -63,15 +64,28 @@ export const PARTICLE_GLYPHS = [
 
 // ── Playing ──────────────────────────────────────────────────────────────────
 //
-// While the piece is playing, a shifting handful of flakes burn orange. The set
-// is redrawn once per beat, so the colour moves through the snow in time with
-// the music without anything else about the snow changing — the flakes keep
+// While the piece is playing, some of the flakes burn orange. The set is
+// redrawn once per beat, so the colour moves through the snow in time with the
+// music without anything else about the snow changing — the flakes keep
 // falling, breathing and blowing exactly as they would in silence.
+//
+// *How many* burn is the music's own doing: the louder the piece sounds, the
+// more of the field catches. A sparse passage keeps a scattering lit, a dense
+// one sets most of it going, and the swell between the two is the loudest
+// thing the collapsed bar can say about what is playing.
 
 /** #CD5633 — the accent the rest of the app plays back in. */
 export const PARTICLE_ACCENT_COLOR = '205, 86, 51';
-/** Share of the field lit on any given beat. */
-const ACCENT_SHARE = 0.18;
+/**
+ * Share of the field lit at the quietest the music gets, and at the most
+ * intense. The floor is deliberately well above nothing — silence is the
+ * absence of colour, so a quiet passage still has to look like music playing
+ * rather than like playback having stopped. The ceiling stops short of the
+ * whole field for the opposite reason: a fully orange bar has nowhere left to
+ * go, and the snow stops reading as snow with colour moving through it.
+ */
+export const ACCENT_SHARE_MIN = 0.18;
+export const ACCENT_SHARE_MAX = 0.78;
 /**
  * How much of a beat the handover takes, as a fraction of one. Long enough that
  * the colour arrives rather than snapping, short enough to still land on the
@@ -105,6 +119,64 @@ const BLUR_ALPHA_COMPENSATION = 0.55;
 export const PARTICLE_BLUR_ALPHA_GAIN = PARTICLE_BLUR_LEVELS.map(
   (blur) => 1 + blur * BLUR_ALPHA_COMPENSATION,
 );
+
+// ── Shape ────────────────────────────────────────────────────────────────────
+//
+// The bar draws with whatever mark the visualizer pane below it is drawing
+// with. The ASCII galaxy is made of characters, so the collapsed bar snows
+// characters; the particle galaxy is made of round motes, so it snows dots and
+// the two keep saying the same thing about what is hidden.
+//
+// Only the mark changes. Every flake keeps its depth, its fall, its breath and
+// its place in the field, so the two are the same snow drawn twice rather than
+// two effects.
+
+export type ParticleShape = 'glyph' | 'dot';
+
+/**
+ * Mote radius in px at the light and heavy ends of the ramp. A flake takes the
+ * radius of the glyph slot it was dealt — a speck where the ASCII field would
+ * put '·', a full mote where it would put 'Ω' — so the same weight ladder
+ * carries the depth in both shapes.
+ *
+ * The light end is held well clear of a single pixel: at this size the depth
+ * blur spreads a mote over several times its own area, and anything smaller
+ * disappears into the bar's own glow rather than reading as a distant speck.
+ */
+const DOT_RADIUS = [1.1, 2.7] as const;
+
+export function particleDotRadius(glyphIndex: number): number {
+  return lerp(DOT_RADIUS[0], DOT_RADIUS[1], glyphIndex / (PARTICLE_GLYPHS.length - 1));
+}
+
+/**
+ * The sharpest each shape is allowed to get, in px.
+ *
+ * A character may come right into focus — crisp edges are most of what makes
+ * it legible as a character at 8.5px. A mote may not: a hard-edged circle this
+ * small stops being a speck of light in a volume and becomes a UI dot, a
+ * bullet or a status light. The floor is what keeps it luminous.
+ */
+export const PARTICLE_MIN_BLUR: Record<ParticleShape, number> = {
+  glyph: 0,
+  dot: 0.7,
+};
+
+/**
+ * A flake's blur once its shape's floor is in force.
+ *
+ * Lifted and compressed rather than clipped. The near end of the focus ladder
+ * rests at 0.35px and the breath swings further than that, so clipping at a
+ * 0.7px floor would pin the near flakes to it for most of their cycle — the
+ * closest, largest motes would be the ones that stopped breathing, which is
+ * exactly backwards. Squeezing the whole ladder into the room above the floor
+ * costs a little of the swing and keeps all of the motion.
+ */
+export function shapedBlur(blur: number, shape: ParticleShape): number {
+  const floor = PARTICLE_MIN_BLUR[shape];
+  if (floor <= 0) return blur;
+  return floor + clamp(blur, 0, MAX_BLUR) * (1 - floor / MAX_BLUR);
+}
 
 /** Alpha at the near and far planes, before the blur gain. */
 const ALPHA_NEAR = 0.78;
@@ -385,27 +457,70 @@ export function windAt(timeSeconds: number): number {
   return total;
 }
 
-/** Whether this flake is one of the lit ones on a given beat. */
-function isAccentedOn(particle: Particle, beatIndex: number): boolean {
-  return hash01(particle.seed * 7919 + beatIndex * 104729) < ACCENT_SHARE;
+/**
+ * The share of the field lit at a given loudness impression, 0..1 in and
+ * `ACCENT_SHARE_MIN`..`ACCENT_SHARE_MAX` out. Straight-line: the intensity it
+ * is fed has already been through the ear's own curves.
+ */
+export function accentShareFor(intensity: number): number {
+  return lerp(ACCENT_SHARE_MIN, ACCENT_SHARE_MAX, clamp(intensity, 0, 1));
+}
+
+/**
+ * The shares in force across a beat boundary — what the previous beat was drawn
+ * with, and what this one is being drawn with.
+ *
+ * Two rather than one because the handover below crossfades between two whole
+ * beats' worth of lit flakes, and a swell that arrived mid-beat would otherwise
+ * light flakes retroactively in the outgoing set as well as the incoming one.
+ */
+export interface AccentShares {
+  previous: number;
+  current: number;
+}
+
+const QUIETEST_SHARES: AccentShares = {
+  previous: ACCENT_SHARE_MIN,
+  current: ACCENT_SHARE_MIN,
+};
+
+/**
+ * Whether this flake is one of the lit ones on a given beat, at a given share.
+ *
+ * The hash depends only on the flake and the beat — the share is a moving
+ * threshold over a fixed ranking. So a swell is purely additive: getting louder
+ * recruits flakes that were dark, without disturbing the ones already burning.
+ * If the share decided the set by reshuffling instead, every change in loudness
+ * would scatter the colour to a different place and the growth would read as
+ * noise rather than as the field catching.
+ */
+function isAccentedOn(particle: Particle, beatIndex: number, share: number): boolean {
+  return hash01(particle.seed * 7919 + beatIndex * 104729) < share;
 }
 
 /**
  * How orange a flake is right now, 0..1, at `beatPosition` beats into the
  * piece. `null` — nothing playing — leaves the whole field white.
  *
- * The lit set is a pure function of (flake, beat), so it needs no state and
- * cannot drift out of time: whatever beat the music is on decides which flakes
- * are burning, and stepping to the next beat hands the colour to a new
+ * The lit set is a pure function of (flake, beat, share), so it needs no state
+ * and cannot drift out of time: whatever beat the music is on decides which
+ * flakes are burning, and stepping to the next beat hands the colour to a new
  * handful. Crossfading between the two sets over the first third of each beat
  * is what makes that handover land *on* the beat instead of strobing at it.
+ *
+ * `shares` carries the loudness in. Omit it and the field sits at its quietest,
+ * which is what a caller with no audio to listen to should show.
  */
-export function particleAccentAt(particle: Particle, beatPosition: number | null): number {
+export function particleAccentAt(
+  particle: Particle,
+  beatPosition: number | null,
+  shares: AccentShares = QUIETEST_SHARES,
+): number {
   if (beatPosition === null || !Number.isFinite(beatPosition)) return 0;
 
   const beatIndex = Math.floor(beatPosition);
-  const previous = isAccentedOn(particle, beatIndex - 1) ? 1 : 0;
-  const current = isAccentedOn(particle, beatIndex) ? 1 : 0;
+  const previous = isAccentedOn(particle, beatIndex - 1, shares.previous) ? 1 : 0;
+  const current = isAccentedOn(particle, beatIndex, shares.current) ? 1 : 0;
   if (previous === current) return current;
 
   const phase = Math.min(1, (beatPosition - beatIndex) / ACCENT_FADE_BEATS);
@@ -480,13 +595,15 @@ export function transitionEffectFor(
  * respawned to keep it going.
  *
  * `transition` layers the arrival/departure inertia on top of that steady
- * state; omit it and the flake is simply falling.
+ * state; omit it and the flake is simply falling. `shape` changes nothing about
+ * where the flake goes — only how sharp it is allowed to get on the way.
  */
 export function particleFrameAt(
   particle: Particle,
   timeSeconds: number,
   field: ParticleField,
   transition?: ParticleTransition | null,
+  shape: ParticleShape = 'glyph',
 ): ParticleFrame {
   const fallen = wrap01(particle.baseY + particle.fallSpeed * timeSeconds);
   const flutter = Math.sin(particle.flutterRate * timeSeconds + particle.flutterPhase);
@@ -497,7 +614,7 @@ export function particleFrameAt(
   const arrival = transitionEffectFor(particle, transition);
 
   const blur = clamp(
-    particle.blurCenter + particle.blurSwing * breath + arrival.blurBoost,
+    shapedBlur(particle.blurCenter + particle.blurSwing * breath, shape) + arrival.blurBoost,
     0,
     MAX_BLUR,
   );

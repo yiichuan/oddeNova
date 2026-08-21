@@ -37,6 +37,17 @@
   font-display: swap;
 }
 
+/* One weight only — there is no bold to synthesise from, and asking the browser
+   for one would smear the high-contrast strokes this face is chosen for. Any
+   heading using it stays at 400. */
+@font-face {
+  font-family: 'DM Serif Display';
+  src: url('/fonts/DMSerifDisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: 'EB Garamond';
   src: url('/fonts/EBGaramond-Regular.ttf') format('truetype');
@@ -50,6 +61,7 @@
   --color-bg-secondary: #000000;
   --color-bg-tertiary: #000000;
   --color-conversation-surface: #0D0D0D;
+  --color-settings-surface: #161616;
   --color-accent: #434343;
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
@@ -77,6 +89,7 @@
   --shadow-menu-overlay: 0 0 15px rgba(0, 0, 0, 0.7);
   --shadow-history-overlay: 0 0 18px rgba(0, 0, 0, 0.9);
 
+  --font-dm-serif: 'DM Serif Display', Georgia, serif;
   --font-jinghua-laosongti: '京華老宋体', serif;
   --font-eb-garamond: 'EB Garamond', serif;
 }
@@ -104,19 +117,22 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
 
+/* The base fill has to stay translucent: `backdrop-filter` only shows through
+   whatever the element's own background lets through, so a solid layer under
+   the gradient would blur a backdrop nobody can see. */
 .primary-nav-surface {
   --primary-nav-glow-angle: 115deg;
   background:
     linear-gradient(
       var(--primary-nav-glow-angle),
-      rgba(78, 78, 78, 0.6) -10%,
-      rgba(36, 36, 36, 0.3) 40%,
-      rgba(36, 36, 36, 0.3) 75%,
-      rgba(78, 78, 78, 0.6) 120%
+      rgba(78, 78, 78, 0.5) -10%,
+      rgba(36, 36, 36, 0.22) 40%,
+      rgba(36, 36, 36, 0.22) 75%,
+      rgba(78, 78, 78, 0.5) 120%
     ),
-    #0D0D0D;
-  backdrop-filter: blur(20px) saturate(120%);
-  -webkit-backdrop-filter: blur(20px) saturate(120%);
+    rgba(13, 13, 13, 0.55);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
 }
 
 .code-panel-controls {
@@ -146,27 +162,30 @@ body {
   padding-right: var(--code-panel-actions-to-edge-gap);
 }
 
-.code-panel-volume-slider {
+.code-panel-volume-slider,
+.featured-volume-slider {
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
 }
 
-.code-panel-volume-slider::-webkit-slider-runnable-track {
+.code-panel-volume-slider::-webkit-slider-runnable-track,
+.featured-volume-slider::-webkit-slider-runnable-track {
   width: 2px;
   height: 100%;
   border: 0;
   border-radius: 999px;
   background: linear-gradient(
     to bottom,
-    #D6D6D6 0,
-    #D6D6D6 calc(100% - var(--volume-progress)),
-    #CD5633 calc(100% - var(--volume-progress)),
-    #CD5633 100%
+    var(--volume-slider-track, #D6D6D6) 0,
+    var(--volume-slider-track, #D6D6D6) calc(100% - var(--volume-progress)),
+    var(--volume-slider-fill, #CD5633) calc(100% - var(--volume-progress)),
+    var(--volume-slider-fill, #CD5633) 100%
   );
 }
 
-.code-panel-volume-slider::-webkit-slider-thumb {
+.code-panel-volume-slider::-webkit-slider-thumb,
+.featured-volume-slider::-webkit-slider-thumb {
   width: 12px;
   height: 12px;
   margin-left: -5px;
@@ -174,30 +193,33 @@ body {
   -webkit-appearance: none;
   border: 0;
   border-radius: 50%;
-  background: #CD5633;
+  background: var(--volume-slider-fill, #CD5633);
 }
 
-.code-panel-volume-slider::-moz-range-track {
+.code-panel-volume-slider::-moz-range-track,
+.featured-volume-slider::-moz-range-track {
   width: 2px;
   height: 100%;
   border: 0;
   border-radius: 999px;
-  background: #D6D6D6;
+  background: var(--volume-slider-track, #D6D6D6);
 }
 
-.code-panel-volume-slider::-moz-range-progress {
+.code-panel-volume-slider::-moz-range-progress,
+.featured-volume-slider::-moz-range-progress {
   width: 2px;
   border: 0;
   border-radius: 999px;
-  background: #CD5633;
+  background: var(--volume-slider-fill, #CD5633);
 }
 
-.code-panel-volume-slider::-moz-range-thumb {
+.code-panel-volume-slider::-moz-range-thumb,
+.featured-volume-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
   border: 0;
   border-radius: 50%;
-  background: #CD5633;
+  background: var(--volume-slider-fill, #CD5633);
 }
 
 .code-panel-controls::before {
@@ -231,8 +253,52 @@ body {
   inset: -18px -3%;
   filter: blur(16px) contrast(10);
   mix-blend-mode: screen;
+  /* The resting value. Also the boot animation's last keyframe, which `both`
+     holds afterwards; this line is what the reduced-motion branch falls back
+     to. */
   opacity: 0.64;
+  animation: code-panel-light-boot 3s cubic-bezier(0.37, 0, 0.63, 1) both;
+  /* Diagnostic, and defensible on its own. An opacity animation gets this
+     element its own composited layer for the 3s it runs; without the hint,
+     finishing the animation hands the layer back and the filter is rasterized
+     afresh in the parent — at a possibly different scale, which `contrast(10)`
+     multiplies by ten. Declaring the hint permanently keeps one layer for the
+     life of the page, so there is no promote/demote edge to re-raster at. */
+  will-change: opacity;
   pointer-events: none;
+}
+
+/* The lights coming up, played once on entering the studio.
+
+   Not decoration bolted on. Leaving the studio puts this subtree under
+   `display: none`, and per CSS Animations that *terminates* every animation
+   on it — returning does not resume them, it starts them over with their
+   negative delays reapplied, so all six blobs snap to a fixed phase in one
+   frame (blob 3 alone can jump ~178px, wider than the blob is). That snap
+   cannot be deleted while the page hides itself this way, so it is staged
+   instead: the same display change that restarts the drift restarts this, in
+   the same frame and with no JS to keep in sync, and the teleport happens
+   while there is no light to see it by.
+
+   It rides on the field rather than on the blobs, and that is the part that
+   makes it work. A blob's own opacity feeds *into* the threshold in its SVG
+   filter, so fading one up would drag it across that edge and pop it into
+   existence — a new jump in place of the old one. Here `opacity` applies to
+   the filter's output, so the fade stays linear however hard the threshold
+   is. (The blobs are also already animating opacity for their pulse, which a
+   second opacity animation on the same element would simply override.)
+
+   The hold near dark is sized in real time, not as a share of the animation:
+   becoming visible costs a first raster of the backdrop-filter, this field's
+   filter and six SVG filters in the same handful of frames, and those frames
+   should have nothing worth looking at. That is ~360ms whatever the ramp
+   lasts, so it stays pinned at 12% of 3s — stretching it with the duration
+   would read as the light being missing rather than arriving. The remaining
+   2.6s is one uninterrupted segment, so the bloom never pauses partway. */
+@keyframes code-panel-light-boot {
+  0% { opacity: 0; }
+  12% { opacity: 0.04; }
+  100% { opacity: 0.64; }
 }
 
 /* The collapsed-state particle layer: ASCII characters falling through the bar
@@ -256,7 +322,7 @@ body {
 .code-panel-controls-light-border {
   position: absolute;
   z-index: 2;
-  top: -1px;
+  top: 0px;
   right: 0;
   bottom: 0;
   left: 0;
@@ -275,7 +341,10 @@ body {
   animation:
     code-panel-blob-drift var(--blob-duration) cubic-bezier(0.37, 0, 0.63, 1) var(--blob-delay) infinite,
     code-panel-light-pulse var(--light-duration) cubic-bezier(0.37, 0, 0.63, 1) var(--light-delay) infinite;
-  will-change: transform;
+  /* No hint here: the field above filters this subtree, and a filtered
+     ancestor flattens the promotion straight back out. It bought the memory of
+     six layers, none of the benefit, and a round of layer churn every time the
+     subtree is rebuilt. */
 }
 
 .code-panel-light-blob svg {
@@ -305,7 +374,7 @@ body {
   --blob-x-b: 88px; --blob-y-b: 5px; --blob-rotate-b: 11deg; --blob-scale-b: 1.12;
 }
 .code-panel-light-blob:nth-child(3) {
-  width: 174px; height: 108px; left: 40%; top: -30px; opacity: 0.48;
+  width: 174px; height: 108px; left: 36%; top: -30px; opacity: 0.48;
   --blob-duration: 52.5s; --blob-delay: -16.6s;
   --light-duration: 7.8s; --light-delay: -4.6s; --light-base: 0.48; --light-high: 0.55; --light-low: 0.27; --light-mid: 0.44;
   --blob-x-a: 96px; --blob-y-a: 17px; --blob-rotate-a: 10deg; --blob-scale-a: 1.1;
@@ -333,6 +402,35 @@ body {
   --blob-x-b: 46px; --blob-y-b: -11px; --blob-rotate-b: 13deg; --blob-scale-b: 1.11;
 }
 
+/* The circles inside a blob, kneading it out of shape. CSS rather than the
+   SMIL `<animate>` this replaces, and the reason is the whole point: SMIL's
+   timeline belongs to the `<svg>` element, so six blobs meant six independent
+   time containers. `display: none` suspends them all when you leave the studio
+   and then resyncs each one on its own schedule, which is why every group used
+   to teleport once, at a different moment, however the filter was tuned. CSS
+   animations share one document timeline: they are cancelled together and
+   restart together, in the single frame `display` comes back — the frame the
+   boot fade above is already covering.
+
+   Translating the circle rather than animating `cx`/`cy` (the only thing CSS
+   can drive here) composes inside the group's `scale()` the same way an offset
+   on `cx` did, so the motion keeps its size. Stops and easing match the
+   keyTimes/keySplines they came from, so the path itself is unchanged. */
+.code-panel-light-ball {
+  animation: code-panel-ball-drift var(--ball-duration) cubic-bezier(0.37, 0, 0.63, 1) var(--ball-delay) infinite;
+}
+
+/* Zero at both ends, so the loop closes on itself; the per-segment easing puts
+   the ball at rest on every stop, which is what keeps the seam invisible. */
+@keyframes code-panel-ball-drift {
+  0%, 100% { transform: translate(0, 0); }
+  16% { transform: translate(var(--ball-x1), var(--ball-y1)); }
+  33% { transform: translate(var(--ball-x2), var(--ball-y2)); }
+  50% { transform: translate(var(--ball-x3), var(--ball-y3)); }
+  67% { transform: translate(var(--ball-x4), var(--ball-y4)); }
+  84% { transform: translate(var(--ball-x5), var(--ball-y5)); }
+}
+
 @keyframes code-panel-blob-drift {
   0%, 100% {
     transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
@@ -353,10 +451,22 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Straight to the resting opacity on the rule above, no ramp. */
+  .code-panel-light-field {
+    animation: none;
+  }
+
   .code-panel-light-blob {
     animation: none;
     transform: none;
     will-change: auto;
+  }
+
+  /* Handled here rather than by not rendering the animation, the way the SMIL
+     version had to be: a media query cannot reach inside SMIL. */
+  .code-panel-light-ball {
+    animation: none;
+    transform: none;
   }
 }
 
@@ -372,8 +482,10 @@ body {
   pointer-events: none;
 }
 
+/* Denser when expanded — there are labels to read across the whole column —
+   but still glass, so the effect does not vanish the moment it opens. */
 [data-expanded='true'] .primary-nav-surface {
-  background: #0D0D0D;
+  background: rgba(13, 13, 13, 0.72);
 }
 
 .primary-nav-more-menu {
@@ -430,14 +542,6 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   animation: primary-nav-tooltip-in 160ms cubic-bezier(0.25, 1, 0.5, 1) both;
-}
-
-.settings-panel-grid {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: linear-gradient(to bottom right, rgba(0, 0, 0, 0.8), transparent 72%);
 }
 
 .primary-nav-github-logo {
@@ -945,4 +1049,121 @@ canvas[id*="_widget__spectrum_"] {
 
 .mobile-menu-item:active {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Featured page · the cover-colour wash ────────────────────────────────────
+   Light in the air rather than a gradient: soft blobs of the cover's own colour
+   at uneven sizes, angles and positions. Stacked gradients read as bands across
+   the page because their edges stay parallel; ellipses at odd angles overlap
+   into a shape that belongs to no direction.
+
+   One colour only. Neighbouring tones were tried here and read as a second
+   colour wandering in — a green sleeve came out green and yellow — so the
+   depth has to come from the shapes, not from the hue.
+
+   The field is blurred as a whole, which is what makes the blobs behave like
+   metaballs: each one carries a plateau of flat colour rather than fading from
+   its own centre, so where two come close the blur bridges them into one body
+   with a bulging waist instead of two circles crossing. Blurring the group also
+   means no blob has an edge of its own anywhere.
+
+   It does not move — the page is something to read, and drifting light behind
+   text is a distraction the second time you see it.
+
+   The mask dims the top and bottom rather than cutting them: there is colour up
+   behind the nav and down behind the transport bar, only held far enough back
+   that both keep their own contrast. */
+
+.featured-glow {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.45) 0%, #000 22%, #000 76%, rgba(0, 0, 0, 0.45) 100%);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.45) 0%, #000 22%, #000 76%, rgba(0, 0, 0, 0.45) 100%);
+}
+
+/* Overscanned past every edge: a blur pulls transparency in from outside its
+   own box, which would otherwise leave a pale gutter down each side. */
+.featured-glow-field {
+  position: absolute;
+  inset: -12%;
+  filter: blur(58px);
+}
+
+.featured-glow-blob {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(var(--glow-color), var(--blob-alpha)) 0%,
+    rgba(var(--glow-color), var(--blob-alpha)) 42%,
+    rgba(var(--glow-color), 0) 100%
+  );
+  transform: rotate(var(--blob-rotate, 0deg));
+  transform-origin: center;
+}
+
+/* Spread right across the field, but off any grid — an even spread is what made
+   this read as a linear gradient, and a tight cluster reads as one lamp. The
+   strong ones stay in the middle band, where the glass panels are. Positions
+   are given inside the overscanned field, so they sit 12% further in than the
+   numbers suggest. */
+.featured-glow-blob:nth-child(1) {
+  width: 52vw; height: 44vh; left: 60vw; top: 70vh;
+  --blob-alpha: 0.32; --blob-rotate: 13deg;
+}
+.featured-glow-blob:nth-child(2) {
+  width: 36vw; height: 32vh; left: 76vw; top: 16vh;
+  --blob-alpha: 0.24; --blob-rotate: -17deg;
+}
+.featured-glow-blob:nth-child(3) {
+  width: 26vw; height: 38vh; left: 20vw; top: 44vh;
+  --blob-alpha: 0.26; --blob-rotate: 21deg;
+}
+.featured-glow-blob:nth-child(4) {
+  width: 40vw; height: 26vh; left: 38vw; top: 56vh;
+  --blob-alpha: 0.20; --blob-rotate: -8deg;
+}
+.featured-glow-blob:nth-child(5) {
+  width: 22vw; height: 25vh; left: 4vw; top: 44vh;
+  --blob-alpha: 0.22; --blob-rotate: 29deg;
+}
+.featured-glow-blob:nth-child(6) {
+  width: 18vw; height: 23vh; left: 56vw; top: 32vh;
+  --blob-alpha: 0.27; --blob-rotate: -34deg;
+}
+.featured-glow-blob:nth-child(7) {
+  width: 30vw; height: 21vh; left: 78vw; top: 52vh;
+  --blob-alpha: 0.21; --blob-rotate: 7deg;
+}
+.featured-glow-blob:nth-child(8) {
+  width: 16vw; height: 19vh; left: 28vw; top: 68vh;
+  --blob-alpha: 0.23; --blob-rotate: -23deg;
+}
+.featured-glow-blob:nth-child(9) {
+  width: 20vw; height: 17vh; left: 88vw; top: 30vh;
+  --blob-alpha: 0.18; --blob-rotate: 41deg;
+}
+
+/* The ends. Faint to begin with and dimmed again by the mask, so the top and
+   bottom carry the colour without pulling the eye off the middle. Their tops
+   are field-relative too, so 4vh sits above the window's edge and 84vh hangs
+   past its foot — each one bleeds in rather than sitting inside the frame. */
+.featured-glow-blob:nth-child(10) {
+  width: 38vw; height: 23vh; left: 0vw; top: 0vh;
+  --blob-alpha: 0.14; --blob-rotate: -12deg;
+}
+.featured-glow-blob:nth-child(11) {
+  width: 30vw; height: 20vh; left: 58vw; top: 4vh;
+  --blob-alpha: 0.12; --blob-rotate: 18deg;
+}
+.featured-glow-blob:nth-child(12) {
+  width: 44vw; height: 25vh; left: 10vw; top: 88vh;
+  --blob-alpha: 0.13; --blob-rotate: -6deg;
+}
+.featured-glow-blob:nth-child(13) {
+  width: 28vw; height: 21vh; left: 76vw; top: 92vh;
+  --blob-alpha: 0.11; --blob-rotate: 24deg;
 }

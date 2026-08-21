@@ -2,15 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  ACCENT_SHARE_MAX,
+  ACCENT_SHARE_MIN,
   PARTICLE_ACCENT_COLOR,
   PARTICLE_BLUR_ALPHA_GAIN,
   PARTICLE_BLUR_LEVELS,
   PARTICLE_COUNT,
   PARTICLE_GLYPHS,
+  PARTICLE_MIN_BLUR,
+  type AccentShares,
+  accentShareFor,
   createParticles,
   particleAccentAt,
+  particleDotRadius,
   particleFrameAt,
   resolveParticleField,
+  shapedBlur,
   transitionEffectFor,
   windAt,
 } from '../control-bar-particles';
@@ -321,10 +328,35 @@ describe('transitionEffectFor', () => {
   });
 });
 
+describe('accentShareFor', () => {
+  it('spans the quietest and loudest the field is allowed to get', () => {
+    expect(accentShareFor(0)).toBeCloseTo(ACCENT_SHARE_MIN, 6);
+    expect(accentShareFor(1)).toBeCloseTo(ACCENT_SHARE_MAX, 6);
+    expect(ACCENT_SHARE_MIN).toBe(0.18);
+    expect(ACCENT_SHARE_MAX).toBe(0.78);
+  });
+
+  it('rises with the music and never leaves the band', () => {
+    let previous = -Infinity;
+    for (let intensity = 0; intensity <= 1; intensity += 0.05) {
+      const share = accentShareFor(intensity);
+      expect(share).toBeGreaterThan(previous);
+      previous = share;
+    }
+    // A reading that overshoots — a clipping mix, or a caller passing raw
+    // amplitude — must not take the field past its ceiling or below its floor.
+    expect(accentShareFor(4)).toBeCloseTo(ACCENT_SHARE_MAX, 6);
+    expect(accentShareFor(-2)).toBeCloseTo(ACCENT_SHARE_MIN, 6);
+  });
+});
+
 describe('particleAccentAt', () => {
   const particles = createParticles();
-  const litCountAt = (beatPosition: number) =>
-    particles.filter((particle) => particleAccentAt(particle, beatPosition) > 0.5).length;
+  const evenly = (share: number): AccentShares => ({ previous: share, current: share });
+  const litAt = (beatPosition: number, shares?: AccentShares) =>
+    particles.filter((particle) => particleAccentAt(particle, beatPosition, shares) > 0.5);
+  const litCountAt = (beatPosition: number, shares?: AccentShares) =>
+    litAt(beatPosition, shares).length;
 
   it('is the app accent, #CD5633', () => {
     expect(PARTICLE_ACCENT_COLOR).toBe('205, 86, 51');
@@ -336,12 +368,52 @@ describe('particleAccentAt', () => {
     }
   });
 
-  it('lights a minority of the field, never all or none of it', () => {
-    for (let beat = 0; beat < 200; beat += 1) {
-      const lit = litCountAt(beat + 0.5);
-      expect(lit).toBeGreaterThan(0);
-      expect(lit).toBeLessThan(particles.length * 0.5);
+  it('sits at its quietest for a caller with no audio to listen to', () => {
+    for (const particle of particles) {
+      expect(particleAccentAt(particle, 6.5))
+        .toBe(particleAccentAt(particle, 6.5, evenly(ACCENT_SHARE_MIN)));
     }
+  });
+
+  it('lights more of the field the louder the piece sounds', () => {
+    let quietTotal = 0;
+    let loudTotal = 0;
+    for (let beat = 0; beat < 200; beat += 1) {
+      const quiet = litCountAt(beat + 0.5, evenly(accentShareFor(0)));
+      const loud = litCountAt(beat + 0.5, evenly(accentShareFor(1)));
+      quietTotal += quiet;
+      loudTotal += loud;
+      // Neither end may collapse: silence still has to look like music playing,
+      // and a full bar has nowhere left to go.
+      expect(quiet).toBeGreaterThan(0);
+      expect(loud).toBeLessThan(particles.length);
+      expect(loud).toBeGreaterThan(quiet);
+    }
+    expect(quietTotal / 200 / particles.length).toBeCloseTo(ACCENT_SHARE_MIN, 1);
+    expect(loudTotal / 200 / particles.length).toBeCloseTo(ACCENT_SHARE_MAX, 1);
+  });
+
+  it('recruits flakes as it swells rather than reshuffling them', () => {
+    // Growth has to be additive, or every change in loudness would scatter the
+    // colour somewhere else and the swell would read as noise.
+    for (let beat = 0; beat < 40; beat += 1) {
+      let previous = new Set(litAt(beat + 0.5, evenly(accentShareFor(0))));
+      for (let intensity = 0.2; intensity <= 1; intensity += 0.2) {
+        const next = new Set(litAt(beat + 0.5, evenly(accentShareFor(intensity))));
+        for (const particle of previous) expect(next.has(particle)).toBe(true);
+        previous = next;
+      }
+    }
+  });
+
+  it('holds the outgoing beat at the share it was drawn with', () => {
+    // A swell arriving now must not light flakes retroactively in the set that
+    // is on its way out — that set is mid-crossfade and already on screen.
+    const quiet = accentShareFor(0);
+    const loud = accentShareFor(1);
+    const swelling = litAt(9.02, { previous: quiet, current: loud });
+    const alreadyLoud = litAt(9.02, { previous: loud, current: loud });
+    expect(swelling.length).toBeLessThan(alreadyLoud.length);
   });
 
   it('holds the same set for the length of a beat', () => {
@@ -494,5 +566,80 @@ describe('particleFrameAt', () => {
         expect(alpha).toBeLessThanOrEqual(1);
       }
     }
+  });
+});
+
+describe('the dot field', () => {
+  const particles = createParticles();
+  const floorLevel = Math.round(PARTICLE_MIN_BLUR.dot / PARTICLE_BLUR_LEVELS[1]);
+
+  it('sizes a mote by the glyph slot it replaces, so weight still reads as depth', () => {
+    const radii = PARTICLE_GLYPHS.map((_, index) => particleDotRadius(index));
+    for (let index = 1; index < radii.length; index += 1) {
+      expect(radii[index]).toBeGreaterThan(radii[index - 1]);
+    }
+    // Nothing sub-pixel at the far end: the depth blur spreads a mote over
+    // several times its own area, and a smaller one would simply vanish.
+    expect(radii[0]).toBeGreaterThan(1);
+  });
+
+  it('never lets a mote come fully into focus', () => {
+    for (let time = 0; time < 200; time += 1.3) {
+      for (const particle of particles) {
+        const { blurLevel } = particleFrameAt(particle, time, FIELD, null, 'dot');
+        expect(PARTICLE_BLUR_LEVELS[blurLevel]).toBeGreaterThanOrEqual(PARTICLE_MIN_BLUR.dot);
+      }
+    }
+  });
+
+  it('holds the floor through a transition, when the blur is being pushed around', () => {
+    for (const entering of [true, false]) {
+      for (let progress = 0; progress <= 1; progress += 0.05) {
+        for (const particle of particles) {
+          const { blurLevel } = particleFrameAt(
+            particle, 7.5, FIELD, { entering, progress }, 'dot',
+          );
+          expect(blurLevel).toBeGreaterThanOrEqual(floorLevel);
+        }
+      }
+    }
+  });
+
+  it('keeps breathing above that floor rather than pinning to it', () => {
+    // Clipping at the floor would flatten precisely the near motes — their
+    // focus rests just below it — so the largest, closest ones would be the
+    // ones that stopped moving. Compressing the ladder keeps them alive.
+    for (const particle of particles) {
+      const levels = new Set<number>();
+      for (let time = 0; time < 40; time += 0.25) {
+        levels.add(particleFrameAt(particle, time, FIELD, null, 'dot').blurLevel);
+      }
+      expect(levels.size).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('leaves the glyph field sharp, and everything else about a flake alone', () => {
+    for (const particle of particles) {
+      const glyph = particleFrameAt(particle, 6, FIELD);
+      const dot = particleFrameAt(particle, 6, FIELD, null, 'dot');
+      expect(dot.x).toBe(glyph.x);
+      expect(dot.y).toBe(glyph.y);
+      expect(dot.glyphIndex).toBe(glyph.glyphIndex);
+      expect(dot.blurLevel).toBeGreaterThanOrEqual(glyph.blurLevel);
+    }
+    // Some flake, somewhere, is in sharp focus while the field draws glyphs.
+    const sharp = particles.some((particle) => Array.from({ length: 80 }, (_, step) =>
+      particleFrameAt(particle, step * 0.5, FIELD).blurLevel).includes(0));
+    expect(sharp).toBe(true);
+  });
+
+  it('lifts and compresses the ladder instead of clipping it', () => {
+    const max = PARTICLE_BLUR_LEVELS[PARTICLE_BLUR_LEVELS.length - 1];
+    expect(shapedBlur(0, 'glyph')).toBe(0);
+    expect(shapedBlur(0, 'dot')).toBeCloseTo(PARTICLE_MIN_BLUR.dot, 6);
+    expect(shapedBlur(max, 'dot')).toBeCloseTo(max, 6);
+    // Strictly increasing in between — the whole swing survives, scaled down.
+    expect(shapedBlur(1, 'dot')).toBeGreaterThan(shapedBlur(0.5, 'dot'));
+    expect(shapedBlur(0.5, 'dot')).toBeGreaterThan(shapedBlur(0, 'dot'));
   });
 });

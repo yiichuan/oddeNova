@@ -5,6 +5,9 @@ import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExportCompleted } from '../lib/analytics';
 import { installOddenovaDarkSyntaxHighlight } from '../lib/oddenova-dark-syntax-highlight';
 import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
+import type { AudioSpectrum } from '../lib/audio-intensity';
+import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
+import { claimTransport } from './transport';
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
 
@@ -93,6 +96,19 @@ function isTouchDevice(): boolean {
     window.matchMedia('(pointer: coarse)').matches
   );
 }
+
+// Shape of the spectrum tap that feeds the control bar's loudness reading.
+//
+// 512 bins is ample resolution for a five-band loudness weighting, and the
+// smoothing takes the frame-to-frame jitter off before anything downstream
+// sees it. The dB window is deliberately not WebAudio's default -100..-30:
+// that floor sits far below the noise of any real mix, which squeezes
+// everything audible into the top of the 0..255 range. -80..-20 spreads a
+// musical range across the whole byte instead.
+const ANALYSER_FFT_SIZE = 512;
+const ANALYSER_SMOOTHING = 0.6;
+const ANALYSER_MIN_DB = -80;
+const ANALYSER_MAX_DB = -20;
 
 // Disconnect a node (optionally from a specific destination), ignoring the
 // "node is not connected" error WebAudio throws when it was never wired up.
@@ -184,6 +200,20 @@ export class StrudelService {
   private masterLpfNode: BiquadFilterNode | null = null;
   private masterChainReady = false;
   private masterChainSettingUp = false;
+  // The spectrum tap. Held here rather than rebuilt per read: an AnalyserNode
+  // is a live graph node, and `sampleAudioSpectrum` is called from animation
+  // frames.
+  private analyserNode: AnalyserNode | null = null;
+  private analyserBins: Uint8Array<ArrayBuffer> | null = null;
+  private analyserSource: AudioNode | null = null;
+  // Captured during prebake so the sampler can stay synchronous — an
+  // `await import('superdough')` per frame would make it useless for driving
+  // animation.
+  private audioAccess: {
+    getAudioContext: () => BaseAudioContext;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getSuperdoughAudioController: () => any;
+  } | null = null;
   // Current UI master values, mirrored here so exportWav can re-apply them on the
   // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
   private currentMasterVolume = 1;
@@ -293,6 +323,7 @@ export class StrudelService {
         registerSoundfonts();
         (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
         (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+        this.audioAccess = { getAudioContext, getSuperdoughAudioController };
         (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
           this.recordLive(sec, name);
       }
@@ -479,6 +510,17 @@ export class StrudelService {
     await this.setMasterLPF(this.currentMasterLpfHz);
   };
 
+  /**
+   * Bring the shared audio graph up for whoever is about to play. The context,
+   * the master chain and the sample banks belong to this module even when the
+   * scheduler asking for them does not — superdough is one audio backend, and
+   * a second one is not a thing this app can have.
+   */
+  prepareAudioForPlayback = async (): Promise<void> => {
+    await this.ensurePlayableAudioGraph();
+    void this.setupMasterChain();
+  };
+
   private ensurePlayableAudioGraph = async (): Promise<void> => {
     if (this._isVideoMode) return;
 
@@ -528,6 +570,82 @@ export class StrudelService {
       const { getAudioContext } = await import('superdough');
       this.masterLpfNode.frequency.setTargetAtTime(freq, getAudioContext().currentTime, 0.01);
     }
+  };
+
+  /**
+   * The node the tap listens to: the last one before the speakers.
+   *
+   * The master LPF when the chain is up, so closing the filter reads as the
+   * music getting duller and quieter rather than as nothing having happened;
+   * the destination gain before that, which also means muting reads as silence.
+   */
+  private analyserSourceNode(): AudioNode | null {
+    if (this.masterLpfNode) return this.masterLpfNode;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const controller = this.audioAccess?.getSuperdoughAudioController() as any;
+    return (controller?.output?.destinationGain as AudioNode | undefined) ?? null;
+  }
+
+  /**
+   * The tap, built on first use and re-tapped whenever the graph underneath it
+   * changes — a WAV export replaces the whole AudioContext, and rebuilding the
+   * master chain replaces the node we were listening to. An analyser left
+   * attached to either would keep returning silence forever.
+   */
+  private ensureAnalyser(): AnalyserNode | null {
+    const access = this.audioAccess;
+    if (!access) return null;
+
+    try {
+      const ctx = access.getAudioContext();
+      if (this.analyserNode && this.analyserNode.context !== ctx) {
+        this.analyserNode = null;
+        this.analyserBins = null;
+        this.analyserSource = null;
+      }
+
+      const source = this.analyserSourceNode();
+      if (!source) return null;
+      if (this.analyserNode && this.analyserSource === source) return this.analyserNode;
+
+      if (this.analyserSource && this.analyserNode) {
+        safeDisconnect(this.analyserSource, this.analyserNode);
+      }
+
+      const analyser = this.analyserNode ?? ctx.createAnalyser();
+      analyser.fftSize = ANALYSER_FFT_SIZE;
+      analyser.smoothingTimeConstant = ANALYSER_SMOOTHING;
+      analyser.minDecibels = ANALYSER_MIN_DB;
+      analyser.maxDecibels = ANALYSER_MAX_DB;
+      // An analyser is a pass-through sink: nothing is connected downstream of
+      // it, so the tap cannot colour or duplicate what reaches the speakers.
+      source.connect(analyser);
+
+      this.analyserNode = analyser;
+      this.analyserSource = source;
+      this.analyserBins = new Uint8Array(analyser.frequencyBinCount);
+      return analyser;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * One frequency frame off the end of the live chain, or null while there is
+   * nothing to listen to — before the engine has loaded, during a WAV export,
+   * or in video mode.
+   *
+   * The returned bins are a buffer this service reuses, so read them before the
+   * next call rather than holding on to them.
+   */
+  sampleAudioSpectrum = (): AudioSpectrum | null => {
+    const analyser = this.ensureAnalyser();
+    const bins = this.analyserBins;
+    if (!analyser || !bins) return null;
+    if ((analyser.context as AudioContext).state === 'closed') return null;
+
+    analyser.getByteFrequencyData(bins);
+    return { bins, nyquistHz: analyser.context.sampleRate / 2 };
   };
 
   setTempo = (bpm: number): void => {
@@ -584,40 +702,23 @@ export class StrudelService {
     }
   };
 
-  private applySeekCycle(cycle: number): boolean {
-    const scheduler = this.editorInstance?.repl.scheduler;
-    if (!scheduler || !Number.isFinite(cycle)) return false;
-
-    if (typeof scheduler.setCycle === 'function') {
-      scheduler.setCycle(cycle);
-      return true;
-    }
-
-    // Cyclist does not expose setCycle(), but its next tick takes its cycle
-    // origin from lastEnd when the tick counter is reset.
-    scheduler.lastBegin = cycle;
-    scheduler.lastEnd = cycle;
-    scheduler.num_cycles_at_cps_change = cycle;
-    scheduler.num_ticks_since_cps_change = 0;
-    scheduler.seconds_at_cps_change = scheduler.getTime?.() ?? 0;
-    return true;
-  }
-
   seekPlayback = (progress: number, loopCycles: number): boolean => {
-    if (!Number.isFinite(progress) || !Number.isFinite(loopCycles) || loopCycles <= 0) return false;
-    const targetCycle = Math.min(1, Math.max(0, progress)) * loopCycles;
+    const targetCycle = seekTargetCycle(progress, loopCycles);
+    if (targetCycle === null) return false;
 
     if (!this._state.isPlaying) {
       this.pendingSeekCycle = targetCycle;
       return true;
     }
 
-    return this.applySeekCycle(targetCycle);
+    return applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle);
   };
 
   private applyPendingSeek(): void {
     if (this.pendingSeekCycle === null) return;
-    if (this.applySeekCycle(this.pendingSeekCycle)) this.pendingSeekCycle = null;
+    if (applySeekCycle(this.editorInstance?.repl.scheduler, this.pendingSeekCycle)) {
+      this.pendingSeekCycle = null;
+    }
   }
 
   pause = (): boolean => {
@@ -637,6 +738,8 @@ export class StrudelService {
 
   play = async (): Promise<void> => {
     if (!this.editorInstance) throw new Error('Engine not initialized');
+    // One transport at a time: a featured audition stops here.
+    claimTransport('studio', this.stop);
     this.notify({ error: null });
     try {
       await this.ensurePlayableAudioGraph();

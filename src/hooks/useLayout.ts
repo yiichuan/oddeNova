@@ -9,6 +9,9 @@ const SIDEBAR_RATIO_MAX = 0.40;
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
 const VIZ_RATIO_MIN = 0.15;
 const VIZ_RATIO_MAX = 0.45;
+/** How far the divider must travel past the minimum height before the drag
+ *  reads as "close it" rather than "make it as short as it goes". */
+const VIZ_COLLAPSE_SLOP = 48;
 /** Height of the vertical resize handle — `--spacing-divider` in index.css. */
 export const VIZ_DIVIDER_HEIGHT = 6;
 
@@ -90,8 +93,8 @@ export function useLayout(): UseLayoutReturn {
   // ── Desktop split ──────────────────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState(() => window.innerWidth * SIDEBAR_RATIO_DEFAULT);
   const [vizHeight, setVizHeight] = useState(() => window.innerHeight * VIZ_RATIO_DEFAULT);
-  // Collapsing hides the viz pane without forgetting its dragged height, so
-  // expanding again restores the split the user last chose. The pane itself
+  // Collapsing hides the viz pane; reopening it always returns to the default
+  // split rather than whatever height it happened to close at. The pane itself
   // stays mounted throughout — it's an iframe whose galaxy is generated once
   // from unseeded randomness, so remounting it would hand back a different
   // one. It idles instead: galaxy-ascii.html skips its frame at zero size.
@@ -142,9 +145,22 @@ export function useLayout(): UseLayoutReturn {
     if (!vDragRef.current) return;
     const delta = e.clientY - vDragRef.current.startY;
     const h = mainRef.current?.offsetHeight ?? window.innerHeight;
-    setVizHeight(Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, vDragRef.current.startHeight - delta)));
+    const min = h * VIZ_RATIO_MIN;
+    const target = vDragRef.current.startHeight - delta;
+    // Pulling the divider well below the minimum height means "close the pane",
+    // not "hold it at the minimum". Dragging back up reopens it within the same
+    // gesture: the handle keeps pointer capture while it is clipped to zero.
+    // Safe to set unconditionally — a collapsed handle can't start a drag.
+    setVizCollapsed(target < min - VIZ_COLLAPSE_SLOP);
+    setVizHeight(Math.max(min, Math.min(h * VIZ_RATIO_MAX, target)));
   }, []);
-  const toggleVizCollapsed = useCallback(() => setVizCollapsed((v) => !v), []);
+  const toggleVizCollapsed = useCallback(() => {
+    if (vizCollapsed) {
+      const h = mainRef.current?.offsetHeight ?? window.innerHeight;
+      setVizHeight(h * VIZ_RATIO_DEFAULT);
+    }
+    setVizCollapsed((v) => !v);
+  }, [vizCollapsed]);
 
   const endVDrag = useCallback<PointerEventHandler<HTMLDivElement>>((e) => {
     e.currentTarget.releasePointerCapture(e.pointerId);

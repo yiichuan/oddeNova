@@ -1,6 +1,7 @@
 import {
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Play,
   Pause,
   Square,
@@ -23,8 +24,8 @@ import {
   Split,
   Volume2,
   VolumeX,
-  PanelBottomClose,
-  PanelBottomOpen,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 interface IconProps {
@@ -43,11 +44,44 @@ export function LogoIcon({ size = 16, className }: IconProps) {
   );
 }
 
+// Brand marks come from their real asset files in public/logo rather than a
+// traced copy, and are painted as a `bg-current` mask — both files are solid
+// black, and a mask lets them take the colour of the text they sit beside. Same
+// treatment the provider logos get in ProviderTabs.
+function MaskedLogo({ src, size, className }: IconProps & { src: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`block shrink-0 bg-current ${className ?? ''}`}
+      style={{
+        width: size,
+        height: size,
+        WebkitMaskImage: `url(${src})`,
+        WebkitMaskPosition: 'center',
+        WebkitMaskRepeat: 'no-repeat',
+        WebkitMaskSize: 'contain',
+        maskImage: `url(${src})`,
+        maskPosition: 'center',
+        maskRepeat: 'no-repeat',
+        maskSize: 'contain',
+      }}
+    />
+  );
+}
+
+export const XLogoIcon = ({ size = 16, className }: IconProps) => (
+  <MaskedLogo src="/logo/X_logo_2023.svg" size={size} className={className} />
+);
+export const GitHubLogoIcon = ({ size = 16, className }: IconProps) => (
+  <MaskedLogo src="/logo/GitHub_Invertocat_Black.svg" size={size} className={className} />
+);
+
 // The rest are thin wrappers over Lucide icons, keeping this project's original
 // names, default sizes, and { size, className } prop shape so call sites stay
 // unchanged. Play/Stop keep their filled look via fill="currentColor".
 export const ChevronRightIcon = ({ size = 16, className }: IconProps) => <ChevronRight size={size} className={className} />;
 export const ChevronDownIcon = ({ size = 16, className }: IconProps) => <ChevronDown size={size} className={className} />;
+export const ChevronUpIcon = ({ size = 16, className }: IconProps) => <ChevronUp size={size} className={className} />;
 export const PlayIcon = ({ size = 18, className }: IconProps) => <Play size={size} className={className} fill="currentColor" />;
 export const PauseIcon = ({ size = 16, className }: IconProps) => <Pause size={size} className={className} fill="currentColor" />;
 export const StopIcon = ({ size = 16, className }: IconProps) => <Square size={size} className={className} fill="currentColor" />;
@@ -70,5 +104,5 @@ export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw siz
 export const GitBranchIcon = ({ size = 16, className }: IconProps) => <Split size={size} className={className} />;
 export const VolumeIcon = ({ size = 16, className }: IconProps) => <Volume2 size={size} className={className} />;
 export const MutedVolumeIcon = ({ size = 16, className }: IconProps) => <VolumeX size={size} className={className} />;
-export const PanelBottomCloseIcon = ({ size = 16, className }: IconProps) => <PanelBottomClose size={size} className={className} />;
-export const PanelBottomOpenIcon = ({ size = 16, className }: IconProps) => <PanelBottomOpen size={size} className={className} />;
+export const MaximizeIcon = ({ size = 16, className }: IconProps) => <Maximize2 size={size} className={className} />;
+export const MinimizeIcon = ({ size = 16, className }: IconProps) => <Minimize2 size={size} className={className} />;

@@ -9,6 +9,10 @@
  * 174 BPM 下单是这一层就把全曲循环拖到 5:53（gain 为 0 的首段静音 96 cycle ≈ 2 分 12 秒），还与同层
  * `.lpf("<...>/16")` 的 64 cycle 完全错位。本次只改这一处：给出正确公式，并明确 `@` 权重与 `/N` 不叠用。
  * 中英双语同步。音乐与交互内容沿用 v22。
+ * v23 追加（原地，用户反馈）：收尾格式的五条建议从纯祈使句改为"祈使句。说明"——句号后用一句
+ * 大白话讲清这一步的创作意图和听感变化，让不懂音乐术语的用户也能判断要不要点。同时删掉旧禁令里
+ * 与之冲突的"不要写说明句"，并在《Commit 规则》里紧贴该条补一个完整的收尾文案示例块（按 v22 五追加
+ * 的教训标注"仅演示写法、不要照抄"）。中英双语同步。
  *
  * 以下为 v22 原始说明（保留）：
  * NOVA-161 多步互动作作（分步创作）：从零创作的抽象/情绪化/含糊请求改为分步进行——
@@ -318,7 +322,20 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
     '- **作曲时必须提交**：当你决定作曲或改曲时，必须以恰好一次 `commit` 结束。纯聊天时不要调用 `setCode`、`validate` 或 `commit`。如果剩余推理空间不足，停止进一步优化，立即提交当前最佳结果。',
     `- **Commit 内容**：\`commit({ explanation })\`，\`explanation\` 必填，用**中文**和 ${personaName} 的口吻撰写。分两种格式：`,
     '- **检查点格式**（分步创作的中间轮）：见《分步创作》节的《检查点文案格式》与示例——总结 + 直接提问 + 通常 2–4 个按当前作品拟定、使用连续数字序号的选项 + 一句结合上下文自由措辞的简短回复引导。**不要**在连续检查点重复同一句或相同句式，不要提供固定引导句模板，也不要写"接下来可以："。',
-    `- **收尾格式**（默认，所有单步交付与分步创作的最后一轮）：结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟五条建议（每条独占一行，以 \`- \` 开头）。建议应基于当前作品状态，优先推荐最有价值的下一步创作方向，并且必须是用户点击后可直接执行的祈使句选项，例如"加入更轻的鼓刷"、"让中段突然安静"；不要写成问题、条件句、说明句、二选一长句，或"如果你想...可以告诉我"这类咨询文本。该字段会作为聊天回复展示给用户。`,
+    `- **收尾格式**（默认，所有单步交付与分步创作的最后一轮）：结构分两部分，用空行分隔：第一部分一句话描述本次改动；第二部分写"接下来可以："后跟五条建议（每条独占一行，以 \`- \` 开头）。建议基于当前作品状态，优先推荐最有价值的下一步创作方向。每条建议写成"祈使句。说明"：句号前是用户点一下就能直接执行的动作，句号后用一句大白话讲清这一步想做什么、听感上会变成什么样，让不懂音乐术语的人也能判断自己想不想要。说明是给用户判断用的理由，不是向用户提问：不要写成问题、条件句、二选一长句，或"如果你想…可以告诉我"这类咨询文本。该字段会作为聊天回复展示给用户。`,
+    '',
+    '收尾文案格式示例（**仅演示写法**——改动描述、建议动作与说明都必须按当前作品实际拟定，不要照抄示例文字）：',
+    '```',
+    '给鼓组换成了刷子音色，整段松弛了下来。',
+    '',
+    '接下来可以：',
+    '- 补一条低音线。现在低频是空的，垫上根音整段会更有支撑、听着更稳。',
+    '- 让中段突然安静。在最满的地方撤掉大部分层，留出一个落差，声音回来时冲击更强。',
+    '- 把旋律移高八度。让它从伴奏里浮出来，情绪更亮、更往前走。',
+    '- 加一点空间混响。声音像是在更大的房间里响，整体更远、更朦胧。',
+    '- 提速到 120 BPM。步子迈得更快，从慵懒转成轻快。',
+    '```',
+    '',
     '- **Commit 后结束**：调用 `commit` 后不再调用任何工具、不再修改代码、不再生成额外内容。',
   ].join('\n'),
   [
@@ -626,7 +643,20 @@ export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string
     '- **Must commit when composing**: when you decide to compose or edit music, end with exactly one `commit`. For pure chat, do not call `setCode`, `validate`, or `commit`. If reasoning budget is running low, stop further optimisation and commit the current best result immediately.',
     `- **Commit content**: \`commit({ explanation })\`, \`explanation\` is required, written in **English** in ${personaName}'s voice. Two formats:`,
     '- **Checkpoint format** (intermediate rounds of stepwise composition): see the Checkpoint copy format and its example in the Stepwise composition section — a summary plus a direct question, usually 2–4 tailored options with consecutive numeric labels, followed by one brief invitation whose wording comes from the current context. **Do not repeat the same sentence or sentence structure in consecutive checkpoints**, do not use a fixed invitation template, and do **not** write "Next steps:".',
-    `- **Final format** (default: all single-turn deliveries and the last round of stepwise composition): two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by five suggestions (each on its own line starting with \`- \`). Suggestions should be based on the current state of the piece, prioritising the most valuable next creative direction, and each one must be a directly executable imperative option the user can click, e.g. "Add softer brush drums" or "Make the middle drop quieter". Do not write questions, conditional phrasing, explanations, either/or long sentences, or "tell me if..." helper text. This field is shown to the user as a chat reply.`,
+    `- **Final format** (default: all single-turn deliveries and the last round of stepwise composition): two parts separated by a blank line: part one is a single sentence describing what changed; part two is "Next steps:" followed by five suggestions (each on its own line starting with \`- \`). Base them on the current state of the piece and lead with the most valuable next creative direction. Write each suggestion as "Imperative. Explanation": before the full stop, an action the user can run just by clicking it; after it, one plain sentence saying what that move is going for and how it will change what they hear, so someone with no music vocabulary can tell whether they want it. The explanation is a reason for the user to judge by, not a question put to them: no questions, no conditional phrasing, no either/or long sentences, no "tell me if you want..." helper text. This field is shown to the user as a chat reply.`,
+    '',
+    'Final copy example (**shape only** — the change description, the actions, and the explanations must all come from the actual piece; do not copy this wording):',
+    '```',
+    'Swapped the kit for brushes, and the whole thing loosened up.',
+    '',
+    'Next steps:',
+    '- Add a bass line. The low end is empty right now, so a root note underneath will make the whole thing feel grounded.',
+    '- Drop the middle to near silence. Pulling most layers out at the fullest point opens a gap, so the return hits harder.',
+    '- Move the melody up an octave. It lifts clear of the backing, and the mood turns brighter and more forward.',
+    '- Add some room reverb. Everything sounds like it is playing in a bigger space, more distant and hazy.',
+    '- Push the tempo to 120 BPM. A quicker step that trades the laid-back feel for something lighter.',
+    '```',
+    '',
     '- **After commit, stop**: after calling `commit`, do not call any tool, do not modify the code, do not generate any extra content.',
   ].join('\n'),
   [

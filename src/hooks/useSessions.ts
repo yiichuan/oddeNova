@@ -171,7 +171,12 @@ function newSessionId(): string {
   return `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function newMessageId(): string {
+/**
+ * Exported so the few callers that hand a ready-made message to
+ * `importSession` mint ids the same way the rest of the session store does,
+ * rather than growing a second id convention.
+ */
+export function newMessageId(): string {
   return `msg-${Date.now()}-${++messageId}`;
 }
 

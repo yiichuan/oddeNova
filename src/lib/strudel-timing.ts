@@ -266,6 +266,60 @@ function alternationCycles(text: string): number[] {
   return spans;
 }
 
+/**
+ * Sum of the weights of the `[N, pattern]` sections an `arrange(` holds, or
+ * null if it holds none. `start` is the index just inside its parenthesis.
+ */
+function arrangeSectionSum(masked: string, start: number): number | null {
+  let depth = 0;
+  let total = 0;
+  let sections = 0;
+
+  for (let index = start; index < masked.length; index += 1) {
+    const character = masked[index];
+    if ('([{'.includes(character)) {
+      if (depth === 0 && character === '[') {
+        const weight = /^\s*(\d+(?:\.\d+)?)\s*,/.exec(masked.slice(index + 1));
+        if (weight) {
+          total += Number(weight[1]);
+          sections += 1;
+        }
+      }
+      depth += 1;
+    } else if (')]}'.includes(character)) {
+      // The paren that closes the arrange call itself.
+      if (character === ')' && depth === 0) break;
+      depth -= 1;
+    }
+  }
+
+  return sections > 0 ? total : null;
+}
+
+/**
+ * `arrange([8, verse], [8, chorus], ...)` plays its sections one after another
+ * and starts over when they are done, so their combined length is the piece —
+ * the form, not a period to fold in with everything else.
+ *
+ * The longest one wins: a sub-arrangement built into a single voice
+ * (`arrange([3, held], [1, turnaround])`) sits inside a section of the
+ * arrangement that carries it. Nothing else is folded in either, because the
+ * alternations inside a section are detail within it; LCM-ing them with the
+ * form is what turns a two-and-a-half minute cover into ten.
+ */
+function arrangeCycles(masked: string): number | null {
+  const call = /\barrange\s*\(/g;
+  let longest: number | null = null;
+  let match: RegExpExecArray | null;
+
+  while ((match = call.exec(masked)) !== null) {
+    const total = arrangeSectionSum(masked, match.index + match[0].length);
+    if (total !== null && total > 0 && (longest === null || total > longest)) longest = total;
+  }
+
+  return longest;
+}
+
 /** Cycles one independent expression (a stack layer, or the surrounding code) runs for. */
 function segmentCycles(segment: string): number {
   const { strings, masked } = scanCode(segment);
@@ -308,6 +362,9 @@ function segmentCycles(segment: string): number {
  * the length of the audible loop in cycles.
  */
 export function getStrudelLoopCycles(code: string): number {
+  const arranged = arrangeCycles(scanCode(code).masked);
+  if (arranged !== null) return arranged;
+
   const parsed = parseScore(code);
   const segments: string[] = [];
 

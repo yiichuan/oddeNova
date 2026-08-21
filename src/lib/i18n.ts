@@ -36,6 +36,29 @@ const S: Record<string, readonly [string, string]> = {
   expandNavigation:   ['展开导航栏', 'Expand navigation'],
   collapseNavigation: ['收起导航栏', 'Collapse navigation'],
 
+  // Featured
+  featuredList:        ['精选作品', 'Featured pieces'],
+  featuredCodedBy:     ['代码', 'Code'],
+  featuredReserved:    ['敬请期待', 'Coming soon'],
+  featuredNothingPlaying: ['未在播放', 'Nothing playing'],
+  featuredPlayPiece:   ['播放这首', 'Play this piece'],
+  featuredPrevPiece:   ['上一首', 'Previous piece'],
+  featuredNextPiece:   ['下一首', 'Next piece'],
+  featuredSourcePost:  ['原帖', 'Original post'],
+  featuredSourcePattern: ['Strudel 源码', 'Strudel source'],
+  featuredSourceCollection: ['收录仓库', 'Collection repo'],
+  featuredNowPlaying:  ['播放中', 'Now playing'],
+  featuredOpenInStudio: ['在工作室打开', 'Open in Studio'],
+  featuredBack:        ['返回', 'Back'],
+  featuredCode:        ['代码', 'Code'],
+  featuredNotes:       ['介绍', 'About'],
+  featuredStyle:       ['风格', 'Style'],
+  featuredTempo:       ['速度', 'Tempo'],
+  featuredLayers:      ['音层', 'Layers'],
+  featuredOpenDetail:  ['查看详情', 'View details'],
+  featuredOpenedIntro: ['这是 {coder} 用 Strudel 写的《{title}》（原作 {originalArtist}），已经放进工作室了。想改成什么样，直接说。',
+                        'This is “{title}” (originally by {originalArtist}), written in Strudel by {coder}, now loaded in the studio. Tell me how you want to change it.'],
+
   // Account
   account:      ['账号', 'Account'],
   email:        ['邮箱', 'Email'],
@@ -175,7 +198,7 @@ const S: Record<string, readonly [string, string]> = {
   modelProviders: ['模型服务商', 'Model providers'],
   chooseProvider: ['选择模型', 'Choose a model'],
   currentlyActive: ['正在使用', 'Active'],
-  providerSidebarHint: ['完成配置并保存设置后，oddeNova 将开始使用所选模型。', 'After you finish configuring and save, oddeNova will start using the selected model.'],
+  providerPickerHint: ['完成配置并保存设置后，oddeNova 将开始使用所选模型。', 'After you finish configuring and save, oddeNova will start using the selected model.'],
   officialProviderDescription: ['由 oddeNova 官方服务提供模型能力，无需配置个人 API Key。', 'Model access is provided by oddeNova. No personal API Key is required.'],
   thirdPartyProviderDescription: ['使用您自己的模型服务商凭证连接模型，保存后生效。API Key 只会保存在当前浏览器中。', 'Connect with your own model provider credentials. Changes take effect after saving. Your API Key is stored only in this browser.'],
   modelConfiguration: ['模型配置', 'Model configuration'],
@@ -191,6 +214,31 @@ const S: Record<string, readonly [string, string]> = {
   settingsSaved: ['设置已保存', 'Settings saved'],
   settingsSaveFailed: ['保存失败，请重试。', 'Could not save settings. Try again.'],
   saveSettings: ['保存设置', 'Save settings'],
+
+  // Settings sections
+  settingsSections: ['设置分区', 'Settings sections'],
+  settingsModel: ['模型', 'Model'],
+  settingsAppearance: ['外观', 'Appearance'],
+  modelSettingsDescription: ['选择用于生成和修改音乐的模型服务商，并配置对应的访问凭证。', 'Choose the provider that generates and revises your music, then configure its credentials.'],
+  appearanceDescription: ['调整 oddeNova 的配色与工作室动画。', 'Adjust how oddeNova looks and which animation the studio plays.'],
+
+  // Appearance — theme
+  theme: ['主题', 'Theme'],
+  themeHint: ['选择界面的配色方案。', 'Choose the color scheme for the interface.'],
+  themeSystem: ['跟随系统', 'Match system'],
+  themeDark: ['深色', 'Dark'],
+  themeLight: ['浅色', 'Light'],
+  comingSoon: ['即将推出', 'Coming soon'],
+  lightThemeUnavailable: ['浅色主题仍在制作中，目前所有选项都以深色显示。', 'The light theme is still in the works — every option renders dark for now.'],
+
+  // Appearance — animation
+  animation: ['动画', 'Animation'],
+  animationHint: ['选择工作室动画面板播放的动画。', 'Choose the animation that plays in the studio visual pane.'],
+  animationGalaxy: ['Galaxy', 'Galaxy'],
+  animationGalaxyHint: ['三维旋臂星系，镜头随音乐游移。', 'A 3D spiral galaxy with a camera that drifts with the music.'],
+  animationGalaxyAscii: ['Galaxy ASCII', 'Galaxy ASCII'],
+  animationGalaxyAsciiHint: ['由字符网格绘制的二维星系。', 'A 2D galaxy drawn as a grid of characters.'],
+  animationVisual: ['动画面板', 'Animation visual'],
 
   // PersonaModal
   customPersonas:     ['自定义人物', 'Custom personas'],
@@ -248,10 +296,9 @@ const S: Record<string, readonly [string, string]> = {
 
   // Thinking level
   thinkingLevel:        ['思考强度', 'Thinking level'],
-  thinkingLevelLow:     ['低', 'Low'],
+  thinkingLevelLow:     ['轻', 'Low'],
   thinkingLevelMedium:  ['中', 'Medium'],
   thinkingLevelHigh:    ['高', 'High'],
-  thinkingLevelExtreme: ['极高', 'Extreme'],
 };
 
 export function t(key: string): string {

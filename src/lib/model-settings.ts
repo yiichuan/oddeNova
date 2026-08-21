@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import {
   PROVIDER_PRESETS,
   getSelectedModel,
@@ -12,6 +13,15 @@ export const SETTINGS_PROVIDERS: ProviderType[] = [
   'anthropic',
   'openai',
 ];
+
+export function providerLabel(provider: ProviderType): string {
+  return provider === 'official' ? t('officialLabel') : PROVIDER_PRESETS[provider].label;
+}
+
+/** Id of a provider's tab in the model settings window, shared with its panel. */
+export function providerTabId(idBase: string, provider: ProviderType): string {
+  return `${idBase}-tab-${provider}`;
+}
 
 export interface ProviderSettingsDraft {
   apiKey: string;

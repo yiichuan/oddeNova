@@ -190,9 +190,9 @@ describe('runAgentLoop — thinkingLevel forwarding', () => {
       locale: 'en',
       systemPrompt: 'You are a music assistant.',
       llm,
-      thinkingLevel: 'extreme',
+      thinkingLevel: 'high',
     });
-    expect(seen).toEqual(['extreme']);
+    expect(seen).toEqual(['high']);
   });
 });
 

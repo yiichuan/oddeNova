@@ -28,7 +28,7 @@ import {
 export type ThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
 
 /** User-selected reasoning depth for a compose-intent turn (see CONTEXT.md: Thinking level). */
-export type ThinkingLevel = 'low' | 'medium' | 'high' | 'extreme';
+export type ThinkingLevel = 'low' | 'medium' | 'high';
 
 // OpenAI ChatCompletion message shape (only the bits we use).
 export interface ChatMsg {

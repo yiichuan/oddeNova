@@ -29,6 +29,7 @@ npm test                 # Vitest, run once (--passWithNoTests)
 npx vitest run <path>    # run a single test file
 npx vitest <pattern>     # watch mode / filter by name
 npx tsc --noEmit -p tsconfig.app.json   # strict type-check only
+npm run previews:animation              # rebuild the appearance-settings animation stills
 ```
 
 Pre-commit (husky + lint-staged) automatically runs `tsc --noEmit`, ESLint on

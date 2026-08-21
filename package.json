@@ -36,7 +36,8 @@
     "eval": "node --env-file=scripts/eval/.env --import=tsx/esm scripts/eval/runner.ts",
     "eval:report": "node --env-file=scripts/eval/.env --import=tsx/esm scripts/eval/report.ts",
     "gen:skill-refs": "node --import=tsx/esm scripts/generate-skill-references.ts",
-    "fonts:greetings": "node --import=tsx/esm scripts/build-greeting-font-subset.ts"
+    "fonts:greetings": "node --import=tsx/esm scripts/build-greeting-font-subset.ts",
+    "previews:animation": "node --import=tsx/esm scripts/build-animation-previews.ts"
   },
   "dependencies": {
     "@airjelly/sdk": "^0.1.0",

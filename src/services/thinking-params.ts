@@ -5,7 +5,10 @@
 // mirrors this collapsing so the UI only offers levels that produce a
 // genuinely different request for the selected provider/model — models without
 // an effort dial ([] from getSupportedThinkingLevels) don't show the control
-// at all. There is deliberately no "off" level anywhere: thinking is always on.
+// at all. The dial has three stops (轻=low / 中=medium / 高=high) and 'high' is
+// the top of it: it always lands on the deepest setting the provider/model
+// actually documents (max / xhigh / the largest thinking budget). There is
+// deliberately no "off" level anywhere: thinking is always on.
 
 import type { ThinkingLevel } from '../agent/loop';
 import { THINKING_LEVELS as ALL_LEVELS } from './llm-config';
@@ -14,26 +17,24 @@ import type { ProviderType } from './llm-config';
 export const ANTHROPIC_THINKING_BUDGET: Record<ThinkingLevel, number> = {
   low: 2000,
   medium: 10000,
-  high: 32000,
-  extreme: 60000,
+  high: 60000,
 };
 
 // DeepSeek only accepts three request-level effort values — low/high/max —
 // which its backend then remaps per-model server-side (deepseek-v4-pro
-// collapses low->high, so only high/max are genuinely distinct there;
-// deepseek-v4-flash keeps low/high/max distinct). xhigh is NOT a valid
-// DeepSeek request value.
+// collapses low->high, so low and medium end up identical there;
+// deepseek-v4-flash keeps all three distinct). xhigh is NOT a valid DeepSeek
+// request value.
 const DEEPSEEK_EFFORT: Record<ThinkingLevel, string> = {
   low: 'low',
   medium: 'high',
-  high: 'high',
-  extreme: 'max',
+  high: 'max',
 };
 
 // gpt-5.6-sol/terra/luna document a full low/medium/high/xhigh/max ladder;
-// gpt-5.5 / gpt-5.4 / gpt-5.4-mini cap at xhigh. Shared between
-// resolveOpenAIThinkingParams and getSupportedThinkingLevels so the two never
-// drift apart.
+// gpt-5.5 / gpt-5.4 / gpt-5.4-mini cap at xhigh. Which of those tops the dial's
+// 'high' stop reaches is the only thing that differs between models here — all
+// three stops stay distinct for every openai model.
 const OPENAI_MAX_MODELS = new Set(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
 const OPENAI_XHIGH_MODELS = new Set(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini']);
 
@@ -64,9 +65,10 @@ export function resolveOpenAIThinkingParams(
       // together, so every level just enables thinking.
       return { thinking: { type: 'enabled' } };
     case 'openai': {
-      // 'extreme' lands on the top tier the model actually documents: max for
-      // gpt-5.6, xhigh for gpt-5.5 / gpt-5.4 / gpt-5.4-mini.
-      if (level === 'extreme') {
+      // 'high' lands on the top tier the model actually documents: max for
+      // gpt-5.6, xhigh for gpt-5.5 / gpt-5.4 / gpt-5.4-mini, plain high for
+      // anything unknown.
+      if (level === 'high') {
         if (OPENAI_MAX_MODELS.has(model)) return { reasoning_effort: 'max' };
         if (OPENAI_XHIGH_MODELS.has(model)) return { reasoning_effort: 'xhigh' };
         return { reasoning_effort: 'high' };
@@ -76,16 +78,17 @@ export function resolveOpenAIThinkingParams(
     case 'glm':
       // Confirmed against Z.ai's own effort-mapping table: glm-5.2 only has 2
       // real tiers — low/medium/high all land on 'high', xhigh/max/ultracode
-      // all land on 'max'. We send `thinking: { type: 'enabled' }` alongside
-      // reasoning_effort (like deepseek/official) rather than relying on
-      // thinking-on-by-default, since GLM (unlike Kimi) doesn't reject the
-      // two fields sent together.
+      // all land on 'max' — so the dial's low and medium stops are the same
+      // request and only 'high' reaches 'max'. We send
+      // `thinking: { type: 'enabled' }` alongside reasoning_effort (like
+      // deepseek/official) rather than relying on thinking-on-by-default, since
+      // GLM (unlike Kimi) doesn't reject the two fields sent together.
       // glm-5.1 / glm-5.1-air / glm-5 only expose the boolean thinking switch,
       // no reasoning_effort.
       if (model === 'glm-5.2') {
         return {
           thinking: { type: 'enabled' },
-          reasoning_effort: level === 'extreme' ? 'max' : 'high',
+          reasoning_effort: level === 'high' ? 'max' : 'high',
         };
       }
       return { thinking: { type: 'enabled' } };
@@ -105,6 +108,7 @@ export function resolveOpenAIThinkingParams(
  * Which Thinking levels are actually distinct for this provider/model, mirroring the
  * collapsing documented in resolveOpenAIThinkingParams/resolveAnthropicThinkingParam
  * above — the UI should only offer levels that produce a different real request.
+ * When two stops collapse onto one request, the higher of them is the one kept.
  * An empty array means the model has no effort dial at all (thinking is a plain
  * on/off switch), so the UI shouldn't render the control.
  */
@@ -119,16 +123,20 @@ export function getSupportedThinkingLevels(provider: ProviderType, model: string
       return ALL_LEVELS;
     case 'deepseek':
     case 'official':
-      // deepseek-v4-pro collapses low->high server-side, so only high/max are
-      // distinct there; v4-flash keeps low/high/max.
-      return model === 'deepseek-v4-pro' ? ['high', 'extreme'] : ['low', 'high', 'extreme'];
+      // deepseek-v4-pro collapses low->high server-side, which is what medium
+      // already sends, so only medium/high are distinct there; v4-flash keeps
+      // all three.
+      return model === 'deepseek-v4-pro' ? ['medium', 'high'] : ALL_LEVELS;
     case 'kimi':
       return [];
     case 'openai':
-      if (OPENAI_MAX_MODELS.has(model) || OPENAI_XHIGH_MODELS.has(model)) return ALL_LEVELS;
-      return ['low', 'medium', 'high'];
+      // Every openai model distinguishes all three stops — only how deep the
+      // top one goes (max / xhigh / high) varies by model.
+      return ALL_LEVELS;
     case 'glm':
-      return model === 'glm-5.2' ? ['high', 'extreme'] : [];
+      // glm-5.2's low and medium are the same request ('high'), so the dial
+      // starts at medium there.
+      return model === 'glm-5.2' ? ['medium', 'high'] : [];
     default: {
       const _exhaustive: never = provider;
       return _exhaustive;
@@ -139,10 +147,9 @@ export function getSupportedThinkingLevels(provider: ProviderType, model: string
 /**
  * Clamp `level` to the closest level actually offered for the current provider/model
  * (nearest higher first, then nearest lower), so a globally-stored preference like
- * 'extreme' still displays sensibly against a model that collapses it down to 'high',
- * and a stored 'medium' folds onto 'high' for DeepSeek (whose wire value for medium
- * IS high). Returns `level` unchanged if `supported` is empty (no tiering to clamp
- * to) or already contains it.
+ * 'low' still displays sensibly against a model that collapses it up to 'medium'
+ * (glm-5.2, deepseek-v4-pro). Returns `level` unchanged if `supported` is empty
+ * (no tiering to clamp to) or already contains it.
  */
 export function clampThinkingLevel(level: ThinkingLevel, supported: readonly ThinkingLevel[]): ThinkingLevel {
   if (supported.length === 0 || supported.includes(level)) return level;

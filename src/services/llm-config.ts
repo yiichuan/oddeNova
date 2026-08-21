@@ -160,7 +160,7 @@ export function getSelectedModel(provider: ProviderType): string {
 // Thinking level (see CONTEXT.md: Thinking level)
 // ---------------------------------------------------------------------------
 
-export const THINKING_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'extreme'];
+export const THINKING_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high'];
 
 const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'medium';
 
@@ -169,6 +169,10 @@ const THINKING_LEVEL_STORAGE_KEY = 'vibe_thinking_level';
 /** Global user preference, persisted like provider/model — not session-scoped. */
 export function getSelectedThinkingLevel(): ThinkingLevel {
   const stored = localStorage.getItem(THINKING_LEVEL_STORAGE_KEY);
+  // The ladder used to have a fourth, top 'extreme' tier; 'high' is now the top
+  // of the dial and maps to what 'extreme' used to send, so an old stored value
+  // lands on the level the user actually picked rather than on the default.
+  if (stored === 'extreme') return 'high';
   return (THINKING_LEVELS as readonly string[]).includes(stored ?? '')
     ? (stored as ThinkingLevel)
     : DEFAULT_THINKING_LEVEL;

@@ -88,6 +88,9 @@ vi.mock('../hooks/useStrudel', () => ({
 
 vi.mock('../hooks/useSessions', () => ({
   useSessions: () => mocks.sessions,
+  // The featured session draft mints message ids through the store's own
+  // helper rather than growing a second id convention.
+  newMessageId: () => `msg-${Math.random()}`,
 }));
 
 vi.mock('../hooks/useSuggestions', () => ({ useSuggestions: () => ({ suggestions: [] }) }));
@@ -139,34 +142,40 @@ vi.mock('../lib/community-invite', () => ({
   shouldAutoOpenApiKeyModal: () => false,
 }));
 
-vi.mock('../components/CodePanel', () => ({
+vi.mock('../components/studio/CodePanel', () => ({
   default: (props: Record<string, unknown>) => {
     mocks.codePanelProps = props;
     return null;
   },
 }));
-vi.mock('../components/ProviderSidebar', () => ({ default: () => null }));
-vi.mock('../components/ModelSettingsPanel', () => ({ default: () => null }));
-vi.mock('../components/Sidebar', () => ({
+vi.mock('../components/settings/SettingsSidebar', () => ({ default: () => null }));
+vi.mock('../components/settings/ModelSettingsPanel', () => ({ default: () => null }));
+vi.mock('../components/settings/AppearanceSettingsPanel', () => ({ default: () => null }));
+vi.mock('../components/conversation/Sidebar', () => ({
   default: (props: Record<string, unknown>) => {
     mocks.sidebarProps = props;
     return null;
   },
 }));
-vi.mock('../components/VizPlaceholder', () => ({ default: () => null }));
-vi.mock('../components/ApiKeyModal', () => ({ default: () => null }));
-vi.mock('../components/ConversationView', () => ({ default: () => null }));
-vi.mock('../components/HistoryPanel', () => ({ default: () => null }));
-vi.mock('../components/ChatInput', () => ({ default: () => null }));
-vi.mock('../components/TopActionBar', () => ({ default: () => null }));
-vi.mock('../components/AccountModal', () => ({
+vi.mock('../components/studio/VizPlaceholder', () => ({ default: () => null }));
+vi.mock('../components/overlays/ApiKeyModal', () => ({ default: () => null }));
+vi.mock('../components/conversation/ConversationView', () => ({ default: () => null }));
+vi.mock('../components/conversation/HistoryPanel', () => ({ default: () => null }));
+vi.mock('../components/conversation/ChatInput', () => ({ default: () => null }));
+// ShareButton too: the featured player bar shares a piece on the studio's own
+// button, so it comes through this module.
+vi.mock('../components/studio/TopActionBar', () => ({
+  default: () => null,
+  ShareButton: () => null,
+}));
+vi.mock('../components/overlays/AccountModal', () => ({
   default: (props: Record<string, unknown>) => {
     mocks.accountModalProps = props;
     return <div data-testid="account-modal" />;
   },
 }));
-vi.mock('../components/PersonaModal', () => ({ default: () => null }));
-vi.mock('../components/OddeNovaImportNotice', () => ({ default: () => null }));
+vi.mock('../components/overlays/PersonaModal', () => ({ default: () => null }));
+vi.mock('../components/overlays/OddeNovaImportNotice', () => ({ default: () => null }));
 
 import App from '../App';
 
@@ -442,6 +451,37 @@ describe('App session sync boundaries', () => {
     expect(mocks.accountModalProps).not.toBeNull();
     expect(homeButton?.getAttribute('aria-current')).toBe('page');
     expect(accountButton?.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('stops the studio when the workspace it plays in is left behind', async () => {
+    mocks.isMobile = false;
+    await renderApp();
+    mocks.strudel.stop.mockClear();
+
+    const navButton = (labelKey: 'navFeatured' | 'navHome' | 'navSettings') =>
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${t(labelKey)}"]`);
+
+    // A transport belongs to the page its controls are on: walking off the
+    // studio silences it rather than leaving it playing out of reach.
+    await act(async () => {
+      navButton('navFeatured')?.click();
+      await Promise.resolve();
+    });
+    expect(mocks.strudel.stop).toHaveBeenCalled();
+
+    mocks.strudel.stop.mockClear();
+    await act(async () => {
+      navButton('navHome')?.click();
+      await Promise.resolve();
+    });
+    // Coming back is not leaving.
+    expect(mocks.strudel.stop).not.toHaveBeenCalled();
+
+    await act(async () => {
+      navButton('navSettings')?.click();
+      await Promise.resolve();
+    });
+    expect(mocks.strudel.stop).toHaveBeenCalled();
   });
 
   it.each(['s("bd sd")', ''])(

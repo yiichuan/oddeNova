@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
-import CodePanel from './components/CodePanel';
-import Sidebar from './components/Sidebar';
-import VizPlaceholder from './components/VizPlaceholder';
+import CodePanel from './components/studio/CodePanel';
+import Sidebar from './components/conversation/Sidebar';
+import VizPlaceholder from './components/studio/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
@@ -14,7 +14,7 @@ import type { ConversationTurn } from './services/llm';
 import { conversationHistoryBefore } from './lib/conversation-history';
 import { createAgentProgressHandler } from './lib/agent-progress-handler';
 import { isDemoMode, getActiveDemoSet } from './demo/demo-config';
-import ApiKeyModal from './components/ApiKeyModal';
+import ApiKeyModal from './components/overlays/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
 import { HistoryIcon, PauseIcon, PlayIcon, PlusIcon } from './components/icons';
@@ -25,20 +25,29 @@ import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
-import ConversationView from './components/ConversationView';
-import HistoryPanel from './components/HistoryPanel';
-import ChatInput from './components/ChatInput';
-import TopActionBar from './components/TopActionBar';
-import AccountModal from './components/AccountModal';
-import OddeNovaImportNotice from './components/OddeNovaImportNotice';
-import PrimaryNav, { type PrimaryNavItem } from './components/PrimaryNav';
-import ProviderSidebar from './components/ProviderSidebar';
-import ModelSettingsPanel from './components/ModelSettingsPanel';
+import ConversationView from './components/conversation/ConversationView';
+import HistoryPanel from './components/conversation/HistoryPanel';
+import ChatInput from './components/conversation/ChatInput';
+import TopActionBar from './components/studio/TopActionBar';
+import AccountModal from './components/overlays/AccountModal';
+import OddeNovaImportNotice from './components/overlays/OddeNovaImportNotice';
+import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
+import FeaturedPage from './components/featured/FeaturedPage';
+import SettingsSidebar, { type SettingsSection } from './components/settings/SettingsSidebar';
+import ModelSettingsPanel from './components/settings/ModelSettingsPanel';
+import AppearanceSettingsPanel from './components/settings/AppearanceSettingsPanel';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 import type { AgentEntryPoint } from './lib/analytics';
+import { FEATURED_PIECES, findFeaturedPiece, type FeaturedPiece } from './lib/featured-pieces';
+import { useFeaturedPreview } from './hooks/useFeaturedPreview';
+import { featuredPlayer } from './services/featured-player';
+import { featuredSessionDraft } from './lib/featured-session';
 import { useModelSettingsDraft } from './hooks/useModelSettingsDraft';
+import { useAnimationPreference, useThemePreference } from './hooks/useAppearance';
+import { ANIMATION_LABEL_KEYS, THEME_LABEL_KEYS } from './lib/appearance-preferences';
+import { providerLabel } from './lib/model-settings';
 import { useAuth } from './hooks/useAuth';
 import { deleteCloudSession, listCloudSessions, saveCloudSession } from './services/cloud-session-repository';
 import { deleteSession, getAllSessions } from './lib/session-storage';
@@ -47,7 +56,7 @@ import {
   getNextImportPromptUserMarker,
   importGuestSessions,
 } from './lib/session-import';
-import type { Session } from './hooks/useSessions';
+import { type Session } from './hooks/useSessions';
 
 export default function App() {
   const strudel = useStrudel();
@@ -83,7 +92,16 @@ export default function App() {
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('model');
+  // The Featured page opens on a piece rather than on an empty panel; there is
+  // no browsing state worth preserving in an unpicked list.
+  const [featuredId, setFeaturedId] = useState<string | null>(
+    () => FEATURED_PIECES[0]?.id ?? null,
+  );
+  const [openingFeatured, setOpeningFeatured] = useState(false);
   const modelSettings = useModelSettingsDraft(resetClient);
+  const themePreference = useThemePreference();
+  const animationPreference = useAnimationPreference();
   const [accountOpen, setAccountOpen] = useState(false);
   const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
   const [guestImportError, setGuestImportError] = useState('');
@@ -221,13 +239,32 @@ export default function App() {
     setApiKeyModalState({ open: true, autoOpened: false });
   }, []);
 
+  // Each settings entry carries the value it is currently set to, so the column
+  // still answers "what am I on?" without opening the section.
+  const settingsHints = useMemo(() => ({
+    model: providerLabel(modelSettings.activeProvider),
+    appearance: `${t(THEME_LABEL_KEYS[themePreference])} · ${t(ANIMATION_LABEL_KEYS[animationPreference])}`,
+  }), [animationPreference, modelSettings.activeProvider, themePreference]);
+
+  // Auditioning a featured piece borrows the studio's engine; `borrowed` is
+  // what tells the rest of this file that the code in the editor is on loan
+  // and belongs to nobody's session.
+  const featuredPreview = useFeaturedPreview(featuredPlayer);
+  const stopFeaturedPreview = featuredPreview.stop;
+  const stopStudio = strudel.stop;
+
   const handlePrimaryNavSelect = useCallback((item: PrimaryNavItem) => {
     if (item === 'account') {
       setAccountOpen(true);
       return;
     }
+    // A transport belongs to the page its controls are on. Walking away stops
+    // it — music playing on behalf of a bar you can no longer reach is worse
+    // than silence, in either direction.
+    if (item !== 'featured') stopFeaturedPreview();
+    if (item !== 'home') stopStudio();
     setPrimaryNavItem(item);
-  }, []);
+  }, [stopFeaturedPreview, stopStudio]);
 
   useEffect(() => {
     const userId = auth.user?.id;
@@ -294,6 +331,8 @@ export default function App() {
   const currentCode = strudel.code || (current?.code ?? '');
   const currentBpm = parseScore(currentCode).bpm ?? 120;
   const isLoading = !!current?.id && loadingSessions.has(current.id);
+  /** The featured piece the detail panel is showing. */
+  const featuredPiece = findFeaturedPiece(featuredId) ?? null;
   const showSessionSyncStatus = Boolean(
     auth.user
     && current
@@ -581,6 +620,28 @@ export default function App() {
     await strudel.play();
   }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
 
+  const importSession = sessions.importSession;
+  const playFeatured = featuredPreview.play;
+  // Picking a tile is what parks the player bar on it, so the bar always shows
+  // the piece you last reached for rather than trailing a separate selection.
+  const handleFeaturedPlay = useCallback((piece: FeaturedPiece) => {
+    setFeaturedId(piece.id);
+    void playFeatured(piece);
+  }, [playFeatured]);
+
+  const handleOpenFeaturedInStudio = useCallback(async (piece: FeaturedPiece) => {
+    setOpeningFeatured(true);
+    try {
+      // The audition is over: what you are about to look at is the studio's
+      // copy of this piece, which the studio's own transport plays.
+      stopFeaturedPreview();
+      await importSession(featuredSessionDraft(piece));
+      setPrimaryNavItem('home');
+    } finally {
+      setOpeningFeatured(false);
+    }
+  }, [importSession, stopFeaturedPreview]);
+
   const handleNewSession = useCallback(async () => {
     if (sessions.currentId) {
       await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
@@ -855,7 +916,10 @@ export default function App() {
       </div>
     ) : (
     <div
-      className="flex h-full w-full overflow-hidden bg-bg-primary p-region"
+      // `relative z-0` makes this a stacking context: without one, the featured
+      // page's colour wash (a -z-10 layer) would fall behind this element's own
+      // background and never be seen.
+      className="relative z-0 flex h-full w-full overflow-hidden bg-bg-primary p-region"
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
     >
       {apiKeyModalState.open && (
@@ -869,9 +933,13 @@ export default function App() {
       <PrimaryNav selectedItem={primaryNavItem} onSelect={handlePrimaryNavSelect} />
 
       <>
-        {/* Primary content keeps its width while non-home destinations are blank.
-            The Sidebar stays mounted so drafts and local UI state survive a switch. */}
-        <div style={{ width: sidebarWidth, flexShrink: 0 }} className="h-full">
+        {/* Featured runs full width — it is a gallery, not a two-pane workspace —
+            so the column and its resize handle step aside there. Everything in
+            them stays mounted, so drafts and local UI state survive the trip. */}
+        <div
+          style={{ width: sidebarWidth, flexShrink: 0 }}
+          className={primaryNavItem === 'featured' ? 'hidden' : 'h-full'}
+        >
           <div className={primaryNavItem === 'home' ? 'h-full' : 'hidden'}>
             <Sidebar
               title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
@@ -909,10 +977,10 @@ export default function App() {
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>
-            <ProviderSidebar
-              activeProvider={modelSettings.activeProvider}
-              onSelect={modelSettings.selectProvider}
-              selectedProvider={modelSettings.selectedProvider}
+            <SettingsSidebar
+              selectedSection={settingsSection}
+              onSelect={setSettingsSection}
+              hints={settingsHints}
             />
           </div>
         </div>
@@ -921,12 +989,16 @@ export default function App() {
         <div
           {...hDragHandlers}
           data-resize-handle="horizontal"
-          className="h-full w-divider shrink-0"
+          className={primaryNavItem === 'featured' ? 'hidden' : 'h-full w-divider shrink-0'}
           style={{ cursor: 'col-resize' }}
         />
 
         <main ref={mainRef} className="flex min-w-0 flex-1 flex-col">
-          <div className={primaryNavItem === 'settings' ? 'hidden' : 'flex h-full min-h-0 flex-col'}>
+          {/* Hidden rather than unmounted on the other destinations: the audio
+              engine is bound to CodePanel's editor, and unmounting it would
+              tear that binding down — including under a featured audition,
+              which plays through this very editor. */}
+          <div className={primaryNavItem === 'home' ? 'flex h-full min-h-0 flex-col' : 'hidden'}>
             <div className="flex-1 min-h-0">
               <CodePanel
                 code={strudel.code}
@@ -981,16 +1053,35 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className={primaryNavItem === 'settings' ? 'h-full min-h-0' : 'hidden'}>
-            <ModelSettingsPanel
-              key={modelSettings.selectedProvider}
-              draft={modelSettings.draft}
-              isDirty={modelSettings.selectedIsDirty}
-              onSave={modelSettings.saveSelectedProvider}
-              onUpdate={(patch) => modelSettings.updateDraft(modelSettings.selectedProvider, patch)}
-              provider={modelSettings.selectedProvider}
-              saveStatus={modelSettings.saveStatus}
+          <div className={primaryNavItem === 'featured' ? 'flex h-full min-h-0' : 'hidden'}>
+            <FeaturedPage
+              pieces={FEATURED_PIECES}
+              currentPiece={featuredPiece}
+              playingId={featuredPreview.playingId}
+              pausedId={featuredPreview.pausedId}
+              engineReady={strudel.engineReady}
+              opening={openingFeatured}
+              onPlay={handleFeaturedPlay}
+              onStop={featuredPreview.stop}
+              onPause={featuredPreview.pause}
+              onOpenInStudio={(piece) => void handleOpenFeaturedInStudio(piece)}
             />
+          </div>
+          <div className={primaryNavItem === 'settings' ? 'flex h-full min-h-0' : 'hidden'}>
+            {settingsSection === 'model' ? (
+              <ModelSettingsPanel
+                activeProvider={modelSettings.activeProvider}
+                draft={modelSettings.draft}
+                isDirty={modelSettings.selectedIsDirty}
+                onSave={modelSettings.saveSelectedProvider}
+                onSelectProvider={modelSettings.selectProvider}
+                onUpdate={(patch) => modelSettings.updateDraft(modelSettings.selectedProvider, patch)}
+                provider={modelSettings.selectedProvider}
+                saveStatus={modelSettings.saveStatus}
+              />
+            ) : (
+              <AppearanceSettingsPanel />
+            )}
           </div>
         </main>
       </>

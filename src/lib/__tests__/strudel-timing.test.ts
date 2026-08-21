@@ -146,6 +146,37 @@ stack(
     expect(formatPlaybackTime(getStrudelLoopDurationSeconds(code))).toBe('05:53');
   });
 
+  it('takes an arrangement as the whole form, not as one of its sections', () => {
+    // What the 360 cover is built on: sections played in order, and a
+    // sub-arrangement inside one voice. Read as alternations it came out 32
+    // cycles — its opening section — which both halved the read-out and
+    // squeezed a seek into the first two minutes of a two-and-a-half.
+    const code = `let lead = arrange(
+  [3, "<[e3 c4] [e3 f3]>*4"],
+  [1, "<[g3 b3] [g3 a3]>*4"],
+).note();
+
+arrange(
+  [32, lead],
+  [8, lead],
+  [8, lead],
+  [4, lead],
+  [4, lead],
+  [8, lead],
+  [8, lead],
+  [4, lead],
+).cpm(30)`;
+
+    expect(getStrudelLoopCycles(code)).toBe(76);
+    expect(formatPlaybackTime(getStrudelLoopDurationSeconds(code))).toBe('02:32');
+  });
+
+  it('leaves code without an arrangement to the layer scan', () => {
+    expect(getStrudelLoopCycles('s("bd*4")')).toBe(1);
+    // `arrange` named in a comment is not an arrangement.
+    expect(getStrudelLoopCycles('// arrange([8, x])\ns("bd*4")')).toBe(1);
+  });
+
   it('formats playback time as zero-padded minutes and seconds', () => {
     expect(formatPlaybackTime(0)).toBe('00:00');
     expect(formatPlaybackTime(96.9)).toBe('01:36');
