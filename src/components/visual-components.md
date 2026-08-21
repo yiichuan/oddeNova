@@ -68,7 +68,6 @@ components/
 - 心情生成按钮（AirJelly，`/airjelly-icon.png`）：左栏输入框上方按钮行内
 - 用户输入框（`ChatInput`）：左下
   - 发送 / 停止按钮：输入框右下
-  - 上下文用量环（`ContextWindowIndicator`）：输入框左下
   - 重启引擎按钮：输入框左下
 
 ### 对话流内部 · ConversationView（`ConversationView.tsx`）
@@ -151,7 +150,6 @@ components/
 - 建议气泡（横向滚动）：底栏输入框上方
 - 用户输入框（`ChatInput`）：左下 / 底部
   - 发送 / 停止按钮：输入框右下
-  - 上下文用量环（`ContextWindowIndicator`）：输入框左下
 - 历史下拉面板（`HistoryPanel`）：左上展开
 
 ---

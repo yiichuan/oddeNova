@@ -1,4 +1,5 @@
 import type { Session } from '../hooks/useSessions';
+import { normalizeGuestSessionForImport } from './session-storage';
 
 function hasImportableContent(session: Session): boolean {
   return session.messages.some((message) => !message.isGreeting) || Boolean(session.code);
@@ -22,25 +23,18 @@ export function collectImportableGuestSessions(
 
 export async function importGuestSessions(
   items: Session[],
-  importSession: (
-    payload: Pick<Session, 'title' | 'code' | 'messages' | 'revisions'>,
-  ) => Promise<void>,
+  importSession: (session: Session) => Promise<void>,
   deleteGuestSession: (id: string) => Promise<void>,
+  normalizeGuestSession: (session: Session) => Promise<Session> = normalizeGuestSessionForImport,
 ): Promise<{ remaining: Session[]; error: unknown | null }> {
   for (const [index, item] of items.entries()) {
+    let normalized = item;
     try {
-      await importSession({
-        title: item.title,
-        code: item.code,
-        messages: item.messages,
-        // Without these the imported turns lose their diffs: a message points
-        // at a revision by id, and an unresolved id falls back to a plain
-        // code badge.
-        revisions: item.revisions,
-      });
-      await deleteGuestSession(item.id);
+      normalized = await normalizeGuestSession(item);
+      await importSession(normalized);
+      await deleteGuestSession(normalized.id);
     } catch (error) {
-      return { remaining: items.slice(index), error };
+      return { remaining: [normalized, ...items.slice(index + 1)], error };
     }
   }
 

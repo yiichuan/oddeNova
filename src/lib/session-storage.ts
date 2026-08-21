@@ -17,8 +17,9 @@ const LS_CURRENT_KEY = 'vibe-sessions-current-v1';
 let db: IDBPDatabase | null = null;
 let memoryFallback = false;
 let openPromise: Promise<void> | null = null;
+const guestNormalizationInFlight = new Map<string, Promise<Session>>();
 
-type StoredSession = Session & { ownerKey?: string; mode?: unknown };
+type StoredSession = Session & { ownerKey?: string; mode?: unknown; tokenStats?: unknown };
 type StoredSetting = {
   key: string;
   value: string;
@@ -29,7 +30,12 @@ function currentSessionSettingKey(ownerKey: string): string {
 }
 
 export function normalizeSession(session: StoredSession): Session {
-  const { mode: _ignoredMode, ownerKey: _ignoredOwner, ...normalized } = session;
+  const {
+    mode: _ignoredMode,
+    ownerKey: _ignoredOwner,
+    tokenStats: _ignoredTokenStats,
+    ...normalized
+  } = session;
   const failedRevisionIds = new Set(
     normalized.revisions
       ?.filter((revision) => revision.playbackStatus === 'failed')
@@ -56,6 +62,17 @@ export function normalizeSession(session: StoredSession): Session {
   return inferredInputMode === undefined
     ? normalized
     : { ...normalized, messages, inputMode: normalized.inputMode ?? inferredInputMode };
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function randomUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  throw new Error('crypto.randomUUID is unavailable');
 }
 
 function withOwner(session: Session, ownerKey: string): StoredSession {
@@ -165,10 +182,26 @@ export async function getAllSessions(ownerKey = GUEST_OWNER_KEY): Promise<Sessio
   if (memoryFallback || !db) return [];
   try {
     const all = (await db.getAll(SESSION_STORE_NAME)) as StoredSession[];
-    return all
-      .filter((session) => matchesOwner(session, ownerKey))
+    const owned = all.filter((session) => matchesOwner(session, ownerKey));
+    const normalized = owned
       .map(normalizeSession)
       .sort((a, b) => b.updatedAt - a.updatedAt);
+    const legacyRows = owned.filter((session) =>
+      Object.prototype.hasOwnProperty.call(session, 'tokenStats'),
+    );
+    if (legacyRows.length > 0) {
+      try {
+        const tx = db.transaction(SESSION_STORE_NAME, 'readwrite');
+        await Promise.all(legacyRows.map((session) => {
+          const clean = normalizeSession(session);
+          return tx.store.put(withOwner(clean, session.ownerKey ?? ownerKey));
+        }));
+        await tx.done;
+      } catch (err) {
+        console.warn('[session-storage] legacy tokenStats cleanup failed', err);
+      }
+    }
+    return normalized;
   } catch {
     return [];
   }
@@ -217,6 +250,49 @@ export async function putCurrentSessionId(
   } catch (err) {
     console.warn('[session-storage] putCurrentSessionId failed', err);
   }
+}
+
+/**
+ * Move a legacy guest session to its UUID key immediately before account
+ * import. The write, current-session pointer update, and old-key deletion are
+ * one IndexedDB transaction so a retry sees the same normalized UUID source.
+ */
+async function moveLegacyGuestSessionToUuid(session: Session): Promise<Session> {
+  const normalized = { ...session, id: randomUuid() };
+  await openDB();
+  if (memoryFallback || !db) return normalized;
+
+  const tx = db.transaction([SESSION_STORE_NAME, SETTINGS_STORE_NAME], 'readwrite');
+  const sessions = tx.objectStore(SESSION_STORE_NAME);
+  const settings = tx.objectStore(SETTINGS_STORE_NAME);
+  const current = await settings.get(currentSessionSettingKey(GUEST_OWNER_KEY)) as StoredSetting | undefined;
+  await sessions.put(withOwner(normalized, GUEST_OWNER_KEY));
+  if (current?.value === session.id) {
+    await settings.put({
+      key: currentSessionSettingKey(GUEST_OWNER_KEY),
+      value: normalized.id,
+    } satisfies StoredSetting);
+  }
+  await sessions.delete([GUEST_OWNER_KEY, session.id]);
+  await tx.done;
+  return normalized;
+}
+
+export function normalizeGuestSessionForImport(session: Session): Promise<Session> {
+  if (isUuid(session.id)) return Promise.resolve(session);
+
+  const existing = guestNormalizationInFlight.get(session.id);
+  if (existing) return existing;
+
+  const pendingRef: { promise?: Promise<Session> } = {};
+  const pending = moveLegacyGuestSessionToUuid(session).finally(() => {
+    if (guestNormalizationInFlight.get(session.id) === pendingRef.promise) {
+      guestNormalizationInFlight.delete(session.id);
+    }
+  });
+  pendingRef.promise = pending;
+  guestNormalizationInFlight.set(session.id, pending);
+  return pending;
 }
 
 export async function putImportedSession(

@@ -225,6 +225,88 @@ describe('session-storage owner namespaces', () => {
 
     expect((await getAllSessions('guest')).map((s) => s.id)).toContain('legacy-idb-session');
   });
+
+  it('normalizes a legacy guest id in one transaction and moves the current-session pointer', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const legacy = {
+      id: 's-1720000000000-abc123',
+      title: 'Legacy guest',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '保留我', timestamp: 1 }],
+      code: 's("bd")',
+      inputMode: 'choice' as const,
+      suggestions: { forCode: 's("bd")', items: ['加贝斯'] },
+      createdAt: 10,
+      updatedAt: 11,
+    };
+    await storage.putSession(legacy);
+    await storage.putCurrentSessionId(legacy.id, 'guest');
+
+    const normalized = await storage.normalizeGuestSessionForImport(legacy);
+
+    expect(normalized.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect((await storage.getAllSessions('guest')).map((session) => session.id)).toEqual([normalized.id]);
+    expect(await storage.getCurrentSessionId('guest')).toBe(normalized.id);
+    expect(await storage.getAllSessions('guest')).toEqual([
+      expect.objectContaining({ ...legacy, id: normalized.id }),
+    ]);
+  });
+
+  it('reuses an existing UUID v7 guest id without normalization', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const existing = {
+      id: '018f5f7e-8b7c-7000-8000-000000000001',
+      title: 'UUID v7',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '保持 id', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    await expect(storage.normalizeGuestSessionForImport(existing)).resolves.toBe(existing);
+  });
+
+  it('reuses one normalized UUID for concurrent calls on the same legacy id', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const legacy = {
+      id: 's-concurrent-legacy',
+      title: '并发导入',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '同一份', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    await storage.putSession(legacy);
+
+    const [first, second] = await Promise.all([
+      storage.normalizeGuestSessionForImport(legacy),
+      storage.normalizeGuestSessionForImport({ ...legacy }),
+    ]);
+
+    expect(first.id).toBe(second.id);
+    expect((await storage.getAllSessions('guest')).map((session) => session.id)).toEqual([first.id]);
+  });
+
+  it('physically rewrites legacy tokenStats out of IndexedDB rows when loaded', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const legacy = {
+      id: 'legacy-token-stats',
+      title: '旧 token stats',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '清理字段', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 2,
+      tokenStats: { promptTokens: 9, systemEstimate: 2, modelId: 'old' },
+    };
+    await storage.putSession(legacy as never);
+
+    expect((await storage.getAllSessions('guest'))[0]).not.toHaveProperty('tokenStats');
+    const raw = await storage.getStorageDb()?.get(storage.SESSION_STORE_NAME, ['guest', legacy.id]);
+    expect(raw).not.toHaveProperty('tokenStats');
+  });
 });
 
 describe('normalizeSession', () => {

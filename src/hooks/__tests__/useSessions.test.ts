@@ -147,6 +147,54 @@ describe('useSessions', () => {
     vi.useRealTimers();
   });
 
+  it('uses UUIDs for browser-created sessions', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(getHook().currentId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+
+    act(() => getHook().newSession());
+
+    expect(getHook().currentId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  });
+
+  it('reuses an imported UUID on retry without duplicating account state or losing durable fields', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+
+    const imported = {
+      id: '00000000-0000-7000-8000-000000000010',
+      title: '完整导入',
+      code: 's("bd")',
+      messages: [{ id: 'm-1', role: 'assistant' as const, content: '完成', inputMode: 'choice' as const, revisionId: 'r-1', timestamp: 11 }],
+      revisions: [{ id: 'r-1', beforeCode: '', afterCode: 's("bd")', playbackStatus: 'played' as const, createdAt: 12 }],
+      inputMode: 'choice' as const,
+      suggestions: { forCode: 's("bd")', items: ['加贝斯'] },
+      externalSource: { type: 'oddenova-strudel-skill' as const, projectId: 'p-1', importedContentHash: 'h-1' },
+      createdAt: 13,
+      updatedAt: 14,
+    };
+
+    await act(async () => {
+      await getHook().importSession(imported as never, { activate: false });
+      await getHook().importSession(imported as never, { activate: false });
+    });
+
+    expect(getHook().sessions.filter((session) => session.id === imported.id)).toHaveLength(1);
+    expect(getHook().sessions.find((session) => session.id === imported.id)).toEqual(imported);
+    expect(storageMocks.putSession).toHaveBeenLastCalledWith(imported, 'user:u-1');
+    expect(cloud.saveSession).toHaveBeenLastCalledWith(imported, 'u-1');
+  });
+
   it('custom title survives first addUserMessage', async () => {
     const { root, getHook } = await renderUseSessions();
     roots.push(root);
@@ -990,6 +1038,76 @@ describe('useSessions', () => {
       code: 's("bd")',
     });
     expect(getHook().currentSyncStatus).toBe('retrying');
+  });
+
+  it('propagates an awaited cloud failure so guest import can retain its source', async () => {
+    const cloudError = new Error('Cloud save failed');
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => { throw cloudError; }),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    const imported = {
+      id: '00000000-0000-4000-8000-000000000011',
+      title: '本机历史',
+      code: 's("bd")',
+      messages: [{ id: 'msg-1', role: 'user' as const, content: '本地聊天', timestamp: 1 }],
+    };
+
+    await act(async () => {
+      await expect(getHook().importSession(imported, {
+        activate: false,
+        awaitCloud: true,
+      })).rejects.toBe(cloudError);
+    });
+
+    expect(getHook().sessions).toContainEqual(expect.objectContaining(imported));
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({ id: imported.id }), 'u-1');
+  });
+
+  it('rejects an awaited import when cloud sync is unavailable', async () => {
+    const { root, getHook } = await renderUseSessions({ syncEnabled: false });
+    roots.push(root);
+
+    await act(async () => {
+      await expect(getHook().importSession({
+        id: '00000000-0000-4000-8000-000000000012',
+        title: '本机历史',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+      }, { activate: false, awaitCloud: true })).rejects.toThrow('cloud sync');
+    });
+  });
+
+  it('rejects an awaited import after the cloud sync has been disposed', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const importSession = getHook().importSession;
+    act(() => root.unmount());
+    roots.splice(roots.indexOf(root), 1);
+
+    await expect(importSession({
+      id: '00000000-0000-4000-8000-000000000013',
+      title: '本机历史',
+      code: 's("bd")',
+      messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+    }, { activate: false, awaitCloud: true })).rejects.toThrow('cloud sync');
   });
 
   it('newSession resets the title when reusing an empty current session', async () => {

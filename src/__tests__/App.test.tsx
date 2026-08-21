@@ -132,6 +132,7 @@ vi.mock('../hooks/useLayout', () => ({
 vi.mock('../lib/session-storage', () => ({
   getAllSessions: mocks.getAllSessions,
   deleteSession: mocks.deleteSession,
+  normalizeGuestSessionForImport: vi.fn(async (session: Session) => session),
 }));
 vi.mock('../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
 vi.mock('../services/llm-config', () => ({ hasApiKeyConfigured: () => true }));
@@ -380,11 +381,7 @@ describe('App password recovery', () => {
     });
 
     // Syncing guest history must not pull the user off the session they are on.
-    expect(mocks.importSession).toHaveBeenCalledWith({
-      title: 'Guest history',
-      code: 'sound("bd")',
-      messages: [],
-    }, { activate: false });
+    expect(mocks.importSession).toHaveBeenCalledWith(guestSession, { activate: false, awaitCloud: true });
     expect(mocks.deleteSession).toHaveBeenCalledWith('guest-session', 'guest');
   });
 });

@@ -39,15 +39,13 @@ create trigger on_auth_user_created_profile
 
 create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),
-  session_id text not null,
   user_id uuid not null references auth.users(id) on delete cascade,
   title text not null,
   code text not null default '',
   messages jsonb not null default '[]'::jsonb check (jsonb_typeof(messages) = 'array'),
-  token_stats jsonb check (token_stats is null or jsonb_typeof(token_stats) = 'object'),
+  input_mode text check (input_mode is null or input_mode in ('normal', 'choice')),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (user_id, session_id)
+  updated_at timestamptz not null default now()
 );
 
 create or replace function public.set_updated_at()

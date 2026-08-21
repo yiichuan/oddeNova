@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from '../icons';
 import ThinkingLevelControl from './ThinkingLevelControl';
-import type { TokenStats } from '../../hooks/useSessions';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
 import { isDemoMode } from '../../demo/demo-config';
@@ -41,7 +40,6 @@ interface ChatInputProps {
   focusTrigger?: number;
   replayValue?: string;
   isVideoMode?: boolean;
-  tokenStats?: TokenStats;
   onFocusChange?: (focused: boolean) => void;
   /** Normal suggestion carousel, or a stepwise numbered-choice response. */
   inputMode?: InputMode;
@@ -68,7 +66,6 @@ export default function ChatInput({
   focusTrigger,
   replayValue,
   isVideoMode = false,
-  tokenStats: _tokenStats,
   onFocusChange,
   inputMode = 'normal',
   suggestions,
@@ -355,9 +352,6 @@ export default function ChatInput({
               </div>
             ) : null}
           </div>
-
-          {/* Context window indicator hidden for now — still far from the limit; kept for future prompt optimisation review*/
-          /* {engineReady && tokenStats && <ContextWindowIndicator tokenStats={tokenStats} />} */}
 
           <div className="flex items-center gap-2 shrink-0">
             {replayValue === undefined && <ThinkingLevelControl disabled={inputDisabled} />}

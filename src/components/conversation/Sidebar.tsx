@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, InputMode } from '../../hooks/useChat';
 import { t } from '../../lib/i18n';
-import type { CodeRevision, Session, TokenStats } from '../../hooks/useSessions';
+import type { CodeRevision, Session } from '../../hooks/useSessions';
 import { MessageCirclePlusIcon, HistoryIcon, PlayIcon } from '../icons';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
@@ -45,7 +45,6 @@ interface SidebarProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
-  tokenStats?: TokenStats;
 }
 
 export default function Sidebar({
@@ -80,7 +79,6 @@ export default function Sidebar({
   onRollback,
   onBranch,
   onRetry,
-  tokenStats,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(1);
@@ -183,7 +181,7 @@ export default function Sidebar({
       </div>
 
       <div className="-mt-px w-full shrink-0">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
       </div>
     </aside>
   );
