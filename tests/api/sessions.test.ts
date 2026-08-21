@@ -43,7 +43,7 @@ describe('sessions API auth', () => {
     const { default: handler } = await import('../../api/sessions.js');
     const res = makeResponse();
 
-    await handler({ method: 'GET', headers: {} } as never, res as never);
+    await handler({ method: 'GET', query: {}, headers: {} } as never, res as never);
 
     expect(res.statusCode).toBe(401);
     expect(res.body).toEqual({ error: 'Unauthorized' });
@@ -75,6 +75,7 @@ describe('sessions API auth', () => {
 
     await handler({
       method: 'GET',
+      query: {},
       headers: { authorization: 'Bearer token-123' },
     } as never, res as never);
 
@@ -136,6 +137,7 @@ describe('sessions API auth', () => {
 
     await handler({
       method: 'GET',
+      query: {},
       headers: { authorization: 'Bearer token-123' },
     } as never, res as never);
 
@@ -184,7 +186,7 @@ describe('sessions API auth', () => {
     const upsert = vi.fn().mockResolvedValue({ error: null });
     supabaseMocks.from.mockReturnValue({ upsert });
 
-    const { default: handler } = await import('../../api/sessions/[id].js');
+    const { default: handler } = await import('../../api/sessions.js');
     const res = makeResponse();
 
     await handler({
@@ -232,7 +234,7 @@ describe('sessions API auth', () => {
     const deleteFn = vi.fn(() => ({ eq: sessionEq }));
     supabaseMocks.from.mockReturnValue({ delete: deleteFn });
 
-    const { default: handler } = await import('../../api/sessions/[id].js');
+    const { default: handler } = await import('../../api/sessions.js');
     const res = makeResponse();
 
     await handler({
@@ -244,5 +246,32 @@ describe('sessions API auth', () => {
     expect(sessionEq).toHaveBeenCalledWith('id', '00000000-0000-4000-8000-000000000001');
     expect(userEq).toHaveBeenCalledWith('user_id', 'u-1');
     expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects item methods without an id', async () => {
+    const { default: handler } = await import('../../api/sessions.js');
+    const res = makeResponse();
+
+    await handler({ method: 'PUT', query: {}, headers: {}, body: {} } as never, res as never);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Missing session id' });
+  });
+
+  it.each(['PUT', 'DELETE'])('rejects a legacy session id for %s before querying Supabase', async (method) => {
+    const { default: handler } = await import('../../api/sessions.js');
+    const res = makeResponse();
+
+    await handler({
+      method,
+      query: { id: 's-1786465556711-wi5as4' },
+      headers: {},
+      body: {},
+    } as never, res as never);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid session id' });
+    expect(supabaseMocks.getUser).not.toHaveBeenCalled();
+    expect(supabaseMocks.from).not.toHaveBeenCalled();
   });
 });

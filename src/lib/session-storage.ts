@@ -1,6 +1,10 @@
 import { openDB as idbOpenDB, type IDBPDatabase } from 'idb';
 import type { Session } from '../hooks/useSessions';
 import { isStepwiseChoice } from '../services/suggestions';
+import {
+  decodePendingSessionId,
+  pendingSessionMarkerKey,
+} from './session-sync-keys';
 
 export const DB_NAME = 'oddenova-db';
 export const DB_VERSION = 3;
@@ -181,6 +185,9 @@ export async function getAllSessions(ownerKey = GUEST_OWNER_KEY): Promise<Sessio
   await openDB();
   if (memoryFallback || !db) return [];
   try {
+    if (ownerKey !== GUEST_OWNER_KEY) {
+      await migrateLegacyAccountSessionIds(ownerKey);
+    }
     const all = (await db.getAll(SESSION_STORE_NAME)) as StoredSession[];
     const owned = all.filter((session) => matchesOwner(session, ownerKey));
     const normalized = owned
@@ -205,6 +212,59 @@ export async function getAllSessions(ownerKey = GUEST_OWNER_KEY): Promise<Sessio
   } catch {
     return [];
   }
+}
+
+async function migrateLegacyAccountSessionIds(ownerKey: string): Promise<void> {
+  if (!db) return;
+
+  const tx = db.transaction([SESSION_STORE_NAME, SETTINGS_STORE_NAME], 'readwrite');
+  const sessions = tx.objectStore(SESSION_STORE_NAME);
+  const settings = tx.objectStore(SETTINGS_STORE_NAME);
+  const all = await sessions.getAll() as StoredSession[];
+  const legacySessions = all.filter(
+    (session) => matchesOwner(session, ownerKey) && !isUuid(session.id),
+  );
+
+  const currentKey = currentSessionSettingKey(ownerKey);
+  const current = legacySessions.length > 0
+    ? await settings.get(currentKey) as StoredSetting | undefined
+    : undefined;
+
+  for (const legacy of legacySessions) {
+    const migrated = { ...normalizeSession(legacy), id: randomUuid() };
+    await sessions.put(withOwner(migrated, ownerKey));
+
+    if (current?.value === legacy.id) {
+      await settings.put({ key: currentKey, value: migrated.id } satisfies StoredSetting);
+    }
+
+    for (const operation of ['sync', 'delete'] as const) {
+      const oldMarkerKey = pendingSessionMarkerKey(operation, ownerKey, legacy.id);
+      const marker = await settings.get(oldMarkerKey) as StoredSetting | undefined;
+      if (marker) {
+        await settings.put({
+          ...marker,
+          key: pendingSessionMarkerKey(operation, ownerKey, migrated.id),
+        });
+        await settings.delete(oldMarkerKey);
+      }
+    }
+
+    await sessions.delete([ownerKey, legacy.id]);
+  }
+
+  const remainingSettings = await settings.getAll() as StoredSetting[];
+  for (const setting of remainingSettings) {
+    for (const operation of ['sync', 'delete'] as const) {
+      const sessionId = decodePendingSessionId(setting.key, operation, ownerKey);
+      if (sessionId !== null && !isUuid(sessionId)) {
+        await settings.delete(setting.key);
+        break;
+      }
+    }
+  }
+
+  await tx.done;
 }
 
 export async function putSession(

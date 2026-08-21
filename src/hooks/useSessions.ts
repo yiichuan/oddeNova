@@ -542,8 +542,8 @@ export function useSessions(options: UseSessionsOptions = {}) {
       setIsLoading(true);
       await openDB();
       const persistent = isSessionStoragePersistent();
-      const storedCurrentId = await getCurrentSessionId(ownerKey);
       let loaded = await getAllSessions(ownerKey);
+      const storedCurrentId = await getCurrentSessionId(ownerKey);
       let pending: PendingSessionOperations = {
         syncIds: new Set(),
         deleteIds: new Set(),

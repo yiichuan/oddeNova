@@ -6,8 +6,8 @@ import { resolve, join } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
+import favoritesHandler from './api/favorites.js'
 import sessionsHandler from './api/sessions'
-import sessionByIdHandler from './api/sessions/[id]'
 
 interface AirJellyRuntime {
   port: number
@@ -320,7 +320,38 @@ function sessionsDevMiddleware(): Plugin {
 
             const id = decodeURIComponent(pathname.replace(/^\//, ''))
             const body = req.method === 'PUT' ? await readJsonBody(req) : undefined
-            await runVercelHandler(sessionByIdHandler, req, res, { id }, body)
+            await runVercelHandler(sessionsHandler, req, res, { id }, body)
+          } catch (error) {
+            res.statusCode = 400
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Bad request' }))
+          }
+        }
+      )
+    },
+  }
+}
+
+function favoritesDevMiddleware(): Plugin {
+  return {
+    name: 'favorites-api-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use(
+        '/api/favorites',
+        async (req: IncomingMessage, res: ServerResponse) => {
+          const url = new URL(req.url ?? '', 'http://localhost')
+          const pathname = url.pathname
+          const query = Object.fromEntries(url.searchParams.entries())
+
+          try {
+            if (pathname !== '/' && pathname !== '') {
+              const [rawId, rawAction] = pathname.split('/').filter(Boolean)
+              if (rawId) query.id = decodeURIComponent(rawId)
+              if (rawAction) query.action = decodeURIComponent(rawAction)
+            }
+
+            const body = req.method === 'POST' ? await readJsonBody(req) : undefined
+            await runVercelHandler(favoritesHandler, req, res, query, body)
           } catch (error) {
             res.statusCode = 400
             res.setHeader('Content-Type', 'application/json')
@@ -361,7 +392,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), favoritesDevMiddleware(), syncAnimationHtml()],
     build: {
       rollupOptions: {
         input: {
