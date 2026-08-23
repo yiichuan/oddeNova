@@ -37,6 +37,12 @@ npm run eval          # node --import=tsx/esm scripts/eval/runner.ts
 npm run eval:report
 ```
 
+## UI changes
+
+Do not start the dev server or drive a browser to verify UI/frontend changes.
+Type-check, lint, and the test suite are the bar for "done" — the developer
+reviews visual results themselves.
+
 ## Architecture
 
 oddeNova is a browser-only (no backend except a thin Vercel proxy) AI agent
@@ -100,7 +106,7 @@ Key modules:
   requirement may be edited repeatedly until that requirement is finished.
   `active.ts` is the pointer to the current version; `system-prompt.ts` is a
   forwarding shim and must never be edited directly. To change the prompt,
-  follow `.github/prompts/edit-system-prompt.prompt.md` (create or reuse the
+  follow `docs/ai/edit-system-prompt.md` (create or reuse the
   requirement's working `v{N+1}`, update its header comment, point `active.ts`
   at it).
 

@@ -1,7 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import { parseNextSteps, stripNextSteps } from '../suggestions';
+import { isStepwiseChoice, parseNextSteps, stripNextSteps } from '../suggestions';
 
 describe('next-step helpers', () => {
+  it('recognizes Chinese stepwise choice mode from consecutive numbered options', () => {
+    expect(isStepwiseChoice([
+      '先写了一小段夏日旋律。这个方向对吗？',
+      '',
+      '1. 配上鼓和贝斯继续',
+      '2. 换个方向重新来',
+      '3. 按这个方向直接写完',
+      '',
+      '回复序号，或者直接说说你的想法。',
+    ].join('\n'))).toBe(true);
+  });
+
+  it('recognizes English stepwise choice mode from consecutive numbered options', () => {
+    expect(isStepwiseChoice([
+      'I sketched a summer melody. Does this direction feel right?',
+      '',
+      '1. Add drums and bass',
+      '2. Try another direction',
+      '3. Finish it this way',
+      '',
+      'Reply with a number or describe your idea.',
+    ].join('\n'))).toBe(true);
+  });
+
+  it('recognizes numbered choices when the question follows the options without blank lines', () => {
+    expect(isStepwiseChoice([
+      '配上轻快鼓组和律动贝斯，阳光感的骨架已经立起来了。',
+      '1. 加一层清爽的和声背景，让中频更饱满',
+      '2. 给旋律加一段呼应的过门，让它有起伏',
+      '3. 就按现在这个完整度直接写完收尾',
+      '想继续往饱满里走，还是就在这里收个尾？',
+    ].join('\n'))).toBe(true);
+  });
+
+  it('does not mistake final next-step suggestions for choice mode', () => {
+    expect(isStepwiseChoice('完成了整首作品。\n\n接下来可以：\n- 加快速度\n- 减少鼓点')).toBe(false);
+  });
+
+  it('does not mistake an ordinary numbered change summary for choice mode', () => {
+    expect(isStepwiseChoice([
+      '我做了三处调整：',
+      '1. 收紧底鼓',
+      '2. 降低贝斯',
+      '3. 简化旋律',
+      '整体现在更清楚。',
+    ].join('\n'))).toBe(false);
+  });
+
+  it('does not mistake a question-led numbered change summary for choice mode', () => {
+    expect(isStepwiseChoice([
+      '我调整了哪些地方？',
+      '1. 收紧底鼓',
+      '2. 降低贝斯',
+      '整体现在更清楚。',
+    ].join('\n'))).toBe(false);
+  });
+
   it('strips Chinese next-step suggestions from commit explanations', () => {
     expect(stripNextSteps('我铺了一层鼓。\n\n接下来可以：\n- 加贝斯\n- 加旋律')).toBe('我铺了一层鼓。');
   });

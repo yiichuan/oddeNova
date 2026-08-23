@@ -9,7 +9,10 @@ import { t } from '../../lib/i18n';
 import type { OddeNovaImportPayload } from '../../lib/oddenova-import';
 import {
   applyAppendAssistantDelta,
+  applyAppendProgressDelta,
+  applyDiscardAgentAttempt,
   applyFinalizeLastAssistantMessage,
+  applyFinalizeAgentAttempt,
   applyRefreshEmptySessionForReuse,
   applyTruncate,
   applyTruncateAndEdit,
@@ -286,6 +289,20 @@ describe('useSessions', () => {
     expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
   });
 
+  it('persists choice input mode with the successful assistant message', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    storageMocks.putSession.mockClear();
+
+    act(() => {
+      getHook().addAssistantMessage('请选择下一步', 'note("c3")', undefined, undefined, 'choice');
+    });
+
+    expect(getHook().currentSession?.inputMode).toBe('choice');
+    expect(getHook().currentSession?.messages.at(-1)?.inputMode).toBe('choice');
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+  });
+
   it('persists the selected session id when switching sessions', async () => {
     const emptyNewer = makeSession({
       id: 'stored-empty-newer',
@@ -494,6 +511,94 @@ describe('useSessions', () => {
     expect(session.messages.at(-1)?.revisionId).toBe(session.revisions?.[0].id);
   });
 
+  it('restores referenced code revisions when importing a shared session', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const referencedRevision = {
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 's("bd")',
+      playbackStatus: 'played' as const,
+      createdAt: 1,
+    };
+    const unreferencedRevision = {
+      id: 'rev-stale',
+      beforeCode: 's("bd")',
+      afterCode: 's("sd")',
+      playbackStatus: 'played' as const,
+      createdAt: 2,
+    };
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '分享的节奏',
+        code: 's("bd")',
+        messages: [{
+          id: 'msg-1',
+          role: 'assistant',
+          content: '完成',
+          code: 's("bd")',
+          revisionId: referencedRevision.id,
+          timestamp: 1,
+        }],
+        revisions: [referencedRevision, unreferencedRevision],
+      });
+    });
+
+    expect(getHook().currentSession?.revisions).toEqual([referencedRevision]);
+    expect(storageMocks.putSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({ revisions: [referencedRevision] }),
+    );
+  });
+
+  it('reconstructs code revisions when importing a legacy share without revisions', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '旧分享',
+        code: 's("sd")',
+        messages: [
+          {
+            id: 'msg-1',
+            role: 'assistant',
+            content: '第一版',
+            code: 's("bd")',
+            revisionId: 'rev-1',
+            timestamp: 1,
+          },
+          { id: 'msg-2', role: 'user', content: '换成军鼓', timestamp: 2 },
+          {
+            id: 'msg-3',
+            role: 'assistant',
+            content: '第二版',
+            code: 's("sd")',
+            revisionId: 'rev-2',
+            timestamp: 3,
+          },
+        ],
+      });
+    });
+
+    expect(getHook().currentSession?.revisions).toEqual([
+      {
+        id: 'rev-1',
+        beforeCode: '',
+        afterCode: 's("bd")',
+        playbackStatus: 'not_attempted',
+        createdAt: 1,
+      },
+      {
+        id: 'rev-2',
+        beforeCode: 's("bd")',
+        afterCode: 's("sd")',
+        playbackStatus: 'not_attempted',
+        createdAt: 3,
+      },
+    ]);
+  });
+
   it('keeps ordinary assistant messages revision-free', async () => {
     const { root, getHook } = await renderUseSessions();
     roots.push(root);
@@ -654,6 +759,77 @@ describe('assistant streaming helpers', () => {
     expect(result.messages[2]).toMatchObject({ role: 'assistant', content: '你觉得' });
     expect(result.messages[2].code).toBeUndefined();
   });
+
+  it('isolates streamed deltas by request attempt', () => {
+    const first = applyAppendAssistantDelta(makeSession(), 'old partial', 'attempt-1');
+    const second = applyAppendAssistantDelta(first, 'new partial', 'attempt-2');
+
+    expect(second.messages).toMatchObject([
+      { content: 'old partial', agentAttemptId: 'attempt-1' },
+      { content: 'new partial', agentAttemptId: 'attempt-2' },
+    ]);
+  });
+
+  it('keeps reasoning deltas from different attempts in separate messages', () => {
+    const first = applyAppendProgressDelta(
+      makeSession(),
+      'old reasoning',
+      'reasoning',
+      'attempt-1',
+    );
+    const second = applyAppendProgressDelta(
+      first,
+      'new reasoning',
+      'reasoning',
+      'attempt-2',
+    );
+
+    expect(second.messages).toMatchObject([
+      { content: 'old reasoning', agentAttemptId: 'attempt-1' },
+      { content: 'new reasoning', agentAttemptId: 'attempt-2' },
+    ]);
+  });
+
+  it('discards only messages from the failed request attempt', () => {
+    const session = makeSession({
+      messages: [
+        { id: 'user', role: 'user', content: '写一段鼓', timestamp: 1 },
+        {
+          id: 'reasoning',
+          role: 'progress',
+          progressKind: 'reasoning',
+          content: 'partial',
+          timestamp: 2,
+          agentAttemptId: 'attempt-1',
+        },
+        {
+          id: 'reply',
+          role: 'assistant',
+          content: 'retry output',
+          timestamp: 3,
+          agentAttemptId: 'attempt-2',
+        },
+      ],
+    });
+
+    expect(applyDiscardAgentAttempt(session, 'attempt-1').messages.map((message) => message.id))
+      .toEqual(['user', 'reply']);
+  });
+
+  it('finalizes successful streamed messages by removing transient markers', () => {
+    const session = makeSession({
+      messages: [{
+        id: 'reply',
+        role: 'assistant',
+        content: 'done',
+        timestamp: 1,
+        agentAttemptId: 'attempt-2',
+      }],
+    });
+
+    expect(applyFinalizeAgentAttempt(session, 'attempt-2').messages[0])
+      .not.toHaveProperty('agentAttemptId');
+  });
 });
 
 describe('applyTruncate', () => {
@@ -718,5 +894,32 @@ describe('applyTruncate', () => {
     const result = applyTruncate(s, 'msg-2');
 
     expect(result.revisions?.map((revision) => revision.id)).toEqual(['rev-1']);
+  });
+
+  it('截断会话时恢复最后一条保留回复对应的输入模式', () => {
+    const s = makeSession({
+      inputMode: 'choice',
+      messages: [
+        { id: 'msg-0', role: 'assistant', content: '普通完成', inputMode: 'normal', timestamp: 0 },
+        { id: 'msg-1', role: 'user', content: '继续', timestamp: 1 },
+        { id: 'msg-2', role: 'assistant', content: '请选择', inputMode: 'choice', timestamp: 2 },
+        { id: 'msg-3', role: 'user', content: '1', timestamp: 3 },
+      ],
+    });
+
+    expect(applyTruncate(s, 'msg-1').inputMode).toBe('normal');
+  });
+
+  it('编辑重发时恢复被保留回复对应的输入模式', () => {
+    const s = makeSession({
+      inputMode: 'choice',
+      messages: [
+        { id: 'msg-0', role: 'assistant', content: '普通完成', inputMode: 'normal', timestamp: 0 },
+        { id: 'msg-1', role: 'user', content: '旧指令', timestamp: 1 },
+        { id: 'msg-2', role: 'assistant', content: '请选择', inputMode: 'choice', timestamp: 2 },
+      ],
+    });
+
+    expect(applyTruncateAndEdit(s, 'msg-1', '新指令').inputMode).toBe('normal');
   });
 });

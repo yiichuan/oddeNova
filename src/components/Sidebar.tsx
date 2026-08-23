@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage, InputMode } from '../hooks/useChat';
 import { t } from '../lib/i18n';
 import type { CodeRevision, Session, TokenStats } from '../hooks/useSessions';
 import { PlusIcon, HistoryIcon, PlayIcon } from './icons';
@@ -8,6 +8,7 @@ import ChatInput from './ChatInput';
 import { isPresentationMode } from '../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
+import type { AgentEntryPoint } from '../lib/analytics';
 
 interface SidebarProps {
   title: string;
@@ -18,8 +19,12 @@ interface SidebarProps {
   engineStatus?: 'initializing' | 'ready' | 'failed';
   sessions: Session[];
   currentId: string | null;
+  inputMode?: InputMode;
   suggestions: string[];
-  onSendText: (text: string) => void;
+  onSendText: (
+    text: string,
+    entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>,
+  ) => void;
   onStop?: () => void;
   onNewSession: () => void;
   onMoodGenerate?: () => Promise<void> | void;
@@ -53,6 +58,7 @@ export default function Sidebar({
   engineStatus = engineReady ? 'ready' : 'initializing',
   sessions,
   currentId,
+  inputMode = 'normal',
   suggestions,
   onSendText,
   onStop,
@@ -191,8 +197,8 @@ export default function Sidebar({
         />
       </div>
 
-      <div className="pl-4 pr-0 pb-2">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
+      <div className="pl-4 pr-0 pb-3">
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} tokenStats={tokenStats} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
       </div>
     </aside>
   );

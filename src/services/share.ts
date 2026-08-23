@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../hooks/useChat';
+import type { CodeRevision } from '../hooks/useSessions';
 
 export type ShareLocale = 'zh-CN' | 'en';
 
@@ -7,6 +8,7 @@ export interface SharePayload {
   title: string;
   code: string;
   messages: ChatMessage[];
+  revisions?: CodeRevision[];
   sharedAt: number;
   locale?: ShareLocale;
 }
@@ -15,6 +17,7 @@ interface UploadShareInput {
   title: string;
   code: string;
   messages: ChatMessage[];
+  revisions?: CodeRevision[];
   locale: ShareLocale;
 }
 
@@ -24,6 +27,7 @@ export async function uploadShare(input: UploadShareInput): Promise<string> {
     title: input.title,
     code: input.code,
     messages: input.messages,
+    revisions: input.revisions,
     sharedAt: Date.now(),
     locale: input.locale,
   };

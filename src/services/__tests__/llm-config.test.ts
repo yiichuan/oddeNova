@@ -1,5 +1,14 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { getActiveModelConfig, getSelectedModel, hasApiKeyConfigured, normalizeProvider, PROVIDER_PRESETS } from '../llm-config';
+import {
+  getActiveModelConfig,
+  getSelectedModel,
+  getSelectedThinkingLevel,
+  setSelectedThinkingLevel,
+  hasApiKeyConfigured,
+  normalizeProvider,
+  PROVIDER_PRESETS,
+  THINKING_LEVELS,
+} from '../llm-config';
 
 function installLocalStorage(): void {
   const store = new Map<string, string>();
@@ -97,7 +106,7 @@ describe('PROVIDER_PRESETS models lists', () => {
   });
 
   it('anthropic models[0] matches the built-in anthropic default', () => {
-    expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-sonnet-4-6');
+    expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-opus-5');
   });
 });
 
@@ -154,12 +163,12 @@ describe('getSelectedModel', () => {
   });
 
   it('falls back to the built-in anthropic default when no override is stored', () => {
-    expect(getSelectedModel('anthropic')).toBe('claude-sonnet-4-6');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-5');
   });
 
   it('uses the exact VITE_LLM_MODEL value for anthropic when it is set', () => {
-    vi.stubEnv('VITE_LLM_MODEL', 'claude-opus-4-8');
-    expect(getSelectedModel('anthropic')).toBe('claude-opus-4-8');
+    vi.stubEnv('VITE_LLM_MODEL', 'claude-opus-5');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-5');
   });
 
   it('does not map legacy anthropic aliases from VITE_LLM_MODEL', () => {
@@ -168,13 +177,13 @@ describe('getSelectedModel', () => {
   });
 
   it('returns a valid stored override for anthropic', () => {
-    localStorage.setItem('vibe_model_anthropic', 'claude-opus-4-8');
-    expect(getSelectedModel('anthropic')).toBe('claude-opus-4-8');
+    localStorage.setItem('vibe_model_anthropic', 'claude-opus-5');
+    expect(getSelectedModel('anthropic')).toBe('claude-opus-5');
   });
 
   it('returns preset.model for official regardless of any stored override', () => {
     localStorage.setItem('vibe_model_official', 'whatever');
-    expect(getSelectedModel('official')).toBe('deepseek-v4-pro');
+    expect(getSelectedModel('official')).toBe('deepseek-v4-flash');
   });
 });
 
@@ -199,5 +208,33 @@ describe('getActiveModelConfig with model overrides', () => {
     localStorage.setItem('vibe_api_key', 'sk-test');
 
     expect(getActiveModelConfig().model).toBe('kimi-k2.6');
+  });
+});
+
+describe('getSelectedThinkingLevel / setSelectedThinkingLevel', () => {
+  it('defaults to medium when nothing is stored', () => {
+    expect(getSelectedThinkingLevel()).toBe('medium');
+  });
+
+  it('returns the stored level when valid', () => {
+    localStorage.setItem('vibe_thinking_level', 'high');
+    expect(getSelectedThinkingLevel()).toBe('high');
+  });
+
+  it('falls back to medium for an invalid stored value', () => {
+    localStorage.setItem('vibe_thinking_level', 'ultra');
+    expect(getSelectedThinkingLevel()).toBe('medium');
+  });
+
+  it('setSelectedThinkingLevel persists a level that getSelectedThinkingLevel then returns', () => {
+    setSelectedThinkingLevel('extreme');
+    expect(localStorage.setItem).toHaveBeenCalledWith('vibe_thinking_level', 'extreme');
+    expect(getSelectedThinkingLevel()).toBe('extreme');
+  });
+});
+
+describe('THINKING_LEVELS', () => {
+  it('lists all four levels in low-to-extreme order', () => {
+    expect(THINKING_LEVELS).toEqual(['low', 'medium', 'high', 'extreme']);
   });
 });

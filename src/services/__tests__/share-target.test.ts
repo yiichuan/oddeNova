@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { shareUrl } from '../share-target';
+import { t } from '../../lib/i18n';
 
 describe('shareUrl', () => {
   afterEach(() => {
@@ -29,8 +30,13 @@ describe('shareUrl', () => {
       share: nativeShare,
     });
 
-    await expect(shareUrl('https://www.oddenova.com/s/abc123')).resolves.toBe('copied');
-    expect(writeText).toHaveBeenCalledWith('https://www.oddenova.com/s/abc123');
+    await expect(shareUrl(
+      'https://www.oddenova.com/s/abc123',
+      '[oddeNova] Morning sketch',
+    )).resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith(
+      'https://www.oddenova.com/s/abc123\n[oddeNova] Morning sketch',
+    );
     expect(nativeShare).not.toHaveBeenCalled();
   });
 
@@ -44,8 +50,14 @@ describe('shareUrl', () => {
       share: nativeShare,
     });
 
-    await expect(shareUrl('https://www.oddenova.com/s/abc123')).resolves.toBe('shared');
-    expect(nativeShare).toHaveBeenCalledWith({ url: 'https://www.oddenova.com/s/abc123' });
+    await expect(shareUrl(
+      'https://www.oddenova.com/s/abc123',
+      '[oddeNova] Morning sketch',
+    )).resolves.toBe('shared');
+    expect(nativeShare).toHaveBeenCalledWith({
+      title: '[oddeNova] Morning sketch',
+      url: 'https://www.oddenova.com/s/abc123',
+    });
     expect(writeText).not.toHaveBeenCalled();
   });
 
@@ -56,8 +68,13 @@ describe('shareUrl', () => {
       clipboard: { writeText },
     });
 
-    await expect(shareUrl('https://www.oddenova.com/s/abc123')).resolves.toBe('copied');
-    expect(writeText).toHaveBeenCalledWith('https://www.oddenova.com/s/abc123');
+    await expect(shareUrl(
+      'https://www.oddenova.com/s/abc123',
+      '[oddeNova] Morning sketch',
+    )).resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith(
+      'https://www.oddenova.com/s/abc123\n[oddeNova] Morning sketch',
+    );
   });
 
   it('falls back to legacy copy when Clipboard API is unavailable', async () => {
@@ -80,8 +97,13 @@ describe('shareUrl', () => {
       },
     });
 
-    await expect(shareUrl('http://192.168.0.112/s/abc123')).resolves.toBe('copied');
-    expect(textarea.value).toBe('http://192.168.0.112/s/abc123');
+    await expect(shareUrl(
+      'http://192.168.0.112/s/abc123',
+      '[oddeNova] Morning sketch',
+    )).resolves.toBe('copied');
+    expect(textarea.value).toBe(
+      'http://192.168.0.112/s/abc123\n[oddeNova] Morning sketch',
+    );
     expect(textarea.select).toHaveBeenCalled();
     expect(document.execCommand).toHaveBeenCalledWith('copy');
     expect(appended).toEqual([textarea]);
@@ -110,9 +132,34 @@ describe('shareUrl', () => {
       },
     });
 
-    await expect(shareUrl('https://www.oddenova.com/s/abc123')).resolves.toBe('copied');
-    expect(nativeShare).toHaveBeenCalledWith({ url: 'https://www.oddenova.com/s/abc123' });
-    expect(writeText).toHaveBeenCalledWith('https://www.oddenova.com/s/abc123');
+    await expect(shareUrl(
+      'https://www.oddenova.com/s/abc123',
+      '[oddeNova] Morning sketch',
+    )).resolves.toBe('copied');
+    expect(nativeShare).toHaveBeenCalledWith({
+      title: '[oddeNova] Morning sketch',
+      url: 'https://www.oddenova.com/s/abc123',
+    });
+    expect(writeText).toHaveBeenCalledWith(
+      'https://www.oddenova.com/s/abc123\n[oddeNova] Morning sketch',
+    );
+  });
+
+  it('stops without copying when the user cancels native share', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const nativeShare = vi.fn().mockRejectedValue(new DOMException('Share canceled', 'AbortError'));
+
+    stubCoarsePointer(true);
+    vi.stubGlobal('navigator', {
+      clipboard: { writeText },
+      share: nativeShare,
+    });
+
+    await expect(shareUrl(
+      'https://www.oddenova.com/s/abc123',
+      '[oddeNova] Morning sketch',
+    )).resolves.toBe('cancelled');
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it('shows the share URL when automatic share targets are unavailable', async () => {
@@ -134,7 +181,13 @@ describe('shareUrl', () => {
     });
     vi.stubGlobal('prompt', prompt);
 
-    await expect(shareUrl('http://192.168.0.112/s/abc123')).resolves.toBe('shown');
-    expect(prompt).toHaveBeenCalledWith('Copy share link', 'http://192.168.0.112/s/abc123');
+    await expect(shareUrl(
+      'http://192.168.0.112/s/abc123',
+      '[oddeNova] Morning sketch',
+    )).resolves.toBe('shown');
+    expect(prompt).toHaveBeenCalledWith(
+      t('copyShareLink'),
+      'http://192.168.0.112/s/abc123\n[oddeNova] Morning sketch',
+    );
   });
 });

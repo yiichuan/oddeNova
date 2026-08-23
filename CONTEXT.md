@@ -31,3 +31,7 @@ _Avoid_: save、sync、persist(单指落库那一步)
 **Conversation history**:
 传给 agent 作为上下文的历史回合快照,在 [Agent turn] 写入新用户消息之前截取。文本指令携带它;"根据心情生成"刻意不带(独立的一次性创作)。
 _Avoid_: context、memory、transcript
+
+**Thinking level**:
+用户可调的、驱动本轮 LLM 推理深度的强度选项:低/中/高/极高,常驻在发送按钮旁,全局持久化(与 provider/model 同层的偏好设置),不随 [Session] 走。只在意图分类判定为 compose 的 [Agent turn] 下生效,决定思考预算/effort 有多深;chat 意图下这轮完全不思考、也不展示思考链,与现状一致——Thinking level 不接管 compose/chat 这层开关,只接管"开了之后思考多深"。思考始终开启、不提供"关闭"档。各 provider/型号实际能表达的档位有限时,UI 只展示该型号真正区分得开的档位(`getSupportedThinkingLevels()`),例如 glm-5.2 只展示"高/极高"两档,deepseek-v4-flash 展示"低/高/极高"、deepseek-v4-pro 只展示"高/极高",gpt-5.1/gpt-5 不展示"极高",完全没有分级能力的型号(kimi、glm-5.1 系列、claude-haiku-4-5 / claude-sonnet-4-5)则不渲染该控件、不给选择。全局存储的偏好值不因型号切换而被覆盖——只在展示时按 `clampThinkingLevel()` 就近折算到当前型号支持的档位,切回支持完整档位的型号后偏好值原样生效。
+_Avoid_: reasoning effort(某个 provider 的原始 API 参数名)、extended thinking / thinking budget(仅 Anthropic 一家的叫法)

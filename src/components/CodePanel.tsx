@@ -116,74 +116,6 @@ function SliderColumn({
   );
 }
 
-interface MobileSliderButtonProps {
-  label: string;
-  displayValue: string;
-  borderRight?: boolean;
-  onClick: () => void;
-}
-
-function MobileSliderButton({ label, displayValue, borderRight, onClick }: MobileSliderButtonProps) {
-  return (
-    <button
-      className="flex-1 min-w-0 flex flex-col items-center justify-center py-[10px] gap-[2px]"
-      style={borderRight ? { borderRight: '1px solid #323232' } : undefined}
-      onClick={onClick}
-    >
-      <span className="text-[11px] text-white/50 select-none">{label}</span>
-      <span className="text-[14px] text-white/90 select-none">{displayValue}</span>
-    </button>
-  );
-}
-
-interface MobileSliderConfig {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  formatValue: (v: number) => string;
-  onChange: (v: number) => void;
-}
-
-interface MobileSliderSheetProps {
-  activeSlider: 'volume' | 'bpm' | 'lpf' | null;
-  configs: Record<'volume' | 'bpm' | 'lpf', MobileSliderConfig>;
-  onClose: () => void;
-}
-
-function MobileSliderSheet({ activeSlider, configs, onClose }: MobileSliderSheetProps) {
-  if (activeSlider === null) return null;
-  const config = configs[activeSlider];
-  const pct = (config.value - config.min) / (config.max - config.min);
-
-  return (
-    <div className="fixed inset-0 z-50" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50" />
-      <div
-        className="absolute bottom-0 left-0 right-0 bg-[#111] border-t border-[#323232] px-6 py-6"
-        style={{ fontFamily: "'ABeeZee', monospace" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-baseline mb-4">
-          <span className="text-[14px] text-white/60">{config.label}</span>
-          <span className="text-[24px] text-white font-light">{config.formatValue(config.value)}</span>
-        </div>
-        <input
-          type="range"
-          min={config.min}
-          max={config.max}
-          step={config.step}
-          value={config.value}
-          onChange={(e) => config.onChange(Number(e.target.value))}
-          className="aj-slider w-full"
-          style={{ height: '24px', ['--fill-pct' as string]: `${pct * 100}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 export default function CodePanel({
   error,
   isPlaying,
@@ -213,7 +145,6 @@ export default function CodePanel({
   const bpmFromSlider = useRef(false);
 
   const isMobile = useIsMobile();
-  const [activeSlider, setActiveSlider] = useState<'volume' | 'bpm' | 'lpf' | null>(null);
 
   const handleExport = async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }) => {
     const ok = await onExport(params);
@@ -221,30 +152,6 @@ export default function CodePanel({
     await strudelService.setMasterVolume(volume);
     await strudelService.setMasterLPF(lpfSliderToHz(lpf));
     return ok;
-  };
-
-  const sliderConfigs: Record<'volume' | 'bpm' | 'lpf', MobileSliderConfig> = {
-    volume: {
-      label: 'Volume',
-      value: volume,
-      min: 0, max: 1, step: 0.01,
-      formatValue: (v) => `${Math.round(v * 100)}%`,
-      onChange: (v) => { setVolume(v); void strudelService.setMasterVolume(v); },
-    },
-    bpm: {
-      label: 'BPM',
-      value: bpm,
-      min: 60, max: 240, step: 1,
-      formatValue: (v) => `${v}`,
-      onChange: (v) => { setBpm(v); bpmFromSlider.current = true; strudelService.setTempo(v); bpmFromSlider.current = false; },
-    },
-    lpf: {
-      label: 'LPF',
-      value: lpf,
-      min: 0, max: 1, step: 0.005,
-      formatValue: formatLpf,
-      onChange: (v) => { setLpf(v); void strudelService.setMasterLPF(lpfSliderToHz(v)); },
-    },
   };
 
   useEffect(() => {
@@ -257,6 +164,8 @@ export default function CodePanel({
 
   useEffect(() => {
     strudelService.setAutocompletionEnabled(!isMobile);
+    // Wrap instead of scrolling sideways in the narrow mobile drawer.
+    strudelService.setLineWrappingEnabled(isMobile);
   }, [isMobile]);
 
   // Demo mode plays at a quiet 10% by default; the master engine otherwise
@@ -412,42 +321,36 @@ export default function CodePanel({
         topActionsContainer.current,
       )}
 
-      {/* Footer — play button + sliders */}
-      <div
-        className="shrink-0 flex items-stretch border-t"
-        style={{ background: '#000', borderColor: '#323232', fontFamily: "'ABeeZee', monospace" }}
-      >
-        {/* Play button, width matches .cm-gutters */}
+      {/* Footer — play button + sliders. Desktop only: on mobile the drawer shows
+          nothing but code, and transport lives next to App's code-pill toggle. */}
+      {!isMobile && (
         <div
-          className="flex items-center justify-center py-[6px]"
-          style={{
-            width: gutterWidth || undefined,
-            minWidth: gutterWidth || undefined,
-            borderRight: gutterWidth ? '1px solid #323232' : undefined,
-          }}
+          className="shrink-0 flex items-stretch border-t"
+          style={{ background: '#000', borderColor: '#323232', fontFamily: "'ABeeZee', monospace" }}
         >
-          <button
-            onClick={handlePlayClick}
-            disabled={!engineReady && !isPlaying}
-            className={`flex items-center justify-center w-9 h-9 transition-opacity text-[#B2370C] ${
-              isPlaying ? 'hover:opacity-70' : 'hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed'
-            }`}
-            title={isPlaying ? t('stop') : t('play')}
+          {/* Play button, width matches .cm-gutters */}
+          <div
+            className="flex items-center justify-center py-[6px]"
+            style={{
+              width: gutterWidth || undefined,
+              minWidth: gutterWidth || undefined,
+              borderRight: gutterWidth ? '1px solid #323232' : undefined,
+            }}
           >
-            {/* Stop renders smaller: Square fills its viewBox (18×18) while
-                Play's triangle is ~14×18, so equal sizes look unbalanced */}
-            {isPlaying ? <StopIcon size={30} /> : <PlayIcon size={36} />}
-          </button>
-        </div>
+            <button
+              onClick={handlePlayClick}
+              disabled={!engineReady && !isPlaying}
+              className={`flex items-center justify-center w-9 h-9 transition-opacity text-[#B2370C] ${
+                isPlaying ? 'hover:opacity-70' : 'hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed'
+              }`}
+              title={isPlaying ? t('stop') : t('play')}
+            >
+              {/* Stop renders smaller: Square fills its viewBox (18×18) while
+                  Play's triangle is ~14×18, so equal sizes look unbalanced */}
+              {isPlaying ? <StopIcon size={30} /> : <PlayIcon size={36} />}
+            </button>
+          </div>
 
-        {isMobile ? (
-          <MobileSliderButton
-            label="Volume"
-            displayValue={`${Math.round(volume * 100)}%`}
-            borderRight
-            onClick={() => setActiveSlider('volume')}
-          />
-        ) : (
           <SliderColumn
             label="Volume"
             sliderKey="volume"
@@ -464,16 +367,7 @@ export default function CodePanel({
             onTooltip={setTooltip}
             borderRight
           />
-        )}
 
-        {isMobile ? (
-          <MobileSliderButton
-            label="BPM"
-            displayValue={`${bpm}`}
-            borderRight
-            onClick={() => setActiveSlider('bpm')}
-          />
-        ) : (
           <SliderColumn
             label="BPM"
             sliderKey="bpm"
@@ -492,15 +386,7 @@ export default function CodePanel({
             onTooltip={setTooltip}
             borderRight
           />
-        )}
 
-        {isMobile ? (
-          <MobileSliderButton
-            label="LPF"
-            displayValue={formatLpf(lpf)}
-            onClick={() => setActiveSlider('lpf')}
-          />
-        ) : (
           <SliderColumn
             label="LPF"
             sliderKey="lpf"
@@ -516,14 +402,7 @@ export default function CodePanel({
             }}
             onTooltip={setTooltip}
           />
-        )}
-      </div>
-      {isMobile && (
-        <MobileSliderSheet
-          activeSlider={activeSlider}
-          configs={sliderConfigs}
-          onClose={() => setActiveSlider(null)}
-        />
+        </div>
       )}
     </div>
   );

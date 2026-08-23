@@ -21,4 +21,52 @@ describe('Vercel API layout', () => {
       }
     }
   });
+
+  it('proxies PostHog ingestion before the SPA fallback without breaking share pages', async () => {
+    const config = JSON.parse(await readFile('vercel.json', 'utf8')) as {
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+
+    expect(config.rewrites).toEqual([
+      {
+        source: '/s/:id',
+        destination: '/api/share-page?id=:id',
+      },
+      {
+        source: '/_nova/static/:path(.*)',
+        destination: 'https://us-assets.i.posthog.com/static/:path',
+      },
+      {
+        source: '/_nova/array/:path(.*)',
+        destination: 'https://us-assets.i.posthog.com/array/:path',
+      },
+      {
+        source: '/_nova/:path(.*)',
+        destination: 'https://us.i.posthog.com/:path',
+      },
+      {
+        source: '/(.*)',
+        destination: '/index.html',
+      },
+    ]);
+  });
+
+  it('registers independent primary and repair daily-suggestion cron windows', async () => {
+    const apiFiles = await readdir('api');
+    const vercelConfig = JSON.parse(await readFile('vercel.json', 'utf8')) as {
+      crons?: Array<{ path: string; schedule: string }>;
+    };
+
+    expect(apiFiles).toContain('daily-suggestions-repair.ts');
+    expect(vercelConfig.crons).toEqual(expect.arrayContaining([
+      {
+        path: '/api/daily-suggestions-generate',
+        schedule: '0 13 * * *',
+      },
+      {
+        path: '/api/daily-suggestions-repair',
+        schedule: '0 16 * * *',
+      },
+    ]));
+  });
 });

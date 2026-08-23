@@ -34,6 +34,9 @@ release
 .claude/
 .agents/
 
+# skills CLI (npx skills add) install artifacts
+skills-lock.json
+
 # Supabase CLI local cache/link info
 supabase/.temp/
 
@@ -48,3 +51,7 @@ docs/research/
 
 # Video recordings
 videos/
+.vercel
+.env*
+
+.worktrees

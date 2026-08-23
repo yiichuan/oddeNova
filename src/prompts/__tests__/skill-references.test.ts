@@ -69,7 +69,8 @@ describe('committed references are in sync with the active prompt', () => {
   for (const { lang, prompt } of cases) {
     it(`resolves all sections and matches files for ${lang}`, () => {
       const refs = extractSkillReferences(prompt, lang); // throws if a heading is renamed
-      const onDisk = (name: string) => readFileSync(`${refsDir}${name}.${lang}.md`, 'utf8');
+      const onDisk = (name: string) =>
+        readFileSync(`${refsDir}${name}.${lang}.md`, 'utf8').replaceAll('\r\n', '\n');
       expect(onDisk('composition-guide')).toBe(`${refs.guide}\n`);
       expect(onDisk('strudel-api')).toBe(`${refs.api}\n`);
       expect(onDisk('samples')).toBe(`${refs.samples}\n`);

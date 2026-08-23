@@ -10,6 +10,7 @@ import TopActionBar from '../TopActionBar';
 
 const uploadShareMock = vi.hoisted(() => vi.fn());
 const shareUrlMock = vi.hoisted(() => vi.fn());
+const trackShareCompletedMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/share', () => ({
   uploadShare: uploadShareMock,
@@ -20,7 +21,7 @@ vi.mock('../../services/share-target', () => ({
 }));
 
 vi.mock('../../lib/analytics', () => ({
-  trackShare: vi.fn(),
+  trackShareCompleted: trackShareCompletedMock,
 }));
 
 vi.mock('../../hooks/useIsMobile', () => ({ useIsMobile: () => false }));
@@ -93,6 +94,7 @@ describe('TopActionBar mobile menu', () => {
     vi.restoreAllMocks();
     uploadShareMock.mockReset();
     shareUrlMock.mockReset();
+    trackShareCompletedMock.mockReset();
   });
 
   it('keeps the requested mobile menu actions in order', () => {
@@ -128,6 +130,150 @@ describe('TopActionBar mobile menu', () => {
       messages: session.messages,
       locale: 'en',
     });
+    expect(shareUrlMock).toHaveBeenCalledWith(
+      `${window.location.origin}/s/share123`,
+      '[oddeNova] Chat only',
+    );
+    expect(trackShareCompletedMock).toHaveBeenCalledWith({
+      share_method: 'clipboard',
+    });
+    expect(container.textContent).toContain('Share details copied');
+  });
+
+  it('uses a localized generic share title for the default session title', async () => {
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockResolvedValueOnce('copied');
+    const session = makeSession({ title: 'New session' });
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(shareUrlMock).toHaveBeenCalledWith(
+      `${window.location.origin}/s/share123`,
+      '[oddeNova] Shared a music creation',
+    );
+  });
+
+  it('shows a native-share success message after system sharing', async () => {
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockResolvedValueOnce('shared');
+    const session = makeSession();
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(container.textContent).toContain('Shared');
+    expect(container.textContent).not.toContain('Share details copied');
+  });
+
+  it('does not capture or show success when system sharing is cancelled', async () => {
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockResolvedValueOnce('cancelled');
+    const session = makeSession();
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(trackShareCompletedMock).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Shared');
+    expect(container.textContent).not.toContain('Share details copied');
+  });
+
+  it('shares the code revisions referenced by conversation messages', async () => {
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockResolvedValueOnce('copied');
+    const revision = {
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 's("bd")',
+      playbackStatus: 'played' as const,
+      createdAt: 1,
+    };
+    const session = makeSession({
+      code: 's("bd")',
+      messages: [{
+        id: 'm-1',
+        role: 'assistant',
+        content: '完成',
+        code: 's("bd")',
+        revisionId: revision.id,
+        timestamp: 1,
+      }],
+      revisions: [revision],
+    });
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(uploadShareMock).toHaveBeenCalledWith(expect.objectContaining({
+      messages: session.messages,
+      revisions: [revision],
+    }));
+  });
+
+  it.each([
+    ['shared', 'native'],
+    ['shown', 'prompt'],
+  ] as const)('maps the %s share result to %s', async (shareResult, shareMethod) => {
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockResolvedValueOnce(shareResult);
+    const session = makeSession();
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(trackShareCompletedMock).toHaveBeenCalledWith({
+      share_method: shareMethod,
+    });
+  });
+
+  it('does not capture share_completed when opening the share target fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    setDesktopViewport();
+    uploadShareMock.mockResolvedValueOnce('share123');
+    shareUrlMock.mockRejectedValueOnce(new Error('share target failed'));
+    const session = makeSession();
+    const { container, root } = renderShareBar(session);
+    roots.push(root);
+    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Share');
+
+    await act(async () => {
+      shareButton?.click();
+    });
+
+    expect(trackShareCompletedMock).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });
 

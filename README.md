@@ -105,7 +105,7 @@ npm run dev
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyiichuan%2FoddeNova)
 
-> API Key 在应用内界面填写，无需配置服务器环境变量。如需 cron 清理功能，在 Vercel 项目设置中配置 `CRON_SECRET`。
+> LLM API Key 在应用内界面填写。如需 cron 清理功能，在 Vercel 项目设置中配置 `CRON_SECRET`。
 
 ## 工作原理
 

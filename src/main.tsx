@@ -4,8 +4,13 @@ import App from './App.tsx'
 import LearnPage, { LEARN_PATH_PREFIX } from './learn/LearnPage.tsx'
 import { loadEditorPreferences } from './lib/editor-preferences'
 import { initPersonaCache } from './lib/persona-storage'
+import { initializeAnalytics } from './lib/analytics'
+import { zh } from './lib/i18n'
 
 const root = createRoot(document.getElementById('root')!)
+// Restore user preferences before rendering to avoid layout shift
+loadEditorPreferences()
+initializeAnalytics(zh ? 'zh-CN' : 'en')
 
 if (window.location.pathname.startsWith(LEARN_PATH_PREFIX)) {
   // Standalone docs page — skip audio/session bootstrap entirely.

@@ -4,13 +4,21 @@ import type { useStrudel } from './useStrudel';
 import type { useSessions, CodeRevisionDraft, TokenStats } from './useSessions';
 import { runAgent } from '../services/llm';
 import type { ConversationTurn, ProgressEvent } from '../services/llm';
+import type { InputMode } from './useChat';
 import { conversationHistoryFromMessages } from '../lib/conversation-history';
 import { commitPlayback } from '../lib/playback-commit';
-import { parseNextSteps, stripNextSteps } from '../services/suggestions';
+import { isStepwiseChoice, parseNextSteps, stripNextSteps } from '../services/suggestions';
 import { getActiveModelConfig } from '../services/llm-config';
-import { trackAgentRun, trackAgentError, trackAgentAbort } from '../lib/analytics';
+import {
+  trackAgentTurnFinished,
+  trackAgentTurnStarted,
+  type AgentEntryPoint,
+  type AgentTurnFinishedProperties,
+  type AgentTurnOutcome,
+} from '../lib/analytics';
 import { t, zh } from '../lib/i18n';
 import type { StrudelState } from '../services/strudel';
+import { isAbortError } from '../lib/errors';
 
 // ── Pure agent-turn logic (testable in isolation) ────────────────────────────
 //
@@ -22,6 +30,8 @@ import type { StrudelState } from '../services/strudel';
 export interface AgentTurnInput {
   /** Final instruction text handed to the agent. */
   text: string;
+  /** Product surface that initiated this turn. */
+  entryPoint: AgentEntryPoint;
   /** Optional mood context appended to the system prompt. */
   moodContext?: string;
   /** Whether to feed the agent prior conversation history. Mood turns pass false. */
@@ -61,6 +71,7 @@ export interface AgentTurnDeps {
     code: string | undefined,
     sessionId: string,
     revision?: CodeRevisionDraft,
+    inputMode?: InputMode,
   ) => void;
   finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
@@ -78,16 +89,21 @@ export interface AgentTurnDeps {
 
   // analytics
   getModelConfig: () => { provider: string; model: string };
+  trackAgentTurnStarted: typeof trackAgentTurnStarted;
+  trackAgentTurnFinished: typeof trackAgentTurnFinished;
 }
 
 /** Distinguish a user-triggered abort from a genuine error. */
 export function isUserAbort(error: unknown, signal?: AbortSignal): boolean {
-  if (signal?.aborted) return true;
-  if (error instanceof DOMException && error.name === 'AbortError') return true;
-  if (error instanceof Error) {
-    return /abort(ed)?/i.test(error.name) || /request was aborted\.?/i.test(error.message);
+  return isAbortError(error, signal);
+}
+
+function safelyTrackAnalytics(capture: () => void): void {
+  try {
+    capture();
+  } catch {
+    // Analytics must never alter Agent, playback, or persistence behavior.
   }
-  return false;
 }
 
 export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): Promise<void> {
@@ -115,6 +131,17 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
   const signal = controller.signal;
   const startedAt = Date.now();
   const { provider, model } = deps.getModelConfig();
+  const analyticsBase = {
+    entry_point: input.entryPoint,
+    provider,
+    model,
+    has_existing_code: beforeCode.trim().length > 0,
+    has_history: Boolean(history?.length),
+  } as const;
+  let outcome: AgentTurnOutcome = 'agent_failed';
+  let iterations = 0;
+
+  safelyTrackAnalytics(() => deps.trackAgentTurnStarted(analyticsBase));
 
   try {
     const onProgress = deps.makeProgressHandler(sessionId);
@@ -126,22 +153,15 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       signal,
       history,
     );
+    iterations = result.iterations;
 
     if (signal.aborted) {
+      outcome = 'aborted';
       if (deps.isCurrentController(sessionId, controller)) {
         deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
-      trackAgentAbort();
       return;
     }
-
-    trackAgentRun({
-      provider,
-      model,
-      iterations: result.iterations,
-      durationMs: Date.now() - startedAt,
-      committed: result.committed,
-    });
 
     if (result.tokenUsage) {
       deps.updateTokenStats({ ...result.tokenUsage, modelId: model }, sessionId);
@@ -151,6 +171,9 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       if (deps.isCurrentSession(sessionId)) {
         // Always persist the newest code as the session truth, run or not.
         const success = await commitPlayback(result.code, sessionId, deps);
+        outcome = result.committed
+          ? (success ? 'played' : 'playback_failed')
+          : 'not_committed';
         const revision: CodeRevisionDraft | undefined = result.committed
           ? {
               beforeCode,
@@ -161,8 +184,9 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
         if (success) {
           const nextSteps = parseNextSteps(result.explanation);
           if (nextSteps.length > 0) deps.setCommitSuggestions(nextSteps);
+          const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
           if (revision) {
-            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
+            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode);
           } else {
             deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
           }
@@ -178,32 +202,48 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
         }
       } else {
         // Background session completed: persist only, don't touch the editor or play audio.
+        outcome = result.committed ? 'generated' : 'not_committed';
         const revision: CodeRevisionDraft | undefined = result.committed
           ? { beforeCode, afterCode: result.code, playbackStatus: 'not_attempted' }
           : undefined;
         if (revision) {
-          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision);
+          const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
+          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode);
         } else {
           deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
         }
         deps.setCurrentCode(result.code, sessionId);
       }
     } else {
+      outcome = 'not_committed';
       deps.finalizeLastAssistantMessage(result.explanation || t('agentNoCode'), sessionId);
     }
   } catch (e: unknown) {
     if (isUserAbort(e, signal)) {
+      outcome = 'aborted';
       if (deps.isCurrentController(sessionId, controller)) {
         deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
-      trackAgentAbort();
     } else {
+      outcome = 'agent_failed';
       const errMsg = e instanceof Error ? e.message : t('requestFailed');
-      deps.finalizeLastAssistantMessage(zh ? `出错了: ${errMsg}` : `Error: ${errMsg}`, sessionId);
+      console.error('[agent] Request failed', {
+        provider,
+        model,
+        errorName: e instanceof Error ? e.name : typeof e,
+        errorMessage: errMsg,
+      });
+      deps.finalizeLastAssistantMessage(t('agentResponseFailed'), sessionId);
       deps.setStrudelError(errMsg);
-      trackAgentError({ provider, model, error_type: e instanceof Error ? e.name : 'unknown' });
     }
   } finally {
+    const finishedProperties: AgentTurnFinishedProperties = {
+      ...analyticsBase,
+      outcome,
+      duration_ms: Date.now() - startedAt,
+      iterations,
+    };
+    safelyTrackAnalytics(() => deps.trackAgentTurnFinished(finishedProperties));
     deps.endLoading(sessionId, controller);
   }
 }
@@ -220,6 +260,65 @@ export interface UseAgentRunnerConfig {
   setCommitSuggestions: Dispatch<SetStateAction<string[] | null>>;
   setRollbackPrefill: Dispatch<SetStateAction<string>>;
   makeProgressHandler: (sessionId: string) => (e: ProgressEvent) => void;
+}
+
+export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
+  const {
+    strudel,
+    sessions,
+    currentCode,
+    abortControllersRef,
+    currentIdRef,
+    setLoadingSessions,
+    setCommitSuggestions,
+    setRollbackPrefill,
+    makeProgressHandler,
+  } = cfg;
+
+  return {
+    runAgent,
+    makeProgressHandler,
+    play: (code) => strudel.play(code),
+    getStrudelError: () => strudel.error,
+    setStrudelError: (msg) => strudel.setError(msg),
+    engineStatus: () => strudel.engineStatus,
+    getCurrentId: () => sessions.currentId,
+    isCurrentSession: (id) => id === currentIdRef.current,
+    getCurrentCode: () => currentCode,
+    snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
+    addUserMessage: (text) => sessions.addUserMessage(text),
+    addAssistantMessage: (text, code, id, revision, inputMode) =>
+      sessions.addAssistantMessage(text, code, id, revision, inputMode),
+    finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
+    setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
+    updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
+    beginLoading: (id) => {
+      setLoadingSessions((prev) => new Set(prev).add(id));
+      const controller = new AbortController();
+      abortControllersRef.current.set(id, controller);
+      return controller;
+    },
+    endLoading: (id, controller) => {
+      if (abortControllersRef.current.get(id) === controller) {
+        abortControllersRef.current.delete(id);
+        setLoadingSessions((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    isCurrentController: (id, controller) => abortControllersRef.current.get(id) === controller,
+    resetSuggestions: () => setCommitSuggestions(null),
+    setCommitSuggestions: (steps) => setCommitSuggestions(steps),
+    clearRollbackPrefill: () => setRollbackPrefill(''),
+    getModelConfig: () => {
+      const c = getActiveModelConfig();
+      return { provider: c.provider, model: c.model };
+    },
+    trackAgentTurnStarted,
+    trackAgentTurnFinished,
+  };
 }
 
 /**
@@ -241,47 +340,17 @@ export function useAgentRunner(cfg: UseAgentRunnerConfig): (input: AgentTurnInpu
 
   return useCallback(
     (input: AgentTurnInput) => {
-      const deps: AgentTurnDeps = {
-        runAgent,
+      const deps = createAgentTurnDeps({
+        strudel,
+        sessions,
+        currentCode,
+        abortControllersRef,
+        currentIdRef,
+        setLoadingSessions,
+        setCommitSuggestions,
+        setRollbackPrefill,
         makeProgressHandler,
-        play: (code) => strudel.play(code),
-        getStrudelError: () => strudel.error,
-        setStrudelError: (msg) => strudel.setError(msg),
-        engineStatus: () => strudel.engineStatus,
-        getCurrentId: () => sessions.currentId,
-        isCurrentSession: (id) => id === currentIdRef.current,
-        getCurrentCode: () => currentCode,
-        snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
-        addUserMessage: (text) => sessions.addUserMessage(text),
-        addAssistantMessage: (text, code, id, revision) => sessions.addAssistantMessage(text, code, id, revision),
-        finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
-        setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
-        updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
-        beginLoading: (id) => {
-          setLoadingSessions((prev) => new Set(prev).add(id));
-          const controller = new AbortController();
-          abortControllersRef.current.set(id, controller);
-          return controller;
-        },
-        endLoading: (id, controller) => {
-          if (abortControllersRef.current.get(id) === controller) {
-            abortControllersRef.current.delete(id);
-            setLoadingSessions((prev) => {
-              const next = new Set(prev);
-              next.delete(id);
-              return next;
-            });
-          }
-        },
-        isCurrentController: (id, controller) => abortControllersRef.current.get(id) === controller,
-        resetSuggestions: () => setCommitSuggestions(null),
-        setCommitSuggestions: (steps) => setCommitSuggestions(steps),
-        clearRollbackPrefill: () => setRollbackPrefill(''),
-        getModelConfig: () => {
-          const c = getActiveModelConfig();
-          return { provider: c.provider, model: c.model };
-        },
-      };
+      });
       return runAgentTurn(input, deps);
     },
     [

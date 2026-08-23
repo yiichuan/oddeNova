@@ -1,6 +1,8 @@
-export const zh: boolean = (() => {
+export function isZh(): boolean {
   try { return navigator.language.startsWith('zh'); } catch { return false; }
-})();
+}
+
+export const zh: boolean = isZh();
 
 const S: Record<string, readonly [string, string]> = {
   // Common
@@ -21,6 +23,7 @@ const S: Record<string, readonly [string, string]> = {
   preparingToPlay:  ['准备播放…', 'Preparing to play…'],
   interrupted:      ['已中断', 'Interrupted'],
   agentNoCode:      ['agent 没有产出代码', 'Agent produced no code'],
+  agentResponseFailed: ['网络发生错误，请重试', 'A network error occurred. Please retry'],
   requestFailed:    ['请求失败', 'Request failed'],
   loadingShare:     ['正在载入分享内容…', 'Loading shared content…'],
   shareLoadFailed:  ['分享内容加载失败', 'Failed to load shared content'],
@@ -49,7 +52,9 @@ const S: Record<string, readonly [string, string]> = {
   sharing:         ['分享中…', 'Sharing…'],
   shareFailed:     ['分享失败', 'Share failed'],
   shareFailedRetry:['分享失败，请重试', 'Share failed, please retry'],
-  linkCopied:      ['链接已复制', 'Link copied'],
+  shareDetailsCopied: ['分享信息已复制', 'Share details copied'],
+  shared:          ['已分享', 'Shared'],
+  sharedMusicCreation: ['分享了一段音乐创作', 'Shared a music creation'],
   export:          ['导出', 'Export'],
   exportWav:       ['导出 WAV', 'Export WAV'],
   learn:           ['学习', 'Learn'],
@@ -70,7 +75,9 @@ const S: Record<string, readonly [string, string]> = {
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
+  choiceInputPlaceholder: ['回复序号，或直接说出你的想法...', 'Reply with a number or describe your idea...'],
   tabToFill:           ['按 Tab 填入', 'Tab to use'],
+  enterToFill:         ['按 ⏎ 填入', '⏎ to use'],
   notInitialized:      ['未初始化', 'Not initialized'],
   restartEngine:       ['重启引擎', 'Restart engine'],
   engineInitializing:  ['初始化中...', 'Initializing...'],
@@ -108,6 +115,8 @@ const S: Record<string, readonly [string, string]> = {
   expandReasoning:   ['展开推理过程', 'Expand reasoning'],
   actionsTitle:  ['思考过程', 'Process'],
   rollbackHere:  ['回滚到此处', 'Roll back to here'],
+  showMore:      ['显示更多', 'Show more'],
+  showLess:      ['显示更少', 'Show less'],
   copyCode:      ['复制代码', 'Copy code'],
   viewChanges:   ['查看修改', 'View changes'],
   noCodeChanges: ['本轮代码没有变化', 'No code changes in this turn'],
@@ -153,6 +162,12 @@ const S: Record<string, readonly [string, string]> = {
     "This section hasn't been translated into Chinese yet — the content below links to the original page on strudel.cc.",
   ],
   openOriginalPage:  ['打开原文页面 ↗', 'Open original page ↗'],
+  // Thinking level
+  thinkingLevel:        ['思考强度', 'Thinking level'],
+  thinkingLevelLow:     ['低', 'Low'],
+  thinkingLevelMedium:  ['中', 'Medium'],
+  thinkingLevelHigh:    ['高', 'High'],
+  thinkingLevelExtreme: ['极高', 'Extreme'],
 };
 
 export function t(key: string): string {

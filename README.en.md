@@ -104,7 +104,7 @@ Open your browser at `http://localhost:5173`. On first use, select a provider an
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyiichuan%2FoddeNova)
 
-> API keys are entered in the in-app UI; no server environment variables required. For the cron cleanup feature, configure `CRON_SECRET` in your Vercel project settings.
+> LLM API keys are entered in the in-app UI. For the cron cleanup feature, configure `CRON_SECRET` in your Vercel project settings.
 
 ## How It Works
 

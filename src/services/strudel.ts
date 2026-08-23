@@ -2,7 +2,7 @@ import { getErrorMessage } from '../lib/errors';
 import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
-import { trackWavExport } from '../lib/analytics';
+import { trackWavExportCompleted } from '../lib/analytics';
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
 
@@ -17,6 +17,7 @@ interface StrudelMirrorType {
   repl: { setCode: (code: string) => void; stop: () => void; [key: string]: unknown };
   setCode: (code: string) => void;
   setAutocompletionEnabled: (enabled: boolean) => void;
+  setLineWrappingEnabled: (enabled: boolean) => void;
   changeSetting: (key: 'isTabIndentationEnabled', value: boolean) => void;
   evaluate: (autostart?: boolean) => Promise<void>;
 }
@@ -143,6 +144,7 @@ export class StrudelService {
   private editorInstance: StrudelMirrorType | null = null;
   private containerElement: HTMLElement | null = null;
   private autocompletionEnabled = false;
+  private lineWrappingEnabled = false;
   private isAudioInitialized = false;
   private isInitializing = false;
 
@@ -222,6 +224,11 @@ export class StrudelService {
   setAutocompletionEnabled(enabled: boolean): void {
     this.autocompletionEnabled = enabled;
     this.editorInstance?.setAutocompletionEnabled(enabled);
+  }
+
+  setLineWrappingEnabled(enabled: boolean): void {
+    this.lineWrappingEnabled = enabled;
+    this.editorInstance?.setLineWrappingEnabled(enabled);
   }
 
   private prebake = async (): Promise<void> => {
@@ -351,6 +358,7 @@ export class StrudelService {
       });
       this.editorInstance = editor;
       editor.setAutocompletionEnabled(this.autocompletionEnabled);
+      editor.setLineWrappingEnabled(this.lineWrappingEnabled);
       editor.changeSetting('isTabIndentationEnabled', true);
 
       // Sync REPL internal state with initial code
@@ -823,7 +831,7 @@ export class StrudelService {
       const renderedBuffer = await offlineCtx.startRendering();
       const wav = audioBufferToWav16(renderedBuffer);
       downloadWav(wav, filename);
-      trackWavExport();
+      trackWavExportCompleted();
 
       setAudioContext(null);
       setSuperdoughAudioController(null);

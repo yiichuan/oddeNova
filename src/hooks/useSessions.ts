@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ChatMessage, ProgressKind } from './useChat';
+import type { ChatMessage, InputMode, ProgressKind } from './useChat';
 import {
   openDB,
   getAllSessions,
@@ -46,6 +46,8 @@ export interface Session {
   title: string;
   messages: ChatMessage[];
   code: string;
+  /** Input behavior established by the latest successful Agent turn. */
+  inputMode?: InputMode;
   externalSource?: ExternalSessionSource;
   /** Optional for backward compatibility with sessions saved before revisions existed. */
   revisions?: CodeRevision[];
@@ -95,6 +97,36 @@ function revisionsReferencedBy(messages: ChatMessage[], revisions?: CodeRevision
   return revisions.filter((revision) => referenced.has(revision.id));
 }
 
+function importedRevisions(messages: ChatMessage[], revisions?: CodeRevision[]): CodeRevision[] | undefined {
+  if (revisions !== undefined) return revisionsReferencedBy(messages, revisions);
+
+  let beforeCode = '';
+  const reconstructed: CodeRevision[] = [];
+  const seen = new Set<string>();
+  for (const message of messages) {
+    if (message.role !== 'assistant' || message.code === undefined) continue;
+    if (message.revisionId && !seen.has(message.revisionId)) {
+      reconstructed.push({
+        id: message.revisionId,
+        beforeCode,
+        afterCode: message.code,
+        playbackStatus: 'not_attempted',
+        createdAt: message.timestamp,
+      });
+      seen.add(message.revisionId);
+    }
+    beforeCode = message.code;
+  }
+
+  return reconstructed.length > 0 ? reconstructed : undefined;
+}
+
+function inputModeReferencedBy(messages: ChatMessage[]): InputMode {
+  return [...messages].reverse().find(
+    (message) => message.role === 'assistant' && message.inputMode !== undefined,
+  )?.inputMode ?? 'normal';
+}
+
 function deriveTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser) return t('newSessionTitle');
@@ -109,6 +141,7 @@ function makeEmptySession(): Session {
     title: t('newSessionTitle'),
     messages: [makeGreetingMessage()],
     code: '',
+    inputMode: 'normal',
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -130,14 +163,25 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
   const messages = [...before, newMsg];
   const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
   const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
-  return { ...s, messages, revisions: revisionsReferencedBy(messages, s.revisions), title };
+  return {
+    ...s,
+    messages,
+    revisions: revisionsReferencedBy(messages, s.revisions),
+    inputMode: inputModeReferencedBy(messages),
+    title,
+  };
 }
 
 export function applyTruncate(s: Session, targetMessageId: string): Session {
   const index = s.messages.findIndex((m) => m.id === targetMessageId);
   if (index === -1) return s;
   const messages = s.messages.slice(0, index);
-  return { ...s, messages, revisions: revisionsReferencedBy(messages, s.revisions) };
+  return {
+    ...s,
+    messages,
+    revisions: revisionsReferencedBy(messages, s.revisions),
+    inputMode: inputModeReferencedBy(messages),
+  };
 }
 
 export function applyRefreshEmptySessionForReuse(s: Session, now: number): Session {
@@ -145,15 +189,25 @@ export function applyRefreshEmptySessionForReuse(s: Session, now: number): Sessi
     ...s,
     title: t('newSessionTitle'),
     messages: [makeGreetingMessage()],
+    inputMode: 'normal',
+    suggestions: undefined,
     createdAt: now,
     updatedAt: now,
   };
 }
 
-export function applyAppendAssistantDelta(s: Session, delta: string): Session {
+export function applyAppendAssistantDelta(
+  s: Session,
+  delta: string,
+  agentAttemptId?: string,
+): Session {
   const messages = [...s.messages];
   const last = messages[messages.length - 1];
-  if (last?.role === 'assistant' && !last.code) {
+  if (
+    last?.role === 'assistant'
+    && !last.code
+    && last.agentAttemptId === agentAttemptId
+  ) {
     messages[messages.length - 1] = { ...last, content: last.content + delta };
     return { ...s, messages };
   }
@@ -166,8 +220,60 @@ export function applyAppendAssistantDelta(s: Session, delta: string): Session {
         role: 'assistant' as const,
         content: delta,
         timestamp: Date.now(),
+        agentAttemptId,
       },
     ],
+  };
+}
+
+export function applyAppendProgressDelta(
+  s: Session,
+  delta: string,
+  kind: 'thinking' | 'reasoning',
+  agentAttemptId?: string,
+): Session {
+  const messages = [...s.messages];
+  const last = messages[messages.length - 1];
+  if (
+    last?.role === 'progress'
+    && last.progressKind === kind
+    && last.agentAttemptId === agentAttemptId
+  ) {
+    messages[messages.length - 1] = { ...last, content: last.content + delta };
+    return { ...s, messages };
+  }
+  return {
+    ...s,
+    messages: [
+      ...messages,
+      {
+        id: newMessageId(),
+        role: 'progress' as const,
+        content: delta,
+        timestamp: Date.now(),
+        progressKind: kind,
+        agentAttemptId,
+      },
+    ],
+  };
+}
+
+export function applyDiscardAgentAttempt(s: Session, attemptId: string): Session {
+  return {
+    ...s,
+    messages: s.messages.filter((message) => message.agentAttemptId !== attemptId),
+  };
+}
+
+export function applyFinalizeAgentAttempt(s: Session, attemptId: string): Session {
+  return {
+    ...s,
+    messages: s.messages.map((message) => {
+      if (message.agentAttemptId !== attemptId) return message;
+      const finalized = { ...message };
+      delete finalized.agentAttemptId;
+      return finalized;
+    }),
   };
 }
 
@@ -315,7 +421,13 @@ export function useSessions() {
   );
 
   const addAssistantMessage = useCallback(
-    (content: string, code?: string, sessionId?: string, revisionDraft?: CodeRevisionDraft): void => {
+    (
+      content: string,
+      code?: string,
+      sessionId?: string,
+      revisionDraft?: CodeRevisionDraft,
+      inputMode?: InputMode,
+    ): void => {
       const apply = getApply(sessionId);
       apply((s) => {
         const now = Date.now();
@@ -324,6 +436,7 @@ export function useSessions() {
           : undefined;
         return {
           ...s,
+          inputMode: inputMode ?? s.inputMode,
           revisions: revision ? [...(s.revisions ?? []), revision] : s.revisions,
           messages: [
             ...s.messages,
@@ -333,6 +446,7 @@ export function useSessions() {
               content,
               code,
               revisionId: revision?.id,
+              inputMode,
               timestamp: now,
             },
           ],
@@ -366,47 +480,50 @@ export function useSessions() {
 
   // Stream-append progress text: if the last message is already the same progress kind, append in-place; otherwise create a new one
   const appendToLastProgress = useCallback(
-    (delta: string, kind: 'thinking' | 'reasoning', sessionId?: string): void => {
+    (
+      delta: string,
+      kind: 'thinking' | 'reasoning',
+      sessionId?: string,
+      agentAttemptId?: string,
+    ): void => {
       const apply = getApply(sessionId);
-      apply((s) => {
-        const messages = [...s.messages];
-        const last = messages[messages.length - 1];
-        if (last?.role === 'progress' && last.progressKind === kind) {
-          messages[messages.length - 1] = { ...last, content: last.content + delta };
-          return { ...s, messages };
-        }
-        return {
-          ...s,
-          messages: [
-            ...messages,
-            {
-              id: newMessageId(),
-              role: 'progress' as const,
-              content: delta,
-              timestamp: Date.now(),
-              progressKind: kind,
-            },
-          ],
-        };
-      });
+      apply((s) => applyAppendProgressDelta(s, delta, kind, agentAttemptId));
     },
     [getApply]
   );
 
   const appendToLastThinking = useCallback(
-    (delta: string, sessionId?: string): void => appendToLastProgress(delta, 'thinking', sessionId),
+    (delta: string, sessionId?: string, agentAttemptId?: string): void =>
+      appendToLastProgress(delta, 'thinking', sessionId, agentAttemptId),
     [appendToLastProgress]
   );
 
   const appendToLastReasoning = useCallback(
-    (delta: string, sessionId?: string): void => appendToLastProgress(delta, 'reasoning', sessionId),
+    (delta: string, sessionId?: string, agentAttemptId?: string): void =>
+      appendToLastProgress(delta, 'reasoning', sessionId, agentAttemptId),
     [appendToLastProgress]
   );
 
   const appendToLastAssistant = useCallback(
-    (delta: string, sessionId?: string): void => {
+    (delta: string, sessionId?: string, agentAttemptId?: string): void => {
       const apply = getApply(sessionId);
-      apply((s) => applyAppendAssistantDelta(s, delta));
+      apply((s) => applyAppendAssistantDelta(s, delta, agentAttemptId));
+    },
+    [getApply]
+  );
+
+  const discardAgentAttempt = useCallback(
+    (attemptId: string, sessionId?: string): void => {
+      const apply = getApply(sessionId);
+      apply((s) => applyDiscardAgentAttempt(s, attemptId));
+    },
+    [getApply]
+  );
+
+  const finalizeAgentAttempt = useCallback(
+    (attemptId: string, sessionId?: string): void => {
+      const apply = getApply(sessionId);
+      apply((s) => applyFinalizeAgentAttempt(s, attemptId));
     },
     [getApply]
   );
@@ -499,7 +616,7 @@ export function useSessions() {
   );
 
   const importSession = useCallback(
-    async (payload: { title: string; code: string; messages: ChatMessage[] }): Promise<void> => {
+    async (payload: { title: string; code: string; messages: ChatMessage[]; revisions?: CodeRevision[] }): Promise<void> => {
       const id = newSessionId();
       const now = Date.now();
       const session: Session = {
@@ -507,6 +624,7 @@ export function useSessions() {
         title: `${payload.title}`,
         messages: payload.messages,
         code: payload.code,
+        revisions: importedRevisions(payload.messages, payload.revisions),
         createdAt: now,
         updatedAt: now,
       };
@@ -629,6 +747,7 @@ export function useSessions() {
         title: `${session.title}${t('branchSuffix')}`,
         messages: sliced,
         code,
+        inputMode: inputModeReferencedBy(sliced),
         revisions: revisionsReferencedBy(sliced, session.revisions),
         createdAt: now,
         updatedAt: now,
@@ -674,6 +793,8 @@ export function useSessions() {
     appendToLastThinking,
     appendToLastReasoning,
     appendToLastAssistant,
+    discardAgentAttempt,
+    finalizeAgentAttempt,
     finalizeLastAssistantMessage,
     setCurrentCode,
     newSession,

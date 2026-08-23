@@ -16,10 +16,19 @@ import {
   type ToolContext,
 } from './tools';
 import { parseScore, summariseScore } from './parser';
-import { getErrorMessage } from '../lib/errors';
+import {
+  getErrorMessage,
+  getErrorStatus,
+  getRetryDelayMs,
+  isRetryableRequestError,
+  waitForRetryDelay,
+} from '../lib/errors';
 
 /** Anthropic extended thinking block, must be echoed back verbatim in multi-turn. */
 export type ThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
+
+/** User-selected reasoning depth for a compose-intent turn (see CONTEXT.md: Thinking level). */
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'extreme';
 
 // OpenAI ChatCompletion message shape (only the bits we use).
 export interface ChatMsg {
@@ -51,7 +60,9 @@ export interface LLMCaller {
     onReasoningDelta?: (delta: string) => void,
     signal?: AbortSignal,
     /** When false, suppress the reasoning/thinking chain for this call (default true). */
-    enableThinking?: boolean
+    enableThinking?: boolean,
+    /** How deep to think when enabled; ignored when enableThinking is false (default 'medium'). */
+    thinkingLevel?: ThinkingLevel
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
@@ -68,9 +79,11 @@ export type ProgressEvent =
   | { kind: 'tool_result'; name: string; ok: boolean; error?: string }
   | { kind: 'commit'; code: string }
   | { kind: 'assistant_text'; text: string }
-  | { kind: 'assistant_text_delta'; delta: string }
-  | { kind: 'assistant_reply_delta'; delta: string }
-  | { kind: 'reasoning_delta'; delta: string }
+  | { kind: 'assistant_text_delta'; delta: string; attemptId?: string }
+  | { kind: 'assistant_reply_delta'; delta: string; attemptId?: string }
+  | { kind: 'reasoning_delta'; delta: string; attemptId?: string }
+  | { kind: 'request_attempt_discarded'; attemptId: string }
+  | { kind: 'request_attempt_succeeded'; attemptId: string }
   | { kind: 'warn'; message: string };
 
 export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
@@ -78,6 +91,7 @@ export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
 export interface RunAgentOptions {
   initialCode: string;
   instruction: string;
+  locale: 'zh' | 'en';
   systemPrompt: string;
   llm: LLMCaller;
   maxIter?: number;
@@ -87,6 +101,8 @@ export interface RunAgentOptions {
   conversationHistory?: ConversationTurn[];
   /** When false, the model's reasoning/thinking chain is disabled for this run (default true). */
   enableThinking?: boolean;
+  /** How deep to think when enabled; ignored when enableThinking is false (default 'medium'). */
+  thinkingLevel?: ThinkingLevel;
 }
 
 export interface TokenUsage {
@@ -94,12 +110,118 @@ export interface TokenUsage {
   systemEstimate: number;
 }
 
+export class EmptyAgentResponseError extends Error {
+  constructor() {
+    super('Model returned no text or tool calls');
+    this.name = 'EmptyAgentResponseError';
+  }
+}
+
+const MAX_REQUEST_ATTEMPTS = 3;
+let requestAttemptSequence = 0;
+
+function nextRequestAttemptId(iteration: number, attempt: number): string {
+  requestAttemptSequence += 1;
+  return `agent-${Date.now()}-${iteration}-${attempt}-${requestAttemptSequence}`;
+}
+
 // Wrap a streaming-delta progress event, or undefined when there's no listener.
 function makeProgressDelta(
   onProgress: ((e: ProgressEvent) => void) | undefined,
   kind: 'assistant_text_delta' | 'assistant_reply_delta' | 'reasoning_delta',
+  attemptId: string,
+  onDelta: () => void,
 ): ((delta: string) => void) | undefined {
-  return onProgress ? (delta: string) => onProgress({ kind, delta }) : undefined;
+  return onProgress
+    ? (delta: string) => {
+        onDelta();
+        onProgress({ kind, delta, attemptId });
+      }
+    : undefined;
+}
+
+type LLMResponse = Awaited<ReturnType<LLMCaller['chatWithTools']>>;
+
+interface ChatWithToolsRetryOptions {
+  llm: LLMCaller;
+  messages: ChatMsg[];
+  tools: ReturnType<typeof getOpenAIToolSchemas>;
+  iteration: number;
+  onProgress?: (event: ProgressEvent) => void;
+  signal?: AbortSignal;
+  enableThinking: boolean;
+  thinkingLevel: ThinkingLevel;
+}
+
+async function chatWithToolsWithRetry(
+  opts: ChatWithToolsRetryOptions,
+): Promise<LLMResponse> {
+  const {
+    llm,
+    messages,
+    tools,
+    iteration,
+    onProgress,
+    signal,
+    enableThinking,
+    thinkingLevel,
+  } = opts;
+
+  for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt++) {
+    const attemptId = nextRequestAttemptId(iteration, attempt);
+    let receivedPartial = false;
+    const markPartial = () => {
+      receivedPartial = true;
+    };
+
+    try {
+      const response = await llm.chatWithTools(
+        messages,
+        tools,
+        makeProgressDelta(
+          onProgress,
+          enableThinking ? 'assistant_text_delta' : 'assistant_reply_delta',
+          attemptId,
+          markPartial,
+        ),
+        makeProgressDelta(onProgress, 'reasoning_delta', attemptId, markPartial),
+        signal,
+        enableThinking,
+        thinkingLevel,
+      );
+
+      if (!response.content?.trim() && response.toolCalls.length === 0) {
+        throw new EmptyAgentResponseError();
+      }
+
+      onProgress?.({ kind: 'request_attempt_succeeded', attemptId });
+      return response;
+    } catch (error) {
+      onProgress?.({ kind: 'request_attempt_discarded', attemptId });
+      if (
+        attempt === MAX_REQUEST_ATTEMPTS
+        || !isRetryableRequestError(error, signal)
+      ) {
+        throw error;
+      }
+
+      const retryAttempt = attempt as 1 | 2;
+      const delayMs = getRetryDelayMs(retryAttempt);
+      console.warn('[agent] Retrying request', {
+        iteration,
+        retryAttempt,
+        maxRetries: MAX_REQUEST_ATTEMPTS - 1,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: getErrorMessage(error),
+        status: getErrorStatus(error),
+        delayMs,
+        receivedPartial,
+      });
+      await waitForRetryDelay(delayMs, signal);
+    }
+  }
+
+  throw new Error('Agent request retry loop exited unexpectedly');
 }
 
 // Count CJK code points (≈1 token/char) for the system-prompt token estimate.
@@ -133,6 +255,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   const {
     initialCode,
     instruction,
+    locale,
     systemPrompt,
     llm,
     maxIter = DEFAULT_MAX_ITER,
@@ -141,13 +264,14 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     signal,
     conversationHistory,
     enableThinking = true,
+    thinkingLevel = 'medium',
   } = opts;
 
   const state: AgentState = {
     code: initialCode || '',
     finalCode: null,
   };
-  const isZh = /[一-龥]/.test(instruction);
+  const isZh = locale === 'zh';
   const ctx: ToolContext = { state, isZh };
   let userTurn: string;
   if (initialCode) {
@@ -197,12 +321,16 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
-    const onTextDelta = makeProgressDelta(
+    const resp = await chatWithToolsWithRetry({
+      llm,
+      messages,
+      tools,
+      iteration: iterations,
       onProgress,
-      enableThinking ? 'assistant_text_delta' : 'assistant_reply_delta',
-    );
-    const onReasoningDelta = makeProgressDelta(onProgress, 'reasoning_delta');
-    const resp = await llm.chatWithTools(messages, tools, onTextDelta, onReasoningDelta, signal, enableThinking);
+      signal,
+      enableThinking,
+      thinkingLevel,
+    });
     if (resp.usage) lastUsage = resp.usage;
 
     if (resp.content && resp.content.trim()) {
@@ -229,8 +357,9 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     });
 
     if (resp.toolCalls.length === 0) {
-      // No tools requested. If the model returned substantive text and did not
-      // mutate code, this is a legal chat turn in unified-agent mode.
+      // No tools requested. A substantive text response is a legal chat turn
+      // in unified-agent mode; empty responses were rejected by the request
+      // retry boundary before reaching this point.
       const text = resp.content?.trim() || '';
       if (text) {
         explanation = text;
