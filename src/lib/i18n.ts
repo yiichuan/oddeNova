@@ -149,6 +149,19 @@ const S: Record<string, readonly [string, string]> = {
   emptyCode:       ['代码为空', 'Code is empty'],
   copyShareLink:   ['复制分享链接', 'Copy share link'],
 
+  // LearnPage
+  learnPageTitle:    ['Strudel 文档', 'Strudel Docs'],
+  backToApp:         ['返回 oddeNova', 'Back to oddeNova'],
+  tableOfContents:   ['目录', 'Contents'],
+  prevChapter:       ['上一篇', 'Previous'],
+  nextChapter:       ['下一篇', 'Next'],
+  viewOriginal:      ['查看英文原文', 'View English original'],
+  translatedOn:      ['翻译于', 'Translated'],
+  notTranslatedNotice: [
+    '这部分内容目前只有英文版。以下链接会跳转到 strudel.cc 的原文页面。',
+    "This section hasn't been translated into Chinese yet — the content below links to the original page on strudel.cc.",
+  ],
+  openOriginalPage:  ['打开原文页面 ↗', 'Open original page ↗'],
   // Thinking level
   thinkingLevel:        ['思考强度', 'Thinking level'],
   thinkingLevelLow:     ['低', 'Low'],
