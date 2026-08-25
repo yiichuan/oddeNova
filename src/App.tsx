@@ -33,6 +33,8 @@ import AccountModal from './components/overlays/AccountModal';
 import OddeNovaImportNotice from './components/overlays/OddeNovaImportNotice';
 import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
 import FeaturedPage from './components/featured/FeaturedPage';
+import FavoritesPage from './components/favorites/FavoritesPage';
+import VinylLabPage from './components/featured/VinylLabPage';
 import SettingsSidebar, { type SettingsSection } from './components/settings/SettingsSidebar';
 import ModelSettingsPanel from './components/settings/ModelSettingsPanel';
 import AppearanceSettingsPanel from './components/settings/AppearanceSettingsPanel';
@@ -41,6 +43,7 @@ import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 import type { AgentEntryPoint } from './lib/analytics';
 import { FEATURED_PIECES, findFeaturedPiece, type FeaturedPiece } from './lib/featured-pieces';
+import { FAVORITE_CONVERSATIONS } from './lib/favorite-conversations';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
 import { featuredPlayer } from './services/featured-player';
 import { featuredSessionDraft } from './lib/featured-session';
@@ -57,6 +60,12 @@ import {
   importGuestSessions,
 } from './lib/session-import';
 import { type Session } from './hooks/useSessions';
+
+/**
+ * Destinations that take the whole content area, leaving no room for the
+ * session column or the divider beside it.
+ */
+const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites', 'vinylLab']);
 
 export default function App() {
   const strudel = useStrudel();
@@ -99,6 +108,10 @@ export default function App() {
     () => FEATURED_PIECES[0]?.id ?? null,
   );
   const [openingFeatured, setOpeningFeatured] = useState(false);
+  // Which of Featured's two views is up. The page owns that; the shell only
+  // needs it because the primary nav breaks apart for the collection and
+  // re-forms into a column for a piece.
+  const [featuredPieceOpen, setFeaturedPieceOpen] = useState(false);
   const modelSettings = useModelSettingsDraft(resetClient);
   const themePreference = useThemePreference();
   const animationPreference = useAnimationPreference();
@@ -251,6 +264,8 @@ export default function App() {
   // and belongs to nobody's session.
   const featuredPreview = useFeaturedPreview(featuredPlayer);
   const stopFeaturedPreview = featuredPreview.stop;
+  const featuredPlayingId = featuredPreview.playingId;
+  const featuredPausedId = featuredPreview.pausedId;
   const stopStudio = strudel.stop;
 
   const handlePrimaryNavSelect = useCallback((item: PrimaryNavItem) => {
@@ -629,6 +644,19 @@ export default function App() {
     void playFeatured(piece);
   }, [playFeatured]);
 
+  /* Reading a piece parks the bar on it too — opening a record, or turning its
+     track column, is choosing what the transport points at. The audition goes
+     quiet with it: the bar names one piece, so letting a different one carry on
+     sounding underneath would make the bar say the wrong thing. Reaching for
+     the piece already sounding, or the one holding a paused playhead, is not a
+     change and leaves the transport alone. */
+  const handleFeaturedSelect = useCallback((piece: FeaturedPiece) => {
+    setFeaturedId(piece.id);
+    if (featuredPlayingId !== piece.id && featuredPausedId !== piece.id) {
+      stopFeaturedPreview();
+    }
+  }, [featuredPausedId, featuredPlayingId, stopFeaturedPreview]);
+
   const handleOpenFeaturedInStudio = useCallback(async (piece: FeaturedPiece) => {
     setOpeningFeatured(true);
     try {
@@ -916,9 +944,8 @@ export default function App() {
       </div>
     ) : (
     <div
-      // `relative z-0` makes this a stacking context: without one, the featured
-      // page's colour wash (a -z-10 layer) would fall behind this element's own
-      // background and never be seen.
+      // `relative z-0` owns the desktop layer stack. Featured then isolates its
+      // background at 0, content at 10, player at 20 and PrimaryNav at 30.
       className="relative z-0 flex h-full w-full overflow-hidden bg-bg-primary p-region"
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
     >
@@ -930,15 +957,19 @@ export default function App() {
         />
       )}
       {accountOverlays}
-      <PrimaryNav selectedItem={primaryNavItem} onSelect={handlePrimaryNavSelect} />
+      <PrimaryNav
+        selectedItem={primaryNavItem}
+        onSelect={handlePrimaryNavSelect}
+        featuredPieceOpen={featuredPieceOpen}
+      />
 
       <>
-        {/* Featured runs full width — it is a gallery, not a two-pane workspace —
+        {/* The gallery pages run full width — they are not two-pane workspaces —
             so the column and its resize handle step aside there. Everything in
             them stays mounted, so drafts and local UI state survive the trip. */}
         <div
           style={{ width: sidebarWidth, flexShrink: 0 }}
-          className={primaryNavItem === 'featured' ? 'hidden' : 'h-full'}
+          className={FULL_WIDTH_PAGES.has(primaryNavItem) ? 'hidden' : 'h-full'}
         >
           <div className={primaryNavItem === 'home' ? 'h-full' : 'hidden'}>
             <Sidebar
@@ -988,7 +1019,7 @@ export default function App() {
         <div
           {...hDragHandlers}
           data-resize-handle="horizontal"
-          className={primaryNavItem === 'featured' ? 'hidden' : 'h-full w-divider shrink-0'}
+          className={FULL_WIDTH_PAGES.has(primaryNavItem) ? 'hidden' : 'h-full w-divider shrink-0'}
           style={{ cursor: 'col-resize' }}
         />
 
@@ -1061,10 +1092,18 @@ export default function App() {
               engineReady={strudel.engineReady}
               opening={openingFeatured}
               onPlay={handleFeaturedPlay}
+              onSelect={handleFeaturedSelect}
               onStop={featuredPreview.stop}
               onPause={featuredPreview.pause}
               onOpenInStudio={(piece) => void handleOpenFeaturedInStudio(piece)}
+              onOpenChange={setFeaturedPieceOpen}
             />
+          </div>
+          <div className={primaryNavItem === 'favorites' ? 'flex h-full min-h-0' : 'hidden'}>
+            <FavoritesPage conversations={FAVORITE_CONVERSATIONS} />
+          </div>
+          <div className={primaryNavItem === 'vinylLab' ? 'flex h-full min-h-0' : 'hidden'}>
+            <VinylLabPage piece={FEATURED_PIECES[0]!} />
           </div>
           <div className={primaryNavItem === 'settings' ? 'flex h-full min-h-0' : 'hidden'}>
             {settingsSection === 'model' ? (

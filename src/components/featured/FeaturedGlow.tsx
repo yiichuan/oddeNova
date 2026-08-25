@@ -58,7 +58,7 @@ export default function FeaturedGlow({ piece }: { piece: FeaturedPiece }) {
     <div
       aria-hidden="true"
       data-testid="featured-glow"
-      className="featured-glow -z-10 transition-opacity duration-700 ease-out motion-reduce:transition-none"
+      className="featured-glow z-0 transition-opacity duration-700 ease-out motion-reduce:transition-none"
       // The cover's own colour and nothing else — every blob draws with it.
       // Nothing shows until the cover has been read; the black stand-in only
       // keeps the colour value valid behind an opacity of zero.

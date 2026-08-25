@@ -64,7 +64,8 @@
     "openai": "^6.34.0",
     "posthog-js": "^1.407.8",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -72,6 +73,7 @@
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.4",
     "@vercel/node": "^5.8.2",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^2.1.9",

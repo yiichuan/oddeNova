@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../../../lib/i18n';
 import { GITHUB_URL, LEARN_URL } from '../../../lib/external-links';
+import { REJOIN_MS, SPLIT_MS } from '../liquid-column';
 import PrimaryNav from '../PrimaryNav';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -12,12 +13,19 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const roots: Root[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   for (const root of roots.splice(0)) {
     act(() => root.unmount());
   }
   document.body.innerHTML = '';
 });
+
+function stubColumnBox(width = 60, height = 900) {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+    width, height, top: 0, left: 0, right: width, bottom: height, x: 0, y: 0, toJSON: () => ({}),
+  } as DOMRect);
+}
 
 function renderPrimaryNav(selectedItem: React.ComponentProps<typeof PrimaryNav>['selectedItem'] = 'home') {
   const container = document.createElement('div');
@@ -36,13 +44,16 @@ function renderPrimaryNav(selectedItem: React.ComponentProps<typeof PrimaryNav>[
 describe('PrimaryNav', () => {
   it('groups items in the requested top-to-bottom order', () => {
     const { container } = renderPrimaryNav();
-    expect(container.querySelector('nav')?.className).toContain('primary-nav-surface');
-    expect(container.querySelector('nav')?.className).toContain('primary-nav-outline');
+    const lobes = [...container.querySelectorAll('.primary-nav-pod')];
+    expect(lobes.map((lobe) => lobe.getAttribute('data-anchor'))).toEqual(['top', 'bottom']);
+    // One glass body and one border, both clipped to the shared silhouette.
+    expect(container.querySelectorAll('.primary-nav-glass')).toHaveLength(1);
+    expect(container.querySelectorAll('.primary-nav-edge')).toHaveLength(1);
     const labelsIn = (testId: string) => [...container.querySelectorAll(`[data-testid="${testId}"] button`)]
       .map((button) => button.getAttribute('aria-label'));
 
-    expect(labelsIn('primary-nav-top')).toEqual([t('navHome'), t('navFeatured')]);
-    expect(labelsIn('primary-nav-bottom')).toEqual([t('navMore'), t('navSettings'), t('navAccount')]);
+    expect(labelsIn('primary-nav-top')).toEqual([t('navHome'), t('navFeatured'), t('navFavorites')]);
+    expect(labelsIn('primary-nav-bottom')).toEqual([t('navMore'), t('navVinylLab'), t('navSettings'), t('navAccount')]);
   });
 
   it('marks the selected item and reports menu changes', () => {
@@ -58,6 +69,26 @@ describe('PrimaryNav', () => {
     expect(onSelect).toHaveBeenCalledWith('settings');
   });
 
+  it('turns the brand mark into the Featured icon while the Featured navigation is active', () => {
+    const { container } = renderPrimaryNav('featured');
+    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
+
+    expect(mark?.className).toContain('[transform:rotateY(180deg)]');
+    expect(mark?.className).not.toContain('group-hover:');
+    expect(mark?.querySelector('svg')).not.toBeNull();
+    expect(mark?.parentElement?.className).not.toContain('hover:bg-white/10');
+  });
+
+  it('turns the brand mark into the Favorites icon while Favorites is active', () => {
+    const { container } = renderPrimaryNav('favorites');
+    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
+
+    expect(mark?.className).toContain('[transform:rotateY(180deg)]');
+    expect(mark?.className).not.toContain('group-hover:');
+    expect(mark?.querySelector('svg')).not.toBeNull();
+    expect(mark?.parentElement?.className).not.toContain('hover:bg-white/10');
+  });
+
   it('opens external links above More without selecting a primary destination', () => {
     const { container, onSelect } = renderPrimaryNav();
     const more = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navMore')}"]`);
@@ -71,6 +102,9 @@ describe('PrimaryNav', () => {
     expect(menu?.dataset.open).toBe('true');
     expect(onSelect).not.toHaveBeenCalled();
 
+    const vinylLab = menu?.querySelector<HTMLButtonElement>(`button[aria-label="${t('navVinylLab')}"]`);
+    expect(vinylLab?.getAttribute('role')).toBe('menuitem');
+
     const learn = menu?.querySelector<HTMLAnchorElement>(`a[href="${LEARN_URL}"]`);
     const github = menu?.querySelector<HTMLAnchorElement>(`a[href="${GITHUB_URL}"]`);
     expect(learn?.getAttribute('aria-label')).toBe(t('navLearnStrudel'));
@@ -82,6 +116,15 @@ describe('PrimaryNav', () => {
 
     act(() => more?.click());
     expect(more?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('selects the Three.js vinyl lab from More', () => {
+    const { container, onSelect } = renderPrimaryNav();
+    const more = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navMore')}"]`);
+    act(() => more?.click());
+    const lab = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navVinylLab')}"]`);
+    act(() => lab?.click());
+    expect(onSelect).toHaveBeenCalledWith('vinylLab');
   });
 
   it('shows collapsed button labels directly to the right after a short hover delay', () => {
@@ -127,5 +170,140 @@ describe('PrimaryNav', () => {
     act(() => collapse?.click());
 
     expect(navContainer?.dataset.expanded).toBe('false');
+  });
+
+  it('settles into two lobes on Featured, unfolding each on hover', () => {
+    stubColumnBox();
+    const { container } = renderPrimaryNav('featured');
+    const shell = container.querySelector<HTMLElement>('[data-nav-shape]');
+    const top = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-top"]');
+    const bottom = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-bottom"]');
+    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
+    const face = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('expandNavPages')}"]`);
+
+    // Selecting Featured before mount lands on the settled shape directly, each
+    // lobe wrapped around its own icon rather than squared off to a shared size.
+    expect(shell?.dataset.navShape).toBe('pods');
+    expect(top?.style.height).toBe('54px');
+    expect(bottom?.style.height).toBe('64px');
+    expect(face?.getAttribute('aria-expanded')).toBe('false');
+
+    const home = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navHome')}"]`);
+    const settings = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navSettings')}"]`);
+    const account = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navAccount')}"]`);
+    expect(home?.className).toContain('opacity-0');
+    expect(settings?.className).toContain('opacity-0');
+    expect(account?.className).not.toContain('opacity-0');
+
+    act(() => top?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    expect(face?.getAttribute('aria-expanded')).toBe('true');
+    expect(mark?.className).toContain('[transform:rotateY(0deg)]');
+    expect(home?.className).toContain('opacity-100');
+    expect(settings?.className).toContain('opacity-0');
+
+    act(() => {
+      top?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      bottom?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(face?.getAttribute('aria-expanded')).toBe('false');
+    expect(mark?.className).toContain('[transform:rotateY(180deg)]');
+    expect(home?.className).toContain('opacity-0');
+    expect(settings?.className).toContain('opacity-100');
+  });
+
+  it('settles into the same two-lobe navigation on Favorites', () => {
+    stubColumnBox();
+    const { container } = renderPrimaryNav('favorites');
+    const shell = container.querySelector<HTMLElement>('[data-nav-shape]');
+    const top = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-top"]');
+    const bottom = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-bottom"]');
+    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
+
+    expect(shell?.dataset.navShape).toBe('pods');
+    expect(top?.style.height).toBe('54px');
+    expect(bottom?.style.height).toBe('64px');
+
+    act(() => top?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    expect(mark?.className).toContain('[transform:rotateY(0deg)]');
+
+    act(() => top?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+    expect(mark?.className).toContain('[transform:rotateY(180deg)]');
+  });
+
+  it('clips one body while the strand holds, and two once it snaps', () => {
+    stubColumnBox();
+    const { container } = renderPrimaryNav();
+    const glass = container.querySelector<HTMLElement>('.primary-nav-glass');
+    const edge = container.querySelector<HTMLElement>('.primary-nav-edge');
+    const subpaths = (element: HTMLElement | null) => (element?.style.clipPath.split('M').length ?? 1) - 1;
+
+    // Joined: a single closed outline, and a border ring drawn from two of them.
+    expect(glass?.style.clipPath).toMatch(/^path\("M/);
+    expect(subpaths(glass)).toBe(1);
+    expect(edge?.style.clipPath).toContain('evenodd');
+    expect(subpaths(edge)).toBe(2);
+
+    const { container: split } = renderPrimaryNav('featured');
+    const splitGlass = split.querySelector<HTMLElement>('.primary-nav-glass');
+    expect(subpaths(splitGlass)).toBe(2);
+    expect(subpaths(split.querySelector<HTMLElement>('.primary-nav-edge'))).toBe(4);
+  });
+
+  it('stays mid-transition until the liquid has finished moving', () => {
+    vi.useFakeTimers();
+    const { container, onSelect } = renderPrimaryNav();
+    const shell = container.querySelector<HTMLElement>('[data-nav-shape]');
+    const root = roots[roots.length - 1];
+
+    expect(shell?.dataset.navShape).toBe('bar');
+
+    const featured = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFeatured')}"]`);
+    act(() => featured?.click());
+    expect(onSelect).toHaveBeenCalledWith('featured');
+
+    // App owns the selection, so replay it the way the real parent would.
+    act(() => root.render(<PrimaryNav selectedItem="featured" onSelect={onSelect} />));
+    expect(shell?.dataset.navShape).toBe('breaking');
+
+    act(() => vi.advanceTimersByTime(SPLIT_MS - 1));
+    expect(shell?.dataset.navShape).toBe('breaking');
+    act(() => vi.advanceTimersByTime(1));
+    expect(shell?.dataset.navShape).toBe('pods');
+
+    act(() => root.render(<PrimaryNav selectedItem="home" onSelect={onSelect} />));
+    expect(shell?.dataset.navShape).toBe('breaking');
+
+    /* Rejoining is measured from wherever the lobes actually stand, which the
+       frame loop owns — so only its outer bound is knowable here. */
+    act(() => vi.advanceTimersByTime(REJOIN_MS));
+    expect(shell?.dataset.navShape).toBe('bar');
+  });
+
+  it('re-forms the column for a piece opened out of the collection', () => {
+    vi.useFakeTimers();
+    const { container, onSelect } = renderPrimaryNav('featured');
+    const shell = container.querySelector<HTMLElement>('[data-nav-shape]');
+    const nav = container.querySelector<HTMLElement>('[data-expanded]');
+    const root = roots[roots.length - 1];
+
+    expect(shell?.dataset.navShape).toBe('pods');
+
+    /* Opening a piece is not a change of page, but the column belongs to the
+       shelf rather than to the record — so it flows back together on the same
+       transition that leaving Featured altogether would run. */
+    act(() => root.render(
+      <PrimaryNav selectedItem="featured" onSelect={onSelect} featuredPieceOpen />,
+    ));
+    expect(nav?.dataset.featuredDetail).toBe('true');
+    expect(shell?.dataset.navShape).toBe('breaking');
+    expect(container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]')?.className)
+      .not.toContain('[transform:rotateY(180deg)]');
+    act(() => vi.advanceTimersByTime(REJOIN_MS));
+    expect(shell?.dataset.navShape).toBe('bar');
+
+    act(() => root.render(<PrimaryNav selectedItem="featured" onSelect={onSelect} />));
+    expect(shell?.dataset.navShape).toBe('breaking');
+    act(() => vi.advanceTimersByTime(SPLIT_MS));
+    expect(shell?.dataset.navShape).toBe('pods');
   });
 });

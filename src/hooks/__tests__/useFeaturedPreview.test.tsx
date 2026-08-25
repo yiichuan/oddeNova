@@ -11,12 +11,12 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 function makePiece(id: string, code: string): FeaturedPiece {
   return {
     id,
+    album: id,
     title: id,
     originalArtist: 'someone',
     coder: 'someone else',
     style: 'Test',
     bpm: 120,
-    blurb: ['简介', 'blurb'],
     sourceUrl: 'https://example.com/post',
     patternUrl: 'https://strudel.cc/?abc',
     code,

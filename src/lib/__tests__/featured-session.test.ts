@@ -7,12 +7,12 @@ import type { FeaturedPiece } from '../featured-pieces';
 
 const PIECE: FeaturedPiece = {
   id: 'one',
+  album: 'Brat',
   title: '360 (cover / remix)',
   originalArtist: 'Charli XCX',
   coder: 'KAIXI',
   style: 'Hyperpop',
   bpm: 120,
-  blurb: ['简介', 'blurb'],
   sourceUrl: 'https://x.com/xxkaixi/status/1',
   patternUrl: 'https://strudel.cc/?abc',
   code: 'setcps(0.5)\ns("bd*4")',

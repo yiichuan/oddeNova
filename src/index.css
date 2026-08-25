@@ -68,6 +68,10 @@
   --color-text-primary: #D6D6D6;
   --color-text-secondary: #B8B8B8;
   --color-text-muted: #747474;
+  /* An idle icon, not idle text: a 1.5-1.6px stroke reads dimmer than a
+     letterform of the same colour, so the marks that sit unselected in the nav
+     and the featured transport get their own step above `text-muted`. */
+  --color-icon-idle: #949494;
   --color-text-reasoning: #949494;
   --color-border: #242424;
   --color-scrollbar-thumb-hover: #4A4A4A;
@@ -98,7 +102,9 @@ body {
   margin: 0;
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /* The platform's own UI face — Inter was named here but never loaded, so
+     this is what the app has always actually rendered in. */
+  font-family: system-ui, -apple-system, sans-serif;
   overflow: hidden;
 }
 
@@ -117,11 +123,19 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
 
-/* The base fill has to stay translucent: `backdrop-filter` only shows through
+/* The nav column is one body of liquid. A single glass layer and a single
+   border layer span the whole column, and both are clipped to a silhouette
+   that JS redraws each frame — the bar, the strand stretching between two
+   lobes, and the two settled lobes are all the same path.
+
+   The base fill has to stay translucent: `backdrop-filter` only shows through
    whatever the element's own background lets through, so a solid layer under
    the gradient would blur a backdrop nobody can see. */
-.primary-nav-surface {
+.primary-nav-glass {
   --primary-nav-glow-angle: 115deg;
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-region);
   background:
     linear-gradient(
       var(--primary-nav-glow-angle),
@@ -133,6 +147,73 @@ body {
     rgba(13, 13, 13, 0.55);
   backdrop-filter: blur(26px) saturate(140%);
   -webkit-backdrop-filter: blur(26px) saturate(140%);
+  pointer-events: none;
+}
+
+/* Clipped to the ring between the silhouette and the same silhouette pulled
+   1px inwards, so the border follows the strand rather than a box. */
+.primary-nav-edge {
+  --primary-nav-glow-angle: 115deg;
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    var(--primary-nav-glow-angle),
+    rgba(64, 64, 64, 0.5) 0%,
+    rgba(58, 58, 58, 0.4) 35%,
+    rgba(58, 58, 58, 0.4) 70%,
+    rgba(74, 74, 74, 0.5) 110%
+  );
+  pointer-events: none;
+}
+
+/* Denser when expanded — there are labels to read across the whole column —
+   but still glass, so the effect does not vanish the moment it opens. */
+[data-expanded='true'] .primary-nav-glass {
+  background: rgba(13, 13, 13, 0.72);
+}
+
+/* A Featured detail reads as a glass workspace rather than the collection's
+   open gallery. When its navigation expands, match the translucent code panel
+   beside it so the two surfaces belong to the same depth plane. */
+[data-featured-detail='true'][data-expanded='true'] .primary-nav-glass {
+  background: rgba(13, 13, 13, 0.55);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+}
+
+/* The lobes carry content only: their height is written frame by frame to
+   match the silhouette they sit in, and clipping is what folds rows away. */
+.primary-nav-pod {
+  height: 50%;
+  overflow: hidden;
+  border-radius: var(--radius-region);
+}
+
+.primary-nav-pod[data-anchor='top'] {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+}
+
+.primary-nav-pod[data-anchor='bottom'] {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+/* The code pane's scrollable body reaches 6px from the right edge. Mirror
+   that inset at the bottom so its horizontal and vertical scrollbars share a
+   single corner rhythm, and keep that corner transparent when both appear. */
+.featured-code-scroll {
+  margin-bottom: -0.875rem;
+  padding-bottom: 0.875rem;
+}
+
+.featured-code-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .code-panel-controls {
@@ -484,10 +565,6 @@ body {
 
 /* Denser when expanded — there are labels to read across the whole column —
    but still glass, so the effect does not vanish the moment it opens. */
-[data-expanded='true'] .primary-nav-surface {
-  background: rgba(13, 13, 13, 0.72);
-}
-
 .primary-nav-more-menu {
   position: fixed;
   inset: auto;
@@ -577,34 +654,6 @@ body {
     animation-duration: 0.01ms;
     transition-duration: 0.01ms;
   }
-}
-
-.primary-nav-outline {
-  position: relative;
-}
-
-.primary-nav-outline::before {
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background: linear-gradient(
-    var(--primary-nav-glow-angle),
-    rgba(64, 64, 64, 0.5) 0%,
-    rgba(58, 58, 58, 0.4) 35%,
-    rgba(58, 58, 58, 0.4) 70%,
-    rgba(74, 74, 74, 0.5) 110%
-  );
-  content: '';
-  pointer-events: none;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
 }
 
 .chat-input-outline {
@@ -1049,6 +1098,91 @@ canvas[id*="_widget__spectrum_"] {
 
 .mobile-menu-item:active {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Featured page · collection-space environment ────────────────────────────
+   WebGL is the only light field. The solid graphite fill is deliberately plain:
+   it is the loading, unsupported-browser and context-loss state. */
+
+.featured-space-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  contain: strict;
+  background: #05070a;
+  transition: opacity 600ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.featured-space-background[data-active='true'] {
+  opacity: 1;
+}
+
+.featured-space-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.featured-space-background[data-webgl-ready='true'] .featured-space-canvas {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-space-background,
+  .featured-space-canvas {
+    transition: none;
+  }
+}
+
+/* ── Featured page · the source mark ─────────────────────────────────────────
+   Lucide draws its info mark as a ring and then the glyph inside it — the stem
+   and the dot above it. The ring keeps the page's own colour and the glyph
+   carries the accent, so the mark reads as a note to open rather than as one
+   more piece of furniture in the corner.
+
+   Picked out by position, which is exactly what "the glyph" is in this icon:
+   everything after the ring. */
+
+.featured-source-mark > :not(:first-child) {
+  stroke: #f05a28;
+}
+
+/* ── Featured page · opening and closing a piece ─────────────────────────────
+   The cover itself is flown between the two views as a copy in the top layer
+   (featured-cover-flight.ts). Everything else is crossfaded under it: the view
+   being left goes first and quickly, the one arriving comes up behind the
+   cover so that it has settled by the time the cover lands on it.
+
+   Only the content fades — never a wrapper holding the cover, or the flight
+   would be handing over between two half-visible pictures. */
+
+@keyframes featured-content-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes featured-content-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.featured-content-in {
+  animation: featured-content-in 300ms cubic-bezier(0.25, 1, 0.5, 1) 80ms both;
+}
+
+.featured-content-out {
+  animation: featured-content-out 180ms ease-in both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-content-in,
+  .featured-content-out {
+    animation: none;
+  }
 }
 
 /* ── Featured page · the cover-colour wash ────────────────────────────────────

@@ -53,10 +53,64 @@ note("<c3 e3 g3>").mask("<0@2 1@4 0@2>")
     expect(getStrudelLoopCycles('note("<a <b c>>")')).toBe(4);
   });
 
+  it('reads two steps written without a space between them as two', () => {
+    // `[a b][c d]` is two steps and so is `-@16[a b]*2@16`. Run together they
+    // keep only the last weight in the run, which read Home's 56-cycle melody
+    // as 37 and left its four voices disagreeing about the length of the piece.
+    expect(getStrudelLoopCycles('note("<[a b]@2[c d]@3>")')).toBe(5);
+    expect(getStrudelLoopCycles('note("<-@16[a b]*2@16 -@24>")')).toBe(56);
+    // An operator still waiting for its argument keeps the step it is on.
+    expect(getStrudelLoopCycles('s("<bd*[2 3] sd>")')).toBe(2);
+    expect(getStrudelLoopCycles('s("<bd(3,8) sd>")')).toBe(2);
+  });
+
+  it('keeps an alternation inside a long slot as detail rather than as form', () => {
+    // A slot spanning 16 cycles has room to run its own alternation inside it:
+    // that is detail within the section, the same way an alternation inside an
+    // `arrange` section is. Multiplying the form by it is what reported Home —
+    // two minutes of music — as twenty days.
+    expect(getStrudelLoopCycles('note("<a@16 [b <c d>]*2@16 e@24>")')).toBe(56);
+    // A single-cycle slot has nowhere to put one but the next pass of its
+    // parent, so there it still multiplies.
+    expect(getStrudelLoopCycles('note("<a@2 [b <c d>]>")')).toBe(6);
+  });
+
+  it('gives every cat slot a cycle of its own', () => {
+    // `cat` is slowcat: one argument to a cycle, then back to the top. Veridis
+    // Quo's flute is sixteen of them written one phrase to a line, which reads
+    // as a list and was counted as a single cycle — a 33-second tune reported
+    // as an 8-second one.
+    expect(getStrudelLoopCycles('cat(note("a"), note("b"), note("c"))')).toBe(3);
+    expect(getStrudelLoopCycles('slowcat(s("bd"), s("sd"))')).toBe(2);
+    // What is inside a slot belongs to that slot, and still has to line up.
+    expect(getStrudelLoopCycles('cat(n("<0 1>"), n("2"), n("3"))')).toBe(6);
+    expect(getStrudelLoopCycles('cat(stack(s("bd"), s("hh*4")), s("sd"))')).toBe(2);
+    // `fastcat`/`seq` fit their arguments into one cycle and change nothing.
+    expect(getStrudelLoopCycles('fastcat(s("bd"), s("sd"), s("hh"))')).toBe(1);
+    expect(getStrudelLoopCycles('cat(s("bd"))')).toBe(1);
+  });
+
   it('scales a layer by chained slow/fast and fits every/iter into the loop', () => {
     expect(getStrudelLoopCycles('note("<a b c>").slow(4)')).toBe(12);
     expect(getStrudelLoopCycles('note("<a b c d>").fast(2)')).toBe(2);
     expect(getStrudelLoopCycles('s("bd*4").every(6, fast(2))')).toBe(6);
+  });
+
+  it('scales each $voice on its own rather than compounding them', () => {
+    // The `$name:` idiom declares one pattern per statement, and a `.slow(2)`
+    // at the end of one stretches that voice and no other. Read as a single
+    // expression the scalings multiply instead: Megalovania's four voices, each
+    // ending in `.slow(2)`, made 16 out of every cycle and reported half a
+    // minute of music as eight and a half.
+    const voices = `setcps(1)
+$lead: note("<a b c d>").slow(2)
+$chords: note("<e f g a>").slow(2)
+$bass: note("<c g>").slow(2)`;
+
+    expect(getStrudelLoopCycles(voices)).toBe(8);
+    // One voice alone has nothing to be kept apart from, and still scales the
+    // script it is the whole of.
+    expect(getStrudelLoopCycles('$: note("<a b c>").slow(2)')).toBe(6);
   });
 
   it('leaves LFO periods out of the loop but keeps a slow that reshapes the pattern', () => {

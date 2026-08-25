@@ -24,6 +24,12 @@ interface FeaturedCoverProps {
   piece: Pick<FeaturedPiece, 'id' | 'coverUrl'>;
   /** Sizing and rounding — the cover fills whatever box it is given. */
   className?: string;
+  /**
+   * Which end of the open/close transition this cover is, if either. The page
+   * finds the two by this attribute and flies a copy between them, so only the
+   * covers that are the same record in two views should carry it.
+   */
+  flightRole?: 'carousel' | 'detail';
 }
 
 /**
@@ -32,7 +38,7 @@ interface FeaturedCoverProps {
  * Always decorative. Every place it appears sits next to the piece's title, so
  * announcing it again would only make a screen reader say the name twice.
  */
-export function FeaturedCover({ piece, className = '' }: FeaturedCoverProps) {
+export function FeaturedCover({ piece, className = '', flightRole }: FeaturedCoverProps) {
   if (piece.coverUrl) {
     return (
       <img
@@ -40,10 +46,22 @@ export function FeaturedCover({ piece, className = '' }: FeaturedCoverProps) {
         alt=""
         aria-hidden="true"
         loading="lazy"
+        // Native image dragging would otherwise start an HTML5 drag — a ghost
+        // of the artwork trailing the cursor — on top of whatever gesture the
+        // surface underneath is already running.
+        draggable={false}
+        data-featured-cover={flightRole}
         className={`object-cover ${className}`}
       />
     );
   }
 
-  return <span aria-hidden="true" className={className} style={featuredCoverStyle(piece.id)} />;
+  return (
+    <span
+      aria-hidden="true"
+      data-featured-cover={flightRole}
+      className={className}
+      style={featuredCoverStyle(piece.id)}
+    />
+  );
 }

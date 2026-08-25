@@ -176,15 +176,31 @@ function chainRootBefore(masked: string, index: number): string {
   return /^\s*([A-Za-z_$][\w$]*)/.exec(masked.slice(start + 1, index))?.[1] ?? '';
 }
 
-/** Split mini-notation on whitespace that sits outside any bracket group. */
+/**
+ * Split mini-notation into steps: on whitespace outside any bracket group, and
+ * on the boundary between two steps written with none. `[a b][c d]` is two
+ * steps and so is `-@16[a b]*2@16`, and reading either as one step keeps only
+ * the last weight in it — which is how a 56-cycle melody came out as 37.
+ *
+ * A bracket only starts a step when what precedes it is a finished step rather
+ * than an operator still waiting for its argument: `bd*[2 3]` and `bd*<2 3>`
+ * are one step. Euclid's parens always attach, so `(` never splits.
+ */
 function topLevelTokens(value: string): string[] {
   const tokens: string[] = [];
   let depth = 0;
   let current = '';
 
   for (const character of value) {
-    if ('([{<'.includes(character)) depth += 1;
-    else if (')]}>'.includes(character)) depth = Math.max(0, depth - 1);
+    if ('([{<'.includes(character)) {
+      if (depth === 0 && '[{<'.includes(character) && /[\])>}\w.~-]$/.test(current)) {
+        tokens.push(current);
+        current = '';
+      }
+      depth += 1;
+    } else if (')]}>'.includes(character)) {
+      depth = Math.max(0, depth - 1);
+    }
 
     if (/\s/.test(character) && depth === 0) {
       if (current) tokens.push(current);
@@ -247,8 +263,17 @@ function alternationCycles(text: string): number[] {
       depth = Math.max(0, depth - 1);
       if (depth === 0 && start >= 0) {
         const inner = text.slice(start + 1, index);
-        const slots = topLevelTokens(inner).reduce((sum, token) => sum + tokenCycles(token), 0);
-        const nested = alternationCycles(inner);
+        const tokens = topLevelTokens(inner);
+        const slots = tokens.reduce((sum, token) => sum + tokenCycles(token), 0);
+        // An alternation sitting in a slot that spans more than one cycle has
+        // room to run its course inside it — it is detail within that section,
+        // exactly as an alternation inside an `arrange` section is, and folding
+        // it into the form is what reported a two-minute cover as 20 days. One
+        // in a single-cycle slot has nowhere to go but across passes of its
+        // parent, so that one still multiplies.
+        const nested = tokens.flatMap((token) =>
+          (tokenCycles(token) === 1 ? alternationCycles(token) : []),
+        );
         let cycles = Math.max(1, slots) * leastCommonPeriod(nested);
 
         const operator = /^\s*([/*])\s*(\d+(?:\.\d+)?)/.exec(text.slice(index + 1));
@@ -297,6 +322,57 @@ function arrangeSectionSum(masked: string, start: number): number | null {
 }
 
 /**
+ * How many comma-separated arguments the call whose parenthesis opens at
+ * `start` holds, counted at its own bracket depth so nested calls and
+ * mini-notation brackets add none. A trailing comma leaves no argument behind.
+ */
+function callArgCount(masked: string, start: number): number {
+  let depth = 0;
+  let args = 0;
+  let filled = false;
+
+  for (let index = start; index < masked.length; index += 1) {
+    const character = masked[index];
+    if ('([{'.includes(character)) {
+      depth += 1;
+    } else if (')]}'.includes(character)) {
+      // The paren that closes the call itself.
+      if (character === ')' && depth === 0) break;
+      depth = Math.max(0, depth - 1);
+    } else if (character === ',' && depth === 0) {
+      if (filled) args += 1;
+      filled = false;
+      continue;
+    }
+    if (!/\s/.test(character)) filled = true;
+  }
+
+  return filled ? args + 1 : args;
+}
+
+/**
+ * `cat(a, b, c)` — and its spelt-out name `slowcat` — gives each argument a
+ * whole cycle and starts again at the top, so the number of arguments is the
+ * pattern's period. Written one phrase to a line it reads as a list and is easy
+ * to miss as structure: a melody of sixteen `cat` slots runs sixteen cycles
+ * however short each slot's own notation is, and counting it as one is what
+ * reports a 33-second tune as an 8-second one. `fastcat`/`seq` squeeze their
+ * arguments into a single cycle instead, and change nothing.
+ */
+function catCycles(masked: string): number[] {
+  const call = /\b(?:slow)?cat\s*\(/g;
+  const spans: number[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = call.exec(masked)) !== null) {
+    const slots = callArgCount(masked, match.index + match[0].length);
+    if (slots > 1) spans.push(slots);
+  }
+
+  return spans;
+}
+
+/**
  * `arrange([8, verse], [8, chorus], ...)` plays its sections one after another
  * and starts over when they are done, so their combined length is the piece —
  * the form, not a period to fold in with everything else.
@@ -320,11 +396,47 @@ function arrangeCycles(masked: string): number | null {
   return longest;
 }
 
+/**
+ * The statements of a script written in the `$name:` idiom, each one a voice,
+ * plus whatever sits before and between them (setcps, shared bindings, a
+ * trailing `all(...)`). Null when the script names fewer than two, since there
+ * is then nothing to keep apart.
+ *
+ * Every voice is its own pattern: a `.slow(2)` at the end of one stretches that
+ * voice and no other. Read as a single expression their scalings compound
+ * instead — Megalovania's four voices each ending in `.slow(2)` multiplied a
+ * 32-cycle loop out to 512, an eight-and-a-half minute claim on half a minute
+ * of music. `parseScore` only splits a script that says `stack(...)`, and these
+ * scripts don't.
+ *
+ * Found in the masked code so a `$` inside a string or a comment names nothing,
+ * and taken only at paren depth 0, which is where a statement can start.
+ */
+function voiceSegments(code: string, masked: string): string[] | null {
+  const declaration = /^[ \t]*\$(?:[A-Za-z_$][\w$]*)?[ \t]*:/gm;
+  const depths = parenDepths(masked);
+  const starts: number[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = declaration.exec(masked)) !== null) {
+    if (depths[match.index] === 0) starts.push(match.index);
+  }
+  if (starts.length < 2) return null;
+
+  const segments = [code.slice(0, starts[0])];
+  for (let index = 0; index < starts.length; index += 1) {
+    segments.push(code.slice(starts[index], starts[index + 1] ?? code.length));
+  }
+
+  return segments;
+}
+
 /** Cycles one independent expression (a stack layer, or the surrounding code) runs for. */
 function segmentCycles(segment: string): number {
   const { strings, masked } = scanCode(segment);
   const periods: number[] = [1];
   for (const text of strings) periods.push(...alternationCycles(text));
+  periods.push(...catCycles(masked));
 
   const depths = parenDepths(masked);
   let scale = 1;
@@ -362,8 +474,13 @@ function segmentCycles(segment: string): number {
  * the length of the audible loop in cycles.
  */
 export function getStrudelLoopCycles(code: string): number {
-  const arranged = arrangeCycles(scanCode(code).masked);
+  const { masked } = scanCode(code);
+
+  const arranged = arrangeCycles(masked);
   if (arranged !== null) return arranged;
+
+  const voices = voiceSegments(code, masked);
+  if (voices !== null) return leastCommonPeriod(voices.map(segmentCycles));
 
   const parsed = parseScore(code);
   const segments: string[] = [];

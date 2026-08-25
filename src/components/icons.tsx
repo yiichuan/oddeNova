@@ -76,6 +76,28 @@ export const GitHubLogoIcon = ({ size = 16, className }: IconProps) => (
   <MaskedLogo src="/logo/GitHub_Invertocat_Black.svg" size={size} className={className} />
 );
 
+// Instagram's mark has no asset file here, and Lucide dropped its brand icons,
+// so it is drawn: the camera outline, lens and flash it has always been, at the
+// same 1.6 stroke the Lucide wrappers below use so it sits evenly beside them.
+export const InstagramLogoIcon = ({ size = 16, className }: IconProps) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.6}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <rect x="2" y="2" width="20" height="20" rx="5" />
+    <circle cx="12" cy="12" r="4.2" />
+    <circle cx="17.6" cy="6.4" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 // The rest are thin wrappers over Lucide icons, keeping this project's original
 // names, default sizes, and { size, className } prop shape so call sites stay
 // unchanged. Play/Stop keep their filled look via fill="currentColor".

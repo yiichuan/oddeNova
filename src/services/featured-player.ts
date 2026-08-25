@@ -129,9 +129,16 @@ class FeaturedPlayer {
     if (!instance) return false;
 
     if (code !== this.currentCode) {
-      // Another piece: nothing about the last one's position applies.
-      this.pendingSeekCycle = null;
+      // Another piece, so it starts at its top — and the scheduler will not do
+      // that by itself. Swapping a pattern into a running Cyclist leaves the
+      // clock counting, and a paused one picks up at the cycle it stopped on,
+      // so the next piece would be joined wherever the last one had got to.
+      // Rewound before the evaluate rather than after it: starting the clock
+      // queries the pattern immediately, and a seek applied afterwards would
+      // arrive a lookahead too late to keep that stretch from sounding.
       this.currentCode = code;
+      this.pendingSeekCycle = 0;
+      this.applyPendingSeek();
     }
 
     try {
