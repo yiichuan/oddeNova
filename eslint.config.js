@@ -6,7 +6,11 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Build and report output, plus `videos/` — a separate Remotion workspace
+  // with its own package.json, node_modules, tsconfig and test runner. All
+  // three are gitignored; linting them only ever reported on code this
+  // project does not build, against a React version it does not use.
+  globalIgnores(['dist', 'coverage', 'videos']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
