@@ -55,7 +55,12 @@ async function loadFont(name: string): Promise<FontZone[]> {
     const url = `${SOUNDFONT_CDN}/${name}.js`;
     const text = await fetch(url).then((r) => r.text());
     const [, data] = text.split('={');
-    return eval('{' + data) as FontZone[];
+    // Indirect eval (the `(0, eval)` idiom): runs in global scope rather than
+    // this function's, which is what lets bundlers minify the surrounding
+    // scope freely and stops Rolldown's direct-eval warning. Behaviorally
+    // identical here since the parsed object literal never reaches into local
+    // variables.
+    return (0, eval)('{' + data) as FontZone[];
   };
   loadCache[name] = load();
   return loadCache[name]!;
