@@ -800,6 +800,7 @@ export default function App() {
                 isPlaying={strudel.isPlaying}
                 isPaused={strudel.isPaused}
                 engineReady={strudel.engineReady}
+                accentColor={strudel.accentColor}
                 session={sessions.currentSession}
                 messages={messages}
                 exportState={strudel.exportState}
@@ -1036,6 +1037,7 @@ export default function App() {
                 isPlaying={strudel.isPlaying}
                 isPaused={strudel.isPaused}
                 engineReady={strudel.engineReady}
+                accentColor={strudel.accentColor}
                 session={sessions.currentSession}
                 messages={messages}
                 exportState={strudel.exportState}

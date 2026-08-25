@@ -24,27 +24,6 @@ describe('FEATURED_PIECES', () => {
     }
   });
 
-  it('draws only into canvases of its own', () => {
-    // A piece keeps the visualizers it was written with, but only the
-    // underscored ones: `._pianoroll()` and `._scope()` each get a canvas
-    // keyed by a widget id, which is a canvas this page can place. The
-    // un-underscored spellings take the shared full-screen draw context —
-    // here that is the studio visualizer's canvas, and a piece playing on the
-    // Featured page has no business painting it.
-    //
-    // `.theme()` and `.fontFamily()` are not Pattern methods in the
-    // @strudel/draw this app ships at all: a piece pasted straight from the
-    // REPL with those still on it would throw before a note sounded.
-    for (const piece of FEATURED_PIECES) {
-      expect(piece.code).not.toMatch(/\.theme\s*\(/);
-      expect(piece.code).not.toMatch(/\.fontFamily\s*\(/);
-      for (const visualizer of ['punchcard', 'pianoroll', 'scope', 'spiral', 'pitchwheel', 'spectrum']) {
-        // `.pianoroll(` but not `._pianoroll(`.
-        expect(piece.code).not.toMatch(new RegExp(`[^_]\\.${visualizer}\\s*\\(`));
-      }
-    }
-  });
-
   it('pins its own tempo rather than inheriting the engine\'s', () => {
     // `setcps` is global and outlives whatever set it, so a piece that leaves
     // its tempo to the engine plays at whatever the studio was last playing.

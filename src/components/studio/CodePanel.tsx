@@ -37,6 +37,13 @@ interface CodePanelProps {
   isPlaying: boolean;
   isPaused: boolean;
   engineReady: boolean;
+  /**
+   * The hued colour the playing piece's own `.color()` set, if any — null the
+   * rest of the time. Recolours the playback progress bar and the control
+   * bar's particle field; both fall back to the studio's own orange on their
+   * own when this is absent. See `StrudelState.accentColor`.
+   */
+  accentColor?: string | null;
   session: Session | null;
   messages: ChatMessage[];
   exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
@@ -148,7 +155,17 @@ function usePrefersReducedMotion() {
   return prefersReducedMotion;
 }
 
-function PlaybackProgress({ code, isPlaying, isPaused }: { code: string; isPlaying: boolean; isPaused: boolean }) {
+function PlaybackProgress({
+  code,
+  isPlaying,
+  isPaused,
+  accentColor,
+}: {
+  code: string;
+  isPlaying: boolean;
+  isPaused: boolean;
+  accentColor?: string | null;
+}) {
   const totalSeconds = useMemo(() => getStrudelLoopDurationSeconds(code), [code]);
   const loopCycles = useMemo(() => code.trim() ? getStrudelLoopCycles(code) : 0, [code]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -218,6 +235,12 @@ function PlaybackProgress({ code, isPlaying, isPaused }: { code: string; isPlayi
     <div
       data-testid="code-panel-playback-progress"
       className="code-panel-playback-layout relative z-10 flex min-w-0 flex-1 items-center"
+      // Falls back to the studio's own orange via the CSS `var(..., #CD5633)`
+      // default below whenever there is no playback accent to show — pause,
+      // stop, or a piece with no hued `.color()`. Leaving the property unset
+      // rather than writing the fallback value here too means there is one
+      // place (the CSS itself) that says what "no accent" paints as.
+      style={accentColor ? ({ '--code-panel-accent': accentColor } as CSSProperties) : undefined}
     >
       <div
         className="group relative flex h-6 min-w-0 flex-1 items-center"
@@ -233,12 +256,12 @@ function PlaybackProgress({ code, isPlaying, isPaused }: { code: string; isPlayi
         >
           <span
             data-testid="code-panel-playback-progress-fill"
-            className="absolute inset-y-0 left-0 rounded-full bg-[#CD5633]"
+            className="absolute inset-y-0 left-0 rounded-full bg-[var(--code-panel-accent,#CD5633)]"
             style={{ width: `${progress * 100}%` }}
           />
           <span
             data-testid="code-panel-playback-progress-thumb"
-            className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-current bg-[#CD5633] text-text-primary transition-[width,height,opacity] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-4 group-hover:w-4 group-hover:opacity-100 group-focus-within:h-4 group-focus-within:w-4 group-focus-within:opacity-100 ${isDragging ? 'h-4 w-4 opacity-100' : 'h-[10px] w-[10px] opacity-0'}`}
+            className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-current bg-[var(--code-panel-accent,#CD5633)] text-text-primary transition-[width,height,opacity] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-4 group-hover:w-4 group-hover:opacity-100 group-focus-within:h-4 group-focus-within:w-4 group-focus-within:opacity-100 ${isDragging ? 'h-4 w-4 opacity-100' : 'h-[10px] w-[10px] opacity-0'}`}
             style={{ left: `${progress * 100}%` }}
           />
         </div>
@@ -286,6 +309,7 @@ export default function CodePanel({
   isPlaying,
   isPaused,
   engineReady,
+  accentColor,
   session,
   messages,
   exportState,
@@ -514,7 +538,7 @@ export default function CodePanel({
       {/* StrudelMirror mounts here */}
       <div
         data-testid="code-panel-code-layer"
-        className="relative z-0 flex-1 min-h-0 overflow-hidden rounded-t-region border border-border bg-conversation-surface"
+        className="relative flex-1 min-h-0 overflow-hidden rounded-t-region border border-border bg-conversation-surface"
       >
         <div
           ref={containerRef}
@@ -604,6 +628,7 @@ export default function CodePanel({
             bpm={bpm}
             sampleSpectrum={strudelService.sampleAudioSpectrum}
             motionless={prefersReducedMotion}
+            accentColor={accentColor}
           />
 
           <span
@@ -629,7 +654,7 @@ export default function CodePanel({
           </div>
           {/* Keyed on the code so a new script remounts with a fresh playhead;
               deliberately not on the play state, so a pause keeps its position. */}
-          <PlaybackProgress key={code} code={code} isPlaying={isPlaying} isPaused={isPaused} />
+          <PlaybackProgress key={code} code={code} isPlaying={isPlaying} isPaused={isPaused} accentColor={accentColor} />
 
           <div
             data-testid="code-panel-right-actions"
@@ -773,6 +798,10 @@ export default function CodePanel({
               writingMode: 'vertical-lr',
               direction: 'rtl',
               '--volume-progress': `${Math.round(volume * 100)}%`,
+              // Falls back to `#CD5633` via the rule's own `var(..., #CD5633)`
+              // default when unset — same accent, same fallback, as the
+              // playback progress bar right below this control.
+              ...(accentColor ? { '--volume-slider-fill': accentColor } : {}),
             } as React.CSSProperties}
           />
         </div>,

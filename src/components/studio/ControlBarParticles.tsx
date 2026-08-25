@@ -38,6 +38,12 @@ interface ControlBarParticlesProps {
   /** Tempo of that piece, used to put the accent on the beat. */
   bpm?: number;
   /**
+   * A colour lifted from the playing piece's own `.color()`, replacing
+   * `PARTICLE_ACCENT_COLOR` for as long as it is set. Absent — the ordinary
+   * case — the field burns the studio's own orange, same as always.
+   */
+  accentColor?: string | null;
+  /**
    * One frequency frame off the end of the audio chain, sampled per animation
    * frame. It decides *how much* of the field burns: the louder the piece
    * sounds, the more flakes catch. Absent — or returning null, as it does
@@ -119,7 +125,7 @@ function paintDot(
  * It also degrades gracefully: a browser without canvas `filter` support gets
  * sharp flakes rather than a broken layer.
  */
-function buildAtlas(pixelRatio: number, shape: ParticleShape): SpriteAtlas {
+function buildAtlas(pixelRatio: number, shape: ParticleShape, accentColor?: string | null): SpriteAtlas {
   const dots = shape === 'dot';
   const maxBlur = PARTICLE_BLUR_LEVELS[PARTICLE_BLUR_LEVELS.length - 1];
   // A Gaussian is effectively finished at 3σ; less padding than that and each
@@ -168,7 +174,7 @@ function buildAtlas(pixelRatio: number, shape: ParticleShape): SpriteAtlas {
 
   return {
     canvas,
-    accentCanvas: tintedCopy(canvas, `rgb(${PARTICLE_ACCENT_COLOR})`),
+    accentCanvas: tintedCopy(canvas, accentColor ?? `rgb(${PARTICLE_ACCENT_COLOR})`),
     cellWidth,
     cellHeight,
     pixelRatio,
@@ -186,6 +192,7 @@ export default function ControlBarParticles({
   bpm = 0,
   sampleSpectrum,
   motionless = false,
+  accentColor = null,
 }: ControlBarParticlesProps) {
   // The bar snows whatever the hidden pane is made of, so the two read as one
   // thing moving between them rather than two unrelated effects.
@@ -263,7 +270,7 @@ export default function ControlBarParticles({
       previous: ACCENT_SHARE_MIN,
       current: ACCENT_SHARE_MIN,
     };
-    let atlas = buildAtlas(Math.min(window.devicePixelRatio || 1, 2), shape);
+    let atlas = buildAtlas(Math.min(window.devicePixelRatio || 1, 2), shape, accentColor);
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -278,7 +285,7 @@ export default function ControlBarParticles({
         canvas.height = bufferHeight;
       }
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      if (atlas.pixelRatio !== pixelRatio) atlas = buildAtlas(pixelRatio, shape);
+      if (atlas.pixelRatio !== pixelRatio) atlas = buildAtlas(pixelRatio, shape, accentColor);
     };
 
     const clear = () => {
@@ -454,7 +461,12 @@ export default function ControlBarParticles({
       resumeRef.current = null;
       observer?.disconnect();
     };
-  }, [motionless, shape]);
+    // `accentColor` rebuilds the whole field along with `shape`: both are rare,
+    // deliberate changes (a latch at most twice a playback, a settings change
+    // rarer still), so paying for a fresh `createParticles()` shuffle on either
+    // is the same trade already made for `shape` — simpler than keeping a
+    // second, narrower path just to re-tint one canvas in place.
+  }, [motionless, shape, accentColor]);
 
   return (
     <canvas

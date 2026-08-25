@@ -21,16 +21,21 @@
  *    `._pianoroll()`, `._scope()` — stay in, along with the `.color()` that
  *    tints them: each draws into a canvas of its own, keyed by a widget id the
  *    transpiler hands it, so they are the author's picture of the piece and are
- *    ours to place. Nothing places them yet: the Featured page runs a bare
- *    `repl()`, which has no `Drawer`, so those canvases are built detached and
- *    never painted — the calls read in the code window and do nothing else.
+ *    ours to place. Nothing places them on the Featured page itself: it runs a
+ *    bare `repl()`, which has no `Drawer`, so those canvases are built
+ *    detached and never painted there — the calls read in the code window and
+ *    do nothing else on that page.
  *
- *    What comes out is the calls that paint something they do not own:
- *    `.punchcard()` and the other un-underscored visualizers take the shared
- *    full-screen draw context, which on this page belongs to the studio's
- *    visualizer, and `.theme()` / `.fontFamily()` are not Pattern methods in
- *    the @strudel/draw we ship at all — the call would throw before a note
- *    sounded.
+ *    `.punchcard()` and the other un-underscored visualizers, plus `.theme()`,
+ *    are painters too — `.punchcard()` etc. draw onto a canvas, and `.theme()`
+ *    recolours syntax — both driven by a `Drawer`. The Studio's own code panel
+ *    now carries one (`codepanel-canvas.ts`, `codepanel-theme.ts`), so a piece
+ *    that keeps these calls gets them painted for real once opened there; on
+ *    the Featured page's bare `repl()` they still just register and do
+ *    nothing, same as the underscored ones. Kept only where the original
+ *    script shipped with them — see the 360 cover below. `.fontFamily()` is
+ *    not a Pattern method in any package this app ships at all, and throws
+ *    before a note sounds — that one is never a thing to write into a script.
  *
  * Past those, the only thing touched is whitespace: trailing spaces come off and
  * runs of blank lines collapse to one, so a script reads the same in the page's
@@ -38,10 +43,13 @@
  */
 
 /**
- * KAIXI's 360 cover, verbatim from the Strudel permalink apart from the
- * display chain the original ends with:
- *
- *   .theme(…).color(…).fontFamily(…).punchcard({…})
+ * KAIXI's 360 cover, verbatim from the Strudel permalink apart from
+ * `.fontFamily(…)`, dropped from the original's closing display chain —
+ * `.theme(…).color(…).fontFamily(…).punchcard({…})` — because it is not a
+ * Pattern method here and throws before a note sounds. The rest of that
+ * chain stays: dead weight on the Featured page's own bare `repl()`, but
+ * painted for real once opened in the Studio, whose code panel now carries
+ * its own Drawer (see the file-level comment above).
  *
  * The samples are loaded from the artist's repository on first play, the way
  * the original does it.
@@ -281,7 +289,13 @@ arrange(
   )],
   [8, stack(section_5, remix_vox.mask("<1 1 1 0 1 1 1 1>"))],
   [4, vox_chop_1.delay(.25).delayt(.5).dfb(.2).mask("<1 0 0 0>")]
-);
+)
+  .theme("<[greenText whitescreen] [blackscreen whitescreen]>/2")
+  .color("[#99CC3E #FFFFFF]")
+  .punchcard({
+    vertical: 1, flipTime: 1, fold: 0, stroke: 1,
+    playheadColor: 'rgba(0, 0, 0, 0)'
+  });
 
 // @version 1.2`;
 

@@ -4,6 +4,9 @@ import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExportCompleted } from '../lib/analytics';
 import { installOddenovaDarkSyntaxHighlight } from '../lib/oddenova-dark-syntax-highlight';
+import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '../lib/codepanel-theme';
+import { createCodePanelDrawContext, type CodePanelDrawContext } from '../lib/codepanel-canvas';
+import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
 import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
@@ -16,6 +19,12 @@ type StrudelReplState = {
   started?: boolean;
   evalError?: Error | unknown;
 };
+
+/** Just enough of `@strudel/core`'s Pattern to type the methods registered below. */
+interface StrudelPattern {
+  queryArc: (begin: number, end: number) => { value?: unknown }[];
+  onPaint: (painter: (ctx: unknown, time: number) => void) => StrudelPattern;
+}
 
 interface StrudelMirrorType {
   dispose?: () => void;
@@ -54,6 +63,13 @@ export type StrudelState = {
   error: string | null;
   engineReady: boolean;
   engineStatus: 'initializing' | 'ready' | 'failed';
+  /**
+   * The hued colour latched from the playing piece's own `.color()`, if it set
+   * one — null the rest of the time, which is what tells consumers (the
+   * playback progress bar, the control bar's particle field) to fall back to
+   * the studio's own accent. See `codepanel-accent.ts`.
+   */
+  accentColor: string | null;
 };
 
 type StateCallback = (state: StrudelState) => void;
@@ -182,6 +198,9 @@ export class StrudelService {
 
   private editorInstance: StrudelMirrorType | null = null;
   private containerElement: HTMLElement | null = null;
+  private panelTheme: CodePanelTheme | null = null;
+  private panelCanvas: CodePanelDrawContext | null = null;
+  private panelAccent: CodePanelAccent | null = null;
   private autocompletionEnabled = false;
   private lineWrappingEnabled = false;
   private isAudioInitialized = false;
@@ -227,6 +246,7 @@ export class StrudelService {
     error: null,
     engineReady: false,
     engineStatus: 'initializing',
+    accentColor: null,
   };
 
   private stateCallbacks: StateCallback[] = [];
@@ -289,7 +309,7 @@ export class StrudelService {
 
   private prebake = async (): Promise<void> => {
     try {
-      const { evalScope, Pattern, noteToMidi, valueToMidi } = await import('@strudel/core');
+      const { evalScope, Pattern, reify, noteToMidi, valueToMidi } = await import('@strudel/core');
       const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
       initAudioOnFirstClick();
@@ -326,6 +346,14 @@ export class StrudelService {
         this.audioAccess = { getAudioContext, getSuperdoughAudioController };
         (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
           this.recordLive(sec, name);
+        // `public/animation/galaxy-ascii.html` runs same-origin in the viz
+        // pane's iframe and already reaches across `window.parent` for
+        // `getAudioContext`/`getSuperdoughAudioController` above — this is the
+        // same channel, for the same reason: no postMessage round trip needed
+        // when the two windows can call straight into each other. Read live
+        // (not captured once) since the accent latches and resets over a
+        // single piece's playback, long after this assignment runs.
+        (window as unknown as Record<string, unknown>).getStrudelAccentColor = () => this._state.accentColor;
       }
 
       // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
@@ -341,6 +369,21 @@ export class StrudelService {
               const pan = panwidth(Math.min(Math.round(midi) / maxPan, 1), 0.5);
               return { ...value, pan: ((value['pan'] as number) || 1) * pan };
             });
+        };
+      }
+
+      // Register .theme() — strudel.cc has it, no published @strudel package
+      // does, and a piece pasted from there dies at eval with
+      // "arrange(...).theme is not a function" before a note sounds.
+      //
+      // Assigned to the prototype rather than declared with `register()`: that
+      // would patternify the argument into the hap structure, making the theme
+      // name part of the music. `punchcard` and `pianoroll` sidestep it the
+      // same way.
+      if (!Pattern.prototype.theme) {
+        const applyTheme = (name: string) => this.panelTheme?.apply(name);
+        Pattern.prototype.theme = function (this: StrudelPattern, themePattern: unknown) {
+          return this.onPaint(createThemePainter(reify(themePattern), applyTheme));
         };
       }
 
@@ -362,7 +405,7 @@ export class StrudelService {
     this.isInitializing = true;
     this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     try {
-      const { StrudelMirror, compartments } = await import('@strudel/codemirror');
+      const { StrudelMirror, compartments, themes } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
       cachedTranspiler = transpiler;
       const { getDrawContext } = await import('@strudel/draw');
@@ -385,11 +428,40 @@ export class StrudelService {
       const currentCode = this._state.code;
 
       if (this.editorInstance) {
+        // Before the view goes away, while it can still take a transaction:
+        // otherwise a theme left over from the last piece keeps its custom
+        // properties on the old panel.
+        this.panelTheme?.reset();
+        this.panelTheme = null;
         this.editorInstance.dispose?.();
         this.editorInstance = null;
       }
 
+      // Stops tracking the outgoing panel's size — `innerHTML = ''` below
+      // removes the canvas as a DOM node either way, but not the ResizeObserver
+      // watching it.
+      this.panelCanvas?.dispose();
+
       this.containerElement.innerHTML = '';
+
+      this.panelCanvas = createCodePanelDrawContext({ panel: this.containerElement, getDrawContext });
+      this.panelAccent = createCodePanelAccent((color) => this.notify({ accentColor: color }));
+
+      // strudel.cc's own value — was [0, -2], which nothing here had ever
+      // exercised. It only matters once a piece registers a painter:
+      // `.punchcard()`, `.pianoroll()`, and now `.theme()`. `afterEval` forces
+      // the Drawer's own drawTime to [0, 0] otherwise (codemirror dist:
+      // `pattern.getPainters().length ? this.drawTime : [0, 0]`), so a piece
+      // with no painter never read this value, which is why [0, -2] went
+      // unnoticed. Once a painter *is* registered, this feeds the Drawer's
+      // `ve()`, which turns it into the `cycles`/`playhead` those painters
+      // draw with. [0, -2] computed to `cycles: -2, playhead: 0` — an
+      // inverted, zero-width window — which is what made a piece calling
+      // `.punchcard()` render as flickering blocks pinned to one edge instead
+      // of scrolling. [-2, 2] computes to `cycles: 4, playhead: 0.5`: two
+      // cycles of trailing history, two of lookahead, centred — the window
+      // strudel.cc's own painters scroll through.
+      const drawTime: [number, number] = [-2, 2];
 
       const editor = new StrudelMirror({
         root: this.containerElement,
@@ -397,8 +469,18 @@ export class StrudelService {
         transpiler,
         defaultOutput,
         getTime: getTimeFn,
-        drawTime: [0, -2],
-        drawContext: getDrawContext(), // default id='test-canvas'; src/index.css has the corresponding #test-canvas z-index rule
+        drawTime,
+        drawContext: this.panelCanvas.context, // scoped to the panel — see codepanel-canvas.ts
+        // Runs every frame during playback with the Drawer's own visibleHaps,
+        // whether or not the piece registers a painter. Replicates upstream's
+        // default `draw()` (`painters.forEach(p => p(drawContext, time, haps,
+        // drawTime))` — codemirror dist) so `.punchcard()` etc. keep working,
+        // and piggybacks the accent-colour sampling on the same frame instead
+        // of a second, redundant animation loop — see codepanel-accent.ts.
+        onDraw: (haps: unknown[], time: number, painters?: ((...args: unknown[]) => void)[]) => {
+          painters?.forEach((paint) => paint(this.panelCanvas?.context, time, haps, drawTime));
+          this.panelAccent?.sample(haps as Parameters<CodePanelAccent['sample']>[0], time);
+        },
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
           const error = evalError ? getErrorMessage(evalError) : null;
@@ -423,6 +505,13 @@ export class StrudelService {
       editor.changeSetting('isTabIndentationEnabled', true);
       if (editor.editor) {
         installOddenovaDarkSyntaxHighlight(editor.editor, compartments.theme);
+        // `.theme()` and the default highlight share one compartment, so the
+        // two have to agree on who holds it — hence the same pair of arguments.
+        this.panelTheme = createCodePanelTheme({
+          editor: editor.editor,
+          themeCompartment: compartments.theme,
+          themes,
+        });
         installCodeEditorScrollMargins(editor.editor);
       }
 
@@ -689,7 +778,13 @@ export class StrudelService {
 
   setCode = (code: string): void => {
     const didChange = code !== this._state.code;
-    if (didChange) this.pendingSeekCycle = null;
+    if (didChange) {
+      this.pendingSeekCycle = null;
+      // A different piece arrived; it does not inherit the last one's look.
+      this.panelTheme?.reset();
+      this.panelCanvas?.clear();
+      this.panelAccent?.reset();
+    }
     this._state = { ...this._state, code, ...(didChange ? { isPaused: false } : {}) };
     if (this.editorInstance) {
       // Skip the full-document replace when content is unchanged — a redundant
@@ -732,6 +827,18 @@ export class StrudelService {
     else if (typeof scheduler.stop === 'function') scheduler.stop();
     else this.editorInstance?.repl.stop();
 
+    // `scheduler.pause()` runs `setStarted(false)`, which stops the Drawer, so
+    // the painter cannot put this back by itself — and cannot fight it either.
+    // `play()` re-evaluates on resume, so the painter returns with the sound.
+    this.panelTheme?.reset();
+    // Stopping the Drawer leaves whatever it last painted frozen on screen —
+    // see the rationale on `CodePanelDrawContext.clear`. Erased on pause, not
+    // just on stop, so a paused piece's punchcard doesn't sit there static.
+    this.panelCanvas?.clear();
+    // The accent is a playback-only read: paused is not playing, so it steps
+    // back to the studio's own orange until `play()` resumes and re-latches.
+    this.panelAccent?.reset();
+
     this.notify({ isPlaying: false, isPaused: true });
     return true;
   };
@@ -740,6 +847,19 @@ export class StrudelService {
     if (!this.editorInstance) throw new Error('Engine not initialized');
     // One transport at a time: a featured audition stops here.
     claimTransport('studio', this.stop);
+    // Hand the panel back to oddeNova's palette before evaluating, so the code
+    // about to run decides the look from scratch: `.theme()` may have been
+    // edited out in the editor, which `setCode` never sees. If it is still
+    // there, the painter repaints on the first frame — which is also how a
+    // resume from `pause()` gets its theme back. Same reasoning for the
+    // canvas: cleared here so a piece with no painter starts from blank
+    // rather than the last thing pause() left frozen on screen.
+    this.panelTheme?.reset();
+    this.panelCanvas?.clear();
+    // Same reasoning again: the accent re-latches from scratch on the first
+    // frame this evaluate() produces, rather than carrying over a colour a
+    // piece that changed since the last play() may no longer set.
+    this.panelAccent?.reset();
     this.notify({ error: null });
     try {
       await this.ensurePlayableAudioGraph();
@@ -771,6 +891,11 @@ export class StrudelService {
   stop = (): void => {
     this.pageAudioRecovery?.clearResumeIntent();
     this.pendingSeekCycle = null;
+    // The Drawer stops with the transport, so the painter cannot undo its own
+    // work.
+    this.panelTheme?.reset();
+    this.panelCanvas?.clear();
+    this.panelAccent?.reset();
     this.editorInstance?.repl.stop();
     this.notify({ isPlaying: false, isPaused: false });
   };

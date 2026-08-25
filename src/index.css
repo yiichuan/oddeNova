@@ -109,13 +109,21 @@ body {
 }
 
 .chat-input-surface {
-  --chat-input-glow-angle: -10deg;
+  --chat-input-glow-angle: -8deg;
+  /* Eased trough rather than a flat middle plateau: a dead-flat stretch
+     between two matching stops (the old 30%/68% pair) meets the ramps on
+     either side at a hard corner — the eye reads that slope kink as a seam
+     even though the colour itself is continuous. Sampling extra stops along
+     a smoothstep curve keeps the slope changing gradually through the dip,
+     so the sheen reads as one soft curve instead of two ramps glued to a
+     flat bottom. */
   background:
     linear-gradient(
       var(--chat-input-glow-angle),
       rgba(58, 58, 58, 0.6) -10%,
-      rgba(36, 36, 36, 0.3) 30%,
-      rgba(36, 36, 36, 0.3) 68%,
+      rgba(47, 47, 47, 0.25) 13%,
+      rgba(36, 36, 36, 0.0) 55%,
+      rgba(57, 57, 57, 0.35) 88%,
       rgba(78, 78, 78, 0.6) 120%
     ),
     #0D0D0D;
@@ -1053,11 +1061,8 @@ body {
   }
 }
 
-/* Strudel full-page visualizer canvas (pianoroll, scope等) 浮于编辑器上层，pointer-events:none 不影响操作 */
-/* z-index 生效依赖 strudel 在 JS 中内联设置的 position:fixed（见 @strudel/draw draw.mjs getDrawContext）*/
-canvas#test-canvas {
-  z-index: 1;
-}
+/* Strudel's shared punchcard/pianoroll/etc canvas — sized, positioned, and
+   z-indexed entirely in JS, scoped to the code panel; see codepanel-canvas.ts. */
 
 canvas[id*="_widget__scope_"],
 canvas[id*="_widget__pianoroll_"],

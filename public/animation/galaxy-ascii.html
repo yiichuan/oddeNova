@@ -332,7 +332,7 @@
             // only colour on screen, so each one carries far more weight than its cell
             // count suggests — a scattering of them reads as a strike, a crowd of them
             // reads as a second galaxy laid over the first.
-            const BURST_CELL_RATE = 0.01;
+            const BURST_CELL_RATE = 0.015;
             // Accent tiers, drawn over the base grid. Higher tier wins a cell.
             const ACCENT_NONE = 0;
             const ACCENT_RING = 1;
@@ -655,10 +655,35 @@
                 }
             }
 
+            /**
+             * The studio window, when this page is running inside its viz pane
+             * iframe — same origin, so a direct call across `window.parent` is
+             * enough; no postMessage round trip. Standalone (open the file on
+             * its own, or the settings preview) `window.parent === window` and
+             * this is just `window`, which has none of the globals below, so
+             * every caller already treats them as optional.
+             */
+            function getHostWindow() {
+                return window.parent && window.parent !== window ? window.parent : window;
+            }
+
+            /**
+             * `#rrggbb` to an `"r, g, b"` triple, the form every colour constant in
+             * this file is already written in — `rgba(${triple}, alpha)`. Null for
+             * anything else, so a caller can `?? '205, 86, 51'` straight past a
+             * missing or malformed accent rather than branching on it.
+             */
+            function hexToRgbTriple(hex) {
+                const match = typeof hex === 'string' ? /^#?([0-9a-f]{6})$/i.exec(hex.trim()) : null;
+                if (!match) return null;
+                const value = match[1];
+                return `${parseInt(value.slice(0, 2), 16)}, ${parseInt(value.slice(2, 4), 16)}, ${parseInt(value.slice(4, 6), 16)}`;
+            }
+
             function tryConnectAudio() {
                 if (audioConnected) return;
                 try {
-                    const hostWindow = window.parent && window.parent !== window ? window.parent : window;
+                    const hostWindow = getHostWindow();
                     const getAudioContext = hostWindow.getAudioContext;
                     const getController = hostWindow.getSuperdoughAudioController;
                     if (typeof getAudioContext !== 'function' || typeof getController !== 'function') return;
@@ -992,7 +1017,7 @@
                     if (rings[index].radius > RING_MAX_RADIUS) rings.splice(index, 1);
                 }
                 // Decay rate sets how long the big-glyph flash reads for: a hard hit.
-                burstEnergy = Math.max(0, burstEnergy - delta * 1.8);
+                burstEnergy = Math.max(0, burstEnergy - delta * 0.5);
                 if (prefersReducedMotion) return;
 
                 let loudest = 0;
@@ -1559,6 +1584,13 @@
                 context.textAlign = 'center';
                 context.textBaseline = 'middle';
 
+                // Lifted from the playing piece's own `.color()` when the studio has
+                // one latched (see StrudelService/codepanel-accent.ts) — same source,
+                // same fallback, as the playback controls' own accent. Read fresh each
+                // repaint rather than cached: this call is one property lookup, cheap
+                // next to everything else this function draws.
+                const burstRgb = hexToRgbTriple(getHostWindow().getStrudelAccentColor?.()) ?? '205, 86, 51';
+
                 for (let tier = ACCENT_RING; tier <= ACCENT_BURST; tier += 1) {
                     const isRing = tier === ACCENT_RING;
                     if (isRing ? !ringLutActive : burstEnergy <= 0.02) continue;
@@ -1566,7 +1598,7 @@
                     context.font = `700 ${fontSize * scale}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
                     context.fillStyle = isRing
                         ? `rgba(200, 208, 202, ${lerp(RING_ACCENT_ALPHA_MIN, RING_ACCENT_ALPHA_MAX, clamp(ringPeak, 0, 1))})`
-                        : `rgba(205, 86, 51, ${lerp(0.6, 1, burstEnergy)})`;
+                        : `rgba(${burstRgb}, ${lerp(0.6, 1, burstEnergy)})`;
 
                     for (let cellIndex = 0; cellIndex < accentBuffer.length; cellIndex += 1) {
                         if (accentBuffer[cellIndex] !== tier) continue;

@@ -248,7 +248,14 @@ describe('CodePanel editor focus reporting', () => {
     expect(progress?.value).toBe('0');
     expect(progress?.type).toBe('range');
     expect(controlsLayer?.querySelector('[data-testid="code-panel-playback-progress-fill"]')).not.toBeNull();
-    expect(controlsLayer?.querySelector('[data-testid="code-panel-playback-progress-fill"]')?.classList.contains('bg-[#CD5633]')).toBe(true);
+    // Falls back to the studio's own orange via the CSS variable's default —
+    // see PlaybackProgress's `--code-panel-accent` — rather than a literal
+    // #CD5633 class now that a playing piece's `.color()` can override it.
+    expect(
+      controlsLayer
+        ?.querySelector('[data-testid="code-panel-playback-progress-fill"]')
+        ?.classList.contains('bg-[var(--code-panel-accent,#CD5633)]'),
+    ).toBe(true);
     const track = controlsLayer?.querySelector('[data-testid="code-panel-playback-track"]');
     expect(track?.classList.contains('h-[2px]')).toBe(true);
     expect(track?.classList.contains('group-hover:h-[4px]')).toBe(true);
@@ -265,6 +272,18 @@ describe('CodePanel editor focus reporting', () => {
     expect(controlsLayer?.textContent).not.toContain('BPM');
     expect(controlsLayer?.textContent).not.toContain('LPF');
     expect(controlsLayer?.querySelector<HTMLElement>(':scope > div')?.style.borderRight).toBe('');
+  });
+
+  it("sets the playback accent from .color(), and drops back to the studio's orange without one", () => {
+    installMatchMedia(false);
+    const { container, root, rerender } = renderCodePanel({ accentColor: '#99CC3E' });
+    roots.push(root);
+
+    const progress = container.querySelector<HTMLElement>('[data-testid="code-panel-playback-progress"]');
+    expect(progress?.style.getPropertyValue('--code-panel-accent')).toBe('#99CC3E');
+
+    rerender({ accentColor: null });
+    expect(progress?.style.getPropertyValue('--code-panel-accent')).toBe('');
   });
 
   it('shows a pause button while playing and invokes pause', () => {
@@ -556,6 +575,36 @@ describe('CodePanel editor focus reporting', () => {
     expect(strudelService.setMasterVolume).toHaveBeenLastCalledWith(0.45);
     expect(popover?.textContent).toContain('45%');
     expect(slider?.style.getPropertyValue('--volume-progress')).toBe('45%');
+  });
+
+  it("sets the volume slider's fill from the playback accent, same as the progress bar", () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel({ accentColor: '#99CC3E' });
+    roots.push(root);
+
+    const volumeButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('mute')}"]`);
+    act(() => {
+      volumeButton?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    const slider = document.querySelector<HTMLInputElement>('[data-testid="code-panel-volume-slider"]');
+    expect(slider?.style.getPropertyValue('--volume-slider-fill')).toBe('#99CC3E');
+  });
+
+  it('leaves the volume slider fill unset without a playback accent', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel({ accentColor: null });
+    roots.push(root);
+
+    const volumeButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('mute')}"]`);
+    act(() => {
+      volumeButton?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    const slider = document.querySelector<HTMLInputElement>('[data-testid="code-panel-volume-slider"]');
+    // Unset, not written empty: the CSS rule's own `var(..., #CD5633)` default
+    // is what has to paint it, the same as it always has.
+    expect(slider?.style.getPropertyValue('--volume-slider-fill')).toBe('');
   });
 
   it('toggles mute and restores the last nonzero volume', () => {

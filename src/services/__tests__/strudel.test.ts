@@ -291,6 +291,8 @@ describe('StrudelService editor preferences', () => {
     const setAutocompletionEnabled = vi.fn();
     vi.doMock('@strudel/codemirror', () => ({
       compartments: { theme: { reconfigure: vi.fn() } },
+      themes: {},
+      settings: {},
       StrudelMirror: class {
         repl = { setCode: vi.fn(), stop: vi.fn() };
         setCode = vi.fn();
@@ -319,6 +321,8 @@ describe('StrudelService editor preferences', () => {
     const changeSetting = vi.fn();
     vi.doMock('@strudel/codemirror', () => ({
       compartments: { theme: { reconfigure: vi.fn() } },
+      themes: {},
+      settings: {},
       StrudelMirror: class {
         repl = { setCode: vi.fn(), stop: vi.fn() };
         setCode = vi.fn();
@@ -348,6 +352,8 @@ describe('StrudelService editor preferences', () => {
     const reconfigure = vi.fn(() => themeEffect);
     vi.doMock('@strudel/codemirror', () => ({
       compartments: { theme: { reconfigure } },
+      themes: {},
+      settings: {},
       StrudelMirror: class {
         editor = { dispatch };
         repl = { setCode: vi.fn(), stop: vi.fn() };

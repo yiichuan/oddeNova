@@ -1,9 +1,13 @@
 diff --git a/node_modules/@strudel/codemirror/dist/index.mjs b/node_modules/@strudel/codemirror/dist/index.mjs
-index 7e172ca..bb12f6b 100644
+index 7e172ca..5567644 100644
 --- a/node_modules/@strudel/codemirror/dist/index.mjs
 +++ b/node_modules/@strudel/codemirror/dist/index.mjs
-@@ -7,7 +7,7 @@ import { StateEffect as E, StateField as V, RangeSetBuilder as on, Prec as W, Ed
- import { highlightSpecialChars as ye, dropCursor as mn, rectangularSelection as cn, crosshairCursor as ln, keymap as B, drawSelection as ke, Decoration as P, EditorView as C, ViewPlugin as ve, WidgetType as we, hoverTooltip as pn, lineNumbers as dn, highlightActiveLine as un, highlightActiveLineGutter as hn } from "@codemirror/view";
+@@ -4,10 +4,10 @@ import { toggleBlockComment as Ro, toggleBlockCommentByLine as Vo, toggleComment
+ import { javascript as en, javascriptLanguage as nn } from "@codemirror/lang-javascript";
+ import { syntaxHighlighting as ie, defaultHighlightStyle as fe, HighlightStyle as tn, bracketMatching as an } from "@codemirror/language";
+ import { StateEffect as E, StateField as V, RangeSetBuilder as on, Prec as W, EditorState as me, EditorSelection as sn, Compartment as rn } from "@codemirror/state";
+-import { highlightSpecialChars as ye, dropCursor as mn, rectangularSelection as cn, crosshairCursor as ln, keymap as B, drawSelection as ke, Decoration as P, EditorView as C, ViewPlugin as ve, WidgetType as we, hoverTooltip as pn, lineNumbers as dn, highlightActiveLine as un, highlightActiveLineGutter as hn } from "@codemirror/view";
++import { highlightSpecialChars as ye, dropCursor as mn, rectangularSelection as cn, crosshairCursor as ln, keymap as B, drawSelection as ke, Decoration as P, EditorView as C, ViewPlugin as ve, WidgetType as we, hoverTooltip as pn, lineNumbers as dn, highlightActiveLine as un, highlightActiveLineGutter as hn, Direction as OddenovaDirection } from "@codemirror/view";
  import { persistentAtom as gn } from "@nanostores/persistent";
  import { logger as xe, pure as bn, ref as fn, Pattern as yn, registerControl as kn, repl as vn } from "@strudel/core";
 -import { setTheme as wn, Drawer as xn, cleanupDraw as ce } from "@strudel/draw";
@@ -11,7 +15,54 @@ index 7e172ca..bb12f6b 100644
  import { complex as jn } from "@strudel/tonal";
  import { SearchCursor as Dn } from "@codemirror/search";
  import { emacs as Pn } from "@replit/codemirror-emacs";
-@@ -2609,8 +2609,8 @@ class ho extends we {
+@@ -289,7 +289,36 @@ const gt = [
+       return a;
+   }
+   return null;
+-}, ft = (t) => t ? [Xe({ override: [bt], closeOnBlur: !1 })] : [], yt = [
++}, oddenovaInfoPosition = (t, n, a, o, s, i) => {
++  let r = t.textDirection == OddenovaDirection.RTL, l = r, p = !1;
++  let d = "top", m, g;
++  let A = n.left - s.left, x = s.right - n.right;
++  let w = o.right - o.left, S = o.bottom - o.top;
++  if (l && A < Math.min(w, x)) l = !1;
++  else if (!l && x < Math.min(w, A)) l = !0;
++  if (w <= (l ? A : x)) {
++    // Locked to the selected row's top instead of upstream's
++    // Math.max(space.top, Math.min(option.top, space.bottom - infoHeight)),
++    // which shifts the info pane upward — off the row it describes — once
++    // it no longer fits before the viewport bottom.
++    m = a.top - n.top;
++    g = Math.min(400, l ? A : x);
++  } else {
++    p = !0;
++    g = Math.min(400, (r ? n.right : s.right - n.left) - 30);
++    let O = s.bottom - n.bottom;
++    if (O >= S || O > n.top) m = a.bottom - n.top;
++    else {
++      d = "bottom";
++      m = n.bottom - a.top;
++    }
++  }
++  let Y = (n.bottom - n.top) / i.offsetHeight, Z = (n.right - n.left) / i.offsetWidth;
++  return {
++    style: `${d}: ${m / Y}px; max-width: ${g / Z}px`,
++    class: "cm-completionInfo-" + (p ? (r ? "left-narrow" : "right-narrow") : l ? "left" : "right"),
++  };
++}, ft = (t) => t ? [Xe({ override: [bt], closeOnBlur: !1, positionInfo: oddenovaInfoPosition })] : [], yt = [
+   //   lineNumbers(),
+   //   highlightActiveLineGutter(),
+   ye(),
+@@ -400,7 +429,7 @@ const Q = E.define(), kt = V.define({
+       }
+     } = n;
+     if (a.has(i)) {
+-      const m = a.get(i), p = m.value?.color ?? "var(--foreground)", l = m.value?.markcss || `outline: solid 2px ${p}`;
++      const m = a.get(i), p = m.value?.color ?? "#D9D9D9", l = m.value?.markcss || `outline: solid 2px ${p}`;
+       o.add(
+         s,
+         r,
+@@ -2609,8 +2638,8 @@ class ho extends we {
    constructor(n) {
      super(), this.widgetConfig = n;
    }
@@ -22,7 +73,7 @@ index 7e172ca..bb12f6b 100644
    }
    toDOM() {
      const n = An(this.widgetConfig);
-@@ -2637,7 +2637,10 @@ N("_pianoroll", (t, n = {}, a) => {
+@@ -2637,7 +2666,10 @@ N("_pianoroll", (t, n = {}, a) => {
  });
  N("_punchcard", (t, n = {}, a) => {
    const o = T(t, n).getContext("2d");
@@ -34,6 +85,19 @@ index 7e172ca..bb12f6b 100644
  });
  N("_spiral", (t, n = {}, a) => {
    let o = n.size || 275;
+diff --git a/node_modules/@strudel/codemirror/highlight.mjs b/node_modules/@strudel/codemirror/highlight.mjs
+index f9f977c..9604a89 100644
+--- a/node_modules/@strudel/codemirror/highlight.mjs
++++ b/node_modules/@strudel/codemirror/highlight.mjs
+@@ -92,7 +92,7 @@ const miniLocationHighlights = EditorView.decorations.compute([miniLocations, vi
+ 
+     if (haps.has(id)) {
+       const hap = haps.get(id);
+-      const color = hap.value?.color ?? 'var(--foreground)';
++      const color = hap.value?.color ?? '#D9D9D9';
+       const style = hap.value?.markcss || `outline: solid 2px ${color}`;
+       // Get explicit channels for color values
+       /* 
 diff --git a/node_modules/@strudel/codemirror/widget.mjs b/node_modules/@strudel/codemirror/widget.mjs
 index 42d3b15..df93d1e 100644
 --- a/node_modules/@strudel/codemirror/widget.mjs

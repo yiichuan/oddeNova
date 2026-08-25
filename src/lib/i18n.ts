@@ -81,8 +81,8 @@ const S: Record<string, readonly [string, string]> = {
   featuredOpenDetail:  ['查看详情', 'View details'],
   featuredAlbumTracks: ['《{album}》的曲目', '{album} tracks'],
   featuredAlbumOf:     ['专辑《{album}》', 'Album {album}'],
-  featuredOpenedIntro: ['这是 {coder} 用 Strudel 写的《{title}》（原作 {originalArtist}），已经放进工作室了。想改成什么样，直接说。',
-                        'This is “{title}” (originally by {originalArtist}), written in Strudel by {coder}, now loaded in the studio. Tell me how you want to change it.'],
+  featuredOpenedIntro: ['{coder} 用 Strudel 写的《{title}》（原作 {originalArtist}），已在工作室中。',
+                        '{coder}’s Strudel rendition of “{title}” (originally by {originalArtist}), now in the studio.'],
 
   // Favorites
   favoritesList:        ['收藏的对话', 'Favorited conversations'],
