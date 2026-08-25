@@ -1209,6 +1209,22 @@ describe('useSessions', () => {
     expect(getHook().currentSession).toEqual(selectedOlder);
   });
 
+  it('loads and migrates stored sessions before reading the current-session pointer', async () => {
+    storageMocks.getAllSessions.mockResolvedValue([
+      makeSession({ id: '00000000-0000-4000-8000-000000000001' }),
+    ]);
+    storageMocks.getCurrentSessionId.mockResolvedValue(
+      '00000000-0000-4000-8000-000000000001',
+    );
+
+    const { root } = await renderUseSessions({ ownerKey: 'user:u-1' });
+    roots.push(root);
+
+    expect(storageMocks.getAllSessions.mock.invocationCallOrder[0]).toBeLessThan(
+      storageMocks.getCurrentSessionId.mock.invocationCallOrder[0],
+    );
+  });
+
   it('reuses a stored greeting-only session on startup instead of stacking another empty one', async () => {
     const storedEmpty = makeSession({
       id: 'stored-empty',

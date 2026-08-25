@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   decodeFavoriteCursor,
   encodeFavoriteCursor,
-} from '../../api/favorites-utils.js';
+} from '../../server/favorites-utils.js';
 
 const supabaseMocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -82,10 +82,40 @@ describe('favorites API', () => {
     const { default: handler } = await import('../../api/favorites.js');
     const res = makeResponse();
 
-    await handler({ method: 'GET', headers: {} } as never, res as never);
+    await handler({ method: 'GET', headers: {}, query: {} } as never, res as never);
 
     expect(res.statusCode).toBe(401);
     expect(res.body).toEqual({ error: 'Unauthorized' });
+    expect(supabaseMocks.from).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsupported favorite action before authentication', async () => {
+    const { default: handler } = await import('../../api/favorites.js');
+    const res = makeResponse();
+
+    await handler({
+      method: 'GET',
+      headers: {},
+      query: { id: 'f-1', action: 'duplicate' },
+    } as never, res as never);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid favorite action' });
+    expect(supabaseMocks.from).not.toHaveBeenCalled();
+  });
+
+  it('requires a favorite id before continuing', async () => {
+    const { default: handler } = await import('../../api/favorites.js');
+    const res = makeResponse();
+
+    await handler({
+      method: 'POST',
+      headers: {},
+      query: { action: 'continue' },
+    } as never, res as never);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Missing favorite id' });
     expect(supabaseMocks.from).not.toHaveBeenCalled();
   });
 
@@ -112,6 +142,7 @@ describe('favorites API', () => {
     await handler({
       method: 'POST',
       headers: { authorization: 'Bearer token-123' },
+      query: {},
       body: { sessionId: sessionRow.id },
     } as never, res as never);
 
@@ -159,6 +190,7 @@ describe('favorites API', () => {
     await handler({
       method: 'POST',
       headers: { authorization: 'Bearer token-123' },
+      query: {},
       body: { sessionId: sessionRow.id },
     } as never, res as never);
 
@@ -191,6 +223,7 @@ describe('favorites API', () => {
     await handler({
       method: 'POST',
       headers: { authorization: 'Bearer token-123' },
+      query: {},
       body: { sessionId: sessionRow.id },
     } as never, res as never);
 
@@ -198,6 +231,7 @@ describe('favorites API', () => {
     await handler({
       method: 'POST',
       headers: { authorization: 'Bearer token-123' },
+      query: {},
       body: { sessionId: sessionRow.id },
     } as never, secondRes as never);
 
@@ -347,7 +381,7 @@ describe('favorites API', () => {
       };
     });
 
-    const { default: handler } = await import('../../api/favorites/[id].js');
+    const { default: handler } = await import('../../api/favorites.js');
     const detailRes = makeResponse();
 
     await handler({
@@ -414,12 +448,12 @@ describe('favorites API', () => {
       throw new Error(`Unexpected table ${table}`);
     });
 
-    const { default: handler } = await import('../../api/favorites/[id]/continue.js');
+    const { default: handler } = await import('../../api/favorites.js');
     const res = makeResponse();
 
     await handler({
       method: 'POST',
-      query: { id: 'f-1' },
+      query: { id: 'f-1', action: 'continue' },
       headers: { authorization: 'Bearer token-123' },
     } as never, res as never);
 

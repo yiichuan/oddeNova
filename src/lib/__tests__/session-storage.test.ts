@@ -157,7 +157,7 @@ describe('session-storage owner namespaces', () => {
     };
     const account = {
       ...guest,
-      id: 'account-session',
+      id: '00000000-0000-4000-8000-000000000001',
       title: 'Account',
       updatedAt: 2,
     };
@@ -166,7 +166,9 @@ describe('session-storage owner namespaces', () => {
     await putSession(account, 'user:u-1');
 
     expect((await getAllSessions('guest')).map((s) => s.id)).toEqual(['guest-session']);
-    expect((await getAllSessions('user:u-1')).map((s) => s.id)).toEqual(['account-session']);
+    expect((await getAllSessions('user:u-1')).map((s) => s.id)).toEqual([
+      '00000000-0000-4000-8000-000000000001',
+    ]);
   });
 
   it('keeps guest and account copies when they share the same session id', async () => {
@@ -250,6 +252,63 @@ describe('session-storage owner namespaces', () => {
     expect(await storage.getAllSessions('guest')).toEqual([
       expect.objectContaining({ ...legacy, id: normalized.id }),
     ]);
+  });
+
+  it('atomically rekeys all owner state for a legacy account session', async () => {
+    const storage = await import('../session-storage');
+    const syncStorage = await import('../session-sync-storage');
+    await storage.openDB();
+    const ownerKey = 'user:u-1';
+    const legacy = {
+      id: 's-1786465556711-wi5as4',
+      title: '旧账号会话',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '保留完整内容', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 10,
+      updatedAt: 11,
+    };
+    await storage.putSession(legacy, ownerKey);
+    await storage.putCurrentSessionId(legacy.id, ownerKey);
+    await syncStorage.markPendingSessionSync(ownerKey, legacy.id);
+    await syncStorage.markPendingSessionDelete(ownerKey, legacy.id);
+
+    const sessions = await storage.getAllSessions(ownerKey);
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toEqual(expect.objectContaining({
+      ...legacy,
+      id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
+    }));
+    const migratedId = sessions[0].id;
+    expect(await storage.getCurrentSessionId(ownerKey)).toBe(migratedId);
+    expect(await syncStorage.readPendingSessionOperations(ownerKey)).toEqual({
+      syncIds: new Set([migratedId]),
+      deleteIds: new Set([migratedId]),
+    });
+    expect(await storage.getStorageDb()?.get(
+      storage.SESSION_STORE_NAME,
+      [ownerKey, legacy.id],
+    )).toBeUndefined();
+  });
+
+  it('drops orphan legacy operation markers while preserving UUID retries', async () => {
+    const storage = await import('../session-storage');
+    const syncStorage = await import('../session-sync-storage');
+    await storage.openDB();
+    const ownerKey = 'user:u-1';
+    const legacyId = 's-1786464777419-eaop23';
+    const uuid = '00000000-0000-4000-8000-000000000001';
+    await syncStorage.markPendingSessionSync(ownerKey, legacyId);
+    await syncStorage.markPendingSessionDelete(ownerKey, legacyId);
+    await syncStorage.markPendingSessionSync(ownerKey, uuid);
+    await syncStorage.markPendingSessionDelete(ownerKey, uuid);
+
+    await storage.getAllSessions(ownerKey);
+
+    expect(await syncStorage.readPendingSessionOperations(ownerKey)).toEqual({
+      syncIds: new Set([uuid]),
+      deleteIds: new Set([uuid]),
+    });
   });
 
   it('reuses an existing UUID v7 guest id without normalization', async () => {

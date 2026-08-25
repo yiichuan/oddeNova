@@ -11,7 +11,7 @@ import {
   readCandidateDates,
   secondsUntilNextBeijingMidnight,
   tomorrowInBeijing,
-} from '../../api/daily-suggestions-core.js';
+} from '../../server/daily-suggestions-core.js';
 
 const items = Array.from({ length: 10 }, (_, i) => ({
   zh: `想做一段第${i + 1}种有呼吸感的电子音乐`,

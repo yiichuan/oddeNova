@@ -2,9 +2,14 @@
   "buildCommand": "vite build",
   "rewrites": [
     {"source": "/s/:id", "destination": "/api/share-page?id=:id"},
+    {"source": "/api/favorites/:id/continue", "destination": "/api/favorites?id=:id&action=continue"},
+    {"source": "/api/favorites/:id", "destination": "/api/favorites?id=:id"},
+    {"source": "/api/sessions/:id", "destination": "/api/sessions?id=:id"},
     {"source": "/_nova/static/:path(.*)", "destination": "https://us-assets.i.posthog.com/static/:path"},
     {"source": "/_nova/array/:path(.*)", "destination": "https://us-assets.i.posthog.com/array/:path"},
     {"source": "/_nova/:path(.*)", "destination": "https://us.i.posthog.com/:path"},
+    {"source": "/api/daily-suggestions-generate", "destination": "/api/daily-suggestions-maintain?trigger=primary"},
+    {"source": "/api/daily-suggestions-repair", "destination": "/api/daily-suggestions-maintain?trigger=repair"},
     {"source": "/((?!api/).*)", "destination": "/index.html"}
   ],
   "crons": [
