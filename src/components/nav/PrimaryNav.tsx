@@ -12,10 +12,10 @@ import { createPortal } from 'react-dom';
 import {
   Disc3,
   Ellipsis,
-  Heart,
   Home,
   PanelLeft,
   Settings,
+  Star,
   User,
   type LucideIcon,
 } from 'lucide-react';
@@ -50,12 +50,12 @@ interface PrimaryNavProps {
 }
 
 /**
- * The collection pages where the column breaks apart. Read in three places —
+ * The collection view where the column breaks apart. Read in three places —
  * the shape it starts settled in, the spread it starts at, and the shape it is
  * heading for — which have to agree or the column starts mid-transition.
  */
 const wantsPodsFor = (selectedItem: PrimaryNavItem, featuredPieceOpen: boolean) => (
-  selectedItem === 'favorites' || (selectedItem === 'featured' && !featuredPieceOpen)
+  selectedItem === 'featured' && !featuredPieceOpen
 );
 
 interface NavItem {
@@ -77,8 +77,8 @@ interface PodGroupState {
 
 const TOP_ITEMS: NavItem[] = [
   { id: 'home', labelKey: 'navHome', icon: Home },
+  { id: 'favorites', labelKey: 'navFavorites', icon: Star },
   { id: 'featured', labelKey: 'navFeatured', icon: Disc3 },
-  { id: 'favorites', labelKey: 'navFavorites', icon: Heart },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
@@ -539,9 +539,7 @@ export default function PrimaryNav({
   });
 
   const wantsPods = wantsPodsFor(selectedItem, featuredPieceOpen);
-  const showingSectionMark = (selectedItem === 'featured' && !featuredPieceOpen)
-    || selectedItem === 'favorites';
-  const SectionMarkIcon = selectedItem === 'favorites' ? Heart : Disc3;
+  const showingSectionMark = selectedItem === 'featured' && !featuredPieceOpen;
   const targetShape: SettledShape = wantsPods ? 'pods' : 'bar';
   /* `breaking` is never stored: it is exactly "the shape has not caught up with
      the page yet", which is what keeps one transition running at a time. */
@@ -867,7 +865,7 @@ export default function PrimaryNav({
                           }}
                         />
                         {showingSectionMark && (
-                          <SectionMarkIcon
+                          <Disc3
                             size={21}
                             strokeWidth={1.6}
                             aria-hidden="true"

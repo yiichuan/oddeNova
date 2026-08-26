@@ -1102,7 +1102,13 @@ export default function App() {
             />
           </div>
           <div className={primaryNavItem === 'favorites' ? 'flex h-full min-h-0' : 'hidden'}>
-            <FavoritesPage conversations={FAVORITE_CONVERSATIONS} />
+            <FavoritesPage
+              conversations={FAVORITE_CONVERSATIONS}
+              isPlaying={strudel.isPlaying}
+              playingCode={strudel.code}
+              onPlayCode={(code) => { void strudel.play(code); }}
+              onStopCode={strudel.stop}
+            />
           </div>
           <div className={primaryNavItem === 'vinylLab' ? 'flex h-full min-h-0' : 'hidden'}>
             <VinylLabPage piece={FEATURED_PIECES[0]!} />

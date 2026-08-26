@@ -160,7 +160,14 @@ vi.mock('../components/conversation/Sidebar', () => ({
 }));
 vi.mock('../components/studio/VizPlaceholder', () => ({ default: () => null }));
 vi.mock('../components/overlays/ApiKeyModal', () => ({ default: () => null }));
-vi.mock('../components/conversation/ConversationView', () => ({ default: () => null }));
+// ArchivedConversationView (rendered under the Favorites tab) imports these
+// named exports from the real module; the mock must carry them too or it
+// throws on any render that reaches the favorites workspace.
+vi.mock('../components/conversation/ConversationView', () => ({
+  default: () => null,
+  MarkdownText: ({ content }: { content: string }) => content,
+  UserMessageBubble: ({ content }: { content: string }) => content,
+}));
 vi.mock('../components/conversation/HistoryPanel', () => ({ default: () => null }));
 vi.mock('../components/conversation/ChatInput', () => ({ default: () => null }));
 // ShareButton too: the featured player bar shares a piece on the studio's own

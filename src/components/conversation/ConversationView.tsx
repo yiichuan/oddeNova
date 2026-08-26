@@ -12,7 +12,7 @@ type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
 };
 
-type MarkdownTone = 'default' | 'muted';
+export type MarkdownTone = 'default' | 'muted';
 
 const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
   userSelect: 'none',
@@ -38,7 +38,8 @@ const headingToneClass: Record<MarkdownTone, string> = {
 
 // Thinking duration: "45s" under a minute, "2m 5s" above; whole minutes drop
 // the seconds ("5m" not "5m 0s").
-function formatThinkDuration(sec: number): string {
+// eslint-disable-next-line react-refresh/only-export-components -- archive stream shares this formatter.
+export function formatThinkDuration(sec: number): string {
   if (sec < 60) return `${sec}s`;
   const m = Math.floor(sec / 60);
   const s = sec % 60;
@@ -198,7 +199,7 @@ function handleUserBubbleCopy(e: ClipboardEvent<HTMLElement>) {
   e.clipboardData.setData('text/plain', trimmed);
 }
 
-function MarkdownText({ content, tone = 'default' }: { content: string; tone?: MarkdownTone }) {
+export function MarkdownText({ content, tone = 'default' }: { content: string; tone?: MarkdownTone }) {
   const lines = content.split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -400,7 +401,7 @@ function MarkdownText({ content, tone = 'default' }: { content: string; tone?: M
 // clamped to five lines with the fifth faded into the bubble background; the
 // "show more" control reveals on hover (and stays visible on touch, which has
 // no hover), and once expanded a "show less" control collapses it again.
-function UserMessageBubble({ content }: { content: string }) {
+export function UserMessageBubble({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);

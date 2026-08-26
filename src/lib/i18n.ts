@@ -92,9 +92,8 @@ const S: Record<string, readonly [string, string]> = {
   favoritesTurnCount:   ['{n} 条消息', '{n} messages'],
   favoritesCodeCount:   ['{n} 段代码', '{n} scripts'],
   favoritesJumpToCode:  ['查看第 {n} 版代码', 'Show take {n}'],
-  favoritesEmptyTitle:  ['还没有收藏的对话', 'Nothing favorited yet'],
-  favoritesEmptyHint:   ['在工作室里收藏一段对话，它连同里面的每一版代码都会留在这里。',
-                         'Favorite a conversation in the studio and it will be kept here, along with every take of its code.'],
+  favoritesReasoningTitle: ['构思过程', 'Ideation process'],
+  favoritesEmptyTitle:  ['这里空空如也。', 'Nothing here yet.'],
   favoritesNoCode:      ['这段对话里还没有代码。', 'This conversation has no code in it yet.'],
   favoritesYou:         ['我', 'You'],
 

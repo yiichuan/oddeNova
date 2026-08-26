@@ -6,21 +6,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../../../lib/i18n';
 import {
   conversationTitle,
-  favoritedDateLabel,
+  favoritedTimeLabel,
   turnText,
   type FavoriteConversation,
 } from '../../../lib/favorite-conversations';
 import FavoritesPage from '../FavoritesPage';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-
+// ArchivedConversationView shares the studio's message primitives. Stub the
+// live-only thinking animation: it is intentionally excluded from archives.
+vi.mock('../../conversation/ThinkingLottie', () => ({ ThinkingLottie: () => null }));
+vi.mock('lottie-react', () => ({ default: () => null }));
 const roots: Root[] = [];
 
 afterEach(() => {
-  vi.useRealTimers();
-  for (const root of roots.splice(0)) {
-    act(() => root.unmount());
-  }
+  for (const root of roots.splice(0)) act(() => root.unmount());
   document.body.innerHTML = '';
 });
 
@@ -65,114 +65,137 @@ const CONVERSATIONS: FavoriteConversation[] = [
   },
 ];
 
-const wheelOf = (container: HTMLElement) => (
-  container.querySelector<HTMLElement>('[data-testid="favorites-title-wheel"]')!
+const sidebarRows = (container: HTMLElement) => (
+  [...container.querySelectorAll<HTMLButtonElement>('[data-favorite-id]')]
 );
-const columnsOf = (container: HTMLElement) => (
+const shownScripts = (container: HTMLElement) => (
   [...container.querySelectorAll<HTMLElement>('[data-favorites-script]')]
 );
 
 describe('FavoritesPage', () => {
-  it('names the page, lists every favorite with its date, and opens the newest', () => {
-    const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+  it('uses a newest-first settings-style sidebar and selects the first favorite by default', () => {
+    const shuffled = [CONVERSATIONS[1], CONVERSATIONS[2], CONVERSATIONS[0]];
+    const { container } = render(<FavoritesPage conversations={shuffled} />);
+    const rows = sidebarRows(container);
 
+    expect(rows.map((row) => row.dataset.favoriteId)).toEqual(['first', 'second', 'third']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(CONVERSATIONS.map(
+      (conversation) => `${conversationTitle(conversation)}${favoritedTimeLabel(conversation.favoritedAt)}`,
+    ));
+    expect(rows[0].getAttribute('aria-current')).toBe('page');
+    expect(rows[0].className).toContain('h-[52px]');
+    expect(rows[0].style.height).toBe('52px');
+    expect(rows[0].className).toContain('px-2 py-0');
     expect(container.querySelector('h1')?.textContent).toBe(t('navFavorites'));
+  });
 
-    const wheel = wheelOf(container);
-    const head = wheel.querySelector<HTMLElement>('[data-title-wheel-centered="true"]')!;
-    expect(head.textContent?.trim()).toBe(
-      `${conversationTitle(CONVERSATIONS[0])} · ${favoritedDateLabel(CONVERSATIONS[0].favoritedAt)}`,
-    );
-
-    // The conversation itself, turn by turn and in the order it happened.
+  it('shows the selected conversation and its last code version by default', () => {
+    const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+    const page = container.querySelector<HTMLElement>('[data-testid="favorites-page"]')!;
     const turns = [...container.querySelectorAll('[data-favorites-turn]')];
+
+    expect(page.children).toHaveLength(3);
+    expect(page.className).toContain('gap-[var(--spacing-divider)]');
+    expect([...container.querySelectorAll('h2')].map((heading) => heading.textContent))
+      .not.toContain(t('favoritesConversation'));
+    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')?.className)
+      .toContain('h-full');
+    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')?.className)
+      .not.toContain('p-5');
+    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')?.className)
+      .toContain('pt-[42px]');
+    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')?.className)
+      .toContain('pb-[14px]');
+    expect(container.querySelector('.conversation-scroll')?.className).toContain('pt-[24px]');
+    expect(container.querySelector('.conversation-scroll')?.className).toContain('px-4');
+    expect(container.querySelectorAll('[data-conversation-edge-fade]').length).toBe(2);
+    expect(container.querySelector('aside')?.className).toContain('bg-conversation-surface');
+    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')?.className)
+      .toContain('bg-conversation-surface');
+    expect(shownScripts(container)[0]?.className).toContain('bg-conversation-surface');
     expect(turns.map((turn) => turn.textContent)).toEqual([
       turnText(CONVERSATIONS[0].turns[0]),
-      `${turnText(CONVERSATIONS[0].turns[1])}${t('favoritesCodeColumn').replace('{n}', '1')}`,
+      `${turnText(CONVERSATIONS[0].turns[1])}代码 V01·1 ${t('lines')}`,
       turnText(CONVERSATIONS[0].turns[2]),
-      `${turnText(CONVERSATIONS[0].turns[3])}${t('favoritesCodeColumn').replace('{n}', '2')}`,
+      `${turnText(CONVERSATIONS[0].turns[3])}代码 V02·1 ${t('lines')}`,
     ]);
+    const reasoning = container.querySelector<HTMLButtonElement>('[data-reasoning-header="first-2-reasoning"]')!;
+    expect(reasoning.textContent).toContain(t('favoritesReasoningTitle'));
+    const process = container.querySelector<HTMLElement>('[data-archive-process="first-2-reasoning"]')!;
+    expect(process.style.marginBlockEnd)
+      .toBe('var(--spacing-action-divider-to-body)');
+    expect(container.textContent).not.toContain('安排段落…');
+    expect(container.textContent).not.toContain('准备播放…');
+    expect(container.textContent).toContain('Checking rhythm, tone, and layering before arranging this revision.');
+    act(() => reasoning.click());
+    expect(process.textContent).not.toContain('Checking rhythm, tone, and layering before arranging this revision.');
+    expect(shownScripts(container)).toHaveLength(1);
+    expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('first-4');
+    expect(shownScripts(container)[0]?.querySelector('code')?.textContent).toBe('s("bd*4, hh*8")');
+    expect(container.querySelector('[data-favorites-chip="first-2"]')?.parentElement?.className)
+      .toContain('gap-0.5');
   });
 
-  it('gives every script in the conversation a column of its own, in order', () => {
+  it('switches favorites from the sidebar and selects that favorite last code version', () => {
     const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+    act(() => container.querySelector<HTMLButtonElement>('[data-favorite-id="second"]')!.click());
 
-    const columns = columnsOf(container);
-    expect(columns.map((column) => column.dataset.favoritesScript)).toEqual(['first-2', 'first-4']);
-    expect(columns.map((column) => column.querySelector('code')?.textContent)).toEqual([
-      's("bd*4")',
-      's("bd*4, hh*8")',
-    ]);
-    expect(columns.map((column) => column.querySelector('h2')?.textContent)).toEqual([
-      t('favoritesCodeColumn').replace('{n}', '1'),
-      t('favoritesCodeColumn').replace('{n}', '2'),
-    ]);
+    expect(container.querySelector<HTMLButtonElement>('[data-favorite-id="second"]')?.getAttribute('aria-current')).toBe('page');
+    expect(container.textContent).toContain(conversationTitle(CONVERSATIONS[1]));
+    expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('second-2');
   });
 
-  it('opens whichever favorite the list settles on', () => {
-    vi.useFakeTimers();
-    try {
-      const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
-      const next = wheelOf(container)
-        .querySelector<HTMLButtonElement>('[data-title-wheel-logical-index="1"]')!;
-
-      act(() => {
-        next.click();
-        vi.advanceTimersByTime(400);
-      });
-
-      expect(container.querySelector('h2')?.textContent).toBe(conversationTitle(CONVERSATIONS[1]));
-      expect(columnsOf(container).map((column) => column.dataset.favoritesScript))
-        .toEqual(['second-2']);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('says so when a favorited conversation holds no code at all', () => {
-    vi.useFakeTimers();
-    try {
-      const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
-      const third = wheelOf(container)
-        .querySelector<HTMLButtonElement>('[data-title-wheel-logical-index="2"]')!;
-
-      act(() => {
-        third.click();
-        vi.advanceTimersByTime(800);
-      });
-
-      expect(columnsOf(container)).toHaveLength(0);
-      expect(container.textContent).toContain(t('favoritesNoCode'));
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('marks the column a widget chip points at, and previews it on hover', () => {
+  it('lets a conversation code chip choose an earlier version for the right window', () => {
     const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
-    const [firstColumn, secondColumn] = columnsOf(container);
-    const secondChip = container.querySelector<HTMLButtonElement>('[data-favorites-chip="first-4"]')!;
+    const firstChip = container.querySelector<HTMLButtonElement>('[data-favorites-chip="first-2"]')!;
+    expect(firstChip.getAttribute('aria-pressed')).toBe('false');
 
-    expect(firstColumn.dataset.highlighted).toBe('false');
+    act(() => firstChip.click());
 
-    // React derives enter/leave from pointerover, so that is what a pointer
-    // arriving on the chip actually looks like.
-    act(() => secondChip.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })));
-    expect(secondColumn.dataset.highlighted).toBe('true');
-    expect(firstColumn.dataset.highlighted).toBe('false');
-
-    act(() => {
-      secondChip.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
-      secondChip.click();
-    });
-    expect(secondColumn.dataset.highlighted).toBe('true');
+    expect(firstChip.getAttribute('aria-pressed')).toBe('true');
+    expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('first-2');
+    expect(shownScripts(container)[0]?.querySelector('code')?.textContent).toBe('s("bd*4")');
   });
 
-  it('has something to say with nothing favorited, and no list to show', () => {
+  it('plays a version from its archive widget and selects it in the code window', () => {
+    const onPlayCode = vi.fn();
+    const { container } = render(<FavoritesPage conversations={CONVERSATIONS} onPlayCode={onPlayCode} />);
+
+    act(() => container.querySelector<HTMLButtonElement>('[data-favorites-code-play="first-2"]')!.click());
+
+    expect(onPlayCode).toHaveBeenCalledWith('s("bd*4")');
+    expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('first-2');
+  });
+
+  it('stops when the archive widget version is already playing', () => {
+    const onStopCode = vi.fn();
+    const { container } = render(
+      <FavoritesPage
+        conversations={CONVERSATIONS}
+        isPlaying
+        playingCode={'s("bd*4, hh*8")'}
+        onStopCode={onStopCode}
+      />,
+    );
+
+    act(() => container.querySelector<HTMLButtonElement>('[data-favorites-code-play="first-4"]')!.click());
+
+    expect(onStopCode).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the code window present when a favorite has no code', () => {
+    const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+    act(() => container.querySelector<HTMLButtonElement>('[data-favorite-id="third"]')!.click());
+
+    expect(shownScripts(container)).toHaveLength(0);
+    expect(container.textContent).toContain(t('favoritesNoCode'));
+  });
+
+  it('keeps the sidebar shell and shows the empty message with no favorites', () => {
     const { container } = render(<FavoritesPage conversations={[]} />);
 
+    expect(container.querySelector('[data-testid="favorites-list"]')).not.toBeNull();
+    expect(sidebarRows(container)).toHaveLength(0);
     expect(container.textContent).toContain(t('favoritesEmptyTitle'));
-    expect(container.querySelector('[data-testid="favorites-title-wheel"]')).toBeNull();
-    expect(columnsOf(container)).toHaveLength(0);
   });
 });

@@ -52,8 +52,9 @@ describe('PrimaryNav', () => {
     const labelsIn = (testId: string) => [...container.querySelectorAll(`[data-testid="${testId}"] button`)]
       .map((button) => button.getAttribute('aria-label'));
 
-    expect(labelsIn('primary-nav-top')).toEqual([t('navHome'), t('navFeatured'), t('navFavorites')]);
+    expect(labelsIn('primary-nav-top')).toEqual([t('navHome'), t('navFavorites'), t('navFeatured')]);
     expect(labelsIn('primary-nav-bottom')).toEqual([t('navMore'), t('navVinylLab'), t('navSettings'), t('navAccount')]);
+
   });
 
   it('marks the selected item and reports menu changes', () => {
@@ -79,14 +80,14 @@ describe('PrimaryNav', () => {
     expect(mark?.parentElement?.className).not.toContain('hover:bg-white/10');
   });
 
-  it('turns the brand mark into the Favorites icon while Favorites is active', () => {
+  it('keeps the regular brand mark while Favorites is active', () => {
     const { container } = renderPrimaryNav('favorites');
     const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
 
-    expect(mark?.className).toContain('[transform:rotateY(180deg)]');
-    expect(mark?.className).not.toContain('group-hover:');
-    expect(mark?.querySelector('svg')).not.toBeNull();
-    expect(mark?.parentElement?.className).not.toContain('hover:bg-white/10');
+    expect(mark?.className).not.toContain('[transform:rotateY(180deg)]');
+    expect(mark?.className).toContain('group-hover:opacity-0');
+    expect(mark?.querySelector('svg')).toBeNull();
+    expect(mark?.parentElement?.className).toContain('hover:bg-white/10');
   });
 
   it('opens external links above More without selecting a primary destination', () => {
@@ -211,23 +212,17 @@ describe('PrimaryNav', () => {
     expect(settings?.className).toContain('opacity-100');
   });
 
-  it('settles into the same two-lobe navigation on Favorites', () => {
+  it('keeps the navigation joined on Favorites', () => {
     stubColumnBox();
     const { container } = renderPrimaryNav('favorites');
     const shell = container.querySelector<HTMLElement>('[data-nav-shape]');
     const top = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-top"]');
     const bottom = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-bottom"]');
-    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
 
-    expect(shell?.dataset.navShape).toBe('pods');
-    expect(top?.style.height).toBe('54px');
-    expect(bottom?.style.height).toBe('64px');
-
-    act(() => top?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
-    expect(mark?.className).toContain('[transform:rotateY(0deg)]');
-
-    act(() => top?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
-    expect(mark?.className).toContain('[transform:rotateY(180deg)]');
+    expect(shell?.dataset.navShape).toBe('bar');
+    expect(top?.style.height).toBe('450px');
+    expect(bottom?.style.height).toBe('450px');
+    expect(container.querySelector(`button[aria-label="${t('expandNavigation')}"]`)).not.toBeNull();
   });
 
   it('clips one body while the strand holds, and two once it snaps', () => {

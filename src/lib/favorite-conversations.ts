@@ -19,6 +19,7 @@
  */
 
 import { zh } from './i18n';
+import type { ChatMessage } from '../hooks/useChat';
 
 export interface FavoriteTurn {
   id: string;
@@ -31,6 +32,8 @@ export interface FavoriteTurn {
    * the studio would have started playing.
    */
   code?: string;
+  /** Completed reasoning retained in the archive, [中文, English]. */
+  thought?: readonly [string, string];
 }
 
 export interface FavoriteConversation {
@@ -64,6 +67,61 @@ export function favoriteScripts(conversation: FavoriteConversation): FavoriteScr
     scripts.push({ turnId: turn.id, take: scripts.length + 1, code: turn.code });
   }
   return scripts;
+}
+
+const DEFAULT_THOUGHT: readonly [string, string] = [
+  '先检查节奏、音色和层次，再安排这一版的变化。',
+  'Checking rhythm, tone, and layering before arranging this revision.',
+];
+
+/**
+ * Turns a saved conversation into the same message model the studio renders.
+ * The mock carries a compact complete agent trace so the archive can prove it
+ * filters transient process status while keeping completed reasoning.
+ */
+export function favoriteConversationMessages(conversation: FavoriteConversation): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  let offset = 0;
+  const timestamp = () => conversation.favoritedAt - 60_000 + offset++ * 1_000;
+
+  for (const turn of conversation.turns) {
+    if (turn.role === 'user') {
+      messages.push({ id: turn.id, role: 'user', content: turnText(turn), timestamp: timestamp() });
+      continue;
+    }
+
+    const thought = zh ? (turn.thought?.[0] ?? DEFAULT_THOUGHT[0]) : (turn.thought?.[1] ?? DEFAULT_THOUGHT[1]);
+    messages.push({
+      id: `${turn.id}-reasoning`,
+      role: 'progress',
+      content: thought,
+      progressKind: 'reasoning',
+      timestamp: timestamp(),
+    });
+    messages.push({
+      id: `${turn.id}-tool`,
+      role: 'progress',
+      content: '安排段落…',
+      progressKind: 'tool_call',
+      toolName: 'setCode',
+      timestamp: timestamp(),
+    });
+    messages.push({
+      id: turn.id,
+      role: 'assistant',
+      content: turnText(turn),
+      code: turn.code,
+      timestamp: timestamp(),
+    });
+    messages.push({
+      id: `${turn.id}-commit`,
+      role: 'progress',
+      content: '准备播放…',
+      progressKind: 'commit',
+      timestamp: timestamp(),
+    });
+  }
+  return messages;
 }
 
 const pad = (value: number) => String(value).padStart(2, '0');
