@@ -255,6 +255,77 @@ stack(
     .gain(0.28),
 )`;
 
+/* The long-titled one. A favorite is named after whatever the session was
+   about, and sessions are not named to fit a column — this is the entry that
+   proves the list truncates its titles rather than pushing the date off the
+   row or reaching out across the page. */
+const LAST_TRAIN_FIRST = `// AMBIENT | BPM: 66
+setcps(0.275)
+
+stack(
+  /* @layer DRONE */
+  // 车厢底噪：两个音叠成空五度，滤波慢慢开合
+  note("<d2 a2>")
+    .s("gm_pad_halo")
+    .slow(8)
+    .lpf(sine.range(240, 760).slow(12))
+    .room(0.7)
+    .gain(0.42),
+
+  /* @layer RAILS */
+  // 轨道接缝，故意不对齐拍子
+  s("~ hh ~ ~ hh ~ ~ ~")
+    .bank("RolandTR606")
+    .speed(0.7)
+    .degradeBy(0.25)
+    .gain(0.3),
+
+  /* @layer CHIME */
+  // 到站提示音，四小节才落一次
+  note("<a5 ~ ~ e5>")
+    .s("gm_music_box")
+    .slow(4)
+    .delay(0.35)
+    .gain(0.26),
+)`;
+
+const LAST_TRAIN_SECOND = `// AMBIENT | BPM: 66
+setcps(0.275)
+
+stack(
+  /* @layer DRONE */
+  note("<d2 a2>")
+    .s("gm_pad_halo")
+    .slow(8)
+    .lpf(sine.range(240, 760).slow(12))
+    .room(0.7)
+    .gain(0.42),
+
+  /* @layer RAILS */
+  s("~ hh ~ ~ hh ~ ~ ~")
+    .bank("RolandTR606")
+    .speed(0.7)
+    .degradeBy(0.25)
+    .gain(0.3),
+
+  /* @layer CHIME */
+  // 退到更远的地方，给车体的低频让位
+  note("<a5 ~ ~ e5>")
+    .s("gm_music_box")
+    .slow(4)
+    .delay(0.35)
+    .room(0.6)
+    .gain(0.18),
+
+  /* @layer SUB */
+  // 车体共振，第 8 小节起一直垫在底下
+  note("d1")
+    .s("sine")
+    .slow(8)
+    .gain(sine.range(0.12, 0.34).slow(16))
+    .mask("<0 1>"),
+)`;
+
 const RAINY_STUDY_FIRST = `// LOFI | BPM: 72
 setcps(0.3)
 
@@ -455,6 +526,446 @@ stack(
  * Newest first — the same order the list on the page reads in, so the page can
  * take this as it comes.
  */
+/* ── A long list, to look at ────────────────────────────────────────────────
+   Twenty-five more entries, so the column on the right runs well past the
+   seven rows it shows and has to scroll. Titles of deliberately uneven length,
+   including two that cannot fit the column, because what a long list does to
+   a right-set row is the thing worth looking at.
+
+   Each carries the shortest exchange that is still an exchange — a question
+   and a reply, no script — so the collection's own rules hold without any of
+   these pretending to be a conversation worth reading. Dated behind all five
+   real ones, so the page still opens on something that has something to say.
+
+   Delete this block and the spread below to go back to the five. */
+const LIST_LENGTH_PROBE: readonly FavoriteConversation[] = [
+  {
+    id: 'probe-01',
+    title: ['雨夜巴士', 'Night Bus in the Rain'],
+    favoritedAt: Date.parse('2026-08-03T15:12:00'),
+    turns: [
+      {
+        id: 'probe-01-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-01-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-02',
+    title: ['八分音符的下午', 'Eighth Notes, Afternoon'],
+    favoritedAt: Date.parse('2026-08-02T19:55:00'),
+    turns: [
+      {
+        id: 'probe-02-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-02-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-03',
+    title: ['Warehouse Take', 'Warehouse Take'],
+    favoritedAt: Date.parse('2026-08-02T00:38:00'),
+    turns: [
+      {
+        id: 'probe-03-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-03-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-04',
+    title: ['给一台坏掉的鼓机写的挽歌，第三稿', 'Elegy for a Broken Drum Machine, Third Draft'],
+    favoritedAt: Date.parse('2026-08-01T05:21:00'),
+    turns: [
+      {
+        id: 'probe-04-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-04-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-05',
+    title: ['低保真', 'Lo-fi'],
+    favoritedAt: Date.parse('2026-07-31T11:04:00'),
+    turns: [
+      {
+        id: 'probe-05-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-05-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-06',
+    title: ['City Pop 02', 'City Pop 02'],
+    favoritedAt: Date.parse('2026-07-30T15:47:00'),
+    turns: [
+      {
+        id: 'probe-06-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-06-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-07',
+    title: ['三点钟的房间', 'A Room at Three'],
+    favoritedAt: Date.parse('2026-07-29T20:30:00'),
+    turns: [
+      {
+        id: 'probe-07-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-07-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-08',
+    title: ['Ambient Drift', 'Ambient Drift'],
+    favoritedAt: Date.parse('2026-07-29T01:13:00'),
+    turns: [
+      {
+        id: 'probe-08-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-08-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-09',
+    title: ['铜管', 'Brass'],
+    favoritedAt: Date.parse('2026-07-28T06:56:00'),
+    turns: [
+      {
+        id: 'probe-09-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-09-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-10',
+    title: ['一直往下走不要回头也不要停下来的那种曲子', 'The Kind That Keeps Going Down and Never Turns Back'],
+    favoritedAt: Date.parse('2026-07-27T11:39:00'),
+    turns: [
+      {
+        id: 'probe-10-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-10-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-11',
+    title: ['海面以下四十米', 'Forty Metres Under'],
+    favoritedAt: Date.parse('2026-07-26T16:22:00'),
+    turns: [
+      {
+        id: 'probe-11-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-11-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-12',
+    title: ['Breakbeat 试验', 'Breakbeat Trial'],
+    favoritedAt: Date.parse('2026-07-25T22:05:00'),
+    turns: [
+      {
+        id: 'probe-12-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-12-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-13',
+    title: ['周日', 'Sunday'],
+    favoritedAt: Date.parse('2026-07-25T02:48:00'),
+    turns: [
+      {
+        id: 'probe-13-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-13-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-14',
+    title: ['给窗台上的植物', 'For the Plant on the Sill'],
+    favoritedAt: Date.parse('2026-07-24T07:31:00'),
+    turns: [
+      {
+        id: 'probe-14-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-14-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-15',
+    title: ['Tape Loop 01', 'Tape Loop 01'],
+    favoritedAt: Date.parse('2026-07-23T12:14:00'),
+    turns: [
+      {
+        id: 'probe-15-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-15-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-16',
+    title: ['很短', 'Short'],
+    favoritedAt: Date.parse('2026-07-22T17:57:00'),
+    turns: [
+      {
+        id: 'probe-16-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-16-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-17',
+    title: ['电梯里的四小节', 'Four Bars in a Lift'],
+    favoritedAt: Date.parse('2026-07-21T22:40:00'),
+    turns: [
+      {
+        id: 'probe-17-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-17-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-18',
+    title: ['Dub 版本', 'Dub Version'],
+    favoritedAt: Date.parse('2026-07-21T03:23:00'),
+    turns: [
+      {
+        id: 'probe-18-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-18-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-19',
+    title: ['霜', 'Frost'],
+    favoritedAt: Date.parse('2026-07-20T09:06:00'),
+    turns: [
+      {
+        id: 'probe-19-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-19-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-20',
+    title: ['最后一班地铁的车厢广播混音版本二', 'Last Train Announcement, Remix Two'],
+    favoritedAt: Date.parse('2026-07-19T13:49:00'),
+    turns: [
+      {
+        id: 'probe-20-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-20-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-21',
+    title: ['Kalimba', 'Kalimba'],
+    favoritedAt: Date.parse('2026-07-18T18:32:00'),
+    turns: [
+      {
+        id: 'probe-21-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-21-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-22',
+    title: ['六月的排练', 'June Rehearsal'],
+    favoritedAt: Date.parse('2026-07-17T23:15:00'),
+    turns: [
+      {
+        id: 'probe-22-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-22-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-23',
+    title: ['Static', 'Static'],
+    favoritedAt: Date.parse('2026-07-17T04:58:00'),
+    turns: [
+      {
+        id: 'probe-23-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-23-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-24',
+    title: ['两个和弦', 'Two Chords'],
+    favoritedAt: Date.parse('2026-07-16T09:41:00'),
+    turns: [
+      {
+        id: 'probe-24-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-24-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+  {
+    id: 'probe-25',
+    title: ['收尾', 'Coda'],
+    favoritedAt: Date.parse('2026-07-15T14:24:00'),
+    turns: [
+      {
+        id: 'probe-25-1',
+        role: 'user',
+        text: ['（占位）', '(placeholder)'],
+      },
+      {
+        id: 'probe-25-2',
+        role: 'assistant',
+        text: ['（占位）', '(placeholder)'],
+      },
+    ],
+  },
+];
+
 export const FAVORITE_CONVERSATIONS: readonly FavoriteConversation[] = [
   {
     id: 'midnight-neon',
@@ -502,6 +1013,47 @@ export const FAVORITE_CONVERSATIONS: readonly FavoriteConversation[] = [
           'A high arpeggio now appears in the last section only, resolving on the fifth of the minor scale. The snare also picked up a little room so it sits back against the wall.',
         ],
         code: MIDNIGHT_NEON_THIRD,
+      },
+    ],
+  },
+  {
+    id: 'last-train',
+    title: [
+      '深夜末班地铁车厢里的环境音草稿',
+      'An Ambient Sketch from the Last Subway Car of the Night',
+    ],
+    favoritedAt: Date.parse('2026-08-19T01:37:00'),
+    turns: [
+      {
+        id: 'last-train-1',
+        role: 'user',
+        text: [
+          '想要很安静的东西，像坐末班地铁回家时车厢里的声音。',
+          'Something very quiet — the inside of the last train home.',
+        ],
+      },
+      {
+        id: 'last-train-2',
+        role: 'assistant',
+        text: [
+          '66 BPM：一层空五度的长音当车厢底噪，接缝声故意不对齐拍子所以永远不成规律，到站提示音四小节才落一次。',
+          'At 66 BPM: an open-fifth drone for the carriage itself, rail joints deliberately off the grid so no pattern ever settles, and a station chime that lands only every four bars.',
+        ],
+        code: LAST_TRAIN_FIRST,
+      },
+      {
+        id: 'last-train-3',
+        role: 'user',
+        text: ['低频再厚一点，提示音可以退远一些。', 'More weight underneath, and push the chime further away.'],
+      },
+      {
+        id: 'last-train-4',
+        role: 'assistant',
+        text: [
+          '加了一条 d1 的正弦低频当车体共振，第 8 小节进来，音量在十六小节的周期里涨落；提示音压低了一半并加了混响，退到车厢另一头去。',
+          'A sine sub on d1 now stands in for the carriage resonance, entering at bar 8 with its level breathing on a sixteen-bar cycle. The chime is down by half and picked up some room, so it sounds from the far end of the car.',
+        ],
+        code: LAST_TRAIN_SECOND,
       },
     ],
   },
@@ -624,4 +1176,5 @@ export const FAVORITE_CONVERSATIONS: readonly FavoriteConversation[] = [
       },
     ],
   },
+  ...LIST_LENGTH_PROBE,
 ];

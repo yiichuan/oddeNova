@@ -68,6 +68,24 @@ describe('EditableSessionTitle', () => {
     expect(input?.className).toContain('w-full');
   });
 
+  // A one-character title sizes the box down to the caret. The floor only
+  // applies while editing, so the resting box still hugs the title.
+  it('opens a one-character title to a minimum editing width', () => {
+    const { container, root } = renderTitle({ title: '气' });
+    roots.push(root);
+
+    const shell = container.querySelector<HTMLElement>('[data-session-title-shell]');
+    expect(shell?.style.minWidth).toBe('');
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
+    });
+
+    // Clamped against the max so the field can never outgrow a narrow sidebar.
+    expect(shell?.style.minWidth).toBe('min(200px, calc(100% - 16px))');
+    expect(shell?.style.maxWidth).toBe('calc(100% - 16px)');
+  });
+
   it('saves the trimmed title on Enter', () => {
     const { container, root, onRename } = renderTitle();
     roots.push(root);

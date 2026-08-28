@@ -1103,6 +1103,9 @@ export default function App() {
           </div>
           <div className={primaryNavItem === 'favorites' ? 'flex h-full min-h-0' : 'hidden'}>
             <FavoritesPage
+              // Hidden rather than unmounted when you leave, so the page has
+              // to be told when it is the one being looked at.
+              active={primaryNavItem === 'favorites'}
               conversations={FAVORITE_CONVERSATIONS}
               isPlaying={strudel.isPlaying}
               playingCode={strudel.code}

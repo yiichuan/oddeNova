@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { t } from '../../lib/i18n';
 import { EditIcon } from '../icons';
 
+/** How wide the field opens to when the title alone would not fill it. Fits
+ *  roughly ten CJK characters of the 16px title face, past the 8px/28px insets
+ *  the control keeps for the edit icon's slot. */
+const EDITING_MIN_WIDTH = 200;
+
 interface EditableSessionTitleProps {
   title: string;
   canEdit: boolean;
@@ -73,12 +78,20 @@ export default function EditableSessionTitle({
       <div
         data-session-title-shell
         data-editing={isEditing}
-        className={`group/title relative grid h-8 w-fit overflow-hidden rounded-[6px] border transition-[background-color,border-color] duration-150 ${
+        className={`group/title relative grid h-8 w-fit overflow-hidden rounded-[6px] border transition-[background-color,border-color,min-width] duration-150 ${
           isEditing
             ? 'border-border bg-[#1a1a1a]'
             : 'border-transparent hover:bg-[#1a1a1a]'
         }`}
-        style={{ maxWidth: 'calc(100% - 16px)' }}
+        style={{
+          maxWidth: 'calc(100% - 16px)',
+          // The box takes its width from the title, which leaves a one-character
+          // name with a field barely wider than its own caret. Editing gets a
+          // floor instead — enough room to read what is being typed. min-width
+          // would otherwise beat max-width outright, so the same 16px inset
+          // clamps it and a narrow sidebar still wins.
+          minWidth: isEditing ? `min(${EDITING_MIN_WIDTH}px, calc(100% - 16px))` : undefined,
+        }}
       >
         {/* Invisible copy owns intrinsic width in both modes. Keeping it in the
             same grid cell as the control prevents the input swap from moving

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../../../lib/i18n';
 import { GITHUB_URL, LEARN_URL } from '../../../lib/external-links';
 import { REJOIN_MS, SPLIT_MS } from '../liquid-column';
-import PrimaryNav from '../PrimaryNav';
+import PrimaryNav, { NAV_COLLAPSED_WIDTH } from '../PrimaryNav';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -72,7 +72,7 @@ describe('PrimaryNav', () => {
 
   it('turns the brand mark into the Featured icon while the Featured navigation is active', () => {
     const { container } = renderPrimaryNav('featured');
-    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
+    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-section-mark"]');
 
     expect(mark?.className).toContain('[transform:rotateY(180deg)]');
     expect(mark?.className).not.toContain('group-hover:');
@@ -80,9 +80,19 @@ describe('PrimaryNav', () => {
     expect(mark?.parentElement?.className).not.toContain('hover:bg-white/10');
   });
 
-  it('keeps the regular brand mark while Favorites is active', () => {
+  it('turns the brand mark into the Favorites icon while Favorites is active', () => {
     const { container } = renderPrimaryNav('favorites');
-    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
+    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-section-mark"]');
+
+    expect(mark?.className).toContain('[transform:rotateY(180deg)]');
+    expect(mark?.className).not.toContain('group-hover:');
+    expect(mark?.querySelector('svg')).not.toBeNull();
+    expect(mark?.parentElement?.className).not.toContain('hover:bg-white/10');
+  });
+
+  it('keeps the regular brand mark on a workspace page', () => {
+    const { container } = renderPrimaryNav('home');
+    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-section-mark"]');
 
     expect(mark?.className).not.toContain('[transform:rotateY(180deg)]');
     expect(mark?.className).toContain('group-hover:opacity-0');
@@ -156,7 +166,9 @@ describe('PrimaryNav', () => {
 
     expect(navContainer?.dataset.expanded).toBe('false');
     expect(navContainer?.className).toContain('mr-region');
-    expect(navContainer?.className).toContain('w-[60px]');
+    // Through the constant, so the column and the pages that subtract it from
+    // the page's left edge cannot drift apart unnoticed.
+    expect(navContainer?.className).toContain(`w-[${NAV_COLLAPSED_WIDTH}px]`);
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
     expect(toggle?.className).toContain('w-[40px]');
 
@@ -179,7 +191,7 @@ describe('PrimaryNav', () => {
     const shell = container.querySelector<HTMLElement>('[data-nav-shape]');
     const top = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-top"]');
     const bottom = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-bottom"]');
-    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]');
+    const mark = container.querySelector<HTMLElement>('[data-testid="primary-nav-section-mark"]');
     const face = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('expandNavPages')}"]`);
 
     // Selecting Featured before mount lands on the settled shape directly, each
@@ -212,9 +224,22 @@ describe('PrimaryNav', () => {
     expect(settings?.className).toContain('opacity-100');
   });
 
-  it('keeps the navigation joined on Favorites', () => {
+  it('settles into the same two lobes on Favorites', () => {
     stubColumnBox();
     const { container } = renderPrimaryNav('favorites');
+    const shell = container.querySelector<HTMLElement>('[data-nav-shape]');
+    const top = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-top"]');
+    const bottom = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-bottom"]');
+
+    expect(shell?.dataset.navShape).toBe('pods');
+    expect(top?.style.height).toBe('54px');
+    expect(bottom?.style.height).toBe('64px');
+    expect(container.querySelector(`button[aria-label="${t('expandNavPages')}"]`)).not.toBeNull();
+  });
+
+  it('keeps the navigation joined on a workspace page', () => {
+    stubColumnBox();
+    const { container } = renderPrimaryNav('home');
     const shell = container.querySelector<HTMLElement>('[data-nav-shape]');
     const top = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-top"]');
     const bottom = container.querySelector<HTMLElement>('[data-testid="primary-nav-pod-bottom"]');
@@ -291,7 +316,7 @@ describe('PrimaryNav', () => {
     ));
     expect(nav?.dataset.featuredDetail).toBe('true');
     expect(shell?.dataset.navShape).toBe('breaking');
-    expect(container.querySelector<HTMLElement>('[data-testid="primary-nav-featured-mark"]')?.className)
+    expect(container.querySelector<HTMLElement>('[data-testid="primary-nav-section-mark"]')?.className)
       .not.toContain('[transform:rotateY(180deg)]');
     act(() => vi.advanceTimersByTime(REJOIN_MS));
     expect(shell?.dataset.navShape).toBe('bar');

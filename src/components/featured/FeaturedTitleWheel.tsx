@@ -20,11 +20,9 @@ interface FeaturedTitleWheelProps {
    * and moving it — the page hands the class down here instead.
    */
   className?: string;
-  /** What the column is a list of. Favorites reuses it for its own list. */
+  /** What the column is a list of — a shelf of records, or one record's tracks. */
   ariaLabel?: string;
   testId?: string;
-  /** Render one finite queue rather than wrapping labels around the wheel. */
-  loop?: boolean;
   /** Lets a title column forward wheel movement to its owning carousel. */
   onWheelStep?: (delta: number) => void;
 }
@@ -113,7 +111,6 @@ export default function FeaturedTitleWheel({
   className = '',
   ariaLabel = 'Select an album or single',
   testId = 'featured-title-wheel',
-  loop = true,
   onWheelStep,
 }: FeaturedTitleWheelProps) {
   const measureRef = useRef<HTMLSpanElement>(null);
@@ -251,7 +248,7 @@ export default function FeaturedTitleWheel({
         onWheelStep(event.deltaX + event.deltaY);
       }}
       className={`fixed right-4 top-[calc(var(--spacing-region)+7px)] z-40 w-[min(15rem,28vw)] cursor-grab touch-none select-none overflow-hidden active:cursor-grabbing sm:right-7 ${className}`}
-      style={{ height: (loop ? Math.min(labels.length, VISIBLE_ROWS) : labels.length) * ROW_HEIGHT }}
+      style={{ height: Math.min(labels.length, VISIBLE_ROWS) * ROW_HEIGHT }}
     >
       {/* The rule the marker is measured against: same metrics, no box of its
           own, never seen. */}
@@ -297,15 +294,13 @@ export default function FeaturedTitleWheel({
         // the column happens to be on. A row reaching the top of that window is
         // the row that comes back at the foot, which is why the column can turn
         // forever without the same title ever standing in it twice.
-        const distance = loop
-          ? positiveModulo(row - position + lead, labels.length) - lead
-          : row;
+        const distance = positiveModulo(row - position + lead, labels.length) - lead;
         // Exactly `position + distance`: the two differ by whole laps of the
         // list. It is what the carousel is told to travel to, so picking the
         // third title down goes three slots on rather than most of a lap back.
-        const logicalIndex = loop ? Math.round(position + distance) : row;
-        const selected = loop ? Math.abs(distance) < 0.001 : row === 0;
-        const visible = loop ? distance > -1 && distance < VISIBLE_ROWS : true;
+        const logicalIndex = Math.round(position + distance);
+        const selected = Math.abs(distance) < 0.001;
+        const visible = distance > -1 && distance < VISIBLE_ROWS;
         const hovered = !selected && visible && hoveredIndex === row;
 
         return (
@@ -344,7 +339,7 @@ export default function FeaturedTitleWheel({
               opacity: visible
                 // Lifted under the pointer, or the preview would be showing
                 // through whatever fade the row happens to sit at.
-                ? (loop ? Math.max(rowOpacity(distance, fadeSpan), hovered ? 0.9 : 0) : 1)
+                ? Math.max(rowOpacity(distance, fadeSpan), hovered ? 0.9 : 0)
                 : 0,
               pointerEvents: visible ? undefined : 'none',
               transform: `translateY(${distance * ROW_HEIGHT}px)`,

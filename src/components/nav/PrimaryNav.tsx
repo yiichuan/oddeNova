@@ -44,19 +44,38 @@ interface PrimaryNavProps {
   /**
    * Whether Featured is showing one piece rather than the collection. Only the
    * collection stands the column apart; a piece opened out of it is a page like
-   * any other, and the column flows back together for it.
+   * any other, and the column flows back together for it. Favorites has no
+   * such second view, so it holds the split for as long as it is up.
    */
   featuredPieceOpen?: boolean;
 }
 
 /**
- * The collection view where the column breaks apart. Read in three places —
- * the shape it starts settled in, the spread it starts at, and the shape it is
- * heading for — which have to agree or the column starts mid-transition.
+ * The gallery views where the column breaks apart: the Featured collection and
+ * Favorites. Both are full-width pages a collection is looked across rather
+ * than two-pane workspaces, and folding the column into a pair of lobes is what
+ * gives either of them its own top corners back.
+ *
+ * Read in three places — the shape it starts settled in, the spread it starts
+ * at, and the shape it is heading for — which have to agree or the column
+ * starts mid-transition.
  */
 const wantsPodsFor = (selectedItem: PrimaryNavItem, featuredPieceOpen: boolean) => (
-  selectedItem === 'featured' && !featuredPieceOpen
+  selectedItem === 'favorites' || (selectedItem === 'featured' && !featuredPieceOpen)
 );
+
+/* The mark is drawn on the back face of the brand logo and turned into view. */
+const SECTION_MARK_CLASS = 'absolute [backface-visibility:hidden] [transform:rotateY(180deg)]';
+
+/**
+ * What the brand mark turns into while a gallery page is up: that page's own
+ * nav icon, so a column folded down to two lobes still says where you are.
+ */
+function SectionMark({ item }: { item: PrimaryNavItem }) {
+  return item === 'favorites'
+    ? <Star size={21} strokeWidth={1.6} aria-hidden="true" className={SECTION_MARK_CLASS} />
+    : <Disc3 size={21} strokeWidth={1.6} aria-hidden="true" className={SECTION_MARK_CLASS} />;
+}
 
 interface NavItem {
   id: PrimaryNavItem;
@@ -94,6 +113,13 @@ const NAV_PAGES_GROUP_ID = 'primary-nav-pages';
    button leaves a 2px gap between the tooltip and the nav's right border. */
 const NAV_TOOLTIP_OFFSET = 12;
 
+/* The column's width when it is not expanded — which on a page whose nav is
+   always in lobes is its only width. Exported because such a page is centred
+   on the page, not on what is left of it once this column has taken its share
+   of the left edge, and it cannot subtract a number it does not have. Kept in
+   step with the `w-[60px]` on the column itself by PrimaryNav's own test. */
+export const NAV_COLLAPSED_WIDTH = 60;
+
 const POD_ROW = 40;
 const POD_ROW_GAP = 8;
 /* In the bar the header row is lifted so its centre line matches the sidebar
@@ -106,8 +132,12 @@ const BAR_EDGE_PADDING = 12;
    icon already has from the column's end. Neither icon moves when the bar
    splits, which is what decides these heights — so the lobes are rounded
    rectangles of different heights rather than matching squares. */
-const TOP_POD_SIZE = BAR_HEADER_OFFSET * 2 + POD_ROW;
-const BOTTOM_POD_SIZE = BAR_EDGE_PADDING * 2 + POD_ROW;
+/* Exported because a page can line its own content up with the lobes: the
+   column and the page stand in the same box, so the foot of the top lobe and
+   the head of the bottom one are real verticals to build against rather than
+   margins picked to look right. */
+export const TOP_POD_SIZE = BAR_HEADER_OFFSET * 2 + POD_ROW;
+export const BOTTOM_POD_SIZE = BAR_EDGE_PADDING * 2 + POD_ROW;
 const PODS_SIZE = TOP_POD_SIZE + BOTTOM_POD_SIZE;
 
 /* How much taller an unfolded lobe is than a folded one — read off the rows
@@ -539,7 +569,9 @@ export default function PrimaryNav({
   });
 
   const wantsPods = wantsPodsFor(selectedItem, featuredPieceOpen);
-  const showingSectionMark = selectedItem === 'featured' && !featuredPieceOpen;
+  /* Exactly the pages that break the column apart: the mark and the split are
+     two halves of one statement about where you are. */
+  const showingSectionMark = wantsPods;
   const targetShape: SettledShape = wantsPods ? 'pods' : 'bar';
   /* `breaking` is never stored: it is exactly "the shape has not caught up with
      the page yet", which is what keeps one transition running at a time. */
@@ -764,8 +796,15 @@ export default function PrimaryNav({
 
   return (
     <>
+      {/* The column takes no events of its own; its two lobes take theirs back
+          (see `.primary-nav-pod`). In the bar they are the whole column and
+          nothing changes. Broken into lobes they are not, and what is left
+          between them is a tall strip of empty column standing over the page —
+          which a page is entitled to put something in, as Favorites does with
+          its turn rail. Without this the strip would still be swallowing every
+          pointer that crossed it on the way to something drawn underneath. */}
       <div
-        className={`relative z-30 mr-region h-full shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+        className={`pointer-events-none relative z-30 mr-region h-full shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
           expanded ? 'w-[188px]' : 'w-[60px]'
         }`}
         data-expanded={expanded}
@@ -842,7 +881,7 @@ export default function PrimaryNav({
                     <>
                       <span
                         aria-hidden="true"
-                        data-testid="primary-nav-featured-mark"
+                        data-testid="primary-nav-section-mark"
                         className={`absolute inset-0 flex items-center justify-center [transform-style:preserve-3d] transition-[transform,opacity] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
                           showingSectionMark
                             ? (topOpen ? '[transform:rotateY(0deg)]' : '[transform:rotateY(180deg)]')
@@ -864,14 +903,7 @@ export default function PrimaryNav({
                             maskSize: 'contain',
                           }}
                         />
-                        {showingSectionMark && (
-                          <Disc3
-                            size={21}
-                            strokeWidth={1.6}
-                            aria-hidden="true"
-                            className="absolute [backface-visibility:hidden] [transform:rotateY(180deg)]"
-                          />
-                        )}
+                        {showingSectionMark && <SectionMark item={selectedItem} />}
                       </span>
                       {!splitting && (
                         <PanelLeft

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { t } from '../../lib/i18n';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
@@ -11,6 +11,21 @@ interface ArchivedConversationViewProps {
   onStopCode: () => void;
   playingCodeMessageId: string | null;
   selectedCodeMessageId: string | null;
+  /**
+   * Whether the page holding this is the one on screen. The archive comes back
+   * to its end each time it is, which it cannot work out for itself: the pages
+   * it lives on are hidden rather than unmounted when you leave them, so
+   * arriving again is a prop changing and nothing else.
+   */
+  active?: boolean;
+  /**
+   * The archive's own scrollport, handed out. A page that puts something beside
+   * the reading which moves it — the turn rail does — needs the element the
+   * reading actually scrolls in, and that is this component's to own: where the
+   * window's ends are and how deep its padding runs are decided in here and in
+   * the stylesheet, not on the page.
+   */
+  scrollRef?: RefObject<HTMLDivElement | null>;
 }
 
 /**
@@ -18,7 +33,26 @@ interface ArchivedConversationViewProps {
  * leaves out anything that exists only while an agent run is underway — live
  * thinking, tool status, commit status, and retry/rollback controls — while
  * retaining completed messages and their expandable reasoning blocks.
+ *
+ * It also stands on no surface of its own. The studio's stream is cut into a
+ * panel and can therefore fade its own top and bottom edges out to that panel's
+ * colour, and park a sticky heading on it; here the messages sit straight on
+ * the page's light field, so every one of those — the edge fades, the heading's
+ * backing, the gradient under it — would be a slab of the wrong colour laid
+ * over the field. They are left out rather than recoloured: nothing behind this
+ * is a flat colour to match.
+ *
+ * The two ends still have to say that the stream runs past them, and they say
+ * it with blur alone — no scrim, no fade of the content's own alpha, both of
+ * which would be a statement about a colour this page does not have. A message
+ * on its way out simply goes soft until there is nothing left to read.
+ *
+ * The masked blur bands (see `.conversation-blur-fade` in index.css) read the
+ * page behind this stream rather than the stream alone. FavoritesPage mounts
+ * them above this archive so they can span that page without becoming fixed
+ * viewport layers.
  */
+
 export default function ArchivedConversationView({
   messages,
   onSelectCode,
@@ -26,6 +60,8 @@ export default function ArchivedConversationView({
   onStopCode,
   playingCodeMessageId,
   selectedCodeMessageId,
+  active = true,
+  scrollRef: externalScrollRef,
 }: ArchivedConversationViewProps) {
   // Finished thoughts are useful in an archive, so they begin expanded. Only
   // entries the reader explicitly closes are held in this set.
@@ -37,6 +73,33 @@ export default function ArchivedConversationView({
     [messages],
   );
 
+  /* A favorite opens at its end. What was kept is the take the exchange
+     arrived at, and the reading that explains it runs backwards from there —
+     so the last reply is what the entry is for, and starting at the first
+     instruction would make you scroll past the whole of it to reach the point.
+
+     Every arrival, not only the first. The gallery pages stay mounted when you
+     leave them — they are hidden, so drafts and local state survive the trip —
+     which means coming back is neither a mount nor a change of messages, and
+     an archive keyed on those alone would hand you back whatever you had
+     scrolled to before you left. Opening at the end is the entry's own
+     behaviour, so it has to happen every time the entry is opened.
+
+     useLayoutEffect, not useEffect: the archive would otherwise paint once
+     where it was and jump. */
+  const ownScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = externalScrollRef ?? ownScrollRef;
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || !active) return;
+    scroller.scrollTop = scroller.scrollHeight;
+    /* `scrollRef` is in the list for the linter's sake and is stable in
+       practice: it is either this component's own ref or one a page holds
+       across its lifetime. A caller that made a new one each render would
+       send the reading back to its end on every render, which is exactly
+       what the dependency is there to say. */
+  }, [visibleMessages, active, scrollRef]);
+
   const toggleReasoning = (id: string) => {
     setCollapsedReasoning((current) => {
       const next = new Set(current);
@@ -47,31 +110,57 @@ export default function ArchivedConversationView({
   };
 
   return (
-    <div className="conversation-scroll-shell h-full">
-      {/* The parent reserves 42px above the scrollport so its scrollbar begins
-          below the Favorites heading. The remaining 24px keeps the first
-          bubble on the saved-row baseline: 42 + 24 = 66px. */}
+    // The scroll window stays local to the archive. Its full-width blur bands
+    // are mounted by FavoritesPage in a stable absolute layer above it.
+    <div className="conversation-archive">
+      <div className="conversation-scroll-shell conversation-scroll-shell--inset">
+      {/* The padding is inside the scrollport rather than around it, so it is
+          the *content* that is held clear of the two bands and not the window:
+          at rest the first message and the last reply stand past where the blur
+          begins, and scrolling still carries them out through it. One band's
+          depth exactly, read from the same token, so the two cannot drift apart.
+          The horizontal padding is in index.css instead: it has to answer to
+          how far the window overhangs its column, which is decided there.
+
+          The scrollbar remains transparent while its gutter stays reserved,
+          so scrolling still works and the message column does not shift. */}
       <div
-        className="conversation-scroll isolate h-full overflow-y-auto px-4 pb-[10px] pt-[24px] space-y-[40px] relative"
+        ref={scrollRef}
+        // `featured-content-in` rides here rather than on anything above the
+        // shell: it animates opacity and fills, and an ancestor that does that
+        // is where the bands below stop being able to see the page behind this
+        // stream. A sibling of theirs can carry it safely.
+        className="conversation-scroll scrollbar-hidden featured-content-in isolate h-full overflow-y-auto py-[var(--spacing-conversation-fade)] space-y-[40px] relative"
         style={{ scrollbarGutter: 'stable' }}
       >
         {visibleMessages.map((message, index) => {
+          /* The two ends of the reading stand on the code window's two edges,
+             and what has to land on them is the ink, not the box around it.
+             Every row here carries a little padding of its own that is
+             invisible in the middle of a stream and is a gap at its ends, so
+             the first and last give theirs up. A user's bubble is the one
+             exception: its padding is a surface you can see, and the edge that
+             belongs on the vertical is the bubble's own. */
+          const isFirst = index === 0;
+          const isLast = index === visibleMessages.length - 1;
           if (message.role === 'progress') {
             const expanded = !collapsedReasoning.has(message.id);
             return (
               <div
                 key={message.id}
                 data-archive-process={message.id}
-                className="relative z-20 flex justify-start animate-fade-in"
-                style={{ marginBlockEnd: 'var(--spacing-action-divider-to-body)' }}
+                className="flex justify-start animate-fade-in"
+                style={isLast
+                  ? undefined
+                  : { marginBlockEnd: 'var(--spacing-action-divider-to-body)' }}
               >
                 <div className="w-full px-2">
                   <button
                     type="button"
                     data-reasoning-header={message.id}
                     onClick={() => toggleReasoning(message.id)}
-                    className={`sticky top-0 z-10 -mx-2 flex w-[calc(100%+1rem)] items-center gap-1.5 bg-conversation-surface px-2 py-0.5 text-sm text-text-secondary/60 transition-colors hover:text-text-secondary${
-                      expanded ? ' reasoning-header--expanded' : ''
+                    className={`flex w-full items-center gap-1.5 pb-0.5 text-sm text-text-secondary/60 transition-colors hover:text-text-secondary ${
+                      isFirst ? 'pt-0' : 'pt-0.5'
                     }`}
                   >
                     <ChevronRightIcon
@@ -115,18 +204,38 @@ export default function ArchivedConversationView({
               data-favorites-turn={message.id}
               className="flex justify-start items-start animate-fade-in"
             >
-              <div className={`relative w-full rounded-xl px-2 pb-2 text-sm bg-transparent text-text-primary ${
-                followsReasoning ? 'pt-0' : 'pt-2'
-              }`}>
+              <div className={`relative w-full rounded-xl px-2 text-sm bg-transparent text-text-primary ${
+                followsReasoning || isFirst ? 'pt-0' : 'pt-2'
+              } ${isLast ? 'pb-0' : 'pb-2'}`}>
                 <MarkdownText content={message.content} />
                 {message.code && (
+                  /* The widget that points at a take is made of the same two
+                     materials as the window that shows it — the Featured
+                     detail's glass fill and its tenth-of-white edge — so a
+                     take reads as the same object named here and opened
+                     there. No backdrop blur to go with the fill, unlike the
+                     window: the scrollport above is `isolate`, which is a
+                     backdrop root, so a filter in here would have nothing
+                     behind it to sample and would cost a compositing layer
+                     per turn to say so. The fill alone does the work, because
+                     the field it stands on is already soft.
+
+                     Hover is the fill and nothing else: the glass lightens,
+                     while the edge and the orange hold still. One thing moving
+                     is enough to say the widget is live, and it is the one
+                     thing that can move without the widget looking like it
+                     changed state — a brighter rule or a hotter orange both
+                     read as selection, which this already has its own
+                     meaning for. The lit value is the opaque grey the widget
+                     used to hover to, kept at the same alpha as its rest so
+                     the material never changes, only its light. */
                   <div className="mt-4 -ml-1 flex gap-0.5 animate-fade-in">
                     <button
                       type="button"
                       data-favorites-chip={message.id}
                       aria-pressed={selectedCodeMessageId === message.id}
                       onClick={() => onSelectCode(message.id)}
-                      className="flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none bg-[#1a1a1a] px-2 py-1.5 text-left text-[11px] text-[#f05a28] transition-colors hover:bg-[#242424] hover:text-[#ff7242]"
+                      className="flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none border border-white/10 bg-[#0D0D0D]/55 px-2 py-1.5 text-left text-[11px] text-[#f05a28] transition-colors hover:bg-[#242424]/55"
                     >
                       <span>代码 V{String(codeVersion).padStart(2, '0')}</span>
                       <span aria-hidden="true">·</span>
@@ -140,7 +249,11 @@ export default function ArchivedConversationView({
                         if (isPlaying) onStopCode();
                         else onPlayCode(message.id, message.code!);
                       }}
-                      className="grid size-7 place-items-center rounded-l-none rounded-r-md bg-[#1a1a1a] text-[#f05a28] transition-colors hover:bg-[#242424] hover:text-[#ff7242]"
+                      // `self-stretch` rather than a second fixed size: the
+                      // chip beside it is as tall as its own line, and two
+                      // edges that stop at different heights would read as a
+                      // misprint now that both are drawn.
+                      className="grid w-7 self-stretch place-items-center rounded-l-none rounded-r-md border border-white/10 bg-[#0D0D0D]/55 text-[#f05a28] transition-colors hover:bg-[#242424]/55"
                     >
                       {isPlaying ? <StopIcon size={12} /> : <PlayIcon size={13} />}
                     </button>
@@ -151,14 +264,8 @@ export default function ArchivedConversationView({
           );
         })}
       </div>
-      <div
-        data-conversation-edge-fade="top"
-        className="conversation-edge-fade conversation-edge-fade--top"
-      />
-      <div
-        data-conversation-edge-fade="bottom"
-        className="conversation-edge-fade conversation-edge-fade--bottom"
-      />
+      </div>
+
     </div>
   );
 }

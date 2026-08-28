@@ -85,10 +85,45 @@
 
   --radius-region: 6px;
   --spacing-region: 10px;
+  /* The shortest window the app will lay itself out in. Below it the window
+     scrolls rather than the layout compressing — every one of these pages is a
+     set of fixed rows and fixed panel chrome pinned to two opposite edges, and
+     what "too short" looks like is not a tighter layout but the two ends
+     arriving on top of each other.
+
+     Read off the tallest of those requirements, which is this page's reading:
+     Favorites rests its first message a sixth of the page's height down, and
+     that has to clear the blur band standing at the column's top — 6 × (1.25 ×
+     the fade depth − the region inset) = 615px of page, 635px of window.
+     Rounded up. The primary nav, the other thing on every page that cannot
+     compress, needs 376px for its two lobes' rows and is nowhere near
+     binding. */
+  --spacing-app-min-height: 640px;
   --spacing-divider: 6px;
   --spacing-action-divider-to-body: 20px;
   --spacing-action-expanded-content-gap: 20px;
   --spacing-conversation-edge-fade: 8px;
+  /* How deep a conversation standing on no surface blurs out at each end. Deep
+     relative to the radius it reaches — that ratio is what hides the steps. */
+  --spacing-conversation-fade: 90px;
+  /* The default resting depth: far enough in from the column's own ends that
+     the first and last message stand clear of the band whatever depth it is
+     tuned to, so tuning the band does not move the conversation. */
+  --spacing-conversation-content-clearance: 160px;
+  /* How far past the window's own edge the bands carry on, so the box edge a
+     backdrop-filter clamps its samples at falls outside the clip. */
+  --spacing-conversation-fade-overscan: 80px;
+  /* How far past its column the reading window reaches on each side. Its
+     content receives the same amount as padding, so the messages do not move. */
+  --spacing-conversation-fade-side-overscan: 60px;
+  /* Where the reading window itself ends. */
+  --spacing-conversation-window-top: 54px;
+  --spacing-conversation-window-bottom: 64px;
+  /* Where the first and last message come to rest, given in the reading
+     column's own coordinates rather than the window's. A page with something
+     standing beside the reading overrides both to line the two up. */
+  --spacing-conversation-content-top: var(--spacing-conversation-content-clearance);
+  --spacing-conversation-content-bottom: var(--spacing-conversation-content-clearance);
   --spacing-reasoning-content-fade: 8px;
   --shadow-menu-overlay: 0 0 15px rgba(0, 0, 0, 0.7);
   --shadow-history-overlay: 0 0 18px rgba(0, 0, 0, 0.9);
@@ -105,7 +140,15 @@ body {
   /* The platform's own UI face — Inter was named here but never loaded, so
      this is what the app has always actually rendered in. */
   font-family: system-ui, -apple-system, sans-serif;
-  overflow: hidden;
+  /* Vertically this is `hidden` in every window tall enough to hold the app,
+     because #root is then exactly the window's height and there is nothing to
+     scroll. It only becomes a scrollbar under the minimum, which is the point:
+     the layout keeps its proportions and the window pans over it instead.
+     Horizontally still hard clipped — nothing here is meant to scroll sideways,
+     and a page-wide band that overhangs its column shouldn't be able to say
+     otherwise. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .chat-input-surface {
@@ -196,6 +239,11 @@ body {
   height: 50%;
   overflow: hidden;
   border-radius: var(--radius-region);
+  /* The column above is pointer-transparent so that the empty strip between
+     two lobes is not a wall in front of whatever the page has put there. The
+     nav's own reach is exactly the two lobes, so they take it back here — in
+     the bar they are the whole column, so nothing about the bar changes. */
+  pointer-events: auto;
 }
 
 .primary-nav-pod[data-anchor='top'] {
@@ -692,9 +740,13 @@ body {
   mask-composite: exclude;
 }
 
+/* 100% rather than 100vw: once the window is short enough to scroll, 100vw is
+   still the width including the scrollbar, and the app would hang off the side
+   by exactly that much. */
 #root {
-  width: 100vw;
+  width: 100%;
   height: 100dvh;
+  min-height: var(--spacing-app-min-height);
 }
 
 ::-webkit-scrollbar {
@@ -953,6 +1005,60 @@ body {
   overflow: hidden;
 }
 
+/* The archive owns the reading window only. Its blur bands are mounted by the
+   page above this element, where they can span the page without becoming fixed
+   viewport layers or being clipped by the scrollport.
+
+   A size container, because this is the one box that is the reading column's
+   full height — the window inside it overhangs, the scrollport inside that is
+   padded — so it is what a resting position expressed as a share of the column
+   has to be a share of. Size containment only: paint containment would clip
+   the window's 60px of horizontal overhang, which is the whole point of it. */
+.conversation-archive {
+  position: relative;
+  height: 100%;
+  container-type: size;
+}
+
+/* The window stands inside its column rather than filling it, which is what
+   leaves the bands room to overhang: a message reaches the window's end already
+   blurred to nothing, so the end itself — which does clip, it is a scrollport —
+   has nothing left to cut.
+
+   Where those two ends are is not this file's decision; the page hands them
+   down. */
+.conversation-scroll-shell--inset {
+  position: absolute;
+  right: calc(var(--spacing-conversation-fade-side-overscan) * -1);
+  left: calc(var(--spacing-conversation-fade-side-overscan) * -1);
+  top: var(--spacing-conversation-window-top);
+  bottom: var(--spacing-conversation-window-bottom);
+  height: auto;
+  isolation: auto;
+}
+
+/* The window is wider than its column by the same measure the bands are, and
+   the messages are pushed back in by exactly what it gained — so the reading
+   does not move, and what changes is only where the window's own edges are.
+   Which is the point: an edge outside the column is an edge the blur never has
+   to stop at. */
+.conversation-scroll-shell--inset > .conversation-scroll {
+  padding-right: calc(1rem + var(--spacing-conversation-fade-side-overscan));
+  /* The two resting positions arrive in the column's coordinates, and the
+     window's ends are not the column's — it reaches past them. Handing that
+     overhang back is what turns "rest here on the page" into padding measured
+     from a scrollport that starts somewhere else. */
+  padding-top: calc(
+    var(--spacing-conversation-content-top)
+      - var(--spacing-conversation-window-top)
+  );
+  padding-bottom: calc(
+    var(--spacing-conversation-content-bottom)
+      - var(--spacing-conversation-window-bottom)
+  );
+  padding-left: calc(1rem + var(--spacing-conversation-fade-side-overscan));
+}
+
 .conversation-scroll { container-type: size; overflow-anchor: none; }
 
 .conversation-edge-fade {
@@ -999,6 +1105,207 @@ body {
    ::-webkit-scrollbar styles above and change the scrollbar width */
 @supports not selector(::-webkit-scrollbar) {
   .conversation-scroll.scrollbar-hidden { scrollbar-color: transparent transparent; }
+}
+
+/* ── A conversation with no surface: how its two ends stop ───────────────────
+   The studio's stream is cut into a panel, so it can fade its ends out to that
+   panel's colour and be done. This one stands on the WebGL light field with no
+   surface of its own, and the field is not one colour — sampled down the column
+   it runs from about rgb(13,15,16) at the top to rgb(27,30,32) at the foot, so
+   a scrim painted in any single value would be visibly the wrong one somewhere.
+
+   So the ends are blur alone, which needs to know nothing about what is behind
+   it. A message on its way out of the window goes soft until there is nothing
+   left to read, rather than being covered over by something.
+
+   ── The six-step ladder ────────────────────────────────────────────────────
+   What a reader sees as a fault line in the fade is one radius handing over to
+   another too far away to pass for the same image: the sharper copy stays
+   legible through the mix, so a word appears to hold and then break rather
+   than soften. The cure is a shorter stride, not a longer band.
+
+   So each end uses radii of 0.8, 1.8, 4, 9, 21 and 48px. Because a layer's
+   backdrop already contains the layers beneath it, those compound to a read of
+   roughly 0.8, 2, 4.5, 10, 23 and 53px — a little over doubling per rung,
+   where the four-step ladder it replaces quadrupled. Two rungs that close
+   together cross-fade as one image going soft rather than as two images.
+
+   Each mask fades its layer in over one rung and then holds it, so only one
+   layer is ever mid-transition and the ladder only accumulates; the release at
+   the far end is shared. Both ramps are stepped along a smoothstep rather than
+   run straight, which takes the corner off each ramp's two ends — a linear
+   ramp turns its alpha abruptly there, and the eye reads that turn as an edge.
+
+   ── Compositing stability ──────────────────────────────────────────────────
+   These captures used to be `position: fixed`. Rapid inner scrolling
+   made Chromium detach and rebuild those viewport-level backdrop surfaces,
+   producing a full-page flash. The page now owns them as stationary absolute
+   layers. Twelve filters are active, and their containing layer no longer
+   changes relationship to the scrolling archive. If that ever proves too many,
+   the ladder shortens from the bottom: drop `nth-child(1)`, restride the rest
+   from 24ths, and lower BLUR_LAYERS to match.
+
+   ── Losing the box ─────────────────────────────────────────────────────────
+   A backdrop-filter is clipped to its own element, and Chromium clamps its
+   samples at that boundary, so every edge of the band is a seam between blurred
+   page and unblurred page — a rectangle drawn in nothing but the difference.
+   The two pairs of edges have to lose it differently.
+
+   Along the top and bottom the band carries on past the reading window, by more
+   than its widest radius, out over open page. The outermost layer's mask has
+   already run out by then, so the box edge is never drawn at all, and what the
+   overhang covers is only the field, which blurs to itself.
+
+   Horizontally the bands span the page, so their box edges coincide with
+   the page edges rather than appearing inside the composition. A short mask
+   fade softens those two terminal edges.
+
+   After codepen.io/silas/pen/rNYqZoz. */
+.conversation-blur-fade {
+  position: absolute;
+  right: calc(var(--spacing-region) * -1);
+  left: auto;
+  z-index: 30;
+  width: 100vw;
+  height: calc(
+    var(--spacing-conversation-fade) + var(--spacing-conversation-fade-overscan)
+  );
+  pointer-events: none;
+}
+
+/* Placed against the *window's* end rather than the column's, with the inner
+   edge one ladder step past it — so the ladder is still at its widest radius
+   where the window stops, with a step of tolerance either side. The overhang
+   then carries on outwards over open page, where the mask has already run
+   out. */
+.conversation-blur-fade--top {
+  top: calc(
+    var(--spacing-conversation-window-top)
+      + var(--spacing-conversation-fade) / 4
+      - var(--spacing-conversation-fade-overscan)
+  );
+  --conversation-fade-direction: to top;
+  --conversation-fade-fallback: rgba(13, 15, 16, 0.55);
+}
+
+.conversation-blur-fade--bottom {
+  bottom: calc(
+    var(--spacing-conversation-window-bottom)
+      + var(--spacing-conversation-fade) / 4
+      - var(--spacing-conversation-fade-overscan)
+  );
+  --conversation-fade-direction: to bottom;
+  --conversation-fade-fallback: rgba(27, 30, 32, 0.55);
+}
+
+/* A cheap, always-painted base borrowed from the resilient single-layer
+   progressive-blur pattern. If Chromium misses a backdrop frame, this remains
+   in place instead of letting the whole band become suddenly transparent. */
+.conversation-blur-fade::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(
+    var(--conversation-fade-direction),
+    transparent,
+    var(--conversation-fade-fallback)
+  );
+  content: '';
+}
+
+/* Flat siblings, each one adding its radius on top of the stack below it and
+   then keeping it: a layer fades in over one step and stays, so at any height
+   only one of them is mid-transition and the ladder only ever accumulates.
+   The step, in ninety-sixths of the fade depth, is what every stop below is
+   counted in — five to a quarter ramp, twenty to a rung. */
+.conversation-blur-fade > span {
+  position: absolute;
+  inset: 0;
+  display: block;
+  --conversation-fade-step: calc(var(--spacing-conversation-fade) / 96);
+  -webkit-mask-image: var(--conversation-layer-mask);
+  mask-image: var(--conversation-layer-mask);
+}
+
+.conversation-blur-fade > span:nth-child(1) {
+  z-index: 1;
+  -webkit-backdrop-filter: blur(0.8px);
+  backdrop-filter: blur(0.8px);
+  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 0), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 5), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 10), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 15), #000 calc(var(--conversation-fade-step) * 20), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
+}
+
+.conversation-blur-fade > span:nth-child(2) {
+  z-index: 2;
+  -webkit-backdrop-filter: blur(1.8px);
+  backdrop-filter: blur(1.8px);
+  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 20), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 25), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 30), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 35), #000 calc(var(--conversation-fade-step) * 40), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
+}
+
+.conversation-blur-fade > span:nth-child(3) {
+  z-index: 3;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 40), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 45), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 50), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 55), #000 calc(var(--conversation-fade-step) * 60), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
+}
+
+.conversation-blur-fade > span:nth-child(4) {
+  z-index: 4;
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
+  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 60), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 65), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 70), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 75), #000 calc(var(--conversation-fade-step) * 80), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
+}
+
+.conversation-blur-fade > span:nth-child(5) {
+  z-index: 5;
+  -webkit-backdrop-filter: blur(21px);
+  backdrop-filter: blur(21px);
+  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 80), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 85), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 90), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 95), #000 calc(var(--conversation-fade-step) * 100), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
+}
+
+.conversation-blur-fade > span:nth-child(6) {
+  z-index: 6;
+  -webkit-backdrop-filter: blur(48px);
+  backdrop-filter: blur(48px);
+  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 100), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 105), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 110), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 115), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
+}
+
+/* ── Scrollbars that keep out of the way ─────────────────────────────────────
+   A bar that is only there while you are in the region it belongs to. Used by
+   the Favorites windows, which stand on the page's light field with no panel
+   of their own — a permanent grey rule down the right of each of them would be
+   the loudest thing on either.
+
+   The bar is made transparent rather than removed: the gutter it stands in is
+   still reserved, so nothing reflows when it appears. These come after the
+   .conversation-scroll rules above deliberately — same specificity, and it is
+   source order that lets this override the always-on thumb there. The
+   two-class .scrollbar-hidden rule still outranks both, which is right: a
+   stream that has handed scrolling to its reasoning window shows no bar at
+   all, hovered or not. */
+.scrollbar-on-hover::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 150ms ease;
+}
+
+.scrollbar-on-hover:hover::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+}
+
+/* The bar itself under the pointer still brightens. Spelled out here because
+   the plain ::-webkit-scrollbar-thumb:hover further down is now the weaker
+   selector of the two. */
+.scrollbar-on-hover::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+
+/* Firefox only, for the same reason the block above gives. */
+@supports not selector(::-webkit-scrollbar) {
+  .scrollbar-on-hover { scrollbar-color: transparent transparent; }
+  .scrollbar-on-hover:hover { scrollbar-color: var(--color-border) transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrollbar-on-hover::-webkit-scrollbar-thumb { transition: none; }
 }
 
 .mobile-rollback-bubble-no-select,

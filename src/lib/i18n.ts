@@ -96,6 +96,8 @@ const S: Record<string, readonly [string, string]> = {
   favoritesEmptyTitle:  ['这里空空如也。', 'Nothing here yet.'],
   favoritesNoCode:      ['这段对话里还没有代码。', 'This conversation has no code in it yet.'],
   favoritesYou:         ['我', 'You'],
+  favoritesTurnRail:    ['我说过的话', 'What you asked for'],
+  favoritesJumpToTurn:  ['跳到这句：{text}', 'Jump to: {text}'],
 
   // Account
   account:      ['账号', 'Account'],

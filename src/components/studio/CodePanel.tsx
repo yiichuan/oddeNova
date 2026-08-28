@@ -535,10 +535,15 @@ export default function CodePanel({
         .video-fade-in { animation: cmFadeIn 0.6s ease-out forwards; }
       `}</style>
 
-      {/* StrudelMirror mounts here */}
+      {/* StrudelMirror mounts here. `isolate` keeps CodeMirror's own layering
+          scale — the gutter at 200, the bottom fade at 240, the scrollbar mask
+          at 250 — inside this box. Those numbers are chosen against each other,
+          not against the app, and without a stacking context of their own they
+          escape into the desktop layer stack and paint over the modals and
+          menus that sit at 50. */}
       <div
         data-testid="code-panel-code-layer"
-        className="relative flex-1 min-h-0 overflow-hidden rounded-t-region border border-border bg-conversation-surface"
+        className="relative isolate flex-1 min-h-0 overflow-hidden rounded-t-region border border-border bg-conversation-surface"
       >
         <div
           ref={containerRef}
