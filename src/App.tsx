@@ -6,6 +6,7 @@ import Sidebar from './components/conversation/Sidebar';
 import VizPlaceholder from './components/studio/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { useSessions } from './hooks/useSessions';
+import { useFavorites } from './hooks/useFavorites';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
@@ -31,6 +32,7 @@ import ChatInput from './components/conversation/ChatInput';
 import TopActionBar from './components/studio/TopActionBar';
 import AccountModal from './components/overlays/AccountModal';
 import OddeNovaImportNotice from './components/overlays/OddeNovaImportNotice';
+import FavoriteActionDialog, { type FavoriteActionKind } from './components/overlays/FavoriteActionDialog';
 import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
 import FeaturedPage from './components/featured/FeaturedPage';
 import FavoritesPage from './components/favorites/FavoritesPage';
@@ -43,7 +45,7 @@ import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
 import type { AgentEntryPoint } from './lib/analytics';
 import { FEATURED_PIECES, findFeaturedPiece, type FeaturedPiece } from './lib/featured-pieces';
-import { FAVORITE_CONVERSATIONS } from './lib/favorite-conversations';
+import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
 import { featuredPlayer } from './services/featured-player';
 import { featuredSessionDraft } from './lib/featured-session';
@@ -67,6 +69,28 @@ import { type Session } from './hooks/useSessions';
  */
 const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites', 'vinylLab']);
 
+/**
+ * The move a conversation has just made, for as long as the dialog reporting
+ * it is up.
+ *
+ * It carries the session itself rather than an id so that a deletion can be
+ * undone from what is held here: the entry steps out of the Favorites list the
+ * moment the bin is pressed, but nothing is written until the dialog is let go
+ * of, which is what makes the undo an undo and not a re-import.
+ */
+interface FavoriteNotice {
+  /**
+   * One per move made, and never reused. The notice keeps itself on screen for
+   * a few seconds and then lets the move stand; when one move follows another
+   * the bar does not leave the page in between, so this is what tells the
+   * component it is reporting something new and owes it a fresh few seconds.
+   */
+  id: number;
+  kind: FavoriteActionKind;
+  session?: Session;
+  favorite: FavoriteConversation;
+}
+
 export default function App() {
   const strudel = useStrudel();
   const auth = useAuth();
@@ -87,6 +111,27 @@ export default function App() {
     cloud: cloudRepository,
     startNewSessionToken: accountStartToken,
   });
+  const favorites = useFavorites({
+    ownerKey,
+    userId: auth.user?.id,
+    sessions: sessions.sessions,
+    sessionsLoading: sessions.isLoading,
+  });
+  const sessionList = sessions.sessions;
+  const clearLegacyFavorite = sessions.setSessionFavorite;
+  useEffect(() => {
+    if (favorites.isLoading) return;
+    for (const session of sessionList) {
+      if (session.favoritedAt !== undefined && favorites.sourceSessionIds.has(session.id)) {
+        clearLegacyFavorite(session.id, null);
+      }
+    }
+  }, [
+    clearLegacyFavorite,
+    favorites.isLoading,
+    favorites.sourceSessionIds,
+    sessionList,
+  ]);
   const dailySuggestionDefaults = useDailySuggestions(zh);
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
   const oddeNovaImportResult = useOddeNovaImport(
@@ -675,9 +720,97 @@ export default function App() {
       await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
     }
     strudel.stop();
+    // The last turn's next-step chips belong to the conversation being left,
+    // exactly as on a switch — a fresh session opens on its own placeholder.
+    setCommitSuggestions(null);
     sessions.newSession();
     if (isDemoMode()) setDemoStep(0);
   }, [strudel, sessions, persistAndFlushOutgoingSession]);
+
+  /* Favorite snapshots are immutable archives. The notice delays destructive
+     release/delete writes long enough for Undo to remain a real cancellation. */
+  const [favoriteNotice, setFavoriteNotice] = useState<FavoriteNotice | null>(null);
+  const [favoritesFocus, setFavoritesFocus] = useState<{ id: string } | null>(null);
+  const pendingFavoriteId = favoriteNotice?.kind === 'released' || favoriteNotice?.kind === 'deleted'
+    ? favoriteNotice.favorite.id
+    : null;
+  const favoriteConversations = useMemo(
+    () => favorites.favorites.filter((favorite) => favorite.id !== pendingFavoriteId),
+    [favorites.favorites, pendingFavoriteId],
+  );
+
+  const commitPendingDelete = useCallback((notice: FavoriteNotice | null) => {
+    if (notice?.kind !== 'released' && notice?.kind !== 'deleted') return;
+    void favorites.remove(notice.favorite).then(() => {
+      if (notice.kind === 'deleted' && notice.session) sessions.deleteSession(notice.session.id);
+    }).catch((error) => {
+      console.warn('[favorites] failed to remove snapshot.', error);
+      strudel.setError(t('favoriteActionFailed'));
+    });
+  }, [favorites, sessions, strudel]);
+
+  const noticeSeqRef = useRef(0);
+
+  const noticeFor = useCallback((
+    kind: FavoriteActionKind,
+    session: Session | undefined,
+    favorite: FavoriteConversation,
+  ): void => {
+    commitPendingDelete(favoriteNotice);
+    setFavoriteNotice({
+      id: ++noticeSeqRef.current,
+      kind,
+      session,
+      favorite,
+    });
+  }, [commitPendingDelete, favoriteNotice]);
+
+  const handleFavoriteSession = useCallback(async (id: string) => {
+    const session = sessions.sessions.find((candidate) => candidate.id === id);
+    if (!session) return;
+    const isCurrentSession = sessions.currentId === id;
+    const finalCode = isCurrentSession ? strudel.code : session.code;
+    try {
+      await setManualCode(finalCode, id);
+      await flushCloudSaves(id);
+      const favorite = await favorites.create(session, finalCode);
+      noticeFor('kept', session, favorite);
+      if (isCurrentSession) await handleNewSession();
+    } catch (error) {
+      console.warn('[favorites] failed to create snapshot.', error);
+      strudel.setError(t('favoriteActionFailed'));
+    }
+  }, [favorites, flushCloudSaves, handleNewSession, noticeFor, sessions, setManualCode, strudel]);
+
+  const handleUnfavorite = useCallback((conversation: FavoriteConversation) => {
+    const sourceId = conversation.sourceSessionId ?? conversation.sessionId;
+    const session = sessions.sessions.find((candidate) => candidate.id === sourceId);
+    if (!session) return;
+    noticeFor('released', session, conversation);
+  }, [noticeFor, sessions.sessions]);
+
+  const handleDeleteFavorite = useCallback((conversation: FavoriteConversation) => {
+    const sourceId = conversation.sourceSessionId ?? conversation.sessionId;
+    const session = sessions.sessions.find((candidate) => candidate.id === sourceId);
+    noticeFor('deleted', session, conversation);
+  }, [noticeFor, sessions.sessions]);
+
+  const dismissFavoriteNotice = useCallback(() => {
+    // Letting the notice go is what commits the deletion it was holding.
+    commitPendingDelete(favoriteNotice);
+    setFavoriteNotice(null);
+  }, [commitPendingDelete, favoriteNotice]);
+
+  const undoFavoriteNotice = useCallback(() => {
+    if (!favoriteNotice) return;
+    if (favoriteNotice.kind === 'kept') {
+      void favorites.remove(favoriteNotice.favorite).catch((error) => {
+        console.warn('[favorites] failed to undo snapshot creation.', error);
+        strudel.setError(t('favoriteActionFailed'));
+      });
+    }
+    setFavoriteNotice(null);
+  }, [favoriteNotice, favorites, strudel]);
 
   const handleSwitchSession = useCallback(async (id: string) => {
     if (sessions.currentId !== id) {
@@ -694,6 +827,41 @@ export default function App() {
     });
     sessions.switchTo(id);
   }, [sessions, persistAndFlushOutgoingSession, strudel.code]);
+
+  const handleOpenFavoriteInStudio = useCallback((
+    conversation: FavoriteConversation,
+    code: string,
+  ) => {
+    void sessions.importSession({
+      title: conversationTitle(conversation),
+      code,
+      messages: (conversation.messages ?? []).map((message) => ({ ...message })),
+    }).then(() => handlePrimaryNavSelect('home')).catch((error) => {
+      console.warn('[favorites] failed to continue snapshot.', error);
+      strudel.setError(t('favoriteActionFailed'));
+    });
+  }, [handlePrimaryNavSelect, sessions, strudel]);
+
+  /* "Take me there" — the page the conversation is on now, opened on it. Only
+     the two reversible moves have one; a deletion has nowhere to go. */
+  const viewFavoriteNotice = useCallback(() => {
+    if (!favoriteNotice) return;
+    const { kind, session, favorite } = favoriteNotice;
+    setFavoriteNotice(null);
+    if (kind === 'kept') {
+      setFavoritesFocus({ id: favorite.id });
+      handlePrimaryNavSelect('favorites');
+      return;
+    }
+    if (kind === 'released' && session) {
+      // "View" is another way of accepting the release, not an undo. Commit
+      // the snapshot removal before returning to Studio so the source session
+      // is no longer filtered out of history.
+      commitPendingDelete(favoriteNotice);
+      void handleSwitchSession(session.id);
+      handlePrimaryNavSelect('home');
+    }
+  }, [commitPendingDelete, favoriteNotice, handlePrimaryNavSelect, handleSwitchSession]);
 
   const responsiveLayout = isMobile ? (
       <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
@@ -904,7 +1072,7 @@ export default function App() {
             >
               <div className="flex-1 overflow-y-auto min-h-0">
                 <HistoryPanel
-                  sessions={sessions.sessions}
+                  sessions={sessions.sessions.filter((session) => !favorites.sourceSessionIds.has(session.id))}
                   currentId={sessions.currentId}
                   isLoading={sessions.isLoading}
                   onSwitch={(id) => { handleSwitchSession(id); setHistoryOpen(false); }}
@@ -980,7 +1148,7 @@ export default function App() {
               isLoading={isLoading || isReplaying}
               engineReady={strudel.engineReady}
               engineStatus={strudel.engineStatus}
-              sessions={sessions.sessions}
+              sessions={sessions.sessions.filter((session) => !favorites.sourceSessionIds.has(session.id))}
               currentId={sessions.currentId}
               inputMode={current?.inputMode ?? 'normal'}
               suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
@@ -996,6 +1164,7 @@ export default function App() {
               onSwitchSession={handleSwitchSession}
               onDeleteSession={sessions.deleteSession}
               onRenameSession={sessions.renameSession}
+              onFavoriteSession={handleFavoriteSession}
               isHistoryLoading={sessions.isLoading}
               onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
               isReplaying={isReplaying}
@@ -1106,11 +1275,15 @@ export default function App() {
               // Hidden rather than unmounted when you leave, so the page has
               // to be told when it is the one being looked at.
               active={primaryNavItem === 'favorites'}
-              conversations={FAVORITE_CONVERSATIONS}
+              conversations={favoriteConversations}
+              focus={favoritesFocus}
               isPlaying={strudel.isPlaying}
               playingCode={strudel.code}
               onPlayCode={(code) => { void strudel.play(code); }}
               onStopCode={strudel.stop}
+              onUnfavorite={handleUnfavorite}
+              onDelete={handleDeleteFavorite}
+              onOpenInStudio={handleOpenFavoriteInStudio}
             />
           </div>
           <div className={primaryNavItem === 'vinylLab' ? 'flex h-full min-h-0' : 'hidden'}>
@@ -1167,6 +1340,18 @@ export default function App() {
     <>
       <OddeNovaImportNotice result={oddeNovaImportResult} />
       {responsiveLayout}
+      {/* Outside both layouts: it is about a conversation rather than about a
+          page, and it blurs whichever one you were on when you moved it. */}
+      {favoriteNotice && (
+        <FavoriteActionDialog
+          key={favoriteNotice.id}
+          kind={favoriteNotice.kind}
+          title={conversationTitle(favoriteNotice.favorite)}
+          onView={favoriteNotice.kind === 'deleted' ? undefined : viewFavoriteNotice}
+          onUndo={undoFavoriteNotice}
+          onClose={dismissFavoriteNotice}
+        />
+      )}
     </>
   );
 }

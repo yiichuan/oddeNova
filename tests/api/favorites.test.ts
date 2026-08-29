@@ -50,6 +50,7 @@ const sessionRow = {
 
 const favoriteRow = {
   id: 'f-1',
+  source_session_id: sessionRow.id,
   user_id: 'u-1',
   title: 'Song',
   code: 's("bd")',
@@ -128,11 +129,11 @@ describe('favorites API', () => {
 
     const favoriteSingle = vi.fn().mockResolvedValue({ data: favoriteRow, error: null });
     const favoriteSelect = vi.fn(() => ({ single: favoriteSingle }));
-    const favoriteInsert = vi.fn(() => ({ select: favoriteSelect }));
+    const favoriteUpsert = vi.fn(() => ({ select: favoriteSelect }));
 
     supabaseMocks.from.mockImplementation((table: string) => {
       if (table === 'sessions') return { select: sessionSelect };
-      if (table === 'favorites') return { insert: favoriteInsert };
+      if (table === 'favorites') return { upsert: favoriteUpsert };
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -148,7 +149,8 @@ describe('favorites API', () => {
 
     expect(sessionIdEq).toHaveBeenCalledWith('id', sessionRow.id);
     expect(sessionUserEq).toHaveBeenCalledWith('user_id', 'u-1');
-    expect(favoriteInsert).toHaveBeenCalledWith(expect.objectContaining({
+    expect(favoriteUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      source_session_id: sessionRow.id,
       user_id: 'u-1',
       title: 'Song',
       code: 's("bd")',
@@ -156,11 +158,12 @@ describe('favorites API', () => {
       revisions: sessionRow.revisions,
       suggestions: sessionRow.suggestions,
       input_mode: 'choice',
-    }));
+    }), { onConflict: 'user_id,source_session_id' });
     expect(res.statusCode).toBe(201);
     expect(res.body).toEqual({
       favorite: {
         id: 'f-1',
+        sourceSessionId: sessionRow.id,
         title: 'Song',
         createdAt: 1786838400000,
       },
@@ -177,10 +180,10 @@ describe('favorites API', () => {
     const sessionUserEq = vi.fn(() => ({ maybeSingle: sessionMaybeSingle }));
     const sessionIdEq = vi.fn(() => ({ eq: sessionUserEq }));
     const sessionSelect = vi.fn(() => ({ eq: sessionIdEq }));
-    const favoriteInsert = vi.fn();
+    const favoriteUpsert = vi.fn();
     supabaseMocks.from.mockImplementation((table: string) => {
       if (table === 'sessions') return { select: sessionSelect };
-      if (table === 'favorites') return { insert: favoriteInsert };
+      if (table === 'favorites') return { upsert: favoriteUpsert };
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -196,24 +199,24 @@ describe('favorites API', () => {
 
     expect(res.statusCode).toBe(422);
     expect(res.body).toEqual({ error: 'Cannot favorite an empty session' });
-    expect(favoriteInsert).not.toHaveBeenCalled();
+    expect(favoriteUpsert).not.toHaveBeenCalled();
   });
 
-  it('creates a fresh favorite for every identical click', async () => {
+  it('updates the same favorite relationship for repeated clicks', async () => {
     authenticated();
     const sessionMaybeSingle = vi.fn().mockResolvedValue({ data: sessionRow, error: null });
     const sessionUserEq = vi.fn(() => ({ maybeSingle: sessionMaybeSingle }));
     const sessionIdEq = vi.fn(() => ({ eq: sessionUserEq }));
     const sessionSelect = vi.fn(() => ({ eq: sessionIdEq }));
-    const favoriteInsertSingle = vi.fn()
+    const favoriteUpsertSingle = vi.fn()
       .mockResolvedValueOnce({ data: favoriteRow, error: null })
-      .mockResolvedValueOnce({ data: { ...favoriteRow, id: '00000000-0000-4000-8000-000000000002' }, error: null });
-    const favoriteSelect = vi.fn(() => ({ single: favoriteInsertSingle }));
-    const favoriteInsert = vi.fn(() => ({ select: favoriteSelect }));
+      .mockResolvedValueOnce({ data: favoriteRow, error: null });
+    const favoriteSelect = vi.fn(() => ({ single: favoriteUpsertSingle }));
+    const favoriteUpsert = vi.fn(() => ({ select: favoriteSelect }));
 
     supabaseMocks.from.mockImplementation((table: string) => {
       if (table === 'sessions') return { select: sessionSelect };
-      if (table === 'favorites') return { insert: favoriteInsert };
+      if (table === 'favorites') return { upsert: favoriteUpsert };
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -235,17 +238,23 @@ describe('favorites API', () => {
       body: { sessionId: sessionRow.id },
     } as never, secondRes as never);
 
-    expect(favoriteInsert).toHaveBeenCalledTimes(2);
-    expect(favoriteInsert.mock.calls[0][0]).not.toHaveProperty('content_hash');
+    expect(favoriteUpsert).toHaveBeenCalledTimes(2);
+    expect(favoriteUpsert.mock.calls[0][0]).not.toHaveProperty('content_hash');
     expect(res.statusCode).toBe(201);
     expect(res.body).toEqual({
-      favorite: { id: 'f-1', title: 'Song', createdAt: 1786838400000 },
+      favorite: {
+        id: 'f-1',
+        sourceSessionId: sessionRow.id,
+        title: 'Song',
+        createdAt: 1786838400000,
+      },
       created: true,
     });
     expect(secondRes.statusCode).toBe(201);
     expect(secondRes.body).toEqual({
       favorite: {
-        id: '00000000-0000-4000-8000-000000000002',
+        id: 'f-1',
+        sourceSessionId: sessionRow.id,
         title: 'Song',
         createdAt: 1786838400000,
       },
@@ -274,13 +283,18 @@ describe('favorites API', () => {
       query: { cursor: undefined },
     } as never, res as never);
 
-    expect(select).toHaveBeenCalledWith('id,title,created_at');
+    expect(select).toHaveBeenCalledWith('id,source_session_id,title,created_at');
     expect(userEq).toHaveBeenCalledWith('user_id', 'u-1');
     expect(orderCreated).toHaveBeenCalledWith('created_at', { ascending: false });
     expect(orderId).toHaveBeenCalledWith('id', { ascending: false });
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
-      favorites: [{ id: 'f-1', title: 'Song', createdAt: 1786838400000 }],
+      favorites: [{
+        id: 'f-1',
+        sourceSessionId: sessionRow.id,
+        title: 'Song',
+        createdAt: 1786838400000,
+      }],
       nextCursor: null,
     });
   });
@@ -340,7 +354,12 @@ describe('favorites API', () => {
       `created_at.lt.${first.created_at},and(created_at.eq.${first.created_at},id.lt.${first.id})`,
     );
     expect(secondResponse.body).toEqual({
-      favorites: [{ id: second.id, title: 'Song', createdAt: 1786838400123 }],
+      favorites: [{
+        id: second.id,
+        sourceSessionId: sessionRow.id,
+        title: 'Song',
+        createdAt: 1786838400123,
+      }],
       nextCursor: null,
     });
   });
@@ -394,6 +413,7 @@ describe('favorites API', () => {
     expect(detailRes.body).toEqual({
       favorite: {
         id: 'f-1',
+        sourceSessionId: sessionRow.id,
         title: 'Song',
         code: 's("bd")',
         messages: sessionRow.messages,

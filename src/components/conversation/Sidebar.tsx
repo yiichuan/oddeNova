@@ -32,6 +32,7 @@ interface SidebarProps {
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
+  onFavoriteSession?: (id: string) => void;
   isHistoryLoading?: boolean;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
@@ -66,6 +67,7 @@ export default function Sidebar({
   onSwitchSession,
   onDeleteSession,
   onRenameSession,
+  onFavoriteSession,
   isHistoryLoading = false,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
@@ -91,6 +93,18 @@ export default function Sidebar({
     }
     prevIsLoadingRef.current = isLoading;
   }, [isLoading]);
+
+  /* The list is a way into another conversation, not a place to stand: once the
+     studio is showing a different session it has done its job and folds away.
+     That covers the session it never sent you to itself — keeping the
+     conversation you are in starts a fresh one behind the notice, and a list
+     still hanging over an empty studio would be pointing at where you were.
+     Keeping some *other* conversation is the case this deliberately misses:
+     the studio stays where it is, and so does the list, because undoing has to
+     have a row to put back. */
+  useEffect(() => {
+    setShowHistory(false);
+  }, [currentId]);
 
   // When a rollback prefill arrives (prefillTrigger changes), trigger input prefill + focus
   useEffect(() => {
@@ -138,7 +152,10 @@ export default function Sidebar({
               <HistoryIcon size={18} />
             </button>
             <button
-              onClick={() => { onNewSession(); setFocusTrigger(v => v + 1); }}
+              /* Also closed here, not only by the effect above: an empty
+                 session is reused rather than replaced, so starting a new one
+                 twice over leaves the id — and the effect — unmoved. */
+              onClick={() => { onNewSession(); setShowHistory(false); setFocusTrigger(v => v + 1); }}
               className="flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition-colors hover:bg-[#242424]"
               title={t('newSession')}
             >
@@ -160,6 +177,10 @@ export default function Sidebar({
                   onSwitch={(id) => { onSwitchSession(id); setShowHistory(false); }}
                   onDelete={onDeleteSession}
                   onRename={onRenameSession}
+                  /* The list stays open behind the dialog on purpose: undoing
+                     puts the row back, and a panel that shut on the way out
+                     would have nowhere to put it back to. */
+                  onFavorite={onFavoriteSession}
                   loadingSessions={loadingSessions}
                   unreadSessions={unreadSessions}
                 />

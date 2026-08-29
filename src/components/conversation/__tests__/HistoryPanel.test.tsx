@@ -27,6 +27,7 @@ function renderHistory(props: Partial<React.ComponentProps<typeof HistoryPanel>>
   const onSwitch = vi.fn();
   const onDelete = vi.fn();
   const onRename = vi.fn();
+  const onFavorite = vi.fn();
 
   act(() => {
     root.render(
@@ -36,12 +37,13 @@ function renderHistory(props: Partial<React.ComponentProps<typeof HistoryPanel>>
         onSwitch={onSwitch}
         onDelete={onDelete}
         onRename={onRename}
+        onFavorite={onFavorite}
         {...props}
       />,
     );
   });
 
-  return { container, root, onSwitch, onDelete, onRename };
+  return { container, root, onSwitch, onDelete, onRename, onFavorite };
 }
 
 function changeInput(input: HTMLInputElement, value: string) {
@@ -109,6 +111,48 @@ describe('HistoryPanel title editing', () => {
     });
 
     expect(onSwitch).not.toHaveBeenCalled();
+  });
+
+  it('fills the star in before handing the conversation over to Favorites', () => {
+    vi.useFakeTimers();
+    const { container, root, onFavorite, onSwitch } = renderHistory();
+    roots.push(root);
+    const star = container.querySelector<HTMLButtonElement>('button[title="Add to favorites"]');
+    expect(star?.querySelector('svg')?.getAttribute('fill')).toBe('none');
+
+    act(() => { star?.click(); });
+
+    // The star answers the click at once; the row leaves under it, and the
+    // conversation is not handed over until both have been seen.
+    expect(star?.querySelector('svg')?.getAttribute('fill')).toBe('currentColor');
+    expect(container.querySelector('[data-session-keeping]')).not.toBeNull();
+    expect(onFavorite).not.toHaveBeenCalled();
+    // Pressing the star is not pressing the row it stands in.
+    expect(onSwitch).not.toHaveBeenCalled();
+
+    act(() => { vi.advanceTimersByTime(400); });
+
+    expect(onFavorite).toHaveBeenCalledWith('s-1');
+    vi.useRealTimers();
+  });
+
+  it('leaves the star out entirely when there is nowhere to keep a conversation', () => {
+    const { container, root } = renderHistory({ onFavorite: undefined });
+    roots.push(root);
+
+    expect(container.querySelector('button[title="Add to favorites"]')).toBeNull();
+    expect(container.querySelector('button[title="Delete"]')).not.toBeNull();
+  });
+
+  it('leaves kept conversations out of the list', () => {
+    const { container, root } = renderHistory({
+      sessions: [makeSession(), makeSession({ id: 's-2', title: '已收藏', favoritedAt: 2 })],
+    });
+    roots.push(root);
+
+    const titles = [...container.querySelectorAll('button[data-session-title-edit]')]
+      .map((button) => button.textContent);
+    expect(titles).toEqual(['旧标题']);
   });
 
   it('keeps delete behavior unchanged', () => {

@@ -208,6 +208,30 @@ describe('useSuggestions', () => {
     expect(view.latest()?.suggestions).toEqual([]);
   });
 
+  it('does not file the previous conversation next-steps onto the session that follows it', async () => {
+    const onSuggestions = vi.fn();
+    const commitSuggestions = ['加一层 pad', '换个鼓组'];
+    const view = renderProbe({
+      key: 'kept',
+      currentCode: 's("bd sd")',
+      commitSuggestions,
+      onSuggestions,
+    });
+    roots.push(view.root);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(onSuggestions).toHaveBeenCalledWith(commitSuggestions, 's("bd sd")');
+    onSuggestions.mockClear();
+
+    // Keeping the open conversation opens a fresh session behind the notice.
+    // The commit those chips came from belongs to the one left behind.
+    view.rerender({ key: 'fresh', currentCode: '', commitSuggestions, onSuggestions });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(onSuggestions).not.toHaveBeenCalled();
+    expect(view.latest()?.suggestions).toEqual(expect.arrayContaining(STATIC_SUGGESTIONS));
+  });
+
   it('uses the loaded daily pool after switching to an empty session', () => {
     const view = renderProbe({
       key: 'one',

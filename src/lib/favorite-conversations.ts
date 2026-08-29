@@ -7,64 +7,126 @@
  * that committed a Strudel script carries that script with it — which is what
  * the page's right-hand columns are, one per commit.
  *
- * Nothing has been favorited for real yet: there is no "favorite" action in the
- * studio and no store behind it. Everything here is stand-in data, shaped the
- * way a real favorite will be so that wiring it up later is a change to this
- * module alone — the page reads `FAVORITE_CONVERSATIONS` and the two helpers
- * below, and nothing else.
+ * Real favorites are sessions the history panel handed over — see
+ * `session-favorites.ts`, which is what the page is fed from. What is left in
+ * here is the shape they arrive in, the helpers that read it, and a set of
+ * stand-in conversations the tests and the page's own fixtures still use.
  *
- * Text is `[中文, English]` throughout, the same shape `i18n.ts` uses. A real
- * favorite will hold whatever language the session was actually held in, as one
- * string; the pair is here only so the mock reads properly either way.
+ * Hence `FavoriteText`: a real favorite holds whatever language the session was
+ * actually held in, as one string, while the stand-ins carry a `[中文, English]`
+ * pair — the same shape `i18n.ts` uses — so they read properly either way.
  */
 
-import { zh } from './i18n';
+import { t, zh } from './i18n';
 import type { ChatMessage } from '../hooks/useChat';
+
+/**
+ * One string when the favorite is a real conversation, `[中文, English]` when it
+ * is one of the stand-ins below.
+ */
+export type FavoriteText = readonly [string, string] | string;
 
 export interface FavoriteTurn {
   id: string;
   role: 'user' | 'assistant';
-  /** What was said, [中文, English]. */
-  text: readonly [string, string];
+  /** What was said. */
+  text: FavoriteText;
   /**
    * The script this turn committed, if it committed one. This is the content of
    * the Strudel widget the conversation showed under the reply — the same code
    * the studio would have started playing.
    */
   code?: string;
-  /** Completed reasoning retained in the archive, [中文, English]. */
-  thought?: readonly [string, string];
+  /** Completed reasoning retained in the archive. */
+  thought?: FavoriteText;
 }
 
 export interface FavoriteConversation {
   /** Stable id. Identifies the conversation on the page and in the list. */
   id: string;
-  /** The session's own title, [中文, English]. */
-  title: readonly [string, string];
+  /** The session's own title. */
+  title: FavoriteText;
   /** When it was favorited, epoch ms. The list is ordered by this, newest first. */
   favoritedAt: number;
   turns: readonly FavoriteTurn[];
+  /**
+   * Compatibility alias for snapshots created while the page still called the
+   * source link `sessionId`. New code should use `sourceSessionId`.
+   */
+  sessionId?: string;
+  /** The editable conversation this immutable snapshot was created from. */
+  sourceSessionId?: string;
+  /**
+   * The conversation's own messages, rendered as they stand. A real session
+   * already is the message model the archive draws, so rebuilding one from
+   * `turns` would only be a lossy copy of what it already holds.
+   */
+  messages?: readonly ChatMessage[];
+  /**
+   * The script the conversation came to rest on, for the case where no turn in
+   * it carries one — code typed straight into the editor, or arriving with an
+   * imported session, never passes through a reply and so leaves no widget in
+   * the reading to hang a take off. The conversation still has code, and a
+   * favorite that showed an empty code window next to it would be lying about
+   * what was kept.
+   */
+  code?: string;
 }
 
 /** One column on the right: a script, and where in the conversation it came from. */
 export interface FavoriteScript {
   /** The turn that committed it — also what the conversation's chip points at. */
   turnId: string;
-  /** 1-based, in the order the conversation committed them. */
-  take: number;
+  /**
+   * 1-based, in the order the conversation committed them — or `null` for a
+   * script the conversation never committed at all. A take is a position in a
+   * sequence of tries, and code that arrived without being asked for is not one
+   * of those: calling it the first take would imply a second.
+   */
+  take: number | null;
+  /** Agent commits point back to a widget; the final snapshot does not. */
+  kind?: 'agent' | 'final';
   code: string;
+}
+
+/**
+ * What a take is called — `代码 V03`, `Code V03`.
+ *
+ * One function for both places it appears: the widget the conversation shows
+ * under the reply that committed it, and the window that opens it. They are the
+ * same take named twice, and a reader following one to the other has only the
+ * name to go on, so the two must not be free to drift apart.
+ *
+ * Padded to two digits because these are labels in a column, not numbers in a
+ * sentence: V09 and V10 are the same width, and a list of them lines up.
+ */
+export function takeLabel(take: number): string {
+  return `${t('favoritesCodeTitle')} V${String(take).padStart(2, '0')}`;
 }
 
 /**
  * The scripts a conversation holds, in the order it wrote them. Derived rather
  * than stored: the conversation is the record, and a second list of code beside
  * it could disagree with the turns it came from.
+ *
+ * Unless the record has nothing to say — a conversation whose code never came
+ * through a reply. Then the one script it ended on stands as the single take,
+ * under an id no message answers to, since there is no widget in the reading
+ * for it to point back at.
  */
 export function favoriteScripts(conversation: FavoriteConversation): FavoriteScript[] {
   const scripts: FavoriteScript[] = [];
   for (const turn of conversation.turns) {
     if (!turn.code) continue;
     scripts.push({ turnId: turn.id, take: scripts.length + 1, code: turn.code });
+  }
+  if (conversation.code && scripts.at(-1)?.code !== conversation.code) {
+    scripts.push({
+      turnId: `${conversation.id}-final`,
+      take: null,
+      kind: 'final',
+      code: conversation.code,
+    });
   }
   return scripts;
 }
@@ -75,11 +137,22 @@ const DEFAULT_THOUGHT: readonly [string, string] = [
 ];
 
 /**
- * Turns a saved conversation into the same message model the studio renders.
- * The mock carries a compact complete agent trace so the archive can prove it
- * filters transient process status while keeping completed reasoning.
+ * The message model the archive draws. A real favorite already holds one and
+ * hands it straight over; a stand-in is built into one here, carrying a compact
+ * complete agent trace so the archive can prove it filters transient process
+ * status while keeping completed reasoning.
+ *
+ * Handed over rather than copied, and readonly for it. The array the session
+ * holds is the one thing about a favorite that stays put while the rest of it
+ * is rebuilt on every change to the session list, and the archive reads that
+ * identity as "the reading has not changed" — copy it and every unrelated
+ * session update would send whoever is reading back to the end of the page.
  */
-export function favoriteConversationMessages(conversation: FavoriteConversation): ChatMessage[] {
+export function favoriteConversationMessages(
+  conversation: FavoriteConversation,
+): readonly ChatMessage[] {
+  if (conversation.messages) return conversation.messages;
+
   const messages: ChatMessage[] = [];
   let offset = 0;
   const timestamp = () => conversation.favoritedAt - 60_000 + offset++ * 1_000;
@@ -90,7 +163,7 @@ export function favoriteConversationMessages(conversation: FavoriteConversation)
       continue;
     }
 
-    const thought = zh ? (turn.thought?.[0] ?? DEFAULT_THOUGHT[0]) : (turn.thought?.[1] ?? DEFAULT_THOUGHT[1]);
+    const thought = favoriteText(turn.thought ?? DEFAULT_THOUGHT);
     messages.push({
       id: `${turn.id}-reasoning`,
       role: 'progress',
@@ -140,14 +213,19 @@ export function favoritedTimeLabel(at: number): string {
     + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/** A real favorite's own words, or the stand-in's, in the running language. */
+export function favoriteText(text: FavoriteText): string {
+  return typeof text === 'string' ? text : (zh ? text[0] : text[1]);
+}
+
 /** The text of a turn, in the language the app is running in. */
 export function turnText(turn: FavoriteTurn): string {
-  return zh ? turn.text[0] : turn.text[1];
+  return favoriteText(turn.text);
 }
 
 /** The title of a conversation, in the language the app is running in. */
 export function conversationTitle(conversation: FavoriteConversation): string {
-  return zh ? conversation.title[0] : conversation.title[1];
+  return favoriteText(conversation.title);
 }
 
 const MIDNIGHT_NEON_FIRST = `// SYNTHWAVE | BPM: 96

@@ -1,5 +1,5 @@
 /**
- * Builds the 京華老宋体 subset used by the Chinese greeting line.
+ * Builds the 京華老宋体 subset used by the app's two Chinese opening lines.
  *
  * The upstream face is a 33 MB TTF. It is referenced by exactly one element —
  * the greeting in ConversationView — which is short-lived (it disappears on the
@@ -10,9 +10,10 @@
  * period.
  *
  * Because the shipped face only carries those glyphs, `font-jinghua-laosongti`
- * must stay exclusive to the greetings. Any other text styled with it would
- * silently fall back to `serif` per-glyph. If a second consumer ever appears,
- * widen `greetingSubsetText()` to cover it.
+ * must stay exclusive to the text named in `greetingSubsetText()`. Any other
+ * text styled with it would silently fall back to `serif` per-glyph — so a new
+ * consumer means widening that function, and the staleness test below is what
+ * makes forgetting to loud.
  *
  * The source TTF lives outside `public/` on purpose — Vite copies `public/`
  * into `dist/` verbatim, and a 33 MB build artifact is not something to ship.
@@ -24,6 +25,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { GREETINGS_ZH } from '../src/lib/greetings';
+import { FAVORITES_EMPTY_ZH } from '../src/lib/i18n';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -41,11 +43,13 @@ export interface SubsetManifest {
 
 /**
  * The exact text the subset must cover: every distinct character across the
- * Chinese greeting pool, sorted so the manifest stays diff-stable regardless of
- * the order greetings are declared in.
+ * Chinese greeting pool and the Favorites page's empty line — the two places
+ * the face is used — sorted so the manifest stays diff-stable regardless of the
+ * order any of it is declared in.
  */
 export function greetingSubsetText(): string {
-  return [...new Set(GREETINGS_ZH.join(''))].sort().join('');
+  const sources = [...GREETINGS_ZH, FAVORITES_EMPTY_ZH];
+  return [...new Set(sources.join(''))].sort().join('');
 }
 
 function readManifest(): SubsetManifest | null {

@@ -4,6 +4,16 @@ export function isZh(): boolean {
 
 export const zh: boolean = isZh();
 
+/**
+ * The Favorites page's empty line, 中文, named rather than inlined below.
+ *
+ * It is set in 京華老宋体, the same face the studio's opening line uses, and that
+ * face ships as a subset of exactly the characters it has to draw — so the
+ * build needs to read this string as text, not as a lookup.
+ * See scripts/build-greeting-font-subset.ts.
+ */
+export const FAVORITES_EMPTY_ZH = '收藏的对话会在这里显示';
+
 const S: Record<string, readonly [string, string]> = {
   // Common
   cancel:       ['取消', 'Cancel'],
@@ -71,7 +81,7 @@ const S: Record<string, readonly [string, string]> = {
   featuredSourcePattern: ['Strudel 源码', 'Strudel source'],
   featuredSourceCollection: ['收录仓库', 'Collection repo'],
   featuredNowPlaying:  ['播放中', 'Now playing'],
-  featuredOpenInStudio: ['在工作室打开', 'Open in Studio'],
+  openInStudio:        ['在工作室打开', 'Open in Studio'],
   featuredBack:        ['返回', 'Back'],
   featuredCode:        ['代码', 'Code'],
   featuredNotes:       ['介绍', 'About'],
@@ -87,17 +97,28 @@ const S: Record<string, readonly [string, string]> = {
   // Favorites
   favoritesList:        ['收藏的对话', 'Favorited conversations'],
   favoritesConversation:['对话', 'Conversation'],
-  favoritesCodeColumn:  ['第 {n} 版', 'Take {n}'],
+  favoritesCodeTitle:   ['代码', 'Script'],
+  favoritesFinalVersion:['最终版', 'Final version'],
   favoritesSavedAt:     ['收藏于 {time}', 'Saved {time}'],
   favoritesTurnCount:   ['{n} 条消息', '{n} messages'],
   favoritesCodeCount:   ['{n} 段代码', '{n} scripts'],
   favoritesJumpToCode:  ['查看第 {n} 版代码', 'Show take {n}'],
   favoritesReasoningTitle: ['构思过程', 'Ideation process'],
-  favoritesEmptyTitle:  ['这里空空如也。', 'Nothing here yet.'],
-  favoritesNoCode:      ['这段对话里还没有代码。', 'This conversation has no code in it yet.'],
+  favoritesEmptyTitle:  [FAVORITES_EMPTY_ZH, 'Conversations you keep will show up here'],
   favoritesYou:         ['我', 'You'],
   favoritesTurnRail:    ['我说过的话', 'What you asked for'],
   favoritesJumpToTurn:  ['跳到这句：{text}', 'Jump to: {text}'],
+
+  // Keeping one, letting one go
+  favorite:             ['收藏', 'Add to favorites'],
+  unfavorite:           ['取消收藏', 'Remove from favorites'],
+  deleteFavorite:       ['永久删除', 'Delete for good'],
+  favoriteDoneTitle:    ['已收藏', 'Kept'],
+  unfavoriteDoneTitle:  ['已取消收藏', 'Let go'],
+  favoriteDeletedTitle: ['已删除', 'Deleted'],
+  favoriteActionView:   ['查看', 'View'],
+  favoriteActionUndo:   ['撤销', 'Undo'],
+  favoriteActionFailed: ['收藏操作失败，请重试。', 'Favorite action failed. Please try again.'],
 
   // Account
   account:      ['账号', 'Account'],

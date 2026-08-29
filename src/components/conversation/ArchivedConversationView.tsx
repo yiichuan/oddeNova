@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { t } from '../../lib/i18n';
+import { takeLabel } from '../../lib/favorite-conversations';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
 import { MarkdownText, UserMessageBubble } from './ConversationView';
 
@@ -11,6 +12,14 @@ interface ArchivedConversationViewProps {
   onStopCode: () => void;
   playingCodeMessageId: string | null;
   selectedCodeMessageId: string | null;
+  /**
+   * Whether the takes are worth numbering. A conversation that wrote one script
+   * has no first take — the widget names the code and stops there, because a
+   * V01 with nothing after it reads as a promise of a V02. The count is the
+   * page's to make, not the archive's: what is numbered is what the code window
+   * lists, and that can hold a version this reading has no widget for.
+   */
+  numberTakes?: boolean;
   /**
    * Whether the page holding this is the one on screen. The archive comes back
    * to its end each time it is, which it cannot work out for itself: the pages
@@ -32,7 +41,8 @@ interface ArchivedConversationViewProps {
  * The durable portion of the studio conversation stream. It deliberately
  * leaves out anything that exists only while an agent run is underway — live
  * thinking, tool status, commit status, and retry/rollback controls — while
- * retaining completed messages and their expandable reasoning blocks.
+ * retaining completed messages and, folded under them, the one thought per
+ * reply that actually composed it (see `arrangeReasoningIds` below).
  *
  * It also stands on no surface of its own. The studio's stream is cut into a
  * panel and can therefore fade its own top and bottom edges out to that panel's
@@ -60,17 +70,53 @@ export default function ArchivedConversationView({
   onStopCode,
   playingCodeMessageId,
   selectedCodeMessageId,
+  numberTakes = true,
   active = true,
   scrollRef: externalScrollRef,
 }: ArchivedConversationViewProps) {
-  // Finished thoughts are useful in an archive, so they begin expanded. Only
-  // entries the reader explicitly closes are held in this set.
-  const [collapsedReasoning, setCollapsedReasoning] = useState<Set<string>>(new Set());
+  /* Thoughts begin folded. What a favorite is kept for is the conversation and
+     the music it arrived at; how the piece was worked out is there for whoever
+     wants it, one line down. Left open, a run's thinking is several screens of
+     grey the reading has to be scrolled past to be read at all. Only entries
+     the reader opens are held in this set. */
+  const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
+  /* Which of a run's thinking blocks was about the music.
+     The agent thinks before every tool call, so one reply leaves several: the
+     one that worked out what to write, and then the short ones that read a
+     validator's answer or decide it is done ("校验通过，commit 用检查点
+     格式"). Only the first is composing — the rest are the machinery talking to
+     itself, and an archive that shows them buries the thinking worth keeping
+     under its own bookkeeping.
+
+     The tell is what the thought was reaching for, as in the studio's own 构思
+     window (`arrangeReasoningIds` in ConversationView) — but read strictly to
+     the end of the step it belongs to, which is what the studio's forward scan
+     does not do. `validate` and `commit` draw no progress line of their own
+     (see agent-progress-handler), so a thought about either has no tool call
+     after it at all, and a scan that runs to the end of the archive finds the
+     *next reply's* `setCode` and keeps it. So the scan stops where the step
+     does: the reply, the next instruction, the commit, or the next thought. */
+  const arrangeReasoningIds = useMemo(() => {
+    const ids = new Set<string>();
+    messages.forEach((message, index) => {
+      if (message.role !== 'progress' || message.progressKind !== 'reasoning') return;
+      for (let next = index + 1; next < messages.length; next++) {
+        const entry = messages[next];
+        if (entry.role !== 'progress') break;
+        if (entry.progressKind === 'reasoning' || entry.progressKind === 'commit') break;
+        if (entry.progressKind === 'tool_call') {
+          if (entry.toolName === 'setCode') ids.add(message.id);
+          break;
+        }
+      }
+    });
+    return ids;
+  }, [messages]);
   const visibleMessages = useMemo(
     () => messages.filter((message) => (
-      message.role !== 'progress' || message.progressKind === 'reasoning'
+      message.role !== 'progress' || arrangeReasoningIds.has(message.id)
     )),
-    [messages],
+    [messages, arrangeReasoningIds],
   );
 
   /* A favorite opens at its end. What was kept is the take the exchange
@@ -101,7 +147,7 @@ export default function ArchivedConversationView({
   }, [visibleMessages, active, scrollRef]);
 
   const toggleReasoning = (id: string) => {
-    setCollapsedReasoning((current) => {
+    setExpandedReasoning((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -144,7 +190,7 @@ export default function ArchivedConversationView({
           const isFirst = index === 0;
           const isLast = index === visibleMessages.length - 1;
           if (message.role === 'progress') {
-            const expanded = !collapsedReasoning.has(message.id);
+            const expanded = expandedReasoning.has(message.id);
             return (
               <div
                 key={message.id}
@@ -237,7 +283,7 @@ export default function ArchivedConversationView({
                       onClick={() => onSelectCode(message.id)}
                       className="flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none border border-white/10 bg-[#0D0D0D]/55 px-2 py-1.5 text-left text-[11px] text-[#f05a28] transition-colors hover:bg-[#242424]/55"
                     >
-                      <span>代码 V{String(codeVersion).padStart(2, '0')}</span>
+                      <span>{numberTakes ? takeLabel(codeVersion) : t('favoritesCodeTitle')}</span>
                       <span aria-hidden="true">·</span>
                       <span>{message.code.split('\n').length} {t('lines')}</span>
                     </button>

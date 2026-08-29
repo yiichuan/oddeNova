@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { Info, SkipBack, SkipForward, SquareArrowOutUpRight } from 'lucide-react';
 import { MutedVolumeIcon, PauseIcon, PlayIcon, VolumeIcon } from '../icons';
 import { ShareButton } from '../studio/TopActionBar';
-import ControlHoverLabel, { type ControlHoverLabelAnchor } from '../studio/ControlHoverLabel';
+import ControlHoverLabel from '../studio/ControlHoverLabel';
+import type { ControlHoverLabelAnchor } from '../studio/control-hover-anchor';
 import { featuredSessionDraft } from '../../lib/featured-session';
 import { t } from '../../lib/i18n';
 import { featuredPlayer } from '../../services/featured-player';
@@ -825,7 +826,7 @@ function OpenInStudio({
         type="button"
         onClick={onOpenInStudio}
         disabled={opening}
-        aria-label={t('featuredOpenInStudio')}
+        aria-label={t('openInStudio')}
         data-testid="featured-bar-open-in-studio"
         className={`${BAR_BARE_ICON} ${BAR_ICON_DISABLED}`}
       >
@@ -833,7 +834,7 @@ function OpenInStudio({
       </button>
       <ControlHoverLabel
         anchor={hoverAnchor}
-        label={t('featuredOpenInStudio')}
+        label={t('openInStudio')}
         testId="featured-bar-open-in-studio-label"
       />
     </div>

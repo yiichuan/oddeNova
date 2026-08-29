@@ -175,7 +175,13 @@ export default function FavoritesList({
             {/* Shrink-wrapped to the row's own text and set against the right
                 edge, so the marker behind it comes out exactly that width. */}
             <span
-              className="relative flex min-w-0 max-w-full items-baseline justify-end gap-1.5 uppercase"
+              /* The date is a second column, not the tail of the name. At a
+                 word's worth of space they run together into one string and
+                 the eye has to find the break; at this they read as two things
+                 on one line, which is what they are. What it costs comes off
+                 the title, which has the room to give — it is the only part of
+                 the row that can truncate. */
+              className="relative flex min-w-0 max-w-full items-baseline justify-end gap-3 uppercase"
               style={{
                 ...ROW_STYLE,
                 color: selected ? '#fff8f1' : '#c7c3bc',

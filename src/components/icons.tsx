@@ -22,6 +22,8 @@ import {
   X,
   RefreshCw,
   Split,
+  SquareArrowOutUpRight,
+  Star,
   Volume2,
   VolumeX,
   Maximize2,
@@ -105,6 +107,11 @@ export const ChevronRightIcon = ({ size = 16, className }: IconProps) => <Chevro
 export const ChevronDownIcon = ({ size = 16, className }: IconProps) => <ChevronDown size={size} className={className} />;
 export const ChevronUpIcon = ({ size = 16, className }: IconProps) => <ChevronUp size={size} className={className} />;
 export const PlayIcon = ({ size = 18, className }: IconProps) => <Play size={size} className={className} fill="currentColor" />;
+// The same triangle left hollow. A filled play is a transport's own
+// button, the one thing on a bar that is about to make a sound; an outline
+// is one action among several, which is what it is beside a copy and an
+// open-elsewhere.
+export const PlayOutlineIcon = ({ size = 18, className }: IconProps) => <Play size={size} className={className} />;
 export const PauseIcon = ({ size = 16, className }: IconProps) => <Pause size={size} className={className} fill="currentColor" />;
 export const StopIcon = ({ size = 16, className }: IconProps) => <Square size={size} className={className} fill="currentColor" />;
 export const HistoryIcon = ({ size = 16, className }: IconProps) => <Clock size={size} className={className} />;
@@ -124,6 +131,15 @@ export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={siz
 export const XIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;
 export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 export const GitBranchIcon = ({ size = 16, className }: IconProps) => <Split size={size} className={className} />;
+export const OpenInStudioIcon = ({ size = 16, className }: IconProps) => (
+  <SquareArrowOutUpRight size={size} className={className} strokeWidth={1.7} />
+);
+// Hollow until the conversation is kept, filled once it is — the outline and
+// the solid are the same glyph, so the switch reads as the star being filled
+// in rather than as one icon swapped for another.
+export const StarIcon = ({ size = 16, className, filled = false }: IconProps & { filled?: boolean }) => (
+  <Star size={size} className={className} fill={filled ? 'currentColor' : 'none'} />
+);
 export const VolumeIcon = ({ size = 16, className }: IconProps) => <Volume2 size={size} className={className} />;
 export const MutedVolumeIcon = ({ size = 16, className }: IconProps) => <VolumeX size={size} className={className} />;
 export const MaximizeIcon = ({ size = 16, className }: IconProps) => <Maximize2 size={size} className={className} />;

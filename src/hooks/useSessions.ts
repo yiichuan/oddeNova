@@ -62,6 +62,11 @@ export interface Session {
    * matches the session's code, the stored chips are stale and get discarded.
    */
   suggestions?: { forCode: string; items: string[] };
+  /**
+   * Legacy favorite marker retained only long enough to migrate older local
+   * sessions into immutable FavoriteSnapshot records.
+   */
+  favoritedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -172,7 +177,7 @@ function isUuid(value: string): boolean {
 }
 
 export type SessionImportPayload = Pick<Session, 'title' | 'code' | 'messages'> &
-  Partial<Pick<Session, 'id' | 'inputMode' | 'revisions' | 'suggestions' | 'externalSource' | 'createdAt' | 'updatedAt'>>;
+  Partial<Pick<Session, 'id' | 'inputMode' | 'revisions' | 'suggestions' | 'externalSource' | 'favoritedAt' | 'createdAt' | 'updatedAt'>>;
 
 /**
  * Exported so the few callers that hand a ready-made message to
@@ -1016,6 +1021,26 @@ export function useSessions(options: UseSessionsOptions = {}) {
     [updateSession]
   );
 
+  /**
+   * Keep the conversation, or let it go — `favoritedAt` for the first, `null`
+   * for the second. The moment is the caller's to pass so that undoing a
+   * release puts the entry back where it stood in the list rather than at the
+   * top of it, which is the whole difference between an undo and a re-do.
+   */
+  const setSessionFavorite = useCallback(
+    (sessionId: string, favoritedAt: number | null): void => {
+      updateSession(
+        sessionId,
+        (s) => {
+          const next = favoritedAt ?? undefined;
+          return s.favoritedAt === next ? s : { ...s, favoritedAt: next };
+        },
+        'checkpoint',
+      );
+    },
+    [updateSession],
+  );
+
   const deleteSession = useCallback(
     (id: string) => {
       setSessions((prev) => {
@@ -1066,6 +1091,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         revisions: importedRevisions(payload.messages, payload.revisions),
         suggestions: payload.suggestions,
         externalSource: payload.externalSource,
+        favoritedAt: payload.favoritedAt,
         createdAt: payload.createdAt ?? now,
         updatedAt: payload.updatedAt ?? now,
       };
@@ -1277,6 +1303,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     newSession,
     switchTo,
     renameSession,
+    setSessionFavorite,
     deleteSession,
     importSession,
     importOddeNovaSession,

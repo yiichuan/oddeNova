@@ -10,7 +10,8 @@ import type { ChatMessage } from '../../hooks/useChat';
 import { zh, t } from '../../lib/i18n';
 import { GITHUB_URL as githubUrl, LEARN_URL as learnUrl } from '../../lib/external-links';
 import { useExportPopoverController, type ExportParams } from '../../hooks/useExportPopoverController';
-import ControlHoverLabel, { type ControlHoverLabelAnchor } from './ControlHoverLabel';
+import ControlHoverLabel from './ControlHoverLabel';
+import type { ControlHoverLabelAnchor } from './control-hover-anchor';
 
 export type { ExportParams } from '../../hooks/useExportPopoverController';
 

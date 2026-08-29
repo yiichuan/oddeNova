@@ -272,6 +272,83 @@ body {
   background: transparent;
 }
 
+/* The Favorites page's script window.
+ *
+ * Its scrollbars live in the panel's own padding rather than beside it: the
+ * body reaches past the padding towards the border, and what would have been
+ * empty there is spent as the bar's band.
+ *
+ * The foot keeps the arrangement it was drawn with — a 6px thumb centred in a
+ * 20px band, 7px from the panel's edge and 7px from the code, with the last
+ * line stopping the panel's own 20px short of the border, exactly as the title
+ * stands 20px in from the other one.
+ *
+ * The right side is set from the edge inwards instead, by two numbers: the bar
+ * stands `--script-edge` off the panel's border, and the code stops
+ * `--script-inset` short of the bar. So the band is the inset plus the thumb,
+ * with the thumb pushed to its outer end rather than centred — the 12px the
+ * code gives up is the gap to the bar, not padding around it.
+ *
+ * A script with no bar of its own stops in the same place, the whole band
+ * short of the border, so nothing steps sideways as one appears. That is what
+ * the second state below is for: `scrollbar-gutter` would have held the band
+ * open, but it is only a promise where the platform draws its scrollbars in
+ * the layout, and where they overlay it nothing is reserved and the code is
+ * cut flush against the border instead. So the window carries
+ * `data-has-vertical-bar` (measured in FavoritesPage's `Panel`) and holds the
+ * band itself whenever there is no bar in it.
+ */
+.favorites-script-scroll {
+  --script-gutter: 1.25rem;
+  --script-thumb: 6px;
+  --script-inset: 12px;
+  --script-edge: 6px;
+  /* The whole band, held open by the window itself: the gap to where the bar
+     would be, the bar's own width, and what it would keep off the border. */
+  --script-band: calc(var(--script-inset) + var(--script-thumb) + var(--script-edge));
+  margin-right: calc((var(--script-gutter) - var(--script-band)) * -1);
+  margin-bottom: calc(var(--script-gutter) * -1);
+}
+
+.favorites-script-scroll[data-has-vertical-bar='true'] {
+  margin-right: calc((var(--script-gutter) - var(--script-edge)) * -1);
+}
+
+/* The foot's band is the panel's padding; the right one is the bar and the gap
+   the code keeps from it. */
+.favorites-script-scroll::-webkit-scrollbar {
+  width: calc(var(--script-band) - var(--script-edge));
+  height: var(--script-gutter);
+}
+
+.favorites-script-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Clipped to the padding box behind a transparent border, which is what holds
+   the 6px bar in the middle of the foot's 20px band and keeps both bars short
+   of the ends of their own track. */
+.favorites-script-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  background-clip: padding-box;
+  border: calc((var(--script-gutter) - var(--script-thumb)) / 2) solid transparent;
+  border-radius: 0;
+}
+
+/* Not centred: the whole of its band's inner side is the gap it keeps from the
+   code, which puts the bar itself against the band's outer end. */
+.favorites-script-scroll::-webkit-scrollbar-thumb:vertical {
+  border-left-width: var(--script-inset);
+  border-right-width: 0;
+}
+
+/* Where the two bands cross. Left unpainted it comes out as the platform's own
+   white square, which is the one thing in this window that belongs to no part
+   of it. */
+.favorites-script-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .code-panel-controls {
   --code-panel-play-button-offset: 20px;
   --code-panel-play-to-progress-gap: 24px;
@@ -781,8 +858,58 @@ body {
   animation: fadeIn 0.2s ease-out;
 }
 
+/* Its opposite, for the few things that have to be seen leaving rather than
+   simply being gone. `forwards` because what follows the animation is an
+   unmount: without it the element would flash back to full opacity for the
+   frame between the animation ending and React taking it away. */
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 .animate-slide-in {
   animation: slideIn 0.2s ease-out;
+}
+
+/* The keep / let-go / delete notice's entrance. It comes down from above the
+   page's top edge, which is where a bar pinned to that edge has to have come
+   from — the same easing the app's own panes travel on. */
+@keyframes favoriteDialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-favorite-dialog-in {
+  animation: favoriteDialogIn 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* And its way out: back up the way it came, a little quicker than it arrived.
+   Leaving is the less interesting half of the movement — it says "this is over"
+   — so it eases in rather than out and is over sooner. */
+@keyframes favoriteDialogOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.animate-favorite-dialog-out {
+  animation: favoriteDialogOut 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-favorite-dialog-in {
+    animation: fadeIn 120ms ease-out;
+  }
+  .animate-favorite-dialog-out {
+    animation: fadeOut 120ms ease-out forwards;
+  }
 }
 
 /* Greeting bubble entrance: fades in while sharpening from a blur. */

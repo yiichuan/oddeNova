@@ -9,6 +9,7 @@ import {
   conversationTitle,
   favoritedDateLabel,
   favoritedTimeLabel,
+  takeLabel,
   turnText,
   type FavoriteConversation,
 } from '../../../lib/favorite-conversations';
@@ -250,11 +251,15 @@ describe('FavoritesPage', () => {
     // detail's panels — not a flat surface laid on it.
     expect(shownScripts(container)[0]?.className).toContain('bg-[#0D0D0D]/55');
     expect(shownScripts(container)[0]?.className).toContain('backdrop-blur-2xl');
+    // Its scrollbars sit in the panel's own padding rather than beside it, so
+    // the code's two ends and the two bars keep one rhythm — see
+    // `.favorites-script-scroll`.
+    expect(shownScripts(container)[0]?.querySelector('.favorites-script-scroll')).not.toBeNull();
     expect(turns.map((turn) => turn.textContent)).toEqual([
       turnText(CONVERSATIONS[0].turns[0]),
-      `${turnText(CONVERSATIONS[0].turns[1])}代码 V01·1 ${t('lines')}`,
+      `${turnText(CONVERSATIONS[0].turns[1])}${takeLabel(1)}·1 ${t('lines')}`,
       turnText(CONVERSATIONS[0].turns[2]),
-      `${turnText(CONVERSATIONS[0].turns[3])}代码 V02·1 ${t('lines')}`,
+      `${turnText(CONVERSATIONS[0].turns[3])}${takeLabel(2)}·1 ${t('lines')}`,
     ]);
     const reasoning = container.querySelector<HTMLButtonElement>('[data-reasoning-header="first-2-reasoning"]')!;
     expect(reasoning.textContent).toContain(t('favoritesReasoningTitle'));
@@ -263,9 +268,10 @@ describe('FavoritesPage', () => {
       .toBe('var(--spacing-action-divider-to-body)');
     expect(container.textContent).not.toContain('安排段落…');
     expect(container.textContent).not.toContain('准备播放…');
-    expect(container.textContent).toContain('Checking rhythm, tone, and layering before arranging this revision.');
+    // Folded until asked for: the archive is opened to read the conversation.
+    expect(container.textContent).not.toContain('Checking rhythm, tone, and layering before arranging this revision.');
     act(() => reasoning.click());
-    expect(process.textContent).not.toContain('Checking rhythm, tone, and layering before arranging this revision.');
+    expect(process.textContent).toContain('Checking rhythm, tone, and layering before arranging this revision.');
     expect(shownScripts(container)).toHaveLength(1);
     expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('first-4');
     expect(shownScripts(container)[0]?.querySelector('code')?.textContent).toBe('s("bd*4, hh*8")');
@@ -295,6 +301,108 @@ describe('FavoritesPage', () => {
     expect(shownScripts(container)[0]?.querySelector('code')?.textContent).toBe('s("bd*4")');
   });
 
+  it('selects every take from the title menu and scrolls the reading to the end for final', () => {
+    const favorite: FavoriteConversation = {
+      ...CONVERSATIONS[0],
+      id: 'with-final',
+      code: 's("bd*4, hh*8, cp*2")',
+    };
+    const { container } = render(<FavoritesPage conversations={[favorite]} />);
+    const versionSelect = () => container.querySelector<HTMLButtonElement>('[data-testid="favorites-version-select"]')!;
+    const archive = container.querySelector<HTMLElement>('.conversation-scroll')!;
+    Object.defineProperty(archive, 'scrollHeight', { configurable: true, value: 420 });
+
+    expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('with-final-final');
+    expect(versionSelect().textContent).toContain(t('favoritesFinalVersion'));
+
+    act(() => versionSelect().click());
+    expect(versionSelect().getAttribute('aria-expanded')).toBe('true');
+    const versionRoot = versionSelect().parentElement;
+    expect(versionRoot).not.toBeNull();
+    const menu = versionRoot!.querySelector<HTMLElement>('[role="listbox"]')!;
+    const selectedOption = menu.querySelector<HTMLElement>('[aria-selected="true"]')!;
+    expect(menu.className).toContain('w-[126px]');
+    expect(menu.className).toContain('bg-[#242424]/95');
+    expect(menu.className).toContain('gap-1.5');
+    expect(selectedOption.className).toContain('rounded-[5px]');
+    expect(selectedOption.className).toContain('py-0.5');
+    expect(selectedOption.className).toContain('bg-white/[0.16]');
+    expect(selectedOption.className).not.toContain('text-[#f05a28]');
+    expect(selectedOption.querySelector('[aria-hidden="true"]')).toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('[data-favorites-version-option="first-2"]')!.click());
+
+    expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('first-2');
+    expect(versionSelect().textContent).toContain(takeLabel(1));
+    expect(versionSelect().getAttribute('aria-expanded')).toBe('false');
+
+    archive.scrollTop = 0;
+    act(() => versionSelect().click());
+    act(() => container.querySelector<HTMLButtonElement>(
+      '[data-favorites-version-option="with-final-final"]',
+    )!.click());
+
+    expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('with-final-final');
+    expect(archive.scrollTop).toBe(420);
+  });
+
+  it('archives only the thinking that wrote code, and leaves it folded', () => {
+    /* A real run's message stream, twice over: the agent thinks, writes, then
+       thinks again — once to read the validator, once to decide it is done.
+       Neither `validate` nor `commit` draws a progress line of its own, so
+       those two thoughts are followed by no tool call at all, and the next
+       thing that looks like one is the *following* reply's `setCode`. */
+    const run: FavoriteConversation = {
+      id: 'run',
+      title: ['一次运行', 'One run'],
+      favoritedAt: Date.parse('2026-08-22T10:00:00'),
+      turns: [
+        { id: 'run-1', role: 'user', text: ['来点鼓', 'Some drums'] },
+        { id: 'run-2', role: 'assistant', text: ['铺好了底鼓', 'Kick is down'], code: 's("bd*4")' },
+        { id: 'run-3', role: 'user', text: ['加个踩镲', 'Add hats'] },
+        { id: 'run-4', role: 'assistant', text: ['踩镲进来了', 'Hats are in'], code: 's("bd*4, hh*8")' },
+      ],
+      messages: [
+        { id: 'run-1', role: 'user', content: 'Some drums', timestamp: 1 },
+        { id: 'run-think', role: 'progress', progressKind: 'reasoning', timestamp: 2, content: 'Four on the floor at 120, room to add hats later.' },
+        { id: 'run-set', role: 'progress', progressKind: 'tool_call', toolName: 'setCode', timestamp: 3, content: '安排段落…' },
+        { id: 'run-check', role: 'progress', progressKind: 'reasoning', timestamp: 4, content: '代码写完了，调用 validate 校验语法。' },
+        { id: 'run-done', role: 'progress', progressKind: 'reasoning', timestamp: 5, content: '校验通过，commit 用检查点格式。' },
+        { id: 'run-commit', role: 'progress', progressKind: 'commit', timestamp: 6, content: '准备播放…' },
+        { id: 'run-2', role: 'assistant', content: 'Kick is down', code: 's("bd*4")', timestamp: 7 },
+        { id: 'run-3', role: 'user', content: 'Add hats', timestamp: 8 },
+        { id: 'run-think-2', role: 'progress', progressKind: 'reasoning', timestamp: 9, content: 'Eighth-note hats, quiet enough to sit under the kick.' },
+        { id: 'run-set-2', role: 'progress', progressKind: 'tool_call', toolName: 'setCode', timestamp: 10, content: '安排段落…' },
+        { id: 'run-commit-2', role: 'progress', progressKind: 'commit', timestamp: 11, content: '准备播放…' },
+        { id: 'run-4', role: 'assistant', content: 'Hats are in', code: 's("bd*4, hh*8")', timestamp: 12 },
+      ],
+    };
+    const { container } = render(<FavoritesPage conversations={[run]} />);
+    const shownProcess = [...container.querySelectorAll<HTMLElement>('[data-archive-process]')];
+
+    expect(shownProcess.map((entry) => entry.dataset.archiveProcess)).toEqual(['run-think', 'run-think-2']);
+    expect(container.textContent).not.toContain('代码写完了，调用 validate 校验语法。');
+    expect(container.textContent).not.toContain('校验通过，commit 用检查点格式。');
+    // Folded, so even the composing thought is a line until it is asked for.
+    expect(container.textContent).not.toContain('Four on the floor at 120, room to add hats later.');
+
+    act(() => container.querySelector<HTMLButtonElement>('[data-reasoning-header="run-think"]')!.click());
+    expect(shownProcess[0].textContent).toContain('Four on the floor at 120, room to add hats later.');
+  });
+
+  it('leaves a lone script unnumbered, in the window and on its widget', () => {
+    const { container } = render(<FavoritesPage conversations={[CONVERSATIONS[1]]} />);
+    const panel = shownScripts(container)[0]!;
+
+    expect(panel.dataset.favoritesScript).toBe('second-2');
+    // Nothing to pick between, so no picker — the name is a name, not a menu.
+    expect(container.querySelector('[data-testid="favorites-version-select"]')).toBeNull();
+    expect(panel.querySelector('h2')?.textContent).toBe(t('favoritesCodeTitle'));
+    expect(container.querySelector('[data-favorites-chip="second-2"]')?.textContent)
+      .toContain(t('favoritesCodeTitle'));
+    // A V01 with nothing after it would promise a second version.
+    expect(container.textContent).not.toContain(takeLabel(1));
+  });
+
   it('plays a version from its archive widget and selects it in the code window', () => {
     const onPlayCode = vi.fn();
     const { container } = render(<FavoritesPage conversations={CONVERSATIONS} onPlayCode={onPlayCode} />);
@@ -321,12 +429,152 @@ describe('FavoritesPage', () => {
     expect(onStopCode).toHaveBeenCalledOnce();
   });
 
-  it('keeps the code window present when a favorite has no code', () => {
+  it('drops the code window and centres the reading when a favorite has no code', () => {
     const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
     act(() => container.querySelector<HTMLButtonElement>('[data-favorite-id="third"]')!.click());
 
+    // No frame standing in for an absent script — the panel is simply not
+    // drawn, and the conversation still is.
     expect(shownScripts(container)).toHaveLength(0);
-    expect(container.textContent).toContain(t('favoritesNoCode'));
+    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')).not.toBeNull();
+    // With nothing beside it the reading answers to the page's middle rather
+    // than to the two verticals the spread is built from, and the page's
+    // middle is the window's: its own left edge stands the nav column inside
+    // the window's, so that much comes off the right.
+    const windows = gallery(container)!;
+    const pageLeftInset = `calc(${NAV_COLLAPSED_WIDTH}px + var(--spacing-region))`;
+    expect(windows.className).toContain('justify-center');
+    expect(windows.getAttribute('style')).toContain('left: 0');
+    expect(windows.getAttribute('style')).toContain(`--favorites-page-inset: ${pageLeftInset}`);
+    expect(windows.getAttribute('style')).toContain('right: var(--favorites-page-inset)');
+    expect(windows.getAttribute('style')).not.toContain('--gallery-inset-left');
+  });
+
+  it('drops the reading and centres the code when a favorite is only a script', () => {
+    /* The mirror of the case above: code typed straight in, on a session that
+       never got past the app's own opening line. There is no exchange to read,
+       so the script takes the page rather than standing beside a blank half. */
+    const script: FavoriteConversation = {
+      id: 'script-only',
+      title: ['只有代码', 'Script only'],
+      favoritedAt: Date.parse('2026-08-22T10:00:00'),
+      turns: [],
+      code: 'setcps(0.5)',
+    };
+    const { container } = render(<FavoritesPage conversations={[script]} />);
+    const windows = gallery(container)!;
+
+    expect(shownScripts(container)).toHaveLength(1);
+    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')).toBeNull();
+    // The reading's own furniture goes with it — there is no stream for the
+    // blur to say carries on, and no turns for the rail to index.
+    expect(rail(container)).toBeNull();
+    expect(container.querySelector('.conversation-blur-fade')).toBeNull();
+    expect(windows.getAttribute('style')).toContain('right: var(--favorites-page-inset)');
+  });
+
+  it('names a take the way its own widget in the conversation does', () => {
+    /* The window and the widget are the same take named twice, and following
+       one to the other is reading the same words. */
+    const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+
+    expect(shownScripts(container)[0]?.getAttribute('aria-label')).toBe(takeLabel(2));
+
+    act(() => container.querySelector<HTMLButtonElement>('[data-favorites-chip="first-2"]')!.click());
+
+    expect(shownScripts(container)[0]?.getAttribute('aria-label')).toBe(takeLabel(1));
+  });
+
+  it('offers the script itself three things, cut to the transport\u2019s pattern', () => {
+    const onPlayCode = vi.fn();
+    const onStopCode = vi.fn();
+    const onOpenInStudio = vi.fn();
+    const kept: FavoriteConversation = { ...CONVERSATIONS[0], sessionId: 'session-first' };
+    const { container } = render(
+      <FavoritesPage
+        conversations={[kept]}
+        onPlayCode={onPlayCode}
+        onStopCode={onStopCode}
+        onOpenInStudio={onOpenInStudio}
+      />,
+    );
+    const action = (name: string) => (
+      container.querySelector<HTMLButtonElement>(`[data-testid="favorites-script-${name}"]`)!
+    );
+
+    // Hear it, take it, or go and work on it — the studio transport's own grey,
+    // and its own way of naming a mark only when the pointer is on it.
+    expect(action('play').getAttribute('aria-label')).toBe(t('play'));
+    expect(action('play').className).toContain('text-[#A8A8A8]');
+    expect(action('play').className).toContain('hover:text-[#C8C8C8]');
+    // An outline, not the transport's filled triangle: this is one action of
+    // three, not the one button a bar exists for.
+    expect(action('play').querySelector('svg')?.getAttribute('fill')).toBe('none');
+    expect(action('copy').getAttribute('aria-label')).toBe(t('copyCode'));
+    expect(action('open-in-studio').getAttribute('aria-label')).toBe(t('openInStudio'));
+
+    act(() => action('play').click());
+    expect(onPlayCode).toHaveBeenCalledWith(CONVERSATIONS[0].turns[3].code);
+
+    act(() => action('open-in-studio').click());
+    expect(onOpenInStudio).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'session-first' }),
+      's("bd*4, hh*8")',
+    );
+  });
+
+  it('turns the script\u2019s play into a stop while that take is sounding', () => {
+    const onStopCode = vi.fn();
+    const { container } = render(
+      <FavoritesPage
+        conversations={CONVERSATIONS}
+        isPlaying
+        playingCode={CONVERSATIONS[0].turns[3].code}
+        onStopCode={onStopCode}
+      />,
+    );
+    const play = container.querySelector<HTMLButtonElement>('[data-testid="favorites-script-play"]')!;
+
+    expect(play.getAttribute('aria-label')).toBe(t('stop'));
+
+    act(() => play.click());
+
+    expect(onStopCode).toHaveBeenCalledOnce();
+  });
+
+  it('can continue an immutable favorite even when its source session is gone', () => {
+    const { container } = render(
+      <FavoritesPage conversations={CONVERSATIONS} onOpenInStudio={vi.fn()} />,
+    );
+
+    expect(container.querySelector('[data-testid="favorites-script-open-in-studio"]')).not.toBeNull();
+  });
+
+  it('shows the script a conversation ended on when no reply carries one', () => {
+    /* Code typed straight into the editor never passes through a reply, so
+       the conversation holds no widget to hang a take off — but the favorite
+       still kept a script, and the page has to show it. */
+    const typed: FavoriteConversation = {
+      id: 'typed',
+      title: ['手写的', 'Typed by hand'],
+      favoritedAt: Date.parse('2026-08-22T10:00:00'),
+      turns: [
+        { id: 'typed-1', role: 'user', text: ['随便聊聊', 'Just chatting'] },
+        { id: 'typed-2', role: 'assistant', text: ['好', 'Sure'] },
+      ],
+      code: 'setcps(0.5)',
+    };
+    const { container } = render(<FavoritesPage conversations={[typed]} />);
+    const shown = shownScripts(container);
+
+    expect(shown).toHaveLength(1);
+    // One take, under an id no message answers to: there is no widget in the
+    // reading for the column to point back at.
+    expect(shown[0]?.dataset.favoritesScript).toBe('typed-final');
+    expect(shown[0]?.textContent).toContain('setcps(0.5)');
+    // Named "code" rather than "take 1" — no reply asked for it, so it is not
+    // the first of anything.
+    expect(shown[0]?.getAttribute('aria-label')).toBe(t('favoritesFinalVersion'));
   });
 
   it('names the open favorite in full in the opposite corner', () => {
@@ -491,12 +739,87 @@ describe('FavoritesPage', () => {
     }
   });
 
-  it('drops the list and shows the empty message with no favorites', () => {
+  it('drops every window and holds one line in the middle with no favorites', () => {
     const { container } = render(<FavoritesPage conversations={[]} />);
 
     expect(container.querySelector('[data-testid="favorites-list"]')).toBeNull();
     expect(container.querySelector('[data-testid="favorites-caption"]')).toBeNull();
-    expect(gallery(container)).not.toBeNull();
-    expect(container.textContent).toContain(t('favoritesEmptyTitle'));
+    // Neither window is drawn empty: what a favorite looks like when opened is
+    // not what the page should look like when there are none.
+    expect(gallery(container)).toBeNull();
+    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')).toBeNull();
+    expect(shownScripts(container)).toHaveLength(0);
+
+    const empty = container.querySelector<HTMLElement>('[data-testid="favorites-empty"]')!;
+    expect(empty.textContent).toBe(t('favoritesEmptyTitle'));
+    // Set the way the studio sets its own opening line — same face, same
+    // arrival out of a blur.
+    const line = empty.querySelector<HTMLElement>('p')!;
+    expect(line.className).toContain('animate-blur-fade-in');
+    expect(line.className).toContain('text-[#969696]');
+    expect(line.className.includes('font-jinghua-laosongti')).toBe(zh);
+    expect(line.className.includes('font-eb-garamond')).toBe(!zh);
+  });
+
+  describe('letting a favorite go', () => {
+    /* Only a favorite that is a real session can be let go of or deleted —
+       a fixture has no session behind it to move or to remove. */
+    const KEPT: FavoriteConversation[] = CONVERSATIONS.map((conversation) => ({
+      ...conversation,
+      sessionId: `session-${conversation.id}`,
+    }));
+
+    it('offers both moves beside the name, on the open favorite', () => {
+      const onUnfavorite = vi.fn();
+      const onDelete = vi.fn();
+      const { container } = render(
+        <FavoritesPage conversations={KEPT} onUnfavorite={onUnfavorite} onDelete={onDelete} />,
+      );
+      const caption = container.querySelector<HTMLElement>('[data-testid="favorites-caption"]')!;
+      const unfavorite = caption.querySelector<HTMLButtonElement>('[data-favorites-unfavorite]')!;
+      const remove = caption.querySelector<HTMLButtonElement>('[data-favorites-delete]')!;
+
+      // Past the name, at the caption's own right edge.
+      expect(unfavorite.compareDocumentPosition(caption.querySelector('h2')!))
+        .toBe(Node.DOCUMENT_POSITION_PRECEDING);
+      // The star is filled: it says the conversation is kept, and pressing it
+      // is what stops keeping it.
+      expect(unfavorite.querySelector('svg')?.getAttribute('fill')).toBe('currentColor');
+
+      act(() => unfavorite.click());
+      act(() => remove.click());
+
+      expect(onUnfavorite).toHaveBeenCalledWith(KEPT[0]);
+      expect(onDelete).toHaveBeenCalledWith(KEPT[0]);
+    });
+
+    it('still allows deleting a favorite whose source session is gone', () => {
+      const { container } = render(
+        <FavoritesPage conversations={CONVERSATIONS} onUnfavorite={vi.fn()} onDelete={vi.fn()} />,
+      );
+      const caption = container.querySelector<HTMLElement>('[data-testid="favorites-caption"]')!;
+
+      expect(caption.querySelector('[data-favorites-unfavorite]')).toBeNull();
+      expect(caption.querySelector('[data-favorites-delete]')).not.toBeNull();
+    });
+
+    it('opens on the favorite it was sent here to show, and yields to the list after', () => {
+      const { container, root } = render(<FavoritesPage conversations={KEPT} />);
+      const openName = () => (
+        container.querySelector('[data-testid="favorites-caption"] h2')?.textContent
+      );
+      expect(openName()).toBe(conversationTitle(KEPT[0]));
+
+      act(() => root.render(<FavoritesPage conversations={KEPT} focus={{ id: 'third' }} />));
+      expect(openName()).toBe(conversationTitle(KEPT[2]));
+
+      // The reader's own pick outranks the arrival that is already answered.
+      act(() => listRows(container)[1].click());
+      expect(openName()).toBe(conversationTitle(KEPT[1]));
+
+      // Being sent here again is a second arrival, even to the same entry.
+      act(() => root.render(<FavoritesPage conversations={KEPT} focus={{ id: 'third' }} />));
+      expect(openName()).toBe(conversationTitle(KEPT[2]));
+    });
   });
 });

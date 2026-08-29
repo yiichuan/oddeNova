@@ -234,7 +234,7 @@ export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: st
     '',
     '1. 配上鼓和贝斯继续',
     '2. 换个方向重新来',
-    '3. 按这个方向直接写完',
+    '3. 按这个方向完成',
     '',
     '想沿着这个夏日方向继续，还是先换个感觉？',
     '```',

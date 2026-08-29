@@ -1,9 +1,5 @@
 import { createPortal } from 'react-dom';
-
-export interface ControlHoverLabelAnchor {
-  left: number;
-  bottom: number;
-}
+import type { ControlHoverLabelAnchor } from './control-hover-anchor';
 
 interface ControlHoverLabelProps {
   anchor: ControlHoverLabelAnchor | null;

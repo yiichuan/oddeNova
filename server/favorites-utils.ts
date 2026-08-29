@@ -1,10 +1,11 @@
-export const FAVORITE_SUMMARY_SELECT = 'id,title,created_at';
-export const FAVORITE_DETAIL_SELECT = 'id,title,code,messages,input_mode,revisions,suggestions,created_at';
+export const FAVORITE_SUMMARY_SELECT = 'id,source_session_id,title,created_at';
+export const FAVORITE_DETAIL_SELECT = 'id,source_session_id,title,code,messages,input_mode,revisions,suggestions,created_at';
 export const SESSION_SOURCE_SELECT = 'id,title,code,messages,input_mode,revisions,suggestions';
 export const SESSION_CONTINUE_SELECT = 'id,title,code,messages,input_mode,revisions,suggestions,external_source,created_at,updated_at';
 
 export interface FavoriteRow {
   id: string;
+  source_session_id?: string | null;
   user_id?: string;
   title: string;
   code: string;
@@ -17,6 +18,7 @@ export interface FavoriteRow {
 
 export interface FavoriteSummary {
   id: string;
+  sourceSessionId?: string;
   title: string;
   createdAt: number;
 }
@@ -69,12 +71,18 @@ export function normalizeFavoriteSnapshot(row: {
   };
 }
 
-export function rowToFavoriteSummary(row: Pick<FavoriteRow, 'id' | 'title' | 'created_at'>): FavoriteSummary {
-  return {
+export function rowToFavoriteSummary(
+  row: Pick<FavoriteRow, 'id' | 'source_session_id' | 'title' | 'created_at'>,
+): FavoriteSummary {
+  const summary: FavoriteSummary = {
     id: row.id,
     title: row.title,
     createdAt: toEpochMillis(row.created_at),
   };
+  if ('source_session_id' in row && typeof row.source_session_id === 'string') {
+    summary.sourceSessionId = row.source_session_id;
+  }
+  return summary;
 }
 
 export function rowToFavorite(row: FavoriteRow): FavoriteDetail {

@@ -206,3 +206,81 @@ describe('Sidebar session title editing layout', () => {
     expect(container.querySelector('form')?.parentElement?.className).not.toContain('pb-3');
   });
 });
+
+describe('Sidebar history panel', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  function renderWithRerender(props: Partial<React.ComponentProps<typeof Sidebar>> = {}) {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const session = makeSession();
+    const render = (next: Partial<React.ComponentProps<typeof Sidebar>>) => {
+      act(() => {
+        root.render(
+          <Sidebar
+            title={session.title}
+            messages={session.messages}
+            isLoading={false}
+            engineReady={true}
+            sessions={[session as Session]}
+            currentId={session.id}
+            suggestions={[]}
+            onSendText={vi.fn()}
+            onNewSession={vi.fn()}
+            onReinitEngine={vi.fn()}
+            onSwitchSession={vi.fn()}
+            onDeleteSession={vi.fn()}
+            onRenameSession={vi.fn()}
+            onRollback={vi.fn()}
+            onBranch={vi.fn()}
+            onRetry={vi.fn()}
+            {...next}
+          />,
+        );
+      });
+    };
+    render(props);
+    return { container, root, rerender: render };
+  }
+
+  const panel = (container: HTMLElement) => container.querySelector('.history-panel-surface');
+  const openHistory = (container: HTMLElement) => act(() => {
+    container.querySelector<HTMLButtonElement>(`button[title="${t('viewHistory')}"]`)!.click();
+  });
+
+  it('folds away when the studio moves to another session', () => {
+    const { container, root, rerender } = renderWithRerender();
+    roots.push(root);
+    openHistory(container);
+    expect(panel(container)).not.toBeNull();
+
+    // Keeping the open conversation starts a fresh session behind the notice.
+    rerender({ currentId: 's-2' });
+
+    expect(panel(container)).toBeNull();
+  });
+
+  it('folds away when a new session is started from the header', () => {
+    const onNewSession = vi.fn();
+    const { container, root } = renderWithRerender({ onNewSession });
+    roots.push(root);
+    openHistory(container);
+    expect(panel(container)).not.toBeNull();
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>(`button[title="${t('newSession')}"]`)!.click();
+    });
+
+    expect(onNewSession).toHaveBeenCalled();
+    expect(panel(container)).toBeNull();
+  });
+});

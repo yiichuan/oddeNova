@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Session } from '../hooks/useSessions';
+import type { FavoriteConversation } from '../lib/favorite-conversations';
 import { t } from '../lib/i18n';
 
 const mocks = vi.hoisted(() => ({
@@ -63,6 +64,14 @@ const mocks = vi.hoisted(() => ({
     deleteSession: vi.fn(),
     renameSession: vi.fn(),
   },
+  favorites: {
+    favorites: [] as FavoriteConversation[],
+    sourceSessionIds: new Set<string>(),
+    isLoading: false,
+    error: null,
+    create: vi.fn(),
+    remove: vi.fn(async () => undefined),
+  },
   codePanelProps: null as Record<string, unknown> | null,
   sidebarProps: null as Record<string, unknown> | null,
   accountModalProps: null as Record<string, unknown> | null,
@@ -91,6 +100,10 @@ vi.mock('../hooks/useSessions', () => ({
   // The featured session draft mints message ids through the store's own
   // helper rather than growing a second id convention.
   newMessageId: () => `msg-${Math.random()}`,
+}));
+
+vi.mock('../hooks/useFavorites', () => ({
+  useFavorites: () => mocks.favorites,
 }));
 
 vi.mock('../hooks/useSuggestions', () => ({ useSuggestions: () => ({ suggestions: [] }) }));
@@ -209,6 +222,18 @@ describe('App password recovery', () => {
     mocks.sidebarProps = null;
     mocks.accountModalProps = null;
     mocks.agentRunnerConfig = null;
+    mocks.favorites.create.mockResolvedValue({
+      id: 'favorite-1',
+      sourceSessionId: 's-1',
+      sessionId: 's-1',
+      title: 'Session',
+      favoritedAt: 100,
+      turns: [],
+      messages: [],
+      code: 's("bd")',
+    });
+    mocks.favorites.favorites = [];
+    mocks.favorites.sourceSessionIds = new Set<string>();
     mocks.isMobile = true;
   });
 
@@ -398,6 +423,7 @@ describe('App session sync boundaries', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    mocks.getAllSessions.mockResolvedValue([]);
     mocks.strudel.code = 's("bd")';
     mocks.session.code = 's("bd")';
     mocks.session.messages = [];
@@ -412,6 +438,18 @@ describe('App session sync boundaries', () => {
     mocks.sidebarProps = null;
     mocks.accountModalProps = null;
     mocks.agentRunnerConfig = null;
+    mocks.favorites.create.mockResolvedValue({
+      id: 'favorite-1',
+      sourceSessionId: 's-1',
+      sessionId: 's-1',
+      title: 'Session',
+      favoritedAt: 100,
+      turns: [],
+      messages: [],
+      code: 's("bd")',
+    });
+    mocks.favorites.favorites = [];
+    mocks.favorites.sourceSessionIds = new Set<string>();
     mocks.isMobile = true;
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -422,6 +460,7 @@ describe('App session sync boundaries', () => {
     if (root) act(() => root?.unmount());
     root = undefined;
     document.body.innerHTML = '';
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -537,6 +576,96 @@ describe('App session sync boundaries', () => {
     const playOrder = mocks.strudel.play.mock.invocationCallOrder[0];
     expect(manualOrder).toBeLessThan(flushOrder);
     expect(flushOrder).toBeLessThan(playOrder);
+  });
+
+  it('checkpoints the live editor code before creating a favorite snapshot', async () => {
+    mocks.isMobile = false;
+    await renderApp();
+    mocks.strudel.code = 's("bd, hh*8")';
+    await renderApp();
+    mocks.sessions.setManualCode.mockClear();
+    mocks.sessions.flushCloudSaves.mockClear();
+    mocks.favorites.create.mockClear();
+    mocks.sessions.newSession.mockClear();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onFavoriteSession as ((id: string) => Promise<void>))('s-1');
+    });
+
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("bd, hh*8")', 's-1');
+    expect(mocks.sessions.flushCloudSaves).toHaveBeenCalledWith('s-1');
+    expect(mocks.favorites.create).toHaveBeenCalledWith(mocks.session, 's("bd, hh*8")');
+    expect(mocks.sessions.flushCloudSaves.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.favorites.create.mock.invocationCallOrder[0]);
+    expect(mocks.sessions.newSession).toHaveBeenCalledOnce();
+  });
+
+  it('does not replace the Studio conversation when favoriting another history entry', async () => {
+    const other = {
+      ...mocks.session,
+      id: 's-2',
+      title: 'Other session',
+      code: 's("hh")',
+    };
+    mocks.sessions.sessions = [mocks.session, other];
+    mocks.favorites.create.mockResolvedValueOnce({
+      id: 'favorite-2',
+      sourceSessionId: 's-2',
+      sessionId: 's-2',
+      title: 'Other session',
+      favoritedAt: 101,
+      turns: [],
+      messages: [],
+      code: 's("hh")',
+    });
+    mocks.isMobile = false;
+    await renderApp();
+    mocks.sessions.newSession.mockClear();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onFavoriteSession as ((id: string) => Promise<void>))('s-2');
+    });
+
+    expect(mocks.favorites.create).toHaveBeenCalledWith(other, 's("hh")');
+    expect(mocks.sessions.newSession).not.toHaveBeenCalled();
+  });
+
+  it('commits an unfavorite when View returns to the source session', async () => {
+    vi.useFakeTimers();
+    const favorite = {
+      id: 'favorite-1',
+      sourceSessionId: 's-1',
+      sessionId: 's-1',
+      title: 'Session',
+      favoritedAt: 100,
+      turns: [{ id: 'a-1', role: 'assistant' as const, text: '完成', code: 's("bd")' }],
+      messages: [{ id: 'a-1', role: 'assistant' as const, content: '完成', code: 's("bd")', timestamp: 1 }],
+      code: 's("bd")',
+    };
+    mocks.favorites.favorites = [favorite];
+    mocks.favorites.sourceSessionIds = new Set(['s-1']);
+    mocks.favorites.remove.mockResolvedValue(undefined);
+    mocks.isMobile = false;
+    await renderApp();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFavorites')}"]`)?.click();
+      await Promise.resolve();
+    });
+    const unfavorite = container.querySelector<HTMLButtonElement>('[data-favorites-unfavorite]');
+    expect(unfavorite).not.toBeNull();
+    act(() => { unfavorite?.click(); });
+    const view = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === t('favoriteActionView'));
+    expect(view).toBeDefined();
+    act(() => { view?.click(); });
+    await act(async () => { await Promise.resolve(); });
+    act(() => { vi.advanceTimersByTime(200); });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(mocks.favorites.remove).toHaveBeenCalledWith(favorite);
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith('s-1');
+    vi.useRealTimers();
   });
 
   it('persists and flushes the outgoing code when creating a new session', async () => {

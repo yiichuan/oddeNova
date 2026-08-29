@@ -133,7 +133,8 @@ async function createFavorite(req: VercelRequest, res: VercelResponse) {
 
     const { data: created, error: insertError } = await auth.supabase
       .from('favorites')
-      .insert({
+      .upsert({
+        source_session_id: sessionId,
         user_id: auth.user.id,
         title: snapshot.title,
         code: snapshot.code,
@@ -141,7 +142,8 @@ async function createFavorite(req: VercelRequest, res: VercelResponse) {
         input_mode: snapshot.inputMode,
         revisions: snapshot.revisions,
         suggestions: snapshot.suggestions,
-      })
+        created_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,source_session_id' })
       .select(FAVORITE_DETAIL_SELECT)
       .single();
 

@@ -363,7 +363,7 @@ export default function FeaturedDetail({
               data-testid="featured-detail-open-in-studio"
               className={`${PILL_FILLED} disabled:cursor-not-allowed disabled:opacity-50`}
             >
-              {t('featuredOpenInStudio')}
+              {t('openInStudio')}
               <ArrowUpRight size={15} strokeWidth={1.6} aria-hidden="true" />
             </button>
           }

@@ -113,6 +113,24 @@ describe('session-storage fallback path', () => {
     await openDB();
     await expect(deleteSession('nonexistent-id')).resolves.toBeUndefined();
   });
+
+  it('keeps immutable favorites available in memory fallback', async () => {
+    const storage = await import('../session-storage');
+    const favorite = {
+      id: 'favorite-1',
+      sourceSessionId: 'session-1',
+      title: 'Final',
+      favoritedAt: 10,
+      turns: [],
+      messages: [],
+      code: 's("bd")',
+    };
+
+    await storage.putFavorite(favorite);
+    expect(await storage.getAllFavorites()).toEqual([favorite]);
+    await storage.deleteFavorite(favorite.id);
+    expect(await storage.getAllFavorites()).toEqual([]);
+  });
 });
 
 describe('session-storage owner namespaces', () => {
@@ -194,6 +212,26 @@ describe('session-storage owner namespaces', () => {
 
     expect((await getAllSessions('guest')).map((s) => s.title)).toEqual(['Guest Copy']);
     expect((await getAllSessions('user:u-1')).map((s) => s.title)).toEqual(['Account Copy']);
+  });
+
+  it('stores favorite snapshots independently per owner', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const favorite = {
+      id: 'favorite-1',
+      sourceSessionId: 'session-1',
+      title: 'Guest Favorite',
+      favoritedAt: 10,
+      turns: [],
+      messages: [],
+      code: 's("bd")',
+    };
+
+    await storage.putFavorite(favorite, 'guest');
+    await storage.putFavorite({ ...favorite, title: 'Account Favorite' }, 'user:u-1');
+
+    expect((await storage.getAllFavorites('guest')).map((item) => item.title)).toEqual(['Guest Favorite']);
+    expect((await storage.getAllFavorites('user:u-1')).map((item) => item.title)).toEqual(['Account Favorite']);
   });
 
   it('opens storage before reading guest sessions for login-time import checks', async () => {

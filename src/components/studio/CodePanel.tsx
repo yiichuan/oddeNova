@@ -26,7 +26,8 @@ import {
 import { useExportPopoverController, type ExportParams } from '../../hooks/useExportPopoverController';
 import type { Session } from '../../hooks/useSessions';
 import type { ChatMessage } from '../../hooks/useChat';
-import ControlHoverLabel, { type ControlHoverLabelAnchor } from './ControlHoverLabel';
+import ControlHoverLabel from './ControlHoverLabel';
+import { anchorAbove, type ControlHoverLabelAnchor } from './control-hover-anchor';
 import ControlBarParticles from './ControlBarParticles';
 import SessionSyncStatus from './SessionSyncStatus';
 import type { SessionSyncStatus as SyncStatus } from '../../lib/session-cloud-sync';
@@ -517,14 +518,6 @@ export default function CodePanel({
 
   // Hover labels are portalled to <body>, so they need viewport coordinates:
   // centred on the control, sitting just above it.
-  const anchorAbove = (element: HTMLElement): ControlHoverLabelAnchor => {
-    const rect = element.getBoundingClientRect();
-    return {
-      left: rect.left + rect.width / 2,
-      bottom: window.innerHeight - rect.top + 8,
-    };
-  };
-
   const hasPlayableCode = code.trim().length > 0;
   const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
 
