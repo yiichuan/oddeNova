@@ -254,8 +254,12 @@ interface FavoritesPageProps {
   onUnfavorite?: (conversation: FavoriteConversation) => void;
   /** Delete it outright. The page only asks; the undo lives in the dialog. */
   onDelete?: (conversation: FavoriteConversation) => void;
-  /** Go on working on this conversation where it is worked on. */
-  onOpenInStudio?: (conversation: FavoriteConversation, code: string) => void;
+  /**
+   * Go on working from this script where scripts are worked on. The script and
+   * nothing else: what is kept is an archive, and the studio is handed the code
+   * to carry on from rather than a copy of the conversation that wrote it.
+   */
+  onOpenInStudio?: (code: string) => void;
 }
 
 interface PanelProps extends Omit<React.HTMLAttributes<HTMLElement>, 'title'> {
@@ -858,7 +862,7 @@ export default function FavoritesPage({
                     }
                   }}
                   onOpenInStudio={onOpenInStudio
-                    ? () => onOpenInStudio(current, selectedScript.code)
+                    ? () => onOpenInStudio(selectedScript.code)
                     : undefined}
                 />
               </div>

@@ -5,7 +5,7 @@ import CodePanel from './components/studio/CodePanel';
 import Sidebar from './components/conversation/Sidebar';
 import VizPlaceholder from './components/studio/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
-import { useSessions } from './hooks/useSessions';
+import { makeGreetingMessage, useSessions } from './hooks/useSessions';
 import { useFavorites } from './hooks/useFavorites';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useDailySuggestions } from './hooks/useDailySuggestions';
@@ -828,14 +828,19 @@ export default function App() {
     sessions.switchTo(id);
   }, [sessions, persistAndFlushOutgoingSession, strudel.code]);
 
-  const handleOpenFavoriteInStudio = useCallback((
-    conversation: FavoriteConversation,
-    code: string,
-  ) => {
+  const handleOpenFavoriteInStudio = useCallback((code: string) => {
     void sessions.importSession({
-      title: conversationTitle(conversation),
+      /* A new session that happens to start on this code — nothing of the
+         conversation that wrote it, not its name and not its exchange. What is
+         kept is an archive: it is finished, it is read where it is kept, and it
+         does not move. Carrying it over would put a second copy of it in the
+         history to drift away from the one on the Favorites page, under a name
+         that says it is that conversation when it is not one yet. So the studio
+         opens the way it opens for anything: its own title, its own opening
+         line, and the code loaded and ready to be played with. */
+      title: t('newSessionTitle'),
       code,
-      messages: (conversation.messages ?? []).map((message) => ({ ...message })),
+      messages: [makeGreetingMessage()],
     }).then(() => handlePrimaryNavSelect('home')).catch((error) => {
       console.warn('[favorites] failed to continue snapshot.', error);
       strudel.setError(t('favoriteActionFailed'));

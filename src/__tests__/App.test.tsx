@@ -100,6 +100,15 @@ vi.mock('../hooks/useSessions', () => ({
   // The featured session draft mints message ids through the store's own
   // helper rather than growing a second id convention.
   newMessageId: () => `msg-${Math.random()}`,
+  // What a favorite opened in the studio arrives on: the code, and the
+  // studio's own opening line above it.
+  makeGreetingMessage: () => ({
+    id: `msg-${Math.random()}`,
+    role: 'assistant',
+    content: 'greeting',
+    timestamp: 1,
+    isGreeting: true,
+  }),
 }));
 
 vi.mock('../hooks/useFavorites', () => ({
