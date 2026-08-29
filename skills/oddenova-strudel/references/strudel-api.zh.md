@@ -10,7 +10,7 @@
 - **禁止** `.add(s("..."))` 叠加采样音层——`.add()` 是数值运算（仅用于 `.add(note("7"))` 等音高偏移），无法接受采样名称字符串，会触发运行时错误 `cannot parse as numeral: "bd"`。叠加多个 `s()` 音层请用逗号语法 `s("bd*4, ~ sd ~ sd")` 或 `stack(s("bd*4"), s("~ sd ~ sd"))`。
 
 ### 音色与采样
-- 合成器：`.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`。旋律采样 / GM 音色库 / Dirt 采样 / 鼓机 Bank 的完整名称见末尾《全量采样名称参考》节。**禁止**使用列表以外的自创名称（如 "superpad"、"rhodes"、"strings"）。
+- 合成器：`.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`。旋律采样 / GM 音色库 / Dirt 采样 / 鼓机 Bank 的完整内置名称见末尾《全量采样名称参考》节；当前代码中也可使用通过内联字面量 `samples({...})` 注册声明的自定义采样名称。禁止使用列表外的虚构、猜测、未声明或动态生成名称（如 "superpad"、"rhodes"、"strings"）。
 - 鼓组：`bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`。鼓机音色库：`.bank("RolandTR808")`——使用 `.bank()` 时用库专用后缀名 `bd sd hh oh cp cb lt mt ht perc rim sh cr`（注意：鼓机库中的击边鼓是 `rim`，不是 `rs`；`rs` 仅在不使用 bank 时有效）。
 
 ### 效果器

@@ -432,7 +432,9 @@ export default function App() {
         />
       )}
       {guestImportSessions && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+        // The editor's bottom fade uses z-index 240/250, so this app-level
+        // dialog must sit above those masks or they can cover its buttons.
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
           <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
             <h2 className="text-lg font-semibold text-text-primary mb-2">{t('importLocalHistory')}</h2>
             <p className="text-xs text-text-muted mb-5">{t('importLocalHistoryDesc')}</p>

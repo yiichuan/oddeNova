@@ -139,7 +139,7 @@ Only check this under the intent that enables the Song arrangement section (a co
 Check: is the parameter variation meaningful, does the automation improve the sound, does the randomness add life, does the arrangement change push the music forward. Do not use a technique for the sake of using it; every variation should serve the musical goal.
 
 ### Engineering legality check
-- **Legal sample names**: every name inside `s("...")` must come from the Sample Reference section. Do not invent sample names that do not exist; do not guess sample names.
+- **Legal sample names**: built-in sample names must come from the Sample Reference section; custom sample names are allowed only when declared in the current code by an inline literal `samples({...})` registration. Do not invent, guess, or use undeclared or dynamically generated sample names.
 - **Uniform code format**: keep each layer a single chained expression — no semicolons, no `var`, `let`, `const`. Method chains may span lines: base expression on the first line, each `.method(...)` on its own line indented 2 extra spaces. Example:
   note("c3 e3 g3")
     .s("piano")

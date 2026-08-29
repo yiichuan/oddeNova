@@ -536,7 +536,7 @@ describe('runAgentLoop — validates the committed state code', () => {
   it('does not commit stale state when validate checked a different temporary code', async () => {
     const badCode = 'stack(s("bd") s("hh"))';
     const fixedCode = 'stack(s("bd"), s("hh"))';
-    vi.mocked(validateCodeRuntime).mockImplementation((code: string) => (
+    vi.mocked(validateCodeRuntime).mockImplementation(async (code: string) => (
       code === badCode
         ? { ok: false, error: 'missing ) after argument list', kind: 'syntax' }
         : { ok: true }
@@ -615,6 +615,68 @@ describe('runAgentLoop — validates the committed state code', () => {
       error: expect.stringContaining('missing ) after argument list'),
     });
     expect(events).toContainEqual({ kind: 'commit', code: fixedCode });
+  });
+
+  it.each([
+    {
+      locale: 'zh' as const,
+      warningLabel: '校验失败',
+      syntaxLabel: '语法错误',
+      explanationLabel: '校验未通过',
+      oldExplanationLabel: '语法校验未通过',
+    },
+    {
+      locale: 'en' as const,
+      warningLabel: 'failed validation',
+      syntaxLabel: 'syntax errors',
+      explanationLabel: 'validation failed',
+      oldExplanationLabel: 'syntax validation failed',
+    },
+  ])('uses validation-failure wording for implicit finalization ($locale)', async ({
+    locale,
+    warningLabel,
+    syntaxLabel,
+    explanationLabel,
+    oldExplanationLabel,
+  }) => {
+    const detail = 'Unknown sample name(s): "camera_flash"';
+    vi.mocked(validateCodeRuntime).mockResolvedValue({
+      ok: false,
+      kind: 'runtime',
+      error: detail,
+    });
+
+    const events: ProgressEvent[] = [];
+    const llm: LLMCaller = {
+      async chatWithTools() {
+        return {
+          content: null,
+          toolCalls: [{
+            id: 'set-code-1',
+            name: 'setCode',
+            arguments: JSON.stringify({ code: 's("camera_flash")' }),
+          }],
+        };
+      },
+    };
+
+    const result = await runAgentLoop({
+      initialCode: '',
+      instruction: 'add a custom sample',
+      locale,
+      systemPrompt: 'You are a music assistant.',
+      llm,
+      maxIter: 1,
+      onProgress: (event) => events.push(event),
+    });
+
+    const warning = events.find((event): event is Extract<ProgressEvent, { kind: 'warn' }> => event.kind === 'warn');
+    expect(warning?.message).toContain(warningLabel);
+    expect(warning?.message).not.toContain(syntaxLabel);
+    expect(warning?.message).toContain(detail);
+    expect(result.explanation).toContain(explanationLabel);
+    expect(result.explanation).not.toContain(oldExplanationLabel);
+    vi.mocked(validateCodeRuntime).mockResolvedValue({ ok: true });
   });
 });
 

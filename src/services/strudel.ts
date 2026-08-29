@@ -1399,8 +1399,8 @@ export function normalizeCode(code: string): string {
   return result;
 }
 
-// Cached after first attach() so validateCodeTranspiler can run synchronously.
-let cachedTranspiler: ((code: string, opts?: object) => unknown) | null = null;
+// Cached after first attach() so validation and playback share the same transpiler.
+let cachedTranspiler: ((code: string, opts?: object) => { output: string }) | null = null;
 
 type ValidationResult = { ok: true } | { ok: false; error: string; kind: 'syntax' | 'runtime' };
 
@@ -1611,13 +1611,13 @@ function hasNoteVoicingChain(code: string): boolean {
 // --- Code validation (no audio engine needed) ---
 
 /** @deprecated Use validateCodeRuntime directly. */
-export function validateCode(code: string): { ok: boolean; error?: string } {
+export async function validateCode(code: string): Promise<{ ok: boolean; error?: string }> {
   if (!code?.trim()) return { ok: false, error: t('emptyCode') };
-  const result = validateCodeRuntime(code);
+  const result = await validateCodeRuntime(code);
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
-export function validateCodeRuntime(code: string): ValidationResult {
+export async function validateCodeRuntime(code: string): Promise<ValidationResult> {
   const clean = normalizeCode(stripUIDecorations(code));
   if (!clean.trim()) return { ok: false, error: t('emptyCode'), kind: 'syntax' };
 
@@ -1629,6 +1629,7 @@ export function validateCodeRuntime(code: string): ValidationResult {
     get(_t, key) {
       if (typeof key === 'symbol') return (globalThis as Record<symbol, unknown>)[key as unknown as symbol];
       const k = key as string;
+      if (k === 'samples') return async () => {};
       const v = (globalThis as Record<string, unknown>)[k];
       if (v === undefined && !PASS_THROUGH.has(k)) {
         throw new ReferenceError(`${k} is not defined`);
@@ -1638,7 +1639,33 @@ export function validateCodeRuntime(code: string): ValidationResult {
   });
 
   try {
-    new Function('__s__', `with (__s__) { ${stripped} }`)(proxy);
+    const transpiler = cachedTranspiler ?? (await import('@strudel/transpiler')).transpiler;
+    cachedTranspiler = transpiler;
+    // The player uses the transpiler's output with the same `{ ... }` and async
+    // wrappers supplied by @strudel/core. Keep mini parsing for the dedicated
+    // validateCodeTranspiler check, but execute the exact transformed JS here.
+    const { output } = transpiler(stripped, { id: undefined, emitMiniLocations: false });
+    // The transpiler rewrites named voices such as `$flute: pattern` to
+    // `pattern.p('$flute')`. The real REPL injects `.p()` immediately before
+    // evaluation, but validation runs outside that REPL closure. Supply the
+    // side-effect-free part of the same contract while dry-running, then put
+    // back any live REPL method so validation cannot register scheduler voices.
+    const { Pattern } = await import('@strudel/core');
+    const livePatternMethod = Object.getOwnPropertyDescriptor(Pattern.prototype, 'p');
+    Object.defineProperty(Pattern.prototype, 'p', {
+      configurable: true,
+      writable: true,
+      value(this: unknown) { return this; },
+    });
+    try {
+      await new Function('__s__', `with (__s__) {\nreturn (async () => {\n${output}\n})()\n}`)(proxy);
+    } finally {
+      if (livePatternMethod) {
+        Object.defineProperty(Pattern.prototype, 'p', livePatternMethod);
+      } else {
+        delete Pattern.prototype.p;
+      }
+    }
     // Check for hallucinated sample names after syntax/runtime validation passes.
     const unknownSamples = findUnknownSamples(code);
     if (unknownSamples.length > 0) {

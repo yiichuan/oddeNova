@@ -338,6 +338,31 @@ describe('App password recovery', () => {
     expect(container.textContent).toContain('Sync local history?');
   });
 
+  it('keeps the guest-history import dialog above the playback layer', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+    });
+
+    const importDialog = [...container.querySelectorAll('div.fixed.inset-0')].find((element) =>
+      element.textContent?.includes('Sync local history?'),
+    );
+    expect(importDialog?.classList.contains('z-[300]')).toBe(true);
+  });
+
   it('imports a guest source once when the confirm button is clicked twice', async () => {
     const guestSession: Session = {
       id: 'guest-session',

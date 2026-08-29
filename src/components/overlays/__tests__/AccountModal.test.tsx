@@ -126,6 +126,25 @@ function getButton(container: HTMLElement, text: string): HTMLButtonElement {
   return button;
 }
 
+describe('AccountModal layering', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('keeps the account dialog above the editor masks', () => {
+    const { container, root } = renderSignedInModal();
+    roots.push(root);
+
+    const overlay = container.querySelector('div.fixed.inset-0');
+    expect(overlay?.classList.contains('z-[300]')).toBe(true);
+  });
+});
+
 describe('AccountModal password recovery', () => {
   const roots: Root[] = [];
 

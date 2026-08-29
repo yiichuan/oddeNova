@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { VERIDIS_QUO } from '../../lib/featured-scripts';
 
 type FakeEventTarget = Pick<Window | Document, 'addEventListener' | 'removeEventListener'> & {
   emit: (type: string) => void;
@@ -47,10 +48,16 @@ function createFakeAudioContext(state: AudioContextState | 'interrupted') {
 }
 
 describe('Strudel code validation', () => {
+  beforeEach(() => {
+    vi.stubGlobal('m', vi.fn(() => ({})));
+  });
+
   afterEach(() => {
     vi.resetModules();
     vi.doUnmock('../../lib/soundfont-loader');
     vi.doUnmock('../../lib/analytics');
+    vi.doUnmock('@strudel/transpiler');
+    vi.unstubAllGlobals();
   });
 
   it('rejects named .arp() modes before playback', async () => {
@@ -58,7 +65,7 @@ describe('Strudel code validation', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
-    const result = validateCodeRuntime('({ arp() { return this } }).arp("pinkyup")');
+    const result = await validateCodeRuntime('({ arp() { return this } }).arp("pinkyup")');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -72,7 +79,7 @@ describe('Strudel code validation', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
-    const result = validateCodeRuntime('({ arp() { return this } }).arp("0 [0,2] 1 [0,2]")');
+    const result = await validateCodeRuntime('({ arp() { return this } }).arp("0 [0,2] 1 [0,2]")');
 
     expect(result.ok).toBe(true);
   });
@@ -82,7 +89,7 @@ describe('Strudel code validation', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
-    const result = validateCodeRuntime(`
+    const result = await validateCodeRuntime(`
       const chain = {
         slow() { return this },
         dict() { return this },
@@ -108,7 +115,7 @@ describe('Strudel code validation', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
-    const result = validateCodeRuntime(`
+    const result = await validateCodeRuntime(`
       const chain = {
         dict() { return this },
         voicing() { return this },
@@ -122,6 +129,101 @@ describe('Strudel code validation', () => {
     `);
 
     expect(result.ok).toBe(true);
+  });
+
+  it('allows a terminal line comment without a final newline in the runtime wrapper', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime('({ arp() { return this } }).arp("0")\n// @version 1.2');
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('allows literal custom samples, mini-notation controls, and a terminal version comment together', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    vi.stubGlobal('samples', vi.fn());
+    vi.stubGlobal('s', vi.fn(() => ({})));
+
+    const code = [
+      "samples({ camera_flash: 'https://example.com/camera.wav', 'vox': 'https://example.com/vox.wav' })",
+      's("<[- [- camera_flash] - -] [-]>/4")',
+      '// @version 1.2',
+    ].join('\n');
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime(code);
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('validates arrange mini-notation after transpiling the same source as playback', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    vi.stubGlobal('arrange', vi.fn((...sections: [number, unknown][]) => {
+      const pattern = sections[0]?.[1];
+      if (!pattern || typeof pattern !== 'object' || !('fast' in pattern)) {
+        throw new TypeError('arrange section pattern is not a Strudel pattern');
+      }
+      return (pattern as { fast: () => unknown }).fast();
+    }));
+    vi.stubGlobal('m', vi.fn(() => ({ fast: vi.fn(() => ({ kind: 'pattern' })) })));
+    vi.stubGlobal('stack', vi.fn((...patterns: unknown[]) => patterns[0]));
+
+    const code = [
+      '// STYLE | BPM: 120',
+      'setcps(0.5)',
+      'const drums = arrange([1, "<bd>"])',
+      'stack(drums)',
+    ].join('\n');
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime(code);
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('keeps samples registration side-effect free during validation', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    const samples = vi.fn(() => {
+      throw new Error('samples should not execute during validation');
+    });
+    vi.stubGlobal('samples', samples);
+    vi.stubGlobal('s', vi.fn(() => ({})));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime([
+      'samples({ silent_custom: "https://example.com/silent.wav" })',
+      's("silent_custom")',
+    ].join('\n'));
+
+    expect(result).toEqual({ ok: true });
+    expect(samples).not.toHaveBeenCalled();
+  });
+
+  it('accepts the playable Veridis Quo script with named voices and pianorolls', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    const { evalScope } = await import('@strudel/core');
+    await evalScope(
+      import('@strudel/core'),
+      import('@strudel/codemirror'),
+      import('@strudel/draw'),
+      import('@strudel/mini'),
+      import('@strudel/tonal'),
+      import('@strudel/webaudio'),
+    );
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime(VERIDIS_QUO);
+
+    expect(result).toEqual({ ok: true });
   });
 });
 

@@ -77,3 +77,20 @@ describe('committed references are in sync with the active prompt', () => {
     });
   }
 });
+
+describe('active prompt sample validation guidance', () => {
+  const zhPrompt = AGENT_SYSTEM_PROMPT_OPENAI(buildPersonaBlock('zh'), 'oddeNova');
+  const enPrompt = AGENT_SYSTEM_PROMPT_EN(buildPersonaBlock('en'), 'oddeNova');
+
+  it('describes scoped custom samples and still forbids undeclared names in both languages', () => {
+    expect(zhPrompt).toContain('内置采样名称的唯一权威参考');
+    expect(zhPrompt).toContain('当前代码中通过内联字面量 `samples({...})` 注册声明的自定义采样名称');
+    expect(zhPrompt).toContain('禁止使用虚构、猜测、未声明或动态生成的采样名称');
+    expect(zhPrompt).not.toContain('所有 `s("...")` 中的名称必须来自《全量采样名称参考》');
+
+    expect(enPrompt).toContain('single authoritative reference for built-in sample names');
+    expect(enPrompt).toContain('declared in the current code by an inline literal `samples({...})` registration');
+    expect(enPrompt).toContain('Do not invent, guess, or use undeclared or dynamically generated sample names');
+    expect(enPrompt).not.toContain('Every name inside `s("...")` must appear in this list');
+  });
+});

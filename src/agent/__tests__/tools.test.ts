@@ -80,7 +80,7 @@ stack(
   });
 
   it('语法错误 — 返回 ok: false，error 含"语法错误"', async () => {
-    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'Unexpected token }', kind: 'syntax' });
+    vi.mocked(validateCodeRuntime).mockResolvedValueOnce({ ok: false, error: 'Unexpected token }', kind: 'syntax' });
     const ctx = makeCtx('s("bd") }}}');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(false);
@@ -88,7 +88,7 @@ stack(
   });
 
   it('运行时错误（幻觉 API）— 返回 ok: false，error 含"运行时错误"和 TidalCycles 提示', async () => {
-    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'sometimesBy is not defined', kind: 'runtime' });
+    vi.mocked(validateCodeRuntime).mockResolvedValueOnce({ ok: false, error: 'sometimesBy is not defined', kind: 'runtime' });
     const ctx = makeCtx('s("bd").sometimesBy(0.5, fast(2))');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(false);
@@ -97,7 +97,7 @@ stack(
   });
 
   it('运行时错误（与 TidalCycles 专有 API 无关）— 不附加误导性的 TidalCycles 提示', async () => {
-    vi.mocked(validateCodeRuntime).mockReturnValueOnce({ ok: false, error: 'Invalid argument', kind: 'runtime' });
+    vi.mocked(validateCodeRuntime).mockResolvedValueOnce({ ok: false, error: 'Invalid argument', kind: 'runtime' });
     const ctx = makeCtx('s("bd").late("[0 .04]*4")');
     const result = await validate({}, ctx);
     expect(result.ok).toBe(false);
@@ -107,9 +107,9 @@ stack(
 
   it('运行时错误（多音层）— 隔离复现出同一错误的音层，在 error 中标出 @layer 名称', async () => {
     vi.mocked(validateCodeRuntime)
-      .mockReturnValueOnce({ ok: false, error: 'Invalid argument', kind: 'runtime' }) // full code
-      .mockReturnValueOnce({ ok: true }) // drums layer in isolation: passes
-      .mockReturnValueOnce({ ok: false, error: 'Invalid argument', kind: 'runtime' }); // bass layer in isolation: reproduces
+      .mockResolvedValueOnce({ ok: false, error: 'Invalid argument', kind: 'runtime' }) // full code
+      .mockResolvedValueOnce({ ok: true }) // drums layer in isolation: passes
+      .mockResolvedValueOnce({ ok: false, error: 'Invalid argument', kind: 'runtime' }); // bass layer in isolation: reproduces
     const ctx = makeCtx(`setcps(0.5)
 stack(
   /* @layer drums */
@@ -124,9 +124,9 @@ stack(
 
   it('运行时错误（多音层，隔离后无法复现）— 不猜测位置', async () => {
     vi.mocked(validateCodeRuntime)
-      .mockReturnValueOnce({ ok: false, error: 'Invalid argument', kind: 'runtime' }) // full code
-      .mockReturnValueOnce({ ok: true }) // drums layer in isolation: passes
-      .mockReturnValueOnce({ ok: true }); // bass layer in isolation: also passes (error only appears in combination)
+      .mockResolvedValueOnce({ ok: false, error: 'Invalid argument', kind: 'runtime' }) // full code
+      .mockResolvedValueOnce({ ok: true }) // drums layer in isolation: passes
+      .mockResolvedValueOnce({ ok: true }); // bass layer in isolation: also passes (error only appears in combination)
     const ctx = makeCtx(`setcps(0.5)
 stack(
   /* @layer drums */
@@ -219,7 +219,7 @@ describe('commit', () => {
   const commit = getHandler('commit');
 
   it('当前状态代码语法错误时返回失败，不提交', async () => {
-    vi.mocked(validateCodeRuntime).mockReturnValueOnce({
+    vi.mocked(validateCodeRuntime).mockResolvedValueOnce({
       ok: false,
       error: 'missing ) after argument list',
       kind: 'syntax',
@@ -230,8 +230,8 @@ describe('commit', () => {
     expect(result.error).toMatch(/missing \) after argument list/);
   });
 
-  it('当前状态代码合法时仍发出 CommitSignal', () => {
+  it('当前状态代码合法时仍发出 CommitSignal', async () => {
     const ctx = makeCtx('stack(s("bd"), s("hh"))');
-    expect(() => commit({ explanation: 'done' }, ctx)).toThrow(CommitSignal);
+    await expect(commit({ explanation: 'done' }, ctx)).rejects.toThrow(CommitSignal);
   });
 });

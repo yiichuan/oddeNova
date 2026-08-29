@@ -177,7 +177,7 @@ export default function AccountModal({
       : t('signIn');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
       <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>

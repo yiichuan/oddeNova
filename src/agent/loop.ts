@@ -492,7 +492,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   if (!committed && !signal?.aborted) {
     const codeChanged = !!state.code && state.code !== initialCode;
     if (codeChanged) {
-      const v = validateCommittedCode(state.code, isZh);
+      const v = await validateCommittedCode(state.code, isZh);
       if (v.ok) {
         committed = true;
         finalCode = state.code;
@@ -505,7 +505,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       } else {
         onProgress?.({
           kind: 'warn',
-          message: isZh ? `agent 未调用 commit 且最后代码语法错误: ${v.error || '未知'}` : `Agent did not call commit and final code has syntax errors: ${v.error || 'unknown'}`,
+          message: isZh ? `agent 未调用 commit 且最后代码校验失败: ${v.error || '未知'}` : `Agent did not call commit and final code failed validation: ${v.error || 'unknown'}`,
         });
         finalCode = state.code;
       }
@@ -524,7 +524,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     if (committed) {
       explanation = isZh ? '已更新' : 'Updated';
     } else if (finalCode && finalCode !== initialCode) {
-      explanation = isZh ? '已生成新代码，但语法校验未通过，请检查' : 'Code generated but syntax validation failed — please check';
+      explanation = isZh ? '已生成新代码，但校验未通过，请检查' : 'Code generated but validation failed — please check';
     } else {
       explanation = isZh ? '未生成新代码' : 'No code changes made';
     }
