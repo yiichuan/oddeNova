@@ -15,6 +15,7 @@ export function useStrudel() {
     engineReady: false,
     engineStatus: 'initializing',
     accentColor: null,
+    isDirty: false,
   }));
 
   const historyRef = useRef<string[]>([]);
@@ -67,6 +68,17 @@ export function useStrudel() {
 
   const pause = useCallback(() => {
     strudelService.pause();
+  }, []);
+
+  // Hot-swap the running pattern with whatever is in the editor now, without
+  // stopping the transport. See `strudelService.update`.
+  const update = useCallback(async () => {
+    try {
+      await strudelService.update();
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   const setCode = useCallback((code: string) => {
@@ -128,11 +140,13 @@ export function useStrudel() {
     engineReady: state.engineReady,
     engineStatus: state.engineStatus,
     accentColor: state.accentColor,
+    isDirty: state.isDirty,
     error: state.error,
     canUndo,
     setRoot,
     play,
     pause,
+    update,
     stop,
     setCode,
     setError,

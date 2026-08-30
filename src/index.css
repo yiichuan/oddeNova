@@ -62,6 +62,9 @@
   --color-bg-tertiary: #000000;
   --color-conversation-surface: #0D0D0D;
   --color-settings-surface: #161616;
+  /* The well an account form's fields sit in — one step up from the modal
+     surface they stand on, so a stack of them reads as a stack of boxes. */
+  --color-auth-field: #141414;
   --color-accent: #434343;
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
@@ -103,6 +106,12 @@
   --spacing-action-divider-to-body: 20px;
   --spacing-action-expanded-content-gap: 20px;
   --spacing-conversation-edge-fade: 8px;
+  /* The editor's breathing space above the first line and below the last. It
+     lives out here rather than on `.cm-editor` because the top fade hangs on
+     the element CodeMirror mounts into — the editor's parent, which a variable
+     scoped to the editor never reaches. Both ends measure from this one value;
+     they drifted apart once already when they did not. */
+  --code-editor-bottom-gap: 14px;
   /* How deep a conversation standing on no surface blurs out at each end. Deep
      relative to the radius it reaches — that ratio is what hides the steps. */
   --spacing-conversation-fade: 90px;
@@ -352,6 +361,14 @@ body {
 .code-panel-controls {
   --code-panel-play-button-offset: 20px;
   --code-panel-play-to-progress-gap: 24px;
+  /* Two round buttons side by side read further apart than the same measure
+     taken between a button and the progress rule: the space between two
+     circles flares open above and below the midline (24px at the midline
+     averages nearer 31 across the button's height), while the rule meets that
+     space as a straight edge and measures what it is. Update is flanked by one
+     of each, so matching its two gaps numerically is exactly what makes them
+     look unequal. This is what the round pair gives back. */
+  --code-panel-round-pair-optical-trim: 8px;
   --code-panel-progress-to-time-gap: 24px;
   --code-panel-time-to-volume-gap: 72px;
   --code-panel-volume-to-actions-gap: 20px;
@@ -363,6 +380,45 @@ body {
   background-color: rgba(13, 13, 13, 0.76);
   backdrop-filter: blur(18px) saturate(112%);
   -webkit-backdrop-filter: blur(18px) saturate(112%);
+}
+
+/* Play and update read as one transport cluster rather than two loose buttons.
+   The gap is part of the cluster, not of the update button, so it comes and
+   goes with it and a stopped bar sits exactly where it always did.
+
+   It is derived from the play-to-progress gap rather than set on its own:
+   update sits between those two and wants an even space either side, so
+   retuning the bar's rhythm moves this with it. The trim is what makes the two
+   read as even rather than measure as even. */
+.code-panel-transport {
+  gap: calc(
+    var(--code-panel-play-to-progress-gap) - var(--code-panel-round-pair-optical-trim)
+  );
+}
+
+/* Update appears mid-playback, the moment an edit outruns the sound. Fading it
+   in over its own width keeps that from reading as a jump in a bar that is
+   otherwise still. Nothing animates it out: after a click the swap is done,
+   and the button leaving at once is the confirmation. */
+.code-panel-update-enter {
+  animation: codePanelUpdateIn 180ms ease-out;
+}
+
+@keyframes codePanelUpdateIn {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-panel-update-enter {
+    animation: none;
+  }
 }
 
 .code-panel-playback-layout {
@@ -455,10 +511,17 @@ body {
 
 /* Apple-style continuous capsule: the curve begins more gradually than a
    semicircular border-radius, smoothing the transition into the straight run.
-   Sized for the 112×32 three-button capsule (path() takes no percentages, so
-   this has to be re-cut if the button count changes). */
+   path() takes no percentages, so every button count needs its own cut: 112×32
+   for the three-button capsule, 76×32 for the two-button one it becomes when
+   Settings → Appearance switches the studio animation off and the visualizer
+   toggle leaves the bar. Both are the same shape — 16px corners, a 4px gap
+   between buttons — with 36px taken out of the straight run. */
 .control-button-capsule {
   clip-path: path('M 16 0 H 96 C 106.8 0 112 5.2 112 16 C 112 26.8 106.8 32 96 32 H 16 C 5.2 32 0 26.8 0 16 C 0 5.2 5.2 0 16 0 Z');
+}
+
+.control-button-capsule-pair {
+  clip-path: path('M 16 0 H 60 C 70.8 0 76 5.2 76 16 C 76 26.8 70.8 32 60 32 H 16 C 5.2 32 0 26.8 0 16 C 0 5.2 5.2 0 16 0 Z');
 }
 
 .code-panel-light-field {
@@ -837,6 +900,23 @@ body {
   border-radius: 0;
 }
 
+/* The inputs inside an account form's fields. They are transparent — the box
+   around them carries the fill — but an autofilled input is not: Chrome paints
+   it with its own pale blue wash through an internal `!important` rule that no
+   `background-color` can reach, and the only thing that covers it is an inset
+   shadow tall enough to fill the box, painted in the surrounding field's
+   colour. `-webkit-text-fill-color` goes with it, because the same rule turns
+   the autofilled text black. */
+.auth-field:-webkit-autofill,
+.auth-field:-webkit-autofill:hover,
+.auth-field:-webkit-autofill:focus,
+.auth-field:-webkit-autofill:active {
+  -webkit-box-shadow: inset 0 0 0 1000px var(--color-auth-field);
+  box-shadow: inset 0 0 0 1000px var(--color-auth-field);
+  -webkit-text-fill-color: var(--color-text-primary);
+  caret-color: var(--color-text-primary);
+}
+
 @keyframes slideIn {
   from {
     opacity: 0;
@@ -935,7 +1015,6 @@ body {
 
 .cm-editor {
   --code-editor-gutter-width: 72px;
-  --code-editor-bottom-gap: 14px;
   --code-editor-horizontal-scrollbar-height: 0px;
 
   height: 100%;
@@ -992,6 +1071,42 @@ body {
   height: calc(var(--code-editor-bottom-gap) + var(--spacing-conversation-edge-fade));
   background: linear-gradient(
     to bottom,
+    transparent,
+    var(--color-conversation-surface) var(--spacing-conversation-edge-fade)
+  );
+  content: '';
+  pointer-events: none;
+}
+
+/* The bottom mask's mirror, so code leaving the viewport does the same thing at
+   both ends instead of fading out below and being cut off above.
+
+   It cannot be `.cm-editor::after` — the scrollbar-corner mask below already
+   holds that, and `::before` is the bottom fade — so it hangs on the element
+   CodeMirror mounts into, which shares the editor's box exactly (`*:h-full`
+   stretches `.cm-editor` to fill it). Same 6px right inset clearing the
+   vertical scrollbar, same 240 so it covers the line numbers (z-index 200) as
+   well as the code, same gradient read upwards.
+
+   The one thing it does not copy is depth. The bottom mask is as deep as the
+   padding *plus* its own fade, which the content's bottom padding is sized to
+   clear; matching that here would mean pushing the first line down by the fade
+   to keep it out of the gradient. So this one stops at the padding instead:
+   solid across the first 6px, transparent again exactly where the first line
+   begins. Shallower band, first line untouched. */
+.code-editor-fade-top {
+  position: relative;
+}
+
+.code-editor-fade-top::before {
+  position: absolute;
+  z-index: 240;
+  top: 0;
+  right: 6px;
+  left: 0;
+  height: var(--code-editor-bottom-gap);
+  background: linear-gradient(
+    to top,
     transparent,
     var(--color-conversation-surface) var(--spacing-conversation-edge-fade)
   );

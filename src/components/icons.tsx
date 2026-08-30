@@ -130,6 +130,8 @@ export const CheckIcon = ({ size = 16, className }: IconProps) => <Check size={s
 export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={size} className={className} />;
 export const XIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;
 export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
+// Strudel's own "update" glyph: re-evaluate the running pattern in place.
+export const UpdateIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 export const GitBranchIcon = ({ size = 16, className }: IconProps) => <Split size={size} className={className} />;
 export const OpenInStudioIcon = ({ size = 16, className }: IconProps) => (
   <SquareArrowOutUpRight size={size} className={className} strokeWidth={1.7} />

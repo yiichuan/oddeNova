@@ -24,6 +24,7 @@ export const LIGHT_THEME_READY = false;
 
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'system';
 export const DEFAULT_ANIMATION: AnimationPreference = 'galaxy-ascii';
+export const DEFAULT_STUDIO_ANIMATION_VISIBLE = true;
 
 /** i18n keys for the user-facing name of each choice. */
 export const THEME_LABEL_KEYS: Record<ThemePreference, string> = {
@@ -45,6 +46,7 @@ export const ANIMATION_SOURCES: Record<AnimationPreference, string> = {
 const STORAGE_KEYS = {
   theme: 'vibe_theme',
   animation: 'vibe_animation',
+  studioAnimationVisible: 'vibe_studio_animation',
 } as const;
 
 const listeners = new Set<() => void>();
@@ -132,6 +134,24 @@ export function getAnimationSource(
   animation: AnimationPreference = getAnimationPreference(),
 ): string {
   return ANIMATION_SOURCES[animation];
+}
+
+/**
+ * Whether the studio shows an animation at all — the visual pane under the
+ * code panel, and the flakes that stand in for it while it is collapsed.
+ *
+ * Deliberately a separate axis from *which* animation plays: turning the pane
+ * off and back on hands back the animation the user picked, instead of
+ * resetting them to the default.
+ */
+export function getStudioAnimationVisible(): boolean {
+  const stored = readStored(STORAGE_KEYS.studioAnimationVisible);
+  return stored === null ? DEFAULT_STUDIO_ANIMATION_VISIBLE : stored === 'true';
+}
+
+export function setStudioAnimationVisible(visible: boolean): void {
+  writeStored(STORAGE_KEYS.studioAnimationVisible, String(visible));
+  emit();
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────

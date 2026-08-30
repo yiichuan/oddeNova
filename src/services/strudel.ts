@@ -8,6 +8,7 @@ import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '.
 import { createCodePanelDrawContext, type CodePanelDrawContext } from '../lib/codepanel-canvas';
 import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
 import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
+import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bounds';
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
 import { claimTransport } from './transport';
@@ -18,6 +19,8 @@ type StrudelReplState = {
   code?: string;
   started?: boolean;
   evalError?: Error | unknown;
+  /** The repl's own `code !== activeCode` — an edit the running pattern hasn't heard yet. */
+  isDirty?: boolean;
 };
 
 /** Just enough of `@strudel/core`'s Pattern to type the methods registered below. */
@@ -63,6 +66,13 @@ export type StrudelState = {
   error: string | null;
   engineReady: boolean;
   engineStatus: 'initializing' | 'ready' | 'failed';
+  /**
+   * The editor holds an edit the sounding pattern hasn't heard yet — Strudel's
+   * own `isDirty` (`code !== activeCode`), which its repl recomputes on every
+   * state change. This is what makes the update button worth offering: with
+   * the buffer and the playing pattern identical there is nothing to swap.
+   */
+  isDirty: boolean;
   /**
    * The hued colour latched from the playing piece's own `.color()`, if it set
    * one — null the rest of the time, which is what tells consumers (the
@@ -247,6 +257,7 @@ export class StrudelService {
     engineReady: false,
     engineStatus: 'initializing',
     accentColor: null,
+    isDirty: false,
   };
 
   private stateCallbacks: StateCallback[] = [];
@@ -491,6 +502,7 @@ export class StrudelService {
             code: nextCode,
             isPlaying: state.started ?? false,
             isPaused: didCodeChange || state.started ? false : this._state.isPaused,
+            isDirty: state.isDirty ?? false,
             error,
           });
         },
@@ -513,6 +525,9 @@ export class StrudelService {
           themes,
         });
         installCodeEditorScrollMargins(editor.editor);
+        // Keeps the completion popup inside the editor instead of under the
+        // control bar — see code-editor-tooltip-bounds.ts.
+        installCodeEditorTooltipBounds(editor.editor);
       }
 
       // Sync REPL internal state with initial code
@@ -886,6 +901,40 @@ export class StrudelService {
       this.notify({ error: message });
       throw error;
     }
+  };
+
+  /**
+   * Strudel's own live update — what Ctrl+Enter does in its REPL.
+   *
+   * `StrudelMirror.evaluate()` on a running scheduler hands the newly compiled
+   * pattern to `setPattern(pattern, autostart)`, which swaps it in at the next
+   * cycle boundary instead of restarting the transport. So an edit made while
+   * a piece plays lands on the beat, with no pause/replay and no lost
+   * playhead. Nothing here re-implements that: the whole job is calling the
+   * engine's own evaluate while it is still started.
+   *
+   * A no-op when nothing is playing — there is no running pattern to swap
+   * into, and `evaluate()` would silently start the transport instead, which
+   * is `play()`'s job.
+   */
+  update = async (): Promise<void> => {
+    if (!this.editorInstance || !this._state.isPlaying) return;
+    // Same reasoning as play(): the code about to run decides the look from
+    // scratch, so a `.theme()` or `.color()` the user just edited out stops
+    // applying. Both re-latch on the next painted frame, and the Drawer never
+    // stopped, so that frame is ~16ms away.
+    //
+    // Unlike play() the canvas is deliberately *not* cleared: the Drawer is
+    // still running, so wiping it would throw away the punchcard's trailing
+    // history mid-flight for no reason — a stop/pause has to clear because
+    // nothing would repaint after it, an update does not.
+    this.panelTheme?.reset();
+    this.panelAccent?.reset();
+    this.notify({ error: null });
+    // Eval failures surface through onUpdateState's `evalError`, which is why
+    // this doesn't try to catch them: the pattern that is already playing
+    // keeps playing, and the error lands in the panel's error banner.
+    await this.editorInstance.evaluate();
   };
 
   stop = (): void => {

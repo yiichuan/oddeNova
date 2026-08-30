@@ -70,6 +70,7 @@ function renderCodePanel(props: Partial<Parameters<typeof CodePanel>[0]> = {}) {
     onMount: vi.fn(),
     onPlay: vi.fn(),
     onPause: vi.fn(),
+    onUpdate: vi.fn(),
   };
 
   const render = (overrides: Partial<Parameters<typeof CodePanel>[0]>) => {
@@ -233,7 +234,10 @@ describe('CodePanel editor focus reporting', () => {
     roots.push(root);
 
     const controlsLayer = container.querySelector('[data-testid="code-panel-controls-layer"]');
-    const playButton = controlsLayer?.querySelector<HTMLButtonElement>('button');
+    // By label, not by position: update now sits ahead of play in the bar.
+    const playButton = controlsLayer?.querySelector<HTMLButtonElement>(
+      `button[aria-label="${t('play')}"]`,
+    );
 
     expect(controlsLayer?.querySelectorAll('button')).toHaveLength(5);
     expect(playButton?.classList.contains('control-button-surface')).toBe(true);
@@ -300,6 +304,39 @@ describe('CodePanel editor focus reporting', () => {
     expect(pauseButton?.querySelector('.lucide-pause')).not.toBeNull();
     act(() => pauseButton?.click());
     expect(onPause).toHaveBeenCalledOnce();
+  });
+
+  it('offers update after play, only while an edit is outrunning the sound', () => {
+    installMatchMedia(false);
+    const onUpdate = vi.fn();
+    const { container, root, rerender } = renderCodePanel({ onUpdate });
+    roots.push(root);
+
+    const updateSelector = `button[aria-label="${t('updatePattern')}"]`;
+
+    // Nothing is playing: no running pattern to swap into.
+    expect(container.querySelector(updateSelector)).toBeNull();
+    // Still nothing playing, edit or not.
+    rerender({ isDirty: true });
+    expect(container.querySelector(updateSelector)).toBeNull();
+    // Playing what the buffer holds: the swap would put back the same pattern.
+    rerender({ isPlaying: true, isDirty: false });
+    expect(container.querySelector(updateSelector)).toBeNull();
+
+    rerender({ isPlaying: true, isDirty: true });
+    const transport = container.querySelector('[data-testid="code-panel-play-control"]');
+    const labels = [...(transport?.querySelectorAll('button') ?? [])]
+      .map((button) => button.getAttribute('aria-label'));
+    expect(labels).toEqual([t('pause'), t('updatePattern')]);
+
+    const updateButton = container.querySelector<HTMLButtonElement>(updateSelector);
+    expect(updateButton?.disabled).toBe(false);
+    act(() => updateButton?.click());
+    expect(onUpdate).toHaveBeenCalledOnce();
+
+    // The edit stops being pending the moment it is swapped in.
+    rerender({ isPlaying: true, isDirty: false });
+    expect(container.querySelector(updateSelector)).toBeNull();
   });
 
   it('seeks continuously and keeps the selected time while stopped', () => {
@@ -442,6 +479,32 @@ describe('CodePanel editor focus reporting', () => {
     rerender({ vizCollapsed: true });
     expect(container.querySelector(`button[aria-label="${t('expandViz')}"]`)).not.toBeNull();
     expect(container.querySelector(`button[aria-label="${t('collapseViz')}"]`)).toBeNull();
+  });
+
+  it('drops the visualizer toggle when the studio animation is switched off', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel({ vizEnabled: false, vizCollapsed: true });
+    roots.push(root);
+
+    const actions = container.querySelector('[data-testid="code-panel-right-actions"]');
+    const labels = [...(actions?.querySelectorAll('button') ?? [])]
+      .map((button) => button.getAttribute('aria-label'));
+
+    expect(labels).toEqual([t('mute'), t('share'), t('download')]);
+
+    // The capsule is re-cut for two buttons — 36px narrower, which is the
+    // toggle plus the gap that sat beside it — so the pair keeps the trio's
+    // spacing and the volume button slides right with the capsule's edge.
+    const capsule = actions?.querySelector('[data-testid="code-panel-share-export-capsule"]');
+    expect(capsule?.querySelectorAll('button')).toHaveLength(2);
+    expect(capsule?.classList.contains('w-[76px]')).toBe(true);
+    expect(capsule?.classList.contains('control-button-capsule-pair')).toBe(true);
+    expect(capsule?.classList.contains('w-28')).toBe(false);
+
+    // Collapsed, but with no pane to stand in for: the flakes stay still.
+    expect(
+      container.querySelector('[data-testid="code-panel-particle-field"]')?.getAttribute('data-active'),
+    ).toBe('false');
   });
 
   it('runs the particle layer only while the visualizer is collapsed', () => {

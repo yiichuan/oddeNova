@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useState } from 'react';
 import {
   resetPasswordForEmail,
   signInWithGoogle,
@@ -11,66 +11,10 @@ import {
 import { getAuthErrorMessageKey } from '../../lib/auth-error';
 import { t, zh } from '../../lib/i18n';
 import type { GoogleOAuthErrorKey } from '../../lib/google-oauth-return';
+import { XIcon } from '../icons';
+import AuthField from './AuthField';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
-
-function PasswordField({
-  label,
-  value,
-  onChange,
-  onKeyDown,
-  disabled,
-  placeholder,
-  autoFocus,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
-  disabled: boolean;
-  placeholder: string;
-  autoFocus?: boolean;
-}) {
-  const [show, setShow] = useState(false);
-  return (
-    <div>
-      <label className="text-xs text-text-secondary mb-1 block">{label}</label>
-      <div className="relative">
-        <input
-          type={show ? 'text' : 'password'}
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.currentTarget.value)}
-          onKeyDown={onKeyDown}
-          placeholder={placeholder}
-          className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 pr-9 outline-none border border-border focus:border-accent/50"
-          autoFocus={autoFocus}
-        />
-        <button
-          type="button"
-          onClick={() => setShow((v) => !v)}
-          disabled={disabled}
-          tabIndex={-1}
-          aria-label={show ? t('hidePassword') : t('showPassword')}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {show ? (
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-              <line x1="1" y1="1" x2="23" y2="23" />
-            </svg>
-          ) : (
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 interface AccountModalProps {
   user: AuthUser | null;
@@ -178,18 +122,26 @@ export default function AccountModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
-      <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
+      {/* Deeper at the foot than at the head: the top edge carries only the
+          close button, which is mostly its own empty hit area, while the last
+          row down here is a solid one that needs the room around it. */}
+      <div className="bg-conversation-surface border border-border rounded-2xl px-6 pt-6 pb-10 w-[420px] max-w-[90vw] shadow-2xl">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
             <h2 className="text-lg font-semibold text-text-primary">{t('account')}</h2>
             <p className="text-xs text-text-muted mt-1">{t('accountDesc')}</p>
           </div>
+          {/* Nudged out of the padding box by most of the button's own slack,
+              so the cross itself — not its 36px hit area — sits on the title's
+              left inset and on its line's centre. */}
           <button
             onClick={onClose}
             disabled={busy}
-            className="text-text-muted hover:text-text-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            title={t('close')}
+            aria-label={t('close')}
+            className="-mr-1.5 -mt-1 grid size-9 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-white/10 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           >
-            {t('close')}
+            <XIcon size={22} />
           </button>
         </div>
 
@@ -197,32 +149,37 @@ export default function AccountModal({
           <div className="text-sm text-red-300">{t('supabaseNotConfigured')}</div>
         ) : recoveringPassword ? (
           <div className="space-y-4">
-            <PasswordField
+            <AuthField
               label={t('newPassword')}
               value={password}
               onChange={setPassword}
               disabled={busy}
-              placeholder={t('newPasswordPlaceholder')}
+              secret
               autoFocus
             />
-            <PasswordField
+            <AuthField
               label={t('confirmNewPassword')}
               value={passwordConfirmation}
               onChange={setPasswordConfirmation}
               onKeyDown={(e) => e.key === 'Enter' && handlePasswordUpdate()}
               disabled={busy}
-              placeholder={t('confirmNewPasswordPlaceholder')}
+              secret
             />
 
             {error && <div className="text-xs text-red-300">{error}</div>}
 
-            <button
-              onClick={handlePasswordUpdate}
-              disabled={busy || !password || !passwordConfirmation}
-              className="w-full py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {busy ? t('loading') : t('updatePassword')}
-            </button>
+            {/* The action stands further off than the fields stand from each
+                other — padding rather than a margin, so the extra room survives
+                whatever the stack's own spacing turns out to be. */}
+            <div className="pt-3">
+              <button
+                onClick={handlePasswordUpdate}
+                disabled={busy || !password || !passwordConfirmation}
+                className="w-full py-2.5 text-sm text-white bg-[#4D4D4D] rounded-lg hover:bg-[#5C5C5C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {busy ? t('loading') : t('updatePassword')}
+              </button>
+            </div>
           </div>
         ) : user ? (
           <div className="space-y-5">
@@ -231,20 +188,22 @@ export default function AccountModal({
               <div className="text-sm text-text-primary break-all">{user.email || user.id}</div>
             </div>
             {error && <div className="text-xs text-red-300">{error}</div>}
-            <button
-              onClick={handleSignOut}
-              disabled={busy}
-              className="w-full py-2.5 text-sm text-white bg-bg-tertiary border border-border rounded-lg hover:border-accent/50 transition-colors disabled:opacity-40"
-            >
-              {t('signOut')}
-            </button>
+            <div className="pt-3">
+              <button
+                onClick={handleSignOut}
+                disabled={busy}
+                className="w-full py-2.5 text-sm text-white bg-white/[0.05] border border-[#2E2E2E] rounded-lg hover:bg-white/[0.09] hover:border-[#4A4A4A] transition-colors disabled:opacity-40"
+              >
+                {t('signOut')}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
             <button
               onClick={handleGoogleSignIn}
               disabled={busy}
-              className="w-full py-2.5 px-4 text-sm font-medium text-text-primary bg-white/5 border border-border rounded-lg hover:bg-white/10 hover:border-white/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
+              className="w-full py-2.5 px-4 text-sm font-medium text-text-primary bg-white/[0.05] border border-[#2E2E2E] rounded-lg hover:bg-white/[0.09] hover:border-[#4A4A4A] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
             >
               <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4 shrink-0">
                 <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.55h3.24c1.9-1.75 2.98-4.33 2.98-7.42Z" />
@@ -255,55 +214,56 @@ export default function AccountModal({
               {busy ? t('loading') : t('continueWithGoogle')}
             </button>
 
-            <div className="flex items-center gap-3 text-[11px] text-text-muted">
-              <span className="h-px flex-1 bg-border" />
+            <div className="flex items-center gap-3 py-3 text-[11px] text-text-muted">
+              <span className="h-px flex-1 bg-[#2E2E2E]" />
               <span>{t('orUseEmail')}</span>
-              <span className="h-px flex-1 bg-border" />
+              <span className="h-px flex-1 bg-[#2E2E2E]" />
             </div>
 
-            <div>
-              <label className="text-xs text-text-secondary mb-1 block">{t('email')}</label>
-              <input
-                type="email"
-                value={email}
-                disabled={busy}
-                onChange={(e) => setEmail(e.currentTarget.value)}
-                placeholder={t('emailPlaceholder')}
-                className="w-full bg-bg-primary text-text-primary text-base rounded-lg px-3 py-2.5 outline-none border border-border focus:border-accent/50"
-                autoFocus
-              />
-            </div>
+            <AuthField
+              label={t('email')}
+              value={email}
+              onChange={setEmail}
+              onKeyDown={(e) => e.key === 'Enter' && submit()}
+              disabled={busy}
+              autoFocus
+            />
             {mode !== 'reset' && (
-              <PasswordField
+              <AuthField
                 label={t('password')}
                 value={password}
                 onChange={setPassword}
                 onKeyDown={(e) => e.key === 'Enter' && submit()}
                 disabled={busy}
-                placeholder={t('passwordPlaceholder')}
+                secret
               />
             )}
             {mode === 'sign-up' && (
-              <PasswordField
+              <AuthField
                 label={t('confirmPassword')}
                 value={passwordConfirmation}
                 onChange={setPasswordConfirmation}
                 onKeyDown={(e) => e.key === 'Enter' && submit()}
                 disabled={busy}
-                placeholder={t('confirmPasswordPlaceholder')}
+                secret
               />
             )}
 
             {message && <div className="text-xs text-green-300">{message}</div>}
             {error && <div className="text-xs text-red-300">{error}</div>}
 
-            <button
-              onClick={submit}
-              disabled={busy || !email.trim() || (mode !== 'reset' && !password) || (mode === 'sign-up' && !passwordConfirmation)}
-              className="w-full py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {busy ? t('loading') : primaryLabel}
-            </button>
+            {/* The submit button and the two links under it travel together —
+                the padding goes above the pair, so the gap that opens is
+                between the form and everything you do with it. */}
+            <div className="pt-7">
+              <button
+                onClick={submit}
+                disabled={busy || !email.trim() || (mode !== 'reset' && !password) || (mode === 'sign-up' && !passwordConfirmation)}
+                className="w-full py-2.5 text-sm text-white bg-[#4D4D4D] rounded-lg hover:bg-[#5C5C5C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {busy ? t('loading') : primaryLabel}
+              </button>
+            </div>
 
             <div className="flex items-center justify-between text-xs">
               <button

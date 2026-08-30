@@ -159,10 +159,10 @@ vi.mock('../lib/session-storage', () => ({
 vi.mock('../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
 vi.mock('../services/llm-config', () => ({ hasApiKeyConfigured: () => true }));
 vi.mock('../services/llm', () => ({ resetClient: vi.fn() }));
-vi.mock('../lib/community-invite', () => ({
-  hasSeenCommunityInvite: () => true,
-  markCommunityInviteSeen: vi.fn(),
-  shouldAutoOpenApiKeyModal: () => false,
+vi.mock('../lib/welcome-modal', () => ({
+  hasSeenWelcome: () => true,
+  markWelcomeSeen: vi.fn(),
+  shouldAutoOpenWelcomeModal: () => false,
 }));
 
 vi.mock('../components/studio/CodePanel', () => ({
@@ -204,6 +204,7 @@ vi.mock('../components/overlays/AccountModal', () => ({
     return <div data-testid="account-modal" />;
   },
 }));
+vi.mock('../components/overlays/WelcomeModal', () => ({ default: () => null }));
 vi.mock('../components/overlays/PersonaModal', () => ({ default: () => null }));
 vi.mock('../components/overlays/OddeNovaImportNotice', () => ({ default: () => null }));
 

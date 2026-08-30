@@ -7,6 +7,7 @@ import {
   MutedVolumeIcon,
   PauseIcon,
   PlayIcon,
+  UpdateIcon,
   VolumeIcon,
 } from '../icons';
 import { t } from '../../lib/i18n';
@@ -55,7 +56,24 @@ interface CodePanelProps {
   onMount: (el: HTMLDivElement) => void;
   onPlay: () => void;
   onPause: () => void;
+  /**
+   * The editor holds an edit the sounding pattern hasn't heard yet
+   * (`StrudelState.isDirty`). Together with `isPlaying` this is what puts the
+   * update button on screen — see the footer.
+   */
+  isDirty?: boolean;
+  /**
+   * Re-evaluates the edited code into the running transport, without stopping
+   * it. Only reachable while that swap would change something.
+   */
+  onUpdate: () => void;
   onEditorFocusChange?: (focused: boolean) => void;
+  /**
+   * Whether the studio shows a visualizer pane at all — Settings → Appearance
+   * can switch it off. Off, there is nothing to collapse or stand in for: the
+   * toggle leaves the control bar and the particle field stays still.
+   */
+  vizEnabled?: boolean;
   /** Whether the visualizer pane below this panel is currently collapsed. */
   vizCollapsed?: boolean;
   /** Collapses/expands that pane; the footer then sits at the page bottom. */
@@ -319,9 +337,12 @@ export default function CodePanel({
   onResetExportState,
   bpm,
   onMount,
+  isDirty = false,
   onPlay,
   onPause,
+  onUpdate,
   onEditorFocusChange,
+  vizEnabled = true,
   vizCollapsed = false,
   onToggleViz,
   syncStatus,
@@ -338,6 +359,7 @@ export default function CodePanel({
   const [volumeAnchor, setVolumeAnchor] = useState<{ right: number; bottom: number } | null>(null);
   const [exportAnchor, setExportAnchor] = useState<{ right: number; top: number } | null>(null);
   const [exportHoverAnchor, setExportHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+  const [updateHoverAnchor, setUpdateHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
   const [vizHoverAnchor, setVizHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
 
   const isMobile = useIsMobile();
@@ -520,6 +542,8 @@ export default function CodePanel({
   // centred on the control, sitting just above it.
   const hasPlayableCode = code.trim().length > 0;
   const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
+  // Only a playing piece with an unheard edit has anything to update into.
+  const canUpdate = isPlaying && isDirty;
 
   return (
     <div ref={panelRef} className="h-full flex flex-col overflow-hidden rounded-region">
@@ -529,7 +553,7 @@ export default function CodePanel({
       `}</style>
 
       {/* StrudelMirror mounts here. `isolate` keeps CodeMirror's own layering
-          scale — the gutter at 200, the bottom fade at 240, the scrollbar mask
+          scale — the gutter at 200, the top and bottom fades at 240, the scrollbar mask
           at 250 — inside this box. Those numbers are chosen against each other,
           not against the app, and without a stacking context of their own they
           escape into the desktop layer stack and paint over the modals and
@@ -541,13 +565,16 @@ export default function CodePanel({
         <div
           ref={containerRef}
           data-testid="code-panel-editor-root"
-          className="h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
+          className="code-editor-fade-top h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
         />
 
         {error && (
           <div
             data-testid="code-panel-runtime-error"
-            className="absolute right-[8px] top-[8px] z-20 w-fit rounded-[4px] border border-[#E01A1A] bg-[#E01A1A]/10 p-2.5 text-xs text-[#E01A1A] font-mono whitespace-pre-wrap wrap-break-word"
+            // Above CodeMirror's whole scale, top fade included: the banner
+            // lands in exactly the strip the top mask covers, and an error is
+            // never the thing that should be washed out.
+            className="absolute right-[8px] top-[8px] z-[260] w-fit rounded-[4px] border border-[#E01A1A] bg-[#E01A1A]/10 p-2.5 text-xs text-[#E01A1A] font-mono whitespace-pre-wrap wrap-break-word"
             style={{ maxWidth: 'min(420px, calc(100% - 24px))' }}
           >
             {error}
@@ -621,7 +648,7 @@ export default function CodePanel({
               on the beat while a piece plays, more of them the louder it
               sounds. */}
           <ControlBarParticles
-            active={vizCollapsed}
+            active={vizEnabled && vizCollapsed}
             isPlaying={isPlaying}
             bpm={bpm}
             sampleSpectrum={strudelService.sampleAudioSpectrum}
@@ -638,7 +665,7 @@ export default function CodePanel({
           {/* Playback position is anchored to the controls boundary, not CodeMirror's gutter. */}
           <div
             data-testid="code-panel-play-control"
-            className="relative z-10 flex items-center justify-center py-[6px]"
+            className="code-panel-transport relative z-10 flex items-center justify-center py-[6px]"
             style={{ marginLeft: 'var(--code-panel-play-button-offset)' }}
           >
             <button
@@ -649,6 +676,42 @@ export default function CodePanel({
             >
               {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={18} />}
             </button>
+
+            {/* Live update: re-evaluates the edited code into the pattern that
+                is already running, so a change lands on the next cycle instead
+                of costing a pause/replay.
+
+                Present only while it would do something — a piece is sounding
+                *and* the editor holds an edit that pattern hasn't heard. Both
+                halves matter: stopped, there is nothing to swap into and
+                starting is the play button's job; unedited, the swap would put
+                back the pattern already playing. So this is a button that
+                shows up when the edit does, rather than a permanently greyed
+                one. It sits after play so its coming and going leaves the
+                transport where it was and is absorbed by the progress bar. */}
+            {canUpdate && (
+              <div
+                onMouseEnter={(event) => setUpdateHoverAnchor(anchorAbove(event.currentTarget))}
+                onMouseLeave={() => setUpdateHoverAnchor(null)}
+                onFocusCapture={(event) => setUpdateHoverAnchor(anchorAbove(event.currentTarget))}
+                onBlurCapture={() => setUpdateHoverAnchor(null)}
+                className="code-panel-update-enter flex items-center"
+              >
+                <button
+                  type="button"
+                  onClick={onUpdate}
+                  className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
+                  aria-label={t('updatePattern')}
+                >
+                  <UpdateIcon size={16} />
+                </button>
+                <ControlHoverLabel
+                  anchor={updateHoverAnchor}
+                  label={t('updatePattern')}
+                  testId="code-panel-update-hover-label"
+                />
+              </div>
+            )}
           </div>
           {/* Keyed on the code so a new script remounts with a fresh playhead;
               deliberately not on the play state, so a pause keeps its position. */}
@@ -677,9 +740,18 @@ export default function CodePanel({
               {volume > 0 ? <VolumeIcon size={18} /> : <MutedVolumeIcon size={18} />}
             </button>
 
+            {/* Two buttons instead of three when the studio animation is off:
+                the capsule loses exactly the toggle's 32px plus the 4px gap
+                that `justify-between` held either side of it, so the pair
+                keeps the spacing the trio had rather than drifting apart.
+                Narrowing it also carries the volume button — and with it the
+                popover, which is measured off the button — 36px to the right,
+                since the group is anchored to the bar's right edge. */}
             <div
               data-testid="code-panel-share-export-capsule"
-              className="control-button-surface control-button-capsule flex h-8 w-28 items-center justify-between px-1 rounded-full"
+              className={`control-button-surface flex h-8 items-center justify-between px-1 rounded-full ${
+                vizEnabled ? 'control-button-capsule w-28' : 'control-button-capsule-pair w-[76px]'
+              }`}
             >
               <ShareButton
                 session={session}
@@ -721,28 +793,30 @@ export default function CodePanel({
                 />
               </div>
 
-              <div
-                className="flex h-8 w-8 items-center justify-center"
-                onMouseEnter={(event) => setVizHoverAnchor(anchorAbove(event.currentTarget))}
-                onMouseLeave={() => setVizHoverAnchor(null)}
-                onFocusCapture={(event) => setVizHoverAnchor(anchorAbove(event.currentTarget))}
-                onBlurCapture={() => setVizHoverAnchor(null)}
-              >
-                <button
-                  type="button"
-                  onClick={onToggleViz}
-                  className="flex h-8 w-8 cursor-pointer items-center justify-center text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
-                  aria-label={vizCollapsed ? t('expandViz') : t('collapseViz')}
-                  aria-pressed={vizCollapsed}
+              {vizEnabled && (
+                <div
+                  className="flex h-8 w-8 items-center justify-center"
+                  onMouseEnter={(event) => setVizHoverAnchor(anchorAbove(event.currentTarget))}
+                  onMouseLeave={() => setVizHoverAnchor(null)}
+                  onFocusCapture={(event) => setVizHoverAnchor(anchorAbove(event.currentTarget))}
+                  onBlurCapture={() => setVizHoverAnchor(null)}
                 >
-                  {vizCollapsed ? <MaximizeIcon size={16} /> : <MinimizeIcon size={16} />}
-                </button>
-                <ControlHoverLabel
-                  anchor={vizHoverAnchor}
-                  label={vizCollapsed ? t('expandViz') : t('collapseViz')}
-                  testId="code-panel-viz-toggle-hover-label"
-                />
-              </div>
+                  <button
+                    type="button"
+                    onClick={onToggleViz}
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
+                    aria-label={vizCollapsed ? t('expandViz') : t('collapseViz')}
+                    aria-pressed={vizCollapsed}
+                  >
+                    {vizCollapsed ? <MaximizeIcon size={16} /> : <MinimizeIcon size={16} />}
+                  </button>
+                  <ControlHoverLabel
+                    anchor={vizHoverAnchor}
+                    label={vizCollapsed ? t('expandViz') : t('collapseViz')}
+                    testId="code-panel-viz-toggle-hover-label"
+                  />
+                </div>
+              )}
 
               <ExportPopover
                 open={exportOpen}

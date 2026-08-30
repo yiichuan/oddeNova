@@ -53,7 +53,9 @@ describe('PrimaryNav', () => {
       .map((button) => button.getAttribute('aria-label'));
 
     expect(labelsIn('primary-nav-top')).toEqual([t('navHome'), t('navFavorites'), t('navFeatured')]);
-    expect(labelsIn('primary-nav-bottom')).toEqual([t('navMore'), t('navVinylLab'), t('navSettings'), t('navAccount')]);
+    expect(labelsIn('primary-nav-bottom')).toEqual([
+      t('navMore'), t('navSettings'), t('navAccount'),
+    ]);
 
   });
 
@@ -113,9 +115,6 @@ describe('PrimaryNav', () => {
     expect(menu?.dataset.open).toBe('true');
     expect(onSelect).not.toHaveBeenCalled();
 
-    const vinylLab = menu?.querySelector<HTMLButtonElement>(`button[aria-label="${t('navVinylLab')}"]`);
-    expect(vinylLab?.getAttribute('role')).toBe('menuitem');
-
     const learn = menu?.querySelector<HTMLAnchorElement>(`a[href="${LEARN_URL}"]`);
     const github = menu?.querySelector<HTMLAnchorElement>(`a[href="${GITHUB_URL}"]`);
     expect(learn?.getAttribute('aria-label')).toBe(t('navLearnStrudel'));
@@ -127,15 +126,6 @@ describe('PrimaryNav', () => {
 
     act(() => more?.click());
     expect(more?.getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('selects the Three.js vinyl lab from More', () => {
-    const { container, onSelect } = renderPrimaryNav();
-    const more = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navMore')}"]`);
-    act(() => more?.click());
-    const lab = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navVinylLab')}"]`);
-    act(() => lab?.click());
-    expect(onSelect).toHaveBeenCalledWith('vinylLab');
   });
 
   it('shows collapsed button labels directly to the right after a short hover delay', () => {

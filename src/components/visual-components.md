@@ -31,8 +31,6 @@ components/
 │   ├── FeaturedCard        单个作品卡片（方形封面 / 悬停播放键 / 双署名）
 │   │   └── FeaturedTiltSurface 中央文字与命中层的 3D 倾斜同步
 │   ├── FeaturedWebglLightField 精选轮播的石墨银 WebGL 背景光场
-│   ├── VinylLabPage        Three.js 唱片包装实验页（展示、控制与诊断）
-│   └── VinylPackageScene   单一 WebGL 实体包装渲染器
 │   ├── FeaturedDetail      详情视图（返回 / 封面 / 署名 / 代码 / 音乐说明）
 │   ├── FeaturedGlow        详情页背景：取封面主色调的弥散渐变（+ featured-accent）
 │   ├── FeaturedPlayerBar   底部悬浮播放栏

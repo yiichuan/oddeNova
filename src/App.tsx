@@ -31,18 +31,18 @@ import HistoryPanel from './components/conversation/HistoryPanel';
 import ChatInput from './components/conversation/ChatInput';
 import TopActionBar from './components/studio/TopActionBar';
 import AccountModal from './components/overlays/AccountModal';
+import WelcomeModal from './components/overlays/WelcomeModal';
 import OddeNovaImportNotice from './components/overlays/OddeNovaImportNotice';
 import FavoriteActionDialog, { type FavoriteActionKind } from './components/overlays/FavoriteActionDialog';
 import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
 import FeaturedPage from './components/featured/FeaturedPage';
 import FavoritesPage from './components/favorites/FavoritesPage';
-import VinylLabPage from './components/featured/VinylLabPage';
 import SettingsSidebar, { type SettingsSection } from './components/settings/SettingsSidebar';
 import ModelSettingsPanel from './components/settings/ModelSettingsPanel';
 import AppearanceSettingsPanel from './components/settings/AppearanceSettingsPanel';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
-import { hasSeenCommunityInvite, markCommunityInviteSeen, shouldAutoOpenApiKeyModal } from './lib/community-invite';
+import { hasSeenWelcome, markWelcomeSeen, shouldAutoOpenWelcomeModal } from './lib/welcome-modal';
 import type { AgentEntryPoint } from './lib/analytics';
 import { FEATURED_PIECES, findFeaturedPiece, type FeaturedPiece } from './lib/featured-pieces';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
@@ -50,7 +50,11 @@ import { useFeaturedPreview } from './hooks/useFeaturedPreview';
 import { featuredPlayer } from './services/featured-player';
 import { featuredSessionDraft } from './lib/featured-session';
 import { useModelSettingsDraft } from './hooks/useModelSettingsDraft';
-import { useAnimationPreference, useThemePreference } from './hooks/useAppearance';
+import {
+  useAnimationPreference,
+  useStudioAnimationVisible,
+  useThemePreference,
+} from './hooks/useAppearance';
 import { ANIMATION_LABEL_KEYS, THEME_LABEL_KEYS } from './lib/appearance-preferences';
 import { providerLabel } from './lib/model-settings';
 import { useAuth } from './hooks/useAuth';
@@ -67,7 +71,7 @@ import { type Session } from './hooks/useSessions';
  * Destinations that take the whole content area, leaving no room for the
  * session column or the divider beside it.
  */
-const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites', 'vinylLab']);
+const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites']);
 
 /**
  * The move a conversation has just made, for as long as the dialog reporting
@@ -160,6 +164,7 @@ export default function App() {
   const modelSettings = useModelSettingsDraft(resetClient);
   const themePreference = useThemePreference();
   const animationPreference = useAnimationPreference();
+  const studioAnimationVisible = useStudioAnimationVisible();
   const [accountOpen, setAccountOpen] = useState(false);
   const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
   const [guestImportError, setGuestImportError] = useState('');
@@ -266,7 +271,12 @@ export default function App() {
   // pause action would become unreachable.
   const mobileTransportDisabled = !strudel.isPlaying && (!strudel.engineReady || !strudel.code);
 
-  const [apiKeyModalState, setApiKeyModalState] = useState(() => {
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
+  // Read once, before the auth session has had a chance to resolve: this is the
+  // very first paint of a first visit, and the flag is what decides it. Waiting
+  // for `auth.loading` would let the studio show through first and then have the
+  // window drop on top of it.
+  const [welcomeOpen, setWelcomeOpen] = useState(() => {
     let isTopWindow = true;
     try {
       isTopWindow = window.self === window.top;
@@ -274,35 +284,35 @@ export default function App() {
       // Cross-origin frame access can throw; treat it as embedded and stay quiet.
       isTopWindow = false;
     }
-    const shouldOpen = shouldAutoOpenApiKeyModal({
-      isTopWindow,
-      hasApiKeyConfigured: hasApiKeyConfigured(),
-      hasSeenCommunityInvite: hasSeenCommunityInvite(),
-    });
-    // autoOpened distinguishes first-entry/required prompts from manual settings opens,
-    // so closing the Settings button path does not mark the invite as seen.
-    return { open: shouldOpen, autoOpened: shouldOpen };
+    return shouldAutoOpenWelcomeModal({ isTopWindow, hasSeenWelcome: hasSeenWelcome() });
   });
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
 
   const closeApiKeyModal = useCallback(() => {
-    if (apiKeyModalState.autoOpened) {
-      // Dismissal counts as exposure; avoid showing the QR invite again next visit.
-      markCommunityInviteSeen();
-    }
-    setApiKeyModalState({ open: false, autoOpened: false });
-  }, [apiKeyModalState.autoOpened]);
+    setApiKeyModalOpen(false);
+  }, []);
+
+  const closeWelcomeModal = useCallback(() => setWelcomeOpen(false), []);
 
   const openSettings = useCallback(() => {
-    setApiKeyModalState({ open: true, autoOpened: false });
+    setApiKeyModalOpen(true);
   }, []);
+
+  // Seen means shown, not dismissed. Continuing with Google hands the page over
+  // to the provider and returns through a reload, so a flag written on the way
+  // out is a flag that never gets written.
+  useEffect(() => {
+    if (welcomeOpen) markWelcomeSeen();
+  }, [welcomeOpen]);
 
   // Each settings entry carries the value it is currently set to, so the column
   // still answers "what am I on?" without opening the section.
   const settingsHints = useMemo(() => ({
     model: providerLabel(modelSettings.activeProvider),
-    appearance: `${t(THEME_LABEL_KEYS[themePreference])} · ${t(ANIMATION_LABEL_KEYS[animationPreference])}`,
-  }), [animationPreference, modelSettings.activeProvider, themePreference]);
+    appearance: `${t(THEME_LABEL_KEYS[themePreference])} · ${
+      studioAnimationVisible ? t(ANIMATION_LABEL_KEYS[animationPreference]) : t('studioAnimationOff')
+    }`,
+  }), [animationPreference, modelSettings.activeProvider, studioAnimationVisible, themePreference]);
 
   // Auditioning a featured piece borrows the studio's engine; `borrowed` is
   // what tells the rest of this file that the code in the editor is on loan
@@ -418,6 +428,12 @@ export default function App() {
 
   const accountOverlays = (
     <>
+      {/* The first-entry window stands down for anyone the session already
+          knows, and for a failed Google return — that one has its own window to
+          report itself in. */}
+      {welcomeOpen && !auth.oauthErrorKey && !auth.user && (
+        <WelcomeModal configured={auth.configured} onClose={closeWelcomeModal} />
+      )}
       {(accountOpen || auth.oauthErrorKey) && (
         <AccountModal
           user={auth.user}
@@ -680,6 +696,16 @@ export default function App() {
     await strudel.play();
   }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
 
+  // Live update: the edit is persisted the same way a play is, then handed to
+  // the running transport instead of restarting it.
+  const handleUpdate = useCallback(async () => {
+    if (sessions.currentId) {
+      await setManualCode(strudel.code, sessions.currentId);
+      await flushCloudSaves(sessions.currentId);
+    }
+    await strudel.update();
+  }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
+
   const importSession = sessions.importSession;
   const playFeatured = featuredPreview.play;
   // Picking a tile is what parks the player bar on it, so the bar always shows
@@ -870,7 +896,7 @@ export default function App() {
 
   const responsiveLayout = isMobile ? (
       <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
-        {apiKeyModalState.open && (
+        {apiKeyModalOpen && (
           <ApiKeyModal
             onClose={closeApiKeyModal}
             onSaved={resetClient}
@@ -984,6 +1010,8 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={handlePlay}
                 onPause={strudel.pause}
+                isDirty={strudel.isDirty}
+                onUpdate={() => { void handleUpdate(); }}
                 onEditorFocusChange={handleCodeFocusChange}
                 syncStatus={visibleSyncStatus}
                 showSyncStatus={showSessionSyncStatus}
@@ -1123,7 +1151,7 @@ export default function App() {
       className="relative z-0 flex h-full w-full overflow-hidden bg-bg-primary p-region"
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
     >
-      {apiKeyModalState.open && (
+      {apiKeyModalOpen && (
         <ApiKeyModal
           onClose={closeApiKeyModal}
           onSaved={resetClient}
@@ -1222,6 +1250,9 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={handlePlay}
                 onPause={strudel.pause}
+                isDirty={strudel.isDirty}
+                onUpdate={() => { void handleUpdate(); }}
+                vizEnabled={studioAnimationVisible}
                 vizCollapsed={vizCollapsed}
                 onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
@@ -1235,29 +1266,36 @@ export default function App() {
                 clipped to zero height it also stops being grabbable.
 
                 The transition is dropped mid-drag: there, every pointer move
-                sets a new height, and easing would trail the cursor. */}
-            <div
-              data-testid="viz-pane"
-              className={`flex shrink-0 flex-col overflow-hidden ${
-                isDragging === 'v'
-                  ? ''
-                  : 'transition-[height] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none'
-              }`}
-              style={{ height: vizCollapsed ? 0 : vizHeight + VIZ_DIVIDER_HEIGHT }}
-            >
-              <div
-                {...vDragHandlers}
-                data-resize-handle="vertical"
-                className="h-divider shrink-0"
-                style={{ cursor: 'row-resize' }}
-              />
+                sets a new height, and easing would trail the cursor.
 
-              {/* Always mounted, even collapsed: remounting rebuilds the
-                  galaxy from scratch, so it would come back a different one. */}
-              <div className="min-h-0 flex-1">
-                <VizPlaceholder isPlaying={strudel.isPlaying} />
+                Unmounted outright — not collapsed — when Settings → Appearance
+                turns the studio animation off: collapsing keeps the iframe
+                alive to preserve the one galaxy it generated, and that is only
+                worth paying for while the pane is something you can reopen. */}
+            {studioAnimationVisible && (
+              <div
+                data-testid="viz-pane"
+                className={`flex shrink-0 flex-col overflow-hidden ${
+                  isDragging === 'v'
+                    ? ''
+                    : 'transition-[height] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none'
+                }`}
+                style={{ height: vizCollapsed ? 0 : vizHeight + VIZ_DIVIDER_HEIGHT }}
+              >
+                <div
+                  {...vDragHandlers}
+                  data-resize-handle="vertical"
+                  className="h-divider shrink-0"
+                  style={{ cursor: 'row-resize' }}
+                />
+
+                {/* Always mounted, even collapsed: remounting rebuilds the
+                    galaxy from scratch, so it would come back a different one. */}
+                <div className="min-h-0 flex-1">
+                  <VizPlaceholder isPlaying={strudel.isPlaying} />
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <div className={primaryNavItem === 'featured' ? 'flex h-full min-h-0' : 'hidden'}>
             <FeaturedPage
@@ -1290,9 +1328,6 @@ export default function App() {
               onDelete={handleDeleteFavorite}
               onOpenInStudio={handleOpenFavoriteInStudio}
             />
-          </div>
-          <div className={primaryNavItem === 'vinylLab' ? 'flex h-full min-h-0' : 'hidden'}>
-            <VinylLabPage piece={FEATURED_PIECES[0]!} />
           </div>
           <div className={primaryNavItem === 'settings' ? 'flex h-full min-h-0' : 'hidden'}>
             {settingsSection === 'model' ? (
