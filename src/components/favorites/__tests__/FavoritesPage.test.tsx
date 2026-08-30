@@ -610,11 +610,10 @@ describe('FavoritesPage', () => {
     act(() => action('play').click());
     expect(onPlayCode).toHaveBeenCalledWith(CONVERSATIONS[0].turns[3].code);
 
+    // The script and nothing else: the studio is handed code to carry on from,
+    // not the conversation that wrote it.
     act(() => action('open-in-studio').click());
-    expect(onOpenInStudio).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'session-first' }),
-      's("bd*4, hh*8")',
-    );
+    expect(onOpenInStudio).toHaveBeenCalledWith('s("bd*4, hh*8")');
   });
 
   it('turns the script\u2019s play into a stop while that take is sounding', () => {

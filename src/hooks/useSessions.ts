@@ -183,7 +183,12 @@ export function newMessageId(): string {
   return `msg-${Date.now()}-${++messageId}`;
 }
 
-function makeGreetingMessage(): ChatMessage {
+/**
+ * The opening line a session starts on. Exported for the callers that build a
+ * session to hand to `importSession` and want the studio's own opening rather
+ * than a line of their own — see `handleOpenFavoriteInStudio`.
+ */
+export function makeGreetingMessage(): ChatMessage {
   return {
     id: newMessageId(),
     role: 'assistant',

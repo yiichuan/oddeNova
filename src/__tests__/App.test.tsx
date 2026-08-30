@@ -75,7 +75,6 @@ const mocks = vi.hoisted(() => ({
     create: vi.fn(),
     remove: vi.fn(async () => undefined),
   },
-  continueCloudFavorite: vi.fn(),
   deleteCloudSession: vi.fn(),
   cloudLibrary: {
     history: {
@@ -145,6 +144,15 @@ vi.mock('../hooks/useSessions', () => ({
   // The featured session draft mints message ids through the store's own
   // helper rather than growing a second id convention.
   newMessageId: () => `msg-${Math.random()}`,
+  // What a favorite opened in the studio arrives on: the code, and the
+  // studio's own opening line above it.
+  makeGreetingMessage: () => ({
+    id: `msg-${Math.random()}`,
+    role: 'assistant',
+    content: 'greeting',
+    timestamp: 1,
+    isGreeting: true,
+  }),
 }));
 
 vi.mock('../hooks/useFavorites', () => ({
@@ -158,10 +166,6 @@ vi.mock('../hooks/useCloudSessionLibrary', () => ({
 vi.mock('../services/cloud-session-repository', () => ({
   deleteCloudSession: mocks.deleteCloudSession,
   saveCloudSession: vi.fn(),
-}));
-
-vi.mock('../services/favorite-repository', () => ({
-  continueCloudFavorite: mocks.continueCloudFavorite,
 }));
 
 vi.mock('../hooks/useSuggestions', () => ({ useSuggestions: () => ({ suggestions: [] }) }));
@@ -208,10 +212,10 @@ vi.mock('../lib/session-storage', () => ({
 vi.mock('../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
 vi.mock('../services/llm-config', () => ({ hasApiKeyConfigured: () => true }));
 vi.mock('../services/llm', () => ({ resetClient: vi.fn() }));
-vi.mock('../lib/community-invite', () => ({
-  hasSeenCommunityInvite: () => true,
-  markCommunityInviteSeen: vi.fn(),
-  shouldAutoOpenApiKeyModal: () => false,
+vi.mock('../lib/welcome-modal', () => ({
+  hasSeenWelcome: () => true,
+  markWelcomeSeen: vi.fn(),
+  shouldAutoOpenWelcomeModal: () => false,
 }));
 
 vi.mock('../components/studio/CodePanel', () => ({
@@ -253,6 +257,7 @@ vi.mock('../components/overlays/AccountModal', () => ({
     return <div data-testid="account-modal" />;
   },
 }));
+vi.mock('../components/overlays/WelcomeModal', () => ({ default: () => null }));
 vi.mock('../components/overlays/PersonaModal', () => ({ default: () => null }));
 vi.mock('../components/overlays/OddeNovaImportNotice', () => ({ default: () => null }));
 
@@ -1023,7 +1028,7 @@ describe('App session sync boundaries', () => {
     expect(mocks.sessions.deleteSession).toHaveBeenCalledWith('s-1');
   });
 
-  it('continues a favorite through the backend before opening the selected take in Studio', async () => {
+  it('opens only the selected favorite script in a new Studio session', async () => {
     mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
     const favorite = {
       id: 'favorite-1',
@@ -1034,14 +1039,6 @@ describe('App session sync boundaries', () => {
       turns: [{ id: 'a-1', role: 'assistant' as const, text: '完成', code: 's("hh")' }],
       messages: [{ id: 'a-1', role: 'assistant' as const, content: '完成', code: 's("hh")', timestamp: 1 }],
       code: 's("bd")',
-    };
-    const continued = {
-      id: '00000000-0000-4000-8000-000000000003',
-      title: 'Session',
-      code: 's("bd")',
-      messages: favorite.messages,
-      createdAt: 200,
-      updatedAt: 200,
     };
     mocks.favorites.favorites = [favorite];
     mocks.favorites.sourceSessionIds = new Set(['s-1']);
@@ -1056,7 +1053,6 @@ describe('App session sync boundaries', () => {
         createdAt: 1, updatedAt: 1, favoritedAt: 100,
       },
     });
-    mocks.continueCloudFavorite.mockResolvedValueOnce(continued);
     mocks.isMobile = false;
     await renderApp();
 
@@ -1075,10 +1071,14 @@ describe('App session sync boundaries', () => {
     expect(open).not.toBeNull();
     await act(async () => { open?.click(); });
 
-    expect(mocks.continueCloudFavorite).toHaveBeenCalledWith('s-1', 's("hh")', 'user-1');
     expect(mocks.sessions.importSession).toHaveBeenCalledWith({
-      ...continued,
+      title: t('newSessionTitle'),
       code: 's("hh")',
+      messages: [expect.objectContaining({
+        role: 'assistant',
+        content: 'greeting',
+        isGreeting: true,
+      })],
     });
   });
 

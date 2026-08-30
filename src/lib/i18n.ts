@@ -32,6 +32,7 @@ const S: Record<string, readonly [string, string]> = {
   sessionDetailNetworkError: ['会话详情加载失败，请重试', 'Could not load the session. Please try again'],
   loadMoreFailed: ['加载更多失败，请重试', 'Could not load more. Please try again'],
   play:         ['播放', 'Play'],
+  updatePattern: ['更新', 'Update'],
   playbackProgress: ['播放进度', 'Playback progress'],
   volume:       ['音量', 'Volume'],
   mute:         ['静音', 'Mute'],
@@ -45,7 +46,6 @@ const S: Record<string, readonly [string, string]> = {
   navFeatured:   ['精选', 'Featured'],
   navFavorites:  ['收藏', 'Favorites'],
   navMore:       ['更多', 'More'],
-  navVinylLab:   ['Three.js 唱片实验', 'Three.js Vinyl Lab'],
   navLearnStrudel: ['学习 Strudel', 'Learn Strudel'],
   navSettings:   ['设置', 'Settings'],
   navAccount:    ['账号', 'Account'],
@@ -53,22 +53,6 @@ const S: Record<string, readonly [string, string]> = {
   collapseNavigation: ['收起导航栏', 'Collapse navigation'],
   expandNavPages:     ['展开页面菜单', 'Show pages'],
   collapseNavPages:   ['收起页面菜单', 'Hide pages'],
-
-  // Three.js vinyl lab
-  vinylLabTitle: ['唱片包装实验', 'Vinyl package study'],
-  vinylLabSubtitle: ['360 的实体包装与材质测试', 'A physical package and material study for 360'],
-  vinylLabControls: ['控制', 'Controls'],
-  vinylLabDiagnostics: ['调试信息', 'Diagnostics'],
-  vinylLabThickness: ['封套厚度', 'Sleeve thickness'],
-  vinylLabBulge: ['唱片鼓包', 'Record bulge'],
-  vinylLabWear: ['边缘磨损', 'Edge wear'],
-  vinylLabKeyLight: ['主光', 'Key light'],
-  vinylLabBackground: ['环境光场', 'Environment'],
-  vinylLabReset: ['重置', 'Reset'],
-  vinylLabReady: ['渲染正常', 'Renderer ready'],
-  vinylLabFailed: ['WebGL 渲染失败', 'WebGL rendering failed'],
-  vinylLabContextLost: ['WebGL 上下文丢失', 'WebGL context lost'],
-  vinylLabFailureHint: ['此设备无法完成此项 WebGL 测试。', 'This device cannot run this WebGL study.'],
 
   // Featured
   featuredList:        ['精选作品', 'Featured pieces'],
@@ -129,13 +113,17 @@ const S: Record<string, readonly [string, string]> = {
   email:        ['邮箱', 'Email'],
   password:     ['密码', 'Password'],
   confirmPassword: ['确认密码', 'Confirm password'],
-  emailPlaceholder:            ['you@example.com', 'you@example.com'],
-  passwordPlaceholder:         ['输入密码', 'Enter your password'],
-  confirmPasswordPlaceholder:  ['再次输入密码', 'Confirm your password'],
-  newPasswordPlaceholder:      ['输入新密码', 'Enter new password'],
-  confirmNewPasswordPlaceholder: ['再次输入新密码', 'Confirm new password'],
   showPassword: ['显示密码', 'Show password'],
   hidePassword: ['隐藏密码', 'Hide password'],
+
+  // First-entry welcome
+  welcomeTitle:             ['oddeNova：欢迎！', 'oddeNova: Welcome!'],
+  welcomeOr:                ['或者', 'or'],
+  welcomeContinueWithEmail: ['使用邮箱继续', 'Continue with email'],
+  welcomeCreateAccount:     ['创建账户', 'Create account'],
+  welcomeHaveAccount:       ['已经有账户？', 'Already have an account?'],
+  welcomeNoAccount:         ['还没有账户？', 'No account yet?'],
+  welcomeSignUpLink:        ['注册', 'Sign up'],
 
   // App status
   engineStarting:   ['音频引擎启动中，请稍后再试', 'Audio engine starting, please try again later'],
@@ -196,7 +184,7 @@ const S: Record<string, readonly [string, string]> = {
   setUpLater:      ['稍后设置', 'Set up later'],
 
   // Account
-  accountDesc:          ['登录后可将对话记录同步到云端。', 'Sign in to sync conversation history to the cloud.'],
+  accountDesc:          ['登录后即可收藏对话，创作也会同步到你的账号。', 'Sign in to keep conversations — your work syncs to your account.'],
   accountActionFailed:  ['操作失败，请稍后重试。', 'Action failed. Please try again later.'],
   supabaseNotConfigured:['Supabase 尚未配置，当前只能以游客模式使用。', 'Supabase is not configured. Guest mode is still available.'],
   signIn:               ['登录', 'Sign in'],
@@ -304,6 +292,12 @@ const S: Record<string, readonly [string, string]> = {
   animationGalaxyAscii: ['Galaxy ASCII', 'Galaxy ASCII'],
   animationGalaxyAsciiHint: ['由字符网格绘制的二维星系。', 'A 2D galaxy drawn as a grid of characters.'],
   animationVisual: ['动画面板', 'Animation visual'],
+  studioAnimationVisible: ['在工作室中显示动画', 'Show the animation in the studio'],
+  studioAnimationVisibleHint: [
+    '关闭后，工作室不再显示代码面板下方的动画窗口。',
+    'Turn this off and the studio drops the animation pane below the code panel.',
+  ],
+  studioAnimationOff: ['动画关闭', 'Animation off'],
 
   // PersonaModal
   customPersonas:     ['自定义人物', 'Custom personas'],

@@ -4,7 +4,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../../../lib/i18n';
-import { getAnimationPreference, getThemePreference } from '../../../lib/appearance-preferences';
+import {
+  getAnimationPreference,
+  getStudioAnimationVisible,
+  getThemePreference,
+} from '../../../lib/appearance-preferences';
 import AppearanceSettingsPanel from '../AppearanceSettingsPanel';
 import SettingsSidebar from '../SettingsSidebar';
 
@@ -16,6 +20,10 @@ function render(element: React.ReactNode) {
   const root = createRoot(container);
   act(() => root.render(element));
   return { container, root };
+}
+
+function studioAnimationSwitch(container: HTMLElement) {
+  return container.querySelector<HTMLButtonElement>('[role="switch"]')!;
 }
 
 function radios(container: HTMLElement, groupLabel: string) {
@@ -91,5 +99,27 @@ describe('settings workspace', () => {
 
     expect(getAnimationPreference()).toBe('galaxy');
     expect(radios(container, t('animation'))[0].getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('switches the studio animation off and dims the animation choices', () => {
+    const { container, root } = render(<AppearanceSettingsPanel />);
+    roots.push(root);
+
+    const toggle = studioAnimationSwitch(container);
+    expect(toggle.getAttribute('aria-label')).toBe(t('studioAnimationVisible'));
+    expect(toggle.getAttribute('aria-checked')).toBe('true'); // shown by default
+    expect(radios(container, t('animation')).some((option) => option.disabled)).toBe(false);
+
+    act(() => toggle.click());
+
+    expect(getStudioAnimationVisible()).toBe(false);
+    expect(studioAnimationSwitch(container).getAttribute('aria-checked')).toBe('false');
+    expect(radios(container, t('animation')).every((option) => option.disabled)).toBe(true);
+
+    // Turning it back on keeps the animation the user had picked.
+    act(() => studioAnimationSwitch(container).click());
+    expect(getStudioAnimationVisible()).toBe(true);
+    expect(getAnimationPreference()).toBe('galaxy-ascii');
+    expect(radios(container, t('animation')).some((option) => option.disabled)).toBe(false);
   });
 });

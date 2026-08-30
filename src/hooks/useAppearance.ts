@@ -1,8 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import {
   DEFAULT_ANIMATION,
+  DEFAULT_STUDIO_ANIMATION_VISIBLE,
   DEFAULT_THEME_PREFERENCE,
   getAnimationPreference,
+  getStudioAnimationVisible,
   getThemePreference,
   resolveTheme,
   subscribeAppearance,
@@ -32,5 +34,14 @@ export function useAnimationPreference(): AnimationPreference {
     subscribeAppearance,
     getAnimationPreference,
     () => DEFAULT_ANIMATION,
+  );
+}
+
+/** Whether the studio shows its animation at all. */
+export function useStudioAnimationVisible(): boolean {
+  return useSyncExternalStore(
+    subscribeAppearance,
+    getStudioAnimationVisible,
+    () => DEFAULT_STUDIO_ANIMATION_VISIBLE,
   );
 }

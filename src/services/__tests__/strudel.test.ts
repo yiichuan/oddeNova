@@ -475,10 +475,12 @@ describe('StrudelService editor preferences', () => {
 
     await service.attach(document.createElement('div'));
 
-    expect(dispatch).toHaveBeenCalledTimes(2);
+    // Syntax highlight, scroll margins, tooltip bounds.
+    expect(dispatch).toHaveBeenCalledTimes(3);
     expect(reconfigure).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith({ effects: themeEffect });
     expect(dispatch.mock.calls[1][0]).toHaveProperty('effects');
+    expect(dispatch.mock.calls[2][0]).toHaveProperty('effects');
   });
 });
 

@@ -36,7 +36,7 @@ import {
   unfoldCurve,
 } from './liquid-column';
 
-export type PrimaryNavItem = 'home' | 'featured' | 'favorites' | 'vinylLab' | 'more' | 'settings' | 'account';
+export type PrimaryNavItem = 'home' | 'featured' | 'favorites' | 'more' | 'settings' | 'account';
 
 interface PrimaryNavProps {
   selectedItem: PrimaryNavItem;
@@ -233,15 +233,11 @@ function PrimaryNavTooltip({ tooltip }: { tooltip: TooltipState }) {
 
 function MoreMenu({
   expanded,
-  selectedItem,
-  onSelect,
   getTooltipTriggerProps,
   hideTooltip,
   onOpenChange,
 }: {
   expanded: boolean;
-  selectedItem: PrimaryNavItem;
-  onSelect: (item: PrimaryNavItem) => void;
   getTooltipTriggerProps: GetTooltipTriggerProps;
   hideTooltip: () => void;
   onOpenChange?: (open: boolean) => void;
@@ -343,7 +339,7 @@ function MoreMenu({
         onClick={toggleMenu}
         {...getTooltipTriggerProps(t('navMore'))}
         className={`flex h-10 w-full items-center overflow-hidden rounded-[6px] text-left transition-colors ${
-          open || selectedItem === 'vinylLab'
+          open
             ? 'bg-white/10 text-text-primary'
             : 'text-icon-idle hover:bg-white/5 hover:text-text-secondary'
         }`}
@@ -371,25 +367,6 @@ function MoreMenu({
         data-open={open}
         className="primary-nav-more-menu"
       >
-        <button
-          type="button"
-          role="menuitem"
-          aria-label={t('navVinylLab')}
-          onClick={() => {
-            hideTooltip();
-            closeMenu();
-            onSelect('vinylLab');
-          }}
-          {...getTooltipTriggerProps(t('navVinylLab'))}
-          className={linkClass}
-        >
-          <span className="flex size-10 shrink-0 items-center justify-center">
-            <Disc3 size={20} strokeWidth={1.5} aria-hidden="true" />
-          </span>
-          <span aria-hidden={!expanded} className={expanded ? 'ml-2 whitespace-nowrap text-sm' : 'sr-only'}>
-            {t('navVinylLab')}
-          </span>
-        </button>
         <a
           role="menuitem"
           aria-label={t('navLearnStrudel')}
@@ -964,8 +941,6 @@ export default function PrimaryNav({
                   <MoreMenu
                     key={`${expanded ? 'expanded' : 'collapsed'}-${splitting ? 'split' : 'bar'}`}
                     expanded={expanded}
-                    selectedItem={selectedItem}
-                    onSelect={onSelect}
                     getTooltipTriggerProps={getTooltipTriggerProps}
                     hideTooltip={hideTooltip}
                     onOpenChange={setMoreMenuOpen}
