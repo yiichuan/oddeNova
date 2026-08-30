@@ -298,99 +298,102 @@ describe('useSessions', () => {
     });
   });
 
-  it('opens a fresh session after a guest user signs in instead of selecting the latest account history', async () => {
+  it('does not list cloud history during account startup or persist its temporary session', async () => {
     const accountSession = makeSession({
       id: 'latest-account-session',
       title: 'Latest account history',
       messages: [{ id: 'm-1', role: 'user', content: '已有聊天', timestamp: 1 }],
+      updatedAt: 20,
     });
+    storageMocks.getAllSessions.mockResolvedValue([accountSession]);
+    storageMocks.getCurrentSessionId.mockResolvedValue(accountSession.id);
     const cloud = {
       listSessions: vi.fn(async () => [accountSession]),
       saveSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
     };
+
     const { root, getHook } = await renderUseSessions({
       ownerKey: 'user:u-1',
       syncEnabled: true,
       cloud,
-      startNewSessionToken: 1,
     });
     roots.push(root);
 
-    expect(getHook().currentId).not.toBe('latest-account-session');
+    expect(cloud.listSessions).not.toHaveBeenCalled();
+    expect(getHook().currentId).not.toBe(accountSession.id);
     expect(getHook().currentSession?.messages).toEqual([
       expect.objectContaining({ isGreeting: true }),
     ]);
-    expect(getHook().sessions).toContainEqual(accountSession);
+    expect(storageMocks.putSession).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: getHook().currentId }),
+      'user:u-1',
+    );
   });
 
-  it('reuses an untouched session on sign-in instead of stacking up another new session', async () => {
-    const untouched = makeSession({
-      id: 'untouched-session',
-      title: t('newSessionTitle'),
-      messages: [{ id: 'g-1', role: 'assistant', content: '你好', timestamp: 1, isGreeting: true }],
-      updatedAt: 10,
-    });
+  it('persists an account temporary session only after its first substantive change', async () => {
     const cloud = {
-      listSessions: vi.fn(async () => [untouched]),
+      listSessions: vi.fn(async () => []),
       saveSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
     };
-    storageMocks.getAllSessions.mockResolvedValue([untouched]);
     const { root, getHook } = await renderUseSessions({
       ownerKey: 'user:u-1',
       syncEnabled: true,
       cloud,
-      startNewSessionToken: 1,
     });
     roots.push(root);
 
-    expect(getHook().sessions).toHaveLength(1);
-    expect(getHook().currentId).toBe('untouched-session');
-    expect(getHook().currentSession?.messages).toEqual([
-      expect.objectContaining({ isGreeting: true }),
-    ]);
+    expect(storageMocks.putSession).not.toHaveBeenCalled();
+
+    act(() => {
+      getHook().addUserMessage('第一次真实内容');
+    });
+    expect(storageMocks.putSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: getHook().currentId,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ content: '第一次真实内容' }),
+        ]),
+      }),
+      'user:u-1',
+    );
   });
 
-  it('clears leftover untouched sessions on sign-in', async () => {
-    const greeting = { id: 'g-1', role: 'assistant' as const, content: '你好', timestamp: 1, isGreeting: true };
-    const untouched = makeSession({
-      id: 'untouched-session',
-      title: t('newSessionTitle'),
-      messages: [greeting],
-      updatedAt: 30,
+  it('accepts a cloud detail into local working state without uploading it again', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
     });
-    const leftover = makeSession({
-      id: 'leftover-session',
-      title: t('newSessionTitle'),
-      messages: [greeting],
-      updatedAt: 20,
-    });
-    const history = makeSession({
-      id: 'history-session',
-      title: '来个简单的鼓点',
-      messages: [{ id: 'm-1', role: 'user', content: '来个简单的鼓点', timestamp: 1 }],
+    roots.push(root);
+    storageMocks.putSession.mockClear();
+
+    const detail = makeSession({
+      id: '00000000-0000-4000-8000-000000000021',
+      title: '云端详情',
       code: 's("bd")',
-      updatedAt: 10,
+      messages: [{ id: 'm-1', role: 'user', content: '打开我', timestamp: 1 }],
+      updatedAt: 42,
     });
-    const cloud = {
-      listSessions: vi.fn(async () => [history]),
-      saveSession: vi.fn(async () => undefined),
-      deleteSession: vi.fn(async () => undefined),
-    };
-    storageMocks.getAllSessions.mockResolvedValue([untouched, leftover, history]);
-    const { root, getHook } = await renderUseSessions({
-      ownerKey: 'user:u-1',
-      syncEnabled: true,
-      cloud,
-      startNewSessionToken: 1,
-    });
-    roots.push(root);
 
-    expect(getHook().sessions.map((session) => session.id))
-      .toEqual(['untouched-session', 'history-session']);
-    expect(storageMocks.deleteSessionStrict).toHaveBeenCalledWith('leftover-session', 'user:u-1');
-    expect(cloud.deleteSession).toHaveBeenCalledWith('leftover-session', 'u-1');
+    await act(async () => {
+      await (getHook() as ReturnType<typeof useSessions> & {
+        acceptCloudDetail: (session: Session) => Promise<void>;
+      }).acceptCloudDetail(detail);
+    });
+
+    expect(getHook().currentId).toBe(detail.id);
+    expect(getHook().currentSession).toEqual(detail);
+    expect(storageMocks.putSession).toHaveBeenCalledWith(detail, 'user:u-1');
+    expect(storageMocks.putCurrentSessionId).toHaveBeenCalledWith(detail.id, 'user:u-1');
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+    await expect(getHook().flushCloudSaves(detail.id)).resolves.toBeUndefined();
   });
 
   it('keeps streamed changes local until a terminal checkpoint saves one latest snapshot', async () => {
@@ -584,16 +587,15 @@ describe('useSessions', () => {
     vi.useRealTimers();
   });
 
-  it('keeps a pending local snapshot over a newer cloud row during startup reconciliation', async () => {
+  it('keeps a pending local working copy without reconciling against a cloud list', async () => {
     const local = makeSession({ id: 'shared', code: 'local dirty', updatedAt: 10 });
-    const remote = makeSession({ id: 'shared', code: 'remote newer', updatedAt: 20 });
     storageMocks.getAllSessions.mockResolvedValueOnce([local]);
     syncStorageMocks.readPendingSessionOperations.mockResolvedValueOnce({
       syncIds: new Set(['shared']),
       deleteIds: new Set(),
     });
     const cloud = {
-      listSessions: vi.fn(async () => [remote]),
+      listSessions: vi.fn(async () => []),
       saveSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
     };
@@ -605,8 +607,9 @@ describe('useSessions', () => {
     });
     roots.push(root);
 
-    expect(getHook().currentSession?.code).toBe('local dirty');
-    expect(storageMocks.putSession).toHaveBeenCalledWith(local, 'user:u-1');
+    expect(getHook().currentSession?.code).toBe('');
+    expect(getHook().sessions).toContainEqual(local);
+    expect(cloud.listSessions).not.toHaveBeenCalled();
   });
 
   it('keeps the local cache untouched when pending operation markers cannot be read', async () => {
@@ -632,7 +635,10 @@ describe('useSessions', () => {
     });
     roots.push(root);
 
-    expect(getHook().sessions).toEqual([local]);
+    expect(getHook().sessions).toEqual([
+      expect.objectContaining({ messages: [expect.objectContaining({ isGreeting: true })] }),
+      local,
+    ]);
     expect(cloud.listSessions).not.toHaveBeenCalled();
     expect(storageMocks.deleteSessionStrict).not.toHaveBeenCalled();
   });
@@ -867,6 +873,9 @@ describe('useSessions', () => {
     const deletedId = getHook().currentId!;
 
     act(() => {
+      getHook().addUserMessage('先让这个临时会话变成工作副本');
+    });
+    act(() => {
       getHook().deleteSession(deletedId);
     });
     await act(async () => {
@@ -943,9 +952,12 @@ describe('useSessions', () => {
   });
 
   it('keeps a session imported while the account load is still in flight', async () => {
-    let resolveList!: (sessions: Session[]) => void;
+    let resolveLocalSessions!: (sessions: Session[]) => void;
+    storageMocks.getAllSessions.mockImplementationOnce(
+      () => new Promise<Session[]>((resolve) => { resolveLocalSessions = resolve; }),
+    );
     const cloud = {
-      listSessions: vi.fn(() => new Promise<Session[]>((resolve) => { resolveList = resolve; })),
+      listSessions: vi.fn(async () => []),
       saveSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
     };
@@ -965,14 +977,15 @@ describe('useSessions', () => {
       }, { activate: false });
     });
 
-    // The load replaces the list with the snapshot it started from, which was
-    // taken before the import existed.
+    // The local load started before the import existed. The in-flight creation
+    // guard must keep it when the account's temporary session is installed.
     await act(async () => {
-      resolveList([]);
+      resolveLocalSessions([]);
     });
 
     expect(getHook().sessions.map((session) => session.title))
       .toContain('来个简单的鼓点');
+    expect(cloud.listSessions).not.toHaveBeenCalled();
   });
 
   it('keeps the code revisions of an imported session', async () => {
@@ -1217,7 +1230,7 @@ describe('useSessions', () => {
       '00000000-0000-4000-8000-000000000001',
     );
 
-    const { root } = await renderUseSessions({ ownerKey: 'user:u-1' });
+    const { root } = await renderUseSessions({ ownerKey: 'guest' });
     roots.push(root);
 
     expect(storageMocks.getAllSessions.mock.invocationCallOrder[0]).toBeLessThan(

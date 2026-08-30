@@ -1,6 +1,5 @@
 import { openDB as idbOpenDB, type IDBPDatabase } from 'idb';
 import type { Session } from '../hooks/useSessions';
-import type { FavoriteConversation } from './favorite-conversations';
 import { isStepwiseChoice } from '../services/suggestions';
 import {
   decodePendingSessionId,
@@ -8,12 +7,12 @@ import {
 } from './session-sync-keys';
 
 export const DB_NAME = 'oddenova-db';
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 const LEGACY_SESSION_STORE_NAME = 'sessions';
+const LEGACY_FAVORITE_STORE_NAME = 'favorites_by_owner';
 export const SESSION_STORE_NAME = 'sessions_by_owner';
 export const PERSONA_STORE_NAME = 'personas';
 export const SETTINGS_STORE_NAME = 'settings';
-export const FAVORITE_STORE_NAME = 'favorites_by_owner';
 export const GUEST_OWNER_KEY = 'guest';
 
 // localStorage keys for one-time migration
@@ -23,11 +22,9 @@ const LS_CURRENT_KEY = 'vibe-sessions-current-v1';
 let db: IDBPDatabase | null = null;
 let memoryFallback = false;
 let openPromise: Promise<void> | null = null;
-const memoryFavorites = new Map<string, FavoriteConversation>();
 const guestNormalizationInFlight = new Map<string, Promise<Session>>();
 
 type StoredSession = Session & { ownerKey?: string; mode?: unknown; tokenStats?: unknown };
-type StoredFavorite = FavoriteConversation & { ownerKey: string };
 type StoredSetting = {
   key: string;
   value: string;
@@ -131,8 +128,12 @@ export async function openDB(): Promise<void> {
           if (!database.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
             database.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
           }
-          if (!database.objectStoreNames.contains(FAVORITE_STORE_NAME)) {
-            database.createObjectStore(FAVORITE_STORE_NAME, { keyPath: ['ownerKey', 'id'] });
+          // Favorites used to be stored as duplicated snapshots. They now live
+          // on the session row, so discard the obsolete store when upgrading a
+          // database that still has it. No legacy snapshot is imported: the
+          // feature was not released with durable local favorites.
+          if (database.objectStoreNames.contains(LEGACY_FAVORITE_STORE_NAME)) {
+            database.deleteObjectStore(LEGACY_FAVORITE_STORE_NAME);
           }
 
           // Both parent branches shipped a v2 database: the account branch used
@@ -404,54 +405,4 @@ export async function deleteSessionStrict(
   await openDB();
   if (memoryFallback || !db) return;
   await db.delete(SESSION_STORE_NAME, [ownerKey, id]);
-}
-
-function memoryFavoriteKey(ownerKey: string, id: string): string {
-  return `${ownerKey}:${id}`;
-}
-
-export async function getAllFavorites(
-  ownerKey = GUEST_OWNER_KEY,
-): Promise<FavoriteConversation[]> {
-  await openDB();
-  if (memoryFallback || !db) {
-    return [...memoryFavorites.entries()]
-      .filter(([key]) => key.startsWith(`${ownerKey}:`))
-      .map(([, favorite]) => favorite)
-      .sort((a, b) => b.favoritedAt - a.favoritedAt);
-  }
-  const all = await db.getAll(FAVORITE_STORE_NAME) as StoredFavorite[];
-  return all
-    .filter((favorite) => favorite.ownerKey === ownerKey)
-    .map(({ ownerKey: _ownerKey, ...favorite }) => favorite)
-    .sort((a, b) => b.favoritedAt - a.favoritedAt);
-}
-
-export async function putFavorite(
-  favorite: FavoriteConversation,
-  ownerKey = GUEST_OWNER_KEY,
-): Promise<void> {
-  await openDB();
-  const snapshot: FavoriteConversation = {
-    ...favorite,
-    turns: favorite.turns.map((turn) => ({ ...turn })),
-    messages: favorite.messages?.map((message) => ({ ...message })),
-  };
-  if (memoryFallback || !db) {
-    memoryFavorites.set(memoryFavoriteKey(ownerKey, favorite.id), snapshot);
-    return;
-  }
-  await db.put(FAVORITE_STORE_NAME, { ...snapshot, ownerKey } satisfies StoredFavorite);
-}
-
-export async function deleteFavorite(
-  id: string,
-  ownerKey = GUEST_OWNER_KEY,
-): Promise<void> {
-  await openDB();
-  if (memoryFallback || !db) {
-    memoryFavorites.delete(memoryFavoriteKey(ownerKey, id));
-    return;
-  }
-  await db.delete(FAVORITE_STORE_NAME, [ownerKey, id]);
 }

@@ -60,4 +60,16 @@ describe('account session schema', () => {
     expect(sql).toMatch(/return new/);
     expect(sql).not.toMatch(/new\.updated_at = now\(\)/);
   });
+
+  it('stores favorites as session lifecycle state and removes the snapshot table', () => {
+    const sql = migrationSql('20260829084850_consolidate_favorites_into_sessions.sql');
+
+    expect(sql).toMatch(/alter table public\.sessions add column if not exists favorited_at timestamptz/);
+    expect(sql).toMatch(/sessions_user_history_idx.*\(user_id, updated_at desc, id desc\).*where favorited_at is null/);
+    expect(sql).toMatch(/sessions_user_favorites_idx.*\(user_id, favorited_at desc, id desc\).*where favorited_at is not null/);
+    expect(sql).not.toMatch(/sessions_user_history_idx.*created_at/);
+    expect(sql).toMatch(/drop table (if exists )?public\.favorites/);
+    expect(sql).not.toMatch(/update public\.sessions/);
+    expect(sql).not.toMatch(/insert into public\.sessions/);
+  });
 });

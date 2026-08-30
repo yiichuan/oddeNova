@@ -12,7 +12,7 @@ describe('Vercel API layout', () => {
     const files = (await readdir('api', { recursive: true }))
       .filter((file) => file.endsWith('.ts'));
 
-    expect(files.sort()).toHaveLength(8);
+    expect(files.sort()).toHaveLength(7);
   });
 
   it('uses Node ESM-resolvable relative imports in TypeScript functions', async () => {
@@ -40,11 +40,15 @@ describe('Vercel API layout', () => {
       },
       {
         source: '/api/favorites/:id/continue',
-        destination: '/api/favorites?id=:id&action=continue',
+        destination: '/api/sessions?resource=favorites&id=:id&action=continue',
       },
       {
         source: '/api/favorites/:id',
-        destination: '/api/favorites?id=:id',
+        destination: '/api/sessions?resource=favorites&id=:id',
+      },
+      {
+        source: '/api/favorites',
+        destination: '/api/sessions?resource=favorites',
       },
       {
         source: '/api/sessions/:id',
@@ -77,27 +81,23 @@ describe('Vercel API layout', () => {
     ]);
   });
 
-  it('rewrites favorite routes before the session, PostHog, and SPA routes', async () => {
+  it('rewrites session routes before PostHog and SPA routes', async () => {
     const config = JSON.parse(await readFile('vercel.json', 'utf8')) as {
       rewrites: Array<{ source: string; destination: string }>;
     };
     const continueIndex = config.rewrites.findIndex((rewrite) => rewrite.source === '/api/favorites/:id/continue');
-    const itemIndex = config.rewrites.findIndex((rewrite) => rewrite.source === '/api/favorites/:id');
+    const favoriteItemIndex = config.rewrites.findIndex((rewrite) => rewrite.source === '/api/favorites/:id');
+    const favoriteCollectionIndex = config.rewrites.findIndex((rewrite) => rewrite.source === '/api/favorites');
     const sessionIndex = config.rewrites.findIndex((rewrite) => rewrite.source === '/api/sessions/:id');
     const postHogIndex = config.rewrites.findIndex((rewrite) => rewrite.source === '/_nova/static/:path(.*)');
     const spaIndex = config.rewrites.findIndex((rewrite) => rewrite.destination === '/index.html');
 
     expect(continueIndex).toBeGreaterThanOrEqual(0);
-    expect(itemIndex).toBeGreaterThan(continueIndex);
-    expect(sessionIndex).toBeGreaterThan(itemIndex);
+    expect(favoriteItemIndex).toBeGreaterThan(continueIndex);
+    expect(favoriteCollectionIndex).toBeGreaterThan(favoriteItemIndex);
+    expect(sessionIndex).toBeGreaterThan(favoriteCollectionIndex);
     expect(postHogIndex).toBeGreaterThan(sessionIndex);
     expect(spaIndex).toBeGreaterThan(sessionIndex);
-  });
-
-  it('uses a Node ESM specifier for the Favorite Vite adapter', async () => {
-    const source = await readFile('vite.config.ts', 'utf8');
-
-    expect(source).toContain("import favoritesHandler from './api/favorites.js'");
   });
 
   it('keeps public Cron windows routed to the single maintenance adapter', async () => {
@@ -126,6 +126,35 @@ describe('Vercel API layout', () => {
     const spaFallback = config.rewrites.find((rewrite) => rewrite.destination === '/index.html');
 
     expect(spaFallback?.source).toBe('/((?!api/).*)');
+  });
+
+  it('parses collection, detail, favorite, and continue paths for the dev adapter', async () => {
+    const { parseSessionApiRequest } = await import('../../../vite.config');
+
+    expect(parseSessionApiRequest('/api/sessions', '/?limit=20')).toEqual({
+      resource: 'sessions',
+      query: { limit: '20', resource: 'sessions' },
+    });
+    expect(parseSessionApiRequest('/api/sessions', '/00000000-0000-4000-8000-000000000001')).toEqual({
+      resource: 'sessions',
+      query: { id: '00000000-0000-4000-8000-000000000001', resource: 'sessions' },
+    });
+    expect(parseSessionApiRequest('/api/favorites', '/?limit=20')).toEqual({
+      resource: 'favorites',
+      query: { limit: '20', resource: 'favorites' },
+    });
+    expect(parseSessionApiRequest('/api/favorites', '/00000000-0000-4000-8000-000000000001')).toEqual({
+      resource: 'favorites',
+      query: { id: '00000000-0000-4000-8000-000000000001', resource: 'favorites' },
+    });
+    expect(parseSessionApiRequest('/api/favorites', '/00000000-0000-4000-8000-000000000001/continue')).toEqual({
+      resource: 'favorites',
+      query: {
+        id: '00000000-0000-4000-8000-000000000001',
+        resource: 'favorites',
+        action: 'continue',
+      },
+    });
   });
 
   it('keeps shared implementation outside the function directory', async () => {

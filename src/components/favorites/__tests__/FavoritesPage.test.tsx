@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { t, zh } from '../../../lib/i18n';
+import type { FavoriteSummary } from '../../../../shared/session-api';
 import { NAV_COLLAPSED_WIDTH } from '../../nav/PrimaryNav';
 import {
   conversationTitle,
@@ -69,6 +70,11 @@ const CONVERSATIONS: FavoriteConversation[] = [
   },
 ];
 
+const SUMMARIES: FavoriteSummary[] = [
+  { id: 'summary-first', title: 'First summary', updatedAt: 30, favoritedAt: 300 },
+  { id: 'summary-second', title: 'Second summary', updatedAt: 20, favoritedAt: 200 },
+];
+
 const listRows = (container: HTMLElement) => (
   [...container.querySelectorAll<HTMLButtonElement>('[data-testid="favorites-list"] [data-favorite-id]')]
 );
@@ -89,6 +95,94 @@ const preview = (container: HTMLElement) => (
 );
 
 describe('FavoritesPage', () => {
+  it('renders cloud summaries in service order without fabricating a conversation', () => {
+    const onSelect = vi.fn();
+    const loadMore = vi.fn();
+    const { container } = render(
+      <FavoritesPage
+        active={false}
+        summaries={SUMMARIES}
+        onSelect={onSelect}
+        hasMore
+        onLoadMore={loadMore}
+      />,
+    );
+
+    expect(listRows(container).map((row) => row.dataset.favoriteId))
+      .toEqual(['summary-first', 'summary-second']);
+    expect(listRows(container).map((row) => row.textContent?.trim()))
+      .toEqual(['First summary01/01', 'Second summary01/01']);
+    expect(container.querySelector('[data-testid="favorites-gallery"]')).toBeNull();
+
+    act(() => listRows(container)[1]!.click());
+    expect(onSelect).toHaveBeenCalledWith(SUMMARIES[1]);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not show an exhausted-pagination label in the favorites list', () => {
+    const { container } = render(
+      <FavoritesPage active summaries={SUMMARIES} onSelect={vi.fn()} />,
+    );
+
+    expect(container.querySelector('[data-testid="infinite-scroll-sentinel"]')).toBeNull();
+    expect(container.textContent).not.toContain(t('noMoreSessions'));
+  });
+
+  it('auto-selects the first cloud summary once on first active entry', () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <FavoritesPage active summaries={SUMMARIES} onSelect={onSelect} />,
+    );
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(SUMMARIES[0]);
+    expect(container.querySelector('[data-testid="favorites-gallery"]')).toBeNull();
+  });
+
+  it('shows collection and detail loading or retry states without making a fake detail', () => {
+    const onRetry = vi.fn();
+    const { container, root } = render(
+      <FavoritesPage
+        active
+        summaries={[]}
+        onSelect={vi.fn()}
+        isLoading
+        onRetry={onRetry}
+      />,
+    );
+
+    expect(container.querySelector('[data-testid="favorites-loading"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="favorites-gallery"]')).toBeNull();
+
+    act(() => root.render(
+      <FavoritesPage
+        active
+        summaries={[]}
+        onSelect={vi.fn()}
+        error={new Error('network')}
+        onRetry={onRetry}
+      />,
+    ));
+    expect(container.querySelector('[data-testid="favorites-error"]')?.textContent)
+      .toContain(t('sessionListNetworkError'));
+
+    act(() => root.render(
+      <FavoritesPage
+        active
+        summaries={SUMMARIES}
+        onSelect={vi.fn()}
+        detailLoading
+        detailError={new Error('network')}
+        onRetryDetail={onRetry}
+      />,
+    ));
+    expect(container.querySelector('[data-testid="favorites-detail-error"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="favorites-detail-error"]')?.textContent)
+      .toContain(t('sessionDetailNetworkError'));
+    act(() => container.querySelector<HTMLButtonElement>('[data-testid="favorites-detail-retry"]')!.click());
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it('stands on the Featured light field, named on the left and listed on the right', () => {
     const shuffled = [CONVERSATIONS[1], CONVERSATIONS[2], CONVERSATIONS[0]];
     const { container } = render(<FavoritesPage conversations={shuffled} />);

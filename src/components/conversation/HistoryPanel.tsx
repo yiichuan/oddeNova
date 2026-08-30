@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import type { SessionSummary } from '../../../shared/session-api';
 import type { Session } from '../../hooks/useSessions';
 import { EditIcon, StarIcon, TrashIcon } from '../icons';
 import { t } from '../../lib/i18n';
+import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
 
 /**
  * How long a kept entry stays on the list after its star fills in.
@@ -16,9 +18,11 @@ import { t } from '../../lib/i18n';
 const KEEPING_MS = 380;
 
 interface HistoryPanelProps {
-  sessions: Session[];
+  sessions: readonly (Session | SessionSummary)[];
   currentId: string | null;
   isLoading?: boolean;
+  initialError?: Error | null;
+  onRetryInitial?: () => void;
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
@@ -26,18 +30,43 @@ interface HistoryPanelProps {
   onFavorite?: (id: string) => void;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  loadMoreError?: Error | null;
+  onRetryLoadMore?: () => void;
+}
+
+type HistoryItem = Session | SessionSummary;
+
+function isCompleteSession(item: HistoryItem): item is Session {
+  return 'messages' in item;
+}
+
+function compareByUpdatedAt(a: HistoryItem, b: HistoryItem): number {
+  const updatedAtDifference = b.updatedAt - a.updatedAt;
+  if (updatedAtDifference !== 0) return updatedAtDifference;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? 1 : -1;
 }
 
 export default function HistoryPanel({
   sessions,
   currentId,
   isLoading = false,
+  initialError = null,
+  onRetryInitial,
   onSwitch,
   onDelete,
   onRename,
   onFavorite,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
+  onLoadMore = () => {},
+  hasMore = false,
+  isLoadingMore = false,
+  loadMoreError = null,
+  onRetryLoadMore = () => {},
 }: HistoryPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -58,7 +87,7 @@ export default function HistoryPanel({
 
   /* The star fills where it was clicked, the row goes with it, and the entry
      is handed over once both have been seen. */
-  const keep = (session: Session) => {
+  const keep = (session: HistoryItem) => {
     if (!onFavorite || keepingId) return;
     setKeepingId(session.id);
     keepingTimerRef.current = setTimeout(() => {
@@ -68,38 +97,50 @@ export default function HistoryPanel({
     }, KEEPING_MS);
   };
 
-  const startEditing = (session: Session) => {
+  const startEditing = (session: HistoryItem) => {
     cancelRef.current = false;
     setEditingId(session.id);
     setDraft(session.title || t('newSessionTitle'));
   };
 
-  const save = (session: Session) => {
+  const save = (session: HistoryItem) => {
     const nextTitle = draft.trim();
     setEditingId(null);
     if (!nextTitle || nextTitle === session.title) return;
     onRename(session.id, nextTitle);
   };
 
-  const cancel = (session: Session) => {
+  const cancel = (session: HistoryItem) => {
     cancelRef.current = true;
     setDraft(session.title || t('newSessionTitle'));
     setEditingId(null);
   };
 
-  // Newest first (by start time). Empty sessions (no messages) are left out,
-  // and so are the kept ones — a favorite is this same conversation living on
-  // the Favorites page, and an entry standing in both lists would make undoing
-  // either move impossible to see.
+  // Keep the presentation invariant even when a local session's updatedAt
+  // changes in place after the initial load.
   const ordered = [...sessions]
-    .filter((s) => s.messages.length > 0 && s.favoritedAt === undefined)
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .filter((session) => !isCompleteSession(session)
+      || (session.messages.length > 0 && session.favoritedAt === undefined))
+    .sort(compareByUpdatedAt);
 
   return (
     <div className="flex flex-col">
       <div>
         {isLoading ? (
           <div className="px-4 py-6 text-center text-xs text-text-muted">{t('loading')}</div>
+        ) : initialError ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-6 text-center text-xs text-text-muted">
+            <span>{t('sessionListNetworkError')}</span>
+            {onRetryInitial && (
+              <button
+                type="button"
+                onClick={onRetryInitial}
+                className="text-text-secondary underline underline-offset-2 hover:text-text-primary"
+              >
+                {t('retry')}
+              </button>
+            )}
+          </div>
         ) : ordered.length === 0 ? (
           <div className="px-4 py-6 text-center text-xs text-text-muted">{t('noSessions')}</div>
         ) : (
@@ -245,6 +286,16 @@ export default function HistoryPanel({
           </ul>
         )}
       </div>
+      {!isLoading && !initialError && ordered.length > 0 && (
+        <InfiniteScrollSentinel
+          enabled
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          loadMoreError={loadMoreError}
+          onLoadMore={onLoadMore}
+          onRetryLoadMore={onRetryLoadMore}
+        />
+      )}
     </div>
   );
 }

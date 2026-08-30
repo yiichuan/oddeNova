@@ -18,6 +18,7 @@ export interface SessionCloudSync {
     sessionId: string,
     deleteLocal?: () => Promise<void>,
   ) => Promise<void>;
+  acceptCloudSession: (session: Session) => void;
   hydrate: (
     sessions: Session[],
     pendingSyncIds: Set<string>,
@@ -458,6 +459,36 @@ export function createSessionCloudSync(options: {
     }
   };
 
+  const acceptCloudSession = (session: Session): void => {
+    if (disposed) return;
+    const existing = records.get(session.id);
+    if (existing && (
+      existing.saveRequested
+      || existing.status === 'dirty'
+      || existing.status === 'saving'
+      || existing.status === 'offline'
+      || existing.status === 'retrying'
+    )) {
+      throw new Error('Cannot accept cloud session while local changes are pending');
+    }
+    if (existing) {
+      clearRecordTimer(existing, 'debounceTimer');
+      clearRecordTimer(existing, 'retryTimer');
+      clearRecordTimer(existing, 'markerRetryTimer');
+    }
+    const record: SyncRecord = {
+      version: 0,
+      latest: session,
+      status: 'synced',
+      retryIndex: 0,
+      markerRetryIndex: 0,
+      hasCloudCopy: true,
+      saveRequested: false,
+    };
+    records.set(session.id, record);
+    onStatus(session.id, 'synced');
+  };
+
   const notifyOnline = (): void => {
     if (disposed || !isOnline()) return;
     for (const [id, record] of records) {
@@ -485,6 +516,7 @@ export function createSessionCloudSync(options: {
     checkpoint,
     flush,
     deleteSession,
+    acceptCloudSession,
     hydrate,
     notifyOnline,
     getStatus: (id) => records.get(id)?.status,

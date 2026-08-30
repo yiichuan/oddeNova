@@ -1,7 +1,7 @@
 /**
- * Converts an editable Session into the immutable snapshot model consumed by
- * Favorites. It also provides the one-time bridge for legacy `favoritedAt`
- * sessions that predate the dedicated favorite store.
+ * Converts a Session into the read model consumed by the Favorites page.
+ * Favorites remain session rows; this object is rebuilt from the current row
+ * instead of being persisted separately.
  */
 
 import type { ChatMessage } from '../hooks/useChat';
@@ -44,7 +44,7 @@ function sessionTurns(session: Session): FavoriteTurn[] {
   return turns;
 }
 
-/** Create the immutable archive captured when a session is kept. */
+/** Create the Favorites read model for a session. */
 export function sessionAsFavorite(
   session: Session,
   options: { favoritedAt?: number; finalCode?: string } = {},

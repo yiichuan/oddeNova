@@ -3,7 +3,9 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { SessionSummary } from '../../../../shared/session-api';
 import type { Session } from '../../../hooks/useSessions';
+import { t } from '../../../lib/i18n';
 import HistoryPanel from '../HistoryPanel';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -75,6 +77,67 @@ describe('HistoryPanel title editing', () => {
 
     expect(onSwitch).toHaveBeenCalledWith('s-1');
     expect(container.querySelector('input')).toBeNull();
+  });
+
+  it('renders server summaries in the supplied order without complete session fields', () => {
+    const summaries: SessionSummary[] = [
+      { id: 'summary-2', title: '第二条', updatedAt: 20 },
+      { id: 'summary-1', title: '第一条', updatedAt: 10 },
+    ];
+    const { container, root, onSwitch } = renderHistory({ sessions: summaries });
+    roots.push(root);
+
+    expect([...container.querySelectorAll('button[data-session-title-edit]')]
+      .map((button) => button.textContent)).toEqual(['第二条', '第一条']);
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-session-title-edit]')?.click();
+    });
+    expect(onSwitch).toHaveBeenCalledWith('summary-2');
+  });
+
+  it('orders history rows by updatedAt when the input is out of order', () => {
+    const { container, root } = renderHistory({
+      sessions: [
+        makeSession({ id: 'older', title: '更早', updatedAt: 10 }),
+        makeSession({ id: 'newer', title: '更新', updatedAt: 20 }),
+      ],
+    });
+    roots.push(root);
+
+    expect([...container.querySelectorAll('button[data-session-title-edit]')]
+      .map((button) => button.textContent)).toEqual(['更新', '更早']);
+  });
+
+  it('shows pagination loading and retry states without an exhausted-list label', () => {
+    const { container, root } = renderHistory({
+      hasMore: true,
+      isLoadingMore: true,
+    });
+    roots.push(root);
+    expect(container.querySelector('[data-testid="infinite-scroll-sentinel"]')?.textContent)
+      .toContain(t('loading'));
+
+    const retry = renderHistory({
+      hasMore: true,
+      loadMoreError: new Error('network'),
+    });
+    roots.push(retry.root);
+    expect(retry.container.querySelector('[data-testid="infinite-scroll-sentinel"] button')?.textContent)
+      .toContain(t('retry'));
+
+    const end = renderHistory({ hasMore: false });
+    roots.push(end.root);
+    expect(end.container.querySelector('[data-testid="infinite-scroll-sentinel"]')).toBeNull();
+  });
+
+  it('labels an initial history loading error before offering retry', () => {
+    const { container, root } = renderHistory({
+      sessions: [],
+      initialError: new Error('network'),
+    });
+    roots.push(root);
+
+    expect(container.textContent).toContain(t('sessionListNetworkError'));
   });
 
   it('renames a session from the history list', () => {

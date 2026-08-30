@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { SessionSummary } from '../../../shared/session-api';
 import type { ChatMessage, InputMode } from '../../hooks/useChat';
 import { t } from '../../lib/i18n';
 import type { CodeRevision, Session } from '../../hooks/useSessions';
@@ -17,7 +18,7 @@ interface SidebarProps {
   isLoading: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
-  sessions: Session[];
+  sessions: readonly (Session | SessionSummary)[];
   currentId: string | null;
   inputMode?: InputMode;
   suggestions: string[];
@@ -34,6 +35,13 @@ interface SidebarProps {
   onRenameSession: (id: string, title: string) => void;
   onFavoriteSession?: (id: string) => void;
   isHistoryLoading?: boolean;
+  historyInitialError?: Error | null;
+  onRetryHistory?: () => void;
+  historyHasMore?: boolean;
+  historyLoadingMore?: boolean;
+  historyLoadMoreError?: Error | null;
+  onLoadMoreHistory?: () => void;
+  onRetryLoadMoreHistory?: () => void;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
   onReplay?: () => void;
@@ -69,6 +77,13 @@ export default function Sidebar({
   onRenameSession,
   onFavoriteSession,
   isHistoryLoading = false,
+  historyInitialError = null,
+  onRetryHistory,
+  historyHasMore = false,
+  historyLoadingMore = false,
+  historyLoadMoreError = null,
+  onLoadMoreHistory,
+  onRetryLoadMoreHistory,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
   onReplay,
@@ -174,6 +189,8 @@ export default function Sidebar({
                   sessions={sessions}
                   currentId={currentId}
                   isLoading={isHistoryLoading}
+                  initialError={historyInitialError}
+                  onRetryInitial={onRetryHistory}
                   onSwitch={(id) => { onSwitchSession(id); setShowHistory(false); }}
                   onDelete={onDeleteSession}
                   onRename={onRenameSession}
@@ -183,6 +200,11 @@ export default function Sidebar({
                   onFavorite={onFavoriteSession}
                   loadingSessions={loadingSessions}
                   unreadSessions={unreadSessions}
+                  hasMore={historyHasMore}
+                  isLoadingMore={historyLoadingMore}
+                  loadMoreError={historyLoadMoreError}
+                  onLoadMore={onLoadMoreHistory}
+                  onRetryLoadMore={onRetryLoadMoreHistory}
                 />
               </div>
             </>

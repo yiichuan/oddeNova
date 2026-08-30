@@ -347,4 +347,24 @@ describe('createSessionCloudSync', () => {
     expect(statuses.get('s-2')).toMatch(/dirty|saving|synced/);
     expect(statuses.has('s-3')).toBe(false);
   });
+
+  it('accepts one authoritative cloud detail without hydrating unrelated sessions', async () => {
+    const { repository, statuses, sync } = setup();
+    const cloudSession = session('cloud detail', 10);
+    const acceptCloudSession = (sync as unknown as {
+      acceptCloudSession: (value: Session) => void;
+    }).acceptCloudSession;
+
+    acceptCloudSession(cloudSession);
+
+    expect(statuses.get('s-1')).toBe('synced');
+    sync.noteLocal({ ...cloudSession, title: 'Renamed' });
+    await sync.checkpoint({ ...cloudSession, title: 'Renamed' });
+
+    expect(repository.saveSession).toHaveBeenCalledTimes(1);
+    expect(repository.saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Renamed' }),
+      'user-1',
+    );
+  });
 });

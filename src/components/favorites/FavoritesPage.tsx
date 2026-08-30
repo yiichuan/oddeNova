@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { t, zh } from '../../lib/i18n';
+import type { FavoriteSummary } from '../../../shared/session-api';
 import {
   conversationTitle,
   favoriteConversationMessages,
@@ -228,7 +229,26 @@ const CONVERSATION_WINDOW = {
 } as CSSProperties;
 
 interface FavoritesPageProps {
-  conversations: readonly FavoriteConversation[];
+  /** Legacy guest read model. Account pages pass summaries and one detail. */
+  conversations?: readonly FavoriteConversation[];
+  /** Ordered cloud rows; the page never sorts or reads their full content. */
+  summaries?: readonly FavoriteSummary[];
+  /** The one cloud favorite whose detail has been fetched for the selection. */
+  detail?: FavoriteConversation | null;
+  /** Controlled selected summary id for the account collection. */
+  selectedId?: string | null;
+  isLoading?: boolean;
+  error?: Error | null;
+  onRetry?: () => void;
+  detailLoading?: boolean;
+  detailError?: Error | null;
+  onRetryDetail?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  loadMoreError?: Error | null;
+  onLoadMore?: () => void;
+  onRetryLoadMore?: () => void;
+  onSelect?: (summary: FavoriteSummary) => void;
   /**
    * Whether this is the page on screen. The gallery pages are hidden rather
    * than unmounted when you leave them, so nothing below can tell an arrival
@@ -578,9 +598,24 @@ function CodePanel({
  * reading.
  */
 export default function FavoritesPage({
-  conversations,
+  conversations = [],
+  summaries,
+  detail = null,
+  selectedId,
   active = true,
   focus = null,
+  isLoading = false,
+  error = null,
+  onRetry,
+  detailLoading = false,
+  detailError = null,
+  onRetryDetail,
+  hasMore = false,
+  isLoadingMore = false,
+  loadMoreError = null,
+  onLoadMore,
+  onRetryLoadMore,
+  onSelect,
   isPlaying = false,
   playingCode = '',
   onPlayCode = () => {},
@@ -589,9 +624,21 @@ export default function FavoritesPage({
   onDelete,
   onOpenInStudio,
 }: FavoritesPageProps) {
+  const isSummaryMode = summaries !== undefined;
   const sortedConversations = useMemo(
     () => [...conversations].sort((left, right) => right.favoritedAt - left.favoritedAt),
     [conversations],
+  );
+  const favoriteSummaries = useMemo<FavoriteSummary[]>(
+    () => summaries
+      ? [...summaries]
+      : sortedConversations.map((conversation) => ({
+        id: conversation.id,
+        title: conversationTitle(conversation),
+        updatedAt: conversation.favoritedAt,
+        favoritedAt: conversation.favoritedAt,
+      })),
+    [sortedConversations, summaries],
   );
   /**
    * What the reader last opened, and the arrival that pick was made under.
@@ -607,6 +654,14 @@ export default function FavoritesPage({
     () => ({ id: sortedConversations[0]?.id ?? null, focus: null }),
   );
   const selectedConversationId = picked.focus === focus ? picked.id : focus?.id ?? picked.id;
+  const [pickedSummaryId, setPickedSummaryId] = useState<string | null>(null);
+  const autoSelectedSummaryRef = useRef<string | null>(null);
+  const selectedSummaryId = selectedId
+    ?? (focus && favoriteSummaries.some((summary) => summary.id === focus.id) ? focus.id : null)
+    ?? pickedSummaryId
+    ?? favoriteSummaries[0]?.id
+    ?? null;
+  const selectedSummary = favoriteSummaries.find((summary) => summary.id === selectedSummaryId) ?? null;
   /* Left alone when the conversation changes: a turn id from another favorite
      simply isn't among this one's scripts, and the fallback below is already
      the last take — which is where an entry opens. */
@@ -615,9 +670,12 @@ export default function FavoritesPage({
      reading, and the element that scrolls is inside the archive. */
   const archiveScrollRef = useRef<HTMLDivElement>(null);
 
-  const current = sortedConversations.find(
+  const legacyCurrent = sortedConversations.find(
     (conversation) => conversation.id === selectedConversationId,
   ) ?? sortedConversations[0] ?? null;
+  const current = isSummaryMode
+    ? detail && selectedSummary?.id === detail.id ? detail : null
+    : legacyCurrent;
   const scripts = useMemo(() => (current ? favoriteScripts(current) : []), [current]);
   const archiveMessages = useMemo(
     () => (current ? favoriteConversationMessages(current) : []),
@@ -639,11 +697,36 @@ export default function FavoritesPage({
   const soloScript = !hasReading && selectedScript !== null;
   const alone = soloReading || soloScript;
 
+  const selectSummary = (summary: FavoriteSummary) => {
+    setPickedSummaryId(summary.id);
+    autoSelectedSummaryRef.current = summary.id;
+    onSelect?.(summary);
+  };
+
+  useEffect(() => {
+    if (!isSummaryMode) return;
+    if (!active) {
+      autoSelectedSummaryRef.current = null;
+      return;
+    }
+    const first = selectedSummary;
+    if (isLoading || error || !first || !onSelect || autoSelectedSummaryRef.current === first.id) return;
+    autoSelectedSummaryRef.current = first.id;
+    onSelect(first);
+  }, [active, error, isLoading, isSummaryMode, onSelect, selectedSummary]);
+
   const selectConversation = (conversation: FavoriteConversation) => {
     const conversationScripts = favoriteScripts(conversation);
     setPicked({ id: conversation.id, focus });
     setSelectedScriptTurnId(conversationScripts.at(-1)?.turnId ?? null);
   };
+
+  const cloudDetailPending = isSummaryMode && selectedSummary !== null && current === null
+    && !detailError;
+  const cloudDetailFailed = isSummaryMode && selectedSummary !== null && current === null
+    && Boolean(detailError);
+  const cloudListEmpty = isSummaryMode && favoriteSummaries.length === 0 && !isLoading && !error;
+  const cloudListFailed = isSummaryMode && favoriteSummaries.length === 0 && Boolean(error);
 
   return (
     <main
@@ -668,9 +751,17 @@ export default function FavoritesPage({
         </header>
 
         <FavoritesList
-          conversations={sortedConversations}
-          selectedId={current?.id ?? null}
-          onSelect={selectConversation}
+          summaries={favoriteSummaries}
+          selectedId={isSummaryMode ? selectedSummary?.id ?? null : current?.id ?? null}
+          onSelect={isSummaryMode ? selectSummary : (summary) => {
+            const conversation = sortedConversations.find((item) => item.id === summary.id);
+            if (conversation) selectConversation(conversation);
+          }}
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          loadMoreError={loadMoreError}
+          onLoadMore={onLoadMore}
+          onRetryLoadMore={onRetryLoadMore}
         />
 
         {/* Both of these are the reading's own furniture — what says the stream
@@ -689,7 +780,50 @@ export default function FavoritesPage({
           />
         )}
 
-        {current === null ? (
+        {isSummaryMode && isLoading && favoriteSummaries.length === 0 ? (
+          <div
+            data-testid="favorites-loading"
+            className="absolute inset-0 flex items-center justify-center text-sm text-text-muted"
+          >
+            {t('loading')}
+          </div>
+        ) : cloudListFailed ? (
+          <div
+            data-testid="favorites-error"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-text-muted"
+          >
+            <span>{t('sessionListNetworkError')}</span>
+            {onRetry && (
+              <button type="button" onClick={onRetry} className="underline underline-offset-2">
+                {t('retry')}
+              </button>
+            )}
+          </div>
+        ) : cloudDetailPending || cloudDetailFailed ? (
+          <div
+            data-testid={detailError ? 'favorites-detail-error' : 'favorites-detail-loading'}
+            data-detail-loading={detailLoading || undefined}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-text-muted"
+          >
+            {detailError ? (
+              <>
+                <span>{t('sessionDetailNetworkError')}</span>
+                {onRetryDetail && (
+                  <button
+                    type="button"
+                    data-testid="favorites-detail-retry"
+                    onClick={onRetryDetail}
+                    className="underline underline-offset-2"
+                  >
+                    {t('retry')}
+                  </button>
+                )}
+              </>
+            ) : (
+              t('loading')
+            )}
+          </div>
+        ) : cloudListEmpty || current === null ? (
           /* Nothing kept yet. No reading, no script, no frame around either —
              the two windows are what a favorite looks like when opened, and
              drawing them empty would be furniture standing in for content.

@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import { t } from '../../lib/i18n';
-import {
-  conversationTitle,
-  favoritedDateLabel,
-  type FavoriteConversation,
-} from '../../lib/favorite-conversations';
+import type { FavoriteSummary } from '../../../shared/session-api';
+import { favoritedDateLabel } from '../../lib/favorite-conversations';
+import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
 
 /** One entry, one row — set in the same metrics the Featured title column uses. */
 const ROW_HEIGHT = 22;
@@ -95,9 +93,14 @@ const ROW_STYLE = {
 
 interface FavoritesListProps {
   /** Newest first — the caller owns the order, the column only draws it. */
-  conversations: readonly FavoriteConversation[];
+  summaries: readonly FavoriteSummary[];
   selectedId: string | null;
-  onSelect: (conversation: FavoriteConversation) => void;
+  onSelect: (summary: FavoriteSummary) => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  loadMoreError?: Error | null;
+  onLoadMore?: () => void;
+  onRetryLoadMore?: () => void;
 }
 
 /**
@@ -122,13 +125,18 @@ interface FavoritesListProps {
  * conversation is where anything finer belongs.
  */
 export default function FavoritesList({
-  conversations,
+  summaries,
   selectedId,
   onSelect,
+  hasMore = false,
+  isLoadingMore = false,
+  loadMoreError = null,
+  onLoadMore = () => {},
+  onRetryLoadMore = () => {},
 }: FavoritesListProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  if (conversations.length === 0) return null;
+  if (summaries.length === 0) return null;
 
   return (
     <div
@@ -148,27 +156,27 @@ export default function FavoritesList({
         maskImage: LIST_FADE,
       }}
     >
-      {conversations.map((conversation) => {
-        const selected = conversation.id === selectedId;
-        const hovered = !selected && hoveredId === conversation.id;
+      {summaries.map((summary) => {
+        const selected = summary.id === selectedId;
+        const hovered = !selected && hoveredId === summary.id;
 
         return (
           <button
-            key={conversation.id}
+            key={summary.id}
             type="button"
             role="option"
             aria-selected={selected}
-            data-favorite-id={conversation.id}
+            data-favorite-id={summary.id}
             data-favorite-selected={selected}
-            onPointerEnter={() => setHoveredId(conversation.id)}
+            onPointerEnter={() => setHoveredId(summary.id)}
             onPointerLeave={() => setHoveredId(
-              (current) => (current === conversation.id ? null : current),
+              (current) => (current === summary.id ? null : current),
             )}
-            onFocus={() => setHoveredId(conversation.id)}
+            onFocus={() => setHoveredId(summary.id)}
             onBlur={() => setHoveredId(
-              (current) => (current === conversation.id ? null : current),
+              (current) => (current === summary.id ? null : current),
             )}
-            onClick={() => onSelect(conversation)}
+            onClick={() => onSelect(summary)}
             className="flex w-full max-w-full shrink-0 items-center justify-end outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/70"
             style={{ height: ROW_HEIGHT }}
           >
@@ -194,7 +202,7 @@ export default function FavoritesList({
                   under the pointer or at full once the entry is the one open. */}
               <span
                 aria-hidden="true"
-                data-favorite-marker={conversation.id}
+                data-favorite-marker={summary.id}
                 className="absolute inset-0 origin-right bg-[#f05a28] transition-[transform,opacity] duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
                 style={{
                   boxShadow: selected ? '0 8px 32px rgba(240,90,40,0.18)' : undefined,
@@ -206,21 +214,29 @@ export default function FavoritesList({
                   characters and holding them keeps the column of days
                   readable however long a name runs. */}
               <span
-                data-favorite-title={conversation.id}
+                data-favorite-title={summary.id}
                 className="relative min-w-0 truncate"
               >
-                {conversationTitle(conversation)}
+                {summary.title}
               </span>
               <time
-                dateTime={new Date(conversation.favoritedAt).toISOString()}
+                dateTime={new Date(summary.favoritedAt).toISOString()}
                 className="relative shrink-0 tabular-nums opacity-60"
               >
-                {favoritedDateLabel(conversation.favoritedAt)}
+                {favoritedDateLabel(summary.favoritedAt)}
               </time>
             </span>
           </button>
         );
       })}
+      <InfiniteScrollSentinel
+        enabled
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        loadMoreError={loadMoreError}
+        onLoadMore={onLoadMore}
+        onRetryLoadMore={onRetryLoadMore}
+      />
     </div>
   );
 }

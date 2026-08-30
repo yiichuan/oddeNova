@@ -6,7 +6,6 @@ import { resolve, join } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
-import favoritesHandler from './api/favorites.js'
 import sessionsHandler from './api/sessions'
 
 interface AirJellyRuntime {
@@ -277,6 +276,10 @@ function runVercelHandler(
         res.statusCode = code
         return response
       },
+      setHeader(name: string, value: string) {
+        res.setHeader(name, value)
+        return response
+      },
       json(payload: unknown) {
         if (!res.headersSent) res.setHeader('Content-Type', 'application/json')
         res.end(JSON.stringify(payload))
@@ -303,62 +306,51 @@ function runVercelHandler(
   })
 }
 
+export function parseSessionApiRequest(
+  base: '/api/sessions' | '/api/favorites',
+  requestUrl: string,
+): { resource: 'sessions' | 'favorites'; query: Record<string, string> } {
+  const url = new URL(requestUrl, 'http://localhost')
+  let pathname = url.pathname
+  if (pathname === base) pathname = '/'
+  else if (pathname.startsWith(`${base}/`)) pathname = pathname.slice(base.length)
+
+  const resource = base === '/api/favorites' ? 'favorites' : 'sessions'
+  const query = Object.fromEntries(url.searchParams.entries())
+  query.resource = resource
+  const pathParts = pathname.replace(/^\/+/, '').split('/').filter(Boolean)
+
+  if (pathParts.at(-1) === 'continue' && pathParts.length > 1) {
+    query.id = decodeURIComponent(pathParts.slice(0, -1).join('/'))
+    query.action = 'continue'
+  } else if (pathParts.length > 0) {
+    query.id = decodeURIComponent(pathParts.join('/'))
+  }
+
+  return { resource, query }
+}
+
 function sessionsDevMiddleware(): Plugin {
   return {
     name: 'sessions-api-dev-middleware',
     configureServer(server) {
-      server.middlewares.use(
-        '/api/sessions',
+      const handle = (base: '/api/sessions' | '/api/favorites') =>
         async (req: IncomingMessage, res: ServerResponse) => {
-          const pathname = new URL(req.url ?? '', 'http://localhost').pathname
-
           try {
-            if (pathname === '/' || pathname === '') {
-              await runVercelHandler(sessionsHandler, req, res)
-              return
-            }
-
-            const id = decodeURIComponent(pathname.replace(/^\//, ''))
-            const body = req.method === 'PUT' ? await readJsonBody(req) : undefined
-            await runVercelHandler(sessionsHandler, req, res, { id }, body)
+            const { query } = parseSessionApiRequest(base, req.url ?? '')
+            const body = req.method === 'PUT' || req.method === 'POST'
+              ? await readJsonBody(req)
+              : undefined
+            await runVercelHandler(sessionsHandler, req, res, query, body)
           } catch (error) {
             res.statusCode = 400
             res.setHeader('Content-Type', 'application/json')
             res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Bad request' }))
           }
         }
-      )
-    },
-  }
-}
 
-function favoritesDevMiddleware(): Plugin {
-  return {
-    name: 'favorites-api-dev-middleware',
-    configureServer(server) {
-      server.middlewares.use(
-        '/api/favorites',
-        async (req: IncomingMessage, res: ServerResponse) => {
-          const url = new URL(req.url ?? '', 'http://localhost')
-          const pathname = url.pathname
-          const query = Object.fromEntries(url.searchParams.entries())
-
-          try {
-            if (pathname !== '/' && pathname !== '') {
-              const [rawId, rawAction] = pathname.split('/').filter(Boolean)
-              if (rawId) query.id = decodeURIComponent(rawId)
-              if (rawAction) query.action = decodeURIComponent(rawAction)
-            }
-
-            const body = req.method === 'POST' ? await readJsonBody(req) : undefined
-            await runVercelHandler(favoritesHandler, req, res, query, body)
-          } catch (error) {
-            res.statusCode = 400
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Bad request' }))
-          }
-        }
-      )
+      server.middlewares.use('/api/sessions', handle('/api/sessions'))
+      server.middlewares.use('/api/favorites', handle('/api/favorites'))
     },
   }
 }
@@ -392,7 +384,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), favoritesDevMiddleware(), syncAnimationHtml()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml()],
     build: {
       rollupOptions: {
         input: {

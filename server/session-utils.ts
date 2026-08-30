@@ -10,6 +10,7 @@ export interface ApiSession {
   revisions?: unknown[];
   suggestions?: unknown;
   externalSource?: unknown;
+  favoritedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -18,7 +19,7 @@ export function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-interface SessionRow {
+export interface SessionRow {
   id: string;
   title: string;
   messages: unknown[];
@@ -27,6 +28,7 @@ interface SessionRow {
   revisions: unknown[] | null;
   suggestions: unknown;
   external_source: unknown;
+  favorited_at: string | number | null;
   created_at: string | number;
   updated_at: string | number;
 }
@@ -83,12 +85,13 @@ export function rowToSession(row: SessionRow): ApiSession {
     revisions: Array.isArray(row.revisions) ? row.revisions : undefined,
     suggestions: row.suggestions ?? undefined,
     externalSource: row.external_source ?? undefined,
+    favoritedAt: row.favorited_at == null ? undefined : toEpochMillis(row.favorited_at),
     createdAt: toEpochMillis(row.created_at),
     updatedAt: toEpochMillis(row.updated_at),
   };
 }
 
-export function sessionToRow(session: ApiSession, userId: string): SessionRow & { user_id: string } {
+export function sessionToRow(session: ApiSession, userId: string): Omit<SessionRow, 'favorited_at'> & { user_id: string } {
   return {
     id: session.id,
     user_id: userId,
@@ -104,7 +107,7 @@ export function sessionToRow(session: ApiSession, userId: string): SessionRow & 
   };
 }
 
-function toEpochMillis(value: string | number): number {
+export function toEpochMillis(value: string | number): number {
   return typeof value === 'number' ? value : new Date(value).getTime();
 }
 

@@ -114,23 +114,6 @@ describe('session-storage fallback path', () => {
     await expect(deleteSession('nonexistent-id')).resolves.toBeUndefined();
   });
 
-  it('keeps immutable favorites available in memory fallback', async () => {
-    const storage = await import('../session-storage');
-    const favorite = {
-      id: 'favorite-1',
-      sourceSessionId: 'session-1',
-      title: 'Final',
-      favoritedAt: 10,
-      turns: [],
-      messages: [],
-      code: 's("bd")',
-    };
-
-    await storage.putFavorite(favorite);
-    expect(await storage.getAllFavorites()).toEqual([favorite]);
-    await storage.deleteFavorite(favorite.id);
-    expect(await storage.getAllFavorites()).toEqual([]);
-  });
 });
 
 describe('session-storage owner namespaces', () => {
@@ -214,24 +197,34 @@ describe('session-storage owner namespaces', () => {
     expect((await getAllSessions('user:u-1')).map((s) => s.title)).toEqual(['Account Copy']);
   });
 
-  it('stores favorite snapshots independently per owner', async () => {
+  it('drops the legacy favorite store on the next database upgrade', async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('oddenova-db', 4);
+      request.onerror = () => reject(request.error);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        const favorites = database.createObjectStore('favorites_by_owner', { keyPath: ['ownerKey', 'id'] });
+        favorites.put({
+          ownerKey: 'guest',
+          id: 'legacy-favorite',
+          title: 'Legacy',
+          turns: [],
+          messages: [],
+          code: 's("bd")',
+          favoritedAt: 100,
+        });
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+    });
+
     const storage = await import('../session-storage');
     await storage.openDB();
-    const favorite = {
-      id: 'favorite-1',
-      sourceSessionId: 'session-1',
-      title: 'Guest Favorite',
-      favoritedAt: 10,
-      turns: [],
-      messages: [],
-      code: 's("bd")',
-    };
 
-    await storage.putFavorite(favorite, 'guest');
-    await storage.putFavorite({ ...favorite, title: 'Account Favorite' }, 'user:u-1');
-
-    expect((await storage.getAllFavorites('guest')).map((item) => item.title)).toEqual(['Guest Favorite']);
-    expect((await storage.getAllFavorites('user:u-1')).map((item) => item.title)).toEqual(['Account Favorite']);
+    expect(await storage.getAllSessions('guest')).toEqual([]);
+    expect(storage.getStorageDb()?.objectStoreNames.contains('favorites_by_owner')).toBe(false);
   });
 
   it('opens storage before reading guest sessions for login-time import checks', async () => {
