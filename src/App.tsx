@@ -6,7 +6,6 @@ import Sidebar from './components/conversation/Sidebar';
 import VizPlaceholder from './components/studio/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { makeGreetingMessage, useSessions } from './hooks/useSessions';
-import { useFavorites } from './hooks/useFavorites';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
@@ -136,12 +135,6 @@ export default function App() {
     syncEnabled: !!auth.user,
     cloud: cloudRepository,
     startNewSessionToken: accountStartToken,
-  });
-  const favorites = useFavorites({
-    sessions: sessions.sessions,
-    sessionsLoading: sessions.isLoading,
-    setSessionFavorite: sessions.setSessionFavorite,
-    enabled: !auth.user,
   });
   const dailySuggestionDefaults = useDailySuggestions(zh);
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
@@ -367,6 +360,10 @@ export default function App() {
   const stopStudio = strudel.stop;
 
   const handlePrimaryNavSelect = useCallback((item: PrimaryNavItem) => {
+    if (item === 'favorites' && !auth.user) {
+      setAccountOpen(true);
+      return;
+    }
     if (item === 'account') {
       setAccountOpen(true);
       return;
@@ -377,7 +374,15 @@ export default function App() {
     if (item !== 'featured') stopFeaturedPreview();
     if (item !== 'home') stopStudio();
     setPrimaryNavItem(item);
-  }, [stopFeaturedPreview, stopStudio]);
+  }, [auth.user, stopFeaturedPreview, stopStudio]);
+
+  useEffect(() => {
+    // A sign-out or expired auth session must not leave the account-only page
+    // visible while the auth state settles.
+    if (!auth.user && primaryNavItem === 'favorites') {
+      setPrimaryNavItem('home');
+    }
+  }, [auth.user, primaryNavItem]);
 
   useEffect(() => {
     const userId = auth.user?.id;
@@ -869,10 +874,6 @@ export default function App() {
   const pendingFavoriteId = favoriteNotice?.kind === 'released' || favoriteNotice?.kind === 'deleted'
     ? favoriteNotice.favorite.id
     : null;
-  const favoriteConversations = useMemo(
-    () => favorites.favorites.filter((favorite) => favorite.id !== pendingFavoriteId),
-    [favorites.favorites, pendingFavoriteId],
-  );
   const cloudFavoriteConversations = useMemo(
     () => cloudFavoriteItems.filter((summary) => summary.id !== pendingFavoriteId),
     [cloudFavoriteItems, pendingFavoriteId],
@@ -880,6 +881,7 @@ export default function App() {
 
   const commitPendingDelete = useCallback(async (notice: FavoriteNotice | null): Promise<boolean> => {
     if (notice?.kind !== 'released' && notice?.kind !== 'deleted') return false;
+    if (!auth.user) return false;
     if (notice.kind === 'deleted') {
       // Deletion already removes the source session. Updating its favorite
       // marker first would enqueue a checkpoint that could race the delete and
@@ -892,11 +894,7 @@ export default function App() {
       return true;
     }
     try {
-      if (auth.user) {
-        await unfavoriteCloudSession(notice.favorite.id);
-      } else {
-        await favorites.remove(notice.favorite);
-      }
+      await unfavoriteCloudSession(notice.favorite.id);
       return true;
     } catch (error) {
       console.warn('[favorites] failed to update session favorite state.', error);
@@ -904,7 +902,7 @@ export default function App() {
       strudel.setError(t('favoriteActionFailed'));
       return false;
     }
-  }, [auth.user, favorites, sessions, strudel, unfavoriteCloudSession]);
+  }, [auth.user, sessions, strudel, unfavoriteCloudSession]);
 
   const noticeSeqRef = useRef(0);
 
@@ -923,77 +921,61 @@ export default function App() {
   }, [commitPendingDelete, favoriteNotice]);
 
   const handleFavoriteSession = useCallback(async (id: string) => {
-    if (auth.user) {
-      const summary = cloudHistoryItems.find((candidate) => candidate.id === id);
-      if (!summary) return;
-      const isCurrentSession = sessions.currentId === id;
-      try {
-        if (isCurrentSession) {
-          await setManualCode(strudel.code, id);
-          await flushCloudSaves(id);
-        }
-        const favoriteSummary = await favoriteCloudSession(summary);
-        noticeFor('kept', undefined, favoriteNoticeFromSummary(favoriteSummary));
-        if (isCurrentSession) await handleNewSession();
-      } catch (error) {
-        console.warn('[favorites] failed to favorite cloud session.', error);
-        if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-        strudel.setError(t('favoriteActionFailed'));
-      }
+    if (!auth.user) {
+      setAccountOpen(true);
       return;
     }
-    const session = sessions.sessions.find((candidate) => candidate.id === id);
-    if (!session) return;
+    const summary = cloudHistoryItems.find((candidate) => candidate.id === id);
+    if (!summary) return;
     const isCurrentSession = sessions.currentId === id;
-    const finalCode = isCurrentSession ? strudel.code : session.code;
     try {
-      await setManualCode(finalCode, id);
-      await flushCloudSaves(id);
-      const favorite = await favorites.create(session, finalCode);
-      noticeFor('kept', session, favorite);
+      if (isCurrentSession) {
+        await setManualCode(strudel.code, id);
+        await flushCloudSaves(id);
+      }
+      const favoriteSummary = await favoriteCloudSession(summary);
+      noticeFor('kept', undefined, favoriteNoticeFromSummary(favoriteSummary));
       if (isCurrentSession) await handleNewSession();
     } catch (error) {
-      console.warn('[favorites] failed to favorite session.', error);
+      console.warn('[favorites] failed to favorite cloud session.', error);
+      if (cloudErrorStatus(error) === 401) setAccountOpen(true);
       strudel.setError(t('favoriteActionFailed'));
     }
-  }, [auth.user, cloudHistoryItems, favoriteCloudSession, favorites, flushCloudSaves, handleNewSession, noticeFor, sessions, setManualCode, strudel]);
+  }, [auth.user, cloudHistoryItems, favoriteCloudSession, flushCloudSaves, handleNewSession, noticeFor, sessions.currentId, setManualCode, strudel]);
 
   const handleUnfavorite = useCallback((conversation: FavoriteConversation) => {
-    const sourceId = conversation.sourceSessionId ?? conversation.sessionId ?? conversation.id;
-    if (auth.user) {
-      const summary = cloudFavoriteItems.find((candidate) => candidate.id === sourceId)
-        ?? cloudFavoriteItems.find((candidate) => candidate.id === conversation.id);
-      if (!summary) return;
-      const session = cloudDetails.get(summary.id)?.session
-        ?? sessions.sessions.find((candidate) => candidate.id === sourceId);
-      noticeFor('released', session, conversation);
+    if (!auth.user) {
+      setAccountOpen(true);
       return;
     }
-    const session = sessions.sessions.find((candidate) => candidate.id === sourceId);
-    if (!session) return;
+    const sourceId = conversation.sourceSessionId ?? conversation.sessionId ?? conversation.id;
+    const summary = cloudFavoriteItems.find((candidate) => candidate.id === sourceId)
+      ?? cloudFavoriteItems.find((candidate) => candidate.id === conversation.id);
+    if (!summary) return;
+    const session = cloudDetails.get(summary.id)?.session
+      ?? sessions.sessions.find((candidate) => candidate.id === sourceId);
     noticeFor('released', session, conversation);
   }, [auth.user, cloudDetails, cloudFavoriteItems, noticeFor, sessions.sessions]);
 
   const handleDeleteFavorite = useCallback((conversation: FavoriteConversation) => {
-    const sourceId = conversation.sourceSessionId ?? conversation.sessionId ?? conversation.id;
-    if (auth.user) {
-      if (sessions.sessions.some((session) => session.id === sourceId)) {
-        removeCloudSummary(sourceId);
-        sessions.deleteSession(sourceId);
-      } else {
-        void deleteCloudSession(sourceId, auth.user.id)
-          .then(() => { removeCloudSummary(sourceId); })
-          .catch((error) => {
-            console.warn('[favorites] failed to delete cloud session.', error);
-            if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-            strudel.setError(t('favoriteActionFailed'));
-          });
-      }
+    if (!auth.user) {
+      setAccountOpen(true);
       return;
     }
-    const session = sessions.sessions.find((candidate) => candidate.id === sourceId);
-    noticeFor('deleted', session, conversation);
-  }, [auth.user, noticeFor, removeCloudSummary, sessions, strudel]);
+    const sourceId = conversation.sourceSessionId ?? conversation.sessionId ?? conversation.id;
+    if (sessions.sessions.some((session) => session.id === sourceId)) {
+      removeCloudSummary(sourceId);
+      sessions.deleteSession(sourceId);
+    } else {
+      void deleteCloudSession(sourceId, auth.user.id)
+        .then(() => { removeCloudSummary(sourceId); })
+        .catch((error) => {
+          console.warn('[favorites] failed to delete cloud session.', error);
+          if (cloudErrorStatus(error) === 401) setAccountOpen(true);
+          strudel.setError(t('favoriteActionFailed'));
+        });
+    }
+  }, [auth.user, removeCloudSummary, sessions, strudel]);
 
   const dismissFavoriteNotice = useCallback(() => {
     // Letting the notice go is what commits the deletion it was holding.
@@ -1004,16 +986,18 @@ export default function App() {
   const undoFavoriteNotice = useCallback(() => {
     if (!favoriteNotice) return;
     if (favoriteNotice.kind === 'kept') {
-      const undo = auth.user
-        ? unfavoriteCloudSession(favoriteNotice.favorite.id)
-        : favorites.remove(favoriteNotice.favorite);
+      if (!auth.user) {
+        setFavoriteNotice(null);
+        return;
+      }
+      const undo = unfavoriteCloudSession(favoriteNotice.favorite.id);
       void undo.catch((error) => {
         console.warn('[favorites] failed to undo session favorite.', error);
         strudel.setError(t('favoriteActionFailed'));
       });
     }
     setFavoriteNotice(null);
-  }, [auth.user, favoriteNotice, favorites, strudel, unfavoriteCloudSession]);
+  }, [auth.user, favoriteNotice, strudel, unfavoriteCloudSession]);
 
   const handleSwitchSession = useCallback(async (id: string) => {
     if (sessions.currentId !== id) {
@@ -1081,6 +1065,10 @@ export default function App() {
   }, [auth.user, cloudHistoryItems, openCloudSession, sessions, strudel, upsertCloudHistorySummary]);
 
   const handleOpenFavoriteInStudio = useCallback((code: string) => {
+    if (!auth.user) {
+      setAccountOpen(true);
+      return;
+    }
     void sessions.importSession({
       /* A new session that happens to start on this code — nothing of the
          conversation that wrote it, not its name and not its exchange. What is
@@ -1097,10 +1085,13 @@ export default function App() {
       console.warn('[favorites] failed to continue snapshot.', error);
       strudel.setError(t('favoriteActionFailed'));
     });
-  }, [handlePrimaryNavSelect, sessions, strudel]);
+  }, [auth.user, handlePrimaryNavSelect, sessions, strudel]);
 
   const handleSelectFavorite = useCallback((summary: FavoriteSummary) => {
-    if (!auth.user) return;
+    if (!auth.user) {
+      setAccountOpen(true);
+      return;
+    }
     void (async () => {
       if (sessions.currentId && sessions.currentId !== summary.id) {
         await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
@@ -1610,7 +1601,7 @@ export default function App() {
               // Hidden rather than unmounted when you leave, so the page has
               // to be told when it is the one being looked at.
               active={primaryNavItem === 'favorites'}
-              conversations={auth.user ? undefined : favoriteConversations}
+              conversations={undefined}
               summaries={auth.user ? cloudFavoriteConversations : undefined}
               selectedId={auth.user ? selectedFavoriteId : undefined}
               detail={auth.user ? selectedAccountFavorite : undefined}
@@ -1629,11 +1620,11 @@ export default function App() {
               onSelect={auth.user ? handleSelectFavorite : undefined}
               isPlaying={strudel.isPlaying}
               playingCode={strudel.code}
-              onPlayCode={(code) => { void strudel.play(code); }}
-              onStopCode={strudel.stop}
-              onUnfavorite={handleUnfavorite}
-              onDelete={handleDeleteFavorite}
-              onOpenInStudio={handleOpenFavoriteInStudio}
+              onPlayCode={auth.user ? (code) => { void strudel.play(code); } : undefined}
+              onStopCode={auth.user ? strudel.stop : undefined}
+              onUnfavorite={auth.user ? handleUnfavorite : undefined}
+              onDelete={auth.user ? handleDeleteFavorite : undefined}
+              onOpenInStudio={auth.user ? handleOpenFavoriteInStudio : undefined}
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'flex h-full min-h-0' : 'hidden'}>

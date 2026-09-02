@@ -593,6 +593,51 @@ describe('App session sync boundaries', () => {
     expect(accountButton?.getAttribute('aria-current')).toBeNull();
   });
 
+  it('opens the account modal instead of entering Favorites for a guest', async () => {
+    mocks.auth.user = null;
+    mocks.isMobile = false;
+    await renderApp();
+
+    const favoritesButton = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${t('navFavorites')}"]`,
+    );
+    const homeButton = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${t('navHome')}"]`,
+    );
+
+    expect(favoritesButton).not.toBeNull();
+    expect(container.querySelector('[data-testid="account-modal"]')).toBeNull();
+
+    await act(async () => {
+      favoritesButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="account-modal"]')).not.toBeNull();
+    expect(homeButton?.getAttribute('aria-current')).toBe('page');
+    expect(favoritesButton?.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('opens the account modal instead of creating a local favorite for a guest', async () => {
+    mocks.auth.user = null;
+    mocks.isMobile = false;
+    await renderApp();
+    mocks.favorites.create.mockClear();
+    mocks.sessions.setManualCode.mockClear();
+    mocks.sessions.flushCloudSaves.mockClear();
+    mocks.sessions.newSession.mockClear();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onFavoriteSession as ((id: string) => Promise<void>))('s-1');
+    });
+
+    expect(container.querySelector('[data-testid="account-modal"]')).not.toBeNull();
+    expect(mocks.favorites.create).not.toHaveBeenCalled();
+    expect(mocks.sessions.setManualCode).not.toHaveBeenCalled();
+    expect(mocks.sessions.flushCloudSaves).not.toHaveBeenCalled();
+    expect(mocks.sessions.newSession).not.toHaveBeenCalled();
+  });
+
   it('uses cloud history summaries for an account instead of local full sessions', async () => {
     mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
     const cloudSummary = { id: 'cloud-1', title: 'Cloud history', updatedAt: 20 };
@@ -899,14 +944,18 @@ describe('App session sync boundaries', () => {
     expect(flushOrder).toBeLessThan(playOrder);
   });
 
-  it('checkpoints the live editor code before creating a favorite snapshot', async () => {
+  it('checkpoints the live editor code before creating an account favorite', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const cloudSummary = { id: 's-1', title: 'Session', updatedAt: 1 };
+    mocks.cloudLibrary.history.items = [cloudSummary];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
     mocks.isMobile = false;
     await renderApp();
     mocks.strudel.code = 's("bd, hh*8")';
     await renderApp();
     mocks.sessions.setManualCode.mockClear();
     mocks.sessions.flushCloudSaves.mockClear();
-    mocks.favorites.create.mockClear();
+    mocks.cloudLibrary.favoriteSession.mockClear();
     mocks.sessions.newSession.mockClear();
 
     await act(async () => {
@@ -915,117 +964,32 @@ describe('App session sync boundaries', () => {
 
     expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("bd, hh*8")', 's-1');
     expect(mocks.sessions.flushCloudSaves).toHaveBeenCalledWith('s-1');
-    expect(mocks.favorites.create).toHaveBeenCalledWith(mocks.session, 's("bd, hh*8")');
+    expect(mocks.cloudLibrary.favoriteSession).toHaveBeenCalledWith(cloudSummary);
     expect(mocks.sessions.flushCloudSaves.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.favorites.create.mock.invocationCallOrder[0]);
+      .toBeLessThan(mocks.cloudLibrary.favoriteSession.mock.invocationCallOrder[0]);
     expect(mocks.sessions.newSession).toHaveBeenCalledOnce();
   });
 
-  it('does not replace the Studio conversation when favoriting another history entry', async () => {
+  it('does not replace the Studio conversation when favoriting another account history entry', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
     const other = {
-      ...mocks.session,
       id: 's-2',
       title: 'Other session',
-      code: 's("hh")',
+      updatedAt: 2,
     };
-    mocks.sessions.sessions = [mocks.session, other];
-    mocks.favorites.create.mockResolvedValueOnce({
-      id: 'favorite-2',
-      sourceSessionId: 's-2',
-      sessionId: 's-2',
-      title: 'Other session',
-      favoritedAt: 101,
-      turns: [],
-      messages: [],
-      code: 's("hh")',
-    });
+    mocks.cloudLibrary.history.items = [other];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
     mocks.isMobile = false;
     await renderApp();
     mocks.sessions.newSession.mockClear();
+    mocks.cloudLibrary.favoriteSession.mockClear();
 
     await act(async () => {
       await (mocks.sidebarProps?.onFavoriteSession as ((id: string) => Promise<void>))('s-2');
     });
 
-    expect(mocks.favorites.create).toHaveBeenCalledWith(other, 's("hh")');
+    expect(mocks.cloudLibrary.favoriteSession).toHaveBeenCalledWith(other);
     expect(mocks.sessions.newSession).not.toHaveBeenCalled();
-  });
-
-  it('commits an unfavorite when View returns to the source session', async () => {
-    vi.useFakeTimers();
-    const favorite = {
-      id: 'favorite-1',
-      sourceSessionId: 's-1',
-      sessionId: 's-1',
-      title: 'Session',
-      favoritedAt: 100,
-      turns: [{ id: 'a-1', role: 'assistant' as const, text: '完成', code: 's("bd")' }],
-      messages: [{ id: 'a-1', role: 'assistant' as const, content: '完成', code: 's("bd")', timestamp: 1 }],
-      code: 's("bd")',
-    };
-    mocks.favorites.favorites = [favorite];
-    mocks.favorites.sourceSessionIds = new Set(['s-1']);
-    mocks.favorites.remove.mockResolvedValue(undefined);
-    mocks.isMobile = false;
-    await renderApp();
-
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFavorites')}"]`)?.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const unfavorite = container.querySelector<HTMLButtonElement>('[data-favorites-unfavorite]');
-    expect(unfavorite).not.toBeNull();
-    act(() => { unfavorite?.click(); });
-    const view = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent === t('favoriteActionView'));
-    expect(view).toBeDefined();
-    act(() => { view?.click(); });
-    await act(async () => { await Promise.resolve(); });
-    act(() => { vi.advanceTimersByTime(200); });
-    await act(async () => { await Promise.resolve(); });
-
-    expect(mocks.favorites.remove).toHaveBeenCalledWith(favorite);
-    expect(mocks.sessions.switchTo).toHaveBeenCalledWith('s-1');
-    vi.useRealTimers();
-  });
-
-  it('deletes the source session directly when deleting a favorite', async () => {
-    vi.useFakeTimers();
-    const favorite = {
-      id: 'favorite-1',
-      sourceSessionId: 's-1',
-      sessionId: 's-1',
-      title: 'Session',
-      favoritedAt: 100,
-      turns: [{ id: 'a-1', role: 'assistant' as const, text: '完成', code: 's("bd")' }],
-      messages: [{ id: 'a-1', role: 'assistant' as const, content: '完成', code: 's("bd")', timestamp: 1 }],
-      code: 's("bd")',
-    };
-    mocks.favorites.favorites = [favorite];
-    mocks.favorites.sourceSessionIds = new Set(['s-1']);
-    mocks.favorites.remove.mockResolvedValue(undefined);
-    mocks.isMobile = false;
-    await renderApp();
-
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFavorites')}"]`)?.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const remove = container.querySelector<HTMLButtonElement>('[data-favorites-delete]');
-    expect(remove).not.toBeNull();
-    act(() => { remove?.click(); });
-    const close = container.querySelector<HTMLButtonElement>(
-      `[data-testid="favorite-action-dialog"] button[aria-label="${t('close')}"]`,
-    );
-    expect(close).not.toBeNull();
-    act(() => { close?.click(); });
-    act(() => { vi.advanceTimersByTime(200); });
-    await act(async () => { await Promise.resolve(); });
-
-    expect(mocks.favorites.remove).not.toHaveBeenCalled();
-    expect(mocks.sessions.deleteSession).toHaveBeenCalledWith('s-1');
   });
 
   it('opens only the selected favorite script in a new Studio session', async () => {
