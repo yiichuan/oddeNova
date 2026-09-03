@@ -11,6 +11,8 @@ import {
 import { t } from '../../lib/i18n';
 import type { FeaturedAlbum } from '../../lib/featured-pieces';
 import FeaturedCard from './FeaturedCard';
+import { useResolvedTheme } from '../../hooks/useAppearance';
+import type { CoverRoom } from './featured-cover-light';
 import FeaturedTitleWheel from './FeaturedTitleWheel';
 import { wheelLabel } from './featured-wheel';
 import {
@@ -95,7 +97,7 @@ interface Sweep {
  *
  * The collection is shorter than the window is wide, so the outermost slot on
  * each side comes back round to a piece already on screen. That is the ring
- * being a ring: at this distance a sleeve is a quarter opaque and turned 28°,
+ * being a ring: at this distance a sleeve is far down the fade and turned 28°,
  * and reads as the wheel continuing rather than as the same record twice.
  */
 const VISIBLE_RADIUS = 3;
@@ -110,6 +112,32 @@ const SNAP_IDLE_MS = 120;
  */
 const PAPER_X_ROTATIONS = [10, -12.5, 7.5, -9.5, 12, -9, 14] as const;
 const PAPER_Z_ROTATIONS = [0, 0, 0, 0, 0, 0, 0] as const;
+
+/**
+ * How solid a sleeve is at each slot out from the centre.
+ *
+ * A sleeve going back into a dark room loses itself in it, and a quarter of a
+ * cover is still plainly a cover against near-black — so the dark room can
+ * spend most of the fade on depth and let the far slots go.
+ *
+ * On paper the same fade is spent on nothing. What shows through a sleeve here
+ * is the page, so opacity does not send it back into the room, it pours the
+ * room into the artwork: at seven tenths a cover is a cover with milk in it,
+ * which is the fog the shelf reads with when it is lit for the wrong room.
+ *
+ * So the paper ramp is nearly flat where the shelf is actually read — the two
+ * sleeves either side of the centre keep all but a few parts of their ink —
+ * and steepens only at the ends, which is where the fade's real job is: hiding
+ * the ring coming back round to a record already on screen. Even a twelfth of
+ * the page mixed into a neighbouring sleeve was enough to read as haze once
+ * the covers beside it were clean, so what is left there is a hair, not a
+ * step. The depth it gives up is carried twice over by the scale, the turn and
+ * the shadow each sleeve drops.
+ */
+const SLEEVE_FADE: Record<CoverRoom, readonly number[]> = {
+  space: [1, 0.72, 0.46, 0.25, 0],
+  paper: [1, 0.97, 0.88, 0.55, 0],
+};
 
 const interpolateStops = (distance: number, stops: readonly number[]) => {
   const bounded = Math.min(Math.abs(distance), stops.length - 1);
@@ -172,6 +200,9 @@ export default function FeaturedCarousel({
   const [cardSize, setCardSize] = useState(266);
   const [stageFrame, setStageFrame] = useState({ top: 0, height: 0 });
   const [reducedMotion, setReducedMotion] = useState(false);
+  /* The room the shelf is standing in, which is what says how far back a sleeve
+     goes as it leaves the centre. */
+  const room: CoverRoom = useResolvedTheme() === 'light' ? 'paper' : 'space';
 
   const setLogicalPosition = useCallback((value: number) => {
     positionRef.current = value;
@@ -513,7 +544,7 @@ export default function FeaturedCarousel({
         // `select-none`: the stage is a drag surface first. Without it a pull
         // across the centred sleeve runs a text selection through its title and
         // credits, and the blue that leaves behind outlives the gesture.
-        className={`fixed left-0 z-[1] cursor-grab touch-pan-y select-none overflow-hidden outline-none active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/20 ${viewFade}`}
+        className={`fixed left-0 z-[1] cursor-grab touch-pan-y select-none overflow-hidden outline-none active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[color:var(--featured-focus-ring)] ${viewFade}`}
         style={{
           height: stageFrame.height,
           perspective: '800px',
@@ -533,7 +564,7 @@ export default function FeaturedCarousel({
           const visible = magnitude <= VISIBLE_RADIUS + 0.05;
           const hidden = magnitude > VISIBLE_RADIUS + 0.55;
           const scale = SIDE_SCALE + Math.max(0, 1 - magnitude) * (1 - SIDE_SCALE);
-          const opacity = interpolateStops(magnitude, [1, 0.72, 0.46, 0.25, 0]);
+          const opacity = interpolateStops(magnitude, SLEEVE_FADE[room]);
           const turnProgress = Math.min(magnitude / VISIBLE_RADIUS, 1);
           const rotateY = -Math.sign(distance)
             * MAX_TURN_DEG
@@ -569,9 +600,18 @@ export default function FeaturedCarousel({
                 // The slot is centred as a cover-plus-metadata group: the
                 // 36px metadata block sits below the square cover.
                 marginTop: -(cardSize / 2 + 36) + stageDrop,
+                // Flat, and deliberately so. The slot leans and turns, but
+                // nothing it holds carries a z of its own: the tile's own lean
+                // is one rotation under a perspective of its own, flattened
+                // well before it reaches here. `preserve-3d` would buy no
+                // depth and would only hand the slot's contents planes to be
+                // depth-sorted on — a sort that flips along a diagonal the
+                // moment two axes are in play, which is what makes half a tile
+                // behave unlike the other half (see FeaturedTiltSurface). It
+                // would also single the centre out, since every other sleeve's
+                // opacity forces the flattening anyway.
                 transform: `translateX(${translateX}px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg) scale(${scale})`,
                 transformOrigin: `${cardSize / 2}px ${cardSize / 2}px`,
-                transformStyle: 'preserve-3d',
                 width: cardSize,
                 zIndex: 20 - Math.round(Math.min(magnitude, 4) * 4),
               }}

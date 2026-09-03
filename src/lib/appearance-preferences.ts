@@ -8,6 +8,8 @@
  * to reach them without a reload.
  */
 
+import { applyAppEditorTheme } from './editor-preferences';
+
 export type ThemePreference = 'system' | 'dark' | 'light';
 export type ResolvedTheme = 'dark' | 'light';
 export type AnimationPreference = 'galaxy' | 'galaxy-ascii';
@@ -16,11 +18,11 @@ export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'dark', 
 export const ANIMATION_PREFERENCES: readonly AnimationPreference[] = ['galaxy', 'galaxy-ascii'];
 
 /**
- * Only the dark palette exists so far. Until a light one is designed, every
- * preference resolves to dark — the stored choice is still honoured, so
- * flipping this flag is all it takes to turn the light option on.
+ * Whether the light palette is built. It is; the flag stays as the one place
+ * that clamps every preference back to dark, should the light half ever need
+ * taking off the road again.
  */
-export const LIGHT_THEME_READY = false;
+export const LIGHT_THEME_READY = true;
 
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'system';
 export const DEFAULT_ANIMATION: AnimationPreference = 'galaxy-ascii';
@@ -105,11 +107,25 @@ export function resolveTheme(preference: ThemePreference = getThemePreference())
   return LIGHT_THEME_READY ? requested : 'dark';
 }
 
-function applyTheme(preference: ThemePreference): void {
+/**
+ * Paint a preference onto the root element.
+ *
+ * `keepEditorTheme` is what separates the boot pass from a change. Only an
+ * actual dark/light flip re-establishes the editor's own palette — a piece of
+ * the contract, not an optimisation: the user may point the editor at a
+ * third-party theme afterwards, and that choice is meant to last until the app
+ * next changes colour scheme. Boot is not a flip, so it leaves whatever
+ * `loadEditorPreferences()` restored in place; re-running the default there
+ * would make the editor choice unable to survive a reload.
+ */
+function applyTheme(preference: ThemePreference, keepEditorTheme = false): void {
   if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  const previous = root.dataset.theme;
   const resolved = resolveTheme(preference);
-  document.documentElement.dataset.theme = resolved;
-  document.documentElement.style.colorScheme = resolved;
+  root.dataset.theme = resolved;
+  root.style.colorScheme = resolved;
+  if (!keepEditorTheme && previous !== resolved) applyAppEditorTheme(resolved);
 }
 
 export function setThemePreference(preference: ThemePreference): void {
@@ -123,6 +139,38 @@ export function setThemePreference(preference: ThemePreference): void {
 export function getAnimationPreference(): AnimationPreference {
   const stored = readStored(STORAGE_KEYS.animation);
   return isAnimationPreference(stored) ? stored : DEFAULT_ANIMATION;
+}
+
+/**
+ * The animations a palette can actually paint. The particle galaxy is emissive
+ * — motes of light on a near-black backdrop, with no ink half to switch to —
+ * so the light palette offers the ASCII field alone. The ASCII field carries
+ * both palettes itself, which is why it is the one that survives the flip.
+ */
+const THEME_ANIMATIONS: Record<ResolvedTheme, readonly AnimationPreference[]> = {
+  dark: ANIMATION_PREFERENCES,
+  light: ['galaxy-ascii'],
+};
+
+/** The animations offered under a palette, in the order the settings list them. */
+export function getAvailableAnimations(
+  theme: ResolvedTheme = resolveTheme(),
+): readonly AnimationPreference[] {
+  return THEME_ANIMATIONS[theme];
+}
+
+/**
+ * The animation a stored choice actually plays right now — the theme's
+ * counterpart to `resolveTheme()`. A galaxy picked in the dark is clamped to
+ * the ASCII field under the light palette, and the stored choice is left
+ * alone so going back to dark hands the galaxy back.
+ */
+export function resolveAnimation(
+  animation: AnimationPreference = getAnimationPreference(),
+  theme: ResolvedTheme = resolveTheme(),
+): AnimationPreference {
+  const available = getAvailableAnimations(theme);
+  return available.includes(animation) ? animation : available[0];
 }
 
 export function setAnimationPreference(animation: AnimationPreference): void {
@@ -158,7 +206,7 @@ export function setStudioAnimationVisible(visible: boolean): void {
 
 /** Paint the stored theme and keep "match system" following the OS. */
 export function loadAppearancePreferences(): void {
-  applyTheme(getThemePreference());
+  applyTheme(getThemePreference(), true);
 
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
   const query = window.matchMedia('(prefers-color-scheme: light)');

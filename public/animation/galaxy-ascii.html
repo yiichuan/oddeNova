@@ -5,13 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ASCII GALAXY — Strudel Live</title>
     <style>
-        :root { color-scheme: dark; }
+        /* Only ever seen in the gap before a frame lands — the canvas covers the
+           viewport and repaints its own ground. The OS preference is the best
+           guess available at parse time; inside the studio `syncDocumentTheme()`
+           corrects it to the host's own theme on the first frame, which is what
+           covers a light app on a dark system and the reverse. */
+        :root { color-scheme: light dark; }
         * { box-sizing: border-box; }
         html, body { width: 100%; height: 100%; }
         body {
             margin: 0;
             overflow: hidden;
             background: #080908;
+        }
+        @media (prefers-color-scheme: light) {
+            body { background: #F7F7FA; }
         }
         #asciiScreen {
             display: block;
@@ -139,9 +147,9 @@
             //   sub   30–140 Hz    kick        → shockwave ring: the front pushes cells
             //                                    up the ASCII ramp, lifts their opacity
             //                                    and draws them one size larger
-            //   body  160–700 Hz   tom / body  → oversized #CD5633 glyphs grown out
-            //                                    of the arm ridges
-            //   crack 1.5–3.5 kHz  snare/clap  → meteors: cool-white streaks cutting
+            //   body  160–700 Hz   tom / body  → oversized accent-coloured glyphs
+            //                                    grown out of the arm ridges
+            //   crack 1.5–3.5 kHz  snare/clap  → meteors: hueless streaks cutting
             //   air   7–16 kHz     hat/cymbal    across the frame from upper left to
             //                                    lower right at 45°, random in place
             //                                    and count
@@ -338,11 +346,66 @@
             const ACCENT_RING = 1;
             const ACCENT_BURST = 2;
             const ACCENT_METEOR = 3;
-            // Neutral grey-white — no hue at all, so the warm burst stays the only
-            // colour on screen. Quantised so a whole trail is painted with a handful of
-            // fillStyle changes.
-            const METEOR_COLORS = Array.from({ length: METEOR_LEVELS }, (unused, index) =>
-                `rgba(228, 228, 228, ${(0.22 + 0.78 * (index + 1) / METEOR_LEVELS).toFixed(3)})`);
+            // ── Palettes ───────────────────────────────────────────────────────
+            // Two rooms for one galaxy, following the app's colour scheme.
+            //
+            // The dark room is emissive: the grid is light thrown onto a near-black
+            // ground, so denser reads as brighter and the alpha ramp reads as glow.
+            // The light room is the same drawing in ink, on the studio's own paper.
+            // Nothing about the ramp changes — what inverts is which end of it is
+            // loud. Ink at 0.06 alpha is as faint on paper as light at 0.06 alpha is
+            // on black, so every threshold, band and lift tuned above carries over
+            // untouched and only these five values move.
+            //
+            // Neutrals are stored as `"r, g, b"` triples, the form the rgba()
+            // templates in the draw passes want. The burst is a triple too, because
+            // it doubles as the fallback for a piece's own `.color()`.
+            const PALETTES = {
+                dark: {
+                    background: '#080908',
+                    glyph: '194, 197, 194',
+                    ring: '200, 208, 202',
+                    // Neutral grey-white — no hue at all, so the burst stays the only
+                    // colour on screen.
+                    meteor: '228, 228, 228',
+                    // #D9542B, the app's dark-theme accent.
+                    burst: '217, 84, 43',
+                },
+                light: {
+                    // The app's own reading surface, so the pane and the editor
+                    // above it read as one sheet rather than as a window cut into
+                    // the layout.
+                    background: '#F7F7FA',
+                    // Cool grey at Lab hue 290, the page's own turn. The tint is
+                    // carried by the grid rather than by the ground: paper this
+                    // near-white cannot hold one that survives being covered in
+                    // glyphs, so the drawing is what sets the temperature. It shares
+                    // the accent's half of the wheel now, but at a twelfth of its
+                    // chroma — the burst is still the only colour struck onto the
+                    // page, and the grid is what it is struck onto.
+                    glyph: '125, 126, 143',
+                    // A wavefront cannot gain brightness on paper, so it gains weight
+                    // instead: a step darker than the grid, on the same hue, which is
+                    // what keeps the swell legible as a swell without introducing a
+                    // second colour to the page.
+                    ring: '186, 187, 205',
+                    // The dark room's grey-white inverted, and turned with everything
+                    // else here.
+                    meteor: '129, 131, 160',
+                    // #0668E5, the app's light-theme accent.
+                    burst: '6, 104, 229',
+                },
+            };
+
+            // Quantised so a whole trail is painted with a handful of fillStyle
+            // changes, and built per palette so a theme flip costs nothing at draw
+            // time.
+            for (const entry of Object.values(PALETTES)) {
+                entry.meteorColors = Array.from({ length: METEOR_LEVELS }, (unused, index) =>
+                    `rgba(${entry.meteor}, ${(0.22 + 0.78 * (index + 1) / METEOR_LEVELS).toFixed(3)})`);
+            }
+
+            const prefersLight = window.matchMedia('(prefers-color-scheme: light)');
             const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
             const canvas = document.getElementById('asciiScreen');
@@ -408,6 +471,12 @@
             let accentColumnLimit = 0;
             let accentRowLimit = 0;
             let silentFor = 1; // starts "silent" so the first audio frame seeds the followers
+            // Re-resolved at the top of every drawn frame; the draw passes read it
+            // rather than re-deriving it, so one frame is painted in one palette.
+            let palette = PALETTES.dark;
+            // What syncDocumentTheme() has already written to the page under the
+            // canvas, so it only touches the DOM on an actual flip.
+            let documentTheme = null;
             let sawAudio = false;
             let burstEnergy = 0;
             let accentSeed = 1;
@@ -668,9 +737,52 @@
             }
 
             /**
+             * Which of the two palettes this frame paints with.
+             *
+             * Inside the studio the host's `<html data-theme>` is the answer.
+             * `appearance-preferences.ts` owns that attribute and has already
+             * resolved "match system" down to a concrete dark/light, so following it
+             * is what makes the animation obey the app's setting rather than the
+             * OS's — the two disagree exactly when the user has overridden one.
+             * Standalone (opened on its own, or embedded cross-origin) there is no
+             * host attribute to read and the OS preference stands in.
+             *
+             * Resolved per frame rather than subscribed to. The iframe is
+             * deliberately never reloaded on a theme change — that would build a
+             * different galaxy, and the studio's whole reason for keeping the frame
+             * alive is to keep the one it generated — so a repaint is the only
+             * moment a flip can be noticed, and this is one dataset lookup next to
+             * a full projection.
+             */
+            function resolveTheme() {
+                try {
+                    const hostTheme = getHostWindow().document.documentElement.dataset.theme;
+                    if (hostTheme === 'light' || hostTheme === 'dark') return hostTheme;
+                } catch {
+                    // A host that can't be read from leaves the OS preference.
+                }
+                return prefersLight.matches ? 'light' : 'dark';
+            }
+
+            /**
+             * Keep the page under the canvas on the same theme as the drawing.
+             *
+             * The canvas covers the viewport and repaints its own ground, so this
+             * shows only in the gap before a frame lands — but that gap is real
+             * every time the studio's visual pane is collapsed and reopened, and
+             * what it would look like is a dark band flashing behind paper.
+             */
+            function syncDocumentTheme(theme) {
+                if (documentTheme === theme) return;
+                documentTheme = theme;
+                document.documentElement.style.colorScheme = theme;
+                document.body.style.background = PALETTES[theme].background;
+            }
+
+            /**
              * `#rrggbb` to an `"r, g, b"` triple, the form every colour constant in
              * this file is already written in — `rgba(${triple}, alpha)`. Null for
-             * anything else, so a caller can `?? '205, 86, 51'` straight past a
+             * anything else, so a caller can `?? palette.burst` straight past a
              * missing or malformed accent rather than branching on it.
              */
             function hexToRgbTriple(hex) {
@@ -1362,7 +1474,10 @@
             function drawAscii(time) {
                 const width = window.innerWidth;
                 const height = window.innerHeight;
-                context.fillStyle = '#080908';
+                const theme = resolveTheme();
+                palette = PALETTES[theme];
+                syncDocumentTheme(theme);
+                context.fillStyle = palette.background;
                 context.fillRect(0, 0, width, height);
                 context.font = `600 ${fontSize}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
                 context.textBaseline = 'top';
@@ -1524,7 +1639,7 @@
                 markMeteors();
 
                 for (let opacityIndex = 0; opacityIndex < opacityLevels.length; opacityIndex += 1) {
-                    context.fillStyle = `rgba(194, 197, 194, ${opacityLevels[opacityIndex]})`;
+                    context.fillStyle = `rgba(${palette.glyph}, ${opacityLevels[opacityIndex]})`;
                     for (let cellIndex = 0; cellIndex < glyphBuffer.length; cellIndex += 1) {
                         const glyphIndex = glyphBuffer[cellIndex];
                         if (glyphIndex === 0 || opacityBuffer[cellIndex] !== opacityIndex + 1) continue;
@@ -1549,10 +1664,13 @@
              * colour are set once, and each tier changes a different property — that
              * separation is what keeps the three voices from looking alike:
              *
-             *   ring     size + colour — the wavefront, one size up, pale
-             *   burst    size + colour — oversized and warm #CD5633, the only colour
-             *                            on screen, grown out of the arm ridges
-             *   meteor   motion        — base size, cool blue-white, a diagonal trail
+             *   ring     size + colour — the wavefront, one size up, one step off
+             *                            the grid's own neutral
+             *   burst    size + colour — oversized and struck in the app's accent
+             *                            (`palette.burst`: orange on the dark theme,
+             *                            blue on the light one), the only colour on
+             *                            screen, grown out of the arm ridges
+             *   meteor   motion        — base size, hueless, a diagonal trail
              *                            travelling across the frame; it is the only
              *                            accent that moves, which is what tells it
              *                            apart from the two static tiers
@@ -1565,7 +1683,7 @@
                     if (accentBuffer[cellIndex] !== ACCENT_METEOR) continue;
                     const intensity = meteorBuffer[cellIndex];
                     const level = clamp(Math.ceil(intensity * METEOR_LEVELS) - 1, 0, METEOR_LEVELS - 1);
-                    context.fillStyle = METEOR_COLORS[level];
+                    context.fillStyle = palette.meteorColors[level];
                     const row = Math.floor(cellIndex / gridColumns);
                     context.fillText(
                         ASCII_RAMP[clamp(
@@ -1589,7 +1707,7 @@
                 // same fallback, as the playback controls' own accent. Read fresh each
                 // repaint rather than cached: this call is one property lookup, cheap
                 // next to everything else this function draws.
-                const burstRgb = hexToRgbTriple(getHostWindow().getStrudelAccentColor?.()) ?? '205, 86, 51';
+                const burstRgb = hexToRgbTriple(getHostWindow().getStrudelAccentColor?.()) ?? palette.burst;
 
                 for (let tier = ACCENT_RING; tier <= ACCENT_BURST; tier += 1) {
                     const isRing = tier === ACCENT_RING;
@@ -1597,7 +1715,7 @@
                     const scale = isRing ? 1.4 + ringPeak * 0.6 : 2.1 + burstEnergy * 0.9;
                     context.font = `700 ${fontSize * scale}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
                     context.fillStyle = isRing
-                        ? `rgba(200, 208, 202, ${lerp(RING_ACCENT_ALPHA_MIN, RING_ACCENT_ALPHA_MAX, clamp(ringPeak, 0, 1))})`
+                        ? `rgba(${palette.ring}, ${lerp(RING_ACCENT_ALPHA_MIN, RING_ACCENT_ALPHA_MAX, clamp(ringPeak, 0, 1))})`
                         : `rgba(${burstRgb}, ${lerp(0.6, 1, burstEnergy)})`;
 
                     for (let cellIndex = 0; cellIndex < accentBuffer.length; cellIndex += 1) {

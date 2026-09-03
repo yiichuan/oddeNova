@@ -53,6 +53,10 @@ export function ThinkingLottie({ className }: ThinkingLottieProps) {
   // cached; only the object identity is per-mount.
   const [data, setData] = useState<object | null>(() => (cached ? structuredClone(cached) : null));
 
+  // `thinking-lottie` is the hook the light theme uses to re-ink the artwork
+  // (see index.css); it belongs to the component, not to each call site.
+  const rootClass = className ? `thinking-lottie ${className}` : 'thinking-lottie';
+
   useEffect(() => {
     if (data !== null) return;
     let alive = true;
@@ -72,8 +76,8 @@ export function ThinkingLottie({ className }: ThinkingLottieProps) {
   if (!data) {
     // Empty placeholder with the same footprint so the label doesn't shift
     // when the animation appears (no visible fallback by design).
-    return <span className={className} />;
+    return <span className={rootClass} />;
   }
 
-  return <Lottie animationData={data} loop autoplay className={className} />;
+  return <Lottie animationData={data} loop autoplay className={rootClass} />;
 }

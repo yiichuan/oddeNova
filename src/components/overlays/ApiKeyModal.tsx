@@ -73,7 +73,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
   const hasCurrentProviderConfig = savedProvider === 'official' || !!savedKey;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
       <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
         <h2 className="text-lg font-semibold text-text-primary mb-2">{t('setApiKey')}</h2>
         <p className="text-xs text-text-muted mb-7">
@@ -160,7 +160,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
 
         {/* QR code banner */}
         <div className="flex items-center gap-3 mt-5 pt-5 border-t border-border">
-          <img src={qrCode} alt={communityInvite.alt} className="w-16 h-16 rounded-lg bg-white p-1 shrink-0 object-contain" />
+          <img src={qrCode} alt={communityInvite.alt} className="qr-plate w-16 h-16 rounded-lg p-1 shrink-0 object-contain" />
           <div>
             <p className="text-sm font-medium text-text-secondary">{communityInvite.title}</p>
           </div>
@@ -186,7 +186,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
           <button
             onClick={handleSave}
             disabled={!canSave}
-            className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-1 py-2.5 text-sm text-on-accent bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {t('save')}
           </button>

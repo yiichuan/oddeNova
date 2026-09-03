@@ -20,6 +20,7 @@ import {
   Check,
   Copy,
   X,
+  Search,
   RefreshCw,
   Split,
   SquareArrowOutUpRight,
@@ -129,6 +130,7 @@ export const EditIcon = ({ size = 16, className }: IconProps) => <Pencil size={s
 export const CheckIcon = ({ size = 16, className }: IconProps) => <Check size={size} className={className} />;
 export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={size} className={className} />;
 export const XIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;
+export const SearchIcon = ({ size = 16, className }: IconProps) => <Search size={size} className={className} />;
 export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 // Strudel's own "update" glyph: re-evaluate the running pattern in place.
 export const UpdateIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;

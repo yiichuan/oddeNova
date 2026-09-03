@@ -1,4 +1,8 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { sleeveShadowColor, type CoverRoom } from './featured-cover-light';
+
+/** Where the sleeve's shadow falls: down and behind, before any lean. */
+const RESTING_THROW = '0 12px 28px';
 
 interface TiltValues extends CSSProperties {
   '--tilt-x': string;
@@ -9,16 +13,31 @@ interface TiltValues extends CSSProperties {
   '--tilt-shadow': string;
 }
 
+/**
+ * A plane that leans away from the pointer, and the box it leans inside.
+ *
+ * Nothing that has to be pressed can live on the plane alone. The lean moves
+ * the plane's edges under the hand — the side the pointer is on projects some
+ * 13px inside the resting box, the far side hangs that far outside it, and
+ * both keep moving while a press is being made. Whoever renders this surface
+ * therefore answers presses on an ancestor of it (see the root of
+ * FeaturedCard); what is written in here is free to move because nothing
+ * depends on where it has got to.
+ */
 export default function FeaturedTiltSurface({
   active,
+  room,
   showHighlight = true,
   children,
 }: {
   active: boolean;
+  /** The room the sleeve stands in — it is what its shadow is cast by. */
+  room: CoverRoom;
   showHighlight?: boolean;
   children: ReactNode;
 }) {
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const resting = `${RESTING_THROW} ${sleeveShadowColor(room, 0)}`;
 
   useEffect(() => {
     const surface = surfaceRef.current;
@@ -28,7 +47,7 @@ export default function FeaturedTiltSurface({
       surface.style.setProperty('--tilt-x', '0deg');
       surface.style.setProperty('--tilt-y', '0deg');
       surface.style.setProperty('--tilt-highlight-opacity', '0');
-      surface.style.setProperty('--tilt-shadow', '0 12px 28px rgba(0, 0, 0, 0.34)');
+      surface.style.setProperty('--tilt-shadow', resting);
     };
     reset();
 
@@ -61,7 +80,7 @@ export default function FeaturedTiltSurface({
       surface.style.setProperty('--tilt-highlight-opacity', `${current.strength * 0.16}`);
       surface.style.setProperty(
         '--tilt-shadow',
-        `${shadowX}px ${shadowY}px ${shadowBlur}px rgba(0, 0, 0, ${0.34 + current.strength * 0.12})`,
+        `${shadowX}px ${shadowY}px ${shadowBlur}px ${sleeveShadowColor(room, current.strength)}`,
       );
     };
 
@@ -118,7 +137,9 @@ export default function FeaturedTiltSurface({
       resizeObserver.disconnect();
       reset();
     };
-  }, [active]);
+    // The room is in here because the shadow is: a theme flip has to re-cast
+    // it, and the reset above is the only thing that writes the resting one.
+  }, [active, resting, room]);
 
   const style: TiltValues = {
     '--tilt-x': '0deg',
@@ -126,7 +147,7 @@ export default function FeaturedTiltSurface({
     '--tilt-highlight-x': '50%',
     '--tilt-highlight-y': '50%',
     '--tilt-highlight-opacity': 0,
-    '--tilt-shadow': '0 12px 28px rgba(0, 0, 0, 0.34)',
+    '--tilt-shadow': resting,
   };
 
   return (
@@ -140,12 +161,13 @@ export default function FeaturedTiltSurface({
            above it — so `preserve-3d` here would buy no depth and would cost
            the paint order: it puts every child on its own plane, and coplanar
            siblings are then sorted by where they lie in 3D rather than by the
-           order they were written in. The tile's press target is one of those
-           siblings (the overlay the credits button stretches across the whole
-           card), the artwork is another, and once the card leans on two axes
-           the sort flips along a diagonal — half the cover stops opening the
-           record, and which half moves with the pointer that is doing the
-           leaning. Flattened, the overlay is simply last and covers all of it. */
+           order they were written in. The overlay the credits button stretches
+           across the whole card is one of those siblings, the artwork is
+           another, and once the card leans on two axes the sort flips along a
+           diagonal — the overlay covering half the cover and lying under the
+           other half, which is a focus ring drawn round a corner of the tile
+           and a hover that changes down the same diagonal. Flattened, the
+           overlay is simply last and covers all of it. */
         className="relative w-full rounded-[2px] [transform:rotateX(var(--tilt-x))_rotateY(var(--tilt-y))]"
         style={style}
       >

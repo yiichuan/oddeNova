@@ -20,6 +20,7 @@ import {
   StopIcon,
   TrashIcon,
 } from '../icons';
+import { useResolvedTheme } from '../../hooks/useAppearance';
 import ControlHoverLabel from '../studio/ControlHoverLabel';
 import { anchorAbove, type ControlHoverLabelAnchor } from '../studio/control-hover-anchor';
 import ArchivedConversationView from '../conversation/ArchivedConversationView';
@@ -322,7 +323,12 @@ function Panel({ title, titleControl, action, className = '', children, ...rest 
       // the page instead of a window cut into it. The edge comes from the same
       // place — a solid grey rule around glass is a drawn border, where a
       // tenth of white is the light catching an edge.
-      className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[9px] border border-white/10 bg-[#0D0D0D]/55 p-5 backdrop-blur-2xl ${className}`}
+      //
+      // `favorites-panel` is the hook the light theme re-materialises all of
+      // that through (index.css): on paper the same window is cut by a pale
+      // frost and a drawn edge instead, because a tenth of white on a
+      // grey-white field is nothing at all.
+      className={`favorites-panel flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[9px] border border-white/10 bg-[#0D0D0D]/55 p-5 backdrop-blur-2xl ${className}`}
       {...rest}
     >
       {/* No offset of its own: the title stands off the panel's top edge by
@@ -411,7 +417,7 @@ function VersionSelect({
         <div
           role="listbox"
           aria-label={t('favoritesCodeTitle')}
-          className="animate-fade-in absolute left-0 top-[calc(100%+6px)] z-50 flex max-h-64 w-[126px] flex-col gap-1.5 overflow-x-hidden overflow-y-auto rounded-[7px] border border-white/15 bg-[#242424]/95 py-1 shadow-2xl backdrop-blur-xl"
+          className="favorites-version-menu animate-fade-in absolute left-0 top-[calc(100%+6px)] z-50 flex max-h-64 w-[126px] flex-col gap-1.5 overflow-x-hidden overflow-y-auto rounded-[7px] border border-white/15 bg-[#242424]/95 py-1 shadow-2xl backdrop-blur-xl"
         >
           {scripts.map((script) => {
             const active = script.turnId === selected.turnId;
@@ -426,7 +432,7 @@ function VersionSelect({
                   onSelect(script);
                   setOpen(false);
                 }}
-                className={`mx-1 flex w-[calc(100%_-_0.5rem)] items-center rounded-[5px] px-2.5 py-0.5 text-left text-[12px] transition-colors ${
+                className={`favorites-version-option mx-1 flex w-[calc(100%_-_0.5rem)] items-center rounded-[5px] px-2.5 py-0.5 text-left text-[12px] transition-colors ${
                   active
                     ? 'bg-white/[0.16] text-text-primary'
                     : 'text-text-secondary hover:bg-white/[0.09] hover:text-text-primary'
@@ -479,7 +485,7 @@ function ScriptAction({
         onClick={onClick}
         aria-label={label}
         data-testid={testId}
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
+        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-icon-idle transition-colors hover:text-text-primary"
       >
         {children}
       </button>
@@ -673,6 +679,10 @@ export default function FavoritesPage({
   /* The archive's own scrollport, borrowed. The rail on the left moves the
      reading, and the element that scrolls is inside the archive. */
   const archiveScrollRef = useRef<HTMLDivElement>(null);
+  /* The one thing on this page that cannot be a custom property: the field is
+     painted by a fragment shader, so which of its two palettes is lit has to
+     be resolved in JS rather than left to the stylesheet. */
+  const paper = useResolvedTheme() === 'light';
 
   const legacyCurrent = sortedConversations.find(
     (conversation) => conversation.id === selectedConversationId,
@@ -735,9 +745,14 @@ export default function FavoritesPage({
   return (
     <main
       data-testid="favorites-page"
-      className="relative isolate flex h-full min-w-0 flex-1 overflow-visible"
+      /* Its own class rather than the Featured shelf's
+         `featured-immersive-surface`. Both pages now stand in the same room and
+         follow the app's theme into paper, but what each holds up is different
+         — a shelf of artwork there, two blocks of text here — so each names its
+         own materials off its own hook. */
+      className="favorites-immersive-surface relative isolate flex h-full min-w-0 flex-1 overflow-visible"
     >
-      <FeaturedWebglLightField active />
+      <FeaturedWebglLightField active variant={paper ? 'paper' : 'space'} />
 
       {/* Inset to the same two verticals every other full-width page uses. */}
       <div
@@ -756,6 +771,7 @@ export default function FavoritesPage({
 
         <FavoritesList
           summaries={favoriteSummaries}
+          conversations={sortedConversations}
           selectedId={isSummaryMode ? selectedSummary?.id ?? null : current?.id ?? null}
           onSelect={isSummaryMode ? selectSummary : (summary) => {
             const conversation = sortedConversations.find((item) => item.id === summary.id);
@@ -860,7 +876,7 @@ export default function FavoritesPage({
                 either side, so matching the numbers would not match the size
                 they read at. */}
             <p
-              className={`animate-blur-fade-in text-center leading-relaxed text-[#969696] ${
+              className={`animate-blur-fade-in text-center leading-relaxed text-text-greeting ${
                 zh ? 'font-jinghua-laosongti text-lg tracking-wider' : 'font-eb-garamond text-xl'
               }`}
             >
@@ -1050,7 +1066,7 @@ export default function FavoritesPage({
                       /* Held a shade under full strength: the corner is a
                          caption, and two marks at the same weight as the name
                          beside them would turn it into a toolbar. */
-                      className="grid size-6 place-items-center rounded-full text-[#f05a28]/70 transition-colors hover:bg-white/10 hover:text-[#f05a28]"
+                      className="grid size-6 place-items-center rounded-full border-0 bg-transparent text-brand-accent transition-[background-color,transform] hover:bg-surface-hover active:scale-95"
                     >
                       <StarIcon size={14} filled />
                     </button>
@@ -1066,7 +1082,7 @@ export default function FavoritesPage({
                          notice reports a deletion in — `--color-error` is
                          #CC3803, an orange, which beside the star's own orange
                          reads as a shade of it rather than as a warning. */
-                      className="grid size-6 place-items-center rounded-full text-text-muted transition-colors hover:bg-white/10 hover:text-[#E01A1A]"
+                      className="grid size-6 place-items-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-diff-remove"
                     >
                       <TrashIcon size={13} />
                     </button>

@@ -18,15 +18,40 @@ export { DEFAULT_FONT_SIZE, DEFAULT_FONT_FAMILY, DEFAULT_THEME };
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
+/**
+ * Whether an id is one of oddeNova's own two palettes rather than a
+ * third-party theme.
+ *
+ * They are the product default expressed per colour scheme, not a standing
+ * choice — which of the two is right is a function of the app theme — so a
+ * stored one is never worth restoring, and reading one back as a choice is
+ * actively wrong: it outranks the app theme, and because the palette is
+ * otherwise only re-derived on an actual dark/light flip, no reload repairs
+ * it.
+ *
+ * Which matters because builds before the light palette existed wrote
+ * `oddenova-dark` back on *every* boot: `loadEditorPreferences()` handed the
+ * resolved fallback to a `setEditorTheme()` that persisted whatever it was
+ * given, so the key was always truthy and always saved. Practically every
+ * browser that has opened the app is carrying one, and on paper it is what
+ * pins the code panel dark. Dropping it here heals those stores on the next
+ * load.
+ */
+function isAppPalette(theme: EditorThemeId): boolean {
+  return theme === appEditorTheme('dark') || theme === appEditorTheme('light');
+}
+
 export function getEditorTheme(): EditorThemeId | null {
   if (typeof window === "undefined") return null;
   const stored = localStorage.getItem(STORAGE_KEYS.theme);
-  if (stored && stored in EDITOR_THEME_VARS) return stored as EditorThemeId;
+  if (stored && stored in EDITOR_THEME_VARS && !isAppPalette(stored as EditorThemeId)) {
+    return stored as EditorThemeId;
+  }
   if (stored) localStorage.removeItem(STORAGE_KEYS.theme);
   return null;
 }
 
-export function setEditorTheme(theme: EditorThemeId | null): void {
+export function setEditorTheme(theme: EditorThemeId | null, save = true): void {
   if (typeof window === "undefined") return;
 
   const resolved = theme ?? DEFAULT_THEME;
@@ -66,11 +91,36 @@ export function setEditorTheme(theme: EditorThemeId | null): void {
 .cm-editor .cm-lineNumbers .cm-gutterElement { color: ${vars.gutterForeground} !important; }
 `.trim();
 
-  if (theme) {
+  if (theme && save) {
     localStorage.setItem(STORAGE_KEYS.theme, theme);
-  } else {
+  } else if (save) {
     localStorage.removeItem(STORAGE_KEYS.theme);
   }
+}
+
+/** The oddeNova editor palette belonging to an application colour scheme. */
+function appEditorTheme(theme: 'dark' | 'light'): EditorThemeId {
+  return theme === 'light' ? 'oddenova-light' : 'oddenova-dark';
+}
+
+/**
+ * Re-establish the oddeNova editor palette when the application changes colour
+ * scheme. Deliberately not persisted: a user can still pick a third-party
+ * editor theme afterwards, and the next app-theme change is what returns the
+ * editor to the matching product default.
+ */
+export function applyAppEditorTheme(theme: 'dark' | 'light'): void {
+  setEditorTheme(appEditorTheme(theme), false);
+}
+
+/**
+ * The palette to open in when the user has never chosen one — read off the
+ * theme already painted on the root, so a light system opens on paper rather
+ * than opening dark and flipping.
+ */
+function defaultEditorTheme(): EditorThemeId {
+  if (typeof document === 'undefined') return DEFAULT_THEME;
+  return appEditorTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
 }
 
 // ── Font family ──────────────────────────────────────────────────────────────
@@ -134,10 +184,17 @@ export function setEditorFontSize(size: number, save = true): void {
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
-/** Apply all saved preferences on app startup */
+/**
+ * Apply all saved preferences on app startup. Nothing is written back: the
+ * fallback is a default rather than a choice, and storing it would make the
+ * two indistinguishable on the next load.
+ *
+ * Runs after `loadAppearancePreferences()`, which is what puts the app theme
+ * the fallback reads on the root.
+ */
 export function loadEditorPreferences(): void {
   const theme = getEditorTheme();
-  setEditorTheme(theme ?? DEFAULT_THEME);
+  setEditorTheme(theme ?? defaultEditorTheme(), false);
 
   const fontFamily = getFontFamily();
   if (fontFamily) setEditorFontFamily(fontFamily, false);

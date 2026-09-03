@@ -166,7 +166,7 @@ describe('model settings workspace components', () => {
 
     const selectedOption = container.querySelector('[role="option"][aria-selected="true"]') as HTMLButtonElement;
     expect(container.querySelector('[role="listbox"]')).not.toBeNull();
-    expect(selectedOption.className).toContain('bg-white/[0.10]');
+    expect(selectedOption.className).toContain('bg-surface-selected');
 
     const nextOption = Array.from(container.querySelectorAll('[role="option"]'))
       .find((option) => option.textContent === 'gpt-5.5-mini') as HTMLButtonElement;

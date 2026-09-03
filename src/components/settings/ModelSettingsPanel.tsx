@@ -119,7 +119,7 @@ export default function ModelSettingsPanel({
                   <p className="mt-1 text-xs leading-5 text-text-muted">{t('modelVersionHint')}</p>
                 </div>
                 {isOfficial ? (
-                  <div id={modelId} className="flex min-h-11 items-center justify-between rounded-[5px] border border-border bg-black/25 px-3.5 text-sm text-text-secondary">
+                  <div id={modelId} className="flex min-h-11 items-center justify-between rounded-[5px] border border-border bg-auth-field px-3.5 text-sm text-text-secondary">
                     <span>{preset.model}</span>
                     <span className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{t('managed')}</span>
                   </div>
@@ -139,7 +139,7 @@ export default function ModelSettingsPanel({
                           setModelMenuOpen(true);
                         }
                       }}
-                      className="flex min-h-11 w-full items-center rounded-[5px] border border-border bg-[#0D0D0D] px-3.5 pr-12 text-left text-sm text-text-primary outline-none transition-colors hover:border-[#3C3C3C] focus-visible:border-[#525252]"
+                      className="flex min-h-11 w-full items-center rounded-[5px] border border-border bg-conversation-surface px-3.5 pr-12 text-left text-sm text-text-primary outline-none transition-colors hover:border-accent/35 focus-visible:border-accent"
                     >
                       {draft.model}
                     </button>
@@ -169,7 +169,7 @@ export default function ModelSettingsPanel({
                             options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
                           }
                         }}
-                        className="absolute left-0 right-0 top-full z-20 mt-1 rounded-[7px] border border-[#343434] bg-[#171717] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
+                        className="absolute left-0 right-0 top-full z-20 mt-1 rounded-[7px] border border-border-hover bg-popover-surface p-1.5 shadow-menu-overlay"
                       >
                         {preset.models?.map((model) => {
                           const selected = draft.model === model;
@@ -187,8 +187,8 @@ export default function ModelSettingsPanel({
                               }}
                               className={`flex min-h-9 w-full items-center rounded-[5px] px-3 text-left text-sm outline-none transition-colors ${
                                 selected
-                                  ? 'bg-white/[0.10] text-text-primary'
-                                  : 'text-text-secondary hover:bg-white/[0.055] hover:text-text-primary focus-visible:bg-white/[0.055] focus-visible:text-text-primary'
+                                  ? 'bg-surface-selected text-text-primary'
+                                  : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:bg-surface-hover focus-visible:text-text-primary'
                               }`}
                             >
                               {model}
@@ -209,7 +209,7 @@ export default function ModelSettingsPanel({
                   </p>
                 </div>
                 {isOfficial ? (
-                  <div id={keyId} className="flex min-h-11 items-center gap-2 rounded-[5px] border border-[#617557]/45 bg-[#617557]/[0.07] px-3.5 text-[13px] text-[#AFC6A3]">
+                  <div id={keyId} className="flex min-h-11 items-center gap-2 rounded-[5px] border border-form-ok/45 bg-form-ok/[0.07] px-3.5 text-[13px] text-form-ok-text">
                     <Check size={13} aria-hidden="true" />
                     {t('noApiKeyRequired')}
                   </div>
@@ -229,10 +229,10 @@ export default function ModelSettingsPanel({
                         aria-describedby={keyTouched && keyMissing ? keyErrorId : undefined}
                         autoComplete="off"
                         spellCheck={false}
-                        className={`min-h-11 w-full rounded-[5px] border bg-[#0D0D0D] px-3.5 pr-12 text-sm text-text-primary outline-none transition-colors ${
+                        className={`min-h-11 w-full rounded-[5px] border bg-conversation-surface px-3.5 pr-12 text-sm text-text-primary outline-none transition-colors ${
                           keyTouched && keyMissing
-                            ? 'border-[#A34C35] focus-visible:border-[#C97960]'
-                            : 'border-border hover:border-[#3C3C3C] focus-visible:border-[#525252]'
+                            ? 'border-form-error focus-visible:border-form-error-text'
+                            : 'border-border hover:border-border-hover focus-visible:border-border-focus'
                         }`}
                         placeholder={preset.apiKeyPlaceholder ?? 'API Key'}
                       />
@@ -240,13 +240,13 @@ export default function ModelSettingsPanel({
                         type="button"
                         onClick={() => setShowKey((value) => !value)}
                         aria-label={showKey ? t('hideApiKey') : t('showApiKey')}
-                        className="absolute right-1.5 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-[4px] text-text-muted outline-none transition-colors hover:bg-white/[0.06] hover:text-text-primary focus-visible:ring-2 focus-visible:ring-text-secondary"
+                        className="absolute right-1.5 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-[4px] text-text-muted outline-none transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         {showKey ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
                       </button>
                     </div>
                     {keyTouched && keyMissing && (
-                      <p id={keyErrorId} role="alert" className="absolute inset-x-0 top-full mt-2 text-xs text-[#C97960]">
+                      <p id={keyErrorId} role="alert" className="absolute inset-x-0 top-full mt-2 text-xs text-form-error-text">
                         {t('apiKeyRequired')}
                       </p>
                     )}
@@ -262,16 +262,16 @@ export default function ModelSettingsPanel({
                 <p className="text-xs leading-5 text-text-muted">{t('providerPickerHint')}</p>
                 <div aria-live="polite" className="text-xs">
                   {saveStatus === 'saved' && (
-                    <span className="inline-flex items-center gap-1.5 text-[#9DB591]"><Check size={13} aria-hidden="true" />{t('settingsSaved')}</span>
+                    <span className="inline-flex items-center gap-1.5 text-form-ok-text"><Check size={13} aria-hidden="true" />{t('settingsSaved')}</span>
                   )}
-                  {saveStatus === 'error' && <span className="text-[#C97960]">{t('settingsSaveFailed')}</span>}
+                  {saveStatus === 'error' && <span className="text-form-error-text">{t('settingsSaveFailed')}</span>}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={!canSave}
-                className="min-h-11 min-w-[132px] rounded-[5px] bg-[#D6D6D6] px-5 text-sm font-semibold text-[#111] outline-none transition-[background-color,color,transform,opacity] duration-150 ease-[cubic-bezier(0.25,1,0.5,1)] hover:bg-[#EEEEEA] focus-visible:ring-2 focus-visible:ring-[#EEEEEA] focus-visible:ring-offset-2 focus-visible:ring-offset-settings-surface active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#242424] disabled:text-text-muted motion-reduce:transition-none"
+                className="min-h-11 min-w-[132px] rounded-[5px] bg-accent px-5 text-sm font-semibold text-on-accent outline-none transition-[background-color,color,transform,opacity] duration-150 ease-[cubic-bezier(0.25,1,0.5,1)] hover:bg-accent-light focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-settings-surface active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-surface-selected disabled:text-text-muted motion-reduce:transition-none"
               >
                 {t('saveSettings')}
               </button>

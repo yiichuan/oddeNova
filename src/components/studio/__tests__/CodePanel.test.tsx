@@ -19,6 +19,7 @@ vi.mock('../../../services/strudel', () => ({
 }));
 
 import CodePanel from '../CodePanel';
+import { setAnimationPreference } from '../../../lib/appearance-preferences';
 import { strudelService } from '../../../services/strudel';
 import { t } from '../../../lib/i18n';
 
@@ -92,6 +93,7 @@ describe('CodePanel editor focus reporting', () => {
       act(() => root.unmount());
     }
     document.body.innerHTML = '';
+    localStorage.clear();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -149,8 +151,8 @@ describe('CodePanel editor focus reporting', () => {
     expect(errorPopover?.classList.contains('top-[8px]')).toBe(true);
     expect(errorPopover?.classList.contains('right-[8px]')).toBe(true);
     expect(errorPopover?.classList.contains('rounded-[4px]')).toBe(true);
-    expect(errorPopover?.classList.contains('border-[#E01A1A]')).toBe(true);
-    expect(errorPopover?.classList.contains('text-[#E01A1A]')).toBe(true);
+    expect(errorPopover?.classList.contains('border-diff-remove')).toBe(true);
+    expect(errorPopover?.classList.contains('text-diff-remove')).toBe(true);
     expect(errorPopover?.style.maxWidth).toBe('min(420px, calc(100% - 24px))');
   });
 
@@ -191,11 +193,19 @@ describe('CodePanel editor focus reporting', () => {
     expect(controlsLayer?.classList.contains('bg-conversation-surface')).toBe(true);
     expect(controlsLayer?.classList.contains('code-panel-controls')).toBe(true);
     expect(controlsLayer?.classList.contains('border')).toBe(true);
+    // Every pull is load-bearing: they put the bar's glass rim on the panel's
+    // own outline instead of inside it. `-ml-px` and `-mb-px` pair with an
+    // oversized box the root clips back, so the rim is flush left, right and
+    // bottom; drop either and that edge sits a pixel in from the rest. `-mt-px`
+    // instead takes the bar over the code layer's bottom border, so the seam
+    // is one line rather than two.
     expect(controlsLayer?.classList.contains('-mt-px')).toBe(true);
+    expect(controlsLayer?.classList.contains('-mb-px')).toBe(true);
     expect(controlsLayer?.classList.contains('-ml-px')).toBe(true);
     expect(controlsLayer?.classList.contains('w-[calc(100%+2px)]')).toBe(true);
     expect(controlsLayer?.classList.contains('z-10')).toBe(true);
-    expect(controlsLayer?.classList.contains('h-12')).toBe(true);
+    // 48px of bar plus the one pixel the root clips off the bottom.
+    expect(controlsLayer?.classList.contains('h-[calc(3rem+1px)]')).toBe(true);
     expect(controlsLayer?.querySelector('[data-testid="code-panel-controls-light-border"]')).not.toBeNull();
     const playControl = controlsLayer?.querySelector<HTMLElement>('[data-testid="code-panel-play-control"]');
     expect(playControl?.style.marginLeft).toBe('var(--code-panel-play-button-offset)');
@@ -242,9 +252,9 @@ describe('CodePanel editor focus reporting', () => {
     expect(controlsLayer?.querySelectorAll('button')).toHaveLength(5);
     expect(playButton?.classList.contains('control-button-surface')).toBe(true);
     expect(playButton?.classList.contains('cursor-pointer')).toBe(true);
-    expect(playButton?.classList.contains('hover:text-[#C8C8C8]')).toBe(true);
+    expect(playButton?.classList.contains('hover:text-control-icon-hover')).toBe(true);
     expect(playButton?.classList.contains('hover:opacity-70')).toBe(false);
-    expect(playButton?.classList.contains('text-[#A8A8A8]')).toBe(true);
+    expect(playButton?.classList.contains('text-control-icon')).toBe(true);
     expect(playButton?.classList.contains('w-8')).toBe(true);
     expect(playButton?.classList.contains('h-8')).toBe(true);
     expect(playButton?.querySelector('.lucide-play')).not.toBeNull();
@@ -252,13 +262,12 @@ describe('CodePanel editor focus reporting', () => {
     expect(progress?.value).toBe('0');
     expect(progress?.type).toBe('range');
     expect(controlsLayer?.querySelector('[data-testid="code-panel-playback-progress-fill"]')).not.toBeNull();
-    // Falls back to the studio's own orange via the CSS variable's default —
-    // see PlaybackProgress's `--code-panel-accent` — rather than a literal
-    // #CD5633 class now that a playing piece's `.color()` can override it.
+    // Falls back through the app theme's playback-accent token while a piece's
+    // `.color()` can still override it locally.
     expect(
       controlsLayer
         ?.querySelector('[data-testid="code-panel-playback-progress-fill"]')
-        ?.classList.contains('bg-[var(--code-panel-accent,#CD5633)]'),
+        ?.classList.contains('bg-[var(--code-panel-accent,var(--color-playback-accent))]'),
     ).toBe(true);
     const track = controlsLayer?.querySelector('[data-testid="code-panel-playback-track"]');
     expect(track?.classList.contains('h-[2px]')).toBe(true);
@@ -300,7 +309,7 @@ describe('CodePanel editor focus reporting', () => {
 
     expect(pauseButton?.classList.contains('rounded-full')).toBe(true);
     expect(pauseButton?.classList.contains('control-button-surface')).toBe(true);
-    expect(pauseButton?.classList.contains('text-[#A8A8A8]')).toBe(true);
+    expect(pauseButton?.classList.contains('text-control-icon')).toBe(true);
     expect(pauseButton?.querySelector('.lucide-pause')).not.toBeNull();
     act(() => pauseButton?.click());
     expect(onPause).toHaveBeenCalledOnce();
@@ -426,7 +435,7 @@ describe('CodePanel editor focus reporting', () => {
     expect(playButton?.disabled).toBe(true);
     expect(playButton?.classList.contains('control-button-surface')).toBe(true);
     expect(playButton?.className).not.toContain('disabled:bg-');
-    expect(playButton?.classList.contains('disabled:text-[#686868]')).toBe(true);
+    expect(playButton?.classList.contains('disabled:text-control-icon-disabled')).toBe(true);
     expect(time?.textContent).toBe('00:00/00:00');
   });
 
@@ -460,8 +469,10 @@ describe('CodePanel editor focus reporting', () => {
     expect(exportButton?.hasAttribute('title')).toBe(false);
     const playButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('play')}"]`);
     expect(playButton?.hasAttribute('title')).toBe(false);
+    expect(volumeButton?.classList.contains('hover:text-control-icon-hover')).toBe(true);
+    expect(shareButton?.classList.contains('hover:text-text-primary')).toBe(true);
+    expect(exportButton?.classList.contains('hover:text-text-primary')).toBe(true);
     actions?.querySelectorAll('button').forEach((button) => {
-      expect(button.classList.contains('hover:text-[#C8C8C8]')).toBe(true);
       expect(button.classList.contains('hover:opacity-70')).toBe(false);
     });
   });
@@ -483,6 +494,7 @@ describe('CodePanel editor focus reporting', () => {
 
   it('drops the visualizer toggle when the studio animation is switched off', () => {
     installMatchMedia(false);
+    localStorage.setItem('vibe_animation', 'galaxy');
     const { container, root } = renderCodePanel({ vizEnabled: false, vizCollapsed: true });
     roots.push(root);
 
@@ -501,7 +513,7 @@ describe('CodePanel editor focus reporting', () => {
     expect(capsule?.classList.contains('control-button-capsule-pair')).toBe(true);
     expect(capsule?.classList.contains('w-28')).toBe(false);
 
-    // Collapsed, but with no pane to stand in for: the flakes stay still.
+    // Collapsed, but with no pane to stand in for: the motes stay still.
     expect(
       container.querySelector('[data-testid="code-panel-particle-field"]')?.getAttribute('data-active'),
     ).toBe('false');
@@ -509,6 +521,7 @@ describe('CodePanel editor focus reporting', () => {
 
   it('runs the particle layer only while the visualizer is collapsed', () => {
     installMatchMedia(false);
+    localStorage.setItem('vibe_animation', 'galaxy');
     const { container, root, rerender } = renderCodePanel();
     roots.push(root);
 
@@ -524,6 +537,26 @@ describe('CodePanel editor focus reporting', () => {
     // The motes stand in for the visualizer, so they must not intercept
     // clicks meant for the transport controls underneath.
     expect(particles?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('leaves the bar clear when the collapsed pane is the ASCII animation', () => {
+    installMatchMedia(false);
+    localStorage.setItem('vibe_animation', 'galaxy-ascii');
+    const { container, root } = renderCodePanel({ vizCollapsed: true });
+    roots.push(root);
+
+    // Only the galaxy's motes carry over into the bar: ASCII characters snowing
+    // across the transport would read as a second run of text, so that pane
+    // stands in for itself and the layer is not mounted at all.
+    expect(container.querySelector('[data-testid="code-panel-particle-field"]')).toBeNull();
+
+    // Picking the galaxy hands the bar its motes back on the spot, without
+    // waiting for the pane to be expanded and collapsed again.
+    act(() => setAnimationPreference('galaxy'));
+
+    const particles = container.querySelector('[data-testid="code-panel-particle-field"]');
+    expect(particles).not.toBeNull();
+    expect(particles?.getAttribute('data-active')).toBe('true');
   });
 
   it('aligns the export popover to the CodePanel top-right corner', () => {
@@ -622,7 +655,7 @@ describe('CodePanel editor focus reporting', () => {
     expect(popover?.classList.contains('gap-1')).toBe(true);
     expect(popover?.classList.contains('py-2')).toBe(true);
     expect(popover?.classList.contains('border')).toBe(true);
-    expect(popover?.classList.contains('border-[#323232]')).toBe(true);
+    expect(popover?.classList.contains('border-border')).toBe(true);
     expect(slider?.getAttribute('aria-orientation')).toBe('vertical');
     expect(slider?.classList.contains('code-panel-volume-slider')).toBe(true);
     expect(slider?.classList.contains('h-20')).toBe(true);
@@ -665,8 +698,8 @@ describe('CodePanel editor focus reporting', () => {
     });
 
     const slider = document.querySelector<HTMLInputElement>('[data-testid="code-panel-volume-slider"]');
-    // Unset, not written empty: the CSS rule's own `var(..., #CD5633)` default
-    // is what has to paint it, the same as it always has.
+    // Unset, not written empty: the CSS rule's app-theme playback token paints
+    // the default while keeping a playing piece free to provide an override.
     expect(slider?.style.getPropertyValue('--volume-slider-fill')).toBe('');
   });
 

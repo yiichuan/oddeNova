@@ -5,6 +5,7 @@ import {
   ACCENT_SHARE_MAX,
   ACCENT_SHARE_MIN,
   PARTICLE_ACCENT_COLOR,
+  PARTICLE_ACCENT_COLOR_LIGHT,
   PARTICLE_BLUR_ALPHA_GAIN,
   PARTICLE_BLUR_LEVELS,
   PARTICLE_COUNT,
@@ -16,6 +17,7 @@ import {
   particleAccentAt,
   particleDotRadius,
   particleFrameAt,
+  resolveParticleColors,
   resolveParticleField,
   shapedBlur,
   transitionEffectFor,
@@ -41,6 +43,29 @@ describe('PARTICLE_GLYPHS', () => {
 
     expect(PARTICLE_GLYPHS).toHaveLength(24);
     expect([...PARTICLE_GLYPHS]).toEqual(ramp.filter((glyph) => glyph !== ' '));
+  });
+});
+
+describe('resolveParticleColors', () => {
+  it('paints the snow light on the dark page and dark on paper', () => {
+    expect(resolveParticleColors('dark').particle).toBe('248, 248, 244');
+    expect(resolveParticleColors('light').particle).toBe('77, 77, 83');
+  });
+
+  it('burns the painted palette\'s accent when the piece names none', () => {
+    expect(resolveParticleColors('dark').accent).toBe(`rgb(${PARTICLE_ACCENT_COLOR})`);
+    expect(resolveParticleColors('light').accent).toBe(`rgb(${PARTICLE_ACCENT_COLOR_LIGHT})`);
+  });
+
+  it('lets a playing piece\'s own colour outrank the theme in both palettes', () => {
+    expect(resolveParticleColors('dark', '#7FD4C1').accent).toBe('#7FD4C1');
+    expect(resolveParticleColors('light', '#7FD4C1').accent).toBe('#7FD4C1');
+  });
+
+  it('returns to the theme accent once the piece stops carrying one', () => {
+    // `null` is what the accent latch reports on stop, pause, or a piece that
+    // never set a hued `.color()` — the same path as never having had one.
+    expect(resolveParticleColors('light', null).accent).toBe(`rgb(${PARTICLE_ACCENT_COLOR_LIGHT})`);
   });
 });
 
@@ -358,8 +383,8 @@ describe('particleAccentAt', () => {
   const litCountAt = (beatPosition: number, shares?: AccentShares) =>
     litAt(beatPosition, shares).length;
 
-  it('is the app accent, #CD5633', () => {
-    expect(PARTICLE_ACCENT_COLOR).toBe('205, 86, 51');
+  it('is the app accent, #D9542B', () => {
+    expect(PARTICLE_ACCENT_COLOR).toBe('217, 84, 43');
   });
 
   it('leaves the field white when nothing is playing', () => {

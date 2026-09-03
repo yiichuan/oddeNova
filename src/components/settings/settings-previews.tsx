@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { ASCII_GALAXY_FRAME } from './ascii-galaxy-frame';
+import { useResolvedTheme } from '../../hooks/useAppearance';
 import type {
   AnimationPreference,
   ResolvedTheme,
@@ -27,12 +28,10 @@ const PALETTES: Record<ResolvedTheme, Palette> = {
     surface: '#101010',
     stroke: '#2B2B2B',
   },
-  // Muted a step below the real light palette: at thumbnail size, against the
-  // card's black backdrop, full-brightness paper glares next to the dark half.
   light: {
-    page: '#C8C8C4',
-    surface: '#D6D6D2',
-    stroke: '#AEADA8',
+    page: '#E4E4EB',
+    surface: '#F7F7FA',
+    stroke: '#D5D5DE',
   },
 };
 
@@ -134,6 +133,12 @@ const FRAME = ASCII_GALAXY_FRAME;
  * layout survives whichever monospace face the browser resolves.
  */
 function AsciiGalaxyFrame() {
+  /* The resolved palette, not the preference: the thumbnail is a picture of
+     what the pane will paint, and under "match system" that is whichever half
+     the OS is currently on. The galaxy itself is the same drawing either way,
+     so only these two values change. */
+  const palette = FRAME.palettes[useResolvedTheme()];
+
   return (
     <svg
       viewBox={`0 0 ${FRAME.columns * FRAME.cellWidth} ${FRAME.rows * FRAME.cellHeight}`}
@@ -147,10 +152,10 @@ function AsciiGalaxyFrame() {
         y="0"
         width={FRAME.columns * FRAME.cellWidth}
         height={FRAME.rows * FRAME.cellHeight}
-        fill={FRAME.background}
+        fill={palette.background}
       />
       <g
-        fill={FRAME.color}
+        fill={palette.color}
         fontFamily='"SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace'
         fontSize={FRAME.fontSize}
         fontWeight="600"

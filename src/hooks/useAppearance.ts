@@ -6,6 +6,7 @@ import {
   getAnimationPreference,
   getStudioAnimationVisible,
   getThemePreference,
+  resolveAnimation,
   resolveTheme,
   subscribeAppearance,
   type AnimationPreference,
@@ -35,6 +36,17 @@ export function useAnimationPreference(): AnimationPreference {
     getAnimationPreference,
     () => DEFAULT_ANIMATION,
   );
+}
+
+/**
+ * The animation that choice actually plays under the current palette — the
+ * light half has no particle galaxy, so a galaxy picked in the dark reads back
+ * as the ASCII field there.
+ */
+export function useResolvedAnimation(): AnimationPreference {
+  const preference = useAnimationPreference();
+  const theme = useResolvedTheme();
+  return resolveAnimation(preference, theme);
 }
 
 /** Whether the studio shows its animation at all. */

@@ -99,16 +99,16 @@ describe('FavoriteActionDialog', () => {
     expect(parts[3]?.contains(button(t('favoriteActionView'))!)).toBe(true);
     expect(parts.at(-1)).toBe(close());
     // The mark and the headline are one phrase, so they carry one colour.
-    expect(parts[0]?.className).toContain('text-[#f05a28]');
-    expect(parts[1]?.className).toContain('text-[#f05a28]');
+    expect(parts[0]?.className).toContain('text-brand-accent');
+    expect(parts[1]?.className).toContain('text-brand-accent');
   });
 
   it('reports a deletion in the delete red instead', () => {
     const { card } = render('deleted');
     const parts = [...card.children];
 
-    expect(parts[0]?.className).toContain('text-[#E01A1A]');
-    expect(parts[1]?.className).toContain('text-[#E01A1A]');
+    expect(parts[0]?.className).toContain('text-error');
+    expect(parts[1]?.className).toContain('text-error');
   });
 
   it('offers no way onward for a deletion, only a way back', () => {

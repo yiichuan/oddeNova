@@ -293,7 +293,7 @@ export default function ChatInput({
               : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
             rows={1}
             disabled={inputDisabled}
-            className="w-full min-h-[63px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-[#cccccc] placeholder:text-[#5A5A5A] outline-none focus:text-white disabled:cursor-not-allowed"
+            className="w-full min-h-[63px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed"
             style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
           />
 
@@ -305,7 +305,7 @@ export default function ChatInput({
               to stop iOS auto-zoom on focus and can't be lowered, so the
               overlay matches it to avoid a jump when a suggestion is adopted. */}
           {suggestionActive && (
-            <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-[#5A5A5A]">
+            <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-text-muted">
               {/* Only the suggestion text blurs/fades between rotations — blur
                   runs first, then opacity fades in on its heels (sequential, not
                   simultaneous), via an explicit transition-delay on opacity.
@@ -332,14 +332,14 @@ export default function ChatInput({
         <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
           <div className="min-w-0">
             {engineStatus !== 'ready' ? (
-              <div className="flex items-center gap-2 text-[12px] text-[#888888]">
-                <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-[#B2370C]' : 'bg-[#666666]'}`} />
+              <div className="flex items-center gap-2 text-[12px] text-text-muted">
+                <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
                 <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
                 {engineStatus === 'failed' && (
                   <button
                     type="button"
                     onClick={onReinitEngine}
-                    className="text-[18px] font-thin text-[#e0e0e0]/60 hover:text-[#e0e0e0] transition-colors leading-none relative -top-[2px]"
+                    className="text-[18px] font-thin text-text-secondary/60 hover:text-text-primary transition-colors leading-none relative -top-[2px]"
                     title={t('restartEngine')}
                   >
                     ↺
@@ -347,7 +347,7 @@ export default function ChatInput({
                 )}
               </div>
              ) : suggestionActive && (!isMobile || focused) ? (
-              <div className="pointer-events-none text-[12px] text-[#5A5A5A]">
+              <div className="pointer-events-none text-[12px] text-text-muted">
                 {isMobile ? t('enterToFill') : t('tabToFill')}
               </div>
             ) : null}
@@ -359,7 +359,7 @@ export default function ChatInput({
               <button
                 type="button"
                 disabled={!replayValue.trim()}
-                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#D8D8D8] text-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-action-fill text-action-text transition duration-200 disabled:cursor-not-allowed disabled:opacity-50"
                 title={t('send')}
               >
                 <ArrowUpIcon size={18} />
@@ -368,7 +368,7 @@ export default function ChatInput({
               <button
                 type="button"
                 onClick={onStop}
-                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#D8D8D8] text-black transition duration-200 hover:bg-[#D8D8D8]/80"
+                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-action-fill text-action-text transition duration-200 hover:bg-action-fill-hover"
                 title={t('stop')}
               >
                 <StopIcon size={18} />
@@ -377,7 +377,7 @@ export default function ChatInput({
               <button
                 type="submit"
                 disabled={!text.trim()}
-                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#D8D8D8] text-black transition duration-200 hover:bg-[#D8D8D8]/80 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-action-fill text-action-text transition duration-200 hover:bg-action-fill-hover disabled:cursor-not-allowed disabled:opacity-50"
                 title={t('send')}
               >
                 <ArrowUpIcon size={18} />

@@ -26,7 +26,7 @@ const inlineCodeToneClass: Record<MarkdownTone, string> = {
 };
 
 const blockCodeToneClass: Record<MarkdownTone, string> = {
-  default: 'text-[#B9D7FF]',
+  default: 'text-code-block',
   muted: 'text-text-secondary/75',
 };
 
@@ -112,7 +112,7 @@ function parseInlineMarkdown(text: string, keyPrefix: string, tone: MarkdownTone
         break;
       }
       nodes.push(
-        <code key={`${keyPrefix}-code-${key++}`} className={`rounded bg-white/10 px-1 py-0.5 font-mono text-[0.92em] [overflow-wrap:anywhere] ${inlineCodeToneClass[tone]}`}>
+        <code key={`${keyPrefix}-code-${key++}`} className={`rounded bg-surface-selected px-1 py-0.5 font-mono text-[0.92em] [overflow-wrap:anywhere] ${inlineCodeToneClass[tone]}`}>
           {text.slice(next + 1, end)}
         </code>,
       );
@@ -253,7 +253,7 @@ export function MarkdownText({ content, tone = 'default' }: { content: string; t
       }
       if (i < lines.length) i += 1;
       blocks.push(
-        <pre key={`md-code-${key++}`} className={`my-2 overflow-x-auto rounded-md bg-white/5 p-2 font-mono text-[11px] leading-relaxed ${blockCodeToneClass[tone]}`}>
+        <pre key={`md-code-${key++}`} className={`my-2 overflow-x-auto rounded-md bg-auth-field p-2 font-mono text-[11px] leading-relaxed ${blockCodeToneClass[tone]}`}>
           <code>{code.join('\n')}</code>
         </pre>,
       );
@@ -272,7 +272,7 @@ export function MarkdownText({ content, tone = 'default' }: { content: string; t
     }
 
     if (/^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(line)) {
-      blocks.push(<hr key={`md-hr-${key++}`} className="my-3 border-0 border-t border-white/10" />);
+      blocks.push(<hr key={`md-hr-${key++}`} className="my-3 border-0 border-t border-border" />);
       i += 1;
       continue;
     }
@@ -441,8 +441,11 @@ export function UserMessageBubble({ content }: { content: string }) {
         {clamped && (
           <>
             {/* Taller fade of the fifth line + the added space into the bubble
-                background (#1a1a1a). */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-[#1a1a1a] via-[#1a1a1a]/80 to-transparent" />
+                background. Keyed to `--color-message-user`, the bubble's own
+                fill, rather than to any page surface: the fade only ever runs
+                inside the bubble, so anything else lands the clamp on a colour
+                the bubble does not have. */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-message-user via-message-user/80 to-transparent" />
             {/* Sits low over the fade, always visible. Gray a shade dimmer
                 than the bubble text (text-primary). */}
             <button
@@ -1123,7 +1126,7 @@ export default function ConversationView({
             // message id without unmounting this block, so the key is what
             // forces a fresh node — and with it, the mount animation to replay.
             key={greetingMsg.id}
-            className={`animate-blur-fade-in text-center text-[#969696] leading-relaxed ${
+            className={`animate-blur-fade-in text-center text-text-greeting leading-relaxed ${
               zh ? 'font-jinghua-laosongti tracking-wider text-sm' : 'font-eb-garamond text-base'
             }`}
           >
@@ -1191,7 +1194,7 @@ export default function ConversationView({
               className="flex justify-end items-end gap-1.5 animate-fade-in group"
             >
               <div
-                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-[#242424] text-text-primary${
+                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-message-user text-text-primary${
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}
@@ -1263,7 +1266,7 @@ export default function ConversationView({
                 const code = msg.code;
                 const lineCount = code.split('\n').length;
                 return (
-                  <div className="mt-4 -ml-1 rounded-md border border-diff-accent/70 overflow-hidden animate-fade-in">
+                  <div className="conversation-code-bar mt-4 -ml-1 rounded-md border border-diff-accent/70 overflow-hidden animate-fade-in">
                     <div className="w-full flex items-center bg-bg-primary/60 text-[11px] text-diff-accent/70">
                       <button
                         onClick={() => toggleCode(msg.id)}
@@ -1304,14 +1307,14 @@ export default function ConversationView({
                 >
                   <button
                     onClick={() => onRetry(msg.id)}
-                    className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[#9E9E9E] transition-colors hover:bg-[#242424]"
+                    className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-icon-idle transition-colors hover:bg-surface-hover"
                     title={t('retry')}
                   >
                     <RetryIcon size={14} />
                   </button>
                   <button
                     onClick={() => onBranch(msg.id)}
-                    className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[#9E9E9E] transition-colors hover:bg-[#242424]"
+                    className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-icon-idle transition-colors hover:bg-surface-hover"
                     title={t('branchFrom')}
                   >
                     <GitBranchIcon size={14} />

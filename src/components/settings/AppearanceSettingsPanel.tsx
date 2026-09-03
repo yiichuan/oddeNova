@@ -2,7 +2,7 @@ import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import {
   ANIMATION_LABEL_KEYS,
-  ANIMATION_PREFERENCES,
+  getAvailableAnimations,
   LIGHT_THEME_READY,
   setAnimationPreference,
   setStudioAnimationVisible,
@@ -12,7 +12,8 @@ import {
   type ThemePreference,
 } from '../../lib/appearance-preferences';
 import {
-  useAnimationPreference,
+  useResolvedAnimation,
+  useResolvedTheme,
   useStudioAnimationVisible,
   useThemePreference,
 } from '../../hooks/useAppearance';
@@ -54,11 +55,11 @@ function OptionCard({
         disabled
           ? 'cursor-not-allowed border-border bg-settings-surface opacity-55'
           : selected
-            ? 'border-[#8A8A8A] bg-white/[0.08] active:scale-[0.99]'
-            : 'border-border bg-settings-surface hover:border-[#3C3C3C] hover:bg-white/[0.03] active:scale-[0.99]'
+            ? 'border-brand-accent/60 bg-surface-selected active:scale-[0.99]'
+            : 'border-border bg-settings-surface hover:border-accent/35 hover:bg-surface-hover active:scale-[0.99]'
       }`}
     >
-      <span className="block aspect-[168/104] w-full overflow-hidden border-b border-[inherit] bg-black">
+      <span className="block aspect-[168/104] w-full overflow-hidden border-b border-[inherit] bg-bg-secondary">
         {preview}
       </span>
       <span className="flex flex-col items-center px-3 py-2.5 text-center">
@@ -93,7 +94,7 @@ function Switch({ checked, label, onChange }: SwitchProps) {
       aria-label={label}
       onClick={() => onChange(!checked)}
       className={`relative flex h-[22px] w-[38px] shrink-0 cursor-pointer items-center rounded-full border outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-text-secondary focus-visible:ring-offset-2 focus-visible:ring-offset-conversation-surface ${
-        checked ? 'border-[#8A8A8A] bg-white/[0.14]' : 'border-border bg-black/40'
+        checked ? 'border-brand-accent/60 bg-brand-accent/15' : 'border-border bg-bg-secondary/60'
       }`}
     >
       <span
@@ -107,7 +108,12 @@ function Switch({ checked, label, onChange }: SwitchProps) {
 
 export default function AppearanceSettingsPanel() {
   const themePreference = useThemePreference();
-  const animation = useAnimationPreference();
+  const resolvedTheme = useResolvedTheme();
+  // The list of animations depends on the palette, and so does the selection:
+  // the light half has no particle galaxy, so a galaxy stored from the dark
+  // half reads back here as the ASCII field.
+  const animations = getAvailableAnimations(resolvedTheme);
+  const animation = useResolvedAnimation();
   const studioAnimationVisible = useStudioAnimationVisible();
 
   return (
@@ -152,7 +158,7 @@ export default function AppearanceSettingsPanel() {
             <p className="mt-1 text-xs leading-5 text-text-muted">{t('animationHint')}</p>
 
             {/* Whether the studio animates at all comes first: with it off,
-                which animation plays is moot, so the two choices below dim out
+                which animation plays is moot, so the choices below dim out
                 rather than disappear — the switch that brings them back is
                 the row immediately above them. */}
             <div
@@ -175,7 +181,7 @@ export default function AppearanceSettingsPanel() {
             </div>
 
             <div role="radiogroup" aria-label={t('animation')} className="mt-3 grid gap-3 sm:grid-cols-2">
-              {ANIMATION_PREFERENCES.map((option) => (
+              {animations.map((option) => (
                 <OptionCard
                   key={option}
                   disabled={!studioAnimationVisible}

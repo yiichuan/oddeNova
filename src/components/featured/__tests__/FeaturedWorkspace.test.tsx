@@ -816,9 +816,11 @@ describe('featured page', () => {
     const angles = (style: string) => Array.from(style.matchAll(/linear-gradient\((\d+)deg/g))
       .map((match) => Number(match[1]));
     /** How dark the sleeve's far edge goes, read off the layer aimed across
-        it — the lamp's own falloff down the cover is not that. */
+        it — the lamp's own falloff down the cover is not that. The ink itself
+        is the room's and not this test's business: the dark room casts in its
+        own black, the lit one in the page's (featured-cover-light.ts). */
     const shade = (style: string) => Number(
-      style.match(/linear-gradient\((?:90|270)deg, rgba\(2, ?4, ?8, ?([\d.]+)\)/)?.[1] ?? 0,
+      style.match(/linear-gradient\((?:90|270)deg, rgba\(\d+, ?\d+, ?\d+, ?([\d.]+)\)/)?.[1] ?? 0,
     );
 
     // Facing straight out: lit from overhead, and from nowhere else.
@@ -847,16 +849,70 @@ describe('featured page', () => {
     expect(visible.every((slot) => (
       slot.querySelector<HTMLElement>('[data-testid="featured-tilt-surface"]')!.dataset.tiltActive === 'true'
     ))).toBe(true);
-    expect(visible.every((slot) => !slot.querySelector('button')!.disabled)).toBe(true);
+    expect(visible.every((slot) => (
+      !slot.querySelector<HTMLButtonElement>('[data-testid^="featured-card-play-"]')!.disabled
+    ))).toBe(true);
     // Nothing off the side of the wheel is a stop on the way through the page.
     const sideSlots = visible.filter((slot) => slot.dataset.carouselCentered !== 'true');
     expect(sideSlots.every((slot) => (
       Array.from(slot.querySelectorAll('button')).every((button) => button.tabIndex === -1)
     ))).toBe(true);
-    expect(container.querySelector<HTMLElement>('[data-carousel-centered="true"]')!
-      .querySelector('button')!.tabIndex).toBe(0);
+    // The centred sleeve's own two controls are. Named rather than taken by
+    // position: what opens the record is the tile itself, so the buttons in a
+    // slot are the credits and the transport and nothing is guaranteed first.
+    const centredSlot = container.querySelector<HTMLElement>('[data-carousel-centered="true"]')!;
+    expect(centredSlot.querySelector<HTMLElement>('[data-featured-card-meta]')!.tabIndex).toBe(0);
+    expect(centredSlot
+      .querySelector<HTMLElement>('[data-testid^="featured-card-play-"]')!.tabIndex).toBe(0);
     // Past the fade a sleeve is out of reach entirely.
     expect(faded.firstElementChild!.hasAttribute('inert')).toBe(true);
+  });
+
+  it('answers a press on the whole tile, whichever part of it the browser hit', () => {
+    // The sleeve leans away from the pointer, so its plane is not where the
+    // browser hit-tests it and its edges move while a press is being made: the
+    // element under the hand when the button goes down need not be the one
+    // under it when the button comes up, and a click then reaches only the
+    // nearest ancestor the two have in common. Each of these is one of those
+    // outcomes, and every one of them has to open the record.
+    const parts = [
+      // Deep inside the leaning plane — a press that landed on the artwork.
+      ['the artwork', (card: HTMLElement) => card.querySelector<HTMLElement>('img, [data-featured-cover]')!],
+      // The credits, which name the record but no longer carry the press.
+      ['the credits', (card: HTMLElement) => card.querySelector<HTMLElement>('[data-featured-card-meta]')!],
+      // The wrapper the surface leans inside: what the browser reports both
+      // for a press landing in the band the lean has vacated and for one whose
+      // down and up targets disagree.
+      ['the box it leans in', (card: HTMLElement) => card
+        .querySelector<HTMLElement>('[data-testid="featured-tilt-surface"]')!.parentElement!],
+      // And the tile itself.
+      ['the tile', (card: HTMLElement) => card],
+    ] as const;
+
+    for (const [name, part] of parts) {
+      const { container, root } = render(<FeaturedPage {...pageProps()} />);
+      roots.push(root);
+      const card = container
+        .querySelector<HTMLElement>('[data-carousel-centered="true"]')!
+        .querySelector<HTMLElement>('[data-testid^="featured-card-"]')!;
+
+      expect(detail(container)).toBeNull();
+      act(() => part(card).dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      expect(detail(container), `a press on ${name} should open the record`).not.toBeNull();
+    }
+  });
+
+  it('keeps the transport out of the press that opens the record', () => {
+    const { container, root } = render(<FeaturedPage {...pageProps()} />);
+    roots.push(root);
+
+    const play = container
+      .querySelector<HTMLElement>('[data-carousel-centered="true"]')!
+      .querySelector<HTMLButtonElement>('[data-testid^="featured-card-play-"]')!;
+    // Playing is not opening: the tile answers every press that reaches it, so
+    // the transport's own has to stop where it lands.
+    act(() => play.click());
+    expect(detail(container)).toBeNull();
   });
 
   it('leaves the sleeve being pressed where it is while the wheel settles behind it', () => {

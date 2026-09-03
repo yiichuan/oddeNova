@@ -144,8 +144,8 @@ describe('ThinkingLevelControl', () => {
 
     expect(dot?.style.width).toBe(segment?.style.height);
     expect(dot?.style.width).toBe(dot?.style.height);
-    expect(dot?.classList).toContain('bg-[#6A6A6A]');
-    expect(segment?.classList).toContain('bg-[#6A6A6A]');
+    expect(dot?.classList).toContain('bg-track-idle');
+    expect(segment?.classList).toContain('bg-track-idle');
 
     const dotSize = parseInt(dot?.style.width ?? '0', 10);
     const thumbSize = parseInt(thumb?.style.width ?? '0', 10);

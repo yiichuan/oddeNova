@@ -1,9 +1,7 @@
 import { useEffect, useRef } from 'react';
 import {
   ACCENT_SHARE_MIN,
-  PARTICLE_ACCENT_COLOR,
   PARTICLE_BLUR_LEVELS,
-  PARTICLE_COLOR,
   PARTICLE_ENTER_MS,
   PARTICLE_FONT,
   PARTICLE_FONT_SIZE,
@@ -13,6 +11,7 @@ import {
   type ParticleShape,
   type ParticleTransition,
   accentShareFor,
+  resolveParticleColors,
   createParticles,
   particleAccentAt,
   particleDotRadius,
@@ -24,7 +23,7 @@ import {
   followIntensity,
   perceivedIntensity,
 } from '../../lib/audio-intensity';
-import { useAnimationPreference } from '../../hooks/useAppearance';
+import { useResolvedAnimation, useResolvedTheme } from '../../hooks/useAppearance';
 
 interface ControlBarParticlesProps {
   /**
@@ -38,9 +37,9 @@ interface ControlBarParticlesProps {
   /** Tempo of that piece, used to put the accent on the beat. */
   bpm?: number;
   /**
-   * A colour lifted from the playing piece's own `.color()`, replacing
-   * `PARTICLE_ACCENT_COLOR` for as long as it is set. Absent — the ordinary
-   * case — the field burns the studio's own orange, same as always.
+   * A colour lifted from the playing piece's own `.color()`, replacing the
+   * theme's accent for as long as it is set. Absent — the ordinary case — the
+   * field burns whatever the painted palette plays back in.
    */
   accentColor?: string | null;
   /**
@@ -99,11 +98,12 @@ function paintDot(
   x: number,
   y: number,
   radius: number,
+  particleColor: string,
 ): void {
   const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
-  gradient.addColorStop(0, `rgb(${PARTICLE_COLOR})`);
-  gradient.addColorStop(0.45, `rgba(${PARTICLE_COLOR}, 0.85)`);
-  gradient.addColorStop(1, `rgba(${PARTICLE_COLOR}, 0)`);
+  gradient.addColorStop(0, `rgb(${particleColor})`);
+  gradient.addColorStop(0.45, `rgba(${particleColor}, 0.85)`);
+  gradient.addColorStop(1, `rgba(${particleColor}, 0)`);
   context.fillStyle = gradient;
   context.beginPath();
   context.arc(x, y, radius, 0, Math.PI * 2);
@@ -125,7 +125,12 @@ function paintDot(
  * It also degrades gracefully: a browser without canvas `filter` support gets
  * sharp flakes rather than a broken layer.
  */
-function buildAtlas(pixelRatio: number, shape: ParticleShape, accentColor?: string | null): SpriteAtlas {
+function buildAtlas(
+  pixelRatio: number,
+  shape: ParticleShape,
+  accentColor: string,
+  particleColor: string,
+): SpriteAtlas {
   const dots = shape === 'dot';
   const maxBlur = PARTICLE_BLUR_LEVELS[PARTICLE_BLUR_LEVELS.length - 1];
   // A Gaussian is effectively finished at 3σ; less padding than that and each
@@ -154,7 +159,7 @@ function buildAtlas(pixelRatio: number, shape: ParticleShape, accentColor?: stri
   context.textBaseline = 'middle';
   // Opaque here; per-flake alpha is applied at blit time via globalAlpha, so
   // one sprite serves every brightness the breathing passes through.
-  context.fillStyle = `rgb(${PARTICLE_COLOR})`;
+  context.fillStyle = `rgb(${particleColor})`;
   // Condenses anything the font renders wider than one monospace advance, so a
   // Greek capital that falls back to another face cannot overflow its cell.
   const advance = context.measureText('@').width;
@@ -166,7 +171,7 @@ function buildAtlas(pixelRatio: number, shape: ParticleShape, accentColor?: stri
       const y = blurIndex * cellHeight + cellHeight / 2;
       // The mote takes the size of the glyph slot it replaces, so the weight
       // ramp still carries the depth: specks far away, full motes up close.
-      if (dots) paintDot(context, x, y, particleDotRadius(glyphIndex));
+      if (dots) paintDot(context, x, y, particleDotRadius(glyphIndex), particleColor);
       else context.fillText(glyph, x, y, advance);
     });
   });
@@ -174,7 +179,7 @@ function buildAtlas(pixelRatio: number, shape: ParticleShape, accentColor?: stri
 
   return {
     canvas,
-    accentCanvas: tintedCopy(canvas, accentColor ?? `rgb(${PARTICLE_ACCENT_COLOR})`),
+    accentCanvas: tintedCopy(canvas, accentColor),
     cellWidth,
     cellHeight,
     pixelRatio,
@@ -182,9 +187,13 @@ function buildAtlas(pixelRatio: number, shape: ParticleShape, accentColor?: stri
 }
 
 /**
- * Marks falling through the control bar like snow, standing in for the
- * visualizer while it is collapsed — ASCII characters, or round motes when the
- * visual pane is set to the particle galaxy.
+ * Motes falling through the control bar like snow, standing in for the particle
+ * galaxy while it is collapsed.
+ *
+ * Only that pane gets a stand-in. Snowed into the bar, the ASCII field's
+ * characters read as a second run of text across the transport rather than as
+ * the hidden pane's own material drifting down, so under that animation this
+ * layer is not mounted at all and the bar stays clear.
  */
 export default function ControlBarParticles({
   active,
@@ -194,9 +203,16 @@ export default function ControlBarParticles({
   motionless = false,
   accentColor = null,
 }: ControlBarParticlesProps) {
-  // The bar snows whatever the hidden pane is made of, so the two read as one
-  // thing moving between them rather than two unrelated effects.
-  const shape: ParticleShape = useAnimationPreference() === 'galaxy' ? 'dot' : 'glyph';
+  // The bar snows what the hidden pane is made of, so the two read as one thing
+  // moving between them rather than two unrelated effects — which only carries
+  // over for the galaxy's motes.
+  const snows = useResolvedAnimation() === 'galaxy';
+  // Canvas fills, so the theme has to be resolved in JS rather than left to a
+  // custom property the way the rest of the bar's colours are.
+  const { particle: particleColor, accent: resolvedAccentColor } = resolveParticleColors(
+    useResolvedTheme(),
+    accentColor,
+  );
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isPlayingRef = useRef(isPlaying);
   const bpmRef = useRef(bpm);
@@ -270,7 +286,12 @@ export default function ControlBarParticles({
       previous: ACCENT_SHARE_MIN,
       current: ACCENT_SHARE_MIN,
     };
-    let atlas = buildAtlas(Math.min(window.devicePixelRatio || 1, 2), shape, accentColor);
+    let atlas = buildAtlas(
+      Math.min(window.devicePixelRatio || 1, 2),
+      'dot',
+      resolvedAccentColor,
+      particleColor,
+    );
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -285,7 +306,9 @@ export default function ControlBarParticles({
         canvas.height = bufferHeight;
       }
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      if (atlas.pixelRatio !== pixelRatio) atlas = buildAtlas(pixelRatio, shape, accentColor);
+      if (atlas.pixelRatio !== pixelRatio) {
+        atlas = buildAtlas(pixelRatio, 'dot', resolvedAccentColor, particleColor);
+      }
     };
 
     const clear = () => {
@@ -326,7 +349,7 @@ export default function ControlBarParticles({
       const sourceHeight = cellHeight * pixelRatio;
 
       for (const particle of particles) {
-        const flake = particleFrameAt(particle, timeSeconds, field, transition, shape);
+        const flake = particleFrameAt(particle, timeSeconds, field, transition, 'dot');
         const sourceX = flake.glyphIndex * sourceWidth;
         const sourceY = flake.blurLevel * sourceHeight;
         const left = flake.x - cellWidth / 2;
@@ -461,12 +484,21 @@ export default function ControlBarParticles({
       resumeRef.current = null;
       observer?.disconnect();
     };
-    // `accentColor` rebuilds the whole field along with `shape`: both are rare,
-    // deliberate changes (a latch at most twice a playback, a settings change
-    // rarer still), so paying for a fresh `createParticles()` shuffle on either
-    // is the same trade already made for `shape` — simpler than keeping a
-    // second, narrower path just to re-tint one canvas in place.
-  }, [motionless, shape, accentColor]);
+    // `snows` is a dependency because the canvas itself comes and goes with it:
+    // switching to the galaxy while the pane is already collapsed mounts a
+    // fresh element, and without a re-run this effect would still be holding
+    // the null ref it bailed on, leaving the bar empty until something else
+    // happened to rebuild it.
+    //
+    // `accentColor` rebuilds the whole field: it is a rare, deliberate change
+    // (a latch at most twice a playback), so paying for a fresh
+    // `createParticles()` shuffle is simpler than keeping a second, narrower
+    // path just to re-tint one canvas in place.
+  }, [motionless, snows, resolvedAccentColor, particleColor]);
+
+  // Nothing to stand in for under the ASCII pane: no canvas, no sprite atlas,
+  // no frame loop.
+  if (!snows) return null;
 
   return (
     <canvas

@@ -72,7 +72,11 @@ function buildGalaxy(): void {
 }
 
 function buildAscii(): void {
-  const frame = captureAsciiFrame(ASCII);
+  /* Two passes over the same seed. The galaxy is identical in both — only the
+     palette moves — so the light pass is captured purely for its two colours,
+     and the thumbnail carries both rather than a second copy of the grid. */
+  const frame = captureAsciiFrame({ ...ASCII, theme: 'dark' });
+  const light = captureAsciiFrame({ ...ASCII, theme: 'light' });
   const module = `/**
  * One frame of the ASCII galaxy, captured from the animation itself.
  *
@@ -80,7 +84,8 @@ function buildAscii(): void {
  *
  * Cells are stored row by row: a glyph per cell in \`glyphRows\` (space = unlit)
  * and its opacity in \`opacityRows\`, as a base-36 index into \`opacities\` with
- * '0' meaning unlit.
+ * '0' meaning unlit. The grid is the same in both colour schemes, so it is
+ * stored once and \`palettes\` holds what the animation paints it with in each.
  */
 
 export const ASCII_GALAXY_FRAME = {
@@ -89,8 +94,10 @@ export const ASCII_GALAXY_FRAME = {
   cellWidth: ${frame.cellWidth},
   cellHeight: ${frame.cellHeight},
   fontSize: ${frame.fontSize},
-  color: '${frame.color}',
-  background: '#080908',
+  palettes: {
+    dark: { color: '${frame.color}', background: '${frame.background}' },
+    light: { color: '${light.color}', background: '${light.background}' },
+  },
   opacities: ${JSON.stringify(frame.opacities)},
   glyphRows: [
 ${frame.glyphRows.map((row) => `    ${JSON.stringify(row)},`).join('\n')}

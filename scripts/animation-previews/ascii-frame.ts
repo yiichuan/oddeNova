@@ -26,7 +26,10 @@ export interface AsciiFrame {
   /** Opacity per cell as an index into `opacities`, '0' meaning unpainted. */
   opacityRows: string[];
   opacities: number[];
+  /** The base grid's own fillStyle in this pass, `rgb(r, g, b)`. */
   color: string;
+  /** The ground the animation painted for this pass. */
+  background: string;
 }
 
 interface Painted {
@@ -55,6 +58,14 @@ export function captureAsciiFrame(options: {
   seed: number;
   /** Seconds of animation to advance before the frame that gets kept. */
   time: number;
+  /**
+   * The colour scheme to capture in. The animation reads it off its host's
+   * `<html data-theme>`, so the stub document below carries one — same channel
+   * the studio uses, which is what keeps the thumbnail's palette the
+   * animation's rather than a copy of it kept in step by hand. Geometry is
+   * identical either way; only the colours move.
+   */
+  theme: 'dark' | 'light';
 }): AsciiFrame {
   const html = readFileSync('public/animation/galaxy-ascii.html', 'utf8');
   const source = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
@@ -88,6 +99,15 @@ export function captureAsciiFrame(options: {
 
   const canvas = { width: 0, height: 0, style: {}, getContext: () => context2d };
 
+  /* `syncDocumentTheme()` writes the palette's ground here, so this doubles as
+     the read-out for the background the capture reports. */
+  const document_ = {
+    getElementById: () => canvas,
+    addEventListener() {},
+    documentElement: { style: { colorScheme: '' }, dataset: { theme: options.theme } },
+    body: { style: { background: '' } },
+  };
+
   /* One slot for the callback the animation registers. It is an array rather
      than a `let` because the only assignment happens inside the sandbox object
      below: flow analysis cannot see through that, so a `let` still reads as its
@@ -104,13 +124,16 @@ export function captureAsciiFrame(options: {
     removeEventListener: () => {},
     // Self-parent: the audio tap looks for host globals that a capture has no
     // business providing, finds none, and leaves the frame in its quiet state.
+    // Self-parent is also what the theme lookup walks, so it lands on the stub
+    // document below — the same place a standalone page would land.
     parent: null as unknown,
+    document: document_,
   };
   window_.parent = window_;
 
   const sandbox = {
     window: window_,
-    document: { getElementById: () => canvas, addEventListener() {}, body: {} },
+    document: document_,
     requestAnimationFrame: (callback: (timestamp: number) => void) => {
       nextFrame[0] = callback;
       return 0;
@@ -135,7 +158,7 @@ export function captureAsciiFrame(options: {
     nextFrame[0](elapsed);
   }
 
-  return toFrame(painted, fontSize, options);
+  return toFrame(painted, fontSize, options, document_.body.style.background);
 }
 
 function parseFontSize(font: string): number {
@@ -146,6 +169,7 @@ function toFrame(
   painted: Painted[],
   fontSize: number,
   options: { width: number; height: number },
+  background: string,
 ): AsciiFrame {
   const cellWidth = fontSize * 0.6;
   const cellHeight = fontSize * 1.08;
@@ -155,6 +179,13 @@ function toFrame(
   const opacities: number[] = [];
   const glyphs = Array.from({ length: rows }, () => new Array<string>(columns).fill(' '));
   const levels = Array.from({ length: rows }, () => new Array<number>(columns).fill(0));
+  /* The base grid is drawn from the cell corner and the accents from its
+     centre, so the first left-aligned cell is a base-grid one — and the base
+     grid is painted in one colour at varying alpha, which is the colour the
+     thumbnail needs. Read rather than restated, so the two palettes below
+     cannot drift from the animation's. */
+  const baseCell = painted.find((cell) => cell.align !== 'center');
+  const color = baseCell?.color.replace(/^rgba\(([^)]*?),\s*[\d.]+\)$/, 'rgb($1)') ?? '';
 
   for (const cell of painted) {
     // Accents are drawn centred in the cell, the base grid from its corner.
@@ -179,6 +210,7 @@ function toFrame(
     glyphRows: glyphs.map((row) => row.join('')),
     opacityRows: levels.map((row) => row.map((level) => level.toString(36)).join('')),
     opacities,
-    color: 'rgb(194, 197, 194)',
+    color,
+    background,
   };
 }

@@ -93,6 +93,18 @@ const ticks = (container: HTMLElement) => (
 const preview = (container: HTMLElement) => (
   container.querySelector<HTMLElement>('[data-turn-tick-preview]')
 );
+const searchInput = (container: HTMLElement) => (
+  container.querySelector<HTMLInputElement>('[data-testid="favorites-search-input"]')!
+);
+
+/** Type into a controlled input the way React hears it. */
+function changeInput(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')?.set;
+  act(() => {
+    setter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
 
 describe('FavoritesPage', () => {
   it('renders cloud summaries in service order without fabricating a conversation', () => {
@@ -202,7 +214,7 @@ describe('FavoritesPage', () => {
     // The marker is the same orange the Featured title column marks its head
     // row with, and it is only run out under the entry that is open.
     const marker = (row: HTMLElement) => row.querySelector<HTMLElement>('[data-favorite-marker]');
-    expect(marker(rows[0])?.className).toContain('bg-[#f05a28]');
+    expect(marker(rows[0])?.className).toContain('bg-brand-accent');
     expect(marker(rows[0])?.style.transform).toBe('scaleX(1)');
     expect(marker(rows[1])?.style.transform).toBe('scaleX(0)');
   });
@@ -216,8 +228,12 @@ describe('FavoritesPage', () => {
     expect(page.children).toHaveLength(2);
     // The list gets a column of its own on the right rather than standing over
     // the code window, and the heading stops on the same vertical.
-    expect(container.querySelector('[data-testid="favorites-list"]')?.getAttribute('style'))
-      .toContain(`width: ${LIST_WIDTH}`);
+    const list = container.querySelector<HTMLElement>('[data-testid="favorites-list"]')!;
+    expect(list.getAttribute('style')).toContain(`width: ${LIST_WIDTH}`);
+    // Six 22px entries deep whatever the viewport is doing, and the rest of
+    // the collection scrolled to rather than shown.
+    expect(list.style.maxHeight).toBe(`${6 * 22}px`);
+    expect(list.className).toContain('overflow-y-auto');
     // The right is what the list needs. The left is that less what the nav's
     // column holds of the page's left edge and what the reading insets itself
     // by, so the two windows stand centred on the page rather than on the
@@ -599,8 +615,8 @@ describe('FavoritesPage', () => {
     // Hear it, take it, or go and work on it — the studio transport's own grey,
     // and its own way of naming a mark only when the pointer is on it.
     expect(action('play').getAttribute('aria-label')).toBe(t('play'));
-    expect(action('play').className).toContain('text-[#A8A8A8]');
-    expect(action('play').className).toContain('hover:text-[#C8C8C8]');
+    expect(action('play').className).toContain('text-icon-idle');
+    expect(action('play').className).toContain('hover:text-text-primary');
     // An outline, not the transport's filled triangle: this is one action of
     // three, not the one button a bar exists for.
     expect(action('play').querySelector('svg')?.getAttribute('fill')).toBe('none');
@@ -849,9 +865,49 @@ describe('FavoritesPage', () => {
     // arrival out of a blur.
     const line = empty.querySelector<HTMLElement>('p')!;
     expect(line.className).toContain('animate-blur-fade-in');
-    expect(line.className).toContain('text-[#969696]');
+    expect(line.className).toContain('text-text-greeting');
     expect(line.className.includes('font-jinghua-laosongti')).toBe(zh);
     expect(line.className.includes('font-eb-garamond')).toBe(!zh);
+  });
+
+  describe('narrowing the list', () => {
+    it('keeps only the entries a query names, over both titles and what was said', () => {
+      const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+      expect(listRows(container)).toHaveLength(3);
+
+      // A title, typed in whichever case is easiest to type.
+      changeInput(searchInput(container), conversationTitle(CONVERSATIONS[1]).toUpperCase());
+      expect(listRows(container).map((row) => row.dataset.favoriteId)).toEqual(['second']);
+
+      // And a phrase from inside a conversation, which no title carries.
+      changeInput(searchInput(container), turnText(CONVERSATIONS[2].turns[0]));
+      expect(listRows(container).map((row) => row.dataset.favoriteId)).toEqual(['third']);
+    });
+
+    it('says nothing matched rather than emptying the corner, and gives it back', () => {
+      const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+      changeInput(searchInput(container), 'nothing in the collection says this');
+
+      expect(listRows(container)).toHaveLength(0);
+      expect(container.querySelector('[data-testid="favorites-search-empty"]')?.textContent)
+        .toBe(t('favoritesSearchEmpty'));
+
+      act(() => container.querySelector<HTMLButtonElement>(
+        '[data-testid="favorites-search-clear"]',
+      )!.click());
+
+      expect(searchInput(container).value).toBe('');
+      expect(listRows(container)).toHaveLength(3);
+    });
+
+    it('holds the open favorite on the page when the list is narrowed past it', () => {
+      const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+      changeInput(searchInput(container), conversationTitle(CONVERSATIONS[1]));
+
+      // The column no longer lists what is open; the reading still shows it.
+      expect(listRows(container).map((row) => row.dataset.favoriteId)).toEqual(['second']);
+      expect(container.textContent).toContain(turnText(CONVERSATIONS[0].turns[0]));
+    });
   });
 
   describe('letting a favorite go', () => {

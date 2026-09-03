@@ -254,7 +254,7 @@ function PlaybackProgress({
     <div
       data-testid="code-panel-playback-progress"
       className="code-panel-playback-layout relative z-10 flex min-w-0 flex-1 items-center"
-      // Falls back to the studio's own orange via the CSS `var(..., #CD5633)`
+      // Falls back to the studio's own orange via the CSS `var(..., #D9542B)`
       // default below whenever there is no playback accent to show — pause,
       // stop, or a piece with no hued `.color()`. Leaving the property unset
       // rather than writing the fallback value here too means there is one
@@ -271,16 +271,16 @@ function PlaybackProgress({
       >
         <div
           data-testid="code-panel-playback-track"
-          className={`relative w-full rounded-full bg-current text-text-primary transition-[height] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-[4px] group-focus-within:h-[4px] ${isDragging ? 'h-[4px]' : 'h-[2px]'}`}
+          className={`code-panel-playback-track relative w-full rounded-full bg-current text-text-primary transition-[height] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-[4px] group-focus-within:h-[4px] ${isDragging ? 'h-[4px]' : 'h-[2px]'}`}
         >
           <span
             data-testid="code-panel-playback-progress-fill"
-            className="absolute inset-y-0 left-0 rounded-full bg-[var(--code-panel-accent,#CD5633)]"
+            className="absolute inset-y-0 left-0 rounded-full bg-[var(--code-panel-accent,var(--color-playback-accent))]"
             style={{ width: `${progress * 100}%` }}
           />
           <span
             data-testid="code-panel-playback-progress-thumb"
-            className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-current bg-[var(--code-panel-accent,#CD5633)] text-text-primary transition-[width,height,opacity] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-4 group-hover:w-4 group-hover:opacity-100 group-focus-within:h-4 group-focus-within:w-4 group-focus-within:opacity-100 ${isDragging ? 'h-4 w-4 opacity-100' : 'h-[10px] w-[10px] opacity-0'}`}
+            className={`code-panel-playback-thumb pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-current bg-[var(--code-panel-accent,var(--color-playback-accent))] text-text-primary transition-[width,height,opacity] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-4 group-hover:w-4 group-hover:opacity-100 group-focus-within:h-4 group-focus-within:w-4 group-focus-within:opacity-100 ${isDragging ? 'h-4 w-4 opacity-100' : 'h-[10px] w-[10px] opacity-0'}`}
             style={{ left: `${progress * 100}%` }}
           />
         </div>
@@ -574,7 +574,7 @@ export default function CodePanel({
             // Above CodeMirror's whole scale, top fade included: the banner
             // lands in exactly the strip the top mask covers, and an error is
             // never the thing that should be washed out.
-            className="absolute right-[8px] top-[8px] z-[260] w-fit rounded-[4px] border border-[#E01A1A] bg-[#E01A1A]/10 p-2.5 text-xs text-[#E01A1A] font-mono whitespace-pre-wrap wrap-break-word"
+            className="absolute right-[8px] top-[8px] z-[260] w-fit rounded-[4px] border border-diff-remove bg-diff-remove/10 p-2.5 text-xs text-diff-remove font-mono whitespace-pre-wrap wrap-break-word"
             style={{ maxWidth: 'min(420px, calc(100% - 24px))' }}
           >
             {error}
@@ -594,11 +594,31 @@ export default function CodePanel({
       </div>
 
       {/* Footer — desktop playback control. On mobile transport lives next to
-          App's code-pill toggle. */}
+          App's code-pill toggle.
+
+          The negative margins all serve one end — the bar's glass rim, not the
+          bar's box, is what the eye takes for its edge, so the rim has to land
+          on the panel's own outline rather than inside it. The bar is grown a
+          pixel past the root on three sides and the root's clip takes that
+          pixel back, cutting away the bar's own transparent border and leaving
+          the rim flush against the panel edge. Hence the 2px-wider box with
+          `-ml-px`, and the 1px-taller box with `-mb-px`; both are clips, not
+          overhangs. Miss either one and the rim on that side sits a pixel in
+          from the others, which reads as a rim of uneven width.
+
+          `-mt-px` is the odd one out — nothing clips there. It pulls the bar's
+          transparent top border onto the code layer's bottom border so the
+          bar's ground paints over it, leaving the seam as one line — the rim's
+          top stroke — rather than two, with the code layer's own rule hidden
+          beneath it.
+
+          The height is the plain 48px bar plus that one clipped pixel. Net
+          contribution to the column is unchanged at 47px — 49 less the two
+          negative margins — so the code layer keeps the height it had. */}
       {!isMobile && (
         <div
           data-testid="code-panel-controls-layer"
-          className="code-panel-controls relative z-10 -mt-px -ml-px flex h-12 w-[calc(100%+2px)] shrink-0 items-stretch rounded-b-region border bg-conversation-surface"
+          className="code-panel-controls relative z-10 -mt-px -mb-px -ml-px flex h-[calc(3rem+1px)] w-[calc(100%+2px)] shrink-0 items-stretch rounded-b-region border bg-conversation-surface"
           style={{ borderColor: 'transparent', fontFamily: "'ABeeZee', monospace" }}
         >
           <div
@@ -642,11 +662,11 @@ export default function CodePanel({
             })}
           </div>
 
-          {/* Stands in for the visualizer while it is collapsed: the marks it
-              is made of — ASCII characters, or motes under the particle galaxy
-              — falling through the bar like snow, some of them burning orange
-              on the beat while a piece plays, more of them the louder it
-              sounds. */}
+          {/* Stands in for the particle galaxy while it is collapsed: its motes
+              falling through the bar like snow, some of them burning orange on
+              the beat while a piece plays, more of them the louder it sounds.
+              Draws nothing under the ASCII animation, whose characters belong
+              to its own pane rather than across the transport. */}
           <ControlBarParticles
             active={vizEnabled && vizCollapsed}
             isPlaying={isPlaying}
@@ -671,7 +691,7 @@ export default function CodePanel({
             <button
               onClick={handlePlayClick}
               disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
-              className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#A8A8A8] transition-colors hover:text-[#C8C8C8] disabled:cursor-not-allowed disabled:text-[#686868] disabled:opacity-100"
+              className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover disabled:cursor-not-allowed disabled:text-control-icon-disabled disabled:opacity-100"
               aria-label={isPlaying ? t('pause') : t('play')}
             >
               {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={18} />}
@@ -700,7 +720,7 @@ export default function CodePanel({
                 <button
                   type="button"
                   onClick={onUpdate}
-                  className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
+                  className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover"
                   aria-label={t('updatePattern')}
                 >
                   <UpdateIcon size={16} />
@@ -732,7 +752,7 @@ export default function CodePanel({
               onMouseLeave={scheduleVolumeClose}
               onFocus={(event) => openVolumePopover(event.currentTarget)}
               onBlur={scheduleVolumeClose}
-              className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
+              className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover"
               aria-label={volume > 0 ? t('mute') : t('unmute')}
               aria-expanded={volumeOpen}
               aria-pressed={volume === 0}
@@ -780,7 +800,7 @@ export default function CodePanel({
                     setExportOpen((open) => !open);
                   }}
                   disabled={actionDisabled}
-                  className="flex h-8 w-8 cursor-pointer items-center justify-center text-[#A8A8A8] transition-colors hover:text-[#C8C8C8] disabled:cursor-not-allowed disabled:text-[#686868] disabled:opacity-100"
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center text-icon-idle transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted disabled:opacity-100"
                   aria-label={t('download')}
                   aria-expanded={exportOpen}
                 >
@@ -804,7 +824,7 @@ export default function CodePanel({
                   <button
                     type="button"
                     onClick={onToggleViz}
-                    className="flex h-8 w-8 cursor-pointer items-center justify-center text-[#A8A8A8] transition-colors hover:text-[#C8C8C8]"
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center text-icon-idle transition-colors hover:text-text-primary"
                     aria-label={vizCollapsed ? t('expandViz') : t('collapseViz')}
                     aria-pressed={vizCollapsed}
                   >
@@ -841,7 +861,7 @@ export default function CodePanel({
         <div
           ref={volumePopoverRef}
           data-testid="code-panel-volume-popover"
-          className="fixed z-50 flex w-[44px] flex-col items-center gap-1 rounded-[6px] border border-[#323232] bg-[#111] px-2 py-2 shadow-[0_6px_18px_rgba(0,0,0,0.9)]"
+          className="fixed z-50 flex w-[44px] flex-col items-center gap-1 rounded-[6px] border border-border bg-popover-surface px-2 py-2 shadow-menu-overlay"
           onMouseEnter={clearVolumeCloseTimer}
           onMouseLeave={scheduleVolumeClose}
           onFocusCapture={clearVolumeCloseTimer}
@@ -870,7 +890,7 @@ export default function CodePanel({
               writingMode: 'vertical-lr',
               direction: 'rtl',
               '--volume-progress': `${Math.round(volume * 100)}%`,
-              // Falls back to `#CD5633` via the rule's own `var(..., #CD5633)`
+              // Falls back to `#D9542B` via the rule's own `var(..., #D9542B)`
               // default when unset — same accent, same fallback, as the
               // playback progress bar right below this control.
               ...(accentColor ? { '--volume-slider-fill': accentColor } : {}),

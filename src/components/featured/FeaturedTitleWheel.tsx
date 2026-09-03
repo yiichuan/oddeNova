@@ -284,7 +284,7 @@ export default function FeaturedTitleWheel({
         <div
           aria-hidden="true"
           data-testid="featured-title-wheel-marker"
-          className="pointer-events-none absolute right-0 top-0 max-w-full bg-[#f05a28] shadow-[0_8px_32px_rgba(240,90,40,0.18)] transition-[width] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+          className="featured-title-marker pointer-events-none absolute right-0 top-0 max-w-full bg-brand-accent shadow-[0_8px_32px_var(--color-accent-glow)] transition-[width] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
           style={{ height: ROW_HEIGHT, width: markerWidth }}
         />
       )}
@@ -331,10 +331,12 @@ export default function FeaturedTitleWheel({
             // The row reaches past its title so that a click does not have to
             // land on the words. What gets *drawn* is still only as wide as
             // the title — that is the inner box's job.
-            className="absolute right-0 top-0 z-20 flex max-w-full items-center justify-end uppercase outline-none transition-opacity duration-150 ease-out focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/70 motion-reduce:transition-none"
+            className="absolute right-0 top-0 z-20 flex max-w-full items-center justify-end uppercase outline-none transition-opacity duration-150 ease-out focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[color:var(--featured-title-ring)] motion-reduce:transition-none"
             style={{
               ...TEXT_STYLE,
-              color: selected ? '#fff8f1' : '#c7c3bc',
+              color: selected
+                ? 'var(--featured-title-selected)'
+                : 'var(--featured-title-idle)',
               height: ROW_HEIGHT,
               opacity: visible
                 // Lifted under the pointer, or the preview would be showing
@@ -360,8 +362,14 @@ export default function FeaturedTitleWheel({
                 // so it arrives the way the marker would.
                 <span
                   aria-hidden="true"
-                  className="absolute inset-0 origin-right bg-[#f05a28]/50 transition-transform duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-                  style={{ transform: `scaleX(${hovered ? 1 : 0})` }}
+                  className="absolute inset-0 origin-right bg-brand-accent transition-transform duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+                  // How much of the marker arrives before the row is committed
+                  // to. Half on the dark field, and less than that on paper —
+                  // see the note on `--featured-title-marker-hover`.
+                  style={{
+                    opacity: 'var(--featured-title-marker-hover)',
+                    transform: `scaleX(${hovered ? 1 : 0})`,
+                  }}
                 />
               )}
               <span className="relative">{label}</span>

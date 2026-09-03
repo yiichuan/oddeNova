@@ -80,8 +80,8 @@ export default function EditableSessionTitle({
         data-editing={isEditing}
         className={`group/title relative grid h-8 w-fit overflow-hidden rounded-[6px] border transition-[background-color,border-color,min-width] duration-150 ${
           isEditing
-            ? 'border-border bg-[#1a1a1a]'
-            : 'border-transparent hover:bg-[#1a1a1a]'
+            ? 'border-border bg-settings-surface'
+            : 'border-transparent hover:bg-surface-hover'
         }`}
         style={{
           maxWidth: 'calc(100% - 16px)',

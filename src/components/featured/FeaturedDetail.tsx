@@ -54,10 +54,12 @@ interface FeaturedDetailProps {
  */
 const PILL_SHAPE =
   'inline-flex shrink-0 items-center gap-1.5 rounded-full text-text-secondary transition-colors hover:text-text-primary';
-const PILL_OUTLINE = `${PILL_SHAPE} h-8 px-3 text-xs border border-white/10 hover:border-white/25`;
+const PILL_OUTLINE = `${PILL_SHAPE} h-8 px-3 text-xs border`
+  + ' border-[color:var(--featured-hairline)] hover:border-[color:var(--featured-hairline-hover)]';
 // A size up from the credits below the cover: this one answers to a 20px panel
 // title, not to a 14px line of text.
-const PILL_FILLED = `${PILL_SHAPE} h-9 px-3.5 text-[13px] bg-white/10 hover:bg-white/[0.16]`;
+const PILL_FILLED = `${PILL_SHAPE} h-9 px-3.5 text-[13px]`
+  + ' bg-[var(--featured-fill)] hover:bg-[var(--featured-fill-hover)]';
 
 /**
  * A credit that goes somewhere: the mark of the place it goes to, then its
@@ -153,7 +155,12 @@ function Panel({
   return (
     <section
       aria-label={title}
-      className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[10px] border border-white/10 bg-[#0D0D0D]/55 p-5 backdrop-blur-2xl"
+      // `featured-panel` carries the glass: the rim the panel is edged with and
+      // the fill the light theme re-materialises it off both hang on that hook.
+      // No border of its own — the rim is a masked ring drawn inside the
+      // padding box, because `overflow-hidden` would clip anything outside it.
+      // See index.css.
+      className="featured-panel flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[10px] bg-[#0D0D0D]/55 p-5 backdrop-blur-2xl"
     >
       <div className="mb-5 flex h-9 shrink-0 items-center justify-between gap-3">
         <h2 className="truncate text-xl font-medium uppercase tracking-[0.08em] text-text-primary">
@@ -276,7 +283,7 @@ export default function FeaturedDetail({
         type="button"
         onClick={onBack}
         data-testid="featured-detail-back"
-        className={`inline-flex h-8 w-fit shrink-0 items-center gap-1.5 rounded-full pl-1.5 pr-3 text-sm text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary ${contentFade}`}
+        className={`inline-flex h-8 w-fit shrink-0 items-center gap-1.5 rounded-full pl-1.5 pr-3 text-sm text-text-secondary transition-colors hover:bg-[var(--featured-wash)] hover:text-text-primary ${contentFade}`}
       >
         <ArrowLeft size={16} strokeWidth={1.6} aria-hidden="true" />
         {t('featuredBack')}
@@ -330,7 +337,7 @@ export default function FeaturedDetail({
               title={transportDisabled ? t('engineStarting') : undefined}
               aria-label={isPlaying ? t('stop') : t('featuredPlayPiece')}
               data-testid="featured-detail-play"
-              className="grid size-8 place-items-center rounded-full bg-[#D8D8D8] text-black transition duration-200 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="grid size-8 place-items-center rounded-full bg-action-fill text-action-text transition duration-200 hover:bg-action-fill-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isPlaying ? <StopIcon size={12} /> : <PlayIcon size={14} />}
             </button>

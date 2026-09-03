@@ -5,7 +5,8 @@
  *
  * Cells are stored row by row: a glyph per cell in `glyphRows` (space = unlit)
  * and its opacity in `opacityRows`, as a base-36 index into `opacities` with
- * '0' meaning unlit.
+ * '0' meaning unlit. The grid is the same in both colour schemes, so it is
+ * stored once and `palettes` holds what the animation paints it with in each.
  */
 
 export const ASCII_GALAXY_FRAME = {
@@ -14,8 +15,10 @@ export const ASCII_GALAXY_FRAME = {
   cellWidth: 4.8,
   cellHeight: 8.64,
   fontSize: 8,
-  color: 'rgb(194, 197, 194)',
-  background: '#080908',
+  palettes: {
+    dark: { color: 'rgb(194, 197, 194)', background: '#080908' },
+    light: { color: 'rgb(125, 126, 143)', background: '#F7F7FA' },
+  },
   opacities: [0.06,0.12,0.2,0.3,0.4,0.5],
   glyphRows: [
     "γ*=γγ/μνγγγ*//γ*/*/+·γ ι ·   ·    .   ·          · ·    · ·        ι·   ·     ·         ·                           ·            ·      ·    ι",

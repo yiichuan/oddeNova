@@ -37,10 +37,10 @@ export default function SettingsSidebar({
                   type="button"
                   onClick={() => onSelect(id)}
                   aria-current={selected ? 'page' : undefined}
-                  className={`group flex min-h-12 w-full items-center gap-3 rounded-[5px] px-3 py-2.5 text-left outline-none transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.25,1,0.5,1)] focus-visible:ring-2 focus-visible:ring-text-secondary focus-visible:ring-offset-2 focus-visible:ring-offset-[#0D0D0D] active:scale-[0.99] motion-reduce:transition-none ${
+                  className={`group flex min-h-12 w-full items-center gap-3 rounded-[5px] px-3 py-2.5 text-left outline-none transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.25,1,0.5,1)] focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-conversation-surface active:scale-[0.99] motion-reduce:transition-none ${
                     selected
-                      ? 'bg-white/[0.09] text-text-primary'
-                      : 'text-text-secondary hover:bg-white/[0.045] hover:text-text-primary'
+                      ? 'bg-surface-selected text-text-primary'
+                      : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
                   }`}
                 >
                   <span

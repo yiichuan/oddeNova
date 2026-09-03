@@ -1,6 +1,6 @@
 /**
  * The playback accent: while a piece plays, the studio's own orange
- * (`#CD5633` — the playback progress bar, the control bar's particle field)
+ * (`#D9542B` — the playback progress bar, the control bar's particle field)
  * gives way to a colour lifted from the piece's own `.color()`, if it set one
  * worth using.
  *

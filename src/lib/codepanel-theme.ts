@@ -1,5 +1,5 @@
 import type { Extension } from '@codemirror/state';
-import { installOddenovaDarkSyntaxHighlight } from './oddenova-dark-syntax-highlight';
+import { installOddenovaSyntaxHighlight } from './oddenova-syntax-highlight';
 
 /**
  * `.theme(name)`, confined to the code panel's syntax colours.
@@ -81,7 +81,7 @@ export function createCodePanelTheme({
   const reset = (): void => {
     if (current === null) return;
     current = null;
-    installOddenovaDarkSyntaxHighlight(editor, themeCompartment);
+    installOddenovaSyntaxHighlight(editor, themeCompartment);
   };
 
   return { apply, reset };

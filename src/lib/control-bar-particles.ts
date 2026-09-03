@@ -74,8 +74,30 @@ export const PARTICLE_GLYPHS = [
 // one sets most of it going, and the swell between the two is the loudest
 // thing the collapsed bar can say about what is playing.
 
-/** #CD5633 — the accent the rest of the app plays back in. */
-export const PARTICLE_ACCENT_COLOR = '205, 86, 51';
+/** #D9542B — the accent the rest of the app plays back in. */
+export const PARTICLE_ACCENT_COLOR = '217, 84, 43';
+/** #0668E5 — the same role in the light palette. */
+export const PARTICLE_ACCENT_COLOR_LIGHT = '6, 104, 229';
+
+/**
+ * The two colours the field is painted in: the snow, and the accent burning
+ * through it. Both are canvas fills rather than CSS, so unlike the rest of the
+ * app they cannot read a custom property and have to be resolved here.
+ *
+ * A playing piece's own `.color()` outranks the theme for as long as it lasts;
+ * without one — silence, a stop, or a piece that never set a hued colour — the
+ * accent falls back to whichever palette is painted.
+ */
+export function resolveParticleColors(
+  theme: 'dark' | 'light',
+  accentColor?: string | null,
+): { particle: string; accent: string } {
+  const light = theme === 'light';
+  return {
+    particle: light ? PARTICLE_COLOR_LIGHT : PARTICLE_COLOR,
+    accent: accentColor ?? `rgb(${light ? PARTICLE_ACCENT_COLOR_LIGHT : PARTICLE_ACCENT_COLOR})`,
+  };
+}
 /**
  * Share of the field lit at the quietest the music gets, and at the most
  * intense. The floor is deliberately well above nothing — silence is the
@@ -97,6 +119,12 @@ export const PARTICLE_FONT_SIZE = 8.5;
 export const PARTICLE_FONT = `600 ${PARTICLE_FONT_SIZE}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
 /** Warm off-white, matching the bar's own light. */
 export const PARTICLE_COLOR = '248, 248, 244';
+/**
+ * On paper the snow is the shade the bar casts rather than the light it gives
+ * off — the field blends `multiply` there, so the flakes have to be darker
+ * than the page for the same drift to read at all.
+ */
+export const PARTICLE_COLOR_LIGHT = '77, 77, 83';
 
 /**
  * Blur radii in px, sharp to soft. Quantised so the renderer can pre-blur one

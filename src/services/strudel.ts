@@ -3,7 +3,7 @@ import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExportCompleted } from '../lib/analytics';
-import { installOddenovaDarkSyntaxHighlight } from '../lib/oddenova-dark-syntax-highlight';
+import { installOddenovaSyntaxHighlight } from '../lib/oddenova-syntax-highlight';
 import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '../lib/codepanel-theme';
 import { createCodePanelDrawContext, type CodePanelDrawContext } from '../lib/codepanel-canvas';
 import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
@@ -516,7 +516,7 @@ export class StrudelService {
       editor.setLineWrappingEnabled(this.lineWrappingEnabled);
       editor.changeSetting('isTabIndentationEnabled', true);
       if (editor.editor) {
-        installOddenovaDarkSyntaxHighlight(editor.editor, compartments.theme);
+        installOddenovaSyntaxHighlight(editor.editor, compartments.theme);
         // `.theme()` and the default highlight share one compartment, so the
         // two have to agree on who holds it — hence the same pair of arguments.
         this.panelTheme = createCodePanelTheme({

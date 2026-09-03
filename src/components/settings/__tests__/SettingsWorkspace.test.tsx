@@ -8,6 +8,8 @@ import {
   getAnimationPreference,
   getStudioAnimationVisible,
   getThemePreference,
+  setAnimationPreference,
+  setThemePreference,
 } from '../../../lib/appearance-preferences';
 import AppearanceSettingsPanel from '../AppearanceSettingsPanel';
 import SettingsSidebar from '../SettingsSidebar';
@@ -64,7 +66,7 @@ describe('settings workspace', () => {
     expect(onSelect).toHaveBeenCalledWith('appearance');
   });
 
-  it('offers three previewed themes with light held back', () => {
+  it('offers three previewed themes including the shipped light palette', () => {
     const { container, root } = render(<AppearanceSettingsPanel />);
     roots.push(root);
 
@@ -72,8 +74,8 @@ describe('settings workspace', () => {
     expect(options).toHaveLength(3);
     expect(options.every((option) => option.querySelector('svg[role="presentation"]'))).toBe(true);
     expect(options[0].getAttribute('aria-checked')).toBe('true'); // system, the default
-    expect(options[2].disabled).toBe(true);
-    expect(options[2].textContent).toContain(t('comingSoon'));
+    expect(options[2].disabled).toBe(false);
+    expect(options[2].textContent).not.toContain(t('comingSoon'));
   });
 
   it('stores the theme choice and marks it selected', () => {
@@ -87,6 +89,9 @@ describe('settings workspace', () => {
   });
 
   it('offers both previewed animations and stores the choice', () => {
+    // Both cards are a dark-palette pair; the light half offers one, below.
+    setThemePreference('dark');
+
     const { container, root } = render(<AppearanceSettingsPanel />);
     roots.push(root);
 
@@ -99,6 +104,23 @@ describe('settings workspace', () => {
 
     expect(getAnimationPreference()).toBe('galaxy');
     expect(radios(container, t('animation'))[0].getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('drops the particle galaxy from the list under the light palette', () => {
+    // The galaxy is emissive and has no light half, so light offers the ASCII
+    // field alone — and a galaxy stored from the dark half reads back as it.
+    setAnimationPreference('galaxy');
+    setThemePreference('light');
+
+    const { container, root } = render(<AppearanceSettingsPanel />);
+    roots.push(root);
+
+    const options = radios(container, t('animation'));
+    expect(options).toHaveLength(1);
+    expect(options[0].textContent).toContain(t('animationGalaxyAscii'));
+    expect(options[0].getAttribute('aria-checked')).toBe('true');
+    // Nothing was written on the way through: back in the dark, it is a galaxy.
+    expect(getAnimationPreference()).toBe('galaxy');
   });
 
   it('switches the studio animation off and dims the animation choices', () => {

@@ -92,7 +92,7 @@ export default function PersonaModal({ onClose }: PersonaModalProps) {
   const canSave = !!name.trim() && !!prompt.trim();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
       <div
         role="dialog"
         aria-modal="true"
@@ -169,7 +169,7 @@ export default function PersonaModal({ onClose }: PersonaModalProps) {
               <button
                 type="button"
                 onClick={startCreate}
-                className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors"
+                className="flex-1 py-2.5 text-sm text-on-accent bg-accent rounded-lg hover:bg-accent-light transition-colors"
               >
                 {t('newPersona')}
               </button>
@@ -216,7 +216,7 @@ export default function PersonaModal({ onClose }: PersonaModalProps) {
                 type="button"
                 onClick={() => void savePersona()}
                 disabled={!canSave}
-                className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex-1 py-2.5 text-sm text-on-accent bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {t('save')}
               </button>

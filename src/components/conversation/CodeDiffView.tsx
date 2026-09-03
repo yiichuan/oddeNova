@@ -57,14 +57,14 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
   );
 
   return (
-    <div className="mt-4 -ml-1 overflow-hidden rounded-md bg-[#1a1a1a] animate-fade-in">
-      <div className="flex w-full items-stretch bg-[#1a1a1a] text-[11px] text-[#d6d6d6]">
+    <div className="conversation-code-bar mt-4 -ml-1 overflow-hidden rounded-md bg-settings-surface animate-fade-in">
+      <div className="flex w-full items-stretch bg-settings-surface text-[11px] text-text-primary">
         <button
           type="button"
           data-code-diff-toggle={messageId}
           aria-expanded={expanded}
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-white/[0.06] hover:text-[#f5f5f5]"
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-surface-hover hover:text-text-primary"
         >
           <ChevronRightIcon
             size={14}
@@ -85,7 +85,7 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
               setTimeout(() => setCopied(false), 2000);
             });
           }}
-          className="px-2 py-1.5 transition-colors hover:bg-white/[0.06] hover:text-[#f5f5f5]"
+          className="px-2 py-1.5 transition-colors hover:bg-surface-hover hover:text-text-primary"
           title={t('copyCode')}
         >
           {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
@@ -93,13 +93,13 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
       </div>
 
       {expanded && (
-        <div className="border-t border-white/10 bg-[#080a0d] py-1 animate-fade-in">
+        <div className="border-t border-border bg-auth-field py-1 animate-fade-in">
           {diff.groups.length === 0 && (
             <div className="px-3 py-3 text-[11px] text-text-muted">{t('noCodeChanges')}</div>
           )}
           {diff.groups.map((group) => (
             <section key={group.key} data-diff-group={group.name} className="py-1.5 first:pt-0 last:pb-0">
-              <div className="sticky top-0 z-[1] flex items-center gap-2 border-y border-white/[0.055] bg-[#101319] px-2.5 py-1 font-mono text-[10px] tracking-[0.16em] text-white/55">
+              <div className="sticky top-0 z-[1] flex items-center gap-2 border-y border-border bg-settings-surface px-2.5 py-1 font-mono text-[10px] tracking-[0.16em] text-text-muted">
                 <span>{group.name.toUpperCase()}</span>
                 <span className="tracking-normal text-diff-add/60">+{group.additions}</span>
                 <span className="tracking-normal text-diff-remove/60">−{group.deletions}</span>
@@ -111,17 +111,17 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
                 {group.rows.map((row, index) => {
                   if (row.kind === 'skip') {
                     return (
-                      <div key={`skip-${index}`} className="grid grid-cols-[2.25rem_2.25rem_1.25rem_minmax(max-content,1fr)] text-white/30">
+                      <div key={`skip-${index}`} className="grid grid-cols-[2.25rem_2.25rem_1.25rem_minmax(max-content,1fr)] text-text-muted/60">
                         <span /><span /><span className="text-center">···</span>
                         <span className="px-1.5 italic">{t('unchangedLines').replace('{count}', String(row.count))}</span>
                       </div>
                     );
                   }
                   const tone = row.kind === 'add'
-                    ? 'bg-diff-add/[0.075] text-white/60'
+                    ? 'bg-diff-add/[0.075] text-text-secondary'
                     : row.kind === 'remove'
-                      ? 'bg-diff-remove/[0.075] text-white/60'
-                      : 'text-white/42';
+                      ? 'bg-diff-remove/[0.075] text-text-secondary'
+                      : 'text-text-muted';
                   const sign = row.kind === 'add' ? '+' : row.kind === 'remove' ? '−' : ' ';
                   const counterpart = counterpartFor(group.rows, index);
                   return (
@@ -130,8 +130,8 @@ export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDi
                       data-diff-kind={row.kind}
                       className={`grid min-w-full grid-cols-[2.25rem_2.25rem_1.25rem_minmax(max-content,1fr)] ${tone}`}
                     >
-                      <span className="select-none border-r border-white/[0.035] pr-1.5 text-right text-white/20">{row.oldLine ?? ''}</span>
-                      <span className="select-none border-r border-white/[0.035] pr-1.5 text-right text-white/20">{row.newLine ?? ''}</span>
+                      <span className="select-none border-r border-border pr-1.5 text-right text-text-muted/60">{row.oldLine ?? ''}</span>
+                      <span className="select-none border-r border-border pr-1.5 text-right text-text-muted/60">{row.newLine ?? ''}</span>
                       <span className="select-none text-center">{sign}</span>
                       <code className="whitespace-pre pr-3">
                         {row.kind === 'add' || row.kind === 'remove'

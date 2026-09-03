@@ -101,30 +101,36 @@ function lobePath(x0: number, y0: number, x1: number, y1: number, rTop: number, 
  * `inset` offsets the outline along its inward normal, which is what lets the
  * same builder produce the 1px ring that stands in for the bar's border: outer
  * outline plus inset outline, filled even-odd.
+ *
+ * `pad` moves the whole outline down and right by that many pixels, for the
+ * one caller that has to draw the column inside a box larger than the column:
+ * the shadow, which needs room around the silhouette for its own blur.
  */
-export function liquidOutline(shape: ColumnShape, inset = 0): string {
+export function liquidOutline(shape: ColumnShape, inset = 0, pad = 0): string {
   const { width, height, radius } = shape;
   const half = width / 2;
   const gap = shape.gapBottom - shape.gapTop;
   const neck = neckFor(gap, half);
 
-  const x0 = inset;
-  const x1 = width - inset;
-  const y0 = inset;
-  const y1 = height - inset;
-  const cx = half;
+  const x0 = pad + inset;
+  const x1 = pad + width - inset;
+  const y0 = pad + inset;
+  const y1 = pad + height - inset;
+  const cx = pad + half;
   const r = Math.max(radius - inset, 0);
   const ri = Math.max(lobeRadius(gap, half, radius) - inset, 0);
   /* The lobe edges face outwards from the gap, so insetting pulls them apart. */
-  const top = shape.gapTop - inset;
-  const bottom = shape.gapBottom + inset;
+  const top = pad + shape.gapTop - inset;
+  const bottom = pad + shape.gapBottom + inset;
 
   if (!neck) {
     return `${lobePath(x0, y0, x1, top, r, ri)} ${lobePath(x0, bottom, x1, y1, ri, r)}`;
   }
 
   const waist = Math.max(neck.waist - inset, 0.4);
-  const attach = clamp(neck.attach - inset, waist, cx - inset);
+  /* Both are distances out from the centre line, so they are measured against
+     the column's own half-width rather than against a padded centre. */
+  const attach = clamp(neck.attach - inset, waist, half - inset);
   const ym = (top + bottom) / 2;
   /* Leave the lobe edge horizontally and arrive at the waist vertically: the
      two tangents are what make the join a meniscus instead of a chamfer. */

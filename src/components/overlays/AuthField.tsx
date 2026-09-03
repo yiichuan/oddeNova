@@ -34,7 +34,7 @@ export default function AuthField({
   const [show, setShow] = useState(false);
 
   return (
-    <label className="relative block rounded-lg border border-[#2E2E2E] bg-auth-field px-3 py-2 transition-colors focus-within:border-[#525252]">
+    <label className="relative block rounded-lg border border-border bg-auth-field px-3 py-2 transition-colors focus-within:border-accent">
       <span className="block text-[11px] leading-4 text-text-muted">{label}</span>
       <input
         type={secret ? (show ? 'text' : 'password') : type}

@@ -96,6 +96,10 @@ const S: Record<string, readonly [string, string]> = {
   favoritesYou:         ['我', 'You'],
   favoritesTurnRail:    ['我说过的话', 'What you asked for'],
   favoritesJumpToTurn:  ['跳到这句：{text}', 'Jump to: {text}'],
+  favoritesSearch:      ['搜索收藏', 'Search favorites'],
+  favoritesSearchHint:  ['搜索', 'Search'],
+  favoritesSearchClear: ['清除搜索', 'Clear search'],
+  favoritesSearchEmpty: ['没有匹配的收藏', 'Nothing matches'],
 
   // Keeping one, letting one go
   favorite:             ['收藏', 'Add to favorites'],

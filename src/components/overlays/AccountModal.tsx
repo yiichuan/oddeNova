@@ -121,7 +121,7 @@ export default function AccountModal({
       : t('signIn');
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
       {/* Deeper at the foot than at the head: the top edge carries only the
           close button, which is mostly its own empty hit area, while the last
           row down here is a solid one that needs the room around it. */}
@@ -139,7 +139,7 @@ export default function AccountModal({
             disabled={busy}
             title={t('close')}
             aria-label={t('close')}
-            className="-mr-1.5 -mt-1 grid size-9 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-white/10 hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            className="-mr-1.5 -mt-1 grid size-9 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           >
             <XIcon size={22} />
           </button>
@@ -175,7 +175,7 @@ export default function AccountModal({
               <button
                 onClick={handlePasswordUpdate}
                 disabled={busy || !password || !passwordConfirmation}
-                className="w-full py-2.5 text-sm text-white bg-[#4D4D4D] rounded-lg hover:bg-[#5C5C5C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full py-2.5 text-sm text-on-accent bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {busy ? t('loading') : t('updatePassword')}
               </button>
@@ -192,7 +192,7 @@ export default function AccountModal({
               <button
                 onClick={handleSignOut}
                 disabled={busy}
-                className="w-full py-2.5 text-sm text-white bg-white/[0.05] border border-[#2E2E2E] rounded-lg hover:bg-white/[0.09] hover:border-[#4A4A4A] transition-colors disabled:opacity-40"
+                className="w-full py-2.5 text-sm text-text-primary bg-auth-field border border-border rounded-lg hover:bg-surface-hover hover:border-accent/35 transition-colors disabled:opacity-40"
               >
                 {t('signOut')}
               </button>
@@ -203,7 +203,7 @@ export default function AccountModal({
             <button
               onClick={handleGoogleSignIn}
               disabled={busy}
-              className="w-full py-2.5 px-4 text-sm font-medium text-text-primary bg-white/[0.05] border border-[#2E2E2E] rounded-lg hover:bg-white/[0.09] hover:border-[#4A4A4A] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
+              className="w-full py-2.5 px-4 text-sm font-medium text-text-primary bg-auth-field border border-border rounded-lg hover:bg-surface-hover hover:border-accent/35 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
             >
               <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4 shrink-0">
                 <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.55h3.24c1.9-1.75 2.98-4.33 2.98-7.42Z" />
@@ -215,9 +215,9 @@ export default function AccountModal({
             </button>
 
             <div className="flex items-center gap-3 py-3 text-[11px] text-text-muted">
-              <span className="h-px flex-1 bg-[#2E2E2E]" />
+              <span className="h-px flex-1 bg-divider" />
               <span>{t('orUseEmail')}</span>
-              <span className="h-px flex-1 bg-[#2E2E2E]" />
+              <span className="h-px flex-1 bg-divider" />
             </div>
 
             <AuthField
@@ -259,7 +259,7 @@ export default function AccountModal({
               <button
                 onClick={submit}
                 disabled={busy || !email.trim() || (mode !== 'reset' && !password) || (mode === 'sign-up' && !passwordConfirmation)}
-                className="w-full py-2.5 text-sm text-white bg-[#4D4D4D] rounded-lg hover:bg-[#5C5C5C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full py-2.5 text-sm text-on-accent bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {busy ? t('loading') : primaryLabel}
               </button>

@@ -33,7 +33,7 @@ export default function SessionSyncStatus({
       data-session-sync-status={status}
       role="status"
       aria-live="polite"
-      className={`pointer-events-none max-w-full truncate rounded-full border bg-black/75 px-2.5 py-1 text-[11px] leading-none backdrop-blur-sm ${TONE[status] ?? ''} ${className}`}
+      className={`pointer-events-none max-w-full truncate rounded-full border bg-popover-surface/85 px-2.5 py-1 text-[11px] leading-none backdrop-blur-sm ${TONE[status] ?? ''} ${className}`}
     >
       {copy}
     </div>

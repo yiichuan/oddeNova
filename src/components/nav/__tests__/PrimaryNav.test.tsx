@@ -99,7 +99,7 @@ describe('PrimaryNav', () => {
     expect(mark?.className).not.toContain('[transform:rotateY(180deg)]');
     expect(mark?.className).toContain('group-hover:opacity-0');
     expect(mark?.querySelector('svg')).toBeNull();
-    expect(mark?.parentElement?.className).toContain('hover:bg-white/10');
+    expect(mark?.parentElement?.className).toContain('hover:bg-surface-hover');
   });
 
   it('opens external links above More without selecting a primary destination', () => {

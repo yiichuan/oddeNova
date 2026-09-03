@@ -40,9 +40,9 @@ const HEADLINE: Record<FavoriteActionKind, string> = {
  * as an icon with a label beside it.
  */
 const TONE: Record<FavoriteActionKind, string> = {
-  kept: 'text-[#f05a28]',
-  released: 'text-[#f05a28]',
-  deleted: 'text-[#E01A1A]',
+  kept: 'text-brand-accent',
+  released: 'text-brand-accent',
+  deleted: 'text-error',
 };
 
 /**
@@ -170,7 +170,7 @@ export default function FavoriteActionDialog({
            afford to sit at the page's own value; this one has to read as
            standing off it, over whatever happens to be underneath — the studio's
            near-black or the Favorites page's light field. */
-        className={`flex w-max max-w-full items-center gap-2.5 rounded-[12px] border border-white/15 bg-[#1C1C1C]/90 py-2 pl-3.5 pr-2 shadow-2xl backdrop-blur-2xl ${
+        className={`flex w-max max-w-full items-center gap-2.5 rounded-[12px] border border-border bg-settings-surface/95 py-2 pl-3.5 pr-2 shadow-2xl backdrop-blur-2xl ${
           leaving
             ? 'animate-favorite-dialog-out pointer-events-none'
             : 'animate-favorite-dialog-in pointer-events-auto'
@@ -198,7 +198,7 @@ export default function FavoriteActionDialog({
             <button
               type="button"
               onClick={() => answer(onView)}
-              className="h-7 rounded-full bg-accent px-3 text-[12px] font-medium text-white transition-colors hover:bg-accent-light"
+              className="h-7 rounded-full bg-accent px-3 text-[12px] font-medium text-on-accent transition-colors hover:bg-accent-light"
             >
               {t('favoriteActionView')}
             </button>
@@ -207,13 +207,13 @@ export default function FavoriteActionDialog({
 
         {/* A hairline before the cross: the two buttons are things to do to the
             conversation, and this is not one of them. */}
-        <span aria-hidden="true" className="h-4 w-px shrink-0 bg-white/10" />
+        <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
         <button
           type="button"
           onClick={() => answer(onClose)}
           title={t('close')}
           aria-label={t('close')}
-          className="grid size-7 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-white/10 hover:text-text-primary"
+          className="grid size-7 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
         >
           <XIcon size={14} />
         </button>

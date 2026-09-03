@@ -228,6 +228,27 @@ export function conversationTitle(conversation: FavoriteConversation): string {
   return favoriteText(conversation.title);
 }
 
+/**
+ * Does this favorite answer what was typed into the list's search field?
+ *
+ * Its name and what was said in it, and nothing else. Those two are what the
+ * reader has actually read, so they are what a half-remembered phrase can be
+ * expected to land in. The date is left out because every row already carries
+ * one in a column of its own, and the script is left out because a search for
+ * a word like `room` would answer with every conversation whose code happens
+ * to use the effect rather than with the one that talked about it.
+ *
+ * Case-folded on both sides, so a query typed the way it is easiest to type
+ * finds a title however the entry was capitalised. An empty query is not a
+ * filter — it matches everything, which is the column at rest.
+ */
+export function favoriteMatches(conversation: FavoriteConversation, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return true;
+  if (conversationTitle(conversation).toLowerCase().includes(needle)) return true;
+  return conversation.turns.some((turn) => turnText(turn).toLowerCase().includes(needle));
+}
+
 const MIDNIGHT_NEON_FIRST = `// SYNTHWAVE | BPM: 96
 setcps(0.4)
 

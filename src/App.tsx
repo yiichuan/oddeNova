@@ -51,7 +51,7 @@ import { featuredPlayer } from './services/featured-player';
 import { featuredSessionDraft } from './lib/featured-session';
 import { useModelSettingsDraft } from './hooks/useModelSettingsDraft';
 import {
-  useAnimationPreference,
+  useResolvedAnimation,
   useStudioAnimationVisible,
   useThemePreference,
 } from './hooks/useAppearance';
@@ -163,7 +163,7 @@ export default function App() {
   const [featuredPieceOpen, setFeaturedPieceOpen] = useState(false);
   const modelSettings = useModelSettingsDraft(resetClient);
   const themePreference = useThemePreference();
-  const animationPreference = useAnimationPreference();
+  const animationPreference = useResolvedAnimation();
   const studioAnimationVisible = useStudioAnimationVisible();
   const [accountOpen, setAccountOpen] = useState(false);
   const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
@@ -537,7 +537,7 @@ export default function App() {
       {guestImportSessions && (
         // The editor's bottom fade uses z-index 240/250, so this app-level
         // dialog must sit above those masks or they can cover its buttons.
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
           <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
             <h2 className="text-lg font-semibold text-text-primary mb-2">{t('importLocalHistory')}</h2>
             <p className="text-xs text-text-muted mb-5">{t('importLocalHistoryDesc')}</p>
@@ -556,7 +556,7 @@ export default function App() {
               <button
                 onClick={() => void importGuestHistory()}
                 disabled={importingGuestHistory}
-                className="flex-1 py-2.5 text-sm text-white bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 py-2.5 text-sm text-on-accent bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {t('importNow')}
               </button>
@@ -1197,7 +1197,7 @@ export default function App() {
             </button>
           </div>
           <h1 className="text-[24px] absolute left-1/2 -translate-x-1/2" style={{
-            background: 'linear-gradient(to bottom, #F5F5F5, #333333)',
+            background: 'linear-gradient(to bottom, var(--color-logo-top), var(--color-logo-bottom))',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
@@ -1322,7 +1322,7 @@ export default function App() {
               // fill from currentColor, so only the triangle/square goes down in
               // brightness while the ring and background stay put.
               className={`absolute right-full top-0 mr-3 flex w-7 h-7 items-center justify-center rounded-full border border-border bg-bg-primary disabled:cursor-not-allowed ${
-                mobileTransportDisabled ? 'text-[#591C06]' : 'text-[#B2370C]'
+                mobileTransportDisabled ? 'text-text-muted' : 'text-action-fill'
               }`}
               aria-label={strudel.isPlaying ? t('pause') : t('play')}
               title={strudel.isPlaying ? t('pause') : t('play')}

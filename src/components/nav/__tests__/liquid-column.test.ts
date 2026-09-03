@@ -95,6 +95,23 @@ describe('liquidOutline', () => {
     expect(Math.max(...inner)).toBeLessThan(Math.max(...outer));
     expect(Math.min(...inner)).toBeGreaterThan(Math.min(...outer));
   });
+
+  it('pads the same outline into a larger box without redrawing it', () => {
+    // Every stage, so the padded strand is checked as well as the padded lobes.
+    for (const gap of [0, 24, 63, 64, 200, 780]) {
+      const column = shape((900 - gap) / 2, (900 + gap) / 2);
+      const at = (pad: number) => numbers(liquidOutline(column, 0, pad));
+      const moved = at(96).map((value) => Math.round((value - 96) * 100) / 100);
+      expect(moved).toEqual(at(0));
+    }
+  });
+
+  it('leaves the padded column room on every side of its box', () => {
+    const padded = numbers(liquidOutline(shape(60, 840), 0, 96));
+    expect(Math.min(...padded)).toBe(96);
+    // 60 across and 900 down, each with 96px of box left past it.
+    expect(Math.max(...padded)).toBe(996);
+  });
 });
 
 describe('spread curves', () => {

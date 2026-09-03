@@ -155,7 +155,7 @@ export function ShareButton({
             void handleShare();
           }}
           disabled={disabled || state === 'loading'}
-          className={buttonClassName ?? 'flex h-8 w-8 cursor-pointer items-center justify-center text-[#A8A8A8] transition-colors hover:text-[#C8C8C8] disabled:cursor-not-allowed disabled:text-[#686868] disabled:opacity-100'}
+          className={buttonClassName ?? 'flex h-8 w-8 cursor-pointer items-center justify-center text-icon-idle transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted disabled:opacity-100'}
           aria-label={t('share')}
         >
           <ShareIcon size={18} />
@@ -175,7 +175,7 @@ export function ShareButton({
       <button
         onClick={handleShare}
         disabled={disabled || state === 'loading'}
-        className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5"
+        className="h-7 flex items-center text-[14px] text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5"
       >
         {t('share')}
       </button>
@@ -188,7 +188,7 @@ export function ShareButton({
       )}
       {state === 'error' && (
         <div className="absolute right-0 top-7 z-50">
-          <span className="text-red-400 text-xs whitespace-nowrap">
+          <span className="text-error text-xs whitespace-nowrap">
             {t('shareFailedRetry')}
           </span>
         </div>
@@ -252,7 +252,7 @@ function CycleInput({
     onCommit(next);
   };
   return (
-    <div className="flex w-full overflow-hidden rounded-[6px] border border-[#323232] bg-black focus-within:border-white/30">
+    <div className="flex w-full overflow-hidden rounded-[6px] border border-border bg-auth-field focus-within:border-accent">
       <input
         type="text"
         inputMode="numeric"
@@ -264,17 +264,17 @@ function CycleInput({
           if (e.key === 'ArrowUp') { e.preventDefault(); step(1); }
           if (e.key === 'ArrowDown') { e.preventDefault(); step(-1); }
         }}
-        className="flex-1 min-w-0 bg-transparent px-2 py-1.5 text-[12px] text-white/90 outline-none"
+        className="flex-1 min-w-0 bg-transparent px-2 py-1.5 text-[12px] text-text-primary outline-none"
         style={{ fontFamily: "'ABeeZee', monospace" }}
       />
-      <div className="flex flex-col border-l border-[#323232]">
+      <div className="flex flex-col border-l border-border">
         <button type="button" onClick={() => step(1)} tabIndex={-1}
-          className="flex-1 flex items-center justify-center px-1.5 text-white/50 hover:text-white/90 hover:bg-white/5 leading-none">
+          className="flex-1 flex items-center justify-center px-1.5 text-text-muted hover:text-text-primary hover:bg-surface-hover leading-none">
           <svg width="8" height="5" viewBox="0 0 8 5" fill="none"><path d="M4 0.5L7.5 4.5H0.5L4 0.5Z" fill="currentColor" /></svg>
         </button>
-        <div className="h-px bg-[#323232]" />
+        <div className="h-px bg-border" />
         <button type="button" onClick={() => step(-1)} tabIndex={-1}
-          className="flex-1 flex items-center justify-center px-1.5 text-white/50 hover:text-white/90 hover:bg-white/5 leading-none">
+          className="flex-1 flex items-center justify-center px-1.5 text-text-muted hover:text-text-primary hover:bg-surface-hover leading-none">
           <svg width="8" height="5" viewBox="0 0 8 5" fill="none"><path d="M4 4.5L0.5 0.5H7.5L4 4.5Z" fill="currentColor" /></svg>
         </button>
       </div>
@@ -285,7 +285,7 @@ function CycleInput({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1 flex-1 min-w-0">
-      <span className="text-[11px] text-white/50">{label}</span>
+      <span className="text-[11px] text-text-muted">{label}</span>
       {children}
     </label>
   );
@@ -417,19 +417,19 @@ export function ExportPopover({
     <div className="flex flex-col gap-3" style={{ fontFamily: "'ABeeZee', monospace" }}>
       {exportState.status === 'exporting' ? (
         <>
-          <div className="text-[13px] text-white/70">{t('rendering')} {Math.round(exportState.progress * 100)}%</div>
-          <div className="h-[3px] w-full overflow-hidden rounded-[6px] bg-[#323232]">
-            <div className="h-full bg-white/70 transition-[width] duration-100 ease-linear" style={{ width: `${Math.round(exportState.progress * 100)}%` }} />
+          <div className="text-[13px] text-text-secondary">{t('rendering')} {Math.round(exportState.progress * 100)}%</div>
+          <div className="h-[3px] w-full overflow-hidden rounded-[6px] bg-border">
+            <div className="h-full bg-playback-accent transition-[width] duration-100 ease-linear" style={{ width: `${Math.round(exportState.progress * 100)}%` }} />
           </div>
           <div className="flex justify-end">
-            <button onClick={onClose} className="rounded-[6px] border border-[#323232] px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90">{t('cancel')}</button>
+            <button onClick={onClose} className="rounded-[6px] border border-border px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary">{t('cancel')}</button>
           </div>
         </>
       ) : exportState.status === 'error' ? (
         <>
-          <div className="text-[12px] text-red-400 break-words">{exportState.error || t('exportFailed')}</div>
+          <div className="text-[12px] text-error break-words">{exportState.error || t('exportFailed')}</div>
           <div className="flex justify-end">
-            <button onClick={handleErrorClose} className="rounded-[6px] border border-[#323232] px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90">{t('close')}</button>
+            <button onClick={handleErrorClose} className="rounded-[6px] border border-border px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary">{t('close')}</button>
           </div>
         </>
       ) : (
@@ -437,7 +437,7 @@ export function ExportPopover({
           <Field label={t('filename')}>
             <div className="relative w-full">
               <input type="text" value={filename} onChange={(e) => handleFilenameChange(e.target.value)} placeholder={filenamePlaceholder}
-                className="w-full rounded-[6px] border border-[#323232] bg-black px-2 py-1.5 pr-9 text-[12px] text-white/90 outline-none placeholder:text-white/30 focus:border-white/30"
+                className="w-full rounded-[6px] border border-border bg-auth-field px-2 py-1.5 pr-9 text-[12px] text-text-primary outline-none placeholder:text-text-muted focus:border-accent"
                 style={{ fontFamily: "'ABeeZee', monospace" }} />
               <button
                 type="button"
@@ -445,13 +445,13 @@ export function ExportPopover({
                 disabled={generateTitleState === 'loading'}
                 aria-label={generateTitleLabel}
                 title={generateTitleLabel}
-                className={`absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-white/70 hover:text-white disabled:opacity-45 disabled:cursor-not-allowed ${generateTitleState === 'loading' ? 'animate-pulse' : ''}`}
+                className={`absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary disabled:opacity-45 disabled:cursor-not-allowed ${generateTitleState === 'loading' ? 'animate-pulse' : ''}`}
               >
                 <SparkleIcon size={16} />
               </button>
             </div>
             {generateTitleState === 'error' && (
-              <span className="text-[11px] text-red-400">{t('generateSongTitleFailed')}</span>
+              <span className="text-[11px] text-error">{t('generateSongTitleFailed')}</span>
             )}
           </Field>
           <div className="flex gap-2">
@@ -460,11 +460,11 @@ export function ExportPopover({
           </div>
           {durationStr && (
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-white/50">{t('estDuration')}</span>
-              <span className="pr-[2px] text-white/80" style={{ fontFamily: "'ABeeZee', monospace" }}>{durationStr}</span>
+              <span className="text-text-muted">{t('estDuration')}</span>
+              <span className="pr-[2px] text-text-primary" style={{ fontFamily: "'ABeeZee', monospace" }}>{durationStr}</span>
             </div>
           )}
-          {!canExport && <div className="text-[12px] text-red-400">{t('cycleError')}</div>}
+          {!canExport && <div className="text-[12px] text-error">{t('cycleError')}</div>}
           <Field label={t('sampleRate')}>
             <div
               className="relative"
@@ -480,7 +480,7 @@ export function ExportPopover({
                 onKeyDown={(event) => {
                   if (event.key === 'Escape') setSampleRateOpen(false);
                 }}
-                className="flex w-full items-center justify-between rounded-[6px] border border-[#323232] bg-black py-1.5 pl-2 pr-2 text-left text-[12px] text-white/90 outline-none focus:border-white/30"
+                className="flex w-full items-center justify-between rounded-[6px] border border-border bg-auth-field py-1.5 pl-2 pr-2 text-left text-[12px] text-text-primary outline-none focus:border-accent"
                 style={{ fontFamily: "'ABeeZee', monospace" }}
               >
                 <span>{sampleRate} Hz</span>
@@ -492,7 +492,7 @@ export function ExportPopover({
                 <div
                   role="listbox"
                   aria-label={t('sampleRate')}
-                  className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 overflow-hidden rounded-[6px] border border-[#323232] bg-[#111] p-1 shadow-[0_6px_18px_rgba(0,0,0,0.9)]"
+                  className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 overflow-hidden rounded-[6px] border border-border bg-popover-surface p-1 shadow-menu-overlay"
                 >
                   {[44100, 48000].map((rate) => (
                     <button
@@ -504,7 +504,7 @@ export function ExportPopover({
                         setSampleRate(rate);
                         setSampleRateOpen(false);
                       }}
-                      className={`w-full rounded-[4px] px-2 py-1.5 text-left text-[12px] transition-colors ${sampleRate === rate ? 'bg-[var(--color-selected-item-bg)] text-white' : 'text-white/90 hover:bg-white/10'}`}
+                      className={`w-full rounded-[4px] px-2 py-1.5 text-left text-[12px] transition-colors ${sampleRate === rate ? 'bg-selected-item-bg text-on-accent' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'}`}
                       style={{ fontFamily: "'ABeeZee', monospace" }}
                     >
                       {rate} Hz
@@ -515,8 +515,8 @@ export function ExportPopover({
             </div>
           </Field>
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onClose} className="rounded-[6px] border border-[#323232] px-3 py-1.5 text-[12px] text-white/70 hover:text-white/90">{t('cancel')}</button>
-            <button onClick={handleExport} disabled={!canExport} className="rounded-[6px] border border-white/30 px-3 py-1.5 text-[12px] text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40">{t('download')}</button>
+            <button onClick={onClose} className="rounded-[6px] border border-border px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary">{t('cancel')}</button>
+            <button onClick={handleExport} disabled={!canExport} className="rounded-[6px] bg-accent px-3 py-1.5 text-[12px] text-on-accent hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-40">{t('download')}</button>
           </div>
         </>
       )}
@@ -526,9 +526,9 @@ export function ExportPopover({
   if (isMobile) {
     return (
       <div className="fixed inset-0 z-50" onClick={handleCloseSafe}>
-        <div className="absolute inset-0 bg-black/50" />
-        <div className="absolute bottom-0 left-0 right-0 rounded-t-[6px] border-t border-[#323232] bg-[#111] px-6 py-6" onClick={(e) => e.stopPropagation()}>
-          <div className="text-[14px] text-white/90 font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
+        <div className="absolute inset-0 bg-[var(--color-overlay-backdrop)]" />
+        <div className="absolute bottom-0 left-0 right-0 rounded-t-[6px] border-t border-border bg-popover-surface px-6 py-6" onClick={(e) => e.stopPropagation()}>
+          <div className="text-[14px] text-text-primary font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
           {body}
         </div>
       </div>
@@ -540,11 +540,11 @@ export function ExportPopover({
       <div className="fixed inset-0 z-40" onClick={handleCloseSafe} />
       <div
         data-testid="export-popover"
-        className={`right-0 z-50 w-[280px] rounded-[6px] border border-[#323232] bg-[#111] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.9)] ${anchorPosition ? 'fixed' : 'absolute'} ${!anchorPosition && (placement === 'above' ? 'bottom-[calc(100%+8px)]' : 'top-full')}`}
+        className={`right-0 z-50 w-[280px] rounded-[6px] border border-border bg-popover-surface p-3 shadow-menu-overlay ${anchorPosition ? 'fixed' : 'absolute'} ${!anchorPosition && (placement === 'above' ? 'bottom-[calc(100%+8px)]' : 'top-full')}`}
         style={anchorPosition}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-[12px] text-white/90 font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
+        <div className="text-[12px] text-text-primary font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
         {body}
       </div>
     </>
@@ -617,10 +617,10 @@ export default function TopActionBar({
 
         {menuOpen && (
           <>
-            <div className="fixed inset-0 z-30 bg-black/35 backdrop-blur-[6px]" onClick={() => setMenuOpen(false)} />
+            <div className="fixed inset-0 z-30 bg-[var(--color-overlay-backdrop)] backdrop-blur-[6px]" onClick={() => setMenuOpen(false)} />
             <div
               role="menu"
-              className="fixed right-3 z-40 w-[min(244px,calc(100vw-24px))] rounded-[18px] border border-[#323232] bg-[#0d0d0d]/95 p-2 text-text-primary shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+              className="fixed right-3 z-40 w-[min(244px,calc(100vw-24px))] rounded-[18px] border border-border bg-popover-surface/95 p-2 text-text-primary shadow-menu-overlay backdrop-blur-xl"
               style={{ top: 'calc(max(12px, env(safe-area-inset-top)) + 44px)' }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -660,7 +660,7 @@ export default function TopActionBar({
                 <span>{t('export')}</span>
                 <DownloadIcon size={19} />
               </button>
-              <div className="my-2 h-px bg-white/10" />
+              <div className="my-2 h-px bg-border" />
               <a
                 role="menuitem"
                 href={learnUrl}
@@ -708,7 +708,7 @@ export default function TopActionBar({
       {/* Account */}
       <button
         onClick={onOpenAccount}
-        className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5 max-w-[180px]"
+        className="h-7 flex items-center text-[14px] text-text-secondary hover:text-text-primary transition-colors px-1.5 max-w-[180px]"
         title={accountLabel}
       >
         <span className="truncate">{accountLabel}</span>
@@ -717,7 +717,7 @@ export default function TopActionBar({
       {/* Settings */}
       <button
         onClick={onOpenSettings}
-        className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5"
+        className="h-7 flex items-center text-[14px] text-text-secondary hover:text-text-primary transition-colors px-1.5"
       >
         {t('settings')}
       </button>
@@ -734,7 +734,7 @@ export default function TopActionBar({
       <button
         onClick={() => setExportOpen((v) => !v)}
         disabled={exportDisabled}
-        className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5"
+        className="h-7 flex items-center text-[14px] text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5"
       >
         {t('export')}
       </button>
@@ -744,7 +744,7 @@ export default function TopActionBar({
         href={learnUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5"
+        className="h-7 flex items-center text-[14px] text-text-secondary hover:text-text-primary transition-colors px-1.5"
       >
         {t('learn')}
       </a>
@@ -754,7 +754,7 @@ export default function TopActionBar({
         href={githubUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="h-7 flex items-center text-[14px] text-white/75 hover:text-white transition-colors px-1.5"
+        className="h-7 flex items-center text-[14px] text-text-secondary hover:text-text-primary transition-colors px-1.5"
       >
         GitHub
       </a>

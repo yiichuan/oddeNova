@@ -103,7 +103,7 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] text-[#888888] transition duration-200 hover:text-[#e0e0e0] disabled:cursor-not-allowed disabled:opacity-30"
+        className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] text-text-muted transition duration-200 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
         title={t('thinkingLevel')}
         aria-label={t('thinkingLevel')}
       >
@@ -116,7 +116,7 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
           data-testid="thinking-level-popover"
           role="group"
           aria-label={t('thinkingLevel')}
-          className="absolute bottom-full right-0 mb-2 w-[208px] rounded-[10px] border border-[#2a2a2a] bg-[#181818] px-3 pb-3 pt-2 shadow-lg"
+          className="absolute bottom-full right-0 mb-2 w-[208px] rounded-[10px] border border-border bg-popover-surface px-3 pb-3 pt-2 shadow-menu-overlay"
         >
           <div
             data-testid="thinking-level-heading"
@@ -131,7 +131,7 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
                 key={index}
                 data-testid="thinking-level-segment"
                 aria-hidden="true"
-                className="absolute top-1/2 -translate-y-1/2 rounded-full bg-[#6A6A6A]"
+                className="absolute top-1/2 -translate-y-1/2 rounded-full bg-track-idle"
                 style={{ left: segmentLeft(index), width: segmentWidth, height: DOT_SIZE }}
               />
             ))}
@@ -141,7 +141,7 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
                 key={lvl}
                 data-testid="thinking-level-dot"
                 aria-hidden="true"
-                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6A6A6A]"
+                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-track-idle"
                 style={{ left: dotLeft(index), width: DOT_SIZE, height: DOT_SIZE }}
               />
             ))}
@@ -149,7 +149,7 @@ export default function ThinkingLevelControl({ disabled = false }: ThinkingLevel
             <span
               data-testid="thinking-level-thumb"
               aria-hidden="true"
-              className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#CD5633] transition-[left] duration-[160ms] ease-out motion-reduce:transition-none"
+              className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-accent transition-[left] duration-[160ms] ease-out motion-reduce:transition-none"
               style={{ left: dotLeft(activeIndex), width: THUMB_SIZE, height: THUMB_SIZE }}
             />
 

@@ -232,7 +232,7 @@ export default function ArchivedConversationView({
                 data-favorites-turn={message.id}
                 className="flex justify-end items-end gap-1.5 animate-fade-in"
               >
-                <div className="relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-[#242424] text-text-primary">
+                <div className="relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-message-user text-text-primary">
                   <UserMessageBubble content={message.content} />
                 </div>
               </div>
@@ -281,7 +281,7 @@ export default function ArchivedConversationView({
                       data-favorites-chip={message.id}
                       aria-pressed={selectedCodeMessageId === message.id}
                       onClick={() => onSelectCode(message.id)}
-                      className="flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none border border-white/10 bg-[#0D0D0D]/55 px-2 py-1.5 text-left text-[11px] text-[#f05a28] transition-colors hover:bg-[#242424]/55"
+                      className="flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none border border-border bg-conversation-surface/55 px-2 py-1.5 text-left text-[11px] text-brand-accent transition-colors hover:bg-surface-hover/55"
                     >
                       <span>{numberTakes ? takeLabel(codeVersion) : t('favoritesCodeTitle')}</span>
                       <span aria-hidden="true">·</span>
@@ -299,7 +299,7 @@ export default function ArchivedConversationView({
                       // chip beside it is as tall as its own line, and two
                       // edges that stop at different heights would read as a
                       // misprint now that both are drawn.
-                      className="grid w-7 self-stretch place-items-center rounded-l-none rounded-r-md border border-white/10 bg-[#0D0D0D]/55 text-[#f05a28] transition-colors hover:bg-[#242424]/55"
+                      className="grid w-7 self-stretch place-items-center rounded-l-none rounded-r-md border border-border bg-conversation-surface/55 text-brand-accent transition-colors hover:bg-surface-hover/55"
                     >
                       {isPlaying ? <StopIcon size={12} /> : <PlayIcon size={13} />}
                     </button>

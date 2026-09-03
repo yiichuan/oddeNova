@@ -160,7 +160,7 @@ export default function Sidebar({
             <button
               onClick={() => setShowHistory(v => !v)}
               className={`flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition-colors ${
-                showHistory ? 'bg-[#242424]' : 'hover:bg-[#242424]'
+                showHistory ? 'bg-surface-selected' : 'hover:bg-surface-hover'
               }`}
               title={t('viewHistory')}
             >
@@ -171,7 +171,7 @@ export default function Sidebar({
                  session is reused rather than replaced, so starting a new one
                  twice over leaves the id — and the effect — unmoved. */
               onClick={() => { onNewSession(); setShowHistory(false); setFocusTrigger(v => v + 1); }}
-              className="flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition-colors hover:bg-[#242424]"
+              className="flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition-colors hover:bg-surface-hover"
               title={t('newSession')}
             >
               <MessageCirclePlusIcon size={18} />
@@ -184,7 +184,7 @@ export default function Sidebar({
           {showHistory && (
             <>
               <div className="fixed inset-0 z-[9]" onClick={() => setShowHistory(false)} />
-              <div className="history-panel-surface absolute top-0 left-3 right-3 max-h-[33.333%] z-10 overflow-y-auto rounded-region border border-border bg-[#0D0D0D]">
+              <div className="history-panel-surface absolute top-0 left-3 right-3 max-h-[33.333%] z-10 overflow-y-auto rounded-region border border-border bg-conversation-surface">
                 <HistoryPanel
                   sessions={sessions}
                   currentId={currentId}

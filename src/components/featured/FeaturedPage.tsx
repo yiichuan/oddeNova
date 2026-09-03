@@ -6,6 +6,7 @@ import FeaturedDetail from './FeaturedDetail';
 import FeaturedGlow from './FeaturedGlow';
 import FeaturedPlayerBar from './FeaturedPlayerBar';
 import FeaturedWebglLightField from './FeaturedWebglLightField';
+import { useResolvedTheme } from '../../hooks/useAppearance';
 import {
   CONTENT_FADE_MS,
   coverFlightSupported,
@@ -119,6 +120,9 @@ export default function FeaturedPage({
   const landedRef = useRef<CoverFlight | null>(null);
   const albums = useMemo(() => featuredAlbums(pieces), [pieces]);
   const openAlbum = albums.find((album) => album.id === openId) ?? null;
+  // The room the shelf stands in follows the app's theme, the same way the
+  // Favorites page's does — one building, lit the way the reader asked for.
+  const paper = useResolvedTheme() === 'light';
 
   const openDetail = useCallback((album: FeaturedAlbum, from?: Element | null) => {
     // Opening a record is also pointing the transport at it. The first track,
@@ -264,13 +268,16 @@ export default function FeaturedPage({
     <main
       ref={pageRef}
       data-testid="featured-page"
-      className="relative isolate flex h-full min-w-0 flex-1 overflow-hidden"
+      // Clipping is set in index.css rather than here: the surface has to clip
+      // like it always did, but leave the transport's shadow the room to fall
+      // past its bottom edge.
+      className="featured-immersive-surface relative isolate flex h-full min-w-0 flex-1"
     >
       {/* Behind everything, and only while a piece is open: the wash belongs to
           the record you are looking at, not to the shelf. Keyed on the piece so
           each cover reads its own colour from scratch. */}
       {openAlbum && <FeaturedGlow key={openAlbum.id} piece={openAlbum.tracks[0]} />}
-      <FeaturedWebglLightField active={!openAlbum} />
+      <FeaturedWebglLightField active={!openAlbum} variant={paper ? 'paper' : 'space'} />
 
       {/* Inset to exactly the bar's width, so every edge on the page — tiles,
           panels, the bar itself — lines up on the same two verticals. */}

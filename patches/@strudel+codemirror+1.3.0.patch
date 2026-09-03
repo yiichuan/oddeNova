@@ -58,7 +58,7 @@ index 7e172ca..5567644 100644
      } = n;
      if (a.has(i)) {
 -      const m = a.get(i), p = m.value?.color ?? "var(--foreground)", l = m.value?.markcss || `outline: solid 2px ${p}`;
-+      const m = a.get(i), p = m.value?.color ?? "#D9D9D9", l = m.value?.markcss || `outline: solid 2px ${p}`;
++      const m = a.get(i), p = m.value?.color ?? "var(--hap-highlight, #D9D9D9)", l = m.value?.markcss || `outline: solid 2px ${p}`;
        o.add(
          s,
          r,
@@ -94,7 +94,7 @@ index f9f977c..9604a89 100644
      if (haps.has(id)) {
        const hap = haps.get(id);
 -      const color = hap.value?.color ?? 'var(--foreground)';
-+      const color = hap.value?.color ?? '#D9D9D9';
++      const color = hap.value?.color ?? 'var(--hap-highlight, #D9D9D9)';
        const style = hap.value?.markcss || `outline: solid 2px ${color}`;
        // Get explicit channels for color values
        /* 

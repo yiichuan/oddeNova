@@ -114,14 +114,14 @@ export default function ProviderTabs({
                 /* A dot rather than the full "Active" label: it has to survive
                    five tabs sharing one row. */
                 <span className="ml-0.5 flex items-center" title={t('currentlyActive')}>
-                  <span className="size-1.5 rounded-full bg-[#8BA77D]" aria-hidden="true" />
+                  <span className="size-1.5 rounded-full bg-form-ok" aria-hidden="true" />
                   <span className="sr-only">{t('currentlyActive')}</span>
                 </span>
               )}
               {selected && (
                 /* Spans the tab, sitting on the bar's bottom border. */
                 <span
-                  className="pointer-events-none absolute inset-x-2 -bottom-2 h-[2px] rounded-full bg-[#D6D6D6]"
+                  className="pointer-events-none absolute inset-x-2 -bottom-2 h-[2px] rounded-full bg-text-primary"
                   aria-hidden="true"
                 />
               )}

@@ -27,9 +27,16 @@ const TICK_WIDTH_HOVER = 32;
 const TICK_HEIGHT = 2;
 const TICK_HEIGHT_HOVER = 4;
 
-/** Grey enough to be furniture, and the list's own warm white when it is not. */
-const TICK_COLOR = 'rgba(255,255,255,0.28)';
-const TICK_COLOR_HOVER = '#fff8f1';
+/**
+ * Grey enough to be furniture, and the list's own warm white when it is not.
+ *
+ * Named rather than written, because the rail is drawn straight onto the
+ * page's light field and that field has two palettes. Both values and the glow
+ * below are painted in index.css, on `.conversation-turn-rail`.
+ */
+const TICK_COLOR = 'var(--turn-tick-idle)';
+const TICK_COLOR_HOVER = 'var(--turn-tick-hover)';
+const TICK_GLOW_HOVER = 'var(--turn-tick-glow)';
 
 /**
  * How much of the page's height the rail leaves at each end.
@@ -134,7 +141,7 @@ export default function ConversationTurnRail({
          it change — the first with the hit area, the second under the pointer.
          An edge would have to be recomputed each time one of those was tuned;
          a centre line does not move. */
-      className="featured-content-in absolute top-1/2 z-40 flex -translate-x-1/2 -translate-y-1/2 select-none flex-col items-center"
+      className="conversation-turn-rail featured-content-in absolute top-1/2 z-40 flex -translate-x-1/2 -translate-y-1/2 select-none flex-col items-center"
       /* The vertical is named before it is used, the way the gallery's two
          are on the page that hands it down: `left` reads better pointing at a
          name than carrying a calc drawn from another module. */
@@ -184,7 +191,7 @@ export default function ConversationTurnRail({
                 /* The one thing here that is not width, thickness or value:
                    a hairline lit to white is still a hairline, and the glow is
                    what carries the change past the two pixels it happens in. */
-                boxShadow: hovered ? '0 0 12px rgba(255,248,241,0.35)' : undefined,
+                boxShadow: hovered ? TICK_GLOW_HOVER : undefined,
               }}
             />
 
@@ -201,7 +208,7 @@ export default function ConversationTurnRail({
             {hovered && (
               <span
                 data-turn-tick-preview={message.id}
-                className="animate-fade-in pointer-events-none absolute top-1/2 z-50 block -translate-y-1/2 rounded-[6px] border border-white/10 bg-[#0D0D0D]/55 px-3 py-2 backdrop-blur-2xl text-left text-[12px] leading-5 text-text-secondary"
+                className="animate-fade-in pointer-events-none absolute top-1/2 z-50 block -translate-y-1/2 rounded-[6px] border border-border bg-conversation-surface/80 px-3 py-2 backdrop-blur-2xl text-left text-[12px] leading-5 text-text-secondary"
                 style={{ left: `calc(100% + ${PREVIEW_GAP}px)`, width: PREVIEW_WIDTH }}
               >
                 <span className="line-clamp-6 whitespace-pre-wrap break-words">

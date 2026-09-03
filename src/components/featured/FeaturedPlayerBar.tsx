@@ -48,7 +48,7 @@ interface FeaturedPlayerBarProps {
  * default arrow, so `cursor-pointer` is part of the set rather than a stray fix.
  */
 const BAR_ICON_BASE =
-  'grid cursor-pointer place-items-center rounded-full text-icon-idle transition-colors hover:bg-white/5 hover:text-text-primary';
+  'grid cursor-pointer place-items-center rounded-full text-icon-idle transition-colors hover:bg-[var(--featured-wash)] hover:text-text-primary';
 const BAR_ICON_DISABLED =
   'disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-icon-idle';
 /** Flanking the play button, where they answer to it. */
@@ -232,7 +232,11 @@ export default function FeaturedPlayerBar({
       data-expanded={expanded}
       // No clipping on the bar itself: each part that collapses already clips
       // its own contents, and the share and volume popovers open out of it.
-      className="absolute bottom-0 left-1/2 z-20 rounded-[14px] border border-white/10 bg-settings-surface/55 shadow-[0_12px_34px_rgba(0,0,0,0.55)] backdrop-blur-2xl backdrop-saturate-150 transition-[width,height,padding,transform] motion-reduce:transition-none"
+      // `featured-bar-glass` is the hook the light theme re-materialises this
+      // surface off, and the hook the nav's grey edge is drawn on as a masked
+      // ring — the border here is transparent and only holds the width open.
+      // See index.css.
+      className="featured-bar-glass absolute bottom-0 left-1/2 z-20 rounded-[14px] border border-transparent bg-settings-surface/55 backdrop-blur-2xl backdrop-saturate-150 transition-[width,height,padding,transform,box-shadow] motion-reduce:transition-none"
       style={{
         ...MORPH,
         height: expanded ? EXPANDED_HEIGHT : COMPACT_HEIGHT,
@@ -326,7 +330,7 @@ export default function FeaturedPlayerBar({
               title={!engineReady && !isPlaying ? t('engineStarting') : undefined}
               aria-label={isPlaying ? t('pause') : t('play')}
               data-testid="featured-bar-play"
-              className="grid size-11 cursor-pointer place-items-center rounded-full bg-accent text-text-primary transition duration-200 hover:bg-[#525252] disabled:cursor-not-allowed disabled:opacity-40"
+              className="featured-transport-play grid size-11 cursor-pointer place-items-center rounded-full bg-accent text-text-primary transition duration-200 hover:bg-[#525252] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isPlaying ? <PauseIcon size={17} /> : <PlayIcon size={18} />}
             </button>
@@ -614,18 +618,18 @@ function PlaybackProgress({
         }}
       >
         <div
-          className={`relative w-full rounded-full bg-white/10 transition-[height] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-[5px] group-focus-within:h-[5px] ${
+          className={`featured-progress-track relative w-full rounded-full bg-white/10 transition-[height] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-[5px] group-focus-within:h-[5px] ${
             isDragging ? 'h-[5px]' : 'h-[3px]'
           }`}
         >
           <span
             data-testid="featured-progress-fill"
-            className="absolute inset-y-0 left-0 rounded-full bg-[#CD5633]"
+            className="absolute inset-y-0 left-0 rounded-full bg-playback-accent"
             style={{ width: `${Math.min(100, progress * 100)}%` }}
           />
           <span
             data-testid="featured-progress-thumb"
-            className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-current bg-[#CD5633] text-text-primary transition-[width,height,opacity] duration-[160ms] ease-out motion-reduce:transition-none group-hover:size-3 group-hover:opacity-100 group-focus-within:size-3 group-focus-within:opacity-100 ${
+            className={`featured-progress-thumb pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-current bg-playback-accent text-text-primary transition-[width,height,opacity] duration-[160ms] ease-out motion-reduce:transition-none group-hover:size-3 group-hover:opacity-100 group-focus-within:size-3 group-focus-within:opacity-100 ${
               isDragging ? 'size-3 opacity-100' : 'size-2.5 opacity-0'
             }`}
             style={{ left: `${Math.min(100, progress * 100)}%` }}
@@ -760,7 +764,7 @@ function VolumeControl({
         <div
           ref={popoverRef}
           data-testid="featured-volume-popover"
-          className="fixed z-50 flex flex-col items-center gap-1 rounded-[6px] border border-white/10 bg-settings-surface/95 px-2 py-2 shadow-[0_3px_10px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+          className="featured-volume-popover fixed z-50 flex flex-col items-center gap-1 rounded-[6px] border border-white/10 bg-settings-surface/95 px-2 py-2 shadow-[0_3px_10px_rgba(0,0,0,0.4)] backdrop-blur-xl"
           onMouseEnter={clearCloseTimer}
           onMouseLeave={scheduleClose}
           onFocusCapture={clearCloseTimer}

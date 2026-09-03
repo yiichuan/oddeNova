@@ -166,8 +166,8 @@ export default function HistoryPanel({
                   <div
                     className={`group flex items-stretch gap-2 rounded-[4px] border px-2 cursor-pointer transition-colors ${
                       active
-                        ? 'border-transparent bg-[var(--color-selected-item-bg)] text-text-primary'
-                        : 'border-transparent bg-[#0D0D0D] text-text-secondary hover:text-text-primary'
+                        ? 'border-transparent bg-[var(--color-selected-item-bg)] text-on-accent'
+                        : 'border-transparent bg-conversation-surface text-text-secondary hover:text-text-primary'
                     }`}
                     onClick={() => onSwitch(s.id)}
                   >
@@ -197,7 +197,7 @@ export default function HistoryPanel({
                             cancel(s);
                           }
                         }}
-                        className="my-[5px] min-w-0 flex-1 rounded-region border border-border bg-[#0D0D0D] px-1 py-0.5 text-xs leading-none text-text-primary outline-none focus:border-accent/60"
+                        className="my-[5px] min-w-0 flex-1 rounded-region border border-border bg-conversation-surface px-1 py-0.5 text-xs leading-none text-text-primary outline-none focus:border-accent/60"
                       />
                     ) : (
                       <button
@@ -222,7 +222,7 @@ export default function HistoryPanel({
                           startEditing(s);
                         }}
                         className={`self-stretch flex items-center opacity-0 group-hover:opacity-100 transition-[opacity,color] ${
-                          active ? 'text-white/75 hover:text-white' : 'text-text-muted hover:text-text-primary'
+                          active ? 'text-on-accent/75 hover:text-on-accent' : 'text-text-muted hover:text-text-primary'
                         }`}
                         title={t('edit')}
                       >
@@ -243,9 +243,9 @@ export default function HistoryPanel({
                              already that orange and would swallow it. */
                           className={`self-stretch flex items-center transition-[opacity,color] ${
                             keeping
-                              ? `opacity-100 ${active ? 'text-white' : 'text-[#f05a28]'}`
+                              ? `opacity-100 ${active ? 'text-on-accent' : 'text-brand-accent'}`
                               : `opacity-0 group-hover:opacity-100 ${
-                                active ? 'text-white/75 hover:text-white' : 'text-text-muted hover:text-[#f05a28]'
+                                active ? 'text-on-accent/75 hover:text-on-accent' : 'text-text-muted hover:text-brand-accent'
                               }`
                           }`}
                           title={t('favorite')}
@@ -272,7 +272,7 @@ export default function HistoryPanel({
                            and stops reading as a warning, so it steps down to
                            the deeper #B42F2F to keep its distance. */
                         className={`self-stretch flex items-center opacity-0 group-hover:opacity-100 transition-[opacity,color] ${
-                          active ? 'text-white/75 hover:text-[#B42F2F]' : 'text-text-muted hover:text-[#E01A1A]'
+                          active ? 'text-on-accent/75 hover:text-danger-on-selected' : 'text-text-muted hover:text-diff-remove'
                         }`}
                         title={t('delete')}
                       >

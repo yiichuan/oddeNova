@@ -153,6 +153,13 @@ const PAGES_UNFOLD = BAR_GROUP_GAP + rowsHeight(TOP_ITEMS.length);
 const ACCOUNT_UNFOLD = POD_ROW_GAP + rowsHeight(BOTTOM_ITEMS.length - 1);
 /* How far the pair may overshoot each other when the strand snaps. */
 const POD_RECOIL = 12;
+/* How much room the shadow layers hold around the column, in every direction.
+   Every one of them is a box this much larger than the nav, so the blur never
+   has to escape the element it is drawn in and the frame never has to keep
+   anything outside its own bounds — neither of which is reliable. Keep it
+   above the offset plus the blur of `--shadow-primary-nav`, and in step with
+   `--primary-nav-shadow-reach` in index.css, which sizes the same boxes. */
+const SHADOW_REACH = 96;
 
 type SettledShape = 'bar' | 'pods';
 type NavShape = SettledShape | 'breaking';
@@ -324,7 +331,7 @@ function MoreMenu({
     }
   };
 
-  const linkClass = `flex h-10 w-full items-center overflow-hidden rounded-[6px] text-icon-idle transition-colors hover:bg-white/5 hover:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white/40 ${
+  const linkClass = `flex h-10 w-full items-center overflow-hidden rounded-[6px] text-icon-idle transition-colors hover:bg-surface-hover hover:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
     expanded ? 'text-left' : 'justify-center'
   }`;
 
@@ -340,8 +347,8 @@ function MoreMenu({
         {...getTooltipTriggerProps(t('navMore'))}
         className={`flex h-10 w-full items-center overflow-hidden rounded-[6px] text-left transition-colors ${
           open
-            ? 'bg-white/10 text-text-primary'
-            : 'text-icon-idle hover:bg-white/5 hover:text-text-secondary'
+            ? 'bg-surface-selected text-text-primary'
+            : 'text-icon-idle hover:bg-surface-hover hover:text-text-secondary'
         }`}
       >
         <span className="flex size-10 shrink-0 items-center justify-center">
@@ -488,8 +495,8 @@ function NavGroup({
                 : 'transition-colors'
             } ${
               selected
-                ? 'bg-white/10 text-text-primary'
-                : 'text-icon-idle hover:bg-white/5 hover:text-text-secondary'
+                ? 'bg-surface-selected text-text-primary'
+                : 'text-icon-idle hover:bg-surface-hover hover:text-text-secondary'
             }`}
             style={{ transitionDelay: reveal && pod?.fadeDelayMs ? `${pod.fadeDelayMs}ms` : undefined }}
           >
@@ -529,6 +536,8 @@ export default function PrimaryNav({
   const navRef = useRef<HTMLElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
   const edgeRef = useRef<HTMLDivElement>(null);
+  const shadowRef = useRef<HTMLDivElement>(null);
+  const shadowCastRef = useRef<HTMLDivElement>(null);
   const topLobeRef = useRef<HTMLDivElement>(null);
   const bottomLobeRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef({ width: 0, height: 0 });
@@ -609,10 +618,13 @@ export default function PrimaryNav({
   const paint = useCallback(() => {
     const glass = glassRef.current;
     const edge = edgeRef.current;
+    const shadow = shadowRef.current;
+    const shadowCast = shadowCastRef.current;
     const topLobe = topLobeRef.current;
     const bottomLobe = bottomLobeRef.current;
     const { width, height } = sizeRef.current;
-    if (!glass || !edge || !topLobe || !bottomLobe || width <= 0 || height <= 0) return;
+    if (!glass || !edge || !shadow || !shadowCast || !topLobe || !bottomLobe) return;
+    if (width <= 0 || height <= 0) return;
 
     const motion = motionRef.current;
     const gapMax = Math.max(height - PODS_SIZE, 0);
@@ -639,13 +651,41 @@ export default function PrimaryNav({
       gapBottom: height - bottomHeight,
       radius: NAV_RADIUS,
     };
-    glass.style.clipPath = `path("${liquidOutline(column)}")`;
+    const outline = liquidOutline(column);
+    const inner = liquidOutline(column, 1);
+    glass.style.clipPath = `path("${outline}")`;
     /* Until there is a shape to clip it to, an unclipped border layer would be
        a solid slab of gradient — so it stays hidden until the first paint. */
     edge.style.display = 'block';
+    /* The shadow belongs to the lobes, not to the column. Whole, the bar is a
+       side of the page rather than a thing standing on it, and it is anchored
+       into three of the page's own edges besides — there is nothing there for
+       a shadow to say. So it arrives with the split and leaves with it, on the
+       same value the silhouette is drawn from, which is what keeps it in step
+       with the liquid rather than with a class that lands on the beat before
+       or after. Off the screen entirely at rest, so a bar costs no blur. */
+    const lift = Math.min(spread, 1);
+    shadow.style.display = lift > 0 ? 'block' : 'none';
+    shadow.style.opacity = `${lift}`;
     /* The border is the ring between the silhouette and the same silhouette
        pulled 1px inwards — so it follows the strand instead of the box. */
-    edge.style.clipPath = `path(evenodd,"${liquidOutline(column)} ${liquidOutline(column, 1)}")`;
+    edge.style.clipPath = `path(evenodd,"${outline} ${inner}")`;
+    /* The cast is a solid silhouette that is never itself seen: the layer above
+       it takes the blur off it, and the frame — its whole box minus the
+       silhouette — then cuts away both the cast and the shadow the column is
+       standing on, leaving only the ring that fell outside the column.
+
+       The frame's box reaches SHADOW_REACH past the column on every side, so
+       its cut-out is drawn in that box's own pixels: a rectangle over all of
+       it, and the silhouette sitting SHADOW_REACH in from its corner.
+
+       That silhouette is the column's, not the cast's — the cast is cut 1px
+       inside it. Two complementary clips do not cancel along a curve, where
+       each is part-covering the same pixel: cut flush, the corners keep a
+       hairline of the cast at up to a quarter of its alpha, which is darker
+       than the shadow around it. */
+    shadowCast.style.clipPath = `path("${inner}")`;
+    shadow.style.clipPath = `path(evenodd,"M0,0 H${width + SHADOW_REACH * 2} V${height + SHADOW_REACH * 2} H0 Z ${liquidOutline(column, 0, SHADOW_REACH)}")`;
     topLobe.style.height = `${topHeight}px`;
     bottomLobe.style.height = `${bottomHeight}px`;
   }, []);
@@ -789,6 +829,14 @@ export default function PrimaryNav({
         data-nav-shape={shape}
       >
         <nav aria-label={t('primaryNavigation')} className="relative h-full w-full" ref={navRef}>
+          {/* The column's shadow: a cast to blur, a layer that blurs it, and a
+              frame that keeps only what fell outside the column. One job per
+              layer — see the CSS for why, and `paint` for the two paths. */}
+          <div ref={shadowRef} className="primary-nav-shadow" aria-hidden="true">
+            <div className="primary-nav-shadow-blur">
+              <div ref={shadowCastRef} className="primary-nav-shadow-cast" />
+            </div>
+          </div>
           {/* The glass and its border are one body clipped to the live
               silhouette; the lobes below carry only content. */}
           <div ref={glassRef} className="primary-nav-glass" aria-hidden="true" />
@@ -819,7 +867,8 @@ export default function PrimaryNav({
                     className="block w-[100px] select-none"
                     style={{
                       aspectRatio: '1175 / 196',
-                      background: 'linear-gradient(to bottom, #D0D0D0, #545454)',
+                      background:
+                        'linear-gradient(to bottom, var(--color-nav-logo-top), var(--color-nav-logo-bottom))',
                       WebkitMaskImage: 'url(/logo/logo-oddenova.svg)',
                       WebkitMaskPosition: 'center',
                       WebkitMaskRepeat: 'no-repeat',
@@ -848,7 +897,7 @@ export default function PrimaryNav({
                   }}
                   {...(splitting ? {} : getTooltipTriggerProps(faceLabel))}
                   className={`group absolute left-[10px] top-0 flex h-10 w-[40px] items-center justify-center rounded-[6px] text-text-secondary transition-[transform,background-color,color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
-                    showingSectionMark ? '' : 'hover:bg-white/10 hover:text-text-primary'
+                    showingSectionMark ? '' : 'hover:bg-surface-hover hover:text-text-primary'
                   }`}
                   style={{ transform: expanded ? 'translateX(128px)' : 'translateX(0)' }}
                 >
@@ -869,7 +918,8 @@ export default function PrimaryNav({
                           className="absolute block w-[18px] select-none [backface-visibility:hidden]"
                           style={{
                             aspectRatio: '119 / 126',
-                            background: 'linear-gradient(to bottom, #D0D0D0, #545454)',
+                            background:
+                              'linear-gradient(to bottom, var(--color-nav-logo-top), var(--color-nav-logo-bottom))',
                             WebkitMaskImage: 'url(/logo/logo-o.svg)',
                             WebkitMaskPosition: 'center',
                             WebkitMaskRepeat: 'no-repeat',
