@@ -302,34 +302,44 @@ export const DRUM_MACHINE_SAMPLES: readonly string[] = [
 // VCSL (Vienna Symphonic Library Community Edition) samples from:
 // https://raw.githubusercontent.com/felixroos/dough-samples/main/vcsl.json
 // License: CC0.
+// Mirrors public/sample-index/vcsl.json, which prebake() loads via
+// samples('/sample-index/vcsl.json'). Keep the two in sync — a key only in the
+// JSON plays but fails validate(); an entry only here validates and then 404s.
+// (`sax` is a vcsl key too, but it already lives in DIRT_SAMPLES.)
 export const VCSL_SAMPLES: readonly string[] = [
   'ballwhistle', 'bassdrum1', 'bassdrum2', 'bongo', 'conga', 'darbuka', 'framedrum',
-  'snare_hi', 'snare_low', 'snare_rim',
+  'snare_hi', 'snare_low', 'snare_modern', 'snare_rim',
   'timpani', 'timpani_roll', 'timpani2',
   'tom_mallet', 'tom_stick', 'tom_rim', 'tom2_mallet', 'tom2_stick', 'tom2_rim',
   'recorder_alto_stacc', 'recorder_alto_vib', 'recorder_alto_sus',
-  'recorder_bass_stacc',
+  'recorder_bass_stacc', 'recorder_bass_sus', 'recorder_bass_vib',
   'recorder_soprano_stacc', 'recorder_soprano_sus',
-  'recorder_tenor_stacc', 'recorder_tenor_sus',
+  'recorder_tenor_stacc', 'recorder_tenor_sus', 'recorder_tenor_vib',
   'ocarina', 'ocarina_small', 'ocarina_small_stacc', 'ocarina_vib',
   'pipeorgan_loud', 'pipeorgan_loud_pedal', 'pipeorgan_quiet', 'pipeorgan_quiet_pedal',
   'organ_4inch', 'organ_8inch', 'organ_full',
-  'trainwhistle', 'harmonica', 'harmonica_soft', 'super64', 'siren', 'didgeridoo',
+  'trainwhistle', 'harmonica', 'harmonica_soft', 'harmonica_vib',
+  'super64', 'super64_acc', 'super64_vib', 'siren', 'didgeridoo',
   'saxello', 'saxello_stacc', 'saxello_vib', 'sax_stacc', 'sax_vib',
   'harp', 'folkharp', 'strumstick',
   'dantranh', 'dantranh_tremolo', 'dantranh_vibrato',
   'kawai', 'steinway', 'piano1',
   'psaltery_pluck', 'psaltery_spiccato', 'psaltery_bow',
-  'clavisynth', 'fmpiano', 'wineglass', 'brakedrum',
-  'balafon', 'belltree', 'clash1', 'clash2', 'cowbell', 'fingercymbal', 'flexatone',
-  'gong', 'gong2', 'handbells', 'handchimes', 'hihat_cymbal',
+  'clavisynth', 'fmpiano', 'wineglass', 'wineglass_slow', 'brakedrum',
+  'agogo', 'anvil', 'balafon', 'balafon_hard', 'balafon_soft', 'belltree',
+  'cabasa', 'cajon', 'clap', 'clash', 'clash2', 'clave', 'cowbell',
+  'fingercymbal', 'flexatone', 'glockenspiel', 'gong', 'gong2', 'guiro',
+  'handbells', 'handchimes', 'hihat',
   'kalimba', 'kalimba2', 'kalimba3', 'kalimba4', 'kalimba5',
-  'marimba', 'marktrees', 'oceandrum',
-  'shaker_large', 'shaker_small', 'slapstick', 'sleighbells',
-  'sus_cymbal', 'sus_cymbal2', 'tambourine1', 'tambourine2', 'triangles',
+  'marimba', 'marktrees', 'oceandrum', 'ratchet',
+  'shaker_large', 'shaker_small', 'slapstick', 'sleighbells', 'slitdrum',
+  'sus_cymbal', 'sus_cymbal2', 'tambourine', 'tambourine2', 'triangles',
   'tubularbells', 'tubularbells2',
-  'vibraphone', 'vibraphone_soft', 'vibraphone_bowed',
-  'xylophone', 'xylophone_soft',
+  'vibraphone', 'vibraphone_soft', 'vibraphone_bowed', 'vibraslap',
+  'woodblock',
+  'xylophone_hard_ff', 'xylophone_hard_pp',
+  'xylophone_medium_ff', 'xylophone_medium_pp',
+  'xylophone_soft_ff', 'xylophone_soft_pp',
 ];
 
 // Mridangam samples from:
@@ -441,8 +451,26 @@ export const SAMPLE_ALLOWLIST: Set<string> = new Set([
 // Strudel built-in synth oscillator names — these are valid in s("...") but are
 // NOT sample files, so they are intentionally excluded from SAMPLE_ALLOWLIST and
 // handled separately in the validator.
+//
+// This is the set registered by superdough's `registerSynthSounds()`, which is
+// the only synth registration `strudel.ts` prebake() performs. Three registered
+// names are deliberately left out because they are not audible voices:
+//   `user` — needs `.partials()`; without it superdough logs a warning and falls
+//            back to triangle, so allowing it only hides a mistake.
+//   `one`  — a constant DC source meant for modulation.
+//   `bus`  — a bus input node (type 'input'), not a sound source.
+// The zzfx family (`zzfx`, `z_sine`, `z_sawtooth`, `z_triangle`, `z_square`,
+// `z_tan`, `z_noise`) is excluded for a different reason: superdough can
+// register it, but prebake() never calls `registerZZFXSounds()`, so those names
+// would pass validation and then play silence.
 export const BUILTIN_SYNTHS: Set<string> = new Set([
-  'sawtooth', 'sine', 'square', 'triangle', 'supersaw',
+  // Waveforms, plus the short aliases superdough maps onto them.
+  'sawtooth', 'sine', 'square', 'triangle',
+  'saw', 'sin', 'sqr', 'tri',
+  // Standalone synth voices.
+  'supersaw', 'sbd', 'pulse', 'bytebeat',
+  // Noise sources (superdough noise.mjs: white/pink/brown/crackle).
+  'white', 'pink', 'brown', 'crackle',
 ]);
 
 /**

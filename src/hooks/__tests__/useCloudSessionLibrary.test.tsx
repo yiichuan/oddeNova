@@ -192,6 +192,174 @@ describe('useCloudSessionLibrary', () => {
     expect(getHook().details.size).toBe(0);
   });
 
+  it('draws both lists from the local cache before the requests land, then writes back what landed', async () => {
+    const cachedHistory = summary('cached-history', 5);
+    const cachedFavorite = favorite('cached-favorite', 5, 6);
+    const landedHistory = summary('landed-history', 30);
+    const writeCachedSummaries = vi.fn();
+    let releaseHistory!: (page: { items: SessionSummary[]; nextCursor: null }) => void;
+    repositoryMocks.listCloudSessionSummaries.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseHistory = resolve; }),
+    );
+
+    const { root, getHook } = await renderLibrary({
+      enabled: true,
+      ownerId: 'user-1',
+      readCachedSummaries: async () => ({
+        history: [cachedHistory],
+        favorites: [cachedFavorite],
+      }),
+      writeCachedSummaries,
+    });
+    roots.push(root);
+
+    // The request is still out and both lists already have rows.
+    await vi.waitFor(() => expect(getHook().history.items).toEqual([cachedHistory]));
+    expect(getHook().favorites.items).toEqual([cachedFavorite]);
+    expect(writeCachedSummaries).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseHistory({ items: [landedHistory], nextCursor: null });
+      await Promise.resolve();
+    });
+
+    await vi.waitFor(() => expect(getHook().history.items).toEqual([landedHistory]));
+    expect(writeCachedSummaries).toHaveBeenLastCalledWith({
+      history: [landedHistory],
+      favorites: [cachedFavorite],
+    });
+  });
+
+  it('opens a conversation this device already holds without going to the network', async () => {
+    const held = summary('held', 10);
+    const storedDetail = detail(held);
+    const acceptCloudDetail = vi.fn(async () => undefined);
+    repositoryMocks.listCloudSessionSummaries.mockResolvedValueOnce({
+      items: [held],
+      nextCursor: null,
+    });
+
+    const { root, getHook } = await renderLibrary({
+      enabled: true,
+      ownerId: 'user-1',
+      acceptCloudDetail,
+      readCachedDetail: async (id: string) => (id === held.id ? storedDetail : null),
+    });
+    roots.push(root);
+    await vi.waitFor(() => expect(repositoryMocks.listCloudSessionSummaries).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await getHook().openSession(held);
+    });
+
+    expect(repositoryMocks.getCloudSession).not.toHaveBeenCalled();
+    expect(acceptCloudDetail).toHaveBeenCalledWith(storedDetail);
+    expect(getHook().details.get(held.id)).toMatchObject({ updatedAt: held.updatedAt });
+  });
+
+  it('reads past a local copy the summary has outrun and keeps the answer for next time', async () => {
+    const kept = favorite('kept', 20, 30);
+    const staleLocal = { ...detail(kept), updatedAt: 9 };
+    const cloudDetail = detail(kept);
+    const writeCachedDetail = vi.fn();
+    repositoryMocks.listCloudSessionSummaries.mockResolvedValueOnce({ items: [], nextCursor: null });
+    repositoryMocks.listCloudFavoriteSummaries.mockResolvedValueOnce({
+      items: [kept],
+      nextCursor: null,
+    });
+    repositoryMocks.getCloudSession.mockResolvedValueOnce(cloudDetail);
+
+    const { root, getHook } = await renderLibrary({
+      enabled: true,
+      ownerId: 'user-1',
+      readCachedDetail: async () => staleLocal,
+      writeCachedDetail,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().ensureFavorites();
+      await getHook().openFavorite(kept);
+    });
+
+    expect(repositoryMocks.getCloudSession).toHaveBeenCalledTimes(1);
+    // A favorite is read, not opened in the studio, so this is the only write
+    // that puts it on the device.
+    expect(writeCachedDetail).toHaveBeenCalledWith(cloudDetail);
+    expect(getHook().details.get(kept.id)?.session).toEqual(cloudDetail);
+  });
+
+  it('shows the local copy of a favorite while the newer one is still coming', async () => {
+    const kept = favorite('kept', 20, 30);
+    const staleLocal = { ...detail(kept), updatedAt: 9 };
+    const cloudDetail = detail(kept);
+    let releaseDetail!: (session: Session) => void;
+    repositoryMocks.listCloudSessionSummaries.mockResolvedValueOnce({ items: [], nextCursor: null });
+    repositoryMocks.listCloudFavoriteSummaries.mockResolvedValueOnce({
+      items: [kept],
+      nextCursor: null,
+    });
+    repositoryMocks.getCloudSession.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseDetail = resolve; }),
+    );
+
+    const { root, getHook } = await renderLibrary({
+      enabled: true,
+      ownerId: 'user-1',
+      readCachedDetail: async () => staleLocal,
+    });
+    roots.push(root);
+
+    let opening!: Promise<Session>;
+    await act(async () => {
+      await getHook().ensureFavorites();
+      opening = getHook().openFavorite(kept);
+      await Promise.resolve();
+    });
+
+    // The request is still out and the page already has a conversation to draw.
+    await vi.waitFor(() => expect(getHook().details.get(kept.id)?.session).toEqual(staleLocal));
+
+    await act(async () => {
+      releaseDetail(cloudDetail);
+      await opening;
+    });
+    expect(getHook().details.get(kept.id)?.session).toEqual(cloudDetail);
+  });
+
+  it('holds the summary cache write until the cached lists have been read back', async () => {
+    const cachedFavorite = favorite('cached-favorite', 5, 6);
+    const landedHistory = summary('landed-history', 30);
+    const writeCachedSummaries = vi.fn();
+    let releaseCache!: (value: { history: SessionSummary[]; favorites: FavoriteSummary[] }) => void;
+    repositoryMocks.listCloudSessionSummaries.mockResolvedValueOnce({
+      items: [landedHistory],
+      nextCursor: null,
+    });
+
+    const { root, getHook } = await renderLibrary({
+      enabled: true,
+      ownerId: 'user-1',
+      readCachedSummaries: () => new Promise((resolve) => { releaseCache = resolve; }),
+      writeCachedSummaries,
+    });
+    roots.push(root);
+
+    // History has landed, the read has not — nothing is written over it yet.
+    await vi.waitFor(() => expect(getHook().history.items).toEqual([landedHistory]));
+    expect(writeCachedSummaries).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseCache({ history: [], favorites: [cachedFavorite] });
+      await Promise.resolve();
+    });
+
+    await vi.waitFor(() => expect(writeCachedSummaries).toHaveBeenLastCalledWith({
+      history: [landedHistory],
+      favorites: [cachedFavorite],
+    }));
+  });
+
   it('caches details by id and updatedAt, removes 404 summaries, and exposes retryable network errors', async () => {
     const cachedSummary = summary('cached', 10);
     const changedSummary = summary('cached', 11);

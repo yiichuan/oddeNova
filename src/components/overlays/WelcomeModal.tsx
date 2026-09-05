@@ -8,8 +8,7 @@ import { getAuthErrorMessageKey } from '../../lib/auth-error';
 import { t, zh } from '../../lib/i18n';
 import { XIcon } from '../icons';
 import AuthField from './AuthField';
-import { getCommunityInviteText } from './apiKeyModalUtils';
-import qrCode from '../../assets/oddeNova音乐制作社区二维码.png';
+import CommunityInviteCard from './CommunityInviteCard';
 
 /**
  * The three faces of the first-entry window, in the order someone meets them:
@@ -84,8 +83,6 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
     if (e.key === 'Enter') submit();
   };
 
-  const communityInvite = getCommunityInviteText();
-
   const primaryLabel = step === 'invite'
     ? t('welcomeContinueWithEmail')
     : step === 'sign-up'
@@ -98,7 +95,7 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
         {/* Deeper at the foot than at the head: the top edge carries only the
             close button, which is mostly its own empty hit area, while the last
             row down here is a solid one that needs the room around it. */}
-        <div className="bg-conversation-surface border border-border rounded-2xl px-6 pt-6 pb-10 shadow-2xl">
+        <div className="bg-conversation-surface border border-border rounded-2xl px-6 pt-6 pb-10 shadow-dialog-overlay">
           {/* The cross keeps the corner to itself and the title takes the width
               below it, so the title's centre is the window's centre rather than
               the centre of whatever is left over beside the button. */}
@@ -164,7 +161,7 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
                 />
               )}
 
-              {message && <div className="text-xs text-green-300">{message}</div>}
+              {message && <div className="text-xs text-form-ok-text">{message}</div>}
               {error && <div className="text-xs text-red-300">{error}</div>}
 
               {/* The action stands further off than the fields stand from each
@@ -201,29 +198,7 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
           )}
         </div>
 
-        {/* A window of its own rather than a strip inside the one above: the
-            invitation is not part of making an account, and standing it apart is
-            what says so. */}
-        {/* Centred as a pair rather than pinned left: the line is far shorter
-            than the window is wide, and left-aligning it leaves all the slack
-            stacked up on one side. */}
-        <div className="flex items-center justify-center gap-4 rounded-2xl border border-border bg-conversation-surface px-6 py-4 shadow-2xl">
-          {/* The source is black on white and the white is baked into the
-              pixels, so the way to grey it is to scale the whole tile down:
-              `brightness` leaves black where it is and takes white to #B8B8B8.
-              The code keeps its polarity, so it still scans. */}
-          <img
-            src={qrCode}
-            alt={communityInvite.alt}
-            className="qr-plate size-16 shrink-0 rounded-lg p-1 object-contain"
-          />
-          {/* Centred in what the code leaves rather than pushed up against it,
-              so the slack sits on both sides of the line instead of all of it
-              on the right. */}
-          <p className="flex-1 text-center text-sm font-medium text-text-secondary">
-            {communityInvite.title}
-          </p>
-        </div>
+        <CommunityInviteCard />
       </div>
     </div>
   );

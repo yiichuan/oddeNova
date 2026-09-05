@@ -14,7 +14,7 @@ import {
   turnText,
   type FavoriteConversation,
 } from '../../../lib/favorite-conversations';
-import FavoritesPage from '../FavoritesPage';
+import FavoritesPage, { READING_LEFT_INSET } from '../FavoritesPage';
 import { LIST_COLUMN, LIST_WIDTH } from '../FavoritesList';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -73,6 +73,14 @@ const CONVERSATIONS: FavoriteConversation[] = [
 const SUMMARIES: FavoriteSummary[] = [
   { id: 'summary-first', title: 'First summary', updatedAt: 30, favoritedAt: 300 },
   { id: 'summary-second', title: 'Second summary', updatedAt: 20, favoritedAt: 200 },
+];
+
+/* Three, so that "the newest one left" is a different entry from both the one
+   removed and the one under it. */
+const THREE_KEPT: FavoriteSummary[] = [
+  { id: 'newest', title: 'Newest kept', updatedAt: 30, favoritedAt: 300 },
+  { id: 'middle', title: 'Middle kept', updatedAt: 20, favoritedAt: 200 },
+  { id: 'oldest', title: 'Oldest kept', updatedAt: 10, favoritedAt: 100 },
 ];
 
 const listRows = (container: HTMLElement) => (
@@ -151,6 +159,93 @@ describe('FavoritesPage', () => {
     expect(container.querySelector('[data-testid="favorites-gallery"]')).toBeNull();
   });
 
+  it('opens the cached first entry while the list is still refreshing, and again if it comes back re-dated', () => {
+    const onSelect = vi.fn();
+    const { root } = render(
+      <FavoritesPage active summaries={SUMMARIES} onSelect={onSelect} isLoading />,
+    );
+
+    // The rows are the ones this device kept; the reader does not wait on the
+    // request that refreshes them.
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(SUMMARIES[0]);
+
+    // The same entry back unchanged is the one already open.
+    act(() => root.render(
+      <FavoritesPage active summaries={[...SUMMARIES]} onSelect={onSelect} />,
+    ));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+
+    // Re-dated, it is a version the page has not opened.
+    const moved = { ...SUMMARIES[0], updatedAt: SUMMARIES[0].updatedAt + 1 };
+    act(() => root.render(
+      <FavoritesPage active summaries={[moved, SUMMARIES[1]]} onSelect={onSelect} />,
+    ));
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onSelect).toHaveBeenLastCalledWith(moved);
+  });
+
+  const openEntry = (container: HTMLElement) => listRows(container)
+    .find((row) => row.getAttribute('aria-selected') === 'true')?.dataset.favoriteId ?? null;
+
+  it('opens the newest entry left when the one on screen is let go of', () => {
+    const onSelect = vi.fn();
+    const { container, root } = render(
+      <FavoritesPage active summaries={THREE_KEPT} selectedId="middle" onSelect={onSelect} />,
+    );
+    expect(openEntry(container)).toBe('middle');
+    onSelect.mockClear();
+
+    /* What letting go of an entry looks like from in here: it leaves this list
+       at once — the notice holds the undo, so the row cannot still be standing
+       — while the id the page was handed goes on pointing at it, because the
+       account's own rows keep it until the notice is committed. A page that
+       took that id on trust would find nothing behind it and draw its empty
+       state over a shelf with two things still on it. */
+    act(() => root.render(
+      <FavoritesPage
+        active
+        summaries={[THREE_KEPT[0], THREE_KEPT[2]]}
+        selectedId="middle"
+        onSelect={onSelect}
+      />,
+    ));
+
+    expect(container.querySelector('[data-testid="favorites-empty"]')).toBeNull();
+    expect(openEntry(container)).toBe('newest');
+    // And said upward, so the detail for it is actually fetched.
+    expect(onSelect).toHaveBeenCalledWith(THREE_KEPT[0]);
+  });
+
+  it('does the same for a deletion, and for an entry this page picked itself', () => {
+    const onSelect = vi.fn();
+    const { container, root } = render(
+      <FavoritesPage active summaries={THREE_KEPT} onSelect={onSelect} />,
+    );
+    act(() => listRows(container)[2].click());
+    expect(openEntry(container)).toBe('oldest');
+    onSelect.mockClear();
+
+    // A deletion takes the row out from under a pick this page is holding on
+    // its own, with no parent id involved at all.
+    act(() => root.render(
+      <FavoritesPage active summaries={[THREE_KEPT[0], THREE_KEPT[1]]} onSelect={onSelect} />,
+    ));
+
+    expect(container.querySelector('[data-testid="favorites-empty"]')).toBeNull();
+    expect(openEntry(container)).toBe('newest');
+    expect(onSelect).toHaveBeenCalledWith(THREE_KEPT[0]);
+  });
+
+  it('still says the account has kept nothing when nothing is left', () => {
+    const { container } = render(
+      <FavoritesPage active summaries={[]} selectedId="middle" onSelect={vi.fn()} />,
+    );
+
+    expect(container.querySelector('[data-testid="favorites-empty"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="favorites-gallery"]')).toBeNull();
+  });
+
   it('shows collection and detail loading or retry states without making a fake detail', () => {
     const onRetry = vi.fn();
     const { container, root } = render(
@@ -219,7 +314,7 @@ describe('FavoritesPage', () => {
     expect(marker(rows[1])?.style.transform).toBe('scaleX(0)');
   });
 
-  it('expands the conversation to the viewport and keeps the others at two thirds', () => {
+  it('sets the two windows against the list\u2019s vertical, the wider one first', () => {
     const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
     const page = container.querySelector<HTMLElement>('[data-testid="favorites-page"]')!;
     const windows = gallery(container)!;
@@ -234,72 +329,65 @@ describe('FavoritesPage', () => {
     // the collection scrolled to rather than shown.
     expect(list.style.maxHeight).toBe(`${6 * 22}px`);
     expect(list.className).toContain('overflow-y-auto');
-    // The right is what the list needs. The left is that less what the nav's
-    // column holds of the page's left edge and what the reading insets itself
-    // by, so the two windows stand centred on the page rather than on the
-    // strip of it this page is handed.
-    expect(windows.className).toContain('inset-y-0');
-    // Centred, because past the reading measure both columns stop growing and
-    // what is left over has to fall evenly either side or the mirror tilts.
-    expect(windows.className).toContain('justify-center');
-    // Air between two reading surfaces, not the studio's 6px resize divider.
-    // With both outer edges pinned, this is also what sets the two widths.
-    expect(windows.getAttribute('style')).toContain('--gallery-gutter: 3rem');
+    // The right is the list's column and nothing more, so the code window
+    // comes as far right as anything on this page can. The left is the
+    // reading's own vertical, which is how its width is set.
+    // The row is the spread's own box on all four sides: the two windows state
+    // no height and no offset of their own, they fill what it gives them.
+    expect(windows.getAttribute('style')).toContain('top: calc(100% / 10 + 30px)');
+    expect(windows.getAttribute('style')).toContain('bottom: calc(100% / 6 - 30px)');
+    // Set against the right rather than centred: what the two windows do not
+    // take collects on the far side of the reading instead of opening a gap
+    // between the code and the list it answers to.
+    expect(windows.className).toContain('justify-end');
+    // Air between two windows, and the same measure a Featured record holds
+    // its own two apart by — not the studio's 6px resize divider.
+    expect(windows.getAttribute('style')).toContain('--gallery-gutter: 1.5rem');
     expect(windows.getAttribute('style')).toContain('gap: var(--gallery-gutter)');
-    // Both margins carry half of what the gutter gives up against the measure
-    // that holds the two windows at their width — so tuning the middle moves
-    // the pair's edges, never the width of what is being read.
-    const stepBack = `calc(${NAV_COLLAPSED_WIDTH}px + var(--spacing-region) + 1.5rem)`;
-    const givenBack = `calc((calc(2rem + ${stepBack}) - 3rem) / 2)`;
-    expect(windows.getAttribute('style')).toContain(
-      `--gallery-inset-left: calc(${LIST_COLUMN} - ${stepBack} + ${givenBack})`,
-    );
-    expect(windows.getAttribute('style')).toContain(
-      `--gallery-inset-right: calc(${LIST_COLUMN} + ${givenBack})`,
-    );
+    expect(windows.getAttribute('style'))
+      .toContain(`--gallery-inset-left: ${READING_LEFT_INSET}`);
+    expect(windows.getAttribute('style')).toContain(`--gallery-inset-right: ${LIST_COLUMN}`);
     expect(windows.getAttribute('style')).toContain('left: var(--gallery-inset-left)');
     expect(windows.getAttribute('style')).toContain('right: var(--gallery-inset-right)');
+    // The heading keeps the page's own two edges: it stops on the list's
+    // vertical and starts on the page's, not on the reading's.
     expect(container.querySelector('header')?.getAttribute('style')).toContain(LIST_COLUMN);
+    expect(container.querySelector('header')?.getAttribute('style')).toContain('left: 1rem');
 
-    // Conversation and code — one row dividing evenly, except that the
-    // conversation carries the reading's own two insets as its basis, so what
-    // comes out is a block of text the width of the code window beside it.
+    // Conversation and code, and the reading gets the wider of the two — it is
+    // the longer read and the one that reflows.
     expect(windows.children).toHaveLength(2);
 
-    // The conversation reaches through the app inset to the viewport edges,
-    // and rests its reading on the code window's two verticals: one sixth of
-    // the row's height in from either end, the same share the panel keeps.
     const conversation = windows.children[0] as HTMLElement;
     expect(conversation.getAttribute('data-testid')).toBe('favorites-conversation-panel');
+    // The reading takes everything the script leaves, so its left edge lands on
+    // the row's own left inset — the page's heading vertical — and its width is
+    // that line rather than a cap of its own.
     expect(conversation.getAttribute('style'))
-      .toContain('flex-grow: 1; flex-shrink: 1; flex-basis: calc(1.5rem * 2);');
-    expect(conversation.getAttribute('style'))
-      .toContain('max-width: calc(390px + 1.5rem * 2)');
-    expect(conversation.className).toContain('overflow-visible');
-    expect(conversation.getAttribute('style'))
-      .toContain('--spacing-conversation-window-top: calc(var(--spacing-region) * -1)');
-    expect(conversation.getAttribute('style'))
-      .toContain('--spacing-conversation-window-bottom: calc(var(--spacing-region) * -1)');
-    // The pair sits 30px below the middle of the page, and the reading's two
-    // stops carry that with it — one is measured from the column's head and
-    // the other from its foot, so the drop is added to one and taken off the
-    // other for both to land on the code window's own two edges.
-    expect(conversation.getAttribute('style'))
-      .toContain('--spacing-conversation-content-top: calc(calc(100cqh / 6) + 30px + 8px)');
-    expect(conversation.getAttribute('style'))
-      .toContain('--spacing-conversation-content-bottom: calc(calc(100cqh / 6) - 30px)');
+      .toContain('flex-grow: 1; flex-shrink: 1; flex-basis: 0%;');
+    expect(conversation.getAttribute('style')).not.toContain('max-width');
+    // A window with edges of its own: it clips its reading rather than blurring
+    // it out, and it stands between the row's two horizontals like the script
+    // beside it, without stating either of them itself.
+    expect(conversation.className).toContain('overflow-hidden');
+    expect(conversation.getAttribute('style')).not.toContain('height');
+    expect(conversation.getAttribute('style')).not.toContain('top');
+    // Nothing is handed down to the archive any more — where the reading stands
+    // off the window's edges is the window's own padding, the same p-5 the
+    // script's window keeps.
+    expect(conversation.getAttribute('style')).not.toContain('--spacing-conversation');
+    expect(conversation.className).toContain('p-5');
 
     const code = windows.children[1] as HTMLElement;
+    // The narrow half: its measure is its basis and it never grows past it.
+    // The cap is what happens when the page runs out — half the spread, gutter
+    // taken off first, so a row too narrow to hold the reading beside a full
+    // measure freezes the script at the cap and hands the rest to the reading:
+    // two equal halves the same air apart. Width is the only thing it says —
+    // the row holds both of its horizontals.
     expect(code.getAttribute('style'))
-      .toContain('flex-grow: 1; flex-shrink: 1; flex-basis: 0%;');
-    // The pair reach their caps together — the targets differ by the same 3rem
-    // the caps do — so neither can take the other's leftover.
-    expect(code.getAttribute('style')).toContain('max-width: 390px');
-    expect(code.getAttribute('style')).toContain('top: 30px');
-    // Two thirds, written as what the stops above leave: a divisor the two
-    // columns share, so neither can be retuned without the other following.
-    expect(code.getAttribute('style')).toContain('height: calc(100% - 200% / 6)');
-    expect(code.className).toContain('self-center');
+      .toBe('max-width: calc((100% - var(--gallery-gutter)) / 2); '
+        + 'flex-grow: 0; flex-shrink: 1; flex-basis: 390px;');
     expect(code.firstElementChild?.getAttribute('data-favorites-script')).toBe('first-4');
   });
 
@@ -307,55 +395,56 @@ describe('FavoritesPage', () => {
     const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
     const turns = [...container.querySelectorAll('[data-favorites-turn]')];
 
-    expect([...container.querySelectorAll('h2')].map((heading) => heading.textContent))
-      .not.toContain(t('favoritesConversation'));
-    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')?.className)
-      .not.toContain('p-5');
-    // The window itself holds nothing back — the scrollport reaches both of its
-    // edges — while the content inside it clears the blur bands by exactly one
-    // band's depth, so the first message and the last reply are sharp at rest
-    // and only soften once they are scrolled out through one.
-    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')?.className)
-      .not.toMatch(/\bp[tby]-/);
+    // Both windows are named across the top, on one baseline: the reading takes
+    // the standing title and the script takes the take it is showing.
+    const titles = [...container.querySelectorAll('h2')].map((heading) => heading.textContent);
+    expect(titles).toContain(t('favoritesConversation'));
+    expect(titles.indexOf(t('favoritesConversation'))).toBe(0);
+    // The reading holds nothing back from either end of what is left below the
+    // title: the first message stands on the top of it and the last reply on
+    // the foot, and both are cut off by the window rather than faded out.
     expect(container.querySelector('.conversation-scroll')?.className)
-      .toContain('py-[var(--spacing-conversation-fade)]');
-    // Horizontal padding is not here: it answers to how far the window
-    // overhangs its column, so it lives beside that in index.css.
-    // The conversation hides its bar — its ends fade, which says the same
-    // thing — while the code window shows its own, since a script has an edge
-    // and nothing else there can say it runs on.
+      .not.toMatch(/\bpy-/);
+    expect(container.querySelector('.conversation-scroll-shell')?.className)
+      .not.toContain('conversation-scroll-shell--inset');
+    // Both windows clip what they hold, so both show a bar: neither can say
+    // "this is not all of it" any other way. Neither waits for the pointer.
     expect(container.querySelectorAll('.scrollbar-on-hover')).toHaveLength(0);
     expect(shownScripts(container)[0]?.querySelector('.overflow-auto')?.className)
       .not.toContain('scrollbar-');
     expect(container.querySelector('.conversation-scroll')?.className)
-      .toContain('scrollbar-hidden');
-    // The exchange stands on the page itself — no surface, no border, and none
-    // of the surface-coloured masks the studio's own stream fades its edges
-    // with. Only the code beside it keeps a panel.
+      .not.toContain('scrollbar-hidden');
+    // The reading reaches into the window's right-hand padding so its bar can
+    // stand where the script's does — the two are on one vertical.
+    expect(container.querySelector('.favorites-reading')).not.toBeNull();
+    // The exchange is held in the same window as the code beside it, and both
+    // are a Featured record's panel rather than a copy of one: the same class,
+    // so the fill, the radius and the masked ring at the edge are stated once
+    // and both pages turn together on paper. No border — the ring is inside
+    // the padding box, where a window that clips its own body cannot lose it.
     const conversationPanel = container.querySelector<HTMLElement>('[data-testid="favorites-conversation-panel"]')!;
-    expect(conversationPanel.className).not.toContain('bg-');
-    expect(conversationPanel.className).not.toContain('border');
+    const scriptPanel = shownScripts(container)[0]!;
+    for (const panel of [conversationPanel, scriptPanel]) {
+      expect(panel.className).toContain('featured-panel');
+      expect(panel.className).toContain('bg-[#0D0D0D]/55');
+      expect(panel.className).toContain('backdrop-blur-2xl');
+      expect(panel.className).toContain('rounded-[10px]');
+      expect(panel.className).not.toContain('border');
+    }
+    // Nothing is laid over either end of the reading — in particular none of
+    // the studio's surface-coloured edge masks, which would be a claim about a
+    // flat colour this window's glass does not have.
     expect(container.querySelectorAll('[data-conversation-edge-fade]').length).toBe(0);
-    // Its two ends say the stream runs past them with blur alone — no scrim and
-    // no fade of the content's own alpha, both of which would be a statement
-    // about a colour this page does not have. One span per nth-child rule in
-    // the stack; a span past the last rule would be an unblurred pane.
-    expect(container.querySelectorAll('[data-conversation-blur-fade]').length).toBe(2);
-    // The bands live at page level rather than inside the scrolling archive,
-    // so they span the page without becoming fixed viewport layers.
-    const archive = container.querySelector('.conversation-archive')!;
-    expect(archive.querySelector(':scope > .conversation-scroll-shell')?.className)
-      .toContain('conversation-scroll-shell--inset');
-    expect(archive.querySelectorAll(':scope > [data-conversation-blur-fade]').length)
-      .toBe(0);
-    expect(container.querySelectorAll('[data-conversation-blur-fade]').length)
-      .toBe(2);
-    expect(container.querySelectorAll('[data-conversation-blur-fade="top"] > span').length)
-      .toBe(6);
-    expect(container.querySelectorAll('[data-conversation-blur-fade="bottom"] > span').length)
-      .toBe(6);
-    expect(container.querySelector('[data-reasoning-header="first-2-reasoning"]')?.className)
-      .not.toContain('bg-conversation-surface');
+    // The 构思过程 header does freeze at the top, the way the studio's does,
+    // because a thought that has scrolled past its own control cannot be shut.
+    // What it does not take is the studio's colours: `bg-conversation-surface`
+    // is that stream's flat panel, and this band is the composite the glass
+    // resolves to where it actually appears — see `.favorites-reasoning-sticky`.
+    const archiveReasoning = container
+      .querySelector<HTMLElement>('[data-reasoning-header="first-2-reasoning"]')!;
+    expect(archiveReasoning.className).toContain('sticky');
+    expect(archiveReasoning.className).toContain('favorites-reasoning-sticky');
+    expect(archiveReasoning.className).not.toContain('bg-conversation-surface');
     expect(container.querySelector('.reasoning-header--expanded')).toBeNull();
     // The code window is glass over the light field, the same as the Featured
     // detail's panels — not a flat surface laid on it.
@@ -423,7 +512,7 @@ describe('FavoritesPage', () => {
     Object.defineProperty(archive, 'scrollHeight', { configurable: true, value: 420 });
 
     expect(shownScripts(container)[0]?.dataset.favoritesScript).toBe('with-final-final');
-    expect(versionSelect().textContent).toContain(t('favoritesFinalVersion'));
+    expect(versionSelect().textContent).toContain(t('favoritesLatestScript'));
 
     act(() => versionSelect().click());
     expect(versionSelect().getAttribute('aria-expanded')).toBe('true');
@@ -546,7 +635,10 @@ describe('FavoritesPage', () => {
     // No frame standing in for an absent script — the panel is simply not
     // drawn, and the conversation still is.
     expect(shownScripts(container)).toHaveLength(0);
-    expect(container.querySelector('[data-testid="favorites-conversation-panel"]')).not.toBeNull();
+    const reading = container.querySelector<HTMLElement>('[data-testid="favorites-conversation-panel"]')!;
+    // The one case where the reading carries a width of its own: with no script
+    // to hold its right edge, nothing else would stop it spanning the display.
+    expect(reading.getAttribute('style')).toContain('max-width: 500px');
     // With nothing beside it the reading answers to the page's middle rather
     // than to the two verticals the spread is built from, and the page's
     // middle is the window's: its own left edge stands the nav column inside
@@ -576,10 +668,9 @@ describe('FavoritesPage', () => {
 
     expect(shownScripts(container)).toHaveLength(1);
     expect(container.querySelector('[data-testid="favorites-conversation-panel"]')).toBeNull();
-    // The reading's own furniture goes with it — there is no stream for the
-    // blur to say carries on, and no turns for the rail to index.
+    // The reading's own furniture goes with it — no turns for the rail to
+    // index, so no rail.
     expect(rail(container)).toBeNull();
-    expect(container.querySelector('.conversation-blur-fade')).toBeNull();
     expect(windows.getAttribute('style')).toContain('right: var(--favorites-page-inset)');
   });
 
@@ -683,7 +774,7 @@ describe('FavoritesPage', () => {
     expect(shown[0]?.textContent).toContain('setcps(0.5)');
     // Named "code" rather than "take 1" — no reply asked for it, so it is not
     // the first of anything.
-    expect(shown[0]?.getAttribute('aria-label')).toBe(t('favoritesFinalVersion'));
+    expect(shown[0]?.getAttribute('aria-label')).toBe(t('favoritesLatestScript'));
   });
 
   it('names the open favorite in full in the opposite corner', () => {

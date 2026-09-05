@@ -27,7 +27,10 @@ function stubColumnBox(width = 60, height = 900) {
   } as DOMRect);
 }
 
-function renderPrimaryNav(selectedItem: React.ComponentProps<typeof PrimaryNav>['selectedItem'] = 'home') {
+function renderPrimaryNav(
+  selectedItem: React.ComponentProps<typeof PrimaryNav>['selectedItem'] = 'home',
+  accountInitials: string | null = null,
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -35,13 +38,39 @@ function renderPrimaryNav(selectedItem: React.ComponentProps<typeof PrimaryNav>[
   roots.push(root);
 
   act(() => {
-    root.render(<PrimaryNav selectedItem={selectedItem} onSelect={onSelect} />);
+    root.render(
+      <PrimaryNav selectedItem={selectedItem} onSelect={onSelect} accountInitials={accountInitials} />,
+    );
   });
 
   return { container, onSelect };
 }
 
+const accountMark = (container: HTMLElement) => container
+  .querySelector(`[data-testid="primary-nav-bottom"] button[aria-label="${t('navAccount')}"]`)
+  ?.querySelector('span > *');
+
 describe('PrimaryNav', () => {
+  it('keeps the outline figure on the account row while signed out', () => {
+    const { container } = renderPrimaryNav();
+    expect(accountMark(container)?.tagName.toLowerCase()).toBe('svg');
+  });
+
+  it('wears the account initials on a grey disc once signed in', () => {
+    const { container } = renderPrimaryNav('home', 'AL');
+    const mark = accountMark(container);
+    expect(mark?.textContent).toBe('AL');
+    expect(mark?.className).toContain('bg-avatar-fill');
+    expect(mark?.className).toContain('text-avatar-text');
+    expect(mark?.className).toContain('rounded-full');
+    expect(mark?.className).toContain('text-[11px]');
+  });
+
+  it('sets a lone full-width character larger so it fills the disc', () => {
+    const { container } = renderPrimaryNav('home', '陈');
+    expect(accountMark(container)?.className).toContain('text-[13px]');
+  });
+
   it('groups items in the requested top-to-bottom order', () => {
     const { container } = renderPrimaryNav();
     const lobes = [...container.querySelectorAll('.primary-nav-pod')];

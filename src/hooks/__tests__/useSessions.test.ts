@@ -396,6 +396,46 @@ describe('useSessions', () => {
     await expect(getHook().flushCloudSaves(detail.id)).resolves.toBeUndefined();
   });
 
+  it('opens a conversation on its working copy when the cloud read is behind it', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+
+    act(() => { getHook().addUserMessage('还没上传的这一句'); });
+    const workingCopy = getHook().currentSession as Session;
+    storageMocks.putSession.mockClear();
+
+    // What the cloud still holds for this conversation: the state before that
+    // message was written.
+    const behind = makeSession({
+      id: workingCopy.id,
+      title: workingCopy.title,
+      code: '',
+      messages: [],
+      updatedAt: 1,
+    });
+
+    await act(async () => {
+      await (getHook() as ReturnType<typeof useSessions> & {
+        acceptCloudDetail: (session: Session) => Promise<void>;
+      }).acceptCloudDetail(behind);
+    });
+
+    expect(getHook().currentId).toBe(workingCopy.id);
+    expect(getHook().currentSession?.messages).toEqual(workingCopy.messages);
+    expect(storageMocks.putSession).not.toHaveBeenCalledWith(behind, 'user:u-1');
+    // The write that was on its way up is still on its way up.
+    expect(getHook().currentSyncStatus).not.toBe('synced');
+  });
+
   it('keeps streamed changes local until a terminal checkpoint saves one latest snapshot', async () => {
     const cloud = {
       listSessions: vi.fn(async () => []),
@@ -889,6 +929,62 @@ describe('useSessions', () => {
     );
     expect(cloud.deleteSession).not.toHaveBeenCalled();
     expect(syncStorageMocks.clearPendingSessionDelete).not.toHaveBeenCalled();
+  });
+
+  it('lands on history and not on a favorite when the open conversation is deleted', async () => {
+    // A favorite is a session too, and the newest one at that — but it is kept
+    // on the Favorites page, so the studio must not be dropped into it by a
+    // deletion made from the history panel.
+    const kept = makeSession({ id: 'kept', title: '收藏的那段', favoritedAt: 30, updatedAt: 30 });
+    const inHistory = makeSession({ id: 'in-history', title: '历史里的上一段', updatedAt: 20 });
+    const open = makeSession({ id: 'open', title: '正在写的这段', updatedAt: 10 });
+    storageMocks.getAllSessions.mockResolvedValue([kept, inHistory, open]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('open');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().deleteSession('open');
+    });
+
+    expect(getHook().currentId).toBe('in-history');
+  });
+
+  it('opens a fresh session when every conversation left is a favorite', async () => {
+    const kept = makeSession({ id: 'kept', favoritedAt: 30, updatedAt: 30 });
+    const open = makeSession({ id: 'open', updatedAt: 10 });
+    storageMocks.getAllSessions.mockResolvedValue([kept, open]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('open');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().deleteSession('open');
+    });
+
+    // Somewhere new, and the collection still holds what was kept.
+    expect(getHook().currentId).not.toBe('kept');
+    expect(getHook().currentId).not.toBe('open');
+    expect(getHook().sessions.map((session) => session.id)).toContain('kept');
+  });
+
+  it('stays in a favorite when some other conversation is deleted', async () => {
+    const kept = makeSession({ id: 'kept', favoritedAt: 30, updatedAt: 30 });
+    const other = makeSession({ id: 'other', updatedAt: 20 });
+    storageMocks.getAllSessions.mockResolvedValue([kept, other]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('kept');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().deleteSession('other');
+    });
+
+    expect(getHook().currentId).toBe('kept');
+    expect(getHook().sessions.map((session) => session.id)).toEqual(['kept']);
   });
 
   it('waits for imported sessions to be saved to the cloud when sync is enabled', async () => {

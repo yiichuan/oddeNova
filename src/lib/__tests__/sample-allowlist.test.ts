@@ -1,5 +1,18 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, it, expect } from 'vitest';
-import { findUnknownSamples, normalizeGmSampleNames } from '../sample-allowlist';
+import {
+  BUILTIN_SYNTHS,
+  GM_NAME_ALIASES,
+  SAMPLE_ALLOWLIST,
+  findUnknownSamples,
+  normalizeGmSampleNames,
+} from '../sample-allowlist';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore — gm-fonts.js is a plain JS ESM file with no type declarations
+import gmFonts from '../gm-fonts.js';
 import { VERIDIS_QUO } from '../featured-scripts';
 
 describe('findUnknownSamples', () => {
@@ -369,5 +382,111 @@ describe('normalizeGmSampleNames', () => {
 
   it('改写后的代码通过 sample 校验', () => {
     expect(findUnknownSamples(normalizeGmSampleNames('s("gm_acoustic_grand_piano")'))).toEqual([]);
+  });
+});
+
+// The allowlist only earns its keep while it matches what prebake() actually
+// registers. Drift in either direction is a real bug: a name that is registered
+// but not allowed gets rejected by validate() even though it plays, and a name
+// that is allowed but not registered validates and then plays silence.
+// These tests read the same files prebake() does, so upstream changes surface
+// here instead of in generated music.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
+const INDEX_DIR = join(ROOT, 'public/sample-index');
+// Not a sample index: maps long drum-machine names onto the short bank prefixes
+// used by the sample keys, consumed by aliasBank() rather than samples().
+const BANK_ALIAS_FILE = 'tidal-drum-machines-alias.json';
+
+const SAMPLE_INDEX_FILES = readdirSync(INDEX_DIR)
+  .filter((file) => file.endsWith('.json') && file !== BANK_ALIAS_FILE);
+
+const readIndex = (file: string): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(INDEX_DIR, file), 'utf8')) as Record<string, unknown>;
+
+const indexKeys = (file: string): string[] =>
+  Object.keys(readIndex(file)).filter((key) => !key.startsWith('_'));
+
+// superdough normalises both registration keys and lookups this way
+// (superdough.mjs registerSound / getSound), so comparisons must too.
+const soundKey = (name: string): string => name.toLowerCase().replace(/\s+/g, '_');
+
+/** Every key superdough's soundMap holds once strudel.ts prebake() has finished. */
+function registeredSoundNames(): Set<string> {
+  const names = new Set<string>();
+  for (const file of SAMPLE_INDEX_FILES) {
+    for (const key of indexKeys(file)) names.add(soundKey(key));
+  }
+
+  // aliasBank() re-registers every existing `bank_suffix` sound under each alias
+  // of that bank, so `RolandTR808_bd` also becomes `tr808_bd`.
+  const aliasMap = readIndex(BANK_ALIAS_FILE) as Record<string, string | string[]>;
+  const aliasByBank = new Map(
+    Object.entries(aliasMap).map(([bank, alias]) => [bank.toLowerCase(), alias]),
+  );
+  for (const name of [...names]) {
+    const sep = name.indexOf('_');
+    if (sep <= 0) continue;
+    const alias = aliasByBank.get(name.slice(0, sep));
+    if (alias === undefined) continue;
+    for (const one of Array.isArray(alias) ? alias : [alias]) {
+      names.add(soundKey(`${one}_${name.slice(sep + 1)}`));
+    }
+  }
+
+  // registerSoundfonts() registers the canonical gm_* names plus every alias.
+  for (const name of Object.keys(gmFonts as Record<string, unknown>)) names.add(soundKey(name));
+  for (const alias of Object.keys(GM_NAME_ALIASES)) names.add(soundKey(alias));
+
+  for (const name of BUILTIN_SYNTHS) names.add(soundKey(name));
+  return names;
+}
+
+describe('sample-allowlist 与 prebake() 实际注册的声音同步', () => {
+  it.each(SAMPLE_INDEX_FILES)('%s 里的每个名称都被校验器接受', (file) => {
+    const rejected = indexKeys(file).filter(
+      (key) => !SAMPLE_ALLOWLIST.has(key) && !BUILTIN_SYNTHS.has(key),
+    );
+    expect(rejected, `${file} 里的这些名称能播放，却会被 validate() 判为幻觉`).toEqual([]);
+  });
+
+  it('allowlist 里的每个名称都真的注册过', () => {
+    const registered = registeredSoundNames();
+    const dead = [...SAMPLE_ALLOWLIST].filter((name) => !registered.has(soundKey(name)));
+    expect(dead, '这些名称会通过 validate()，播放时却找不到声音').toEqual([]);
+  });
+});
+
+// Mirrors superdough's registerSynthSounds(), the only synth registration
+// prebake() performs. Parsed from the installed package so that a synth added
+// upstream fails here instead of silently staying unusable.
+describe('BUILTIN_SYNTHS 覆盖 registerSynthSounds() 注册的全部声音', () => {
+  // Registered, but deliberately not offered to the agent — none of them is an
+  // audible voice, so allowing them would only let a mistake through.
+  const NOT_A_VOICE = new Set([
+    'user', // needs .partials(); without it superdough falls back to triangle
+    'one',  // constant DC source, for modulation
+    'bus',  // bus input node (type 'input')
+  ]);
+
+  const readSuperdough = (file: string): string =>
+    readFileSync(join(ROOT, 'node_modules/superdough', file), 'utf8');
+
+  const stringsIn = (source: string, pattern: RegExp): string[] => {
+    const match = pattern.exec(source);
+    if (match === null) return [];
+    return [...match[1].matchAll(/'([^']+)'/g)].map(([, name]) => name);
+  };
+
+  it('没有遗漏任何已注册的合成器名', () => {
+    const synth = readSuperdough('synth.mjs');
+    const registered = [
+      ...stringsIn(synth, /const waveforms\s*=\s*\[([^\]]*)\]/),
+      ...stringsIn(readSuperdough('helpers.mjs'), /export const noises\s*=\s*\[([^\]]*)\]/),
+      ...stringsIn(synth, /const waveformAliases\s*=\s*\[([\s\S]*?)\];/),
+      ...[...synth.matchAll(/registerSound\(\s*'([a-z0-9_]+)'/g)].map(([, name]) => name),
+    ];
+    // A superdough refactor that breaks the parsing must fail loudly, not pass.
+    expect(registered.length).toBeGreaterThan(10);
+    expect(registered.filter((name) => !BUILTIN_SYNTHS.has(name) && !NOT_A_VOICE.has(name))).toEqual([]);
   });
 });

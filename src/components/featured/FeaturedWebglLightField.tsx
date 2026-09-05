@@ -74,10 +74,10 @@ void main() {
   // same way; what differs is where the ramp they are added onto begins, and
   // how hard the key and the fill are driven into it.
   float silverKey = softEllipse(point, vec2(0.79, 0.54), vec2(0.82, 0.44), 1.42);
-  float silverFill = softEllipse(point, vec2(-0.56, -0.34), vec2(1.28, 0.82), 1.70);
+  float silverFill = softEllipse(point, vec2(-0.56, -0.34), vec2(1.05, 0.67), 1.70);
   float overhead = softEllipse(point, vec2(-0.12, 1.08), vec2(1.62, 0.52), 2.05);
-  float silverLeft = softEllipse(point, vec2(-1.34, 0.26), vec2(0.72, 1.20), 1.48);
-  float lowerShelf = softEllipse(point, vec2(0.48, -0.92), vec2(1.24, 0.44), 1.54);
+  float silverLeft = softEllipse(point, vec2(-1.50, 0.26), vec2(0.72, 1.20), 1.48);
+  float lowerShelf = softEllipse(point, vec2(1.06, -0.78), vec2(1.20, 0.53), 1.54);
 
   vec3 colour;
 
@@ -97,7 +97,10 @@ void main() {
        everything the light is — its brightness and its colour together — has
        to fit inside it, since the bloom below saturates towards that ceiling
        and never past it. At the old #F3F3F3 the whole budget was twelve
-       levels, which is not a light. At #D4D4D6 it is forty-three, which is.
+       levels, which is not a light. At #D4D4D6 it was forty-three, which is;
+       at #DEDEE0 it is thirty-three, which still is — the pools were already
+       arriving within a level or two of the ceiling, so what the ten levels
+       cost is the fall out to the corners and not the light itself.
 
        That ground is two levels cool rather than a plain grey, which is a
        change of principle and not only of value. The subtractive page kept
@@ -112,7 +115,7 @@ void main() {
 
        Its colours cannot be copied. Those five vectors are spent over the
        whole of a 0-to-1 ramp and then pulled open again by the shoulder and
-       the 0.90 gamma below. Multiplied into paper's 0.161 of headroom they
+       the 0.90 gamma below. Multiplied into paper's 0.129 of headroom they
        light the page by eight levels and their hue lands at one. What crosses
        over is the ratio between the channels, never the numbers.
 
@@ -143,24 +146,36 @@ void main() {
        not raised with them: they are what keeps that fall, and lifting them
        would light the corners the middle is meant to be measured against.
 
-       What the reader sees: #D8D8DB in the top right corner and #E1E1E3 in the
-       bottom left, which is still very nearly unlit paper; #F8F8FB through the
-       middle; #FCFCFE where the fill light gathers under the reading, and
-       #F6F6FC under the script window's top right corner — six levels of cool
-       there and seven in the key pool above it, which is now the page's most
-       coloured point. Thirty-nine levels from darkest corner to brightest
-       pool.
+       What the reader sees: #E1E1E4 in the top right corner and #E8E8EA in
+       the bottom left, which is still very nearly unlit paper; #F9F9FC through
+       the middle; #FCFCFE where the fill light gathers under the reading, and
+       #F7F7FD under the script window's top right corner — six levels of cool
+       there, which is still the page's most coloured point. Twenty-seven
+       levels from darkest corner to brightest pool.
+
+       Those five are the readings the last ground was measured at, carried
+       across rather than sampled again: the bloom at a point does not move
+       when the ground under it does, so each one is its own bloom put back
+       through the new ramp. Which is why only the first two really change.
+       A corner is nearly all ground and takes nearly all of the ten levels;
+       the pools are at ninety-seven hundredths of the headroom and take none
+       of them.
 
        Which is the ground being spent the only way it can be. It has been
-       moved twice now, nine levels down and five back up, and the middle of
-       the page has never felt more than one of them: the bloom is already at
+       moved three times now — nine levels down, five back up, and ten more —
+       and the middle of the page has never felt more than one or two of them:
+       the bloom is already at
        ninety-two hundredths there, so almost everything the ground gives up
        is handed straight back by the light, and almost everything it takes
        back comes out of the corners. A ground is not the page's colour on
        this branch. It is only how far down the unlit parts of it reach, which
        is to say how deep the vignette is: forty-eight levels of it at
-       #CFCFD1, thirty-nine at #D4D4D6, and the pools standing at the same
-       #FCFCFE either way.
+       #CFCFD1, thirty-nine at #D4D4D6, twenty-seven at #DEDEE0, and the pools
+       standing at the same #FCFCFE throughout. This last move is the shallowest
+       the vignette has been asked to be: the page reads as one sheet with light
+       gathered in it rather than as a lit middle falling away to dark corners,
+       which is what a page carrying two long blocks of text wants and what a
+       shelf of artwork did not.
 
        The cost was known and taken, and has now been taken twice. The script
        window is a 35% fill of #F7F7FA: over the first field it stood eleven
@@ -175,10 +190,10 @@ void main() {
       + silverFill * 1.70
       + overhead * 0.30
       + silverLeft * 0.30
-      + lowerShelf * 0.34;
+      + lowerShelf * 0.52;
     float bloom = 1.0 - exp(-pooled * 2.4);
     float spread = mix(0.010, 0.028, smoothstep(-0.05, 0.80, point.x));
-    vec3 ground = vec3(0.831, 0.831, 0.839);
+    vec3 ground = vec3(0.871, 0.871, 0.878);
     colour = ground + (vec3(1.0) - ground) * bloom;
     colour -= vec3(spread * bloom, spread * bloom, 0.0);
   } else {

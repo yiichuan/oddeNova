@@ -170,7 +170,7 @@ export default function FavoriteActionDialog({
            afford to sit at the page's own value; this one has to read as
            standing off it, over whatever happens to be underneath — the studio's
            near-black or the Favorites page's light field. */
-        className={`flex w-max max-w-full items-center gap-2.5 rounded-[12px] border border-border bg-settings-surface/95 py-2 pl-3.5 pr-2 shadow-2xl backdrop-blur-2xl ${
+        className={`flex w-max max-w-full items-center gap-2.5 rounded-[12px] border border-border bg-settings-surface/95 py-2 pl-3.5 pr-2 shadow-menu-overlay backdrop-blur-2xl ${
           leaving
             ? 'animate-favorite-dialog-out pointer-events-none'
             : 'animate-favorite-dialog-in pointer-events-auto'

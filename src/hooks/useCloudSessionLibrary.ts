@@ -13,6 +13,7 @@ import {
   listCloudFavoriteSummaries,
   unfavoriteCloudSession,
 } from '../services/favorite-repository';
+import type { CachedSummaries } from '../lib/session-summary-cache';
 import type { Session } from './useSessions';
 
 export type CloudCollectionStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -41,6 +42,12 @@ export interface UseCloudSessionLibraryOptions {
   enabled: boolean;
   ownerId?: string;
   acceptCloudDetail?: (session: Session) => Promise<void>;
+  /** The lists as this device last saw them, drawn before the request lands. */
+  readCachedSummaries?: () => Promise<CachedSummaries | null>;
+  writeCachedSummaries?: (value: CachedSummaries) => void;
+  /** One conversation as this device last held it, read before the network. */
+  readCachedDetail?: (id: string) => Promise<Session | null>;
+  writeCachedDetail?: (session: Session) => void;
 }
 
 interface CollectionState<T> {
@@ -53,6 +60,7 @@ interface CollectionState<T> {
 }
 
 type CollectionAction<T> =
+  | { type: 'hydrate'; items: T[] }
   | { type: 'initial-start' }
   | { type: 'initial-success'; items: T[]; nextCursor: string | null }
   | { type: 'initial-error'; error: Error }
@@ -103,9 +111,18 @@ function collectionReducer<T extends { id: string }>(
   action: CollectionAction<T>,
 ): CollectionState<T> {
   switch (action.type) {
+    /* What this device saw last time, drawn while the request that replaces it
+       is still in the air. It yields to anything more recent: a collection
+       already holding items, or one whose load has landed, keeps what it has. */
+    case 'hydrate':
+      if (state.items.length > 0 || state.initialStatus === 'ready') return state;
+      return { ...state, items: action.items };
     case 'initial-start':
+      // Items survive the request that is about to replace them: a list
+      // already on screen should not blink out while it is being refreshed.
       return {
         ...emptyCollection<T>(),
+        items: state.items,
         initialStatus: 'loading',
       };
     case 'initial-success':
@@ -118,9 +135,10 @@ function collectionReducer<T extends { id: string }>(
         moreError: null,
       };
     case 'initial-error':
+      // Items survive a failed refresh too. Whoever is drawing them decides
+      // whether a list that could not be checked is still worth showing.
       return {
         ...state,
-        items: [],
         nextCursor: null,
         initialStatus: 'error',
         initialError: action.error,
@@ -210,6 +228,10 @@ export function useCloudSessionLibrary({
   enabled,
   ownerId,
   acceptCloudDetail,
+  readCachedSummaries,
+  writeCachedSummaries,
+  readCachedDetail,
+  writeCachedDetail,
 }: UseCloudSessionLibraryOptions) {
   const [historyState, dispatchHistory] = useReducer(
     historyReducer,
@@ -245,15 +267,28 @@ export function useCloudSessionLibrary({
     && !controller.signal.aborted,
   [enabled, ownerId]);
 
+  /* In-flight work belongs to the scope that started it. Anything that changes
+     the scope — the owner, or the library being switched off — discards it. */
   useEffect(() => {
     const controllers = controllersRef.current;
     const requests = requestsRef.current;
     const detailRequests = detailRequestsRef.current;
-    generationRef.current += 1;
-    for (const controller of controllers) controller.abort();
-    controllers.clear();
-    requests.clear();
-    detailRequests.clear();
+    const discardInFlight = (): void => {
+      generationRef.current += 1;
+      for (const controller of controllers) controller.abort();
+      controllers.clear();
+      requests.clear();
+      detailRequests.clear();
+    };
+    discardInFlight();
+    return discardInFlight;
+  }, [enabled, ownerId]);
+
+  /* What was read belongs to the owner it was read for, and to no one else. It
+     outlives `enabled` going down and coming back up — a guest import finishing
+     or the session list settling is not a reason to make the user wait for
+     lists and conversations this device already has. */
+  useEffect(() => {
     favoriteMovesRef.current.clear();
     dispatchHistory({ type: 'reset' });
     dispatchFavorites({ type: 'reset' });
@@ -261,15 +296,56 @@ export function useCloudSessionLibrary({
     detailsRef.current = emptyDetails;
     setDetails(emptyDetails);
     setDetailError(null);
+  }, [ownerId]);
 
-    return () => {
-      generationRef.current += 1;
-      for (const controller of controllers) controller.abort();
-      controllers.clear();
-      requests.clear();
-      detailRequests.clear();
-    };
-  }, [enabled, ownerId]);
+  // Draw the lists on last time's answer, then let the request correct them.
+  const [summariesHydrated, setSummariesHydrated] = useState(false);
+  useEffect(() => {
+    if (!ownerId || !readCachedSummaries) {
+      setSummariesHydrated(true);
+      return;
+    }
+    setSummariesHydrated(false);
+    let cancelled = false;
+    void readCachedSummaries().then((cached) => {
+      if (cancelled) return;
+      if (cached) {
+        dispatchHistory({ type: 'hydrate', items: cached.history });
+        dispatchFavorites({ type: 'hydrate', items: cached.favorites });
+      }
+      setSummariesHydrated(true);
+    }).catch(() => {
+      if (!cancelled) setSummariesHydrated(true);
+    });
+    return () => { cancelled = true; };
+  }, [ownerId, readCachedSummaries]);
+
+  /* Keep that answer current. Only what a request actually landed is worth
+     writing down — a hydrated list is what was written down last time — but
+     once one has landed, every later change to either list (a rename, a
+     conversation kept or released, a page loaded) goes down with it. */
+  useEffect(() => {
+    if (!ownerId || !writeCachedSummaries) return;
+    /* Never before the read it replaces has come back. The two race from the
+       same mount, and history's request lands without favorites having been
+       asked for at all — writing then would put an empty favorites list over
+       the one on the device, and the next visit to the page would open on a
+       spinner instead of on its own rows. */
+    if (!summariesHydrated) return;
+    if (historyState.initialStatus !== 'ready' && favoritesState.initialStatus !== 'ready') return;
+    writeCachedSummaries({
+      history: historyState.items,
+      favorites: favoritesState.items,
+    });
+  }, [
+    favoritesState.initialStatus,
+    favoritesState.items,
+    historyState.initialStatus,
+    historyState.items,
+    ownerId,
+    summariesHydrated,
+    writeCachedSummaries,
+  ]);
 
   const runCollectionRequest = useCallback(async (options: {
     key: string;
@@ -395,6 +471,19 @@ export function useCloudSessionLibrary({
     if (enabled && ownerId) void loadHistory();
   }, [enabled, loadHistory, ownerId]);
 
+  /** Hold a conversation in memory for the rest of the session. */
+  const rememberDetail = useCallback((session: Session): void => {
+    setDetails((previous) => {
+      const next = new Map(previous);
+      const existing = next.get(session.id);
+      if (!existing || existing.updatedAt <= session.updatedAt) {
+        next.set(session.id, { updatedAt: session.updatedAt, session });
+      }
+      detailsRef.current = next;
+      return next;
+    });
+  }, []);
+
   const openSummary = useCallback(async (
     summary: SessionSummary | FavoriteSummary,
     options: { acceptCloudDetail?: boolean } = {},
@@ -411,6 +500,23 @@ export function useCloudSessionLibrary({
     const existingRequest = detailRequestsRef.current.get(requestKey);
     if (existingRequest) return existingRequest;
 
+    /* A conversation this device has already read is on this device. Where it
+       is at least as new as the summary asking for it, nothing about it is
+       outstanding and the network has nothing to add — so it opens from here,
+       in the time an IndexedDB read takes. */
+    const stored = await readCachedDetail?.(summary.id);
+    if (stored && stored.updatedAt >= summary.updatedAt) {
+      rememberDetail(stored);
+      if (shouldAcceptCloudDetail) await acceptCloudDetail?.(stored);
+      return stored;
+    }
+
+    /* Behind the summary, but still this conversation. A reader is given it
+       now and corrected when the request lands — the same bargain the lists
+       make. The studio is not offered it: accepting a copy the cloud has
+       already moved past would make the stale one the working session. */
+    if (stored && !shouldAcceptCloudDetail) rememberDetail(stored);
+
     const generation = generationRef.current;
     const controller = new AbortController();
     controllersRef.current.add(controller);
@@ -420,16 +526,11 @@ export function useCloudSessionLibrary({
         const session = await getCloudSession(summary.id, ownerId, controller.signal);
         if (!scopeIsActive(generation, controller)) throw abortError();
         if (shouldAcceptCloudDetail) await acceptCloudDetail?.(session);
+        // Accepting a detail into the studio already writes it to this device;
+        // one read for a conversation the studio is not opening does not.
+        else writeCachedDetail?.(session);
         if (!scopeIsActive(generation, controller)) throw abortError();
-        setDetails((previous) => {
-          const next = new Map(previous);
-          const existing = next.get(session.id);
-          if (!existing || existing.updatedAt <= session.updatedAt) {
-            next.set(session.id, { updatedAt: session.updatedAt, session });
-          }
-          detailsRef.current = next;
-          return next;
-        });
+        rememberDetail(session);
         setDetailError(null);
         return session;
       } catch (value) {
@@ -466,7 +567,15 @@ export function useCloudSessionLibrary({
         detailRequestsRef.current.delete(requestKey);
       }
     }
-  }, [acceptCloudDetail, enabled, ownerId, scopeIsActive]);
+  }, [
+    acceptCloudDetail,
+    enabled,
+    ownerId,
+    readCachedDetail,
+    rememberDetail,
+    scopeIsActive,
+    writeCachedDetail,
+  ]);
 
   const retryDetail = useCallback(async (): Promise<void> => {
     const failed = detailError;

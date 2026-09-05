@@ -348,6 +348,26 @@ describe('createSessionCloudSync', () => {
     expect(statuses.has('s-3')).toBe(false);
   });
 
+  it('refuses a cloud detail while the working copy is still on its way up', async () => {
+    const { repository, statuses, sync } = setup();
+    const local = session('local edit');
+
+    sync.noteLocal(local);
+    await Promise.resolve();
+    expect(statuses.get('s-1')).toBe('dirty');
+
+    expect(sync.acceptCloudSession({ ...local, title: 'cloud copy' })).toBe(false);
+    expect(statuses.get('s-1')).toBe('dirty');
+
+    // The refused read changed nothing: the pending save still carries the
+    // local code up.
+    await sync.flush('s-1');
+    expect(repository.saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'local edit' }),
+      'user-1',
+    );
+  });
+
   it('accepts one authoritative cloud detail without hydrating unrelated sessions', async () => {
     const { repository, statuses, sync } = setup();
     const cloudSession = session('cloud detail', 10);

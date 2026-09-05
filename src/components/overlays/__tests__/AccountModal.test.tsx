@@ -37,7 +37,7 @@ function renderRecoveryModal() {
   act(() => {
     root.render(
       <AccountModal
-        user={{ id: 'user-1', email: 'listener@example.com' }}
+        user={{ id: 'user-1', email: 'listener@example.com', name: null }}
         configured
         recoveringPassword
         onClose={onClose}
@@ -77,7 +77,7 @@ function renderSignedInModal(beforeSignOut?: () => Promise<void>) {
   act(() => {
     root.render(
       <AccountModal
-        user={{ id: 'user-1', email: 'listener@example.com' }}
+        user={{ id: 'user-1', email: 'listener@example.com', name: null }}
         configured
         beforeSignOut={beforeSignOut}
         onClose={onClose}

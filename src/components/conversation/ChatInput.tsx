@@ -235,154 +235,166 @@ export default function ChatInput({
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
       <div
-        className={`chat-input-surface chat-input-outline rounded-t-none rounded-b-region pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
+        className={`chat-input-surface chat-input-outline rounded-t-none rounded-b-region pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed' : ''}`}
       >
-        {/* Wraps just the textarea so the suggestion overlay below can be
-            positioned absolute against its box, not the card as a whole
-            (which also includes the footer). Top padding lives on the card
-            above, not here — inside the textarea it would be scrolled out of
-            view (and off the top of the visible box) once content overflows
-            past MAX_TEXTAREA_HEIGHT, same reasoning as the footer below. */}
-        {/* pr-2 insets the textarea's right edge (where the scrollbar rides)
-            from the card edge, giving the scrollbar an 8px gap. The textarea's
-            own pr below is reduced by the same 8px so the text position is
-            unchanged. */}
-        <div className="relative pr-3">
-          <textarea
-            ref={textareaRef}
-            value={replayValue !== undefined ? replayValue : text}
-            onChange={replayValue !== undefined ? undefined : (e) => {
-              adoptedSuggestionRef.current = null;
-              setText(e.target.value);
-            }}
-            readOnly={replayValue !== undefined}
-            onFocus={() => {
-              setFocused(true);
-              onFocusChange?.(true);
-            }}
-            onBlur={() => {
-              setFocused(false);
-              onFocusChange?.(false);
-            }}
-            onKeyDown={(e) => {
-              if (replayValue !== undefined) return;
-              // Guarded so Tab still moves focus out when there's nothing to adopt.
-              if (e.key === 'Tab' && !e.shiftKey && suggestionActive && currentSuggestion) {
-                e.preventDefault();
-                adoptSuggestion();
-                return;
-              }
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                // Mobile: the return key stands in for Tab, but only while the
-                // field is still empty (suggestionActive). Once the user is
-                // typing it falls through as a plain newline — sending is the
-                // send button's job there, not the keyboard's.
-                if (isMobile) {
-                  if (suggestionActive && currentSuggestion) {
-                    e.preventDefault();
-                    adoptSuggestion();
-                  }
+        {/* The fade of the waiting state is taken on the card's contents, not
+            on the card. Held on the card it also took the hairline with it,
+            and on paper that ring is only a few levels off the fill it is
+            drawn on — halve that difference and the composer loses its edge
+            entirely for as long as the agent is answering. Dimming what is
+            *inside* says the same thing and leaves the panel its outline. */}
+        <div className={`transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`}>
+          {/* Wraps just the textarea so the suggestion overlay below can be
+              positioned absolute against its box, not the card as a whole
+              (which also includes the footer). Top padding lives on the card
+              above, not here — inside the textarea it would be scrolled out of
+              view (and off the top of the visible box) once content overflows
+              past MAX_TEXTAREA_HEIGHT, same reasoning as the footer below. */}
+          {/* pr-2 insets the textarea's right edge (where the scrollbar rides)
+              from the card edge, giving the scrollbar an 8px gap. The textarea's
+              own pr below is reduced by the same 8px so the text position is
+              unchanged. */}
+          <div className="relative pr-3">
+            <textarea
+              ref={textareaRef}
+              value={replayValue !== undefined ? replayValue : text}
+              onChange={replayValue !== undefined ? undefined : (e) => {
+                adoptedSuggestionRef.current = null;
+                setText(e.target.value);
+              }}
+              readOnly={replayValue !== undefined}
+              onFocus={() => {
+                setFocused(true);
+                onFocusChange?.(true);
+              }}
+              onBlur={() => {
+                setFocused(false);
+                onFocusChange?.(false);
+              }}
+              onKeyDown={(e) => {
+                if (replayValue !== undefined) return;
+                // Guarded so Tab still moves focus out when there's nothing to adopt.
+                if (e.key === 'Tab' && !e.shiftKey && suggestionActive && currentSuggestion) {
+                  e.preventDefault();
+                  adoptSuggestion();
                   return;
                 }
-                e.preventDefault();
-                handleSubmit(e);
-              }
-            }}
-            placeholder={suggestionActive
-              ? ''
-              : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
-            rows={1}
-            disabled={inputDisabled}
-            className="w-full min-h-[63px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed"
-            style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
-          />
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  // Mobile: the return key stands in for Tab, but only while the
+                  // field is still empty (suggestionActive). Once the user is
+                  // typing it falls through as a plain newline — sending is the
+                  // send button's job there, not the keyboard's.
+                  if (isMobile) {
+                    if (suggestionActive && currentSuggestion) {
+                      e.preventDefault();
+                      adoptSuggestion();
+                    }
+                    return;
+                  }
+                  e.preventDefault();
+                  handleSubmit(e);
+                }
+              }}
+              placeholder={suggestionActive
+                ? ''
+                : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
+              rows={1}
+              disabled={inputDisabled}
+              className="w-full min-h-[73px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed"
+              style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
+            />
 
-          {/* Rotating suggestion shown in place of the native placeholder
-              (which can't animate or carry a styled hint). The text types
-              out unit by unit. Mirrors the textarea's own padding exactly;
-              pointer-events-none so clicks focus the input. Type scale tracks
-              the textarea's, including its 16px on mobile — that size is there
-              to stop iOS auto-zoom on focus and can't be lowered, so the
-              overlay matches it to avoid a jump when a suggestion is adopted. */}
-          {suggestionActive && (
-            <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-text-muted">
-              {/* Only the suggestion text blurs/fades between rotations — blur
-                  runs first, then opacity fades in on its heels (sequential, not
-                  simultaneous), via an explicit transition-delay on opacity.
-                  Padding + matching negative margin gives the filter's own layer
-                  room to blur into without being hard-clipped at the element's
-                  box edge (a visible rectangle otherwise, since CSS filter
-                  clips at the border box) — net zero visual displacement. */}
-              <span
-                className="inline-block -m-1.5 p-1.5"
-                style={{
-                  filter: suggestionFading ? 'blur(1.5px)' : 'blur(0px)',
-                  opacity: suggestionFading ? 0 : 1,
-                  transition: 'filter 200ms ease, opacity 250ms ease 100ms',
-                }}
-              >
-                {typedPlaceholder}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Footer row — hint/status on the left, send button on the right.
-            Real layout, always visible regardless of textarea scroll state. */}
-        <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
-          <div className="min-w-0">
-            {engineStatus !== 'ready' ? (
-              <div className="flex items-center gap-2 text-[12px] text-text-muted">
-                <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
-                <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
-                {engineStatus === 'failed' && (
-                  <button
-                    type="button"
-                    onClick={onReinitEngine}
-                    className="text-[18px] font-thin text-text-secondary/60 hover:text-text-primary transition-colors leading-none relative -top-[2px]"
-                    title={t('restartEngine')}
-                  >
-                    ↺
-                  </button>
-                )}
+            {/* Rotating suggestion shown in place of the native placeholder
+                (which can't animate or carry a styled hint). The text types
+                out unit by unit. Mirrors the textarea's own padding exactly;
+                pointer-events-none so clicks focus the input. Type scale tracks
+                the textarea's, including its 16px on mobile — that size is there
+                to stop iOS auto-zoom on focus and can't be lowered, so the
+                overlay matches it to avoid a jump when a suggestion is adopted. */}
+            {suggestionActive && (
+              <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-text-muted">
+                {/* Only the suggestion text blurs/fades between rotations — blur
+                    runs first, then opacity fades in on its heels (sequential, not
+                    simultaneous), via an explicit transition-delay on opacity.
+                    Padding + matching negative margin gives the filter's own layer
+                    room to blur into without being hard-clipped at the element's
+                    box edge (a visible rectangle otherwise, since CSS filter
+                    clips at the border box) — net zero visual displacement. */}
+                <span
+                  className="inline-block -m-1.5 p-1.5"
+                  style={{
+                    filter: suggestionFading ? 'blur(1.5px)' : 'blur(0px)',
+                    opacity: suggestionFading ? 0 : 1,
+                    transition: 'filter 200ms ease, opacity 250ms ease 100ms',
+                  }}
+                >
+                  {typedPlaceholder}
+                </span>
               </div>
-             ) : suggestionActive && (!isMobile || focused) ? (
-              <div className="pointer-events-none text-[12px] text-text-muted">
-                {isMobile ? t('enterToFill') : t('tabToFill')}
-              </div>
-            ) : null}
+            )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {replayValue === undefined && <ThinkingLevelControl disabled={inputDisabled} />}
-            {replayValue !== undefined ? (
-              <button
-                type="button"
-                disabled={!replayValue.trim()}
-                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-action-fill text-action-text transition duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-                title={t('send')}
-              >
-                <ArrowUpIcon size={18} />
-              </button>
-            ) : isLoading ? (
-              <button
-                type="button"
-                onClick={onStop}
-                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-action-fill text-action-text transition duration-200 hover:bg-action-fill-hover"
-                title={t('stop')}
-              >
-                <StopIcon size={18} />
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={!text.trim()}
-                className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-action-fill text-action-text transition duration-200 hover:bg-action-fill-hover disabled:cursor-not-allowed disabled:opacity-50"
-                title={t('send')}
-              >
-                <ArrowUpIcon size={18} />
-              </button>
-            )}
+          {/* Footer row — hint/status on the left, send button on the right.
+              Real layout, always visible regardless of textarea scroll state. */}
+          <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
+            <div className="min-w-0">
+              {engineStatus !== 'ready' ? (
+                <div className="flex items-center gap-2 text-[12px] text-text-muted">
+                  <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
+                  <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
+                  {engineStatus === 'failed' && (
+                    <button
+                      type="button"
+                      onClick={onReinitEngine}
+                      className="text-[18px] font-thin text-text-secondary/60 hover:text-text-primary transition-colors leading-none relative -top-[2px]"
+                      title={t('restartEngine')}
+                    >
+                      ↺
+                    </button>
+                  )}
+                </div>
+               ) : suggestionActive && (!isMobile || focused) ? (
+                <div className="pointer-events-none text-[12px] text-text-muted">
+                  {isMobile ? t('enterToFill') : t('tabToFill')}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {replayValue === undefined && <ThinkingLevelControl disabled={inputDisabled} />}
+              {replayValue !== undefined ? (
+                <button
+                  type="button"
+                  disabled={!replayValue.trim()}
+                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={t('send')}
+                >
+                  <ArrowUpIcon size={18} />
+                </button>
+              ) : isLoading ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover"
+                  title={t('stop')}
+                >
+                  {/* A step under the arrow it stands in for: a solid square
+                      carries more ink than an outlined glyph, so matching their
+                      nominal sizes makes the stop mark read as the larger of
+                      the two. */}
+                  <StopIcon size={16} />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!text.trim()}
+                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  title={t('send')}
+                >
+                  <ArrowUpIcon size={18} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

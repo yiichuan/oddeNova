@@ -426,6 +426,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const cloudOwnerId = ownerKey.startsWith('user:') ? ownerKey.slice('user:'.length) : undefined;
   const isAccountOwner = ownerKey.startsWith('user:');
   const [sessions, setSessions] = useState<Session[]>([]);
+  // Read by callbacks that must see the current list without taking it as a
+  // dependency — an identity that changed on every session write would ripple
+  // through the cloud library and out to every consumer of a switch handler.
+  const sessionsRef = useRef<Session[]>(sessions);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPersistent, setIsPersistent] = useState(false);
@@ -450,6 +454,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
   // has meaningful content (or an explicit checkpoint) this set becomes the
   // small local working-copy index used by subsequent writes.
   const persistedSessionIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
 
   const noteCreatedSession = useCallback((sessionId: string): void => {
     const tracked = createdDuringLoadRef.current;
@@ -749,18 +757,35 @@ export function useSessions(options: UseSessionsOptions = {}) {
     await sessionCloudSync?.flush(sessionId);
   }, [sessionCloudSync]);
 
+  /**
+   * Open a session on a cloud read. The read is authoritative only where the
+   * working copy has nothing the cloud is missing: a copy carrying its own
+   * later writes — a turn still being answered, an edit still on its way up —
+   * stays as it is, and the session is opened on that instead. Registering the
+   * accepted read as a synced cloud copy before changing React state keeps the
+   * first subsequent editor mutation the only operation that can enqueue a
+   * save.
+   */
   const acceptCloudDetail = useCallback(async (session: Session): Promise<void> => {
     if (!ownerLoaded) return;
-    // This is an authoritative read, not a local edit. Register it as a
-    // synced cloud copy before changing React state so the first subsequent
-    // editor mutation is the only operation that can enqueue a save.
-    sessionCloudSync?.acceptCloudSession(session);
-    await dbPutSession(session, ownerKey);
-    persistedSessionIdsRef.current.add(session.id);
-    setSessions((previous) => [
-      session,
-      ...previous.filter((existing) => existing.id !== session.id),
-    ]);
+    const workingCopy = sessionsRef.current.find((existing) => existing.id === session.id);
+    const workingCopyIsAhead = workingCopy !== undefined
+      && workingCopy.updatedAt > session.updatedAt;
+    const adopted = !workingCopyIsAhead
+      && (sessionCloudSync?.acceptCloudSession(session) ?? true);
+    if (adopted) {
+      await dbPutSession(session, ownerKey);
+      persistedSessionIdsRef.current.add(session.id);
+      setSessions((previous) => [
+        session,
+        ...previous.filter((existing) => existing.id !== session.id),
+      ]);
+    } else if (!workingCopy) {
+      // Refused with nothing local to fall back on cannot happen — the sync
+      // record that refused is the working copy's own — but opening a session
+      // that is not in the list would strand the studio on an empty current id.
+      return;
+    }
     setCurrentId(session.id);
     await dbPutCurrentSessionId(session.id, ownerKey);
   }, [ownerKey, ownerLoaded, sessionCloudSync]);
@@ -1110,15 +1135,34 @@ export function useSessions(options: UseSessionsOptions = {}) {
         } else if (wasPersisted || !isAccountOwner) {
           void dbDeleteSession(id, ownerKey);
         }
-        if (next.length === 0) {
+        /* Where the studio goes when the conversation it is in is deleted.
+           Not simply the next session on the list: a favorite is a session
+           too, and it is kept on the Favorites page rather than in history —
+           so falling onto one hands the user a conversation the panel they
+           just deleted from does not even list, arriving out of nowhere.
+           History's own next entry, which is what the panel shows and
+           `historyItems` in App.tsx filters the same way.
+
+           Only ever consulted for the session being left. Deleting some other
+           conversation while sitting in a favorite is not a reason to be moved
+           out of it. */
+        const leavingCurrent = id === currentId;
+        const successor = leavingCurrent
+          ? next.find((session) => session.favoritedAt === undefined)
+          : undefined;
+        /* A fresh session when there is nowhere in history to land: either
+           nothing is left at all, or everything left is kept. The favorites
+           stay in the list — they are still the collection, they are just not
+           somewhere the studio can be put down. */
+        if (next.length === 0 || (leavingCurrent && !successor)) {
           const fresh = makeEmptySession();
           noteCreatedSession(fresh.id);
           activateSession(fresh.id);
           persistLocalSession(fresh);
-          return [fresh];
+          return [fresh, ...next];
         }
-        if (id === currentId) {
-          activateSession(next[0].id);
+        if (successor) {
+          activateSession(successor.id);
         }
         return next;
       });

@@ -24,7 +24,7 @@ export const ANIMATION_PREFERENCES: readonly AnimationPreference[] = ['galaxy', 
  */
 export const LIGHT_THEME_READY = true;
 
-export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'system';
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'light';
 export const DEFAULT_ANIMATION: AnimationPreference = 'galaxy-ascii';
 export const DEFAULT_STUDIO_ANIMATION_VISIBLE = true;
 

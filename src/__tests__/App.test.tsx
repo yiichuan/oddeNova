@@ -196,7 +196,7 @@ vi.mock('../hooks/useModelSettingsDraft', () => ({
 vi.mock('../hooks/useLayout', () => ({
   VIZ_DIVIDER_HEIGHT: 6,
   useLayout: () => ({
-    isMobile: mocks.isMobile, keyboardHeight: 0, sidebarWidth: 0, vizHeight: 0, isDragging: false,
+    isMobile: mocks.isMobile, keyboardHeight: 0, sidebarWidth: 0, sidebarCollapsed: false, vizHeight: 0, isDragging: false,
     vizCollapsed: false, toggleVizCollapsed: vi.fn(),
     mainRef: { current: null }, topActionsRef: { current: null }, hDragHandlers: {}, vDragHandlers: {},
     historyOpen: false, setHistoryOpen: vi.fn(), drawerOpen: false, setDrawerOpen: vi.fn(),
@@ -524,6 +524,7 @@ describe('App session sync boundaries', () => {
     mocks.strudel.code = 's("bd")';
     mocks.session.code = 's("bd")';
     mocks.session.messages = [];
+    mocks.session.updatedAt = 1;
     mocks.sessions.currentId = 's-1';
     mocks.sessions.currentSession = mocks.session;
     mocks.sessions.sessions = [mocks.session];
@@ -860,6 +861,151 @@ describe('App session sync boundaries', () => {
 
     expect(mocks.sessions.currentId).toBe('s-1');
     expect(mocks.strudel.setError).toHaveBeenCalledWith(t('requestFailed'));
+  });
+
+  /**
+   * An account conversation this device already holds a working copy of, beside
+   * the summary the history list carries for it.
+   */
+  function heldAccountSession(
+    workingCopyUpdatedAt: number,
+    summaryUpdatedAt = 20,
+  ): Session {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const held: Session = {
+      id: 'cloud-held',
+      title: 'Held conversation',
+      code: 's("bd")',
+      messages: [{ id: 'message-1', role: 'user', content: '来点鼓', timestamp: 1 }],
+      createdAt: 1,
+      updatedAt: workingCopyUpdatedAt,
+    };
+    mocks.cloudLibrary.history.items = [
+      { id: held.id, title: held.title, updatedAt: summaryUpdatedAt },
+    ];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    mocks.sessions.sessions = [mocks.session, held];
+    mocks.isMobile = false;
+    return held;
+  }
+
+  it('opens a held conversation from the working copy without waiting on the cloud', async () => {
+    const held = heldAccountSession(20);
+    await renderApp();
+    mocks.cloudLibrary.openSession.mockClear();
+    mocks.sessions.acceptCloudDetail.mockClear();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onSwitchSession as ((id: string) => Promise<void>))(held.id);
+    });
+
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(held.id);
+    expect(mocks.cloudLibrary.openSession).not.toHaveBeenCalled();
+    expect(mocks.sessions.acceptCloudDetail).not.toHaveBeenCalled();
+    // The conversation being left is still saved on the way out.
+    expect(mocks.sessions.flushCloudSaves).toHaveBeenCalledWith('s-1');
+  });
+
+  it('returns to a conversation still being answered without re-reading the cloud', async () => {
+    // Ahead in the history list, so only the run in flight can hold the read off.
+    const held = heldAccountSession(20, 40);
+    await renderApp();
+
+    act(() => {
+      (mocks.agentRunnerConfig?.setLoadingSessions as (value: Set<string>) => void)(
+        new Set([held.id]),
+      );
+    });
+    mocks.cloudLibrary.openSession.mockClear();
+    mocks.strudel.setError.mockClear();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onSwitchSession as ((id: string) => Promise<void>))(held.id);
+    });
+
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(held.id);
+    expect(mocks.cloudLibrary.openSession).not.toHaveBeenCalled();
+    expect(mocks.strudel.setError).not.toHaveBeenCalled();
+  });
+
+  it('revalidates a held conversation in the background when the cloud is ahead', async () => {
+    const held = heldAccountSession(20, 40);
+    let releaseRead!: () => void;
+    mocks.cloudLibrary.openSession.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseRead = () => resolve(undefined); }),
+    );
+    await renderApp();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onSwitchSession as ((id: string) => Promise<void>))(held.id);
+    });
+
+    // The switch has already happened while the read is still outstanding.
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(held.id);
+    expect(mocks.cloudLibrary.openSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: held.id }),
+    );
+    await act(async () => { releaseRead(); });
+  });
+
+  it('reads the open conversation again when the history list turns out to be ahead', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    mocks.session.updatedAt = 20;
+    // What the list knows about the conversation on screen: a later version,
+    // written somewhere else.
+    mocks.cloudLibrary.history.items = [
+      { id: mocks.session.id, title: mocks.session.title, updatedAt: 55 },
+    ];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    mocks.isMobile = false;
+
+    await renderApp();
+
+    await vi.waitFor(() => {
+      expect(mocks.cloudLibrary.openSession).toHaveBeenCalledWith(
+        expect.objectContaining({ id: mocks.session.id, updatedAt: 55 }),
+      );
+    });
+    // Once per version, however many renders the conversation goes through.
+    expect(mocks.cloudLibrary.openSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the open conversation alone while its own turn is being answered', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    mocks.session.updatedAt = 20;
+    mocks.cloudLibrary.history.items = [
+      { id: mocks.session.id, title: mocks.session.title, updatedAt: 55 },
+    ];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    mocks.isMobile = false;
+
+    await renderApp();
+    act(() => {
+      (mocks.agentRunnerConfig?.setLoadingSessions as (value: Set<string>) => void)(
+        new Set([mocks.session.id]),
+      );
+    });
+    mocks.cloudLibrary.openSession.mockClear();
+
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.cloudLibrary.openSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps a held conversation open when its background revalidation fails', async () => {
+    const held = heldAccountSession(20, 40);
+    mocks.cloudLibrary.openSession.mockRejectedValueOnce(
+      Object.assign(new Error('offline'), { status: 500 }),
+    );
+    await renderApp();
+    mocks.strudel.setError.mockClear();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onSwitchSession as ((id: string) => Promise<void>))(held.id);
+      await Promise.resolve();
+    });
+
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(held.id);
+    expect(mocks.strudel.setError).not.toHaveBeenCalledWith(t('requestFailed'));
   });
 
   it('stops the studio when the workspace it plays in is left behind', async () => {

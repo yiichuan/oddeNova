@@ -1,4 +1,5 @@
 import { createClient, type AuthChangeEvent, type Session as SupabaseSession, type User } from '@supabase/supabase-js';
+import { displayNameFromMetadata } from '../lib/account-identity';
 import {
   clearGoogleOAuthPending,
   markGoogleOAuthPending,
@@ -7,6 +8,8 @@ import {
 export interface AuthUser {
   id: string;
   email: string | null;
+  /** The provider's display name — Google supplies one, an address does not. */
+  name: string | null;
 }
 
 export interface AuthState {
@@ -29,6 +32,7 @@ function toAuthUser(user: User | null | undefined): AuthUser | null {
   return {
     id: user.id,
     email: user.email ?? null,
+    name: displayNameFromMetadata(user.user_metadata),
   };
 }
 

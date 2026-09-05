@@ -69,6 +69,11 @@
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
   --color-brand-accent: #D9542B;
+  /* The accent under a pointer. A tenth of white laid over the accent — the
+     same lift that takes the paper theme's #0668E5 to its `--color-accent-light`
+     #237AE8, so both rooms brighten by the same amount rather than by the same
+     eyeball. */
+  --color-brand-accent-hover: #DD6540;
   --color-playback-accent: #D9542B;
   --color-text-primary: #D6D6D6;
   --color-text-secondary: #B8B8B8;
@@ -77,6 +82,12 @@
      letterform of the same colour, so the marks that sit unselected in the nav
      and the featured transport get their own step above `text-muted`. */
   --color-icon-idle: #949494;
+  /* The disc the account button wears once someone is signed in. A face is not
+     a signal, so it stays out of the accent and off the hue wheel entirely — a
+     true grey held a few steps clear of the ground it is read against, which is
+     up here and down on paper. */
+  --color-avatar-fill: #4E4E4E;
+  --color-avatar-text: #E6E6E6;
   --color-text-reasoning: #949494;
   --color-border: #242424;
   --color-scrollbar-thumb-hover: #4A4A4A;
@@ -178,33 +189,20 @@
   --spacing-action-divider-to-body: 20px;
   --spacing-action-expanded-content-gap: 20px;
   --spacing-conversation-edge-fade: 8px;
+  /* Headroom at the stream's top edge. The rollback key hangs 10px above its
+     bubble's top-right corner, and the veil over that edge is the fade's own
+     depth, so a user bubble parked at the very top — scrolled there, or put
+     there by the turn anchor — needs both cleared before the key is lit whole.
+     Read in three places: the scrollport's top padding, the reasoning header's
+     frozen spot and the cap it carries above it, and the turn anchor, which
+     takes the number off that padding rather than repeating it. */
+  --spacing-conversation-top-inset: calc(var(--spacing-conversation-edge-fade) + 10px);
   /* The editor's breathing space above the first line and below the last. It
      lives out here rather than on `.cm-editor` because the top fade hangs on
      the element CodeMirror mounts into — the editor's parent, which a variable
      scoped to the editor never reaches. Both ends measure from this one value;
      they drifted apart once already when they did not. */
   --code-editor-bottom-gap: 14px;
-  /* How deep a conversation standing on no surface blurs out at each end. Deep
-     relative to the radius it reaches — that ratio is what hides the steps. */
-  --spacing-conversation-fade: 90px;
-  /* The default resting depth: far enough in from the column's own ends that
-     the first and last message stand clear of the band whatever depth it is
-     tuned to, so tuning the band does not move the conversation. */
-  --spacing-conversation-content-clearance: 160px;
-  /* How far past the window's own edge the bands carry on, so the box edge a
-     backdrop-filter clamps its samples at falls outside the clip. */
-  --spacing-conversation-fade-overscan: 80px;
-  /* How far past its column the reading window reaches on each side. Its
-     content receives the same amount as padding, so the messages do not move. */
-  --spacing-conversation-fade-side-overscan: 60px;
-  /* Where the reading window itself ends. */
-  --spacing-conversation-window-top: 54px;
-  --spacing-conversation-window-bottom: 64px;
-  /* Where the first and last message come to rest, given in the reading
-     column's own coordinates rather than the window's. A page with something
-     standing beside the reading overrides both to line the two up. */
-  --spacing-conversation-content-top: var(--spacing-conversation-content-clearance);
-  --spacing-conversation-content-bottom: var(--spacing-conversation-content-clearance);
   --spacing-reasoning-content-fade: 8px;
   /* Indirected on purpose. Tailwind v4 inlines an `@theme` shadow value into
      the `shadow-*` utility instead of leaving a `var()` behind, so a token
@@ -215,6 +213,16 @@
   --menu-overlay-cast: 0 0 15px rgba(0, 0, 0, 0.7);
   --shadow-menu-overlay: var(--menu-overlay-cast);
   --shadow-history-overlay: 0 0 18px rgba(0, 0, 0, 0.9);
+  /* What the auth windows stand on. They arrive over a dimmed, blurred room
+     rather than over the page, so their cast only has to seat a 420px panel on
+     a ground that is already dark — a far, wide pool reads there as a cloud
+     under the window instead of as lift. Two layers held close: the near one
+     draws the contact edge, the outer one carries the drop, and the panel's own
+     border finds its shape. */
+  --dialog-overlay-cast:
+    0 2px 5px rgba(0, 0, 0, 0.26),
+    0 10px 24px rgba(0, 0, 0, 0.20);
+  --shadow-dialog-overlay: var(--dialog-overlay-cast);
   /* What the nav column stands on. In the dark room there is no light to take
      out of the ground, so the column is raised by a pool of deeper black under
      it rather than by a tinted cast.
@@ -281,11 +289,17 @@ html[data-theme='light'] {
   --color-accent-light: #237AE8;
   --color-accent-glow: rgba(6, 104, 229, 0.22);
   --color-brand-accent: #0668E5;
+  --color-brand-accent-hover: #237AE8;
   --color-playback-accent: #0668E5;
   --color-text-primary: #212121;
   --color-text-secondary: #515151;
   --color-text-muted: #696969;
   --color-icon-idle: #646464;
+  /* The idle icon's own grey, filled in: on paper the disc reads darker than
+     the column rather than lighter, and taking the value the outline already
+     had keeps it the same weight of mark. */
+  --color-avatar-fill: #88888A;
+  --color-avatar-text: #F7F7F7;
   --color-text-reasoning: #646464;
   --color-border: #D7D7DE;
   --color-scrollbar-thumb-hover: #A2A2AE;
@@ -298,7 +312,7 @@ html[data-theme='light'] {
   --color-selected-item-bg: #0668E5;
   --color-surface-hover: #E8E8ED;
   --color-surface-selected: #DDDDE4;
-  --color-message-user: #E2E2E4;
+  --color-message-user: #E8E8EB;
   --color-action-fill: #29292D;
   --color-action-fill-hover: #3E3E43;
   --color-action-text: #FAFAFD;
@@ -341,6 +355,12 @@ html[data-theme='light'] {
     0 1px 2px rgba(44, 45, 61, 0.05),
     0 6px 16px rgba(44, 45, 61, 0.09);
   --shadow-history-overlay: 0 16px 42px rgba(44, 45, 61, 0.16);
+  /* The same cast in the paper's own ink, and lighter again: on a pale ground
+     the shadow is the paper with the light taken out of it, so it takes far
+     less alpha to read as the same distance off the page. */
+  --dialog-overlay-cast:
+    0 1px 2px rgba(44, 45, 61, 0.05),
+    0 8px 20px rgba(44, 45, 61, 0.10);
   /* The composer's cast in the same ink, pulled in tight and evened out, and
      carrying the density it loses by being small — the column has 10px of page
      to fall on, not the open room under the composer. */
@@ -749,6 +769,111 @@ body {
   --favorites-search-rule-active: var(--color-brand-accent);
 }
 
+/* ── Favorites page · the frozen 构思过程 header ──────────────────────────────
+   The band the reasoning control freezes into at the top of the reading, and
+   the fade that carries the thought out from under it.
+
+   The studio backs its own with `--color-conversation-surface`, which is right
+   there and wrong here: that stream is cut into a flat panel, so its header
+   can simply be the panel's colour. This window is glass over a light field
+   that changes value across it, and nothing behind the reading is a flat
+   colour to match — which is why the archive had no frozen header at all until
+   the interaction demanded one.
+
+   What makes it possible anyway is that the band only ever appears in one
+   place: pinned to the top of the reading. So it is not asked to match the
+   window everywhere, only there, and there the glass resolves to something a
+   flat colour can state. Both values below are that composite — the panel fill
+   over the field as it stands behind the top of the reading — rather than
+   either of the two colours it is made of:
+
+     paper   #F7F7FA at 66% over a field running #E8E8EB…#F0F0F2 up there
+     dark    #0D0D0D at 55% over a field running #090A0C…#101113
+
+   The remaining error is the field's own gradient across the band's width,
+   which is three or four levels either way. Below the threshold at which a
+   band is seen as a band, and far under what the interaction was costing:
+   before this, a thought long enough to scroll was a thought that could not be
+   shut without scrolling all the way back to find its control.
+
+   Which is why the fill is stated only while the header is actually frozen —
+   `data-stuck`, set by the archive from where the band really is. Standing in
+   the stream the same flat value is simply wrong: the glass resolves to
+   something else everywhere but the top, so the band stops being the window
+   and becomes a rectangle drawn on it, brighter than what it lies on and
+   visible for its full measure. Unfrozen the header needs no fill at all —
+   nothing is passing under it — so it has none. */
+.favorites-reasoning-sticky {
+  --favorites-reading-veil: #0E0E10;
+}
+
+.favorites-reasoning-sticky[data-stuck] {
+  background: var(--favorites-reading-veil);
+}
+
+/* Only while there is something under it to cut off, and only while the band
+   above it is being drawn: the fade is the veil running out, so it cannot
+   outlive the veil. Collapsed, the header has the stream's own 40px between it
+   and the next turn and nothing to hide. */
+.favorites-reasoning-sticky[data-stuck][data-expanded]::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: var(--spacing-reasoning-content-fade);
+  background: linear-gradient(to bottom, var(--favorites-reading-veil), transparent);
+  pointer-events: none;
+  content: '';
+}
+
+html[data-theme='light'] .favorites-reasoning-sticky {
+  --favorites-reading-veil: #F4F4F7;
+}
+
+/* ── Favorites page · the take widget in the reading ─────────────────────────
+   The pair of buttons a turn carries when it arrived at a take: the chip that
+   names it and the play control butted onto its right. One fill for both, so
+   the two halves read as one key split rather than as two controls that happen
+   to touch.
+
+   Flat, and stated rather than borrowed. It used to be the window's own glass
+   at 55% behind a `--color-border` hairline, which meant the widget was only
+   findable by its edge — a fill that close to what it sits on is not a surface,
+   it is a rectangle of border. Dropping the edge is what forces the fill to be
+   a real value, and a real value needs no edge.
+
+   The dark room takes a mid grey. Not the app's `--color-surface-hover`
+   (#242424), which is a hover state for things standing on the app's own near
+   black: this stands inside a window that is itself #0D0D0D at 55% over the
+   field, so the grey has to clear the window rather than the page under it.
+
+   Hover moves the fill and nothing else — the orange label holds, since a
+   hotter orange would read as selection, which the chip already says with
+   `aria-pressed`. Up in the dark room, down on paper: the same direction each
+   room's transport play button takes, so a control answering the pointer
+   answers it the same way everywhere in the building. */
+.favorites-code-chip {
+  background: #191919;
+}
+
+.favorites-code-chip:hover {
+  background: #202020;
+}
+
+/* Paper's is white, full stop. The window it sits in is #F7F7FA at 66% over a
+   field reading around #F8F8FB through the middle, so white is the one value
+   left above it that is still a colour and not a tint — seven levels clear of
+   the glass, which is what the dropped hairline was worth. Anything cooler or
+   greyer here reads as the window with a patch missing rather than as a key
+   laid on it. */
+html[data-theme='light'] .favorites-code-chip {
+  background: #fcfcfc;
+}
+
+html[data-theme='light'] .favorites-code-chip:hover {
+  background: #F0F0F5;
+}
+
 /* ── Favorites page · the turn rail's marks ──────────────────────────────────
    Furniture at rest and the list's own white when pointed at, with the change
    carried past the two pixels it happens in by a glow. Named for the same
@@ -835,6 +960,124 @@ body {
    of it. */
 .favorites-script-scroll::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* ── Favorites page · the windows' clipped ends ──────────────────────────────
+   Both windows here hold more than they show and cut the rest off at their own
+   edges. A hard cut is the one thing a window like this says badly: a reply or
+   a line of code severed mid-stroke reads as a fault in the drawing rather
+   than as "there is more of this".
+
+   A mask, not a gradient laid over the ends. The studio can fade its stream
+   out to `--color-conversation-surface` because that stream is cut into a flat
+   panel; these two are glass over a moving light field, and any colour painted
+   over their ends is a slab of the wrong one — which is why the bands these
+   windows used to carry were taken out rather than retuned. A mask states no
+   colour at all. It takes the ink's own alpha down and lets through whatever
+   the window is standing on, in either palette and wherever the field happens
+   to be at the time.
+
+   Only the end that is actually cutting something off carries a fade. At rest
+   the first line stands on the top of the window's reading area and the last
+   on the foot of it, and a fade held there always would dim ink with nothing
+   beyond it. `data-clipped-top` / `data-clipped-bottom` are written onto the
+   scrollport by `useClippedEnds`, and the two depths are registered properties
+   so the change can be carried rather than snapped.
+
+   The foot inset is for a window whose box reaches past its own content: the
+   script's scrollport takes the panel's bottom padding as the band its
+   horizontal bar stands in, so a fade run to the box's edge would take the bar
+   with it. The foot fade ends where the content ends and the band below is
+   left alone — which is what the two stops at `--favorites-fade-foot-end` are
+   for, a hard step back to opaque across a line nothing else is painted on. */
+@property --favorites-fade-head {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --favorites-fade-foot {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.favorites-window-fade {
+  /* About a line and a half of either window's text: enough to read as ink
+     running out, short enough that what it takes is the line already leaving. */
+  --favorites-fade-depth: 28px;
+  --favorites-fade-foot-inset: 0px;
+  --favorites-fade-foot-end: calc(100% - var(--favorites-fade-foot-inset));
+  --favorites-fade-foot-start: calc(var(--favorites-fade-foot-end) - var(--favorites-fade-foot));
+  transition:
+    --favorites-fade-head 160ms ease,
+    --favorites-fade-foot 160ms ease;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--favorites-fade-head),
+    #000 var(--favorites-fade-foot-start),
+    transparent var(--favorites-fade-foot-end),
+    #000 var(--favorites-fade-foot-end),
+    #000 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--favorites-fade-head),
+    #000 var(--favorites-fade-foot-start),
+    transparent var(--favorites-fade-foot-end),
+    #000 var(--favorites-fade-foot-end),
+    #000 100%
+  );
+}
+
+.favorites-window-fade[data-clipped-top='true'] {
+  --favorites-fade-head: var(--favorites-fade-depth);
+}
+
+.favorites-window-fade[data-clipped-bottom='true'] {
+  --favorites-fade-foot: var(--favorites-fade-depth);
+}
+
+/* Except where the reading has frozen a 构思过程 band at the top. The band is
+   already the window's top edge there — an opaque line across the full measure
+   saying the same thing the fade says — and a fade over it would take the one
+   control that has to stay legible down with the text it is covering. Last of
+   the three, since it and the rule it overrides are the same weight. */
+.favorites-window-fade:has([data-stuck]) {
+  --favorites-fade-head: 0px;
+  /* Instant on the way in, carried on the way out. A band arriving at the top
+     is itself a step, and 160ms of head fading out under it is 160ms of a
+     control that has to stay legible being translucent. Leaving is the other
+     way round: the band goes and the ink beneath it has to start running out,
+     which is a fade and should be carried like one. */
+  transition-duration: 0s;
+}
+
+/* The script's foot band is its horizontal bar's, and the bar is furniture:
+   the fade stops on the last line of code instead. */
+.favorites-script-scroll {
+  --favorites-fade-foot-inset: var(--script-gutter);
+}
+
+/* The reading's bar, cut to the script's above: the same 6px rule in
+   --color-border, standing the same 6px off the window's border. The reading
+   reaches into the panel's right-hand padding to get there — 14px of the 20px
+   band, which leaves the bar its 6px — and the scrollport hands 8px back as
+   the gap the messages keep off it. A user's bubble ends on that 8px; the
+   assistant's text carries its own 8px of row padding and so keeps 16px, and
+   between them the reading's right-hand edge reads as one line rather than
+   as text run up against a rule.
+
+   Mounted on the box around the archive rather than on the scrollport itself,
+   because a negative margin has to be taken outside anything that clips. */
+.favorites-reading {
+  margin-right: -14px;
+}
+
+.favorites-reading .conversation-scroll {
+  padding-right: 8px;
 }
 
 /* The list of kept conversations, top right.
@@ -1303,6 +1546,32 @@ body {
   box-shadow: var(--shadow-history-overlay);
 }
 
+/* The history list's search line.
+ *
+ * The one line in that panel the reader writes rather than picks, and the only
+ * thing marking it as such is its own fill — nothing is drawn around it,
+ * because the rows under it carry no outline either until the pointer is on
+ * them, and a framed field over unframed rows reads as a control parked on the
+ * list rather than as its first line.
+ *
+ * A wash of light over the ground rather than a colour of its own, because the
+ * panel stands on two different grounds — the sidebar overlay's conversation
+ * surface and the top bar's page ground — and one flat value cannot be a step
+ * off both. The overlay is the same step off either, and turns with the theme:
+ * light laid on the dark room, ink laid on the paper one.
+ *
+ * One value, held through focus and through typing. The field has no state to
+ * report that is not already reported better elsewhere — the caret says it is
+ * being written in, and the list going short says what was written — so a fill
+ * that moved under either would be a second voice saying the same thing. */
+.history-search-field {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme='light'] .history-search-field {
+  background-color: rgba(39, 40, 52, 0.05);
+}
+
 .primary-nav-more-menu::after {
   position: absolute;
   z-index: 1;
@@ -1764,58 +2033,12 @@ body {
   overflow: hidden;
 }
 
-/* The archive owns the reading window only. Its blur bands are mounted by the
-   page above this element, where they can span the page without becoming fixed
-   viewport layers or being clipped by the scrollport.
-
-   A size container, because this is the one box that is the reading column's
-   full height — the window inside it overhangs, the scrollport inside that is
-   padded — so it is what a resting position expressed as a share of the column
-   has to be a share of. Size containment only: paint containment would clip
-   the window's 60px of horizontal overhang, which is the whole point of it. */
+/* The archive's own box: the full height of whatever window it is put in, and
+   nothing else. What decides where the reading's two ends are is that window's
+   padding, the same as it is for the script beside it. */
 .conversation-archive {
   position: relative;
   height: 100%;
-  container-type: size;
-}
-
-/* The window stands inside its column rather than filling it, which is what
-   leaves the bands room to overhang: a message reaches the window's end already
-   blurred to nothing, so the end itself — which does clip, it is a scrollport —
-   has nothing left to cut.
-
-   Where those two ends are is not this file's decision; the page hands them
-   down. */
-.conversation-scroll-shell--inset {
-  position: absolute;
-  right: calc(var(--spacing-conversation-fade-side-overscan) * -1);
-  left: calc(var(--spacing-conversation-fade-side-overscan) * -1);
-  top: var(--spacing-conversation-window-top);
-  bottom: var(--spacing-conversation-window-bottom);
-  height: auto;
-  isolation: auto;
-}
-
-/* The window is wider than its column by the same measure the bands are, and
-   the messages are pushed back in by exactly what it gained — so the reading
-   does not move, and what changes is only where the window's own edges are.
-   Which is the point: an edge outside the column is an edge the blur never has
-   to stop at. */
-.conversation-scroll-shell--inset > .conversation-scroll {
-  padding-right: calc(1rem + var(--spacing-conversation-fade-side-overscan));
-  /* The two resting positions arrive in the column's coordinates, and the
-     window's ends are not the column's — it reaches past them. Handing that
-     overhang back is what turns "rest here on the page" into padding measured
-     from a scrollport that starts somewhere else. */
-  padding-top: calc(
-    var(--spacing-conversation-content-top)
-      - var(--spacing-conversation-window-top)
-  );
-  padding-bottom: calc(
-    var(--spacing-conversation-content-bottom)
-      - var(--spacing-conversation-window-bottom)
-  );
-  padding-left: calc(1rem + var(--spacing-conversation-fade-side-overscan));
 }
 
 .conversation-scroll { container-type: size; overflow-anchor: none; }
@@ -1866,173 +2089,11 @@ body {
   .conversation-scroll.scrollbar-hidden { scrollbar-color: transparent transparent; }
 }
 
-/* ── A conversation with no surface: how its two ends stop ───────────────────
-   The studio's stream is cut into a panel, so it can fade its ends out to that
-   panel's colour and be done. This one stands on the WebGL light field with no
-   surface of its own, and the field is not one colour — sampled down the column
-   it runs from about rgb(13,15,16) at the top to rgb(27,30,32) at the foot, so
-   a scrim painted in any single value would be visibly the wrong one somewhere.
-
-   So the ends are blur alone, which needs to know nothing about what is behind
-   it. A message on its way out of the window goes soft until there is nothing
-   left to read, rather than being covered over by something.
-
-   ── The six-step ladder ────────────────────────────────────────────────────
-   What a reader sees as a fault line in the fade is one radius handing over to
-   another too far away to pass for the same image: the sharper copy stays
-   legible through the mix, so a word appears to hold and then break rather
-   than soften. The cure is a shorter stride, not a longer band.
-
-   So each end uses radii of 0.8, 1.8, 4, 9, 21 and 48px. Because a layer's
-   backdrop already contains the layers beneath it, those compound to a read of
-   roughly 0.8, 2, 4.5, 10, 23 and 53px — a little over doubling per rung,
-   where the four-step ladder it replaces quadrupled. Two rungs that close
-   together cross-fade as one image going soft rather than as two images.
-
-   Each mask fades its layer in over one rung and then holds it, so only one
-   layer is ever mid-transition and the ladder only accumulates; the release at
-   the far end is shared. Both ramps are stepped along a smoothstep rather than
-   run straight, which takes the corner off each ramp's two ends — a linear
-   ramp turns its alpha abruptly there, and the eye reads that turn as an edge.
-
-   ── Compositing stability ──────────────────────────────────────────────────
-   These captures used to be `position: fixed`. Rapid inner scrolling
-   made Chromium detach and rebuild those viewport-level backdrop surfaces,
-   producing a full-page flash. The page now owns them as stationary absolute
-   layers. Twelve filters are active, and their containing layer no longer
-   changes relationship to the scrolling archive. If that ever proves too many,
-   the ladder shortens from the bottom: drop `nth-child(1)`, restride the rest
-   from 24ths, and lower BLUR_LAYERS to match.
-
-   ── Losing the box ─────────────────────────────────────────────────────────
-   A backdrop-filter is clipped to its own element, and Chromium clamps its
-   samples at that boundary, so every edge of the band is a seam between blurred
-   page and unblurred page — a rectangle drawn in nothing but the difference.
-   The two pairs of edges have to lose it differently.
-
-   Along the top and bottom the band carries on past the reading window, by more
-   than its widest radius, out over open page. The outermost layer's mask has
-   already run out by then, so the box edge is never drawn at all, and what the
-   overhang covers is only the field, which blurs to itself.
-
-   Horizontally the bands span the page, so their box edges coincide with
-   the page edges rather than appearing inside the composition. A short mask
-   fade softens those two terminal edges.
-
-   After codepen.io/silas/pen/rNYqZoz. */
-.conversation-blur-fade {
-  position: absolute;
-  right: calc(var(--spacing-region) * -1);
-  left: auto;
-  z-index: 30;
-  width: 100vw;
-  height: calc(
-    var(--spacing-conversation-fade) + var(--spacing-conversation-fade-overscan)
-  );
-  pointer-events: none;
-}
-
-/* Placed against the *window's* end rather than the column's, with the inner
-   edge one ladder step past it — so the ladder is still at its widest radius
-   where the window stops, with a step of tolerance either side. The overhang
-   then carries on outwards over open page, where the mask has already run
-   out. */
-.conversation-blur-fade--top {
-  top: calc(
-    var(--spacing-conversation-window-top)
-      + var(--spacing-conversation-fade) / 4
-      - var(--spacing-conversation-fade-overscan)
-  );
-  --conversation-fade-direction: to top;
-  --conversation-fade-fallback: rgba(13, 15, 16, 0.55);
-}
-
-.conversation-blur-fade--bottom {
-  bottom: calc(
-    var(--spacing-conversation-window-bottom)
-      + var(--spacing-conversation-fade) / 4
-      - var(--spacing-conversation-fade-overscan)
-  );
-  --conversation-fade-direction: to bottom;
-  --conversation-fade-fallback: rgba(27, 30, 32, 0.55);
-}
-
-/* A cheap, always-painted base borrowed from the resilient single-layer
-   progressive-blur pattern. If Chromium misses a backdrop frame, this remains
-   in place instead of letting the whole band become suddenly transparent. */
-.conversation-blur-fade::before {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background: linear-gradient(
-    var(--conversation-fade-direction),
-    transparent,
-    var(--conversation-fade-fallback)
-  );
-  content: '';
-}
-
-/* Flat siblings, each one adding its radius on top of the stack below it and
-   then keeping it: a layer fades in over one step and stays, so at any height
-   only one of them is mid-transition and the ladder only ever accumulates.
-   The step, in ninety-sixths of the fade depth, is what every stop below is
-   counted in — five to a quarter ramp, twenty to a rung. */
-.conversation-blur-fade > span {
-  position: absolute;
-  inset: 0;
-  display: block;
-  --conversation-fade-step: calc(var(--spacing-conversation-fade) / 96);
-  -webkit-mask-image: var(--conversation-layer-mask);
-  mask-image: var(--conversation-layer-mask);
-}
-
-.conversation-blur-fade > span:nth-child(1) {
-  z-index: 1;
-  -webkit-backdrop-filter: blur(0.8px);
-  backdrop-filter: blur(0.8px);
-  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 0), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 5), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 10), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 15), #000 calc(var(--conversation-fade-step) * 20), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
-}
-
-.conversation-blur-fade > span:nth-child(2) {
-  z-index: 2;
-  -webkit-backdrop-filter: blur(1.8px);
-  backdrop-filter: blur(1.8px);
-  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 20), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 25), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 30), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 35), #000 calc(var(--conversation-fade-step) * 40), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
-}
-
-.conversation-blur-fade > span:nth-child(3) {
-  z-index: 3;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 40), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 45), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 50), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 55), #000 calc(var(--conversation-fade-step) * 60), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
-}
-
-.conversation-blur-fade > span:nth-child(4) {
-  z-index: 4;
-  -webkit-backdrop-filter: blur(9px);
-  backdrop-filter: blur(9px);
-  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 60), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 65), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 70), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 75), #000 calc(var(--conversation-fade-step) * 80), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
-}
-
-.conversation-blur-fade > span:nth-child(5) {
-  z-index: 5;
-  -webkit-backdrop-filter: blur(21px);
-  backdrop-filter: blur(21px);
-  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 80), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 85), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 90), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 95), #000 calc(var(--conversation-fade-step) * 100), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
-}
-
-.conversation-blur-fade > span:nth-child(6) {
-  z-index: 6;
-  -webkit-backdrop-filter: blur(48px);
-  backdrop-filter: blur(48px);
-  --conversation-layer-mask: linear-gradient(var(--conversation-fade-direction), transparent calc(var(--conversation-fade-step) * 100), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 105), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 110), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 115), #000 calc(var(--conversation-fade-step) * 120), rgb(0 0 0 / 0.844) calc(var(--conversation-fade-step) * 126), rgb(0 0 0 / 0.5) calc(var(--conversation-fade-step) * 132), rgb(0 0 0 / 0.156) calc(var(--conversation-fade-step) * 138), transparent calc(var(--conversation-fade-step) * 144));
-}
-
 /* ── Scrollbars that keep out of the way ─────────────────────────────────────
    A bar that is only there while you are in the region it belongs to. Used by
-   the Favorites windows, which stand on the page's light field with no panel
-   of their own — a permanent grey rule down the right of each of them would be
-   the loudest thing on either.
+   the Favorites windows, which are glass over a moving light field — a
+   permanent grey rule down the right of either of them would be the loudest
+   thing on it.
 
    The bar is made transparent rather than removed: the gutter it stands in is
    still reserved, so nothing reflows when it appears. These come after the
@@ -2211,7 +2272,7 @@ html[data-theme='light'] .qr-plate {
    average: this fallback is darker than the field it stands in for, because
    everything that would have lifted it lives in the shader. */
 html[data-theme='light'] .featured-space-background[data-variant='paper'] {
-  background: #D4D4D6;
+  background: #DEDEE0;
 }
 
 .featured-space-canvas {
@@ -2433,6 +2494,16 @@ html[data-theme='light'] .primary-nav-glass {
   background: #EBEBF0;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+/* A hover is read against whatever it is laid on, and the column is not the
+   page: the app's hover grey sits three levels under #EBEBF0, which on the
+   page is a step and on the column is nothing at all. The rows take a deeper
+   grey of the same cool ramp — twice the step off their own fill, still clear
+   of the selected row underneath them. Scoped to the lobes, which is every
+   part of the nav that answers a pointer. */
+html[data-theme='light'] .primary-nav-pod {
+  --color-surface-hover: #E3E3EA;
 }
 
 /* A lit ring only means something around a lit surface. With the fill flat,
@@ -2659,14 +2730,6 @@ html[data-theme='light'] .mobile-menu-item:active {
   background: var(--color-surface-selected);
 }
 
-html[data-theme='light'] .conversation-blur-fade--top {
-  --conversation-fade-fallback: rgba(228, 228, 235, 0.58);
-}
-
-html[data-theme='light'] .conversation-blur-fade--bottom {
-  --conversation-fade-fallback: rgba(247, 247, 250, 0.64);
-}
-
 /* The code bar under a reply is a readout of the take, not a piece of the
    room, so on the light theme it steps out of the page's tinted paper and
    holds neutral grey — each value at the lightness of the ground it replaces,
@@ -2679,6 +2742,15 @@ html[data-theme='light'] .conversation-code-bar {
   --color-auth-field: #E9E9E9;
   --color-surface-hover: #E6E6E8;
   --color-bg-primary: #E6E6E6;
+}
+
+/* The rollback key hangs off the corner of a user bubble — over the stream,
+   not over the page — so on paper the page's own #E3E3E5 read as a hole
+   punched in the conversation surface. It takes that surface instead. Scoped
+   by re-declaring the token on the button, the way the code bar above does,
+   so border, text and hover keep coming from the shared set. */
+html[data-theme='light'] .conversation-rollback-button {
+  --color-bg-primary: var(--color-conversation-surface);
 }
 
 html[data-theme='light'] canvas[id*="_widget__scope_"],
@@ -2744,8 +2816,8 @@ html[data-theme='light'] .featured-title-marker {
    against a moving light field, and the near-opaque 0.86 the bar carried made
    it a slab on a page the panels were windows into. Two thirds is the value
    that reads as glass from either side — the field still moves through it, and
-   what is set on it still holds. `.favorites-panel` below is the same object
-   and keeps the original window values for now; the long note is there. */
+   what is set on it still holds. The Favorites windows are the same object and
+   are cut from the same hook, so they take this fill with them. */
 html[data-theme='light'] .featured-panel,
 html[data-theme='light'] .featured-bar-glass {
   background: rgba(247, 247, 250, 0.66);
@@ -2864,85 +2936,25 @@ html[data-theme='light'] .conversation-turn-rail {
   --turn-tick-glow: 0 0 12px rgba(44, 45, 61, 0.20);
 }
 
-/* The script window. Still a window rather than a card — the frost is kept, so
-   the field's pools carry on showing through it and the panel stays cut into
-   the page instead of dropped on it — but what shows through now settles on
-   #F7F7FA, the studio's own reading surface, which is where a script belongs
-   in either building.
-
-   How much shows through is the whole point of the fill, and 0.88 was not
-   enough of it. The panel is a near-neutral near-white and the field under
-   this window runs up to fourteen levels of cool separation — the field is lit
-   with more colour at this end of the page than under the reading precisely
-   because the glass is here to eat it (see FeaturedWebglLightField). At 0.88
-   barely two of those survived the mix, and the window read as a flat plate
-   with the lit page stopping at its edge. At 0.35 nine come through, and the
-   pool moving under the glass — twelve levels of it across the window's own
-   width — is a light seen through a window rather than one inferred from its
-   edge.
-
-   Past the dark room's own 0.55, and the reason to stop short of it turned out
-   not to hold. The worry was legibility: dark text on a pale ground was
-   supposed to give up faster than pale text on a dark one. Measured, it barely
-   gives up at all — the script's contrast against its own fill runs 7.17 at
-   0.88 and 6.17 at 0.35, and would still be 5.57 with no fill whatsoever,
-   because the field this window stands on is light enough that letting more of
-   it through costs almost nothing. What does bind is the step at the window's
-   edge: see below, and mind that number rather than this one.
-
-   And it casts nothing. A shadow is what a thing standing above a page throws
-   onto it, and this is not standing above anything — it is an opening in the
-   page with the field showing through it. The first shadow here was wide and
-   far, which read as the panel having come loose; pulling it close made it a
-   card resting on the page instead, which is the same mistake at a smaller
-   radius. What holds the window is the step in value at its edge — eleven
-   levels from the field to the fill, on a page whose whole field spans under
-   thirty — and the drawn border sitting in that step. Nothing else is needed,
-   and anything else contradicts it.
-
-   That step is what the fill's opacity is really spending: twenty-one levels
-   at 0.65, sixteen at 0.50, eleven at 0.35. It is not the only thing holding the
-   edge, though, which is why the floor is lower than it first looks — the
-   border below carries the other half, and carries it in both directions.
-
-   And the border is the same white the dark room uses, at eight tenths where
-   that one uses one. Both are the same thing — a light caught on the edge of a
-   piece of glass, which is brighter than any surface in the room because it is
-   a highlight rather than a fill. What changes between the two rooms is only
-   how much of it is needed: on near-black a tenth of white already stands
-   clear, and on a page whose own ground is #F3F3F3 it takes eight tenths to
-   put the edge above everything around it.
-
-   Measured around the ring, that edge lands 12 levels above the fill inside it
-   and 19 above the field outside — bright against both, which is what makes it
-   read as catching light rather than as a drawn outline. It is also why the
-   fill can go as sheer as it does: with the edge doing this much, the panel's
-   own step down to the field is no longer the only thing saying where the
-   window is. Eight tenths was tried first and sat a level or two too proud of
-   the page; six tenths is the same edge with the glare taken off it.
-
-   Left flat, and deliberately. A directional version was built — the field's
-   key light sits up and to the right of this window, so the ring burned at the
-   top right and fell to a drawn line at the bottom left, on a gradient painted
-   through a masked pseudo-element because a border cannot hold one. It is the
-   more physical edge and it is not the one kept: a window this sheer is read
-   as a shape before it is read as a material, and a ring of even weight states
-   the shape without asking to be looked at. One value, all the way round.
-
-   Everything above is measured against the field as it was: #F3F3F3 with the
-   five sources drawn out of it as shade, running to about #D7D7E5 under this
-   window. That field is now lit the other way — added onto a lower ground
-   rather than subtracted from a high one — and reaches #F0F0F7 here, so the
-   numbers no longer land where this note puts them. The fill's eleven-level
-   step is two, and the ring's nineteen over the field is nine. What holds the
-   window now is its border, which is the half of the job this note already
-   said the border was carrying. Taken deliberately rather than bought back by
-   dimming the field; see the u_paper branch in FeaturedWebglLightField for the
-   other way out, which is to let this window go darker than the page rather
-   than brighter. */
-html[data-theme='light'] .favorites-panel {
-  border-color: rgba(255, 255, 255, 0.6);
-  background: rgba(247, 247, 250, 0.35);
+/* The two windows' edge, taken off the primary nav's.
+ *
+ * The Featured record's panels are edged with a rim of light — a gradient that
+ * enters bright at the near corner, thins across the face and is picked up
+ * again at the far one — which is how a pane of glass reads when the room is
+ * lit for it. This page is not that room. Its two windows stand in the nav's
+ * own column of paper, close enough to it that the eye reads the three edges
+ * together, and a lit rim beside a flat ink line reads as two different
+ * materials rather than one page.
+ *
+ * So the rim is dropped for the line the nav is drawn with: `--color-border`,
+ * flat, the same declaration `.primary-nav-edge` takes on paper. The masked
+ * ring stays — it is what lets the panel carry an edge at all while clipping
+ * its own scrolling body — only what fills it changes.
+ *
+ * Scoped to this page: the Featured record keeps its rim, where the panels are
+ * the only glass in the room and nothing flat stands next to them. */
+html[data-theme='light'] .favorites-immersive-surface .featured-panel::before {
+  background: var(--color-border);
 }
 
 /* The version menu is the one thing on this page that stands over the panel

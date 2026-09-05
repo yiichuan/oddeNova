@@ -1,5 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
+import { useClippedEnds } from '../../hooks/useClippedEnds';
 import { t } from '../../lib/i18n';
 import { takeLabel } from '../../lib/favorite-conversations';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
@@ -44,23 +45,23 @@ interface ArchivedConversationViewProps {
  * retaining completed messages and, folded under them, the one thought per
  * reply that actually composed it (see `arrangeReasoningIds` below).
  *
- * It also stands on no surface of its own. The studio's stream is cut into a
- * panel and can therefore fade its own top and bottom edges out to that panel's
- * colour, and park a sticky heading on it; here the messages sit straight on
- * the page's light field, so every one of those — the edge fades, the heading's
- * backing, the gradient under it — would be a slab of the wrong colour laid
- * over the field. They are left out rather than recoloured: nothing behind this
- * is a flat colour to match.
+ * The window it stands in is glass over a moving light field rather than a
+ * flat surface. The studio's stream is cut into a panel and can therefore fade
+ * its own top and bottom edges out to that panel's colour; here that fade
+ * would be a slab of the wrong colour laid over the field showing through. So
+ * the reading runs to the window's two ends and what happens there is a mask
+ * rather than a colour — the ink's own alpha taken down over the last stretch
+ * of an end that is cutting something off, the way the script beside it does
+ * it. `.favorites-window-fade` in index.css holds both. This component owns
+ * none of the measures: how far the reading stands off the window's edges is
+ * the window's own padding.
  *
- * The two ends still have to say that the stream runs past them, and they say
- * it with blur alone — no scrim, no fade of the content's own alpha, both of
- * which would be a statement about a colour this page does not have. A message
- * on its way out simply goes soft until there is nothing left to read.
- *
- * The masked blur bands (see `.conversation-blur-fade` in index.css) read the
- * page behind this stream rather than the stream alone. FavoritesPage mounts
- * them above this archive so they can span that page without becoming fixed
- * viewport layers.
+ * The one thing that did come across is the studio's frozen 构思过程 header,
+ * and it came across because the alternative was worse: a thought long enough
+ * to scroll was a thought whose control had scrolled away, so there was no way
+ * to shut it without first finding it again. Its band is the one place a flat
+ * colour can be stated on this glass — see `.favorites-reasoning-sticky` in
+ * index.css for why the value is not the studio's.
  */
 
 export default function ArchivedConversationView({
@@ -135,6 +136,17 @@ export default function ArchivedConversationView({
      where it was and jump. */
   const ownScrollRef = useRef<HTMLDivElement>(null);
   const scrollRef = externalScrollRef ?? ownScrollRef;
+  /* What the pin answers to is the stream's own shape, not the array carrying
+     it. `messages` is derived above this component, and a page that rebuilds
+     the same conversation into a new array — because the object it was read
+     out of was rebuilt, because anything at all re-rendered — hands this an
+     arrival that never happened. Keyed on the array, the effect would take the
+     reading back to its end in the middle of someone reading it, which is
+     exactly what it feels like: scroll up, and the window pulls you back down.
+
+     Length and last id, because that is what changes when there is genuinely
+     something new to be at the end of. */
+  const streamShape = `${visibleMessages.length}:${visibleMessages.at(-1)?.id ?? ''}`;
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller || !active) return;
@@ -144,7 +156,80 @@ export default function ArchivedConversationView({
        across its lifetime. A caller that made a new one each render would
        send the reading back to its end on every render, which is exactly
        what the dependency is there to say. */
-  }, [visibleMessages, active, scrollRef]);
+  }, [streamShape, active, scrollRef]);
+
+  /* Which thoughts' headers are frozen at the top of the reading right now.
+     The band a frozen header is drawn on is a flat colour standing in for
+     glass — see `.favorites-reasoning-sticky` in index.css — and it is only
+     that colour in the one place the header ever freezes. Painted while the
+     header is still standing in the stream it is a rectangle laid on the
+     window, a few levels off whatever the field resolves to down there and
+     wide enough to be read as a shape. So the fill is asked for by position,
+     not by existence.
+
+     Two markers per thought answer it: one on the line the header freezes at
+     and one at the end of what it holds. Once the first has passed out above
+     the header is pinned; once the second has, the whole row is gone and the
+     header went up with it. Frozen is the state between the two — which is
+     what it has to mean, since the window's top fade steps aside for a frozen
+     band and would otherwise stay away long after the band had left.
+
+     An observer rather than a scroll handler: the answer changes twice per
+     thought, not once per frame. */
+  const [stuckReasoningIds, setStuckReasoningIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const reasoningShape = visibleMessages
+    .filter((message) => message.role === 'progress')
+    .map((message) => message.id)
+    .join(',');
+  const passedAboveRef = useRef(new Map<string, { head: boolean; foot: boolean }>());
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || typeof IntersectionObserver === 'undefined') return undefined;
+    const passed = passedAboveRef.current;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const mark = entry.target as HTMLElement;
+        const head = mark.dataset.reasoningMark;
+        const id = head ?? mark.dataset.reasoningMarkEnd;
+        if (!id) continue;
+        /* A page that is hidden rather than unmounted — which is what leaving
+           this one does — reports every rect as zero, and a zero marker reads
+           as one that has gone out the top. Nothing is on screen to be wrong
+           about, so the answer stands until the page is laid out again. */
+        const bounds = entry.rootBounds;
+        if (!bounds || bounds.height === 0) continue;
+        const above = !entry.isIntersecting && entry.boundingClientRect.top <= bounds.top;
+        const state = passed.get(id) ?? { head: false, foot: false };
+        passed.set(id, head ? { ...state, head: above } : { ...state, foot: above });
+      }
+      setStuckReasoningIds((current) => {
+        const next = new Set<string>();
+        for (const [id, state] of passed) if (state.head && !state.foot) next.add(id);
+        // Rebuilt rather than diffed, so a thought that has left the stream
+        // leaves the set with it — and handed back unchanged when it says the
+        // same thing, so a scroll that crosses nothing costs no render.
+        const same = next.size === current.size && [...next].every((id) => current.has(id));
+        return same ? current : next;
+      });
+    }, { root: scroller });
+    scroller
+      .querySelectorAll('[data-reasoning-mark], [data-reasoning-mark-end]')
+      .forEach((mark) => observer.observe(mark));
+    return () => {
+      observer.disconnect();
+      passed.clear();
+    };
+    /* `reasoningShape` is what the markers are: the effect re-reads them when
+       the stream's thoughts change, and not when anything else does. */
+  }, [reasoningShape, scrollRef]);
+
+  /* Which of the reading's two ends is cutting something off, for the fade
+     that says so — see `.favorites-window-fade` in index.css. Below the pin
+     above, so a reading that has just been sent to its end is measured where
+     it landed rather than where it was. */
+  useClippedEnds(scrollRef);
 
   const toggleReasoning = (id: string) => {
     setExpandedReasoning((current) => {
@@ -153,34 +238,49 @@ export default function ArchivedConversationView({
       else next.add(id);
       return next;
     });
+    /* Collapsing a thought read from deep inside it takes thousands of pixels
+       out of the stream under a header that was frozen at the top of the
+       window. What the browser does with the scroll offset then is clamp it to
+       whatever is left, which can leave the header — the thing just pressed —
+       somewhere off screen. `block: 'nearest'` puts it back, and is a no-op in
+       the case that matters more: opening a thought grows the stream *below*
+       the header, the header is already in view, and the reading must not
+       move. See the archive's own test, which holds the scrollport to zero
+       writes across an expand. */
+    requestAnimationFrame(() => {
+      scrollRef.current
+        ?.querySelector(`[data-reasoning-header="${CSS.escape(id)}"]`)
+        ?.scrollIntoView({ block: 'nearest' });
+    });
   };
 
   return (
-    // The scroll window stays local to the archive. Its full-width blur bands
-    // are mounted by FavoritesPage in a stable absolute layer above it.
+    // The scroll window stays local to the archive: it fills the window it is
+    // given and holds nothing back from either end.
     <div className="conversation-archive">
-      <div className="conversation-scroll-shell conversation-scroll-shell--inset">
-      {/* The padding is inside the scrollport rather than around it, so it is
-          the *content* that is held clear of the two bands and not the window:
-          at rest the first message and the last reply stand past where the blur
-          begins, and scrolling still carries them out through it. One band's
-          depth exactly, read from the same token, so the two cannot drift apart.
-          The horizontal padding is in index.css instead: it has to answer to
-          how far the window overhangs its column, which is decided there.
+      <div className="conversation-scroll-shell">
+      {/* No padding of its own at either end. The first message stands on the
+          top of the window's reading area and the last reply on the foot of
+          it, which is where the script beside it starts and stops too — and
+          neither is faded while it is standing there, since a fade is what an
+          end says when it is holding something back.
 
-          The scrollbar remains transparent while its gutter stays reserved,
-          so scrolling still works and the message column does not shift. */}
+          The bar stands rather than hides. This reading is held in a window
+          with edges now, the same as the script beside it, and a window that
+          clips what it is holding has to say how much more of it there is —
+          the two say it the same way. Its gutter is reserved whether or not
+          there is anything to scroll, so the message column never shifts.
+          Where the bar stands is `.favorites-reading` in index.css.
+
+          The arrival is not here either: it is on the window that holds this,
+          so the glass and the reading in it come up as one thing. */}
       <div
         ref={scrollRef}
-        // `featured-content-in` rides here rather than on anything above the
-        // shell: it animates opacity and fills, and an ancestor that does that
-        // is where the bands below stop being able to see the page behind this
-        // stream. A sibling of theirs can carry it safely.
-        className="conversation-scroll scrollbar-hidden featured-content-in isolate h-full overflow-y-auto py-[var(--spacing-conversation-fade)] space-y-[40px] relative"
+        className="conversation-scroll favorites-window-fade isolate h-full overflow-y-auto space-y-[40px] relative"
         style={{ scrollbarGutter: 'stable' }}
       >
         {visibleMessages.map((message, index) => {
-          /* The two ends of the reading stand on the code window's two edges,
+          /* The two ends of the reading stand on the window's own two edges,
              and what has to land on them is the ink, not the box around it.
              Every row here carries a little padding of its own that is
              invisible in the middle of a stream and is a gap at its ends, so
@@ -195,17 +295,58 @@ export default function ArchivedConversationView({
               <div
                 key={message.id}
                 data-archive-process={message.id}
-                className="flex justify-start animate-fade-in"
+                /* `relative z-20` puts the whole block above the messages that
+                   follow it in the stream. Without it the header's own z-10 is
+                   scoped to this row and cannot outrank a later sibling, so a
+                   frozen header would be painted over by the reply scrolling
+                   up under it — which looks like the text passing through. */
+                className="relative z-20 flex justify-start animate-fade-in"
                 style={isLast
                   ? undefined
                   : { marginBlockEnd: 'var(--spacing-action-divider-to-body)' }}
               >
                 <div className="w-full px-2">
+                  {/* The line the header freezes at, kept as a thing of its
+                      own so an observer can watch it: the header itself stops
+                      moving once it is pinned and can no longer say where it
+                      would have been. A pixel tall and taken straight back
+                      out again, so the reading is laid out as though it were
+                      not here. */}
+                  <div
+                    data-reasoning-mark={message.id}
+                    aria-hidden="true"
+                    className="h-px -mb-px"
+                  />
                   <button
                     type="button"
                     data-reasoning-header={message.id}
                     onClick={() => toggleReasoning(message.id)}
-                    className={`flex w-full items-center gap-1.5 pb-0.5 text-sm text-text-secondary/60 transition-colors hover:text-text-secondary ${
+                    data-expanded={expanded || undefined}
+                    data-stuck={stuckReasoningIds.has(message.id) || undefined}
+                    /* Frozen at the top of the window once it would otherwise
+                       have scrolled out above it, the way the studio's is, so
+                       a thought long enough to need scrolling can still be
+                       shut from anywhere inside it. Before this the only way
+                       back to the control was to scroll all the way up to
+                       where it had gone.
+
+                       `-mx-2` and the matching width take the band out to the
+                       stream's full measure and `px-2` puts the label back
+                       where it was: what freezes has to cover the whole line
+                       under it, and the row's own padding would leave two
+                       strips of reasoning showing either side.
+
+                       What it is filled with is `.favorites-reasoning-sticky`
+                       in index.css — not the studio's `bg-conversation-surface`,
+                       which is that stream's flat panel and would be a slab of
+                       the wrong colour here; this window is glass over a
+                       moving field, so the band is the colour that glass
+                       actually resolves to at the one place the band ever
+                       appears, and `data-stuck` is what says the header is in
+                       that place. Standing in the stream it carries no fill:
+                       there the same value is a rectangle drawn on the glass,
+                       which is the one thing the band must never look like. */
+                    className={`favorites-reasoning-sticky sticky top-0 z-10 -mx-2 flex w-[calc(100%+1rem)] items-center gap-1.5 px-2 pb-0.5 text-sm text-text-secondary/60 transition-colors hover:text-text-secondary ${
                       isFirst ? 'pt-0' : 'pt-0.5'
                     }`}
                   >
@@ -220,6 +361,14 @@ export default function ArchivedConversationView({
                       <MarkdownText content={message.content} tone="muted" />
                     </div>
                   )}
+                  {/* The far end of what the header holds. A sticky header
+                      lets go when its own row runs out, and this is where
+                      that is. */}
+                  <div
+                    data-reasoning-mark-end={message.id}
+                    aria-hidden="true"
+                    className="h-px -mt-px"
+                  />
                 </div>
               </div>
             );
@@ -255,33 +404,41 @@ export default function ArchivedConversationView({
               } ${isLast ? 'pb-0' : 'pb-2'}`}>
                 <MarkdownText content={message.content} />
                 {message.code && (
-                  /* The widget that points at a take is made of the same two
-                     materials as the window that shows it — the Featured
-                     detail's glass fill and its tenth-of-white edge — so a
-                     take reads as the same object named here and opened
-                     there. No backdrop blur to go with the fill, unlike the
-                     window: the scrollport above is `isolate`, which is a
-                     backdrop root, so a filter in here would have nothing
-                     behind it to sample and would cost a compositing layer
-                     per turn to say so. The fill alone does the work, because
-                     the field it stands on is already soft.
+                  /* The widget that points at a take used to be cut from the
+                     window that shows it — the Featured detail's glass fill
+                     and its tenth-of-white edge — so that a take read as the
+                     same object named here and opened there. Which was true
+                     of the object and wrong about the thing: this is a control
+                     inside the reading, not a second window laid on it, and a
+                     translucent fill needing a drawn edge to be found at all
+                     is a surface that has not decided whether it is there.
 
-                     Hover is the fill and nothing else: the glass lightens,
-                     while the edge and the orange hold still. One thing moving
-                     is enough to say the widget is live, and it is the one
-                     thing that can move without the widget looking like it
-                     changed state — a brighter rule or a hotter orange both
-                     read as selection, which this already has its own
-                     meaning for. The lit value is the opaque grey the widget
-                     used to hover to, kept at the same alpha as its rest so
-                     the material never changes, only its light. */
+                     So the edge goes and the fill does the whole job: one flat
+                     colour, stated against the glass rather than borrowed from
+                     it, far enough off the window to be found by its own shape.
+                     Both palettes are in index.css under `.favorites-code-chip`
+                     — near-white on paper, a mid grey in the dark room, each
+                     the value that reads as a key raised off the window it sits
+                     in. No backdrop blur either way: the scrollport above is
+                     `isolate`, which is a backdrop root, so a filter in here
+                     would have nothing behind it to sample and would cost a
+                     compositing layer per turn to say so.
+
+                     Hover is that fill and nothing else — the orange holds
+                     still. One thing moving is enough to say the widget is
+                     live, and it is the one thing that can move without the
+                     widget looking like it changed state, which the page
+                     already has its own meaning for. Which direction it moves
+                     is the room's: the dark room lights its controls to answer
+                     the pointer and paper shades them, the same way the
+                     Featured transport's play button is drawn. */
                   <div className="mt-4 -ml-1 flex gap-0.5 animate-fade-in">
                     <button
                       type="button"
                       data-favorites-chip={message.id}
                       aria-pressed={selectedCodeMessageId === message.id}
                       onClick={() => onSelectCode(message.id)}
-                      className="flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none border border-border bg-conversation-surface/55 px-2 py-1.5 text-left text-[11px] text-brand-accent transition-colors hover:bg-surface-hover/55"
+                      className="favorites-code-chip flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none px-2 py-1.5 text-left text-[11px] text-brand-accent transition-colors"
                     >
                       <span>{numberTakes ? takeLabel(codeVersion) : t('favoritesCodeTitle')}</span>
                       <span aria-hidden="true">·</span>
@@ -299,7 +456,7 @@ export default function ArchivedConversationView({
                       // chip beside it is as tall as its own line, and two
                       // edges that stop at different heights would read as a
                       // misprint now that both are drawn.
-                      className="grid w-7 self-stretch place-items-center rounded-l-none rounded-r-md border border-border bg-conversation-surface/55 text-brand-accent transition-colors hover:bg-surface-hover/55"
+                      className="favorites-code-chip grid w-7 self-stretch place-items-center rounded-l-none rounded-r-md text-brand-accent transition-colors"
                     >
                       {isPlaying ? <StopIcon size={12} /> : <PlayIcon size={13} />}
                     </button>

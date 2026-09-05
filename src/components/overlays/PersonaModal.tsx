@@ -97,7 +97,7 @@ export default function PersonaModal({ onClose }: PersonaModalProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="bg-bg-secondary border border-border rounded-2xl p-6 w-[460px] max-w-[92vw] max-h-[88vh] overflow-y-auto shadow-2xl"
+        className="bg-bg-secondary border border-border rounded-2xl p-6 w-[460px] max-w-[92vw] max-h-[88vh] overflow-y-auto shadow-dialog-overlay"
       >
         {view.kind === 'list' ? (
           <>

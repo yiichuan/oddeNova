@@ -5,6 +5,7 @@ import {
   ANIMATION_SOURCES,
   DEFAULT_ANIMATION,
   DEFAULT_STUDIO_ANIMATION_VISIBLE,
+  DEFAULT_THEME_PREFERENCE,
   getAnimationPreference,
   getAnimationSource,
   getAvailableAnimations,
@@ -30,7 +31,7 @@ describe('appearance preferences', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('falls back to the defaults when nothing is stored', () => {
-    expect(getThemePreference()).toBe('system');
+    expect(getThemePreference()).toBe(DEFAULT_THEME_PREFERENCE);
     expect(getAnimationPreference()).toBe(DEFAULT_ANIMATION);
   });
 
@@ -38,7 +39,7 @@ describe('appearance preferences', () => {
     localStorage.setItem('vibe_theme', 'solarized');
     localStorage.setItem('vibe_animation', 'nebula');
 
-    expect(getThemePreference()).toBe('system');
+    expect(getThemePreference()).toBe(DEFAULT_THEME_PREFERENCE);
     expect(getAnimationPreference()).toBe(DEFAULT_ANIMATION);
   });
 

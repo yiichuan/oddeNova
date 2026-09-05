@@ -48,6 +48,12 @@ interface PrimaryNavProps {
    * such second view, so it holds the split for as long as it is up.
    */
   featuredPieceOpen?: boolean;
+  /**
+   * The two letters the account button wears once someone is signed in — a
+   * filled accent disc standing in for a face. Null while signed out, where
+   * the outline figure is the honest mark for nobody in particular.
+   */
+  accountInitials?: string | null;
 }
 
 /**
@@ -419,6 +425,26 @@ function MoreMenu({
   );
 }
 
+/* A full-width script — CJK, kana — comes through as the single character of a
+   family name, and one glyph set at the size two Latin letters want would sit
+   lost in the disc. Latin, digits, and the accented and Cyrillic ranges that
+   set at Latin width all sit below U+0500. */
+const WIDE_INITIALS = /[^\u0020-\u04FF]/;
+
+/** The signed-in face of the account row: initials cut out of a grey disc. */
+function AccountAvatar({ initials }: { initials: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex size-[26px] items-center justify-center rounded-full bg-avatar-fill font-semibold leading-none tracking-[0.01em] text-avatar-text ${
+        WIDE_INITIALS.test(initials) ? 'text-[13px]' : 'text-[11px]'
+      }`}
+    >
+      {initials}
+    </span>
+  );
+}
+
 function NavGroup({
   items,
   selectedItem,
@@ -426,6 +452,7 @@ function NavGroup({
   testId,
   expanded,
   pod,
+  accountInitials,
   renderMore,
   getTooltipTriggerProps,
   hideTooltip,
@@ -471,6 +498,9 @@ function NavGroup({
 
         const reveal = revealState(id);
         const selected = selectedItem === id;
+        /* The signed-in avatar is already a filled disc; a hover plate behind it
+           reads as a second, competing shape, so that row hovers on colour alone. */
+        const wearsAvatar = id === 'account' && Boolean(accountInitials);
         const label = t(labelKey);
         /* The pod's face icon is its own hover target; a tooltip on top of the
            unfolding it triggers is noise. */
@@ -496,12 +526,14 @@ function NavGroup({
             } ${
               selected
                 ? 'bg-surface-selected text-text-primary'
-                : 'text-icon-idle hover:bg-surface-hover hover:text-text-secondary'
+                : `text-icon-idle hover:text-text-secondary ${wearsAvatar ? '' : 'hover:bg-surface-hover'}`
             }`}
             style={{ transitionDelay: reveal && pod?.fadeDelayMs ? `${pod.fadeDelayMs}ms` : undefined }}
           >
             <span className="flex size-10 shrink-0 items-center justify-center">
-              <Icon size={21} strokeWidth={1.6} aria-hidden="true" />
+              {id === 'account' && accountInitials
+                ? <AccountAvatar initials={accountInitials} />
+                : <Icon size={21} strokeWidth={1.6} aria-hidden="true" />}
             </span>
             <span
               aria-hidden={!expanded}
@@ -524,6 +556,7 @@ export default function PrimaryNav({
   selectedItem,
   onSelect,
   featuredPieceOpen = false,
+  accountInitials = null,
 }: PrimaryNavProps) {
   const [navExpanded, setNavExpanded] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -985,6 +1018,7 @@ export default function PrimaryNav({
                 testId="primary-nav-bottom"
                 expanded={expanded}
                 pod={lobeGroup(bottomOpen, 'account')}
+                accountInitials={accountInitials}
                 getTooltipTriggerProps={getTooltipTriggerProps}
                 hideTooltip={hideTooltip}
                 renderMore={() => (

@@ -5,6 +5,7 @@ import {
   onAuthStateChange,
   type AuthUser,
 } from '../services/auth-service';
+import { displayNameFromMetadata } from '../lib/account-identity';
 import {
   consumeGoogleOAuthReturn,
   type GoogleOAuthErrorKey,
@@ -45,7 +46,13 @@ export function useAuth(): UseAuthState {
 
     const unsubscribe = onAuthStateChange((event, session) => {
       setState((current) => ({
-        user: session?.user ? { id: session.user.id, email: session.user.email ?? null } : null,
+        user: session?.user
+          ? {
+            id: session.user.id,
+            email: session.user.email ?? null,
+            name: displayNameFromMetadata(session.user.user_metadata),
+          }
+          : null,
         configured: isAuthConfigured(),
         loading: false,
         recoveringPassword: event === 'PASSWORD_RECOVERY',

@@ -494,6 +494,10 @@ describe('CodePanel editor focus reporting', () => {
 
   it('drops the visualizer toggle when the studio animation is switched off', () => {
     installMatchMedia(false);
+    // The particle galaxy exists only under the dark palette — the light half
+    // clamps a stored `galaxy` back to the ASCII field — so the theme has to be
+    // asked for here rather than left to whatever the default happens to be.
+    localStorage.setItem('vibe_theme', 'dark');
     localStorage.setItem('vibe_animation', 'galaxy');
     const { container, root } = renderCodePanel({ vizEnabled: false, vizCollapsed: true });
     roots.push(root);
@@ -521,6 +525,7 @@ describe('CodePanel editor focus reporting', () => {
 
   it('runs the particle layer only while the visualizer is collapsed', () => {
     installMatchMedia(false);
+    localStorage.setItem('vibe_theme', 'dark'); // the galaxy is a dark-palette animation
     localStorage.setItem('vibe_animation', 'galaxy');
     const { container, root, rerender } = renderCodePanel();
     roots.push(root);
@@ -541,6 +546,7 @@ describe('CodePanel editor focus reporting', () => {
 
   it('leaves the bar clear when the collapsed pane is the ASCII animation', () => {
     installMatchMedia(false);
+    localStorage.setItem('vibe_theme', 'dark'); // so that picking `galaxy` below is available at all
     localStorage.setItem('vibe_animation', 'galaxy-ascii');
     const { container, root } = renderCodePanel({ vizCollapsed: true });
     roots.push(root);

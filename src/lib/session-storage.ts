@@ -288,6 +288,46 @@ export async function putSession(
   }
 }
 
+/**
+ * One session by id, as this device last held it. The cloud library reads it
+ * before going to the network so a conversation this device has already seen
+ * opens on what it has rather than on a round trip.
+ */
+export async function getSession(
+  id: string,
+  ownerKey = GUEST_OWNER_KEY,
+): Promise<Session | null> {
+  await openDB();
+  if (memoryFallback || !db) return null;
+  try {
+    const stored = await db.get(SESSION_STORE_NAME, [ownerKey, id]) as StoredSession | undefined;
+    return stored ? normalizeSession(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function readSetting(key: string): Promise<string | null> {
+  await openDB();
+  if (memoryFallback || !db) return null;
+  try {
+    const setting = await db.get(SETTINGS_STORE_NAME, key) as StoredSetting | undefined;
+    return setting?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeSetting(key: string, value: string): Promise<void> {
+  await openDB();
+  if (memoryFallback || !db) return;
+  try {
+    await db.put(SETTINGS_STORE_NAME, { key, value } satisfies StoredSetting);
+  } catch (err) {
+    console.warn('[session-storage] writeSetting failed', err);
+  }
+}
+
 export async function getCurrentSessionId(
   ownerKey = GUEST_OWNER_KEY,
 ): Promise<string | null> {

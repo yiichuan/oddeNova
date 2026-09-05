@@ -73,7 +73,7 @@ describe('settings workspace', () => {
     const options = radios(container, t('theme'));
     expect(options).toHaveLength(3);
     expect(options.every((option) => option.querySelector('svg[role="presentation"]'))).toBe(true);
-    expect(options[0].getAttribute('aria-checked')).toBe('true'); // system, the default
+    expect(options[2].getAttribute('aria-checked')).toBe('true'); // light, the default
     expect(options[2].disabled).toBe(false);
     expect(options[2].textContent).not.toContain(t('comingSoon'));
   });

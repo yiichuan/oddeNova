@@ -18,7 +18,12 @@ export interface SessionCloudSync {
     sessionId: string,
     deleteLocal?: () => Promise<void>,
   ) => Promise<void>;
-  acceptCloudSession: (session: Session) => void;
+  /**
+   * Take a cloud read as the synced truth for one session. Refused — `false`,
+   * with nothing changed — while the working copy holds writes the cloud has
+   * not got yet: a background revalidation must never overwrite those.
+   */
+  acceptCloudSession: (session: Session) => boolean;
   hydrate: (
     sessions: Session[],
     pendingSyncIds: Set<string>,
@@ -459,8 +464,8 @@ export function createSessionCloudSync(options: {
     }
   };
 
-  const acceptCloudSession = (session: Session): void => {
-    if (disposed) return;
+  const acceptCloudSession = (session: Session): boolean => {
+    if (disposed) return false;
     const existing = records.get(session.id);
     if (existing && (
       existing.saveRequested
@@ -469,7 +474,10 @@ export function createSessionCloudSync(options: {
       || existing.status === 'offline'
       || existing.status === 'retrying'
     )) {
-      throw new Error('Cannot accept cloud session while local changes are pending');
+      /* The working copy is ahead of the cloud and on its way up. Refusing is
+         the whole answer: the caller keeps what it has, the pending save still
+         stands, and the next read after it lands will agree with both. */
+      return false;
     }
     if (existing) {
       clearRecordTimer(existing, 'debounceTimer');
@@ -487,6 +495,7 @@ export function createSessionCloudSync(options: {
     };
     records.set(session.id, record);
     onStatus(session.id, 'synced');
+    return true;
   };
 
   const notifyOnline = (): void => {

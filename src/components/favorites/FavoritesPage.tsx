@@ -21,46 +21,52 @@ import {
   TrashIcon,
 } from '../icons';
 import { useResolvedTheme } from '../../hooks/useAppearance';
+import { useClippedEnds } from '../../hooks/useClippedEnds';
 import ControlHoverLabel from '../studio/ControlHoverLabel';
 import { anchorAbove, type ControlHoverLabelAnchor } from '../studio/control-hover-anchor';
 import ArchivedConversationView from '../conversation/ArchivedConversationView';
-import ConversationBlurBands from '../conversation/ConversationBlurBands';
 import ConversationTurnRail from '../conversation/ConversationTurnRail';
 import FeaturedWebglLightField from '../featured/FeaturedWebglLightField';
 import FavoritesList, { LIST_COLUMN } from './FavoritesList';
 import { NAV_COLLAPSED_WIDTH } from '../nav/PrimaryNav';
 
-/**
- * The reading's own inset: the window's 60px of horizontal overhang handed
- * straight back as padding leaves 1rem, and the message row adds its own half
- * of that before the first character.
- */
-const READING_INSET = '1.5rem';
+/** The page's own edge: where the heading starts and where the list stops. */
+const PAGE_SIDE_INSET = '1rem';
 
 /**
- * What the left has to step back by that the right does not, because the two
- * are not counted from the same place. This page begins where the primary
- * nav's column ends, and on a page whose nav is always in lobes that column is
- * still holding 60px of the page's left edge plus the app's region inset — 70px
- * the right edge has nothing to answer — and then the reading insets itself
- * again. Take both off the left and the conversation's first character stands
- * as far from the page's left edge as the code window's edge does from its
- * right.
+ * How far the reading's left edge stands off the page's left edge — and so how
+ * wide the reading is, since its other three edges are all spoken for: the
+ * script's measure and the gutter fix its right, the band fixes both of its
+ * horizontals. This line and the reading's width are one fact said from
+ * opposite ends of the page. Move it in and the reading grows; move it out and
+ * the reading hands the width back.
+ *
+ * Not the page's own edge, which the heading above keeps. A reading taken all
+ * the way out to it is as wide as the display, and a line that long is one the
+ * eye loses its place in on the way back to the next. This stands the reading
+ * off far enough to keep a margin of its own — a page it does not have to
+ * fill — while still leaving it the wider half of the spread by half again.
+ *
+ * Exported so the page's own test can say the row stands on this line without
+ * pinning the number to whatever it happens to be tuned to.
+ */
+export const READING_LEFT_INSET = '7rem';
+
+/**
+ * The primary nav's column, counted from the viewport's left edge: this page
+ * begins where it ends.
  */
 const NAV_COLUMN = `${NAV_COLLAPSED_WIDTH}px + var(--spacing-region)`;
-const GALLERY_LEFT_STEP_BACK = `calc(${NAV_COLUMN} + ${READING_INSET})`;
 
 /**
- * The same step back without the reading's own inset: purely what the primary
- * nav's column holds of the window's left edge, which is how far this page's
- * left edge stands inside the window's.
+ * The same column taken off the page's right edge, which makes a box whose
+ * middle is the window's middle rather than this page's.
  *
- * Taken off the right, it makes a box whose middle is the window's middle. What
- * needs one is anything standing alone on this page — a reading with no script
- * beside it, the line an empty page shows — because a lone thing centred in the
- * strip the page was handed reads as a thing pushed to the right. The spread
- * below never needs it: it is built from two verticals instead, and lands on
- * the same centre by a longer road.
+ * What needs one is anything standing alone here — a reading with no script
+ * beside it, the line an empty page shows — because a lone thing centred in
+ * the strip the page was handed reads as a thing pushed to the right. The
+ * spread below never needs it: it is set against its own two verticals and
+ * makes no claim to the middle of anything.
  *
  * Written out flat rather than as a calc inside a calc. Nesting is valid CSS
  * and the browser resolves it, but it makes the value a different string for
@@ -83,151 +89,115 @@ const PAGE_LEFT_INSET = `calc(${NAV_COLUMN})`;
 const RAIL_CENTER = `calc(${NAV_COLLAPSED_WIDTH / -2}px - var(--spacing-region))`;
 
 /**
- * The air between the two windows.
- *
- * Half again the 2rem the page keeps between any two things standing side by
- * side: these two are one spread rather than two neighbours, and the extra is
- * what says so — but only just, because a spread is read across.
- *
- * A knob for how far apart the two windows stand, and for nothing else — what
- * it gives up goes to the margins below rather than into the windows.
+ * The air between the two windows, taken from the Featured detail's own pair:
+ * the same two kinds of window held apart by the same measure, so a reader
+ * crossing between the pages meets one spread rather than two.
  */
-const GALLERY_GUTTER = '3rem';
+const GALLERY_GUTTER = '1.5rem';
 
 /**
- * The gutter that leaves the two windows exactly the width the page's own two
- * verticals gave them, before any of this was tuned: 2rem of air plus the whole
- * of the left's step back. Not what the gutter is — what it is measured
- * against.
+ * The two verticals the spread stands on.
+ *
+ * The right is the list's column and nothing added to it, so the code window
+ * comes as far right as anything on this page can — up to the gutter the list
+ * keeps, and no further, since past that it would be running under the
+ * entries. What used to stand between the two was a margin whose whole job was
+ * to keep the pair centred on the window, and the pair is no longer centred on
+ * anything.
+ *
+ * The left is the reading's own vertical rather than the page's: what it is
+ * measuring is a width, not an edge, so it answers to the line above and not
+ * to where the heading starts.
  */
-const WIDTH_HOLDING_GUTTER = `calc(2rem + ${GALLERY_LEFT_STEP_BACK})`;
+const GALLERY_INSET_LEFT = READING_LEFT_INSET;
+const GALLERY_INSET_RIGHT = LIST_COLUMN;
 
 /**
- * Half of whatever the gutter gives up against that, handed to each margin.
+ * How wide the script's window is.
  *
- * Which is what keeps the windows' width out of the gutter's hands. The pair is
- * held between two margins and one gutter; narrow the gutter with the margins
- * pinned and the two columns take the whole difference and grow. Give it to the
- * margins instead — half each, so the spread stays centred on the page — and
- * the two windows keep their width whatever the middle is set to.
+ * A measure rather than a share, and a fixed one: a script's lines are as long
+ * as they were written, and a window that grows with the display past that is
+ * only holding air. So the script keeps this while the page is wide enough to
+ * hold two windows of it — see the pair's share below for what happens when it
+ * is not.
  */
-const GUTTER_GIVEN_BACK = `calc((${WIDTH_HOLDING_GUTTER} - ${GALLERY_GUTTER}) / 2)`;
+const SCRIPT_MEASURE = '390px';
 
 /**
- * How far in from either side of the page the gallery stands: the column the
- * list needs, the left's step back, and each margin's share of what the gutter
- * gave up.
+ * How the row divides: the script keeps its measure, and the reading takes
+ * everything the page has left.
+ *
+ * Which means the reading has no width of its own to set. What sets it is the
+ * one vertical it has not already been given — how far its left edge stands
+ * off the page's left edge — and that is `GALLERY_INSET_LEFT` above. Widen the
+ * reading by moving that line, not by naming a width here: a width named here
+ * and an inset named there would be two answers to the same question, and the
+ * page would end up honouring whichever is smaller.
  */
-const GALLERY_INSET_RIGHT = `calc(${LIST_COLUMN} + ${GUTTER_GIVEN_BACK})`;
-const GALLERY_INSET_LEFT = `calc(${LIST_COLUMN} - ${GALLERY_LEFT_STEP_BACK}`
-  + ` + ${GUTTER_GIVEN_BACK})`;
+const CONVERSATION_SHARE = '1 1 0%';
 
 /**
- * How the row divides between the two columns.
+ * And what the script does once the page runs out.
  *
- * Equal grow, and the conversation carries the reading's own two insets as its
- * basis. So the free space halves, and the conversation takes its half plus the
- * 3rem it is about to give straight back to its own margins — which leaves the
- * block of text inside it exactly the width of the code window beside it.
+ * The measure is a ceiling, not a floor: it is what the script is worth while
+ * the reading beside it is still the wider of the two. Narrow the page and the
+ * reading gives width up first, as the one that reflows — but only down to the
+ * script's own measure. Past that the script has stopped being the narrow half,
+ * and holding it at a number the reading has already gone under would mean the
+ * pair narrowing by squeezing the reading alone until it is a column beside a
+ * window.
  *
- * That is what makes the two mirror images about the page's centre rather than
- * merely equidistant from its edges. The outer pair already matched: the first
- * character of the reading stands as far from the left edge as the code
- * window's edge does from the right. Equal widths is what brings the inner pair
- * with them — and two blocks reflected in an axis have to be the same size, so
- * the 0.9-to-1.1 the row used to hold could not survive the ask.
+ * So the measure is capped at half the spread, and below the crossing the two
+ * come in together, each holding half of what is left once the gutter is taken
+ * out. Half of the spread rather than half of the row is the whole of it: the
+ * gutter comes off first, so the two halves are equal to each other and the air
+ * between them is the same measure at every width the page has.
  */
-const CONVERSATION_SHARE = `1 1 calc(${READING_INSET} * 2)`;
-const CODE_SHARE = '1 1 0%';
+const CODE_SHARE = `0 1 ${SCRIPT_MEASURE}`;
+const PAIRED_CODE_CAP = 'calc((100% - var(--gallery-gutter)) / 2)';
 
 /**
- * How wide either block gets to be at its widest.
+ * The width a reading keeps when it has no script beside it.
  *
- * A measure rather than a share: past about this, a line of prose or of code is
- * one the eye loses its place in on the way back to the next line, and a window
- * that keeps growing with the display only makes more of them. So beyond a
- * point the two blocks stop growing and the page grows around them instead.
- *
- * Which is why the row is centred. Both columns reach the cap at the same
- * width — their targets differ by the same 3rem their caps do — so neither can
- * take the other's leftover, and what is left over is air the row divides
- * evenly. That is what keeps the mirror: each block moves in from its own edge
- * of the page by exactly half of it.
+ * The only case that needs a number. Everywhere else the reading is held
+ * between two things and its width falls out of where they are; alone on the
+ * page it is held between nothing, and a window let loose across a display
+ * this wide is a wall of text with no line the eye can return to.
  */
-const READING_MEASURE = '390px';
-const CONVERSATION_MAX = `calc(${READING_MEASURE} + ${READING_INSET} * 2)`;
+const SOLO_READING_MEASURE = '500px';
 
-/**
- * How much of the page's height the gallery leaves above and below itself, as
- * a divisor of that height: the two windows keep the middle two thirds, so
- * both of their edges stand one sixth of the page in from its own.
- *
- * One number, because the two columns say it in different ways and must not
- * drift. The code window has a panel and says it with a height. The
- * conversation has none — it runs the column's full height and lets its ends
- * blur out — so it says it with where the reading comes to rest instead: at
- * the top of the scroll the first message's top stands on the code window's
- * top edge, at the bottom the last reply's foot stands on its bottom edge.
- * Between those the stream carries on past both, which is what the blur is
- * for. Read as a spread rather than as two things floating independently.
- */
-const GALLERY_BAND_DIVISOR = 6;
-
-/** The code window's own height, as a share of the row it stands in. */
-const GALLERY_BAND_HEIGHT = `calc(100% - 200% / ${GALLERY_BAND_DIVISOR})`;
-
-/**
- * The same measure for the conversation, in cqh against `.conversation-archive`
- * — the one box that is the reading column's full height, which is also the
- * height the code window takes its share of. A percentage cannot say this:
- * padding resolves against width.
- */
-const GALLERY_BAND_INSET = `calc(100cqh / ${GALLERY_BAND_DIVISOR})`;
-
-/**
- * How far below the middle of the page the pair sits.
- *
- * The reading follows the code window down rather than staying put: the two
- * verticals below are one measure said twice, and the first message standing
- * on the code window's top edge is what the page's whole geometry has been
- * built around. Moving one of the pair and not the other would leave that off
- * by exactly this much.
- */
+/** How far below the middle of the page the pair sits: the difference between
+ *  the two bands below, and nothing more. */
 const GALLERY_DROP = '30px';
 
 /**
- * How far below the code window's top edge the reading starts.
+ * The two bands of page the spread leaves above and below itself.
  *
- * Just off it rather than exactly on it. A first message on the same line as
- * the panel's border reads as having run into it — the border is a drawn edge
- * and the message is not, and the eye takes two things touching for one thing
- * clipped. This is the smallest offset that reads as clearance rather than as
- * an alignment someone missed.
+ * Stated on the row rather than on the windows, so the pair's four edges are
+ * settled in one place: the two verticals above, these two horizontals here,
+ * and each window simply fills what it is given. It used to be a height and a
+ * centring and an offset, three numbers saying one thing between them, and
+ * moving either edge meant solving for the other two.
  *
- * Only the head takes it. The foot still stands on the panel's own bottom
- * edge, where a script has no chrome of its own to answer to either.
+ * The foot keeps the sixth of the page the pair was drawn with, less the drop.
+ * The head is the shallower of the two: what stands in it is one line of
+ * heading against the page's top corner, where the foot holds the caption's
+ * two — and the windows are the reason the page exists, so they take the room
+ * the page can spare rather than sitting politely in the middle of it. A tenth
+ * still leaves the heading air enough not to be touched.
  */
-const READING_HEAD_CLEARANCE = '8px';
+const GALLERY_BAND_TOP = `calc(100% / 10 + ${GALLERY_DROP})`;
+const GALLERY_BAND_BOTTOM = `calc(100% / 6 - ${GALLERY_DROP})`;
 
 /**
- * The reading window and its content stops, handed to the archive stylesheet.
- *
- * The window keeps the page's own height, reaching back through the app's
- * region inset to the very edges of it — an end outside the column is an end
- * the blur never has to stop at.
- *
- * The two are independent on purpose: the stops are given in the column's own
- * coordinates, so where the stream stops being drawn and where the reading
- * comes to rest can be moved separately. index.css converts between the two
- * when it turns a stop into scrollport padding.
+ * Which entry is open, and which version of it — because the page now opens an
+ * entry the moment the cached list draws it, before the request that refreshes
+ * the list has landed. An id on its own would call the job done and leave the
+ * reader on a copy the account has since moved past; naming the version means
+ * a summary that comes back re-dated is asked for again, and one that comes
+ * back unchanged is not.
  */
-const CONVERSATION_WINDOW = {
-  '--spacing-conversation-window-top': 'calc(var(--spacing-region) * -1)',
-  '--spacing-conversation-window-bottom': 'calc(var(--spacing-region) * -1)',
-  '--spacing-conversation-content-top':
-    `calc(${GALLERY_BAND_INSET} + ${GALLERY_DROP} + ${READING_HEAD_CLEARANCE})`,
-  '--spacing-conversation-content-bottom': `calc(${GALLERY_BAND_INSET} - ${GALLERY_DROP})`,
-} as CSSProperties;
+const openedKey = (summary: FavoriteSummary): string => `${summary.id}:${summary.updatedAt}`;
 
 interface FavoritesPageProps {
   /** Legacy guest read model. Account pages pass summaries and one detail. */
@@ -283,6 +253,54 @@ interface FavoritesPageProps {
   onOpenInStudio?: (code: string) => void;
 }
 
+/**
+ * What both windows on this page are cut from: a Featured record's panels, the
+ * same class and the same measures rather than a copy of their values.
+ *
+ * The two pages stand in one room. Both are windows cut into the same WebGL
+ * light field, both hold a script and something to read beside it, and a panel
+ * that kept its own fill or its own radius here would read as a near-miss of
+ * the one next door rather than as a decision. So `featured-panel` carries all
+ * of it — the fill, the radius, and the edge, which is a masked ring inside
+ * the padding box rather than a border, because a window that clips its own
+ * body would clip a ring hung outside it. index.css re-materialises the whole
+ * set for paper in one place, and both pages turn together.
+ */
+const WINDOW_GLASS = 'featured-panel flex min-h-0 min-w-0 flex-col overflow-hidden'
+  + ' rounded-[10px] bg-[#0D0D0D]/55 p-5 backdrop-blur-2xl';
+
+/**
+ * The line across the top of a window.
+ *
+ * One component for both of them, because the whole point of the pair is that
+ * the reading and the script are the same kind of thing seen twice: their two
+ * titles stand on one baseline, and a measure changed here moves both.
+ *
+ * No offset of its own: the title stands off the panel's top edge by exactly
+ * what the last line under it stands off the bottom one, which is the panel's
+ * own padding and nothing else. The 42px that used to be added here made a
+ * window's two ends say different things — held at the top, cut at the foot —
+ * and both of these are read from both ends.
+ */
+function WindowTitle({ title, titleControl, action }: {
+  title: string;
+  titleControl?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="relative z-20 mb-5 flex h-9 shrink-0 items-center justify-between gap-3">
+      {titleControl ?? (
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <h2 className="truncate text-lg font-medium uppercase tracking-[0.08em] text-text-primary">
+            {title}
+          </h2>
+        </div>
+      )}
+      {action}
+    </div>
+  );
+}
+
 interface PanelProps extends Omit<React.HTMLAttributes<HTMLElement>, 'title'> {
   title: string;
   titleControl?: ReactNode;
@@ -313,49 +331,32 @@ function Panel({ title, titleControl, action, className = '', children, ...rest 
     if (script instanceof HTMLElement) observer.observe(script);
     return () => observer.disconnect();
   }, []);
+  /* Which of the window's two ends is cutting the script off, for the fade
+     that says so — see `.favorites-window-fade` in index.css. The bar says how
+     much more there is; this says the line you are looking at is not the last
+     one, which a bar cannot say about the line itself. */
+  useClippedEnds(scrollRef);
 
   return (
     <section
       aria-label={title}
-      // Glass rather than a surface, taken verbatim from the Featured
-      // detail's panels: both stand on the same WebGL light field, and a
-      // panel that keeps its own flat colour there reads as a card dropped on
-      // the page instead of a window cut into it. The edge comes from the same
-      // place — a solid grey rule around glass is a drawn border, where a
-      // tenth of white is the light catching an edge.
-      //
-      // `favorites-panel` is the hook the light theme re-materialises all of
-      // that through (index.css): on paper the same window is cut by a pale
-      // frost and a drawn edge instead, because a tenth of white on a
-      // grey-white field is nothing at all.
-      className={`favorites-panel flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[9px] border border-white/10 bg-[#0D0D0D]/55 p-5 backdrop-blur-2xl ${className}`}
+      className={`${WINDOW_GLASS} ${className}`}
       {...rest}
     >
-      {/* No offset of its own: the title stands off the panel's top edge by
-          exactly what the last line of the script stands off its bottom one,
-          which is the panel's own padding and nothing else. The 42px that used
-          to be added here made the window's two ends say different things —
-          held at the top, cut at the foot — and a script is read from both. */}
-      <div className="relative z-20 mb-5 flex h-9 shrink-0 items-center justify-between gap-3">
-        {titleControl ?? (
-          <div className="flex min-w-0 items-baseline gap-2.5">
-            <h2 className="truncate text-lg font-medium uppercase tracking-[0.08em] text-text-primary">
-              {title}
-            </h2>
-          </div>
-        )}
-        {action}
-      </div>
+      <WindowTitle title={title} titleControl={titleControl} action={action} />
       {/* The bars stand whenever the script is longer or wider than the
-          window, rather than waiting for the pointer. A conversation says how
-          much more of it there is by fading out; a script has an edge and
-          cannot, so the only thing here that can say "this is not all of it"
-          is a bar. Where they stand and how far they hold off the code is
+          window, rather than waiting for the pointer: the only thing that can
+          say "this is not all of it" through a clipped edge is a bar.
+
+          Where they stand and how far they hold off the code is
           `.favorites-script-scroll` — the panel's own padding at the foot, read
           as a band to sit in the middle of; at the right, 6px between the bar
           and the border and 12px between the code and the bar, with the code
           holding that same line when there is no bar there. */}
-      <div ref={scrollRef} className="favorites-script-scroll min-h-0 flex-1 overflow-auto">
+      <div
+        ref={scrollRef}
+        className="favorites-script-scroll favorites-window-fade min-h-0 flex-1 overflow-auto"
+      >
         {children}
       </div>
     </section>
@@ -374,7 +375,7 @@ function VersionSelect({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const labelFor = (script: FavoriteScript) => script.kind === 'final'
-    ? t('favoritesFinalVersion')
+    ? t('favoritesLatestScript')
     : script.take === null ? t('favoritesCodeTitle') : takeLabel(script.take);
 
   useEffect(() => {
@@ -417,7 +418,7 @@ function VersionSelect({
         <div
           role="listbox"
           aria-label={t('favoritesCodeTitle')}
-          className="favorites-version-menu animate-fade-in absolute left-0 top-[calc(100%+6px)] z-50 flex max-h-64 w-[126px] flex-col gap-1.5 overflow-x-hidden overflow-y-auto rounded-[7px] border border-white/15 bg-[#242424]/95 py-1 shadow-2xl backdrop-blur-xl"
+          className="favorites-version-menu animate-fade-in absolute left-0 top-[calc(100%+6px)] z-50 flex max-h-64 w-[126px] flex-col gap-1.5 overflow-x-hidden overflow-y-auto rounded-[7px] border border-white/15 bg-[#242424]/95 py-1 shadow-menu-overlay backdrop-blur-xl"
         >
           {scripts.map((script) => {
             const active = script.turnId === selected.turnId;
@@ -520,7 +521,7 @@ function CodePanel({
      only thing there is is the thing itself. */
   const numbered = scripts.length > 1;
   const title = script.kind === 'final'
-    ? t('favoritesFinalVersion')
+    ? t('favoritesLatestScript')
     : script.take === null || !numbered ? t('favoritesCodeTitle') : takeLabel(script.take);
 
   return (
@@ -666,12 +667,41 @@ export default function FavoritesPage({
   const selectedConversationId = picked.focus === focus ? picked.id : focus?.id ?? picked.id;
   const [pickedSummaryId, setPickedSummaryId] = useState<string | null>(null);
   const autoSelectedSummaryRef = useRef<string | null>(null);
-  const selectedSummaryId = selectedId
-    ?? (focus && favoriteSummaries.some((summary) => summary.id === focus.id) ? focus.id : null)
-    ?? pickedSummaryId
-    ?? favoriteSummaries[0]?.id
+  /* Which entry the page is open on, asked as four questions in order of who
+     has the better claim: the page it was navigated to with, the entry it was
+     told to focus, the one picked here, and failing all three the newest thing
+     kept.
+
+     Every one of them is resolved against the list rather than taken on trust,
+     which is the whole of it. An id is only a claim about an entry, and the
+     two ways an entry leaves — let go of, or deleted — both break that claim
+     while the id is still being held somewhere: an unfavorited entry is out of
+     this list the moment the notice appears but stays in the account's own
+     rows until the notice is committed, so the id above is live and points at
+     nothing here; a deleted one is gone from both, but only after the render
+     that noticed. Either way a chain that stops at the first non-null id stops
+     at an id with no entry behind it, and the page draws its empty state — the
+     line meant for an account that has never kept anything — over a shelf with
+     things still on it.
+
+     Resolving each claim to an entry instead makes a dead id simply not
+     answer, and the question passes to the next one. Which is what the focus
+     line already did on its own; the other two now do the same, and the last
+     of them is the newest kept, so an entry going out from under the reader
+     hands the page to the top of the list rather than to a blank.
+
+     No cleanup anywhere to go with it. Nothing has to notice that an id died
+     and clear it, which is the version of this that races the list: the id can
+     stay as stale as it likes in a state hook or a parent's prop, because it
+     is only ever read through the list it has to be in. */
+  const summaryFor = (id: string | null | undefined) => (id
+    ? favoriteSummaries.find((summary) => summary.id === id) ?? null
+    : null);
+  const selectedSummary = summaryFor(selectedId)
+    ?? summaryFor(focus?.id)
+    ?? summaryFor(pickedSummaryId)
+    ?? favoriteSummaries[0]
     ?? null;
-  const selectedSummary = favoriteSummaries.find((summary) => summary.id === selectedSummaryId) ?? null;
   /* Left alone when the conversation changes: a turn id from another favorite
      simply isn't among this one's scripts, and the fallback below is already
      the last take — which is where an entry opens. */
@@ -713,8 +743,10 @@ export default function FavoritesPage({
 
   const selectSummary = (summary: FavoriteSummary) => {
     setPickedSummaryId(summary.id);
-    autoSelectedSummaryRef.current = summary.id;
-    onSelect?.(summary);
+    // Only counted as opened where there is something upstream to open it.
+    if (!onSelect) return;
+    autoSelectedSummaryRef.current = openedKey(summary);
+    onSelect(summary);
   };
 
   useEffect(() => {
@@ -724,10 +756,16 @@ export default function FavoritesPage({
       return;
     }
     const first = selectedSummary;
-    if (isLoading || error || !first || !onSelect || autoSelectedSummaryRef.current === first.id) return;
-    autoSelectedSummaryRef.current = first.id;
+    /* Not held back by the list still loading. The list a visit opens on is
+       the one this device kept from last time — the rows are already on
+       screen — so waiting for the request that refreshes them before asking
+       for the first entry is the whole of the wait the reader sees. Asking
+       now opens it out of local storage; the request lands behind that and
+       corrects both. */
+    if (error || !first || !onSelect || autoSelectedSummaryRef.current === openedKey(first)) return;
+    autoSelectedSummaryRef.current = openedKey(first);
     onSelect(first);
-  }, [active, error, isLoading, isSummaryMode, onSelect, selectedSummary]);
+  }, [active, error, isSummaryMode, onSelect, selectedSummary]);
 
   const selectConversation = (conversation: FavoriteConversation) => {
     const conversationScripts = favoriteScripts(conversation);
@@ -755,15 +793,15 @@ export default function FavoritesPage({
       <FeaturedWebglLightField active variant={paper ? 'paper' : 'space'} />
 
       {/* Inset to the same two verticals every other full-width page uses. */}
-      <div
-        className="relative z-10 h-full w-full overflow-visible px-4"
-        style={CONVERSATION_WINDOW}
-      >
+      <div className="relative z-10 h-full w-full overflow-visible px-4">
         {/* Laid over the page rather than stacked above the gallery: the
             gallery is centred on the page's own height, and a heading in flow
             would push it off that centre. It stops where the list's column
             starts, the same vertical the gallery below it ends on. */}
-        <header className="absolute left-4 top-2 z-40" style={{ right: LIST_COLUMN }}>
+        <header
+          className="absolute top-2 z-40"
+          style={{ left: PAGE_SIDE_INSET, right: LIST_COLUMN }}
+        >
           <h1 className="text-2xl font-semibold leading-10 tracking-[-0.02em] text-text-primary">
             {t('navFavorites')}
           </h1>
@@ -784,12 +822,12 @@ export default function FavoritesPage({
           onRetryLoadMore={onRetryLoadMore}
         />
 
-        {/* Both of these are the reading's own furniture — what says the stream
-            runs past the window's ends, and what indexes it. A favorite with no
-            conversation in it has neither to say anything about. */}
-        {hasReading && <ConversationBlurBands />}
+        {/* The reading's index. It lives out here rather than in the window it
+            points into: the strip between the nav's two lobes is where it
+            stands, and a favorite with no conversation in it has no turns for
+            it to index.
 
-        {/* Keyed like the gallery, so an arriving favorite brings its own index
+            Keyed like the gallery, so an arriving favorite brings its own index
             in rather than morphing the last one's into it. */}
         {hasReading && current && (
           <ConversationTurnRail
@@ -885,15 +923,14 @@ export default function FavoritesPage({
           </div>
         ) : (
           /* The full height of the page, inset to the two verticals the windows
-              stand on — the list's column on the right and the same measure of
-              air on the left. It stops short of the list rather than running
-              under it, since the code window is the one that would otherwise meet
-              the entries.
+              stand on — the list's column on the right and the page's own edge
+              measure on the left. It stops short of the list rather than
+              running under it, since the code window is the one that would
+              otherwise meet the entries.
 
-              Full height because the two columns no longer agree about it: the
-              conversation is pinned to the nav's lobes and the code keeps the
-              gallery's own two thirds. The row holds the widths; each column says
-              where its own two ends are.
+              Full height, though neither window uses all of it: the row holds
+              the two widths and the vertical each of them is anchored on, and
+              each window states its own height off the one measure they share.
 
               Keyed on the conversation so an arriving favorite starts its
               reading where its own end is rather than where the last one was
@@ -901,32 +938,44 @@ export default function FavoritesPage({
               archive's own business — see the layout effect in
               ArchivedConversationView.
 
-              The fade itself is deliberately *not* here. `featured-content-in`
+              The fade is not here but on each window, and for a reason that
+              outlived the reason it was written for. `featured-content-in`
               animates opacity and fills, which keeps the element a compositing
-              group for good — and an ancestor of that kind is where the blurred
-              ends of the conversation stop being able to see the page behind
-              them, which is what makes pale text glow instead of going soft. So
-              each column carries its own fade, below the point where that
-              matters. */
+              group for good, and a group of that kind above the reading is
+              where its blurred ends stop being able to see what is behind
+              them. That is now the window's own glass rather than the page,
+              and the window is a backdrop root either way — but a fade on the
+              row would still be one group covering two windows that arrive as
+              two things. */
           <div
             key={current.id}
             data-testid="favorites-gallery"
-            /* Air, not a divider. The app's 6px divider measure is a resize
-               handle's width — two panes of one workspace butted together with
-               just enough between them to grab. These two are not that: they are
-               two reading surfaces held apart on the page's light field, and
-               what separates them should read as the page showing through. */
-            className="absolute inset-y-0 flex justify-center"
-            /* The two verticals are named before they are used: each is four
-               terms drawn from three modules, and `left`/`right` read better
-               pointing at a name than carrying the arithmetic.
+            /* Air between the windows, not a divider. The app's 6px divider
+               measure is a resize handle's width — two panes of one workspace
+               butted together with just enough between them to grab. These two
+               are not that: they are two windows held apart on the page's light
+               field, and what separates them should read as the page showing
+               through.
 
-               A column standing on its own answers to neither: with nothing
-               beside it there is no spread to hold apart and no list to stop
-               short of — only the page, and the middle of it. */
+               Set against the right rather than centred, which is what the
+               script answers to; the reading then fills what is left, so the
+               row has no spare width to place and both of its outer edges are
+               on the verticals they were given.
+
+               A window standing on its own is centred instead: with nothing
+               beside it there is no spread to anchor, and a lone window pushed
+               against one edge reads as one missing its other half. */
+            className={`absolute flex ${alone ? 'justify-center' : 'justify-end'}`}
+            /* The two verticals are named before they are used, so `left` and
+               `right` read as the places they are rather than as arithmetic.
+
+               A lone window answers to neither: only the page, and the middle
+               of it. */
             style={alone
               ? ({
                 '--favorites-page-inset': PAGE_LEFT_INSET,
+                top: GALLERY_BAND_TOP,
+                bottom: GALLERY_BAND_BOTTOM,
                 left: 0,
                 right: 'var(--favorites-page-inset)',
               } as CSSProperties)
@@ -934,37 +983,51 @@ export default function FavoritesPage({
                 '--gallery-inset-left': GALLERY_INSET_LEFT,
                 '--gallery-inset-right': GALLERY_INSET_RIGHT,
                 '--gallery-gutter': GALLERY_GUTTER,
+                top: GALLERY_BAND_TOP,
+                bottom: GALLERY_BAND_BOTTOM,
                 left: 'var(--gallery-inset-left)',
                 right: 'var(--gallery-inset-right)',
                 gap: 'var(--gallery-gutter)',
               } as CSSProperties)}
           >
             {!soloScript && (
-              /* No surface of its own: the exchange is read straight off the
-                 page's light field. The code beside it keeps its panel because
-                 a script is a thing you look *at*, with edges; a conversation
-                 is something you look *through*, and a second frame around it
-                 only says that it is furniture.
+              /* The same window as the script beside it, and as the pair a
+                 Featured record opens into: one glass, one title row, one set
+                 of edges. A conversation and the code it arrived at are two
+                 halves of one kept thing, and the page should not have to say
+                 which of the two it takes more seriously.
 
-                 The reading runs the whole way to both ends of it: no padding
-                 at either edge, so the messages reach them and the blur is what
-                 says the stream carries on past. The bands reach past the
-                 reading window at both ends by design, and the outermost of
-                 them stops a few pixels above this column. Horizontal overflow
-                 stays visible so the reading window can extend 60px past either
-                 side while its compensated content remains on the same
-                 verticals. */
+                 Wider than the script: it is the longer read and the one
+                 that reflows, where a script's lines are as long as they were
+                 written. How much wider is not set here but by where its left
+                 edge stands — see READING_LEFT_INSET.
+
+                 Inside, the reading runs to both ends of the window and is
+                 clipped there. It used to blur out instead, which is what a
+                 stream standing on open page has to do to say it carries on
+                 past; a window with an edge says that by having one. */
               <section
                 data-testid="favorites-conversation-panel"
                 aria-label={t('favoritesConversation')}
-                className="flex min-w-0 flex-col overflow-visible"
+                className={`${WINDOW_GLASS} featured-content-in relative`}
                 style={{
-                  ...CONVERSATION_WINDOW,
                   flex: CONVERSATION_SHARE,
-                  maxWidth: CONVERSATION_MAX,
+                  // Only when it stands alone: beside a script the reading's
+                  // width is where its two edges are, and a cap could only
+                  // disagree with them.
+                  maxWidth: alone ? SOLO_READING_MEASURE : undefined,
                 }}
               >
-                <div className="min-h-0 flex-1">
+                {/* Named rather than left to be inferred. The script's own
+                    title is the take it is showing and changes with it, so the
+                    line opposite has to be there for the pair to read as two
+                    windows onto one favorite rather than as a panel beside a
+                    column of text. */}
+                <WindowTitle title={t('favoritesConversation')} />
+                {/* `favorites-reading` reaches this box into the window's
+                    right-hand padding so the bar inside it can stand where the
+                    script's does — see index.css. */}
+                <div className="favorites-reading min-h-0 flex-1">
                   <ArchivedConversationView
                     active={active}
                     messages={archiveMessages}
@@ -983,19 +1046,23 @@ export default function FavoritesPage({
               </section>
             )}
 
-            {/* Its two edges are the verticals the conversation beside it comes
-                to rest on, so the height is taken from the same measure. */}
+            {/* The narrow half of the row: it keeps its place against the
+                page's right-hand vertical, and its measure for as long as that
+                measure is still the narrower of the two — past which it is half
+                the spread and the reading is the other half. Both of its
+                horizontals are the row's, which is the whole point of the
+                row. */}
             {selectedScript && (
               <div
-                className="featured-content-in relative z-40 flex min-w-0 self-center"
+                className="featured-content-in relative z-40 flex min-w-0"
+                /* The cap is where the crossing happens: a flex item held
+                   under its basis is frozen there and the width it did not
+                   take goes to the item beside it, which is the reading — so
+                   naming half the spread here is enough to make both halves
+                   it. Alone there is nothing to be half of. */
                 style={{
-                  height: GALLERY_BAND_HEIGHT,
                   flex: CODE_SHARE,
-                  maxWidth: READING_MEASURE,
-                  // Offset rather than a margin: `self-center` centres the margin
-                  // box, so a margin here would move the panel half as far as it
-                  // says. The column is already `relative`.
-                  top: GALLERY_DROP,
+                  maxWidth: alone ? undefined : PAIRED_CODE_CAP,
                 }}
               >
                 <CodePanel

@@ -76,7 +76,7 @@ describe('HistoryPanel title editing', () => {
     });
 
     expect(onSwitch).toHaveBeenCalledWith('s-1');
-    expect(container.querySelector('input')).toBeNull();
+    expect(container.querySelector('input[aria-label="Edit session title"]')).toBeNull();
   });
 
   it('renders server summaries in the supplied order without complete session fields', () => {
@@ -227,5 +227,68 @@ describe('HistoryPanel title editing', () => {
     });
 
     expect(onDelete).toHaveBeenCalledWith('s-1');
+  });
+});
+
+describe('HistoryPanel search', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  const titlesIn = (container: HTMLElement) =>
+    [...container.querySelectorAll('button[data-session-title-edit]')].map((b) => b.textContent);
+
+  const searchIn = (container: HTMLElement) =>
+    container.querySelector<HTMLInputElement>('[data-testid="history-search-input"]');
+
+  it('narrows the list to titles matching what is typed', () => {
+    const { container, root } = renderHistory({
+      sessions: [
+        makeSession({ id: 's-1', title: '鼓组实验', updatedAt: 2 }),
+        makeSession({ id: 's-2', title: 'Bass line', updatedAt: 1 }),
+      ],
+    });
+    roots.push(root);
+
+    changeInput(searchIn(container)!, 'bass');
+
+    expect(titlesIn(container)).toEqual(['Bass line']);
+  });
+
+  it('says the query found nothing rather than that there are no sessions', () => {
+    const { container, root } = renderHistory();
+    roots.push(root);
+
+    changeInput(searchIn(container)!, '没有这个');
+
+    expect(titlesIn(container)).toEqual([]);
+    expect(container.textContent).toContain(t('historySearchEmpty'));
+    expect(container.textContent).not.toContain(t('noSessions'));
+  });
+
+  it('puts the whole list back when the field is cleared', () => {
+    const { container, root } = renderHistory();
+    roots.push(root);
+
+    changeInput(searchIn(container)!, '没有这个');
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-testid="history-search-clear"]')?.click();
+    });
+
+    expect(titlesIn(container)).toEqual(['旧标题']);
+    expect(searchIn(container)!.value).toBe('');
+  });
+
+  it('leaves the field out while the list is still loading', () => {
+    const { container, root } = renderHistory({ sessions: [], isLoading: true });
+    roots.push(root);
+
+    expect(searchIn(container)).toBeNull();
   });
 });

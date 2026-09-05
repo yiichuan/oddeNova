@@ -51,12 +51,33 @@ const RAIL_CLEARANCE = 260;
 /**
  * The preview window: how wide it is and how far it stands off the rail.
  *
- * Capped rather than free. It opens into the strip between the nav's column and
- * the reading, and the reading's first character is the vertical it must not
- * reach — 200px from where the rail leaves off stops well short of it whatever
- * the page is sized to, since every vertical in that strip is a fixed measure.
+ * Not a taste, an arithmetic. It opens into the strip between the rail and the
+ * reading, and the reading's own left edge is the vertical it must not cross —
+ * a window laid over the text it is an index to is the one thing this cannot
+ * be. Every vertical in that strip is a fixed measure, so the widest it can be
+ * is a number rather than a judgement:
+ *
+ *   the rail's right edge   -40px centre + 20px half-width  =  -20px
+ *   this window's left edge  -20px + PREVIEW_GAP            =   -6px
+ *   the reading's left edge  READING_LEFT_INSET, 7rem       =  112px
+ *
+ * which leaves 118px to the reading's edge, and 104 takes the same 14px off
+ * that edge as it takes off the rail — so the window stands in the middle of
+ * the strip it was given rather than pressed against one side of it.
+ *
+ * The three numbers are the Favorites page's (`RAIL_CENTER` and
+ * `READING_LEFT_INSET` in FavoritesPage.tsx), read here rather than imported:
+ * this component is handed a centre line and knows nothing about the page it
+ * is on, and a page that puts the rail somewhere else has to check this. What
+ * it costs to be wrong is visible immediately, which is why it is written down
+ * rather than guarded.
+ *
+ * 104px is a narrow measure and is meant to be. What the window owes a reader
+ * is the beginning of the instruction — enough to find a place in the reading
+ * without opening it, which is a glance and not a read — and six lines of it
+ * at this width is more of one than a glance uses.
  */
-const PREVIEW_WIDTH = 200;
+const PREVIEW_WIDTH = 104;
 const PREVIEW_GAP = 14;
 
 /** How much of a message the label carries before a screen reader is better off

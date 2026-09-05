@@ -723,7 +723,12 @@ export default function ConversationView({
               top += node.offsetTop;
               node = node.offsetParent as HTMLElement | null;
             }
-            if (node === el) target = Math.min(bottomPin, top - 10);
+            // Rest the bubble on the scrollport's own top padding instead of
+            // flush with its edge: that band is what holds the rollback key
+            // hanging off the bubble's corner clear of the top veil. Measured
+            // rather than repeated, so the two can't drift apart.
+            const topInset = parseFloat(getComputedStyle(el).paddingTop) || 0;
+            if (node === el) target = Math.min(bottomPin, top - topInset);
           }
         }
         // Reveal the live reasoning window. A user bubble taller than the
@@ -1036,11 +1041,12 @@ export default function ConversationView({
                 be collapsed mid-read — even scrolled to the very bottom. Its
                 opaque surface matches the conversation area and masks the
                 reasoning text that scrolls beneath it. The before cap covers
-                the scrollport padding above the sticky row for the same reason.
-                scroll-mt-2.5 makes the onClick scrollIntoView land the header
-                at that same 10px-inset frozen spot — without it, collapsing
-                aligns the header flush to the scrollport edge (0px) and
-                re-expanding snaps it back down to 10px, a visible jump. */}
+                the scrollport padding above the sticky row for the same reason,
+                so both are the scrollport's own top inset.
+                scroll-mt makes the onClick scrollIntoView land the header at
+                that same inset frozen spot — without it, collapsing aligns the
+                header flush to the scrollport edge (0px) and re-expanding snaps
+                it back down to the inset, a visible jump. */}
             <button
               data-reasoning-header={msg.id}
               onClick={() => {
@@ -1051,7 +1057,7 @@ export default function ConversationView({
                     ?.scrollIntoView({ block: 'nearest' });
                 });
               }}
-              className={`sticky top-0 z-10 -mx-2 scroll-mt-2.5 flex w-[calc(100%+1rem)] items-center gap-1.5 bg-conversation-surface px-2 py-0.5 text-sm text-text-secondary/60 transition-colors hover:text-text-secondary before:absolute before:inset-x-0 before:-top-2.5 before:h-2.5 before:bg-conversation-surface${
+              className={`sticky top-0 z-10 -mx-2 scroll-mt-[var(--spacing-conversation-top-inset)] flex w-[calc(100%+1rem)] items-center gap-1.5 bg-conversation-surface px-2 py-0.5 text-sm text-text-secondary/60 transition-colors hover:text-text-secondary before:absolute before:inset-x-0 before:top-[calc(var(--spacing-conversation-top-inset)*-1)] before:h-[var(--spacing-conversation-top-inset)] before:bg-conversation-surface${
                 isExpanded ? ' reasoning-header--expanded' : ''
               }`}
             >
@@ -1113,7 +1119,7 @@ export default function ConversationView({
           over outside overlays like the history panel (z-10 in Sidebar). */}
       <div
         ref={scrollRef}
-        className={`conversation-scroll isolate h-full overflow-y-auto px-4 py-[10px] space-y-[40px] relative${
+        className={`conversation-scroll isolate h-full overflow-y-auto px-4 pt-[var(--spacing-conversation-top-inset)] pb-[10px] space-y-[40px] relative${
           reasoningWindowExpanded ? ' scrollbar-hidden' : ''
         }`}
         style={{ scrollbarGutter: 'stable' }}
@@ -1127,16 +1133,11 @@ export default function ConversationView({
             // forces a fresh node — and with it, the mount animation to replay.
             key={greetingMsg.id}
             className={`animate-blur-fade-in text-center text-text-greeting leading-relaxed ${
-              zh ? 'font-jinghua-laosongti tracking-wider text-sm' : 'font-eb-garamond text-base'
+              zh ? 'font-jinghua-laosongti tracking-wider text-sm' : 'font-eb-garamond text-sm'
             }`}
           >
             {greetingMsg.content}
           </p>
-        </div>
-      )}
-      {!greetingMsg && messages.length === 0 && !isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
-          <span>{t('startCreating')}</span>
         </div>
       )}
 
@@ -1211,7 +1212,7 @@ export default function ConversationView({
                   <button
                     onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
                     disabled={!rollbackButtonEnabled}
-                    className="w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
+                    className="conversation-rollback-button w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
                     title={t('rollbackHere')}
                   >
                     <Undo2 size={12} />

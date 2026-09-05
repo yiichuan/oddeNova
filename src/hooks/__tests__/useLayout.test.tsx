@@ -15,10 +15,21 @@ function Probe({ onValue }: { onValue: (value: UseLayoutReturn) => void }) {
   return null;
 }
 
-/** The handlers only read clientY/pointerId and capture the pointer. */
+/** The handlers only read clientX/clientY/pointerId and capture the pointer. */
 function pointerEvent(clientY: number) {
   return {
     clientY,
+    pointerId: 1,
+    currentTarget: {
+      setPointerCapture: () => {},
+      releasePointerCapture: () => {},
+    },
+  } as unknown as ReactPointerEvent<HTMLDivElement>;
+}
+
+function horizontalPointerEvent(clientX: number) {
+  return {
+    clientX,
     pointerId: 1,
     currentTarget: {
       setPointerCapture: () => {},
@@ -99,5 +110,95 @@ describe('useLayout vertical drag', () => {
     act(() => get().vDragHandlers.onPointerMove(pointerEvent(100)));
     expect(get().vizCollapsed).toBe(false);
     expect(get().vizHeight).toBeCloseTo(startHeight - 100);
+  });
+});
+
+describe('useLayout horizontal drag', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.innerHTML = '';
+  });
+
+  function mount() {
+    let latest!: UseLayoutReturn;
+    const root = createRoot(document.createElement('div'));
+    roots.push(root);
+    act(() => root.render(<Probe onValue={(value) => { latest = value; }} />));
+    return { get: () => latest, min: window.innerWidth * 0.20 };
+  }
+
+  it('holds the column at its minimum width while the divider stays near it', () => {
+    const { get, min } = mount();
+    const startWidth = get().sidebarWidth;
+
+    act(() => get().hDragHandlers.onPointerDown(horizontalPointerEvent(0)));
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(min - 20 - startWidth)));
+    act(() => get().hDragHandlers.onPointerUp(horizontalPointerEvent(min - 20 - startWidth)));
+
+    expect(get().sidebarCollapsed).toBe(false);
+    expect(get().sidebarWidth).toBeCloseTo(min);
+  });
+
+  it('collapses the column once the divider is dragged well past the minimum', () => {
+    const { get, min } = mount();
+    const startWidth = get().sidebarWidth;
+
+    act(() => get().hDragHandlers.onPointerDown(horizontalPointerEvent(0)));
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(min - 60 - startWidth)));
+
+    expect(get().sidebarCollapsed).toBe(true);
+
+    act(() => get().hDragHandlers.onPointerUp(horizontalPointerEvent(min - 60 - startWidth)));
+    expect(get().sidebarCollapsed).toBe(true);
+  });
+
+  it('reopens the column when the same drag comes back past the minimum', () => {
+    const { get, min } = mount();
+    const startWidth = get().sidebarWidth;
+
+    act(() => get().hDragHandlers.onPointerDown(horizontalPointerEvent(0)));
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(min - 60 - startWidth)));
+    expect(get().sidebarCollapsed).toBe(true);
+
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(0)));
+    expect(get().sidebarCollapsed).toBe(false);
+    expect(get().sidebarWidth).toBeCloseTo(startWidth);
+  });
+
+  it('keeps a closed column closed while the divider hovers on the boundary', () => {
+    const { get, min } = mount();
+    const startWidth = get().sidebarWidth;
+
+    act(() => get().hDragHandlers.onPointerDown(horizontalPointerEvent(0)));
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(min - 60 - startWidth)));
+    expect(get().sidebarCollapsed).toBe(true);
+
+    // Back inside the dead band that sits above the closing boundary: closing
+    // and reopening must not trade the column back and forth here.
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(min - 40 - startWidth)));
+    expect(get().sidebarCollapsed).toBe(true);
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(min - 20 - startWidth)));
+    expect(get().sidebarCollapsed).toBe(true);
+  });
+
+  it('reopens a collapsed column on a short pull, not a full minimum width', () => {
+    const { get, min } = mount();
+    const startWidth = get().sidebarWidth;
+
+    act(() => get().hDragHandlers.onPointerDown(horizontalPointerEvent(0)));
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(min - 60 - startWidth)));
+    act(() => get().hDragHandlers.onPointerUp(horizontalPointerEvent(min - 60 - startWidth)));
+    expect(get().sidebarCollapsed).toBe(true);
+
+    // The drag starts from zero, so these are distances travelled, not widths.
+    act(() => get().hDragHandlers.onPointerDown(horizontalPointerEvent(0)));
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(40)));
+    expect(get().sidebarCollapsed).toBe(true);
+
+    act(() => get().hDragHandlers.onPointerMove(horizontalPointerEvent(60)));
+    expect(get().sidebarCollapsed).toBe(false);
+    expect(get().sidebarWidth).toBeCloseTo(min);
   });
 });

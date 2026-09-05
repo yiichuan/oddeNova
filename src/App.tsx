@@ -58,13 +58,24 @@ import {
 import { ANIMATION_LABEL_KEYS, THEME_LABEL_KEYS } from './lib/appearance-preferences';
 import { providerLabel } from './lib/model-settings';
 import { useAuth } from './hooks/useAuth';
+import { accountInitials } from './lib/account-identity';
 import {
   deleteCloudSession,
   saveCloudSession,
 } from './services/cloud-session-repository';
 import { useCloudSessionLibrary } from './hooks/useCloudSessionLibrary';
 import type { FavoriteSummary, SessionSummary } from '../shared/session-api';
-import { deleteSession, getAllSessions } from './lib/session-storage';
+import {
+  deleteSession,
+  getAllSessions,
+  getSession,
+  putSession,
+} from './lib/session-storage';
+import {
+  readSummaryCache,
+  writeSummaryCache,
+  type CachedSummaries,
+} from './lib/session-summary-cache';
 import {
   collectImportableGuestSessions,
   getNextImportPromptUserMarker,
@@ -77,6 +88,9 @@ import { type Session } from './hooks/useSessions';
  * session column or the divider beside it.
  */
 const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites']);
+
+/** How long the summary cache holds a change before writing it down. */
+const SUMMARY_CACHE_WRITE_MS = 1000;
 
 function cloudErrorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object' || !('status' in error)) return undefined;
@@ -186,10 +200,43 @@ export default function App() {
     && guestImportSessions === null
     && !importingGuestHistory,
   );
+  /* The cloud library's local half. Everything it reads for this account is
+     kept where the account's own working copies are kept, under the same owner
+     key, so a second visit opens on what the first one read. */
+  const readCachedSummaries = useCallback(() => readSummaryCache(ownerKey), [ownerKey]);
+  /* The lists move with every answered message — the conversation on screen
+     keeps re-dating its own summary — and none of that is worth a write of its
+     own. One write a second carries whatever the lists last said. */
+  const summaryCacheTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const summaryCachePendingRef = useRef<CachedSummaries | null>(null);
+  const writeCachedSummaries = useCallback((value: CachedSummaries) => {
+    summaryCachePendingRef.current = value;
+    if (summaryCacheTimerRef.current !== null) return;
+    summaryCacheTimerRef.current = setTimeout(() => {
+      summaryCacheTimerRef.current = null;
+      const pending = summaryCachePendingRef.current;
+      summaryCachePendingRef.current = null;
+      if (pending) void writeSummaryCache(ownerKey, pending);
+    }, SUMMARY_CACHE_WRITE_MS);
+  }, [ownerKey]);
+  useEffect(() => () => {
+    if (summaryCacheTimerRef.current !== null) clearTimeout(summaryCacheTimerRef.current);
+  }, []);
+  const readCachedDetail = useCallback(
+    (id: string) => getSession(id, ownerKey),
+    [ownerKey],
+  );
+  const writeCachedDetail = useCallback((session: Session) => {
+    void putSession(session, ownerKey);
+  }, [ownerKey]);
   const cloudLibrary = useCloudSessionLibrary({
     enabled: cloudLibraryEnabled,
     ownerId: auth.user?.id,
     acceptCloudDetail: sessions.acceptCloudDetail,
+    readCachedSummaries,
+    writeCachedSummaries,
+    readCachedDetail,
+    writeCachedDetail,
   });
   const cloudHistory = cloudLibrary.history;
   const cloudFavorites = cloudLibrary.favorites;
@@ -223,6 +270,7 @@ export default function App() {
     isMobile,
     keyboardHeight,
     sidebarWidth,
+    sidebarCollapsed,
     vizHeight,
     vizCollapsed,
     toggleVizCollapsed,
@@ -462,10 +510,19 @@ export default function App() {
   const historyItems: readonly (Session | SessionSummary)[] = auth.user
     ? cloudHistoryItems
     : sessions.sessions.filter((session) => session.favoritedAt === undefined);
+  /* Loading is only ever the empty state's business: once there are rows to
+     show — last visit's, or this one's — the list is drawn and the request
+     that is still out corrects it in place. */
   const historyInitialLoading = auth.user
-    ? !cloudLibraryEnabled || cloudHistory.initialStatus === 'loading'
+    ? (!cloudLibraryEnabled || cloudHistory.initialStatus === 'loading')
+      && cloudHistoryItems.length === 0
     : sessions.isLoading;
-  const historyInitialError = auth.user ? cloudHistory.initialError : null;
+  /* Same for the failure: a list this device could not check is still the list
+     it has, and saying so where rows are already drawn would replace them with
+     an apology. The error takes the panel only when there is nothing else. */
+  const historyInitialError = auth.user && cloudHistoryItems.length === 0
+    ? cloudHistory.initialError
+    : null;
   const historyHasMore = auth.user ? cloudHistory.nextCursor !== null : false;
   const historyLoadingMore = Boolean(auth.user && cloudHistory.moreStatus === 'loading');
   const historyLoadMoreError = auth.user ? cloudHistory.moreError : null;
@@ -496,6 +553,25 @@ export default function App() {
       updatedAt: current.updatedAt,
     }, 0);
   }, [auth.user?.id, cloudFavoriteItems, cloudLibraryEnabled, current, upsertCloudHistorySummary]);
+
+  /* The other half of opening on the working copy. When the history list turns
+     out to know a later version of the conversation on screen — written on
+     another device, or by a page that was open elsewhere — read it once and let
+     the studio catch up. Once per version, so a read that comes back older than
+     the summary claimed cannot ask for itself again; and never over a turn
+     being answered here, which is the one thing the cloud cannot know about. */
+  const revalidatedVersionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!auth.user || !cloudLibraryEnabled || !current || isLoading) return;
+    const summary = cloudHistoryItems.find((candidate) => candidate.id === current.id);
+    if (!summary || summary.updatedAt <= current.updatedAt) return;
+    const version = `${summary.id}:${summary.updatedAt}`;
+    if (revalidatedVersionRef.current === version) return;
+    revalidatedVersionRef.current = version;
+    void openCloudSession(summary).catch((error) => {
+      console.warn('[sessions] open conversation revalidation failed.', error);
+    });
+  }, [auth.user, cloudHistoryItems, cloudLibraryEnabled, current, isLoading, openCloudSession]);
 
   const { suggestions } = useSuggestions({
     key: current?.id ?? '',
@@ -538,7 +614,7 @@ export default function App() {
         // The editor's bottom fade uses z-index 240/250, so this app-level
         // dialog must sit above those masks or they can cover its buttons.
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
-          <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
+          <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-dialog-overlay">
             <h2 className="text-lg font-semibold text-text-primary mb-2">{t('importLocalHistory')}</h2>
             <p className="text-xs text-text-muted mb-5">{t('importLocalHistoryDesc')}</p>
             <div className="flex gap-3">
@@ -854,11 +930,22 @@ export default function App() {
   const selectedAccountFavoriteDetail = selectedAccountFavoriteSummary
     ? cloudDetails.get(selectedAccountFavoriteSummary.id)?.session ?? null
     : null;
-  const selectedAccountFavorite = selectedAccountFavoriteDetail && selectedAccountFavoriteSummary
-    ? sessionAsFavorite(selectedAccountFavoriteDetail, {
-      favoritedAt: selectedAccountFavoriteSummary.favoritedAt,
-    })
-    : null;
+  /* Memoised for its identity, not for the work. `sessionAsFavorite` builds a
+     new object out of the same two inputs every time it is called, and the
+     Favorites page hands that object straight down to the archive as the
+     conversation being read — where a fresh one is indistinguishable from a
+     different favorite having been opened, and takes the reading back to its
+     end. Any render of this component was enough: a track starting, a hover
+     three panes away. So the object changes when the detail or the summary
+     behind it does, and at no other time. */
+  const selectedAccountFavorite = useMemo(
+    () => (selectedAccountFavoriteDetail && selectedAccountFavoriteSummary
+      ? sessionAsFavorite(selectedAccountFavoriteDetail, {
+        favoritedAt: selectedAccountFavoriteSummary.favoritedAt,
+      })
+      : null),
+    [selectedAccountFavoriteDetail, selectedAccountFavoriteSummary],
+  );
   const selectedAccountFavoriteError = cloudDetailError
     && cloudDetailError.id === selectedAccountFavoriteSummary?.id
     ? cloudDetailError.error
@@ -1012,20 +1099,53 @@ export default function App() {
       next.delete(id);
       return next;
     });
+    const workingCopy = sessions.sessions.find((session) => session.id === id);
+    const summary = auth.user
+      ? cloudHistoryItems.find((candidate) => candidate.id === id)
+      : undefined;
+    /* A conversation this device already holds opens on the copy it holds —
+       the switch is a local one, and nothing waits on the network. What the
+       cloud is asked for afterwards is only a correction: whether another
+       device has written this conversation since. A turn still being answered
+       is not asked about at all; its working copy is being written right now,
+       and the cloud's idea of it is the past. */
+    if (workingCopy) {
+      sessions.switchTo(id);
+      const cloudIsAhead = summary !== undefined && summary.updatedAt > workingCopy.updatedAt;
+      if (cloudIsAhead && !loadingSessions.has(id)) {
+        void openCloudSession(summary).catch((error) => {
+          console.warn('[sessions] background session revalidation failed.', error);
+          if (cloudErrorStatus(error) === 401) setAccountOpen(true);
+        });
+      }
+      return;
+    }
+    // Nothing local to open: this device is seeing the conversation for the
+    // first time, and the read is the switch.
     if (auth.user) {
-      const summary = cloudHistoryItems.find((candidate) => candidate.id === id);
       if (!summary) return;
       try {
         await openCloudSession(summary);
       } catch (error) {
         console.warn('[sessions] failed to open cloud session.', error);
         if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-        if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
+        // Gone from the cloud is gone: the library has already dropped the
+        // summary, and there is nothing to open.
+        if (cloudErrorStatus(error) === 404) return;
+        strudel.setError(t('requestFailed'));
       }
       return;
     }
     sessions.switchTo(id);
-  }, [auth.user, cloudHistoryItems, openCloudSession, persistAndFlushOutgoingSession, sessions, strudel]);
+  }, [
+    auth.user,
+    cloudHistoryItems,
+    loadingSessions,
+    openCloudSession,
+    persistAndFlushOutgoingSession,
+    sessions,
+    strudel,
+  ]);
 
   const handleDeleteSession = useCallback((id: string) => {
     if (!auth.user) {
@@ -1092,13 +1212,17 @@ export default function App() {
       setAccountOpen(true);
       return;
     }
-    void (async () => {
-      if (sessions.currentId && sessions.currentId !== summary.id) {
-        await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
-      }
-      setSelectedFavoriteId(summary.id);
-      await openCloudFavorite(summary);
-    })().catch((error) => {
+    /* The studio session's flush runs alongside the open, not in front of it.
+       Reading a favorite never touches the studio's session — the detail is
+       not accepted into it — so the two have no order between them, and the
+       flush is durable enough to finish on its own. Waiting on a network write
+       before the first local read is what put a spinner on a page whose
+       contents this device already has. */
+    if (sessions.currentId && sessions.currentId !== summary.id) {
+      void persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+    }
+    setSelectedFavoriteId(summary.id);
+    void openCloudFavorite(summary).catch((error) => {
       if (cloudErrorStatus(error) === 401) setAccountOpen(true);
     });
   }, [auth.user, openCloudFavorite, persistAndFlushOutgoingSession, sessions.currentId, strudel.code]);
@@ -1370,6 +1494,9 @@ export default function App() {
                 width: '200px',
                 maxHeight: '40dvh',
                 border: '0.5px solid var(--color-border)',
+                // The history search bar sticks to the top of this dropdown,
+                // so it has to be drawn on the dropdown's own ground.
+                ['--history-search-bg' as string]: 'var(--color-bg-primary)',
               }}
             >
               <div className="flex-1 overflow-y-auto min-h-0">
@@ -1439,6 +1566,7 @@ export default function App() {
         selectedItem={primaryNavItem}
         onSelect={handlePrimaryNavSelect}
         featuredPieceOpen={featuredPieceOpen}
+        accountInitials={accountInitials(auth.user)}
       />
 
       <>
@@ -1446,8 +1574,8 @@ export default function App() {
             so the column and its resize handle step aside there. Everything in
             them stays mounted, so drafts and local UI state survive the trip. */}
         <div
-          style={{ width: sidebarWidth, flexShrink: 0 }}
-          className={FULL_WIDTH_PAGES.has(primaryNavItem) ? 'hidden' : 'h-full'}
+          style={{ width: sidebarCollapsed ? 0 : sidebarWidth, flexShrink: 0 }}
+          className={FULL_WIDTH_PAGES.has(primaryNavItem) ? 'hidden' : 'h-full overflow-hidden'}
         >
           <div className={primaryNavItem === 'home' ? 'h-full' : 'hidden'}>
             <Sidebar
@@ -1501,13 +1629,37 @@ export default function App() {
           </div>
         </div>
 
-        {/* Horizontal resize handle */}
+        {/* Horizontal resize handle. Dragged shut it gives up its own width
+            too, so the studio's left edge lands exactly where the conversation
+            column's left edge was — the grab strip then hangs over the studio
+            instead of holding a gap open, and dragging it right brings the
+            column back. */}
         <div
           {...hDragHandlers}
           data-resize-handle="horizontal"
-          className={FULL_WIDTH_PAGES.has(primaryNavItem) ? 'hidden' : 'h-full w-divider shrink-0'}
+          data-collapsed={sidebarCollapsed || undefined}
+          className={
+            FULL_WIDTH_PAGES.has(primaryNavItem)
+              ? 'hidden'
+              : `relative h-full shrink-0 ${sidebarCollapsed ? 'w-0' : 'w-divider'}`
+          }
           style={{ cursor: 'col-resize' }}
-        />
+        >
+          {sidebarCollapsed && (
+            /* Reaching back over the gutter PrimaryNav holds open (`mr-region`,
+               which nothing else claims once the column is shut), so the whole
+               strip of ground between the nav and the studio takes the
+               col-resize cursor instead of a 6px seam at the studio's edge. */
+            <span
+              aria-hidden="true"
+              className="absolute inset-y-0 z-20"
+              style={{
+                left: 'calc(-1 * var(--spacing-region))',
+                width: 'calc(var(--spacing-region) + var(--spacing-divider))',
+              }}
+            />
+          )}
+        </div>
 
         <main ref={mainRef} className="flex min-w-0 flex-1 flex-col">
           {/* Hidden rather than unmounted on the other destinations: the audio
@@ -1606,8 +1758,21 @@ export default function App() {
               selectedId={auth.user ? selectedFavoriteId : undefined}
               detail={auth.user ? selectedAccountFavorite : undefined}
               focus={favoritesFocus}
-              isLoading={Boolean(auth.user && cloudLibrary.favorites.initialStatus === 'loading')}
-              error={auth.user ? cloudLibrary.favorites.initialError : null}
+              /* Both are the empty page's business only, the way the history
+                 panel's are. Rows on screen — last visit's or this one's — are
+                 the page; a request still out behind them is not a spinner,
+                 and one that failed behind them is not an apology in place of
+                 what the device already has. Saying otherwise would also hold
+                 the first entry shut, since a page that is loading or broken
+                 has nothing to open. */
+              isLoading={Boolean(
+                auth.user
+                && cloudFavoriteConversations.length === 0
+                && (!cloudLibraryEnabled || cloudLibrary.favorites.initialStatus === 'loading'),
+              )}
+              error={auth.user && cloudFavoriteConversations.length === 0
+                ? cloudLibrary.favorites.initialError
+                : null}
               onRetry={auth.user ? cloudLibrary.favorites.retryInitial : undefined}
               detailLoading={Boolean(auth.user && selectedAccountFavoriteSummary && !selectedAccountFavorite && !selectedAccountFavoriteError)}
               detailError={auth.user ? selectedAccountFavoriteError : null}
@@ -1617,7 +1782,12 @@ export default function App() {
               loadMoreError={auth.user ? cloudLibrary.favorites.moreError : null}
               onLoadMore={auth.user ? loadMoreCloudFavorites : undefined}
               onRetryLoadMore={auth.user ? cloudLibrary.favorites.retryMore : undefined}
-              onSelect={auth.user ? handleSelectFavorite : undefined}
+              /* Withheld until the library can actually answer: the page opens
+                 its first entry the moment one is on screen, and an open that
+                 throws because the library is still coming up is an open the
+                 page counts as done. Handing it down when the library is ready
+                 is what asks for that first entry again. */
+              onSelect={auth.user && cloudLibraryEnabled ? handleSelectFavorite : undefined}
               isPlaying={strudel.isPlaying}
               playingCode={strudel.code}
               onPlayCode={auth.user ? (code) => { void strudel.play(code); } : undefined}

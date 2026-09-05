@@ -74,7 +74,7 @@ export default function ApiKeyModal({ onClose, onSaved, required = false }: ApiK
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
-      <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-2xl">
+      <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-dialog-overlay">
         <h2 className="text-lg font-semibold text-text-primary mb-2">{t('setApiKey')}</h2>
         <p className="text-xs text-text-muted mb-7">
           {t('apiKeyDesc')}

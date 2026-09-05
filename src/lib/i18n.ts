@@ -86,7 +86,12 @@ const S: Record<string, readonly [string, string]> = {
   favoritesList:        ['收藏的对话', 'Favorited conversations'],
   favoritesConversation:['对话', 'Conversation'],
   favoritesCodeTitle:   ['代码', 'Script'],
-  favoritesFinalVersion:['最终版', 'Final version'],
+  /* The script a conversation was left at when no reply committed it — the
+     model's `kind: 'final'`. Named for where it sits and not for what it is:
+     it is the newest of the scripts and outside the V01/V02 sequence, which
+     is all a reader needs, and calling it final would say the piece was
+     settled when all that happened is that nothing came after it. */
+  favoritesLatestScript:['最新', 'Latest'],
   favoritesSavedAt:     ['收藏于 {time}', 'Saved {time}'],
   favoritesTurnCount:   ['{n} 条消息', '{n} messages'],
   favoritesCodeCount:   ['{n} 段代码', '{n} scripts'],
@@ -313,7 +318,6 @@ const S: Record<string, readonly [string, string]> = {
   personaPromptPlaceholder: ['描述一下这个人物的性格和说话方式，比如它是谁、会怎么和你聊天。', "Describe this persona's character and how they talk — for example, who they are and how they'd chat with you."],
 
   // ConversationView
-  startCreating: ['说点什么开始创作', 'Say something to start creating'],
   strudelCode:   ['Strudel 代码', 'Strudel code'],
   lines:         ['行', 'lines'],
   branchFrom:    ['从此处创建分支对话', 'Branch conversation from here'],
@@ -334,6 +338,10 @@ const S: Record<string, readonly [string, string]> = {
   // HistoryPanel
   history:    ['历史对话', 'History'],
   noSessions: ['暂无会话', 'No sessions'],
+  historySearch:      ['搜索历史对话', 'Search history'],
+  historySearchHint:  ['搜索', 'Search'],
+  historySearchClear: ['清除搜索', 'Clear search'],
+  historySearchEmpty: ['没有匹配的对话', 'No matching conversations'],
 
   // Sidebar
   choosePersona: ['选择人物', 'Choose persona'],
