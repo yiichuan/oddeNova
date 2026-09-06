@@ -14,6 +14,17 @@ export const zh: boolean = isZh();
  */
 export const FAVORITES_EMPTY_ZH = '收藏的对话会在这里显示';
 
+/**
+ * The theme song's opening line, 中文, named for the same reason as the one
+ * above: it lands in the greeting slot, in 京華老宋体, so the subset build has
+ * to be able to read it as text rather than as a lookup.
+ *
+ * Short on purpose. That slot holds one centred line in the middle of an empty
+ * conversation — the pool in `greetings.ts` is the register it has to sit in,
+ * and a paragraph there reads as a notice rather than an opening.
+ */
+export const THEME_SONG_INTRO_ZH = '听听看 《迟来的信使》，接收 创作 的 邀约';
+
 const S: Record<string, readonly [string, string]> = {
   // Common
   cancel:       ['取消', 'Cancel'],
@@ -155,8 +166,8 @@ const S: Record<string, readonly [string, string]> = {
   sessionHistory:   ['会话历史', 'Session history'],
   newSessionTitle:  ['新会话', 'New session'],
   themeSongTitle:   ['Beta 1.0 主题曲', 'Beta 1.0 Theme Song'],
-  themeSongIntro:   ['《迟来的信使》—— oddeNova Beta 1.0 的主题曲，已经在代码面板里了。按播放听听看，或者告诉我你想把它改成什么样。',
-                     '“The Late Messenger” — oddeNova\'s Beta 1.0 theme song, already loaded in the code panel. Press play to hear it, or tell me how you would like it changed.'],
+  themeSongIntro:   [THEME_SONG_INTRO_ZH,
+                     'Hear “The Late Messenger” — and take up the invitation to write.'],
   branchSuffix:     ['（分支）', ' (branch)'],
   sessionSyncOffline: ['未同步到云端 · 联网后自动上传', 'Not synced to cloud · uploads when online'],
   sessionSyncRetrying:['同步失败，正在重试', 'Sync failed; retrying'],

@@ -9,6 +9,7 @@ import {
   type SubsetManifest,
 } from '../../../scripts/build-greeting-font-subset';
 import { GREETINGS_ZH } from '../greetings';
+import { FAVORITES_EMPTY_ZH, THEME_SONG_INTRO_ZH } from '../i18n';
 
 const manifest = (): SubsetManifest => JSON.parse(readFileSync(MANIFEST, 'utf8')) as SubsetManifest;
 
@@ -19,6 +20,15 @@ describe('greetingSubsetText', () => {
       for (const char of greeting) {
         expect(text).toContain(char);
       }
+    }
+  });
+
+  it('covers the other two lines set in this face', () => {
+    // Both reach the same slot the greetings do — the Favorites empty state,
+    // and the opening line of the theme-song session seeded on first entry.
+    const text = greetingSubsetText();
+    for (const char of FAVORITES_EMPTY_ZH + THEME_SONG_INTRO_ZH) {
+      expect(text).toContain(char);
     }
   });
 
