@@ -1,0 +1,930 @@
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  DownloadIcon,
+  MaximizeIcon,
+  MinimizeIcon,
+  MutedVolumeIcon,
+  PauseIcon,
+  PlayIcon,
+  UpdateIcon,
+  VolumeIcon,
+} from '../icons';
+import { t } from '../../lib/i18n';
+import { strudelService } from '../../services/strudel';
+import { isDemoMode } from '../../demo/demo-config';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import {
+  formatPlaybackTime,
+  getStrudelLoopCycles,
+  getStrudelLoopDurationSeconds,
+} from '../../lib/strudel-timing';
+import {
+  ExportPopover,
+  ShareButton,
+  type GenerateTitleParams,
+} from './TopActionBar';
+import { useExportPopoverController, type ExportParams } from '../../hooks/useExportPopoverController';
+import type { Session } from '../../hooks/useSessions';
+import type { ChatMessage } from '../../hooks/useChat';
+import ControlHoverLabel from './ControlHoverLabel';
+import { anchorAbove, type ControlHoverLabelAnchor } from './control-hover-anchor';
+import ControlBarParticles from './ControlBarParticles';
+import SessionSyncStatus from './SessionSyncStatus';
+import type { SessionSyncStatus as SyncStatus } from '../../lib/session-cloud-sync';
+
+interface CodePanelProps {
+  code: string;
+  error: string | null;
+  isPlaying: boolean;
+  isPaused: boolean;
+  engineReady: boolean;
+  /**
+   * The hued colour the playing piece's own `.color()` set, if any — null the
+   * rest of the time. Recolours the playback progress bar and the control
+   * bar's particle field; both fall back to the studio's own orange on their
+   * own when this is absent. See `StrudelState.accentColor`.
+   */
+  accentColor?: string | null;
+  session: Session | null;
+  messages: ChatMessage[];
+  exportState: { status: 'idle' | 'exporting' | 'error'; progress: number; error?: string };
+  onExport: (params: ExportParams) => Promise<boolean>;
+  onGenerateTitle: (params: GenerateTitleParams) => Promise<string>;
+  onResetExportState: () => void;
+  bpm: number;
+  onMount: (el: HTMLDivElement) => void;
+  onPlay: () => void;
+  onPause: () => void;
+  /**
+   * The editor holds an edit the sounding pattern hasn't heard yet
+   * (`StrudelState.isDirty`). Together with `isPlaying` this is what puts the
+   * update button on screen — see the footer.
+   */
+  isDirty?: boolean;
+  /**
+   * The code the sounding pattern was compiled from (`StrudelState.activeCode`)
+   * — unlike `code`, it only moves when an evaluate succeeds. The progress bar
+   * runs off this so an unheard edit leaves the running piece's duration and
+   * playhead alone; both follow once the edit is played or updated in.
+   */
+  activeCode?: string;
+  /**
+   * Re-evaluates the edited code into the running transport, without stopping
+   * it. Only reachable while that swap would change something.
+   */
+  onUpdate: () => void;
+  onEditorFocusChange?: (focused: boolean) => void;
+  /**
+   * Whether the studio shows a visualizer pane at all — Settings → Appearance
+   * can switch it off. Off, there is nothing to collapse or stand in for: the
+   * toggle leaves the control bar and the particle field stays still.
+   */
+  vizEnabled?: boolean;
+  /** Whether the visualizer pane below this panel is currently collapsed. */
+  vizCollapsed?: boolean;
+  /** Collapses/expands that pane; the footer then sits at the page bottom. */
+  onToggleViz?: () => void;
+  syncStatus?: SyncStatus;
+  showSyncStatus?: boolean;
+}
+
+interface Metaball {
+  cx: number;
+  cy: number;
+  r: number;
+  x: readonly number[];
+  y: readonly number[];
+  duration: number;
+  delay: number;
+}
+
+interface MetaballGroup {
+  balls: readonly Metaball[];
+  motionScale?: number;
+}
+
+const ORGANIC_LIGHT_GROUPS: readonly MetaballGroup[] = [
+  { balls: [
+    { cx: 70, cy: 80, r: 46, x: [0, 24, 60, 38, -14, -8, 0], y: [0, -18, 6, 22, 13, -9, 0], duration: 8.6, delay: -4.1 },
+    { cx: 130, cy: 80, r: 44, x: [0, -22, -60, -34, 16, 9, 0], y: [0, 17, -5, -20, -12, 11, 0], duration: 9.1, delay: -5.3 },
+  ] },
+  // Diagonal, not vertical: stacked on one x these two land on the same spot
+  // once the viewBox is squashed into a 48px bar, reading as a single clump
+  // that occupies no width — which is what opened the 204px gaps either side.
+  { balls: [
+    { cx: 78, cy: 54, r: 43, x: [0, -20, 8, 22, 13, -15, 0], y: [0, 24, 54, 35, -13, -9, 0], duration: 8.9, delay: -5.2 },
+    { cx: 122, cy: 108, r: 47, x: [0, 18, -9, -20, -12, 14, 0], y: [0, -22, -54, -32, 15, 10, 0], duration: 9.4, delay: -2.8 },
+  ] },
+  { balls: [
+    { cx: 68, cy: 59, r: 45, x: [0, 29, 64, 43, -13, -8, 0], y: [0, 5, 42, 54, 18, -16, 0], duration: 9.2, delay: -4.5 },
+    { cx: 132, cy: 101, r: 48, x: [0, -27, -64, -40, 15, 9, 0], y: [0, -7, -42, -51, -16, 18, 0], duration: 9.8, delay: -5.4 },
+  ] },
+  { motionScale: 1.25, balls: [
+    { cx: 100, cy: 45, r: 41, x: [0, -18, -38, 0, 38, 20, 0], y: [0, 25, 60, 53, 61, 28, 0], duration: 9.7, delay: -3.6 },
+    { cx: 62, cy: 105, r: 45, x: [0, 34, 76, 57, 38, 14, 0], y: [0, -12, 1, -29, -60, -32, 0], duration: 10.1, delay: -4.8 },
+    { cx: 138, cy: 106, r: 43, x: [0, -18, -38, -57, -76, -38, 0], y: [0, -28, -61, -33, -1, 14, 0], duration: 10.5, delay: -6.2 },
+  ] },
+  { motionScale: 1.25, balls: [
+    { cx: 47, cy: 82, r: 41, x: [0, 24, 53, 78, 106, 49, 0], y: [0, -18, -5, 13, 1, 17, 0], duration: 9.3, delay: -3.7 },
+    { cx: 100, cy: 77, r: 37, x: [0, 28, 53, 25, -53, -27, 0], y: [0, 16, 6, -15, 5, -14, 0], duration: 9.8, delay: -6.1 },
+    { cx: 153, cy: 83, r: 40, x: [0, -27, -53, -80, -106, -51, 0], y: [0, -15, -6, 14, -1, 16, 0], duration: 10.2, delay: -2.2 },
+  ] },
+  { motionScale: 1.25, balls: [
+    { cx: 66, cy: 52, r: 41, x: [0, 7, 2, 35, 64, 30, 0], y: [0, 31, 59, 62, 53, 19, 0], duration: 9.6, delay: -5.4 },
+    { cx: 68, cy: 111, r: 45, x: [0, 31, 62, 31, -2, -12, 0], y: [0, -18, -6, -35, -59, -28, 0], duration: 10, delay: -4.9 },
+    { cx: 130, cy: 105, r: 42, x: [0, -32, -64, -63, -62, -30, 0], y: [0, -26, -53, -25, 6, 15, 0], duration: 10.4, delay: -7.3 },
+  ] },
+] as const;
+
+// Scale each metaball's area to 1.5× its previous size: √2 × √1.5 = √3.
+const METABALL_LINEAR_SCALE = Math.sqrt(3);
+const METABALL_DURATION_SCALE = 2;
+const COMPOSITE_LIGHT_GROUP_ORDER = [0, 3, 1, 4, 2, 5] as const;
+
+
+/**
+ * The per-ball half of `code-panel-ball-drift`: the five interior stops of the
+ * path this ball walks, plus its own tempo. The path is stated as offsets from
+ * where the ball already sits, so it becomes a `transform` on the circle rather
+ * than an animation of `cx`/`cy` — which is what lets CSS drive it at all.
+ *
+ * Stops 0 and 6 are both zero, the seam the loop closes on, so only 1..5 need
+ * naming. The circle's transform composes inside the group's `scale()`, exactly
+ * as an offset applied to `cx` used to, so the motion is unchanged in size.
+ */
+function ballDriftVars(ball: Metaball, motionScale = 1): CSSProperties {
+  const vars: Record<string, string> = {
+    '--ball-duration': `${ball.duration * METABALL_DURATION_SCALE}s`,
+    '--ball-delay': `${ball.delay}s`,
+  };
+  for (let stop = 1; stop <= 5; stop += 1) {
+    vars[`--ball-x${stop}`] = `${ball.x[stop] * motionScale}px`;
+    vars[`--ball-y${stop}`] = `${ball.y[stop] * motionScale}px`;
+  }
+  return vars as CSSProperties;
+}
+
+function usePrefersReducedMotion() {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!media) return;
+    const handleChange = (event: MediaQueryListEvent) => setPrefersReducedMotion(event.matches);
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
+  return prefersReducedMotion;
+}
+
+function PlaybackProgress({
+  code,
+  isPlaying,
+  isPaused,
+  accentColor,
+}: {
+  code: string;
+  isPlaying: boolean;
+  isPaused: boolean;
+  accentColor?: string | null;
+}) {
+  const totalSeconds = useMemo(() => getStrudelLoopDurationSeconds(code), [code]);
+  const loopCycles = useMemo(() => code.trim() ? getStrudelLoopCycles(code) : 0, [code]);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const elapsedRef = useRef(0);
+  const seekInputRef = useRef<HTMLInputElement>(null);
+  const pointerFocusedRef = useRef(false);
+  const playbackOriginRef = useRef({ elapsedSeconds: 0, startedAt: 0 });
+  const wasPlayingRef = useRef(false);
+
+  const updateElapsedSeconds = useCallback((seconds: number) => {
+    elapsedRef.current = seconds;
+    setElapsedSeconds(seconds);
+  }, []);
+
+  // Stopping (unlike pausing) rewinds the playhead, and so does losing a
+  // playable duration. Adjusted on the transition during render rather than in
+  // an effect, which would cost a cascading render.
+  const isRewound = (!isPlaying || totalSeconds <= 0) && !isPaused;
+  const [wasRewound, setWasRewound] = useState(isRewound);
+  if (isRewound !== wasRewound) {
+    setWasRewound(isRewound);
+    if (isRewound) setElapsedSeconds(0);
+  }
+
+  useEffect(() => {
+    if (!isPlaying || totalSeconds <= 0) {
+      // Rewinding the resume origin belongs here: refs cannot be written during render.
+      if (!isPaused) elapsedRef.current = 0;
+      wasPlayingRef.current = false;
+      return;
+    }
+
+    wasPlayingRef.current = true;
+    playbackOriginRef.current = {
+      elapsedSeconds: elapsedRef.current,
+      startedAt: performance.now(),
+    };
+    let frame = 0;
+    const update = (now: number) => {
+      const origin = playbackOriginRef.current;
+      updateElapsedSeconds((origin.elapsedSeconds + (now - origin.startedAt) / 1000) % totalSeconds);
+      frame = window.requestAnimationFrame(update);
+    };
+    frame = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(frame);
+  }, [code, isPaused, isPlaying, totalSeconds, updateElapsedSeconds]);
+
+  // Clamped because a code swap can shorten the loop under a playhead that is
+  // already past the new end: the next frame's modulo brings it back, this
+  // keeps the one render in between from overrunning the track.
+  const progress = totalSeconds > 0 ? Math.min(1, elapsedSeconds / totalSeconds) : 0;
+  const elapsedLabel = formatPlaybackTime(elapsedSeconds);
+  const totalLabel = formatPlaybackTime(totalSeconds);
+  const seekDisabled = totalSeconds <= 0 || loopCycles <= 0;
+
+  const handleSeek = (nextProgress: number) => {
+    if (seekDisabled) return;
+    const normalizedProgress = Math.min(1, Math.max(0, nextProgress));
+    const nextElapsedSeconds = normalizedProgress * totalSeconds;
+    updateElapsedSeconds(nextElapsedSeconds);
+    playbackOriginRef.current = {
+      elapsedSeconds: nextElapsedSeconds,
+      startedAt: performance.now(),
+    };
+    strudelService.seekPlayback(normalizedProgress, loopCycles);
+  };
+
+  return (
+    <div
+      data-testid="code-panel-playback-progress"
+      className="code-panel-playback-layout relative z-10 flex min-w-0 flex-1 items-center"
+      // Falls back to the studio's own orange via the CSS `var(..., #D9542B)`
+      // default below whenever there is no playback accent to show — pause,
+      // stop, or a piece with no hued `.color()`. Leaving the property unset
+      // rather than writing the fallback value here too means there is one
+      // place (the CSS itself) that says what "no accent" paints as.
+      style={accentColor ? ({ '--code-panel-accent': accentColor } as CSSProperties) : undefined}
+    >
+      <div
+        className="group relative flex h-6 min-w-0 flex-1 items-center"
+        onPointerLeave={() => {
+          if (isDragging || !pointerFocusedRef.current) return;
+          seekInputRef.current?.blur();
+          pointerFocusedRef.current = false;
+        }}
+      >
+        <div
+          data-testid="code-panel-playback-track"
+          className={`code-panel-playback-track relative w-full rounded-full bg-current text-text-primary transition-[height] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-[4px] group-focus-within:h-[4px] ${isDragging ? 'h-[4px]' : 'h-[2px]'}`}
+        >
+          <span
+            data-testid="code-panel-playback-progress-fill"
+            className="absolute inset-y-0 left-0 rounded-full bg-[var(--code-panel-accent,var(--color-playback-accent))]"
+            style={{ width: `${progress * 100}%` }}
+          />
+          <span
+            data-testid="code-panel-playback-progress-thumb"
+            className={`code-panel-playback-thumb pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-current bg-[var(--code-panel-accent,var(--color-playback-accent))] text-text-primary transition-[width,height,opacity] duration-[160ms] ease-out motion-reduce:transition-none group-hover:h-4 group-hover:w-4 group-hover:opacity-100 group-focus-within:h-4 group-focus-within:w-4 group-focus-within:opacity-100 ${isDragging ? 'h-4 w-4 opacity-100' : 'h-[10px] w-[10px] opacity-0'}`}
+            style={{ left: `${progress * 100}%` }}
+          />
+        </div>
+        <input
+          ref={seekInputRef}
+          data-testid="code-panel-playback-seek"
+          type="range"
+          min={0}
+          max={1000}
+          step={1}
+          value={Math.round(progress * 1000)}
+          disabled={seekDisabled}
+          onChange={(event) => handleSeek(Number(event.target.value) / 1000)}
+          onPointerDown={() => {
+            pointerFocusedRef.current = true;
+            setIsDragging(true);
+          }}
+          onPointerUp={() => setIsDragging(false)}
+          onPointerCancel={() => {
+            pointerFocusedRef.current = false;
+            setIsDragging(false);
+          }}
+          onBlur={() => {
+            pointerFocusedRef.current = false;
+            setIsDragging(false);
+          }}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+          aria-label={t('playbackProgress')}
+          aria-valuetext={`${elapsedLabel}/${totalLabel}`}
+        />
+      </div>
+      <span
+        data-testid="code-panel-playback-time"
+        className="shrink-0 text-[12px] leading-none tabular-nums text-text-primary"
+      >
+        {elapsedLabel}/{totalLabel}
+      </span>
+    </div>
+  );
+}
+
+export default function CodePanel({
+  code,
+  error,
+  isPlaying,
+  isPaused,
+  engineReady,
+  accentColor,
+  session,
+  messages,
+  exportState,
+  onExport,
+  onGenerateTitle,
+  onResetExportState,
+  bpm,
+  onMount,
+  isDirty = false,
+  activeCode = '',
+  onPlay,
+  onPause,
+  onUpdate,
+  onEditorFocusChange,
+  vizEnabled = true,
+  vizCollapsed = false,
+  onToggleViz,
+  syncStatus,
+  showSyncStatus = false,
+}: CodePanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const volumeButtonRef = useRef<HTMLButtonElement>(null);
+  const volumePopoverRef = useRef<HTMLDivElement>(null);
+  const volumeCloseTimerRef = useRef<number | null>(null);
+  const [volume, setVolume] = useState(() => isDemoMode() ? 0.1 : 1);
+  const lastNonzeroVolumeRef = useRef(volume > 0 ? volume : 1);
+  const [volumeOpen, setVolumeOpen] = useState(false);
+  const [volumeAnchor, setVolumeAnchor] = useState<{ right: number; bottom: number } | null>(null);
+  const [exportAnchor, setExportAnchor] = useState<{ right: number; top: number } | null>(null);
+  const [exportHoverAnchor, setExportHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+  const [updateHoverAnchor, setUpdateHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+  const [vizHoverAnchor, setVizHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+
+  const isMobile = useIsMobile();
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  const exportWithVolumeRestore = useCallback(async (params: ExportParams) => {
+    const ok = await onExport(params);
+    await strudelService.setMasterVolume(volume);
+    return ok;
+  }, [onExport, volume]);
+  const { exportOpen, setExportOpen, handleExport } = useExportPopoverController(
+    exportWithVolumeRestore,
+    onResetExportState,
+  );
+
+  const clearVolumeCloseTimer = useCallback(() => {
+    if (volumeCloseTimerRef.current === null) return;
+    window.clearTimeout(volumeCloseTimerRef.current);
+    volumeCloseTimerRef.current = null;
+  }, []);
+
+  const openVolumePopover = useCallback((element: HTMLElement) => {
+    clearVolumeCloseTimer();
+    const rect = element.getBoundingClientRect();
+    setVolumeAnchor({
+      right: window.innerWidth - rect.right - 6,
+      bottom: window.innerHeight - rect.top + 8,
+    });
+    setVolumeOpen(true);
+  }, [clearVolumeCloseTimer]);
+
+  const scheduleVolumeClose = useCallback(() => {
+    clearVolumeCloseTimer();
+    volumeCloseTimerRef.current = window.setTimeout(() => {
+      volumeCloseTimerRef.current = null;
+      setVolumeOpen(false);
+    }, 150);
+  }, [clearVolumeCloseTimer]);
+
+  const setMasterVolume = useCallback((nextVolume: number) => {
+    if (nextVolume > 0) lastNonzeroVolumeRef.current = nextVolume;
+    setVolume(nextVolume);
+    void strudelService.setMasterVolume(nextVolume).catch(() => {});
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setMasterVolume(volume > 0 ? 0 : lastNonzeroVolumeRef.current);
+  }, [setMasterVolume, volume]);
+
+  useEffect(() => clearVolumeCloseTimer, [clearVolumeCloseTimer]);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      onMount(containerRef.current);
+    }
+  // onMount is stable (useCallback), so this fires only once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    strudelService.setAutocompletionEnabled(!isMobile);
+    // Wrap instead of scrolling sideways in the narrow mobile drawer.
+    strudelService.setLineWrappingEnabled(isMobile);
+  }, [isMobile]);
+
+  // Demo mode plays at a quiet 10% by default; the master engine otherwise
+  // starts at full, so push the demo default down on mount.
+  useEffect(() => {
+    if (isDemoMode()) void strudelService.setMasterVolume(0.1);
+  }, []);
+
+  useEffect(() => {
+    if (!volumeOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (volumeButtonRef.current?.contains(target) || volumePopoverRef.current?.contains(target)) return;
+      setVolumeOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [volumeOpen]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !onEditorFocusChange) return;
+
+    let focusOutTimer: number | null = null;
+
+    const clearFocusOutTimer = () => {
+      if (focusOutTimer === null) return;
+      window.clearTimeout(focusOutTimer);
+      focusOutTimer = null;
+    };
+
+    const handleFocusIn = () => {
+      clearFocusOutTimer();
+      onEditorFocusChange(true);
+    };
+
+    const handleFocusOut = (event: FocusEvent) => {
+      clearFocusOutTimer();
+      const nextTarget = event.relatedTarget;
+      if (nextTarget instanceof Node && container.contains(nextTarget)) return;
+
+      focusOutTimer = window.setTimeout(() => {
+        focusOutTimer = null;
+        const activeElement = document.activeElement;
+        if (activeElement instanceof Node && container.contains(activeElement)) return;
+        onEditorFocusChange(false);
+      }, 0);
+    };
+
+    container.addEventListener('focusin', handleFocusIn);
+    container.addEventListener('focusout', handleFocusOut);
+
+    return () => {
+      clearFocusOutTimer();
+      container.removeEventListener('focusin', handleFocusIn);
+      container.removeEventListener('focusout', handleFocusOut);
+    };
+  }, [onEditorFocusChange]);
+
+  // Keep the bottom fade above the horizontal scrollbar only when that
+  // scrollbar actually exists. Without overflow, the fade reaches the edge.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let resizeObserver: ResizeObserver | null = null;
+    let scroller: HTMLElement | null = null;
+
+    const updateScrollbarState = () => {
+      if (!scroller) return;
+      const editor = scroller.closest<HTMLElement>('.cm-editor');
+      if (!editor) return;
+      editor.dataset.hasHorizontalScrollbar = String(scroller.scrollWidth > scroller.clientWidth + 1);
+    };
+
+    const attachScroller = (nextScroller: HTMLElement) => {
+      if (scroller === nextScroller) {
+        updateScrollbarState();
+        return;
+      }
+      resizeObserver?.disconnect();
+      scroller = nextScroller;
+      resizeObserver = new ResizeObserver(updateScrollbarState);
+      resizeObserver.observe(nextScroller);
+      const content = nextScroller.querySelector('.cm-content');
+      if (content instanceof HTMLElement) resizeObserver.observe(content);
+      updateScrollbarState();
+    };
+
+    const mutationObserver = new MutationObserver(() => {
+      const nextScroller = container.querySelector('.cm-scroller');
+      if (nextScroller instanceof HTMLElement) attachScroller(nextScroller);
+    });
+    mutationObserver.observe(container, { childList: true, subtree: true, characterData: true });
+
+    const existingScroller = container.querySelector('.cm-scroller');
+    if (existingScroller instanceof HTMLElement) attachScroller(existingScroller);
+
+    return () => {
+      mutationObserver.disconnect();
+      resizeObserver?.disconnect();
+    };
+  }, []);
+
+  const handlePlayClick = () => {
+    if (isPlaying) {
+      onPause();
+    } else if (engineReady) {
+      onPlay();
+    }
+  };
+
+  // Hover labels are portalled to <body>, so they need viewport coordinates:
+  // centred on the control, sitting just above it.
+  const hasPlayableCode = code.trim().length > 0;
+  const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
+  // Only a playing piece with an unheard edit has anything to update into.
+  const canUpdate = isPlaying && isDirty;
+  // What the transport is on, which is what the progress bar measures. While a
+  // piece sounds that is the last evaluated code, not the editor buffer: typing
+  // must not restretch the duration or move the playhead of a pattern that is
+  // still playing the old bars. With nothing sounding there is no transport to
+  // describe, so the buffer is the piece — its duration is a preview of what
+  // pressing play would start.
+  const timelineCode = (isPlaying || isPaused) && activeCode ? activeCode : code;
+
+  return (
+    <div ref={panelRef} className="h-full flex flex-col overflow-hidden rounded-region">
+      <style>{`
+        @keyframes cmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .video-fade-in { animation: cmFadeIn 0.6s ease-out forwards; }
+      `}</style>
+
+      {/* StrudelMirror mounts here. `isolate` keeps CodeMirror's own layering
+          scale — the gutter at 200, the top and bottom fades at 240, the scrollbar mask
+          at 250 — inside this box. Those numbers are chosen against each other,
+          not against the app, and without a stacking context of their own they
+          escape into the desktop layer stack and paint over the modals and
+          menus that sit at 50. */}
+      <div
+        data-testid="code-panel-code-layer"
+        className="relative isolate flex-1 min-h-0 overflow-hidden rounded-t-region border border-border bg-conversation-surface"
+      >
+        <div
+          ref={containerRef}
+          data-testid="code-panel-editor-root"
+          className="code-editor-fade-top h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
+        />
+
+        {error && (
+          <div
+            data-testid="code-panel-runtime-error"
+            // Above CodeMirror's whole scale, top fade included: the banner
+            // lands in exactly the strip the top mask covers, and an error is
+            // never the thing that should be washed out.
+            className="absolute right-[8px] top-[8px] z-[260] w-fit rounded-[4px] border border-diff-remove bg-diff-remove/10 p-2.5 text-xs text-diff-remove font-mono whitespace-pre-wrap wrap-break-word"
+            style={{ maxWidth: 'min(420px, calc(100% - 24px))' }}
+          >
+            {error}
+          </div>
+        )}
+
+        {/* Sync status floats over the code without resizing it. The error
+            banner lives at the top-right, so the capsule's position can never
+            depend on whether the code is broken. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end">
+          <SessionSyncStatus
+            status={syncStatus}
+            visible={!!showSyncStatus}
+            className="ml-auto shrink-0 mr-3 mb-2"
+          />
+        </div>
+      </div>
+
+      {/* Footer — desktop playback control. On mobile transport lives next to
+          App's code-pill toggle.
+
+          The negative margins all serve one end — the bar's glass rim, not the
+          bar's box, is what the eye takes for its edge, so the rim has to land
+          on the panel's own outline rather than inside it. The bar is grown a
+          pixel past the root on three sides and the root's clip takes that
+          pixel back, cutting away the bar's own transparent border and leaving
+          the rim flush against the panel edge. Hence the 2px-wider box with
+          `-ml-px`, and the 1px-taller box with `-mb-px`; both are clips, not
+          overhangs. Miss either one and the rim on that side sits a pixel in
+          from the others, which reads as a rim of uneven width.
+
+          `-mt-px` is the odd one out — nothing clips there. It pulls the bar's
+          transparent top border onto the code layer's bottom border so the
+          bar's ground paints over it, leaving the seam as one line — the rim's
+          top stroke — rather than two, with the code layer's own rule hidden
+          beneath it.
+
+          The height is the plain 48px bar plus that one clipped pixel. Net
+          contribution to the column is unchanged at 47px — 49 less the two
+          negative margins — so the code layer keeps the height it had. */}
+      {!isMobile && (
+        <div
+          data-testid="code-panel-controls-layer"
+          className="code-panel-controls relative z-10 -mt-px -mb-px -ml-px flex h-[calc(3rem+1px)] w-[calc(100%+2px)] shrink-0 items-stretch rounded-b-region border bg-conversation-surface"
+          style={{ borderColor: 'transparent', fontFamily: "'ABeeZee', monospace" }}
+        >
+          <div
+            data-testid="code-panel-light-field"
+            className="code-panel-light-field"
+            aria-hidden="true"
+          >
+            {COMPOSITE_LIGHT_GROUP_ORDER.map((groupIndex, index) => {
+              const group = ORGANIC_LIGHT_GROUPS[groupIndex];
+              return (
+                <span className="code-panel-light-blob" key={groupIndex}>
+                  <svg viewBox="0 0 200 160" preserveAspectRatio="none" focusable="false">
+                  <defs>
+                    <filter id={`code-panel-metaball-${index}`} x="-35%" y="-35%" width="170%" height="170%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="7.5" result="blur" />
+                      <feColorMatrix
+                        in="blur"
+                        mode="matrix"
+                        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"
+                      />
+                    </filter>
+                  </defs>
+                  <g
+                    filter={`url(#code-panel-metaball-${index})`}
+                    transform={`translate(100 80) scale(${METABALL_LINEAR_SCALE}) translate(-100 -80)`}
+                  >
+                    {group.balls.map((ball, ballIndex) => (
+                      <circle
+                        key={ballIndex}
+                        cx={ball.cx}
+                        cy={ball.cy}
+                        r={ball.r}
+                        className="code-panel-light-ball"
+                        style={ballDriftVars(ball, group.motionScale)}
+                      />
+                    ))}
+                  </g>
+                  </svg>
+                </span>
+              );
+            })}
+          </div>
+
+          {/* Stands in for the particle galaxy while it is collapsed: its motes
+              falling through the bar like snow, some of them burning orange on
+              the beat while a piece plays, more of them the louder it sounds.
+              Draws nothing under the ASCII animation, whose characters belong
+              to its own pane rather than across the transport. */}
+          <ControlBarParticles
+            active={vizEnabled && vizCollapsed}
+            isPlaying={isPlaying}
+            bpm={bpm}
+            sampleSpectrum={strudelService.sampleAudioSpectrum}
+            motionless={prefersReducedMotion}
+            accentColor={accentColor}
+          />
+
+          <span
+            data-testid="code-panel-controls-light-border"
+            className="code-panel-controls-light-border"
+            aria-hidden="true"
+          />
+
+          {/* Playback position is anchored to the controls boundary, not CodeMirror's gutter. */}
+          <div
+            data-testid="code-panel-play-control"
+            className="code-panel-transport relative z-10 flex items-center justify-center py-[6px]"
+            style={{ marginLeft: 'var(--code-panel-play-button-offset)' }}
+          >
+            <button
+              onClick={handlePlayClick}
+              disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
+              className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover disabled:cursor-not-allowed disabled:text-control-icon-disabled disabled:opacity-100"
+              aria-label={isPlaying ? t('pause') : t('play')}
+            >
+              {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={18} />}
+            </button>
+
+            {/* Live update: re-evaluates the edited code into the pattern that
+                is already running, so a change lands on the next cycle instead
+                of costing a pause/replay.
+
+                Present only while it would do something — a piece is sounding
+                *and* the editor holds an edit that pattern hasn't heard. Both
+                halves matter: stopped, there is nothing to swap into and
+                starting is the play button's job; unedited, the swap would put
+                back the pattern already playing. So this is a button that
+                shows up when the edit does, rather than a permanently greyed
+                one. It sits after play so its coming and going leaves the
+                transport where it was and is absorbed by the progress bar. */}
+            {canUpdate && (
+              <div
+                onMouseEnter={(event) => setUpdateHoverAnchor(anchorAbove(event.currentTarget))}
+                onMouseLeave={() => setUpdateHoverAnchor(null)}
+                onFocusCapture={(event) => setUpdateHoverAnchor(anchorAbove(event.currentTarget))}
+                onBlurCapture={() => setUpdateHoverAnchor(null)}
+                className="code-panel-update-enter flex items-center"
+              >
+                <button
+                  type="button"
+                  onClick={onUpdate}
+                  className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover"
+                  aria-label={t('updatePattern')}
+                >
+                  <UpdateIcon size={16} />
+                </button>
+                <ControlHoverLabel
+                  anchor={updateHoverAnchor}
+                  label={t('updatePattern')}
+                  testId="code-panel-update-hover-label"
+                />
+              </div>
+            )}
+          </div>
+          {/* Not remounted per script: a swap lands on the next cycle boundary
+              with the transport still running, so the playhead carries over
+              rather than snapping to zero under sound that never restarted.
+              The rewind cases — stop, and an edit that resets a paused piece —
+              come through `isPlaying`/`isPaused` instead. */}
+          <PlaybackProgress
+            code={timelineCode}
+            isPlaying={isPlaying}
+            isPaused={isPaused}
+            accentColor={accentColor}
+          />
+
+          <div
+            data-testid="code-panel-right-actions"
+            className="code-panel-right-actions relative z-10 ml-auto flex shrink-0 items-center"
+          >
+            <button
+              ref={volumeButtonRef}
+              type="button"
+              onClick={() => {
+                clearVolumeCloseTimer();
+                toggleMute();
+              }}
+              onMouseEnter={(event) => openVolumePopover(event.currentTarget)}
+              onMouseLeave={scheduleVolumeClose}
+              onFocus={(event) => openVolumePopover(event.currentTarget)}
+              onBlur={scheduleVolumeClose}
+              className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover"
+              aria-label={volume > 0 ? t('mute') : t('unmute')}
+              aria-expanded={volumeOpen}
+              aria-pressed={volume === 0}
+            >
+              {volume > 0 ? <VolumeIcon size={18} /> : <MutedVolumeIcon size={18} />}
+            </button>
+
+            {/* Two buttons instead of three when the studio animation is off:
+                the capsule loses exactly the toggle's 32px plus the 4px gap
+                that `justify-between` held either side of it, so the pair
+                keeps the spacing the trio had rather than drifting apart.
+                Narrowing it also carries the volume button — and with it the
+                popover, which is measured off the button — 36px to the right,
+                since the group is anchored to the bar's right edge. */}
+            <div
+              data-testid="code-panel-share-export-capsule"
+              className={`control-button-surface flex h-8 items-center justify-between px-1 rounded-full ${
+                vizEnabled ? 'control-button-capsule w-28' : 'control-button-capsule-pair w-[76px]'
+              }`}
+            >
+              <ShareButton
+                session={session}
+                code={code}
+                messages={messages}
+                disabled={!session || !hasPlayableCode || exportState.status === 'exporting'}
+                variant="icon"
+              />
+
+              <div
+                className="flex h-8 w-8 items-center justify-center"
+                onMouseEnter={(event) => setExportHoverAnchor(anchorAbove(event.currentTarget))}
+                onMouseLeave={() => setExportHoverAnchor(null)}
+                onFocusCapture={(event) => setExportHoverAnchor(anchorAbove(event.currentTarget))}
+                onBlurCapture={() => setExportHoverAnchor(null)}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rect = panelRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    setExportAnchor({
+                      right: window.innerWidth - rect.right,
+                      top: rect.top,
+                    });
+                    setExportOpen((open) => !open);
+                  }}
+                  disabled={actionDisabled}
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center text-icon-idle transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted disabled:opacity-100"
+                  aria-label={t('download')}
+                  aria-expanded={exportOpen}
+                >
+                  <DownloadIcon size={18} />
+                </button>
+                <ControlHoverLabel
+                  anchor={exportHoverAnchor}
+                  label={t('download')}
+                  testId="code-panel-export-hover-label"
+                />
+              </div>
+
+              {vizEnabled && (
+                <div
+                  className="flex h-8 w-8 items-center justify-center"
+                  onMouseEnter={(event) => setVizHoverAnchor(anchorAbove(event.currentTarget))}
+                  onMouseLeave={() => setVizHoverAnchor(null)}
+                  onFocusCapture={(event) => setVizHoverAnchor(anchorAbove(event.currentTarget))}
+                  onBlurCapture={() => setVizHoverAnchor(null)}
+                >
+                  <button
+                    type="button"
+                    onClick={onToggleViz}
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center text-icon-idle transition-colors hover:text-text-primary"
+                    aria-label={vizCollapsed ? t('expandViz') : t('collapseViz')}
+                    aria-pressed={vizCollapsed}
+                  >
+                    {vizCollapsed ? <MaximizeIcon size={16} /> : <MinimizeIcon size={16} />}
+                  </button>
+                  <ControlHoverLabel
+                    anchor={vizHoverAnchor}
+                    label={vizCollapsed ? t('expandViz') : t('collapseViz')}
+                    testId="code-panel-viz-toggle-hover-label"
+                  />
+                </div>
+              )}
+
+              <ExportPopover
+                open={exportOpen}
+                onClose={() => setExportOpen(false)}
+                exportState={exportState}
+                onResetState={onResetExportState}
+                onExport={handleExport}
+                code={code}
+                sessionTitle={session?.title}
+                messages={messages}
+                onGenerateTitle={onGenerateTitle}
+                bpm={bpm}
+                placement="above"
+                anchorPosition={exportAnchor ?? undefined}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {volumeOpen && volumeAnchor && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={volumePopoverRef}
+          data-testid="code-panel-volume-popover"
+          className="fixed z-50 flex w-[44px] flex-col items-center gap-1 rounded-[6px] border border-border bg-popover-surface px-2 py-2 shadow-menu-overlay"
+          onMouseEnter={clearVolumeCloseTimer}
+          onMouseLeave={scheduleVolumeClose}
+          onFocusCapture={clearVolumeCloseTimer}
+          onBlurCapture={scheduleVolumeClose}
+          style={{
+            ...volumeAnchor,
+            fontFamily: "'ABeeZee', monospace",
+          }}
+        >
+          <span className="text-[10px] tabular-nums text-text-primary">{Math.round(volume * 100)}%</span>
+          <input
+            data-testid="code-panel-volume-slider"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round(volume * 100)}
+            onChange={(event) => {
+              const nextVolume = Number(event.target.value) / 100;
+              setMasterVolume(nextVolume);
+            }}
+            aria-label={t('volume')}
+            aria-orientation="vertical"
+            className="code-panel-volume-slider h-20 w-4 cursor-pointer"
+            style={{
+              writingMode: 'vertical-lr',
+              direction: 'rtl',
+              '--volume-progress': `${Math.round(volume * 100)}%`,
+              // Falls back to `#D9542B` via the rule's own `var(..., #D9542B)`
+              // default when unset — same accent, same fallback, as the
+              // playback progress bar right below this control.
+              ...(accentColor ? { '--volume-slider-fill': accentColor } : {}),
+            } as React.CSSProperties}
+          />
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}

@@ -3,18 +3,63 @@ import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
 import { trackWavExportCompleted } from '../lib/analytics';
+import { installOddenovaSyntaxHighlight } from '../lib/oddenova-syntax-highlight';
+import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '../lib/codepanel-theme';
+import { createCodePanelDrawContext, type CodePanelDrawContext } from '../lib/codepanel-canvas';
+import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
+import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
+import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bounds';
+import type { AudioSpectrum } from '../lib/audio-intensity';
+import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
+import { claimTransport } from './transport';
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
 
 type StrudelReplState = {
   code?: string;
+  /** The source the sounding pattern was compiled from — the repl's own `activeCode`. */
+  activeCode?: string;
   started?: boolean;
   evalError?: Error | unknown;
+  /** The repl's own `code !== activeCode` — an edit the running pattern hasn't heard yet. */
+  isDirty?: boolean;
 };
+
+/**
+ * What @strudel/core seeds `code`/`activeCode` with before anything has been
+ * evaluated. Nobody can hear it, so it reads here as "no sounding pattern".
+ */
+const REPL_PLACEHOLDER_CODE = '// LOADING';
+
+/** Just enough of `@strudel/core`'s Pattern to type the methods registered below. */
+interface StrudelPattern {
+  queryArc: (begin: number, end: number) => { value?: unknown }[];
+  onPaint: (painter: (ctx: unknown, time: number) => void) => StrudelPattern;
+}
 
 interface StrudelMirrorType {
   dispose?: () => void;
-  repl: { setCode: (code: string) => void; stop: () => void; [key: string]: unknown };
+  editor?: {
+    dispatch: (transaction: { effects: unknown }) => void;
+  };
+  repl: {
+    setCode: (code: string) => void;
+    stop: () => void;
+    scheduler?: {
+      started?: boolean;
+      now?: () => number;
+      pause?: () => void;
+      stop?: () => void;
+      setCycle?: (cycle: number) => void;
+      getTime?: () => number;
+      lastBegin?: number;
+      lastEnd?: number;
+      num_cycles_at_cps_change?: number;
+      num_ticks_since_cps_change?: number;
+      seconds_at_cps_change?: number;
+    };
+    [key: string]: unknown;
+  };
   setCode: (code: string) => void;
   setAutocompletionEnabled: (enabled: boolean) => void;
   setLineWrappingEnabled: (enabled: boolean) => void;
@@ -25,9 +70,33 @@ interface StrudelMirrorType {
 export type StrudelState = {
   code: string;
   isPlaying: boolean;
+  isPaused: boolean;
   error: string | null;
   engineReady: boolean;
   engineStatus: 'initializing' | 'ready' | 'failed';
+  /**
+   * The editor holds an edit the sounding pattern hasn't heard yet — Strudel's
+   * own `isDirty` (`code !== activeCode`), which its repl recomputes on every
+   * state change. This is what makes the update button worth offering: with
+   * the buffer and the playing pattern identical there is nothing to swap.
+   */
+  isDirty: boolean;
+  /**
+   * The source the sounding pattern was compiled from — Strudel's own
+   * `activeCode`, which only moves when `evaluate()` succeeds. Empty until the
+   * first evaluate. `code` is the editor buffer and runs ahead of this on every
+   * keystroke; anything describing what is *playing* (the progress bar's
+   * duration and playhead) has to read this instead, or an unheard edit would
+   * redraw the timeline of a pattern nobody is listening to.
+   */
+  activeCode: string;
+  /**
+   * The hued colour latched from the playing piece's own `.color()`, if it set
+   * one — null the rest of the time, which is what tells consumers (the
+   * playback progress bar, the control bar's particle field) to fall back to
+   * the studio's own accent. See `codepanel-accent.ts`.
+   */
+  accentColor: string | null;
 };
 
 type StateCallback = (state: StrudelState) => void;
@@ -70,6 +139,19 @@ function isTouchDevice(): boolean {
     window.matchMedia('(pointer: coarse)').matches
   );
 }
+
+// Shape of the spectrum tap that feeds the control bar's loudness reading.
+//
+// 512 bins is ample resolution for a five-band loudness weighting, and the
+// smoothing takes the frame-to-frame jitter off before anything downstream
+// sees it. The dB window is deliberately not WebAudio's default -100..-30:
+// that floor sits far below the noise of any real mix, which squeezes
+// everything audible into the top of the 0..255 range. -80..-20 spreads a
+// musical range across the whole byte instead.
+const ANALYSER_FFT_SIZE = 512;
+const ANALYSER_SMOOTHING = 0.6;
+const ANALYSER_MIN_DB = -80;
+const ANALYSER_MAX_DB = -20;
 
 // Disconnect a node (optionally from a specific destination), ignoring the
 // "node is not connected" error WebAudio throws when it was never wired up.
@@ -143,6 +225,9 @@ export class StrudelService {
 
   private editorInstance: StrudelMirrorType | null = null;
   private containerElement: HTMLElement | null = null;
+  private panelTheme: CodePanelTheme | null = null;
+  private panelCanvas: CodePanelDrawContext | null = null;
+  private panelAccent: CodePanelAccent | null = null;
   private autocompletionEnabled = false;
   private lineWrappingEnabled = false;
   private isAudioInitialized = false;
@@ -161,17 +246,36 @@ export class StrudelService {
   private masterLpfNode: BiquadFilterNode | null = null;
   private masterChainReady = false;
   private masterChainSettingUp = false;
+  // The spectrum tap. Held here rather than rebuilt per read: an AnalyserNode
+  // is a live graph node, and `sampleAudioSpectrum` is called from animation
+  // frames.
+  private analyserNode: AnalyserNode | null = null;
+  private analyserBins: Uint8Array<ArrayBuffer> | null = null;
+  private analyserSource: AudioNode | null = null;
+  // Captured during prebake so the sampler can stay synchronous — an
+  // `await import('superdough')` per frame would make it useless for driving
+  // animation.
+  private audioAccess: {
+    getAudioContext: () => BaseAudioContext;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getSuperdoughAudioController: () => any;
+  } | null = null;
   // Current UI master values, mirrored here so exportWav can re-apply them on the
   // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
+  private pendingSeekCycle: number | null = null;
   private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
     code: '',
+    activeCode: '',
     isPlaying: false,
+    isPaused: false,
     error: null,
     engineReady: false,
     engineStatus: 'initializing',
+    accentColor: null,
+    isDirty: false,
   };
 
   private stateCallbacks: StateCallback[] = [];
@@ -191,9 +295,10 @@ export class StrudelService {
         shouldInterruptOnHidden: isTouchDevice,
         onPlaybackInterrupted: () => {
           this.editorInstance?.repl.stop();
-          this.notify({ isPlaying: false });
+          this.pendingSeekCycle = null;
+          this.notify({ isPlaying: false, isPaused: false });
         },
-        requestUserResume: () => this.notify({ error: USER_RESUME_PROMPT, isPlaying: false }),
+        requestUserResume: () => this.notify({ error: USER_RESUME_PROMPT, isPlaying: false, isPaused: false }),
         windowTarget: window,
         documentTarget: document,
       });
@@ -233,7 +338,7 @@ export class StrudelService {
 
   private prebake = async (): Promise<void> => {
     try {
-      const { evalScope, Pattern, noteToMidi, valueToMidi } = await import('@strudel/core');
+      const { evalScope, Pattern, reify, noteToMidi, valueToMidi } = await import('@strudel/core');
       const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
       initAudioOnFirstClick();
@@ -267,8 +372,17 @@ export class StrudelService {
         registerSoundfonts();
         (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
         (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
+        this.audioAccess = { getAudioContext, getSuperdoughAudioController };
         (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
           this.recordLive(sec, name);
+        // `public/animation/galaxy-ascii.html` runs same-origin in the viz
+        // pane's iframe and already reaches across `window.parent` for
+        // `getAudioContext`/`getSuperdoughAudioController` above — this is the
+        // same channel, for the same reason: no postMessage round trip needed
+        // when the two windows can call straight into each other. Read live
+        // (not captured once) since the accent latches and resets over a
+        // single piece's playback, long after this assignment runs.
+        (window as unknown as Record<string, unknown>).getStrudelAccentColor = () => this._state.accentColor;
       }
 
       // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
@@ -284,6 +398,21 @@ export class StrudelService {
               const pan = panwidth(Math.min(Math.round(midi) / maxPan, 1), 0.5);
               return { ...value, pan: ((value['pan'] as number) || 1) * pan };
             });
+        };
+      }
+
+      // Register .theme() — strudel.cc has it, no published @strudel package
+      // does, and a piece pasted from there dies at eval with
+      // "arrange(...).theme is not a function" before a note sounds.
+      //
+      // Assigned to the prototype rather than declared with `register()`: that
+      // would patternify the argument into the hap structure, making the theme
+      // name part of the music. `punchcard` and `pianoroll` sidestep it the
+      // same way.
+      if (!Pattern.prototype.theme) {
+        const applyTheme = (name: string) => this.panelTheme?.apply(name);
+        Pattern.prototype.theme = function (this: StrudelPattern, themePattern: unknown) {
+          return this.onPaint(createThemePainter(reify(themePattern), applyTheme));
         };
       }
 
@@ -305,7 +434,7 @@ export class StrudelService {
     this.isInitializing = true;
     this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     try {
-      const { StrudelMirror } = await import('@strudel/codemirror');
+      const { StrudelMirror, compartments, themes } = await import('@strudel/codemirror');
       const { transpiler } = await import('@strudel/transpiler');
       cachedTranspiler = transpiler;
       const { getDrawContext } = await import('@strudel/draw');
@@ -328,11 +457,40 @@ export class StrudelService {
       const currentCode = this._state.code;
 
       if (this.editorInstance) {
+        // Before the view goes away, while it can still take a transaction:
+        // otherwise a theme left over from the last piece keeps its custom
+        // properties on the old panel.
+        this.panelTheme?.reset();
+        this.panelTheme = null;
         this.editorInstance.dispose?.();
         this.editorInstance = null;
       }
 
+      // Stops tracking the outgoing panel's size — `innerHTML = ''` below
+      // removes the canvas as a DOM node either way, but not the ResizeObserver
+      // watching it.
+      this.panelCanvas?.dispose();
+
       this.containerElement.innerHTML = '';
+
+      this.panelCanvas = createCodePanelDrawContext({ panel: this.containerElement, getDrawContext });
+      this.panelAccent = createCodePanelAccent((color) => this.notify({ accentColor: color }));
+
+      // strudel.cc's own value — was [0, -2], which nothing here had ever
+      // exercised. It only matters once a piece registers a painter:
+      // `.punchcard()`, `.pianoroll()`, and now `.theme()`. `afterEval` forces
+      // the Drawer's own drawTime to [0, 0] otherwise (codemirror dist:
+      // `pattern.getPainters().length ? this.drawTime : [0, 0]`), so a piece
+      // with no painter never read this value, which is why [0, -2] went
+      // unnoticed. Once a painter *is* registered, this feeds the Drawer's
+      // `ve()`, which turns it into the `cycles`/`playhead` those painters
+      // draw with. [0, -2] computed to `cycles: -2, playhead: 0` — an
+      // inverted, zero-width window — which is what made a piece calling
+      // `.punchcard()` render as flickering blocks pinned to one edge instead
+      // of scrolling. [-2, 2] computes to `cycles: 4, playhead: 0.5`: two
+      // cycles of trailing history, two of lookahead, centred — the window
+      // strudel.cc's own painters scroll through.
+      const drawTime: [number, number] = [-2, 2];
 
       const editor = new StrudelMirror({
         root: this.containerElement,
@@ -340,14 +498,35 @@ export class StrudelService {
         transpiler,
         defaultOutput,
         getTime: getTimeFn,
-        drawTime: [0, -2],
-        drawContext: getDrawContext(), // default id='test-canvas'; src/index.css has the corresponding #test-canvas z-index rule
+        drawTime,
+        drawContext: this.panelCanvas.context, // scoped to the panel — see codepanel-canvas.ts
+        // Runs every frame during playback with the Drawer's own visibleHaps,
+        // whether or not the piece registers a painter. Replicates upstream's
+        // default `draw()` (`painters.forEach(p => p(drawContext, time, haps,
+        // drawTime))` — codemirror dist) so `.punchcard()` etc. keep working,
+        // and piggybacks the accent-colour sampling on the same frame instead
+        // of a second, redundant animation loop — see codepanel-accent.ts.
+        onDraw: (haps: unknown[], time: number, painters?: ((...args: unknown[]) => void)[]) => {
+          painters?.forEach((paint) => paint(this.panelCanvas?.context, time, haps, drawTime));
+          this.panelAccent?.sample(haps as Parameters<CodePanelAccent['sample']>[0], time);
+        },
         onUpdateState: (state: StrudelReplState) => {
           const evalError = state.evalError;
           const error = evalError ? getErrorMessage(evalError) : null;
+          const nextCode = state.code ?? this._state.code;
+          const didCodeChange = nextCode !== this._state.code;
+          if (didCodeChange) this.rewindOnCodeChange(state.started ?? false);
+          const replActiveCode = state.activeCode;
+          const nextActiveCode =
+            typeof replActiveCode !== 'string' || replActiveCode === REPL_PLACEHOLDER_CODE
+              ? this._state.activeCode
+              : replActiveCode;
           this.notify({
-            code: state.code ?? this._state.code,
+            code: nextCode,
+            activeCode: nextActiveCode,
             isPlaying: state.started ?? false,
+            isPaused: didCodeChange || state.started ? false : this._state.isPaused,
+            isDirty: state.isDirty ?? false,
             error,
           });
         },
@@ -360,6 +539,20 @@ export class StrudelService {
       editor.setAutocompletionEnabled(this.autocompletionEnabled);
       editor.setLineWrappingEnabled(this.lineWrappingEnabled);
       editor.changeSetting('isTabIndentationEnabled', true);
+      if (editor.editor) {
+        installOddenovaSyntaxHighlight(editor.editor, compartments.theme);
+        // `.theme()` and the default highlight share one compartment, so the
+        // two have to agree on who holds it — hence the same pair of arguments.
+        this.panelTheme = createCodePanelTheme({
+          editor: editor.editor,
+          themeCompartment: compartments.theme,
+          themes,
+        });
+        installCodeEditorScrollMargins(editor.editor);
+        // Keeps the completion popup inside the editor instead of under the
+        // control bar — see code-editor-tooltip-bounds.ts.
+        installCodeEditorTooltipBounds(editor.editor);
+      }
 
       // Sync REPL internal state with initial code
       this.editorInstance?.repl.setCode(currentCode);
@@ -445,6 +638,17 @@ export class StrudelService {
     await this.setMasterLPF(this.currentMasterLpfHz);
   };
 
+  /**
+   * Bring the shared audio graph up for whoever is about to play. The context,
+   * the master chain and the sample banks belong to this module even when the
+   * scheduler asking for them does not — superdough is one audio backend, and
+   * a second one is not a thing this app can have.
+   */
+  prepareAudioForPlayback = async (): Promise<void> => {
+    await this.ensurePlayableAudioGraph();
+    void this.setupMasterChain();
+  };
+
   private ensurePlayableAudioGraph = async (): Promise<void> => {
     if (this._isVideoMode) return;
 
@@ -496,6 +700,82 @@ export class StrudelService {
     }
   };
 
+  /**
+   * The node the tap listens to: the last one before the speakers.
+   *
+   * The master LPF when the chain is up, so closing the filter reads as the
+   * music getting duller and quieter rather than as nothing having happened;
+   * the destination gain before that, which also means muting reads as silence.
+   */
+  private analyserSourceNode(): AudioNode | null {
+    if (this.masterLpfNode) return this.masterLpfNode;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const controller = this.audioAccess?.getSuperdoughAudioController() as any;
+    return (controller?.output?.destinationGain as AudioNode | undefined) ?? null;
+  }
+
+  /**
+   * The tap, built on first use and re-tapped whenever the graph underneath it
+   * changes — a WAV export replaces the whole AudioContext, and rebuilding the
+   * master chain replaces the node we were listening to. An analyser left
+   * attached to either would keep returning silence forever.
+   */
+  private ensureAnalyser(): AnalyserNode | null {
+    const access = this.audioAccess;
+    if (!access) return null;
+
+    try {
+      const ctx = access.getAudioContext();
+      if (this.analyserNode && this.analyserNode.context !== ctx) {
+        this.analyserNode = null;
+        this.analyserBins = null;
+        this.analyserSource = null;
+      }
+
+      const source = this.analyserSourceNode();
+      if (!source) return null;
+      if (this.analyserNode && this.analyserSource === source) return this.analyserNode;
+
+      if (this.analyserSource && this.analyserNode) {
+        safeDisconnect(this.analyserSource, this.analyserNode);
+      }
+
+      const analyser = this.analyserNode ?? ctx.createAnalyser();
+      analyser.fftSize = ANALYSER_FFT_SIZE;
+      analyser.smoothingTimeConstant = ANALYSER_SMOOTHING;
+      analyser.minDecibels = ANALYSER_MIN_DB;
+      analyser.maxDecibels = ANALYSER_MAX_DB;
+      // An analyser is a pass-through sink: nothing is connected downstream of
+      // it, so the tap cannot colour or duplicate what reaches the speakers.
+      source.connect(analyser);
+
+      this.analyserNode = analyser;
+      this.analyserSource = source;
+      this.analyserBins = new Uint8Array(analyser.frequencyBinCount);
+      return analyser;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * One frequency frame off the end of the live chain, or null while there is
+   * nothing to listen to — before the engine has loaded, during a WAV export,
+   * or in video mode.
+   *
+   * The returned bins are a buffer this service reuses, so read them before the
+   * next call rather than holding on to them.
+   */
+  sampleAudioSpectrum = (): AudioSpectrum | null => {
+    const analyser = this.ensureAnalyser();
+    const bins = this.analyserBins;
+    if (!analyser || !bins) return null;
+    if ((analyser.context as AudioContext).state === 'closed') return null;
+
+    analyser.getByteFrequencyData(bins);
+    return { bins, nyquistHz: analyser.context.sampleRate / 2 };
+  };
+
   setTempo = (bpm: number): void => {
     const cps = parseFloat(Math.max(0.05, Math.min(8, bpm / 240)).toFixed(6));
     const replacement = `setcps(${cps})`;
@@ -536,7 +816,15 @@ export class StrudelService {
   };
 
   setCode = (code: string): void => {
-    this._state = { ...this._state, code };
+    const didChange = code !== this._state.code;
+    if (didChange) {
+      this.rewindOnCodeChange(this._state.isPlaying);
+      // A different piece arrived; it does not inherit the last one's look.
+      this.panelTheme?.reset();
+      this.panelCanvas?.clear();
+      this.panelAccent?.reset();
+    }
+    this._state = { ...this._state, code, ...(didChange ? { isPaused: false } : {}) };
     if (this.editorInstance) {
       // Skip the full-document replace when content is unchanged — a redundant
       // setCode clears all CodeMirror decorations (miniLocation highlight boxes)
@@ -548,12 +836,92 @@ export class StrudelService {
     }
   };
 
+  seekPlayback = (progress: number, loopCycles: number): boolean => {
+    const targetCycle = seekTargetCycle(progress, loopCycles);
+    if (targetCycle === null) return false;
+
+    if (!this._state.isPlaying) {
+      this.pendingSeekCycle = targetCycle;
+      return true;
+    }
+
+    return applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle);
+  };
+
+  /**
+   * A code change rewinds the piece — except while it plays.
+   *
+   * Editing the code clears `isPaused` and drops the progress bar back to
+   * 0:00, so the transport has to agree. It does not on its own: `pause()`
+   * leaves the Cyclist's cycle bookkeeping intact (that is what makes a resume
+   * pick up mid-piece), so a paused edit followed by play would carry on from
+   * the pre-edit playhead while the bar reads zero. Queued as a pending seek
+   * rather than applied here because the scheduler only takes one after
+   * `play()`'s `evaluate()`.
+   *
+   * While playing, the playhead is deliberately kept: `update()` swaps the new
+   * pattern in at the next cycle boundary so an edit lands on the beat.
+   */
+  private rewindOnCodeChange(isStarted: boolean): void {
+    this.pendingSeekCycle = isStarted ? null : 0;
+  }
+
+  private applyPendingSeek(): void {
+    if (this.pendingSeekCycle === null) return;
+    if (applySeekCycle(this.editorInstance?.repl.scheduler, this.pendingSeekCycle)) {
+      this.pendingSeekCycle = null;
+    }
+  }
+
+  pause = (): boolean => {
+    const scheduler = this.editorInstance?.repl.scheduler;
+    if (!scheduler || !this._state.isPlaying) return false;
+
+    const currentCycle = scheduler.now?.();
+    if (Number.isFinite(currentCycle)) this.pendingSeekCycle = currentCycle as number;
+
+    if (typeof scheduler.pause === 'function') scheduler.pause();
+    else if (typeof scheduler.stop === 'function') scheduler.stop();
+    else this.editorInstance?.repl.stop();
+
+    // `scheduler.pause()` runs `setStarted(false)`, which stops the Drawer, so
+    // the painter cannot put this back by itself — and cannot fight it either.
+    // `play()` re-evaluates on resume, so the painter returns with the sound.
+    this.panelTheme?.reset();
+    // Stopping the Drawer leaves whatever it last painted frozen on screen —
+    // see the rationale on `CodePanelDrawContext.clear`. Erased on pause, not
+    // just on stop, so a paused piece's punchcard doesn't sit there static.
+    this.panelCanvas?.clear();
+    // The accent is a playback-only read: paused is not playing, so it steps
+    // back to the studio's own orange until `play()` resumes and re-latches.
+    this.panelAccent?.reset();
+
+    this.notify({ isPlaying: false, isPaused: true });
+    return true;
+  };
+
   play = async (): Promise<void> => {
     if (!this.editorInstance) throw new Error('Engine not initialized');
+    // One transport at a time: a featured audition stops here.
+    claimTransport('studio', this.stop);
+    // Hand the panel back to oddeNova's palette before evaluating, so the code
+    // about to run decides the look from scratch: `.theme()` may have been
+    // edited out in the editor, which `setCode` never sees. If it is still
+    // there, the painter repaints on the first frame — which is also how a
+    // resume from `pause()` gets its theme back. Same reasoning for the
+    // canvas: cleared here so a piece with no painter starts from blank
+    // rather than the last thing pause() left frozen on screen.
+    this.panelTheme?.reset();
+    this.panelCanvas?.clear();
+    // Same reasoning again: the accent re-latches from scratch on the first
+    // frame this evaluate() produces, rather than carrying over a colour a
+    // piece that changed since the last play() may no longer set.
+    this.panelAccent?.reset();
     this.notify({ error: null });
     try {
       await this.ensurePlayableAudioGraph();
       await this.editorInstance.evaluate();
+      this.applyPendingSeek();
       this.pageAudioRecovery?.clearResumeIntent();
       void this.setupMasterChain();
     } catch (error) {
@@ -561,6 +929,7 @@ export class StrudelService {
         try {
           await this.resetLiveAudioGraph();
           await this.editorInstance.evaluate();
+          this.applyPendingSeek();
           this.pageAudioRecovery?.clearResumeIntent();
           void this.setupMasterChain();
           return;
@@ -576,9 +945,50 @@ export class StrudelService {
     }
   };
 
+  /**
+   * Strudel's own live update — what Ctrl+Enter does in its REPL.
+   *
+   * `StrudelMirror.evaluate()` on a running scheduler hands the newly compiled
+   * pattern to `setPattern(pattern, autostart)`, which swaps it in at the next
+   * cycle boundary instead of restarting the transport. So an edit made while
+   * a piece plays lands on the beat, with no pause/replay and no lost
+   * playhead. Nothing here re-implements that: the whole job is calling the
+   * engine's own evaluate while it is still started.
+   *
+   * A no-op when nothing is playing — there is no running pattern to swap
+   * into, and `evaluate()` would silently start the transport instead, which
+   * is `play()`'s job.
+   */
+  update = async (): Promise<void> => {
+    if (!this.editorInstance || !this._state.isPlaying) return;
+    // Same reasoning as play(): the code about to run decides the look from
+    // scratch, so a `.theme()` or `.color()` the user just edited out stops
+    // applying. Both re-latch on the next painted frame, and the Drawer never
+    // stopped, so that frame is ~16ms away.
+    //
+    // Unlike play() the canvas is deliberately *not* cleared: the Drawer is
+    // still running, so wiping it would throw away the punchcard's trailing
+    // history mid-flight for no reason — a stop/pause has to clear because
+    // nothing would repaint after it, an update does not.
+    this.panelTheme?.reset();
+    this.panelAccent?.reset();
+    this.notify({ error: null });
+    // Eval failures surface through onUpdateState's `evalError`, which is why
+    // this doesn't try to catch them: the pattern that is already playing
+    // keeps playing, and the error lands in the panel's error banner.
+    await this.editorInstance.evaluate();
+  };
+
   stop = (): void => {
     this.pageAudioRecovery?.clearResumeIntent();
+    this.pendingSeekCycle = null;
+    // The Drawer stops with the transport, so the painter cannot undo its own
+    // work.
+    this.panelTheme?.reset();
+    this.panelCanvas?.clear();
+    this.panelAccent?.reset();
     this.editorInstance?.repl.stop();
+    this.notify({ isPlaying: false, isPaused: false });
   };
 
   scrollCodeToBottom = (): void => {
@@ -1080,8 +1490,8 @@ export function normalizeCode(code: string): string {
   return result;
 }
 
-// Cached after first attach() so validateCodeTranspiler can run synchronously.
-let cachedTranspiler: ((code: string, opts?: object) => unknown) | null = null;
+// Cached after first attach() so validation and playback share the same transpiler.
+let cachedTranspiler: ((code: string, opts?: object) => { output: string }) | null = null;
 
 type ValidationResult = { ok: true } | { ok: false; error: string; kind: 'syntax' | 'runtime' };
 
@@ -1292,13 +1702,13 @@ function hasNoteVoicingChain(code: string): boolean {
 // --- Code validation (no audio engine needed) ---
 
 /** @deprecated Use validateCodeRuntime directly. */
-export function validateCode(code: string): { ok: boolean; error?: string } {
+export async function validateCode(code: string): Promise<{ ok: boolean; error?: string }> {
   if (!code?.trim()) return { ok: false, error: t('emptyCode') };
-  const result = validateCodeRuntime(code);
+  const result = await validateCodeRuntime(code);
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
-export function validateCodeRuntime(code: string): ValidationResult {
+export async function validateCodeRuntime(code: string): Promise<ValidationResult> {
   const clean = normalizeCode(stripUIDecorations(code));
   if (!clean.trim()) return { ok: false, error: t('emptyCode'), kind: 'syntax' };
 
@@ -1310,6 +1720,7 @@ export function validateCodeRuntime(code: string): ValidationResult {
     get(_t, key) {
       if (typeof key === 'symbol') return (globalThis as Record<symbol, unknown>)[key as unknown as symbol];
       const k = key as string;
+      if (k === 'samples') return async () => {};
       const v = (globalThis as Record<string, unknown>)[k];
       if (v === undefined && !PASS_THROUGH.has(k)) {
         throw new ReferenceError(`${k} is not defined`);
@@ -1319,7 +1730,33 @@ export function validateCodeRuntime(code: string): ValidationResult {
   });
 
   try {
-    new Function('__s__', `with (__s__) { ${stripped} }`)(proxy);
+    const transpiler = cachedTranspiler ?? (await import('@strudel/transpiler')).transpiler;
+    cachedTranspiler = transpiler;
+    // The player uses the transpiler's output with the same `{ ... }` and async
+    // wrappers supplied by @strudel/core. Keep mini parsing for the dedicated
+    // validateCodeTranspiler check, but execute the exact transformed JS here.
+    const { output } = transpiler(stripped, { id: undefined, emitMiniLocations: false });
+    // The transpiler rewrites named voices such as `$flute: pattern` to
+    // `pattern.p('$flute')`. The real REPL injects `.p()` immediately before
+    // evaluation, but validation runs outside that REPL closure. Supply the
+    // side-effect-free part of the same contract while dry-running, then put
+    // back any live REPL method so validation cannot register scheduler voices.
+    const { Pattern } = await import('@strudel/core');
+    const livePatternMethod = Object.getOwnPropertyDescriptor(Pattern.prototype, 'p');
+    Object.defineProperty(Pattern.prototype, 'p', {
+      configurable: true,
+      writable: true,
+      value(this: unknown) { return this; },
+    });
+    try {
+      await new Function('__s__', `with (__s__) {\nreturn (async () => {\n${output}\n})()\n}`)(proxy);
+    } finally {
+      if (livePatternMethod) {
+        Object.defineProperty(Pattern.prototype, 'p', livePatternMethod);
+      } else {
+        delete Pattern.prototype.p;
+      }
+    }
     // Check for hallucinated sample names after syntax/runtime validation passes.
     const unknownSamples = findUnknownSamples(code);
     if (unknownSamples.length > 0) {

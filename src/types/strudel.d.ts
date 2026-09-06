@@ -1,6 +1,12 @@
 declare module '@strudel/core' {
   interface Pattern {
     piano(): Pattern;
+    /**
+     * Paint the code panel with a Strudel theme name, patterned over time.
+     * Registered by `StrudelService.prebake`; strudel.cc has it, no published
+     * `@strudel/*` package does.
+     */
+    theme(name: unknown): Pattern;
   }
 }
 

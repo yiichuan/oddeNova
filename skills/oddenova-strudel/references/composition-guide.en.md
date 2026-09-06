@@ -109,7 +109,7 @@ The job of arrangement is not to schedule when instruments enter and leave — i
 - **Resolution**: the later part can form a natural ending by reducing the number of layers, lowering density, simplifying rhythm, and weakening energy.
 
 ### Strudel time-structure reference
-When you need to place entrances and exits precisely, compute the time windows: `<v1 … vk>/N` — total length N cycles, evenly divided; `<0@a 1@b 0@c>` — weights decide duration (no slash; weights = cycles per step, e.g. `<0@4 1@24 0@4>` enters at cycle 4, exits at cycle 28). Computing time positions serves the listening goal, not the satisfaction of a fixed arrangement formula.
+When you need to place entrances and exits precisely, compute the time windows: `<v1 … vk>` gives one cycle per step, k cycles in total; `/N` stretches **each step** to N cycles, so the whole thing spans k×N cycles (`<a b c d>/16` is 16 cycles per step and 64 cycles total, not 16 cycles total); `<0@a 1@b 0@c>` sets each step's cycle count directly by weight, a+b+c cycles in total (e.g. `<0@4 1@24 0@4>` enters at cycle 4, exits at cycle 28). **`@` weights and `/N` multiply — do not combine them**: `<0@6 1@2 0@6 1@2>` is already 16 cycles, so adding `/16` turns it into 256 cycles — that one layer alone stretches the whole piece's loop to several minutes and puts it out of phase with the other patterns in the same layer; for a precise window use `@` weights only. Computing time positions serves the listening goal, not the satisfaction of a fixed arrangement formula.
 
 ### Pre-generation self-check
 After arranging, check: ① Can you hear the piece's identity in the first half? ② Is there a simple-to-rich build? ③ Is there at least one clear energy or density change? ④ Did you avoid any single layer running the whole piece unchanged — does even the anchor have at least one entrance/exit/transformation (unless the style wants that element constant)? ⑤ Did you avoid varying for the sake of varying? ⑥ Is there a complete beginning, development, and resolution? If there are clear problems, rework the arrangement.
@@ -139,7 +139,7 @@ Only check this under the intent that enables the Song arrangement section (a co
 Check: is the parameter variation meaningful, does the automation improve the sound, does the randomness add life, does the arrangement change push the music forward. Do not use a technique for the sake of using it; every variation should serve the musical goal.
 
 ### Engineering legality check
-- **Legal sample names**: every name inside `s("...")` must come from the Sample Reference section. Do not invent sample names that do not exist; do not guess sample names.
+- **Legal sample names**: built-in sample names must come from the Sample Reference section; custom sample names are allowed only when declared in the current code by an inline literal `samples({...})` registration. Do not invent, guess, or use undeclared or dynamically generated sample names.
 - **Uniform code format**: keep each layer a single chained expression — no semicolons, no `var`, `let`, `const`. Method chains may span lines: base expression on the first line, each `.method(...)` on its own line indented 2 extra spaces. Example:
   note("c3 e3 g3")
     .s("piano")

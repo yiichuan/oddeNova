@@ -126,6 +126,24 @@ describe('useSuggestions', () => {
     expect(onSuggestions).toHaveBeenCalledWith(['加入贝斯', '让鼓点更密'], 's("bd sd")');
   });
 
+  it('does not persist commit suggestions again when the session already has the same items', async () => {
+    const onSuggestions = vi.fn();
+    const items = ['加入贝斯', '让鼓点更密'];
+    const { root } = renderProbe({
+      currentCode: 's("bd sd")',
+      commitSuggestions: items,
+      persisted: { forCode: 's("bd sd")', items },
+      onSuggestions,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onSuggestions).not.toHaveBeenCalled();
+  });
+
   it('exposes up to five commit next-steps and caps the overflow', async () => {
     const onSuggestions = vi.fn();
     let latest: ReturnType<typeof useSuggestions> | undefined;
@@ -188,6 +206,30 @@ describe('useSuggestions', () => {
     view.rerender({ currentCode: 's("bd")', commitSuggestions });
 
     expect(view.latest()?.suggestions).toEqual([]);
+  });
+
+  it('does not file the previous conversation next-steps onto the session that follows it', async () => {
+    const onSuggestions = vi.fn();
+    const commitSuggestions = ['加一层 pad', '换个鼓组'];
+    const view = renderProbe({
+      key: 'kept',
+      currentCode: 's("bd sd")',
+      commitSuggestions,
+      onSuggestions,
+    });
+    roots.push(view.root);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(onSuggestions).toHaveBeenCalledWith(commitSuggestions, 's("bd sd")');
+    onSuggestions.mockClear();
+
+    // Keeping the open conversation opens a fresh session behind the notice.
+    // The commit those chips came from belongs to the one left behind.
+    view.rerender({ key: 'fresh', currentCode: '', commitSuggestions, onSuggestions });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(onSuggestions).not.toHaveBeenCalled();
+    expect(view.latest()?.suggestions).toEqual(expect.arrayContaining(STATIC_SUGGESTIONS));
   });
 
   it('uses the loaded daily pool after switching to an empty session', () => {

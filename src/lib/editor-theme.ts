@@ -2,6 +2,7 @@ export const EDITOR_THEME_STORAGE_KEY = "vibe-editor-theme";
 
 export const EDITOR_THEME_IDS = [
   "oddenova-dark",
+  "oddenova-light",
   "dracula",
   "tokyo-night",
   "nord",
@@ -17,6 +18,7 @@ export const EDITOR_THEME_OPTIONS: {
   type: "dark" | "light";
 }[] = [
   { id: "oddenova-dark", name: "oddeNova Dark", type: "dark" },
+  { id: "oddenova-light", name: "oddeNova Light", type: "light" },
   { id: "dracula", name: "Dracula", type: "dark" },
   { id: "tokyo-night", name: "Tokyo Night", type: "dark" },
   { id: "nord", name: "Nord", type: "dark" },
@@ -39,7 +41,7 @@ export const EDITOR_THEME_VARS: Record<
   }
 > = {
   "oddenova-dark": {
-    background: "#000000",
+    background: "#0D0D0D",
     foreground: "#e2e8f0",
     caret: "#91a3e0",
     selection: "rgba(172, 185, 225, 0.25)",
@@ -47,6 +49,16 @@ export const EDITOR_THEME_VARS: Record<
     gutterBackground: "transparent",
     gutterForeground: "#898989",
     gutterBorder: "#323232",
+  },
+  "oddenova-light": {
+    background: "#F7F7FA",
+    foreground: "#202024",
+    caret: "#0668E5",
+    selection: "rgba(6,104,229,0.16)",
+    lineHighlight: "rgba(6,104,229,0.07)",
+    gutterBackground: "transparent",
+    gutterForeground: "#686870",
+    gutterBorder: "#D5D5DE",
   },
   dracula: {
     background: "#282a36",

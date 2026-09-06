@@ -1,4 +1,50 @@
+// @vitest-environment happy-dom
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  IDBCursor,
+  IDBCursorWithValue,
+  IDBDatabase,
+  IDBFactory,
+  IDBIndex,
+  IDBKeyRange,
+  IDBObjectStore,
+  IDBOpenDBRequest,
+  IDBRequest,
+  IDBTransaction,
+  IDBVersionChangeEvent,
+} from 'fake-indexeddb';
+
+function stubLocalStorage() {
+  const store = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key);
+    }),
+    clear: vi.fn(() => {
+      store.clear();
+    }),
+  });
+}
+
+function stubIndexedDB() {
+  vi.stubGlobal('indexedDB', new IDBFactory());
+  vi.stubGlobal('IDBCursor', IDBCursor);
+  vi.stubGlobal('IDBCursorWithValue', IDBCursorWithValue);
+  vi.stubGlobal('IDBDatabase', IDBDatabase);
+  vi.stubGlobal('IDBFactory', IDBFactory);
+  vi.stubGlobal('IDBIndex', IDBIndex);
+  vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+  vi.stubGlobal('IDBObjectStore', IDBObjectStore);
+  vi.stubGlobal('IDBOpenDBRequest', IDBOpenDBRequest);
+  vi.stubGlobal('IDBRequest', IDBRequest);
+  vi.stubGlobal('IDBTransaction', IDBTransaction);
+  vi.stubGlobal('IDBVersionChangeEvent', IDBVersionChangeEvent);
+}
 
 const fakeSession = {
   id: 'test-id',
@@ -66,6 +112,290 @@ describe('session-storage fallback path', () => {
     const { openDB, deleteSession } = await import('../session-storage');
     await openDB();
     await expect(deleteSession('nonexistent-id')).resolves.toBeUndefined();
+  });
+
+});
+
+describe('session-storage owner namespaces', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    stubIndexedDB();
+    stubLocalStorage();
+  });
+
+  function createLegacySessionStore(session: {
+    id: string;
+    title: string;
+    messages: { id: string; role: 'user'; content: string; timestamp: number }[];
+    code: string;
+    createdAt: number;
+    updatedAt: number;
+  }) {
+    return new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('oddenova-db', 1);
+      request.onerror = () => reject(request.error);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('sessions', { keyPath: 'id' }).put(session);
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+    });
+  }
+
+  it('loads only sessions for the requested owner key', async () => {
+    const { openDB, getAllSessions, putSession } = await import('../session-storage');
+    await openDB();
+
+    const guest = {
+      id: 'guest-session',
+      title: 'Guest',
+      messages: [{ id: 'msg-1', role: 'user' as const, content: 'local', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const account = {
+      ...guest,
+      id: '00000000-0000-4000-8000-000000000001',
+      title: 'Account',
+      updatedAt: 2,
+    };
+
+    await putSession(guest, 'guest');
+    await putSession(account, 'user:u-1');
+
+    expect((await getAllSessions('guest')).map((s) => s.id)).toEqual(['guest-session']);
+    expect((await getAllSessions('user:u-1')).map((s) => s.id)).toEqual([
+      '00000000-0000-4000-8000-000000000001',
+    ]);
+  });
+
+  it('keeps guest and account copies when they share the same session id', async () => {
+    const { openDB, getAllSessions, putSession } = await import('../session-storage');
+    await openDB();
+
+    const base = {
+      id: 'same-session',
+      title: 'Guest Copy',
+      messages: [{ id: 'msg-1', role: 'user' as const, content: 'guest local chat', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await putSession(base, 'guest');
+    await putSession({
+      ...base,
+      title: 'Account Copy',
+      messages: [{ id: 'msg-2', role: 'user' as const, content: 'account chat', timestamp: 2 }],
+      updatedAt: 2,
+    }, 'user:u-1');
+
+    expect((await getAllSessions('guest')).map((s) => s.title)).toEqual(['Guest Copy']);
+    expect((await getAllSessions('user:u-1')).map((s) => s.title)).toEqual(['Account Copy']);
+  });
+
+  it('drops the legacy favorite store on the next database upgrade', async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('oddenova-db', 4);
+      request.onerror = () => reject(request.error);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        const favorites = database.createObjectStore('favorites_by_owner', { keyPath: ['ownerKey', 'id'] });
+        favorites.put({
+          ownerKey: 'guest',
+          id: 'legacy-favorite',
+          title: 'Legacy',
+          turns: [],
+          messages: [],
+          code: 's("bd")',
+          favoritedAt: 100,
+        });
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+    });
+
+    const storage = await import('../session-storage');
+    await storage.openDB();
+
+    expect(await storage.getAllSessions('guest')).toEqual([]);
+    expect(storage.getStorageDb()?.objectStoreNames.contains('favorites_by_owner')).toBe(false);
+  });
+
+  it('opens storage before reading guest sessions for login-time import checks', async () => {
+    localStorage.setItem('vibe-sessions-v1', JSON.stringify([
+      {
+        id: 'legacy-guest-session',
+        title: 'Guest',
+        messages: [{ id: 'msg-1', role: 'user' as const, content: 'local', timestamp: 1 }],
+        code: 's("bd")',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]));
+
+    const { getAllSessions } = await import('../session-storage');
+
+    expect((await getAllSessions('guest')).map((s) => s.id)).toContain('legacy-guest-session');
+  });
+
+  it('migrates legacy IndexedDB sessions into the guest namespace', async () => {
+    await createLegacySessionStore({
+      id: 'legacy-idb-session',
+      title: 'Legacy IDB',
+      messages: [{ id: 'msg-1', role: 'user', content: 'old local chat', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const { getAllSessions } = await import('../session-storage');
+
+    expect((await getAllSessions('guest')).map((s) => s.id)).toContain('legacy-idb-session');
+  });
+
+  it('normalizes a legacy guest id in one transaction and moves the current-session pointer', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const legacy = {
+      id: 's-1720000000000-abc123',
+      title: 'Legacy guest',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '保留我', timestamp: 1 }],
+      code: 's("bd")',
+      inputMode: 'choice' as const,
+      suggestions: { forCode: 's("bd")', items: ['加贝斯'] },
+      createdAt: 10,
+      updatedAt: 11,
+    };
+    await storage.putSession(legacy);
+    await storage.putCurrentSessionId(legacy.id, 'guest');
+
+    const normalized = await storage.normalizeGuestSessionForImport(legacy);
+
+    expect(normalized.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect((await storage.getAllSessions('guest')).map((session) => session.id)).toEqual([normalized.id]);
+    expect(await storage.getCurrentSessionId('guest')).toBe(normalized.id);
+    expect(await storage.getAllSessions('guest')).toEqual([
+      expect.objectContaining({ ...legacy, id: normalized.id }),
+    ]);
+  });
+
+  it('atomically rekeys all owner state for a legacy account session', async () => {
+    const storage = await import('../session-storage');
+    const syncStorage = await import('../session-sync-storage');
+    await storage.openDB();
+    const ownerKey = 'user:u-1';
+    const legacy = {
+      id: 's-1786465556711-wi5as4',
+      title: '旧账号会话',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '保留完整内容', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 10,
+      updatedAt: 11,
+    };
+    await storage.putSession(legacy, ownerKey);
+    await storage.putCurrentSessionId(legacy.id, ownerKey);
+    await syncStorage.markPendingSessionSync(ownerKey, legacy.id);
+    await syncStorage.markPendingSessionDelete(ownerKey, legacy.id);
+
+    const sessions = await storage.getAllSessions(ownerKey);
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toEqual(expect.objectContaining({
+      ...legacy,
+      id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
+    }));
+    const migratedId = sessions[0].id;
+    expect(await storage.getCurrentSessionId(ownerKey)).toBe(migratedId);
+    expect(await syncStorage.readPendingSessionOperations(ownerKey)).toEqual({
+      syncIds: new Set([migratedId]),
+      deleteIds: new Set([migratedId]),
+    });
+    expect(await storage.getStorageDb()?.get(
+      storage.SESSION_STORE_NAME,
+      [ownerKey, legacy.id],
+    )).toBeUndefined();
+  });
+
+  it('drops orphan legacy operation markers while preserving UUID retries', async () => {
+    const storage = await import('../session-storage');
+    const syncStorage = await import('../session-sync-storage');
+    await storage.openDB();
+    const ownerKey = 'user:u-1';
+    const legacyId = 's-1786464777419-eaop23';
+    const uuid = '00000000-0000-4000-8000-000000000001';
+    await syncStorage.markPendingSessionSync(ownerKey, legacyId);
+    await syncStorage.markPendingSessionDelete(ownerKey, legacyId);
+    await syncStorage.markPendingSessionSync(ownerKey, uuid);
+    await syncStorage.markPendingSessionDelete(ownerKey, uuid);
+
+    await storage.getAllSessions(ownerKey);
+
+    expect(await syncStorage.readPendingSessionOperations(ownerKey)).toEqual({
+      syncIds: new Set([uuid]),
+      deleteIds: new Set([uuid]),
+    });
+  });
+
+  it('reuses an existing UUID v7 guest id without normalization', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const existing = {
+      id: '018f5f7e-8b7c-7000-8000-000000000001',
+      title: 'UUID v7',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '保持 id', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    await expect(storage.normalizeGuestSessionForImport(existing)).resolves.toBe(existing);
+  });
+
+  it('reuses one normalized UUID for concurrent calls on the same legacy id', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const legacy = {
+      id: 's-concurrent-legacy',
+      title: '并发导入',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '同一份', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    await storage.putSession(legacy);
+
+    const [first, second] = await Promise.all([
+      storage.normalizeGuestSessionForImport(legacy),
+      storage.normalizeGuestSessionForImport({ ...legacy }),
+    ]);
+
+    expect(first.id).toBe(second.id);
+    expect((await storage.getAllSessions('guest')).map((session) => session.id)).toEqual([first.id]);
+  });
+
+  it('physically rewrites legacy tokenStats out of IndexedDB rows when loaded', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    const legacy = {
+      id: 'legacy-token-stats',
+      title: '旧 token stats',
+      messages: [{ id: 'm-1', role: 'user' as const, content: '清理字段', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 2,
+      tokenStats: { promptTokens: 9, systemEstimate: 2, modelId: 'old' },
+    };
+    await storage.putSession(legacy as never);
+
+    expect((await storage.getAllSessions('guest'))[0]).not.toHaveProperty('tokenStats');
+    const raw = await storage.getStorageDb()?.get(storage.SESSION_STORE_NAME, ['guest', legacy.id]);
+    expect(raw).not.toHaveProperty('tokenStats');
   });
 });
 
@@ -197,7 +527,10 @@ describe('session-storage strict import writes', () => {
     await storage.openDB();
 
     await expect(storage.putImportedSession(fakeSession)).rejects.toThrow('disk write failed');
-    expect(put).toHaveBeenCalledWith('sessions', fakeSession);
+    expect(put).toHaveBeenCalledWith('sessions_by_owner', {
+      ...fakeSession,
+      ownerKey: 'guest',
+    });
   });
 
   it('writes a conflict branch in one transaction and propagates transaction failure', async () => {
@@ -220,8 +553,8 @@ describe('session-storage strict import writes', () => {
 
     await expect(storage.putImportedSessionBranch(detached, branch))
       .rejects.toThrow('transaction aborted');
-    expect(transaction).toHaveBeenCalledWith('sessions', 'readwrite');
-    expect(put).toHaveBeenNthCalledWith(1, detached);
-    expect(put).toHaveBeenNthCalledWith(2, branch);
+    expect(transaction).toHaveBeenCalledWith('sessions_by_owner', 'readwrite');
+    expect(put).toHaveBeenNthCalledWith(1, { ...detached, ownerKey: 'guest' });
+    expect(put).toHaveBeenNthCalledWith(2, { ...branch, ownerKey: 'guest' });
   });
 });

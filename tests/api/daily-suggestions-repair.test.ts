@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BlobNotFoundError, del, head, put } from '@vercel/blob';
-import handler from '../../api/daily-suggestions-repair.js';
+import { repairHandler as handler } from '../../api/daily-suggestions-maintain.js';
 
 vi.mock('@vercel/blob', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@vercel/blob')>();

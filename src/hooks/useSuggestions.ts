@@ -119,11 +119,24 @@ export function useSuggestions(opts: {
     setState((current) => current.source === 'default' ? defaultState(defaults, currentCode) : current);
   }
 
-  // Persist freshly shown commit chips to the session (external system sync).
+  // Persist freshly shown commit chips to the session (external system sync) —
+  // but only while they are the chips actually on screen. A session switch
+  // (including the new one the studio opens when the conversation you were in
+  // is kept) resets the state to whatever the arriving session has, and that
+  // session's empty `persisted` is itself what re-runs this effect. Writing
+  // then would file the *previous* conversation's next steps onto the session
+  // just opened, which would go on to open on them as its own placeholder.
   useEffect(() => {
+    if (state.source !== 'commit') return;
     if (!commitSuggestions || commitSuggestions.length === 0) return;
-    onSuggestionsRef.current?.(commitSuggestions.slice(0, MAX_SUGGESTIONS), currentCodeRef.current);
-  }, [commitSuggestions]);
+    const items = commitSuggestions.slice(0, MAX_SUGGESTIONS);
+    const alreadyPersisted = persisted?.forCode === currentCodeRef.current
+      && persisted.items.length === items.length
+      && persisted.items.every((item, index) => item === items[index]);
+    if (!alreadyPersisted) {
+      onSuggestionsRef.current?.(items, currentCodeRef.current);
+    }
+  }, [commitSuggestions, persisted, state.source]);
 
   return { suggestions: state.items };
 }

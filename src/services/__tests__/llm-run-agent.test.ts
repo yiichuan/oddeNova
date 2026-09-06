@@ -148,12 +148,12 @@ describe('runAgent conversationHistory pass-through', () => {
   });
 
   it('threads getSelectedThinkingLevel() into RunAgentOptions.thinkingLevel', async () => {
-    getSelectedThinkingLevelMock.mockReturnValue('extreme');
+    getSelectedThinkingLevelMock.mockReturnValue('high');
 
     await runAgent('go', '', undefined);
 
     const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
-    expect(opts.thinkingLevel).toBe('extreme');
+    expect(opts.thinkingLevel).toBe('high');
   });
 
   it('disables thinking when the classifier returns chat', async () => {
@@ -256,7 +256,7 @@ describe('createOpenAILLMCaller thinking params', () => {
 
   it('merges resolved thinking params into the request when thinking is enabled', async () => {
     const llm = await captureLLM();
-    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'extreme');
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'high');
 
     expect(openAIChatCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({ thinking: { type: 'enabled' }, reasoning_effort: 'max' }),
@@ -316,7 +316,7 @@ describe('anthropicLLMCaller thinking params', () => {
     await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'high');
 
     expect(anthropicStreamMock).toHaveBeenCalledWith(
-      expect.objectContaining({ thinking: { type: 'enabled', budget_tokens: 32000 } }),
+      expect.objectContaining({ thinking: { type: 'enabled', budget_tokens: 60000 } }),
       expect.any(Object),
     );
   });

@@ -10,7 +10,7 @@ This is a syntax reference: the point is to understand what each method does and
 - **Forbidden**: `.add(s("..."))` to layer samples — `.add()` is arithmetic (only for pitch offsets like `.add(note("7"))`); it cannot accept a sample-name string and will throw `cannot parse as numeral: "bd"`. To layer multiple `s()` tracks use comma syntax `s("bd*4, ~ sd ~ sd")` or `stack(s("bd*4"), s("~ sd ~ sd"))`.
 
 ### Sounds & samples
-- Synths: `.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`. For full melodic / GM / Dirt / drum-machine names see the Sample Reference section. **Do not invent names** outside the list (e.g., "superpad", "rhodes", "strings").
+- Synths: `.s("sawtooth"|"sine"|"square"|"triangle"|"supersaw")`. For full built-in melodic / GM / Dirt / drum-machine names see the Sample Reference section; custom sample names are allowed only when declared in the current code by an inline literal `samples({...})` registration. Do not invent, guess, or use undeclared or dynamically generated names (e.g., "superpad", "rhodes", "strings").
 - Drums: `bd sd hh rs cp cb lt mt ht 808bd 808sd 808oh 808hc`. Drum-machine banks: `.bank("RolandTR808")` — when using `.bank()`, use bank-specific suffixes `bd sd hh oh cp cb lt mt ht perc rim sh cr` (note: the bank's rimshot is `rim`, not `rs`; `rs` is only valid without a bank).
 
 ### Effects

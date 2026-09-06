@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { useStrudel } from './useStrudel';
-import type { useSessions, CodeRevisionDraft, TokenStats } from './useSessions';
+import type { useSessions, CodeRevisionDraft } from './useSessions';
 import { runAgent } from '../services/llm';
 import type { ConversationTurn, ProgressEvent } from '../services/llm';
 import type { InputMode } from './useChat';
@@ -75,7 +75,12 @@ export interface AgentTurnDeps {
   ) => void;
   finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
-  updateTokenStats: (stats: TokenStats, sessionId: string) => void;
+  setSessionSuggestions: (
+    items: string[],
+    forCode: string,
+    sessionId: string,
+  ) => void;
+  checkpointSession: (sessionId: string) => Promise<void>;
 
   // loading / abort lifecycle (owned by App's controller map + loading set)
   beginLoading: (sessionId: string) => AbortController;
@@ -163,10 +168,6 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       return;
     }
 
-    if (result.tokenUsage) {
-      deps.updateTokenStats({ ...result.tokenUsage, modelId: model }, sessionId);
-    }
-
     if (result.code) {
       if (deps.isCurrentSession(sessionId)) {
         // Always persist the newest code as the session truth, run or not.
@@ -183,7 +184,10 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
           : undefined;
         if (success) {
           const nextSteps = parseNextSteps(result.explanation);
-          if (nextSteps.length > 0) deps.setCommitSuggestions(nextSteps);
+          if (nextSteps.length > 0) {
+            deps.setCommitSuggestions(nextSteps);
+            deps.setSessionSuggestions(nextSteps, result.code, sessionId);
+          }
           const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
           if (revision) {
             deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode);
@@ -244,6 +248,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       iterations,
     };
     safelyTrackAnalytics(() => deps.trackAgentTurnFinished(finishedProperties));
+    await deps.checkpointSession(sessionId);
     deps.endLoading(sessionId, controller);
   }
 }
@@ -291,7 +296,8 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
       sessions.addAssistantMessage(text, code, id, revision, inputMode),
     finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
     setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
-    updateTokenStats: (stats, id) => sessions.updateTokenStats(stats, id),
+    setSessionSuggestions: (items, code, id) => sessions.setSuggestions(items, code, id),
+    checkpointSession: (id) => sessions.checkpointSession(id),
     beginLoading: (id) => {
       setLoadingSessions((prev) => new Set(prev).add(id));
       const controller = new AbortController();

@@ -6,7 +6,7 @@ import {
   parseStoredBatch,
   readCandidateDates,
   secondsUntilNextBeijingMidnight,
-} from './daily-suggestions-core.js';
+} from '../server/daily-suggestions-core.js';
 
 async function readDate(date: string) {
   try {

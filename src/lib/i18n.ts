@@ -4,6 +4,27 @@ export function isZh(): boolean {
 
 export const zh: boolean = isZh();
 
+/**
+ * The Favorites page's empty line, 中文, named rather than inlined below.
+ *
+ * It is set in 京華老宋体, the same face the studio's opening line uses, and that
+ * face ships as a subset of exactly the characters it has to draw — so the
+ * build needs to read this string as text, not as a lookup.
+ * See scripts/build-greeting-font-subset.ts.
+ */
+export const FAVORITES_EMPTY_ZH = '收藏的对话会在这里显示';
+
+/**
+ * The theme song's opening line, 中文, named for the same reason as the one
+ * above: it lands in the greeting slot, in 京華老宋体, so the subset build has
+ * to be able to read it as text rather than as a lookup.
+ *
+ * Short on purpose. That slot holds one centred line in the middle of an empty
+ * conversation — the pool in `greetings.ts` is the register it has to sit in,
+ * and a paragraph there reads as a notice rather than an opening.
+ */
+export const THEME_SONG_INTRO_ZH = '听听看 《迟来的信使》，接收 创作 的 邀约';
+
 const S: Record<string, readonly [string, string]> = {
   // Common
   cancel:       ['取消', 'Cancel'],
@@ -11,12 +32,118 @@ const S: Record<string, readonly [string, string]> = {
   save:         ['保存', 'Save'],
   send:         ['发送', 'Send'],
   stop:         ['停止', 'Stop'],
+  pause:        ['暂停', 'Pause'],
   delete:       ['删除', 'Delete'],
   edit:         ['编辑', 'Edit'],
   copy:         ['复制', 'Copy'],
   retry:        ['重试', 'Retry'],
   loading:      ['加载中…', 'Loading…'],
+  noMoreSessions: ['没有更多会话', 'No more sessions'],
+  sessionListNetworkError: ['会话列表加载失败，请重试', 'Could not load sessions. Please try again'],
+  sessionDetailNetworkError: ['会话详情加载失败，请重试', 'Could not load the session. Please try again'],
+  loadMoreFailed: ['加载更多失败，请重试', 'Could not load more. Please try again'],
   play:         ['播放', 'Play'],
+  updatePattern: ['更新', 'Update'],
+  playbackProgress: ['播放进度', 'Playback progress'],
+  volume:       ['音量', 'Volume'],
+  mute:         ['静音', 'Mute'],
+  unmute:       ['取消静音', 'Unmute'],
+  collapseViz:  ['收起动画', 'Collapse visuals'],
+  expandViz:    ['展开动画', 'Expand visuals'],
+
+  // Primary navigation
+  primaryNavigation: ['一级菜单', 'Primary navigation'],
+  navHome:       ['工作室', 'Studio'],
+  navFeatured:   ['精选', 'Featured'],
+  navFavorites:  ['收藏', 'Favorites'],
+  navMore:       ['更多', 'More'],
+  navLearnStrudel: ['学习 Strudel', 'Learn Strudel'],
+  navSettings:   ['设置', 'Settings'],
+  navAccount:    ['账号', 'Account'],
+  expandNavigation:   ['展开导航栏', 'Expand navigation'],
+  collapseNavigation: ['收起导航栏', 'Collapse navigation'],
+  expandNavPages:     ['展开页面菜单', 'Show pages'],
+  collapseNavPages:   ['收起页面菜单', 'Hide pages'],
+
+  // Featured
+  featuredList:        ['精选作品', 'Featured pieces'],
+  featuredIntroLabel:  ['内容来源说明', 'About these albums'],
+  featuredIntro:       ['精选内容收集于互联网，仅作演示与学习之用，版权归原作者所有。',
+                        'The featured pieces are collected from the internet, shown here for demonstration and study only; all rights belong to their original creators.'],
+  featuredCodedBy:     ['代码', 'Code'],
+  featuredNothingPlaying: ['未在播放', 'Nothing playing'],
+  featuredPlayPiece:   ['播放这首', 'Play this piece'],
+  featuredPrevPiece:   ['上一首', 'Previous piece'],
+  featuredNextPiece:   ['下一首', 'Next piece'],
+  featuredSourcePost:  ['原帖', 'Original post'],
+  featuredSourceRepo:  ['源码仓库', 'Source repo'],
+  featuredSourcePattern: ['Strudel 源码', 'Strudel source'],
+  featuredSourceCollection: ['收录仓库', 'Collection repo'],
+  featuredNowPlaying:  ['播放中', 'Now playing'],
+  openInStudio:        ['在工作室打开', 'Open in Studio'],
+  featuredBack:        ['返回', 'Back'],
+  featuredCode:        ['代码', 'Code'],
+  featuredNotes:       ['介绍', 'About'],
+  featuredStyle:       ['风格', 'Style'],
+  featuredTempo:       ['速度', 'Tempo'],
+  featuredLayers:      ['音层', 'Layers'],
+  featuredOpenDetail:  ['查看详情', 'View details'],
+  featuredAlbumTracks: ['《{album}》的曲目', '{album} tracks'],
+  featuredAlbumOf:     ['专辑《{album}》', 'Album {album}'],
+  featuredOpenedIntro: ['{coder} 用 Strudel 写的《{title}》（原作 {originalArtist}），已在工作室中。',
+                        '{coder}’s Strudel rendition of “{title}” (originally by {originalArtist}), now in the studio.'],
+
+  // Favorites
+  favoritesList:        ['收藏的对话', 'Favorited conversations'],
+  favoritesConversation:['对话', 'Conversation'],
+  favoritesCodeTitle:   ['代码', 'Script'],
+  /* The script a conversation was left at when no reply committed it — the
+     model's `kind: 'final'`. Named for where it sits and not for what it is:
+     it is the newest of the scripts and outside the V01/V02 sequence, which
+     is all a reader needs, and calling it final would say the piece was
+     settled when all that happened is that nothing came after it. */
+  favoritesLatestScript:['最新', 'Latest'],
+  favoritesSavedAt:     ['收藏于 {time}', 'Saved {time}'],
+  favoritesTurnCount:   ['{n} 条消息', '{n} messages'],
+  favoritesCodeCount:   ['{n} 段代码', '{n} scripts'],
+  favoritesJumpToCode:  ['查看第 {n} 版代码', 'Show take {n}'],
+  favoritesReasoningTitle: ['构思过程', 'Ideation process'],
+  favoritesEmptyTitle:  [FAVORITES_EMPTY_ZH, 'Conversations you keep will show up here'],
+  favoritesYou:         ['我', 'You'],
+  favoritesTurnRail:    ['我说过的话', 'What you asked for'],
+  favoritesJumpToTurn:  ['跳到这句：{text}', 'Jump to: {text}'],
+  favoritesSearch:      ['搜索收藏', 'Search favorites'],
+  favoritesSearchHint:  ['搜索', 'Search'],
+  favoritesSearchClear: ['清除搜索', 'Clear search'],
+  favoritesSearchEmpty: ['没有匹配的收藏', 'Nothing matches'],
+
+  // Keeping one, letting one go
+  favorite:             ['收藏', 'Add to favorites'],
+  unfavorite:           ['取消收藏', 'Remove from favorites'],
+  deleteFavorite:       ['永久删除', 'Delete for good'],
+  favoriteDoneTitle:    ['已收藏', 'Kept'],
+  unfavoriteDoneTitle:  ['已取消收藏', 'Let go'],
+  favoriteDeletedTitle: ['已删除', 'Deleted'],
+  favoriteActionView:   ['查看', 'View'],
+  favoriteActionUndo:   ['撤销', 'Undo'],
+  favoriteActionFailed: ['收藏操作失败，请重试。', 'Favorite action failed. Please try again.'],
+
+  // Account
+  account:      ['账号', 'Account'],
+  email:        ['邮箱', 'Email'],
+  password:     ['密码', 'Password'],
+  confirmPassword: ['确认密码', 'Confirm password'],
+  showPassword: ['显示密码', 'Show password'],
+  hidePassword: ['隐藏密码', 'Hide password'],
+
+  // First-entry welcome
+  welcomeTitle:             ['oddeNova：欢迎！', 'oddeNova: Welcome!'],
+  welcomeOr:                ['或者', 'or'],
+  welcomeContinueWithEmail: ['使用邮箱继续', 'Continue with email'],
+  welcomeCreateAccount:     ['创建账户', 'Create account'],
+  welcomeHaveAccount:       ['已经有账户？', 'Already have an account?'],
+  welcomeNoAccount:         ['还没有账户？', 'No account yet?'],
+  welcomeSignUpLink:        ['注册', 'Sign up'],
 
   // App status
   engineStarting:   ['音频引擎启动中，请稍后再试', 'Audio engine starting, please try again later'],
@@ -38,7 +165,12 @@ const S: Record<string, readonly [string, string]> = {
   newSession:       ['新建会话', 'New session'],
   sessionHistory:   ['会话历史', 'Session history'],
   newSessionTitle:  ['新会话', 'New session'],
+  themeSongTitle:   ['Beta 1.0 主题曲', 'Beta 1.0 Theme Song'],
+  themeSongIntro:   [THEME_SONG_INTRO_ZH,
+                     'Hear “The Late Messenger” — and take up the invitation to write.'],
   branchSuffix:     ['（分支）', ' (branch)'],
+  sessionSyncOffline: ['未同步到云端 · 联网后自动上传', 'Not synced to cloud · uploads when online'],
+  sessionSyncRetrying:['同步失败，正在重试', 'Sync failed; retrying'],
 
   // Tool call labels (formatToolCall)
   arrangeMusic:   ['编排段落…', 'Arranging…'],
@@ -56,6 +188,7 @@ const S: Record<string, readonly [string, string]> = {
   shared:          ['已分享', 'Shared'],
   sharedMusicCreation: ['分享了一段音乐创作', 'Shared a music creation'],
   export:          ['导出', 'Export'],
+  download:        ['下载', 'Download'],
   exportWav:       ['导出 WAV', 'Export WAV'],
   learn:           ['学习', 'Learn'],
   openMenu:        ['打开菜单', 'Open menu'],
@@ -72,6 +205,48 @@ const S: Record<string, readonly [string, string]> = {
   cycleError:      ['起始 cycle 必须小于结束 cycle', 'Start cycle must be less than end cycle'],
   sampleRate:      ['采样率', 'Sample rate'],
   setUpLater:      ['稍后设置', 'Set up later'],
+
+  // Account
+  accountDesc:          ['登录后即可收藏对话，创作也会同步到你的账号。', 'Sign in to keep conversations — your work syncs to your account.'],
+  accountActionFailed:  ['操作失败，请稍后重试。', 'Action failed. Please try again later.'],
+  supabaseNotConfigured:['Supabase 尚未配置，当前只能以游客模式使用。', 'Supabase is not configured. Guest mode is still available.'],
+  signIn:               ['登录', 'Sign in'],
+  continueWithGoogle:   ['使用 Google 继续', 'Continue with Google'],
+  orUseEmail:           ['或使用邮箱', 'or use email'],
+  signOut:              ['退出登录', 'Sign out'],
+  signedInAs:           ['当前登录', 'Signed in as'],
+  createAccount:        ['注册账号', 'Create account'],
+  needAccount:          ['注册账号', 'Create account'],
+  haveAccount:          ['已有账号，去登录', 'Already have an account'],
+  forgotPassword:       ['忘记密码？', 'Forgot password?'],
+  backToSignIn:         ['返回登录', 'Back to sign in'],
+  sendResetEmail:       ['发送重置邮件', 'Send reset email'],
+  newPassword:          ['新密码', 'New password'],
+  confirmNewPassword:   ['确认新密码', 'Confirm new password'],
+  updatePassword:       ['更新密码', 'Update password'],
+  passwordsDoNotMatch:  ['两次输入的密码不一致', 'Passwords do not match'],
+  confirmEmailSent:     ['确认邮件已发送。请先完成邮箱确认。', 'Confirmation email sent. Confirm your email.'],
+  passwordResetSent:    ['密码重置邮件已发送。', 'Password reset email sent.'],
+  authErrorInvalidCredentials:['邮箱或密码不正确，请检查后重试。', 'Incorrect email or password. Please check and try again.'],
+  authErrorEmailNotConfirmed:['请先完成邮箱验证，再登录。', 'Please verify your email before signing in.'],
+  authErrorUserAlreadyExists:['该邮箱已注册，请直接登录或重置密码。', 'An account with this email already exists. Sign in or reset your password.'],
+  authErrorWeakPassword:['密码至少需要 8 个字符。', 'Your password must be at least 8 characters.'],
+  authErrorInvalidEmail:['邮箱格式不正确，请检查后重试。', 'Enter a valid email address and try again.'],
+  authErrorRateLimited:['操作过于频繁，请稍后再试。', 'Too many attempts. Please wait a moment and try again.'],
+  authErrorSignupDisabled:['当前暂不支持注册新账号。', 'New account registration is currently unavailable.'],
+  authErrorSamePassword:['新密码不能与当前密码相同。', 'Your new password must be different from your current password.'],
+  authErrorSessionExpired:['登录状态已失效，请重新登录后再试。', 'Your session has expired. Please sign in and try again.'],
+  authErrorNetwork:['网络连接失败，请检查网络后重试。', 'Unable to connect. Check your network and try again.'],
+  authErrorGoogleCancelled:['已取消 Google 登录。', 'Google sign-in was cancelled.'],
+  authErrorGoogleFailed:['Google 登录失败，请重试。', 'Google sign-in failed. Please try again.'],
+  authErrorGoogleIdentityConflict:[
+    '该邮箱已有账号，请先使用邮箱密码登录后再重试。',
+    'An account already uses this email. Sign in with email and password, then try again.',
+  ],
+  importLocalHistory:   ['同步本机历史？', 'Sync local history?'],
+  importLocalHistoryDesc:['检测到本机游客模式下已有对话记录。要导入到当前账号并开启云同步吗？', 'Local guest conversations were found. Import them into this account and enable cloud sync?'],
+  importNow:            ['导入并同步', 'Import and sync'],
+  notNow:               ['暂不', 'Not now'],
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
@@ -95,6 +270,58 @@ const S: Record<string, readonly [string, string]> = {
   scanToJoin:   ['扫码入群', 'Scan to join'],
   freeApiKey:   ['免费领体验 API Key', 'Get a free trial API Key'],
 
+  // Model settings workspace
+  modelProviders: ['模型服务商', 'Model providers'],
+  chooseProvider: ['选择模型', 'Choose a model'],
+  currentlyActive: ['正在使用', 'Active'],
+  providerPickerHint: ['完成配置并保存设置后，oddeNova 将开始使用所选模型。', 'After you finish configuring and save, oddeNova will start using the selected model.'],
+  officialProviderDescription: ['由 oddeNova 官方服务提供模型能力，无需配置个人 API Key。', 'Model access is provided by oddeNova. No personal API Key is required.'],
+  thirdPartyProviderDescription: ['使用您自己的模型服务商凭证连接模型，保存后生效。API Key 只会保存在当前浏览器中。', 'Connect with your own model provider credentials. Changes take effect after saving. Your API Key is stored only in this browser.'],
+  modelConfiguration: ['模型配置', 'Model configuration'],
+  modelVersion: ['模型版本', 'Model version'],
+  modelVersionHint: ['选择用于生成和修改音乐的模型。', 'Choose the model used to generate and revise music.'],
+  managed: ['托管', 'Managed'],
+  officialKeyHint: ['官方服务的访问凭证由平台安全托管。', 'Credentials for the official service are managed by the platform.'],
+  apiKeyLocalHint: ['Key 仅保存在当前浏览器中。', 'The key is stored only in this browser.'],
+  noApiKeyRequired: ['无需配置 API Key', 'No API Key required'],
+  hideApiKey: ['隐藏 API Key', 'Hide API Key'],
+  showApiKey: ['显示 API Key', 'Show API Key'],
+  apiKeyRequired: ['请输入该服务商的 API Key。', 'Enter an API Key for this provider.'],
+  settingsSaved: ['设置已保存', 'Settings saved'],
+  settingsSaveFailed: ['保存失败，请重试。', 'Could not save settings. Try again.'],
+  saveSettings: ['保存设置', 'Save settings'],
+
+  // Settings sections
+  settingsSections: ['设置分区', 'Settings sections'],
+  settingsModel: ['模型', 'Model'],
+  settingsAppearance: ['外观', 'Appearance'],
+  modelSettingsDescription: ['选择用于生成和修改音乐的模型服务商，并配置对应的访问凭证。', 'Choose the provider that generates and revises your music, then configure its credentials.'],
+  appearanceDescription: ['调整 oddeNova 的配色与工作室动画。', 'Adjust how oddeNova looks and which animation the studio plays.'],
+
+  // Appearance — theme
+  theme: ['主题', 'Theme'],
+  themeHint: ['选择界面的配色方案。', 'Choose the color scheme for the interface.'],
+  themeSystem: ['跟随系统', 'Match system'],
+  themeDark: ['深色', 'Dark'],
+  themeLight: ['浅色', 'Light'],
+  comingSoon: ['即将推出', 'Coming soon'],
+  lightThemeUnavailable: ['浅色主题仍在制作中，目前所有选项都以深色显示。', 'The light theme is still in the works — every option renders dark for now.'],
+
+  // Appearance — animation
+  animation: ['动画', 'Animation'],
+  animationHint: ['选择工作室动画面板播放的动画。', 'Choose the animation that plays in the studio visual pane.'],
+  animationGalaxy: ['Galaxy', 'Galaxy'],
+  animationGalaxyHint: ['三维旋臂星系，镜头随音乐游移。', 'A 3D spiral galaxy with a camera that drifts with the music.'],
+  animationGalaxyAscii: ['Galaxy ASCII', 'Galaxy ASCII'],
+  animationGalaxyAsciiHint: ['由字符网格绘制的二维星系。', 'A 2D galaxy drawn as a grid of characters.'],
+  animationVisual: ['动画面板', 'Animation visual'],
+  studioAnimationVisible: ['在工作室中显示动画', 'Show the animation in the studio'],
+  studioAnimationVisibleHint: [
+    '关闭后，工作室不再显示代码面板下方的动画窗口。',
+    'Turn this off and the studio drops the animation pane below the code panel.',
+  ],
+  studioAnimationOff: ['动画关闭', 'Animation off'],
+
   // PersonaModal
   customPersonas:     ['自定义人物', 'Custom personas'],
   noCustomPersonas:   ['还没有自定义人物', 'No custom personas yet'],
@@ -105,7 +332,6 @@ const S: Record<string, readonly [string, string]> = {
   personaPromptPlaceholder: ['描述一下这个人物的性格和说话方式，比如它是谁、会怎么和你聊天。', "Describe this persona's character and how they talk — for example, who they are and how they'd chat with you."],
 
   // ConversationView
-  startCreating: ['说点什么开始创作', 'Say something to start creating'],
   strudelCode:   ['Strudel 代码', 'Strudel code'],
   lines:         ['行', 'lines'],
   branchFrom:    ['从此处创建分支对话', 'Branch conversation from here'],
@@ -126,6 +352,10 @@ const S: Record<string, readonly [string, string]> = {
   // HistoryPanel
   history:    ['历史对话', 'History'],
   noSessions: ['暂无会话', 'No sessions'],
+  historySearch:      ['搜索历史对话', 'Search history'],
+  historySearchHint:  ['搜索', 'Search'],
+  historySearchClear: ['清除搜索', 'Clear search'],
+  historySearchEmpty: ['没有匹配的对话', 'No matching conversations'],
 
   // Sidebar
   choosePersona: ['选择人物', 'Choose persona'],
@@ -139,10 +369,6 @@ const S: Record<string, readonly [string, string]> = {
   voiceNotSupported: ['浏览器不支持语音识别，请使用 Chrome', 'Speech recognition not supported, please use Chrome'],
   releaseToStop:     ['松开停止', 'Release to stop'],
   holdToSpeak:       ['按住说话', 'Hold to speak'],
-
-  // ContextWindowIndicator
-  contextWindow: ['上下文窗口', 'Context window'],
-  tokens:        ['个令牌', 'tokens'],
 
   // strudel / engine
   clickToResume:   ['点击播放继续', 'Click to resume'],
@@ -164,10 +390,9 @@ const S: Record<string, readonly [string, string]> = {
   openOriginalPage:  ['打开原文页面 ↗', 'Open original page ↗'],
   // Thinking level
   thinkingLevel:        ['思考强度', 'Thinking level'],
-  thinkingLevelLow:     ['低', 'Low'],
+  thinkingLevelLow:     ['轻', 'Low'],
   thinkingLevelMedium:  ['中', 'Medium'],
   thinkingLevelHigh:    ['高', 'High'],
-  thinkingLevelExtreme: ['极高', 'Extreme'],
 };
 
 export function t(key: string): string {

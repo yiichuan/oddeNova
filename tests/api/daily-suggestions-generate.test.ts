@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BlobNotFoundError, BlobPreconditionFailedError, del, head, put } from '@vercel/blob';
 import { waitUntil } from '@vercel/functions';
-import handler from '../../api/daily-suggestions-generate.js';
+import maintenanceHandler, { primaryHandler as handler } from '../../api/daily-suggestions-maintain.js';
 
 vi.mock('@vercel/blob', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@vercel/blob')>();
@@ -60,6 +60,35 @@ describe('daily-suggestions-generate handler', () => {
     delete process.env.CRON_SECRET;
     delete process.env.OFFICIAL_API_KEY;
     delete process.env.VITE_API_KEY;
+  });
+
+  it('dispatches primary and repair triggers to their explicit target dates', async () => {
+    vi.mocked(head).mockImplementation(async (pathname) => ({ pathname }) as never);
+    const primaryRes = makeRes();
+    const repairRes = makeRes();
+
+    await maintenanceHandler({
+      method: 'GET',
+      headers: { authorization: 'Bearer cron-secret' },
+      query: { trigger: 'primary' },
+    } as never, primaryRes as never);
+    await maintenanceHandler({
+      method: 'GET',
+      headers: { authorization: 'Bearer cron-secret' },
+      query: { trigger: 'repair' },
+    } as never, repairRes as never);
+
+    expect(primaryRes.body).toEqual({ status: 'exists', date: '2026-07-18', attempts: 0 });
+    expect(repairRes.body).toEqual({ status: 'exists', date: '2026-07-17', attempts: 0 });
+  });
+
+  it('rejects an invalid maintenance trigger', async () => {
+    const res = makeRes();
+
+    await maintenanceHandler({ query: { trigger: 'late' } } as never, res as never);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid trigger' });
   });
 
   it('rejects a request without the Cron bearer token', async () => {

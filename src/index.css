@@ -24,10 +24,26 @@
   font-display: swap;
 }
 
+/* Greeting-only subset — carries just the characters used by GREETINGS_ZH, so
+   this face must not be applied to any other text (missing glyphs would fall
+   back to `serif` one character at a time). The full 33 MB source lives in
+   assets/fonts/; `npm run fonts:greetings` regenerates this file whenever the
+   greeting pool changes, and a test fails the build if it goes stale. */
 @font-face {
   font-family: '京華老宋体';
-  src: url('/fonts/京華老宋体v3.0.ttf') format('truetype');
+  src: url('/fonts/jinghua-laosongti-greetings.woff2') format('woff2');
   font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* One weight only — there is no bold to synthesise from, and asking the browser
+   for one would smear the high-contrast strokes this face is chosen for. Any
+   heading using it stays at 400. */
+@font-face {
+  font-family: 'DM Serif Display';
+  src: url('/fonts/DMSerifDisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
@@ -41,38 +57,1622 @@
 }
 
 @theme {
-  --color-bg-primary: #000000;
+  --color-bg-primary: #070707;
   --color-bg-secondary: #000000;
   --color-bg-tertiary: #000000;
+  --color-conversation-surface: #0D0D0D;
+  --color-settings-surface: #161616;
+  /* The well an account form's fields sit in — one step up from the modal
+     surface they stand on, so a stack of them reads as a stack of boxes. */
+  --color-auth-field: #141414;
   --color-accent: #434343;
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
-  --color-text-primary: #C0C0C0;
+  --color-brand-accent: #D9542B;
+  /* The accent under a pointer. A tenth of white laid over the accent — the
+     same lift that takes the paper theme's #0668E5 to its `--color-accent-light`
+     #237AE8, so both rooms brighten by the same amount rather than by the same
+     eyeball. */
+  --color-brand-accent-hover: #DD6540;
+  --color-playback-accent: #D9542B;
+  --color-text-primary: #D6D6D6;
   --color-text-secondary: #B8B8B8;
   --color-text-muted: #747474;
-  --color-border: #323232;
+  /* An idle icon, not idle text: a 1.5-1.6px stroke reads dimmer than a
+     letterform of the same colour, so the marks that sit unselected in the nav
+     and the featured transport get their own step above `text-muted`. */
+  --color-icon-idle: #949494;
+  /* The disc the account button wears once someone is signed in. A face is not
+     a signal, so it stays out of the accent and off the hue wheel entirely — a
+     true grey held a few steps clear of the ground it is read against, which is
+     up here and down on paper. */
+  --color-avatar-fill: #4E4E4E;
+  --color-avatar-text: #E6E6E6;
+  --color-text-reasoning: #949494;
+  --color-border: #242424;
+  --color-scrollbar-thumb-hover: #4A4A4A;
   --color-success: #00b894;
   --color-error: #CC3803;
   --color-warning: #7E936F;
-  --color-diff-accent: #5295EB;
-  --color-diff-add: #28AB42;
-  --color-diff-remove: #DE573F;
+  --color-diff-accent: #434343;
+  --color-diff-add: #5CB957;
+  --color-diff-remove: #E01A1A;
+  --color-selected-item-bg: #BC4E2D;
+  --color-surface-hover: #242424;
+  --color-surface-selected: #242424;
+  --color-message-user: #242424;
+  --color-action-fill: #D8D8D8;
+  --color-action-fill-hover: #EEEEEA;
+  --color-action-text: #111111;
+  --color-control-icon: #A8A8A8;
+  --color-control-icon-hover: #C8C8C8;
+  --color-control-icon-disabled: #686868;
+  --color-on-accent: #F8F7F4;
+  --color-popover-surface: #111111;
+  --color-overlay-backdrop: rgba(0, 0, 0, 0.6);
+  --color-logo-top: #F5F5F5;
+  --color-logo-bottom: #333333;
+  /* The nav column's mark is masked rather than set in type, and it sits on
+     glass instead of on the ground, so it carries its own pair — held a step
+     off white at the top so the mask reads as lit metal, not as a cutout. */
+  --color-nav-logo-top: #D0D0D0;
+  --color-nav-logo-bottom: #545454;
+  /* One step brighter than `--color-border`: the edge a field or a card
+     answers a pointer with, still quieter than the edge it answers focus
+     with. */
+  --color-border-hover: #3C3C3C;
+  --color-border-focus: #525252;
+  /* A rule drawn *on* a surface rather than around one — the "or" line in the
+     account sheets. It sits a step above `--color-border` so it stays legible
+     on the raised surface it crosses. */
+  --color-divider: #2E2E2E;
+  /* The unlit part of a track a control slides along. */
+  --color-track-idle: #6A6A6A;
+  /* Destructive intent on a row already filled with `--color-selected-item-bg`,
+     where the ordinary red is too near the fill to keep reading as a warning. */
+  --color-danger-on-selected: #B42F2F;
+  /* A fenced code block inside a chat message. */
+  --color-code-block: #B9D7FF;
+  /* The greeting an empty session opens with: quieter than body text without
+     dropping to the muted step the interface labels use. */
+  --color-text-greeting: #969696;
+  /* The settings forms' own success and failure tints — muted against the
+     panel rather than the app's full-strength status colours, which are sized
+     for a toast. */
+  --color-form-ok: #8BA77D;
+  --color-form-ok-text: #AFC6A3;
+  --color-form-error: #A34C35;
+  --color-form-error-text: #C97960;
+  --syntax-atom: #4BA3B9;
+  --syntax-label: #DFB234;
+  --syntax-keyword: #ECB43C;
+  --syntax-operator: #797977;
+  --syntax-special-variable: #C4C73D;
+  --syntax-type: #9AD345;
+  --syntax-number: #D9D9D9;
+  --syntax-definition: #AF8BE5;
+  --syntax-string: #D9D9D9;
+  --syntax-comment: #646973;
+  --syntax-variable: #D9542B;
+  --syntax-tag: #5184D6;
+  --syntax-bracket: #9E9E9E;
+  --syntax-meta: #C55F0D;
+  --syntax-attribute: #CF59CB;
+  --syntax-property: #B0B0B0;
+  --syntax-invalid: #E01A1A;
+  --syntax-punctuation: #8A8A8A;
+  /* The outline Strudel draws around the mini-notation step that is sounding
+     right now (`@strudel/codemirror`'s highlight decoration, read through the
+     patched default in `patches/@strudel+codemirror+1.3.0.patch`). Drawn in
+     the same ink as the plain tokens it boxes — a box is a position, not a
+     colour of its own — so it follows `--syntax-number`/`--syntax-string`
+     across the two rooms. A pattern's own `.color()` still outranks it. */
+  --hap-highlight: #D9D9D9;
 
+  --radius-region: 6px;
+  --spacing-region: 10px;
+  /* The shortest window the app will lay itself out in. Below it the window
+     scrolls rather than the layout compressing — every one of these pages is a
+     set of fixed rows and fixed panel chrome pinned to two opposite edges, and
+     what "too short" looks like is not a tighter layout but the two ends
+     arriving on top of each other.
+
+     Read off the tallest of those requirements, which is this page's reading:
+     Favorites rests its first message a sixth of the page's height down, and
+     that has to clear the blur band standing at the column's top — 6 × (1.25 ×
+     the fade depth − the region inset) = 615px of page, 635px of window.
+     Rounded up. The primary nav, the other thing on every page that cannot
+     compress, needs 376px for its two lobes' rows and is nowhere near
+     binding. */
+  --spacing-app-min-height: 640px;
+  --spacing-divider: 6px;
+  --spacing-action-divider-to-body: 20px;
+  --spacing-action-expanded-content-gap: 20px;
+  --spacing-conversation-edge-fade: 8px;
+  /* Headroom at the stream's top edge. The rollback key hangs 10px above its
+     bubble's top-right corner, and the veil over that edge is the fade's own
+     depth, so a user bubble parked at the very top — scrolled there, or put
+     there by the turn anchor — needs both cleared before the key is lit whole.
+     Read in three places: the scrollport's top padding, the reasoning header's
+     frozen spot and the cap it carries above it, and the turn anchor, which
+     takes the number off that padding rather than repeating it. */
+  --spacing-conversation-top-inset: calc(var(--spacing-conversation-edge-fade) + 10px);
+  /* The editor's breathing space above the first line and below the last. It
+     lives out here rather than on `.cm-editor` because the top fade hangs on
+     the element CodeMirror mounts into — the editor's parent, which a variable
+     scoped to the editor never reaches. Both ends measure from this one value;
+     they drifted apart once already when they did not. */
+  --code-editor-bottom-gap: 14px;
+  --spacing-reasoning-content-fade: 8px;
+  /* Indirected on purpose. Tailwind v4 inlines an `@theme` shadow value into
+     the `shadow-*` utility instead of leaving a `var()` behind, so a token
+     redefined under `html[data-theme='light']` would reach the hand-written
+     `box-shadow: var(...)` rules and silently miss every popover wearing the
+     utility class. Keeping the utility pointed at a second variable is what
+     lets both paths turn with the theme. */
+  --menu-overlay-cast: 0 0 15px rgba(0, 0, 0, 0.7);
+  --shadow-menu-overlay: var(--menu-overlay-cast);
+  --shadow-history-overlay: 0 0 18px rgba(0, 0, 0, 0.9);
+  /* What the auth windows stand on. They arrive over a dimmed, blurred room
+     rather than over the page, so their cast only has to seat a 420px panel on
+     a ground that is already dark — a far, wide pool reads there as a cloud
+     under the window instead of as lift. Two layers held close: the near one
+     draws the contact edge, the outer one carries the drop, and the panel's own
+     border finds its shape. */
+  --dialog-overlay-cast:
+    0 2px 5px rgba(0, 0, 0, 0.26),
+    0 10px 24px rgba(0, 0, 0, 0.20);
+  --shadow-dialog-overlay: var(--dialog-overlay-cast);
+  /* What the nav column stands on. In the dark room there is no light to take
+     out of the ground, so the column is raised by a pool of deeper black under
+     it rather than by a tinted cast.
+
+     Held close, and thrown evenly. The column runs the full height of a page
+     inset by `--spacing-region`, so on three sides 10px is all the ground its
+     shadow ever gets to fall on before the window edge cuts it off. A soft
+     cast with a drop to it would spend those 10px on its faintest tail and
+     read as nothing; this one is a ring that has almost finished falling off
+     by the time it runs out of page. */
+  --shadow-primary-nav: 0 0 12px rgba(0, 0, 0, 0.6);
+
+  --font-dm-serif: 'DM Serif Display', Georgia, serif;
   --font-jinghua-laosongti: '京華老宋体', serif;
   --font-eb-garamond: 'EB Garamond', serif;
+}
+
+/* The light palette is a cool paper workspace, not an inversion of the dark
+   room. Components consume the same semantic names in both modes; only this
+   layer decides how those roles are painted.
+
+   The grounds run on one cool ramp (Lab hue ~290) rather than the warm one
+   they used to: the reading surface is the brightest thing on the page, the
+   composer and the nav sit under it as flat fills, and the page itself is
+   another step down again so both of them read as raised. The two gaps are
+   not equal and are not meant to be — twelve levels from the reading down to
+   the panels, seven from the panels down to the page — so the reading stands
+   clear of everything else while the panels still read as lifted off the
+   ground rather than as a second surface to read on. The
+   accent is the one thing the cool turn does not touch — the blue stays
+   exactly where it was, so a page of paper carries the same signal colour the
+   dark room does, and every hue on screen is either the ground or the accent
+   with nothing in between competing.
+
+   The ramp is read off the reading surface, #F7F7FA: a near-white with just
+   enough blue in it to not be grey, and the tint deepens as the values drop,
+   which is how a cool neutral actually reads.
+
+   Every ground below is the warm value it replaces turned in place rather
+   than a new colour picked against it: Lab lightness and chroma held where
+   they were and only the hue swung round to 290 degrees, the side of the
+   wheel where red and green sit level and the blue channel carries all of the
+   tint — which is what #F7F7FA itself is. So the ramp keeps every step and
+   every ratio it was tuned to, and changes only its temperature.
+
+   Text does not join that ramp. Ink is the one layer read letter by letter,
+   and a hue carried at text weight stops looking like the paper's tint and
+   starts looking like a cast on the words, so every neutral text and icon
+   value is a true grey (Lab C* = 0) — colour belongs to what the type sits
+   on, not to the type. Each grey is placed at the exact lightness of the
+   ground it is read against, so the steps keep the ratios they were tuned to
+   against each other; against the reading surface they now read
+   7.4 / 5.1 / 15.1 for secondary, muted and primary, every one of them a
+   hair under where they sat on paper because the turn cost that surface two
+   levels of lightness. */
+html[data-theme='light'] {
+  --color-bg-primary: #E3E3E5;
+  --color-bg-secondary: #E1E1E8;
+  --color-bg-tertiary: #D8D8E1;
+  --color-conversation-surface: #F7F7FA;
+  --color-settings-surface: #FCFCFE;
+  --color-auth-field: #E9E9ED;
+  --color-accent: #0668E5;
+  --color-accent-light: #237AE8;
+  --color-accent-glow: rgba(6, 104, 229, 0.22);
+  --color-brand-accent: #0668E5;
+  --color-brand-accent-hover: #237AE8;
+  --color-playback-accent: #0668E5;
+  --color-text-primary: #212121;
+  --color-text-secondary: #515151;
+  --color-text-muted: #696969;
+  --color-icon-idle: #646464;
+  /* The idle icon's own grey, filled in: on paper the disc reads darker than
+     the column rather than lighter, and taking the value the outline already
+     had keeps it the same weight of mark. */
+  --color-avatar-fill: #88888A;
+  --color-avatar-text: #F7F7F7;
+  --color-text-reasoning: #646464;
+  --color-border: #D7D7DE;
+  --color-scrollbar-thumb-hover: #A2A2AE;
+  --color-success: #147A55;
+  --color-error: #C43D2B;
+  --color-warning: #6E7632;
+  --color-diff-accent: #0668E5;
+  --color-diff-add: #247B43;
+  --color-diff-remove: #C43D2B;
+  --color-selected-item-bg: #0668E5;
+  --color-surface-hover: #E8E8ED;
+  --color-surface-selected: #DDDDE4;
+  --color-message-user: #E8E8EB;
+  --color-action-fill: #29292D;
+  --color-action-fill-hover: #3E3E43;
+  --color-action-text: #FAFAFD;
+  --color-control-icon: #F6F6FB;
+  --color-control-icon-hover: #FFFFFF;
+  --color-control-icon-disabled: #909097;
+  --color-on-accent: #FAFAFD;
+  --color-popover-surface: #FCFCFE;
+  --color-overlay-backdrop: rgba(39, 40, 52, 0.28);
+  --color-logo-top: #202024;
+  --color-logo-bottom: #73737A;
+  /* On paper the mark starts at true black: the glass under it is bright
+     enough that a grey top would read as a faded print rather than as ink. */
+  --color-nav-logo-top: #161616;
+  --color-nav-logo-bottom: #5E5E5E;
+  --color-border-hover: #C4C4CF;
+  --color-border-focus: #0668E5;
+  --color-divider: #DEDEE4;
+  --color-track-idle: #B7B7C3;
+  /* Pale, not deep: the selected row is a blue fill here, and a dark red on it
+     reads as a smudge rather than as danger. */
+  --color-danger-on-selected: #FFC9BE;
+  --color-code-block: #1F4F91;
+  --color-text-greeting: #6E6E6E;
+  --color-form-ok: #3F7A55;
+  --color-form-ok-text: #2E6644;
+  --color-form-error: #C43D2B;
+  --color-form-error-text: #A8341F;
+  /* Cast in the ground's own hue rather than in a neutral black — a shadow on
+     paper is the paper with the light taken out of it, so this turned with the
+     ramp and stayed the same distance off it.
+
+     Two layers, both held close. Everything that takes this is a small popover
+     a couple of hundred pixels across — a volume chip is barely wider than a
+     wide blur — so a single far cast spent its whole radius past the panel and
+     read as a dark pool the popover happened to sit in. The near layer draws
+     the contact edge, the outer one carries the lift, and the panel's own
+     border does the work of finding its shape. */
+  --menu-overlay-cast:
+    0 1px 2px rgba(44, 45, 61, 0.05),
+    0 6px 16px rgba(44, 45, 61, 0.09);
+  --shadow-history-overlay: 0 16px 42px rgba(44, 45, 61, 0.16);
+  /* The same cast in the paper's own ink, and lighter again: on a pale ground
+     the shadow is the paper with the light taken out of it, so it takes far
+     less alpha to read as the same distance off the page. */
+  --dialog-overlay-cast:
+    0 1px 2px rgba(44, 45, 61, 0.05),
+    0 8px 20px rgba(44, 45, 61, 0.10);
+  /* The composer's cast in the same ink, pulled in tight and evened out, and
+     carrying the density it loses by being small — the column has 10px of page
+     to fall on, not the open room under the composer. */
+  --shadow-primary-nav: 0 0 6px rgba(44, 45, 61, 0.12);
+}
+
+/* Syntax colour belongs to the surface the code sits on, not to the page
+   around it, so these key off the editor theme rather than `data-theme`. The
+   default path is the same either way — an app-theme flip re-establishes the
+   matching oddeNova editor theme — but this way a light editor theme chosen
+   while the app stays dark still gets legible syntax, which the app-theme
+   keying could not give it.
+
+   `oddenova-syntax-highlight.ts` emits `color: var(--syntax-…)` per tag,
+   so CodeMirror needs no re-dispatch when these change: the compartment holds
+   the same rules and the browser repaints them. */
+/* The dark room's structure, re-lit for paper on the light theme's own hue —
+   declared in the dark block's order so the two can be read side by side.
+
+   Two rules carry over unchanged. The score is not colour-coded: numbers and
+   strings stay the editor's own foreground, a hair off it, so a mini-notation
+   string reads as the pattern it is rather than as one more highlighted
+   token. And scaffolding recedes in four measured steps —
+   property, bracket, punctuation, operator — with comments a step past all of
+   them, each placed at the contrast ratio its dark counterpart has against
+   #0D0D0D (9.0 / 7.2 / 5.6 / 4.5 / 3.5), so the ramp recedes by the same
+   amount in both themes.
+
+   What does *not* carry over is which way round the wheel is spent. Colour
+   here follows the app's accent, and the two themes accent from opposite
+   halves of it: the dark room is built on orange (`--color-brand-accent`
+   #D9542B), so its loudest, most frequent tokens are warm — orange variables,
+   gold keywords — and its cool hues are the rare classifying ones. On paper
+   the accent is blue (#0668E5), so the same roles swap sides. Function and
+   variable names — by far the most of what a Strudel script is — take the
+   accent itself, and the arc runs cool from there: green types, teal special
+   variables and atoms, steel meta, indigo tags, violet keywords and labels,
+   magenta attributes.
+
+   Two deliberate exceptions sit outside that arc, both warm. Definitions are
+   struck in orange-red — the one place a name is being *introduced* rather
+   than referenced, and the only reason to break the cool field is to mark
+   that. Invalid is the other, and having two warm tokens is what sets its
+   value: on hue alone the pair would be one colour, so invalid drops to a
+   deep crimson (6.3:1 against 4.3:1) and is told apart by weight first. It is
+   the heavier of the two by design — the whole point of an error colour is
+   that it wins the page.
+
+   Contrast does not transpose either. Gold at 10:1 against near-black is a
+   bright gold; at 10:1 against paper it is brown. So the hued tokens land
+   between 4.8 and 6.6, which is the band where a hue can still be named on a
+   light ground, and they keep the dark palette's *ordering* within it. */
+html[data-editor-theme='oddenova-light'],
+html[data-editor-theme='github-light'],
+html[data-editor-theme='solarized-light'] {
+  --syntax-atom: #0B6D85;
+  --syntax-label: #6F47CE;
+  --syntax-keyword: #7434CF;
+  --syntax-operator: #6C747E;
+  --syntax-special-variable: #0B655E;
+  --syntax-type: #0B6739;
+  --syntax-number: #292D33;
+  --syntax-definition: #D93E17;
+  --syntax-string: #292D33;
+  --syntax-comment: #7C8591;
+  --syntax-variable: #0863DA;
+  --syntax-tag: #505BD6;
+  --syntax-bracket: #4D545C;
+  --syntax-meta: #2D7599;
+  --syntax-attribute: #AC2BA6;
+  --syntax-property: #41464C;
+  --syntax-invalid: #B6142F;
+  --syntax-punctuation: #5D646D;
+  --hap-highlight: #292D33;
 }
 
 body {
   margin: 0;
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  overflow: hidden;
+  /* The platform's own UI face — Inter was named here but never loaded, so
+     this is what the app has always actually rendered in. */
+  font-family: system-ui, -apple-system, sans-serif;
+  /* Vertically this is `hidden` in every window tall enough to hold the app,
+     because #root is then exactly the window's height and there is nothing to
+     scroll. It only becomes a scrollbar under the minimum, which is the point:
+     the layout keeps its proportions and the window pans over it instead.
+     Horizontally still hard clipped — nothing here is meant to scroll sideways,
+     and a page-wide band that overhangs its column shouldn't be able to say
+     otherwise. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
+.chat-input-surface {
+  --chat-input-glow-angle: -8deg;
+  /* Eased trough rather than a flat middle plateau: a dead-flat stretch
+     between two matching stops (the old 30%/68% pair) meets the ramps on
+     either side at a hard corner — the eye reads that slope kink as a seam
+     even though the colour itself is continuous. Sampling extra stops along
+     a smoothstep curve keeps the slope changing gradually through the dip,
+     so the sheen reads as one soft curve instead of two ramps glued to a
+     flat bottom. */
+  background:
+    linear-gradient(
+      var(--chat-input-glow-angle),
+      rgba(58, 58, 58, 0.6) -10%,
+      rgba(47, 47, 47, 0.25) 13%,
+      rgba(36, 36, 36, 0.0) 55%,
+      rgba(57, 57, 57, 0.35) 88%,
+      rgba(78, 78, 78, 0.6) 120%
+    ),
+    #0D0D0D;
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+}
+
+/* The column stands above the page, and a shadow is how it says so. It takes
+   three layers, one job each.
+
+   It cannot be a `box-shadow` on the glass: a shadow drawn as part of an
+   element is cut away by that element's own `clip-path`, and the glass is
+   clipped to the live silhouette on every frame. A `drop-shadow` has to be
+   taken off a shape somewhere else — and then hidden, because a shadow that
+   lay under the column as well as around it would be blurred by the glass's
+   own `backdrop-filter` into a slab of black where the page should show.
+
+   So: `-cast` is that shape, `-blur` takes the shadow off it, and the outer
+   layer is the frame — its whole box minus the silhouette — that keeps only
+   what fell outside the column. Each of the three carries either a clip or a
+   filter, never both: on one element the two are applied in an order that is
+   not worth betting the effect on, and split apart there is nothing to get
+   wrong. `paint()` in PrimaryNav writes the two paths, and fades the frame in
+   with the split — a whole bar throws nothing, and at rest it is not on the
+   screen at all, which is also what keeps an unclipped slab of black off it
+   before the first paint.
+
+   The frame and the blur are both a good deal larger than the column, and the
+   cast is put back at the column's size inside them. So the blur is drawn
+   well inside the box it belongs to, and the frame keeps nothing outside its
+   own — a shadow that has to escape either one is a shadow that only shows up
+   where the column's own box happens to be, which is the gap between the
+   lobes and nowhere else.
+
+   The whole stack sits under the glass rather than over it so the seam
+   between them never shows. The glass's `backdrop-filter` does reach a little
+   past its own clip and pick up the near edge of the shadow, which only
+   deepens the column's rim — and on paper the fill is opaque and blurs
+   nothing at all. */
+.primary-nav-shadow {
+  /* Kept in step with `SHADOW_REACH` in PrimaryNav, which draws the cut-out
+     this box is cut by, in this box's own pixels. */
+  --primary-nav-shadow-reach: 96px;
+  display: none;
+  position: absolute;
+  inset: calc(var(--primary-nav-shadow-reach) * -1);
+  pointer-events: none;
+}
+
+.primary-nav-shadow-blur {
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(var(--shadow-primary-nav));
+}
+
+/* Back at the column's own size and place, so the silhouette written into it
+   is in the same pixels as the glass's. */
+.primary-nav-shadow-cast {
+  position: absolute;
+  inset: var(--primary-nav-shadow-reach);
+  background: #000;
+}
+
+/* The nav column is one body of liquid. A single glass layer and a single
+   border layer span the whole column, and both are clipped to a silhouette
+   that JS redraws each frame — the bar, the strand stretching between two
+   lobes, and the two settled lobes are all the same path.
+
+   The base fill has to stay translucent: `backdrop-filter` only shows through
+   whatever the element's own background lets through, so a solid layer under
+   the gradient would blur a backdrop nobody can see. */
+.primary-nav-glass {
+  --primary-nav-glow-angle: 115deg;
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-region);
+  background:
+    linear-gradient(
+      var(--primary-nav-glow-angle),
+      rgba(78, 78, 78, 0.5) -10%,
+      rgba(36, 36, 36, 0.22) 40%,
+      rgba(36, 36, 36, 0.22) 75%,
+      rgba(78, 78, 78, 0.5) 120%
+    ),
+    rgba(13, 13, 13, 0.55);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
+  pointer-events: none;
+}
+
+/* Clipped to the ring between the silhouette and the same silhouette pulled
+   1px inwards, so the border follows the strand rather than a box. */
+.primary-nav-edge {
+  --primary-nav-glow-angle: 115deg;
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    var(--primary-nav-glow-angle),
+    rgba(64, 64, 64, 0.5) 0%,
+    rgba(58, 58, 58, 0.4) 35%,
+    rgba(58, 58, 58, 0.4) 70%,
+    rgba(74, 74, 74, 0.5) 110%
+  );
+  pointer-events: none;
+}
+
+/* Denser when expanded — there are labels to read across the whole column —
+   but still glass, so the effect does not vanish the moment it opens. */
+[data-expanded='true'] .primary-nav-glass {
+  background: rgba(13, 13, 13, 0.72);
+}
+
+/* A Featured detail reads as a glass workspace rather than the collection's
+   open gallery. When its navigation expands, match the translucent code panel
+   beside it so the two surfaces belong to the same depth plane. */
+[data-featured-detail='true'][data-expanded='true'] .primary-nav-glass {
+  background: rgba(13, 13, 13, 0.55);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+}
+
+/* The lobes carry content only: their height is written frame by frame to
+   match the silhouette they sit in, and clipping is what folds rows away. */
+.primary-nav-pod {
+  height: 50%;
+  overflow: hidden;
+  border-radius: var(--radius-region);
+  /* The column above is pointer-transparent so that the empty strip between
+     two lobes is not a wall in front of whatever the page has put there. The
+     nav's own reach is exactly the two lobes, so they take it back here — in
+     the bar they are the whole column, so nothing about the bar changes. */
+  pointer-events: auto;
+}
+
+.primary-nav-pod[data-anchor='top'] {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+}
+
+.primary-nav-pod[data-anchor='bottom'] {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+/* The code pane's scrollable body reaches 6px from the right edge. Mirror
+   that inset at the bottom so its horizontal and vertical scrollbars share a
+   single corner rhythm, and keep that corner transparent when both appear. */
+.featured-code-scroll {
+  margin-bottom: -0.875rem;
+  padding-bottom: 0.875rem;
+}
+
+.featured-code-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── Featured page · the room's own materials ────────────────────────────────
+   Almost nothing on this page stands on a surface — the sleeves, the titles,
+   the panels and the bar are all held straight on the light field — so what a
+   hairline is drawn in, what a filled control is filled with, and the title
+   column's two text values cannot be taken from the shared tokens. Named here
+   so both palettes answer the same questions, and read back from the
+   components' inline styles and arbitrary values.
+
+   The dark room spends white, thinly. */
+.featured-immersive-surface {
+  /* A panel's edge, and the outline a pill wears — at rest and under the
+     pointer. */
+  --featured-hairline: rgba(255, 255, 255, 0.10);
+  --featured-hairline-hover: rgba(255, 255, 255, 0.25);
+  /* The one filled pill, likewise. */
+  --featured-fill: rgba(255, 255, 255, 0.10);
+  --featured-fill-hover: rgba(255, 255, 255, 0.16);
+  /* The disc that fades in behind an icon. */
+  --featured-wash: rgba(255, 255, 255, 0.05);
+  /* Light caught on a sleeve's edge as the pointer crosses it, and the two
+     rings that answer the keyboard. */
+  --featured-cover-ring: rgba(255, 255, 255, 0.15);
+  --featured-focus-ring: rgba(255, 255, 255, 0.20);
+  --featured-title-ring: rgba(255, 255, 255, 0.70);
+  /* The title column, read off the marker when there is one and off the field
+     when there is not: the shelf's own warm white, and a grey under it. */
+  --featured-title-idle: #c7c3bc;
+  --featured-title-selected: #fff8f1;
+  /* How much of the marker arrives under the pointer, before the row is
+     committed to. Half on the dark field: the idle grey is lighter than the
+     orange behind it either way, so the ramp costs the title nothing. */
+  --featured-title-marker-hover: 0.5;
+}
+
+/* The transport is pinned to this surface's own bottom edge, so the shadow it
+   casts on paper falls past that edge and into the app's region gutter — and
+   `overflow: hidden` cut it off in a straight line along the bar's underside.
+   `clip` keeps every bit of clipping the page had, and the margin then hands
+   back exactly the reach of that shadow: 12px of offset plus half of a 34px
+   blur, rounded up. Nothing else can spend it — the content column inside
+   carries its own `overflow-hidden`, and the two light layers are `fixed` and
+   were never clipped here to begin with. Browsers without the margin property
+   fall back to a plain clip, which is where this started. */
+.featured-immersive-surface {
+  overflow: clip;
+  overflow-clip-margin: 32px;
+}
+
+/* The record's two panels and the transport are both edged by a masked ring
+   rather than by a `border-color`, because on paper that edge is a gradient —
+   a rim of light running a pane of glass — and these fills are translucent, so
+   the usual two-layer background trick would show the gradient straight
+   through the surface. See the paper section for the rim itself.
+
+   The dark room asks for none of that. Its edges are the ones the page was
+   drawn with: a white hairline on the panels, and the nav column's grey sheen
+   on the transport, so the bar and the column read as one material. Both are
+   set on the ring below rather than on a real border, so the two palettes are
+   changing one thing and not two. */
+/* Only the panel needs asking: the bar is already `absolute`, and an unlayered
+   `position` here would beat that utility and drop it out of its corner. */
+.featured-panel {
+  position: relative;
+}
+
+.featured-panel::before,
+.featured-bar-glass::before {
+  position: absolute;
+  padding: 1px;
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* The panel has no border of its own to clear, and could not have one: it clips
+   its own scrolling body, and a ring hung outside the padding box would be
+   clipped away with it. The flat white is the `border-white/10` this used to
+   carry, moved onto the ring unchanged. */
+.featured-panel::before {
+  inset: 0;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+/* The bar keeps a 1px transparent border so the width it is measured at is
+   unchanged, so its ring is pulled back out over that border to sit on the box
+   the eye reads as the bar's edge. Keep the stops in step with
+   `.primary-nav-edge`. */
+.featured-bar-glass::before {
+  inset: -1px;
+  background: linear-gradient(
+    115deg,
+    rgba(64, 64, 64, 0.5) 0%,
+    rgba(58, 58, 58, 0.4) 35%,
+    rgba(58, 58, 58, 0.4) 70%,
+    rgba(74, 74, 74, 0.5) 110%
+  );
+}
+
+/* ── Favorites page · what a row is set on ───────────────────────────────────
+   The list in the top right corner is drawn against a filled marker rather
+   than against the page, so none of what a row needs can be taken from the
+   shared tokens: what it is set on is the accent, not a surface. Its two text
+   values, the marker's glow, how much of the marker arrives before the row is
+   committed to, and the focus ring are all named here so both palettes can
+   answer the same questions, and read back in FavoritesList's inline styles.
+
+   The dark page keeps the warm pair it was drawn with — the Featured title
+   column's own white, and a grey that sits under it — with the orange marker
+   glowing at what it stands on. */
+.favorites-immersive-surface {
+  --favorites-row-idle: #c7c3bc;
+  --favorites-row-selected: #fff8f1;
+  --favorites-row-marker-glow: 0 8px 32px rgba(240, 90, 40, 0.18);
+  /* How much of the marker arrives under the pointer, before the row is
+     committed to. Half the fill on the dark page: the idle grey is lighter
+     than the orange behind it either way, so the ramp costs the row nothing. */
+  --favorites-row-marker-hover: 0.5;
+  --favorites-row-ring: rgba(255, 255, 255, 0.7);
+  /* The field under the rows. What is typed is held at the same white a chosen
+     row is set in — it is the thing you are holding, not one of the entries at
+     rest — over a rule that stays out of the way until the field is in use and
+     then answers in the accent, the same colour the column marks the open
+     entry with. The active value is named once here for both palettes: the
+     accent is already each theme's own. */
+  --favorites-search-text: #fff8f1;
+  --favorites-search-rule: rgba(255, 248, 241, 0.16);
+  --favorites-search-rule-active: var(--color-brand-accent);
+}
+
+/* ── Favorites page · the frozen 构思过程 header ──────────────────────────────
+   The band the reasoning control freezes into at the top of the reading, and
+   the fade that carries the thought out from under it.
+
+   The studio backs its own with `--color-conversation-surface`, which is right
+   there and wrong here: that stream is cut into a flat panel, so its header
+   can simply be the panel's colour. This window is glass over a light field
+   that changes value across it, and nothing behind the reading is a flat
+   colour to match — which is why the archive had no frozen header at all until
+   the interaction demanded one.
+
+   What makes it possible anyway is that the band only ever appears in one
+   place: pinned to the top of the reading. So it is not asked to match the
+   window everywhere, only there, and there the glass resolves to something a
+   flat colour can state. Both values below are that composite — the panel fill
+   over the field as it stands behind the top of the reading — rather than
+   either of the two colours it is made of:
+
+     paper   #F7F7FA at 66% over a field running #E8E8EB…#F0F0F2 up there
+     dark    #0D0D0D at 55% over a field running #090A0C…#101113
+
+   The remaining error is the field's own gradient across the band's width,
+   which is three or four levels either way. Below the threshold at which a
+   band is seen as a band, and far under what the interaction was costing:
+   before this, a thought long enough to scroll was a thought that could not be
+   shut without scrolling all the way back to find its control.
+
+   Which is why the fill is stated only while the header is actually frozen —
+   `data-stuck`, set by the archive from where the band really is. Standing in
+   the stream the same flat value is simply wrong: the glass resolves to
+   something else everywhere but the top, so the band stops being the window
+   and becomes a rectangle drawn on it, brighter than what it lies on and
+   visible for its full measure. Unfrozen the header needs no fill at all —
+   nothing is passing under it — so it has none. */
+.favorites-reasoning-sticky {
+  --favorites-reading-veil: #0E0E10;
+}
+
+.favorites-reasoning-sticky[data-stuck] {
+  background: var(--favorites-reading-veil);
+}
+
+/* Only while there is something under it to cut off, and only while the band
+   above it is being drawn: the fade is the veil running out, so it cannot
+   outlive the veil. Collapsed, the header has the stream's own 40px between it
+   and the next turn and nothing to hide. */
+.favorites-reasoning-sticky[data-stuck][data-expanded]::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: var(--spacing-reasoning-content-fade);
+  background: linear-gradient(to bottom, var(--favorites-reading-veil), transparent);
+  pointer-events: none;
+  content: '';
+}
+
+html[data-theme='light'] .favorites-reasoning-sticky {
+  --favorites-reading-veil: #F4F4F7;
+}
+
+/* ── Favorites page · the take widget in the reading ─────────────────────────
+   The pair of buttons a turn carries when it arrived at a take: the chip that
+   names it and the play control butted onto its right. One fill for both, so
+   the two halves read as one key split rather than as two controls that happen
+   to touch.
+
+   Flat, and stated rather than borrowed. It used to be the window's own glass
+   at 55% behind a `--color-border` hairline, which meant the widget was only
+   findable by its edge — a fill that close to what it sits on is not a surface,
+   it is a rectangle of border. Dropping the edge is what forces the fill to be
+   a real value, and a real value needs no edge.
+
+   The dark room takes a mid grey. Not the app's `--color-surface-hover`
+   (#242424), which is a hover state for things standing on the app's own near
+   black: this stands inside a window that is itself #0D0D0D at 55% over the
+   field, so the grey has to clear the window rather than the page under it.
+
+   Hover moves the fill and nothing else — the orange label holds, since a
+   hotter orange would read as selection, which the chip already says with
+   `aria-pressed`. Up in the dark room, down on paper: the same direction each
+   room's transport play button takes, so a control answering the pointer
+   answers it the same way everywhere in the building. */
+.favorites-code-chip {
+  background: #191919;
+}
+
+.favorites-code-chip:hover {
+  background: #202020;
+}
+
+/* Paper's is white, full stop. The window it sits in is #F7F7FA at 66% over a
+   field reading around #F8F8FB through the middle, so white is the one value
+   left above it that is still a colour and not a tint — seven levels clear of
+   the glass, which is what the dropped hairline was worth. Anything cooler or
+   greyer here reads as the window with a patch missing rather than as a key
+   laid on it. */
+html[data-theme='light'] .favorites-code-chip {
+  background: #fcfcfc;
+}
+
+html[data-theme='light'] .favorites-code-chip:hover {
+  background: #F0F0F5;
+}
+
+/* ── Favorites page · the turn rail's marks ──────────────────────────────────
+   Furniture at rest and the list's own white when pointed at, with the change
+   carried past the two pixels it happens in by a glow. Named for the same
+   reason the rows above are: the rail is drawn straight onto the light field,
+   so neither value belongs to a surface either palette owns. */
+.conversation-turn-rail {
+  --turn-tick-idle: rgba(255, 255, 255, 0.28);
+  --turn-tick-hover: #fff8f1;
+  --turn-tick-glow: 0 0 12px rgba(255, 248, 241, 0.35);
+}
+
+/* The Favorites page's script window.
+ *
+ * Its scrollbars live in the panel's own padding rather than beside it: the
+ * body reaches past the padding towards the border, and what would have been
+ * empty there is spent as the bar's band.
+ *
+ * The foot keeps the arrangement it was drawn with — a 6px thumb centred in a
+ * 20px band, 7px from the panel's edge and 7px from the code, with the last
+ * line stopping the panel's own 20px short of the border, exactly as the title
+ * stands 20px in from the other one.
+ *
+ * The right side is set from the edge inwards instead, by two numbers: the bar
+ * stands `--script-edge` off the panel's border, and the code stops
+ * `--script-inset` short of the bar. So the band is the inset plus the thumb,
+ * with the thumb pushed to its outer end rather than centred — the 12px the
+ * code gives up is the gap to the bar, not padding around it.
+ *
+ * A script with no bar of its own stops in the same place, the whole band
+ * short of the border, so nothing steps sideways as one appears. That is what
+ * the second state below is for: `scrollbar-gutter` would have held the band
+ * open, but it is only a promise where the platform draws its scrollbars in
+ * the layout, and where they overlay it nothing is reserved and the code is
+ * cut flush against the border instead. So the window carries
+ * `data-has-vertical-bar` (measured in FavoritesPage's `Panel`) and holds the
+ * band itself whenever there is no bar in it.
+ */
+.favorites-script-scroll {
+  --script-gutter: 1.25rem;
+  --script-thumb: 6px;
+  --script-inset: 12px;
+  --script-edge: 6px;
+  /* The whole band, held open by the window itself: the gap to where the bar
+     would be, the bar's own width, and what it would keep off the border. */
+  --script-band: calc(var(--script-inset) + var(--script-thumb) + var(--script-edge));
+  margin-right: calc((var(--script-gutter) - var(--script-band)) * -1);
+  margin-bottom: calc(var(--script-gutter) * -1);
+}
+
+.favorites-script-scroll[data-has-vertical-bar='true'] {
+  margin-right: calc((var(--script-gutter) - var(--script-edge)) * -1);
+}
+
+/* The foot's band is the panel's padding; the right one is the bar and the gap
+   the code keeps from it. */
+.favorites-script-scroll::-webkit-scrollbar {
+  width: calc(var(--script-band) - var(--script-edge));
+  height: var(--script-gutter);
+}
+
+.favorites-script-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Clipped to the padding box behind a transparent border, which is what holds
+   the 6px bar in the middle of the foot's 20px band and keeps both bars short
+   of the ends of their own track. */
+.favorites-script-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  background-clip: padding-box;
+  border: calc((var(--script-gutter) - var(--script-thumb)) / 2) solid transparent;
+  border-radius: 0;
+}
+
+/* Not centred: the whole of its band's inner side is the gap it keeps from the
+   code, which puts the bar itself against the band's outer end. */
+.favorites-script-scroll::-webkit-scrollbar-thumb:vertical {
+  border-left-width: var(--script-inset);
+  border-right-width: 0;
+}
+
+/* Where the two bands cross. Left unpainted it comes out as the platform's own
+   white square, which is the one thing in this window that belongs to no part
+   of it. */
+.favorites-script-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── Favorites page · the windows' clipped ends ──────────────────────────────
+   Both windows here hold more than they show and cut the rest off at their own
+   edges. A hard cut is the one thing a window like this says badly: a reply or
+   a line of code severed mid-stroke reads as a fault in the drawing rather
+   than as "there is more of this".
+
+   A mask, not a gradient laid over the ends. The studio can fade its stream
+   out to `--color-conversation-surface` because that stream is cut into a flat
+   panel; these two are glass over a moving light field, and any colour painted
+   over their ends is a slab of the wrong one — which is why the bands these
+   windows used to carry were taken out rather than retuned. A mask states no
+   colour at all. It takes the ink's own alpha down and lets through whatever
+   the window is standing on, in either palette and wherever the field happens
+   to be at the time.
+
+   Only the end that is actually cutting something off carries a fade. At rest
+   the first line stands on the top of the window's reading area and the last
+   on the foot of it, and a fade held there always would dim ink with nothing
+   beyond it. `data-clipped-top` / `data-clipped-bottom` are written onto the
+   scrollport by `useClippedEnds`, and the two depths are registered properties
+   so the change can be carried rather than snapped.
+
+   The foot inset is for a window whose box reaches past its own content: the
+   script's scrollport takes the panel's bottom padding as the band its
+   horizontal bar stands in, so a fade run to the box's edge would take the bar
+   with it. The foot fade ends where the content ends and the band below is
+   left alone — which is what the two stops at `--favorites-fade-foot-end` are
+   for, a hard step back to opaque across a line nothing else is painted on. */
+@property --favorites-fade-head {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --favorites-fade-foot {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.favorites-window-fade {
+  /* About a line and a half of either window's text: enough to read as ink
+     running out, short enough that what it takes is the line already leaving. */
+  --favorites-fade-depth: 28px;
+  --favorites-fade-foot-inset: 0px;
+  --favorites-fade-foot-end: calc(100% - var(--favorites-fade-foot-inset));
+  --favorites-fade-foot-start: calc(var(--favorites-fade-foot-end) - var(--favorites-fade-foot));
+  transition:
+    --favorites-fade-head 160ms ease,
+    --favorites-fade-foot 160ms ease;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--favorites-fade-head),
+    #000 var(--favorites-fade-foot-start),
+    transparent var(--favorites-fade-foot-end),
+    #000 var(--favorites-fade-foot-end),
+    #000 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--favorites-fade-head),
+    #000 var(--favorites-fade-foot-start),
+    transparent var(--favorites-fade-foot-end),
+    #000 var(--favorites-fade-foot-end),
+    #000 100%
+  );
+}
+
+.favorites-window-fade[data-clipped-top='true'] {
+  --favorites-fade-head: var(--favorites-fade-depth);
+}
+
+.favorites-window-fade[data-clipped-bottom='true'] {
+  --favorites-fade-foot: var(--favorites-fade-depth);
+}
+
+/* Except where the reading has frozen a 构思过程 band at the top. The band is
+   already the window's top edge there — an opaque line across the full measure
+   saying the same thing the fade says — and a fade over it would take the one
+   control that has to stay legible down with the text it is covering. Last of
+   the three, since it and the rule it overrides are the same weight. */
+.favorites-window-fade:has([data-stuck]) {
+  --favorites-fade-head: 0px;
+  /* Instant on the way in, carried on the way out. A band arriving at the top
+     is itself a step, and 160ms of head fading out under it is 160ms of a
+     control that has to stay legible being translucent. Leaving is the other
+     way round: the band goes and the ink beneath it has to start running out,
+     which is a fade and should be carried like one. */
+  transition-duration: 0s;
+}
+
+/* The script's foot band is its horizontal bar's, and the bar is furniture:
+   the fade stops on the last line of code instead. */
+.favorites-script-scroll {
+  --favorites-fade-foot-inset: var(--script-gutter);
+}
+
+/* The reading's bar, cut to the script's above: the same 6px rule in
+   --color-border, standing the same 6px off the window's border. The reading
+   reaches into the panel's right-hand padding to get there — 14px of the 20px
+   band, which leaves the bar its 6px — and the scrollport hands 8px back as
+   the gap the messages keep off it. A user's bubble ends on that 8px; the
+   assistant's text carries its own 8px of row padding and so keeps 16px, and
+   between them the reading's right-hand edge reads as one line rather than
+   as text run up against a rule.
+
+   Mounted on the box around the archive rather than on the scrollport itself,
+   because a negative margin has to be taken outside anything that clips. */
+.favorites-reading {
+  margin-right: -14px;
+}
+
+.favorites-reading .conversation-scroll {
+  padding-right: 8px;
+}
+
+/* The list of kept conversations, top right.
+ *
+ * Its gutter is reserved in FavoritesList's own layout, so the only thing left
+ * to say here is what stands in it — and the answer is the studio's own bar,
+ * the same 6px rule in `--color-border` the conversation stream is read
+ * beside. It was falling through to the bare `::-webkit-scrollbar` rules,
+ * whose track is left unpainted and therefore comes out as the platform's
+ * default band: a colour belonging to no palette, drawn straight onto the
+ * page's light field. The thumb was already right; the track is the fix.
+ *
+ * Hover is deliberately not repeated. The bare `::-webkit-scrollbar-thumb:hover`
+ * further down carries `--color-scrollbar-thumb-hover` and is later in source
+ * at equal specificity, which is the same way the conversation's own bar
+ * brightens. */
+.favorites-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.favorites-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.favorites-list-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 0;
+}
+
+.code-panel-controls {
+  --code-panel-play-button-offset: 20px;
+  --code-panel-play-to-progress-gap: 24px;
+  /* Two round buttons side by side read further apart than the same measure
+     taken between a button and the progress rule: the space between two
+     circles flares open above and below the midline (24px at the midline
+     averages nearer 31 across the button's height), while the rule meets that
+     space as a straight edge and measures what it is. Update is flanked by one
+     of each, so matching its two gaps numerically is exactly what makes them
+     look unequal. This is what the round pair gives back. */
+  --code-panel-round-pair-optical-trim: 8px;
+  --code-panel-progress-to-time-gap: 24px;
+  --code-panel-time-to-volume-gap: 72px;
+  --code-panel-volume-to-actions-gap: 20px;
+  --code-panel-actions-to-edge-gap: 20px;
+
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: rgba(13, 13, 13, 0.76);
+  backdrop-filter: blur(18px) saturate(112%);
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+}
+
+/* Play and update read as one transport cluster rather than two loose buttons.
+   The gap is part of the cluster, not of the update button, so it comes and
+   goes with it and a stopped bar sits exactly where it always did.
+
+   It is derived from the play-to-progress gap rather than set on its own:
+   update sits between those two and wants an even space either side, so
+   retuning the bar's rhythm moves this with it. The trim is what makes the two
+   read as even rather than measure as even. */
+.code-panel-transport {
+  gap: calc(
+    var(--code-panel-play-to-progress-gap) - var(--code-panel-round-pair-optical-trim)
+  );
+}
+
+/* Update appears mid-playback, the moment an edit outruns the sound. Fading it
+   in over its own width keeps that from reading as a jump in a bar that is
+   otherwise still. Nothing animates it out: after a click the swap is done,
+   and the button leaving at once is the confirmation. */
+.code-panel-update-enter {
+  animation: codePanelUpdateIn 180ms ease-out;
+}
+
+@keyframes codePanelUpdateIn {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-panel-update-enter {
+    animation: none;
+  }
+}
+
+.code-panel-playback-layout {
+  gap: var(--code-panel-progress-to-time-gap);
+  padding-left: var(--code-panel-play-to-progress-gap);
+  padding-right: var(--code-panel-time-to-volume-gap);
+}
+
+.code-panel-right-actions {
+  gap: var(--code-panel-volume-to-actions-gap);
+  padding-right: var(--code-panel-actions-to-edge-gap);
+}
+
+.code-panel-volume-slider,
+.featured-volume-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+.code-panel-volume-slider::-webkit-slider-runnable-track,
+.featured-volume-slider::-webkit-slider-runnable-track {
+  width: 2px;
+  height: 100%;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    to bottom,
+    var(--volume-slider-track, var(--color-text-primary)) 0,
+    var(--volume-slider-track, var(--color-text-primary)) calc(100% - var(--volume-progress)),
+    var(--volume-slider-fill, var(--color-playback-accent)) calc(100% - var(--volume-progress)),
+    var(--volume-slider-fill, var(--color-playback-accent)) 100%
+  );
+}
+
+.code-panel-volume-slider::-webkit-slider-thumb,
+.featured-volume-slider::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-left: -5px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--volume-slider-fill, var(--color-playback-accent));
+}
+
+.code-panel-volume-slider::-moz-range-track,
+.featured-volume-slider::-moz-range-track {
+  width: 2px;
+  height: 100%;
+  border: 0;
+  border-radius: 999px;
+  background: var(--volume-slider-track, var(--color-text-primary));
+}
+
+.code-panel-volume-slider::-moz-range-progress,
+.featured-volume-slider::-moz-range-progress {
+  width: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--volume-slider-fill, var(--color-playback-accent));
+}
+
+.code-panel-volume-slider::-moz-range-thumb,
+.featured-volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--volume-slider-fill, var(--color-playback-accent));
+}
+
+.code-panel-controls::before {
+  position: absolute;
+  z-index: 0;
+  inset: -16px -4%;
+  background:
+    radial-gradient(ellipse 28% 80% at 16% 96%, rgba(248, 248, 244, 0.08), transparent 52%),
+    radial-gradient(ellipse 34% 76% at 58% 4%, rgba(255, 255, 252, 0.07), transparent 56%),
+    radial-gradient(ellipse 24% 86% at 94% 104%, rgba(236, 238, 236, 0.08), transparent 54%);
+  filter: blur(10px);
+  content: '';
+  pointer-events: none;
+}
+
+.control-button-surface {
+  background: #000;
+}
+
+/* Apple-style continuous capsule: the curve begins more gradually than a
+   semicircular border-radius, smoothing the transition into the straight run.
+   path() takes no percentages, so every button count needs its own cut: 112×32
+   for the three-button capsule, 76×32 for the two-button one it becomes when
+   Settings → Appearance switches the studio animation off and the visualizer
+   toggle leaves the bar. Both are the same shape — 16px corners, a 4px gap
+   between buttons — with 36px taken out of the straight run. */
+.control-button-capsule {
+  clip-path: path('M 16 0 H 96 C 106.8 0 112 5.2 112 16 C 112 26.8 106.8 32 96 32 H 16 C 5.2 32 0 26.8 0 16 C 0 5.2 5.2 0 16 0 Z');
+}
+
+.control-button-capsule-pair {
+  clip-path: path('M 16 0 H 60 C 70.8 0 76 5.2 76 16 C 76 26.8 70.8 32 60 32 H 16 C 5.2 32 0 26.8 0 16 C 0 5.2 5.2 0 16 0 Z');
+}
+
+.code-panel-light-field {
+  position: absolute;
+  z-index: 0;
+  inset: -18px -3%;
+  filter: blur(16px) contrast(10);
+  mix-blend-mode: screen;
+  /* The resting value. Also the boot animation's last keyframe, which `both`
+     holds afterwards; this line is what the reduced-motion branch falls back
+     to. */
+  opacity: 0.64;
+  animation: code-panel-light-boot 3s cubic-bezier(0.37, 0, 0.63, 1) both;
+  /* Diagnostic, and defensible on its own. An opacity animation gets this
+     element its own composited layer for the 3s it runs; without the hint,
+     finishing the animation hands the layer back and the filter is rasterized
+     afresh in the parent — at a possibly different scale, which `contrast(10)`
+     multiplies by ten. Declaring the hint permanently keeps one layer for the
+     life of the page, so there is no promote/demote edge to re-raster at. */
+  will-change: opacity;
+  pointer-events: none;
+}
+
+/* The lights coming up, played once on entering the studio.
+
+   Not decoration bolted on. Leaving the studio puts this subtree under
+   `display: none`, and per CSS Animations that *terminates* every animation
+   on it — returning does not resume them, it starts them over with their
+   negative delays reapplied, so all six blobs snap to a fixed phase in one
+   frame (blob 3 alone can jump ~178px, wider than the blob is). That snap
+   cannot be deleted while the page hides itself this way, so it is staged
+   instead: the same display change that restarts the drift restarts this, in
+   the same frame and with no JS to keep in sync, and the teleport happens
+   while there is no light to see it by.
+
+   It rides on the field rather than on the blobs, and that is the part that
+   makes it work. A blob's own opacity feeds *into* the threshold in its SVG
+   filter, so fading one up would drag it across that edge and pop it into
+   existence — a new jump in place of the old one. Here `opacity` applies to
+   the filter's output, so the fade stays linear however hard the threshold
+   is. (The blobs are also already animating opacity for their pulse, which a
+   second opacity animation on the same element would simply override.)
+
+   The hold near dark is sized in real time, not as a share of the animation:
+   becoming visible costs a first raster of the backdrop-filter, this field's
+   filter and six SVG filters in the same handful of frames, and those frames
+   should have nothing worth looking at. That is ~360ms whatever the ramp
+   lasts, so it stays pinned at 12% of 3s — stretching it with the duration
+   would read as the light being missing rather than arriving. The remaining
+   2.6s is one uninterrupted segment, so the bloom never pauses partway. */
+@keyframes code-panel-light-boot {
+  0% { opacity: 0; }
+  12% { opacity: 0.04; }
+  100% { opacity: 0.64; }
+}
+
+/* The collapsed-state particle layer: ASCII characters falling through the bar
+   like snow. Screens rather than paints, so they read as catching the light
+   rather than sitting on top of it.
+
+   No opacity transition here on purpose. Appearing and leaving are animated per
+   flake on the canvas — each one fades on its own curve while it settles in or
+   sinks out — and a layer-wide fade on top of that would flatten the staggering
+   back out. An idle layer is a cleared canvas, which needs no hiding. */
+.code-panel-particle-field {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* All four edges, one weight. The bar's own border stays transparent all round
+   — the root clips three of those sides away, and the fourth is deliberately
+   left unpainted so this element draws every edge the bar has.
+
+   That leaves a known one-pixel notch in the two uprights, and it is a choice,
+   not an oversight: `-mt-px` lands the bar's border-box one row above this
+   element, and the bar's ground covers that row across the full width — the
+   code layer's side borders included — while these strokes only start a row
+   lower. Closing it means moving the seam onto the bar's own `border-top`,
+   which forces the seam to the frame's colour and gives up the bright rim.
+   The rim is worth the notch here. */
+.code-panel-controls-light-border {
+  position: absolute;
+  z-index: 2;
+  top: 0px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border: 1px solid oklch(80% 0.008 80 / 0.18);
+  border-radius: inherit;
+  box-shadow: inset 0 0 8px oklch(96% 0.008 80 / 0.14);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.code-panel-light-blob {
+  position: absolute;
+  display: block;
+  color: rgba(248, 248, 244, 0.82);
+  transform-origin: center;
+  animation:
+    code-panel-blob-drift var(--blob-duration) cubic-bezier(0.37, 0, 0.63, 1) var(--blob-delay) infinite,
+    code-panel-light-pulse var(--light-duration) cubic-bezier(0.37, 0, 0.63, 1) var(--light-delay) infinite;
+  /* No hint here: the field above filters this subtree, and a filtered
+     ancestor flattens the promotion straight back out. It bought the memory of
+     six layers, none of the benefit, and a round of layer churn every time the
+     subtree is rebuilt. */
+}
+
+.code-panel-light-blob svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 18px rgba(255, 255, 252, 0.32));
+}
+
+.code-panel-light-blob circle {
+  fill: currentColor;
+}
+
+.code-panel-light-blob:nth-child(1) {
+  width: 156px; height: 96px; left: -48px; top: -18px; opacity: 0.64;
+  --blob-duration: 48.9s; --blob-delay: -11.2s;
+  --light-duration: 6.7s; --light-delay: -2.4s; --light-base: 0.64; --light-high: 0.65; --light-low: 0.43; --light-mid: 0.57;
+  --blob-x-a: 76px; --blob-y-a: -10px; --blob-rotate-a: 14deg; --blob-scale-a: 1.08;
+  --blob-x-b: -34px; --blob-y-b: 18px; --blob-rotate-b: -9deg; --blob-scale-b: 0.94;
+}
+.code-panel-light-blob:nth-child(2) {
+  width: 112px; height: 148px; left: 18%; top: -52px; opacity: 0.28;
+  --blob-duration: 61.2s; --blob-delay: -4.8s;
+  --light-duration: 9.3s; --light-delay: -7.1s; --light-base: 0.28; --light-high: 0.36; --light-low: 0.12; --light-mid: 0.24;
+  --blob-x-a: -72px; --blob-y-a: 22px; --blob-rotate-a: -18deg; --blob-scale-a: 0.91;
+  --blob-x-b: 88px; --blob-y-b: 5px; --blob-rotate-b: 11deg; --blob-scale-b: 1.12;
+}
+.code-panel-light-blob:nth-child(3) {
+  width: 174px; height: 108px; left: 36%; top: -30px; opacity: 0.48;
+  --blob-duration: 52.5s; --blob-delay: -16.6s;
+  --light-duration: 7.8s; --light-delay: -4.6s; --light-base: 0.48; --light-high: 0.55; --light-low: 0.27; --light-mid: 0.44;
+  --blob-x-a: 96px; --blob-y-a: 17px; --blob-rotate-a: 10deg; --blob-scale-a: 1.1;
+  --blob-x-b: -82px; --blob-y-b: -8px; --blob-rotate-b: -16deg; --blob-scale-b: 0.9;
+}
+.code-panel-light-blob:nth-child(4) {
+  width: 126px; height: 156px; left: 62%; top: -58px; opacity: 0.6;
+  --blob-duration: 65.9s; --blob-delay: -8.3s;
+  --light-duration: 10.6s; --light-delay: -8.8s; --light-base: 0.6; --light-high: 0.63; --light-low: 0.38; --light-mid: 0.54;
+  --blob-x-a: -86px; --blob-y-a: 12px; --blob-rotate-a: -12deg; --blob-scale-a: 0.93;
+  --blob-x-b: 72px; --blob-y-b: 24px; --blob-rotate-b: 17deg; --blob-scale-b: 1.09;
+}
+.code-panel-light-blob:nth-child(5) {
+  width: 160px; height: 94px; left: 79%; top: -21px; opacity: 0.35;
+  --blob-duration: 57s; --blob-delay: -13.7s;
+  --light-duration: 8.5s; --light-delay: -1.9s; --light-base: 0.35; --light-high: 0.43; --light-low: 0.16; --light-mid: 0.29;
+  --blob-x-a: 70px; --blob-y-a: -16px; --blob-rotate-a: 19deg; --blob-scale-a: 1.13;
+  --blob-x-b: -98px; --blob-y-b: 14px; --blob-rotate-b: -8deg; --blob-scale-b: 0.92;
+}
+.code-panel-light-blob:nth-child(6) {
+  width: 118px; height: 142px; left: calc(100% - 45px); top: -46px; opacity: 0.54;
+  --blob-duration: 51.1s; --blob-delay: -6.1s;
+  --light-duration: 5.9s; --light-delay: -5.2s; --light-base: 0.54; --light-high: 0.6; --light-low: 0.32; --light-mid: 0.48;
+  --blob-x-a: -92px; --blob-y-a: 20px; --blob-rotate-a: -15deg; --blob-scale-a: 0.89;
+  --blob-x-b: 46px; --blob-y-b: -11px; --blob-rotate-b: 13deg; --blob-scale-b: 1.11;
+}
+
+/* The circles inside a blob, kneading it out of shape. CSS rather than the
+   SMIL `<animate>` this replaces, and the reason is the whole point: SMIL's
+   timeline belongs to the `<svg>` element, so six blobs meant six independent
+   time containers. `display: none` suspends them all when you leave the studio
+   and then resyncs each one on its own schedule, which is why every group used
+   to teleport once, at a different moment, however the filter was tuned. CSS
+   animations share one document timeline: they are cancelled together and
+   restart together, in the single frame `display` comes back — the frame the
+   boot fade above is already covering.
+
+   Translating the circle rather than animating `cx`/`cy` (the only thing CSS
+   can drive here) composes inside the group's `scale()` the same way an offset
+   on `cx` did, so the motion keeps its size. Stops and easing match the
+   keyTimes/keySplines they came from, so the path itself is unchanged. */
+.code-panel-light-ball {
+  animation: code-panel-ball-drift var(--ball-duration) cubic-bezier(0.37, 0, 0.63, 1) var(--ball-delay) infinite;
+}
+
+/* Zero at both ends, so the loop closes on itself; the per-segment easing puts
+   the ball at rest on every stop, which is what keeps the seam invisible. */
+@keyframes code-panel-ball-drift {
+  0%, 100% { transform: translate(0, 0); }
+  16% { transform: translate(var(--ball-x1), var(--ball-y1)); }
+  33% { transform: translate(var(--ball-x2), var(--ball-y2)); }
+  50% { transform: translate(var(--ball-x3), var(--ball-y3)); }
+  67% { transform: translate(var(--ball-x4), var(--ball-y4)); }
+  84% { transform: translate(var(--ball-x5), var(--ball-y5)); }
+}
+
+@keyframes code-panel-blob-drift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+  34% {
+    transform: translate3d(var(--blob-x-a), var(--blob-y-a), 0) rotate(var(--blob-rotate-a)) scale(var(--blob-scale-a));
+  }
+  67% {
+    transform: translate3d(var(--blob-x-b), var(--blob-y-b), 0) rotate(var(--blob-rotate-b)) scale(var(--blob-scale-b));
+  }
+}
+
+@keyframes code-panel-light-pulse {
+  0%, 100% { opacity: var(--light-base); }
+  19% { opacity: var(--light-high); }
+  47% { opacity: var(--light-low); }
+  73% { opacity: var(--light-mid); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Straight to the resting opacity on the rule above, no ramp. */
+  .code-panel-light-field {
+    animation: none;
+  }
+
+  .code-panel-light-blob {
+    animation: none;
+    transform: none;
+    will-change: auto;
+  }
+
+  /* Handled here rather than by not rendering the animation, the way the SMIL
+     version had to be: a media query cannot reach inside SMIL. */
+  .code-panel-light-ball {
+    animation: none;
+    transform: none;
+  }
+}
+
+.code-panel-controls::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.58'/%3E%3C/svg%3E");
+  background-size: 132px 132px;
+  mix-blend-mode: soft-light;
+  opacity: 0.18;
+  content: '';
+  pointer-events: none;
+}
+
+/* Denser when expanded — there are labels to read across the whole column —
+   but still glass, so the effect does not vanish the moment it opens. */
+.primary-nav-more-menu {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  background: var(--color-conversation-surface);
+  box-shadow: var(--shadow-menu-overlay);
+  opacity: 0;
+  transform: translateY(4px);
+  transform-origin: bottom center;
+  transition:
+    opacity 160ms cubic-bezier(0.25, 1, 0.5, 1),
+    transform 200ms cubic-bezier(0.25, 1, 0.5, 1),
+    display 200ms allow-discrete,
+    overlay 200ms allow-discrete;
+}
+
+.history-panel-surface {
+  box-shadow: var(--shadow-history-overlay);
+}
+
+/* The history list's search line.
+ *
+ * The one line in that panel the reader writes rather than picks, and the only
+ * thing marking it as such is its own fill — nothing is drawn around it,
+ * because the rows under it carry no outline either until the pointer is on
+ * them, and a framed field over unframed rows reads as a control parked on the
+ * list rather than as its first line.
+ *
+ * A wash of light over the ground rather than a colour of its own, because the
+ * panel stands on two different grounds — the sidebar overlay's conversation
+ * surface and the top bar's page ground — and one flat value cannot be a step
+ * off both. The overlay is the same step off either, and turns with the theme:
+ * light laid on the dark room, ink laid on the paper one.
+ *
+ * One value, held through focus and through typing. The field has no state to
+ * report that is not already reported better elsewhere — the caret says it is
+ * being written in, and the list going short says what was written — so a fill
+ * that moved under either would be a second voice saying the same thing. */
+.history-search-field {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme='light'] .history-search-field {
+  background-color: rgba(39, 40, 52, 0.05);
+}
+
+.primary-nav-more-menu::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border: 1px solid var(--color-border);
+  border-radius: inherit;
+  pointer-events: none;
+  content: '';
+}
+
+.primary-nav-more-menu:popover-open,
+.primary-nav-more-menu[data-open='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.primary-nav-tooltip {
+  max-width: 180px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-settings-surface);
+  padding: 4px 7px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: primary-nav-tooltip-in 160ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+.primary-nav-github-logo {
+  display: block;
+  flex: none;
+  background-color: currentColor;
+  -webkit-mask: url('/logo/GitHub_Invertocat_Black.svg') center / contain no-repeat;
+  mask: url('/logo/GitHub_Invertocat_Black.svg') center / contain no-repeat;
+}
+
+@keyframes primary-nav-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateX(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@starting-style {
+  .primary-nav-more-menu:popover-open {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-nav-more-menu,
+  .primary-nav-tooltip {
+    transform: none;
+    animation-duration: 0.01ms;
+    transition-duration: 0.01ms;
+  }
+}
+
+.chat-input-outline {
+  position: relative;
+}
+
+.chat-input-outline::before {
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    var(--chat-input-glow-angle),
+    rgba(64, 64, 64, 0.5) 0%,
+    rgba(70, 70, 70, 0.4) 24%,
+    rgba(80, 80, 80, 0.5) 68%,
+    rgba(74, 74, 74, 0.5) 110%
+  );
+  content: '';
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* 100% rather than 100vw: once the window is short enough to scroll, 100vw is
+   still the width including the scrollbar, and the app would hang off the side
+   by exactly that much. */
 #root {
-  width: 100vw;
+  width: 100%;
   height: 100dvh;
+  min-height: var(--spacing-app-min-height);
 }
 
 ::-webkit-scrollbar {
@@ -80,11 +1680,27 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 0;
+}
+
+/* The inputs inside an account form's fields. They are transparent — the box
+   around them carries the fill — but an autofilled input is not: Chrome paints
+   it with its own pale blue wash through an internal `!important` rule that no
+   `background-color` can reach, and the only thing that covers it is an inset
+   shadow tall enough to fill the box, painted in the surrounding field's
+   colour. `-webkit-text-fill-color` goes with it, because the same rule turns
+   the autofilled text black. */
+.auth-field:-webkit-autofill,
+.auth-field:-webkit-autofill:hover,
+.auth-field:-webkit-autofill:focus,
+.auth-field:-webkit-autofill:active {
+  -webkit-box-shadow: inset 0 0 0 1000px var(--color-auth-field);
+  box-shadow: inset 0 0 0 1000px var(--color-auth-field);
+  -webkit-text-fill-color: var(--color-text-primary);
+  caret-color: var(--color-text-primary);
 }
 
 @keyframes slideIn {
@@ -108,8 +1724,58 @@ body {
   animation: fadeIn 0.2s ease-out;
 }
 
+/* Its opposite, for the few things that have to be seen leaving rather than
+   simply being gone. `forwards` because what follows the animation is an
+   unmount: without it the element would flash back to full opacity for the
+   frame between the animation ending and React taking it away. */
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 .animate-slide-in {
   animation: slideIn 0.2s ease-out;
+}
+
+/* The keep / let-go / delete notice's entrance. It comes down from above the
+   page's top edge, which is where a bar pinned to that edge has to have come
+   from — the same easing the app's own panes travel on. */
+@keyframes favoriteDialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-favorite-dialog-in {
+  animation: favoriteDialogIn 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* And its way out: back up the way it came, a little quicker than it arrived.
+   Leaving is the less interesting half of the movement — it says "this is over"
+   — so it eases in rather than out and is over sooner. */
+@keyframes favoriteDialogOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.animate-favorite-dialog-out {
+  animation: favoriteDialogOut 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-favorite-dialog-in {
+    animation: fadeIn 120ms ease-out;
+  }
+  .animate-favorite-dialog-out {
+    animation: fadeOut 120ms ease-out forwards;
+  }
 }
 
 /* Greeting bubble entrance: fades in while sharpening from a blur. */
@@ -134,13 +1800,21 @@ body {
    ============================================= */
 
 .cm-editor {
+  --code-editor-gutter-width: 72px;
+  --code-editor-horizontal-scrollbar-height: 0px;
+
   height: 100%;
+  position: relative;
+}
+
+.cm-editor[data-has-horizontal-scrollbar='true'] {
+  --code-editor-horizontal-scrollbar-height: 6px;
 }
 
 /* Fixed-width gutter — prevents expansion when line numbers gain digits */
 .cm-editor .cm-lineNumbers {
-  width: 72px !important;
-  min-width: 72px !important;
+  width: var(--code-editor-gutter-width) !important;
+  min-width: var(--code-editor-gutter-width) !important;
 }
 
 .cm-editor .cm-lineNumbers .cm-gutterElement {
@@ -155,17 +1829,90 @@ body {
 }
 
 .cm-editor .cm-content {
-  padding-left: 10px !important;
+  padding-left: 0px !important;
+  padding-top: var(--code-editor-bottom-gap) !important;
+  padding-bottom: calc(var(--code-editor-bottom-gap) + var(--spacing-conversation-edge-fade)) !important;
   font-size: 13px !important;
   font-family: 'ABeeZee', monospace !important;
   line-height: 2.0 !important;
   letter-spacing: 0.1em !important;
 }
 
-/* Visible divider between gutter and code */
-.cm-editor .cm-gutters {
-  border-right-width: 1px !important;
-  border-right-style: solid !important;
+/* Keep the line-number gutter visually continuous with the code area. */
+.cm-editor .cm-scroller > .cm-gutters {
+  left: 0;
+  background-color: var(--background) !important;
+  border-right: 0 !important;
+}
+
+/* Match the permanent bottom breathing space to CodeMirror's natural 4px top
+   padding. The top edge reuses the conversation flow's 8px fade, and the mask
+   spans both line numbers and code. */
+.cm-editor::before {
+  position: absolute;
+  z-index: 240;
+  right: 6px;
+  bottom: var(--code-editor-horizontal-scrollbar-height);
+  left: 0;
+  height: calc(var(--code-editor-bottom-gap) + var(--spacing-conversation-edge-fade));
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--color-conversation-surface) var(--spacing-conversation-edge-fade)
+  );
+  content: '';
+  pointer-events: none;
+}
+
+/* The bottom mask's mirror, so code leaving the viewport does the same thing at
+   both ends instead of fading out below and being cut off above.
+
+   It cannot be `.cm-editor::after` — the scrollbar-corner mask below already
+   holds that, and `::before` is the bottom fade — so it hangs on the element
+   CodeMirror mounts into, which shares the editor's box exactly (`*:h-full`
+   stretches `.cm-editor` to fill it). Same 6px right inset clearing the
+   vertical scrollbar, same 240 so it covers the line numbers (z-index 200) as
+   well as the code, same gradient read upwards.
+
+   The one thing it does not copy is depth. The bottom mask is as deep as the
+   padding *plus* its own fade, which the content's bottom padding is sized to
+   clear; matching that here would mean pushing the first line down by the fade
+   to keep it out of the gradient. So this one stops at the padding instead:
+   solid across the first 6px, transparent again exactly where the first line
+   begins. Shallower band, first line untouched. */
+.code-editor-fade-top {
+  position: relative;
+}
+
+.code-editor-fade-top::before {
+  position: absolute;
+  z-index: 240;
+  top: 0;
+  right: 6px;
+  left: 0;
+  height: var(--code-editor-bottom-gap);
+  background: linear-gradient(
+    to top,
+    transparent,
+    var(--color-conversation-surface) var(--spacing-conversation-edge-fade)
+  );
+  content: '';
+  pointer-events: none;
+}
+
+/* CodeMirror keeps gutters vertically synchronized inside the shared scroller.
+   This mask makes the horizontal scrollbar belong visually to the code area
+   while leaving the vertical scrollbar and gutter synchronization untouched. */
+.cm-editor::after {
+  position: absolute;
+  z-index: 250;
+  bottom: 0;
+  left: 0;
+  width: var(--code-editor-gutter-width);
+  height: var(--code-editor-horizontal-scrollbar-height);
+  background: var(--background);
+  content: '';
+  pointer-events: none;
 }
 
 /* Playable inline code examples on /learn (src/learn/components.tsx CodeBlock).
@@ -197,7 +1944,7 @@ body {
   background: var(--background) !important;
   border: 1px solid var(--gutterBorder) !important;
   border-radius: 0 !important;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  box-shadow: var(--shadow-menu-overlay);
   font-family: 'ABeeZee', monospace !important;
   font-size: 12px;
 }
@@ -299,7 +2046,53 @@ body {
    browser then shifts scrollTop to keep its chosen anchor fixed, which
    visually shoves everything above the header upward instead of just
    pushing what's below it down. */
+.conversation-scroll-shell {
+  position: relative;
+  isolation: isolate;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The archive's own box: the full height of whatever window it is put in, and
+   nothing else. What decides where the reading's two ends are is that window's
+   padding, the same as it is for the script beside it. */
+.conversation-archive {
+  position: relative;
+  height: 100%;
+}
+
 .conversation-scroll { container-type: size; overflow-anchor: none; }
+
+.conversation-edge-fade {
+  position: absolute;
+  z-index: 30;
+  right: 6px;
+  left: 0;
+  height: var(--spacing-conversation-edge-fade);
+  pointer-events: none;
+}
+
+.conversation-edge-fade--top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--color-conversation-surface), transparent);
+}
+
+.conversation-edge-fade--bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--color-conversation-surface), transparent);
+}
+
+.reasoning-header--expanded::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: var(--spacing-reasoning-content-fade);
+  background: linear-gradient(to bottom, var(--color-conversation-surface), transparent);
+  pointer-events: none;
+  content: '';
+}
 
 /* Scrollbar for conversation view */
 .conversation-scroll::-webkit-scrollbar { width: 6px; }
@@ -315,6 +2108,45 @@ body {
    ::-webkit-scrollbar styles above and change the scrollbar width */
 @supports not selector(::-webkit-scrollbar) {
   .conversation-scroll.scrollbar-hidden { scrollbar-color: transparent transparent; }
+}
+
+/* ── Scrollbars that keep out of the way ─────────────────────────────────────
+   A bar that is only there while you are in the region it belongs to. Used by
+   the Favorites windows, which are glass over a moving light field — a
+   permanent grey rule down the right of either of them would be the loudest
+   thing on it.
+
+   The bar is made transparent rather than removed: the gutter it stands in is
+   still reserved, so nothing reflows when it appears. These come after the
+   .conversation-scroll rules above deliberately — same specificity, and it is
+   source order that lets this override the always-on thumb there. The
+   two-class .scrollbar-hidden rule still outranks both, which is right: a
+   stream that has handed scrolling to its reasoning window shows no bar at
+   all, hovered or not. */
+.scrollbar-on-hover::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 150ms ease;
+}
+
+.scrollbar-on-hover:hover::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+}
+
+/* The bar itself under the pointer still brightens. Spelled out here because
+   the plain ::-webkit-scrollbar-thumb:hover further down is now the weaker
+   selector of the two. */
+.scrollbar-on-hover::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+
+/* Firefox only, for the same reason the block above gives. */
+@supports not selector(::-webkit-scrollbar) {
+  .scrollbar-on-hover { scrollbar-color: transparent transparent; }
+  .scrollbar-on-hover:hover { scrollbar-color: var(--color-border) transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrollbar-on-hover::-webkit-scrollbar-thumb { transition: none; }
 }
 
 .mobile-rollback-bubble-no-select,
@@ -333,6 +2165,12 @@ body {
 }
 .cm-editor .cm-scroller::-webkit-scrollbar-corner { background: transparent; }
 
+::-webkit-scrollbar-thumb:hover,
+.conversation-scroll:not(.scrollbar-hidden)::-webkit-scrollbar-thumb:hover,
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+
 /* Mobile: prevent iOS Safari auto-zoom on editor focus (font-size < 16px triggers zoom) */
 @media (pointer: coarse) {
   .cm-editor .cm-content { font-size: 16px !important; }
@@ -341,11 +2179,18 @@ body {
 
 /* Narrow the gutter below the mobile breakpoint (matches useIsMobile, i.e. the
    widths where the editor lives in the drawer): the desktop 72px costs too much
-   of the line. 32px of content still fits a 3-digit number at the 16px above. */
-@media (max-width: 768px) {
+   of the line. 32px of content still fits a 3-digit number at the 16px above.
+   Kept in step with MOBILE_BREAKPOINT in useIsMobile.ts by hand — this is the
+   same threshold stated twice, once where JS can read it and once where CSS
+   can. */
+@media (max-width: 460px) {
+  .cm-editor {
+    --code-editor-gutter-width: 44px;
+  }
+
   .cm-editor .cm-lineNumbers {
-    width: 44px !important;
-    min-width: 44px !important;
+    width: var(--code-editor-gutter-width) !important;
+    min-width: var(--code-editor-gutter-width) !important;
   }
 
   .cm-editor .cm-lineNumbers .cm-gutterElement {
@@ -367,11 +2212,8 @@ body {
   }
 }
 
-/* Strudel full-page visualizer canvas (pianoroll, scope等) 浮于编辑器上层，pointer-events:none 不影响操作 */
-/* z-index 生效依赖 strudel 在 JS 中内联设置的 position:fixed（见 @strudel/draw draw.mjs getDrawContext）*/
-canvas#test-canvas {
-  z-index: 1;
-}
+/* Strudel's shared punchcard/pianoroll/etc canvas — sized, positioned, and
+   z-indexed entirely in JS, scoped to the code panel; see codepanel-canvas.ts. */
 
 canvas[id*="_widget__scope_"],
 canvas[id*="_widget__pianoroll_"],
@@ -386,9 +2228,35 @@ canvas[id*="_widget__spectrum_"] {
   border-radius: 6px;
 }
 
+/* A QR code is a machine-readable mark, so the white ground under it is
+   content and stays white in both themes. What does change is how loudly it
+   sits on the page: on the dark sheets it is the brightest thing on screen
+   and gets damped, while on paper it is already at home. */
+.qr-plate {
+  background: #FFFFFF;
+  filter: brightness(0.72);
+}
+
+html[data-theme='light'] .qr-plate {
+  filter: none;
+}
+
 /* Mobile: hide scrollbar on suggestion chips row */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* The two panels the mobile top bar drops down — history on the left, the
+   overflow menu on the right. One frame, stated once: they open from the same
+   row and often one straight after the other, so any difference between their
+   edges reads as a difference in kind rather than in what they hold. The page
+   ground rather than the popover surface, so neither has to be told apart from
+   the page it covers by its fill; what raises them is the hairline and their
+   shadow. The border is half a pixel because on the screens this layout is for
+   a whole one reads as a drawn line rather than as an edge. */
+.mobile-dropdown-panel {
+  background: var(--color-bg-primary);
+  border: 0.5px solid var(--color-border);
+}
 
 .mobile-menu-item {
   display: flex;
@@ -397,7 +2265,12 @@ canvas[id*="_widget__spectrum_"] {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-radius: 14px;
+  /* The menu's own corner less its 8px padding — a row's rounding has to be
+     the outer radius minus the gap it stands in, or the hover plate curves
+     away from the frame it is nested in instead of running parallel to it.
+     The menu is at --radius-region (6px), so this is the concentric value for
+     it rather than a second radius of its own. */
+  border-radius: 4px;
   padding: 0 14px;
   font-size: 16px;
   line-height: 1;
@@ -412,6 +2285,751 @@ canvas[id*="_widget__spectrum_"] {
 
 .mobile-menu-item:active {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Featured page · collection-space environment ────────────────────────────
+   WebGL is the only light field. The solid graphite fill is deliberately plain:
+   it is the loading, unsupported-browser and context-loss state. */
+
+.featured-space-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  contain: strict;
+  background: #05070a;
+  transition: opacity 600ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.featured-space-background[data-active='true'] {
+  opacity: 1;
+}
+
+/* The same plain state on the paper palette — loading, no WebGL, or a lost
+   context. It is the shader's own ground colour, so a field that never arrives
+   leaves the page the right colour rather than a hole in it. Which is now the
+   unlit paper the sources are added onto rather than anything like the page's
+   average: this fallback is darker than the field it stands in for, because
+   everything that would have lifted it lives in the shader. */
+html[data-theme='light'] .featured-space-background[data-variant='paper'] {
+  background: #DEDEE0;
+}
+
+.featured-space-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.featured-space-background[data-webgl-ready='true'] .featured-space-canvas {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-space-background,
+  .featured-space-canvas {
+    transition: none;
+  }
+}
+
+/* ── Featured page · the source mark ─────────────────────────────────────────
+   Lucide draws its info mark as a ring and then the glyph inside it — the stem
+   and the dot above it. The ring keeps the page's own colour and the glyph
+   carries the accent, so the mark reads as a note to open rather than as one
+   more piece of furniture in the corner.
+
+   Picked out by position, which is exactly what "the glyph" is in this icon:
+   everything after the ring. */
+
+.featured-source-mark > :not(:first-child) {
+  stroke: var(--color-brand-accent);
+}
+
+/* ── Featured page · opening and closing a piece ─────────────────────────────
+   The cover itself is flown between the two views as a copy in the top layer
+   (featured-cover-flight.ts). Everything else is crossfaded under it: the view
+   being left goes first and quickly, the one arriving comes up behind the
+   cover so that it has settled by the time the cover lands on it.
+
+   Only the content fades — never a wrapper holding the cover, or the flight
+   would be handing over between two half-visible pictures. */
+
+@keyframes featured-content-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes featured-content-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.featured-content-in {
+  animation: featured-content-in 300ms cubic-bezier(0.25, 1, 0.5, 1) 80ms both;
+}
+
+.featured-content-out {
+  animation: featured-content-out 180ms ease-in both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-content-in,
+  .featured-content-out {
+    animation: none;
+  }
+}
+
+/* ── Featured page · the cover-colour wash ────────────────────────────────────
+   Light in the air rather than a gradient: soft blobs of the cover's own colour
+   at uneven sizes, angles and positions. Stacked gradients read as bands across
+   the page because their edges stay parallel; ellipses at odd angles overlap
+   into a shape that belongs to no direction.
+
+   One colour only. Neighbouring tones were tried here and read as a second
+   colour wandering in — a green sleeve came out green and yellow — so the
+   depth has to come from the shapes, not from the hue.
+
+   The field is blurred as a whole, which is what makes the blobs behave like
+   metaballs: each one carries a plateau of flat colour rather than fading from
+   its own centre, so where two come close the blur bridges them into one body
+   with a bulging waist instead of two circles crossing. Blurring the group also
+   means no blob has an edge of its own anywhere.
+
+   It does not move — the page is something to read, and drifting light behind
+   text is a distraction the second time you see it.
+
+   The mask dims the top and bottom rather than cutting them: there is colour up
+   behind the nav and down behind the transport bar, only held far enough back
+   that both keep their own contrast. */
+
+.featured-glow {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.45) 0%, #000 22%, #000 76%, rgba(0, 0, 0, 0.45) 100%);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.45) 0%, #000 22%, #000 76%, rgba(0, 0, 0, 0.45) 100%);
+}
+
+/* Overscanned past every edge: a blur pulls transparency in from outside its
+   own box, which would otherwise leave a pale gutter down each side. */
+.featured-glow-field {
+  position: absolute;
+  inset: -12%;
+  filter: blur(58px);
+}
+
+.featured-glow-blob {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(var(--glow-color), var(--blob-alpha)) 0%,
+    rgba(var(--glow-color), var(--blob-alpha)) 42%,
+    rgba(var(--glow-color), 0) 100%
+  );
+  transform: rotate(var(--blob-rotate, 0deg));
+  transform-origin: center;
+}
+
+/* Spread right across the field, but off any grid — an even spread is what made
+   this read as a linear gradient, and a tight cluster reads as one lamp. The
+   strong ones stay in the middle band, where the glass panels are. Positions
+   are given inside the overscanned field, so they sit 12% further in than the
+   numbers suggest. */
+.featured-glow-blob:nth-child(1) {
+  width: 52vw; height: 44vh; left: 60vw; top: 70vh;
+  --blob-alpha: 0.32; --blob-rotate: 13deg;
+}
+.featured-glow-blob:nth-child(2) {
+  width: 36vw; height: 32vh; left: 76vw; top: 16vh;
+  --blob-alpha: 0.24; --blob-rotate: -17deg;
+}
+.featured-glow-blob:nth-child(3) {
+  width: 26vw; height: 38vh; left: 20vw; top: 44vh;
+  --blob-alpha: 0.26; --blob-rotate: 21deg;
+}
+.featured-glow-blob:nth-child(4) {
+  width: 40vw; height: 26vh; left: 38vw; top: 56vh;
+  --blob-alpha: 0.20; --blob-rotate: -8deg;
+}
+.featured-glow-blob:nth-child(5) {
+  width: 22vw; height: 25vh; left: 4vw; top: 44vh;
+  --blob-alpha: 0.22; --blob-rotate: 29deg;
+}
+.featured-glow-blob:nth-child(6) {
+  width: 18vw; height: 23vh; left: 56vw; top: 32vh;
+  --blob-alpha: 0.27; --blob-rotate: -34deg;
+}
+.featured-glow-blob:nth-child(7) {
+  width: 30vw; height: 21vh; left: 78vw; top: 52vh;
+  --blob-alpha: 0.21; --blob-rotate: 7deg;
+}
+.featured-glow-blob:nth-child(8) {
+  width: 16vw; height: 19vh; left: 28vw; top: 68vh;
+  --blob-alpha: 0.23; --blob-rotate: -23deg;
+}
+.featured-glow-blob:nth-child(9) {
+  width: 20vw; height: 17vh; left: 88vw; top: 30vh;
+  --blob-alpha: 0.18; --blob-rotate: 41deg;
+}
+
+/* The ends. Faint to begin with and dimmed again by the mask, so the top and
+   bottom carry the colour without pulling the eye off the middle. Their tops
+   are field-relative too, so 4vh sits above the window's edge and 84vh hangs
+   past its foot — each one bleeds in rather than sitting inside the frame. */
+.featured-glow-blob:nth-child(10) {
+  width: 38vw; height: 23vh; left: 0vw; top: 0vh;
+  --blob-alpha: 0.14; --blob-rotate: -12deg;
+}
+.featured-glow-blob:nth-child(11) {
+  width: 30vw; height: 20vh; left: 58vw; top: 4vh;
+  --blob-alpha: 0.12; --blob-rotate: 18deg;
+}
+.featured-glow-blob:nth-child(12) {
+  width: 44vw; height: 25vh; left: 10vw; top: 88vh;
+  --blob-alpha: 0.13; --blob-rotate: -6deg;
+}
+.featured-glow-blob:nth-child(13) {
+  width: 28vw; height: 21vh; left: 76vw; top: 92vh;
+  --blob-alpha: 0.11; --blob-rotate: 24deg;
+}
+
+/* Paper takes the same wash lighter. A colour laid on a dark field has to lift
+   out of black to be seen at all, so it is spent generously; the same colour on
+   a bright ground is already sitting on top of everything and reads at close to
+   full strength, which on this page means it starts competing with the sleeves
+   it is supposed to be light from. Dimmed as a group rather than blob by blob:
+   the field is already one composited body — that is what the blur is for — so
+   scaling it here keeps the metaballs' fusion exactly as drawn instead of
+   thinning every overlap at a different rate. */
+html[data-theme='light'] .featured-glow-field {
+  opacity: 0.6;
+}
+
+/* ── Light material adaptations ─────────────────────────────────────────────
+   These pieces have effects that are intentionally more specific than the
+   shared colour tokens (glass gradients, canvas blend modes, and progressive
+   blur fallbacks). They still read from the same approved palette, but need a
+   different material treatment rather than a literal colour substitution. */
+
+/* On paper the composer is a flat panel, not glass. The dark room's sheen is
+   light falling across a translucent surface; here there is no room for it to
+   fall from, so the same gradient only ever read as a smear across a page.
+   A single opaque fill one step under the reading surface, with the shadow
+   left to do the raising — and `backdrop-filter` switched off with it, since
+   an opaque layer has no backdrop left to blur. */
+html[data-theme='light'] .chat-input-surface {
+  background: #EBEBF0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 12px 34px rgba(44, 45, 61, 0.10);
+}
+
+/* The nav column is the composer's sibling and gets the same flat fill, so the
+   two raised panels on the page are literally the same colour. */
+html[data-theme='light'] .primary-nav-glass {
+  background: #EBEBF0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* A hover is read against whatever it is laid on, and the column is not the
+   page: the app's hover grey sits three levels under #EBEBF0, which on the
+   page is a step and on the column is nothing at all. The rows take a deeper
+   grey of the same cool ramp — twice the step off their own fill, still clear
+   of the selected row underneath them. Scoped to the lobes, which is every
+   part of the nav that answers a pointer. */
+html[data-theme='light'] .primary-nav-pod {
+  --color-surface-hover: #E3E3EA;
+}
+
+/* A lit ring only means something around a lit surface. With the fill flat,
+   both hairlines drop to the page's own border colour and read as an edge
+   rather than as a light source. */
+html[data-theme='light'] .chat-input-outline::before {
+  background: var(--color-border);
+}
+
+/* Three soft whites bloomed behind the control bar. On paper there is nothing
+   for a white bloom to be brighter than, so the same three ellipses become the
+   shade the bar sits in — the same cool grey the drifting light above casts,
+   so the still half of the light and the moving half agree.
+
+   These pools paint normally rather than multiplying, so this is the
+   normal-composite twin of the lavender the blobs resolve to: the same colour
+   taken against the bar's own ground. It reads saturated written down and a
+   pale blue-grey on screen, because a tenth of it is all that is ever laid on.
+   The alphas are the ones that were here — the wash keeps its old weight and
+   only deepens the lean it already had. */
+html[data-theme='light'] .code-panel-controls::before {
+  background:
+    radial-gradient(ellipse 28% 80% at 16% 96%, rgba(220, 221, 254, 0.10), transparent 52%),
+    radial-gradient(ellipse 34% 76% at 58% 4%, rgba(220, 221, 254, 0.08), transparent 56%),
+    radial-gradient(ellipse 24% 86% at 94% 104%, rgba(220, 221, 254, 0.10), transparent 54%);
+}
+
+html[data-theme='light'] .primary-nav-edge {
+  background: var(--color-border);
+}
+
+/* The thinking flash was drawn to be a light source in a dark room: near-white
+   shapes that, on paper, all but vanish into the conversation surface they sit
+   on. Nothing about the drawing needs to change — only which end of the scale
+   it is read from — so every fill takes the same ink as the status label it
+   sits beside, and the flash reads as a mark on the page instead of a glow.
+   lottie-web writes fills as presentation attributes, which any rule here
+   outranks; the three layers feeding the track mattes are alpha mattes, so
+   recolouring them costs nothing. */
+html[data-theme='light'] .thinking-lottie svg path {
+  fill: var(--color-text-primary);
+}
+
+/* Nothing to densify when the fill is already opaque: expanding the column
+   changes its silhouette, not its colour. The blur is turned off here as well
+   because the Featured-detail rule above sets its own, and that selector
+   outranks the flat `.primary-nav-glass` rule. */
+html[data-theme='light'] [data-expanded='true'] .primary-nav-glass,
+html[data-theme='light'] [data-featured-detail='true'][data-expanded='true'] .primary-nav-glass {
+  background: #EBEBF0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-theme='light'] .code-panel-controls {
+  background-color: rgba(247, 247, 250, 0.86);
+  box-shadow: 0 10px 30px rgba(44, 45, 61, 0.09);
+}
+
+/* On paper the transport is an instrument panel laid on the page, not a row of
+   dark keys punched through it: pale grey caps carrying dark glyphs, which is
+   the way round every physical transport reads under room light. The greys are
+   true neutrals rather than the page's tinted ramp, for the same reason the code
+   bar under a reply is — a readout of the take is not a piece of the room.
+
+   The icon steps are re-declared on the bar rather than app-wide so they stay
+   local to this one panel, and `--color-icon-idle` is re-declared alongside
+   them so share, download and the visualizer toggle — which consume that token
+   rather than the control one — sit at the same weight as play and volume. The
+   popovers those buttons open are portalled to <body> and so keep the app's
+   own values. */
+html[data-theme='light'] .code-panel-controls {
+  --color-control-icon: var(--color-text-primary);
+  --color-control-icon-hover: #000000;
+  --color-control-icon-disabled: #A8A8A8;
+  --color-icon-idle: var(--color-text-primary);
+}
+
+html[data-theme='light'] .control-button-surface {
+  background: #E1E1E5;
+}
+
+/* The unlit run of the progress bar. A shade under the buttons, because it is
+   two pixels tall against the bar rather than a 32px cap on it, and needs that
+   much more separation to read as a track at all. The played run keeps the
+   accent. */
+html[data-theme='light'] .code-panel-playback-track {
+  color: #C5C5C9;
+}
+
+/* The thumb's ring, which is `border-current` on the dark ink the rest of the
+   panel is written in. Dark ink is right for a glyph and wrong for this: the
+   ring's job is to hold the accent dot off the track it rides and off the caps
+   either side of it, and a dark hairline on a pale bar reads as one more mark
+   among the marks. White cuts the dot out of everything around it instead —
+   the same figure as the bar's own lit rim, which is the light theme's way of
+   saying a thing sits above the surface rather than in it. */
+html[data-theme='light'] .code-panel-playback-thumb {
+  color: #FFFFFF;
+}
+
+/* `contrast(10)` is dropped here, and the tint below is the reason.
+
+   That filter multiplies every channel's distance from mid-grey by ten. It is
+   free as long as the result clamps — the dark room's near-white pins at pure
+   white, and the near-black this theme used to paint pinned at pure black, so
+   whatever rounding the raster carried was flattened out of existence. A tint
+   that has to survive the filter cannot clamp, and an unclamped channel is
+   amplified along with every 1/255 of rasterizing error under it. Worse where
+   it shows most: `contrast()` works on unpremultiplied colour, and the field's
+   alpha is low — 0.22 times a blob's own opacity — so unpremultiplying already
+   magnifies the error before the ten times lands on it. That is a drifting
+   field of speckle, which is exactly what it looked like.
+
+   Nothing is lost by removing it. `contrast()` never touches alpha, and alpha
+   is what carries this effect's shape: the metaball threshold is the
+   feColorMatrix inside each blob's own SVG filter, and the softness is the
+   blur in front of this. The colour is now simply the colour, and it is quiet. */
+html[data-theme='light'] .code-panel-light-field {
+  filter: blur(16px);
+  mix-blend-mode: multiply;
+  opacity: 0.42;
+}
+
+html[data-theme='light'] .code-panel-particle-field {
+  mix-blend-mode: multiply;
+}
+
+/* Glass is an edge that catches light, not a line drawn round a box, so on
+   paper the rim goes bright rather than dark. The tinted hairline this
+   replaces was an outline: it described where the bar stopped, which is the
+   one thing a pane of glass never does.
+
+   Four layers, reading inward, because a single flat stroke cannot be both the
+   lit edge and the body of the pane. The border is the rim itself. Inside it a
+   hard 1px white line stands for the specular the pane's own thickness would
+   throw along its top edge, and a fainter one along the bottom for the light
+   that bounces back up off the page. Between them a wide soft bloom is the
+   room carried through the glass — the same figure as the dark theme's inner
+   glow, opened up because there is more light here to carry.
+
+   The bar is a near-white already, so the rim only has the delta between it
+   and pure white to work with along the top; along the sides and bottom it
+   meets the page ground, a clear step darker, and that is where the edge
+   actually does its lifting. `normal` blending stays, deliberately: `screen`
+   is what the dark room uses to make a pale rim glow, and over a near-white
+   ground screen is a no-op. */
+html[data-theme='light'] .code-panel-controls-light-border {
+  /* One stroke, one weight, one colour, all four edges. The bar reads as a lit
+     pane set into the panel rather than as its bottom 47px, and a rim brighter
+     than anything around it is what says so — on paper there is no other cue
+     available, since the bar's ground and the code surface are within a couple
+     of values of each other.
+
+     Two consequences are accepted rather than fixed. The uprights run in the
+     same pixel columns as the code layer's border, so white here makes the
+     panel's outline two-tone, cool grey down the code area and white for the
+     last 47px. And `-mt-px` leaves a one-pixel notch where each upright meets
+     the seam (see the base rule). Both close only by giving the rim the
+     frame's colour, which is the one thing this is not for.
+
+     What is fixed is the weight. The `inset 0 1px 0` / `inset 0 -1px 0`
+     specular lines this carried are gone: painted inside the border rather
+     than on it, they made the top and bottom measure 2px against 1px sides.
+     The light they were for now comes from the bloom, which is a gradient and
+     so has no edge to measure against the strokes. */
+  border-color: rgb(218, 218, 232);
+  box-shadow: inset 0 0 12px rgba(234, 234, 248, 0.5);
+  mix-blend-mode: normal;
+}
+
+/* The colour of the light on paper. A periwinkle written down, a pale blue
+   seen: the field multiplies it into the bar at about 14% — its own 0.22 times
+   the deepest blob's opacity — and #F7F7FA under that much of this is #F4F4FA,
+   falling back to bare paper as the light thins. Written saturation and seen
+   saturation are not the same number here: a tenth of a colour is all that is
+   ever laid on, so the value has to start well past where it lands, and the
+   only reading that matters is the second one.
+
+   Where it bottoms out is bracketed by two values the page already holds:
+   bare paper at #F7F7FA and, a step under it, the composer's and the nav
+   column's fill at #EBEBF0. Every channel of the deepest light falls inside
+   that interval — paper's blue exactly, red and green between the two — so
+   the effect reads as this room's own light gathering on the bar rather than
+   as a third surface colour introduced for the sake of it.
+
+   Blue is at 255 for a reason, not for want of a value. The target's blue *is*
+   the paper's, and multiply can only ever take a channel down, so blue is left
+   alone and the whole of the tint is made out of what red and green give
+   up — which is what a cool light does to a page in the first place. It also
+   fixes where the ceiling is: at a given tint this is as light as the effect
+   can be, so a lift would have to come out of the colour instead — the spread
+   between the channels narrowing rather than the depth changing. That is the
+   trade from here on: brighter costs colour, and there is no third direction.
+
+   Alpha is deliberately 0.34, unchanged from the neutral shade this replaces.
+   The SVG threshold below reads it: at 0.34 a lone circle sits under the
+   filter's 10/24 cut and only unions of circles surface, which is what makes
+   the light-theme blobs the sparser, more broken shapes they are. */
+html[data-theme='light'] .code-panel-light-blob {
+  color: rgba(230, 230, 255, 0.64);
+}
+
+/* The same colour as the body it haloes, so the two read as one light. */
+html[data-theme='light'] .code-panel-light-blob svg {
+  filter: drop-shadow(0 0 16px rgba(233, 233, 255, 0.36));
+}
+
+html[data-theme='light'] .primary-nav-more-menu,
+html[data-theme='light'] .primary-nav-tooltip {
+  background: var(--color-popover-surface);
+}
+
+html[data-theme='light'] .mobile-menu-item {
+  color: var(--color-text-secondary);
+}
+
+html[data-theme='light'] .mobile-menu-item:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+html[data-theme='light'] .mobile-menu-item:active {
+  background: var(--color-surface-selected);
+}
+
+/* The code bar under a reply is a readout of the take, not a piece of the
+   room, so on the light theme it steps out of the page's tinted paper and
+   holds neutral grey — each value at the lightness of the ground it replaces,
+   so only the hue leaves. Scoped by re-declaring the tokens on the bar itself
+   rather than by new ones, because every surface in here is a shared token
+   that keeps its tint everywhere else. `--color-bg-primary` covers the
+   fallback bar shown for a take with no recorded revision. */
+html[data-theme='light'] .conversation-code-bar {
+  --color-settings-surface: #FDFDFD;
+  --color-auth-field: #E9E9E9;
+  --color-surface-hover: #E6E6E8;
+  --color-bg-primary: #E6E6E6;
+}
+
+/* The rollback key hangs off the corner of a user bubble — over the stream,
+   not over the page — so on paper the page's own #E3E3E5 read as a hole
+   punched in the conversation surface. It takes that surface instead, and only
+   its fill: border, text and hover still come from the shared set.
+
+   Painted directly rather than by re-declaring `--color-bg-primary` on the
+   button, the way the code bar above does. On mobile the stream *is* the page
+   and the wrapper there points `--color-conversation-surface` back at
+   `--color-bg-primary`; a button that then defined `--color-bg-primary` from
+   the surface would close that loop, and a cyclic custom property drops both
+   values rather than settling on the one they agree about. */
+html[data-theme='light'] .conversation-rollback-button {
+  background: var(--color-conversation-surface);
+}
+
+html[data-theme='light'] canvas[id*="_widget__scope_"],
+html[data-theme='light'] canvas[id*="_widget__pianoroll_"],
+html[data-theme='light'] canvas[id*="_widget__spiral_"],
+html[data-theme='light'] canvas[id*="_widget__punchcard_"],
+html[data-theme='light'] canvas[id*="_widget__pitchwheel_"],
+html[data-theme='light'] canvas[id*="_widget__spectrum_"] {
+  border-color: var(--color-border);
+}
+
+/* ── Featured page · the same room, re-lit for paper ─────────────────────────
+   The shelf used to hold the dark palette whatever the app was set to, on the
+   grounds that its field is artwork the covers are lit by. It no longer does.
+   The field itself changes palette in the shader — the same five sources added
+   onto a low ground instead of bloomed out of near-black, see the `u_paper`
+   branch in FeaturedWebglLightField — and the page follows the app's theme onto
+   it, the way the Favorites reading room already did. One building, both rooms
+   lit the way the reader asked for, and the nav's own paper column no longer
+   stands against a dark page.
+
+   What is left here is the job the Favorites section below does: not colour
+   substitution, but this page's own materials re-made for the light they are
+   under. Glass on paper is a pale fill with a lit edge; a hairline spent in
+   white on near-black has to be spent in ink on paper, at whatever weight holds
+   the same separation. The values are the studio's own paper surfaces, so a
+   reader moving between the three pages is moving between rooms of one
+   building. */
+html[data-theme='light'] .featured-immersive-surface {
+  /* Ink where the dark room spent white, and rather less of it: a hairline has
+     the whole page's brightness behind it here, so the same separation costs
+     fewer parts. */
+  --featured-hairline: rgba(44, 45, 61, 0.14);
+  --featured-hairline-hover: rgba(44, 45, 61, 0.30);
+  --featured-fill: rgba(44, 45, 61, 0.08);
+  --featured-fill-hover: rgba(44, 45, 61, 0.14);
+  --featured-wash: rgba(44, 45, 61, 0.06);
+  --featured-cover-ring: rgba(44, 45, 61, 0.18);
+  /* Both keyboard rings take the accent instead of white. White on paper is
+     the one thing that cannot mark anything out. */
+  --featured-focus-ring: rgba(6, 104, 229, 0.7);
+  --featured-title-ring: rgba(6, 104, 229, 0.7);
+  /* The same relationship the dark pair holds, turned over: the centred title
+     is read off the blue marker it stands in, and the rest off the page. */
+  --featured-title-idle: var(--color-text-secondary);
+  --featured-title-selected: var(--color-on-accent);
+  /* Less than half here. The hover fill is the same blue the centred title is
+     filled with, and dark text on half of it is text on a mid blue — legible,
+     but only just. A fifth keeps the title's own colour readable through it,
+     and a pale blue bar says "not yet committed" as clearly as a strong one. */
+  --featured-title-marker-hover: 0.22;
+}
+
+/* The marker's glow, dropped. It is light thrown by an orange bar onto a dark
+   field; the same throw from a blue one onto paper is a haze around the bar
+   rather than light off it. */
+html[data-theme='light'] .featured-title-marker {
+  box-shadow: none;
+}
+
+/* The record's two panels and the transport are one material, so they are
+   given one fill: the sheer 0.35 the panels used to carry left code unreadable
+   against a moving light field, and the near-opaque 0.86 the bar carried made
+   it a slab on a page the panels were windows into. Two thirds is the value
+   that reads as glass from either side — the field still moves through it, and
+   what is set on it still holds. The Favorites windows are the same object and
+   are cut from the same hook, so they take this fill with them. */
+html[data-theme='light'] .featured-panel,
+html[data-theme='light'] .featured-bar-glass {
+  background: rgba(247, 247, 250, 0.66);
+}
+
+/* In the gallery the transport is the only thing standing over the shelf, and
+   it has to be read as standing over it — the sleeves scroll under the bar, and
+   without a cast there is nothing to say which of the two is in front. Open a
+   record and that question is already answered by the panels beside it, so the
+   bar goes back to sitting in the light field: a shadow there would raise the
+   transport above the two surfaces it was just matched to.
+
+   `:not([data-expanded='true'])` rather than `[data-expanded='false']` so the
+   rule does not depend on React choosing to render the attribute at all when
+   the state is false. */
+html[data-theme='light'] .featured-bar-glass:not([data-expanded='true']) {
+  box-shadow: 0 12px 34px rgba(44, 45, 61, 0.12);
+}
+
+/* On paper both surfaces are edged the same way, and the edge is a pane's own:
+   light enters at the near corner, runs the rim, thins to almost nothing across
+   the face where the pane is head-on, and is picked up again where it leaves at
+   the far corner. Spent near the top of white's range because white has little
+   room to be brighter than a pale field — any lower and the edge carrying the
+   glass simply disappears into the page. The dark room keeps its two flat
+   edges instead; the note on the ring says why. */
+html[data-theme='light'] .featured-panel::before,
+html[data-theme='light'] .featured-bar-glass::before {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(255, 255, 255, 0.58) 30%,
+    rgba(255, 255, 255, 0.48) 58%,
+    rgba(255, 255, 255, 0.66) 78%,
+    rgba(255, 255, 255, 1) 100%
+  );
+}
+
+/* Pale cap, dark glyph — the way round every physical transport reads under
+   room light, and the way the studio's own play button is drawn on paper. The
+   dark room's grey cap carries a light glyph for the same reason. */
+html[data-theme='light'] .featured-transport-play {
+  background: #E1E1E5;
+  color: var(--color-text-primary);
+}
+
+html[data-theme='light'] .featured-transport-play:hover:not(:disabled) {
+  background: #D5D5DA;
+}
+
+/* The unlit run of the progress bar, a shade under the caps beside it: three
+   pixels tall against a pale panel needs that much more to read as a track at
+   all. The played run keeps the accent. */
+html[data-theme='light'] .featured-progress-track {
+  background: #C5C5C9;
+}
+
+/* The thumb's ring is `border-current`, which on paper would be dark ink — one
+   more mark among the marks. White cuts the accent dot out of the track and the
+   panel both, which is this theme's way of saying a thing rides above a
+   surface. */
+html[data-theme='light'] .featured-progress-thumb {
+  color: #FFFFFF;
+}
+
+/* Portalled to <body>, so it is outside the page's own hook and takes the app's
+   popover surface flat: a frost here would be a second one over the bar's. */
+html[data-theme='light'] .featured-volume-popover {
+  border-color: var(--color-border);
+  background: var(--color-popover-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-menu-overlay);
+}
+
+/* ── Favorites page · the same room, re-lit for paper ────────────────────────
+   The field itself is a fragment shader and changes palette there
+   (FeaturedWebglLightField): a plain grey-white ground with the same five
+   sources pooling a cool shade into it instead of silver blooming out of it —
+   the one field on the light theme whose colour is all in its light and none
+   in its paper. What is left
+   for the stylesheet is everything standing on that ground.
+
+   Nothing here is a colour substitution. Each of these pieces is a material —
+   glass, a lit edge, a fill read against an accent — and a material has to be
+   re-made for the light it is under rather than recoloured under the old one.
+   The values are the studio's own paper surfaces, so a reader moving between
+   the two pages is moving between two rooms of one building. */
+
+/* What the list asks for. On paper a selected row is white on the blue
+   accent and an idle one is the page's secondary text, which is the same
+   relationship the dark pair holds — the row is read off the marker when there
+   is one and off the field when there is not. */
+html[data-theme='light'] .favorites-immersive-surface {
+  --favorites-row-idle: var(--color-text-secondary);
+  --favorites-row-selected: var(--color-on-accent);
+  --favorites-row-marker-glow: none;
+  /* Less than half here, where the dark page can afford half. The hover fill
+     is the same blue the selected row is filled with, and dark text on half of
+     it is text on a mid blue — legible, but only just. Bringing the ramp down
+     to a fifth keeps the row's own colour readable through it, and a pale blue
+     bar is as clear a "not yet committed" as a strong one. */
+  --favorites-row-marker-hover: 0.22;
+  --favorites-row-ring: rgba(6, 104, 229, 0.7);
+  /* On paper the typed line is the page's own primary text — there is no lit
+     white to hold it in — and the rule is the same near-black the turn rail
+     draws its marks with, at the strength a hairline needs to be seen on a
+     grey-white ground without becoming furniture. */
+  --favorites-search-text: var(--color-text-primary);
+  --favorites-search-rule: rgba(57, 58, 73, 0.22);
+}
+
+html[data-theme='light'] .conversation-turn-rail {
+  --turn-tick-idle: rgba(57, 58, 73, 0.30);
+  --turn-tick-hover: var(--color-text-primary);
+  --turn-tick-glow: 0 0 12px rgba(44, 45, 61, 0.20);
+}
+
+/* The two windows' edge, taken off the primary nav's.
+ *
+ * The Featured record's panels are edged with a rim of light — a gradient that
+ * enters bright at the near corner, thins across the face and is picked up
+ * again at the far one — which is how a pane of glass reads when the room is
+ * lit for it. This page is not that room. Its two windows stand in the nav's
+ * own column of paper, close enough to it that the eye reads the three edges
+ * together, and a lit rim beside a flat ink line reads as two different
+ * materials rather than one page.
+ *
+ * So the rim is dropped for the line the nav is drawn with: `--color-border`,
+ * flat, the same declaration `.primary-nav-edge` takes on paper. The masked
+ * ring stays — it is what lets the panel carry an edge at all while clipping
+ * its own scrolling body — only what fills it changes.
+ *
+ * Scoped to this page: the Featured record keeps its rim, where the panels are
+ * the only glass in the room and nothing flat stands next to them. */
+html[data-theme='light'] .favorites-immersive-surface .featured-panel::before {
+  background: var(--color-border);
+}
+
+/* The version menu is the one thing on this page that stands over the panel
+   rather than on the field, so it takes the popover surface flat — a second
+   frost over the first would show the panel's own edge through it. */
+html[data-theme='light'] .favorites-version-menu {
+  border-color: var(--color-border);
+  background: var(--color-popover-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-menu-overlay);
+}
+
+/* Its rows lose the two washes of white with them, for the same reason, and
+   take the page's own hover and selected fills. */
+html[data-theme='light'] .favorites-version-option {
+  background: transparent;
+}
+
+html[data-theme='light'] .favorites-version-option:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+html[data-theme='light'] .favorites-version-option[aria-selected='true'] {
+  background: var(--color-surface-selected);
+  color: var(--color-text-primary);
 }
 
 /* Static (non-playable) docs code blocks — src/learn/components.tsx

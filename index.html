@@ -14,6 +14,17 @@
     <meta name="theme-color" content="#0f1115" />
     <link rel="canonical" href="https://oddenova.com/" />
 
+    <!-- The greeting is the first thing painted in a fresh session and is gone
+         as soon as the user sends a message, so its face has to be in flight
+         before the CSS that references it resolves. -->
+    <link
+      rel="preload"
+      href="/fonts/jinghua-laosongti-greetings.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
     <meta property="og:title" content="oddeNova | Vibe Your Music, Live" />
     <meta
       property="og:description"

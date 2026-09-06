@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { VERIDIS_QUO } from '../../lib/featured-scripts';
 
 type FakeEventTarget = Pick<Window | Document, 'addEventListener' | 'removeEventListener'> & {
   emit: (type: string) => void;
@@ -47,10 +48,16 @@ function createFakeAudioContext(state: AudioContextState | 'interrupted') {
 }
 
 describe('Strudel code validation', () => {
+  beforeEach(() => {
+    vi.stubGlobal('m', vi.fn(() => ({})));
+  });
+
   afterEach(() => {
     vi.resetModules();
     vi.doUnmock('../../lib/soundfont-loader');
     vi.doUnmock('../../lib/analytics');
+    vi.doUnmock('@strudel/transpiler');
+    vi.unstubAllGlobals();
   });
 
   it('rejects named .arp() modes before playback', async () => {
@@ -58,7 +65,7 @@ describe('Strudel code validation', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
-    const result = validateCodeRuntime('({ arp() { return this } }).arp("pinkyup")');
+    const result = await validateCodeRuntime('({ arp() { return this } }).arp("pinkyup")');
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -72,7 +79,7 @@ describe('Strudel code validation', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
-    const result = validateCodeRuntime('({ arp() { return this } }).arp("0 [0,2] 1 [0,2]")');
+    const result = await validateCodeRuntime('({ arp() { return this } }).arp("0 [0,2] 1 [0,2]")');
 
     expect(result.ok).toBe(true);
   });
@@ -82,7 +89,7 @@ describe('Strudel code validation', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
-    const result = validateCodeRuntime(`
+    const result = await validateCodeRuntime(`
       const chain = {
         slow() { return this },
         dict() { return this },
@@ -108,7 +115,7 @@ describe('Strudel code validation', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
 
     const { validateCodeRuntime } = await import('../strudel');
-    const result = validateCodeRuntime(`
+    const result = await validateCodeRuntime(`
       const chain = {
         dict() { return this },
         voicing() { return this },
@@ -122,6 +129,101 @@ describe('Strudel code validation', () => {
     `);
 
     expect(result.ok).toBe(true);
+  });
+
+  it('allows a terminal line comment without a final newline in the runtime wrapper', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime('({ arp() { return this } }).arp("0")\n// @version 1.2');
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('allows literal custom samples, mini-notation controls, and a terminal version comment together', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    vi.stubGlobal('samples', vi.fn());
+    vi.stubGlobal('s', vi.fn(() => ({})));
+
+    const code = [
+      "samples({ camera_flash: 'https://example.com/camera.wav', 'vox': 'https://example.com/vox.wav' })",
+      's("<[- [- camera_flash] - -] [-]>/4")',
+      '// @version 1.2',
+    ].join('\n');
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime(code);
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('validates arrange mini-notation after transpiling the same source as playback', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    vi.stubGlobal('arrange', vi.fn((...sections: [number, unknown][]) => {
+      const pattern = sections[0]?.[1];
+      if (!pattern || typeof pattern !== 'object' || !('fast' in pattern)) {
+        throw new TypeError('arrange section pattern is not a Strudel pattern');
+      }
+      return (pattern as { fast: () => unknown }).fast();
+    }));
+    vi.stubGlobal('m', vi.fn(() => ({ fast: vi.fn(() => ({ kind: 'pattern' })) })));
+    vi.stubGlobal('stack', vi.fn((...patterns: unknown[]) => patterns[0]));
+
+    const code = [
+      '// STYLE | BPM: 120',
+      'setcps(0.5)',
+      'const drums = arrange([1, "<bd>"])',
+      'stack(drums)',
+    ].join('\n');
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime(code);
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('keeps samples registration side-effect free during validation', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    const samples = vi.fn(() => {
+      throw new Error('samples should not execute during validation');
+    });
+    vi.stubGlobal('samples', samples);
+    vi.stubGlobal('s', vi.fn(() => ({})));
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime([
+      'samples({ silent_custom: "https://example.com/silent.wav" })',
+      's("silent_custom")',
+    ].join('\n'));
+
+    expect(result).toEqual({ ok: true });
+    expect(samples).not.toHaveBeenCalled();
+  });
+
+  it('accepts the playable Veridis Quo script with named voices and pianorolls', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    const { evalScope } = await import('@strudel/core');
+    await evalScope(
+      import('@strudel/core'),
+      import('@strudel/codemirror'),
+      import('@strudel/draw'),
+      import('@strudel/mini'),
+      import('@strudel/tonal'),
+      import('@strudel/webaudio'),
+    );
+
+    const { validateCodeRuntime } = await import('../strudel');
+    const result = await validateCodeRuntime(VERIDIS_QUO);
+
+    expect(result).toEqual({ ok: true });
   });
 });
 
@@ -290,6 +392,9 @@ describe('StrudelService editor preferences', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
     const setAutocompletionEnabled = vi.fn();
     vi.doMock('@strudel/codemirror', () => ({
+      compartments: { theme: { reconfigure: vi.fn() } },
+      themes: {},
+      settings: {},
       StrudelMirror: class {
         repl = { setCode: vi.fn(), stop: vi.fn() };
         setCode = vi.fn();
@@ -317,6 +422,9 @@ describe('StrudelService editor preferences', () => {
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
     const changeSetting = vi.fn();
     vi.doMock('@strudel/codemirror', () => ({
+      compartments: { theme: { reconfigure: vi.fn() } },
+      themes: {},
+      settings: {},
       StrudelMirror: class {
         repl = { setCode: vi.fn(), stop: vi.fn() };
         setCode = vi.fn();
@@ -336,6 +444,215 @@ describe('StrudelService editor preferences', () => {
     await service.attach(document.createElement('div'));
 
     expect(changeSetting).toHaveBeenCalledWith('isTabIndentationEnabled', true);
+  });
+
+  it('installs the oddeNova Dark syntax highlight extension when the editor attaches', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const dispatch = vi.fn();
+    const themeEffect = { type: 'oddenova-theme' };
+    const reconfigure = vi.fn(() => themeEffect);
+    vi.doMock('@strudel/codemirror', () => ({
+      compartments: { theme: { reconfigure } },
+      themes: {},
+      settings: {},
+      StrudelMirror: class {
+        editor = { dispatch };
+        repl = { setCode: vi.fn(), stop: vi.fn() };
+        setCode = vi.fn();
+        evaluate = vi.fn(async () => {});
+        setAutocompletionEnabled = vi.fn();
+        setLineWrappingEnabled = vi.fn();
+        changeSetting = vi.fn();
+      },
+    }));
+    vi.doMock('@strudel/transpiler', () => ({ transpiler: vi.fn() }));
+    vi.doMock('@strudel/draw', () => ({ getDrawContext: vi.fn(() => ({})) }));
+    vi.doMock('@strudel/webaudio', () => ({ webaudioOutput: vi.fn() }));
+
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+
+    await service.attach(document.createElement('div'));
+
+    // Syntax highlight, scroll margins, tooltip bounds.
+    expect(dispatch).toHaveBeenCalledTimes(3);
+    expect(reconfigure).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({ effects: themeEffect });
+    expect(dispatch.mock.calls[1][0]).toHaveProperty('effects');
+    expect(dispatch.mock.calls[2][0]).toHaveProperty('effects');
+  });
+});
+
+describe('StrudelService playback seeking', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('../../lib/soundfont-loader');
+    vi.doUnmock('../../lib/analytics');
+  });
+
+  it('maps normalized progress to the active scheduler cycle and clamps it', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const setCycle = vi.fn();
+    (service as unknown as {
+      _state: { isPlaying: boolean };
+      editorInstance: { repl: { scheduler: { setCycle: (cycle: number) => void } } };
+    })._state.isPlaying = true;
+    (service as unknown as {
+      editorInstance: { repl: { scheduler: { setCycle: (cycle: number) => void } } };
+    }).editorInstance = { repl: { scheduler: { setCycle } } };
+
+    expect(service.seekPlayback(0.25, 16)).toBe(true);
+    expect(service.seekPlayback(2, 16)).toBe(true);
+    expect(setCycle).toHaveBeenNthCalledWith(1, 4);
+    expect(setCycle).toHaveBeenNthCalledWith(2, 16);
+  });
+
+  it('stores a stopped seek and applies it after the next successful play', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const setCycle = vi.fn();
+    const evaluate = vi.fn(async () => {});
+    const mutableService = service as unknown as {
+      _isVideoMode: boolean;
+      editorInstance: {
+        evaluate: () => Promise<void>;
+        repl: { stop: () => void; scheduler: { setCycle: (cycle: number) => void } };
+      };
+    };
+    mutableService._isVideoMode = true;
+    mutableService.editorInstance = {
+      evaluate,
+      repl: { stop: vi.fn(), scheduler: { setCycle } },
+    };
+
+    expect(service.seekPlayback(0.75, 8)).toBe(true);
+    expect(setCycle).not.toHaveBeenCalled();
+
+    await service.play();
+
+    expect(evaluate).toHaveBeenCalledOnce();
+    expect(setCycle).toHaveBeenCalledWith(6);
+  });
+
+  it('pauses at the scheduler cycle and resumes from it', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const pause = vi.fn();
+    const setCycle = vi.fn();
+    const evaluate = vi.fn(async () => {});
+    const states: Array<{ isPlaying: boolean; isPaused: boolean }> = [];
+    service.onStateChange((state) => states.push({ isPlaying: state.isPlaying, isPaused: state.isPaused }));
+    const mutableService = service as unknown as {
+      _isVideoMode: boolean;
+      _state: { isPlaying: boolean; isPaused: boolean };
+      editorInstance: {
+        evaluate: () => Promise<void>;
+        repl: {
+          stop: () => void;
+          scheduler: {
+            now: () => number;
+            pause: () => void;
+            setCycle: (cycle: number) => void;
+          };
+        };
+      };
+    };
+    mutableService._isVideoMode = true;
+    mutableService._state.isPlaying = true;
+    mutableService.editorInstance = {
+      evaluate,
+      repl: {
+        stop: vi.fn(),
+        scheduler: { now: () => 5.25, pause, setCycle },
+      },
+    };
+
+    expect(service.pause()).toBe(true);
+    expect(pause).toHaveBeenCalledOnce();
+    expect(states.at(-1)).toEqual({ isPlaying: false, isPaused: true });
+
+    await service.play();
+
+    expect(setCycle).toHaveBeenCalledWith(5.25);
+  });
+
+  it('clears paused state on stop and rewinds a paused piece when the code changes', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const mutableService = service as unknown as {
+      _state: { code: string; isPlaying: boolean; isPaused: boolean };
+      pendingSeekCycle: number | null;
+    };
+
+    mutableService._state.isPaused = true;
+    mutableService.pendingSeekCycle = 4;
+    service.stop();
+    expect(mutableService._state.isPaused).toBe(false);
+    expect(mutableService.pendingSeekCycle).toBeNull();
+
+    // Paused: the progress bar rewinds to 0:00 on an edit, so the transport
+    // has to be sent back to cycle 0 too — the Cyclist would otherwise resume
+    // from the pre-edit playhead it kept through pause().
+    mutableService._state.isPaused = true;
+    mutableService.pendingSeekCycle = 3;
+    service.setCode('s("bd")');
+    expect(mutableService._state.isPaused).toBe(false);
+    expect(mutableService.pendingSeekCycle).toBe(0);
+
+    // Playing: update() swaps the new pattern in at the next cycle boundary,
+    // so the playhead is deliberately left alone.
+    mutableService._state.isPlaying = true;
+    mutableService.pendingSeekCycle = 3;
+    service.setCode('s("hh")');
+    expect(mutableService.pendingSeekCycle).toBeNull();
+  });
+
+  it('resumes at cycle 0 when the code is edited while paused', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const setCycle = vi.fn();
+    const evaluate = vi.fn(async () => {});
+    const mutableService = service as unknown as {
+      _isVideoMode: boolean;
+      _state: { isPlaying: boolean };
+      editorInstance: {
+        evaluate: () => Promise<void>;
+        setCode: (code: string) => void;
+        repl: {
+          stop: () => void;
+          scheduler: { now: () => number; pause: () => void; setCycle: (cycle: number) => void };
+        };
+      };
+    };
+    mutableService._isVideoMode = true;
+    mutableService._state.isPlaying = true;
+    mutableService.editorInstance = {
+      evaluate,
+      setCode: vi.fn(),
+      repl: {
+        stop: vi.fn(),
+        scheduler: { now: () => 5.25, pause: vi.fn(), setCycle },
+      },
+    };
+
+    service.pause();
+    service.setCode('s("bd sd")');
+    await service.play();
+
+    expect(setCycle).toHaveBeenCalledWith(0);
+    expect(setCycle).not.toHaveBeenCalledWith(5.25);
   });
 });
 

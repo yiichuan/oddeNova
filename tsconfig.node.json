@@ -20,5 +20,12 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts"]
+  // The build scripts are node programs, not app code: they belong to this
+  // project so `Buffer` and `node:*` resolve. Listed one by one rather than as
+  // `scripts` — the older scripts in there have never been type-checked.
+  "include": [
+    "vite.config.ts",
+    "scripts/build-animation-previews.ts",
+    "scripts/animation-previews/**/*.ts"
+  ]
 }

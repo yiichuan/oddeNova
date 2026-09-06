@@ -39,6 +39,8 @@ export interface ProviderPreset {
   protocol: Protocol;
   /** User-selectable models for this provider; first item is the default. Omitted for providers without manual model selection (official). */
   models?: string[];
+  /** Non-secret example showing the provider's API key shape. */
+  apiKeyPlaceholder?: string;
 }
 
 /** Built-in configuration for each provider; Base URL is not visible to the user. */
@@ -49,6 +51,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     model: 'deepseek-v4-flash', // current official model, supports function calling
     protocol: 'openai',
     models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    apiKeyPlaceholder: 'sk-…',
   },
   kimi: {
     label: 'Kimi',
@@ -62,14 +65,16 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     baseURL: 'https://api.openai.com/v1',
     model: 'gpt-5.5',           // current flagship model, supports Chat Completions API + function calling
     protocol: 'openai',
-    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.5-mini', 'gpt-5.1', 'gpt-5'],
+    apiKeyPlaceholder: 'sk-…',
   },
   anthropic: {
     label: 'Anthropic',
     baseURL: 'https://api.anthropic.com',
     model: 'claude-opus-5',             // display only; actual model uses LEGACY_MODELS
     protocol: 'anthropic',
-    models: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'],
+    models: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+    apiKeyPlaceholder: 'sk-ant-api…',
   },
   official: {
     label: t('officialLabel'),
@@ -83,6 +88,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     model: 'glm-5.2',
     protocol: 'openai',
     models: ['glm-5.2', 'glm-5.1', 'glm-5.1-air', 'glm-5'],
+    apiKeyPlaceholder: 'id.secret',
   },
 };
 
@@ -154,7 +160,7 @@ export function getSelectedModel(provider: ProviderType): string {
 // Thinking level (see CONTEXT.md: Thinking level)
 // ---------------------------------------------------------------------------
 
-export const THINKING_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'extreme'];
+export const THINKING_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high'];
 
 const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'medium';
 
@@ -163,6 +169,10 @@ const THINKING_LEVEL_STORAGE_KEY = 'vibe_thinking_level';
 /** Global user preference, persisted like provider/model — not session-scoped. */
 export function getSelectedThinkingLevel(): ThinkingLevel {
   const stored = localStorage.getItem(THINKING_LEVEL_STORAGE_KEY);
+  // The ladder used to have a fourth, top 'extreme' tier; 'high' is now the top
+  // of the dial and maps to what 'extreme' used to send, so an old stored value
+  // lands on the level the user actually picked rather than on the default.
+  if (stored === 'extreme') return 'high';
   return (THINKING_LEVELS as readonly string[]).includes(stored ?? '')
     ? (stored as ThinkingLevel)
     : DEFAULT_THINKING_LEVEL;

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { BlobPreconditionFailedError, list, del } from '@vercel/blob';
-import { beijingDate, expiredDailySuggestionCleanup } from './daily-suggestions-core.js';
+import { beijingDate, expiredDailySuggestionCleanup } from '../server/daily-suggestions-core.js';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 

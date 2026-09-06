@@ -227,14 +227,19 @@ describe('getSelectedThinkingLevel / setSelectedThinkingLevel', () => {
   });
 
   it('setSelectedThinkingLevel persists a level that getSelectedThinkingLevel then returns', () => {
-    setSelectedThinkingLevel('extreme');
-    expect(localStorage.setItem).toHaveBeenCalledWith('vibe_thinking_level', 'extreme');
-    expect(getSelectedThinkingLevel()).toBe('extreme');
+    setSelectedThinkingLevel('high');
+    expect(localStorage.setItem).toHaveBeenCalledWith('vibe_thinking_level', 'high');
+    expect(getSelectedThinkingLevel()).toBe('high');
+  });
+
+  it('reads a legacy stored "extreme" as high, the new top of the dial', () => {
+    localStorage.setItem('vibe_thinking_level', 'extreme');
+    expect(getSelectedThinkingLevel()).toBe('high');
   });
 });
 
 describe('THINKING_LEVELS', () => {
-  it('lists all four levels in low-to-extreme order', () => {
-    expect(THINKING_LEVELS).toEqual(['low', 'medium', 'high', 'extreme']);
+  it('lists all three levels in low-to-high order', () => {
+    expect(THINKING_LEVELS).toEqual(['low', 'medium', 'high']);
   });
 });

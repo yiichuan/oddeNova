@@ -19,6 +19,7 @@ import {
   useSessions,
 } from '../useSessions';
 import type { Session } from '../useSessions';
+import { THEME_SONG_SEEDED_KEY, themeSongCode } from '../../lib/theme-song';
 
 const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
@@ -29,7 +30,19 @@ const storageMocks = vi.hoisted(() => ({
   putImportedSession: vi.fn(async (_session: unknown) => undefined),
   putImportedSessionBranch: vi.fn(async (_detached: unknown, _branch: unknown) => undefined),
   deleteSession: vi.fn(async () => undefined),
+  deleteSessionStrict: vi.fn(async () => undefined),
   isSessionStoragePersistent: vi.fn(() => true),
+}));
+
+const syncStorageMocks = vi.hoisted(() => ({
+  readPendingSessionOperations: vi.fn(async () => ({
+    syncIds: new Set<string>(),
+    deleteIds: new Set<string>(),
+  })),
+  markPendingSessionSync: vi.fn(async () => undefined),
+  clearPendingSessionSync: vi.fn(async () => undefined),
+  markPendingSessionDelete: vi.fn(async () => undefined),
+  clearPendingSessionDelete: vi.fn(async () => undefined),
 }));
 
 vi.mock('../../lib/session-storage', () => ({
@@ -41,8 +54,11 @@ vi.mock('../../lib/session-storage', () => ({
   putImportedSession: storageMocks.putImportedSession,
   putImportedSessionBranch: storageMocks.putImportedSessionBranch,
   deleteSession: storageMocks.deleteSession,
+  deleteSessionStrict: storageMocks.deleteSessionStrict,
   isSessionStoragePersistent: storageMocks.isSessionStoragePersistent,
 }));
+
+vi.mock('../../lib/session-sync-storage', () => syncStorageMocks);
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -58,14 +74,24 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
-async function renderUseSessions(): Promise<{ root: Root; getHook: () => ReturnType<typeof useSessions> }> {
+async function renderUseSessions(options?: Parameters<typeof useSessions>[0]): Promise<{
+  root: Root;
+  getHook: () => ReturnType<typeof useSessions>;
+  rerender: (nextOptions?: Parameters<typeof useSessions>[0]) => Promise<void>;
+}> {
   let hook: ReturnType<typeof useSessions> | undefined;
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
-  function Probe({ onValue }: { onValue: (value: ReturnType<typeof useSessions>) => void }) {
-    const value = useSessions();
+  function Probe({
+    onValue,
+    options: probeOptions,
+  }: {
+    onValue: (value: ReturnType<typeof useSessions>) => void;
+    options?: Parameters<typeof useSessions>[0];
+  }) {
+    const value = useSessions(probeOptions);
     useEffect(() => {
       onValue(value);
     });
@@ -73,7 +99,7 @@ async function renderUseSessions(): Promise<{ root: Root; getHook: () => ReturnT
   }
 
   await act(async () => {
-    root.render(createElement(Probe, { onValue: (value) => { hook = value; } }));
+    root.render(createElement(Probe, { onValue: (value) => { hook = value; }, options }));
   });
   await act(async () => {
     await Promise.resolve();
@@ -84,6 +110,11 @@ async function renderUseSessions(): Promise<{ root: Root; getHook: () => ReturnT
     getHook: () => {
       if (!hook) throw new Error('useSessions hook was not rendered');
       return hook;
+    },
+    rerender: async (nextOptions) => {
+      await act(async () => {
+        root.render(createElement(Probe, { onValue: (value) => { hook = value; }, options: nextOptions }));
+      });
     },
   };
 }
@@ -100,7 +131,17 @@ describe('useSessions', () => {
     storageMocks.putImportedSession.mockResolvedValue(undefined);
     storageMocks.putImportedSessionBranch.mockResolvedValue(undefined);
     storageMocks.deleteSession.mockResolvedValue(undefined);
+    storageMocks.deleteSessionStrict.mockResolvedValue(undefined);
     storageMocks.isSessionStoragePersistent.mockReturnValue(true);
+    syncStorageMocks.readPendingSessionOperations.mockResolvedValue({
+      syncIds: new Set(),
+      deleteIds: new Set(),
+    });
+    // Every test below but the two first-entry ones is about a visitor who has
+    // been here before, and an empty history is how they say so. Left unset,
+    // the first of them to load would be handed the theme song and the rest
+    // would not, which is the sort of order dependence that makes a suite lie.
+    localStorage.setItem(THEME_SONG_SEEDED_KEY, '1');
   });
 
   afterEach(() => {
@@ -109,6 +150,128 @@ describe('useSessions', () => {
     }
     document.body.innerHTML = '';
     vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('opens a first entry on the theme song rather than a blank editor', async () => {
+    localStorage.removeItem(THEME_SONG_SEEDED_KEY);
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const [seeded] = getHook().sessions;
+    expect(getHook().sessions).toHaveLength(1);
+    expect(seeded.title).toBe(t('themeSongTitle'));
+    expect(seeded.code).toBe(themeSongCode());
+    expect(getHook().currentId).toBe(seeded.id);
+    // It holds code, so it is a real session: "New session" stacks a blank one
+    // on top of it instead of recycling it out of the history.
+    act(() => getHook().newSession());
+    expect(getHook().sessions.map((session) => session.id)).toContain(seeded.id);
+  });
+
+  it('gives the theme song to a visitor who was already using the app', async () => {
+    // The case a version launch is actually made of: rows already in storage.
+    // Keyed to an empty history, this visitor would never see the piece.
+    localStorage.removeItem(THEME_SONG_SEEDED_KEY);
+    const existing = makeSession({ id: 's-old', title: '我的曲子', code: 's("bd")' });
+    storageMocks.getAllSessions.mockResolvedValue([existing]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('s-old');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const [first, ...rest] = getHook().sessions;
+    expect(first.code).toBe(themeSongCode());
+    expect(rest.map((session) => session.id)).toEqual(['s-old']);
+    // Their own work is still what opens: finding someone else's piece in the
+    // editor in place of yours reads as having lost it.
+    expect(getHook().currentId).toBe('s-old');
+    // And the seed is a real stored row, not a list-only decoration.
+    expect(storageMocks.putSession).toHaveBeenCalledWith(
+      expect.objectContaining({ code: themeSongCode() }),
+      'guest',
+    );
+  });
+
+  it('leaves an account load alone, so nothing unsynced lands in the cloud list', async () => {
+    localStorage.removeItem(THEME_SONG_SEEDED_KEY);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+
+    expect(getHook().sessions.every((session) => session.code !== themeSongCode())).toBe(true);
+    // Untouched, so the guest pass still gets its turn — auth resolves after
+    // the first paint, and that pass is where the seed belongs.
+    expect(localStorage.getItem(THEME_SONG_SEEDED_KEY)).toBeNull();
+  });
+
+  it('seeds the theme song once, so deleting it is final', async () => {
+    localStorage.removeItem(THEME_SONG_SEEDED_KEY);
+    const first = await renderUseSessions();
+    roots.push(first.root);
+    expect(first.getHook().sessions[0].code).toBe(themeSongCode());
+
+    // A later visit that again finds nothing stored — the visitor deleted it.
+    const second = await renderUseSessions();
+    roots.push(second.root);
+    expect(second.getHook().sessions[0].code).toBe('');
+    expect(second.getHook().sessions[0].title).toBe(t('newSessionTitle'));
+  });
+
+  it('uses UUIDs for browser-created sessions', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    expect(getHook().currentId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+
+    act(() => getHook().newSession());
+
+    expect(getHook().currentId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  });
+
+  it('reuses an imported UUID on retry without duplicating account state or losing durable fields', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+
+    const imported = {
+      id: '00000000-0000-7000-8000-000000000010',
+      title: '完整导入',
+      code: 's("bd")',
+      messages: [{ id: 'm-1', role: 'assistant' as const, content: '完成', inputMode: 'choice' as const, revisionId: 'r-1', timestamp: 11 }],
+      revisions: [{ id: 'r-1', beforeCode: '', afterCode: 's("bd")', playbackStatus: 'played' as const, createdAt: 12 }],
+      inputMode: 'choice' as const,
+      suggestions: { forCode: 's("bd")', items: ['加贝斯'] },
+      externalSource: { type: 'oddenova-strudel-skill' as const, projectId: 'p-1', importedContentHash: 'h-1' },
+      createdAt: 13,
+      updatedAt: 14,
+    };
+
+    await act(async () => {
+      await getHook().importSession(imported as never, { activate: false });
+      await getHook().importSession(imported as never, { activate: false });
+    });
+
+    expect(getHook().sessions.filter((session) => session.id === imported.id)).toHaveLength(1);
+    expect(getHook().sessions.find((session) => session.id === imported.id)).toEqual(imported);
+    expect(storageMocks.putSession).toHaveBeenLastCalledWith(imported, 'user:u-1');
+    expect(cloud.saveSession).toHaveBeenLastCalledWith(imported, 'u-1');
   });
 
   it('custom title survives first addUserMessage', async () => {
@@ -135,6 +298,1004 @@ describe('useSessions', () => {
     });
 
     expect(getHook().currentSession?.title).toBe('全新内容');
+  });
+
+  it('loads and writes sessions under the requested owner key', async () => {
+    storageMocks.getAllSessions.mockResolvedValueOnce([
+      makeSession({ id: 'account-session', title: 'Account', messages: [{ id: 'm', role: 'user', content: 'hi', timestamp: 1 }] }),
+    ] as Session[]);
+    const { root, getHook } = await renderUseSessions({ ownerKey: 'user:u-1' });
+    roots.push(root);
+
+    expect(storageMocks.getAllSessions).toHaveBeenCalledWith('user:u-1');
+
+    act(() => {
+      getHook().renameSession('account-session', 'Cloud Title');
+    });
+
+    expect(storageMocks.putSession).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'account-session',
+      title: 'Cloud Title',
+    }), 'user:u-1');
+  });
+
+  it('does not expose guest sessions while an account owner is loading', async () => {
+    const guestSession = makeSession({ id: 'guest-session' });
+    let resolveAccountSessions!: (sessions: Session[]) => void;
+    storageMocks.getAllSessions
+      .mockResolvedValueOnce([guestSession])
+      .mockImplementationOnce(() => new Promise<Session[]>((resolve) => {
+        resolveAccountSessions = resolve;
+      }));
+    const { root, getHook, rerender } = await renderUseSessions({ ownerKey: 'guest' });
+    roots.push(root);
+
+    expect(getHook().sessions).toEqual([guestSession]);
+
+    await rerender({ ownerKey: 'user:u-1' });
+
+    expect(getHook().sessions).toEqual([]);
+    expect(getHook().currentSession).toBeNull();
+
+    await act(async () => {
+      resolveAccountSessions([]);
+    });
+  });
+
+  it('does not copy the previous owner\'s session into the new owner while it loads', async () => {
+    const accountSession = makeSession({
+      id: 'account-session',
+      title: '来个简单的贝斯',
+      messages: [{ id: 'm-1', role: 'user', content: '来个简单的贝斯', timestamp: 1 }],
+      code: 's("bd")',
+    });
+    let resolveGuestSessions!: (sessions: Session[]) => void;
+    storageMocks.getAllSessions
+      .mockResolvedValueOnce([accountSession])
+      .mockImplementationOnce(() => new Promise<Session[]>((resolve) => {
+        resolveGuestSessions = resolve;
+      }));
+    const { root, getHook, rerender } = await renderUseSessions({ ownerKey: 'user:u-1' });
+    roots.push(root);
+
+    // Signing out flips the owner key while the account session is still the
+    // one held in memory; a late writer must not persist it as a guest session.
+    await rerender({ ownerKey: 'guest' });
+    storageMocks.putSession.mockClear();
+
+    act(() => {
+      getHook().setSuggestions(['换个音色'], 's("bd")');
+    });
+
+    expect(storageMocks.putSession).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'account-session' }),
+      'guest',
+    );
+
+    await act(async () => {
+      resolveGuestSessions([]);
+    });
+  });
+
+  it('does not list cloud history during account startup or persist its temporary session', async () => {
+    const accountSession = makeSession({
+      id: 'latest-account-session',
+      title: 'Latest account history',
+      messages: [{ id: 'm-1', role: 'user', content: '已有聊天', timestamp: 1 }],
+      updatedAt: 20,
+    });
+    storageMocks.getAllSessions.mockResolvedValue([accountSession]);
+    storageMocks.getCurrentSessionId.mockResolvedValue(accountSession.id);
+    const cloud = {
+      listSessions: vi.fn(async () => [accountSession]),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+
+    expect(cloud.listSessions).not.toHaveBeenCalled();
+    expect(getHook().currentId).not.toBe(accountSession.id);
+    expect(getHook().currentSession?.messages).toEqual([
+      expect.objectContaining({ isGreeting: true }),
+    ]);
+    expect(storageMocks.putSession).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: getHook().currentId }),
+      'user:u-1',
+    );
+  });
+
+  it('persists an account temporary session only after its first substantive change', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+
+    expect(storageMocks.putSession).not.toHaveBeenCalled();
+
+    act(() => {
+      getHook().addUserMessage('第一次真实内容');
+    });
+    expect(storageMocks.putSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: getHook().currentId,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ content: '第一次真实内容' }),
+        ]),
+      }),
+      'user:u-1',
+    );
+  });
+
+  it('accepts a cloud detail into local working state without uploading it again', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+    storageMocks.putSession.mockClear();
+
+    const detail = makeSession({
+      id: '00000000-0000-4000-8000-000000000021',
+      title: '云端详情',
+      code: 's("bd")',
+      messages: [{ id: 'm-1', role: 'user', content: '打开我', timestamp: 1 }],
+      updatedAt: 42,
+    });
+
+    await act(async () => {
+      await (getHook() as ReturnType<typeof useSessions> & {
+        acceptCloudDetail: (session: Session) => Promise<void>;
+      }).acceptCloudDetail(detail);
+    });
+
+    expect(getHook().currentId).toBe(detail.id);
+    expect(getHook().currentSession).toEqual(detail);
+    expect(storageMocks.putSession).toHaveBeenCalledWith(detail, 'user:u-1');
+    expect(storageMocks.putCurrentSessionId).toHaveBeenCalledWith(detail.id, 'user:u-1');
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+    await expect(getHook().flushCloudSaves(detail.id)).resolves.toBeUndefined();
+  });
+
+  it('opens a conversation on its working copy when the cloud read is behind it', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+
+    act(() => { getHook().addUserMessage('还没上传的这一句'); });
+    const workingCopy = getHook().currentSession as Session;
+    storageMocks.putSession.mockClear();
+
+    // What the cloud still holds for this conversation: the state before that
+    // message was written.
+    const behind = makeSession({
+      id: workingCopy.id,
+      title: workingCopy.title,
+      code: '',
+      messages: [],
+      updatedAt: 1,
+    });
+
+    await act(async () => {
+      await (getHook() as ReturnType<typeof useSessions> & {
+        acceptCloudDetail: (session: Session) => Promise<void>;
+      }).acceptCloudDetail(behind);
+    });
+
+    expect(getHook().currentId).toBe(workingCopy.id);
+    expect(getHook().currentSession?.messages).toEqual(workingCopy.messages);
+    expect(storageMocks.putSession).not.toHaveBeenCalledWith(behind, 'user:u-1');
+    // The write that was on its way up is still on its way up.
+    expect(getHook().currentSyncStatus).not.toBe('synced');
+  });
+
+  it('keeps streamed changes local until a terminal checkpoint saves one latest snapshot', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    act(() => {
+      getHook().addUserMessage('同步这段旋律');
+      getHook().appendToLastReasoning('先保留完整推理。');
+      getHook().addAssistantMessage('完成', 's("bd")');
+    });
+
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+
+    let checkpoint!: Promise<void>;
+    act(() => {
+      checkpoint = getHook().checkpointSession(getHook().currentId!);
+    });
+    await act(async () => {
+      await checkpoint;
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledTimes(1);
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ content: '同步这段旋律' }),
+        expect.objectContaining({ content: '先保留完整推理。' }),
+        expect.objectContaining({ content: '完成' }),
+      ]),
+    }), 'u-1');
+  });
+
+  it('debounces manual code edits for two seconds before saving the latest code', async () => {
+    vi.useFakeTimers();
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = getHook().setManualCode('s("bd")');
+      second = getHook().setManualCode('s("bd sd")');
+    });
+    await act(async () => {
+      await Promise.all([first, second]);
+      await vi.advanceTimersByTimeAsync(1999);
+    });
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledTimes(1);
+    expect(cloud.saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 's("bd sd")' }),
+      'u-1',
+    );
+    vi.useRealTimers();
+  });
+
+  it('surfaces manual save status only when the cloud request starts and clears success after two seconds', async () => {
+    vi.useFakeTimers();
+    let resolveSave!: () => void;
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(() => new Promise<void>((resolve) => {
+        resolveSave = resolve;
+      })),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    let manualSave!: Promise<void>;
+    act(() => {
+      manualSave = getHook().setManualCode('s("bd")');
+    });
+    await act(async () => {
+      await manualSave;
+      await vi.advanceTimersByTimeAsync(1999);
+    });
+    expect(getHook().currentManualSyncStatus).toBeUndefined();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getHook().currentManualSyncStatus).toBe('saving');
+
+    await act(async () => {
+      resolveSave();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getHook().currentManualSyncStatus).toBe('synced');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1999);
+    });
+    expect(getHook().currentManualSyncStatus).toBe('synced');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getHook().currentManualSyncStatus).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it('keeps a failed manual cloud request visible for retry', async () => {
+    vi.useFakeTimers();
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => {
+        throw new Error('Cloud save failed');
+      }),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    let manualSave!: Promise<void>;
+    act(() => {
+      manualSave = getHook().setManualCode('s("bd")');
+    });
+    await act(async () => {
+      await manualSave;
+      await vi.advanceTimersByTimeAsync(2000);
+      await Promise.resolve();
+    });
+
+    expect(getHook().currentManualSyncStatus).toBe('retrying');
+    vi.useRealTimers();
+  });
+
+  it('does not surface a later Agent checkpoint as a manual save', async () => {
+    vi.useFakeTimers();
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    let manualSave!: Promise<void>;
+    await act(async () => {
+      manualSave = getHook().setManualCode('s("bd")');
+    });
+    await act(async () => {
+      await manualSave;
+    });
+    act(() => {
+      getHook().addUserMessage('继续调整');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledTimes(1);
+    expect(getHook().currentManualSyncStatus).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it('keeps a pending local working copy without reconciling against a cloud list', async () => {
+    const local = makeSession({ id: 'shared', code: 'local dirty', updatedAt: 10 });
+    storageMocks.getAllSessions.mockResolvedValueOnce([local]);
+    syncStorageMocks.readPendingSessionOperations.mockResolvedValueOnce({
+      syncIds: new Set(['shared']),
+      deleteIds: new Set(),
+    });
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    expect(getHook().currentSession?.code).toBe('');
+    expect(getHook().sessions).toContainEqual(local);
+    expect(cloud.listSessions).not.toHaveBeenCalled();
+  });
+
+  it('keeps the local cache untouched when pending operation markers cannot be read', async () => {
+    const local = makeSession({
+      id: 'local-unknown',
+      code: 'local possibly dirty',
+      messages: [{ id: 'user', role: 'user', content: '保留我', timestamp: 1 }],
+    });
+    storageMocks.getAllSessions.mockResolvedValueOnce([local]);
+    syncStorageMocks.readPendingSessionOperations.mockRejectedValueOnce(
+      new Error('settings store unavailable'),
+    );
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    expect(getHook().sessions).toEqual([
+      expect.objectContaining({ messages: [expect.objectContaining({ isGreeting: true })] }),
+      local,
+    ]);
+    expect(cloud.listSessions).not.toHaveBeenCalled();
+    expect(storageMocks.deleteSessionStrict).not.toHaveBeenCalled();
+  });
+
+  it('purges a tombstoned local row even when the cloud cannot be listed', async () => {
+    const deleted = makeSession({
+      id: 'deleted',
+      messages: [{ id: 'user', role: 'user', content: '删除我', timestamp: 1 }],
+    });
+    storageMocks.getAllSessions.mockResolvedValueOnce([deleted]);
+    syncStorageMocks.readPendingSessionOperations.mockResolvedValueOnce({
+      syncIds: new Set(),
+      deleteIds: new Set(['deleted']),
+    });
+    const cloud = {
+      listSessions: vi.fn(async () => { throw new Error('offline'); }),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    expect(storageMocks.deleteSessionStrict).toHaveBeenCalledWith('deleted', 'user:u-1');
+    expect(getHook().sessions.some((item) => item.id === 'deleted')).toBe(false);
+  });
+
+  it('does not upload a greeting-only session', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    act(() => getHook().newSession());
+    await Promise.resolve();
+
+    expect(getHook().currentSession?.messages).toEqual([
+      expect.objectContaining({ isGreeting: true }),
+    ]);
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+  });
+
+  it('does not upload a greeting-only session after it is renamed', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    act(() => {
+      getHook().renameSession(getHook().currentId!, '只有标题');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(cloud.saveSession).not.toHaveBeenCalled();
+    expect(syncStorageMocks.markPendingSessionSync).not.toHaveBeenCalled();
+  });
+
+  it('checkpoints the latest complete turn without uploading an earlier reasoning snapshot', async () => {
+    let releaseFirstSave!: () => void;
+    const saveSession = vi.fn<(session: Session) => Promise<void>>()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => {
+        releaseFirstSave = resolve;
+      }))
+      .mockResolvedValue(undefined);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession,
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+
+    act(() => {
+      getHook().addUserMessage('来个简单的鼓点', sessionId);
+    });
+    act(() => {
+      getHook().appendToLastReasoning('先构思四四拍鼓点。', sessionId);
+      getHook().addProgress('tool_call', '编排段落…', {
+        toolName: 'setCode',
+        sessionId,
+      });
+      getHook().addAssistantMessage(
+        '一个简单干净的四四拍鼓点。',
+        's("bd sd")',
+        sessionId,
+        {
+          beforeCode: '',
+          afterCode: 's("bd sd")',
+          playbackStatus: 'played',
+        },
+      );
+    });
+
+    expect(saveSession).not.toHaveBeenCalled();
+    let checkpoint!: Promise<void>;
+    act(() => {
+      checkpoint = getHook().checkpointSession(sessionId);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      releaseFirstSave();
+      await checkpoint;
+    });
+
+    const finalSnapshot = saveSession.mock.calls.at(-1)?.[0];
+    const finalMessage = finalSnapshot?.messages.at(-1);
+    expect(finalMessage).toMatchObject({
+      role: 'assistant',
+      content: '一个简单干净的四四拍鼓点。',
+      code: 's("bd sd")',
+    });
+    expect(finalSnapshot?.revisions).toHaveLength(1);
+    expect(finalMessage?.revisionId).toBe(finalSnapshot?.revisions?.[0].id);
+  });
+
+  it('does not retry one account owner cloud failure after switching to another owner', async () => {
+    const saveSession = vi.fn()
+      .mockRejectedValueOnce(new Error('account A save failed'))
+      .mockResolvedValue(undefined);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession,
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook, rerender } = await renderUseSessions({
+      ownerKey: 'user:account-a',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    act(() => {
+      getHook().addUserMessage('A 的私密会话');
+    });
+    await act(async () => {
+      await expect(getHook().flushCloudSaves()).rejects.toThrow('account A save failed');
+    });
+
+    await rerender({ ownerKey: 'guest', cloud, syncEnabled: false });
+    await rerender({ ownerKey: 'user:account-b', cloud, syncEnabled: true });
+    await act(async () => {
+      await getHook().flushCloudSaves();
+    });
+
+    expect(saveSession).toHaveBeenCalledTimes(1);
+    expect(saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ messages: expect.arrayContaining([
+        expect.objectContaining({ content: 'A 的私密会话' }),
+      ]) }),
+      'account-a',
+    );
+  });
+
+  it('does not resurrect a failed cloud snapshot after deleting its session', async () => {
+    const saveSession = vi.fn()
+      .mockRejectedValueOnce(new Error('save failed before delete'))
+      .mockResolvedValue(undefined);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession,
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const deletedId = getHook().currentId!;
+
+    act(() => {
+      getHook().addUserMessage('删除这段会话');
+    });
+    await act(async () => {
+      await expect(getHook().flushCloudSaves()).rejects.toThrow('save failed before delete');
+    });
+
+    act(() => {
+      getHook().deleteSession(deletedId);
+    });
+    await vi.waitFor(() => {
+      expect(cloud.deleteSession).toHaveBeenCalledWith(deletedId, 'u-1');
+    });
+    await act(async () => {
+      await getHook().flushCloudSaves();
+    });
+
+    expect(saveSession.mock.calls.filter(([session]) => session.id === deletedId)).toHaveLength(1);
+  });
+
+  it('keeps the delete tombstone when strict local deletion fails', async () => {
+    storageMocks.deleteSessionStrict.mockRejectedValueOnce(new Error('IDB delete failed'));
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const deletedId = getHook().currentId!;
+
+    act(() => {
+      getHook().addUserMessage('先让这个临时会话变成工作副本');
+    });
+    act(() => {
+      getHook().deleteSession(deletedId);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(syncStorageMocks.markPendingSessionDelete).toHaveBeenCalledWith(
+      'user:u-1',
+      deletedId,
+    );
+    expect(cloud.deleteSession).not.toHaveBeenCalled();
+    expect(syncStorageMocks.clearPendingSessionDelete).not.toHaveBeenCalled();
+  });
+
+  it('lands on history and not on a favorite when the open conversation is deleted', async () => {
+    // A favorite is a session too, and the newest one at that — but it is kept
+    // on the Favorites page, so the studio must not be dropped into it by a
+    // deletion made from the history panel.
+    const kept = makeSession({ id: 'kept', title: '收藏的那段', favoritedAt: 30, updatedAt: 30 });
+    const inHistory = makeSession({ id: 'in-history', title: '历史里的上一段', updatedAt: 20 });
+    const open = makeSession({ id: 'open', title: '正在写的这段', updatedAt: 10 });
+    storageMocks.getAllSessions.mockResolvedValue([kept, inHistory, open]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('open');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().deleteSession('open');
+    });
+
+    expect(getHook().currentId).toBe('in-history');
+  });
+
+  it('opens a fresh session when every conversation left is a favorite', async () => {
+    const kept = makeSession({ id: 'kept', favoritedAt: 30, updatedAt: 30 });
+    const open = makeSession({ id: 'open', updatedAt: 10 });
+    storageMocks.getAllSessions.mockResolvedValue([kept, open]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('open');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().deleteSession('open');
+    });
+
+    // Somewhere new, and the collection still holds what was kept.
+    expect(getHook().currentId).not.toBe('kept');
+    expect(getHook().currentId).not.toBe('open');
+    expect(getHook().sessions.map((session) => session.id)).toContain('kept');
+  });
+
+  it('stays in a favorite when some other conversation is deleted', async () => {
+    const kept = makeSession({ id: 'kept', favoritedAt: 30, updatedAt: 30 });
+    const other = makeSession({ id: 'other', updatedAt: 20 });
+    storageMocks.getAllSessions.mockResolvedValue([kept, other]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('kept');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    act(() => {
+      getHook().deleteSession('other');
+    });
+
+    expect(getHook().currentId).toBe('kept');
+    expect(getHook().sessions.map((session) => session.id)).toEqual(['kept']);
+  });
+
+  it('waits for imported sessions to be saved to the cloud when sync is enabled', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '本机历史',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+      });
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: '本机历史',
+      messages: [expect.objectContaining({ content: '本地聊天' })],
+    }), 'u-1');
+  });
+
+  it('stays on the current session when importing without activating', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const currentIdBeforeImport = getHook().currentId;
+    storageMocks.putCurrentSessionId.mockClear();
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '来个简单的鼓点',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '来个简单的鼓点', timestamp: 1 }],
+      }, { activate: false });
+    });
+
+    expect(getHook().currentId).toBe(currentIdBeforeImport);
+    expect(storageMocks.putCurrentSessionId).not.toHaveBeenCalled();
+    expect(getHook().sessions.map((session) => session.title))
+      .toContain('来个简单的鼓点');
+    expect(cloud.saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '来个简单的鼓点' }),
+      'u-1',
+    );
+  });
+
+  it('keeps a session imported while the account load is still in flight', async () => {
+    let resolveLocalSessions!: (sessions: Session[]) => void;
+    storageMocks.getAllSessions.mockImplementationOnce(
+      () => new Promise<Session[]>((resolve) => { resolveLocalSessions = resolve; }),
+    );
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+      startNewSessionToken: 1,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '来个简单的鼓点',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '来个简单的鼓点', timestamp: 1 }],
+      }, { activate: false });
+    });
+
+    // The local load started before the import existed. The in-flight creation
+    // guard must keep it when the account's temporary session is installed.
+    await act(async () => {
+      resolveLocalSessions([]);
+    });
+
+    expect(getHook().sessions.map((session) => session.title))
+      .toContain('来个简单的鼓点');
+    expect(cloud.listSessions).not.toHaveBeenCalled();
+  });
+
+  it('keeps the code revisions of an imported session', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const revision = {
+      id: 'rev-1',
+      beforeCode: '',
+      afterCode: 's("bd")',
+      playbackStatus: 'played' as const,
+      createdAt: 1,
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importSession({
+        title: '来个简单的鼓点',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'assistant', content: '好了', code: 's("bd")', revisionId: 'rev-1', timestamp: 1 }],
+        revisions: [revision],
+      });
+    });
+
+    expect(getHook().currentSession?.revisions).toEqual([revision]);
+    expect(cloud.saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ revisions: [revision] }),
+      'u-1',
+    );
+  });
+
+  it('keeps an imported session locally and retries when the cloud save fails', async () => {
+    const cloudError = new Error('Cloud save failed');
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => { throw cloudError; }),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await expect(getHook().importSession({
+        title: '本机历史',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+      })).resolves.toBeUndefined();
+    });
+
+    expect(getHook().currentSession).toMatchObject({
+      title: '本机历史',
+      code: 's("bd")',
+    });
+    expect(getHook().currentSyncStatus).toBe('retrying');
+  });
+
+  it('propagates an awaited cloud failure so guest import can retain its source', async () => {
+    const cloudError = new Error('Cloud save failed');
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => { throw cloudError; }),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    const imported = {
+      id: '00000000-0000-4000-8000-000000000011',
+      title: '本机历史',
+      code: 's("bd")',
+      messages: [{ id: 'msg-1', role: 'user' as const, content: '本地聊天', timestamp: 1 }],
+    };
+
+    await act(async () => {
+      await expect(getHook().importSession(imported, {
+        activate: false,
+        awaitCloud: true,
+      })).rejects.toBe(cloudError);
+    });
+
+    expect(getHook().sessions).toContainEqual(expect.objectContaining(imported));
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({ id: imported.id }), 'u-1');
+  });
+
+  it('rejects an awaited import when cloud sync is unavailable', async () => {
+    const { root, getHook } = await renderUseSessions({ syncEnabled: false });
+    roots.push(root);
+
+    await act(async () => {
+      await expect(getHook().importSession({
+        id: '00000000-0000-4000-8000-000000000012',
+        title: '本机历史',
+        code: 's("bd")',
+        messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+      }, { activate: false, awaitCloud: true })).rejects.toThrow('cloud sync');
+    });
+  });
+
+  it('rejects an awaited import after the cloud sync has been disposed', async () => {
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const importSession = getHook().importSession;
+    act(() => root.unmount());
+    roots.splice(roots.indexOf(root), 1);
+
+    await expect(importSession({
+      id: '00000000-0000-4000-8000-000000000013',
+      title: '本机历史',
+      code: 's("bd")',
+      messages: [{ id: 'msg-1', role: 'user', content: '本地聊天', timestamp: 1 }],
+    }, { activate: false, awaitCloud: true })).rejects.toThrow('cloud sync');
   });
 
   it('newSession resets the title when reusing an empty current session', async () => {
@@ -236,6 +1397,22 @@ describe('useSessions', () => {
     expect(getHook().currentSession).toEqual(selectedOlder);
   });
 
+  it('loads and migrates stored sessions before reading the current-session pointer', async () => {
+    storageMocks.getAllSessions.mockResolvedValue([
+      makeSession({ id: '00000000-0000-4000-8000-000000000001' }),
+    ]);
+    storageMocks.getCurrentSessionId.mockResolvedValue(
+      '00000000-0000-4000-8000-000000000001',
+    );
+
+    const { root } = await renderUseSessions({ ownerKey: 'guest' });
+    roots.push(root);
+
+    expect(storageMocks.getAllSessions.mock.invocationCallOrder[0]).toBeLessThan(
+      storageMocks.getCurrentSessionId.mock.invocationCallOrder[0],
+    );
+  });
+
   it('reuses a stored greeting-only session on startup instead of stacking another empty one', async () => {
     const storedEmpty = makeSession({
       id: 'stored-empty',
@@ -278,6 +1455,9 @@ describe('useSessions', () => {
     });
     storageMocks.putSession.mockClear();
 
+    act(() => {
+      getHook().setSuggestions(['加入贝斯', '让鼓点更密'], 'stack(s("bd"))');
+    });
     act(() => {
       getHook().setSuggestions(['加入贝斯', '让鼓点更密'], 'stack(s("bd"))');
     });
@@ -327,7 +1507,7 @@ describe('useSessions', () => {
     });
 
     expect(getHook().currentId).toBe('target-session');
-    expect(storageMocks.putCurrentSessionId).toHaveBeenCalledWith('target-session');
+    expect(storageMocks.putCurrentSessionId).toHaveBeenCalledWith('target-session', 'guest');
   });
 
   it('exposes whether session storage is persistent after opening the database', async () => {
@@ -400,6 +1580,144 @@ describe('useSessions', () => {
     expect(getHook().currentSession?.id).toBe(branchId);
     expect(getHook().sessions).toHaveLength(sessionCount);
   });
+
+  it('cloud-saves oddeNova skill creates, updates, and both sides of a conflict branch', async () => {
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'cloud-project',
+      title: 'Cloud imported beat',
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make a cloud beat' }],
+    };
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+
+    await act(async () => {
+      await getHook().importOddeNovaSession(payload);
+    });
+    const importedId = getHook().currentId!;
+    expect(cloud.saveSession).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: importedId,
+      code: payload.code,
+      externalSource: expect.objectContaining({ projectId: 'cloud-project' }),
+    }), 'u-1');
+
+    await act(async () => {
+      await getHook().importOddeNovaSession({ ...payload, code: 'stack(s("sd"))' });
+    });
+    expect(cloud.saveSession).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: importedId,
+      code: 'stack(s("sd"))',
+      externalSource: expect.objectContaining({ projectId: 'cloud-project' }),
+    }), 'u-1');
+
+    act(() => getHook().setCurrentCode('website edit'));
+    cloud.saveSession.mockClear();
+    await act(async () => {
+      await getHook().importOddeNovaSession({ ...payload, code: 'stack(s("hh"))' });
+    });
+
+    expect(cloud.saveSession).toHaveBeenCalledTimes(2);
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
+      id: importedId,
+      code: 'website edit',
+      externalSource: undefined,
+    }), 'u-1');
+    expect(cloud.saveSession).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'stack(s("hh"))',
+      externalSource: expect.objectContaining({ projectId: 'cloud-project' }),
+    }), 'u-1');
+  });
+
+  it.each(['detached', 'branch'] as const)(
+    'keeps local branch state and schedules retry when the %s cloud save fails',
+    async (failedSide) => {
+      const payload: OddeNovaImportPayload = {
+        protocolVersion: 1,
+        source: 'oddenova-strudel-skill',
+        projectId: `partial-${failedSide}`,
+        title: 'Partial cloud branch',
+        code: 'stack(s("bd"))',
+        messages: [{ role: 'user', content: 'Make a beat' }],
+      };
+      const cloud = {
+        listSessions: vi.fn(async () => []),
+        saveSession: vi.fn<(_session: Session, _expectedUserId?: string) => Promise<void>>(
+          async () => undefined,
+        ),
+        deleteSession: vi.fn(async () => undefined),
+      };
+      const { root, getHook } = await renderUseSessions({
+        ownerKey: 'user:u-1',
+        cloud,
+        syncEnabled: true,
+      });
+      roots.push(root);
+
+      await act(async () => {
+        await getHook().importOddeNovaSession(payload);
+      });
+      act(() => getHook().setCurrentCode('website edit'));
+      await act(async () => {
+        await getHook().flushCloudSaves();
+      });
+
+      let releaseOther!: () => void;
+      cloud.saveSession.mockImplementation((session) => {
+        const side = session.externalSource ? 'branch' : 'detached';
+        if (side === failedSide) {
+          return Promise.reject(new Error(`${failedSide} cloud save failed`));
+        }
+        return new Promise<void>((resolve) => {
+          releaseOther = resolve;
+        });
+      });
+      cloud.saveSession.mockClear();
+
+      let settled = false;
+      let importPromise!: Promise<string>;
+      await act(async () => {
+        importPromise = getHook().importOddeNovaSession({
+          ...payload,
+          code: 'stack(s("hh"))',
+        });
+        void importPromise.then(
+          () => { settled = true; },
+          () => { settled = true; },
+        );
+        await Promise.resolve();
+      });
+
+      expect(cloud.saveSession).toHaveBeenCalledTimes(2);
+      expect(settled).toBe(false);
+      expect(getHook().currentSession).toMatchObject({
+        code: 'stack(s("hh"))',
+        externalSource: expect.objectContaining({ projectId: payload.projectId }),
+      });
+
+      await act(async () => {
+        releaseOther();
+        await expect(importPromise).resolves.toBe('branched');
+      });
+      expect(getHook().sessions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'website edit', externalSource: undefined }),
+        expect.objectContaining({
+          code: 'stack(s("hh"))',
+          externalSource: expect.objectContaining({ projectId: payload.projectId }),
+        }),
+      ]));
+    },
+  );
 
   it('rejects a failed imported-session create without changing React state', async () => {
     const payload: OddeNovaImportPayload = {
@@ -548,6 +1866,7 @@ describe('useSessions', () => {
     expect(getHook().currentSession?.revisions).toEqual([referencedRevision]);
     expect(storageMocks.putSession).toHaveBeenLastCalledWith(
       expect.objectContaining({ revisions: [referencedRevision] }),
+      'guest',
     );
   });
 

@@ -1,4 +1,4 @@
-The list below is auto-generated and identical to what the runtime validator (validate tool) checks. Every name inside `s("...")` must appear in this list, or validate will error.
+The list below is auto-generated, is the single authoritative reference for built-in sample names, and matches the built-in samples checked by the runtime validator (validate tool). Custom sample names are allowed only when declared in the current code by an inline literal `samples({...})` registration; do not invent, guess, or use undeclared or dynamically generated sample names.
 
 **Synth oscillators** (used directly in `s("...")`, not sample files):
 sawtooth  sine  square  triangle  supersaw

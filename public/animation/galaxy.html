@@ -4,35 +4,44 @@
     <meta charset="UTF-8">
     <title>SPIRAL — Strudel Live</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; }
+        body { margin: 0; overflow: hidden; background: #0C0C0C; }
+        /* Same disc as the chat input's send button: a 30px circle carrying an
+           18px lucide icon. box-sizing matters — this document has no reset, so
+           the default content-box would put the 1px border outside the 30 and
+           leave the two buttons visibly different sizes. */
         #camBtn {
-            position: absolute; top: 12px; left: 12px; z-index: 10;
-            width: 30px; height: 30px; padding: 0;
+            position: absolute; right: 8px; bottom: 8px; z-index: 10;
+            box-sizing: border-box; width: 30px; height: 30px; padding: 0;
             background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 6px; cursor: pointer; display: flex;
+            border-radius: 50%; cursor: pointer; display: flex;
             align-items: center; justify-content: center;
             transition: background 0.2s, border-color 0.2s;
         }
         #camBtn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
-        #camBtn svg { width: 15px; height: 15px; }
+        #camBtn svg { width: 18px; height: 18px; }
     </style>
 </head>
 <body>
-    <!-- cinematic = orbit path icon, overview = top-down arrow icon -->
+    <!-- The button wears the mode it is currently in: rotate-3d while the
+         camera orbits, arrow-down-to-dot while it sits overhead. Both are
+         lucide, kept on their own 24-unit grid so they carry lucide's
+         proportions rather than being redrawn by hand. -->
     <button id="camBtn" title="切换视角">
-        <svg id="iconCin" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- orbit ring -->
-            <ellipse cx="8" cy="8" rx="6" ry="3.2" stroke="rgba(255,255,255,0.7)" stroke-width="1.1" stroke-dasharray="2.5 1.8"/>
-            <!-- arrowhead on the ring -->
-            <path d="M13.5 7.2 L14.2 8.9 L12.4 8.5" stroke="rgba(255,255,255,0.7)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
-            <!-- center dot -->
-            <circle cx="8" cy="8" r="1.1" fill="rgba(255,255,255,0.7)"/>
+        <svg id="iconCin" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             xmlns="http://www.w3.org/2000/svg">
+            <!-- lucide rotate-3d -->
+            <path d="m15.194 13.707 3.814 1.86-1.86 3.814"/>
+            <path d="M16.47214 7.52786 A 5 10 0 1 0 13 21.79796"/>
+            <path d="M21.79796 11 A 10 5 0 1 0 19 15.57071"/>
         </svg>
-        <svg id="iconOvr" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
-            <!-- outer circle -->
-            <circle cx="8" cy="8" r="5.5" stroke="rgba(255,255,255,0.7)" stroke-width="1.1"/>
-            <!-- down arrow -->
-            <path d="M8 4.5 L8 10.5 M5.5 8.5 L8 11 L10.5 8.5" stroke="rgba(255,255,255,0.7)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+        <svg id="iconOvr" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             xmlns="http://www.w3.org/2000/svg" style="display:none">
+            <!-- lucide arrow-down-to-dot -->
+            <path d="M12 2v14"/>
+            <path d="m19 9-7 7-7-7"/>
+            <circle cx="12" cy="21" r="1"/>
         </svg>
     </button>
 
@@ -130,6 +139,7 @@
             scene    = new THREE.Scene();
             camera   = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setClearColor(0x010101, 1);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
@@ -168,7 +178,13 @@
 
                 const u1 = Math.random(), u2 = Math.random();
                 const skewed = Math.pow((u1 + u2) / 2, 1.6);
-                const radius = 0.5 + skewed * 27.5;
+                // Let the spiral reach almost all the way to the origin. A small
+                // center-biased sample keeps the innermost turns continuous
+                // without adding a separate glowing core.
+                const isCoreSample = Math.random() < 0.008;
+                const radius = isCoreSample
+                    ? 0.02 + Math.pow(Math.random(), 1.6) * 2.8
+                    : 0.02 + skewed * 27.98;
 
                 const spiralAngle  = Math.log(radius + 1) * 7.0;
                 const innerBlend   = Math.pow(Math.min(1.0, radius / 4.5), 1.5);
@@ -201,6 +217,11 @@
                     off = 0.0;
                     finalAngle = randomAngle;
                 }
+
+                // The dedicated core sample stays evenly distributed in angle.
+                // The regular particles still gain spiral structure gradually,
+                // so the arms dissolve into a soft elliptical center without gaps.
+                if (isCoreSample) finalAngle = randomAngle;
 
                 const edgeFade    = Math.max(0.0, (radius - 14.0) / 14.0);
                 const finalRadius = radius + edgeFade * Math.pow(Math.random(), 0.5) * 12.0;
@@ -277,8 +298,10 @@
                         float d = distance(gl_PointCoord, vec2(0.5));
                         if (d > 0.5) discard;
 
-                        float alpha     = pow(1.0 - d * 2.0, 4.0);
-                        float intensity = clamp(vBrightness, 0.5, 0.9);
+                        float alpha         = pow(1.0 - d * 2.0, 4.0);
+                        float baseIntensity = clamp(vBrightness, 0.5, 0.9);
+                        float coreFade      = 1.0 - smoothstep(0.0, 12.0, vRadius);
+                        float intensity     = mix(baseIntensity, 0.28, coreFade);
 
                         vec3 coreColor = vec3(1.0,  0.97, 0.92);
                         vec3 armColor  = vec3(0.65, 0.82, 1.0);
@@ -304,7 +327,7 @@
             const renderScene = new RenderPass(scene, camera);
             bloomPass = new UnrealBloomPass(
                 new THREE.Vector2(window.innerWidth, window.innerHeight),
-                1.8, 0.5, 0.08
+                1.8, 0.5, 0.22
             );
             composer = new EffectComposer(renderer);
             composer.addPass(renderScene);
@@ -408,7 +431,7 @@
             vortex.material.uniforms.uChaos.value = simChaos !== null ? simChaos : chaosLevel;
             vortex.material.uniforms.uScale.value = vpScale;
 
-            bloomPass.strength = 1.1 * Math.max(vpScale, 0.5);
+            bloomPass.strength = 0.65 * Math.max(vpScale, 0.5);
             bloomPass.radius   = 0.5 * Math.min(vpScale, 1.0);
 
             // Apply chaos offset in vertex shader via uniform (position blending)

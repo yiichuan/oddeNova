@@ -22,5 +22,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  // scripts/ is pulled into this program anyway — greeting-font-subset.test.ts
+  // imports the generator — so the generator's ambient module declaration has
+  // to be part of it too.
+  "include": ["src", "scripts/subset-font.d.ts"]
 }

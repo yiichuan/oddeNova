@@ -12,6 +12,13 @@ Prefer goals, principles, examples, and self-review over procedural workflows or
 over-specific rules. Trust the model's reasoning; add hard constraints only when
 they prevent concrete failures or define non-negotiable boundaries.
 
+## Skill usage
+
+When a request is explicit and its implementation scope is clear, proceed directly
+without invoking the brainstorming skill. Use brainstorming only when requirements
+are ambiguous, the work needs substantial feature design, or meaningful design or
+architecture trade-offs require user input.
+
 ## Commands
 
 ```bash
@@ -22,6 +29,7 @@ npm test                 # Vitest, run once (--passWithNoTests)
 npx vitest run <path>    # run a single test file
 npx vitest <pattern>     # watch mode / filter by name
 npx tsc --noEmit -p tsconfig.app.json   # strict type-check only
+npm run previews:animation              # rebuild the appearance-settings animation stills
 ```
 
 Pre-commit (husky + lint-staged) automatically runs `tsc --noEmit`, ESLint on
@@ -40,8 +48,18 @@ npm run eval:report
 ## UI changes
 
 Do not start the dev server or drive a browser to verify UI/frontend changes.
-Type-check, lint, and the test suite are the bar for "done" — the developer
-reviews visual results themselves.
+Scale verification to the risk of the change:
+
+- Pure CSS, color, spacing, typography, copy, or design-token tweaks: do not run
+  the full test suite, full-project lint, type-check, or production build by
+  default. Inspect the diff and optionally run `git diff --check`; the developer
+  reviews visual results.
+- Localized JSX markup or class changes without behavior changes: run only a
+  focused test or lint check when it adds value.
+- Interaction, state, data-flow, shared-component, dependency, or build changes:
+  run targeted tests and the appropriate type/lint checks in proportion to risk.
+- Run full tests and a production build for broad or high-risk changes, before a
+  requested commit/push/release, or when explicitly requested.
 
 ## Architecture
 
