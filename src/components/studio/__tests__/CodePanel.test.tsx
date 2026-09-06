@@ -380,6 +380,41 @@ describe('CodePanel editor focus reporting', () => {
     expect(thumb?.classList.contains('opacity-0')).toBe(true);
   });
 
+  it('keeps the sounding piece on the progress bar until an edit is evaluated', () => {
+    installMatchMedia(false);
+    const playingCode = 'setcps(0.5)\ns("bd sd").mask("<1 0>/16")';
+    const editedCode = 'setcps(0.5)\ns("bd sd hh").mask("<1 0>/8")';
+    const { container, root, rerender } = renderCodePanel({
+      isPlaying: true,
+      activeCode: playingCode,
+      code: playingCode,
+    });
+    roots.push(root);
+
+    const time = () => container.querySelector('[data-testid="code-panel-playback-time"]')?.textContent;
+    expect(time()).toBe('00:00/01:04');
+
+    // Typed into the editor but not evaluated: the transport is still on the
+    // old piece, so its duration is too.
+    rerender({ code: editedCode, isDirty: true });
+    expect(time()).toBe('00:00/01:04');
+
+    // Updated into the running pattern — now it is the sounding piece.
+    rerender({ code: editedCode, activeCode: editedCode, isDirty: false });
+    expect(time()).toBe('00:00/00:32');
+  });
+
+  it('shows the editor buffer duration while nothing is sounding', () => {
+    installMatchMedia(false);
+    const { container, root } = renderCodePanel({
+      code: 'setcps(0.5)\ns("bd sd hh").mask("<1 0>/8")',
+      activeCode: 'setcps(0.5)\ns("bd sd").mask("<1 0>/16")',
+    });
+    roots.push(root);
+
+    expect(container.querySelector('[data-testid="code-panel-playback-time"]')?.textContent).toBe('00:00/00:32');
+  });
+
   it('disables seeking when there is no playable code', () => {
     installMatchMedia(false);
     const { container, root } = renderCodePanel({ code: '' });

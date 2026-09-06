@@ -584,7 +584,7 @@ describe('StrudelService playback seeking', () => {
     expect(setCycle).toHaveBeenCalledWith(5.25);
   });
 
-  it('clears paused state and the resume cycle on stop and code changes', async () => {
+  it('clears paused state on stop and rewinds a paused piece when the code changes', async () => {
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
     vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
     const { StrudelService } = await import('../strudel');
@@ -600,11 +600,59 @@ describe('StrudelService playback seeking', () => {
     expect(mutableService._state.isPaused).toBe(false);
     expect(mutableService.pendingSeekCycle).toBeNull();
 
+    // Paused: the progress bar rewinds to 0:00 on an edit, so the transport
+    // has to be sent back to cycle 0 too — the Cyclist would otherwise resume
+    // from the pre-edit playhead it kept through pause().
     mutableService._state.isPaused = true;
     mutableService.pendingSeekCycle = 3;
     service.setCode('s("bd")');
     expect(mutableService._state.isPaused).toBe(false);
+    expect(mutableService.pendingSeekCycle).toBe(0);
+
+    // Playing: update() swaps the new pattern in at the next cycle boundary,
+    // so the playhead is deliberately left alone.
+    mutableService._state.isPlaying = true;
+    mutableService.pendingSeekCycle = 3;
+    service.setCode('s("hh")');
     expect(mutableService.pendingSeekCycle).toBeNull();
+  });
+
+  it('resumes at cycle 0 when the code is edited while paused', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const setCycle = vi.fn();
+    const evaluate = vi.fn(async () => {});
+    const mutableService = service as unknown as {
+      _isVideoMode: boolean;
+      _state: { isPlaying: boolean };
+      editorInstance: {
+        evaluate: () => Promise<void>;
+        setCode: (code: string) => void;
+        repl: {
+          stop: () => void;
+          scheduler: { now: () => number; pause: () => void; setCycle: (cycle: number) => void };
+        };
+      };
+    };
+    mutableService._isVideoMode = true;
+    mutableService._state.isPlaying = true;
+    mutableService.editorInstance = {
+      evaluate,
+      setCode: vi.fn(),
+      repl: {
+        stop: vi.fn(),
+        scheduler: { now: () => 5.25, pause: vi.fn(), setCycle },
+      },
+    };
+
+    service.pause();
+    service.setCode('s("bd sd")');
+    await service.play();
+
+    expect(setCycle).toHaveBeenCalledWith(0);
+    expect(setCycle).not.toHaveBeenCalledWith(5.25);
   });
 });
 

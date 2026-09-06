@@ -1404,6 +1404,7 @@ export default function App() {
                 onPlay={handlePlay}
                 onPause={strudel.pause}
                 isDirty={strudel.isDirty}
+                activeCode={strudel.activeCode}
                 onUpdate={() => { void handleUpdate(); }}
                 onEditorFocusChange={handleCodeFocusChange}
                 syncStatus={visibleSyncStatus}
@@ -1686,6 +1687,7 @@ export default function App() {
                 onPlay={handlePlay}
                 onPause={strudel.pause}
                 isDirty={strudel.isDirty}
+                activeCode={strudel.activeCode}
                 onUpdate={() => { void handleUpdate(); }}
                 vizEnabled={studioAnimationVisible}
                 vizCollapsed={vizCollapsed}

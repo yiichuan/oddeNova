@@ -17,11 +17,19 @@ type SafariAudioContextState = AudioContextState | 'interrupted';
 
 type StrudelReplState = {
   code?: string;
+  /** The source the sounding pattern was compiled from — the repl's own `activeCode`. */
+  activeCode?: string;
   started?: boolean;
   evalError?: Error | unknown;
   /** The repl's own `code !== activeCode` — an edit the running pattern hasn't heard yet. */
   isDirty?: boolean;
 };
+
+/**
+ * What @strudel/core seeds `code`/`activeCode` with before anything has been
+ * evaluated. Nobody can hear it, so it reads here as "no sounding pattern".
+ */
+const REPL_PLACEHOLDER_CODE = '// LOADING';
 
 /** Just enough of `@strudel/core`'s Pattern to type the methods registered below. */
 interface StrudelPattern {
@@ -73,6 +81,15 @@ export type StrudelState = {
    * the buffer and the playing pattern identical there is nothing to swap.
    */
   isDirty: boolean;
+  /**
+   * The source the sounding pattern was compiled from — Strudel's own
+   * `activeCode`, which only moves when `evaluate()` succeeds. Empty until the
+   * first evaluate. `code` is the editor buffer and runs ahead of this on every
+   * keystroke; anything describing what is *playing* (the progress bar's
+   * duration and playhead) has to read this instead, or an unheard edit would
+   * redraw the timeline of a pattern nobody is listening to.
+   */
+  activeCode: string;
   /**
    * The hued colour latched from the playing piece's own `.color()`, if it set
    * one — null the rest of the time, which is what tells consumers (the
@@ -251,6 +268,7 @@ export class StrudelService {
   private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
     code: '',
+    activeCode: '',
     isPlaying: false,
     isPaused: false,
     error: null,
@@ -497,9 +515,15 @@ export class StrudelService {
           const error = evalError ? getErrorMessage(evalError) : null;
           const nextCode = state.code ?? this._state.code;
           const didCodeChange = nextCode !== this._state.code;
-          if (didCodeChange) this.pendingSeekCycle = null;
+          if (didCodeChange) this.rewindOnCodeChange(state.started ?? false);
+          const replActiveCode = state.activeCode;
+          const nextActiveCode =
+            typeof replActiveCode !== 'string' || replActiveCode === REPL_PLACEHOLDER_CODE
+              ? this._state.activeCode
+              : replActiveCode;
           this.notify({
             code: nextCode,
+            activeCode: nextActiveCode,
             isPlaying: state.started ?? false,
             isPaused: didCodeChange || state.started ? false : this._state.isPaused,
             isDirty: state.isDirty ?? false,
@@ -794,7 +818,7 @@ export class StrudelService {
   setCode = (code: string): void => {
     const didChange = code !== this._state.code;
     if (didChange) {
-      this.pendingSeekCycle = null;
+      this.rewindOnCodeChange(this._state.isPlaying);
       // A different piece arrived; it does not inherit the last one's look.
       this.panelTheme?.reset();
       this.panelCanvas?.clear();
@@ -823,6 +847,24 @@ export class StrudelService {
 
     return applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle);
   };
+
+  /**
+   * A code change rewinds the piece — except while it plays.
+   *
+   * Editing the code clears `isPaused` and drops the progress bar back to
+   * 0:00, so the transport has to agree. It does not on its own: `pause()`
+   * leaves the Cyclist's cycle bookkeeping intact (that is what makes a resume
+   * pick up mid-piece), so a paused edit followed by play would carry on from
+   * the pre-edit playhead while the bar reads zero. Queued as a pending seek
+   * rather than applied here because the scheduler only takes one after
+   * `play()`'s `evaluate()`.
+   *
+   * While playing, the playhead is deliberately kept: `update()` swaps the new
+   * pattern in at the next cycle boundary so an edit lands on the beat.
+   */
+  private rewindOnCodeChange(isStarted: boolean): void {
+    this.pendingSeekCycle = isStarted ? null : 0;
+  }
 
   private applyPendingSeek(): void {
     if (this.pendingSeekCycle === null) return;

@@ -70,6 +70,19 @@ const wantsPodsFor = (selectedItem: PrimaryNavItem, featuredPieceOpen: boolean) 
   selectedItem === 'favorites' || (selectedItem === 'featured' && !featuredPieceOpen)
 );
 
+/* The one page where a whole column is still standing on something. A Featured
+   piece fills the room behind the bar with a lit wash of the cover's own
+   colour, and a bar drawn flat on that reads as a strip cut out of it rather
+   than as a thing in front of it. Every other whole-bar page puts a workspace
+   beside the column instead of under it.
+
+   Read from the page and the piece together: Featured stays mounted with its
+   piece still open behind whatever you moved on to, so the piece alone does not
+   say where you are. */
+const castsAsBarFor = (selectedItem: PrimaryNavItem, featuredPieceOpen: boolean) => (
+  selectedItem === 'featured' && featuredPieceOpen
+);
+
 /* The mark is drawn on the back face of the brand logo and turned into view. */
 const SECTION_MARK_CLASS = 'absolute [backface-visibility:hidden] [transform:rotateY(180deg)]';
 
@@ -166,6 +179,12 @@ const POD_RECOIL = 12;
    above the offset plus the blur of `--shadow-primary-nav`, and in step with
    `--primary-nav-shadow-reach` in index.css, which sizes the same boxes. */
 const SHADOW_REACH = 96;
+/* How long the bar's cast takes to leave. It arrives with no fade at all — the
+   column is already standing on the piece's wash by the page's first frame —
+   and only the way out is worth spending time on. Long enough to cover a split:
+   step back to the collection and the lobes' own lift has come up under it
+   before it is gone, so the column never crosses that journey unlit. */
+const CAST_FADE_MS = SPLIT_MS;
 
 type SettledShape = 'bar' | 'pods';
 type NavShape = SettledShape | 'breaking';
@@ -585,9 +604,11 @@ export default function PrimaryNav({
     spread: makeTrack(wantsPodsFor(selectedItem, featuredPieceOpen) ? 1 : 0),
     unfoldTop: makeTrack(0),
     unfoldBottom: makeTrack(0),
+    cast: makeTrack(castsAsBarFor(selectedItem, featuredPieceOpen) ? 1 : 0),
   });
 
   const wantsPods = wantsPodsFor(selectedItem, featuredPieceOpen);
+  const castsAsBar = castsAsBarFor(selectedItem, featuredPieceOpen);
   /* Exactly the pages that break the column apart: the mark and the split are
      two halves of one statement about where you are. */
   const showingSectionMark = wantsPods;
@@ -690,14 +711,21 @@ export default function PrimaryNav({
     /* Until there is a shape to clip it to, an unclipped border layer would be
        a solid slab of gradient — so it stays hidden until the first paint. */
     edge.style.display = 'block';
-    /* The shadow belongs to the lobes, not to the column. Whole, the bar is a
-       side of the page rather than a thing standing on it, and it is anchored
-       into three of the page's own edges besides — there is nothing there for
-       a shadow to say. So it arrives with the split and leaves with it, on the
-       same value the silhouette is drawn from, which is what keeps it in step
-       with the liquid rather than with a class that lands on the beat before
-       or after. Off the screen entirely at rest, so a bar costs no blur. */
-    const lift = Math.min(spread, 1);
+    /* The shadow belongs to whatever the column is standing on, which is the
+       lobes on most pages and the bar on one. Broken apart, it arrives with the
+       split and leaves with it, on the same value the silhouette is drawn from
+       — which is what keeps it in step with the liquid rather than with a class
+       that lands on the beat before or after. Whole, the bar is usually a side
+       of the page rather than a thing standing on it, anchored into three of
+       the page's own edges besides, and there is nothing there for a shadow to
+       say; on a Featured piece it is standing on the room, and the cast track
+       carries that.
+
+       Taken as one cast overlapping another rather than as the deeper of the
+       two, so a column crossing between them neither dips in the middle nor
+       doubles at the ends. Off the screen entirely at rest, so a bar on a
+       workspace still costs no blur. */
+    const lift = 1 - (1 - Math.min(spread, 1)) * (1 - motion.cast.value);
     shadow.style.display = lift > 0 ? 'block' : 'none';
     shadow.style.opacity = `${lift}`;
     /* The border is the ring between the silhouette and the same silhouette
@@ -729,7 +757,7 @@ export default function PrimaryNav({
       frameRef.current = null;
       const now = performance.now();
       const motion = motionRef.current;
-      const running = [motion.spread, motion.unfoldTop, motion.unfoldBottom]
+      const running = [motion.spread, motion.unfoldTop, motion.unfoldBottom, motion.cast]
         .map((track) => advanceTrack(track, now))
         .some(Boolean);
       paint();
@@ -781,6 +809,25 @@ export default function PrimaryNav({
     startTrack(track, (t) => curve(from + (1 - from) * t), duration);
     runMotion();
   }, [targetShape, runMotion]);
+
+  /* Light the bar's cast the moment it is standing on a piece, and only ever
+     fade it out. A page that puts a lit room behind the column has it lit from
+     the first frame — there is no arrival to animate — but taking it away is a
+     move the column makes, and the shadow follows the column out. */
+  useEffect(() => {
+    const track = motionRef.current.cast;
+    if (castsAsBar) {
+      track.value = 1;
+      track.curve = null;
+      track.duration = 0;
+      paint();
+      return;
+    }
+    if (!track.curve && track.value === 0) return;
+    const from = track.value;
+    startTrack(track, (t) => from * (1 - t), CAST_FADE_MS);
+    runMotion();
+  }, [castsAsBar, paint, runMotion]);
 
   /* Hover unfolding rides on top of wherever the lobe currently sits. */
   useEffect(() => {
@@ -858,7 +905,7 @@ export default function PrimaryNav({
           expanded ? 'w-[188px]' : 'w-[60px]'
         }`}
         data-expanded={expanded}
-        data-featured-detail={featuredPieceOpen || undefined}
+        data-featured-detail={castsAsBar || undefined}
         data-nav-shape={shape}
       >
         <nav aria-label={t('primaryNavigation')} className="relative h-full w-full" ref={navRef}>

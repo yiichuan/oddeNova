@@ -9,6 +9,7 @@ const MAX_HISTORY = 50;
 export function useStrudel() {
   const [state, setState] = useState<StrudelState>(() => ({
     code: '',
+    activeCode: '',
     isPlaying: false,
     isPaused: false,
     error: null,
@@ -135,6 +136,7 @@ export function useStrudel() {
   return {
     code: state.code,
     currentCode: state.code,
+    activeCode: state.activeCode,
     isPlaying: state.isPlaying,
     isPaused: state.isPaused,
     engineReady: state.engineReady,

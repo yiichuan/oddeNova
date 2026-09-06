@@ -63,6 +63,13 @@ interface CodePanelProps {
    */
   isDirty?: boolean;
   /**
+   * The code the sounding pattern was compiled from (`StrudelState.activeCode`)
+   * — unlike `code`, it only moves when an evaluate succeeds. The progress bar
+   * runs off this so an unheard edit leaves the running piece's duration and
+   * playhead alone; both follow once the edit is played or updated in.
+   */
+  activeCode?: string;
+  /**
    * Re-evaluates the edited code into the running transport, without stopping
    * it. Only reachable while that swap would change something.
    */
@@ -233,7 +240,10 @@ function PlaybackProgress({
     return () => window.cancelAnimationFrame(frame);
   }, [code, isPaused, isPlaying, totalSeconds, updateElapsedSeconds]);
 
-  const progress = totalSeconds > 0 ? elapsedSeconds / totalSeconds : 0;
+  // Clamped because a code swap can shorten the loop under a playhead that is
+  // already past the new end: the next frame's modulo brings it back, this
+  // keeps the one render in between from overrunning the track.
+  const progress = totalSeconds > 0 ? Math.min(1, elapsedSeconds / totalSeconds) : 0;
   const elapsedLabel = formatPlaybackTime(elapsedSeconds);
   const totalLabel = formatPlaybackTime(totalSeconds);
   const seekDisabled = totalSeconds <= 0 || loopCycles <= 0;
@@ -338,6 +348,7 @@ export default function CodePanel({
   bpm,
   onMount,
   isDirty = false,
+  activeCode = '',
   onPlay,
   onPause,
   onUpdate,
@@ -544,6 +555,13 @@ export default function CodePanel({
   const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
   // Only a playing piece with an unheard edit has anything to update into.
   const canUpdate = isPlaying && isDirty;
+  // What the transport is on, which is what the progress bar measures. While a
+  // piece sounds that is the last evaluated code, not the editor buffer: typing
+  // must not restretch the duration or move the playhead of a pattern that is
+  // still playing the old bars. With nothing sounding there is no transport to
+  // describe, so the buffer is the piece — its duration is a preview of what
+  // pressing play would start.
+  const timelineCode = (isPlaying || isPaused) && activeCode ? activeCode : code;
 
   return (
     <div ref={panelRef} className="h-full flex flex-col overflow-hidden rounded-region">
@@ -733,9 +751,17 @@ export default function CodePanel({
               </div>
             )}
           </div>
-          {/* Keyed on the code so a new script remounts with a fresh playhead;
-              deliberately not on the play state, so a pause keeps its position. */}
-          <PlaybackProgress key={code} code={code} isPlaying={isPlaying} isPaused={isPaused} accentColor={accentColor} />
+          {/* Not remounted per script: a swap lands on the next cycle boundary
+              with the transport still running, so the playhead carries over
+              rather than snapping to zero under sound that never restarted.
+              The rewind cases — stop, and an edit that resets a paused piece —
+              come through `isPlaying`/`isPaused` instead. */}
+          <PlaybackProgress
+            code={timelineCode}
+            isPlaying={isPlaying}
+            isPaused={isPaused}
+            accentColor={accentColor}
+          />
 
           <div
             data-testid="code-panel-right-actions"
