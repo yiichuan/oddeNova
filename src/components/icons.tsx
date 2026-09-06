@@ -29,6 +29,7 @@ import {
   VolumeX,
   Maximize2,
   Minimize2,
+  User,
 } from 'lucide-react';
 
 interface IconProps {
@@ -120,6 +121,9 @@ export const PlusIcon = ({ size = 16, className }: IconProps) => <Plus size={siz
 export const MessageCirclePlusIcon = ({ size = 16, className }: IconProps) => <MessageCirclePlus size={size} className={className} />;
 export const SparkleIcon = ({ size = 16, className }: IconProps) => <Sparkles size={size} className={className} />;
 export const SettingsIcon = ({ size = 16, className }: IconProps) => <Settings size={size} className={className} />;
+// The same face the desktop nav's account row wears, so the account is one
+// mark across both layouts.
+export const UserIcon = ({ size = 16, className }: IconProps) => <User size={size} className={className} />;
 export const MenuIcon = ({ size = 16, className }: IconProps) => <Menu size={size} className={className} />;
 export const BookOpenIcon = ({ size = 16, className }: IconProps) => <BookOpen size={size} className={className} />;
 export const ArrowUpIcon = ({ size = 16, className }: IconProps) => <ArrowUp size={size} className={className} />;

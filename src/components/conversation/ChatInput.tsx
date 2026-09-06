@@ -234,8 +234,14 @@ export default function ChatInput({
       {/* Card: textarea on top, footer (hint + send button) below it in normal
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
+      {/* The square top is a joint, not a style: in the studio the composer is
+          the foot of the sidebar and butts straight up against the stream
+          above it, so rounding there would open a gap in a panel that is meant
+          to read as one piece. On mobile it is a card of its own, standing off
+          the rule the transport rides, and takes the radius on all four
+          corners. The hairline ring inherits it (.chat-input-outline::before). */}
       <div
-        className={`chat-input-surface chat-input-outline rounded-t-none rounded-b-region pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed' : ''}`}
+        className={`chat-input-surface chat-input-outline ${isMobile ? 'rounded-region' : 'rounded-t-none rounded-b-region'} pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed' : ''}`}
       >
         {/* The fade of the waiting state is taken on the card's contents, not
             on the card. Held on the card it also took the hairline with it,

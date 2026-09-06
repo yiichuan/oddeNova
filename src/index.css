@@ -2158,8 +2158,11 @@ html[data-theme='light'] .history-search-field {
 
 /* Narrow the gutter below the mobile breakpoint (matches useIsMobile, i.e. the
    widths where the editor lives in the drawer): the desktop 72px costs too much
-   of the line. 32px of content still fits a 3-digit number at the 16px above. */
-@media (max-width: 768px) {
+   of the line. 32px of content still fits a 3-digit number at the 16px above.
+   Kept in step with MOBILE_BREAKPOINT in useIsMobile.ts by hand — this is the
+   same threshold stated twice, once where JS can read it and once where CSS
+   can. */
+@media (max-width: 460px) {
   .cm-editor {
     --code-editor-gutter-width: 44px;
   }
@@ -2221,6 +2224,19 @@ html[data-theme='light'] .qr-plate {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* The two panels the mobile top bar drops down — history on the left, the
+   overflow menu on the right. One frame, stated once: they open from the same
+   row and often one straight after the other, so any difference between their
+   edges reads as a difference in kind rather than in what they hold. The page
+   ground rather than the popover surface, so neither has to be told apart from
+   the page it covers by its fill; what raises them is the hairline and their
+   shadow. The border is half a pixel because on the screens this layout is for
+   a whole one reads as a drawn line rather than as an edge. */
+.mobile-dropdown-panel {
+  background: var(--color-bg-primary);
+  border: 0.5px solid var(--color-border);
+}
+
 .mobile-menu-item {
   display: flex;
   min-height: 48px;
@@ -2228,7 +2244,12 @@ html[data-theme='light'] .qr-plate {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-radius: 14px;
+  /* The menu's own corner less its 8px padding — a row's rounding has to be
+     the outer radius minus the gap it stands in, or the hover plate curves
+     away from the frame it is nested in instead of running parallel to it.
+     The menu is at --radius-region (6px), so this is the concentric value for
+     it rather than a second radius of its own. */
+  border-radius: 4px;
   padding: 0 14px;
   font-size: 16px;
   line-height: 1;
@@ -2746,11 +2767,17 @@ html[data-theme='light'] .conversation-code-bar {
 
 /* The rollback key hangs off the corner of a user bubble — over the stream,
    not over the page — so on paper the page's own #E3E3E5 read as a hole
-   punched in the conversation surface. It takes that surface instead. Scoped
-   by re-declaring the token on the button, the way the code bar above does,
-   so border, text and hover keep coming from the shared set. */
+   punched in the conversation surface. It takes that surface instead, and only
+   its fill: border, text and hover still come from the shared set.
+
+   Painted directly rather than by re-declaring `--color-bg-primary` on the
+   button, the way the code bar above does. On mobile the stream *is* the page
+   and the wrapper there points `--color-conversation-surface` back at
+   `--color-bg-primary`; a button that then defined `--color-bg-primary` from
+   the surface would close that loop, and a cyclic custom property drops both
+   values rather than settling on the one they agree about. */
 html[data-theme='light'] .conversation-rollback-button {
-  --color-bg-primary: var(--color-conversation-surface);
+  background: var(--color-conversation-surface);
 }
 
 html[data-theme='light'] canvas[id*="_widget__scope_"],

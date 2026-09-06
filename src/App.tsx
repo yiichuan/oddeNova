@@ -1350,7 +1350,20 @@ export default function App() {
         {/* mb-3 keeps the stream from clipping flush against the rule below —
             this is where messages get cut off as they scroll, so butting it
             straight up to the line read as cramped. */}
-        <div className="flex-1 min-h-0 overflow-hidden mb-5">
+        {/* The stream's own surface, re-declared to the page's. On desktop the
+            conversation is cut into a flat panel and everything that has to
+            paint over it — the end fades, the sticky reasoning header's band —
+            fades out to `--color-conversation-surface`, which is that panel's
+            fill. Here there is no panel: the stream stands directly on the
+            page, so the same token has to name the page's own ground or those
+            bands are a slab of the wrong colour laid across the ends of the
+            reading. Scoped by re-declaring the token on the wrapper, the way
+            the code bar and the rollback key do, so the studio's panel keeps
+            its fill everywhere else. */}
+        <div
+          className="flex-1 min-h-0 overflow-hidden mb-5"
+          style={{ ['--color-conversation-surface' as string]: 'var(--color-bg-primary)' }}
+        >
           <ConversationView
             key={sessions.currentId ?? 'default'}
             messages={messages}
@@ -1488,13 +1501,12 @@ export default function App() {
           <>
             <div className="fixed inset-0 z-30" onClick={() => setHistoryOpen(false)} />
             <div
-              className="fixed z-40 bg-bg-primary overflow-hidden flex flex-col shadow-lg"
+              className="mobile-dropdown-panel fixed z-40 rounded-region overflow-hidden flex flex-col shadow-lg"
               style={{
                 top: 'calc(max(12px, env(safe-area-inset-top)) + 44px)',
                 left: '12px',
                 width: '200px',
                 maxHeight: '40dvh',
-                border: '0.5px solid var(--color-border)',
                 // The history search bar sticks to the top of this dropdown,
                 // so it has to be drawn on the dropdown's own ground.
                 ['--history-search-bg' as string]: 'var(--color-bg-primary)',

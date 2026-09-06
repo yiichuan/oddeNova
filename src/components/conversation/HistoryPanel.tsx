@@ -236,11 +236,21 @@ export default function HistoryPanel({
                   }`}
                   data-session-keeping={keeping || undefined}
                 >
+                  {/* Only the selected row carries a fill. An unselected one
+                      used to paint `bg-conversation-surface`, which in the
+                      sidebar overlay is the panel's own ground and so was
+                      never visible — but the top-bar dropdown stands on the
+                      page ground, and there the same fill drew a rounded
+                      plate under every row and left the selected one with
+                      nothing to stand out against. Nothing scrolls under
+                      these rows (the search band above is sticky and opaque
+                      in the host's ground, see --history-search-bg), so they
+                      have no reason to be opaque at all. */}
                   <div
                     className={`group flex items-stretch gap-2 rounded-[4px] border px-2 cursor-pointer transition-colors ${
                       active
                         ? 'border-transparent bg-[var(--color-selected-item-bg)] text-on-accent'
-                        : 'border-transparent bg-conversation-surface text-text-secondary hover:text-text-primary'
+                        : 'border-transparent text-text-secondary hover:text-text-primary'
                     }`}
                     onClick={() => onSwitch(s.id)}
                   >

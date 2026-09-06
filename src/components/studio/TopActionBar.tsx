@@ -4,7 +4,7 @@ import { uploadShare } from '../../services/share';
 import { shareUrl } from '../../services/share-target';
 import { trackShareCompleted, type ShareMethod } from '../../lib/analytics';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon, SparkleIcon } from '../icons';
+import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon, SparkleIcon, UserIcon } from '../icons';
 import type { Session } from '../../hooks/useSessions';
 import type { ChatMessage } from '../../hooks/useChat';
 import { zh, t } from '../../lib/i18n';
@@ -620,7 +620,7 @@ export default function TopActionBar({
             <div className="fixed inset-0 z-30 bg-[var(--color-overlay-backdrop)] backdrop-blur-[6px]" onClick={() => setMenuOpen(false)} />
             <div
               role="menu"
-              className="fixed right-3 z-40 w-[min(244px,calc(100vw-24px))] rounded-[18px] border border-border bg-popover-surface/95 p-2 text-text-primary shadow-menu-overlay backdrop-blur-xl"
+              className="mobile-dropdown-panel fixed right-3 z-40 w-[min(244px,calc(100vw-24px))] rounded-region p-2 text-text-primary shadow-menu-overlay"
               style={{ top: 'calc(max(12px, env(safe-area-inset-top)) + 44px)' }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -631,7 +631,7 @@ export default function TopActionBar({
                 className="mobile-menu-item"
               >
                 <span>{accountLabel}</span>
-                <SettingsIcon size={19} />
+                <UserIcon size={19} />
               </button>
               <button
                 type="button"
