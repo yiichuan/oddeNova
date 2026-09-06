@@ -14,6 +14,11 @@ import {
 } from '../lib/session-storage';
 import { t } from '../lib/i18n';
 import { pickGreeting } from '../lib/greetings';
+import {
+  hasSeededThemeSong,
+  markThemeSongSeeded,
+  themeSongCode,
+} from '../lib/theme-song';
 import { hashImportedContent, type OddeNovaImportPayload } from '../lib/oddenova-import';
 import {
   createSessionCloudSync,
@@ -256,6 +261,38 @@ function makeEmptySession(): Session {
     title: t('newSessionTitle'),
     messages: [makeGreetingMessage()],
     code: '',
+    inputMode: 'normal',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * The session a first-time visitor lands in: oddeNova's own theme song, already
+ * written into the code panel.
+ *
+ * An empty editor is the hardest thing to answer — the app can do a great deal
+ * and the blank page says none of it. A finished piece says it in one press of
+ * play, and it is a real session from the first moment: playable, editable, and
+ * the visitor's to take apart.
+ *
+ * It carries code, so `isEffectivelyEmpty` never matches it and "New session"
+ * leaves it standing in the history rather than recycling it.
+ */
+function makeThemeSongSession(): Session {
+  return {
+    id: newSessionId(),
+    title: t('themeSongTitle'),
+    // An opening line rather than a random greeting, and `isGreeting` — which
+    // is what keeps it out of the LLM history and out of retry/branch.
+    messages: [{
+      id: newMessageId(),
+      role: 'assistant',
+      content: t('themeSongIntro'),
+      timestamp: Date.now(),
+      isGreeting: true,
+    }],
+    code: themeSongCode(),
     inputMode: 'normal',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -598,6 +635,35 @@ export function useSessions(options: UseSessionsOptions = {}) {
         }
 
       }
+      // The theme song goes in on the browser's first sight of it, and the
+      // judge of that is the flag alone — not an empty history. Keying it to an
+      // empty history was the bug: everyone already using the app has rows
+      // here, so nobody but a brand new visitor would ever have been given it.
+      //
+      // Guest rows only. The account pass treats the cloud as authoritative, so
+      // a row written there would either need to be uploaded — one copy per
+      // browser, since the flag is local and the account is not — or sit
+      // unsynced. Instead this lands in the guest namespace, and the existing
+      // "import your guest history" prompt carries it up on sign-in: it holds
+      // code, which is what `collectImportableGuestSessions` looks for.
+      //
+      // The mark goes down before the first await, so a double-invoked effect
+      // cannot seed twice.
+      if (!isAccountOwner && !hasSeededThemeSong()) {
+        markThemeSongSeeded();
+        // Nothing stored yet means a genuinely new visitor: they open on the
+        // theme song. Anyone else opens where they left off and finds it at the
+        // top of the history instead — arriving to a piece you did not write,
+        // in place of the work you left, reads as having lost the work.
+        const isFirstEntry = loaded.length === 0;
+        const themeSession = makeThemeSongSession();
+        await Promise.all([
+          dbPutSession(themeSession, ownerKey),
+          ...(isFirstEntry ? [dbPutCurrentSessionId(themeSession.id, ownerKey)] : []),
+        ]);
+        loaded = [themeSession, ...loaded];
+      }
+
       if (cancelled) return;
       const tracked = createdDuringLoadRef.current;
       persistedSessionIdsRef.current = new Set([
@@ -672,6 +738,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
         return;
       }
 
+      // Reached only once the theme song has been seeded already: the seed
+      // above puts a session into `loaded`, so an empty history here means this
+      // browser has had its turn.
       const fresh = makeEmptySession();
       await Promise.all([
         dbPutSession(fresh, ownerKey),

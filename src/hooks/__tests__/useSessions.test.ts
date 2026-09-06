@@ -19,6 +19,7 @@ import {
   useSessions,
 } from '../useSessions';
 import type { Session } from '../useSessions';
+import { THEME_SONG_SEEDED_KEY, themeSongCode } from '../../lib/theme-song';
 
 const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
@@ -136,6 +137,11 @@ describe('useSessions', () => {
       syncIds: new Set(),
       deleteIds: new Set(),
     });
+    // Every test below but the two first-entry ones is about a visitor who has
+    // been here before, and an empty history is how they say so. Left unset,
+    // the first of them to load would be handed the theme song and the rest
+    // would not, which is the sort of order dependence that makes a suite lie.
+    localStorage.setItem(THEME_SONG_SEEDED_KEY, '1');
   });
 
   afterEach(() => {
@@ -145,6 +151,79 @@ describe('useSessions', () => {
     document.body.innerHTML = '';
     vi.clearAllMocks();
     vi.useRealTimers();
+  });
+
+  it('opens a first entry on the theme song rather than a blank editor', async () => {
+    localStorage.removeItem(THEME_SONG_SEEDED_KEY);
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const [seeded] = getHook().sessions;
+    expect(getHook().sessions).toHaveLength(1);
+    expect(seeded.title).toBe(t('themeSongTitle'));
+    expect(seeded.code).toBe(themeSongCode());
+    expect(getHook().currentId).toBe(seeded.id);
+    // It holds code, so it is a real session: "New session" stacks a blank one
+    // on top of it instead of recycling it out of the history.
+    act(() => getHook().newSession());
+    expect(getHook().sessions.map((session) => session.id)).toContain(seeded.id);
+  });
+
+  it('gives the theme song to a visitor who was already using the app', async () => {
+    // The case a version launch is actually made of: rows already in storage.
+    // Keyed to an empty history, this visitor would never see the piece.
+    localStorage.removeItem(THEME_SONG_SEEDED_KEY);
+    const existing = makeSession({ id: 's-old', title: '我的曲子', code: 's("bd")' });
+    storageMocks.getAllSessions.mockResolvedValue([existing]);
+    storageMocks.getCurrentSessionId.mockResolvedValue('s-old');
+
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    const [first, ...rest] = getHook().sessions;
+    expect(first.code).toBe(themeSongCode());
+    expect(rest.map((session) => session.id)).toEqual(['s-old']);
+    // Their own work is still what opens: finding someone else's piece in the
+    // editor in place of yours reads as having lost it.
+    expect(getHook().currentId).toBe('s-old');
+    // And the seed is a real stored row, not a list-only decoration.
+    expect(storageMocks.putSession).toHaveBeenCalledWith(
+      expect.objectContaining({ code: themeSongCode() }),
+      'guest',
+    );
+  });
+
+  it('leaves an account load alone, so nothing unsynced lands in the cloud list', async () => {
+    localStorage.removeItem(THEME_SONG_SEEDED_KEY);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      syncEnabled: true,
+      cloud,
+    });
+    roots.push(root);
+
+    expect(getHook().sessions.every((session) => session.code !== themeSongCode())).toBe(true);
+    // Untouched, so the guest pass still gets its turn — auth resolves after
+    // the first paint, and that pass is where the seed belongs.
+    expect(localStorage.getItem(THEME_SONG_SEEDED_KEY)).toBeNull();
+  });
+
+  it('seeds the theme song once, so deleting it is final', async () => {
+    localStorage.removeItem(THEME_SONG_SEEDED_KEY);
+    const first = await renderUseSessions();
+    roots.push(first.root);
+    expect(first.getHook().sessions[0].code).toBe(themeSongCode());
+
+    // A later visit that again finds nothing stored — the visitor deleted it.
+    const second = await renderUseSessions();
+    roots.push(second.root);
+    expect(second.getHook().sessions[0].code).toBe('');
+    expect(second.getHook().sessions[0].title).toBe(t('newSessionTitle'));
   });
 
   it('uses UUIDs for browser-created sessions', async () => {

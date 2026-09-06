@@ -9,3 +9,12 @@ declare module '@strudel/tonal';
 declare module '@strudel/webaudio';
 declare module '@strudel/transpiler';
 declare module 'fake-indexeddb/auto';
+
+/**
+ * Vite's raw-text import. Used to carry the theme-song scripts in from
+ * `themes/` without a second copy of them living in `src/`.
+ */
+declare module '*?raw' {
+  const content: string;
+  export default content;
+}
