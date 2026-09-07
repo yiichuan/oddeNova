@@ -279,6 +279,8 @@
    hair under where they sat on paper because the turn cost that surface two
    levels of lightness. */
 html[data-theme='light'] {
+  --primary-nav-fill: #EBEBF0;
+  --primary-nav-edge-fill: var(--color-border);
   --color-bg-primary: #E3E3E5;
   --color-bg-secondary: #E1E1E8;
   --color-bg-tertiary: #D8D8E1;
@@ -542,20 +544,31 @@ body {
    The base fill has to stay translucent: `backdrop-filter` only shows through
    whatever the element's own background lets through, so a solid layer under
    the gradient would blur a backdrop nobody can see. */
-.primary-nav-glass {
-  --primary-nav-glow-angle: 115deg;
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-region);
-  background:
+:root {
+  --primary-nav-fill:
     linear-gradient(
-      var(--primary-nav-glow-angle),
+      var(--primary-nav-glow-angle, 115deg),
       rgba(78, 78, 78, 0.5) -10%,
       rgba(36, 36, 36, 0.22) 40%,
       rgba(36, 36, 36, 0.22) 75%,
       rgba(78, 78, 78, 0.5) 120%
     ),
     rgba(13, 13, 13, 0.55);
+  --primary-nav-edge-fill: linear-gradient(
+    var(--primary-nav-glow-angle, 115deg),
+    rgba(64, 64, 64, 0.5) 0%,
+    rgba(58, 58, 58, 0.4) 35%,
+    rgba(58, 58, 58, 0.4) 70%,
+    rgba(74, 74, 74, 0.5) 110%
+  );
+}
+
+.primary-nav-glass {
+  --primary-nav-glow-angle: 115deg;
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-region);
+  background: var(--primary-nav-fill);
   backdrop-filter: blur(26px) saturate(140%);
   -webkit-backdrop-filter: blur(26px) saturate(140%);
   pointer-events: none;
@@ -568,14 +581,37 @@ body {
   display: none;
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    var(--primary-nav-glow-angle),
-    rgba(64, 64, 64, 0.5) 0%,
-    rgba(58, 58, 58, 0.4) 35%,
-    rgba(58, 58, 58, 0.4) 70%,
-    rgba(74, 74, 74, 0.5) 110%
-  );
+  background: var(--primary-nav-edge-fill);
   pointer-events: none;
+}
+
+/* Artwork that has not arrived yet wears the same material as PrimaryNav.
+   The border is a masked fill rather than a CSS border so the dark room keeps
+   the nav's directional edge gradient exactly, while paper resolves both to
+   its flat panel and hairline colours below. */
+.featured-cover-placeholder {
+  --primary-nav-glow-angle: 115deg;
+  position: relative;
+  border-radius: inherit;
+  background: var(--primary-nav-fill);
+}
+
+.featured-cover-placeholder::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--primary-nav-edge-fill);
+  content: '';
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 
 /* Denser when expanded — there are labels to read across the whole column —
@@ -2533,7 +2569,6 @@ html[data-theme='light'] .chat-input-surface {
 /* The nav column is the composer's sibling and gets the same flat fill, so the
    two raised panels on the page are literally the same colour. */
 html[data-theme='light'] .primary-nav-glass {
-  background: #EBEBF0;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -2574,7 +2609,7 @@ html[data-theme='light'] .code-panel-controls::before {
 }
 
 html[data-theme='light'] .primary-nav-edge {
-  background: var(--color-border);
+  background: var(--primary-nav-edge-fill);
 }
 
 /* The thinking flash was drawn to be a light source in a dark room: near-white

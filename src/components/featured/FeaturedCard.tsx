@@ -118,7 +118,7 @@ export default function FeaturedCard({
         >
           <FeaturedCover
             piece={cover}
-            className="absolute inset-0 size-full"
+            className="absolute inset-0 size-full rounded-[2px]"
             flightRole="carousel"
           />
 

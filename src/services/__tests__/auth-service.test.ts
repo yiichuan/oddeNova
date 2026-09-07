@@ -45,7 +45,7 @@ describe('Google authentication service', () => {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/compose?demo=true`,
-        scopes: 'openid email profile',
+        scopes: 'openid',
       },
     });
     expect(sessionStorage.getItem('oddenova_google_oauth_pending_at')).not.toBeNull();

@@ -11,7 +11,7 @@ stack(
     .s("gm_pad_warm")
     .adsr([0.35, 0.45, 0.42, 0.65])
     .lpf(sine.range(900, 1800).slow(16))
-    .gain(0.065)
+    .gain(0.2)
     .room(0.42)
     .pan(sine.range(0.35, 0.65).slow(11)),
 
@@ -23,7 +23,7 @@ stack(
     .penv(18)
     .pdecay(0.045)
     .adsr([0.002, 0.16, 0])
-    .gain("0.42 0.32 0.38 0.3")
+    .gain("1.3 0.96 1.1 0.9")
     .mask("<0@4 1@8 0@20>"),
 
   /* @layer earth */
@@ -35,7 +35,7 @@ stack(
     .s("triangle")
     .adsr([0.012, 0.25, 0.15, 0.18])
     .lpf(380)
-    .gain("<0.26@12 0.12@20>")
+    .gain("<0.78@12 0.36@20>")
     .mask("<0@4 1@9 0@19>"),
 
   /* @layer grasses */
@@ -45,7 +45,7 @@ stack(
     .adsr([0.001, 0.035, 0])
     .hpf(6500)
     .lpf(11000)
-    .gain("0.045 0.07 0.04 0.055")
+    .gain("0.14 0.21 0.12 0.17")
     .pan("0.3 0.7 0.4 0.6")
     .mask("<0@6 1@6 0@20>"),
 
@@ -56,7 +56,7 @@ stack(
     .adsr([0.004, 0.12, 0])
     .hpf(1100)
     .lpf(4200)
-    .gain(0.09)
+    .gain(0.27)
     .mask("<0@8 1@4 0@20>"),
 
   /* @layer walk_fill */
@@ -67,7 +67,7 @@ stack(
     .bank("AkaiMPC60")
     .adsr([0.003, 0.07, 0])
     .lpf(4000)
-    .gain("0 0 0 [0.07 0.1 0.14 0.19]")
+    .gain("0 0 0 [0.21 0.3 0.42 0.57]")
     .pan("0.5 0.5 0.5 [0.42 0.5 0.58 0.66]")
     .mask("<0@11 1 0@20>"),
 
@@ -78,7 +78,7 @@ stack(
   s("<[bd ~ ~ [~ bd] ~ bd ~ ~] [bd ~ ~ bd ~ ~ [bd ~] ~] [bd ~ ~ [~ bd] ~ bd ~ [~ bd]] [bd ~ ~ bd ~ [~ bd] ~ ~]>")
     .bank("AkaiMPC60")
     .lpf(2400)
-    .gain("<[0.44 0.31 0.38 0.3]!23 [0.3 0.21 0.26 0.2]!9>")
+    .gain("<[1.3 0.93 1.1 0.9]!23 [0.9 0.63 0.78 0.6]!9>")
     .mask("<0@12 1@12 0@8>"),
 
   /* @layer running_bass */
@@ -90,7 +90,7 @@ stack(
     .s("gm_electric_bass_finger")
     .adsr([0.008, 0.16, 0.15, 0.09])
     .lpf(850)
-    .gain(0.24)
+    .gain(0.72)
     .mask("<0@12 1@12 0@8>"),
 
   /* @layer chase_sub */
@@ -104,7 +104,7 @@ stack(
     .s("sine")
     .adsr([0.04, 0.3, 0.55, 0.4])
     .release("<0.4@24 2.2 0.4@7>")
-    .gain("<0.18@24 0.12@8>")
+    .gain("<0.54@24 0.36@8>")
     .mask("<0@12 1@13 0@7>"),
 
   /* @layer rushing_grasses */
@@ -115,7 +115,7 @@ stack(
     .bank("AkaiMPC60")
     .adsr([0.003, 0.035, 0])
     .lpf(9500)
-    .gain("<[0.095 0.05 0.072 0.042]!22 [0.062 0.033 0.047 0.027] [0.035 0.019 0.026 0.015]!9>")
+    .gain("<[0.29 0.15 0.22 0.13]!22 [0.19 0.099 0.14 0.081] [0.11 0.057 0.078 0.045]!9>")
     .pan("0.38 0.6 0.44 0.64")
     .mask("<0@12 1@12 0@8>"),
 
@@ -127,7 +127,7 @@ stack(
     .bank("AkaiMPC60")
     .adsr([0.003, 0.09, 0])
     .lpf(4300)
-    .gain("<[0.15 0.08 0.13 0.07]!23 [0.09 0.048 0.078 0.042]!9>")
+    .gain("<[0.45 0.24 0.39 0.21]!23 [0.27 0.14 0.23 0.13]!9>")
     .mask("<0@12 1@12 0@8>"),
 
   /* @layer swell */
@@ -143,13 +143,13 @@ stack(
     .lpenv(4)
     .lpattack(2.45)
     .lpdecay(0.06)
-    .gain(0.1)
+    .gain(0.3)
     .room(0.5)
     .mask("<0@11 1 0@20>"),
 
   /* @layer chase_landing */
   // The soft impact of the chase landing. A low-passed white-noise tail
-  // instead of a cymbal, held at 0.09 so it never covers the drums; no delay,
+  // instead of a cymbal, held at 0.27 so it never covers the drums; no delay,
   // reverb only.
   // Once only, on cycle 13.
   s("white")
@@ -157,7 +157,7 @@ stack(
     .hpf(300)
     .lpf(2600)
     .room(0.85)
-    .gain(0.09)
+    .gain(0.27)
     .mask("<0@12 1 0@19>"),
 
   /* @layer wandering_light */
@@ -168,7 +168,7 @@ stack(
     .s("triangle")
     .adsr([0.008, 0.15, 0])
     .lpf(sine.range(1200, 3800).slow(8))
-    .gain("<0.095@12 0.06@12 0.08@8>")
+    .gain("<0.29@12 0.18@12 0.24@8>")
     .delay(0.42)
     .room(0.5)
     .pan(sine.range(0.15, 0.85).slow(5))
@@ -181,7 +181,7 @@ stack(
     .fast(2)
     .s("gm_epiano1")
     .adsr([0.025, 0.35, 0.25, 0.9])
-    .gain(0.19)
+    .gain(0.57)
     .lpf(2400)
     .delay(0.32)
     .room(0.75)
@@ -199,7 +199,7 @@ stack(
     .delay(0.26)
     .room(0.38)
     .pan(0.43)
-    .gain("<[0.25 0.19 0.22 0.17]!24 [0.1 0.08 0.09 0.07]!8>")
+    .gain("<[0.75 0.57 0.66 0.51]!24 [0.3 0.24 0.27 0.21]!8>")
     .mask("<0@12 1@13 0@7>"),
 
   /* @layer messenger_reply */
@@ -213,7 +213,7 @@ stack(
     .delay(0.24)
     .room(0.3)
     .pan(0.65)
-    .gain("0.16 0.12 0.14 0.1")
+    .gain("0.48 0.36 0.42 0.3")
     .mask("<0@18 1@6 0@8>"),
 
   /* @layer distant_stars */
@@ -225,7 +225,7 @@ stack(
   note("<d6 ~ a5 ~ e6 ~ b5 ~>")
     .s("sine")
     .adsr([0.02, 0.5, 0.12, 1.8])
-    .gain(0.085)
+    .gain(0.26)
     .room(0.9)
     .orbit(2)
     .delay(0.5)
@@ -240,7 +240,7 @@ stack(
     .adsr([2, 1, 0.4, 2])
     .hpf(650)
     .lpf(sine.range(900, 2400).slow(13))
-    .gain(0.035)
+    .gain(0.11)
     .room(0.8)
     .pan(sine.range(0.2, 0.8).slow(21))
 )
