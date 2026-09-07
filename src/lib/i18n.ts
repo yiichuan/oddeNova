@@ -137,7 +137,11 @@ const S: Record<string, readonly [string, string]> = {
   hidePassword: ['隐藏密码', 'Hide password'],
 
   // First-entry welcome
-  welcomeTitle:             ['oddeNova：欢迎！', 'oddeNova: Welcome!'],
+  // The gap before the wand is two non-breaking spaces, written as escapes
+  // because both are invisible in source. Ordinary spaces would not do: a
+  // run of them collapses to one in HTML, so the wider gap simply would not
+  // render — and a breakable one lets the emoji wrap onto a line of its own.
+  welcomeTitle:             ['即刻开始，vibe 一首你自己的单曲\u00A0\u00A0🪄', 'Start now — vibe your own music\u00A0\u00A0🪄'],
   welcomeOr:                ['或者', 'or'],
   welcomeContinueWithEmail: ['使用邮箱继续', 'Continue with email'],
   welcomeCreateAccount:     ['创建账户', 'Create account'],

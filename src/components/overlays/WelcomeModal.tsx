@@ -110,7 +110,7 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
               <XIcon size={22} />
             </button>
           </div>
-          <h2 className="mb-6 text-center text-xl font-semibold text-text-primary">
+          <h2 className="mt-3 mb-6 text-center text-lg font-semibold text-text-primary">
             {t('welcomeTitle')}
           </h2>
 

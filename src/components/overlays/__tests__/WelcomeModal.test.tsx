@@ -85,7 +85,7 @@ describe('WelcomeModal', () => {
     const { container, root } = renderModal();
     roots.push(root);
 
-    expect(container.textContent).toContain('oddeNova: Welcome!');
+    expect(container.textContent).toContain('Start now — vibe your own music\u00A0\u00A0🪄');
     expect(findButton(container, 'Continue with Google')).toBeDefined();
     expect(findButton(container, 'Continue with email')).toBeDefined();
     expect(inputs(container)).toHaveLength(1);
