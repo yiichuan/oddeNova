@@ -1,4 +1,5 @@
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
+import { Disc3 } from 'lucide-react';
 import type { FeaturedPiece } from '../../lib/featured-pieces';
 
 /**
@@ -39,20 +40,44 @@ interface FeaturedCoverProps {
  * announcing it again would only make a screen reader say the name twice.
  */
 export function FeaturedCover({ piece, className = '', flightRole }: FeaturedCoverProps) {
+  // The URL rather than a boolean is the state: the player bar reuses this
+  // component as it moves between pieces, and a newly selected cover must put
+  // its placeholder back even if the previous image had already loaded.
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+
   if (piece.coverUrl) {
+    const loaded = loadedUrl === piece.coverUrl;
     return (
-      <img
-        src={piece.coverUrl}
-        alt=""
+      <span
         aria-hidden="true"
-        loading="lazy"
-        // Native image dragging would otherwise start an HTML5 drag — a ghost
-        // of the artwork trailing the cursor — on top of whatever gesture the
-        // surface underneath is already running.
-        draggable={false}
         data-featured-cover={flightRole}
-        className={`object-cover ${className}`}
-      />
+        className={`grid overflow-hidden ${className}`}
+      >
+        <span
+          data-featured-cover-placeholder
+          className={`featured-cover-placeholder col-start-1 row-start-1 grid size-full place-items-center text-icon-idle transition-opacity duration-200 motion-reduce:transition-none ${
+            loaded ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
+          <Disc3 size="24%" strokeWidth={1.25} aria-hidden="true" />
+        </span>
+        <img
+          src={piece.coverUrl}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          // Native image dragging would otherwise start an HTML5 drag — a ghost
+          // of the artwork trailing the cursor — on top of whatever gesture the
+          // surface underneath is already running.
+          draggable={false}
+          onLoad={() => setLoadedUrl(piece.coverUrl ?? null)}
+          onError={() => setLoadedUrl(null)}
+          data-featured-cover-image
+          className={`col-start-1 row-start-1 size-full object-cover transition-opacity duration-200 motion-reduce:transition-none ${
+            loaded ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      </span>
     );
   }
 
