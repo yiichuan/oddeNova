@@ -308,7 +308,7 @@ describe('App password recovery', () => {
     vi.clearAllMocks();
   });
 
-  it('does not show the guest-history import dialog during password recovery', async () => {
+  it('does not start the guest-history import during password recovery', async () => {
     mocks.auth.recoveringPassword = true;
     mocks.getAllSessions.mockResolvedValue([{
       id: 'guest-session',
@@ -327,10 +327,10 @@ describe('App password recovery', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Sync local history?');
+    expect(mocks.importSession).not.toHaveBeenCalled();
   });
 
-  it('does not show the guest-history import dialog when recovery starts during guest-session loading', async () => {
+  it('does not start the guest-history import when recovery begins during inspection', async () => {
     const guestSession: Session = {
       id: 'guest-session',
       title: 'Guest history',
@@ -365,10 +365,10 @@ describe('App password recovery', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Sync local history?');
+    expect(mocks.importSession).not.toHaveBeenCalled();
   });
 
-  it('waits for the account sessions to load before offering the guest import', async () => {
+  it('waits for the account sessions to load before importing guest history', async () => {
     const guestSession: Session = {
       id: 'guest-session',
       title: 'Guest history',
@@ -390,7 +390,7 @@ describe('App password recovery', () => {
 
     // Importing into a half-loaded account drops the imported session: the
     // in-flight load replaces the session list once it lands.
-    expect(container.textContent).not.toContain('Sync local history?');
+    expect(mocks.importSession).not.toHaveBeenCalled();
 
     mocks.sessions.isLoading = false;
     await act(async () => {
@@ -398,10 +398,13 @@ describe('App password recovery', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Sync local history?');
+    expect(mocks.importSession).toHaveBeenCalledWith(
+      guestSession,
+      { activate: false, awaitCloud: true },
+    );
   });
 
-  it('keeps the guest-history import dialog above the playback layer', async () => {
+  it('keeps the guest-history sync dialog above the playback layer', async () => {
     const guestSession: Session = {
       id: 'guest-session',
       title: 'Guest history',
@@ -411,6 +414,10 @@ describe('App password recovery', () => {
       updatedAt: 1,
     };
     mocks.getAllSessions.mockResolvedValue([guestSession]);
+    let finishImport!: () => void;
+    mocks.importSession.mockImplementation(
+      () => new Promise<undefined>((resolve) => { finishImport = () => resolve(undefined); }),
+    );
     const container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -421,12 +428,17 @@ describe('App password recovery', () => {
     });
 
     const importDialog = [...container.querySelectorAll('div.fixed.inset-0')].find((element) =>
-      element.textContent?.includes('Sync local history?'),
+      element.textContent?.includes('Syncing local history'),
     );
     expect(importDialog?.classList.contains('z-[300]')).toBe(true);
+
+    await act(async () => {
+      finishImport();
+      await Promise.resolve();
+    });
   });
 
-  it('imports a guest source once when the confirm button is clicked twice', async () => {
+  it('automatically imports once and shows progress until cloud sync finishes', async () => {
     const guestSession: Session = {
       id: 'guest-session',
       title: '来个简单的鼓点',
@@ -449,27 +461,17 @@ describe('App password recovery', () => {
       await Promise.resolve();
     });
 
-    const importButton = [...container.querySelectorAll('button')]
-      .find((button) => button.textContent === 'Import and sync');
-    expect(importButton).toBeDefined();
-
-    // The cloud save keeps the dialog up for as long as the request takes, so
-    // an impatient second click must not import the same history twice.
-    await act(async () => {
-      importButton?.click();
-      await Promise.resolve();
-    });
-    await act(async () => {
-      importButton?.click();
-      await Promise.resolve();
-    });
-
     expect(mocks.importSession).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Syncing local history');
+    expect(container.textContent).not.toContain('Sync local history?');
+    expect(container.textContent).not.toContain('Import and sync');
 
     await act(async () => {
       finishImport();
       await Promise.resolve();
     });
+
+    expect(container.textContent).not.toContain('Syncing local history');
   });
 
   it('removes a guest source after importing it to the signed-in account', async () => {
@@ -488,15 +490,6 @@ describe('App password recovery', () => {
 
     await act(async () => {
       root?.render(<App />);
-      await Promise.resolve();
-    });
-
-    const importButton = [...container.querySelectorAll('button')]
-      .find((button) => button.textContent === 'Import and sync');
-    expect(importButton).toBeDefined();
-
-    await act(async () => {
-      importButton?.click();
       await Promise.resolve();
     });
 
