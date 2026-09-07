@@ -89,7 +89,9 @@ export async function signInWithGoogle(): Promise<void> {
     provider: 'google',
     options: {
       redirectTo,
-      scopes: 'openid email profile',
+      // Supabase already requests `email profile`; only `openid` is additive.
+      // Passing the full triplet made gotrue emit a duplicated scope list.
+      scopes: 'openid',
     },
   });
   if (error) {
