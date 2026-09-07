@@ -454,6 +454,10 @@ export default function App() {
       const importable = collectImportableGuestSessions(guestSessions, latestGuestSessionsRef.current);
       if (importable.length > 0) {
         setGuestImportError('');
+        // The import starts automatically on the next effect. Put the blocking
+        // state up in this commit so the old confirmation dialog never flashes
+        // between discovering local history and beginning its cloud save.
+        setImportingGuestHistory(true);
         setGuestImportSessions(importable);
       } else {
         setGuestImportGateUserId(userId);
@@ -468,10 +472,9 @@ export default function App() {
   }, [auth.user, auth.loading, auth.recoveringPassword, sessions.isLoading]);
 
   const importGuestHistory = useCallback(async () => {
-    // The cloud save keeps the dialog up for as long as the request takes. A
-    // second click would import the same history again under a fresh id, so
-    // guard on a ref: it is set before the first await, unlike the state the
-    // disabled button reads.
+    // The cloud save keeps the dialog up for as long as the request takes.
+    // Guard on a ref set before the first await so an effect replay or a retry
+    // cannot import the same history twice under fresh ids.
     if (guestImportRunningRef.current) return;
     guestImportRunningRef.current = true;
     setImportingGuestHistory(true);
@@ -495,6 +498,11 @@ export default function App() {
       setImportingGuestHistory(false);
     }
   }, [auth.user?.id, guestImportSessions, sessions]);
+
+  useEffect(() => {
+    if (!guestImportSessions || guestImportError || guestImportRunningRef.current) return;
+    void importGuestHistory();
+  }, [guestImportError, guestImportSessions, importGuestHistory]);
 
   const current = sessions.currentSession;
   const visibleSyncStatus = !sessions.isPersistent
@@ -612,32 +620,35 @@ export default function App() {
       )}
       {guestImportSessions && (
         // The editor's bottom fade uses z-index 240/250, so this app-level
-        // dialog must sit above those masks or they can cover its buttons.
+        // progress dialog must sit above those masks.
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
           <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-dialog-overlay">
-            <h2 className="text-lg font-semibold text-text-primary mb-2">{t('importLocalHistory')}</h2>
-            <p className="text-xs text-text-muted mb-5">{t('importLocalHistoryDesc')}</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setGuestImportError('');
-                  setGuestImportSessions(null);
-                  setGuestImportGateUserId(auth.user?.id ?? null);
-                }}
-                disabled={importingGuestHistory}
-                className="flex-1 py-2.5 text-sm text-text-secondary bg-bg-tertiary rounded-lg hover:bg-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            <h2 className="text-lg font-semibold text-text-primary mb-2">
+              {guestImportError ? t('syncLocalHistoryFailed') : t('syncingLocalHistory')}
+            </h2>
+            <p className="text-xs text-text-muted">
+              {guestImportError || t('syncingLocalHistoryDesc')}
+            </p>
+            {importingGuestHistory && !guestImportError && (
+              <div
+                role="status"
+                aria-label={t('syncingLocalHistory')}
+                className="mt-5 flex justify-center"
               >
-                {t('notNow')}
-              </button>
+                <span
+                  aria-hidden="true"
+                  className="size-5 animate-spin rounded-full border-2 border-border border-t-brand-accent"
+                />
+              </div>
+            )}
+            {guestImportError && (
               <button
                 onClick={() => void importGuestHistory()}
-                disabled={importingGuestHistory}
-                className="flex-1 py-2.5 text-sm text-on-accent bg-accent rounded-lg hover:bg-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="mt-5 w-full rounded-lg bg-accent py-2.5 text-sm text-on-accent transition-colors hover:bg-accent-light"
               >
-                {t('importNow')}
+                {t('retry')}
               </button>
-            </div>
-            {guestImportError && <div className="text-xs text-red-300 mt-3">{guestImportError}</div>}
+            )}
           </div>
         </div>
       )}

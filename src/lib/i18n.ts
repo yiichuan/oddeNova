@@ -243,10 +243,9 @@ const S: Record<string, readonly [string, string]> = {
     '该邮箱已有账号，请先使用邮箱密码登录后再重试。',
     'An account already uses this email. Sign in with email and password, then try again.',
   ],
-  importLocalHistory:   ['同步本机历史？', 'Sync local history?'],
-  importLocalHistoryDesc:['检测到本机游客模式下已有对话记录。要导入到当前账号并开启云同步吗？', 'Local guest conversations were found. Import them into this account and enable cloud sync?'],
-  importNow:            ['导入并同步', 'Import and sync'],
-  notNow:               ['暂不', 'Not now'],
+  syncingLocalHistory:  ['正在同步本机历史', 'Syncing local history'],
+  syncingLocalHistoryDesc:['正在将本机游客模式下的对话记录导入当前账号并同步到云端，请稍候。', 'Importing local guest conversations into this account and syncing them to the cloud. Please wait.'],
+  syncLocalHistoryFailed:['本机历史同步失败', 'Local history sync failed'],
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],

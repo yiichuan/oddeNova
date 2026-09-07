@@ -148,7 +148,7 @@ export default function AccountModal({
           </div>
 
           {!configured ? (
-            <div className="text-sm text-red-300">{t('supabaseNotConfigured')}</div>
+            <div className="text-sm text-error">{t('supabaseNotConfigured')}</div>
           ) : recoveringPassword ? (
             <div className="space-y-4">
               <AuthField
@@ -168,7 +168,7 @@ export default function AccountModal({
                 secret
               />
 
-              {error && <div className="text-xs text-red-300">{error}</div>}
+              {error && <div className="text-xs text-error">{error}</div>}
 
               {/* The action stands further off than the fields stand from each
                   other — padding rather than a margin, so the extra room survives
@@ -189,7 +189,7 @@ export default function AccountModal({
                 <div className="text-xs text-text-muted mb-1">{t('signedInAs')}</div>
                 <div className="text-sm text-text-primary break-all">{user.email || user.id}</div>
               </div>
-              {error && <div className="text-xs text-red-300">{error}</div>}
+              {error && <div className="text-xs text-error">{error}</div>}
               <div className="pt-3">
                 <button
                   onClick={handleSignOut}
@@ -252,7 +252,7 @@ export default function AccountModal({
               )}
 
               {message && <div className="text-xs text-form-ok-text">{message}</div>}
-              {error && <div className="text-xs text-red-300">{error}</div>}
+              {error && <div className="text-xs text-error">{error}</div>}
 
               {/* The submit button and the two links under it travel together —
                   the padding goes above the pair, so the gap that opens is
