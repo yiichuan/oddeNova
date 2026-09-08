@@ -805,6 +805,37 @@ body {
   --favorites-search-rule-active: var(--color-brand-accent);
 }
 
+.favorite-title-marquee-track {
+  display: inline-flex;
+  width: max-content;
+  white-space: nowrap;
+  will-change: transform;
+  animation: favorite-title-marquee
+    var(--favorite-title-marquee-duration)
+    linear
+    infinite;
+}
+
+.favorite-title-marquee-clone {
+  margin-left: 24px;
+}
+
+@keyframes favorite-title-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(var(--favorite-title-marquee-distance));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .favorite-title-marquee-track {
+    animation: none;
+  }
+}
+
 /* ── Favorites page · the frozen 构思过程 header ──────────────────────────────
    The band the reasoning control freezes into at the top of the reading, and
    the fade that carries the thought out from under it.
