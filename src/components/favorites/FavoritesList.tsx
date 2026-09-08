@@ -178,13 +178,14 @@ function FavoriteTitleMarquee({ id, title }: FavoriteTitleMarqueeProps) {
 
     const handleResize = () => {
       const wasActive = activeRef.current;
+      clearTimer();
       measure();
       if (wasActive) resetMarquee();
     };
 
-    measure();
     if (typeof ResizeObserver === 'undefined') return undefined;
 
+    measure();
     const observer = new ResizeObserver(handleResize);
     observer.observe(viewport);
     return () => observer.disconnect();

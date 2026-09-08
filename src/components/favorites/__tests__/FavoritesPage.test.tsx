@@ -1008,6 +1008,29 @@ describe('FavoritesPage', () => {
     }
   });
 
+  it('falls back to a static title when ResizeObserver is unavailable', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('ResizeObserver', undefined);
+
+    try {
+      const { container } = render(
+        <FavoritesPage active={false} summaries={SUMMARIES} onSelect={vi.fn()} />,
+      );
+      const title = listRows(container)[0]!
+        .querySelector<HTMLElement>('[data-favorite-title="summary-first"]')!;
+      setTitleMetrics(title, { clientWidth: 80, scrollWidth: 220 });
+
+      dispatchPointer(title, 'pointerenter');
+      act(() => vi.advanceTimersByTime(500));
+
+      expect(title.dataset.favoriteTitleOverflowing).toBe('false');
+      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
+      expect(title.querySelector('[data-favorite-title-track="summary-first"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the title static when reduced motion is requested', () => {
     vi.useFakeTimers();
     installResizeObserverMock();
