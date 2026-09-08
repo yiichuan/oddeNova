@@ -157,6 +157,31 @@ describe('useCloudSessionLibrary', () => {
     expect(repositoryMocks.listCloudSessionSummaries).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps remote history search separate from the ordinary history collection', async () => {
+    const ordinary = summary('ordinary');
+    const match = summary('match');
+    repositoryMocks.listCloudSessionSummaries
+      .mockResolvedValueOnce({ items: [ordinary], nextCursor: null })
+      .mockResolvedValueOnce({ items: [match], nextCursor: null });
+
+    const { root, getHook } = await renderLibrary();
+    roots.push(root);
+    await vi.waitFor(() => expect(repositoryMocks.listCloudSessionSummaries).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      getHook().historySearch.setQuery('match');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    await vi.waitFor(() => expect(repositoryMocks.listCloudSessionSummaries).toHaveBeenCalledTimes(2));
+
+    expect(getHook().history.items).toEqual([ordinary]);
+    expect(getHook().historySearch.collection.items).toEqual([match]);
+    expect(repositoryMocks.listCloudSessionSummaries).toHaveBeenLastCalledWith(expect.objectContaining({
+      q: 'match',
+      expectedUserId: 'user-1',
+    }));
+  });
+
   it('lazy-loads favorites and resets both collections and detail cache when scope changes', async () => {
     const history = summary('history-1');
     const savedFavorite = favorite('favorite-1');
@@ -522,6 +547,85 @@ describe('useCloudSessionLibrary', () => {
     expect(getHook().favorites.items).toEqual([]);
     expect(getHook().history.items.map((item) => item.id)).toEqual(['first', 'second']);
     expect(getHook().history.items[0]).toEqual(serverUnfavorite);
+  });
+
+  it('refreshes active history and favorite searches after a successful favorite transition', async () => {
+    const first = summary('first', 30);
+    const serverFavorite = favorite(first.id, first.updatedAt, 99);
+    const serverUnfavorite = summary(first.id, first.updatedAt);
+    repositoryMocks.listCloudSessionSummaries.mockResolvedValue({ items: [first], nextCursor: null });
+    repositoryMocks.listCloudFavoriteSummaries.mockResolvedValue({ items: [serverFavorite], nextCursor: null });
+
+    const { root, getHook } = await renderLibrary();
+    roots.push(root);
+    await vi.waitFor(() => expect(repositoryMocks.listCloudSessionSummaries).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await getHook().ensureFavorites();
+      getHook().historySearch.setQuery('first');
+      getHook().favoritesSearch.setQuery('first');
+    });
+    await vi.waitFor(() => {
+      expect(repositoryMocks.listCloudSessionSummaries.mock.calls.filter(([options]) => options?.q === 'first')).toHaveLength(1);
+      expect(repositoryMocks.listCloudFavoriteSummaries.mock.calls.filter(([options]) => options?.q === 'first')).toHaveLength(1);
+    });
+    const historySearchCallsBeforeFavorite = repositoryMocks.listCloudSessionSummaries.mock.calls
+      .filter(([options]) => options?.q === 'first').length;
+    const favoriteSearchCallsBeforeFavorite = repositoryMocks.listCloudFavoriteSummaries.mock.calls
+      .filter(([options]) => options?.q === 'first').length;
+
+    repositoryMocks.favoriteCloudSession.mockResolvedValueOnce(serverFavorite);
+    await act(async () => {
+      await getHook().favoriteSession(first);
+    });
+    await vi.waitFor(() => {
+      expect(repositoryMocks.listCloudSessionSummaries.mock.calls
+        .filter(([options]) => options?.q === 'first').length)
+        .toBe(historySearchCallsBeforeFavorite + 1);
+      expect(repositoryMocks.listCloudFavoriteSummaries.mock.calls
+        .filter(([options]) => options?.q === 'first').length)
+        .toBe(favoriteSearchCallsBeforeFavorite + 1);
+    });
+
+    repositoryMocks.unfavoriteCloudSession.mockResolvedValueOnce(serverUnfavorite);
+    await act(async () => {
+      await getHook().unfavoriteSession(serverFavorite);
+    });
+    await vi.waitFor(() => {
+      expect(repositoryMocks.listCloudSessionSummaries.mock.calls
+        .filter(([options]) => options?.q === 'first').length)
+        .toBe(historySearchCallsBeforeFavorite + 2);
+      expect(repositoryMocks.listCloudFavoriteSummaries.mock.calls
+        .filter(([options]) => options?.q === 'first').length)
+        .toBe(favoriteSearchCallsBeforeFavorite + 2);
+    });
+  });
+
+  it('can release a favorite that only the current search collection contains', async () => {
+    const searchedFavorite = favorite('searched-only', 30, 99);
+    const serverSession = summary(searchedFavorite.id, searchedFavorite.updatedAt);
+    repositoryMocks.listCloudFavoriteSummaries.mockResolvedValue({
+      items: [searchedFavorite],
+      nextCursor: null,
+    });
+
+    const { root, getHook } = await renderLibrary();
+    roots.push(root);
+
+    await act(async () => {
+      getHook().favoritesSearch.setQuery('searched');
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    await vi.waitFor(() => expect(getHook().favoritesSearch.collection.items).toEqual([searchedFavorite]));
+
+    repositoryMocks.unfavoriteCloudSession.mockResolvedValueOnce(serverSession);
+    await act(async () => {
+      await getHook().unfavoriteSession(searchedFavorite.id);
+    });
+
+    expect(repositoryMocks.unfavoriteCloudSession).toHaveBeenCalledWith(
+      searchedFavorite.id,
+      'user-1',
+    );
   });
 
   it('keeps history summaries ordered by updatedAt after an upsert', async () => {

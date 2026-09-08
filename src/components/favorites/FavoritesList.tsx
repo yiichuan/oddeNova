@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../lib/i18n';
 import type { FavoriteSummary } from '../../../shared/session-api';
 import {
-  favoriteMatches,
   favoritedDateLabel,
   type FavoriteConversation,
 } from '../../lib/favorite-conversations';
@@ -220,7 +219,7 @@ function SearchField({ value, onChange }: SearchFieldProps) {
 interface FavoritesListProps {
   /** Newest first — the caller owns the order, the column only draws it. */
   summaries: readonly FavoriteSummary[];
-  /** Full local records let search include conversation text as well as titles. */
+  /** Legacy local records are retained for caller compatibility; search uses titles only. */
   conversations?: readonly FavoriteConversation[];
   selectedId: string | null;
   onSelect: (summary: FavoriteSummary) => void;
@@ -229,6 +228,11 @@ interface FavoritesListProps {
   loadMoreError?: Error | null;
   onLoadMore?: () => void;
   onRetryLoadMore?: () => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
+  isLoading?: boolean;
+  initialError?: Error | null;
+  onRetryInitial?: () => void;
 }
 
 /**
@@ -252,13 +256,12 @@ interface FavoritesListProps {
  * is not, so the row carries the date alone and the page's own reading of the
  * conversation is where anything finer belongs.
  *
- * Over the rows, a line to narrow the loaded summaries by title. The corner
- * holds six entries at a time, so typing is the quick way back to a known
- * favorite while the sentinel continues to bring older pages into the list.
+ * Over the rows, a line to narrow the collection by title. The corner holds
+ * six entries at a time, so typing is the quick way back to a known favorite
+ * while the sentinel continues to bring older pages into the list.
  */
 export default function FavoritesList({
   summaries,
-  conversations = [],
   selectedId,
   onSelect,
   hasMore = false,
@@ -266,24 +269,27 @@ export default function FavoritesList({
   loadMoreError = null,
   onLoadMore = () => {},
   onRetryLoadMore = () => {},
+  searchQuery,
+  onSearchQueryChange,
+  isLoading = false,
+  initialError = null,
+  onRetryInitial,
 }: FavoritesListProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
+  const [localQuery, setLocalQuery] = useState('');
+  const remoteSearch = onSearchQueryChange !== undefined;
+  const query = remoteSearch ? (searchQuery ?? '') : localQuery;
+  const hasQuery = query.trim() !== '';
+  const updateQuery = (value: string): void => {
+    if (onSearchQueryChange) onSearchQueryChange(value);
+    else setLocalQuery(value);
+  };
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (needle === '') return summaries;
-    const conversationsById = new Map(conversations.map((conversation) => [
-      conversation.id,
-      conversation,
-    ]));
-    return summaries.filter((summary) => {
-      const conversation = conversationsById.get(summary.id);
-      return conversation
-        ? favoriteMatches(conversation, query)
-        : summary.title.toLowerCase().includes(needle);
-    });
-  }, [conversations, query, summaries]);
+    if (remoteSearch || needle === '') return summaries;
+    return summaries.filter((summary) => summary.title.toLowerCase().includes(needle));
+  }, [query, remoteSearch, summaries]);
 
   /**
    * How much of the foot is dissolving: as deep as the fade goes while there
@@ -322,7 +328,10 @@ export default function FavoritesList({
     };
   }, [matches]);
 
-  if (summaries.length === 0) return null;
+  // The page owns the empty collection and loading/error states. Keep this
+  // column only when there is something to search, or while an active query is
+  // waiting for the server to answer.
+  if (summaries.length === 0 && !hasQuery) return null;
 
   const fade = listFade(fadeDepth);
 
@@ -339,7 +348,7 @@ export default function FavoritesList({
         width: LIST_WIDTH,
       }}
     >
-      <SearchField value={query} onChange={setQuery} />
+      <SearchField value={query} onChange={updateQuery} />
 
       <div
         ref={scrollRef}
@@ -355,7 +364,28 @@ export default function FavoritesList({
           maskImage: fade,
         }}
       >
-        {matches.map((summary) => {
+        {isLoading ? (
+          <p
+            data-testid="favorites-search-loading"
+            className="w-full shrink-0 text-right uppercase"
+            style={{ ...ROW_STYLE, color: 'var(--favorites-row-idle)', paddingRight: ROW_PADDING }}
+          >
+            {t('loading')}
+          </p>
+        ) : initialError ? (
+          <div
+            data-testid="favorites-search-error"
+            className="flex w-full shrink-0 flex-col items-end gap-1 text-right uppercase"
+            style={{ ...ROW_STYLE, color: 'var(--favorites-row-idle)', paddingRight: ROW_PADDING }}
+          >
+            <span>{t('sessionListNetworkError')}</span>
+            {onRetryInitial && (
+              <button type="button" onClick={onRetryInitial} className="underline underline-offset-2">
+                {t('retry')}
+              </button>
+            )}
+          </div>
+        ) : matches.map((summary) => {
           const selected = summary.id === selectedId;
           const hovered = !selected && hoveredId === summary.id;
 
@@ -433,10 +463,9 @@ export default function FavoritesList({
             </button>
           );
         })}
-        {/* Only ever the query's own doing — an empty collection has no column
-            at all — so it says what happened here rather than standing in for
-            the page's empty line. Set as a row, in the rows' place. */}
-        {matches.length === 0 && (
+        {/* A query with no matches keeps the column in place and says what
+            happened here rather than standing in for the page's empty line. */}
+        {!isLoading && !initialError && hasQuery && matches.length === 0 && (
           <p
             data-testid="favorites-search-empty"
             className="w-full shrink-0 text-right uppercase"
@@ -445,14 +474,14 @@ export default function FavoritesList({
             {t('favoritesSearchEmpty')}
           </p>
         )}
-        <InfiniteScrollSentinel
+        {!isLoading && !initialError && matches.length > 0 && <InfiniteScrollSentinel
           enabled
           hasMore={hasMore}
           isLoadingMore={isLoadingMore}
           loadMoreError={loadMoreError}
           onLoadMore={onLoadMore}
           onRetryLoadMore={onRetryLoadMore}
-        />
+        />}
       </div>
     </div>
   );

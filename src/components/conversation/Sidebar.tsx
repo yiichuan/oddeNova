@@ -33,7 +33,7 @@ interface SidebarProps {
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
-  onFavoriteSession?: (id: string) => void;
+  onFavoriteSession?: (id: string, session?: Session | SessionSummary) => void;
   isHistoryLoading?: boolean;
   historyInitialError?: Error | null;
   onRetryHistory?: () => void;
@@ -42,6 +42,8 @@ interface SidebarProps {
   historyLoadMoreError?: Error | null;
   onLoadMoreHistory?: () => void;
   onRetryLoadMoreHistory?: () => void;
+  historySearchQuery?: string;
+  onHistorySearchQueryChange?: (value: string) => void;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
   onReplay?: () => void;
@@ -84,6 +86,8 @@ export default function Sidebar({
   historyLoadMoreError = null,
   onLoadMoreHistory,
   onRetryLoadMoreHistory,
+  historySearchQuery,
+  onHistorySearchQueryChange,
   loadingSessions = new Set<string>(),
   unreadSessions = new Set<string>(),
   onReplay,
@@ -205,6 +209,8 @@ export default function Sidebar({
                   loadMoreError={historyLoadMoreError}
                   onLoadMore={onLoadMoreHistory}
                   onRetryLoadMore={onRetryLoadMoreHistory}
+                  searchQuery={historySearchQuery}
+                  onSearchQueryChange={onHistorySearchQueryChange}
                 />
               </div>
             </>

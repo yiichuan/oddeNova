@@ -15,6 +15,7 @@ import {
 } from '../services/favorite-repository';
 import type { CachedSummaries } from '../lib/session-summary-cache';
 import type { Session } from './useSessions';
+import { useCloudCollectionSearch } from './useCloudCollectionSearch';
 
 export type CloudCollectionStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -255,6 +256,24 @@ export function useCloudSessionLibrary({
   const requestsRef = useRef<Map<string, Promise<void>>>(new Map());
   const detailRequestsRef = useRef<Map<string, Promise<Session>>>(new Map());
   const favoriteMovesRef = useRef<Map<string, FavoriteMove>>(new Map());
+
+  const historySearch = useCloudCollectionSearch<SessionSummary>({
+    enabled,
+    ownerId,
+    fetchPage: listCloudSessionSummaries,
+  });
+  const favoritesSearch = useCloudCollectionSearch<FavoriteSummary>({
+    enabled,
+    ownerId,
+    fetchPage: listCloudFavoriteSummaries,
+  });
+  const invalidateHistorySearch = historySearch.invalidate;
+  const invalidateFavoritesSearch = favoritesSearch.invalidate;
+
+  const refreshSearches = useCallback((): void => {
+    invalidateHistorySearch();
+    invalidateFavoritesSearch();
+  }, [invalidateFavoritesSearch, invalidateHistorySearch]);
 
   historyRef.current = historyState;
   favoritesRef.current = favoritesState;
@@ -629,6 +648,7 @@ export function useCloudSessionLibrary({
       if (generationRef.current === generation) {
         dispatchHistory({ type: 'remove', id: item.id });
         dispatchFavorites({ type: 'upsert', item: serverFavorite, index: 0 });
+        refreshSearches();
       }
       return serverFavorite;
     } catch (error) {
@@ -639,14 +659,15 @@ export function useCloudSessionLibrary({
       }
       throw error;
     }
-  }, [enabled, ownerId]);
+  }, [enabled, ownerId, refreshSearches]);
 
   const unfavoriteSession = useCallback(async (
     itemOrId: FavoriteSummary | string,
   ): Promise<SessionSummary> => {
     if (!enabled || !ownerId) throw new Error('Cloud session library is unavailable');
     const item = typeof itemOrId === 'string'
-      ? favoritesRef.current.items.find((candidate) => candidate.id === itemOrId)
+      ? favoritesSearch.collection.items.find((candidate) => candidate.id === itemOrId)
+        ?? favoritesRef.current.items.find((candidate) => candidate.id === itemOrId)
       : itemOrId;
     if (!item) throw new Error('Favorite summary is unavailable');
 
@@ -668,6 +689,7 @@ export function useCloudSessionLibrary({
         dispatchFavorites({ type: 'remove', id: item.id });
         dispatchHistory({ type: 'upsert', item: serverSession, index: historyIndex });
         favoriteMovesRef.current.delete(item.id);
+        refreshSearches();
       }
       return serverSession;
     } catch (error) {
@@ -677,7 +699,7 @@ export function useCloudSessionLibrary({
       }
       throw error;
     }
-  }, [enabled, ownerId]);
+  }, [enabled, favoritesSearch.collection.items, ownerId, refreshSearches]);
 
   const history = useMemo<CloudCollection<SessionSummary>>(() => ({
     ...historyState,
@@ -716,5 +738,8 @@ export function useCloudSessionLibrary({
     unfavoriteSession,
     removeSummary,
     upsertHistorySummary,
+    historySearch,
+    favoritesSearch,
+    refreshSearches,
   };
 }
