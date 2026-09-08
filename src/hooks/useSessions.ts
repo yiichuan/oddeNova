@@ -1189,7 +1189,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const deleteSession = useCallback(
-    (id: string) => {
+    (id: string, onCloudDeleted?: () => void) => {
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
         const wasPersisted = persistedSessionIdsRef.current.has(id);
@@ -1198,6 +1198,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           void sessionCloudSync.deleteSession(
             id,
             () => dbDeleteSessionStrict(id, ownerKey),
+            onCloudDeleted,
           ).catch((err) => {
             console.warn('[sessions] cloud session delete failed.', err);
           });

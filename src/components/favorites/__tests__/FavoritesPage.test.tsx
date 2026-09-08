@@ -962,7 +962,7 @@ describe('FavoritesPage', () => {
   });
 
   describe('narrowing the list', () => {
-    it('keeps only the entries a query names, over both titles and what was said', () => {
+    it('keeps only the entries whose titles match what was typed', () => {
       const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
       expect(listRows(container)).toHaveLength(3);
 
@@ -970,9 +970,11 @@ describe('FavoritesPage', () => {
       changeInput(searchInput(container), conversationTitle(CONVERSATIONS[1]).toUpperCase());
       expect(listRows(container).map((row) => row.dataset.favoriteId)).toEqual(['second']);
 
-      // And a phrase from inside a conversation, which no title carries.
+      // A phrase from inside a conversation is not a title match.
       changeInput(searchInput(container), turnText(CONVERSATIONS[2].turns[0]));
-      expect(listRows(container).map((row) => row.dataset.favoriteId)).toEqual(['third']);
+      expect(listRows(container)).toHaveLength(0);
+      expect(container.querySelector('[data-testid="favorites-search-empty"]')?.textContent)
+        .toBe(t('favoritesSearchEmpty'));
     });
 
     it('says nothing matched rather than emptying the corner, and gives it back', () => {
@@ -998,6 +1000,54 @@ describe('FavoritesPage', () => {
       // The column no longer lists what is open; the reading still shows it.
       expect(listRows(container).map((row) => row.dataset.favoriteId)).toEqual(['second']);
       expect(container.textContent).toContain(turnText(CONVERSATIONS[0].turns[0]));
+    });
+
+    it('renders controlled remote summaries without filtering their local conversation details', () => {
+      const onSearchQueryChange = vi.fn();
+      const { container } = render(
+        <FavoritesPage
+          summaries={SUMMARIES}
+          searchQuery="bass"
+          onSearchQueryChange={onSearchQueryChange}
+        />,
+      );
+
+      expect(searchInput(container).value).toBe('bass');
+      expect(listRows(container).map((row) => row.dataset.favoriteId))
+        .toEqual(['summary-first', 'summary-second']);
+      changeInput(searchInput(container), 'drums');
+      expect(onSearchQueryChange).toHaveBeenCalledWith('drums');
+    });
+
+    it('keeps the remote search field when no server result has arrived', () => {
+      const onSearchQueryChange = vi.fn();
+      const { container } = render(
+        <FavoritesPage
+          summaries={[]}
+          searchQuery="bass"
+          onSearchQueryChange={onSearchQueryChange}
+          isLoading
+        />,
+      );
+
+      expect(searchInput(container).value).toBe('bass');
+      expect(container.querySelector('[data-testid="favorites-search-loading"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="favorites-empty"]')).toBeNull();
+    });
+
+    it('leaves the page empty state in charge when an account has no favorites', () => {
+      const onSearchQueryChange = vi.fn();
+      const { container } = render(
+        <FavoritesPage
+          summaries={[]}
+          searchQuery=""
+          onSearchQueryChange={onSearchQueryChange}
+        />,
+      );
+
+      expect(container.querySelector('[data-testid="favorites-list"]')).toBeNull();
+      expect(container.querySelector('[data-testid="favorites-search-empty"]')).toBeNull();
+      expect(container.querySelector('[data-testid="favorites-empty"]')).not.toBeNull();
     });
   });
 

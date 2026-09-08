@@ -17,6 +17,7 @@ export interface SessionCloudSync {
   deleteSession: (
     sessionId: string,
     deleteLocal?: () => Promise<void>,
+    onCloudDeleted?: () => void,
   ) => Promise<void>;
   /**
    * Take a cloud read as the synced truth for one session. Refused — `false`,
@@ -59,6 +60,8 @@ interface DeleteRecord {
   retryIndex: number;
   retryTimer?: ReturnType<typeof setTimeout>;
   deleteLocal?: () => Promise<void>;
+  onCloudDeleted?: () => void;
+  cloudDeleteNotified: boolean;
   markerWritten: boolean;
   syncDiscarded: boolean;
   localDeleted: boolean;
@@ -391,6 +394,16 @@ export function createSessionCloudSync(options: {
       }
       if (!isOnline()) return;
       await repository.deleteSession(id, expectedUserId);
+      if (!record.cloudDeleteNotified) {
+        record.cloudDeleteNotified = true;
+        try {
+          record.onCloudDeleted?.();
+        } catch (error) {
+          // A refresh callback is a UI concern. It must not turn a completed
+          // remote delete into a retry of an already deleted row.
+          console.warn('[sessions] cloud delete notification failed.', error);
+        }
+      }
       clearDeleteTimer(record);
       await clearPendingSessionDelete(ownerKey, id);
       deletes.delete(id);
@@ -403,11 +416,14 @@ export function createSessionCloudSync(options: {
   const deleteSession = async (
     id: string,
     deleteLocal?: () => Promise<void>,
+    onCloudDeleted?: () => void,
   ): Promise<void> => {
     if (disposed) return;
     const deleteRecord = deletes.get(id) ?? {
       retryIndex: 0,
       deleteLocal,
+      onCloudDeleted,
+      cloudDeleteNotified: false,
       markerWritten: false,
       syncDiscarded: false,
       localDeleted: deleteLocal === undefined,
@@ -415,6 +431,7 @@ export function createSessionCloudSync(options: {
     if (!deleteRecord.localDeleted && deleteLocal) {
       deleteRecord.deleteLocal = deleteLocal;
     }
+    if (onCloudDeleted) deleteRecord.onCloudDeleted = onCloudDeleted;
     deletes.set(id, deleteRecord);
 
     const record = records.get(id);
@@ -458,6 +475,7 @@ export function createSessionCloudSync(options: {
           markerWritten: true,
           syncDiscarded: false,
           localDeleted: true,
+          cloudDeleteNotified: false,
         });
       }
       if (isOnline()) scheduleDeleteRetry(id, true);

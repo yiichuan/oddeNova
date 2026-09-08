@@ -113,6 +113,41 @@ const mocks = vi.hoisted(() => ({
     unfavoriteSession: vi.fn(async () => undefined),
     removeSummary: vi.fn(),
     upsertHistorySummary: vi.fn(),
+    historySearch: {
+      query: '',
+      setQuery: vi.fn(),
+      active: false,
+      collection: {
+        items: [] as { id: string; title: string; updatedAt: number }[],
+        nextCursor: null as string | null,
+        initialStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+        moreStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+        initialError: null as Error | null,
+        moreError: null as Error | null,
+        retryInitial: vi.fn(),
+        retryMore: vi.fn(),
+      },
+      loadMore: vi.fn(async () => undefined),
+      invalidate: vi.fn(),
+    },
+    favoritesSearch: {
+      query: '',
+      setQuery: vi.fn(),
+      active: false,
+      collection: {
+        items: [] as { id: string; title: string; updatedAt: number; favoritedAt: number }[],
+        nextCursor: null as string | null,
+        initialStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+        moreStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+        initialError: null as Error | null,
+        moreError: null as Error | null,
+        retryInitial: vi.fn(),
+        retryMore: vi.fn(),
+      },
+      loadMore: vi.fn(async () => undefined),
+      invalidate: vi.fn(),
+    },
+    refreshSearches: vi.fn(),
   },
   codePanelProps: null as Record<string, unknown> | null,
   sidebarProps: null as Record<string, unknown> | null,
@@ -508,11 +543,22 @@ describe('App session sync boundaries', () => {
     mocks.cloudLibrary.history.items = [];
     mocks.cloudLibrary.history.initialStatus = 'idle';
     mocks.cloudLibrary.history.nextCursor = null;
+    mocks.cloudLibrary.historySearch.query = '';
+    mocks.cloudLibrary.historySearch.active = false;
+    mocks.cloudLibrary.historySearch.collection.items = [];
+    mocks.cloudLibrary.historySearch.collection.initialStatus = 'idle';
+    mocks.cloudLibrary.historySearch.collection.nextCursor = null;
     mocks.cloudLibrary.favorites.items = [];
     mocks.cloudLibrary.favorites.initialStatus = 'idle';
     mocks.cloudLibrary.favorites.nextCursor = null;
+    mocks.cloudLibrary.favoritesSearch.query = '';
+    mocks.cloudLibrary.favoritesSearch.active = false;
+    mocks.cloudLibrary.favoritesSearch.collection.items = [];
+    mocks.cloudLibrary.favoritesSearch.collection.initialStatus = 'idle';
+    mocks.cloudLibrary.favoritesSearch.collection.nextCursor = null;
     mocks.cloudLibrary.details.clear();
     mocks.cloudLibrary.detailError = null;
+    mocks.cloudLibrary.refreshSearches.mockReset();
     mocks.getAllSessions.mockResolvedValue([]);
     mocks.strudel.code = 's("bd")';
     mocks.session.code = 's("bd")';
@@ -713,6 +759,88 @@ describe('App session sync boundaries', () => {
     expect(mocks.strudel.setError).toHaveBeenCalledWith(t('requestFailed'));
   });
 
+  it('refreshes searches only after a summary-only cloud deletion succeeds', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const cloudSummary = {
+      id: 'cloud-history-delete-refreshes',
+      title: 'Cloud history',
+      updatedAt: 20,
+    };
+    mocks.cloudLibrary.history.items = [cloudSummary];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    mocks.deleteCloudSession.mockResolvedValueOnce(undefined);
+    mocks.isMobile = false;
+    await renderApp();
+
+    await act(async () => {
+      (mocks.sidebarProps?.onDeleteSession as ((id: string) => void))(cloudSummary.id);
+      await Promise.resolve();
+    });
+
+    expect(mocks.cloudLibrary.refreshSearches).toHaveBeenCalledOnce();
+  });
+
+  it('waits for the loaded session delete to reach the cloud before refreshing searches', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const cloudSummary = {
+      id: mocks.session.id,
+      title: 'Cloud history',
+      updatedAt: 20,
+    };
+    mocks.cloudLibrary.history.items = [cloudSummary];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    let notifyDeleted!: () => void;
+    mocks.sessions.deleteSession.mockImplementationOnce(
+      (_id: string, onCloudDeleted?: () => void) => { notifyDeleted = onCloudDeleted ?? (() => {}); },
+    );
+    mocks.isMobile = false;
+    await renderApp();
+
+    act(() => {
+      (mocks.sidebarProps?.onDeleteSession as ((id: string) => void))(cloudSummary.id);
+    });
+    expect(mocks.cloudLibrary.refreshSearches).not.toHaveBeenCalled();
+
+    act(() => { notifyDeleted(); });
+    expect(mocks.cloudLibrary.refreshSearches).toHaveBeenCalledOnce();
+    expect(mocks.deleteCloudSession).not.toHaveBeenCalled();
+  });
+
+  it('refreshes searches after the rename save is flushed', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const cloudSummary = {
+      id: 'cloud-history-rename-refreshes',
+      title: '旧标题',
+      updatedAt: 20,
+    };
+    mocks.cloudLibrary.history.items = [cloudSummary];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    let finishFlush!: () => void;
+    mocks.sessions.flushCloudSaves.mockImplementationOnce(
+      () => new Promise<undefined>((resolve) => { finishFlush = () => resolve(undefined); }),
+    );
+    mocks.isMobile = false;
+    await renderApp();
+
+    let rename!: Promise<void>;
+    await act(async () => {
+      rename = (mocks.sidebarProps?.onRenameSession as ((id: string, title: string) => Promise<void>))(
+        cloudSummary.id,
+        '新标题',
+      );
+      await Promise.resolve();
+    });
+    expect(mocks.sessions.renameSession).toHaveBeenCalledWith(cloudSummary.id, '新标题');
+    expect(mocks.sessions.flushCloudSaves).toHaveBeenCalledWith(cloudSummary.id);
+    expect(mocks.cloudLibrary.refreshSearches).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishFlush();
+      await rename;
+    });
+    expect(mocks.cloudLibrary.refreshSearches).toHaveBeenCalledOnce();
+  });
+
   it('shows the undo and view notice after favoriting an account history session', async () => {
     vi.useFakeTimers();
     mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
@@ -745,7 +873,12 @@ describe('App session sync boundaries', () => {
     act(() => { undo?.click(); });
     act(() => { vi.advanceTimersByTime(180); });
     await act(async () => { await Promise.resolve(); });
-    expect(mocks.cloudLibrary.unfavoriteSession).toHaveBeenCalledWith(cloudSummary.id);
+    expect(mocks.cloudLibrary.unfavoriteSession).toHaveBeenCalledWith(expect.objectContaining({
+      id: cloudSummary.id,
+      title: cloudSummary.title,
+      updatedAt: cloudSummary.updatedAt,
+      favoritedAt: 30,
+    }));
   });
 
   it('shows the undo and view notice when releasing an account favorite', async () => {
@@ -806,7 +939,12 @@ describe('App session sync boundaries', () => {
     act(() => { close?.click(); });
     act(() => { vi.advanceTimersByTime(180); });
     await act(async () => { await Promise.resolve(); });
-    expect(mocks.cloudLibrary.unfavoriteSession).toHaveBeenCalledWith(cloudFavorite.id);
+    expect(mocks.cloudLibrary.unfavoriteSession).toHaveBeenCalledWith(expect.objectContaining({
+      id: cloudFavorite.id,
+      title: cloudFavorite.title,
+      updatedAt: cloudFavorite.updatedAt,
+      favoritedAt: cloudFavorite.favoritedAt,
+    }));
 
     mocks.cloudLibrary.unfavoriteSession.mockClear();
     mocks.sessions.acceptCloudDetail.mockClear();

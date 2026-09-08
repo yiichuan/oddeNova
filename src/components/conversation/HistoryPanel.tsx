@@ -27,7 +27,7 @@ interface HistoryPanelProps {
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   /** Keep this conversation: it leaves the list and turns up in Favorites. */
-  onFavorite?: (id: string) => void;
+  onFavorite?: (id: string, session?: HistoryItem) => void;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
   onLoadMore?: () => void;
@@ -35,6 +35,8 @@ interface HistoryPanelProps {
   isLoadingMore?: boolean;
   loadMoreError?: Error | null;
   onRetryLoadMore?: () => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
 }
 
 type HistoryItem = Session | SessionSummary;
@@ -67,14 +69,22 @@ export default function HistoryPanel({
   isLoadingMore = false,
   loadMoreError = null,
   onRetryLoadMore = () => {},
+  searchQuery,
+  onSearchQueryChange,
 }: HistoryPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  const [query, setQuery] = useState('');
+  const [localQuery, setLocalQuery] = useState('');
   const [keepingId, setKeepingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
   const keepingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteSearch = onSearchQueryChange !== undefined;
+  const query = remoteSearch ? (searchQuery ?? '') : localQuery;
+  const updateQuery = (value: string): void => {
+    if (onSearchQueryChange) onSearchQueryChange(value);
+    else setLocalQuery(value);
+  };
 
   useEffect(() => {
     if (!editingId) return;
@@ -94,7 +104,11 @@ export default function HistoryPanel({
     keepingTimerRef.current = setTimeout(() => {
       keepingTimerRef.current = null;
       setKeepingId(null);
-      onFavorite(session.id);
+      // Keep the item that was actually clicked with the delayed handoff. The
+      // parent may re-render with a different search query before the fade has
+      // finished, and an id alone would then have to be found in a collection
+      // that no longer contains this row.
+      onFavorite(session.id, session);
     }, KEEPING_MS);
   };
 
@@ -131,9 +145,9 @@ export default function HistoryPanel({
      in the ones that are not, which is worse than a narrower search that is
      the same everywhere. */
   const needle = query.trim().toLowerCase();
-  const ordered = needle
-    ? listed.filter((s) => (s.title || t('newSessionTitle')).toLowerCase().includes(needle))
-    : listed;
+  const ordered = remoteSearch || !needle
+    ? listed
+    : listed.filter((s) => (s.title || t('newSessionTitle')).toLowerCase().includes(needle));
   const searchable = listed.length > 0 || needle !== '';
 
   return (
@@ -153,7 +167,7 @@ export default function HistoryPanel({
           sidebar overlay is drawn on the conversation surface, the top-bar
           dropdown on the page ground, and either sets --history-search-bg to
           say which. */}
-      {!isLoading && !initialError && searchable && (
+      {(remoteSearch || (!isLoading && !initialError && searchable)) && (
         <div
           className="sticky top-0 z-20 px-2 pt-2.5 pb-1.5"
           style={{ background: 'var(--history-search-bg, var(--color-conversation-surface))' }}
@@ -166,7 +180,7 @@ export default function HistoryPanel({
               aria-label={t('historySearch')}
               data-testid="history-search-input"
               placeholder={t('historySearchHint')}
-              onChange={(e) => setQuery(e.currentTarget.value)}
+              onChange={(e) => updateQuery(e.currentTarget.value)}
               onClick={(e) => e.stopPropagation()}
               /* Escape empties the field rather than reaching the panel that
                  listens for it — while there is something in it to clear. */
@@ -174,7 +188,7 @@ export default function HistoryPanel({
                 e.stopPropagation();
                 if (e.key === 'Escape' && query !== '') {
                   e.preventDefault();
-                  setQuery('');
+                  updateQuery('');
                 }
               }}
               className="min-w-0 flex-1 bg-transparent text-xs leading-none text-text-primary outline-none placeholder:text-text-muted"
@@ -186,7 +200,7 @@ export default function HistoryPanel({
                 data-testid="history-search-clear"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setQuery('');
+                  updateQuery('');
                 }}
                 className="shrink-0 text-text-muted transition-colors hover:text-text-primary"
               >
