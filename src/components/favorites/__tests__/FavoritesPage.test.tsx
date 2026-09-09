@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -883,8 +885,15 @@ describe('FavoritesPage', () => {
 
       act(() => vi.advanceTimersByTime(1));
       expect(title.dataset.favoriteTitleMarquee).toBe('active');
+      expect(title.classList.contains('truncate')).toBe(false);
+      expect(title.classList.contains('text-clip')).toBe(true);
       expect(title.querySelectorAll('[data-favorite-title-track="summary-first"]'))
         .toHaveLength(1);
+      const track = title.querySelector<HTMLElement>(
+        '[data-favorite-title-track="summary-first"]',
+      );
+      expect(track?.style.getPropertyValue('--favorite-title-marquee-distance'))
+        .toBe('-140px');
       const clones = title.querySelectorAll('[data-favorite-title-clone="summary-first"]');
       expect(clones).toHaveLength(1);
       expect(clones[0]?.getAttribute('aria-hidden'))
@@ -903,6 +912,14 @@ describe('FavoritesPage', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('plays the title marquee once and holds its final position', () => {
+    const favoritesStyles = readFileSync(resolve(__dirname, '../../../index.css'), 'utf8');
+
+    expect(favoritesStyles).toMatch(
+      /\.favorite-title-marquee-track\s*\{[^}]*animation:\s*favorite-title-marquee\s+var\(--favorite-title-marquee-duration\)\s+linear\s+1\s+forwards;/s,
+    );
   });
 
   it('does not start an overflowing title marquee after leaving before the hover delay', () => {
@@ -1073,8 +1090,11 @@ describe('FavoritesPage', () => {
 
     // The title gives up its width; the date holds its five characters, so the
     // column of days stays readable however long a name runs.
-    expect(row.querySelector('[data-favorite-title="long"]')?.className)
-      .toContain('min-w-0 truncate');
+    const title = row.querySelector('[data-favorite-title="long"]');
+    expect(title?.className).toContain('min-w-0');
+    expect(title?.className).toContain('overflow-hidden');
+    expect(title?.className).toContain('whitespace-nowrap');
+    expect(title?.className).toContain('text-ellipsis');
     expect(row.querySelector('time')?.className).toContain('shrink-0');
     expect(row.querySelector('time')?.textContent).toBe(favoritedDateLabel(long.favoritedAt));
   });

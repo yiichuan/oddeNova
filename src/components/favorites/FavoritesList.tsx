@@ -110,7 +110,6 @@ const LIST_GUTTER = '2rem';
 export const LIST_COLUMN = `calc(${LIST_RIGHT_INSET} + ${LIST_WIDTH} + ${LIST_GUTTER})`;
 
 const MARQUEE_DELAY_MS = 500;
-const MARQUEE_GAP_PX = 24;
 const MARQUEE_SPEED_PX_PER_SECOND = 32;
 const MARQUEE_MIN_DURATION_MS = 1_800;
 
@@ -173,7 +172,7 @@ function FavoriteTitleMarquee({ id, title }: FavoriteTitleMarqueeProps) {
       }
 
       setIsOverflowing(true);
-      setDistance(contentWidthRef.current + MARQUEE_GAP_PX);
+      setDistance(overflow);
     };
 
     const handleResize = () => {
@@ -216,7 +215,9 @@ function FavoriteTitleMarquee({ id, title }: FavoriteTitleMarqueeProps) {
       data-favorite-title={id}
       data-favorite-title-overflowing={isOverflowing ? 'true' : 'false'}
       data-favorite-title-marquee={isActive ? 'active' : 'idle'}
-      className="relative min-w-0 truncate"
+      className={`relative min-w-0 overflow-hidden whitespace-nowrap ${
+        isActive ? 'text-clip' : 'text-ellipsis'
+      }`}
       onPointerEnter={handlePointerEnter}
       onPointerLeave={resetMarquee}
     >

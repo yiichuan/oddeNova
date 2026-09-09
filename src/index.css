@@ -813,7 +813,8 @@ body {
   animation: favorite-title-marquee
     var(--favorite-title-marquee-duration)
     linear
-    infinite;
+    1
+    forwards;
 }
 
 .favorite-title-marquee-clone {
