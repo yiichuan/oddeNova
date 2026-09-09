@@ -1,8 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { t } from '../../lib/i18n';
 import type { FavoriteSummary } from '../../../shared/session-api';
 import {
-  favoriteMatches,
   favoritedDateLabel,
   type FavoriteConversation,
 } from '../../lib/favorite-conversations';
@@ -101,12 +108,143 @@ const LIST_GUTTER = '2rem';
  */
 export const LIST_COLUMN = `calc(${LIST_RIGHT_INSET} + ${LIST_WIDTH} + ${LIST_GUTTER})`;
 
+const MARQUEE_DELAY_MS = 500;
+const MARQUEE_SPEED_PX_PER_SECOND = 32;
+const MARQUEE_MIN_DURATION_MS = 1_800;
+
 const ROW_STYLE = {
   fontSize: 12,
   fontWeight: 400,
   letterSpacing: '0.08em',
   lineHeight: `${ROW_HEIGHT}px`,
 } as const;
+
+interface FavoriteTitleMarqueeProps {
+  id: string;
+  title: string;
+}
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function FavoriteTitleMarquee({ id, title }: FavoriteTitleMarqueeProps) {
+  const viewportRef = useRef<HTMLSpanElement>(null);
+  const contentWidthRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+  const activeRef = useRef(false);
+  const overflowRef = useRef(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [isActive, setIsActive] = useState(false);
+  const [distance, setDistance] = useState(0);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current === null) return;
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  const resetMarquee = useCallback(() => {
+    clearTimer();
+    activeRef.current = false;
+    setIsActive(false);
+  }, [clearTimer]);
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport === null) return undefined;
+
+    const measure = () => {
+      if (!activeRef.current || contentWidthRef.current === 0) {
+        contentWidthRef.current = viewport.scrollWidth;
+      }
+
+      const overflow = contentWidthRef.current - viewport.clientWidth;
+      overflowRef.current = overflow > 0;
+      if (overflow <= 0) {
+        clearTimer();
+        setIsOverflowing(false);
+        setDistance(0);
+        return;
+      }
+
+      setIsOverflowing(true);
+      setDistance(overflow);
+    };
+
+    const handleResize = () => {
+      const wasActive = activeRef.current;
+      clearTimer();
+      measure();
+      if (wasActive) resetMarquee();
+    };
+
+    if (typeof ResizeObserver === 'undefined') return undefined;
+
+    measure();
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [clearTimer, resetMarquee]);
+
+  useEffect(() => () => clearTimer(), [clearTimer]);
+
+  const handlePointerEnter = () => {
+    if (!overflowRef.current || prefersReducedMotion()) return;
+
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      if (!overflowRef.current || prefersReducedMotion()) return;
+      activeRef.current = true;
+      setIsActive(true);
+    }, MARQUEE_DELAY_MS);
+  };
+
+  const duration = Math.max(
+    MARQUEE_MIN_DURATION_MS,
+    Math.round((distance / MARQUEE_SPEED_PX_PER_SECOND) * 1000),
+  );
+
+  return (
+    <span
+      ref={viewportRef}
+      data-favorite-title={id}
+      data-favorite-title-overflowing={isOverflowing ? 'true' : 'false'}
+      data-favorite-title-marquee={isActive ? 'active' : 'idle'}
+      className={`relative min-w-0 overflow-hidden whitespace-nowrap ${
+        isActive ? 'text-clip' : 'text-ellipsis'
+      }`}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={resetMarquee}
+    >
+      <span aria-hidden={isActive || undefined} className={isActive ? 'invisible' : undefined}>
+        {title}
+      </span>
+      {isActive && (
+        <span
+          data-favorite-title-track={id}
+          className="favorite-title-marquee-track pointer-events-none absolute left-0 top-0"
+          style={{
+            '--favorite-title-marquee-distance': `-${distance}px`,
+            '--favorite-title-marquee-duration': `${duration}ms`,
+          } as CSSProperties}
+        >
+          <span>{title}</span>
+          <span
+            aria-hidden="true"
+            data-favorite-title-clone={id}
+            className="favorite-title-marquee-clone"
+          >
+            {title}
+          </span>
+        </span>
+      )}
+    </span>
+  );
+}
 
 interface SearchFieldProps {
   value: string;
@@ -220,7 +358,7 @@ function SearchField({ value, onChange }: SearchFieldProps) {
 interface FavoritesListProps {
   /** Newest first — the caller owns the order, the column only draws it. */
   summaries: readonly FavoriteSummary[];
-  /** Full local records let search include conversation text as well as titles. */
+  /** Legacy local records are retained for caller compatibility; search uses titles only. */
   conversations?: readonly FavoriteConversation[];
   selectedId: string | null;
   onSelect: (summary: FavoriteSummary) => void;
@@ -229,6 +367,11 @@ interface FavoritesListProps {
   loadMoreError?: Error | null;
   onLoadMore?: () => void;
   onRetryLoadMore?: () => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
+  isLoading?: boolean;
+  initialError?: Error | null;
+  onRetryInitial?: () => void;
 }
 
 /**
@@ -252,13 +395,12 @@ interface FavoritesListProps {
  * is not, so the row carries the date alone and the page's own reading of the
  * conversation is where anything finer belongs.
  *
- * Over the rows, a line to narrow the loaded summaries by title. The corner
- * holds six entries at a time, so typing is the quick way back to a known
- * favorite while the sentinel continues to bring older pages into the list.
+ * Over the rows, a line to narrow the collection by title. The corner holds
+ * six entries at a time, so typing is the quick way back to a known favorite
+ * while the sentinel continues to bring older pages into the list.
  */
 export default function FavoritesList({
   summaries,
-  conversations = [],
   selectedId,
   onSelect,
   hasMore = false,
@@ -266,24 +408,27 @@ export default function FavoritesList({
   loadMoreError = null,
   onLoadMore = () => {},
   onRetryLoadMore = () => {},
+  searchQuery,
+  onSearchQueryChange,
+  isLoading = false,
+  initialError = null,
+  onRetryInitial,
 }: FavoritesListProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
+  const [localQuery, setLocalQuery] = useState('');
+  const remoteSearch = onSearchQueryChange !== undefined;
+  const query = remoteSearch ? (searchQuery ?? '') : localQuery;
+  const hasQuery = query.trim() !== '';
+  const updateQuery = (value: string): void => {
+    if (onSearchQueryChange) onSearchQueryChange(value);
+    else setLocalQuery(value);
+  };
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (needle === '') return summaries;
-    const conversationsById = new Map(conversations.map((conversation) => [
-      conversation.id,
-      conversation,
-    ]));
-    return summaries.filter((summary) => {
-      const conversation = conversationsById.get(summary.id);
-      return conversation
-        ? favoriteMatches(conversation, query)
-        : summary.title.toLowerCase().includes(needle);
-    });
-  }, [conversations, query, summaries]);
+    if (remoteSearch || needle === '') return summaries;
+    return summaries.filter((summary) => summary.title.toLowerCase().includes(needle));
+  }, [query, remoteSearch, summaries]);
 
   /**
    * How much of the foot is dissolving: as deep as the fade goes while there
@@ -314,15 +459,20 @@ export default function FavoritesList({
     /* The window's own height moves with the page, and the fade has to be told
        — the rows below it are the same rows, but how many of them are under
        the window is not. */
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(measure);
+    observer?.observe(element);
     return () => {
       element.removeEventListener('scroll', measure);
-      observer.disconnect();
+      observer?.disconnect();
     };
   }, [matches]);
 
-  if (summaries.length === 0) return null;
+  // The page owns the empty collection and loading/error states. Keep this
+  // column only when there is something to search, or while an active query is
+  // waiting for the server to answer.
+  if (summaries.length === 0 && !hasQuery) return null;
 
   const fade = listFade(fadeDepth);
 
@@ -339,7 +489,7 @@ export default function FavoritesList({
         width: LIST_WIDTH,
       }}
     >
-      <SearchField value={query} onChange={setQuery} />
+      <SearchField value={query} onChange={updateQuery} />
 
       <div
         ref={scrollRef}
@@ -355,7 +505,28 @@ export default function FavoritesList({
           maskImage: fade,
         }}
       >
-        {matches.map((summary) => {
+        {isLoading ? (
+          <p
+            data-testid="favorites-search-loading"
+            className="w-full shrink-0 text-right uppercase"
+            style={{ ...ROW_STYLE, color: 'var(--favorites-row-idle)', paddingRight: ROW_PADDING }}
+          >
+            {t('loading')}
+          </p>
+        ) : initialError ? (
+          <div
+            data-testid="favorites-search-error"
+            className="flex w-full shrink-0 flex-col items-end gap-1 text-right uppercase"
+            style={{ ...ROW_STYLE, color: 'var(--favorites-row-idle)', paddingRight: ROW_PADDING }}
+          >
+            <span>{t('sessionListNetworkError')}</span>
+            {onRetryInitial && (
+              <button type="button" onClick={onRetryInitial} className="underline underline-offset-2">
+                {t('retry')}
+              </button>
+            )}
+          </div>
+        ) : matches.map((summary) => {
           const selected = summary.id === selectedId;
           const hovered = !selected && hoveredId === summary.id;
 
@@ -417,12 +588,11 @@ export default function FavoritesList({
                 {/* The title gives up its width first — the date is five
                     characters and holding them keeps the column of days
                     readable however long a name runs. */}
-                <span
-                  data-favorite-title={summary.id}
-                  className="relative min-w-0 truncate"
-                >
-                  {summary.title}
-                </span>
+                <FavoriteTitleMarquee
+                  key={`${summary.id}:${summary.title}`}
+                  id={summary.id}
+                  title={summary.title}
+                />
                 <time
                   dateTime={new Date(summary.favoritedAt).toISOString()}
                   className="relative shrink-0 tabular-nums opacity-60"
@@ -433,10 +603,9 @@ export default function FavoritesList({
             </button>
           );
         })}
-        {/* Only ever the query's own doing — an empty collection has no column
-            at all — so it says what happened here rather than standing in for
-            the page's empty line. Set as a row, in the rows' place. */}
-        {matches.length === 0 && (
+        {/* A query with no matches keeps the column in place and says what
+            happened here rather than standing in for the page's empty line. */}
+        {!isLoading && !initialError && hasQuery && matches.length === 0 && (
           <p
             data-testid="favorites-search-empty"
             className="w-full shrink-0 text-right uppercase"
@@ -445,14 +614,14 @@ export default function FavoritesList({
             {t('favoritesSearchEmpty')}
           </p>
         )}
-        <InfiniteScrollSentinel
+        {!isLoading && !initialError && matches.length > 0 && <InfiniteScrollSentinel
           enabled
           hasMore={hasMore}
           isLoadingMore={isLoadingMore}
           loadMoreError={loadMoreError}
           onLoadMore={onLoadMore}
           onRetryLoadMore={onRetryLoadMore}
-        />
+        />}
       </div>
     </div>
   );

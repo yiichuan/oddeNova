@@ -110,12 +110,12 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
               <XIcon size={22} />
             </button>
           </div>
-          <h2 className="mb-6 text-center text-xl font-semibold text-text-primary">
+          <h2 className="mt-3 mb-6 text-center text-lg font-semibold text-text-primary">
             {t('welcomeTitle')}
           </h2>
 
           {!configured ? (
-            <div className="text-sm text-red-300">{t('supabaseNotConfigured')}</div>
+            <div className="text-sm text-error">{t('supabaseNotConfigured')}</div>
           ) : (
             <div className="space-y-4">
               <button
@@ -162,7 +162,7 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
               )}
 
               {message && <div className="text-xs text-form-ok-text">{message}</div>}
-              {error && <div className="text-xs text-red-300">{error}</div>}
+              {error && <div className="text-xs text-error">{error}</div>}
 
               {/* The action stands further off than the fields stand from each
                   other — padding rather than a margin, so the extra room survives

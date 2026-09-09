@@ -47,11 +47,12 @@ describe('cloud-session-repository', () => {
     await expect(listCloudSessionSummaries({
       limit: 20,
       cursor: 'previous cursor',
+      q: '  雨 & bass  ',
       expectedUserId: 'user-1',
     })).resolves.toEqual(body);
 
     expect(fetch).toHaveBeenCalledWith(
-      '/api/sessions?limit=20&cursor=previous+cursor',
+      '/api/sessions?limit=20&cursor=previous+cursor&q=%E9%9B%A8+%26+bass',
       {
         method: 'GET',
         headers: { Authorization: 'Bearer token-123' },

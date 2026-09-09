@@ -51,8 +51,18 @@ export const positiveModulo = (value: number, divisor: number) => (
  */
 export const nearestEquivalent = (target: number, from: number, ring: number) => {
   if (ring <= 0) return target;
-  const delta = positiveModulo(target - from, ring);
-  return from + (delta > ring / 2 ? delta - ring : delta);
+  /*
+   * Build the answer from the target slot and a whole number of laps. Besides
+   * expressing the ring more directly, this keeps an integer target exact.
+   * Computing it as `from + delta` can leave a floating-point remainder after
+   * a drag (for example `-2.9999999999999996`), which is not a valid array
+   * index even though it is visually the `-3` slot.
+   *
+   * `Math.round(-0.5)` preserves the existing tie-break: a target exactly half
+   * a lap ahead is reached forwards.
+   */
+  const laps = Math.round((from - target) / ring);
+  return target + laps * ring;
 };
 
 /** cubic-bezier(0.22, 1, 0.36, 1), in the closed form a frame loop can read. */

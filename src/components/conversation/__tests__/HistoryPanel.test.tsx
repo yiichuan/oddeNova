@@ -195,7 +195,7 @@ describe('HistoryPanel title editing', () => {
 
     act(() => { vi.advanceTimersByTime(400); });
 
-    expect(onFavorite).toHaveBeenCalledWith('s-1');
+    expect(onFavorite).toHaveBeenCalledWith('s-1', expect.objectContaining({ id: 's-1', title: '旧标题' }));
     vi.useRealTimers();
   });
 
@@ -290,5 +290,33 @@ describe('HistoryPanel search', () => {
     roots.push(root);
 
     expect(searchIn(container)).toBeNull();
+  });
+
+  it('uses a controlled query for remote results and keeps the field visible on empty results', () => {
+    const onSearchQueryChange = vi.fn();
+    const { container, root } = renderHistory({
+      sessions: [],
+      isLoading: true,
+      searchQuery: 'bass',
+      onSearchQueryChange,
+    });
+    roots.push(root);
+
+    expect(searchIn(container)?.value).toBe('bass');
+    expect(container.textContent).toContain(t('loading'));
+    changeInput(searchIn(container)!, 'drums');
+    expect(onSearchQueryChange).toHaveBeenCalledWith('drums');
+  });
+
+  it('does not locally filter already filtered remote summaries', () => {
+    const onSearchQueryChange = vi.fn();
+    const { container, root } = renderHistory({
+      sessions: [{ id: 'remote-1', title: 'Remote title', updatedAt: 2 }],
+      searchQuery: 'bass',
+      onSearchQueryChange,
+    });
+    roots.push(root);
+
+    expect(titlesIn(container)).toEqual(['Remote title']);
   });
 });

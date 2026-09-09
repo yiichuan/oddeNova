@@ -14,6 +14,8 @@ export async function listCloudFavoriteSummaries(
     limit: String(options.limit ?? DEFAULT_PAGE_LIMIT),
   });
   if (options.cursor) params.set('cursor', options.cursor);
+  const q = options.q?.trim();
+  if (q) params.set('q', q);
   return requestJson<CursorPage<FavoriteSummary>>(
     `/api/favorites?${params.toString()}`,
     { method: 'GET', ...(options.signal ? { signal: options.signal } : {}) },

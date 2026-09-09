@@ -976,6 +976,30 @@ describe('useSessions', () => {
     expect(saveSession.mock.calls.filter(([session]) => session.id === deletedId)).toHaveLength(1);
   });
 
+  it('notifies after a loaded account session is deleted remotely', async () => {
+    const loaded = makeSession({ id: 'loaded', title: '已加载', code: 's("bd")' });
+    storageMocks.getAllSessions.mockResolvedValue([loaded]);
+    const cloud = {
+      listSessions: vi.fn(async () => []),
+      saveSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+    const { root, getHook } = await renderUseSessions({
+      ownerKey: 'user:u-1',
+      cloud,
+      syncEnabled: true,
+    });
+    roots.push(root);
+    const onCloudDeleted = vi.fn();
+
+    act(() => {
+      getHook().deleteSession('loaded', onCloudDeleted);
+    });
+    await vi.waitFor(() => expect(onCloudDeleted).toHaveBeenCalledOnce());
+
+    expect(cloud.deleteSession).toHaveBeenCalledWith('loaded', 'u-1');
+  });
+
   it('keeps the delete tombstone when strict local deletion fails', async () => {
     storageMocks.deleteSessionStrict.mockRejectedValueOnce(new Error('IDB delete failed'));
     const cloud = {

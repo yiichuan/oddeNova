@@ -32,6 +32,30 @@ note("<c3 e3 g3>").mask("<0@2 1@4 0@2>")
     expect(getStrudelLoopCycles(code)).toBe(24);
   });
 
+  it('uses matching weighted mask windows as the layered form length', () => {
+    const code = `setcps(0.4)
+stack(
+  note("<a b c>").mask("<0@4 1@8 0@20>"),
+  note("<a b c d e>").mask("<0@4 1@8 0@20>"),
+  note("<a b c d e f g>")
+    .release("<0.5@4 1.8>")
+    .mask("<0@4 1@8 0@20>")
+)`;
+
+    expect(getStrudelLoopCycles(code)).toBe(32);
+    expect(getStrudelLoopDurationSeconds(code)).toBe(80);
+  });
+
+  it('falls back to the exact LCM when mask windows disagree', () => {
+    const code = `setcps(0.4)
+stack(
+  note("<a b c>").mask("<0@4 1@8 0@20>"),
+  note("<a b c d e>").mask("<0@2 1@4 0@24>")
+)`;
+
+    expect(getStrudelLoopCycles(code)).toBe(480);
+  });
+
   it('multiplies @ weights by a trailing /N rather than letting either one win', () => {
     // The weights on their own already decide the span: 6+2+6+2 = 16 cycles.
     expect(getStrudelLoopCycles('s("noise").gain("<0@6 0.22@2 0@6 0.32@2>")')).toBe(16);

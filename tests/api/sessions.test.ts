@@ -39,7 +39,7 @@ function queryBuilder(result: { data?: unknown; error?: unknown }) {
     single: ReturnType<typeof vi.fn>;
     then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise<unknown>;
   } = {};
-  for (const method of ['select', 'eq', 'is', 'not', 'order', 'or', 'limit', 'update', 'delete']) {
+  for (const method of ['select', 'eq', 'is', 'not', 'filter', 'order', 'or', 'limit', 'update', 'delete']) {
     query[method] = vi.fn(() => query);
   }
   query.maybeSingle = vi.fn().mockResolvedValue(result);
@@ -156,13 +156,14 @@ describe('sessions API auth and collection reads', () => {
 
     await handler({
       method: 'GET',
-      query: { limit: '20' },
+      query: { limit: '20', q: '  Song.*  ' },
       headers: { authorization: 'Bearer token-123' },
     } as never, res as never);
 
     expect(query.select).toHaveBeenCalledWith('id,title,updated_at');
     expect(query.eq).toHaveBeenCalledWith('user_id', 'u-1');
     expect(query.is).toHaveBeenCalledWith('favorited_at', null);
+    expect(query.filter).toHaveBeenCalledWith('title', 'imatch', 'Song\\.\\*');
     expect(query.order).toHaveBeenNthCalledWith(1, 'updated_at', { ascending: false });
     expect(query.order).toHaveBeenNthCalledWith(2, 'id', { ascending: false });
     expect(query.limit).toHaveBeenCalledWith(21);
@@ -195,13 +196,14 @@ describe('sessions API auth and collection reads', () => {
 
     await handler({
       method: 'GET',
-      query: { resource: 'favorites', limit: '20' },
+      query: { resource: 'favorites', limit: '20', q: '  雨 Bass  ' },
       headers: { authorization: 'Bearer token-123' },
     } as never, res as never);
 
     expect(query.select).toHaveBeenCalledWith('id,title,updated_at,favorited_at');
     expect(query.eq).toHaveBeenCalledWith('user_id', 'u-1');
     expect(query.not).toHaveBeenCalledWith('favorited_at', 'is', null);
+    expect(query.filter).toHaveBeenCalledWith('title', 'imatch', '雨 Bass');
     expect(query.order).toHaveBeenNthCalledWith(1, 'favorited_at', { ascending: false });
     expect(query.order).toHaveBeenNthCalledWith(2, 'id', { ascending: false });
     expect(query.limit).toHaveBeenCalledWith(21);
@@ -244,6 +246,81 @@ describe('sessions API auth and collection reads', () => {
       `updated_at.lt.${cursor.sortValue},and(updated_at.eq.${cursor.sortValue},id.lt.${cursor.id})`,
     );
     expect(query.limit).toHaveBeenCalledWith(3);
+  });
+
+  it('filters the full title result set before paginating search matches', async () => {
+    supabaseMocks.getUser.mockResolvedValue({
+      data: { user: { id: 'u-1' } },
+      error: null,
+    });
+    const nonMatches = Array.from({ length: 25 }, (_, index) => historyRow(
+      index + 10,
+      new Date(Date.UTC(2026, 7, 30, 12, 0, 25 - index)).toISOString(),
+    ));
+    const matches = Array.from({ length: 3 }, (_, index) => ({
+      ...historyRow(
+        index + 1,
+        new Date(Date.UTC(2026, 7, 29, 12, 0, 3 - index)).toISOString(),
+      ),
+      title: `雨 Bass ${index + 1}`,
+    }));
+    const allRows = [...nonMatches, ...matches];
+
+    function behavioralQuery() {
+      let titlePattern: string | null = null;
+      let cursor: { sortValue: string; id: string } | null = null;
+      let pageLimit = 20;
+      const query = queryBuilder({ data: [], error: null });
+      query.filter = vi.fn((_column: unknown, operator: unknown, value: unknown) => {
+        if (operator === 'imatch' && typeof value === 'string') titlePattern = value;
+        return query;
+      });
+      query.or = vi.fn((expression: unknown) => {
+        if (typeof expression === 'string') {
+          const match = expression.match(/^updated_at\.lt\.(.*),and\(updated_at\.eq\.(.*),id\.lt\.([^)]+)\)$/);
+          if (match) cursor = { sortValue: match[1], id: match[3] };
+        }
+        return query;
+      });
+      query.limit = vi.fn((value: unknown) => {
+        if (typeof value === 'number') pageLimit = value;
+        return query;
+      });
+      query.then = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => {
+        const filtered = allRows.filter((row) => {
+          const titleMatches = titlePattern === null || new RegExp(titlePattern, 'i').test(row.title);
+          const isAfterCursor = cursor === null
+            || row.updated_at < cursor.sortValue
+            || (row.updated_at === cursor.sortValue && row.id < cursor.id);
+          return titleMatches && isAfterCursor;
+        }).slice(0, pageLimit);
+        return Promise.resolve({ data: filtered, error: null }).then(resolve, reject);
+      };
+      return query;
+    }
+
+    supabaseMocks.from.mockImplementation(() => behavioralQuery());
+    const { default: handler } = await import('../../api/sessions.js');
+
+    const first = makeResponse();
+    await handler({
+      method: 'GET',
+      query: { limit: '2', q: '雨 Bass' },
+      headers: { authorization: 'Bearer token-123' },
+    } as never, first as never);
+    const firstBody = first.body as { items: Array<{ id: string }>; nextCursor: string };
+
+    const second = makeResponse();
+    await handler({
+      method: 'GET',
+      query: { limit: '2', q: '雨 Bass', cursor: firstBody.nextCursor },
+      headers: { authorization: 'Bearer token-123' },
+    } as never, second as never);
+    const secondBody = second.body as { items: Array<{ id: string }>; nextCursor: null };
+
+    expect([...firstBody.items, ...secondBody.items].map((item) => item.id)).toEqual(matches.map((row) => row.id));
+    expect(new Set([...firstBody.items, ...secondBody.items].map((item) => item.id)).size).toBe(3);
+    expect(secondBody.nextCursor).toBeNull();
   });
 
   it.each([

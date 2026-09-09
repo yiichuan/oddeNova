@@ -644,7 +644,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       // a row written there would either need to be uploaded — one copy per
       // browser, since the flag is local and the account is not — or sit
       // unsynced. Instead this lands in the guest namespace, and the existing
-      // "import your guest history" prompt carries it up on sign-in: it holds
+      // The automatic guest-history import carries it up on sign-in: it holds
       // code, which is what `collectImportableGuestSessions` looks for.
       //
       // The mark goes down before the first await, so a double-invoked effect
@@ -1189,7 +1189,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const deleteSession = useCallback(
-    (id: string) => {
+    (id: string, onCloudDeleted?: () => void) => {
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
         const wasPersisted = persistedSessionIdsRef.current.has(id);
@@ -1198,6 +1198,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           void sessionCloudSync.deleteSession(
             id,
             () => dbDeleteSessionStrict(id, ownerKey),
+            onCloudDeleted,
           ).catch((err) => {
             console.warn('[sessions] cloud session delete failed.', err);
           });

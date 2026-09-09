@@ -18,6 +18,7 @@ import {
   rowToSessionSummary,
   type SessionCursor,
 } from '../server/session-pagination.js';
+import { titleSearchPattern } from '../server/session-search.js';
 
 const FULL_SESSION_COLUMNS = 'id,title,code,messages,input_mode,revisions,suggestions,external_source,favorited_at,created_at,updated_at';
 const SESSION_SUMMARY_COLUMNS = 'id,title,updated_at';
@@ -115,6 +116,11 @@ async function listSessions(
     query = resource === 'favorites'
       ? query.not('favorited_at', 'is', null)
       : query.is('favorited_at', null);
+
+    const searchPattern = titleSearchPattern(getStringQuery(req, 'q') ?? undefined);
+    if (searchPattern !== null) {
+      query = query.filter('title', 'imatch', searchPattern);
+    }
 
     if (cursor) {
       query = query.or(

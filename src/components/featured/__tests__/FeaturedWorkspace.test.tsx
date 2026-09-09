@@ -14,7 +14,11 @@ vi.mock('../../../services/strudel', () => ({
 }));
 
 import { t } from '../../../lib/i18n';
-import { FEATURED_COLLECTION_URL, type FeaturedPiece } from '../../../lib/featured-pieces';
+import {
+  FEATURED_COLLECTION_URL,
+  FEATURED_PIECES,
+  type FeaturedPiece,
+} from '../../../lib/featured-pieces';
 import {
   nearestEquivalent,
   SIDE_SCALE,
@@ -289,6 +293,36 @@ describe('featured page', () => {
       expect(wheel.defaultPrevented).toBe(true);
       expect(container.querySelector<HTMLElement>('[data-carousel-centered="true"]')!
         .dataset.carouselLogicalIndex).toBe('1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a negative fractional snap on an exact album index', () => {
+    vi.useFakeTimers();
+    try {
+      const { container, root } = render(<FeaturedPage {...pageProps({
+        pieces: FEATURED_PIECES,
+        currentPiece: FEATURED_PIECES[0],
+      })} />);
+      roots.push(root);
+      const carousel = container.querySelector<HTMLElement>('[data-testid="featured-carousel"]')!;
+
+      // The production collection has six albums and UNDERTALE is index 3.
+      // Moving backwards to a fractional position near -3 used to settle at
+      // -2.9999999999999996, whose positive modulo was not a valid array index.
+      act(() => {
+        carousel.dispatchEvent(new WheelEvent('wheel', {
+          deltaY: -136,
+          bubbles: true,
+          cancelable: true,
+        }));
+        vi.advanceTimersByTime(500);
+      });
+
+      const centred = container.querySelector<HTMLElement>('[data-carousel-centered="true"]')!;
+      expect(centred.dataset.carouselLogicalIndex).toBe('-3');
+      expect(centred.textContent).toContain('UNDERTALE');
     } finally {
       vi.useRealTimers();
     }
