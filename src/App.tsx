@@ -3,7 +3,7 @@ import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import CodePanel from './components/studio/CodePanel';
 import Sidebar from './components/conversation/Sidebar';
-import VizPlaceholder from './components/studio/VizPlaceholder';
+import StudioVisualizer from './components/studio/StudioVisualizer';
 import { useStrudel } from './hooks/useStrudel';
 import { makeGreetingMessage, useSessions } from './hooks/useSessions';
 import { useSuggestions } from './hooks/useSuggestions';
@@ -133,6 +133,7 @@ interface FavoriteNotice {
 
 export default function App() {
   const strudel = useStrudel();
+  const [mobileStudioView, setMobileStudioView] = useState<'code' | 'tracks'>('code');
   const auth = useAuth();
   const cloudRepository = useMemo(() => ({
     saveSession: saveCloudSession,
@@ -1398,7 +1399,7 @@ export default function App() {
           }}
         >
           <div className="h-full flex flex-col">
-            <div className="flex-1 min-h-0">
+            <div data-testid="mobile-code-pane" hidden={mobileStudioView !== 'code'} className="flex-1 min-h-0">
               <CodePanel
                 code={strudel.code}
                 error={strudel.error}
@@ -1422,6 +1423,17 @@ export default function App() {
                 onEditorFocusChange={handleCodeFocusChange}
                 syncStatus={visibleSyncStatus}
                 showSyncStatus={showSessionSyncStatus}
+              />
+            </div>
+            <div data-testid="mobile-track-pane" hidden={mobileStudioView !== 'tracks'} className="flex-1 min-h-0">
+              <StudioVisualizer
+                isPlaying={strudel.isPlaying}
+                isPaused={strudel.isPaused}
+                visible={drawerOpen && mobileStudioView === 'tracks'}
+                animationEnabled={false}
+                scopeKey={sessions.currentSession?.id ?? ''}
+                hasCode={Boolean(strudel.code.trim())}
+                engineReady={strudel.engineReady}
               />
             </div>
           </div>
@@ -1468,10 +1480,21 @@ export default function App() {
               {strudel.isPlaying ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
             </button>
             <button
-              onClick={() => setDrawerOpen((v) => !v)}
+              onClick={() => {
+                setMobileStudioView('code');
+                setDrawerOpen(!(drawerOpen && mobileStudioView === 'code'));
+              }}
               className="flex h-7 items-center rounded-full border border-border bg-bg-primary px-4 text-[12px] text-text-secondary hover:text-text-primary transition-colors"
             >
-              {drawerOpen ? t('collapseCode') : t('viewCode')}
+              {drawerOpen && mobileStudioView === 'code' ? t('collapseCode') : t('viewCode')}
+            </button>
+            <button type="button" aria-label={t('tracksView')} aria-pressed={drawerOpen && mobileStudioView === 'tracks'}
+              onClick={() => {
+                setMobileStudioView('tracks');
+                setDrawerOpen(!(drawerOpen && mobileStudioView === 'tracks'));
+              }}
+              className="absolute left-full top-0 ml-3 flex h-7 items-center whitespace-nowrap rounded-full border border-border bg-bg-primary px-3 text-[12px] text-text-secondary hover:text-text-primary">
+              {t('tracksView')}
             </button>
           </div>
 
@@ -1680,7 +1703,7 @@ export default function App() {
               tear that binding down — including under a featured audition,
               which plays through this very editor. */}
           <div className={primaryNavItem === 'home' ? 'flex h-full min-h-0 flex-col' : 'hidden'}>
-            <div className="flex-1 min-h-0">
+            <div className="h-0 flex-1 min-h-0 overflow-hidden">
               <CodePanel
                 code={strudel.code}
                 error={strudel.error}
@@ -1701,7 +1724,8 @@ export default function App() {
                 isDirty={strudel.isDirty}
                 activeCode={strudel.activeCode}
                 onUpdate={() => { void handleUpdate(); }}
-                vizEnabled={studioAnimationVisible}
+                vizEnabled
+                vizAnimationEnabled={studioAnimationVisible}
                 vizCollapsed={vizCollapsed}
                 onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
@@ -1717,34 +1741,37 @@ export default function App() {
                 The transition is dropped mid-drag: there, every pointer move
                 sets a new height, and easing would trail the cursor.
 
-                Unmounted outright — not collapsed — when Settings → Appearance
-                turns the studio animation off: collapsing keeps the iframe
-                alive to preserve the one galaxy it generated, and that is only
-                worth paying for while the pane is something you can reopen. */}
-            {studioAnimationVisible && (
+                Tracks remain available when the decorative animation is off. */}
+            <div
+              data-testid="viz-pane"
+              className={`flex shrink-0 flex-col overflow-hidden ${
+                isDragging === 'v'
+                  ? ''
+                  : 'transition-[height] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none'
+              }`}
+              style={{ height: vizCollapsed ? 0 : vizHeight + VIZ_DIVIDER_HEIGHT }}
+            >
               <div
-                data-testid="viz-pane"
-                className={`flex shrink-0 flex-col overflow-hidden ${
-                  isDragging === 'v'
-                    ? ''
-                    : 'transition-[height] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none'
-                }`}
-                style={{ height: vizCollapsed ? 0 : vizHeight + VIZ_DIVIDER_HEIGHT }}
-              >
-                <div
-                  {...vDragHandlers}
-                  data-resize-handle="vertical"
-                  className="h-divider shrink-0"
-                  style={{ cursor: 'row-resize' }}
-                />
+                {...vDragHandlers}
+                data-resize-handle="vertical"
+                className="h-divider shrink-0"
+                style={{ cursor: 'row-resize' }}
+              />
 
-                {/* Always mounted, even collapsed: remounting rebuilds the
-                    galaxy from scratch, so it would come back a different one. */}
-                <div className="min-h-0 flex-1">
-                  <VizPlaceholder isPlaying={strudel.isPlaying} />
-                </div>
+              {/* Always mounted, even collapsed: remounting rebuilds the
+                  galaxy from scratch, so it would come back a different one. */}
+              <div className="min-h-0 flex-1">
+                <StudioVisualizer
+                  isPlaying={strudel.isPlaying}
+                  isPaused={strudel.isPaused}
+                  visible={!vizCollapsed && primaryNavItem === 'home'}
+                  animationEnabled={studioAnimationVisible}
+                  scopeKey={sessions.currentSession?.id ?? ''}
+                  hasCode={Boolean(strudel.code.trim())}
+                  engineReady={strudel.engineReady}
+                />
               </div>
-            )}
+            </div>
           </div>
           <div className={primaryNavItem === 'featured' ? 'flex h-full min-h-0' : 'hidden'}>
             <FeaturedPage

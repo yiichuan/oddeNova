@@ -497,6 +497,7 @@ describe('StrudelService playback seeking', () => {
     const { StrudelService } = await import('../strudel');
     const service = new StrudelService();
     const setCycle = vi.fn();
+    const refresh = vi.spyOn(service.trackPreview, 'refresh');
     (service as unknown as {
       _state: { isPlaying: boolean };
       editorInstance: { repl: { scheduler: { setCycle: (cycle: number) => void } } };
@@ -509,6 +510,7 @@ describe('StrudelService playback seeking', () => {
     expect(service.seekPlayback(2, 16)).toBe(true);
     expect(setCycle).toHaveBeenNthCalledWith(1, 4);
     expect(setCycle).toHaveBeenNthCalledWith(2, 16);
+    expect(refresh).toHaveBeenCalledTimes(2);
   });
 
   it('stores a stopped seek and applies it after the next successful play', async () => {
@@ -517,6 +519,7 @@ describe('StrudelService playback seeking', () => {
     const { StrudelService } = await import('../strudel');
     const service = new StrudelService();
     const setCycle = vi.fn();
+    const refresh = vi.spyOn(service.trackPreview, 'refresh');
     const evaluate = vi.fn(async () => {});
     const mutableService = service as unknown as {
       _isVideoMode: boolean;
@@ -533,6 +536,7 @@ describe('StrudelService playback seeking', () => {
 
     expect(service.seekPlayback(0.75, 8)).toBe(true);
     expect(setCycle).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledOnce();
 
     await service.play();
 
@@ -720,5 +724,113 @@ describe('page audio recovery', () => {
 
     expect(onPlaybackInterrupted).not.toHaveBeenCalled();
     expect(requestUserResume).not.toHaveBeenCalled();
+  });
+});
+
+// The editor/audio device is external here; compile/query real Strudel patterns
+// and assert the events actually reaching the output boundary.
+describe('studio track audition integration', () => {
+  afterEach(() => {
+    vi.resetModules();
+    for (const name of ['@strudel/codemirror', '@strudel/draw', '@strudel/webaudio', '../../lib/soundfont-loader', '../../lib/analytics', 'superdough']) vi.doUnmock(name);
+    vi.unstubAllGlobals();
+  });
+
+  it('gates live output without reevaluation, preserves the transport, and restores all layers on successful apply', async () => {
+    const heard: unknown[] = [];
+    let options: {
+      transpiler: (code: string) => { output: string };
+      afterEval: (result: unknown) => void;
+      defaultOutput: (hap: unknown, deadline: number, duration: number, cps: number, time: number) => Promise<void>;
+    };
+    const evaluate = vi.fn();
+    const scheduler = { now: () => 3.25, cps: .5, started: true, pattern: undefined as unknown };
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    vi.doMock('@strudel/draw', () => ({ getDrawContext: () => ({ clearRect: () => {} }) }));
+    vi.doMock('@strudel/webaudio', () => ({ webaudioOutput: async (hap: unknown) => { heard.push(hap); } }));
+    vi.doMock('@strudel/codemirror', () => ({
+      compartments: {}, themes: {}, settings: {},
+      StrudelMirror: class {
+        constructor(opts: typeof options) { options = opts; }
+        repl = { scheduler, stop: vi.fn(), setCode: vi.fn() };
+        setCode = vi.fn(); evaluate = evaluate;
+        setAutocompletionEnabled = vi.fn(); setLineWrappingEnabled = vi.fn(); changeSetting = vi.fn();
+      },
+    }));
+    const { StrudelService } = await import('../strudel');
+    const core = await import('@strudel/core');
+    const mini = await import('@strudel/mini');
+    await core.evalScope(core, mini);
+    const service = new StrudelService();
+    await service.attach(document.createElement('div'));
+    const code = 'stack(/* @layer kick */ s("bd"), /* @layer hat */ s("hh"))';
+    const result = await core.evaluate(code, options!.transpiler);
+    options!.afterEval(result);
+    const haps = result.pattern.queryArc(0, 1);
+    service.trackPreview.toggleSolo(service.trackPreview.snapshot.tracks[1].id);
+    for (const hap of haps) await options!.defaultOutput(hap, 0, 1, .5, 1);
+    expect(heard).toEqual([haps[1]]);
+    expect(scheduler.now()).toBe(3.25);
+    expect(evaluate).not.toHaveBeenCalled();
+    // Compilation alone, including a failed evaluation, cannot reset audition.
+    options!.transpiler(code);
+    expect(service.trackPreview.snapshot.soloId).not.toBeNull();
+    options!.afterEval(result);
+    expect(service.trackPreview.snapshot.soloId).toBeNull();
+    heard.length = 0;
+    for (const hap of haps) await options!.defaultOutput(hap, 0, 1, .5, 1);
+    expect(heard).toEqual(haps);
+    service.trackPreview.toggleSolo(service.trackPreview.snapshot.tracks[0].id);
+    // Stop at the audio-rendering boundary after the real exporter schedules
+    // its haps. Device rendering is deliberately outside this Node test.
+    const scheduled: unknown[] = [];
+    const renderingBoundary = new Error('rendering boundary');
+    vi.stubGlobal('OfflineAudioContext', class {
+      startRendering = async () => { throw renderingBoundary; };
+    });
+    vi.doMock('superdough', () => ({
+      superdough: async (value: { s: unknown }) => { scheduled.push(value.s); },
+      getAudioContext: () => ({ close: async () => {} }),
+      setAudioContext: () => {}, setSuperdoughAudioController: () => {},
+      getSuperdoughAudioController: () => null, initAudio: async () => {},
+      clearNodePools: () => {}, resetGlobalEffects: () => {}, errorLogger: () => {},
+    }));
+    scheduler.pattern = result.pattern;
+    evaluate.mockImplementation(async () => { options!.afterEval(result); });
+    await expect(service.exportWav({ filename: 'test', beginCycle: 0, endCycle: 1, sampleRate: 44100 })).rejects.toBe(renderingBoundary);
+    expect(scheduled).toEqual(['bd', 'hh']);
+    expect(service.trackPreview.snapshot.soloId).toBeNull();
+    service.trackPreview.toggleSolo(service.trackPreview.snapshot.tracks[0].id);
+    service.setCode('s("cp")');
+    expect(service.trackPreview.snapshot.soloId).toBeNull();
+  });
+
+  it('compiles the track preview on demand while stopped without starting playback', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const evaluate = vi.fn(async (autostart = true) => {
+      expect(autostart).toBe(false);
+      service.trackPreview.commit({ queryArc: () => [] }, {
+        oddenovaTracks: { tracks: [{ id: 'bass', name: '贝斯' }] },
+      });
+    });
+    const mutableService = service as unknown as {
+      _state: { code: string; isPlaying: boolean };
+      editorInstance: { evaluate: (autostart?: boolean) => Promise<void>; repl: { stop: () => void } };
+    };
+    mutableService._state.code = 'stack(/* @layer 贝斯 */ s("sawtooth"))';
+    mutableService._state.isPlaying = false;
+    mutableService.editorInstance = { evaluate, repl: { stop: vi.fn() } };
+
+    await service.prepareTrackPreview();
+    await service.prepareTrackPreview();
+
+    expect(evaluate).toHaveBeenCalledOnce();
+    expect(evaluate).toHaveBeenCalledWith(false);
+    expect(service.trackPreview.snapshot.status).toBe('ready');
+    expect(mutableService._state.isPlaying).toBe(false);
   });
 });

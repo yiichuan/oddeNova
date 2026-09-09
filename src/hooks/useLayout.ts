@@ -8,7 +8,6 @@ const SIDEBAR_RATIO_MIN = 0.20;
 const SIDEBAR_RATIO_MAX = 0.40;
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55); // ≈ 0.392, derived from top:bottom = 1.55
 const VIZ_RATIO_MIN = 0.15;
-const VIZ_RATIO_MAX = 0.45;
 /** How far the divider must travel past the minimum height before the drag
  *  reads as "close it" rather than "make it as short as it goes". */
 const VIZ_COLLAPSE_SLOP = 48;
@@ -26,6 +25,16 @@ const SIDEBAR_REOPEN_PULL = 48;
 const sidebarReopenBoundary = (min: number) => min - SIDEBAR_COLLAPSE_SLOP + SIDEBAR_REOPEN_HYSTERESIS;
 /** Height of the vertical resize handle — `--spacing-divider` in index.css. */
 export const VIZ_DIVIDER_HEIGHT = 6;
+/** Net desktop CodePanel controls height after its two 1px vertical margins. */
+const CODE_PANEL_CONTROLS_HEIGHT = 47;
+
+/** The track pane can fill the main area while keeping its playback controls visible. */
+const maxVizHeight = (containerHeight: number) => (
+  Math.max(
+    containerHeight * VIZ_RATIO_MIN,
+    containerHeight - VIZ_DIVIDER_HEIGHT - CODE_PANEL_CONTROLS_HEIGHT,
+  )
+);
 
 export interface PointerDragHandlers {
   onPointerDown: PointerEventHandler<HTMLDivElement>;
@@ -130,7 +139,7 @@ export function useLayout(): UseLayoutReturn {
     const handleResize = () => {
       const h = mainRef.current?.offsetHeight ?? window.innerHeight;
       setSidebarWidth(w => Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, w)));
-      setVizHeight(v => Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, v)));
+      setVizHeight(v => Math.max(h * VIZ_RATIO_MIN, Math.min(maxVizHeight(h), v)));
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -177,13 +186,14 @@ export function useLayout(): UseLayoutReturn {
     const delta = e.clientY - vDragRef.current.startY;
     const h = mainRef.current?.offsetHeight ?? window.innerHeight;
     const min = h * VIZ_RATIO_MIN;
+    const max = maxVizHeight(h);
     const target = vDragRef.current.startHeight - delta;
     // Pulling the divider well below the minimum height means "close the pane",
     // not "hold it at the minimum". Dragging back up reopens it within the same
     // gesture: the handle keeps pointer capture while it is clipped to zero.
     // Safe to set unconditionally — a collapsed handle can't start a drag.
     setVizCollapsed(target < min - VIZ_COLLAPSE_SLOP);
-    setVizHeight(Math.max(min, Math.min(h * VIZ_RATIO_MAX, target)));
+    setVizHeight(Math.max(min, Math.min(max, target)));
   }, []);
   const toggleVizCollapsed = useCallback(() => {
     if (vizCollapsed) {

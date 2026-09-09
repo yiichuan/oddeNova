@@ -75,12 +75,10 @@ interface CodePanelProps {
    */
   onUpdate: () => void;
   onEditorFocusChange?: (focused: boolean) => void;
-  /**
-   * Whether the studio shows a visualizer pane at all — Settings → Appearance
-   * can switch it off. Off, there is nothing to collapse or stand in for: the
-   * toggle leaves the control bar and the particle field stays still.
-   */
+  /** Whether a collapsible visualizer pane is available. */
   vizEnabled?: boolean;
+  /** Decorative particles follow the appearance setting independently of tracks. */
+  vizAnimationEnabled?: boolean;
   /** Whether the visualizer pane below this panel is currently collapsed. */
   vizCollapsed?: boolean;
   /** Collapses/expands that pane; the footer then sits at the page bottom. */
@@ -141,6 +139,8 @@ const ORGANIC_LIGHT_GROUPS: readonly MetaballGroup[] = [
 const METABALL_LINEAR_SCALE = Math.sqrt(3);
 const METABALL_DURATION_SCALE = 2;
 const COMPOSITE_LIGHT_GROUP_ORDER = [0, 3, 1, 4, 2, 5] as const;
+/** Net height of the desktop controls row in CodePanel's flex column. */
+const DESKTOP_CONTROLS_ONLY_HEIGHT = 47;
 
 
 /**
@@ -354,6 +354,7 @@ export default function CodePanel({
   onUpdate,
   onEditorFocusChange,
   vizEnabled = true,
+  vizAnimationEnabled = true,
   vizCollapsed = false,
   onToggleViz,
   syncStatus,
@@ -375,6 +376,7 @@ export default function CodePanel({
 
   const isMobile = useIsMobile();
   const prefersReducedMotion = usePrefersReducedMotion();
+  const [controlsOnly, setControlsOnly] = useState(false);
 
   const exportWithVolumeRestore = useCallback(async (params: ExportParams) => {
     const ok = await onExport(params);
@@ -434,6 +436,28 @@ export default function CodePanel({
     strudelService.setAutocompletionEnabled(!isMobile);
     // Wrap instead of scrolling sideways in the narrow mobile drawer.
     strudelService.setLineWrappingEnabled(isMobile);
+  }, [isMobile]);
+
+  // The desktop resize limit leaves only this footer mounted. The code layer's
+  // own border would otherwise remain as a stray line above the controls even
+  // though its editor content has flexed to zero; restore it as soon as the
+  // pane grows again.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || isMobile || typeof ResizeObserver === 'undefined') {
+      setControlsOnly(false);
+      return;
+    }
+
+    const updateControlsOnly = () => {
+      const height = panel.getBoundingClientRect().height;
+      setControlsOnly(height > 0 && height <= DESKTOP_CONTROLS_ONLY_HEIGHT);
+    };
+
+    updateControlsOnly();
+    const resizeObserver = new ResizeObserver(updateControlsOnly);
+    resizeObserver.observe(panel);
+    return () => resizeObserver.disconnect();
   }, [isMobile]);
 
   // Demo mode plays at a quiet 10% by default; the master engine otherwise
@@ -578,7 +602,7 @@ export default function CodePanel({
           menus that sit at 50. */}
       <div
         data-testid="code-panel-code-layer"
-        className="relative isolate flex-1 min-h-0 overflow-hidden rounded-t-region border border-border bg-conversation-surface"
+        className={`relative isolate flex-1 min-h-0 overflow-hidden rounded-t-region bg-conversation-surface ${controlsOnly ? 'border-0' : 'border border-border'}`}
       >
         <div
           ref={containerRef}
@@ -686,7 +710,7 @@ export default function CodePanel({
               Draws nothing under the ASCII animation, whose characters belong
               to its own pane rather than across the transport. */}
           <ControlBarParticles
-            active={vizEnabled && vizCollapsed}
+            active={vizEnabled && vizAnimationEnabled && vizCollapsed}
             isPlaying={isPlaying}
             bpm={bpm}
             sampleSpectrum={strudelService.sampleAudioSpectrum}
@@ -698,6 +722,7 @@ export default function CodePanel({
             data-testid="code-panel-controls-light-border"
             className="code-panel-controls-light-border"
             aria-hidden="true"
+            style={{ borderTopColor: controlsOnly ? 'transparent' : undefined }}
           />
 
           {/* Playback position is anchored to the controls boundary, not CodeMirror's gutter. */}

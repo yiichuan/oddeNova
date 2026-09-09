@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { getEngineUnavailableMessage } from '../lib/engine-status';
 import { getErrorMessage } from '../lib/errors';
 import { t } from '../lib/i18n';
@@ -166,5 +166,23 @@ export function useStrudel() {
     triggerFadeIn: () => strudelService.triggerFadeIn(),
     // [video] Allow App.tsx's postMessage handler to inject Remotion frame time into the Strudel scheduler, driving the highlight box
     setVideoTime: (t: number) => strudelService.setVideoTime(t),
+  };
+}
+
+/** Keeps animation-frame data out of App's shared playback state. */
+export function useStrudelTracks(scopeKey: string) {
+  const preview = strudelService.trackPreview;
+  const snapshot = useSyncExternalStore(preview.subscribe, () => preview.snapshot);
+  const previousScope = useRef(scopeKey);
+  useEffect(() => {
+    if (previousScope.current !== scopeKey) preview.reset();
+    previousScope.current = scopeKey;
+  }, [preview, scopeKey]);
+  return {
+    ...snapshot,
+    getFrame: strudelService.getTrackFrame,
+    prepareTrackPreview: strudelService.prepareTrackPreview,
+    toggleSolo: preview.toggleSolo,
+    clearSolo: preview.clearSolo,
   };
 }

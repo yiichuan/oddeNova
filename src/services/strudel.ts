@@ -12,6 +12,7 @@ import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bound
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
 import { claimTransport } from './transport';
+import { TrackPreview, type PreviewHap, type PreviewPattern, type TrackFrame } from './track-preview';
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
 
@@ -47,6 +48,7 @@ interface StrudelMirrorType {
     stop: () => void;
     scheduler?: {
       started?: boolean;
+      cps?: number;
       now?: () => number;
       pause?: () => void;
       stop?: () => void;
@@ -223,6 +225,14 @@ export function installPageAudioRecovery(options: PageAudioRecoveryOptions): Pag
 export class StrudelService {
   private static _instance: StrudelService | null = null;
 
+  readonly trackPreview = new TrackPreview();
+
+  getTrackFrame = (): TrackFrame => {
+    const scheduler = this.editorInstance?.repl.scheduler;
+    const cycle = this._state.isPlaying ? scheduler?.now?.() ?? 0 : this.pendingSeekCycle ?? 0;
+    return this.trackPreview.frame(cycle, scheduler?.cps ?? 0.5);
+  };
+
   private editorInstance: StrudelMirrorType | null = null;
   private containerElement: HTMLElement | null = null;
   private panelTheme: CodePanelTheme | null = null;
@@ -265,6 +275,7 @@ export class StrudelService {
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
   private pendingSeekCycle: number | null = null;
+  private trackPreviewPreparation: { code: string; promise: Promise<void> } | null = null;
   private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
     code: '',
@@ -495,8 +506,14 @@ export class StrudelService {
       const editor = new StrudelMirror({
         root: this.containerElement,
         initialCode: currentCode,
-        transpiler,
-        defaultOutput,
+        transpiler: (code: string, options: Parameters<typeof transpiler>[1]) =>
+          this.trackPreview.prepare(code, transpiler(code, options)),
+        afterEval: ({ pattern, meta }: { pattern: PreviewPattern; meta?: Parameters<TrackPreview['commit']>[1] }) => {
+          this.trackPreview.commit(pattern, meta);
+        },
+        defaultOutput: (hap: PreviewHap, deadline: number, duration: number, cps: number, time: number) => {
+          if (this.trackPreview.isAudible(hap)) return defaultOutput(hap, deadline, duration, cps, time);
+        },
         getTime: getTimeFn,
         drawTime,
         drawContext: this.panelCanvas.context, // scoped to the panel — see codepanel-canvas.ts
@@ -818,6 +835,9 @@ export class StrudelService {
   setCode = (code: string): void => {
     const didChange = code !== this._state.code;
     if (didChange) {
+      this.trackPreviewPreparation = null;
+      if (this._state.isPlaying) this.trackPreview.clearSolo();
+      else this.trackPreview.reset();
       this.rewindOnCodeChange(this._state.isPlaying);
       // A different piece arrived; it does not inherit the last one's look.
       this.panelTheme?.reset();
@@ -836,16 +856,44 @@ export class StrudelService {
     }
   };
 
+  /**
+   * Compile the current editor buffer for the track view without starting the
+   * scheduler. Strudel's `evaluate(false)` still runs the exact same
+   * transpiler/REPL path as playback, but leaves the transport stopped while
+   * `afterEval` supplies TrackPreview with the queryable pattern.
+   */
+  prepareTrackPreview = async (): Promise<void> => {
+    const code = this._state.code.trim();
+    const editor = this.editorInstance;
+    if (!code || !editor || this.trackPreview.snapshot.status !== 'idle') return;
+
+    if (this.trackPreviewPreparation?.code === code) {
+      await this.trackPreviewPreparation.promise;
+      return;
+    }
+
+    const promise = Promise.resolve().then(() => editor.evaluate(false));
+    this.trackPreviewPreparation = { code, promise };
+    try {
+      await promise;
+    } finally {
+      if (this.trackPreviewPreparation?.promise === promise) this.trackPreviewPreparation = null;
+    }
+  };
+
   seekPlayback = (progress: number, loopCycles: number): boolean => {
     const targetCycle = seekTargetCycle(progress, loopCycles);
     if (targetCycle === null) return false;
 
     if (!this._state.isPlaying) {
       this.pendingSeekCycle = targetCycle;
+      this.trackPreview.refresh();
       return true;
     }
 
-    return applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle);
+    const applied = applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle);
+    if (applied) this.trackPreview.refresh();
+    return applied;
   };
 
   /**
@@ -980,6 +1028,7 @@ export class StrudelService {
   };
 
   stop = (): void => {
+    this.trackPreview.clearSolo();
     this.pageAudioRecovery?.clearResumeIntent();
     this.pendingSeekCycle = null;
     // The Drawer stops with the transport, so the painter cannot undo its own

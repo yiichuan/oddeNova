@@ -95,6 +95,7 @@ describe('CodePanel editor focus reporting', () => {
     document.body.innerHTML = '';
     localStorage.clear();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -236,6 +237,62 @@ describe('CodePanel editor focus reporting', () => {
       expect(blob.querySelectorAll('circle').length).toBeGreaterThanOrEqual(2);
       expect(blob.querySelectorAll('circle').length).toBeLessThanOrEqual(3);
     });
+  });
+
+  it('removes the editor border when only the playback controls remain', () => {
+    installMatchMedia(false);
+    const resizeCallbacks: ResizeObserverCallback[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallbacks.push(callback);
+      }
+
+      observe() {}
+      disconnect() {}
+    });
+
+    const { container, root } = renderCodePanel();
+    roots.push(root);
+    const panel = container.firstElementChild as HTMLElement;
+    const codeLayer = container.querySelector<HTMLElement>('[data-testid="code-panel-code-layer"]');
+    const lightBorder = container.querySelector<HTMLElement>('[data-testid="code-panel-controls-light-border"]');
+    const getPanelRect = vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      right: 780,
+      bottom: 47,
+      left: 80,
+      width: 700,
+      height: 47,
+      x: 80,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    act(() => {
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver));
+    });
+
+    expect(codeLayer?.classList.contains('border-0')).toBe(true);
+    expect(codeLayer?.classList.contains('border')).toBe(false);
+    expect(lightBorder?.style.borderTopColor).toBe('transparent');
+
+    getPanelRect.mockReturnValue({
+      top: 0,
+      right: 780,
+      bottom: 200,
+      left: 80,
+      width: 700,
+      height: 200,
+      x: 80,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    act(() => {
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver));
+    });
+
+    expect(codeLayer?.classList.contains('border')).toBe(true);
+    expect(lightBorder?.style.borderTopColor).toBe('');
   });
 
   it('keeps the playback button and timeline in the desktop controls layer', () => {
@@ -577,6 +634,16 @@ describe('CodePanel editor focus reporting', () => {
     // The motes stand in for the visualizer, so they must not intercept
     // clicks meant for the transport controls underneath.
     expect(particles?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('keeps track-pane controls without particles when decorative animation is disabled', () => {
+    installMatchMedia(false);
+    localStorage.setItem('vibe_theme', 'dark');
+    localStorage.setItem('vibe_animation', 'galaxy');
+    const { container, root } = renderCodePanel({ vizEnabled: true, vizCollapsed: true, vizAnimationEnabled: false });
+    roots.push(root);
+    expect(container.querySelector(`[aria-label="${t('expandViz')}"]`)).not.toBeNull();
+    expect(container.querySelector('[data-testid="code-panel-particle-field"]')?.getAttribute('data-active')).toBe('false');
   });
 
   it('leaves the bar clear when the collapsed pane is the ASCII animation', () => {
