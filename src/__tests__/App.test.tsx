@@ -759,6 +759,24 @@ describe('App session sync boundaries', () => {
     expect(mocks.strudel.setError).toHaveBeenCalledWith(t('requestFailed'));
   });
 
+  it('does not show an old account deletion failure after switching accounts', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    let rejectDelete!: (error: Error) => void;
+    mocks.deleteCloudSession.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectDelete = reject;
+    }));
+    mocks.isMobile = false;
+    await renderApp();
+    act(() => {
+      (mocks.sidebarProps?.onDeleteSession as ((id: string) => void))('cloud-only');
+    });
+    mocks.auth.user = { id: 'user-2', email: 'other@example.com' };
+    await act(async () => { root?.render(<App />); });
+    mocks.strudel.setError.mockClear();
+    await act(async () => { rejectDelete(new Error('old account offline')); });
+    expect(mocks.strudel.setError).not.toHaveBeenCalled();
+  });
+
   it('refreshes searches only after a summary-only cloud deletion succeeds', async () => {
     mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
     const cloudSummary = {
