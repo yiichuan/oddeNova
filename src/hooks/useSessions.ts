@@ -1155,17 +1155,26 @@ export function useSessions(options: UseSessionsOptions = {}) {
     activateSession(id);
   }, [activateSession]);
 
+  // Resolve only after the local mutation has registered its checkpoint. A
+  // caller can then flush it without racing React's deferred state updater.
   const renameSession = useCallback(
-    (sessionId: string, title: string): void => {
+    (sessionId: string, title: string): Promise<void> => {
       const nextTitle = title.trim();
-      if (!nextTitle) return;
-      updateSession(
-        sessionId,
-        (s) => ({ ...s, title: nextTitle.slice(0, 60) }),
-        'checkpoint',
-      );
+      if (!nextTitle) return Promise.resolve();
+      return new Promise((resolve) => {
+        setSessions((previous) => {
+          const next = previous.map((session) => {
+            if (session.id !== sessionId) return session;
+            const updated = { ...session, title: nextTitle.slice(0, 60), updatedAt: Date.now() };
+            persistSession(updated, 'checkpoint');
+            return updated;
+          });
+          resolve();
+          return next;
+        });
+      });
     },
-    [updateSession]
+    [persistSession],
   );
 
   /**

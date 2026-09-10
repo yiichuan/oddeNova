@@ -134,6 +134,14 @@ Key modules:
   last-committed `code`. `useReplay.ts` replays a session's history step by
   step; undo supports up to 50 steps.
 
+- **`src/hooks/useSessionActions.ts`** — Session deletion and renaming across
+  working copies, cloud summaries, and title search. Keep this ordering here:
+  loaded deletion uses the durable retry queue and refreshes search only on its
+  cloud-completion callback; unloaded deletion removes its summary after remote
+  success. Renaming awaits `useSessions.renameSession()` (local mutation and
+  checkpoint registration), then flushes before refreshing search. Account
+  changes and unmount invalidate old action results, including error display.
+
 - **`src/demo/`** — `?demo=true` runs a scripted `demo-llm.ts` in place of a
   real LLM call, replaying canned tool-call sequences from `demo-config.ts`,
   so the agent loop can be exercised without API keys.

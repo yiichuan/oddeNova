@@ -64,6 +64,7 @@ import {
   saveCloudSession,
 } from './services/cloud-session-repository';
 import { useCloudSessionLibrary } from './hooks/useCloudSessionLibrary';
+import { useSessionActions } from './hooks/useSessionActions';
 import type { FavoriteSummary, SessionSummary } from '../shared/session-api';
 import {
   deleteSession,
@@ -267,8 +268,6 @@ export default function App() {
   const openCloudFavorite = cloudLibrary.openFavorite;
   const favoriteCloudSession = cloudLibrary.favoriteSession;
   const unfavoriteCloudSession = cloudLibrary.unfavoriteSession;
-  const refreshSearches = cloudLibrary.refreshSearches;
-  const removeCloudSummary = cloudLibrary.removeSummary;
   const upsertCloudHistorySummary = cloudLibrary.upsertHistorySummary;
   const retryCloudDetail = cloudLibrary.retryDetail;
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
@@ -1001,6 +1000,23 @@ export default function App() {
     [displayedFavoriteItems, pendingFavoriteId],
   );
 
+  const reportSessionActionError = useCallback((error: unknown) => {
+    console.warn('[sessions] session action failed.', error);
+    if (cloudErrorStatus(error) === 401) setAccountOpen(true);
+    if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
+  }, [strudel]);
+  const reportFavoriteDeleteError = useCallback((error: unknown) => {
+    console.warn('[favorites] failed to delete session.', error);
+    if (cloudErrorStatus(error) === 401) setAccountOpen(true);
+    strudel.setError(t('favoriteActionFailed'));
+  }, [strudel]);
+  const { deleteSession: deleteSessionAction, renameSession: handleRenameSession } = useSessionActions({
+    ownerId: auth.user?.id,
+    sessions,
+    library: cloudLibrary,
+    onError: reportSessionActionError,
+  });
+
   const commitPendingDelete = useCallback(async (notice: FavoriteNotice | null): Promise<boolean> => {
     if (notice?.kind !== 'released' && notice?.kind !== 'deleted') return false;
     if (!auth.user) return false;
@@ -1012,10 +1028,7 @@ export default function App() {
         ?? notice.favorite.sourceSessionId
         ?? notice.favorite.sessionId
         ?? notice.favorite.id;
-      const userId = auth.user.id;
-      sessions.deleteSession(sourceSessionId, () => {
-        if (authUserIdRef.current === userId) refreshSearches();
-      });
+      deleteSessionAction(sourceSessionId, reportFavoriteDeleteError);
       return true;
     }
     try {
@@ -1027,7 +1040,7 @@ export default function App() {
       strudel.setError(t('favoriteActionFailed'));
       return false;
     }
-  }, [auth.user, refreshSearches, sessions, strudel, unfavoriteCloudSession]);
+  }, [auth.user, deleteSessionAction, reportFavoriteDeleteError, strudel, unfavoriteCloudSession]);
 
   const noticeSeqRef = useRef(0);
 
@@ -1100,26 +1113,8 @@ export default function App() {
       return;
     }
     const sourceId = conversation.sourceSessionId ?? conversation.sessionId ?? conversation.id;
-    const userId = auth.user.id;
-    if (sessions.sessions.some((session) => session.id === sourceId)) {
-      removeCloudSummary(sourceId);
-      sessions.deleteSession(sourceId, () => {
-        if (authUserIdRef.current === userId) refreshSearches();
-      });
-    } else {
-      void deleteCloudSession(sourceId, auth.user.id)
-        .then(() => {
-          if (authUserIdRef.current !== userId) return;
-          removeCloudSummary(sourceId);
-          refreshSearches();
-        })
-        .catch((error) => {
-          console.warn('[favorites] failed to delete cloud session.', error);
-          if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-          strudel.setError(t('favoriteActionFailed'));
-        });
-    }
-  }, [auth.user, refreshSearches, removeCloudSummary, sessions, strudel]);
+    deleteSessionAction(sourceId, reportFavoriteDeleteError);
+  }, [auth.user, deleteSessionAction, reportFavoriteDeleteError]);
 
   const dismissFavoriteNotice = useCallback(() => {
     // Letting the notice go is what commits the deletion it was holding.
@@ -1206,54 +1201,7 @@ export default function App() {
     strudel,
   ]);
 
-  const handleDeleteSession = useCallback((id: string) => {
-    if (!auth.user) {
-      sessions.deleteSession(id);
-      return;
-    }
-    const userId = auth.user.id;
-    if (sessions.sessions.some((session) => session.id === id)) {
-      removeCloudSummary(id);
-      sessions.deleteSession(id, () => {
-        if (authUserIdRef.current === userId) refreshSearches();
-      });
-    } else {
-      void deleteCloudSession(id, auth.user.id)
-        .then(() => {
-          if (authUserIdRef.current !== userId) return;
-          removeCloudSummary(id);
-          refreshSearches();
-        })
-        .catch((error) => {
-          console.warn('[sessions] failed to delete cloud session.', error);
-          if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-          if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
-        });
-    }
-  }, [auth.user, refreshSearches, removeCloudSummary, sessions, strudel]);
-
-  const handleRenameSession = useCallback(async (id: string, title: string) => {
-    if (!auth.user) {
-      sessions.renameSession(id, title);
-      return;
-    }
-    const summary = displayedHistoryItems.find((candidate) => candidate.id === id)
-      ?? cloudHistoryItems.find((candidate) => candidate.id === id);
-    if (!summary) return;
-    const userId = auth.user.id;
-    try {
-      await openCloudSession(summary);
-      if (authUserIdRef.current !== userId) return;
-      sessions.renameSession(id, title);
-      upsertCloudHistorySummary({ ...summary, title }, 0);
-      await flushCloudSaves(id);
-      if (authUserIdRef.current === userId) refreshSearches();
-    } catch (error) {
-      console.warn('[sessions] failed to rename cloud session.', error);
-      if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-      if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
-    }
-  }, [auth.user, cloudHistoryItems, displayedHistoryItems, flushCloudSaves, openCloudSession, refreshSearches, sessions, strudel, upsertCloudHistorySummary]);
+  const handleDeleteSession = deleteSessionAction;
 
   const handleOpenFavoriteInStudio = useCallback((code: string) => {
     if (!auth.user) {
