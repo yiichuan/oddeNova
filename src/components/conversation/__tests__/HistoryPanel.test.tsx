@@ -218,15 +218,109 @@ describe('HistoryPanel title editing', () => {
     expect(titles).toEqual(['旧标题']);
   });
 
-  it('keeps delete behavior unchanged', () => {
+  it('asks before deleting, and deletes nothing until the question is answered', () => {
+    const { container, root, onDelete, onSwitch } = renderHistory();
+    roots.push(root);
+
+    const bin = () => container.querySelector<HTMLButtonElement>('button[title="Delete"]');
+    const confirm = () => document.querySelector<HTMLElement>('[data-testid="history-delete-confirm"]');
+
+    expect(confirm()).toBeNull();
+    act(() => { bin()?.click(); });
+
+    // The question, and which conversation it is about. The row underneath is
+    // not switched to on the way: the bin answers for itself.
+    expect(confirm()?.textContent).toContain(t('deleteSessionAsk'));
+    expect(confirm()?.textContent).toContain('旧标题');
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(onSwitch).not.toHaveBeenCalled();
+
+    // Standing back leaves the conversation where it is.
+    act(() => {
+      document.querySelector<HTMLButtonElement>('[data-testid="history-delete-cancel"]')?.click();
+    });
+    expect(confirm()).toBeNull();
+    expect(onDelete).not.toHaveBeenCalled();
+
+    // Escape is the other way out.
+    act(() => { bin()?.click(); });
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+    expect(confirm()).toBeNull();
+    expect(onDelete).not.toHaveBeenCalled();
+
+    act(() => { bin()?.click(); });
+    act(() => {
+      document.querySelector<HTMLButtonElement>('[data-testid="history-delete-accept"]')?.click();
+    });
+    expect(onDelete).toHaveBeenCalledWith('s-1');
+    expect(confirm()).toBeNull();
+  });
+
+  /* Only where a finger is the pointer. The studio's own list keeps its three
+     marks in the row, and a mouse held down on a row does nothing. */
+  it('leaves the row alone under a held pointer unless the menu is asked for', () => {
+    vi.useFakeTimers();
+    const { container, root, onSwitch } = renderHistory();
+    roots.push(root);
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!.parentElement!;
+
+    const press = (pointerType: string) => {
+      const event = new MouseEvent('pointerdown', { bubbles: true, clientX: 40, clientY: 40 });
+      Object.defineProperty(event, 'pointerType', { value: pointerType });
+      act(() => { row.dispatchEvent(event); });
+      act(() => { vi.advanceTimersByTime(600); });
+    };
+
+    // Hover-revealed marks, no menu: this panel was not told a finger is the
+    // pointer.
+    press('touch');
+    expect(document.querySelector('[data-testid="history-row-menu"]')).toBeNull();
+
+    act(() => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onSwitch).toHaveBeenCalledWith('s-1');
+    vi.useRealTimers();
+  });
+
+  it('does not open the held-row menu for a mouse, which has the row itself', () => {
+    vi.useFakeTimers();
+    const { container, root } = renderHistory({ longPressMenu: true });
+    roots.push(root);
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!.parentElement!;
+
+    const event = new MouseEvent('pointerdown', { bubbles: true, clientX: 40, clientY: 40 });
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+    act(() => { row.dispatchEvent(event); });
+    act(() => { vi.advanceTimersByTime(600); });
+
+    expect(document.querySelector('[data-testid="history-row-menu"]')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  /* The question is about a row, so it goes when the row does — deleted from
+     another window, kept, or filtered out from under it. */
+  it('takes the question down with the row it was asked about', () => {
     const { container, root, onDelete } = renderHistory();
     roots.push(root);
 
     act(() => {
       container.querySelector<HTMLButtonElement>('button[title="Delete"]')?.click();
     });
+    expect(document.querySelector('[data-testid="history-delete-confirm"]')).not.toBeNull();
 
-    expect(onDelete).toHaveBeenCalledWith('s-1');
+    act(() => {
+      root.render(
+        <HistoryPanel
+          sessions={[makeSession({ id: 's-2', title: '另一段' })]}
+          currentId={null}
+          onSwitch={vi.fn()}
+          onDelete={onDelete}
+          onRename={vi.fn()}
+        />,
+      );
+    });
+
+    expect(document.querySelector('[data-testid="history-delete-confirm"]')).toBeNull();
+    expect(onDelete).not.toHaveBeenCalled();
   });
 });
 

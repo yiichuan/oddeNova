@@ -1132,9 +1132,13 @@ export default function ConversationView({
             // message id without unmounting this block, so the key is what
             // forces a fresh node — and with it, the mount animation to replay.
             key={greetingMsg.id}
+            // A step larger on a phone: this is the one line on an empty
+            // screen, read at arm's length on a display the width of a hand,
+            // where the desktop's 14px reads as fine print rather than as an
+            // opening.
             className={`animate-blur-fade-in text-center text-text-greeting leading-relaxed ${
-              zh ? 'font-jinghua-laosongti tracking-wider text-sm' : 'font-eb-garamond text-sm'
-            }`}
+              zh ? 'font-jinghua-laosongti tracking-wider' : 'font-eb-garamond'
+            } ${isMobile ? 'text-base' : 'text-sm'}`}
           >
             {greetingMsg.content}
           </p>

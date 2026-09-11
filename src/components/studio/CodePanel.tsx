@@ -142,6 +142,12 @@ const METABALL_LINEAR_SCALE = Math.sqrt(3);
 const METABALL_DURATION_SCALE = 2;
 const COMPOSITE_LIGHT_GROUP_ORDER = [0, 3, 1, 4, 2, 5] as const;
 
+/** How long the mobile editor's scrollbar stays up after the last scroll, in
+    ms. Long enough that a flick, its glide, and the pause you take to read
+    where you landed all sit inside one showing of the bar — it goes away when
+    you are done with the code, not the moment your thumb leaves the glass. */
+const SCROLLBAR_IDLE_MS = 2000;
+
 
 /**
  * The per-ball half of `code-panel-ball-drift`: the five interior stops of the
@@ -179,6 +185,62 @@ function usePrefersReducedMotion() {
   }, []);
 
   return prefersReducedMotion;
+}
+
+/**
+ * The light behind the control bar: six blurred, drifting blobs read through a
+ * metaball filter, so the bar looks lit from within rather than filled.
+ *
+ * Its own component because both bars want it — the desktop footer and the
+ * mobile code window's — and the blobs are placed in percentages of the bar
+ * they sit in, so the same field lays itself out across a phone's bar as
+ * happily as across a desktop's. Every SVG filter needs an id unique in the
+ * document, and both bars can be mounted at once, so the prefix is a parameter
+ * rather than a constant.
+ */
+function ControlsLightField({ idPrefix }: { idPrefix: string }) {
+  return (
+    <div
+      data-testid="code-panel-light-field"
+      className="code-panel-light-field"
+      aria-hidden="true"
+    >
+      {COMPOSITE_LIGHT_GROUP_ORDER.map((groupIndex, index) => {
+        const group = ORGANIC_LIGHT_GROUPS[groupIndex];
+        return (
+          <span className="code-panel-light-blob" key={groupIndex}>
+            <svg viewBox="0 0 200 160" preserveAspectRatio="none" focusable="false">
+              <defs>
+                <filter id={`${idPrefix}-${index}`} x="-35%" y="-35%" width="170%" height="170%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="7.5" result="blur" />
+                  <feColorMatrix
+                    in="blur"
+                    mode="matrix"
+                    values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"
+                  />
+                </filter>
+              </defs>
+              <g
+                filter={`url(#${idPrefix}-${index})`}
+                transform={`translate(100 80) scale(${METABALL_LINEAR_SCALE}) translate(-100 -80)`}
+              >
+                {group.balls.map((ball, ballIndex) => (
+                  <circle
+                    key={ballIndex}
+                    cx={ball.cx}
+                    cy={ball.cy}
+                    r={ball.r}
+                    className="code-panel-light-ball"
+                    style={ballDriftVars(ball, group.motionScale)}
+                  />
+                ))}
+              </g>
+            </svg>
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 function PlaybackProgress({
@@ -436,6 +498,50 @@ export default function CodePanel({
     strudelService.setLineWrappingEnabled(isMobile);
   }, [isMobile]);
 
+  /* Mobile: the editor's bar shows itself while the code is moving and then
+     goes away, the way a phone's own scrollbars do. A permanent rule down the
+     right of a window that is already floating over a dimmed page is one line
+     too many, but a window with no bar at all never says how much code is
+     below the fold — so it says it at the moment the question is being asked
+     and stops afterwards.
+
+     Listening on the container in the capture phase rather than on the
+     scroller itself: scroll events don't bubble, but they do capture, and
+     CodeMirror mounts its scroller some time after this effect runs. Capturing
+     from the box that is always there means no waiting for a child that may
+     not exist yet, and no re-binding when the editor is rebuilt.
+
+     The flag goes on the scroller that actually moved, so a mobile editor with
+     both bars lights only the one being used. */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!isMobile || !container) return;
+
+    const timers = new Map<Element, number>();
+
+    const handleScroll = (event: Event) => {
+      const scroller = event.target;
+      if (!(scroller instanceof HTMLElement)) return;
+      scroller.dataset.scrolling = 'true';
+      const pending = timers.get(scroller);
+      if (pending !== undefined) window.clearTimeout(pending);
+      timers.set(scroller, window.setTimeout(() => {
+        timers.delete(scroller);
+        delete scroller.dataset.scrolling;
+      }, SCROLLBAR_IDLE_MS));
+    };
+
+    container.addEventListener('scroll', handleScroll, true);
+    return () => {
+      container.removeEventListener('scroll', handleScroll, true);
+      for (const [scroller, timer] of timers) {
+        window.clearTimeout(timer);
+        delete (scroller as HTMLElement).dataset.scrolling;
+      }
+      timers.clear();
+    };
+  }, [isMobile]);
+
   // Demo mode plays at a quiet 10% by default; the master engine otherwise
   // starts at full, so push the demo default down on mount.
   useEffect(() => {
@@ -578,12 +684,21 @@ export default function CodePanel({
           menus that sit at 50. */}
       <div
         data-testid="code-panel-code-layer"
-        className="relative isolate flex-1 min-h-0 overflow-hidden rounded-t-region border border-border bg-conversation-surface"
+        // No outline on mobile. There the panel is a window floating on a
+        // dimmed page, and a window is already told from its ground by standing
+        // off it — a drawn edge on top of that reads as a second frame inside
+        // the first. On desktop the panel is inlaid in the page and the line is
+        // the only thing saying where it starts.
+        className={`relative isolate flex-1 min-h-0 overflow-hidden rounded-t-region bg-conversation-surface${
+          isMobile ? '' : ' border border-border'
+        }`}
       >
         <div
           ref={containerRef}
           data-testid="code-panel-editor-root"
-          className="code-editor-fade-top h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full"
+          className={`code-editor-fade-top h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${
+            isMobile ? ' code-scroll-autohide' : ''
+          }`}
         />
 
         {error && (
@@ -639,46 +754,7 @@ export default function CodePanel({
           className="code-panel-controls relative z-10 -mt-px -mb-px -ml-px flex h-[calc(3rem+1px)] w-[calc(100%+2px)] shrink-0 items-stretch rounded-b-region border bg-conversation-surface"
           style={{ borderColor: 'transparent', fontFamily: "'ABeeZee', monospace" }}
         >
-          <div
-            data-testid="code-panel-light-field"
-            className="code-panel-light-field"
-            aria-hidden="true"
-          >
-            {COMPOSITE_LIGHT_GROUP_ORDER.map((groupIndex, index) => {
-              const group = ORGANIC_LIGHT_GROUPS[groupIndex];
-              return (
-                <span className="code-panel-light-blob" key={groupIndex}>
-                  <svg viewBox="0 0 200 160" preserveAspectRatio="none" focusable="false">
-                  <defs>
-                    <filter id={`code-panel-metaball-${index}`} x="-35%" y="-35%" width="170%" height="170%">
-                      <feGaussianBlur in="SourceGraphic" stdDeviation="7.5" result="blur" />
-                      <feColorMatrix
-                        in="blur"
-                        mode="matrix"
-                        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"
-                      />
-                    </filter>
-                  </defs>
-                  <g
-                    filter={`url(#code-panel-metaball-${index})`}
-                    transform={`translate(100 80) scale(${METABALL_LINEAR_SCALE}) translate(-100 -80)`}
-                  >
-                    {group.balls.map((ball, ballIndex) => (
-                      <circle
-                        key={ballIndex}
-                        cx={ball.cx}
-                        cy={ball.cy}
-                        r={ball.r}
-                        className="code-panel-light-ball"
-                        style={ballDriftVars(ball, group.motionScale)}
-                      />
-                    ))}
-                  </g>
-                  </svg>
-                </span>
-              );
-            })}
-          </div>
+          <ControlsLightField idPrefix="code-panel-metaball" />
 
           {/* Stands in for the particle galaxy while it is collapsed: its motes
               falling through the bar like snow, some of them burning orange on
@@ -880,6 +956,91 @@ export default function CodePanel({
               />
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Footer — mobile playback control, inside the code window App floats
+          over the conversation. Only the transport and the timeline: the ways
+          of taking the piece away with you are hung above the window by App,
+          where there is room for them, and everything the desktop bar carries
+          that a finger cannot reach is gone — no hover labels, no volume
+          popover (the phone has its own volume keys), no viz toggle (there is
+          no viz pane on mobile).
+
+          The ground is the desktop bar's, `.code-panel-controls` and all: the
+          same glass, the same grain, the same lit field drifting behind it.
+          Only the rhythm is restated, by `.code-panel-mobile-controls`, which
+          is later in the stylesheet and so wins the spacing variables the
+          shared progress layout reads.
+
+          No rim and no border, and so none of the desktop bar's negative
+          margins either — those exist only to clip a transparent border away so
+          the glass rim can land flush on the panel's outline, and there is
+          neither here. 47px is stated outright, which is what the desktop box
+          nets out to, so dropping the borders leaves the bar exactly as tall as
+          it was. */}
+      {isMobile && (
+        <div
+          data-testid="code-panel-mobile-controls"
+          className="code-panel-controls code-panel-mobile-controls relative z-10 flex h-[47px] w-full shrink-0 items-center rounded-b-region bg-conversation-surface pl-3 pr-4"
+          style={{ fontFamily: "'ABeeZee', monospace" }}
+        >
+          <ControlsLightField idPrefix="code-panel-mobile-metaball" />
+
+          {/* Both transport keys are plain discs — a fill, no ring — wearing
+              the desktop bar's own `control-button-surface`, so a cap on this
+              bar is literally the same colour as a cap on that one: near-black
+              in the dark room, pale grey on paper.
+
+              Neither takes `--color-control-icon`, and that is not incidental:
+              the token is near-white on the light theme (#F6F6FB) because every
+              desktop control wearing it stands on that black cap. Worn without
+              a cap underneath it lands white-on-white and the button
+              disappears. These carry the caps instead and take their glyph from
+              the action ramp, which reads in both themes.
+
+              `relative z-10` on the cluster, as on the progress layout beside
+              it: the lit field sits at 0 and the grain at 1, and the controls
+              are the one thing on this bar that is not scenery. */}
+          <div className="relative z-10 flex shrink-0 items-center">
+            <button
+              type="button"
+              onClick={handlePlayClick}
+              disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
+              className={`control-button-surface flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed ${
+                !isPlaying && (!engineReady || !hasPlayableCode) ? 'text-text-muted' : 'text-action-fill'
+              }`}
+              aria-label={isPlaying ? t('pause') : t('play')}
+            >
+              {isPlaying ? <PauseIcon size={12} /> : <PlayIcon size={13} />}
+            </button>
+
+            {/* Same condition as the desktop bar: a piece is sounding and the
+                editor holds an edit it hasn't heard. The pair reads as one
+                cluster — same disc, same size — with play the lit one and this
+                the quieter answer beside it. It arrives mid-playback the moment
+                an edit outruns the sound, so it fades in over its own width
+                rather than appearing whole in a bar that is otherwise still. */}
+            {canUpdate && (
+              <div className="code-panel-update-enter ml-2 flex shrink-0 items-center">
+                <button
+                  type="button"
+                  onClick={onUpdate}
+                  className="control-button-surface flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-text-secondary transition-colors"
+                  aria-label={t('updatePattern')}
+                >
+                  <UpdateIcon size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <PlaybackProgress
+            code={timelineCode}
+            isPlaying={isPlaying}
+            isPaused={isPaused}
+            accentColor={accentColor}
+          />
         </div>
       )}
 

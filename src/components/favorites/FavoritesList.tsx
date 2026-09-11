@@ -7,6 +7,7 @@ import {
   type FavoriteConversation,
 } from '../../lib/favorite-conversations';
 import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
+import ScrollingTitle from '../common/ScrollingTitle';
 import { SearchIcon, XIcon } from '../icons';
 
 /** One entry, one row — set in the same metrics the Featured title column uses. */
@@ -416,13 +417,15 @@ export default function FavoritesList({
                 />
                 {/* The title gives up its width first — the date is five
                     characters and holding them keeps the column of days
-                    readable however long a name runs. */}
-                <span
+                    readable however long a name runs. What it gives up is
+                    shown by an ellipsis on the rows standing by, and run
+                    round on the one being read. */}
+                <ScrollingTitle
                   data-favorite-title={summary.id}
-                  className="relative min-w-0 truncate"
-                >
-                  {summary.title}
-                </span>
+                  title={summary.title}
+                  active={selected}
+                  className="relative min-w-0"
+                />
                 <time
                   dateTime={new Date(summary.favoritedAt).toISOString()}
                   className="relative shrink-0 tabular-nums opacity-60"

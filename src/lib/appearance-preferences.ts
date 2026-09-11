@@ -28,6 +28,12 @@ export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'light';
 export const DEFAULT_ANIMATION: AnimationPreference = 'galaxy-ascii';
 export const DEFAULT_STUDIO_ANIMATION_VISIBLE = true;
 
+/** Browser chrome and overscroll should continue the app's outermost surface. */
+const BROWSER_THEME_COLORS: Record<ResolvedTheme, string> = {
+  dark: '#070707',
+  light: '#E3E3E5',
+};
+
 /** i18n keys for the user-facing name of each choice. */
 export const THEME_LABEL_KEYS: Record<ThemePreference, string> = {
   system: 'themeSystem',
@@ -125,6 +131,9 @@ function applyTheme(preference: ThemePreference, keepEditorTheme = false): void 
   const resolved = resolveTheme(preference);
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute('content', BROWSER_THEME_COLORS[resolved]);
   if (!keepEditorTheme && previous !== resolved) applyAppEditorTheme(resolved);
 }
 

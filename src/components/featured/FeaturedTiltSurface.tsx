@@ -1,5 +1,11 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { sleeveShadowColor, type CoverRoom } from './featured-cover-light';
+import {
+  deviceTiltSupported,
+  orientationReading,
+  tiltFromReading,
+  type TiltReading,
+} from './featured-device-tilt';
 
 /** Where the sleeve's shadow falls: down and behind, before any lean. */
 const RESTING_THROW = '0 12px 28px';
@@ -14,7 +20,23 @@ interface TiltValues extends CSSProperties {
 }
 
 /**
- * A plane that leans away from the pointer, and the box it leans inside.
+ * A plane that leans away from the hand, and the box it leans inside.
+ *
+ * Which hand is whichever one is there. A display has a pointer, and the plane
+ * leans away from wherever the cursor is over it. A phone has no pointer — a
+ * finger is only ever on the glass for the moment it presses — but it has the
+ * one thing the display does not, which is that the whole page is being held:
+ * the readings say how far the thing has been turned since it was picked up,
+ * and the sleeve is turned with it.
+ *
+ * Both are read, and neither is asked for. A machine with a cursor sends no
+ * orientation; a phone has no cursor to send. What is left is the case where
+ * both are there — this page's own layout opened on a machine with a mouse, or
+ * a tablet on a keyboard — and there the sleeve simply answers whichever hand
+ * moved last, which is the right answer to "which hand is holding it". They
+ * arrive here as the same -1..1 pair, and everything past that point — the
+ * lean, the light caught on it, the shadow it throws — is one piece of
+ * arithmetic serving both.
  *
  * Nothing that has to be pressed can live on the plane alone. The lean moves
  * the plane's edges under the hand — the side the pointer is on projects some
@@ -59,8 +81,15 @@ export default function FeaturedTiltSurface({
     syncOrigin();
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!active || reduced) return;
+    /* A coarse pointer has no resting position to read a lean from — a finger
+       is only over the sleeve for the instant it presses it, and on a page
+       whose whole surface is dragged it is over it for every one of those
+       drags. So the cursor is read only where there is a real one, and the
+       device wherever the browser has the event at all. */
     const precisePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-    if (!active || reduced || !precisePointer) return;
+    const deviceHand = deviceTiltSupported();
+    if (!precisePointer && !deviceHand) return;
 
     let frameId: number | null = null;
     let lastFrame = 0;
@@ -127,13 +156,38 @@ export default function FeaturedTiltSurface({
       requestFrame();
     };
 
+    /* Where the phone was when this sleeve took the centre. Captured on the
+       first reading rather than assumed to be level: see tiltFromReading. */
+    let baseline: TiltReading | null = null;
+
+    const onOrientation = (event: DeviceOrientationEvent) => {
+      const reading = orientationReading(event);
+      if (!reading) return;
+      baseline ??= reading;
+      const tilt = tiltFromReading(reading, baseline);
+      target.x = tilt.x;
+      target.y = tilt.y;
+      /* How far the phone has been turned, in one number — where the pointer's
+         strength says "the hand is over the sleeve", the device's says "the
+         sleeve is being turned this much". It is what the light is spent by, so
+         a phone held exactly as it was picked up shows a sleeve standing square
+         with no highlight on it, and tipping it is what lights the artwork.
+         Full strength a little before the lean is: past two thirds of the way
+         the sleeve is plainly turned, and the light should already be all
+         there. */
+      target.strength = Math.min(1, Math.hypot(tilt.x, tilt.y) * 1.5);
+      requestFrame();
+    };
+
     const resizeObserver = new ResizeObserver(syncOrigin);
     resizeObserver.observe(surface);
 
-    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    if (precisePointer) window.addEventListener('pointermove', onPointerMove, { passive: true });
+    if (deviceHand) window.addEventListener('deviceorientation', onOrientation);
     return () => {
       if (frameId !== null) window.cancelAnimationFrame(frameId);
       window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('deviceorientation', onOrientation);
       resizeObserver.disconnect();
       reset();
     };

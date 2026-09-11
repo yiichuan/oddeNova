@@ -237,6 +237,51 @@ describe('FavoritesPage', () => {
     expect(onSelect).toHaveBeenCalledWith(THREE_KEPT[0]);
   });
 
+  /* Being sent to a favorite has to beat the entry the page was left on: the
+     one that was just kept is the reason for the visit. */
+  it('opens on the entry it was sent to rather than the one it was left on', () => {
+    const onSelect = vi.fn();
+    const focus = { id: 'newest' };
+    const { container, root } = render(
+      <FavoritesPage
+        active
+        summaries={THREE_KEPT}
+        selectedId="oldest"
+        focus={focus}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(openEntry(container)).toBe('newest');
+    expect(onSelect).toHaveBeenCalledWith(THREE_KEPT[0]);
+
+    /* And the arrival is spent once it has been answered: the list is back in
+       charge, with the same focus still hanging off the parent. */
+    act(() => listRows(container)[1].click());
+    act(() => root.render(
+      <FavoritesPage
+        active
+        summaries={THREE_KEPT}
+        selectedId="middle"
+        focus={focus}
+        onSelect={onSelect}
+      />,
+    ));
+    expect(openEntry(container)).toBe('middle');
+
+    // A later send wins again — it is a new arrival, even to the same entry.
+    act(() => root.render(
+      <FavoritesPage
+        active
+        summaries={THREE_KEPT}
+        selectedId="middle"
+        focus={{ id: 'oldest' }}
+        onSelect={onSelect}
+      />,
+    ));
+    expect(openEntry(container)).toBe('oldest');
+  });
+
   it('still says the account has kept nothing when nothing is left', () => {
     const { container } = render(
       <FavoritesPage active summaries={[]} selectedId="middle" onSelect={vi.fn()} />,
@@ -814,10 +859,74 @@ describe('FavoritesPage', () => {
 
     // The title gives up its width; the date holds its five characters, so the
     // column of days stays readable however long a name runs.
-    expect(row.querySelector('[data-favorite-title="long"]')?.className)
-      .toContain('min-w-0 truncate');
+    const title = row.querySelector('[data-favorite-title="long"]')!;
+    expect(title.className).toContain('truncate');
+    expect(title.className).toContain('min-w-0');
     expect(row.querySelector('time')?.className).toContain('shrink-0');
     expect(row.querySelector('time')?.textContent).toBe(favoritedDateLabel(long.favoritedAt));
+  });
+
+  it('runs the open entry\'s name round when it will not fit, and only that one', () => {
+    const long = (id: string): FavoriteConversation => ({
+      ...CONVERSATIONS[0],
+      id,
+      title: [
+        '深夜末班地铁车厢里的环境音草稿',
+        'An Ambient Sketch from the Last Subway Car of the Night',
+      ],
+    });
+    /* happy-dom lays nothing out, so the two measurements this turns on have
+       to be stood in for: a name twice as wide as the room it has. */
+    const nameWidth = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ ...new DOMRect(), width: 240 } as DOMRect);
+    const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(120);
+    try {
+      const { container } = render(
+        <FavoritesPage conversations={[long('first-long'), long('second-long')]} />,
+      );
+      const titleFor = (id: string) => container
+        .querySelector<HTMLElement>(`[data-favorite-title="${id}"]`)!;
+
+      // The one being read runs; the one waiting to be picked says what it is
+      // giving up with an ellipsis, as before.
+      expect(titleFor('first-long').dataset.marquee).toBe('true');
+      // One lap is the name and the gap it comes round after — 240 + 48 — and
+      // it takes that many pixels at the reading pace.
+      expect(titleFor('first-long').style.getPropertyValue('--scrolling-title-lap'))
+        .toBe('-288px');
+      expect(titleFor('first-long').style.getPropertyValue('--scrolling-title-gap'))
+        .toBe('48px');
+      expect(titleFor('first-long').style.getPropertyValue('--scrolling-title-duration'))
+        .toBe('12.00s');
+      // Said twice, because the row is a circle — but only once in the row's
+      // own text: the copy is drawn by CSS out of this attribute.
+      expect(titleFor('first-long').querySelector('.scrolling-title-line')
+        ?.getAttribute('data-title')).toBe(conversationTitle(long('first-long')));
+      expect(titleFor('first-long').textContent).toBe(conversationTitle(long('first-long')));
+      expect(titleFor('second-long').dataset.marquee).toBeUndefined();
+
+      // And it goes with the selection rather than staying where it started.
+      act(() => container.querySelector<HTMLButtonElement>('[data-favorite-id="second-long"]')!.click());
+      expect(titleFor('second-long').dataset.marquee).toBe('true');
+      expect(titleFor('first-long').dataset.marquee).toBeUndefined();
+    } finally {
+      nameWidth.mockRestore();
+      clientWidth.mockRestore();
+    }
+  });
+
+  it('leaves a name that fits alone', () => {
+    const width = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ ...new DOMRect(), width: 120 } as DOMRect);
+    const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(120);
+    try {
+      const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+
+      expect(container.querySelector('[data-marquee]')).toBeNull();
+    } finally {
+      width.mockRestore();
+      room.mockRestore();
+    }
   });
 
   it('opens a favorite at its end rather than at its first instruction', () => {
@@ -1027,10 +1136,48 @@ describe('FavoritesPage', () => {
       expect(unfavorite.querySelector('svg')?.getAttribute('fill')).toBe('currentColor');
 
       act(() => unfavorite.click());
+      // The bin opens the question rather than carrying it out; answering it is
+      // what deletes.
       act(() => remove.click());
+      act(() => document.querySelector<HTMLButtonElement>('[data-testid="favorites-delete-accept"]')!.click());
 
       expect(onUnfavorite).toHaveBeenCalledWith(KEPT[0]);
       expect(onDelete).toHaveBeenCalledWith(KEPT[0]);
+    });
+
+    it('asks before deleting, and deletes nothing until the question is answered', () => {
+      const onDelete = vi.fn();
+      const { container } = render(
+        <FavoritesPage conversations={KEPT} onUnfavorite={vi.fn()} onDelete={onDelete} />,
+      );
+      const remove = container.querySelector<HTMLButtonElement>('[data-favorites-delete]')!;
+      const confirm = () => document.querySelector<HTMLElement>('[data-testid="favorites-delete-confirm"]');
+
+      expect(confirm()).toBeNull();
+      act(() => remove.click());
+
+      // The question says what happens, and which conversation it happens to.
+      expect(confirm()?.textContent).toContain(t('deleteFavoriteAsk'));
+      expect(confirm()?.textContent).toContain(conversationTitle(KEPT[0]));
+      expect(onDelete).not.toHaveBeenCalled();
+
+      // Standing back leaves the favorite exactly as it was.
+      act(() => document.querySelector<HTMLButtonElement>('[data-testid="favorites-delete-cancel"]')!.click());
+      expect(confirm()).toBeNull();
+      expect(onDelete).not.toHaveBeenCalled();
+
+      // And Escape is the other way out of it.
+      act(() => remove.click());
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      });
+      expect(confirm()).toBeNull();
+      expect(onDelete).not.toHaveBeenCalled();
+
+      act(() => remove.click());
+      act(() => document.querySelector<HTMLButtonElement>('[data-testid="favorites-delete-accept"]')!.click());
+      expect(onDelete).toHaveBeenCalledWith(KEPT[0]);
+      expect(confirm()).toBeNull();
     });
 
     it('still allows deleting a favorite whose source session is gone', () => {

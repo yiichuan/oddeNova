@@ -7,11 +7,15 @@ import FeaturedGlow from './FeaturedGlow';
 import FeaturedPlayerBar from './FeaturedPlayerBar';
 import FeaturedWebglLightField from './FeaturedWebglLightField';
 import { useResolvedTheme } from '../../hooks/useAppearance';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import MobileFeaturedPage from './MobileFeaturedPage';
+import { positiveModulo } from './featured-carousel-motion';
 import {
   CONTENT_FADE_MS,
   coverFlightSupported,
   flightRect,
   liftCover,
+  raiseCoverLight,
   type CoverFlight,
 } from './featured-cover-flight';
 
@@ -70,6 +74,18 @@ interface FeaturedPageProps {
    * for a record — so the change is reported outwards.
    */
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Whether this is the page on screen. The shelf stays mounted while you are
+   * elsewhere in the app, and on a phone what it stands in is the device's own
+   * attitude — readings it has no business answering from behind another page.
+   */
+  active?: boolean;
+  /**
+   * Opens the shell's navigation drawer. Mobile only: on a phone this page
+   * draws its own top bar, and the key in it that reaches the rest of the app
+   * has nowhere else to go. Desktop has the nav column standing beside it.
+   */
+  onOpenNav?: () => void;
 }
 
 /**
@@ -109,16 +125,24 @@ export default function FeaturedPage({
   onPause,
   onOpenInStudio,
   onOpenChange,
+  active = true,
+  onOpenNav,
 }: FeaturedPageProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>('idle');
   const pageRef = useRef<HTMLElement>(null);
   const carouselRef = useRef<FeaturedCarouselHandle>(null);
   const flightRef = useRef<CoverFlight | null>(null);
-  // A copy that has arrived and is waiting to be taken away — see the handover
-  // at the head of the layout effect below.
-  const landedRef = useRef<CoverFlight | null>(null);
+  /* What the transport is pointed at, as of the last render — and, for the
+     length of one call, what a skip has just pointed it at. See skipTo. */
+  const parkedRef = useRef<string | null>(currentPiece?.id ?? null);
+  /* A copy that has arrived and is waiting to be taken away — see the handover
+     at the head of the layout effect below. Which end it arrived at comes with
+     it: a cover that has just been put back on the shelf is a sleeve with its
+     light to raise. */
+  const landedRef = useRef<{ flight: CoverFlight; arriving: 'detail' | 'carousel' } | null>(null);
   const albums = useMemo(() => featuredAlbums(pieces), [pieces]);
+  const isMobile = useIsMobile();
   const openAlbum = albums.find((album) => album.id === openId) ?? null;
   // The room the shelf stands in follows the app's theme, the same way the
   // Favorites page's does — one building, lit the way the reader asked for.
@@ -184,8 +208,15 @@ export default function FeaturedPage({
     // appears on the same frame. Taking the copy away on a timer or an animation
     // frame instead loses the race with React's own commit, and the one frame
     // with neither of them on screen is the blink you see on arrival.
-    landedRef.current?.remove();
+    const landed = landedRef.current;
+    landed?.flight.remove();
     landedRef.current = null;
+    /* The tile has its artwork back as of this commit and has not been painted
+       yet, so the light the copy did not carry can be started on the same frame
+       the tile appears on. */
+    if (landed?.arriving === 'carousel') {
+      raiseCoverLight(pageRef.current?.querySelector('[data-carousel-centered="true"]'));
+    }
 
     const flight = flightRef.current;
     if (!flight || (stage !== 'opening' && stage !== 'returning')) return undefined;
@@ -203,7 +234,7 @@ export default function FeaturedPage({
       if (abandoned) return;
       // Handed over rather than removed here: the copy has to outlive this
       // moment by exactly one commit, which is what `landedRef` is for.
-      landedRef.current = flight;
+      landedRef.current = { flight, arriving };
       flightRef.current = null;
       setStage('idle');
     });
@@ -215,36 +246,91 @@ export default function FeaturedPage({
     onOpenChange?.(openId !== null);
   }, [openId, onOpenChange]);
 
+  useEffect(() => {
+    parkedRef.current = currentPiece?.id ?? null;
+  });
+
   /**
    * A skip on the bar, which walks the whole collection a track at a time and
-   * so can step off the record being read and onto the next one.
+   * so can step off the record being shown and onto the next one.
    *
    * The page turns with it rather than being told afterwards by the piece that
-   * came back parked: what you are reading and what the transport is pointed at
-   * are one choice, and a skip is the moment that choice is made.
+   * came back parked: what you are looking at and what the transport is pointed
+   * at are one choice, and a skip is the moment that choice is made. That holds
+   * in both views. Behind a piece it opens the record the skip landed in — no
+   * cover flight either way, since the cover has nowhere to leave from, and the
+   * arriving record fades its own content in because the view is keyed on which
+   * record it is. On the shelf it turns the wheel to that record, which is the
+   * same statement made by the only means the shelf has of making it.
    *
-   * No cover flight either way — the cover has nowhere to leave from, it is
-   * already standing at the head of a piece — and the arriving record fades its
-   * own content in, since the view is keyed on which record it is.
-   *
-   * The shelf comes round behind it too, out of sight, so the way back out lands
-   * on the record you were last reading rather than on the one you went in from.
+   * The wheel turns either way, in sight or out of it, so the way back out of a
+   * piece lands on the record you were last reading rather than on the one you
+   * went in from.
    */
   const skipTo = useCallback((piece: FeaturedPiece) => {
     onPlay(piece);
-    if (openId === null) return;
+    /* Claimed before the wheel is asked to move. The trip it starts can settle
+       inside this very call — a collection already standing where it was sent,
+       or a reader who has asked for no animation — and the settle asks whether
+       the transport is inside the record it landed on. The answer has to be the
+       track this skip just chose, which is not yet the one in props: it arrives
+       on the next render. Without this, a skip backwards into an album would be
+       answered by re-parking the bar on that album's first track, which is the
+       one track the reader did not ask for. */
+    parkedRef.current = piece.id;
     const owner = albums.find((album) => album.tracks.some((track) => track.id === piece.id));
-    if (!owner || owner.id === openId) return;
-    setOpenId(owner.id);
+    if (!owner) return;
+    // A skip within one record moves the track and not the shelf; `centreOn`
+    // is silent when the wheel is already there or already on its way.
     carouselRef.current?.centreOn(owner.id);
+    if (openId !== null && owner.id !== openId) setOpenId(owner.id);
   }, [albums, onPlay, openId]);
+
+  /**
+   * The other end of that one choice: the wheel has stopped somewhere, so the
+   * transport is pointed at what it stopped on.
+   *
+   * The record's first track, which is where a record begins — except when the
+   * bar is already parked inside this record, where the skips have walked it to
+   * a track of their own and re-pointing it at the first would undo them.
+   */
+  const centreOnAlbum = useCallback((album: FeaturedAlbum) => {
+    if (album.tracks.some((track) => track.id === parkedRef.current)) return;
+    onSelect(album.tracks[0]);
+  }, [onSelect]);
 
   useEffect(() => () => {
     flightRef.current?.remove();
-    landedRef.current?.remove();
+    landedRef.current?.flight.remove();
     flightRef.current = null;
     landedRef.current = null;
   }, []);
+
+  /* Everything above is what the page *is* — the collection, what the transport
+     is pointed at, which record is open — and none of it changes with the width
+     of the screen. What changes is the room it is put in, so the two layouts
+     part here and nowhere else, the way the Favorites page's do.
+     See MobileFeaturedPage for what a phone does with a shelf. */
+  if (isMobile) {
+    return (
+      <MobileFeaturedPage
+        albums={albums}
+        pieces={pieces}
+        currentPiece={currentPiece}
+        playingId={playingId}
+        pausedId={pausedId}
+        engineReady={engineReady}
+        opening={opening}
+        active={active}
+        onPlay={onPlay}
+        onSelect={onSelect}
+        onStop={onStop}
+        onPause={onPause}
+        onOpenInStudio={onOpenInStudio}
+        onOpenNav={onOpenNav}
+      />
+    );
+  }
 
   const galleryLeaving = stage === 'opening';
   const galleryReturning = stage === 'returning';
@@ -255,14 +341,20 @@ export default function FeaturedPage({
       ? 'featured-content-in'
       : '';
 
-  // The bar's skip buttons walk the collection in the order the grid shows it.
-  // No wrap-around: the ends of a hand-picked list are worth feeling. With a
-  // single piece there is nothing either side and both buttons sit disabled.
+  /* The bar's skips walk the collection in the order the shelf shows it, and
+     walk it round: the shelf is a ring with no first or last sleeve on it, and
+     a transport that came to a stop at an end would be the one part of this
+     page that had one. Past the last track is the first again, so next can be
+     pressed for as long as anyone cares to press it, and prev off the front of
+     the collection arrives at the back of it.
+
+     A collection of one is the exception. There is nowhere to go — a skip would
+     land on the track already parked and restart it — so both keys stand
+     disabled, which is what they did at the ends before. */
   const parkedIndex = currentPiece ? pieces.findIndex((piece) => piece.id === currentPiece.id) : -1;
-  const prevPiece = parkedIndex > 0 ? pieces[parkedIndex - 1] : null;
-  const nextPiece = parkedIndex >= 0 && parkedIndex < pieces.length - 1
-    ? pieces[parkedIndex + 1]
-    : null;
+  const ringed = parkedIndex >= 0 && pieces.length > 1;
+  const prevPiece = ringed ? pieces[positiveModulo(parkedIndex - 1, pieces.length)] : null;
+  const nextPiece = ringed ? pieces[positiveModulo(parkedIndex + 1, pieces.length)] : null;
 
   return (
     <main
@@ -306,13 +398,8 @@ export default function FeaturedPage({
           <FeaturedCarousel
             ref={carouselRef}
             albums={albums}
-            playingId={playingId}
-            engineReady={engineReady}
             onOpen={openDetail}
-            // A record pressed on the shelf starts at its first track; there is
-            // nowhere else it could reasonably begin.
-            onPlay={(album) => onPlay(album.tracks[0])}
-            onStop={onStop}
+            onCentre={centreOnAlbum}
             openId={openId}
             centerCoverHidden={galleryLeaving || galleryReturning}
             transition={galleryLeaving ? 'leaving' : galleryReturning ? 'entering' : null}

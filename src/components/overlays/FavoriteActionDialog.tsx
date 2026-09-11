@@ -25,6 +25,23 @@ interface FavoriteActionDialogProps {
    * its undo an undo rather than a re-import.
    */
   onClose: () => void;
+  /**
+   * Report the move and offer nothing.
+   *
+   * What the two buttons are for is a move the reader has not yet agreed to:
+   * the desktop acts first and holds the undo open behind the report, so the
+   * bar is where the decision actually gets made. The phone asks before it
+   * acts — a panel in the middle of the page that nothing happens without — so
+   * by the time this goes up the answer is already in, and offering to undo it
+   * would be asking the same question a second time from the far end of the
+   * screen from the thumb that answered the first one.
+   *
+   * So there it is one line saying what happened, and then it goes. No undo,
+   * no way onward, not even a cross: with nothing to press there is nothing to
+   * reach for, and a bar that takes no clicks cannot come between a thumb and
+   * the page under it.
+   */
+  reportOnly?: boolean;
 }
 
 const HEADLINE: Record<FavoriteActionKind, string> = {
@@ -58,6 +75,21 @@ const TONE: Record<FavoriteActionKind, string> = {
  * for them while they are.
  */
 export const LINGER_MS = 5000;
+
+/**
+ * How long a report-only notice waits — see `reportOnly`.
+ *
+ * The five seconds above are not a reading time, they are how long the way
+ * back stays open: the bar has to outlast the moment where someone realises
+ * they meant the other row. Take the undo away and that reason goes with it,
+ * and what is left is one short line to be read once. Held for the same five
+ * seconds it would stop being a report and start being something waiting to be
+ * dismissed — on a phone, across the top of the page, with nothing on it to
+ * dismiss it with.
+ *
+ * Two seconds is that line read at a glance, twice over, and then gone.
+ */
+export const REPORT_LINGER_MS = 2000;
 
 /**
  * How long the notice takes to go once it has been answered.
@@ -97,6 +129,7 @@ export default function FavoriteActionDialog({
   onView,
   onUndo,
   onClose,
+  reportOnly = false,
 }: FavoriteActionDialogProps) {
   const [held, setHeld] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -134,9 +167,12 @@ export default function FavoriteActionDialog({
 
   useEffect(() => {
     if (held || leaving) return undefined;
-    const timer = window.setTimeout(() => answer(() => closeRef.current()), LINGER_MS);
+    const timer = window.setTimeout(
+      () => answer(() => closeRef.current()),
+      reportOnly ? REPORT_LINGER_MS : LINGER_MS,
+    );
     return () => window.clearTimeout(timer);
-  }, [held, leaving]);
+  }, [held, leaving, reportOnly]);
 
   useEffect(() => {
     if (!leaving) return undefined;
@@ -153,7 +189,10 @@ export default function FavoriteActionDialog({
       /* A strip across the top rather than a layer over everything: nothing
          here is waiting on an answer, so nothing here may stand between the
          pointer and the page. Only the bar itself takes clicks. */
-      className="pointer-events-none fixed inset-x-0 top-6 z-[100] flex justify-center px-4"
+      /* Its top edge stands in the page's own top row rather than under it —
+         see `.favorite-notice-strip`, which has to be a rule of its own
+         because it is measured off the notch inset. */
+      className="favorite-notice-strip pointer-events-none fixed inset-x-0 z-[100] flex justify-center px-4"
     >
       <div
         role="status"
@@ -161,19 +200,27 @@ export default function FavoriteActionDialog({
         /* Reaching for it stops the clock, and taking the hand away starts it
            over. Focus counts as reaching: the notice can be tabbed to, and
            nothing should be able to close under a key on its way to a button. */
-        onPointerEnter={() => setHeld(true)}
-        onPointerLeave={() => setHeld(false)}
-        onFocusCapture={() => setHeld(true)}
-        onBlurCapture={() => setHeld(false)}
+        onPointerEnter={reportOnly ? undefined : () => setHeld(true)}
+        onPointerLeave={reportOnly ? undefined : () => setHeld(false)}
+        onFocusCapture={reportOnly ? undefined : () => setHeld(true)}
+        onBlurCapture={reportOnly ? undefined : () => setHeld(false)}
         /* Lighter than the surfaces it passes over, and edged brighter than
            the app's panels are. Those are places the page settles into and can
            afford to sit at the page's own value; this one has to read as
            standing off it, over whatever happens to be underneath — the studio's
            near-black or the Favorites page's light field. */
-        className={`flex w-max max-w-full items-center gap-2.5 rounded-[12px] border border-border bg-settings-surface/95 py-2 pl-3.5 pr-2 shadow-menu-overlay backdrop-blur-2xl ${
+        className={`flex w-max max-w-full items-center gap-2.5 rounded-[12px] border border-border bg-settings-surface/95 py-2 shadow-menu-overlay backdrop-blur-2xl ${
+          /* The right inset is the cross's own breathing room. With nothing
+             there the line closes up and sits even on both sides. */
+          reportOnly ? 'px-3.5' : 'pl-3.5 pr-2'
+        } ${
           leaving
             ? 'animate-favorite-dialog-out pointer-events-none'
-            : 'animate-favorite-dialog-in pointer-events-auto'
+            : `animate-favorite-dialog-in ${
+              /* Nothing on it to press, so it takes no presses: the page under
+                 a report stays as reachable as it was without it. */
+              reportOnly ? 'pointer-events-none' : 'pointer-events-auto'
+            }`
         }`}
       >
         {/* The same glyph the move was made with, at rest, so the line reads
@@ -186,37 +233,41 @@ export default function FavoriteActionDialog({
             either a fixed mark or a word you have to be able to read. */}
         <span className="min-w-0 truncate text-[13px] text-text-secondary">{title}</span>
 
-        <span className="ml-1 flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => answer(onUndo)}
-            className="h-7 rounded-full border border-border px-3 text-[12px] text-text-secondary transition-colors hover:border-accent/50 hover:text-text-primary"
-          >
-            {t('favoriteActionUndo')}
-          </button>
-          {onView && (
+        {!reportOnly && (
+          <>
+            <span className="ml-1 flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => answer(onUndo)}
+                className="h-7 rounded-full border border-border px-3 text-[12px] text-text-secondary transition-colors hover:border-accent/50 hover:text-text-primary"
+              >
+                {t('favoriteActionUndo')}
+              </button>
+              {onView && (
+                <button
+                  type="button"
+                  onClick={() => answer(onView)}
+                  className="h-7 rounded-full bg-accent px-3 text-[12px] font-medium text-on-accent transition-colors hover:bg-accent-light"
+                >
+                  {t('favoriteActionView')}
+                </button>
+              )}
+            </span>
+
+            {/* A hairline before the cross: the two buttons are things to do to
+                the conversation, and this is not one of them. */}
+            <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
             <button
               type="button"
-              onClick={() => answer(onView)}
-              className="h-7 rounded-full bg-accent px-3 text-[12px] font-medium text-on-accent transition-colors hover:bg-accent-light"
+              onClick={() => answer(onClose)}
+              title={t('close')}
+              aria-label={t('close')}
+              className="grid size-7 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
             >
-              {t('favoriteActionView')}
+              <XIcon size={14} />
             </button>
-          )}
-        </span>
-
-        {/* A hairline before the cross: the two buttons are things to do to the
-            conversation, and this is not one of them. */}
-        <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
-        <button
-          type="button"
-          onClick={() => answer(onClose)}
-          title={t('close')}
-          aria-label={t('close')}
-          className="grid size-7 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
-        >
-          <XIcon size={14} />
-        </button>
+          </>
+        )}
       </div>
     </div>
   );

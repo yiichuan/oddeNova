@@ -12,6 +12,16 @@ const WORD_BREAK = /[\s._+-]+/;
 const WIDE_SCRIPT = /[^\u0020-\u04FF]/;
 
 /**
+ * Whether initials are a single full-width glyph rather than two Latin
+ * letters. Anything that draws them has to know: the two set at different
+ * sizes, and the rule for telling them apart belongs with the code that
+ * produced them rather than copied into each thing that shows them.
+ */
+export function isWideInitials(initials: string): boolean {
+  return WIDE_SCRIPT.test(initials);
+}
+
+/**
  * The name a Google sign-in carries. Supabase copies the provider's profile
  * into `user_metadata`, where Google leaves the display name under either
  * `full_name` or `name` depending on the scopes granted — an email sign-up

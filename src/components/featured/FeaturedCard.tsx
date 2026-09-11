@@ -1,25 +1,26 @@
-import { PlayIcon, StopIcon } from '../icons';
 import { t, zh } from '../../lib/i18n';
 import type { FeaturedAlbum } from '../../lib/featured-pieces';
 import { FeaturedCover } from './featured-cover';
-import { coverLight, coverLightCss, type CoverRoom } from './featured-cover-light';
+import {
+  coverGlazeCss,
+  coverLight,
+  coverLightCss,
+  type CoverRoom,
+} from './featured-cover-light';
 import FeaturedTiltSurface from './FeaturedTiltSurface';
 import { useResolvedTheme } from '../../hooks/useAppearance';
 
-const TILE_COVER = 'relative aspect-square w-full overflow-hidden rounded-[2px]';
+/* `isolate`: the glaze over the artwork is laid on in soft light, and what it
+   is meant to light is the artwork under it — not the sleeve standing behind
+   this one on the wheel, nor the room behind that. */
+const TILE_COVER = 'relative isolate aspect-square w-full overflow-hidden rounded-[2px]';
 
 /** Two names on one line are a list, and a list is punctuated per language. */
 const CREDIT_SEPARATOR = zh ? '、' : ', ';
 
 interface FeaturedCardProps {
   album: FeaturedAlbum;
-  /** Whether anything on this record is the one currently sounding. */
-  isPlaying: boolean;
-  /** Playback is refused until the engine is up. */
-  engineReady: boolean;
   onOpen: () => void;
-  onPlay: () => void;
-  onStop: () => void;
   showMetadata?: boolean;
   tiltable?: boolean;
   /**
@@ -42,37 +43,34 @@ interface FeaturedCardProps {
 }
 
 /**
- * One record in the collection: a square cover with a transport tucked into its
- * lower-right corner, and the two credits underneath.
+ * One record in the collection: a square cover with the two credits underneath.
  *
  * A record is an album, which may be a single — so the name under the cover is
  * the album's, and the credits are everyone who had a hand in it, each named
  * once. An album of one therefore looks exactly like the tile always did.
  *
- * Two things can be done to a tile — opened, or heard — so there are two real
- * buttons: the credits, which name the record and carry its focus ring across
- * the whole tile (`after:inset-0`), and the transport above them. Opening is
- * answered on the tile itself rather than on either of them; see the press on
- * the root below for why it cannot belong to anything the sleeve draws.
+ * One thing can be done to a tile, which is to open the record, so it carries
+ * one real button: the credits, which name the record and carry its focus ring
+ * across the whole tile (`after:inset-0`). Opening is answered on the tile
+ * itself rather than on that button; see the press on the root below for why it
+ * cannot belong to anything the sleeve draws.
  *
- * Both stay live even when the credits themselves are hidden: a sleeve turned
- * away at the side of the carousel is still a record you can press and play,
- * and only its writing is too small to be worth showing.
+ * The tile used to carry a transport of its own, in the corner of the artwork.
+ * It went when the shelf and the bar became one selection: the record in the
+ * middle of the wheel is the record the bar is parked on, and the bar is
+ * directly under it with a play button on it. Two transports for one record,
+ * one of them only reachable by hovering the artwork, is a second way of saying
+ * a thing the page already says plainly.
  */
 export default function FeaturedCard({
   album,
-  isPlaying,
-  engineReady,
   onOpen,
-  onPlay,
-  onStop,
   showMetadata = true,
   tiltable = false,
   focusable = true,
   turn = 0,
   coverHidden = false,
 }: FeaturedCardProps) {
-  const transportDisabled = !engineReady && !isPlaying;
   // Which room the shelf is standing in. Every light on this tile — the lamp
   // over the artwork, the veil down its turned edge, the shadow it drops on
   // the shelf — is read from it.
@@ -80,6 +78,9 @@ export default function FeaturedCard({
   // The artwork on the sleeve is the first track's: an album's face is its
   // opening record, and a single has nothing else it could be.
   const [cover] = album.tracks;
+  // How the sleeve stands in that room — one reading for the two layers that
+  // draw it.
+  const sleeveLight = coverLight(turn, room);
 
   return (
     <div
@@ -113,6 +114,7 @@ export default function FeaturedCard({
     >
       <FeaturedTiltSurface active={tiltable} room={room}>
         <div
+          data-featured-sleeve
           className={`${TILE_COVER} bg-[#05070a] ${coverHidden ? 'invisible' : ''}`}
           style={{ boxShadow: 'var(--tilt-shadow)' }}
         >
@@ -122,42 +124,31 @@ export default function FeaturedCard({
             flightRole="carousel"
           />
 
-          {/* The light the sleeve stands in, laid over the artwork rather than
-              filtered through it — a shadow falls across a cover without
-              changing the colours it was printed in. Under the transport and
-              under the pointer's own highlight, both of which are lights of
-              their own on top of this one. */}
+          {/* What the sleeve loses: the shade down the edge that turned away,
+              and the lamp's fall from the waist of the cover to its foot. Laid
+              over the artwork rather than filtered through it — a shadow falls
+              across a cover without changing the colours it was printed in.
+              Under the pointer's own highlight, which is a light of its own on
+              top of this one. */}
           <span
             aria-hidden="true"
             data-featured-cover-light
             className="pointer-events-none absolute inset-0"
-            style={{ backgroundImage: coverLightCss(coverLight(turn, room)) }}
+            style={{ backgroundImage: coverLightCss(sleeveLight) }}
           />
 
-        {/* Fades in on hover, and on keyboard focus — otherwise the transport
-            would be invisible to anyone not using a mouse. Fade only: the
-            button sits in a fixed spot on the cover, and sliding it in would
-            make it a moving target on the way to it. */}
-        <button
-          type="button"
-          // Playing is not opening, so this press stops here rather than
-          // reaching the tile underneath, which answers everything else.
-          onClick={(event) => {
-            event.stopPropagation();
-            if (isPlaying) onStop(); else onPlay();
-          }}
-          disabled={transportDisabled}
-          tabIndex={focusable ? undefined : -1}
-          title={transportDisabled ? t('engineStarting') : undefined}
-          aria-label={`${isPlaying ? t('stop') : t('featuredPlayPiece')} — ${album.title}`}
-          data-testid={`featured-card-play-${album.id}`}
-          // `cursor-[inherit]`: see the note on the credits button below.
-          className={`absolute bottom-3 right-3 z-10 grid size-10 place-items-center cursor-[inherit] rounded-full bg-action-fill text-action-text shadow-lg transition-opacity duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] hover:bg-action-fill-hover disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none ${
-            isPlaying ? 'opacity-100' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
-          }`}
-        >
-          {isPlaying ? <StopIcon size={14} /> : <PlayIcon size={16} />}
-        </button>
+          {/* And what it catches. Its own layer because it is put on
+              differently: white laid over artwork stands in front of it and
+              lifts the black in the picture along with everything else, which
+              is the haze a lit cover comes back as. In soft light the same
+              gradient lights what is already there instead — see
+              coverGlazeCss. */}
+          <span
+            aria-hidden="true"
+            data-featured-cover-glaze
+            className="pointer-events-none absolute inset-0 mix-blend-soft-light"
+            style={{ backgroundImage: coverGlazeCss(sleeveLight) }}
+          />
 
           <span className="pointer-events-none absolute inset-0 rounded-[2px] ring-inset ring-white/0 transition-[box-shadow] duration-200 group-hover:ring-1 group-hover:ring-[color:var(--featured-cover-ring)] motion-reduce:transition-none" />
         </div>

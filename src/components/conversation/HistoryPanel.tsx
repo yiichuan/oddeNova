@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+import { createPortal } from 'react-dom';
 import type { SessionSummary } from '../../../shared/session-api';
 import type { Session } from '../../hooks/useSessions';
 import { EditIcon, SearchIcon, StarIcon, TrashIcon, XIcon } from '../icons';
@@ -16,6 +23,36 @@ import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
  * wait.
  */
 const KEEPING_MS = 380;
+
+/**
+ * How long a row has to be held before it offers what can be done to it.
+ *
+ * The floor is the platform's own: hold a link in mobile Safari and its menu
+ * arrives at about half a second, so anything much shorter turns a slow tap
+ * into a menu and anything much longer reads as the row not answering. 450ms
+ * sits just inside that, where the press is deliberate but the wait is not
+ * something you notice having done.
+ */
+const LONG_PRESS_MS = 450;
+
+/**
+ * How far the finger may travel before the press is read as a scroll instead.
+ *
+ * This list is the scrolling part of the drawer, so nearly every press on it
+ * is the start of a scroll. A few pixels of drift is a thumb resting; past
+ * that the intent is to move the list, and the menu must not arrive on top of
+ * it.
+ */
+const LONG_PRESS_SLOP = 10;
+
+/* The plate's own box, stated here because the menu is placed before it is
+   measured: it opens at the finger and has to be turned back from the edges of
+   the window in the same frame. Kept in step with the markup below by hand —
+   three rows of 40 and the plate's 4 top and bottom. */
+const ROW_MENU_WIDTH = 176;
+const ROW_MENU_HEIGHT = 3 * 40 + 8;
+/** How far the plate stands off the window's edges when it is turned back. */
+const ROW_MENU_MARGIN = 8;
 
 interface HistoryPanelProps {
   sessions: readonly (Session | SessionSummary)[];
@@ -35,6 +72,33 @@ interface HistoryPanelProps {
   isLoadingMore?: boolean;
   loadMoreError?: Error | null;
   onRetryLoadMore?: () => void;
+  /**
+   * Whether a press held on a row opens the three moves as a menu.
+   *
+   * The controls in the row are revealed by the pointer resting on it, which
+   * is a gesture a touch screen does not have: there, a row has one gesture,
+   * the tap that opens the conversation, and anything else has to be asked for
+   * by holding it. So the surfaces built for a finger — the mobile drawer —
+   * turn this on and get the same three moves as a small plate under the
+   * thumb; the row's own marks stay where they are for the pointer that can
+   * reach them.
+   */
+  longPressMenu?: boolean;
+  /**
+   * Whether the list carries its own filter field. Off where the list is one
+   * section of a larger panel that has a search of its own — the mobile
+   * navigation drawer — so the reader is not offered two fields for the same
+   * question a few rows apart.
+   */
+  showSearch?: boolean;
+  /**
+   * The filter to apply, when the field the reader types it into belongs to
+   * the host rather than to this panel. Given one, the list is filtered from
+   * outside and its own field (if it has one) stops being the source — the two
+   * are alternatives, which is why the drawer that supplies this also turns
+   * `showSearch` off.
+   */
+  query?: string;
 }
 
 type HistoryItem = Session | SessionSummary;
@@ -67,14 +131,46 @@ export default function HistoryPanel({
   isLoadingMore = false,
   loadMoreError = null,
   onRetryLoadMore = () => {},
+  longPressMenu = false,
+  showSearch = true,
+  query: hostQuery,
 }: HistoryPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  const [query, setQuery] = useState('');
+  const [ownQuery, setOwnQuery] = useState('');
+  /* Whoever is asking the question owns it. */
+  const query = hostQuery ?? ownQuery;
   const [keepingId, setKeepingId] = useState<string | null>(null);
+  /* Which row's bin has been pressed, if any.
+   *
+   * The two other things that can be done to a row are answered by the row
+   * itself — a title goes back if the rename is abandoned, a kept conversation
+   * is one press away in Favorites — and neither needs asking about. Deleting
+   * is the one that does: the conversation goes from this device and from the
+   * account, there is no list it turns up on afterwards, and the bin sits a
+   * few pixels from the pencil on a row that is one of many.
+   *
+   * Held as an id rather than a flag so the question is about a row, and dies
+   * with it: a row that leaves the list while its question is up — deleted
+   * from another window, kept, filtered away — simply stops being found, and
+   * the question goes with it rather than standing over nothing.
+   */
+  const [askingDeleteId, setAskingDeleteId] = useState<string | null>(null);
+  /* The row being held, and where it was held — the plate opens at the finger
+     rather than at the row, which is the half of the row the thumb is not
+     covering. Same reasoning as the id above: it names a row, and is resolved
+     against the list every render. */
+  const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
   const keepingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirmCancelRef = useRef<HTMLButtonElement>(null);
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressOriginRef = useRef<{ x: number; y: number } | null>(null);
+  /* A press that became a menu must not also be the tap that opens the
+     conversation — the click lands after the finger lifts, by which time the
+     plate is already up. */
+  const pressHandledRef = useRef(false);
 
   useEffect(() => {
     if (!editingId) return;
@@ -84,7 +180,46 @@ export default function HistoryPanel({
 
   useEffect(() => () => {
     if (keepingTimerRef.current !== null) clearTimeout(keepingTimerRef.current);
+    if (pressTimerRef.current !== null) clearTimeout(pressTimerRef.current);
   }, []);
+
+  const cancelPress = () => {
+    if (pressTimerRef.current !== null) clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = null;
+    pressOriginRef.current = null;
+  };
+
+  /* The press, for the surfaces that have no pointer to reveal things with.
+   *
+   * Only a finger or a pen opens it: where there is a mouse the three marks in
+   * the row are already visible under it, and a held mouse button that put a
+   * menu up as well would be two answers to the same question.
+   */
+  const rowPressHandlers = (session: HistoryItem) => (longPressMenu ? {
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === 'mouse') return;
+      cancelPress();
+      pressHandledRef.current = false;
+      pressOriginRef.current = { x: event.clientX, y: event.clientY };
+      const { clientX, clientY } = event;
+      pressTimerRef.current = setTimeout(() => {
+        pressTimerRef.current = null;
+        pressHandledRef.current = true;
+        setRowMenu({ id: session.id, x: clientX, y: clientY });
+      }, LONG_PRESS_MS);
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const origin = pressOriginRef.current;
+      if (!origin) return;
+      const travelled = Math.hypot(event.clientX - origin.x, event.clientY - origin.y);
+      if (travelled > LONG_PRESS_SLOP) cancelPress();
+    },
+    onPointerUp: cancelPress,
+    onPointerCancel: cancelPress,
+    /* The platform's own menu would arrive on top of this one, offering to
+       copy a row that is not text. */
+    onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => event.preventDefault(),
+  } : {});
 
   /* The star fills where it was clicked, the row goes with it, and the entry
      is handed over once both have been seen. */
@@ -135,6 +270,25 @@ export default function HistoryPanel({
     ? listed.filter((s) => (s.title || t('newSessionTitle')).toLowerCase().includes(needle))
     : listed;
   const searchable = listed.length > 0 || needle !== '';
+  /* Resolved against the list rather than taken on trust — see the id above. */
+  const askingDelete = askingDeleteId
+    ? listed.find((session) => session.id === askingDeleteId) ?? null
+    : null;
+  const heldRow = rowMenu
+    ? listed.find((session) => session.id === rowMenu.id) ?? null
+    : null;
+
+  useEffect(() => {
+    if (!askingDelete) return;
+    /* The way out that costs nothing takes the focus, so the key already under
+       the hand is the one that leaves the conversation alone. */
+    confirmCancelRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAskingDeleteId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [askingDelete]);
 
   return (
     <div className="flex flex-col">
@@ -153,7 +307,7 @@ export default function HistoryPanel({
           sidebar overlay is drawn on the conversation surface, the top-bar
           dropdown on the page ground, and either sets --history-search-bg to
           say which. */}
-      {!isLoading && !initialError && searchable && (
+      {showSearch && !isLoading && !initialError && searchable && (
         <div
           className="sticky top-0 z-20 px-2 pt-2.5 pb-1.5"
           style={{ background: 'var(--history-search-bg, var(--color-conversation-surface))' }}
@@ -166,7 +320,7 @@ export default function HistoryPanel({
               aria-label={t('historySearch')}
               data-testid="history-search-input"
               placeholder={t('historySearchHint')}
-              onChange={(e) => setQuery(e.currentTarget.value)}
+              onChange={(e) => setOwnQuery(e.currentTarget.value)}
               onClick={(e) => e.stopPropagation()}
               /* Escape empties the field rather than reaching the panel that
                  listens for it — while there is something in it to clear. */
@@ -174,7 +328,7 @@ export default function HistoryPanel({
                 e.stopPropagation();
                 if (e.key === 'Escape' && query !== '') {
                   e.preventDefault();
-                  setQuery('');
+                  setOwnQuery('');
                 }
               }}
               className="min-w-0 flex-1 bg-transparent text-xs leading-none text-text-primary outline-none placeholder:text-text-muted"
@@ -186,7 +340,7 @@ export default function HistoryPanel({
                 data-testid="history-search-clear"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setQuery('');
+                  setOwnQuery('');
                 }}
                 className="shrink-0 text-text-muted transition-colors hover:text-text-primary"
               >
@@ -251,8 +405,22 @@ export default function HistoryPanel({
                       active
                         ? 'border-transparent bg-[var(--color-selected-item-bg)] text-on-accent'
                         : 'border-transparent text-text-secondary hover:text-text-primary'
+                    } ${
+                      /* A press held on a row of text is a text selection and
+                         a copy callout, on every mobile browser, unless the row
+                         says it is not text to be picked up. */
+                      longPressMenu ? 'select-none [-webkit-touch-callout:none]' : ''
                     }`}
-                    onClick={() => onSwitch(s.id)}
+                    onClick={() => {
+                      /* The tap that would have opened it was the press that
+                         opened the menu. */
+                      if (pressHandledRef.current) {
+                        pressHandledRef.current = false;
+                        return;
+                      }
+                      onSwitch(s.id);
+                    }}
+                    {...rowPressHandlers(s)}
                   >
                     {isEditing ? (
                       <input
@@ -366,7 +534,7 @@ export default function HistoryPanel({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              onDelete(s.id);
+                              setAskingDeleteId(s.id);
                             }}
                             /* A red apiece, because the two rows are not the
                                same ground. On the page's own dark the diff's own
@@ -402,6 +570,163 @@ export default function HistoryPanel({
           onLoadMore={onLoadMore}
           onRetryLoadMore={onRetryLoadMore}
         />
+      )}
+
+      {/* ── What a held row offers ── */}
+      {/* The same three moves the row carries for a pointer, as a plate under
+          the thumb. Sent to the body for the reason the question below is: this
+          list is clipped by its own scrollport and travels with a drawer that
+          moves on a transform.
+
+          It opens at the finger rather than on the row — a row is 30 pixels
+          tall and the thumb is on top of it — and is turned back from the
+          window's edges so a press near the bottom or the right does not put
+          the plate half outside. Tapping the ground puts it away: this is a
+          menu, not a question, and nothing has been done yet. */}
+      {heldRow && rowMenu && typeof document !== 'undefined' && createPortal(
+        <div
+          data-testid="history-row-menu-layer"
+          className="fixed inset-0 z-[150]"
+          onPointerDown={() => setRowMenu(null)}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <div
+            data-testid="history-row-menu"
+            role="menu"
+            aria-label={heldRow.title || t('newSessionTitle')}
+            className="animate-fade-in absolute w-[176px] overflow-hidden rounded-[10px] border border-border bg-conversation-surface py-1 shadow-menu-overlay"
+            style={{
+              /* Off the fingertip by the width of one, so the first line is
+                 not opening underneath the thumb that asked for it. */
+              left: Math.min(
+                Math.max(rowMenu.x + ROW_MENU_MARGIN, ROW_MENU_MARGIN),
+                Math.max(ROW_MENU_MARGIN, window.innerWidth - ROW_MENU_WIDTH - ROW_MENU_MARGIN),
+              ),
+              top: Math.min(
+                Math.max(rowMenu.y + ROW_MENU_MARGIN, ROW_MENU_MARGIN),
+                Math.max(ROW_MENU_MARGIN, window.innerHeight - ROW_MENU_HEIGHT - ROW_MENU_MARGIN),
+              ),
+            }}
+            /* The press that opens the plate is still down when it appears, so
+               its lift lands here. Only what is pressed after that counts. */
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {/* Icon then word, one column of marks down the left so the three
+                read as a list rather than as three labels of different
+                lengths. The first two are the row's own two marks at the row's
+                own size; the third says what it does in the red this app
+                deletes in, mark and word together — the one of the three that
+                does not come back. */}
+            {[
+              {
+                key: 'rename',
+                label: t('rename'),
+                icon: <EditIcon size={15} />,
+                onSelect: () => startEditing(heldRow),
+              },
+              ...(onFavorite ? [{
+                key: 'favorite',
+                label: t('favorite'),
+                icon: <StarIcon size={15} />,
+                onSelect: () => keep(heldRow),
+              }] : []),
+              {
+                key: 'delete',
+                label: t('delete'),
+                icon: <TrashIcon size={15} />,
+                onSelect: () => setAskingDeleteId(heldRow.id),
+                danger: true,
+              },
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                role="menuitem"
+                data-history-row-menu={item.key}
+                onClick={() => {
+                  setRowMenu(null);
+                  item.onSelect();
+                }}
+                className={`flex h-10 w-full items-center gap-2.5 px-3 text-left text-[14px] transition-colors active:bg-surface-hover ${
+                  item.danger ? 'text-diff-remove' : 'text-text-primary'
+                }`}
+              >
+                <span className="flex w-4 shrink-0 justify-center">{item.icon}</span>
+                <span className="truncate">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* ── The question the bin opens ── */}
+      {/* Sent to the body rather than drawn where it is asked. This list is a
+          third of a panel in the sidebar and a section of a drawer on a phone —
+          it is scrolled, it is clipped, and the drawer that holds it travels on
+          a transform, which would make even a `fixed` layer inside it measure
+          itself against the drawer. A question this size has to stand on the
+          window, so it is put there directly, the way the top bar's own
+          popovers are.
+
+          Above the sidebar's click-away sheet at z-9 and the favorites notice
+          at z-100, under the account modal's z-300. The ground behind it does
+          not dismiss it, for the reason the other delete question's does not: a
+          question closed by a stray click on the page behind it is a question
+          that was never answered. 「保留」 and Escape are the ways out. */}
+      {askingDelete && typeof document !== 'undefined' && createPortal(
+        <div
+          data-testid="history-delete-confirm"
+          className="animate-fade-in fixed inset-0 z-[200] flex items-center justify-center bg-[var(--color-overlay-backdrop)] px-8 backdrop-blur-[2px]"
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="history-delete-question"
+            className="w-full max-w-[360px] rounded-2xl border border-border bg-conversation-surface p-5 shadow-dialog-overlay"
+          >
+            <p
+              id="history-delete-question"
+              className="text-[15px] leading-relaxed text-text-primary"
+            >
+              {t('deleteSessionAsk')}
+            </p>
+            {/* Which conversation — the row it was asked from is behind the
+                backdrop now, and the bin sits on a list of near-identical
+                lines. The placeholder an untitled row shows on the list is the
+                name here too, so the two say the same thing. */}
+            <p className="mt-1.5 truncate text-[12px] text-text-secondary">
+              {askingDelete.title || t('newSessionTitle')}
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                ref={confirmCancelRef}
+                data-testid="history-delete-cancel"
+                onClick={() => setAskingDeleteId(null)}
+                className="h-9 rounded-full border border-border px-4 text-[13px] text-text-secondary transition-colors hover:bg-surface-hover"
+              >
+                {t('keepIt')}
+              </button>
+              <button
+                type="button"
+                data-testid="history-delete-accept"
+                onClick={() => {
+                  setAskingDeleteId(null);
+                  onDelete(askingDelete.id);
+                }}
+                /* The red is in the word, not under it — the same weight the
+                   two favorites panels give the answer that does not come
+                   back. */
+                className="h-9 rounded-full px-4 text-[13px] font-medium text-diff-remove transition-colors hover:bg-surface-hover"
+              >
+                {t('delete')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

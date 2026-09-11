@@ -10,6 +10,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import { zh, t } from '../../lib/i18n';
 import { GITHUB_URL as githubUrl, LEARN_URL as learnUrl } from '../../lib/external-links';
 import { useExportPopoverController, type ExportParams } from '../../hooks/useExportPopoverController';
+import { getStrudelLoopCycles, getStrudelLoopDurationSeconds } from '../../lib/strudel-timing';
 import ControlHoverLabel from './ControlHoverLabel';
 import type { ControlHoverLabelAnchor } from './control-hover-anchor';
 
@@ -221,6 +222,15 @@ export interface ExportPopoverProps {
   anchorPosition?: { right: number; top?: number; bottom?: number };
 }
 
+/**
+ * Where the export ends when the piece cannot say where it ends itself.
+ *
+ * Only reached by code with no readable loop in it — an empty buffer, or
+ * something the timing reader cannot measure. Anything it can measure brings
+ * its own answer, which is the whole of one time through.
+ */
+const FALLBACK_END_CYCLE = 4;
+
 function defaultFilename() {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -322,17 +332,47 @@ export function ExportPopover({
     activeGenerateTitleRequest: null,
   });
   const [beginCycle, setBeginCycle] = useState(0);
-  const [endCycle, setEndCycle] = useState(4);
+  const [endCycle, setEndCycle] = useState(FALLBACK_END_CYCLE);
   const [beginCycleStr, setBeginCycleStr] = useState('0');
-  const [endCycleStr, setEndCycleStr] = useState('4');
+  const [endCycleStr, setEndCycleStr] = useState(String(FALLBACK_END_CYCLE));
   const [sampleRate, setSampleRate] = useState(48000);
   const [sampleRateOpen, setSampleRateOpen] = useState(false);
   const [prevOpen, setPrevOpen] = useState(false);
   const { filename, filenamePlaceholder, generateTitleState } = titleForm;
 
+  /* How long one time through is, in cycles and in seconds, read off the code
+     by the same measure the transport under the editor is drawn from.
+
+     That is the point of reading it here rather than counting cycles: the
+     window of the piece this dialog opens on is the piece — from its first
+     cycle to the one the pattern comes round on — so the length it estimates
+     and the length the playback bar shows are the same number arrived at the
+     same way, and a download left at its defaults is one whole time through
+     rather than an arbitrary four cycles of it. */
+  const loopCycles = useMemo(() => (code.trim() ? getStrudelLoopCycles(code) : 0), [code]);
+  const loopSeconds = useMemo(
+    () => (code.trim() ? getStrudelLoopDurationSeconds(code) : 0),
+    [code],
+  );
+  /* Seconds per cycle, taken from the loop rather than from the tempo where
+     the loop can be measured: `bpm` has been rounded to a whole number on its
+     way here, and the transport's clock has not. */
+  const cycleSeconds = loopCycles > 0 && loopSeconds > 0
+    ? loopSeconds / loopCycles
+    : bpm > 0 ? 240 / bpm : 0;
+
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (open) {
+      /* Opened on the whole of the piece. Re-read every time it opens rather
+         than kept from the last export: between two openings the code has very
+         likely changed, and last time's numbers would be a window on a piece
+         that no longer exists. */
+      const end = loopCycles > 0 ? loopCycles : FALLBACK_END_CYCLE;
+      setBeginCycle(0);
+      setBeginCycleStr('0');
+      setEndCycle(end);
+      setEndCycleStr(String(end));
       setSampleRateOpen(false);
       setTitleForm({
         filename: '',
@@ -354,9 +394,9 @@ export function ExportPopover({
 
   const canExport = useMemo(() => endCycle > beginCycle, [endCycle, beginCycle]);
   const durationStr = useMemo(() => {
-    if (!canExport || bpm <= 0) return null;
-    return formatDuration((endCycle - beginCycle) * 240 / bpm);
-  }, [canExport, beginCycle, endCycle, bpm]);
+    if (!canExport || cycleSeconds <= 0) return null;
+    return formatDuration((endCycle - beginCycle) * cycleSeconds);
+  }, [canExport, beginCycle, endCycle, cycleSeconds]);
 
   if (!open) return null;
 
@@ -524,15 +564,49 @@ export function ExportPopover({
   );
 
   if (isMobile) {
-    return (
-      <div className="fixed inset-0 z-50" onClick={handleCloseSafe}>
-        <div className="absolute inset-0 bg-[var(--color-overlay-backdrop)]" />
-        <div className="absolute bottom-0 left-0 right-0 rounded-t-[6px] border-t border-border bg-popover-surface px-6 py-6" onClick={(e) => e.stopPropagation()}>
+    const dialog = (
+      <div
+        data-testid="export-dialog-mobile"
+        /* Above the code window's own z-50: this is opened from the row of
+           keys hung over that window, and it has to stand over what it was
+           opened from. */
+        className="fixed inset-0 z-[60] flex items-center justify-center px-6"
+        onClick={handleCloseSafe}
+      >
+        {/* The page goes soft behind it. A dialog in the middle of the screen
+            has the piece, the editor and the transport all around it, and
+            nothing there is part of the question being asked — the blur is
+            what says so, and it is the same 6px the code window itself dims
+            the page with. */}
+        <div className="absolute inset-0 bg-[var(--color-overlay-backdrop)] backdrop-blur-[6px]" />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('exportWav')}
+          /* In the middle rather than along the bottom edge. It used to be a
+             sheet, which is the right shape for a list you flick through and
+             the wrong one for a short form with a keyboard about to come up
+             underneath it: a sheet rises from the very edge the keyboard takes,
+             and its fields end up pinned against it. */
+          className="relative w-full max-w-[360px] rounded-[12px] border border-border bg-popover-surface px-5 py-5 shadow-dialog-overlay"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="text-[14px] text-text-primary font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
           {body}
         </div>
       </div>
     );
+
+    /* Sent to the body, which is the whole of the second half of this.
+       The row of keys this is opened from is hung on the code window, and that
+       window is drawn at a scale — a transform, which makes it the frame every
+       `fixed` thing inside it is measured against. So this dialog's backdrop,
+       asking for the viewport, got the window instead: a dark rectangle laid
+       exactly over a rounded panel, which is why the code window appeared to
+       square off its corners the moment the download dialog opened. Out here
+       the backdrop covers the page, and the window keeps its own shape under
+       it. */
+    return typeof document !== 'undefined' ? createPortal(dialog, document.body) : dialog;
   }
 
   const desktopPopover = (
