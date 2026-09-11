@@ -23,7 +23,7 @@ export const FAVORITES_EMPTY_ZH = '收藏的对话会在这里显示';
  * conversation — the pool in `greetings.ts` is the register it has to sit in,
  * and a paragraph there reads as a notice rather than an opening.
  */
-export const THEME_SONG_INTRO_ZH = '听听看 《迟来的信使》，接收 创作 的 邀约';
+export const THEME_SONG_INTRO_ZH = '听听看 《奥德诺娃的梦呓》，接收 创作 的 邀约';
 
 const S: Record<string, readonly [string, string]> = {
   // Common
@@ -185,9 +185,9 @@ const S: Record<string, readonly [string, string]> = {
   sessionHistory:   ['会话历史', 'Session history'],
   navSearch:        ['搜索', 'Search'],
   newSessionTitle:  ['新会话', 'New session'],
-  themeSongTitle:   ['Beta 1.0 主题曲', 'Beta 1.0 Theme Song'],
+  themeSongTitle:   ['oddeNova beta 1.0 默认印象', 'oddeNova beta 1.0 Default Impression'],
   themeSongIntro:   [THEME_SONG_INTRO_ZH,
-                     'Hear “The Late Messenger” — and take up the invitation to write.'],
+                     'Hear “Reverie of oddeNova” — and take up the invitation to write.'],
   branchSuffix:     ['（分支）', ' (branch)'],
   sessionSyncOffline: ['未同步到云端 · 联网后自动上传', 'Not synced to cloud · uploads when online'],
   sessionSyncRetrying:['同步失败，正在重试', 'Sync failed; retrying'],
