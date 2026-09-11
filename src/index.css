@@ -65,6 +65,12 @@
   /* The well an account form's fields sit in — one step up from the modal
      surface they stand on, so a stack of them reads as a stack of boxes. */
   --color-auth-field: #141414;
+  /* The strip the phone's code window carries its transport on. A flat fill,
+     because there is no page under that bar for glass to be glass over — see
+     `.code-panel-mobile-controls`. One step off the editor it closes, which is
+     what tells a row of controls from the code above it without drawing a line
+     between the two. */
+  --color-control-bar-surface: #141414;
   --color-accent: #434343;
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
@@ -287,6 +293,7 @@ html[data-theme='light'] {
   --color-conversation-surface: #F7F7FA;
   --color-settings-surface: #FCFCFE;
   --color-auth-field: #E9E9ED;
+  --color-control-bar-surface: #EDEDF1;
   --color-accent: #0668E5;
   --color-accent-light: #237AE8;
   --color-accent-glow: rgba(6, 104, 229, 0.22);
@@ -1479,142 +1486,50 @@ html[data-theme='light'] .code-window-scrim {
   background: rgba(72, 73, 86, 0.2);
 }
 
-/* The mobile control bar stands on the desktop bar's ground and restates only
-   its rhythm. It carries `.code-panel-controls` as well, so this has to come
-   after it in the stylesheet — the two are single-class selectors and source
-   order is all that separates them.
-
-   Nothing here is derived from the desktop numbers, because the thing being
-   spaced is different: a phone bar has no volume control to hold the clock away
-   from, and its two ends are a finger's width apart. */
+/* The phone bar: its ground, and its rhythm.
+ *
+ * The rhythm first, because it is the shorter half — none of it is derived
+ * from the desktop numbers, since the thing being spaced is different. A phone
+ * bar has no volume control to hold the clock away from, and its two ends are
+ * a finger's width apart.
+ *
+ * The ground is flat, and that is the whole of it. `.code-panel-controls`
+ * above describes a pane of glass — a translucent fill over an 18px backdrop
+ * blur, grain across the top of it, six lit blobs drifting behind — and every
+ * part of that is about a strip standing above a page it lets through, which
+ * is what the desktop bar is. This bar has no page under it: the window is
+ * opaque from the editor's top edge down to here, so the blur had nothing to
+ * gather, and the lights spent themselves covering the one strip of a phone's
+ * window that has to stay legible at arm's length.
+ *
+ * So: no field, no grain, no blur, no lift on paper — one colour, one step off
+ * the editor above it, which is what tells a row of controls from the code
+ * without a rule drawn between them. The glass is desktop's, where the page it
+ * stands on is real.
+ *
+ * Everything here restates a declaration `.code-panel-controls` already made,
+ * at the same one-class specificity, so it is source order that decides it —
+ * this block must stay below that rule. The paper branch is separate for the
+ * same reason in reverse: its selector carries an attribute and outranks a
+ * class, so it has to be answered in kind. */
 .code-panel-mobile-controls {
   --code-panel-play-to-progress-gap: 12px;
   --code-panel-progress-to-time-gap: 10px;
   --code-panel-time-to-volume-gap: 0px;
+
+  background-color: var(--color-control-bar-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
-/* The lit field at phone measure.
- *
- * Not the desktop field scaled — the two bars did not change by the same amount
- * in the two directions, and one factor over both is what made the first
- * attempt read wrong. The bar lost about three fifths of its width and none of
- * its height, so the field is restated: narrowed horizontally, left alone
- * vertically.
- *
- * Horizontally everything is the desktop figure times one factor, so the six
- * lights hold the widths, the spacing and the travel they have on desktop as
- * fractions of the bar. `left` is the desktop blob's *centre* rather than its
- * left edge, with `margin-left` pulling back half the narrowed width — a blob
- * placed by its edge drifts rightward as it narrows, by half the width it lost,
- * which on a phone bar is a fifth of the bar and is what piled two lights up
- * off the right end.
- *
- * Vertically nothing is restated. Heights and tops stay exactly as they are, so
- * each blob still stands taller than the 47px it is lighting and the bar sees a
- * slice through the middle of it — the horizontal wash the desktop bar has,
- * rather than a row of lumps with their own top and bottom edges inside the
- * frame. `--blob-y-*` stays too: the same travel over the same height.
- *
- * Durations are untouched. Travel and width fell by the same factor, so a light
- * still crosses the same fraction of the bar in the same time — which is what
- * the eye reads as speed. Scaling the travel without the width, as the first
- * attempt did, is what left the field looking becalmed.
- *
- * The field's blur takes the horizontal factor. It sits above the blobs rather
- * than inside them, so it is the one measurement the per-blob geometry cannot
- * carry, and it is the horizontal requirement that decides it: 16px against a
- * narrowed blob is a quarter of its width instead of a tenth, and would smear
- * the six back into the flat wash this is all avoiding. Vertically that leaves
- * it softer than desktop, which costs nothing — the edges it would be softening
- * are above and below the bar, outside the frame. `contrast(10)` is right
- * unchanged: blur and geometry moved together, so the alpha field it works on
- * is the same shape, just narrower.
- *
- * Everything else — the opacity pulse, the rotation and scale in the drift, the
- * metaball threshold inside each blob's own SVG — is either proportional
- * already or independent of size, and is left to the desktop rules. */
-.code-panel-mobile-controls {
-  --code-panel-light-scale: 0.42;
+html[data-theme='light'] .code-panel-mobile-controls {
+  background-color: var(--color-control-bar-surface);
+  box-shadow: none;
 }
 
-.code-panel-mobile-controls .code-panel-light-field {
-  filter: blur(calc(16px * var(--code-panel-light-scale))) contrast(10);
-}
-
-/* Down from the desktop 0.64, on the phone bar and in the dark room only.
- *
- * The field is the one place the narrowing does not cancel out. `contrast(10)`
- * works on alpha, so what reaches the screen is set by how *concentrated* the
- * light is, not by how much of it there is — and six blobs at two fifths of
- * their width, blurred by two fifths as much, are far more concentrated than
- * the desktop field they are derived from. The same numbers that hold the
- * geometry right are what push the result up the contrast curve, and on a bar
- * the width of a thumb there is no room left for it to spread across.
- *
- * A second step down with COMPACT_METABALL_SCALE, and for the other half of the
- * same reading: the bar is no longer lit corner to corner, so the peak is now
- * what the eye takes the field's brightness from rather than an average it was
- * holding up. A core as bright as the sheet used to be reads brighter than the
- * sheet did.
- *
- * Dark only because `contrast(10)` is dark only: the paper rule further down
- * drops it, so the paper field has nothing to be pushed up and is already
- * where it should be. `:not([data-theme='light'])` rather than `[data-theme='dark']`
- * so the value also holds for the frame before the attribute is written.
- *
- * It goes through the custom property because the boot animation's last
- * keyframe is what actually holds the field's opacity once it has run — see
- * `.code-panel-light-field`. */
-:root:not([data-theme='light']) .code-panel-mobile-controls .code-panel-light-field {
-  --code-panel-light-rest: 0.3;
-}
-
-/* The blob's own bloom, which the scale did not reach: it sits in a `filter`
-   on the SVG rather than in the geometry above, so it stayed at its desktop
-   18px around a blob narrowed to ~65px — a halo nearly as wide as the thing
-   casting it, which `contrast(10)` then read as one solid core. Taking it with
-   the same factor as everything else is what puts the six back to being six. */
-.code-panel-mobile-controls .code-panel-light-blob svg {
-  filter: drop-shadow(
-    0 0 calc(18px * var(--code-panel-light-scale)) rgba(255, 255, 252, 0.32)
-  );
-}
-
-.code-panel-mobile-controls .code-panel-light-blob:nth-child(1) {
-  left: 3%; width: calc(156px * var(--code-panel-light-scale));
-  margin-left: calc(-78px * var(--code-panel-light-scale));
-  --blob-x-a: calc(76px * var(--code-panel-light-scale));
-  --blob-x-b: calc(-34px * var(--code-panel-light-scale));
-}
-.code-panel-mobile-controls .code-panel-light-blob:nth-child(2) {
-  left: 23%; width: calc(112px * var(--code-panel-light-scale));
-  margin-left: calc(-56px * var(--code-panel-light-scale));
-  --blob-x-a: calc(-72px * var(--code-panel-light-scale));
-  --blob-x-b: calc(88px * var(--code-panel-light-scale));
-}
-.code-panel-mobile-controls .code-panel-light-blob:nth-child(3) {
-  left: 44%; width: calc(174px * var(--code-panel-light-scale));
-  margin-left: calc(-87px * var(--code-panel-light-scale));
-  --blob-x-a: calc(96px * var(--code-panel-light-scale));
-  --blob-x-b: calc(-82px * var(--code-panel-light-scale));
-}
-.code-panel-mobile-controls .code-panel-light-blob:nth-child(4) {
-  left: 68%; width: calc(126px * var(--code-panel-light-scale));
-  margin-left: calc(-63px * var(--code-panel-light-scale));
-  --blob-x-a: calc(-86px * var(--code-panel-light-scale));
-  --blob-x-b: calc(72px * var(--code-panel-light-scale));
-}
-.code-panel-mobile-controls .code-panel-light-blob:nth-child(5) {
-  left: 87%; width: calc(160px * var(--code-panel-light-scale));
-  margin-left: calc(-80px * var(--code-panel-light-scale));
-  --blob-x-a: calc(70px * var(--code-panel-light-scale));
-  --blob-x-b: calc(-98px * var(--code-panel-light-scale));
-}
-.code-panel-mobile-controls .code-panel-light-blob:nth-child(6) {
-  left: 101%; width: calc(118px * var(--code-panel-light-scale));
-  margin-left: calc(-59px * var(--code-panel-light-scale));
-  --blob-x-a: calc(-92px * var(--code-panel-light-scale));
-  --blob-x-b: calc(46px * var(--code-panel-light-scale));
+/* The grain belongs to the glass and goes with it. */
+.code-panel-mobile-controls::after {
+  content: none;
 }
 
 .code-panel-right-actions {
@@ -3132,6 +3047,31 @@ html[data-theme='light'] .chat-input-surface {
   box-shadow: 0 12px 34px rgba(44, 45, 61, 0.10);
 }
 
+/* Except on a phone, where there is nothing to raise it off.
+ *
+ * The shadow above is the whole of how the paper composer says it stands above
+ * the page, and on a desktop it has a page to say it to: the column sits on
+ * `--color-bg-primary`, a clear step under both of them. The phone layout has
+ * no page ground at all. The studio stands directly on the conversation
+ * surface, both document roots are painted that same surface, and so is the
+ * strip of browser chrome under the composer — so the shadow had nothing to
+ * fall on but the reading surface itself, and what it put there was a band a
+ * shade deeper than the page, graded downward, in the last few pixels before a
+ * toolbar painted the flat page colour. A gradient across the one part of this
+ * layout that is meant to be one colour throughout.
+ *
+ * The fill stays. A step under the surface is how a field says it is a field,
+ * and it is flat — it is only the raising that goes, because there is nothing
+ * here to be raised above.
+ *
+ * Kept in step with MOBILE_BREAKPOINT in useIsMobile.ts by hand, same as the
+ * document roots this is answering to. */
+@media (max-width: 460px) {
+  html[data-theme='light'] .chat-input-surface {
+    box-shadow: none;
+  }
+}
+
 /* The nav column is the composer's sibling and gets the same flat fill, so the
    two raised panels on the page are literally the same colour. */
 html[data-theme='light'] .primary-nav-glass {
@@ -3269,13 +3209,6 @@ html[data-theme='light'] .code-panel-light-field {
   filter: blur(16px);
   mix-blend-mode: multiply;
   opacity: 0.42;
-}
-
-/* The phone bar's field takes its blur down with its blobs, the same way the
-   dark theme's does — restated here because the rule above is a whole
-   declaration rather than a radius, and it drops `contrast(10)` on purpose. */
-html[data-theme='light'] .code-panel-mobile-controls .code-panel-light-field {
-  filter: blur(calc(16px * var(--code-panel-light-scale)));
 }
 
 html[data-theme='light'] .code-panel-particle-field {

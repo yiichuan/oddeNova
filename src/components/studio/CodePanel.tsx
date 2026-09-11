@@ -139,27 +139,6 @@ const ORGANIC_LIGHT_GROUPS: readonly MetaballGroup[] = [
 
 // Scale each metaball's area to 1.5× its previous size: √2 × √1.5 = √3.
 const METABALL_LINEAR_SCALE = Math.sqrt(3);
-/**
- * The same body at a phone's measure, and the only thing a phone changes about
- * this effect — the filter, the threshold, the geometry, the drift and the
- * pulse are all the desktop's.
- *
- * √3 puts a blob's lit mass about six tenths wider than the box it is placed
- * in: the balls already span nearly the whole viewBox, and the group's own
- * `overflow: visible` lets the scaled result out past it. On a desktop bar that
- * overhang is the point — the lights run into each other and what the bar shows
- * is one continuous wash with the brightness moving along it, which is what a
- * bar 800px long has room to read as.
- *
- * On a bar the width of a thumb it is the whole problem. Six bodies each half
- * again wider than their spacing cover the bar wall to wall, so there is no
- * unlit ground anywhere on it for a light to fall off *into* — the brightness
- * varies a little across one unbroken sheet, which is exactly a slab of graphic
- * and not a light source. 1 is the body filling its own box and no more, which
- * opens ten to twenty pixels of dark between neighbours: enough for the field's
- * blur to feather each core into, and enough for the six to be six.
- */
-const COMPACT_METABALL_SCALE = 1;
 const METABALL_DURATION_SCALE = 2;
 const COMPOSITE_LIGHT_GROUP_ORDER = [0, 3, 1, 4, 2, 5] as const;
 
@@ -217,16 +196,9 @@ function usePrefersReducedMotion() {
  * they sit in, so the same field lays itself out across a phone's bar as
  * happily as across a desktop's. Every SVG filter needs an id unique in the
  * document, and both bars can be mounted at once, so the prefix is a parameter
- * rather than a constant. `scale` is the other thing the two bars do not share
- * — see COMPACT_METABALL_SCALE.
+ * rather than a constant.
  */
-function ControlsLightField({
-  idPrefix,
-  scale = METABALL_LINEAR_SCALE,
-}: {
-  idPrefix: string;
-  scale?: number;
-}) {
+function ControlsLightField({ idPrefix }: { idPrefix: string }) {
   return (
     <div
       data-testid="code-panel-light-field"
@@ -250,7 +222,7 @@ function ControlsLightField({
               </defs>
               <g
                 filter={`url(#${idPrefix}-${index})`}
-                transform={`translate(100 80) scale(${scale}) translate(-100 -80)`}
+                transform={`translate(100 80) scale(${METABALL_LINEAR_SCALE}) translate(-100 -80)`}
               >
                 {group.balls.map((ball, ballIndex) => (
                   <circle
@@ -995,11 +967,18 @@ export default function CodePanel({
           gone — no hover labels (nothing to hover with), no volume popover (the
           phone has its own volume keys).
 
-          The ground is the desktop bar's, `.code-panel-controls` and all: the
-          same glass, the same grain, the same lit field drifting behind it.
-          Only the rhythm is restated, by `.code-panel-mobile-controls`, which
-          is later in the stylesheet and so wins the spacing variables the
-          shared progress layout reads.
+          The ground is not the desktop bar's. That bar is glass: a translucent
+          fill over a backdrop blur, grain on top of it and six lit blobs
+          drifting behind, all of which describe a strip standing above the page
+          it lets through. A phone has no page under this bar — the window is
+          opaque from the editor's top edge to here — so there was nothing for
+          the glass to be glass over, and what the lights actually did was cover
+          the one strip of the window that has to stay legible at a thumb's
+          distance. It is a flat fill of its own colour instead, one step off
+          the editor it closes, which is the whole of what this bar needs to
+          say. `.code-panel-mobile-controls` carries it, and is later in the
+          stylesheet than `.code-panel-controls` so it wins both that and the
+          spacing variables the shared progress layout reads.
 
           No rim and no border, and so none of the desktop bar's negative
           margins either — those exist only to clip a transparent border away so
@@ -1010,16 +989,11 @@ export default function CodePanel({
       {isMobile && (
         <div
           data-testid="code-panel-mobile-controls"
-          className={`code-panel-controls code-panel-mobile-controls relative z-10 flex h-[47px] w-full shrink-0 items-center rounded-b-region bg-conversation-surface pl-3 ${
+          className={`code-panel-controls code-panel-mobile-controls relative z-10 flex h-[47px] w-full shrink-0 items-center rounded-b-region pl-3 ${
             vizEnabled ? 'pr-2' : 'pr-4'
           }`}
           style={{ fontFamily: "'ABeeZee', monospace" }}
         >
-          <ControlsLightField
-            idPrefix="code-panel-mobile-metaball"
-            scale={COMPACT_METABALL_SCALE}
-          />
-
           {/* Both transport keys are plain discs — a fill, no ring — wearing
               the desktop bar's own `control-button-surface`, so a cap on this
               bar is literally the same colour as a cap on that one: near-black
@@ -1033,8 +1007,10 @@ export default function CodePanel({
               the action ramp, which reads in both themes.
 
               `relative z-10` on the cluster, as on the progress layout beside
-              it: the lit field sits at 0 and the grain at 1, and the controls
-              are the one thing on this bar that is not scenery. */}
+              it. Nothing is painted under them on this bar any more, but the
+              layers are the shared `.code-panel-controls` scale and the desktop
+              bar does put scenery at 0 and 1, so the controls stay where that
+              scale puts them rather than drifting apart by platform. */}
           <div className="relative z-10 flex shrink-0 items-center">
             <button
               type="button"
@@ -1078,14 +1054,28 @@ export default function CodePanel({
           {/* The window's own key, not the transport's: it puts the editor over
               the whole window and takes the animation out, which is the desktop
               toggle's act on a layout where the two panes are stacked the same
-              way. So it is the same state, the same labels and the same glyphs
-              as the bar upstairs, and deliberately not the same shape — the two
-              keys to its left are discs because they act on the sound, and a
-              third disc beside them would read as a third transport key. A bare
-              glyph at the far end says it belongs to the frame instead.
+              way. It shares that toggle's state and labels, and deliberately
+              not its shape — the two keys to its left are discs because they
+              act on the sound, and a third disc beside them would read as a
+              third transport key. A bare glyph at the far end says it belongs
+              to the frame instead.
 
-              `relative z-10` for the same reason the transport carries it: the
-              lit field is at 0 and its grain at 1, and this is not scenery. */}
+              The glyph runs the other way round from the desktop bar's, and
+              that is not a slip. Up there the key sits in a row of actions
+              beside share and download, and what it reports on is the pane it
+              opens and shuts: collapsed, it offers to bring the animation back,
+              so it shows the outward arrows. Down here it is the only thing on
+              the window that changes the window, and what a thumb reaching for
+              it is after is the editor — so the arrows describe what happens to
+              the code. With the animation up, pressing this expands the editor
+              over it: outward. With the animation gone, pressing it gives the
+              height back: inward. The labels still name the pane, which is what
+              actually moves, and the two are the same act said from the two
+              ends of it.
+
+              `relative z-10` for the same reason the transport carries it —
+              the shared bar's layer scale keeps its controls above a 0 and a 1
+              this bar no longer paints. */}
           {vizEnabled && (
             <button
               type="button"
@@ -1095,7 +1085,7 @@ export default function CodePanel({
               aria-label={vizCollapsed ? t('expandViz') : t('collapseViz')}
               aria-pressed={vizCollapsed}
             >
-              {vizCollapsed ? <MaximizeIcon size={15} /> : <MinimizeIcon size={15} />}
+              {vizCollapsed ? <MinimizeIcon size={15} /> : <MaximizeIcon size={15} />}
             </button>
           )}
         </div>
