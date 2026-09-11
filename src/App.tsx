@@ -1783,6 +1783,9 @@ export default function App() {
                 activeCode={strudel.activeCode}
                 onUpdate={() => { void handleUpdate(); }}
                 onEditorFocusChange={handleCodeFocusChange}
+                vizEnabled={studioAnimationVisible}
+                vizCollapsed={vizCollapsed}
+                onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
                 showSyncStatus={showSessionSyncStatus}
               />
@@ -1805,9 +1808,26 @@ export default function App() {
                 galaxy; here the window is shut most of the time, and an unseen
                 iframe still running its frames is a phone's battery spent on
                 something nobody is looking at. `visibility: hidden` does not
-                stop that — only not being there does. */}
+                stop that — only not being there does.
+
+                Collapsing is the other case, and it is desktop's: the bar's
+                right-hand key slides this shut and gives the height to the
+                editor, on the same curve and over the same 320ms the desktop
+                pane travels. The frame stays mounted through it, so the galaxy
+                that comes back is the one that went away — and it costs nothing
+                to keep, because a pane clipped to zero height leaves the
+                document inside it zero pixels tall, which is the case
+                galaxy-ascii.html idles on. The margin travels with the height:
+                it is the gap that keeps two borderless panes from reading as
+                one, and a gap left standing under a shut pane is a step in the
+                window's own floor. */}
             {studioAnimationVisible && codeSheetOpen && (
-              <div className="mt-3 min-h-0 shrink-0" style={{ height: '40%' }}>
+              <div
+                data-testid="mobile-viz-pane"
+                data-collapsed={vizCollapsed || undefined}
+                className="min-h-0 shrink-0 overflow-hidden transition-[height,margin-top] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
+                style={{ height: vizCollapsed ? 0 : '40%', marginTop: vizCollapsed ? 0 : 12 }}
+              >
                 <VizPlaceholder isPlaying={strudel.isPlaying} bordered={false} compact />
               </div>
             )}

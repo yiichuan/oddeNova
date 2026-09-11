@@ -79,12 +79,29 @@
             // weight units projectGalaxy accumulates, where one star in the outer
             // disk is worth roughly 0.04 and an arm ridge cell lands near 1.
             const SPARSE_FADE_DENSITY = 0.15;
-            const isCompactCanvas = window.innerHeight < 420;
-            const STAR_COUNT = isCompactCanvas ? 30000 : 56000;
-            const TARGET_COLUMNS = 178;
             /* Set by a host whose pane is far narrower than a studio's — see the
                font-size floor in the resize handler. */
             const COMPACT = new URLSearchParams(location.search).get('compact') === '1';
+            const isCompactCanvas = window.innerHeight < 420;
+            /* A budget, not a length — the gap rationing in createGalaxy drops
+               stars out of it — so what it really sets is how many stars land in
+               a cell, and that is the number the exposure curve is tuned to.
+
+               A phone's pane holds well under half the cells a studio's does
+               (see COMPACT_TARGET_COLUMNS), so the studio budget put around
+               half again as many stars in every cell of it: the field came out
+               denser than the desktop pane has ever shown, which is a different
+               galaxy, and it cost a phone one Math.sin and a projection per
+               star to arrive at it. Cutting to a phone's own budget holds the
+               density the desktop pane holds — near enough 4.5 stars a cell
+               either way — and takes a third off the most expensive thing in
+               the frame, which is what the loop needs to make its 30fps on a
+               handset. */
+            const COMPACT_STAR_COUNT = 20000;
+            const STAR_COUNT = COMPACT
+                ? COMPACT_STAR_COUNT
+                : isCompactCanvas ? 30000 : 56000;
+            const TARGET_COLUMNS = 178;
             /* What a phone's pane is designed around instead.
 
                178 columns is a studio measurement: across the ~360px the mobile
@@ -1872,6 +1889,65 @@
                 context.textBaseline = 'top';
             }
 
+            /**
+             * One step of the listening half: connect if the engine has come up,
+             * read the spectrum, and advance every follower, onset detector and
+             * effect that hangs off them.
+             *
+             * Separated from the drawing half because the two want different
+             * rates, and on a phone they get them. Detection wants resolution —
+             * it is looking for the leading edge of a drum, and a kick's bands do
+             * not peak together, which is the whole reason the arbitration below
+             * holds a 20ms window open before it decides which effect a hit
+             * earns. Drawing wants a budget: 30fps of a full projection is what
+             * this pane costs.
+             *
+             * Run from the frame loop, the first inherits the second. A desktop
+             * frame is 16ms so the window still spans two or three samples, but a
+             * phone drawing at 25fps samples every 40ms — wider than the window
+             * itself, so the window opened and closed on a single sample and
+             * whichever band happened to be ahead at that instant took the hit.
+             * The kick's fundamental needs ~10ms to develop under its pitch
+             * envelope while its beater click speaks immediately and reaches every
+             * band, so the band that was ahead was never the sub one: the
+             * shockwave, which is the only effect the sub band owns, could not
+             * fire at all on a handset, and everything else landed a frame late
+             * and quantised to the frame grid.
+             */
+            function stepAudio(delta) {
+                if (!audioConnected) tryConnectAudio();
+                updateAudio(delta);
+                updateGlitch(delta);
+            }
+
+            /* Fine enough that the arbitration window is several samples wide
+               whatever the frame rate does, and coarse enough to be free: one
+               getByteFrequencyData over 512 bins and a few dozen followers. */
+            const AUDIO_TICK_MS = 8;
+            let lastAudioTime = null;
+
+            function audioTick() {
+                // Two cases where the frame loop owns the audio clock instead:
+                // an offline render steps it from the rendered timeline, and a
+                // pane collapsed to nothing by the host has no visuals to drive.
+                // Dropping the mark means the tick after either one measures its
+                // own interval rather than the whole gap.
+                if (simTime !== null
+                    || window.innerWidth === 0
+                    || window.innerHeight === 0) {
+                    lastAudioTime = null;
+                    return;
+                }
+                const now = performance.now() * 0.001;
+                const delta = lastAudioTime === null
+                    ? AUDIO_TICK_MS / 1000
+                    : clamp(now - lastAudioTime, 0, 0.25);
+                lastAudioTime = now;
+                stepAudio(delta);
+            }
+
+            setInterval(audioTick, AUDIO_TICK_MS);
+
             function animate(timestamp) {
                 requestAnimationFrame(animate);
                 // Collapsed to nothing by the host layout. The loop has to stay
@@ -1896,13 +1972,11 @@
                     : clamp(time - lastVisualTime, 0, 0.25);
                 lastVisualTime = time;
 
-                // Listen every frame, draw at 30fps. Sampling the spectrum only on
-                // drawn frames costs half the temporal resolution of the beat
-                // detection, and loses more as a heavier track drags the frame rate
-                // down — the visuals slide off the music exactly when it gets busy.
-                if (!audioConnected) tryConnectAudio();
-                updateAudio(delta);
-                updateGlitch(delta);
+                // Live audio listens on its own clock (see stepAudio); this branch
+                // is the offline renderer's, where the audio has to be stepped by
+                // the same clock that drives the visuals so a render flies meteors
+                // at the rendered rate rather than at wall time.
+                if (simTime !== null) stepAudio(delta);
 
                 if (simTime === null && timestamp - lastFrameTime < FRAME_INTERVAL) return;
                 lastFrameTime = timestamp;

@@ -1551,6 +1551,12 @@ html[data-theme='light'] .code-window-scrim {
  * geometry right are what push the result up the contrast curve, and on a bar
  * the width of a thumb there is no room left for it to spread across.
  *
+ * A second step down with COMPACT_METABALL_SCALE, and for the other half of the
+ * same reading: the bar is no longer lit corner to corner, so the peak is now
+ * what the eye takes the field's brightness from rather than an average it was
+ * holding up. A core as bright as the sheet used to be reads brighter than the
+ * sheet did.
+ *
  * Dark only because `contrast(10)` is dark only: the paper rule further down
  * drops it, so the paper field has nothing to be pushed up and is already
  * where it should be. `:not([data-theme='light'])` rather than `[data-theme='dark']`
@@ -1560,7 +1566,7 @@ html[data-theme='light'] .code-window-scrim {
  * keyframe is what actually holds the field's opacity once it has run — see
  * `.code-panel-light-field`. */
 :root:not([data-theme='light']) .code-panel-mobile-controls .code-panel-light-field {
-  --code-panel-light-rest: 0.34;
+  --code-panel-light-rest: 0.3;
 }
 
 /* The blob's own bloom, which the scale did not reach: it sits in a `filter`
@@ -2696,6 +2702,16 @@ html[data-theme='light'] .history-search-field {
 @media (pointer: coarse) {
   .cm-editor .cm-content { font-size: 16px !important; }
   .cm-editor .cm-lineNumbers .cm-gutterElement { font-size: 16px !important; }
+
+  /* The caret at a finger's scale. CodeMirror draws it 1.2px wide, which is a
+     hairline meant for a screen at arm's length; on a phone held close, in a
+     line the thumb is about to cover, it takes the weight the platform's own
+     caret has. The negative margin stays half the width, which is what keeps
+     the stroke centred on the insertion point rather than beside it. */
+  .cm-editor .cm-cursor {
+    border-left-width: 2px;
+    margin-left: -1px;
+  }
 }
 
 /* Narrow the gutter below the mobile breakpoint (matches useIsMobile, i.e. the

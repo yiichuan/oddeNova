@@ -831,6 +831,70 @@ describe('CodePanel editor focus reporting', () => {
     expect(strudelService.setLineWrappingEnabled).toHaveBeenLastCalledWith(false);
   });
 
+  it('gives the mobile bar the key that puts the editor over the whole window', () => {
+    installMatchMedia(true);
+    const onToggleViz = vi.fn();
+    const { container, root, rerender } = renderCodePanel({ onToggleViz });
+    roots.push(root);
+
+    const bar = container.querySelector('[data-testid="code-panel-mobile-controls"]');
+    const toggle = bar?.querySelector<HTMLButtonElement>(
+      '[data-testid="code-panel-mobile-viz-toggle"]',
+    );
+
+    // Open, it offers to shut the animation; the glyph and the label say the
+    // same thing, and both are the desktop bar's.
+    expect(toggle?.getAttribute('aria-label')).toBe(t('collapseViz'));
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle?.querySelector('.lucide-minimize-2')).not.toBeNull();
+    // Not a disc: the two keys to its left act on the sound and wear the cap
+    // that says so, and a third one here would read as a third transport key.
+    expect(toggle?.classList.contains('control-button-surface')).toBe(false);
+
+    act(() => toggle?.click());
+    expect(onToggleViz).toHaveBeenCalledTimes(1);
+
+    rerender({ vizCollapsed: true });
+    expect(toggle?.getAttribute('aria-label')).toBe(t('expandViz'));
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle?.querySelector('.lucide-maximize-2')).not.toBeNull();
+  });
+
+  it('drops the mobile viz key when there is no animation to shut', () => {
+    installMatchMedia(true);
+    const { container, root } = renderCodePanel({ vizEnabled: false });
+    roots.push(root);
+
+    const bar = container.querySelector('[data-testid="code-panel-mobile-controls"]');
+    expect(bar?.querySelector('[data-testid="code-panel-mobile-viz-toggle"]')).toBeNull();
+    // The bar takes its full right margin back: the padding was cut to seat a
+    // key that is no longer there.
+    expect(bar?.classList.contains('pr-4')).toBe(true);
+  });
+
+  it('keeps the metaballs on the mobile bar but holds them inside their box', () => {
+    installMatchMedia(true);
+    const { container, root } = renderCodePanel();
+    roots.push(root);
+
+    const bar = container.querySelector('[data-testid="code-panel-mobile-controls"]');
+    const field = bar?.querySelector('[data-testid="code-panel-light-field"]');
+
+    // The same effect the desktop bar carries: six blobs, six filters, fifteen
+    // balls kneading them out of shape.
+    expect(field?.querySelectorAll('.code-panel-light-blob')).toHaveLength(6);
+    expect(field?.querySelectorAll('.code-panel-light-blob filter')).toHaveLength(6);
+    expect(field?.querySelectorAll('.code-panel-light-ball')).toHaveLength(15);
+
+    // What it does not carry is the overhang. √3 puts a blob's lit mass wider
+    // than the box it is placed in, which on a bar this narrow covers the whole
+    // of it — six lights with no unlit ground to fall off into read as one
+    // sheet. The body fills its own box and stops.
+    field?.querySelectorAll('g').forEach((group) => {
+      expect(group.getAttribute('transform')).toBe('translate(100 80) scale(1) translate(-100 -80)');
+    });
+  });
+
   it('updates line wrapping when the layout crosses the mobile breakpoint', () => {
     const setMobile = installMatchMedia(false);
     const { root } = renderCodePanel();
