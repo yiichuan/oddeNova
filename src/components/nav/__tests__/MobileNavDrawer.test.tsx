@@ -140,6 +140,25 @@ describe('MobileNavDrawer search', () => {
     expect(destinations()?.hidden).toBe(false);
   });
 
+  it('takes the whole window while the search is up, and gives it back after', () => {
+    const { container } = renderDrawer();
+    const panel = () =>
+      container.querySelector<HTMLElement>('[data-testid="mobile-nav-drawer"]')!;
+
+    expect(panel().className).toContain('w-2/3');
+
+    act(() => searchKey(container)?.click());
+    expect(panel().className).toContain('w-full');
+    expect(panel().className).not.toContain('w-2/3');
+
+    act(() => {
+      searchField(container)!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    expect(panel().className).toContain('w-2/3');
+  });
+
   it('offers a held row the three moves, and opens nothing on the way', () => {
     vi.useFakeTimers();
     const { container, onSwitch } = renderDrawer();

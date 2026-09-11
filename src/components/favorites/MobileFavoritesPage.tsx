@@ -452,7 +452,11 @@ export default function MobileFavoritesPage({
                a box of its own now, and one that is running has to start at
                its first letter — a centred line centres its overflow, which
                would cut the beginning off before it had moved at all. */
-            className="flex min-w-0 max-w-[50%] flex-1 justify-center text-[12px] text-text-secondary"
+            /* The page's reading size, like the stream above it. It is the
+               only place the name of what is open is written on this layout —
+               the desktop caption's job — and a caption nobody can read at a
+               glance is not doing that job. */
+            className="flex min-w-0 max-w-[50%] flex-1 justify-center text-base text-text-secondary"
           >
             {/* Always the one being read — it is the caption, there is nothing
                 else it could be naming — so it always runs when it has to.
@@ -707,25 +711,29 @@ export default function MobileFavoritesPage({
             paddingBottom: SAFE_BOTTOM,
           }}
         >
-          {/* Set exactly as the navigation drawer's own rows are — 15px, the
-              face's own weight, no tracking of its own — because the two panels
-              are one pair seen from opposite edges of the screen, and a heading
+          {/* Set exactly as the navigation drawer's own rows are — the face's
+              own weight, no tracking of its own — because the two panels are
+              one pair seen from opposite edges of the screen, and a heading
               that is a hair heavier or tighter than the list opposite reads as
-              a near-miss rather than as a decision.
+              a near-miss rather than as a decision. It follows that drawer's
+              size wherever it goes, which is why this is the same `text-base`
+              its rows are now set at rather than the 15px they were.
 
               What makes it a heading is not its type but its place: it is the
-              only line in the panel that is not an entry, the rows under it are
-              a step smaller, and the air below it is a row and a half deep. */}
-          <h2 className="shrink-0 px-4 pb-5 pt-1 text-[15px] text-text-primary">
+              only line in the panel that is not an entry, and the air below it
+              is a row and a half deep. */}
+          <h2 className="shrink-0 px-4 pb-5 pt-1 text-base text-text-primary">
             {t('favoritesList')}
           </h2>
           {/* The rows are the session history's rows, down to the numbers: the
-              same 12px line at rest, the same 4px plate, the same fill on the
-              one that is open. A collection and a history are the same object
-              — a list of conversations you pick one out of — and reading as
-              two different lists inside one app is the one thing they must not
-              do. What is added is the day it was kept, at the end of the line,
-              which is what tells two similar names apart. */}
+              same line at rest — 16px on this layout, the platform's own
+              reading size, the same as the navigation drawer opposite — the
+              same 4px plate, and the same fill on the one that is open. A
+              collection and a history are the same object — a list of
+              conversations you pick one out of — and reading as two different
+              lists inside one app is the one thing they must not do. What is
+              added is the day it was kept, at the end of the line, which is
+              what tells two similar names apart. */}
           <div
             role="listbox"
             aria-label={t('favoritesList')}
@@ -759,7 +767,7 @@ export default function MobileFavoritesPage({
                   <ScrollingTitle
                     title={summary.title}
                     active={selected}
-                    className="min-w-0 flex-1 text-xs leading-none"
+                    className="min-w-0 flex-1 text-base leading-5"
                   />
                   {/* Held a step under whatever the row is set in rather than
                       given a grey of its own: on the open row that grey would
@@ -767,7 +775,7 @@ export default function MobileFavoritesPage({
                       that cannot be read. */}
                   <time
                     dateTime={new Date(summary.favoritedAt).toISOString()}
-                    className="shrink-0 text-xs leading-none tabular-nums opacity-60"
+                    className="shrink-0 text-base leading-5 tabular-nums opacity-60"
                   >
                     {favoritedDateLabel(summary.favoritedAt)}
                   </time>

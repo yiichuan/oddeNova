@@ -43,10 +43,26 @@ export default function AuthField({
         onChange={(e) => onChange(e.currentTarget.value)}
         onKeyDown={onKeyDown}
         autoFocus={autoFocus}
+        /* An address is not prose. A phone keyboard that treats it as prose
+           capitalises the first letter, autocorrects the domain and offers
+           predictions — and it is the predictions that showed: clearing the
+           field and typing into it again re-armed the suggestion strip, whose
+           inline candidate the field then had to find room for. Turning the
+           whole language layer off is what keeps this a single unbroken line.
+           `inputMode` gets the address keyboard (@ and . on the first plane)
+           for the same reason the type does. */
+        autoComplete={!secret && type === 'email' ? 'email' : undefined}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        inputMode={!secret && type === 'email' ? 'email' : undefined}
         /* Transparent, so the box's fill runs unbroken behind it — except when
            Chrome autofills, which `.auth-field` in index.css paints back over.
-           16px and no smaller: iOS zooms the page on focus below that. */
-        className={`auth-field w-full border-0 bg-transparent p-0 text-base leading-6 text-text-primary outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+           16px and no smaller: iOS zooms the page on focus below that.
+           `h-6` pins the box to that one line for good: left to size itself the
+           field grows the moment anything — a predicted candidate, a composing
+           run — asks for a second one, and the whole form steps down with it. */
+        className={`auth-field h-6 w-full border-0 bg-transparent p-0 text-base leading-6 text-text-primary outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
           secret ? 'pr-8' : ''
         }`}
       />

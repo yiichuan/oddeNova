@@ -446,6 +446,36 @@ body {
   background-color: var(--color-bg-primary);
 }
 
+/* iOS Safari zooms the page whenever focus lands in a field set below 16px,
+   and it does not zoom back out — the page is left magnified and the layout
+   has to be pinched back. It is the *computed* size that decides it, so no
+   field on a phone may be set smaller than this, whatever the design of the
+   panel it sits in. Stated once here rather than per field: this is a platform
+   rule, and the next field added should not have to rediscover it.
+
+   `max()` so a field that is already larger keeps its own size. */
+@media (max-width: 460px) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* On a phone there is no page ground: the studio stands directly on the
+   conversation surface, and the strips the browser keeps for itself — the
+   notch at the top, the toolbar at the bottom — are the only places the
+   document canvas is ever seen. They have to continue the page rather than
+   frame it, so both roots take that surface instead. `theme-color` in
+   appearance-preferences.ts carries the same pair for the bars the browser
+   paints itself. */
+@media (max-width: 460px) {
+  html,
+  body {
+    background-color: var(--color-conversation-surface);
+  }
+}
+
 body {
   margin: 0;
   color: var(--color-text-primary);
@@ -1511,6 +1541,39 @@ html[data-theme='light'] .code-window-scrim {
   filter: blur(calc(16px * var(--code-panel-light-scale))) contrast(10);
 }
 
+/* Down from the desktop 0.64, on the phone bar and in the dark room only.
+ *
+ * The field is the one place the narrowing does not cancel out. `contrast(10)`
+ * works on alpha, so what reaches the screen is set by how *concentrated* the
+ * light is, not by how much of it there is — and six blobs at two fifths of
+ * their width, blurred by two fifths as much, are far more concentrated than
+ * the desktop field they are derived from. The same numbers that hold the
+ * geometry right are what push the result up the contrast curve, and on a bar
+ * the width of a thumb there is no room left for it to spread across.
+ *
+ * Dark only because `contrast(10)` is dark only: the paper rule further down
+ * drops it, so the paper field has nothing to be pushed up and is already
+ * where it should be. `:not([data-theme='light'])` rather than `[data-theme='dark']`
+ * so the value also holds for the frame before the attribute is written.
+ *
+ * It goes through the custom property because the boot animation's last
+ * keyframe is what actually holds the field's opacity once it has run — see
+ * `.code-panel-light-field`. */
+:root:not([data-theme='light']) .code-panel-mobile-controls .code-panel-light-field {
+  --code-panel-light-rest: 0.34;
+}
+
+/* The blob's own bloom, which the scale did not reach: it sits in a `filter`
+   on the SVG rather than in the geometry above, so it stayed at its desktop
+   18px around a blob narrowed to ~65px — a halo nearly as wide as the thing
+   casting it, which `contrast(10)` then read as one solid core. Taking it with
+   the same factor as everything else is what puts the six back to being six. */
+.code-panel-mobile-controls .code-panel-light-blob svg {
+  filter: drop-shadow(
+    0 0 calc(18px * var(--code-panel-light-scale)) rgba(255, 255, 252, 0.32)
+  );
+}
+
 .code-panel-mobile-controls .code-panel-light-blob:nth-child(1) {
   left: 3%; width: calc(156px * var(--code-panel-light-scale));
   margin-left: calc(-78px * var(--code-panel-light-scale));
@@ -1653,8 +1716,12 @@ html[data-theme='light'] .code-window-scrim {
   mix-blend-mode: screen;
   /* The resting value. Also the boot animation's last keyframe, which `both`
      holds afterwards; this line is what the reduced-motion branch falls back
-     to. */
-  opacity: 0.64;
+     to — which is why it is a variable and not a number. `both` means the
+     keyframe wins once the boot has run, so anything that wants the field at a
+     different brightness has to move both, and one custom property is what
+     keeps the two from drifting apart. */
+  --code-panel-light-rest: 0.64;
+  opacity: var(--code-panel-light-rest);
   animation: code-panel-light-boot 3s cubic-bezier(0.37, 0, 0.63, 1) both;
   /* Diagnostic, and defensible on its own. An opacity animation gets this
      element its own composited layer for the 3s it runs; without the hint,
@@ -1696,7 +1763,7 @@ html[data-theme='light'] .code-window-scrim {
 @keyframes code-panel-light-boot {
   0% { opacity: 0; }
   12% { opacity: 0.04; }
-  100% { opacity: 0.64; }
+  100% { opacity: var(--code-panel-light-rest); }
 }
 
 /* The collapsed-state particle layer: ASCII characters falling through the bar

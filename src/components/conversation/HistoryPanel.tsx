@@ -189,6 +189,17 @@ export default function HistoryPanel({
     pressOriginRef.current = null;
   };
 
+  /* The list's own type size.
+   *
+   * `longPressMenu` is already the panel's "this is a finger, not a pointer"
+   * flag — it is set by the mobile drawer and by nothing else — so it is what
+   * sets the reading size too, rather than a second prop saying the same thing
+   * twice. On a phone the rows are read at the platform's 16px like everything
+   * else in that drawer; the studio's history overlay keeps its 12, where it
+   * is one list among several in a window being worked in rather than the
+   * whole of what is on screen. */
+  const rowTextClass = longPressMenu ? 'text-base leading-5' : 'text-xs leading-none';
+
   /* The press, for the surfaces that have no pointer to reveal things with.
    *
    * Only a finger or a pen opens it: where there is a mouse the three marks in
@@ -352,9 +363,9 @@ export default function HistoryPanel({
       )}
       <div>
         {isLoading ? (
-          <div className="px-4 py-6 text-center text-xs text-text-muted">{t('loading')}</div>
+          <div className={`px-4 py-6 text-center ${rowTextClass} text-text-muted`}>{t('loading')}</div>
         ) : initialError ? (
-          <div className="flex flex-col items-center gap-2 px-4 py-6 text-center text-xs text-text-muted">
+          <div className={`flex flex-col items-center gap-2 px-4 py-6 text-center ${rowTextClass} text-text-muted`}>
             <span>{t('sessionListNetworkError')}</span>
             {onRetryInitial && (
               <button
@@ -367,7 +378,7 @@ export default function HistoryPanel({
             )}
           </div>
         ) : ordered.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-text-muted">
+          <div className={`px-4 py-6 text-center ${rowTextClass} text-text-muted`}>
             {needle ? t('historySearchEmpty') : t('noSessions')}
           </div>
         ) : (
@@ -448,7 +459,7 @@ export default function HistoryPanel({
                             cancel(s);
                           }
                         }}
-                        className="my-[5px] min-w-0 flex-1 rounded-region border border-border bg-conversation-surface px-1 py-0.5 text-xs leading-none text-text-primary outline-none focus:border-accent/60"
+                        className={`my-[5px] min-w-0 flex-1 rounded-region border border-border bg-conversation-surface px-1 py-0.5 ${rowTextClass} text-text-primary outline-none focus:border-accent/60`}
                       />
                     ) : (
                       <button
@@ -457,7 +468,7 @@ export default function HistoryPanel({
                         className="flex-1 flex items-center py-[8px] text-left min-w-0"
                         title={displayTitle}
                       >
-                        <span className="block w-full text-xs leading-none truncate">{displayTitle}</span>
+                        <span className={`block w-full ${rowTextClass} truncate`}>{displayTitle}</span>
                       </button>
                     )}
                     {/* While a row is still being answered it has nothing to
@@ -621,19 +632,19 @@ export default function HistoryPanel({
               {
                 key: 'rename',
                 label: t('rename'),
-                icon: <EditIcon size={15} />,
+                icon: <EditIcon size={16} />,
                 onSelect: () => startEditing(heldRow),
               },
               ...(onFavorite ? [{
                 key: 'favorite',
                 label: t('favorite'),
-                icon: <StarIcon size={15} />,
+                icon: <StarIcon size={16} />,
                 onSelect: () => keep(heldRow),
               }] : []),
               {
                 key: 'delete',
                 label: t('delete'),
-                icon: <TrashIcon size={15} />,
+                icon: <TrashIcon size={16} />,
                 onSelect: () => setAskingDeleteId(heldRow.id),
                 danger: true,
               },
@@ -647,11 +658,13 @@ export default function HistoryPanel({
                   setRowMenu(null);
                   item.onSelect();
                 }}
-                className={`flex h-10 w-full items-center gap-2.5 px-3 text-left text-[14px] transition-colors active:bg-surface-hover ${
+                /* Only a finger opens this menu, so it is set at the phone's
+                   own reading size like the rows it was opened from. */
+                className={`flex h-11 w-full items-center gap-2.5 px-3 text-left text-base transition-colors active:bg-surface-hover ${
                   item.danger ? 'text-diff-remove' : 'text-text-primary'
                 }`}
               >
-                <span className="flex w-4 shrink-0 justify-center">{item.icon}</span>
+                <span className="flex w-5 shrink-0 justify-center">{item.icon}</span>
                 <span className="truncate">{item.label}</span>
               </button>
             ))}

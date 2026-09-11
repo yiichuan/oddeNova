@@ -295,7 +295,6 @@ export default function App() {
     setCodeSheetOpen,
     navDrawerOpen,
     setNavDrawerOpen,
-    mobileFocusedArea,
     shouldLiftBottomBar,
     handleChatFocusChange,
     handleCodeFocusChange,
@@ -1657,16 +1656,20 @@ export default function App() {
             comes back. `inert` is what a hidden-but-laid-out panel needs so it
             stays out of the tab order while it is not on screen.
 
-            Lifted clear of the keyboard by giving up the bottom of the screen
-            rather than by moving: the window is centred in whatever room is
-            left, so it stays whole while the code is being edited. */}
+            The keyboard does not move it. It used to give the bottom of the
+            screen up and shrink, which is the one thing the window cannot
+            afford to do: the editor is the reason the window is open, and
+            handing half the screen to the keyboard left it a handful of rows
+            deep with the animation below still holding its share. The keyboard
+            now covers the foot of the window instead of resizing it — the
+            editor scrolls the caret into view inside its own scroller, the way
+            it does on every other platform, and nothing above the caret moves. */}
         <div
           data-testid="mobile-code-sheet"
           className="fixed inset-0 z-50 flex items-center justify-center px-3 pt-14 pb-4"
           style={{
             visibility: codeSheetOpen ? 'visible' : 'hidden',
             transition: codeSheetOpen ? undefined : 'visibility 0s linear 240ms',
-            bottom: mobileFocusedArea === 'code' ? keyboardHeight : undefined,
           }}
           inert={!codeSheetOpen}
         >
@@ -1681,11 +1684,9 @@ export default function App() {
             aria-label={t('expandCode')}
             className="relative z-10 flex w-full max-w-[520px] flex-col transition-[opacity,transform] duration-[240ms] ease-out motion-reduce:transition-none"
             // Height taken from the room this overlay actually has rather than
-            // from the viewport, so giving the bottom of the screen up to the
-            // keyboard shortens the window instead of pushing it off the top.
-            // The overlay's own top padding is what the row of actions hangs
-            // in: it is placed above the window, so the window may not be
-            // centred in ground the row would have to leave.
+            // from the viewport. The overlay's own top padding is what the row
+            // of actions hangs in: it is placed above the window, so the window
+            // may not be centred in ground the row would have to leave.
             //
             // Taller than it was, because it now holds two panes: the editor
             // gives up a third of itself to the animation, and taking that out
@@ -1788,9 +1789,13 @@ export default function App() {
             </div>
 
             {/* The studio's animation pane, under the code the way it is on
-                desktop. A third of the window rather than desktop's two fifths:
-                the same pane, but the editor it shares the box with is a phone's
-                width and needs the rows more than the animation needs the room.
+                desktop, and now at desktop's own share of the box rather than
+                the third it was cut to. The third was taken back for the
+                editor's rows, and on a phone that trade does not pay: a pane
+                that short renders the field at a scale where the galaxy reads
+                as texture instead of as a galaxy, and the rows it bought were
+                being handed to the keyboard anyway (which no longer takes
+                them — see the window above).
                 Parted by more than the desktop's 6px seam: that gap is sized to
                 be grabbed, and there is no split to drag here — what it has to
                 do instead is keep two borderless panes from reading as one.
@@ -1802,7 +1807,7 @@ export default function App() {
                 something nobody is looking at. `visibility: hidden` does not
                 stop that — only not being there does. */}
             {studioAnimationVisible && codeSheetOpen && (
-              <div className="mt-3 min-h-0 shrink-0" style={{ height: '32%' }}>
+              <div className="mt-3 min-h-0 shrink-0" style={{ height: '40%' }}>
                 <VizPlaceholder isPlaying={strudel.isPlaying} bordered={false} compact />
               </div>
             )}

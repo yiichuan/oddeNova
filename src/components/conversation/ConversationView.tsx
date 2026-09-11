@@ -536,6 +536,30 @@ export default function ConversationView({
   // User-collapsed state of the live streaming reasoning window.
   const [reasoningCollapsed, setReasoningCollapsed] = useState(false);
   const isMobile = useIsMobile();
+  /* The stream's reading sizes.
+   *
+   * A phone is set at the platform's own 16px — the size every other app it
+   * sits beside is read at, and the size below which the browser magnifies the
+   * page out from under a focused field (see the floor in index.css). The
+   * studio's column keeps its 14: there the stream is one panel of a workspace
+   * being worked in, not the whole of what is on screen.
+   *
+   * Reasoning is deliberately one step under the reply in both. It is the
+   * work, not the answer — something to be able to look into rather than to
+   * read — and set level with the reply it competes with it for the same
+   * attention. That relationship is the point, so it is stated as its own
+   * constant rather than left to be rediscovered per call site. */
+  const bodyText = isMobile ? 'text-base' : 'text-sm';
+  /* Only the resolved reasoning *body* moves. Everything else that belongs to
+     the thinking — the sticky header over it, the actions heading, the status
+     lines, the live window — is already at 14px on both layouts, which is
+     exactly the step under the phone's reading size this wants, so those stay
+     the literal `text-sm` they were rather than being routed through here and
+     dragging the studio's own column down with them. */
+  const reasoningText = isMobile ? 'text-sm' : 'text-[12px]';
+  /* Marks set against `bodyText`: a glyph reads lighter than a letterform, so
+     it runs a step over the type it stands beside rather than level with it. */
+  const markSize = isMobile ? 16 : 14;
   // On mobile, long-pressing a message reveals the rollback button (no real hover state on touch screens)
   const [longPressedId, setLongPressedId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1062,7 +1086,7 @@ export default function ConversationView({
               }`}
             >
               <ChevronRightIcon
-                size={14}
+                size={markSize}
                 className={`flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
               />
               <span>{t('reasoningTitle')}</span>
@@ -1071,7 +1095,7 @@ export default function ConversationView({
               )}
             </button>
             {isExpanded && (
-              <div className="mt-1.5 text-[12px] text-text-reasoning font-mono break-words leading-relaxed animate-fade-in">
+              <div className={`mt-1.5 ${reasoningText} text-text-reasoning font-mono break-words leading-relaxed animate-fade-in`}>
                 <MarkdownText content={msg.content} tone="muted" />
               </div>
             )}
@@ -1177,7 +1201,7 @@ export default function ConversationView({
                         <span>· {formatThinkDuration(actionGroupDurationSec.get(gid)!)}</span>
                       )}
                       <ChevronRightIcon
-                        size={14}
+                        size={markSize}
                         className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
                       />
                     </button>
@@ -1199,7 +1223,7 @@ export default function ConversationView({
               className="flex justify-end items-end gap-1.5 animate-fade-in group"
             >
               <div
-                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-message-user text-text-primary${
+                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary${
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}
@@ -1254,7 +1278,7 @@ export default function ConversationView({
             className={`flex justify-start items-start animate-fade-in group${showsTurnActions ? ' mb-16' : ''}`}
             style={assistantStyle}
           >
-            <div className={`relative w-full rounded-xl px-2 pb-2 text-sm bg-transparent text-text-primary ${
+            <div className={`relative w-full rounded-xl px-2 pb-2 ${bodyText} bg-transparent text-text-primary ${
               followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
             }`}>
               <MarkdownText content={msg.content} />
@@ -1315,14 +1339,14 @@ export default function ConversationView({
                     className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-icon-idle transition-colors hover:bg-surface-hover"
                     title={t('retry')}
                   >
-                    <RetryIcon size={14} />
+                    <RetryIcon size={markSize} />
                   </button>
                   <button
                     onClick={() => onBranch(msg.id)}
                     className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-icon-idle transition-colors hover:bg-surface-hover"
                     title={t('branchFrom')}
                   >
-                    <GitBranchIcon size={14} />
+                    <GitBranchIcon size={markSize} />
                   </button>
                 </div>
               )}
@@ -1346,7 +1370,7 @@ export default function ConversationView({
                 data-live-reasoning-toggle
                 onClick={() => setReasoningCollapsed((v) => !v)}
                 aria-expanded={reasoningWindowExpanded}
-                className="flex min-w-0 items-center gap-1.5 text-left text-sm text-text-primary transition-colors hover:text-text-secondary"
+                className={`flex min-w-0 items-center gap-1.5 text-left ${bodyText} text-text-primary transition-colors hover:text-text-secondary`}
                 title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
               >
                 <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
@@ -1356,7 +1380,7 @@ export default function ConversationView({
                 />
               </button>
             ) : (
-              <div className="min-w-0 text-sm text-text-primary">{liveStatusLabel}</div>
+              <div className={`min-w-0 ${bodyText} text-text-primary`}>{liveStatusLabel}</div>
             )}
           </div>
           {reasoningWindowExpanded && streamingReasoningMsg && (

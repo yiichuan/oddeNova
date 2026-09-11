@@ -29,8 +29,13 @@ type DrawerIcon = (props: { size?: number; className?: string }) => ReactNode;
    label beside it, so the labels line up down the panel whatever their icons
    are. Stated once rather than repeated per row — the whole point of the drawer
    is that these read as one list. */
+/* 16px, the platform's own reading size, rather than the 15 this was set at.
+   A phone is held at arm's length and read in passing, and it is also where
+   the browser will magnify the page out from under you the moment focus lands
+   in anything smaller (see the field floor in index.css) — so the panel is set
+   at the size the platform assumes and everything in it is sized from there. */
 const ROW_CLASS =
-  'flex w-full items-center gap-3 rounded-[6px] px-3 py-2.5 text-left text-[15px]'
+  'flex w-full items-center gap-3 rounded-[6px] px-3 py-2.5 text-left text-base'
   + ' transition-colors hover:bg-surface-hover active:bg-surface-selected';
 
 /* A row that goes somewhere. */
@@ -49,8 +54,8 @@ const ROW_CURRENT = 'bg-surface-selected text-text-primary';
    everything that lives *under* a heading in this panel lines up down one edge
    whichever heading it is under. */
 const SUB_ROW_CLASS =
-  'flex w-full items-center gap-2 rounded-[4px] px-2 py-[8px] text-left text-xs'
-  + ' leading-none transition-colors hover:bg-surface-hover active:bg-surface-selected';
+  'flex w-full items-center gap-2 rounded-[4px] px-2 py-[8px] text-left text-base'
+  + ' leading-5 transition-colors hover:bg-surface-hover active:bg-surface-selected';
 
 /* A row that opens a section under it. Quieter, and carrying no mark of its
    own: it names the group below rather than standing in the list as another
@@ -88,7 +93,7 @@ function DrawerRow({
       aria-expanded={section ? expanded : undefined}
       aria-current={current ? 'page' : undefined}
     >
-      {Icon && <Icon size={19} className="shrink-0" />}
+      {Icon && <Icon size={20} className="shrink-0" />}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {/* Right for shut, down for open: the arrow points at where the section
           is, which is off to the side while it is folded away and directly
@@ -96,7 +101,7 @@ function DrawerRow({
           keeps the turn continuous. */}
       {section && (
         <ChevronRight
-          size={16}
+          size={17}
           aria-hidden="true"
           className={`shrink-0 transition-transform duration-200 motion-reduce:transition-none ${
             expanded ? 'rotate-90' : ''
@@ -304,12 +309,28 @@ export default function MobileNavDrawer({
         aria-modal="true"
         aria-label={t('primaryNavigation')}
         data-testid="mobile-nav-drawer"
-        // Two thirds of the window. It is a panel you step into and back out of
-        // rather than somewhere to stay, so leaving a strip of the page standing
-        // beside it says the way back is still there — but the rows have to be
-        // readable first, and a half left the longer labels running into their
-        // own truncation.
-        className="absolute inset-y-0 left-0 flex w-2/3 flex-col border-r border-border bg-conversation-surface shadow-menu-overlay transition-transform duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
+        // Two thirds of the window at rest. It is a panel you step into and
+        // back out of rather than somewhere to stay, so leaving a strip of the
+        // page standing beside it says the way back is still there — but the
+        // rows have to be readable first, and a half left the longer labels
+        // running into their own truncation.
+        //
+        // Searching takes the whole window, because searching is no longer
+        // stepping into the drawer — it is the thing being done, and what it
+        // returns is a list that can be any length. The strip of page beside
+        // the panel was there to say where you came from; while a question is
+        // being answered, what matters is the answer having somewhere to be
+        // read, and two thirds of a phone is not it. Tapping the strip was also
+        // the way back out, which is why the field's own key takes that job
+        // over the moment it is gone: it clears the words, then the mode, and
+        // the strip is back.
+        //
+        // Width is in the transition alongside the transform so the panel opens
+        // out rather than jumping, on the same curve and duration it slid in
+        // on — the two are the same panel moving, and they should move alike.
+        className={`absolute inset-y-0 left-0 flex flex-col border-r border-border bg-conversation-surface shadow-menu-overlay transition-[transform,width] duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${
+          searchOpen ? 'w-full' : 'w-2/3'
+        }`}
         style={{
           transform: open ? 'translateX(0)' : 'translateX(-100%)',
           paddingTop: 'max(12px, env(safe-area-inset-top))',
@@ -324,8 +345,8 @@ export default function MobileNavDrawer({
             answering it. */}
         <div className={`flex shrink-0 items-center justify-between pb-2 ${searchOpen ? 'px-2' : 'pl-4 pr-2'}`}>
           {searchOpen ? (
-            <div className="history-search-field flex h-9 w-full items-center gap-1.5 rounded-[6px] px-2.5">
-              <SearchIcon size={14} className="shrink-0 text-text-muted" />
+            <div className="history-search-field flex h-10 w-full items-center gap-2 rounded-[6px] px-2.5">
+              <SearchIcon size={16} className="shrink-0 text-text-muted" />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -345,7 +366,13 @@ export default function MobileNavDrawer({
                   if (query !== '') setQuery('');
                   else setSearchOpen(false);
                 }}
-                className="min-w-0 flex-1 bg-transparent text-xs leading-none text-text-primary outline-none placeholder:text-text-muted"
+                /* 16px and no smaller. This is the field the page was being
+                   magnified out from under: iOS zooms in on focus below that
+                   size and never zooms back, so a search left the whole app
+                   scaled up and needing a pinch to read. The floor in index.css
+                   would catch it either way; it is stated here too because the
+                   size is part of this field's design now, not a rescue. */
+                className="h-6 min-w-0 flex-1 bg-transparent text-base leading-6 text-text-primary outline-none placeholder:text-text-muted"
               />
               {/* One key for both jobs, because from where the reader sits
                   they are one job: it takes back the search. With something
@@ -366,7 +393,7 @@ export default function MobileNavDrawer({
                 title={query !== '' ? t('historySearchClear') : t('close')}
                 className="shrink-0 text-text-muted transition-colors hover:text-text-primary"
               >
-                <XIcon size={14} />
+                <XIcon size={16} />
               </button>
             </div>
           ) : (
@@ -403,7 +430,7 @@ export default function MobileNavDrawer({
                 title={t('navSearch')}
                 data-testid="drawer-search-open"
               >
-                <SearchIcon size={18} />
+                <SearchIcon size={20} />
               </button>
             </>
           )}
@@ -466,7 +493,7 @@ export default function MobileNavDrawer({
                       branch glyph is a version-control mark, not GitHub's, and
                       the two navs should not be naming the same destination
                       with different marks. */}
-                  <span className="primary-nav-github-logo size-[15px]" aria-hidden="true" />
+                  <span className="primary-nav-github-logo size-4" aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate">GitHub</span>
                 </a>
                 <a
@@ -476,7 +503,7 @@ export default function MobileNavDrawer({
                   onClick={onClose}
                   className={`${SUB_ROW_CLASS} ${ROW_TEXT}`}
                 >
-                  <BookOpenIcon size={15} className="shrink-0" />
+                  <BookOpenIcon size={16} className="shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{t('navLearnStrudel')}</span>
                 </a>
               </div>
@@ -584,7 +611,7 @@ export default function MobileNavDrawer({
                 {accountInitials}
               </span>
             ) : (
-              <UserIcon size={18} className="shrink-0" />
+              <UserIcon size={20} className="shrink-0" />
             )}
           </button>
           {/* Flips straight between the two palettes rather than cycling
@@ -600,7 +627,7 @@ export default function MobileNavDrawer({
             aria-label={theme === 'dark' ? t('switchToLight') : t('switchToDark')}
             title={theme === 'dark' ? t('switchToLight') : t('switchToDark')}
           >
-            {theme === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+            {theme === 'dark' ? <SunIcon size={20} /> : <MoonIcon size={20} />}
           </button>
         </div>
       </div>

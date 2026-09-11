@@ -221,6 +221,35 @@ export default function ChatInput({
     }
   };
 
+  // Where the phone's return key is actually caught.
+  //
+  // `keydown` is not reliable for it: with an IME in the loop a phone reports a
+  // bare `keyCode: 229` and no `key`, so the handler below never recognises the
+  // press and the field takes a blank line instead of the suggestion. Every
+  // mobile keyboard does agree on the *edit* the key is asking for, and this is
+  // it — `insertLineBreak`, identical however the keydown came out.
+  //
+  // A native listener rather than React's `onBeforeInput`, which is still the
+  // `textInput` polyfill: it only dispatches when the event carries character
+  // data, and a line break carries none, so it never fires here at all.
+  //
+  // Narrowly gated. The moment there is anything typed `suggestionActive` is
+  // false and the newline goes in exactly as it always did.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || !isMobile || replayValue !== undefined) return;
+    if (!suggestionActive || !currentSuggestion) return;
+
+    const onBeforeInput = (e: Event) => {
+      if ((e as InputEvent).inputType !== 'insertLineBreak') return;
+      e.preventDefault();
+      adoptedSuggestionRef.current = currentSuggestion;
+      setText(currentSuggestion);
+    };
+    el.addEventListener('beforeinput', onBeforeInput);
+    return () => el.removeEventListener('beforeinput', onBeforeInput);
+  }, [isMobile, replayValue, suggestionActive, currentSuggestion]);
+
   const handleCardClick = (e: React.MouseEvent<HTMLFormElement>) => {
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
@@ -290,6 +319,12 @@ export default function ChatInput({
                   // field is still empty (suggestionActive). Once the user is
                   // typing it falls through as a plain newline — sending is the
                   // send button's job there, not the keyboard's.
+                  //
+                  // The phone's own return key often does not arrive here at all
+                  // (an IME in the loop reports a bare `keyCode: 229` with no
+                  // `key`). The native `beforeinput` listener above is what
+                  // actually catches it there; this stays as the plain-keyboard
+                  // path and as the belt to its braces.
                   if (isMobile) {
                     if (suggestionActive && currentSuggestion) {
                       e.preventDefault();

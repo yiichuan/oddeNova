@@ -85,6 +85,22 @@
             /* Set by a host whose pane is far narrower than a studio's — see the
                font-size floor in the resize handler. */
             const COMPACT = new URLSearchParams(location.search).get('compact') === '1';
+            /* What a phone's pane is designed around instead.
+
+               178 columns is a studio measurement: across the ~360px the mobile
+               code window gives this pane it works out at a 4px glyph, which is
+               below what a phone renders as a letterform at all — the field came
+               out as grey texture — and it put *more* cells on screen than a
+               full-width desktop pane carries, at three times the device pixels.
+               Every frame then cost more than the phone had, the loop fell well
+               under its 30fps, and a beat detector that only sees the spectrum
+               when a frame runs lost the transients it exists to find: meteors
+               landed late and the shockwave's accent gate, which measures one
+               hit against its neighbours, never cleared.
+
+               96 is the same field at a size a phone can draw — a glyph half
+               again as large, and under half the cells to fill. */
+            const COMPACT_TARGET_COLUMNS = 96;
             const TARGET_FPS = 30;
             const FRAME_INTERVAL = 1000 / TARGET_FPS;
             const FOV = 50 * Math.PI / 180;
@@ -168,6 +184,15 @@
             // and hat noise overlap most, and listening to it makes the two
             // indistinguishable.
             const AUDIO_FLOOR = 0.015;
+            // Ceiling on the latency compensation (see `outputLatency`). A reading
+            // this large is a
+            // misreport rather than a route — past it the effects would read as
+            // answering the beat before rather than the beat they belong to, which
+            // is worse than being early.
+            const MAX_OUTPUT_LATENCY = 0.4;
+            // Under this, firing straight away and firing on a timer are the same
+            // thing to the eye, and the queue is pure overhead.
+            const MIN_OUTPUT_LATENCY = 0.008;
             // Narrow bands, in Hz, resolved against the real sample rate. A wide
             // "everything under 1.4kHz" band tracks the bass line, chords and vocals
             // as much as the kick, so once an arrangement fills in the glitch fires on
@@ -453,6 +478,25 @@
             let analyserSource = null;
             let dataArray = null;
             let audioConnected = false;
+            /**
+             * How far ahead of the speaker the tap is, in seconds.
+             *
+             * The analyser hangs off the engine's output gain, which is the signal
+             * on its way to the device — not the sound in the room. Everything
+             * between the two costs time: the output buffer, the OS mixer, and on
+             * a phone a route that may be Bluetooth. On a desktop that is a frame
+             * or two and nobody notices; on a phone it is tens of milliseconds and
+             * upwards, which is exactly the range the ear reads as "the picture is
+             * early". So an effect is not fired when the transient is *seen*, it is
+             * fired when the transient will be *heard*.
+             */
+            let outputLatency = 0;
+            /**
+             * Effects waiting out that latency, in the order they were detected.
+             * Every entry is held for the same delay, so the queue is already in
+             * due order and the frame below can stop at the first one not ready.
+             */
+            const pendingEffects = [];
             let simAudio = null;
             let simTime = null;
             let lastFrameTime = -Infinity;
@@ -695,18 +739,19 @@
                 context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
 
                 // The floor keeps a glyph from shrinking below what the display can
-                // draw. Stated flat in CSS pixels it also stops any panel narrower
-                // than ~880px from reaching TARGET_COLUMNS — at the 360px the mobile
-                // code window gives this pane, the field came out at 75 columns
-                // instead of 178 and every character was more than twice the size it
-                // is designed around.
+                // draw, which also means any panel narrower than ~880px falls short
+                // of TARGET_COLUMNS and holds the glyph at the floor instead.
                 //
-                // Only `?compact=1` relaxes it, and only the mobile pane sets that. In
-                // device pixels the same limit is 4 CSS px at DPR 2, still eight real
-                // pixels of glyph. Every other host keeps the flat 8 it has always had,
+                // `?compact=1` — set by the mobile pane and nothing else — asks for the
+                // column count instead of the glyph size, so the field is the one thing
+                // that scales down to a phone and the character stays a character. At
+                // 360px that lands near 6px, which is what a phone can actually draw,
+                // and the 5 floor is only there for a pane narrower than any this is
+                // mounted in. Every other host keeps the flat 8 it has always had,
                 // narrow desktop windows included — a size the pane is drawn at on a
                 // screen someone is sitting in front of is not this fix's business.
-                fontSize = clamp(width / (TARGET_COLUMNS * 0.62), COMPACT ? 8 / pixelRatio : 8, 15);
+                const targetColumns = COMPACT ? COMPACT_TARGET_COLUMNS : TARGET_COLUMNS;
+                fontSize = clamp(width / (targetColumns * 0.62), COMPACT ? 5 : 8, 15);
                 context.font = `600 ${fontSize}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
                 context.textBaseline = 'top';
                 cellWidth = context.measureText('@').width;
@@ -852,6 +897,16 @@
                     tapNode.connect(analyser);
                     analyserSource = tapNode;
                     dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    // `outputLatency` is the whole path to the speaker and the one
+                    // that matters; `baseLatency` is only the buffer the engine
+                    // writes into, and stands in where the browser reports nothing
+                    // better. Read once per connection: the route can change, but
+                    // changing it rebuilds the context, which drops this one.
+                    outputLatency = clamp(
+                        audioContext.outputLatency || audioContext.baseLatency || 0,
+                        0,
+                        MAX_OUTPUT_LATENCY,
+                    );
 
                     const binHz = audioContext.sampleRate / analyser.fftSize;
                     const lastBin = analyser.frequencyBinCount - 1;
@@ -882,6 +937,36 @@
                 analyserSource = null;
                 dataArray = null;
                 audioConnected = false;
+                outputLatency = 0;
+                pendingEffects.length = 0;
+            }
+
+            /**
+             * Run an effect when the transient that earned it reaches the speaker.
+             *
+             * Everything the detector fires goes through here, so the whole glitch
+             * layer moves as one and the relative timing between a meteor and the
+             * ring it lands next to is untouched.
+             */
+            function onHeard(effect) {
+                if (outputLatency <= MIN_OUTPUT_LATENCY) {
+                    effect();
+                    return;
+                }
+                pendingEffects.push({ due: outputLatency, effect });
+            }
+
+            /** Fire whatever has come due this frame, oldest first. */
+            function releaseHeardEffects(delta) {
+                let released = 0;
+                for (let index = 0; index < pendingEffects.length; index += 1) {
+                    const pending = pendingEffects[index];
+                    pending.due -= delta;
+                    if (pending.due > 0) break;
+                    pending.effect();
+                    released += 1;
+                }
+                if (released > 0) pendingEffects.splice(0, released);
             }
 
             function createBand(hz, refractory, dominance, weight) {
@@ -1147,6 +1232,9 @@
              * rather than as rhythm.
              */
             function updateGlitch(delta) {
+                // Before anything else this frame: what the tap heard a latency ago
+                // is reaching the speaker now, and this is the moment it shows.
+                releaseHeardEffects(delta);
                 const slope = meteorSlope();
                 for (let index = meteors.length - 1; index >= 0; index -= 1) {
                     const meteor = meteors[index];
@@ -1221,23 +1309,25 @@
                         // sets how much meteor the hit earns rather than which effect
                         // it gets.
                         if (voiceDecay >= SHORT_HIT_DECAY) {
-                            spawnMeteors(strength);
+                            onHeard(() => spawnMeteors(strength));
                         } else if (sinceShortHit >= SHORT_HIT_REFRACTORY) {
                             sinceShortHit = 0;
-                            spawnMeteor(strength * SHORT_HIT_METEOR_SCALE, true);
+                            onHeard(() => spawnMeteor(strength * SHORT_HIT_METEOR_SCALE, true));
                         }
                     } else if (voice === 0 && accent >= RING_ACCENT && loudest >= RING_MIN_LEVEL) {
                         // A low hit that genuinely towers over its neighbours.
-                        spawnRing(strength);
+                        onHeard(() => spawnRing(strength));
                     } else {
                         // Every other low hit. The ring is the only accent-gated tier:
                         // repeated identical hits measure several tens of a percent
                         // apart, so a second gate lower down would sit inside that noise
                         // and alternate the effect from beat to beat — the same flicker
                         // the arbitration window exists to remove. 1.55 clears it.
-                        burstEnergy = Math.max(burstEnergy, strength);
-                        // Re-seed so each hit lights a different set of cells.
-                        accentSeed = (Math.imul(accentSeed, 1103515245) + 12345) & 0x7fffffff;
+                        onHeard(() => {
+                            burstEnergy = Math.max(burstEnergy, strength);
+                            // Re-seed so each hit lights a different set of cells.
+                            accentSeed = (Math.imul(accentSeed, 1103515245) + 12345) & 0x7fffffff;
+                        });
                     }
                 }
                 // No idle pulse any more. Firing an accent every couple of seconds just

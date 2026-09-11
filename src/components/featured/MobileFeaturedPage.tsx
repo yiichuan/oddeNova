@@ -1346,7 +1346,11 @@ export default function MobileFeaturedPage({
             paddingBottom: SAFE_BOTTOM,
           }}
         >
-          <h2 className="shrink-0 px-4 pb-5 pt-1 text-[15px] text-text-primary">
+          {/* Set as the navigation drawer's rows are, the way the collection's
+              own list panel is: the three panels on this layout are one family
+              seen from either edge of the screen, so the heading follows that
+              drawer's size rather than keeping a 15px of its own. */}
+          <h2 className="shrink-0 px-4 pb-5 pt-1 text-base text-text-primary">
             {t('featuredList')}
           </h2>
           {/* One row per record, in the order the shelf runs — the same rows the
@@ -1385,13 +1389,13 @@ export default function MobileFeaturedPage({
                   <ScrollingTitle
                     title={album.title}
                     active={selected}
-                    className="min-w-0 text-xs leading-none"
+                    className="min-w-0 text-base leading-5"
                     style={{ flex: `${LIST_TITLE_SHARE} 1 0` }}
                   />
                   <ScrollingTitle
                     title={album.originalArtists[0]}
                     active={selected}
-                    className="min-w-0 text-xs leading-none opacity-60"
+                    className="min-w-0 text-base leading-5 opacity-60"
                     style={{ flex: `${LIST_ARTIST_SHARE} 1 0` }}
                   />
                 </button>

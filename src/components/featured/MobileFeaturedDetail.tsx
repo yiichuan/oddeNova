@@ -338,15 +338,24 @@ export default function MobileFeaturedDetail({
           title={t('featuredBack')}
           className={`pointer-events-auto ${BAR_KEY}`}
         >
-          {/* At the weight lucide draws its own glyphs at, not the lighter
-              stroke the display's back link wears: the key opposite is the
-              studio's share mark, and every other key on the collection's bars
-              is drawn at full weight. A 1.6 stroke beside a 2 reads as a size
-              smaller even though the box is the same. Well over the others'
-              20, because a chevron is one corner of the box the rest of them
-              fill: it takes the room to read as the same size, and it still has
-              5px of the 36px hit area either side of it. */}
-          <ChevronLeft size={26} aria-hidden="true" />
+          {/* Well over the others' 20, because a chevron is one corner of the
+              box the rest of them fill: it takes the room to read as the same
+              size, and it still has 5px of the 36px hit area either side of it.
+
+              Which is exactly why the stroke cannot also be left at lucide's
+              default. A lucide glyph states its stroke in the 24-unit viewBox
+              and the whole thing is then scaled to `size`, so the weight that
+              reaches the screen is `size / 24 * strokeWidth` — a 2 at 26 comes
+              out at 2.17 CSS px against the 1.5 of the size-18 share mark
+              across the row, half again as heavy. The room this glyph needs to
+              read as the right size is the same room that made it read as the
+              wrong weight.
+
+              1.4 is what cancels the scale: 26/24 × 1.4 = 1.52, the share
+              mark's own stroke to within a hundredth of a pixel. Derived from
+              that pair rather than picked — if either key's size moves, this
+              is `1.5 × 24 / size` again. */}
+          <ChevronLeft size={26} strokeWidth={1.4} aria-hidden="true" />
         </button>
         <ShareKey track={track} />
       </div>

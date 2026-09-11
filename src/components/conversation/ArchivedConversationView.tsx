@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { useClippedEnds } from '../../hooks/useClippedEnds';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { t } from '../../lib/i18n';
 import { takeLabel } from '../../lib/favorite-conversations';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
@@ -177,6 +178,18 @@ export default function ArchivedConversationView({
   footer,
   autoHideScrollbar = false,
 }: ArchivedConversationViewProps) {
+  /* The same reading scale the studio's stream is set at, and set here for the
+     same reasons — see `bodyText` in ConversationView. An archive is a
+     conversation being read; that it is being read back rather than taken part
+     in is no reason for it to be a different size from the one it was had at,
+     and a collection that set its own type would be the second answer to a
+     question the studio has already answered. Reasoning stays the step under
+     the reply that it is there too. */
+  const isMobile = useIsMobile();
+  const bodyText = isMobile ? 'text-base' : 'text-sm';
+  const reasoningText = isMobile ? 'text-sm' : 'text-[12px]';
+  const markSize = isMobile ? 16 : 14;
+
   /* Thoughts begin folded. What a favorite is kept for is the conversation and
      the music it arrived at; how the piece was worked out is there for whoever
      wants it, one line down. Left open, a run's thinking is several screens of
@@ -483,13 +496,13 @@ export default function ArchivedConversationView({
                     }`}
                   >
                     <ChevronRightIcon
-                      size={14}
+                      size={markSize}
                       className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
                     />
                     <span>{t('favoritesReasoningTitle')}</span>
                   </button>
                   {expanded && (
-                    <div className="mt-1.5 text-[12px] text-text-reasoning font-mono break-words leading-relaxed animate-fade-in">
+                    <div className={`mt-1.5 ${reasoningText} text-text-reasoning font-mono break-words leading-relaxed animate-fade-in`}>
                       <MarkdownText content={message.content} tone="muted" />
                     </div>
                   )}
@@ -513,7 +526,7 @@ export default function ArchivedConversationView({
                 data-favorites-turn={message.id}
                 className="flex justify-end items-end gap-1.5 animate-fade-in"
               >
-                <div className="relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-message-user text-text-primary">
+                <div className={`relative max-w-[85%] rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary`}>
                   <UserMessageBubble content={message.content} />
                 </div>
               </div>
@@ -531,7 +544,7 @@ export default function ArchivedConversationView({
               data-favorites-turn={message.id}
               className="flex justify-start items-start animate-fade-in"
             >
-              <div className={`relative w-full rounded-xl px-2 text-sm bg-transparent text-text-primary ${
+              <div className={`relative w-full rounded-xl px-2 ${bodyText} bg-transparent text-text-primary ${
                 followsReasoning || isFirst ? 'pt-0' : 'pt-2'
               } ${isLast ? 'pb-0' : 'pb-2'}`}>
                 <MarkdownText content={message.content} />

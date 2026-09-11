@@ -29,7 +29,7 @@ describe('appearance preferences', () => {
     document.head.querySelector('meta[name="theme-color"]')?.remove();
     const themeColor = document.createElement('meta');
     themeColor.name = 'theme-color';
-    themeColor.content = '#E3E3E5';
+    themeColor.content = '#F7F7FA';
     document.head.append(themeColor);
   });
 
@@ -73,10 +73,10 @@ describe('appearance preferences', () => {
     const themeColor = document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
 
     setThemePreference('dark');
-    expect(themeColor?.content).toBe('#070707');
+    expect(themeColor?.content).toBe('#0D0D0D');
 
     setThemePreference('light');
-    expect(themeColor?.content).toBe(LIGHT_THEME_READY ? '#E3E3E5' : '#070707');
+    expect(themeColor?.content).toBe(LIGHT_THEME_READY ? '#F7F7FA' : '#0D0D0D');
   });
 
   it('resolves "match system" against the OS preference', () => {
