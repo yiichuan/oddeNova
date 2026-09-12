@@ -6,6 +6,7 @@ const CLOUD_REQUEST_TIMEOUT_MS = 15_000;
 
 export interface CloudSessionListOptions {
   cursor?: string;
+  q?: string;
   limit?: number;
   expectedUserId?: string;
   signal?: AbortSignal;
@@ -102,6 +103,8 @@ export async function listCloudSessionSummaries(
     limit: String(options.limit ?? DEFAULT_PAGE_LIMIT),
   });
   if (options.cursor) params.set('cursor', options.cursor);
+  const q = options.q?.trim();
+  if (q) params.set('q', q);
   return requestJson<CursorPage<SessionSummary>>(
     `/api/sessions?${params.toString()}`,
     { method: 'GET', ...(options.signal ? { signal: options.signal } : {}) },

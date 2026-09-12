@@ -289,6 +289,23 @@ describe('createSessionCloudSync', () => {
       .toBeLessThan(markerMocks.clearPendingSessionDelete.mock.invocationCallOrder[0]);
   });
 
+  it('notifies only after a remote delete succeeds and retries the notification once', async () => {
+    const { repository, sync } = setup();
+    const remoteError = new Error('temporary outage');
+    const onCloudDeleted = vi.fn();
+    repository.deleteSession
+      .mockRejectedValueOnce(remoteError)
+      .mockResolvedValue(undefined);
+
+    await expect(sync.deleteSession('s-1', undefined, onCloudDeleted)).rejects.toBe(remoteError);
+    expect(onCloudDeleted).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(repository.deleteSession).toHaveBeenCalledTimes(2);
+    expect(onCloudDeleted).toHaveBeenCalledOnce();
+  });
+
   it('retries strict local deletion before ever deleting the remote row', async () => {
     const { repository, sync } = setup();
     const deleteLocal = vi.fn(async () => {

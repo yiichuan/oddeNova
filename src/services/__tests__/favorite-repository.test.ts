@@ -47,9 +47,14 @@ describe('favorite-repository', () => {
     global.fetch = vi.fn().mockResolvedValueOnce(jsonResponse(body));
 
     const { listCloudFavoriteSummaries } = await import('../favorite-repository');
-    await expect(listCloudFavoriteSummaries({ limit: 20, expectedUserId: 'user-1' })).resolves.toEqual(body);
+    await expect(listCloudFavoriteSummaries({
+      limit: 20,
+      cursor: 'next',
+      q: '  雨 & bass  ',
+      expectedUserId: 'user-1',
+    })).resolves.toEqual(body);
 
-    expect(fetch).toHaveBeenCalledWith('/api/favorites?limit=20', expect.objectContaining({
+    expect(fetch).toHaveBeenCalledWith('/api/favorites?limit=20&cursor=next&q=%E9%9B%A8+%26+bass', expect.objectContaining({
       method: 'GET',
       headers: { Authorization: 'Bearer token-123' },
       signal: expect.any(AbortSignal),

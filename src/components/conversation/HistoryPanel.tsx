@@ -84,7 +84,7 @@ interface HistoryPanelProps {
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   /** Keep this conversation: it leaves the list and turns up in Favorites. */
-  onFavorite?: (id: string) => void;
+  onFavorite?: (id: string, session?: HistoryItem) => void;
   loadingSessions?: Set<string>;
   unreadSessions?: Set<string>;
   onLoadMore?: () => void;
@@ -119,6 +119,15 @@ interface HistoryPanelProps {
    * `showSearch` off.
    */
   query?: string;
+  /**
+   * The filter as the host holds it, when the field drawn here is the one the
+   * reader types into but the answer comes from somewhere this panel cannot
+   * reach — the account's own history, searched on the server. Given the
+   * change handler alongside it, the field stays where it is and what is typed
+   * goes back out to whoever is doing the asking.
+   */
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
 }
 
 type HistoryItem = Session | SessionSummary;
@@ -154,13 +163,22 @@ export default function HistoryPanel({
   longPressMenu = false,
   showSearch = true,
   query: hostQuery,
+  searchQuery,
+  onSearchQueryChange,
 }: HistoryPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const titleInput = useSessionTitleInput(setDraft);
   const [ownQuery, setOwnQuery] = useState('');
-  /* Whoever is asking the question owns it. */
-  const query = hostQuery ?? ownQuery;
+  /* Whoever is asking the question owns it: the drawer that types it into a
+     field of its own and passes the answer down, the host that holds it for a
+     search this panel cannot run itself, or this panel. */
+  const remoteSearch = onSearchQueryChange !== undefined;
+  const query = hostQuery ?? (remoteSearch ? (searchQuery ?? '') : ownQuery);
+  const updateQuery = (value: string): void => {
+    if (onSearchQueryChange) onSearchQueryChange(value);
+    else setOwnQuery(value);
+  };
   const [keepingId, setKeepingId] = useState<string | null>(null);
   /* Which row's bin has been pressed, if any.
    *
@@ -298,7 +316,11 @@ export default function HistoryPanel({
     keepingTimerRef.current = setTimeout(() => {
       keepingTimerRef.current = null;
       setKeepingId(null);
-      onFavorite(session.id);
+      // Keep the item that was actually clicked with the delayed handoff. The
+      // parent may re-render with a different search query before the fade has
+      // finished, and an id alone would then have to be found in a collection
+      // that no longer contains this row.
+      onFavorite(session.id, session);
     }, KEEPING_MS);
   };
 
@@ -337,9 +359,9 @@ export default function HistoryPanel({
      in the ones that are not, which is worse than a narrower search that is
      the same everywhere. */
   const needle = query.trim().toLowerCase();
-  const ordered = needle
-    ? listed.filter((s) => (s.title || t('newSessionTitle')).toLowerCase().includes(needle))
-    : listed;
+  const ordered = remoteSearch || !needle
+    ? listed
+    : listed.filter((s) => (s.title || t('newSessionTitle')).toLowerCase().includes(needle));
   const searchable = listed.length > 0 || needle !== '';
   /* Resolved against the list rather than taken on trust — see the id above. */
   const askingDelete = askingDeleteId
@@ -386,7 +408,7 @@ export default function HistoryPanel({
           sidebar overlay is drawn on the conversation surface, the top-bar
           dropdown on the page ground, and either sets --history-search-bg to
           say which. */}
-      {showSearch && !isLoading && !initialError && searchable && (
+      {showSearch && (remoteSearch || (!isLoading && !initialError && searchable)) && (
         <div
           className="sticky top-0 z-20 px-2 pt-2.5 pb-1.5"
           style={{ background: 'var(--history-search-bg, var(--color-conversation-surface))' }}
@@ -399,7 +421,7 @@ export default function HistoryPanel({
               aria-label={t('historySearch')}
               data-testid="history-search-input"
               placeholder={t('historySearchHint')}
-              onChange={(e) => setOwnQuery(e.currentTarget.value)}
+              onChange={(e) => updateQuery(e.currentTarget.value)}
               onClick={(e) => e.stopPropagation()}
               /* Escape empties the field rather than reaching the panel that
                  listens for it — while there is something in it to clear. */
@@ -407,7 +429,7 @@ export default function HistoryPanel({
                 e.stopPropagation();
                 if (e.key === 'Escape' && query !== '') {
                   e.preventDefault();
-                  setOwnQuery('');
+                  updateQuery('');
                 }
               }}
               className="min-w-0 flex-1 bg-transparent text-xs leading-none text-text-primary outline-none placeholder:text-text-muted"
@@ -419,7 +441,7 @@ export default function HistoryPanel({
                 data-testid="history-search-clear"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setOwnQuery('');
+                  updateQuery('');
                 }}
                 className="shrink-0 text-text-muted transition-colors hover:text-text-primary"
               >

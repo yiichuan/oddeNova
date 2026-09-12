@@ -221,6 +221,8 @@ interface FavoritesPageProps {
   loadMoreError?: Error | null;
   onLoadMore?: () => void;
   onRetryLoadMore?: () => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
   onSelect?: (summary: FavoriteSummary) => void;
   /**
    * Whether this is the page on screen. The gallery pages are hidden rather
@@ -639,6 +641,8 @@ export default function FavoritesPage({
   loadMoreError = null,
   onLoadMore,
   onRetryLoadMore,
+  searchQuery,
+  onSearchQueryChange,
   onSelect,
   isPlaying = false,
   playingCode = '',
@@ -652,6 +656,9 @@ export default function FavoritesPage({
 }: FavoritesPageProps) {
   const isMobile = useIsMobile();
   const isSummaryMode = summaries !== undefined;
+  const remoteSearchActive = isSummaryMode
+    && onSearchQueryChange !== undefined
+    && Boolean(searchQuery?.trim());
   const sortedConversations = useMemo(
     () => [...conversations].sort((left, right) => right.favoritedAt - left.favoritedAt),
     [conversations],
@@ -842,8 +849,15 @@ export default function FavoritesPage({
     && !detailError;
   const cloudDetailFailed = isSummaryMode && selectedSummary !== null && current === null
     && Boolean(detailError);
-  const cloudListEmpty = isSummaryMode && favoriteSummaries.length === 0 && !isLoading && !error;
-  const cloudListFailed = isSummaryMode && favoriteSummaries.length === 0 && Boolean(error);
+  const cloudListEmpty = isSummaryMode
+    && !remoteSearchActive
+    && favoriteSummaries.length === 0
+    && !isLoading
+    && !error;
+  const cloudListFailed = isSummaryMode
+    && !remoteSearchActive
+    && favoriteSummaries.length === 0
+    && Boolean(error);
 
   /* Everything above is what a favorite *is* — which entry is open, which take
      it is pointed at, what the reading holds — and none of it changes with the
@@ -939,6 +953,11 @@ export default function FavoritesPage({
           loadMoreError={loadMoreError}
           onLoadMore={onLoadMore}
           onRetryLoadMore={onRetryLoadMore}
+          searchQuery={searchQuery}
+          onSearchQueryChange={onSearchQueryChange}
+          isLoading={remoteSearchActive ? isLoading : false}
+          initialError={remoteSearchActive ? error : null}
+          onRetryInitial={remoteSearchActive ? onRetry : undefined}
         />
 
         {/* The reading's index. It lives out here rather than in the window it
@@ -957,7 +976,7 @@ export default function FavoritesPage({
           />
         )}
 
-        {isSummaryMode && isLoading && favoriteSummaries.length === 0 ? (
+        {isSummaryMode && !remoteSearchActive && isLoading && favoriteSummaries.length === 0 ? (
           <div
             data-testid="favorites-loading"
             className="absolute inset-0 flex items-center justify-center text-sm text-text-muted"
@@ -1000,7 +1019,7 @@ export default function FavoritesPage({
               t('loading')
             )}
           </div>
-        ) : cloudListEmpty || current === null ? (
+        ) : cloudListEmpty || (current === null && !remoteSearchActive) ? (
           /* Nothing kept yet. No reading, no script, no frame around either —
              the two windows are what a favorite looks like when opened, and
              drawing them empty would be furniture standing in for content.
@@ -1040,7 +1059,7 @@ export default function FavoritesPage({
               {t('favoritesEmptyTitle')}
             </p>
           </div>
-        ) : (
+        ) : current ? (
           /* The full height of the page, inset to the two verticals the windows
               stand on — the list's column on the right and the page's own edge
               measure on the left. It stops short of the list rather than
@@ -1204,7 +1223,7 @@ export default function FavoritesPage({
               </div>
             )}
           </div>
-        )}
+        ) : null}
 
         {/* The caption, in the corner opposite the page's own name. The list
             above it has to cut a long title to hold its column and shows only

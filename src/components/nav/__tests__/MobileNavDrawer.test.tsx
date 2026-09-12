@@ -279,7 +279,9 @@ describe('MobileNavDrawer search', () => {
     // conversation is handed over once both have been seen.
     act(() => { vi.advanceTimersByTime(500); });
 
-    expect(onFavorite).toHaveBeenCalledWith('a');
+    // The row goes up with the id: what is being kept may be a search result
+    // the app's own history collection has never held.
+    expect(onFavorite).toHaveBeenCalledWith('a', expect.objectContaining({ id: 'a' }));
     expect(document.querySelector('[data-testid="history-row-menu"]')).toBeNull();
     vi.useRealTimers();
   });

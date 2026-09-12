@@ -75,15 +75,19 @@ function leastCommonPeriod(periods: number[]): number {
 interface ScannedCode {
   /** Contents of every string literal, comments excluded. */
   strings: string[];
+  /** String literals with their source positions, used to inspect method calls. */
+  literals: { start: number; value: string }[];
   /** The code with string bodies and comments blanked out, brackets intact. */
   masked: string;
 }
 
 function scanCode(code: string): ScannedCode {
   const strings: string[] = [];
+  const literals: { start: number; value: string }[] = [];
   let masked = '';
   let quote: '"' | "'" | '`' | null = null;
   let value = '';
+  let stringStart = -1;
   let inLineComment = false;
   let inBlockComment = false;
 
@@ -112,7 +116,9 @@ function scanCode(code: string): ScannedCode {
         index += 1;
       } else if (character === quote) {
         strings.push(value);
+        literals.push({ start: stringStart, value });
         value = '';
+        stringStart = -1;
         quote = null;
         masked += ' ';
       } else {
@@ -131,13 +137,27 @@ function scanCode(code: string): ScannedCode {
       index += 1;
     } else if (character === '"' || character === "'" || character === '`') {
       quote = character;
+      stringStart = index;
       masked += ' ';
     } else {
       masked += character;
     }
   }
 
-  return { strings, masked };
+  return { strings, literals, masked };
+}
+
+/** Return string arguments belonging directly to a chained method such as `.mask("...")`. */
+function methodStringValues(scanned: ScannedCode, method: string): string[] {
+  const call = new RegExp(`\\.${method}\\s*\\(\\s*$`);
+  return scanned.literals
+    .filter((literal) => call.test(scanned.masked.slice(0, literal.start)))
+    .map((literal) => literal.value);
+}
+
+/** Whether a mask explicitly describes a multi-cycle arrangement window. */
+function hasExplicitWindowSyntax(text: string): boolean {
+  return /<[^<>]*(?:@|!)[^<>]*>/.test(text) || /<[^<>]*>\s*\/\s*\d+(?:\.\d+)?/.test(text);
 }
 
 /** Paren nesting depth in front of every character of `masked`. */
@@ -397,6 +417,28 @@ function arrangeCycles(masked: string): number | null {
 }
 
 /**
+ * Several weighted masks with the same span are an explicit form in layered
+ * compositions: the masks describe when sections enter and leave, while the
+ * notes inside those sections may intentionally have unrelated phrase lengths.
+ * Require at least two matching windows so a short rhythmic mask is not
+ * mistaken for the length of the whole piece.
+ */
+function consistentMaskArrangementCycles(segments: string[]): number | null {
+  const spans = segments.flatMap((segment) => {
+    const scanned = scanCode(segment);
+    return methodStringValues(scanned, 'mask').flatMap((text) => {
+      if (!hasExplicitWindowSyntax(text)) return [];
+      const periods = alternationCycles(text);
+      return periods.length === 1 ? periods : [];
+    });
+  }).filter((period) => Number.isFinite(period) && period > 1);
+
+  if (spans.length < 2) return null;
+  const unique = new Set(spans);
+  return unique.size === 1 ? spans[0] : null;
+}
+
+/**
  * The statements of a script written in the `$name:` idiom, each one a voice,
  * plus whatever sits before and between them (setcps, shared bindings, a
  * trailing `all(...)`). Null when the script names fewer than two, since there
@@ -479,10 +521,15 @@ export function getStrudelLoopCycles(code: string): number {
   const arranged = arrangeCycles(masked);
   if (arranged !== null) return arranged;
 
+  const parsed = parseScore(code);
+  if (parsed.hasStack && parsed.layers.length > 0) {
+    const maskArrangement = consistentMaskArrangementCycles(parsed.layers.map((layer) => layer.source));
+    if (maskArrangement !== null) return maskArrangement;
+  }
+
   const voices = voiceSegments(code, masked);
   if (voices !== null) return leastCommonPeriod(voices.map(segmentCycles));
 
-  const parsed = parseScore(code);
   const segments: string[] = [];
 
   if (parsed.hasStack && parsed.layers.length > 0) {

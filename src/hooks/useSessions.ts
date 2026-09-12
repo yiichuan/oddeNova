@@ -1158,17 +1158,27 @@ export function useSessions(options: UseSessionsOptions = {}) {
     activateSession(id);
   }, [activateSession]);
 
+  // Resolve only after the local mutation has registered its checkpoint. A
+  // caller can then flush it without racing React's deferred state updater.
   const renameSession = useCallback(
-    (sessionId: string, title: string): void => {
+    (sessionId: string, title: string): Promise<void> => {
       const nextTitle = title.trim();
-      if (!nextTitle) return;
-      updateSession(
-        sessionId,
-        (s) => ({ ...s, title: normalizeSessionTitle(nextTitle, s.title) }),
-        'checkpoint',
-      );
+      if (!nextTitle) return Promise.resolve();
+      return new Promise((resolve) => {
+        setSessions((previous) => {
+          const next = previous.map((session) => {
+            if (session.id !== sessionId) return session;
+            const nextName = normalizeSessionTitle(nextTitle, session.title);
+            const updated = { ...session, title: nextName, updatedAt: Date.now() };
+            persistSession(updated, 'checkpoint');
+            return updated;
+          });
+          resolve();
+          return next;
+        });
+      });
     },
-    [updateSession]
+    [persistSession],
   );
 
   /**
@@ -1192,7 +1202,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const deleteSession = useCallback(
-    (id: string) => {
+    (id: string, onCloudDeleted?: () => void) => {
       setSessions((prev) => {
         const next = prev.filter((s) => s.id !== id);
         const wasPersisted = persistedSessionIdsRef.current.has(id);
@@ -1201,6 +1211,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           void sessionCloudSync.deleteSession(
             id,
             () => dbDeleteSessionStrict(id, ownerKey),
+            onCloudDeleted,
           ).catch((err) => {
             console.warn('[sessions] cloud session delete failed.', err);
           });

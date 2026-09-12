@@ -70,6 +70,7 @@ import {
   saveCloudSession,
 } from './services/cloud-session-repository';
 import { useCloudSessionLibrary } from './hooks/useCloudSessionLibrary';
+import { useSessionActions } from './hooks/useSessionActions';
 import type { FavoriteSummary, SessionSummary } from '../shared/session-api';
 import {
   deleteSession,
@@ -154,6 +155,8 @@ interface FavoriteNotice {
    * move that has already been made.
    */
   settled?: boolean;
+  /** Snapshot of the cloud row used to commit a deferred favorite change. */
+  summary?: FavoriteSummary;
 }
 
 export default function App() {
@@ -230,6 +233,8 @@ export default function App() {
   const guestImportFailureCountRef = useRef(0);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
+  const authUserIdRef = useRef<string | null>(auth.user?.id ?? null);
+  authUserIdRef.current = auth.user?.id ?? null;
   const skipNextManualSyncSessionRef = useRef<string | null>(null);
   const mobileCodeRestoreRef = useRef<{ id: string; code: string } | null>(null);
   const prevLoadingRef = useRef<Set<string>>(new Set());
@@ -281,8 +286,16 @@ export default function App() {
   });
   const cloudHistory = cloudLibrary.history;
   const cloudFavorites = cloudLibrary.favorites;
+  const historySearch = cloudLibrary.historySearch;
+  const favoritesSearch = cloudLibrary.favoritesSearch;
   const cloudHistoryItems = cloudHistory.items;
   const cloudFavoriteItems = cloudFavorites.items;
+  const displayedHistory = historySearch.active ? historySearch.collection : cloudHistory;
+  const displayedFavoriteCollection = favoritesSearch.active
+    ? favoritesSearch.collection
+    : cloudFavorites;
+  const displayedHistoryItems = displayedHistory.items;
+  const displayedFavoriteItems = displayedFavoriteCollection.items;
   const cloudHistoryInitialError = cloudHistory.initialError;
   const cloudHistoryMoreError = cloudHistory.moreError;
   const cloudFavoritesInitialError = cloudFavorites.initialError;
@@ -297,7 +310,6 @@ export default function App() {
   const openCloudFavorite = cloudLibrary.openFavorite;
   const favoriteCloudSession = cloudLibrary.favoriteSession;
   const unfavoriteCloudSession = cloudLibrary.unfavoriteSession;
-  const removeCloudSummary = cloudLibrary.removeSummary;
   const upsertCloudHistorySummary = cloudLibrary.upsertHistorySummary;
   const retryCloudDetail = cloudLibrary.retryDetail;
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
@@ -585,24 +597,33 @@ export default function App() {
   const currentBpm = parseScore(currentCode).bpm ?? 120;
   const isLoading = !!current?.id && loadingSessions.has(current.id);
   const historyItems: readonly (Session | SessionSummary)[] = auth.user
-    ? cloudHistoryItems
+    ? displayedHistoryItems
     : sessions.sessions.filter((session) => session.favoritedAt === undefined);
   /* Loading is only ever the empty state's business: once there are rows to
      show — last visit's, or this one's — the list is drawn and the request
      that is still out corrects it in place. */
   const historyInitialLoading = auth.user
-    ? (!cloudLibraryEnabled || cloudHistory.initialStatus === 'loading')
-      && cloudHistoryItems.length === 0
+    ? (!cloudLibraryEnabled || displayedHistory.initialStatus === 'loading')
+      && displayedHistoryItems.length === 0
     : sessions.isLoading;
   /* Same for the failure: a list this device could not check is still the list
      it has, and saying so where rows are already drawn would replace them with
      an apology. The error takes the panel only when there is nothing else. */
-  const historyInitialError = auth.user && cloudHistoryItems.length === 0
-    ? cloudHistory.initialError
+  const historyInitialError = auth.user && displayedHistoryItems.length === 0
+    ? displayedHistory.initialError
     : null;
-  const historyHasMore = auth.user ? cloudHistory.nextCursor !== null : false;
-  const historyLoadingMore = Boolean(auth.user && cloudHistory.moreStatus === 'loading');
-  const historyLoadMoreError = auth.user ? cloudHistory.moreError : null;
+  const historyHasMore = auth.user ? displayedHistory.nextCursor !== null : false;
+  const historyLoadingMore = Boolean(auth.user && displayedHistory.moreStatus === 'loading');
+  const historyLoadMoreError = auth.user ? displayedHistory.moreError : null;
+  const loadMoreDisplayedHistory = auth.user && historySearch.active
+    ? historySearch.loadMore
+    : loadMoreCloudHistory;
+  const retryDisplayedHistory = auth.user && historySearch.active
+    ? historySearch.collection.retryInitial
+    : cloudLibrary.history.retryInitial;
+  const retryMoreDisplayedHistory = auth.user && historySearch.active
+    ? historySearch.collection.retryMore
+    : cloudLibrary.history.retryMore;
   /** The featured piece the detail panel is showing. */
   const featuredPiece = findFeaturedPiece(featuredId) ?? null;
   const showSessionSyncStatus = Boolean(
@@ -1035,9 +1056,9 @@ export default function App() {
   const [favoriteNotice, setFavoriteNotice] = useState<FavoriteNotice | null>(null);
   const [favoritesFocus, setFavoritesFocus] = useState<{ id: string } | null>(null);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
-  const selectedAccountFavoriteSummary = cloudFavoriteItems.find(
+  const selectedAccountFavoriteSummary = displayedFavoriteItems.find(
     (summary) => summary.id === selectedFavoriteId,
-  ) ?? null;
+  ) ?? cloudFavoriteItems.find((summary) => summary.id === selectedFavoriteId) ?? null;
   const selectedAccountFavoriteDetail = selectedAccountFavoriteSummary
     ? cloudDetails.get(selectedAccountFavoriteSummary.id)?.session ?? null
     : null;
@@ -1080,11 +1101,14 @@ export default function App() {
      set. */
   useEffect(() => {
     setSelectedFavoriteId((selected) => (
-      selected && !cloudFavoriteItems.some((summary) => summary.id === selected)
+      selected
+        && !displayedFavoriteItems.some((summary) => summary.id === selected)
+        && !cloudFavoriteItems.some((summary) => summary.id === selected)
+        && !cloudDetails.has(selected)
         ? null
         : selected
     ));
-  }, [cloudFavoriteItems]);
+  }, [cloudDetails, cloudFavoriteItems, displayedFavoriteItems]);
   /* The row a notice is holding back — out of the collection while the undo
      behind the bar can still put it back. A settled notice holds nothing: its
      move is already written, and the library's own list is already the truth
@@ -1094,14 +1118,41 @@ export default function App() {
     ? favoriteNotice.favorite.id
     : null;
   const cloudFavoriteConversations = useMemo(
-    () => cloudFavoriteItems.filter((summary) => summary.id !== pendingFavoriteId).map((summary) => {
+    () => displayedFavoriteItems.filter((summary) => summary.id !== pendingFavoriteId).map((summary) => {
       if (!isMobile) return summary;
       const detail = cloudDetails.get(summary.id)?.session
         ?? sessions.sessions.find((session) => session.id === summary.id);
       return detail ? { ...summary, title: fullSessionTitle(summary.title, detail.messages) } : summary;
     }),
-    [cloudFavoriteItems, pendingFavoriteId, isMobile, cloudDetails, sessions.sessions],
+    [displayedFavoriteItems, pendingFavoriteId, isMobile, cloudDetails, sessions.sessions],
   );
+
+  const reportSessionActionError = useCallback((error: unknown) => {
+    console.warn('[sessions] session action failed.', error);
+    if (cloudErrorStatus(error) === 401) setAccountOpen(true);
+    if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
+  }, [strudel]);
+  const reportFavoriteDeleteError = useCallback((error: unknown) => {
+    console.warn('[favorites] failed to delete session.', error);
+    if (cloudErrorStatus(error) === 401) setAccountOpen(true);
+    strudel.setError(t('favoriteActionFailed'));
+  }, [strudel]);
+  /* On a phone a name is written from a list the reader has not left, so the
+     row is loaded without being opened: `openSession` would make it the
+     current conversation and drop the studio the reader is still in. */
+  const prepareForRename = useCallback(async (summary: SessionSummary) => {
+    if (!isMobile) return openCloudSession(summary);
+    if (sessions.sessions.some((session) => session.id === summary.id)) return undefined;
+    const detail = await readCloudSession(summary);
+    return sessions.acceptCloudDetail(detail, { activate: false });
+  }, [isMobile, openCloudSession, readCloudSession, sessions]);
+  const { deleteSession: deleteSessionAction, renameSession: handleRenameSession } = useSessionActions({
+    ownerId: auth.user?.id,
+    sessions,
+    library: cloudLibrary,
+    onError: reportSessionActionError,
+    prepareForRename,
+  });
 
   const commitPendingDelete = useCallback(async (notice: FavoriteNotice | null): Promise<boolean> => {
     if (notice?.kind !== 'released' && notice?.kind !== 'deleted') return false;
@@ -1116,11 +1167,11 @@ export default function App() {
         ?? notice.favorite.sourceSessionId
         ?? notice.favorite.sessionId
         ?? notice.favorite.id;
-      sessions.deleteSession(sourceSessionId);
+      deleteSessionAction(sourceSessionId, reportFavoriteDeleteError);
       return true;
     }
     try {
-      await unfavoriteCloudSession(notice.favorite.id);
+      await unfavoriteCloudSession(notice.summary ?? notice.favorite.id);
       return true;
     } catch (error) {
       console.warn('[favorites] failed to update session favorite state.', error);
@@ -1128,7 +1179,7 @@ export default function App() {
       strudel.setError(t('favoriteActionFailed'));
       return false;
     }
-  }, [auth.user, sessions, strudel, unfavoriteCloudSession]);
+  }, [auth.user, deleteSessionAction, reportFavoriteDeleteError, strudel, unfavoriteCloudSession]);
 
   const noticeSeqRef = useRef(0);
 
@@ -1136,6 +1187,7 @@ export default function App() {
     kind: FavoriteActionKind,
     session: Session | undefined,
     favorite: FavoriteConversation,
+    summary?: FavoriteSummary,
     settled = false,
   ): number => {
     void commitPendingDelete(favoriteNotice);
@@ -1145,18 +1197,27 @@ export default function App() {
       kind,
       session,
       favorite,
+      summary,
       settled,
     });
     return id;
   }, [commitPendingDelete, favoriteNotice]);
 
-  const handleFavoriteSession = useCallback(async (id: string) => {
+  const handleFavoriteSession = useCallback(async (
+    id: string,
+    clickedItem?: Session | SessionSummary,
+  ) => {
     const navigation = mobileNavigationRef.current;
     if (!auth.user) {
       setAccountOpen(true);
       return;
     }
-    const summary = cloudHistoryItems.find((candidate) => candidate.id === id);
+    const userId = auth.user.id;
+    if (authUserIdRef.current !== userId) return;
+    const summary = clickedItem?.id === id
+      ? clickedItem
+      : displayedHistoryItems.find((candidate) => candidate.id === id)
+      ?? cloudHistoryItems.find((candidate) => candidate.id === id);
     if (!summary) return;
     const isCurrentSession = sessions.currentId === id;
     try {
@@ -1167,7 +1228,7 @@ export default function App() {
         await flushCloudSaves(id);
       }
       const favoriteSummary = await favoriteCloudSession(summary);
-      noticeFor('kept', undefined, favoriteNoticeFromSummary(favoriteSummary));
+      noticeFor('kept', undefined, favoriteNoticeFromSummary(favoriteSummary), favoriteSummary);
       /* Whenever the collection is next opened, it opens on this.
        *
        * The page remembers the entry it was last left on, which is right for
@@ -1186,7 +1247,7 @@ export default function App() {
       if (cloudErrorStatus(error) === 401) setAccountOpen(true);
       strudel.setError(t('favoriteActionFailed'));
     }
-  }, [auth.user, cloudHistoryItems, favoriteCloudSession, flushCloudSaves, handleNewSession, noticeFor, sessions.currentId, setManualCode, strudel, isMobile]);
+  }, [auth.user, cloudHistoryItems, displayedHistoryItems, favoriteCloudSession, flushCloudSaves, handleNewSession, noticeFor, sessions.currentId, setManualCode, strudel, isMobile]);
 
   const handleUnfavorite = useCallback((conversation: FavoriteConversation) => {
     if (!auth.user) {
@@ -1194,13 +1255,15 @@ export default function App() {
       return;
     }
     const sourceId = conversation.sourceSessionId ?? conversation.sessionId ?? conversation.id;
-    const summary = cloudFavoriteItems.find((candidate) => candidate.id === sourceId)
+    const summary = displayedFavoriteItems.find((candidate) => candidate.id === sourceId)
+      ?? cloudFavoriteItems.find((candidate) => candidate.id === sourceId)
+      ?? displayedFavoriteItems.find((candidate) => candidate.id === conversation.id)
       ?? cloudFavoriteItems.find((candidate) => candidate.id === conversation.id);
     if (!summary) return;
     const session = cloudDetails.get(summary.id)?.session
       ?? sessions.sessions.find((candidate) => candidate.id === sourceId);
-    noticeFor('released', session, conversation);
-  }, [auth.user, cloudDetails, cloudFavoriteItems, noticeFor, sessions.sessions]);
+    noticeFor('released', session, conversation, summary);
+  }, [auth.user, cloudDetails, cloudFavoriteItems, displayedFavoriteItems, noticeFor, sessions.sessions]);
 
   /* The same act, for a layout that has already asked.
    *
@@ -1228,7 +1291,7 @@ export default function App() {
        answered a moment ago and the collection has already changed under it;
        a line that waited for the network would arrive after the reader had
        moved on, and would be reporting a request rather than the move. */
-    const noticeId = noticeFor('released', undefined, conversation, true);
+    const noticeId = noticeFor('released', undefined, conversation, summary, true);
     void unfavoriteCloudSession(summary).catch((error) => {
       console.warn('[favorites] failed to release favorite.', error);
       if (cloudErrorStatus(error) === 401) setAccountOpen(true);
@@ -1245,19 +1308,8 @@ export default function App() {
       return;
     }
     const sourceId = conversation.sourceSessionId ?? conversation.sessionId ?? conversation.id;
-    if (sessions.sessions.some((session) => session.id === sourceId)) {
-      removeCloudSummary(sourceId);
-      sessions.deleteSession(sourceId);
-    } else {
-      void deleteCloudSession(sourceId, auth.user.id)
-        .then(() => { removeCloudSummary(sourceId); })
-        .catch((error) => {
-          console.warn('[favorites] failed to delete cloud session.', error);
-          if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-          strudel.setError(t('favoriteActionFailed'));
-        });
-    }
-  }, [auth.user, removeCloudSummary, sessions, strudel]);
+    deleteSessionAction(sourceId, reportFavoriteDeleteError);
+  }, [auth.user, deleteSessionAction, reportFavoriteDeleteError]);
 
   const dismissFavoriteNotice = useCallback(() => {
     // Letting the notice go is what commits the deletion it was holding.
@@ -1272,7 +1324,7 @@ export default function App() {
         setFavoriteNotice(null);
         return;
       }
-      const undo = unfavoriteCloudSession(favoriteNotice.favorite.id);
+      const undo = unfavoriteCloudSession(favoriteNotice.summary ?? favoriteNotice.favorite.id);
       void undo.catch((error) => {
         console.warn('[favorites] failed to undo session favorite.', error);
         strudel.setError(t('favoriteActionFailed'));
@@ -1298,7 +1350,8 @@ export default function App() {
     });
     const workingCopy = sessions.sessions.find((session) => session.id === id);
     const summary = auth.user
-      ? cloudHistoryItems.find((candidate) => candidate.id === id)
+      ? displayedHistoryItems.find((candidate) => candidate.id === id)
+        ?? cloudHistoryItems.find((candidate) => candidate.id === id)
       : undefined;
     /* A conversation this device already holds opens on the copy it holds —
        the switch is a local one, and nothing waits on the network. What the
@@ -1353,6 +1406,7 @@ export default function App() {
   }, [
     auth.user,
     cloudHistoryItems,
+    displayedHistoryItems,
     loadingSessions,
     openCloudSession,
     readCloudSession,
@@ -1362,50 +1416,15 @@ export default function App() {
     strudel,
   ]);
 
+  /* The phone's lists are reached through a stack this can unwind under the
+     reader — a row deleted from the drawer must not leave a detail view open
+     on it — so the navigation this delete belongs to is noted before the
+     action runs. See mobileNavigationRef. */
   const handleDeleteSession = useCallback((id: string) => {
     if (isMobile) ++mobileNavigationRef.current;
-    if (!auth.user) {
-      sessions.deleteSession(id);
-      return;
-    }
-    if (sessions.sessions.some((session) => session.id === id)) {
-      removeCloudSummary(id);
-      sessions.deleteSession(id);
-    } else {
-      void deleteCloudSession(id, auth.user.id)
-        .then(() => { removeCloudSummary(id); })
-        .catch((error) => {
-          console.warn('[sessions] failed to delete cloud session.', error);
-          if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-          if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
-        });
-    }
-  }, [auth.user, removeCloudSummary, sessions, strudel, isMobile]);
+    deleteSessionAction(id);
+  }, [deleteSessionAction, isMobile]);
 
-  const handleRenameSession = useCallback(async (id: string, title: string) => {
-    if (!auth.user) {
-      sessions.renameSession(id, title);
-      return;
-    }
-    const summary = cloudHistoryItems.find((candidate) => candidate.id === id);
-    if (!summary) return;
-    try {
-      if (isMobile) {
-        if (!sessions.sessions.some((session) => session.id === id)) {
-          const detail = await readCloudSession(summary);
-          await sessions.acceptCloudDetail(detail, { activate: false });
-        }
-      } else {
-        await openCloudSession(summary);
-      }
-      sessions.renameSession(id, title);
-      upsertCloudHistorySummary({ ...summary, title }, 0);
-    } catch (error) {
-      console.warn('[sessions] failed to rename cloud session.', error);
-      if (cloudErrorStatus(error) === 401) setAccountOpen(true);
-      if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
-    }
-  }, [auth.user, cloudHistoryItems, openCloudSession, readCloudSession, isMobile, sessions, strudel, upsertCloudHistorySummary]);
 
   const handleOpenFavoriteInStudio = useCallback((code: string) => {
     if (!auth.user) {
@@ -1469,12 +1488,27 @@ export default function App() {
       cloudHistoryMoreError,
       cloudFavoritesInitialError,
       cloudFavoritesMoreError,
+      historySearch.collection.initialError,
+      historySearch.collection.moreError,
+      favoritesSearch.collection.initialError,
+      favoritesSearch.collection.moreError,
       cloudDetailError?.error,
     ];
     if (auth.user && errors.some((error) => cloudErrorStatus(error) === 401)) {
       setAccountOpen(true);
     }
-  }, [auth.user, cloudDetailError, cloudFavoritesInitialError, cloudFavoritesMoreError, cloudHistoryInitialError, cloudHistoryMoreError]);
+  }, [
+    auth.user,
+    cloudDetailError,
+    cloudFavoritesInitialError,
+    cloudFavoritesMoreError,
+    cloudHistoryInitialError,
+    cloudHistoryMoreError,
+    favoritesSearch.collection.initialError,
+    favoritesSearch.collection.moreError,
+    historySearch.collection.initialError,
+    historySearch.collection.moreError,
+  ]);
 
   /* "Take me there" — the page the conversation is on now, opened on it. Only
      the two reversible moves have one; a deletion has nowhere to go. */
@@ -1584,6 +1618,8 @@ export default function App() {
       active={primaryNavItem === 'favorites'}
       conversations={undefined}
       summaries={auth.user ? cloudFavoriteConversations : undefined}
+      searchQuery={auth.user ? favoritesSearch.query : undefined}
+      onSearchQueryChange={auth.user ? favoritesSearch.setQuery : undefined}
       selectedId={auth.user ? selectedFavoriteId : undefined}
       detail={auth.user ? selectedAccountFavorite : undefined}
       focus={favoritesFocus}
@@ -1597,20 +1633,22 @@ export default function App() {
       isLoading={Boolean(
         auth.user
         && cloudFavoriteConversations.length === 0
-        && (!cloudLibraryEnabled || cloudLibrary.favorites.initialStatus === 'loading'),
+        && (!cloudLibraryEnabled || displayedFavoriteCollection.initialStatus === 'loading'),
       )}
       error={auth.user && cloudFavoriteConversations.length === 0
-        ? cloudLibrary.favorites.initialError
+        ? displayedFavoriteCollection.initialError
         : null}
-      onRetry={auth.user ? cloudLibrary.favorites.retryInitial : undefined}
+      onRetry={auth.user ? displayedFavoriteCollection.retryInitial : undefined}
       detailLoading={Boolean(auth.user && selectedAccountFavoriteSummary && !selectedAccountFavorite && !selectedAccountFavoriteError)}
       detailError={auth.user ? selectedAccountFavoriteError : null}
       onRetryDetail={auth.user ? retrySelectedFavorite : undefined}
-      hasMore={auth.user ? cloudLibrary.favorites.nextCursor !== null : false}
-      isLoadingMore={Boolean(auth.user && cloudLibrary.favorites.moreStatus === 'loading')}
-      loadMoreError={auth.user ? cloudLibrary.favorites.moreError : null}
-      onLoadMore={auth.user ? loadMoreCloudFavorites : undefined}
-      onRetryLoadMore={auth.user ? cloudLibrary.favorites.retryMore : undefined}
+      hasMore={auth.user ? displayedFavoriteCollection.nextCursor !== null : false}
+      isLoadingMore={Boolean(auth.user && displayedFavoriteCollection.moreStatus === 'loading')}
+      loadMoreError={auth.user ? displayedFavoriteCollection.moreError : null}
+      onLoadMore={auth.user
+        ? (favoritesSearch.active ? favoritesSearch.loadMore : loadMoreCloudFavorites)
+        : undefined}
+      onRetryLoadMore={auth.user ? displayedFavoriteCollection.retryMore : undefined}
       /* Withheld until the library can actually answer: the page opens
          its first entry the moment one is on screen, and an open that
          throws because the library is still coming up is an open the
@@ -2132,12 +2170,14 @@ export default function App() {
               onFavoriteSession={handleFavoriteSession}
               isHistoryLoading={historyInitialLoading}
               historyInitialError={historyInitialError}
-              onRetryHistory={auth.user ? cloudLibrary.history.retryInitial : undefined}
+              onRetryHistory={auth.user ? retryDisplayedHistory : undefined}
               historyHasMore={historyHasMore}
               historyLoadingMore={historyLoadingMore}
               historyLoadMoreError={historyLoadMoreError}
-              onLoadMoreHistory={auth.user ? loadMoreCloudHistory : undefined}
-              onRetryLoadMoreHistory={auth.user ? cloudLibrary.history.retryMore : undefined}
+              onLoadMoreHistory={auth.user ? loadMoreDisplayedHistory : undefined}
+              onRetryLoadMoreHistory={auth.user ? retryMoreDisplayedHistory : undefined}
+              historySearchQuery={auth.user ? historySearch.query : undefined}
+              onHistorySearchQueryChange={auth.user ? historySearch.setQuery : undefined}
               onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
               isReplaying={isReplaying}
               replayInputText={replayInputText}

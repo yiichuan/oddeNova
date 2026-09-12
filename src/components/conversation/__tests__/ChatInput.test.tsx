@@ -2,7 +2,7 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatInput from '../ChatInput';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -339,6 +339,10 @@ describe('ChatInput engine initialization status', () => {
 
 describe('ChatInput Thinking level control', () => {
   const roots: Root[] = [];
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
 
   afterEach(() => {
     for (const root of roots.splice(0)) {
