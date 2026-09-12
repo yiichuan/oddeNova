@@ -27,6 +27,7 @@ const session = (id: string, title: string, updatedAt: number) => ({
 
 function renderDrawer(
   sessions = [session('a', 'Acid bassline', 2), session('b', 'Ambient pads', 1)],
+  extraHistory: Partial<MobileNavDrawerHistory> = {},
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -34,28 +35,32 @@ function renderDrawer(
   roots.push(root);
   const onSwitch = vi.fn();
   const onFavorite = vi.fn();
-  const history = {
-    sessions,
-    currentId: 'a',
-    onSwitch,
-    onDelete: vi.fn(),
-    onRename: vi.fn(),
-    onFavorite,
-  } as unknown as MobileNavDrawerHistory;
-
-  act(() => {
-    root.render(
-      <MobileNavDrawer
-        open
-        onClose={vi.fn()}
-        accountLabel="ada@example.com"
-        onNewSession={vi.fn()}
-        onOpenAccount={vi.fn()}
-        history={history}
-      />,
-    );
-  });
-  return { container, onSwitch, onFavorite };
+  const draw = (overrides: Partial<MobileNavDrawerHistory> = {}) => {
+    const history = {
+      sessions,
+      currentId: 'a',
+      onSwitch,
+      onDelete: vi.fn(),
+      onRename: vi.fn(),
+      onFavorite,
+      ...extraHistory,
+      ...overrides,
+    } as unknown as MobileNavDrawerHistory;
+    act(() => {
+      root.render(
+        <MobileNavDrawer
+          open
+          onClose={vi.fn()}
+          accountLabel="ada@example.com"
+          onNewSession={vi.fn()}
+          onOpenAccount={vi.fn()}
+          history={history}
+        />,
+      );
+    });
+  };
+  draw();
+  return { container, onSwitch, onFavorite, rerender: draw };
 }
 
 const searchKey = (container: HTMLElement) =>
@@ -301,6 +306,53 @@ describe('MobileNavDrawer search', () => {
     expect(document.querySelector('[data-testid="history-delete-confirm"]')?.textContent)
       .toContain(t('deleteSessionAsk'));
     vi.useRealTimers();
+  });
+
+  /* Signed in, the field is the account's rather than this device's: the same
+     pair the desktop column is handed. See `searchQuery` on the history prop. */
+  it('hands what is typed to the account instead of filtering the rows it has', () => {
+    const onSearchQueryChange = vi.fn();
+    const { container, rerender } = renderDrawer(undefined, {
+      searchQuery: '',
+      onSearchQueryChange,
+    });
+    act(() => searchKey(container)?.click());
+    type(searchField(container)!, 'techno');
+
+    expect(onSearchQueryChange).toHaveBeenLastCalledWith('techno');
+    // Held by the account, so the field only carries it once it is handed back.
+    rerender({ searchQuery: 'techno' });
+    expect(searchField(container)?.value).toBe('techno');
+    // And the rows are the account's answer: listed as they came, not narrowed
+    // a second time against a word none of their titles hold.
+    expect(titles(container)).toEqual(['Acid bassline', 'Ambient pads']);
+  });
+
+  it('says nothing matched when the account comes back with no rows', () => {
+    const { container } = renderDrawer([], {
+      searchQuery: 'techno',
+      onSearchQueryChange: vi.fn(),
+    });
+    act(() => searchKey(container)?.click());
+
+    expect(titles(container)).toEqual([]);
+    expect(container.textContent).toContain(t('historySearchEmpty'));
+  });
+
+  it('drops the account search when the field is closed', () => {
+    const onSearchQueryChange = vi.fn();
+    const { container } = renderDrawer(undefined, {
+      searchQuery: 'techno',
+      onSearchQueryChange,
+    });
+    act(() => searchKey(container)?.click());
+    act(() => {
+      searchField(container)!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+
+    expect(onSearchQueryChange).toHaveBeenLastCalledWith('');
   });
 
   it('clears the words before it closes the field', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronRight, Disc3, Star } from 'lucide-react';
 import type { SessionSummary } from '../../../shared/session-api';
 import type { Session } from '../../hooks/useSessions';
@@ -182,7 +182,16 @@ export interface MobileNavDrawerHistory {
    * drawer's history being a lesser copy of the list rather than the same list
    * shown somewhere else.
    */
-  onFavorite?: (id: string) => void;
+  onFavorite?: (id: string, session?: Session | SessionSummary) => void;
+  /**
+   * The filter as the account holds it, and where the drawer's own field
+   * writes it — the same pair the desktop column hands its list, so a name
+   * typed here is answered by the whole account rather than by the page of it
+   * this device happens to have loaded. Absent while signed out, where there
+   * is no account to ask and the drawer filters the rows it has.
+   */
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
   onLoadMore?: () => void;
   hasMore?: boolean;
   isLoadingMore?: boolean;
@@ -272,7 +281,18 @@ export default function MobileNavDrawer({
      point searching, so while it is on, the destinations and the two headings
      step aside and the panel is the field and what it found. */
   const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [ownQuery, setOwnQuery] = useState('');
+  /* Whoever can answer the question owns it. Signed in, the account does, and
+     the rows that come back are already the answer — so the panel below is
+     told not to filter them again. Signed out, there is only what is on this
+     device, and the field narrows it here. */
+  const onSearchQueryChange = history.onSearchQueryChange;
+  const remoteSearch = onSearchQueryChange !== undefined;
+  const query = history.searchQuery ?? ownQuery;
+  const setQuery = useCallback((value: string): void => {
+    if (onSearchQueryChange) onSearchQueryChange(value);
+    else setOwnQuery(value);
+  }, [onSearchQueryChange]);
   const searchInputRef = useRef<HTMLInputElement>(null);
   /* The one section that is worth arriving open: the drawer's main reason for
      being pulled out is to get back into a conversation, and More holds two
@@ -295,7 +315,7 @@ export default function MobileNavDrawer({
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, open, searchOpen]);
+  }, [onClose, open, searchOpen, setQuery]);
 
   /* A search that has to be tapped twice — once to open the field, once to
      get into it — is a search nobody uses. */
@@ -311,10 +331,13 @@ export default function MobileNavDrawer({
     if (open) return;
     const timer = setTimeout(() => {
       setSearchOpen(false);
+      /* The account's search is dropped with the panel, not left narrowed
+         behind it: the list this was filtering is the same one the studio
+         draws. */
       setQuery('');
     }, SLIDE_MS);
     return () => clearTimeout(timer);
-  }, [open]);
+  }, [open, setQuery]);
 
   return (
     <div
@@ -608,7 +631,18 @@ export default function MobileNavDrawer({
                    of reach here. Holding a row is what asks for them. */
                 longPressMenu
                 showSearch={false}
-                query={searchOpen ? query : undefined}
+                {...(remoteSearch
+                  ? {
+                    /* The rows are the account's answer to this, so the panel
+                       lists them as they came rather than narrowing them a
+                       second time — see `searchQuery` on HistoryPanel. It is
+                       still told what was asked, which is what lets an empty
+                       answer say nothing matched rather than that the account
+                       has no conversations. */
+                    searchQuery: query,
+                    onSearchQueryChange: setQuery,
+                  }
+                  : { query: searchOpen ? query : undefined })}
               />
             </div>
           </DrawerFillSection>
