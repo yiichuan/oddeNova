@@ -80,8 +80,6 @@ stack(
   /* @layer nova_theme */
   // The theme, the first time it appears whole.
   // Precisely because no one is listening, it can be sung freely.
-  // fast(2) folds the eight-step phrase into four cycles, exactly the width the mask opens;
-  // early(1) lines the phase up so the phrase starts at its head, not six steps in on the cadence.
   note("<~ [d5@2 ~ a4] [e5@2 f5 e5] [d5@3 ~] ~ [a4 c5 d5@2] [e5@2 b4 a4] [d5@3 ~]>")
     .fast(2)
     .early(1)
@@ -97,7 +95,6 @@ stack(
   /* @layer lost_path */
   // Cycles 9–13: the road begins to fork.
   // Toward countless futures.
-  // Eight steps, a length that divides the entry cycle, so every fork sets out from the same d5–a4 head.
   note("<[d5 ~ a4] ~ [e5 f5 ~] [~ d5] [c5 ~ d5] ~ [a4 ~ e5] [~ f5]>")
     .s("gm_epiano1")
     .adsr([0.018, 0.18, 0.12, 0.4])
@@ -195,7 +192,6 @@ stack(
   /* @layer storm_sub */
   // The sustained low weight under the roaring rain.
   // The root turns D → G → C in step with the sky's harmony — the same root line earth walks.
-  // The last cycle takes a long release, so the low end leaves trailing a tail.
   note("<d2 g1 c2 a1>/2")
     .struct("x ~ ~ ~ x ~ ~ ~")
     .s("sine")
