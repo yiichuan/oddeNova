@@ -45,14 +45,32 @@ const LONG_PRESS_MS = 450;
  */
 const LONG_PRESS_SLOP = 10;
 
-/* The plate's own box, stated here because the menu is placed before it is
-   measured: it opens at the finger and has to be turned back from the edges of
-   the window in the same frame. Kept in step with the markup below by hand —
-   three rows of 40 and the plate's 4 top and bottom. */
+/* The plate's own box, stated here because the menu is placed before it can be
+   measured: it opens *above* the row it was held on, so its own height has to
+   be known in the frame it appears in. Kept in step with the markup below by
+   hand — rows of 44 and the plate's 4 top and bottom. */
 const ROW_MENU_WIDTH = 176;
-const ROW_MENU_HEIGHT = 3 * 40 + 8;
+const ROW_MENU_ITEM_HEIGHT = 44;
+const ROW_MENU_PADDING_Y = 8;
 /** How far the plate stands off the window's edges when it is turned back. */
 const ROW_MENU_MARGIN = 8;
+/** The air between the plate and the row it was opened from. */
+const ROW_MENU_GAP = 8;
+
+/**
+ * How far the held row grows while it is being pressed.
+ *
+ * The plate opens away from the row, so something has to say which row it
+ * belongs to. The row itself says it: it swells under the finger over the
+ * length of the hold, which both answers "what am I about to act on" and makes
+ * the wait legible — the growth *is* the progress of the press. Small, because
+ * these rows sit a few pixels apart and one of them rearing up over its
+ * neighbours would read as the list breaking rather than as a row responding.
+ */
+const HELD_ROW_SCALE = 1.035;
+
+/** How quickly a row that was not held long enough settles back. */
+const HELD_ROW_RELEASE_MS = 160;
 
 interface HistoryPanelProps {
   sessions: readonly (Session | SessionSummary)[];
@@ -156,11 +174,20 @@ export default function HistoryPanel({
    * the question goes with it rather than standing over nothing.
    */
   const [askingDeleteId, setAskingDeleteId] = useState<string | null>(null);
-  /* The row being held, and where it was held — the plate opens at the finger
-     rather than at the row, which is the half of the row the thumb is not
-     covering. Same reasoning as the id above: it names a row, and is resolved
-     against the list every render. */
-  const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  /* The row being held, and the box it occupied when the hold landed — the
+     plate opens over the row rather than under the finger, so what it needs is
+     the row's own edges, read once at the moment the menu is called for.
+     Same reasoning as the id above: it names a row, and is resolved against
+     the list every render. */
+  const [rowMenu, setRowMenu] = useState<
+    { id: string; top: number; bottom: number; centerX: number } | null
+  >(null);
+  /* The row currently under a finger, which is not the same as the row the
+     menu belongs to: it is set the instant the press lands and grows the row
+     for as long as the press is being read, whether or not it lasts. It stays
+     set while the plate is up, so the row that the menu is about stays raised
+     under it. */
+  const [pressedId, setPressedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
   const keepingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -187,6 +214,16 @@ export default function HistoryPanel({
     if (pressTimerRef.current !== null) clearTimeout(pressTimerRef.current);
     pressTimerRef.current = null;
     pressOriginRef.current = null;
+    /* A press that became a menu keeps the row raised — the plate standing off
+       the row is only readable while the row it came from is the one lifted.
+       A press that came to nothing lets it back down. */
+    if (!pressHandledRef.current) setPressedId(null);
+  };
+
+  /* Everything that puts the plate away also puts its row back down. */
+  const closeRowMenu = () => {
+    setRowMenu(null);
+    setPressedId(null);
   };
 
   /* The list's own type size.
@@ -212,11 +249,29 @@ export default function HistoryPanel({
       cancelPress();
       pressHandledRef.current = false;
       pressOriginRef.current = { x: event.clientX, y: event.clientY };
-      const { clientX, clientY } = event;
+      setPressedId(session.id);
+      /* Measured when the hold lands rather than now: the row is growing under
+         the finger for the length of the press, and the plate has to stand off
+         the box the row actually ends up occupying. */
+      const row = event.currentTarget;
       pressTimerRef.current = setTimeout(() => {
         pressTimerRef.current = null;
         pressHandledRef.current = true;
-        setRowMenu({ id: session.id, x: clientX, y: clientY });
+        /* The finger is still down when the plate arrives, and on every mobile
+           browser a hold that has not been read as a gesture is on its way to
+           becoming a text selection. The row says it is not text to be picked
+           up (see the row's class below), but a selection the browser has
+           already begun — anywhere in the drawer — survives the plate opening
+           and lands on the first words it can reach, which are the plate's
+           own. So it is dropped here, in the same frame the menu appears. */
+        window.getSelection()?.removeAllRanges();
+        const box = row.getBoundingClientRect();
+        setRowMenu({
+          id: session.id,
+          top: box.top,
+          bottom: box.bottom,
+          centerX: box.left + box.width / 2,
+        });
       }, LONG_PRESS_MS);
     },
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -288,6 +343,14 @@ export default function HistoryPanel({
   const heldRow = rowMenu
     ? listed.find((session) => session.id === rowMenu.id) ?? null
     : null;
+  /* What the plate will measure once it is up, needed before it is: three
+     lines, or two where keeping is not on offer. */
+  const rowMenuHeight = (onFavorite ? 3 : 2) * ROW_MENU_ITEM_HEIGHT + ROW_MENU_PADDING_Y;
+  /* Above the row if the room is there, below it if it is not — a row near the
+     top of the window has nothing above it to stand in. */
+  const rowMenuAbove = rowMenu
+    ? rowMenu.top - ROW_MENU_GAP - rowMenuHeight >= ROW_MENU_MARGIN
+    : true;
 
   useEffect(() => {
     if (!askingDelete) return;
@@ -412,7 +475,7 @@ export default function HistoryPanel({
                       in the host's ground, see --history-search-bg), so they
                       have no reason to be opaque at all. */}
                   <div
-                    className={`group flex items-stretch gap-2 rounded-[4px] border px-2 cursor-pointer transition-colors ${
+                    className={`group flex items-stretch gap-2 rounded-[4px] border px-2 cursor-pointer transition-[color,background-color,border-color,transform] ${
                       active
                         ? 'border-transparent bg-[var(--color-selected-item-bg)] text-on-accent'
                         : 'border-transparent text-text-secondary hover:text-text-primary'
@@ -420,8 +483,18 @@ export default function HistoryPanel({
                       /* A press held on a row of text is a text selection and
                          a copy callout, on every mobile browser, unless the row
                          says it is not text to be picked up. */
-                      longPressMenu ? 'select-none [-webkit-touch-callout:none]' : ''
+                      longPressMenu ? 'select-none [-webkit-touch-callout:none] motion-reduce:transition-none' : ''
                     }`}
+                    /* The row rises with the press: the growth runs the length
+                       of the hold, so it arrives at full size as the plate
+                       opens, and drops back fast when the press came to
+                       nothing. Written here rather than as a class because the
+                       two durations are the gesture's own timings, stated
+                       once at the top of the file. */
+                    style={longPressMenu ? {
+                      transform: pressedId === s.id ? `scale(${HELD_ROW_SCALE})` : undefined,
+                      transitionDuration: `${pressedId === s.id ? LONG_PRESS_MS : HELD_ROW_RELEASE_MS}ms`,
+                    } : undefined}
                     onClick={() => {
                       /* The tap that would have opened it was the press that
                          opened the menu. */
@@ -589,34 +662,46 @@ export default function HistoryPanel({
           list is clipped by its own scrollport and travels with a drawer that
           moves on a transform.
 
-          It opens at the finger rather than on the row — a row is 30 pixels
-          tall and the thumb is on top of it — and is turned back from the
-          window's edges so a press near the bottom or the right does not put
-          the plate half outside. Tapping the ground puts it away: this is a
-          menu, not a question, and nothing has been done yet. */}
+          It opens *above* the row, centred on it, rather than below the finger
+          that called it. Below is where the hand already is: the plate lands
+          under the palm, its three lines have to be reached back into, and the
+          row it belongs to is hidden behind the arm. Above the row, the whole
+          plate is in clear sight over a row that has risen to meet it, and
+          every line is a short reach up. It flips back below only when there
+          is not the room above — a row near the top of the window — and is
+          turned back from the side edges either way. Tapping the ground puts it
+          away: this is a menu, not a question, and nothing has been done
+          yet. */}
       {heldRow && rowMenu && typeof document !== 'undefined' && createPortal(
         <div
           data-testid="history-row-menu-layer"
-          className="fixed inset-0 z-[150]"
-          onPointerDown={() => setRowMenu(null)}
+          className="fixed inset-0 z-[150] select-none [-webkit-touch-callout:none]"
+          onPointerDown={closeRowMenu}
           onContextMenu={(event) => event.preventDefault()}
         >
           <div
             data-testid="history-row-menu"
             role="menu"
             aria-label={heldRow.title || t('newSessionTitle')}
-            className="animate-fade-in absolute w-[176px] overflow-hidden rounded-[10px] border border-border bg-conversation-surface py-1 shadow-menu-overlay"
+            className="animate-row-menu-in absolute w-[176px] overflow-hidden rounded-[10px] border border-border bg-conversation-surface py-1 shadow-menu-overlay"
             style={{
-              /* Off the fingertip by the width of one, so the first line is
-                 not opening underneath the thumb that asked for it. */
+              /* Centred over the row, turned back from either side edge so a
+                 row at the end of a narrow drawer does not push it out. */
               left: Math.min(
-                Math.max(rowMenu.x + ROW_MENU_MARGIN, ROW_MENU_MARGIN),
+                Math.max(rowMenu.centerX - ROW_MENU_WIDTH / 2, ROW_MENU_MARGIN),
                 Math.max(ROW_MENU_MARGIN, window.innerWidth - ROW_MENU_WIDTH - ROW_MENU_MARGIN),
               ),
-              top: Math.min(
-                Math.max(rowMenu.y + ROW_MENU_MARGIN, ROW_MENU_MARGIN),
-                Math.max(ROW_MENU_MARGIN, window.innerHeight - ROW_MENU_HEIGHT - ROW_MENU_MARGIN),
-              ),
+              /* Standing off the row's own edge, on whichever side has the
+                 room. */
+              top: rowMenuAbove
+                ? rowMenu.top - ROW_MENU_GAP - rowMenuHeight
+                : Math.min(
+                  rowMenu.bottom + ROW_MENU_GAP,
+                  Math.max(ROW_MENU_MARGIN, window.innerHeight - rowMenuHeight - ROW_MENU_MARGIN),
+                ),
+              /* It grows out of the row, so it grows from the edge nearest
+                 it. */
+              transformOrigin: rowMenuAbove ? 'bottom center' : 'top center',
             }}
             /* The press that opens the plate is still down when it appears, so
                its lift lands here. Only what is pressed after that counts. */
@@ -655,7 +740,7 @@ export default function HistoryPanel({
                 role="menuitem"
                 data-history-row-menu={item.key}
                 onClick={() => {
-                  setRowMenu(null);
+                  closeRowMenu();
                   item.onSelect();
                 }}
                 /* Only a finger opens this menu, so it is set at the phone's

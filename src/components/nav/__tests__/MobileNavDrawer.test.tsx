@@ -181,6 +181,67 @@ describe('MobileNavDrawer search', () => {
     vi.useRealTimers();
   });
 
+  /* The plate stands over the row, not under the hand that called it, and the
+     row it belongs to rises to meet it. */
+  it('opens the held row menu above the row, and raises the row under it', () => {
+    vi.useFakeTimers();
+    const removeAllRanges = vi.fn();
+    vi.spyOn(window, 'getSelection')
+      .mockReturnValue({ removeAllRanges } as unknown as Selection);
+    const { container } = renderDrawer();
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!
+      .parentElement!;
+    /* The box the plate is placed off: a row low enough in the window to have
+       room above it. */
+    row.getBoundingClientRect = () => ({
+      top: 400, bottom: 440, left: 20, right: 320, width: 300, height: 40,
+      x: 20, y: 400, toJSON: () => ({}),
+    });
+
+    act(() => { press(row); });
+    act(() => { vi.advanceTimersByTime(600); });
+
+    const menu = document.querySelector<HTMLElement>('[data-testid="history-row-menu"]')!;
+    // Three lines of 44 and the plate's own 8, standing 8 clear of the row's top.
+    expect(menu.style.top).toBe('252px');
+    // Centred on the row: 170 less half the plate's 176.
+    expect(menu.style.left).toBe('82px');
+    expect(menu.style.transformOrigin).toBe('bottom center');
+    // The row says which one the plate is about, and holds it while it is up.
+    expect(row.style.transform).toContain('scale(');
+    // Nothing the browser had begun selecting survives into the plate.
+    expect(removeAllRanges).toHaveBeenCalled();
+
+    // The row settles back when the plate goes.
+    act(() => {
+      document.querySelector<HTMLElement>('[data-testid="history-row-menu-layer"]')
+        ?.dispatchEvent(pointer('pointerdown', 40, 40));
+    });
+    expect(document.querySelector('[data-testid="history-row-menu"]')).toBeNull();
+    expect(row.style.transform).toBe('');
+    vi.useRealTimers();
+  });
+
+  /* A row near the top of the window has nothing above it to stand in. */
+  it('flips the held row menu below a row with no room above it', () => {
+    vi.useFakeTimers();
+    const { container } = renderDrawer();
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!
+      .parentElement!;
+    row.getBoundingClientRect = () => ({
+      top: 20, bottom: 60, left: 20, right: 320, width: 300, height: 40,
+      x: 20, y: 20, toJSON: () => ({}),
+    });
+
+    act(() => { press(row); });
+    act(() => { vi.advanceTimersByTime(600); });
+
+    const menu = document.querySelector<HTMLElement>('[data-testid="history-row-menu"]')!;
+    expect(menu.style.top).toBe('68px');
+    expect(menu.style.transformOrigin).toBe('top center');
+    vi.useRealTimers();
+  });
+
   it('reads a press that travels as a scroll rather than a hold', () => {
     vi.useFakeTimers();
     const { container } = renderDrawer();

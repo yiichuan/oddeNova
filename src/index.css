@@ -2154,6 +2154,30 @@ html[data-theme='light'] .history-search-field {
   }
 }
 
+/* The plate a held conversation row opens (see HistoryPanel). It stands off the
+   row rather than on it, so it has to be seen coming *from* the row: it grows
+   out of the edge nearest it — the origin is set per side where it is placed —
+   quickly enough to feel like the answer to a press that has already been
+   waited out. */
+@keyframes historyRowMenuIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-row-menu-in {
+  animation: historyRowMenuIn 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-row-menu-in {
+    animation: fadeIn 120ms ease-out;
+  }
+}
+
 /* Greeting bubble entrance: fades in while sharpening from a blur. */
 @keyframes blurFadeIn {
   from {
