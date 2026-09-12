@@ -34,7 +34,12 @@ export default function AuthField({
   const [show, setShow] = useState(false);
 
   return (
-    <label className="relative block rounded-lg border border-border bg-auth-field px-3 py-2 transition-colors focus-within:border-accent">
+    /* The box is held at the height of the two lines it carries — the label and
+       the one line of value — rather than sized by them, and clips what it
+       holds. Between this and `.auth-field` in index.css, nothing the keyboard
+       puts inside the field while typing (a composing run, an inline
+       candidate) can add a line to it or move the row below. */
+    <label className="relative block h-[3.625rem] overflow-hidden rounded-lg border border-border bg-auth-field px-3 py-2 transition-colors focus-within:border-accent">
       <span className="block text-[11px] leading-4 text-text-muted">{label}</span>
       <input
         type={secret ? (show ? 'text' : 'password') : type}
@@ -59,9 +64,12 @@ export default function AuthField({
         /* Transparent, so the box's fill runs unbroken behind it — except when
            Chrome autofills, which `.auth-field` in index.css paints back over.
            16px and no smaller: iOS zooms the page on focus below that.
-           `h-6` pins the box to that one line for good: left to size itself the
-           field grows the moment anything — a predicted candidate, a composing
-           run — asks for a second one, and the whole form steps down with it. */
+           `h-6` pins the box to that one line, and `.auth-field` in index.css
+           states the rest of the single-line geometry — one line-height, no
+           wrapping, overflow scrolled to rather than broken — because left to
+           size itself the field grows the moment anything (a predicted
+           candidate, a composing run) asks for a second line, and the whole
+           form steps down with it. */
         className={`auth-field h-6 w-full border-0 bg-transparent p-0 text-base leading-6 text-text-primary outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
           secret ? 'pr-8' : ''
         }`}

@@ -2046,6 +2046,39 @@ html[data-theme='light'] .history-search-field {
   border-radius: 0;
 }
 
+/* An account field is one line tall and stays one line tall. A phone keyboard
+   does not only suggest above the field: while a word is being composed it
+   hands the browser a marked run that the field has to render inside itself,
+   and clearing the field and typing again is exactly what re-arms that run.
+   Left to lay itself out the control finds room for it by taking a second
+   line, and the form steps down with it.
+
+   So the geometry is stated rather than left to the control: one line's
+   height, that same line-height, the text held on a single unbroken run, and
+   anything past the right edge scrolled to rather than wrapped. `overflow`
+   hidden on the vertical axis is the backstop — even a second line laid out in
+   spite of all this has nowhere to be drawn. `field-sizing: fixed` says the
+   same thing to the browsers that would otherwise let the control size itself
+   to its content. */
+.auth-field {
+  height: 1.5rem;
+  min-height: 1.5rem;
+  max-height: 1.5rem;
+  line-height: 1.5rem;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-overflow: clip;
+  overflow-x: auto;
+  overflow-y: hidden;
+  field-sizing: fixed;
+  scrollbar-width: none;
+}
+
+.auth-field::-webkit-scrollbar {
+  display: none;
+}
+
 /* The inputs inside an account form's fields. They are transparent — the box
    around them carries the fill — but an autofilled input is not: Chrome paints
    it with its own pale blue wash through an internal `!important` rule that no
