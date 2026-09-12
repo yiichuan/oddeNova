@@ -376,8 +376,13 @@ export default function FeaturedPage({
     >
       {/* Behind everything, and only while a piece is open: the wash belongs to
           the record you are looking at, not to the shelf. Keyed on the piece so
-          each cover reads its own colour from scratch. */}
-      {openAlbum && <FeaturedGlow key={openAlbum.id} piece={openAlbum.tracks[0]} />}
+          each cover reads its own colour from scratch.
+
+          Held back until the cover has landed: the field is a dozen blurred,
+          looping layers, and mounting it in the same commit as the flight
+          hands the paint work it costs to the exact frames the flight needs
+          to itself. */}
+      {openAlbum && stage !== 'opening' && <FeaturedGlow key={openAlbum.id} piece={openAlbum.tracks[0]} />}
       <FeaturedWebglLightField active={!openAlbum} variant={paper ? 'paper' : 'space'} />
 
       {/* Inset to exactly the bar's width, so every edge on the page — tiles,

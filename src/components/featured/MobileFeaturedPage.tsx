@@ -991,8 +991,13 @@ export default function MobileFeaturedPage({
           reads its colour from scratch. The blobs it is made of are laid out
           again for a page this shape — a phone is a tall narrow window, and a
           field cut for a wide one arrives as a column of vertical slivers. See
-          `.featured-glow-blob` in index.css. */}
-      {openAlbum && <FeaturedGlow key={openAlbum.id} piece={openAlbum.tracks[0]} />}
+          `.featured-glow-blob` in index.css.
+
+          Held back until the cover has landed: the field is a dozen blurred,
+          looping layers, and mounting it in the same commit as the flight
+          hands the paint work it costs to the exact frames the flight needs
+          to itself. It has nothing to light before the cover arrives anyway. */}
+      {openAlbum && stage !== 'opening' && <FeaturedGlow key={openAlbum.id} piece={openAlbum.tracks[0]} />}
 
       {/* ── The shelf ── */}
       {/* The wheel, stood on end. Every slot is drawn from one number — how far
