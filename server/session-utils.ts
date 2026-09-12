@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, type User } from '@supabase/supabase-js';
+import { normalizeSessionTitle } from '../shared/session-title.js';
 
 export interface ApiSession {
   id: string;
@@ -78,7 +79,7 @@ export function rowToSession(row: SessionRow): ApiSession {
     : undefined;
   return {
     id: row.id,
-    title: row.title,
+    title: normalizeSessionTitle(row.title, 'New Session'),
     messages: row.messages || [],
     code: row.code || '',
     ...(inputMode ? { inputMode } : {}),
@@ -95,7 +96,7 @@ export function sessionToRow(session: ApiSession, userId: string): Omit<SessionR
   return {
     id: session.id,
     user_id: userId,
-    title: session.title,
+    title: normalizeSessionTitle(session.title, 'New Session'),
     messages: Array.isArray(session.messages) ? session.messages : [],
     code: session.code || '',
     input_mode: session.inputMode ?? null,

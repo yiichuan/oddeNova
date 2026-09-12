@@ -17,7 +17,7 @@ import { isDemoMode, getActiveDemoSet } from './demo/demo-config';
 import ApiKeyModal from './components/overlays/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
-import { HistoryIcon, PauseIcon, PlayIcon, PlusIcon } from './components/icons';
+import { DownloadIcon, EllipsisIcon, SquareTerminalIcon, XIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useOddeNovaImport } from './hooks/useOddeNovaImport';
@@ -26,16 +26,19 @@ import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
 import ConversationView from './components/conversation/ConversationView';
-import HistoryPanel from './components/conversation/HistoryPanel';
 import ChatInput from './components/conversation/ChatInput';
-import TopActionBar from './components/studio/TopActionBar';
+import { ExportPopover, ShareButton } from './components/studio/TopActionBar';
+import { useExportPopoverController } from './hooks/useExportPopoverController';
 import AccountModal from './components/overlays/AccountModal';
 import WelcomeModal from './components/overlays/WelcomeModal';
 import OddeNovaImportNotice from './components/overlays/OddeNovaImportNotice';
 import FavoriteActionDialog, { type FavoriteActionKind } from './components/overlays/FavoriteActionDialog';
 import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
+import MobileNavDrawer from './components/nav/MobileNavDrawer';
 import FeaturedPage from './components/featured/FeaturedPage';
 import FavoritesPage from './components/favorites/FavoritesPage';
+import { requestDeviceTilt } from './components/featured/featured-device-tilt';
+import { useCoverAccent } from './components/featured/featured-accent';
 import SettingsSidebar, { type SettingsSection } from './components/settings/SettingsSidebar';
 import ModelSettingsPanel from './components/settings/ModelSettingsPanel';
 import AppearanceSettingsPanel from './components/settings/AppearanceSettingsPanel';
@@ -46,6 +49,9 @@ import type { AgentEntryPoint } from './lib/analytics';
 import { FEATURED_PIECES, findFeaturedPiece, type FeaturedPiece } from './lib/featured-pieces';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { sessionAsFavorite } from './lib/session-favorites';
+import { fullSessionTitle } from './lib/full-session-title';
+import { useVisualViewport } from './hooks/useVisualViewport';
+import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
 import { featuredPlayer } from './services/featured-player';
 import { featuredSessionDraft } from './lib/featured-session';
@@ -82,6 +88,7 @@ import {
   getNextImportPromptUserMarker,
   importGuestSessions,
 } from './lib/session-import';
+import { isOnline } from './lib/network-status';
 import { type Session } from './hooks/useSessions';
 
 /**
@@ -92,6 +99,12 @@ const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites']);
 
 /** How long the summary cache holds a change before writing it down. */
 const SUMMARY_CACHE_WRITE_MS = 1000;
+
+/* A failure this many times running stops asking and hands the rest to the
+   ordinary sync queue instead — see the note on guestImportFailureCountRef.
+   Two: one automatic attempt on discovery, one manual retry, and then no more
+   standing in the reader's way. */
+const GUEST_IMPORT_MAX_PROMPTS = 2;
 
 function cloudErrorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object' || !('status' in error)) return undefined;
@@ -130,6 +143,18 @@ interface FavoriteNotice {
   kind: FavoriteActionKind;
   session?: Session;
   favorite: FavoriteConversation;
+  /**
+   * Whether the move this reports is already done.
+   *
+   * The desktop notice is half report and half held breath: the release it
+   * announces has not been written yet, and letting the bar go is what writes
+   * it, which is what makes its undo an undo. The phone asks before it acts
+   * instead — see handleReleaseFavorite — so by the time a bar goes up there
+   * the move is behind it, and there is nothing left for the dismissal to
+   * commit. Saying so here keeps the commit from running a second time on a
+   * move that has already been made.
+   */
+  settled?: boolean;
   /** Snapshot of the cloud row used to commit a deferred favorite change. */
   summary?: FavoriteSummary;
 }
@@ -167,6 +192,7 @@ export default function App() {
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
+  const mobileNavigationRef = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('model');
   // The Featured page opens on a piece rather than on an empty panel; there is
   // no browsing state worth preserving in an unpicked list.
@@ -174,25 +200,43 @@ export default function App() {
     () => FEATURED_PIECES[0]?.id ?? null,
   );
   const [openingFeatured, setOpeningFeatured] = useState(false);
-  // Which of Featured's two views is up. The page owns that; the shell only
-  // needs it because the primary nav breaks apart for the collection and
-  // re-forms into a column for a piece.
-  const [featuredPieceOpen, setFeaturedPieceOpen] = useState(false);
+  // Which of Featured's two views is up, and which record if it is the
+  // second one. The page owns that; the shell needs it for two reasons — the
+  // primary nav breaks apart for the collection and re-forms into a column
+  // for a piece, and a phone's own chrome takes the open record's own colour
+  // (see useBrowserChromeColor) — so the piece is kept rather than a bare flag.
+  const [openFeaturedPiece, setOpenFeaturedPiece] = useState<FeaturedPiece | null>(null);
+  const featuredPieceOpen = openFeaturedPiece !== null;
+  const featuredAccent = useCoverAccent(openFeaturedPiece?.coverUrl);
+  // Mobile only: the code window standing over the Favorites page — see
+  // MobileFavoritesPage's onCodeWindowChange and useBrowserChromeColor.
+  const [favoritesCodeOpen, setFavoritesCodeOpen] = useState(false);
   const modelSettings = useModelSettingsDraft(resetClient);
   const themePreference = useThemePreference();
   const animationPreference = useResolvedAnimation();
   const studioAnimationVisible = useStudioAnimationVisible();
   const [accountOpen, setAccountOpen] = useState(false);
   const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
-  const [guestImportError, setGuestImportError] = useState('');
+  /* `null` while nothing has gone wrong; otherwise which of the two things
+     went wrong, since the dialog reads differently for each — see the render
+     below and GUEST_IMPORT_MAX_PROMPTS. */
+  const [guestImportError, setGuestImportError] = useState<'offline' | 'rejected' | null>(null);
   const [importingGuestHistory, setImportingGuestHistory] = useState(false);
   const [guestImportGateUserId, setGuestImportGateUserId] = useState<string | null>(null);
+  void guestImportGateUserId;
   const guestImportRunningRef = useRef(false);
+  /* How many *consecutive* failures the reader has been asked about. The first
+     failure gets a dialog with Retry and Later; a second failure right after
+     it does not get a second dialog — see importGuestHistory. Zeroed on
+     success and whenever a fresh check starts (sign-out, then a different
+     account signing in). */
+  const guestImportFailureCountRef = useRef(0);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const authUserIdRef = useRef<string | null>(auth.user?.id ?? null);
   authUserIdRef.current = auth.user?.id ?? null;
   const skipNextManualSyncSessionRef = useRef<string | null>(null);
+  const mobileCodeRestoreRef = useRef<{ id: string; code: string } | null>(null);
   const prevLoadingRef = useRef<Set<string>>(new Set());
   const importPromptUserRef = useRef<string | null>(null);
   const latestGuestSessionsRef = useRef<Session[]>([]);
@@ -200,10 +244,7 @@ export default function App() {
     auth.user
     && !auth.loading
     && !auth.recoveringPassword
-    && !sessions.isLoading
-    && guestImportGateUserId === auth.user.id
-    && guestImportSessions === null
-    && !importingGuestHistory,
+    && !sessions.isLoading,
   );
   /* The cloud library's local half. Everything it reads for this account is
      kept where the account's own working copies are kept, under the same owner
@@ -265,6 +306,7 @@ export default function App() {
   const loadMoreCloudFavorites = cloudLibrary.loadMoreFavorites;
   const ensureCloudFavorites = cloudLibrary.ensureFavorites;
   const openCloudSession = cloudLibrary.openSession;
+  const readCloudSession = cloudLibrary.readSession;
   const openCloudFavorite = cloudLibrary.openFavorite;
   const favoriteCloudSession = cloudLibrary.favoriteSession;
   const unfavoriteCloudSession = cloudLibrary.unfavoriteSession;
@@ -290,12 +332,11 @@ export default function App() {
     mainRef,
     hDragHandlers,
     vDragHandlers,
-    historyOpen,
-    setHistoryOpen,
-    drawerOpen,
-    setDrawerOpen,
+    codeSheetOpen,
+    setCodeSheetOpen,
+    navDrawerOpen,
+    setNavDrawerOpen,
     shouldLiftBottomBar,
-    mobileDrawerHeight,
     handleChatFocusChange,
     handleCodeFocusChange,
   } = useLayout();
@@ -321,9 +362,10 @@ export default function App() {
     const nextMarker = getNextImportPromptUserMarker(auth.user?.id ?? null, importPromptUserRef.current);
     if (nextMarker !== importPromptUserRef.current) {
       importPromptUserRef.current = nextMarker;
-      setGuestImportError('');
+      setGuestImportError(null);
       setGuestImportSessions(null);
       setGuestImportGateUserId(null);
+      guestImportFailureCountRef.current = 0;
     }
   }, [auth.user]);
 
@@ -354,18 +396,24 @@ export default function App() {
     }
   }, [sessions]);
 
-  // Mobile transport toggle next to the code pill. Mirrors CodePanel's footer
-  // play button, which mobile no longer renders.
-  const handleMobileTransportClick = useCallback(() => {
-    if (strudel.isPlaying) {
-      strudel.pause();
-    } else if (strudel.engineReady && strudel.code) {
-      void strudel.play();
-    }
-  }, [strudel]);
-  // Dimmed until there's something to play — but never while playing, or the
-  // pause action would become unreachable.
-  const mobileTransportDisabled = !strudel.isPlaying && (!strudel.engineReady || !strudel.code);
+  /* Leaving the code window puts the transport down. It is the only place on a
+     phone with a play key on it — the bottom bar carries the input and nothing
+     else — so a piece left sounding behind a closed window is a piece you can
+     no longer stop, which is the same reason walking off the studio's page
+     stops it on desktop. See `handlePrimaryNavSelect`. */
+  const closeCodeSheet = useCallback(() => {
+    setCodeSheetOpen(false);
+    strudel.stop();
+  }, [setCodeSheetOpen, strudel]);
+
+  /* The code window's export popover. Driven from here rather than from
+     CodePanel because the two controls it belongs with — download and share —
+     hang above the window on mobile rather than sitting on its control bar,
+     and a popover has to be owned by whatever opens it. Restoring the master
+     volume afterwards is the audio service's own job (it mirrors the current
+     value and re-applies it when the live context comes back), so nothing is
+     lost by not going through CodePanel's volume-aware wrapper. */
+  const mobileExport = useExportPopoverController(strudel.exportWav, strudel.resetExportState);
 
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   // Read once, before the auth session has had a chance to resolve: this is the
@@ -389,10 +437,6 @@ export default function App() {
   }, []);
 
   const closeWelcomeModal = useCallback(() => setWelcomeOpen(false), []);
-
-  const openSettings = useCallback(() => {
-    setApiKeyModalOpen(true);
-  }, []);
 
   // Seen means shown, not dismissed. Continuing with Google hands the page over
   // to the provider and returns through a reload, so a flag written on the way
@@ -420,6 +464,7 @@ export default function App() {
   const stopStudio = strudel.stop;
 
   const handlePrimaryNavSelect = useCallback((item: PrimaryNavItem) => {
+    if (isMobile) ++mobileNavigationRef.current;
     if (item === 'favorites' && !auth.user) {
       setAccountOpen(true);
       return;
@@ -434,7 +479,7 @@ export default function App() {
     if (item !== 'featured') stopFeaturedPreview();
     if (item !== 'home') stopStudio();
     setPrimaryNavItem(item);
-  }, [auth.user, stopFeaturedPreview, stopStudio]);
+  }, [auth.user, stopFeaturedPreview, stopStudio, isMobile]);
 
   useEffect(() => {
     // A sign-out or expired auth session must not leave the account-only page
@@ -465,7 +510,7 @@ export default function App() {
       if (cancelled) return;
       const importable = collectImportableGuestSessions(guestSessions, latestGuestSessionsRef.current);
       if (importable.length > 0) {
-        setGuestImportError('');
+        setGuestImportError(null);
         // The import starts automatically on the next effect. Put the blocking
         // state up in this commit so the old confirmation dialog never flashes
         // between discovering local history and beginning its cloud save.
@@ -483,6 +528,23 @@ export default function App() {
     return () => { cancelled = true; };
   }, [auth.user, auth.loading, auth.recoveringPassword, sessions.isLoading]);
 
+  /* What both "Later" and the second failure do: stop treating the remaining
+     guest sessions as something the app is blocked on.
+     
+     This does not lose anything. Every item that reaches this point already
+     wrote its way into the *account's* local session list — importSession
+     writes that row before it ever touches the cloud — so what remains
+     outstanding is only the cloud copy, and session-cloud-sync.ts is already
+     retrying that on its own ordinary schedule (see the 'retrying'/'offline'
+     status it set when the checkpoint first failed). The guest-side row is
+     also left alone rather than deleted, so the next sign-in re-offers
+     exactly what never made it up. */
+  const dismissGuestImportBlock = useCallback(() => {
+    setGuestImportSessions(null);
+    setGuestImportError(null);
+    setGuestImportGateUserId(auth.user?.id ?? null);
+  }, [auth.user?.id]);
+
   const importGuestHistory = useCallback(async () => {
     // The cloud save keeps the dialog up for as long as the request takes.
     // Guard on a ref set before the first await so an effect replay or a retry
@@ -491,25 +553,32 @@ export default function App() {
     guestImportRunningRef.current = true;
     setImportingGuestHistory(true);
     const items = guestImportSessions ?? [];
-    setGuestImportError('');
+    setGuestImportError(null);
     try {
       const result = await importGuestSessions(
         items,
         (item) => sessions.importSession(item, { activate: false, awaitCloud: true }),
         (id) => deleteSession(id, 'guest'),
       );
-      setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
       if (result.error) {
         console.warn('[account] failed to import guest sessions to cloud.', result.error);
-        setGuestImportError(t('accountActionFailed'));
+        guestImportFailureCountRef.current += 1;
+        if (guestImportFailureCountRef.current >= GUEST_IMPORT_MAX_PROMPTS) {
+          dismissGuestImportBlock();
+        } else {
+          setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
+          setGuestImportError(isOnline() ? 'rejected' : 'offline');
+        }
       } else {
+        guestImportFailureCountRef.current = 0;
+        setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
         setGuestImportGateUserId(auth.user?.id ?? null);
       }
     } finally {
       guestImportRunningRef.current = false;
       setImportingGuestHistory(false);
     }
-  }, [auth.user?.id, guestImportSessions, sessions]);
+  }, [auth.user?.id, dismissGuestImportBlock, guestImportSessions, sessions]);
 
   useEffect(() => {
     if (!guestImportSessions || guestImportError || guestImportRunningRef.current) return;
@@ -617,6 +686,7 @@ export default function App() {
   const visibleSuggestions = demoSuggestions;
 
   const accountLabel = auth.user?.email || (auth.user ? t('account') : t('signIn'));
+  const syncViewport = useVisualViewport(isMobile && Boolean(guestImportSessions));
 
   const accountOverlays = (
     <>
@@ -642,13 +712,19 @@ export default function App() {
       {guestImportSessions && (
         // The editor's bottom fade uses z-index 240/250, so this app-level
         // progress dialog must sit above those masks.
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
-          <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-dialog-overlay">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] px-4 backdrop-blur-[2px]"
+          style={isMobile ? { top: syncViewport?.top ?? 0, height: syncViewport?.height ?? '100dvh', bottom: 'auto' } : undefined}
+        >
+          <div className={`bg-bg-secondary border border-border rounded-2xl w-[420px] max-w-[90vw] shadow-dialog-overlay ${isMobile ? 'p-4' : 'p-6'}`}>
             <h2 className="text-lg font-semibold text-text-primary mb-2">
               {guestImportError ? t('syncLocalHistoryFailed') : t('syncingLocalHistory')}
             </h2>
             <p className="text-xs text-text-muted">
-              {guestImportError || t('syncingLocalHistoryDesc')}
+              {guestImportError === 'offline'
+                ? t('syncLocalHistoryOffline')
+                : guestImportError === 'rejected'
+                  ? t('syncLocalHistoryRejected')
+                  : t('syncingLocalHistoryDesc')}
             </p>
             {importingGuestHistory && !guestImportError && (
               <div
@@ -662,13 +738,24 @@ export default function App() {
                 />
               </div>
             )}
+            {/* Two ways out rather than one: a stuck retry used to be the only
+                door in the room. Later leaves quietly — see
+                dismissGuestImportBlock for why that loses nothing. */}
             {guestImportError && (
-              <button
-                onClick={() => void importGuestHistory()}
-                className="mt-5 w-full rounded-lg bg-accent py-2.5 text-sm text-on-accent transition-colors hover:bg-accent-light"
-              >
-                {t('retry')}
-              </button>
+              <div className="mt-5 flex gap-2">
+                <button
+                  onClick={dismissGuestImportBlock}
+                  className="flex-1 rounded-lg border border-border py-2.5 text-sm text-text-secondary transition-colors hover:text-text-primary hover:border-accent/50"
+                >
+                  {t('syncLocalHistoryLater')}
+                </button>
+                <button
+                  onClick={() => void importGuestHistory()}
+                  className="flex-1 rounded-lg bg-accent py-2.5 text-sm text-on-accent transition-colors hover:bg-accent-light"
+                >
+                  {t('retry')}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -679,6 +766,7 @@ export default function App() {
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
     if (!current) return;
+    if (isMobile) mobileCodeRestoreRef.current = { id: current.id, code: current.code };
     skipNextManualSyncSessionRef.current = current.id;
     strudel.setCode(current.code);
     strudel.stop();
@@ -689,6 +777,12 @@ export default function App() {
   const flushCloudSaves = sessions.flushCloudSaves;
   useEffect(() => {
     if (!current?.id || isLoading || isReplaying || isVideoMode) return;
+    // The REPL publishes code asynchronously. Until it acknowledges the
+    // incoming session, its previous value still belongs to the outgoing one.
+    if (isMobile && mobileCodeRestoreRef.current?.id === current.id) {
+      if (strudel.code !== mobileCodeRestoreRef.current.code) return;
+      mobileCodeRestoreRef.current = null;
+    }
     if (skipNextManualSyncSessionRef.current === current.id) {
       skipNextManualSyncSessionRef.current = null;
       return;
@@ -703,6 +797,7 @@ export default function App() {
     isVideoMode,
     setManualCode,
     strudel.code,
+    isMobile,
   ]);
 
   // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
@@ -877,14 +972,16 @@ export default function App() {
 
   const persistAndFlushOutgoingSession = useCallback(async (id: string, code: string) => {
     try {
-      await setManualCode(code, id);
+      const restoring = isMobile && mobileCodeRestoreRef.current?.id === id
+        ? mobileCodeRestoreRef.current : null;
+      await setManualCode(restoring?.code ?? code, id);
       await flushCloudSaves(id);
     } catch (error) {
       // Local persistence and the durable pending marker remain authoritative;
       // the coordinator will retry while the user continues navigating.
       console.warn('[sessions] outgoing session flush failed.', error);
     }
-  }, [flushCloudSaves, setManualCode]);
+  }, [flushCloudSaves, setManualCode, isMobile]);
 
   const handlePlay = useCallback(async () => {
     if (sessions.currentId) {
@@ -940,16 +1037,19 @@ export default function App() {
   }, [importSession, stopFeaturedPreview]);
 
   const handleNewSession = useCallback(async () => {
+    const navigation = ++mobileNavigationRef.current;
     if (sessions.currentId) {
-      await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      const save = persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      if (!isMobile) await save;
     }
+    if (isMobile && mobileNavigationRef.current !== navigation) return;
     strudel.stop();
     // The last turn's next-step chips belong to the conversation being left,
     // exactly as on a switch — a fresh session opens on its own placeholder.
     setCommitSuggestions(null);
     sessions.newSession();
     if (isDemoMode()) setDemoStep(0);
-  }, [strudel, sessions, persistAndFlushOutgoingSession]);
+  }, [strudel, sessions, persistAndFlushOutgoingSession, isMobile]);
 
   /* The notice delays release/delete writes long enough for Undo to remain a
      real cancellation while the session stays in its current collection. */
@@ -972,32 +1072,59 @@ export default function App() {
      behind it does, and at no other time. */
   const selectedAccountFavorite = useMemo(
     () => (selectedAccountFavoriteDetail && selectedAccountFavoriteSummary
-      ? sessionAsFavorite(selectedAccountFavoriteDetail, {
+      ? sessionAsFavorite(isMobile ? {
+        ...selectedAccountFavoriteDetail,
+        title: fullSessionTitle(selectedAccountFavoriteDetail.title, selectedAccountFavoriteDetail.messages),
+      } : selectedAccountFavoriteDetail, {
         favoritedAt: selectedAccountFavoriteSummary.favoritedAt,
       })
       : null),
-    [selectedAccountFavoriteDetail, selectedAccountFavoriteSummary],
+    [isMobile, selectedAccountFavoriteDetail, selectedAccountFavoriteSummary],
   );
   const selectedAccountFavoriteError = cloudDetailError
     && cloudDetailError.id === selectedAccountFavoriteSummary?.id
     ? cloudDetailError.error
     : null;
+  /* The selection outliving the row it points at — the entry was deleted, or
+     let go of — is cleared here so the page falls back to its own first row.
+
+     Written against the latest value rather than against the one this render
+     closed over, because the page below has already answered the same event by
+     the time this runs. A deletion re-renders both, and effects commit
+     child-first: Favorites sees its open entry gone, picks the next row and
+     asks for it through `onSelect`, and that queues the id of a row that is
+     very much in the list. Reading `selectedFavoriteId` from the render's
+     closure would then see the *deleted* id, still true of a value that no
+     longer exists, and null the new pick straight back out — leaving the page
+     open on a favorite nothing ever fetched, which is the spinner that never
+     resolves. The updater form asks the question of the id that is actually
+     set. */
   useEffect(() => {
-    if (
-      selectedFavoriteId
-      && !displayedFavoriteItems.some((summary) => summary.id === selectedFavoriteId)
-      && !cloudFavoriteItems.some((summary) => summary.id === selectedFavoriteId)
-      && !cloudDetails.has(selectedFavoriteId)
-    ) {
-      setSelectedFavoriteId(null);
-    }
-  }, [cloudDetails, cloudFavoriteItems, displayedFavoriteItems, selectedFavoriteId]);
-  const pendingFavoriteId = favoriteNotice?.kind === 'released' || favoriteNotice?.kind === 'deleted'
+    setSelectedFavoriteId((selected) => (
+      selected
+        && !displayedFavoriteItems.some((summary) => summary.id === selected)
+        && !cloudFavoriteItems.some((summary) => summary.id === selected)
+        && !cloudDetails.has(selected)
+        ? null
+        : selected
+    ));
+  }, [cloudDetails, cloudFavoriteItems, displayedFavoriteItems]);
+  /* The row a notice is holding back — out of the collection while the undo
+     behind the bar can still put it back. A settled notice holds nothing: its
+     move is already written, and the library's own list is already the truth
+     about where that conversation is. */
+  const pendingFavoriteId = !favoriteNotice?.settled
+    && (favoriteNotice?.kind === 'released' || favoriteNotice?.kind === 'deleted')
     ? favoriteNotice.favorite.id
     : null;
   const cloudFavoriteConversations = useMemo(
-    () => displayedFavoriteItems.filter((summary) => summary.id !== pendingFavoriteId),
-    [displayedFavoriteItems, pendingFavoriteId],
+    () => displayedFavoriteItems.filter((summary) => summary.id !== pendingFavoriteId).map((summary) => {
+      if (!isMobile) return summary;
+      const detail = cloudDetails.get(summary.id)?.session
+        ?? sessions.sessions.find((session) => session.id === summary.id);
+      return detail ? { ...summary, title: fullSessionTitle(summary.title, detail.messages) } : summary;
+    }),
+    [displayedFavoriteItems, pendingFavoriteId, isMobile, cloudDetails, sessions.sessions],
   );
 
   const reportSessionActionError = useCallback((error: unknown) => {
@@ -1010,15 +1137,27 @@ export default function App() {
     if (cloudErrorStatus(error) === 401) setAccountOpen(true);
     strudel.setError(t('favoriteActionFailed'));
   }, [strudel]);
+  /* On a phone a name is written from a list the reader has not left, so the
+     row is loaded without being opened: `openSession` would make it the
+     current conversation and drop the studio the reader is still in. */
+  const prepareForRename = useCallback(async (summary: SessionSummary) => {
+    if (!isMobile) return openCloudSession(summary);
+    if (sessions.sessions.some((session) => session.id === summary.id)) return undefined;
+    const detail = await readCloudSession(summary);
+    return sessions.acceptCloudDetail(detail, { activate: false });
+  }, [isMobile, openCloudSession, readCloudSession, sessions]);
   const { deleteSession: deleteSessionAction, renameSession: handleRenameSession } = useSessionActions({
     ownerId: auth.user?.id,
     sessions,
     library: cloudLibrary,
     onError: reportSessionActionError,
+    prepareForRename,
   });
 
   const commitPendingDelete = useCallback(async (notice: FavoriteNotice | null): Promise<boolean> => {
     if (notice?.kind !== 'released' && notice?.kind !== 'deleted') return false;
+    // Already written where it was asked for. See `settled`.
+    if (notice.settled) return false;
     if (!auth.user) return false;
     if (notice.kind === 'deleted') {
       // Deletion already removes the source session. Updating its favorite
@@ -1049,21 +1188,26 @@ export default function App() {
     session: Session | undefined,
     favorite: FavoriteConversation,
     summary?: FavoriteSummary,
-  ): void => {
+    settled = false,
+  ): number => {
     void commitPendingDelete(favoriteNotice);
+    const id = ++noticeSeqRef.current;
     setFavoriteNotice({
-      id: ++noticeSeqRef.current,
+      id,
       kind,
       session,
       favorite,
       summary,
+      settled,
     });
+    return id;
   }, [commitPendingDelete, favoriteNotice]);
 
   const handleFavoriteSession = useCallback(async (
     id: string,
     clickedItem?: Session | SessionSummary,
   ) => {
+    const navigation = mobileNavigationRef.current;
     if (!auth.user) {
       setAccountOpen(true);
       return;
@@ -1078,18 +1222,32 @@ export default function App() {
     const isCurrentSession = sessions.currentId === id;
     try {
       if (isCurrentSession) {
-        await setManualCode(strudel.code, id);
+        const restoring = isMobile && mobileCodeRestoreRef.current?.id === id
+          ? mobileCodeRestoreRef.current : null;
+        await setManualCode(restoring?.code ?? strudel.code, id);
         await flushCloudSaves(id);
       }
       const favoriteSummary = await favoriteCloudSession(summary);
       noticeFor('kept', undefined, favoriteNoticeFromSummary(favoriteSummary), favoriteSummary);
-      if (isCurrentSession) await handleNewSession();
+      /* Whenever the collection is next opened, it opens on this.
+       *
+       * The page remembers the entry it was last left on, which is right for
+       * coming back to a collection and wrong for coming back to one that has
+       * just grown: the thing that was kept a moment ago is the reason for the
+       * visit, and finding the page on the entry before it reads as the keeping
+       * not having taken. Saying so here covers every way in — the notice's
+       * 'view', the nav, the drawer — rather than only the one with a button on
+       * it. */
+      setFavoritesFocus({ id: favoriteSummary.id });
+      if (isCurrentSession && (!isMobile || (
+        currentIdRef.current === id && mobileNavigationRef.current === navigation
+      ))) await handleNewSession();
     } catch (error) {
       console.warn('[favorites] failed to favorite cloud session.', error);
       if (cloudErrorStatus(error) === 401) setAccountOpen(true);
       strudel.setError(t('favoriteActionFailed'));
     }
-  }, [auth.user, cloudHistoryItems, displayedHistoryItems, favoriteCloudSession, flushCloudSaves, handleNewSession, noticeFor, sessions.currentId, setManualCode, strudel]);
+  }, [auth.user, cloudHistoryItems, displayedHistoryItems, favoriteCloudSession, flushCloudSaves, handleNewSession, noticeFor, sessions.currentId, setManualCode, strudel, isMobile]);
 
   const handleUnfavorite = useCallback((conversation: FavoriteConversation) => {
     if (!auth.user) {
@@ -1106,6 +1264,43 @@ export default function App() {
       ?? sessions.sessions.find((candidate) => candidate.id === sourceId);
     noticeFor('released', session, conversation, summary);
   }, [auth.user, cloudDetails, cloudFavoriteItems, displayedFavoriteItems, noticeFor, sessions.sessions]);
+
+  /* The same act, for a layout that has already asked.
+   *
+   * The notice above is a report with an undo held open behind it: the release
+   * is not committed when the star is pressed but when the strip is dismissed,
+   * which is what makes "undo" mean anything. The mobile Favorites page puts
+   * the question first instead — a panel in the middle of the page that nothing
+   * happens without — so by the time this is called the answer is already in,
+   * and a strip offering to take it back would be asking twice.
+   *
+   * `unfavoriteSession` carries the whole move on its own: the row leaves the
+   * collection and arrives in the history at once, and goes back where it was
+   * if the request fails.
+   */
+  const handleReleaseFavorite = useCallback((conversation: FavoriteConversation) => {
+    if (!auth.user) {
+      setAccountOpen(true);
+      return;
+    }
+    const sourceId = conversation.sourceSessionId ?? conversation.sessionId ?? conversation.id;
+    const summary = cloudFavoriteItems.find((candidate) => candidate.id === sourceId)
+      ?? cloudFavoriteItems.find((candidate) => candidate.id === conversation.id);
+    if (!summary) return;
+    /* Said as the row leaves, not after the write lands. The question was
+       answered a moment ago and the collection has already changed under it;
+       a line that waited for the network would arrive after the reader had
+       moved on, and would be reporting a request rather than the move. */
+    const noticeId = noticeFor('released', undefined, conversation, summary, true);
+    void unfavoriteCloudSession(summary).catch((error) => {
+      console.warn('[favorites] failed to release favorite.', error);
+      if (cloudErrorStatus(error) === 401) setAccountOpen(true);
+      strudel.setError(t('favoriteActionFailed'));
+      /* The row goes back into the collection, so the line that said it had
+         left goes too — unless something else has since taken the bar. */
+      setFavoriteNotice((notice) => (notice?.id === noticeId ? null : notice));
+    });
+  }, [auth.user, cloudFavoriteItems, noticeFor, strudel, unfavoriteCloudSession]);
 
   const handleDeleteFavorite = useCallback((conversation: FavoriteConversation) => {
     if (!auth.user) {
@@ -1139,9 +1334,11 @@ export default function App() {
   }, [auth.user, favoriteNotice, strudel, unfavoriteCloudSession]);
 
   const handleSwitchSession = useCallback(async (id: string) => {
+    const navigation = ++mobileNavigationRef.current;
     if (sessions.currentId !== id) {
       if (sessions.currentId) {
-        await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+        const save = persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+        if (!isMobile) await save;
       }
     }
     setCommitSuggestions(null);
@@ -1166,7 +1363,15 @@ export default function App() {
       sessions.switchTo(id);
       const cloudIsAhead = summary !== undefined && summary.updatedAt > workingCopy.updatedAt;
       if (cloudIsAhead && !loadingSessions.has(id)) {
-        void openCloudSession(summary).catch((error) => {
+        // Revalidation may update this copy, but cannot activate an old row.
+        const revalidate = isMobile ? readCloudSession(summary).then(async (detail) => {
+          if (mobileNavigationRef.current !== navigation) return;
+          const accepted = await sessions.acceptCloudDetail(detail, { activate: false });
+          if (!accepted || mobileNavigationRef.current !== navigation) return;
+          mobileCodeRestoreRef.current = { id, code: accepted.code };
+          strudel.setCode(accepted.code);
+        }) : openCloudSession(summary);
+        void revalidate.catch((error) => {
           console.warn('[sessions] background session revalidation failed.', error);
           if (cloudErrorStatus(error) === 401) setAccountOpen(true);
         });
@@ -1178,7 +1383,15 @@ export default function App() {
     if (auth.user) {
       if (!summary) return;
       try {
-        await openCloudSession(summary);
+        if (isMobile) {
+          const detail = await readCloudSession(summary);
+          if (mobileNavigationRef.current !== navigation) return;
+          await sessions.acceptCloudDetail(detail, { activate: false });
+          if (mobileNavigationRef.current !== navigation) return;
+          sessions.switchTo(id);
+        } else {
+          await openCloudSession(summary);
+        }
       } catch (error) {
         console.warn('[sessions] failed to open cloud session.', error);
         if (cloudErrorStatus(error) === 401) setAccountOpen(true);
@@ -1196,12 +1409,22 @@ export default function App() {
     displayedHistoryItems,
     loadingSessions,
     openCloudSession,
+    readCloudSession,
+    isMobile,
     persistAndFlushOutgoingSession,
     sessions,
     strudel,
   ]);
 
-  const handleDeleteSession = deleteSessionAction;
+  /* The phone's lists are reached through a stack this can unwind under the
+     reader — a row deleted from the drawer must not leave a detail view open
+     on it — so the navigation this delete belongs to is noted before the
+     action runs. See mobileNavigationRef. */
+  const handleDeleteSession = useCallback((id: string) => {
+    if (isMobile) ++mobileNavigationRef.current;
+    deleteSessionAction(id);
+  }, [deleteSessionAction, isMobile]);
+
 
   const handleOpenFavoriteInStudio = useCallback((code: string) => {
     if (!auth.user) {
@@ -1321,8 +1544,161 @@ export default function App() {
     }
   }, [auth.user, commitPendingDelete, favoriteNotice, handlePrimaryNavSelect, handleSwitchSession, sessions, strudel]);
 
+  /* Wired once and hung in whichever shell is up. It is the same page on
+     both — it works out for itself what a phone does with a gallery — and
+     two copies of this many props would be two places to keep in step. */
+  /* Which of the mobile shell's pages is up. Desktop reads `primaryNavItem`
+     directly; these are the same question asked once, where the mobile tree
+     asks it of every part of itself. */
+  const onFavoritesPage = primaryNavItem === 'favorites';
+  const onFeaturedPage = primaryNavItem === 'featured';
+  /* The studio stands behind both gallery pages rather than in place of
+     either: it holds the editor the audio engine is bound to. */
+  const onStudioPage = !onFavoritesPage && !onFeaturedPage;
+  /* Which conversation the history list draws as open — a question about the
+     page in front of the reader, not about which session is loaded.
+     `sessions.currentId` is the second of those and stays set while a gallery is
+     up, because the studio behind it is still holding that conversation and
+     anything still generating still belongs to it. So the highlight asks the
+     narrower question, and asks it by naming the studio rather than by ruling
+     out the pages that are not it: a page added later would arrive inside
+     `onStudioPage` and inherit a highlight that is not about it. */
+  const historyHighlightId = primaryNavItem === 'home' ? sessions.currentId : null;
+  /* The system's own chrome follows the same question — see
+     useBrowserChromeColor. Featured stands on its own ground; every other
+     page (including the two full-width mobile pages folded into onStudioPage's
+     opposite) shares the studio's. Two more things ride along on top of that
+     base answer rather than needing a bucket of their own: a record open on
+     Featured tints it with that record's own colour, and the code window's
+     scrim — which as a `fixed inset-0` backdrop can only ever reach the
+     document — is mixed in by hand so the phone's own notch and toolbar strips
+     go dark with the rest of the page instead of staying lit. */
+  const browserChromeOverlay = guestImportSessions || (welcomeOpen && !auth.oauthErrorKey && !auth.user) || accountOpen || auth.oauthErrorKey
+    ? 'auth'
+    : codeSheetOpen || favoritesCodeOpen
+      ? 'code'
+      : null;
+  useBrowserChromeColor(onFeaturedPage ? 'featured' : 'studio', {
+    tint: onFeaturedPage ? featuredAccent : null,
+    overlay: browserChromeOverlay,
+  });
+
+  /* Wired once and hung in whichever shell is up, the same as the collection
+     below it: it is one page that works out for itself what a phone does with
+     a shelf. */
+  const featuredPage = (
+    <FeaturedPage
+      pieces={FEATURED_PIECES}
+      currentPiece={featuredPiece}
+      playingId={featuredPreview.playingId}
+      pausedId={featuredPreview.pausedId}
+      engineReady={strudel.engineReady}
+      opening={openingFeatured}
+      /* Hidden rather than unmounted when you leave, so the page has to be
+         told when it is the one being looked at. On a phone the shelf leans
+         with the device, and a page behind another page has no business
+         answering the device. */
+      active={onFeaturedPage}
+      onPlay={handleFeaturedPlay}
+      onSelect={handleFeaturedSelect}
+      onStop={featuredPreview.stop}
+      onPause={featuredPreview.pause}
+      onOpenInStudio={(piece) => void handleOpenFeaturedInStudio(piece)}
+      onOpenChange={setOpenFeaturedPiece}
+      /* Mobile only: on a phone this page draws its own top bar, and the key
+         in it that reaches the rest of the app opens the shell's drawer. */
+      onOpenNav={() => setNavDrawerOpen(true)}
+    />
+  );
+
+  const favoritesPage = (
+    <FavoritesPage
+      // Hidden rather than unmounted when you leave, so the page has
+      // to be told when it is the one being looked at.
+      active={primaryNavItem === 'favorites'}
+      conversations={undefined}
+      summaries={auth.user ? cloudFavoriteConversations : undefined}
+      searchQuery={auth.user ? favoritesSearch.query : undefined}
+      onSearchQueryChange={auth.user ? favoritesSearch.setQuery : undefined}
+      selectedId={auth.user ? selectedFavoriteId : undefined}
+      detail={auth.user ? selectedAccountFavorite : undefined}
+      focus={favoritesFocus}
+      /* Both are the empty page's business only, the way the history
+         panel's are. Rows on screen — last visit's or this one's — are
+         the page; a request still out behind them is not a spinner,
+         and one that failed behind them is not an apology in place of
+         what the device already has. Saying otherwise would also hold
+         the first entry shut, since a page that is loading or broken
+         has nothing to open. */
+      isLoading={Boolean(
+        auth.user
+        && cloudFavoriteConversations.length === 0
+        && (!cloudLibraryEnabled || displayedFavoriteCollection.initialStatus === 'loading'),
+      )}
+      error={auth.user && cloudFavoriteConversations.length === 0
+        ? displayedFavoriteCollection.initialError
+        : null}
+      onRetry={auth.user ? displayedFavoriteCollection.retryInitial : undefined}
+      detailLoading={Boolean(auth.user && selectedAccountFavoriteSummary && !selectedAccountFavorite && !selectedAccountFavoriteError)}
+      detailError={auth.user ? selectedAccountFavoriteError : null}
+      onRetryDetail={auth.user ? retrySelectedFavorite : undefined}
+      hasMore={auth.user ? displayedFavoriteCollection.nextCursor !== null : false}
+      isLoadingMore={Boolean(auth.user && displayedFavoriteCollection.moreStatus === 'loading')}
+      loadMoreError={auth.user ? displayedFavoriteCollection.moreError : null}
+      onLoadMore={auth.user
+        ? (favoritesSearch.active ? favoritesSearch.loadMore : loadMoreCloudFavorites)
+        : undefined}
+      onRetryLoadMore={auth.user ? displayedFavoriteCollection.retryMore : undefined}
+      /* Withheld until the library can actually answer: the page opens
+         its first entry the moment one is on screen, and an open that
+         throws because the library is still coming up is an open the
+         page counts as done. Handing it down when the library is ready
+         is what asks for that first entry again. */
+      onSelect={auth.user && cloudLibraryEnabled ? handleSelectFavorite : undefined}
+      isPlaying={strudel.isPlaying}
+      playingCode={strudel.code}
+      onPlayCode={auth.user ? (code) => { void strudel.play(code); } : undefined}
+      onStopCode={auth.user ? strudel.stop : undefined}
+      /* The phone asks before it acts and so has nothing left to report;
+         the desktop reports and holds the undo open. Two handlers, one
+         act — see handleReleaseFavorite. */
+      onUnfavorite={auth.user ? (isMobile ? handleReleaseFavorite : handleUnfavorite) : undefined}
+      onDelete={auth.user ? handleDeleteFavorite : undefined}
+      onOpenInStudio={auth.user ? handleOpenFavoriteInStudio : undefined}
+      /* Mobile only: on a phone this page draws its own top bar, and the key
+         in it that reaches the rest of the app opens the shell's drawer. */
+      onOpenNav={() => setNavDrawerOpen(true)}
+      onCodeWindowChange={setFavoritesCodeOpen}
+    />
+  );
+
+  /* Whether there is anything in the editor to play.
+   *
+   * The phone keeps the code out of sight behind one key in the corner, which
+   * leaves that key saying only that a window exists — the same mark whether
+   * there is a piece behind it or an empty buffer. So it takes the accent
+   * while there is something to open, the way the star does on a kept
+   * conversation: not a state to be changed, a fact about what is in there.
+   *
+   * Read off the buffer alone rather than off the engine as well. The
+   * transport's own disabled state is the right place for "cannot play yet" —
+   * an engine coming up is a second or two at the start of a session, and a
+   * key that greyed out for it would report on the audio stack rather than on
+   * the work.
+   */
+  const hasPlayableCode = strudel.code.trim().length > 0;
+
   const responsiveLayout = isMobile ? (
-      <div className="flex flex-col bg-bg-primary overflow-hidden" style={{ height: '100%', width: '100%' }}>
+      /* The page stands on the conversation surface rather than on the page
+         ground the desktop shell uses. On desktop that ground is what the
+         raised panels — conversation column, composer, nav — are seen against,
+         and every one of them sits a step above it. Mobile has no such
+         arrangement: the stream is the page, so the page has to be the colour
+         the stream would have been given, or the composer (which carries the
+         same `.chat-input-surface` as desktop's, at the same #0D0D0D) reads as
+         a lighter slab laid on a darker page instead of as part of the
+         reading. */
+      <div className="flex flex-col bg-conversation-surface overflow-hidden" style={{ height: '100%', width: '100%' }}>
         {apiKeyModalOpen && (
           <ApiKeyModal
             onClose={closeApiKeyModal}
@@ -1331,108 +1707,269 @@ export default function App() {
           />
         )}
 
-        {/* ── Top Nav ── */}
-        <div
-          className="relative flex items-center justify-between px-2 shrink-0"
-          style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '12px' }}
-        >
-          <div className="flex items-center">
+        {/* ── Studio ── */}
+        {/* Hidden rather than unmounted when another page is up. The window
+            below holds the editor the audio engine is bound to, so a shell
+            that swapped its pages out would stop the music every time you
+            went to look at something. `display: contents` while it is up, so
+            wrapping the three parts of the studio does not change how the
+            column lays them out. */}
+        <div className={onStudioPage ? 'contents' : 'hidden'}>
+          {/* ── Top Nav ── */}
+          {/* Two doors and the mark between them: the navigation drawer on the
+              left, the code window on the right. Everything either of them used
+              to be — a new-session key, a history dropdown, an overflow menu of
+              settings and links — now lives inside whichever one it belongs to,
+              so the bar itself holds nothing that has to be read. */}
+          <div
+            className="relative flex items-center justify-between px-2 shrink-0"
+            style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '12px' }}
+          >
             <button
-              onClick={handleNewSession}
-              className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-              aria-label={t('newSession')}
-              title={t('newSession')}
+              onClick={() => setNavDrawerOpen(true)}
+              className="w-9 h-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              aria-label={t('navMore')}
+              aria-expanded={navDrawerOpen}
+              aria-haspopup="dialog"
+              title={t('navMore')}
             >
-              <PlusIcon size={18} />
+              <EllipsisIcon size={20} />
             </button>
+            {/* A step above the keys either side rather than level with them.
+                Set at the glyphs' own 20px the wordmark read as a third control
+                in the row instead of as the name of the thing the row belongs
+                to; carrying it to 24 gives it the head's weight while staying
+                well short of the banner a much larger mark would make of it. */}
+            <h1 className="text-[24px] absolute left-1/2 -translate-x-1/2" style={{
+              background: 'linear-gradient(to bottom, var(--color-logo-top), var(--color-logo-bottom))',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}>
+              <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
+              <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
+            </h1>
             <button
-              onClick={() => setHistoryOpen(true)}
-              className="w-8 h-8 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-              aria-label={t('sessionHistory')}
-              title={t('sessionHistory')}
+              onClick={() => setCodeSheetOpen(true)}
+              data-testid="mobile-code-key"
+              data-has-code={hasPlayableCode || undefined}
+              className={`w-9 h-9 flex items-center justify-center transition-colors ${
+                hasPlayableCode
+                  ? 'text-brand-accent'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+              aria-label={t('expandCode')}
+              aria-expanded={codeSheetOpen}
+              aria-haspopup="dialog"
+              title={t('expandCode')}
             >
-              <HistoryIcon size={18} />
+              <SquareTerminalIcon size={20} />
             </button>
           </div>
-          <h1 className="text-[24px] absolute left-1/2 -translate-x-1/2" style={{
-            background: 'linear-gradient(to bottom, var(--color-logo-top), var(--color-logo-bottom))',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}>
-            <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
-            <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
-          </h1>
-          <TopActionBar
-            onOpenSettings={openSettings}
-            onOpenAccount={() => setAccountOpen(true)}
-            accountLabel={accountLabel}
-            session={sessions.currentSession}
-            code={strudel.code}
-            messages={messages}
-            engineReady={strudel.engineReady}
-            hasCode={!!strudel.code}
-            exportState={strudel.exportState}
-            onExport={strudel.exportWav}
-            onGenerateTitle={generateSongTitle}
-            onResetExportState={strudel.resetExportState}
-            bpm={currentBpm}
-          />
+
+          {/* ── Conversation ── */}
+          {/* mb-3 keeps the stream from clipping flush against the rule below —
+              this is where messages get cut off as they scroll, so butting it
+              straight up to the line read as cramped. */}
+          {/* Nothing to re-declare here any more. Everything that paints over the
+              stream — the end fades, the sticky reasoning header's band — fades
+              out to `--color-conversation-surface`, and on this layout the page
+              underneath is that colour, so those bands land on their own ground
+              without being told to. */}
+          <div className="flex-1 min-h-0 overflow-hidden mb-5">
+            <ConversationView
+              key={sessions.currentId ?? 'default'}
+              messages={messages}
+              revisions={sessions.currentSession?.revisions}
+              isLoading={isLoading}
+              onRollback={handleRollback}
+              onBranch={sessions.branchFromMessage}
+              onRetry={handleRetry}
+              /* The phone only. Its code window is shut behind a key in the
+                 corner, so the widget under a reply is the nearest thing the
+                 reading has to a transport — the same key the Favorites
+                 reading carries, doing the same job. The desktop's stream
+                 (rendered from Sidebar) hands none of this down: the window is
+                 already open beside it. */
+              isPlaying={strudel.isPlaying}
+              /* What is sounding, not what is in the buffer. The studio's
+                 window is editable while a take plays, so the two part company
+                 the moment anything is typed in it — and a widget that
+                 answered to the buffer would offer to stop a take the reader
+                 has already edited away from. */
+              playingCode={strudel.activeCode}
+              onPlayCode={(code) => { void strudel.play(code); }}
+              onStopCode={strudel.stop}
+            />
+          </div>
+
+          {/* ── Bottom Bar ── */}
+          {/* The input and nothing else. Playing, editing and exporting all
+              belong to the code window now, and a transport left down here would
+              be a second place to press play with no code in sight. */}
+          <div
+            className="relative shrink-0 px-3 pt-3"
+            style={{
+              paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+              transform: shouldLiftBottomBar ? `translateY(-${keyboardHeight}px)` : undefined,
+              transition: 'transform 0.3s ease-out',
+            }}
+          >
+            {/* No rule between the reading and the field. It was drawn for the
+                row of controls that used to straddle it; with those gone the
+                field's own outline is the only edge the eye needs, and a second
+                line above it just cuts the page in two. */}
+            {/* Suggestions ride inside the field as the animated placeholder,
+                same as desktop — mobile adopts one by focusing the field rather
+                than with Tab, so no separate chip row. */}
+            <ChatInput
+              isLoading={isLoading}
+              engineReady={strudel.engineReady}
+              engineStatus={strudel.engineStatus}
+              onSendText={handleChatInstruction}
+              onStop={handleStop}
+              onReinitEngine={strudel.reinit}
+              prefill={rollbackPrefill}
+              focusTrigger={inputFocusTrigger}
+              onFocusChange={handleChatFocusChange}
+              inputMode={current?.inputMode ?? 'normal'}
+              suggestions={isVideoMode ? [] : visibleSuggestions}
+              isVideoMode={isVideoMode}
+            />
+          </div>
         </div>
 
-        {/* ── Conversation ── */}
-        {/* mb-3 keeps the stream from clipping flush against the rule below —
-            this is where messages get cut off as they scroll, so butting it
-            straight up to the line read as cramped. */}
-        {/* The stream's own surface, re-declared to the page's. On desktop the
-            conversation is cut into a flat panel and everything that has to
-            paint over it — the end fades, the sticky reasoning header's band —
-            fades out to `--color-conversation-surface`, which is that panel's
-            fill. Here there is no panel: the stream stands directly on the
-            page, so the same token has to name the page's own ground or those
-            bands are a slab of the wrong colour laid across the ends of the
-            reading. Scoped by re-declaring the token on the wrapper, the way
-            the code bar and the rollback key do, so the studio's panel keeps
-            its fill everywhere else. */}
-        <div
-          className="flex-1 min-h-0 overflow-hidden mb-5"
-          style={{ ['--color-conversation-surface' as string]: 'var(--color-bg-primary)' }}
-        >
-          <ConversationView
-            key={sessions.currentId ?? 'default'}
-            messages={messages}
-            revisions={sessions.currentSession?.revisions}
-            isLoading={isLoading}
-            onRollback={handleRollback}
-            onBranch={sessions.branchFromMessage}
-            onRetry={handleRetry}
-          />
+        {/* ── Favorites ── */}
+        {/* The gallery page, folded down to a phone by the page itself. It
+            stands beside the studio rather than in place of it, for the same
+            reason the studio stays mounted: what is playing goes on playing
+            while you read what you have kept. */}
+        <div className={onFavoritesPage ? 'flex min-h-0 flex-1' : 'hidden'}>
+          {favoritesPage}
         </div>
 
-        {/* ── Code Drawer ── */}
-        {/* No border of its own: CodePanel already draws a full border, and a
-            border-t here would survive the 0-height collapsed state as a stray
-            line 6px below the rule. */}
+        {/* ── Featured ── */}
+        {/* The shelf, folded down to a phone by the page itself. It stands
+            beside the studio for the same reason the collection does: what is
+            playing goes on playing while you go and look at something. */}
+        <div className={onFeaturedPage ? 'flex min-h-0 flex-1' : 'hidden'}>
+          {featuredPage}
+        </div>
+
+        {/* ── Code Window ── */}
+        {/* Never unmounted, only hidden. The audio engine is bound to the
+            editor this panel mounts, so tearing it down with the window would
+            take the running piece with it — and keeping it laid out at full
+            size means CodeMirror has nothing to re-measure when the window
+            comes back. `inert` is what a hidden-but-laid-out panel needs so it
+            stays out of the tab order while it is not on screen.
+
+            The keyboard does not move it. It used to give the bottom of the
+            screen up and shrink, which is the one thing the window cannot
+            afford to do: the editor is the reason the window is open, and
+            handing half the screen to the keyboard left it a handful of rows
+            deep with the animation below still holding its share. The keyboard
+            now covers the foot of the window instead of resizing it — the
+            editor scrolls the caret into view inside its own scroller, the way
+            it does on every other platform, and nothing above the caret moves. */}
         <div
-          className="shrink-0 overflow-hidden"
+          data-testid="mobile-code-sheet"
+          className="fixed inset-0 z-50 flex items-center justify-center px-3 pt-14 pb-4"
           style={{
-            height: mobileDrawerHeight,
-            // Lands CodePanel's bottom border exactly on the rule the bottom bar
-            // draws at -6px, so the two are the same row of pixels and read as
-            // one line. The border sits in the last 1px *inside* the drawer's
-            // box, so the box has to stop at -5, not -6.
-            //
-            // Constant, never animated: while this transitioned alongside height
-            // the border travelled from 0 to its resting place and showed as a
-            // second line for the length of the animation. Only height moves now,
-            // so the border stays pinned to the rule throughout. The conversation
-            // above is flex-1, so it gives up the 5px and the bar doesn't move.
-            marginBottom: 5,
-            transition: 'height 0.3s cubic-bezier(0.4,0,0.2,1)',
+            visibility: codeSheetOpen ? 'visible' : 'hidden',
+            transition: codeSheetOpen ? undefined : 'visibility 0s linear 240ms',
           }}
+          inert={!codeSheetOpen}
         >
-          <div className="h-full flex flex-col">
-            <div className="flex-1 min-h-0">
+          <div
+            className="code-window-scrim absolute inset-0 backdrop-blur-[6px] transition-opacity duration-[240ms] ease-out motion-reduce:transition-none"
+            style={{ opacity: codeSheetOpen ? 1 : 0 }}
+            onClick={closeCodeSheet}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('expandCode')}
+            className="relative z-10 flex w-full max-w-[520px] flex-col transition-[opacity,transform] duration-[240ms] ease-out motion-reduce:transition-none"
+            // Height taken from the room this overlay actually has rather than
+            // from the viewport. The overlay's own top padding is what the row
+            // of actions hangs in: it is placed above the window, so the window
+            // may not be centred in ground the row would have to leave.
+            //
+            // Taller than it was, because it now holds two panes: the editor
+            // gives up a third of itself to the animation, and taking that out
+            // of the old height would have left the code with barely a screen.
+            style={{
+              height: '88%',
+              maxHeight: 700,
+              opacity: codeSheetOpen ? 1 : 0,
+              transform: codeSheetOpen ? 'scale(1)' : 'scale(0.97)',
+            }}
+          >
+            {/* Hung above the window rather than set on its control bar. Both
+                act on the finished piece rather than on the transport, the bar
+                is a phone's width and already holds a timeline, and up here
+                they stand on the backdrop — so they are bare glyphs with no
+                surface of their own, the way a caption is not a button. The
+                way out of the window is the backdrop itself.
+
+                What the window can do goes left, the way out goes right. The
+                two are different kinds of act — one works on the piece, the
+                other leaves — and putting them at opposite ends means a thumb
+                reaching for one is nowhere near the other. */}
+            <div className="absolute -top-11 left-0 right-0 flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => mobileExport.setExportOpen((open) => !open)}
+                  disabled={!strudel.engineReady || !strudel.code.trim() || strudel.exportState.status === 'exporting'}
+                  className="code-window-action flex h-9 w-9 items-center justify-center"
+                  aria-label={t('download')}
+                  aria-expanded={mobileExport.exportOpen}
+                  title={t('download')}
+                >
+                  <DownloadIcon size={19} />
+                </button>
+                <ShareButton
+                  session={sessions.currentSession}
+                  code={strudel.code}
+                  messages={messages}
+                  disabled={!sessions.currentSession || strudel.exportState.status === 'exporting'}
+                  variant="icon"
+                  wrapperClassName="relative flex h-9 w-9 items-center justify-center"
+                  buttonClassName="code-window-action flex h-9 w-9 items-center justify-center"
+                />
+              </div>
+              {/* The backdrop still closes the window; this is the same act
+                  given a target, for a reach that does not want to find the
+                  one strip of page the window is not covering. */}
+              <button
+                type="button"
+                onClick={closeCodeSheet}
+                className="code-window-action flex h-9 w-9 items-center justify-center"
+                aria-label={t('close')}
+                title={t('close')}
+              >
+                <XIcon size={19} />
+              </button>
+            </div>
+            <ExportPopover
+              open={mobileExport.exportOpen}
+              onClose={() => mobileExport.setExportOpen(false)}
+              exportState={strudel.exportState}
+              onResetState={strudel.resetExportState}
+              onExport={mobileExport.handleExport}
+              code={strudel.code}
+              sessionTitle={sessions.currentSession?.title}
+              messages={messages}
+              onGenerateTitle={generateSongTitle}
+              bpm={currentBpm}
+            />
+            {/* Takes whatever the animation below leaves. `min-h-0` because the
+                panel's own scroller is inside it: without it the editor's
+                content sets the flex base and pushes the animation off the
+                bottom of the window instead of yielding to it. */}
+            <div className="min-h-0 flex-1">
               <CodePanel
                 code={strudel.code}
                 error={strudel.error}
@@ -1454,129 +1991,113 @@ export default function App() {
                 activeCode={strudel.activeCode}
                 onUpdate={() => { void handleUpdate(); }}
                 onEditorFocusChange={handleCodeFocusChange}
+                vizEnabled={studioAnimationVisible}
+                vizCollapsed={vizCollapsed}
+                onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
                 showSyncStatus={showSessionSyncStatus}
               />
             </div>
-          </div>
-        </div>
 
-        {/* ── Bottom Bar ── */}
-        <div
-          className="relative shrink-0 px-3 pt-3"
-          style={{
-            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-            transform: shouldLiftBottomBar ? `translateY(-${keyboardHeight}px)` : undefined,
-            transition: 'transform 0.3s ease-out',
-          }}
-        >
-          {/* The rule the row below straddles, drawn 6px above this bar rather
-              than as its border-t so it lands on the row's centre line in both
-              drawer states. Kept inside the bar so it still rides along when the
-              keyboard lifts it; a sibling of the drawer would stay behind. */}
-          <div className="absolute -top-1.5 left-0 right-0 border-t border-border" />
+            {/* The studio's animation pane, under the code the way it is on
+                desktop, and now at desktop's own share of the box rather than
+                the third it was cut to. The third was taken back for the
+                editor's rows, and on a phone that trade does not pay: a pane
+                that short renders the field at a scale where the galaxy reads
+                as texture instead of as a galaxy, and the rows it bought were
+                being handed to the keyboard anyway (which no longer takes
+                them — see the window above).
+                Parted by more than the desktop's 6px seam: that gap is sized to
+                be grabbed, and there is no split to drag here — what it has to
+                do instead is keep two borderless panes from reading as one.
 
-          {/* Transport and code pill both ride the rule above, positioned
-              independently: the transport flush left, the pill centred in the
-              bar. Both are 28px tall so they straddle the rule and hide the
-              stretch behind them with their own background. The transport lives
-              here rather than in CodePanel's footer so it stays reachable
-              whether or not the code drawer is open.
+                Mounted only while the window is up. On desktop it stays alive
+                through a collapse because remounting hands back a different
+                galaxy; here the window is shut most of the time, and an unseen
+                iframe still running its frames is a phone's battery spent on
+                something nobody is looking at. `visibility: hidden` does not
+                stop that — only not being there does.
 
-              Only the pill is centred; the transport hangs off its left edge via
-              right-full rather than an offset of its own, so the 20px gap holds
-              when the label swaps between 查看代码 / 收起代码 and changes width. */}
-          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 -translate-y-1/2 h-7">
-            <button
-              onClick={handleMobileTransportClick}
-              disabled={mobileTransportDisabled}
-              // Dimmed by darkening the glyph itself, not by opacity: the icons
-              // fill from currentColor, so only the triangle/square goes down in
-              // brightness while the ring and background stay put.
-              className={`absolute right-full top-0 mr-3 flex w-7 h-7 items-center justify-center rounded-full border border-border bg-bg-primary disabled:cursor-not-allowed ${
-                mobileTransportDisabled ? 'text-text-muted' : 'text-action-fill'
-              }`}
-              aria-label={strudel.isPlaying ? t('pause') : t('play')}
-              title={strudel.isPlaying ? t('pause') : t('play')}
-            >
-              {strudel.isPlaying ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
-            </button>
-            <button
-              onClick={() => setDrawerOpen((v) => !v)}
-              className="flex h-7 items-center rounded-full border border-border bg-bg-primary px-4 text-[12px] text-text-secondary hover:text-text-primary transition-colors"
-            >
-              {drawerOpen ? t('collapseCode') : t('viewCode')}
-            </button>
-          </div>
-
-          {/* Input. Suggestions ride inside it as the animated placeholder, same
-              as desktop — mobile adopts one by focusing the field rather than
-              with Tab, so no separate chip row. */}
-          <div className="mt-3">
-            <ChatInput
-              isLoading={isLoading}
-              engineReady={strudel.engineReady}
-              engineStatus={strudel.engineStatus}
-              onSendText={handleChatInstruction}
-              onStop={handleStop}
-              onReinitEngine={strudel.reinit}
-              prefill={rollbackPrefill}
-              focusTrigger={inputFocusTrigger}
-              onFocusChange={handleChatFocusChange}
-              inputMode={current?.inputMode ?? 'normal'}
-              suggestions={isVideoMode ? [] : visibleSuggestions}
-              isVideoMode={isVideoMode}
-            />
-          </div>
-        </div>
-
-        {/* ── History Dropdown ── */}
-        {historyOpen && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setHistoryOpen(false)} />
-            <div
-              className="mobile-dropdown-panel fixed z-40 rounded-region overflow-hidden flex flex-col shadow-lg"
-              style={{
-                top: 'calc(max(12px, env(safe-area-inset-top)) + 44px)',
-                left: '12px',
-                width: '200px',
-                maxHeight: '40dvh',
-                // The history search bar sticks to the top of this dropdown,
-                // so it has to be drawn on the dropdown's own ground.
-                ['--history-search-bg' as string]: 'var(--color-bg-primary)',
-              }}
-            >
-              <div className="flex-1 overflow-y-auto min-h-0">
-                <HistoryPanel
-                  sessions={historyItems}
-                  currentId={sessions.currentId}
-                  isLoading={historyInitialLoading}
-                  initialError={historyInitialError}
-                  onRetryInitial={auth.user ? retryDisplayedHistory : undefined}
-                  onSwitch={(id) => { handleSwitchSession(id); setHistoryOpen(false); }}
-                  onDelete={handleDeleteSession}
-                  onRename={(id, title) => { void handleRenameSession(id, title); }}
-                  onLoadMore={auth.user ? loadMoreDisplayedHistory : undefined}
-                  hasMore={historyHasMore}
-                  isLoadingMore={historyLoadingMore}
-                  loadMoreError={historyLoadMoreError}
-                  onRetryLoadMore={auth.user ? retryMoreDisplayedHistory : undefined}
-                  searchQuery={auth.user ? historySearch.query : undefined}
-                  onSearchQueryChange={auth.user ? historySearch.setQuery : undefined}
-                  loadingSessions={loadingSessions}
-                  unreadSessions={unreadSessions}
-                />
+                Collapsing is the other case, and it is desktop's: the bar's
+                right-hand key slides this shut and gives the height to the
+                editor, on the same curve and over the same 320ms the desktop
+                pane travels. The frame stays mounted through it, so the galaxy
+                that comes back is the one that went away — and it costs nothing
+                to keep, because a pane clipped to zero height leaves the
+                document inside it zero pixels tall, which is the case
+                galaxy-ascii.html idles on. The margin travels with the height:
+                it is the gap that keeps two borderless panes from reading as
+                one, and a gap left standing under a shut pane is a step in the
+                window's own floor. */}
+            {studioAnimationVisible && codeSheetOpen && (
+              <div
+                data-testid="mobile-viz-pane"
+                data-collapsed={vizCollapsed || undefined}
+                className="min-h-0 shrink-0 overflow-hidden transition-[height,margin-top] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
+                style={{ height: vizCollapsed ? 0 : '40%', marginTop: vizCollapsed ? 0 : 12 }}
+              >
+                <VizPlaceholder isPlaying={strudel.isPlaying} bordered={false} compact />
               </div>
-            </div>
-          </>
-        )}
+            )}
+          </div>
+        </div>
+
+        {/* ── Navigation Drawer ── */}
+        <MobileNavDrawer
+          open={navDrawerOpen}
+          onClose={() => setNavDrawerOpen(false)}
+          accountLabel={accountLabel}
+          accountInitials={accountInitials(auth.user)}
+          /* Both of these are studio acts reached from a drawer that opens on
+             either page, so each carries the shell back to the studio with it —
+             a new conversation started from the collection is one you would
+             otherwise have to find your own way to. */
+          onNewSession={() => { handlePrimaryNavSelect('home'); handleNewSession(); }}
+          onOpenAccount={() => setAccountOpen(true)}
+          current={onFavoritesPage ? 'favorites' : onFeaturedPage ? 'featured' : 'home'}
+          onOpenFavorites={() => handlePrimaryNavSelect('favorites')}
+          /* The shelf's sleeves lean with the device, and on iOS the readings
+             have to be asked for from inside a real gesture. This press is that
+             gesture — the row that opens the page — and the ask is started
+             *before* the page opens and without being waited on: the spec ties
+             the request to a transient user activation, so anything awaited first
+             spends it, and a reader who walks in and only turns the phone never
+             produces another gesture to ask from. Nothing here depends on the
+             answer; without readings the sleeves stand square. */
+          onOpenFeatured={() => {
+            void requestDeviceTilt();
+            handlePrimaryNavSelect('featured');
+          }}
+          history={{
+            sessions: historyItems,
+            currentId: historyHighlightId,
+            isLoading: historyInitialLoading,
+            initialError: historyInitialError,
+            onRetryInitial: auth.user ? retryDisplayedHistory : undefined,
+            onSwitch: (id) => { handlePrimaryNavSelect('home'); void handleSwitchSession(id); },
+            onDelete: handleDeleteSession,
+            onRename: (id, title) => { void handleRenameSession(id, title); },
+            onFavorite: (id, clicked) => { void handleFavoriteSession(id, clicked); },
+            /* The same pair the desktop column gets: the drawer's field asks
+               the account rather than the page of it this device has loaded. */
+            searchQuery: auth.user ? historySearch.query : undefined,
+            onSearchQueryChange: auth.user ? historySearch.setQuery : undefined,
+            onLoadMore: auth.user ? loadMoreDisplayedHistory : undefined,
+            hasMore: historyHasMore,
+            isLoadingMore: historyLoadingMore,
+            loadMoreError: historyLoadMoreError,
+            onRetryLoadMore: auth.user ? retryMoreDisplayedHistory : undefined,
+            loadingSessions,
+            unreadSessions,
+          }}
+        />
         {importStatus === 'loading' && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80">
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-conversation-surface/80">
             <span className="text-text-secondary text-sm">{t('loadingShare')}</span>
           </div>
         )}
         {importStatus === 'error' && !importErrorDismissed && (
-          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-bg-primary/90">
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-conversation-surface/90">
             <span className="text-red-400 text-sm">{t('shareLoadFailed')}</span>
             <div className="flex gap-3">
               <button
@@ -1669,6 +2190,10 @@ export default function App() {
               onRollback={handleRollback}
               onBranch={sessions.branchFromMessage}
               onRetry={handleRetry}
+              isPlaying={strudel.isPlaying}
+              playingCode={strudel.activeCode}
+              onPlayCode={(code) => { void strudel.play(code); }}
+              onStopCode={strudel.stop}
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>
@@ -1784,72 +2309,11 @@ export default function App() {
               </div>
             )}
           </div>
-          <div className={primaryNavItem === 'featured' ? 'flex h-full min-h-0' : 'hidden'}>
-            <FeaturedPage
-              pieces={FEATURED_PIECES}
-              currentPiece={featuredPiece}
-              playingId={featuredPreview.playingId}
-              pausedId={featuredPreview.pausedId}
-              engineReady={strudel.engineReady}
-              opening={openingFeatured}
-              onPlay={handleFeaturedPlay}
-              onSelect={handleFeaturedSelect}
-              onStop={featuredPreview.stop}
-              onPause={featuredPreview.pause}
-              onOpenInStudio={(piece) => void handleOpenFeaturedInStudio(piece)}
-              onOpenChange={setFeaturedPieceOpen}
-            />
+          <div className={onFeaturedPage ? 'flex h-full min-h-0' : 'hidden'}>
+            {featuredPage}
           </div>
           <div className={primaryNavItem === 'favorites' ? 'flex h-full min-h-0' : 'hidden'}>
-            <FavoritesPage
-              // Hidden rather than unmounted when you leave, so the page has
-              // to be told when it is the one being looked at.
-              active={primaryNavItem === 'favorites'}
-              conversations={undefined}
-              summaries={auth.user ? cloudFavoriteConversations : undefined}
-              searchQuery={auth.user ? favoritesSearch.query : undefined}
-              onSearchQueryChange={auth.user ? favoritesSearch.setQuery : undefined}
-              selectedId={auth.user ? selectedFavoriteId : undefined}
-              detail={auth.user ? selectedAccountFavorite : undefined}
-              focus={favoritesFocus}
-              /* Both are the empty page's business only, the way the history
-                 panel's are. Rows on screen — last visit's or this one's — are
-                 the page; a request still out behind them is not a spinner,
-                 and one that failed behind them is not an apology in place of
-                 what the device already has. Saying otherwise would also hold
-                 the first entry shut, since a page that is loading or broken
-                 has nothing to open. */
-              isLoading={Boolean(
-                auth.user
-                && displayedFavoriteItems.length === 0
-                && (!cloudLibraryEnabled || displayedFavoriteCollection.initialStatus === 'loading'),
-              )}
-              error={auth.user && displayedFavoriteItems.length === 0
-                ? displayedFavoriteCollection.initialError
-                : null}
-              onRetry={auth.user ? displayedFavoriteCollection.retryInitial : undefined}
-              detailLoading={Boolean(auth.user && selectedAccountFavoriteSummary && !selectedAccountFavorite && !selectedAccountFavoriteError)}
-              detailError={auth.user ? selectedAccountFavoriteError : null}
-              onRetryDetail={auth.user ? retrySelectedFavorite : undefined}
-              hasMore={auth.user ? displayedFavoriteCollection.nextCursor !== null : false}
-              isLoadingMore={Boolean(auth.user && displayedFavoriteCollection.moreStatus === 'loading')}
-              loadMoreError={auth.user ? displayedFavoriteCollection.moreError : null}
-              onLoadMore={auth.user && favoritesSearch.active ? favoritesSearch.loadMore : (auth.user ? loadMoreCloudFavorites : undefined)}
-              onRetryLoadMore={auth.user ? displayedFavoriteCollection.retryMore : undefined}
-              /* Withheld until the library can actually answer: the page opens
-                 its first entry the moment one is on screen, and an open that
-                 throws because the library is still coming up is an open the
-                 page counts as done. Handing it down when the library is ready
-                 is what asks for that first entry again. */
-              onSelect={auth.user && cloudLibraryEnabled ? handleSelectFavorite : undefined}
-              isPlaying={strudel.isPlaying}
-              playingCode={strudel.code}
-              onPlayCode={auth.user ? (code) => { void strudel.play(code); } : undefined}
-              onStopCode={auth.user ? strudel.stop : undefined}
-              onUnfavorite={auth.user ? handleUnfavorite : undefined}
-              onDelete={auth.user ? handleDeleteFavorite : undefined}
-              onOpenInStudio={auth.user ? handleOpenFavoriteInStudio : undefined}
-            />
+            {favoritesPage}
           </div>
           <div className={primaryNavItem === 'settings' ? 'flex h-full min-h-0' : 'hidden'}>
             {settingsSection === 'model' ? (
@@ -1909,7 +2373,10 @@ export default function App() {
           key={favoriteNotice.id}
           kind={favoriteNotice.kind}
           title={conversationTitle(favoriteNotice.favorite)}
-          onView={favoriteNotice.kind === 'deleted' ? undefined : viewFavoriteNotice}
+          /* The phone gets the line and nothing else: it asked before it acted,
+             so the bar has nothing left to offer. See `reportOnly`. */
+          reportOnly={isMobile}
+          onView={isMobile || favoriteNotice.kind === 'deleted' ? undefined : viewFavoriteNotice}
           onUndo={undoFavoriteNotice}
           onClose={dismissFavoriteNotice}
         />

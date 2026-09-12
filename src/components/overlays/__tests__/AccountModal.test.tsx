@@ -378,7 +378,12 @@ describe('AccountModal sign out', () => {
     expect(callOrder).toEqual(['flush', 'signOut', 'onClose']);
   });
 
-  it('keeps the user signed in when pending cloud saves cannot be flushed', async () => {
+  it('still signs out when pending cloud saves cannot be flushed', async () => {
+    // A flush failure must never trap the user in an account they just asked
+    // to leave — the unsent save stays in IndexedDB with its pending-sync
+    // marker and session-cloud-sync retries it on the next sign-in, the same
+    // as the guest-import "later" path already relies on.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const beforeSignOut = vi.fn(async () => {
       throw new Error('Cloud save failed');
     });
@@ -388,11 +393,13 @@ describe('AccountModal sign out', () => {
     await act(async () => {
       findButton(container, 'Sign out').click();
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(beforeSignOut).toHaveBeenCalledOnce();
-    expect(authMocks.signOut).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
+    expect(authMocks.signOut).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 });
 

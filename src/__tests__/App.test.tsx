@@ -8,6 +8,8 @@ import type { FavoriteSummary, SessionSummary } from '../../shared/session-api';
 import type { Session } from '../hooks/useSessions';
 import type { FavoriteConversation } from '../lib/favorite-conversations';
 import { t } from '../lib/i18n';
+import { LEAVING_MS, REPORT_LINGER_MS } from '../components/overlays/FavoriteActionDialog';
+import { resetDeviceTiltStateForTests } from '../components/featured/featured-device-tilt';
 
 const mocks = vi.hoisted(() => ({
   getAllSessions: vi.fn(),
@@ -57,7 +59,7 @@ const mocks = vi.hoisted(() => ({
     setManualCode: vi.fn(async () => undefined),
     checkpointSession: vi.fn(async () => undefined),
     flushCloudSaves: vi.fn(async () => undefined),
-    acceptCloudDetail: vi.fn(async (_session: Session) => undefined),
+    acceptCloudDetail: vi.fn(async (_session: Session): Promise<Session | undefined> => undefined),
     newSession: vi.fn(),
     switchTo: vi.fn(),
     branchFromMessage: vi.fn(),
@@ -105,6 +107,9 @@ const mocks = vi.hoisted(() => ({
     ensureFavorites: vi.fn(async () => undefined),
     loadMoreFavorites: vi.fn(async () => undefined),
     openSession: vi.fn(async () => undefined),
+    readSession: vi.fn(async (summary: SessionSummary): Promise<Session> => ({
+      ...summary, code: '', messages: [], createdAt: 1,
+    })),
     openFavorite: vi.fn(async () => undefined),
     favoriteSession: vi.fn(async (summary: SessionSummary): Promise<FavoriteSummary> => ({
       ...summary,
@@ -151,6 +156,7 @@ const mocks = vi.hoisted(() => ({
   },
   codePanelProps: null as Record<string, unknown> | null,
   sidebarProps: null as Record<string, unknown> | null,
+  historyProps: null as Record<string, unknown> | null,
   accountModalProps: null as Record<string, unknown> | null,
   agentRunnerConfig: null as Record<string, unknown> | null,
   isMobile: true,
@@ -234,8 +240,8 @@ vi.mock('../hooks/useLayout', () => ({
     isMobile: mocks.isMobile, keyboardHeight: 0, sidebarWidth: 0, sidebarCollapsed: false, vizHeight: 0, isDragging: false,
     vizCollapsed: false, toggleVizCollapsed: vi.fn(),
     mainRef: { current: null }, topActionsRef: { current: null }, hDragHandlers: {}, vDragHandlers: {},
-    historyOpen: false, setHistoryOpen: vi.fn(), drawerOpen: false, setDrawerOpen: vi.fn(),
-    mobileFocusedArea: null, shouldLiftBottomBar: false, mobileDrawerHeight: 0,
+    codeSheetOpen: false, setCodeSheetOpen: vi.fn(), navDrawerOpen: false, setNavDrawerOpen: vi.fn(),
+    mobileFocusedArea: null, shouldLiftBottomBar: false,
     handleChatFocusChange: vi.fn(), handleCodeFocusChange: vi.fn(),
   }),
 }));
@@ -278,13 +284,17 @@ vi.mock('../components/conversation/ConversationView', () => ({
   MarkdownText: ({ content }: { content: string }) => content,
   UserMessageBubble: ({ content }: { content: string }) => content,
 }));
-vi.mock('../components/conversation/HistoryPanel', () => ({ default: () => null }));
+vi.mock('../components/conversation/HistoryPanel', () => ({ default: (props: Record<string, unknown>) => {
+  mocks.historyProps = props;
+  return null;
+} }));
 vi.mock('../components/conversation/ChatInput', () => ({ default: () => null }));
 // ShareButton too: the featured player bar shares a piece on the studio's own
 // button, so it comes through this module.
 vi.mock('../components/studio/TopActionBar', () => ({
   default: () => null,
   ShareButton: () => null,
+  ExportPopover: () => null,
 }));
 vi.mock('../components/overlays/AccountModal', () => ({
   default: (props: Record<string, unknown>) => {
@@ -440,6 +450,7 @@ describe('App password recovery', () => {
   });
 
   it('keeps the guest-history sync dialog above the playback layer', async () => {
+    mocks.isMobile = false;
     const guestSession: Session = {
       id: 'guest-session',
       title: 'Guest history',
@@ -466,6 +477,8 @@ describe('App password recovery', () => {
       element.textContent?.includes('Syncing local history'),
     );
     expect(importDialog?.classList.contains('z-[300]')).toBe(true);
+    expect(importDialog?.classList.contains('items-center')).toBe(true);
+    expect(importDialog?.classList.contains('backdrop-blur-[2px]')).toBe(true);
 
     await act(async () => {
       finishImport();
@@ -531,6 +544,159 @@ describe('App password recovery', () => {
     // Syncing guest history must not pull the user off the session they are on.
     expect(mocks.importSession).toHaveBeenCalledWith(guestSession, { activate: false, awaitCloud: true });
     expect(mocks.deleteSession).toHaveBeenCalledWith('guest-session', 'guest');
+  });
+
+  /* The bug: a cloud save that fails once used to be retried under the same
+     item forever, and the dialog's only door was that retry button — so a
+     server that would never accept one particular payload parked the whole
+     app in front of it. These four cover the fix: the app gives up asking
+     after a second failure in a row, a reader can leave sooner than that on
+     their own, and the two reasons a save can fail get told apart. */
+  it('gives up asking after a second consecutive failure, instead of leaving the app stuck in the dialog', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    // Every attempt fails — a payload the server will never accept, say.
+    mocks.importSession.mockRejectedValue(new Error('rejected'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // First failure: the dialog stays up and offers a retry.
+    expect(container.textContent).toContain(t('syncLocalHistoryFailed'));
+    const retryButton = () => [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === t('retry'));
+    expect(retryButton()).not.toBeUndefined();
+    // The cloud library reads as still loading while the dialog holds it shut
+    // — see cloudLibraryEnabled in App.tsx.
+    expect(mocks.historyProps?.isLoading).toBe(false);
+
+    await act(async () => {
+      retryButton()?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Second consecutive failure: no third prompt, and the app is not left
+    // parked on it. The old code either stayed here forever or, if the
+    // dialog were simply dismissed, left the account's own history
+    // permanently unloaded — this checks both did not happen.
+    expect(container.textContent).not.toContain(t('syncLocalHistoryFailed'));
+    expect(container.textContent).not.toContain(t('syncingLocalHistory'));
+    expect(mocks.historyProps?.isLoading).toBe(false);
+    // Never having succeeded, the guest copy is left in place for next time.
+    expect(mocks.deleteSession).not.toHaveBeenCalled();
+  });
+
+  it('opens the cloud library the moment the reader chooses to leave it for later', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    mocks.importSession.mockRejectedValueOnce(new Error('rejected'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const laterButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === t('syncLocalHistoryLater'));
+    expect(laterButton).not.toBeUndefined();
+    expect(mocks.historyProps?.isLoading).toBe(false);
+
+    await act(async () => {
+      laterButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain(t('syncLocalHistoryFailed'));
+    // Closing the dialog alone reopens no gate; this is the second half of the
+    // fix, not just "the dialog goes away."
+    expect(mocks.historyProps?.isLoading).toBe(false);
+  });
+
+  it('tells a rejected save apart from a lost connection', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    mocks.importSession.mockRejectedValueOnce(new Error('rejected'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(t('syncLocalHistoryRejected'));
+    expect(container.textContent).not.toContain(t('syncLocalHistoryOffline'));
+  });
+
+  it('names a lost connection as one, while the device is offline', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    mocks.importSession.mockRejectedValueOnce(new Error('network request failed'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(t('syncLocalHistoryOffline'));
+    expect(container.textContent).not.toContain(t('syncLocalHistoryRejected'));
+    onLine.mockRestore();
   });
 });
 
@@ -725,6 +891,10 @@ describe('App session sync boundaries', () => {
     expect(remove).not.toBeNull();
 
     act(() => { remove?.click(); });
+    // The bin asks first; the delete is what the answer does.
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-testid="favorites-delete-accept"]')?.click();
+    });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -733,6 +903,71 @@ describe('App session sync boundaries', () => {
     expect(mocks.deleteCloudSession).toHaveBeenCalledWith(cloudFavorite.id, 'user-1');
     expect(mocks.cloudLibrary.removeSummary).not.toHaveBeenCalledWith(cloudFavorite.id);
     expect(mocks.strudel.setError).toHaveBeenCalledWith(t('favoriteActionFailed'));
+  });
+
+  /* The favorite under the reader is deleted and the page hands itself to the
+     next row — which only works if the id that row's open is made under
+     survives the clean-up of the id it replaced. It did not: both ran in the
+     same commit, and the clean-up read the deleted id out of a stale closure
+     and nulled the new pick with it, leaving the page on a favorite nothing
+     had been asked for. See the selection effect in App.tsx. */
+  it('opens the next favorite when the open one is deleted', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const kept = [
+      { id: 'fav-1', title: 'First kept', updatedAt: 20, favoritedAt: 40 },
+      { id: 'fav-2', title: 'Second kept', updatedAt: 10, favoritedAt: 30 },
+    ];
+    mocks.cloudLibrary.favorites.items = kept;
+    mocks.cloudLibrary.favorites.initialStatus = 'ready';
+    for (const summary of kept) {
+      mocks.cloudLibrary.details.set(summary.id, {
+        updatedAt: summary.updatedAt,
+        session: {
+          id: summary.id,
+          title: summary.title,
+          code: 's("bd")',
+          messages: [{ id: `${summary.id}-m1`, role: 'user', content: summary.title, timestamp: 1 }],
+          createdAt: 1,
+          updatedAt: summary.updatedAt,
+          favoritedAt: summary.favoritedAt,
+        },
+      });
+    }
+    // The library's own removal, which is what the page sees of a deletion.
+    mocks.cloudLibrary.removeSummary.mockImplementation((id: string) => {
+      mocks.cloudLibrary.favorites.items = mocks.cloudLibrary.favorites.items
+        .filter((summary) => summary.id !== id);
+    });
+    mocks.deleteCloudSession.mockResolvedValue(undefined);
+    mocks.isMobile = false;
+    await renderApp();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFavorites')}"]`)?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.cloudLibrary.openFavorite).toHaveBeenCalledWith(kept[0]);
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-favorites-delete]')?.click();
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="favorites-delete-accept"]')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // The library answering, and the page re-reading it.
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.cloudLibrary.openFavorite).toHaveBeenCalledWith(kept[1]);
+    expect(container.querySelector('[data-testid="favorites-detail-loading"]')).toBeNull();
+    expect(container.querySelector('[data-testid="favorites-caption"]')?.textContent)
+      .toContain(kept[1].title);
   });
 
   it('keeps a cloud history summary when direct deletion fails', async () => {
@@ -981,6 +1216,158 @@ describe('App session sync boundaries', () => {
     expect(mocks.sessions.acceptCloudDetail.mock.calls[0]?.[0]).not.toHaveProperty('favoritedAt');
   });
 
+  /* Keeping a conversation and then going to look at the collection — by
+     either road — has to land on the thing that was just kept, not on whatever
+     the page was last left open at. */
+  describe('opening the collection on a fresh favorite', () => {
+    const older = { id: 'fav-older', title: 'Older kept', updatedAt: 10, favoritedAt: 100 };
+    const toKeep = { id: 'sess-fresh', title: 'Just kept', updatedAt: 20 };
+
+    const detailFor = (id: string, title: string, updatedAt: number) => ({
+      updatedAt,
+      session: {
+        id,
+        title,
+        code: 's("bd")',
+        messages: [{ id: `${id}-m1`, role: 'user', content: title, timestamp: 1 }],
+        createdAt: 1,
+        updatedAt,
+      },
+    });
+
+    const openOn = () => container
+      .querySelector('[data-testid="favorites-caption"] h2')?.textContent;
+    const goTo = async (label: string) => {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)?.click();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    };
+
+    /** Signed in, one favorite already kept, one history session to keep. */
+    const setUp = async () => {
+      mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+      mocks.cloudLibrary.favorites.items = [older];
+      mocks.cloudLibrary.favorites.initialStatus = 'ready';
+      mocks.cloudLibrary.history.items = [toKeep];
+      mocks.cloudLibrary.history.initialStatus = 'ready';
+      mocks.cloudLibrary.details.set(older.id, detailFor(older.id, older.title, older.updatedAt));
+      mocks.cloudLibrary.details.set(
+        toKeep.id,
+        detailFor(toKeep.id, toKeep.title, toKeep.updatedAt),
+      );
+      // The library's own move: the new favorite arrives at the top of the
+      // collection and leaves the history.
+      mocks.cloudLibrary.favoriteSession.mockImplementation(async (item: SessionSummary) => {
+        const kept = { ...item, favoritedAt: 300 };
+        mocks.cloudLibrary.favorites.items = [kept, ...mocks.cloudLibrary.favorites.items];
+        mocks.cloudLibrary.history.items = mocks.cloudLibrary.history.items
+          .filter((candidate) => candidate.id !== item.id);
+        return kept;
+      });
+      mocks.isMobile = false;
+      await renderApp();
+
+      // The precondition for the bug: the page has been here before and
+      // remembers what was open.
+      await goTo(t('navFavorites'));
+      expect(openOn()).toBe(older.title);
+      await goTo(t('navHome'));
+
+      await act(async () => {
+        await (mocks.sidebarProps?.onFavoriteSession as ((id: string) => Promise<void>))(toKeep.id);
+      });
+    };
+
+    it('follows the notice through to the conversation it reports', async () => {
+      vi.useFakeTimers();
+      await setUp();
+
+      const view = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === t('favoriteActionView'));
+      act(() => { view?.click(); });
+      act(() => { vi.advanceTimersByTime(LEAVING_MS); });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(openOn()).toBe(toKeep.title);
+    });
+
+    it('opens on it by any other road into the collection too', async () => {
+      await setUp();
+
+      await goTo(t('navFavorites'));
+
+      expect(openOn()).toBe(toKeep.title);
+    });
+  });
+
+  /* The phone asks before it acts, so the bar it puts up afterwards has
+     nothing left to offer: one line saying what happened, and no way to argue
+     with it. */
+  it('reports a release on a phone without offering to take it back', async () => {
+    vi.useFakeTimers();
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const cloudFavorite = {
+      id: 'cloud-unfavorite-mobile',
+      title: 'Cloud favorite',
+      updatedAt: 20,
+      favoritedAt: 30,
+    };
+    mocks.cloudLibrary.favorites.items = [cloudFavorite];
+    mocks.cloudLibrary.favorites.initialStatus = 'ready';
+    mocks.cloudLibrary.details.set(cloudFavorite.id, {
+      updatedAt: cloudFavorite.updatedAt,
+      session: {
+        ...cloudFavorite,
+        code: 's("bd")',
+        messages: [{ id: 'message-1', role: 'user', content: '保留这段', timestamp: 1 }],
+        createdAt: 1,
+      },
+    });
+    mocks.isMobile = true;
+    await renderApp();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navMore')}"]`)?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === t('navFavorites'))?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The phone's own question, answered.
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-favorites-unfavorite]')?.click();
+    });
+    act(() => {
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="favorites-mobile-confirm-accept"]',
+      )?.click();
+    });
+
+    const dialog = container.querySelector('[data-testid="favorite-action-dialog"]');
+    expect(dialog?.textContent).toContain(t('unfavoriteDoneTitle'));
+    expect(dialog?.querySelectorAll('button')).toHaveLength(0);
+    // The release is written where it was answered, once.
+    expect(mocks.cloudLibrary.unfavoriteSession).toHaveBeenCalledTimes(1);
+
+    // And letting the bar go writes nothing further — it was only ever a
+    // report.
+    // The wait running out sets the bar going; it is gone once it has gone.
+    act(() => { vi.advanceTimersByTime(REPORT_LINGER_MS); });
+    act(() => { vi.advanceTimersByTime(LEAVING_MS); });
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.cloudLibrary.unfavoriteSession).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="favorite-action-dialog"]')).toBeNull();
+  });
+
   it('flushes before opening an account detail and keeps the current session on failure', async () => {
     mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
     const cloudSummary = { id: 'cloud-2', title: 'Cloud detail', updatedAt: 20 };
@@ -1188,6 +1575,125 @@ describe('App session sync boundaries', () => {
     expect(mocks.strudel.stop).toHaveBeenCalled();
   });
 
+  it('repaints the system\'s own chrome for whichever page is in front of the reader', async () => {
+    localStorage.setItem('vibe_theme', 'dark');
+    document.head.querySelector('meta[name="theme-color"]')?.remove();
+    const meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    document.head.append(meta);
+    mocks.isMobile = false;
+
+    try {
+      await renderApp();
+
+      const chromeVar = () => document.documentElement.style.getPropertyValue('--browser-chrome-color');
+      const navButton = (labelKey: 'navFeatured' | 'navHome' | 'navFavorites') =>
+        container.querySelector<HTMLButtonElement>(`button[aria-label="${t(labelKey)}"]`);
+
+      // The studio's own colour, on the page the app always opens on.
+      expect(meta.content).toBe('#0D0D0D');
+      expect(chromeVar()).toBe('#0D0D0D');
+
+      // Featured stands on its own ground, and the system's own strips follow
+      // it there — this is the fix: they used to stay on the studio's colour.
+      await act(async () => {
+        navButton('navFeatured')?.click();
+        await Promise.resolve();
+      });
+      expect(meta.content).toBe('#05070a');
+      expect(chromeVar()).toBe('#05070a');
+
+      // Favorites shares the studio's ground, not Featured's.
+      await act(async () => {
+        navButton('navHome')?.click();
+        await Promise.resolve();
+      });
+      expect(meta.content).toBe('#0D0D0D');
+    } finally {
+      localStorage.removeItem('vibe_theme');
+      meta.remove();
+      document.documentElement.style.removeProperty('--browser-chrome-color');
+    }
+  });
+
+  it('asks for the device readings from the press that opens the shelf, before it opens', async () => {
+    mocks.isMobile = true;
+    /* iOS hands out the readings only after a request made from inside a real
+       gesture. Entering the shelf from the drawer and then only *turning* the
+       phone produces no further gesture — so the row that opens the page is the
+       gesture, and the ask goes out on it rather than waiting for a touch that
+       may never come. Started, not awaited: an await here would spend the
+       activation the request needs. */
+    const requestPermission = vi.fn(async () => 'granted');
+    vi.stubGlobal('DeviceOrientationEvent', Object.assign(
+      function DeviceOrientationEvent() {},
+      { requestPermission },
+    ));
+    resetDeviceTiltStateForTests();
+    await renderApp();
+
+    const row = [...container
+      .querySelectorAll<HTMLButtonElement>('[data-testid="mobile-nav-drawer"] button')]
+      .find((button) => button.textContent?.includes(t('navFeatured')))!;
+    expect(row).not.toBeUndefined();
+
+    await act(async () => {
+      row.click();
+      await Promise.resolve();
+    });
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    /* And the shelf opened without waiting on the answer — the highlight going
+       out is the studio no longer being the page in front of the reader. */
+    expect(mocks.historyProps?.currentId).toBeNull();
+
+    resetDeviceTiltStateForTests();
+    vi.unstubAllGlobals();
+  });
+
+  it('drops the history highlight when a phone leaves the studio, and gets it back on return', async () => {
+    mocks.isMobile = true;
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    mocks.cloudLibrary.history.items = [{ id: 's-1', title: 'Session', updatedAt: 1 }];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    await renderApp();
+
+    /* A phone navigates from the drawer: there is no PrimaryNav on this layout,
+       and these rows are the only way to either gallery. */
+    const goToGallery = async (label: string) => {
+      const row = [...container
+        .querySelectorAll<HTMLButtonElement>('[data-testid="mobile-nav-drawer"] button')]
+        .find((button) => button.textContent?.includes(label));
+      expect(row).not.toBeUndefined();
+      await act(async () => {
+        row?.click();
+        await Promise.resolve();
+      });
+    };
+
+    expect(mocks.historyProps?.currentId).toBe('s-1');
+
+    /* The studio stays mounted behind a gallery and keeps holding the
+       conversation — which is what the list used to read, and why a row stayed
+       lit on a page it had nothing to do with. The session itself is untouched:
+       nothing switches away, nothing is cleared. */
+    await goToGallery(t('navFavorites'));
+    expect(mocks.historyProps?.currentId).toBeNull();
+    expect(mocks.sessions.switchTo).not.toHaveBeenCalled();
+
+    await goToGallery(t('navFeatured'));
+    expect(mocks.historyProps?.currentId).toBeNull();
+    expect(mocks.sessions.switchTo).not.toHaveBeenCalled();
+
+    // Picking a row out of the drawer carries the shell back to the studio
+    // first, and the highlight follows the conversation that actually opens.
+    await act(async () => {
+      (mocks.historyProps!.onSwitch as (id: string) => void)('s-1');
+      await Promise.resolve();
+    });
+    expect(mocks.historyProps?.currentId).toBe('s-1');
+  });
+
   it.each(['s("bd sd")', ''])(
     'routes a manual editor change (%s) through setManualCode',
     async (code) => {
@@ -1341,6 +1847,26 @@ describe('App session sync boundaries', () => {
     });
   });
 
+  /* The phone keeps the code behind one key, so the key has to say whether
+     there is anything behind it. */
+  it('lights the mobile code key while there is a piece to open', async () => {
+    mocks.isMobile = true;
+    mocks.strudel.code = '';
+    await renderApp();
+    const key = () => container.querySelector<HTMLButtonElement>('[data-testid="mobile-code-key"]');
+
+    expect(key()?.className).toContain('text-text-secondary');
+    expect(key()?.className).not.toContain('text-brand-accent');
+
+    mocks.strudel.code = 's("bd*4")';
+    await renderApp();
+
+    expect(key()?.className).toContain('text-brand-accent');
+    expect(key()?.getAttribute('data-has-code')).toBe('true');
+    // Still the same key, doing the same thing.
+    expect(key()?.getAttribute('aria-label')).toBe(t('expandCode'));
+  });
+
   it('persists and flushes the outgoing code when creating a new session', async () => {
     mocks.isMobile = false;
     await renderApp();
@@ -1429,6 +1955,101 @@ describe('App session sync boundaries', () => {
       await transition;
     });
     expect(mocks.sessions.switchTo).toHaveBeenCalledWith('s-2');
+  });
+
+  it('switches mobile history immediately while the outgoing cloud write is pending', async () => {
+    const held = heldAccountSession(20);
+    mocks.isMobile = true;
+    let release!: () => void;
+    mocks.sessions.flushCloudSaves.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      release = () => resolve(undefined);
+    }));
+    await renderApp();
+    await act(async () => {
+      (mocks.historyProps!.onSwitch as (id: string) => void)(held.id);
+    });
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(held.id);
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("bd")', 's-1');
+    await act(async () => release());
+  });
+
+  it('keeps the last mobile selection when cloud reads resolve in reverse order', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const first = { id: 'remote-a', title: 'Remote A', updatedAt: 10 };
+    const last = { id: 'remote-b', title: 'Remote B', updatedAt: 10 };
+    mocks.cloudLibrary.history.items = [first, last];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    let resolveFirst!: (session: Session) => void;
+    let resolveLast!: (session: Session) => void;
+    mocks.cloudLibrary.readSession
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveLast = resolve; }));
+    await renderApp();
+    await act(async () => {
+      (mocks.historyProps!.onSwitch as (id: string) => void)(first.id);
+      (mocks.historyProps!.onSwitch as (id: string) => void)(last.id);
+    });
+    const lastDetail = { ...last, code: 's("hh")', messages: [], createdAt: 1 };
+    await act(async () => resolveLast(lastDetail));
+    await act(async () => resolveFirst({ ...first, code: 's("bd")', messages: [], createdAt: 1 }));
+    expect(mocks.sessions.acceptCloudDetail).toHaveBeenCalledTimes(1);
+    expect(mocks.sessions.acceptCloudDetail).toHaveBeenCalledWith(lastDetail, { activate: false });
+    expect(mocks.sessions.switchTo).toHaveBeenCalledTimes(1);
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(last.id);
+  });
+
+  it('does not let a late mobile favorite completion leave a newer history selection', async () => {
+    const held = heldAccountSession(20);
+    mocks.isMobile = true;
+    const source = { id: mocks.session.id, title: mocks.session.title, updatedAt: 1 };
+    mocks.cloudLibrary.history.items.push(source);
+    let finishFavorite!: (summary: FavoriteSummary) => void;
+    mocks.cloudLibrary.favoriteSession.mockImplementationOnce(() => new Promise((resolve) => {
+      finishFavorite = resolve;
+    }));
+    await renderApp();
+    await act(async () => {
+      (mocks.historyProps!.onFavorite as (id: string) => void)(source.id);
+    });
+    await act(async () => {
+      (mocks.historyProps!.onSwitch as (id: string) => void)(held.id);
+    });
+    await act(async () => finishFavorite({ ...source, favoritedAt: 100 }));
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(held.id);
+    expect(mocks.sessions.newSession).not.toHaveBeenCalled();
+  });
+
+  it('renames another mobile history row without activating it or replacing editor code', async () => {
+    const held = heldAccountSession(20);
+    mocks.isMobile = true;
+    await renderApp();
+    mocks.strudel.setCode.mockClear();
+    await act(async () => {
+      (mocks.historyProps!.onRename as (id: string, title: string) => void)(held.id, 'Renamed');
+    });
+    expect(mocks.sessions.renameSession).toHaveBeenCalledWith(held.id, 'Renamed');
+    expect(mocks.cloudLibrary.openSession).not.toHaveBeenCalled();
+    expect(mocks.sessions.switchTo).not.toHaveBeenCalled();
+    expect(mocks.strudel.setCode).not.toHaveBeenCalled();
+  });
+
+  it('does not save the previous mobile editor code into the incoming session before restoration', async () => {
+    await renderApp();
+    const incoming = { ...mocks.session, id: 'incoming', code: 's("hh")' };
+    mocks.sessions.sessions = [mocks.session, incoming];
+    mocks.sessions.currentId = incoming.id;
+    mocks.sessions.currentSession = incoming;
+    await renderApp();
+    mocks.sessions.setManualCode.mockClear();
+    // An unrelated session update arrives before the REPL publishes its new code.
+    mocks.sessions.currentSession = { ...incoming, code: 's("hh").gain(.8)' };
+    await renderApp();
+    expect(mocks.sessions.setManualCode).not.toHaveBeenCalled();
+    mocks.strudel.code = incoming.code;
+    await renderApp();
+    mocks.strudel.code = 's("hh").gain(.5)';
+    await renderApp();
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("hh").gain(.5)', incoming.id);
   });
 
   it('checkpoints rollback after restoring code and truncating messages', async () => {

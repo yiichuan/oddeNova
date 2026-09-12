@@ -157,6 +157,20 @@ describe('useCloudSessionLibrary', () => {
     expect(repositoryMocks.listCloudSessionSummaries).toHaveBeenCalledTimes(2);
   });
 
+  it('reads mobile session content without activating it, including cached reads', async () => {
+    const item = summary('mobile-session');
+    const session = detail(item);
+    const acceptCloudDetail = vi.fn(async () => undefined);
+    repositoryMocks.getCloudSession.mockResolvedValue(session);
+    const { root, getHook } = await renderLibrary({ enabled: true, ownerId: 'user-1', acceptCloudDetail });
+    roots.push(root);
+    await act(async () => { expect(await getHook().readSession(item)).toEqual(session); });
+    await act(async () => { expect(await getHook().readSession(item)).toEqual(session); });
+    expect(repositoryMocks.getCloudSession).toHaveBeenCalledOnce();
+    expect(acceptCloudDetail).not.toHaveBeenCalled();
+    expect(getHook().details.get(item.id)?.session).toEqual(session);
+  });
+
   it('keeps remote history search separate from the ordinary history collection', async () => {
     const ordinary = summary('ordinary');
     const match = summary('match');

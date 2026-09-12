@@ -21,6 +21,7 @@ import {
   TrashIcon,
 } from '../icons';
 import { useResolvedTheme } from '../../hooks/useAppearance';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { useClippedEnds } from '../../hooks/useClippedEnds';
 import ControlHoverLabel from '../studio/ControlHoverLabel';
 import { anchorAbove, type ControlHoverLabelAnchor } from '../studio/control-hover-anchor';
@@ -28,6 +29,7 @@ import ArchivedConversationView from '../conversation/ArchivedConversationView';
 import ConversationTurnRail from '../conversation/ConversationTurnRail';
 import FeaturedWebglLightField from '../featured/FeaturedWebglLightField';
 import FavoritesList, { LIST_COLUMN } from './FavoritesList';
+import MobileFavoritesPage, { type MobileFavoritesState } from './MobileFavoritesPage';
 import { NAV_COLLAPSED_WIDTH } from '../nav/PrimaryNav';
 
 /** The page's own edge: where the heading starts and where the list stops. */
@@ -253,6 +255,17 @@ interface FavoritesPageProps {
    * to carry on from rather than a copy of the conversation that wrote it.
    */
   onOpenInStudio?: (code: string) => void;
+  /**
+   * Opens the shell's navigation drawer. Mobile only, and the page's business
+   * rather than the shell's: on a phone this page draws its own top bar, so the
+   * key that reaches the rest of the app stands in it.
+   */
+  onOpenNav?: () => void;
+  /**
+   * Mobile only: whether the code window is standing over the page right now.
+   * See MobileFavoritesPage's own prop of the same name.
+   */
+  onCodeWindowChange?: (open: boolean) => void;
 }
 
 /**
@@ -638,7 +651,10 @@ export default function FavoritesPage({
   onUnfavorite,
   onDelete,
   onOpenInStudio,
+  onOpenNav,
+  onCodeWindowChange,
 }: FavoritesPageProps) {
+  const isMobile = useIsMobile();
   const isSummaryMode = summaries !== undefined;
   const remoteSearchActive = isSummaryMode
     && onSearchQueryChange !== undefined
@@ -672,7 +688,16 @@ export default function FavoritesPage({
     () => ({ id: sortedConversations[0]?.id ?? null, focus: null }),
   );
   const selectedConversationId = picked.focus === focus ? picked.id : focus?.id ?? picked.id;
-  const [pickedSummaryId, setPickedSummaryId] = useState<string | null>(null);
+  /* The same pair for the account's collection: what was picked here, and the
+     arrival it was picked under. The legacy path above has needed this from the
+     start; this one needs it for the same reason and for one more. Being sent
+     to a favorite is not only 'view' on the notice — keeping a conversation
+     sends the reader to it too, whenever they next open the page — and both
+     have to beat the id the page was last left on. */
+  const [pickedSummary, setPickedSummary] = useState<{
+    id: string | null;
+    focus: { id: string } | null;
+  }>({ id: null, focus: null });
   const autoSelectedSummaryRef = useRef<string | null>(null);
   /* Which entry the page is open on, asked as four questions in order of who
      has the better claim: the page it was navigated to with, the entry it was
@@ -704,9 +729,21 @@ export default function FavoritesPage({
   const summaryFor = (id: string | null | undefined) => (id
     ? favoriteSummaries.find((summary) => summary.id === id) ?? null
     : null);
-  const selectedSummary = summaryFor(selectedId)
+  /* An arrival this page has not answered yet, which is the one claim that
+     outranks the id it was left on.
+
+     Without it the order below reads the wrong way round the moment someone
+     has been here before: the page remembers what they last opened, and being
+     sent to a favorite — the notice's 'view', or simply having just kept
+     something — would lose to that memory and open the entry before the one
+     they were sent to. It holds only until it is answered: once a row has been
+     picked under this arrival, the arrival is spent and the list is back in
+     charge, so being sent here pins nothing. */
+  const arrival = pickedSummary.focus === focus ? null : focus;
+  const selectedSummary = summaryFor(arrival?.id)
+    ?? summaryFor(selectedId)
     ?? summaryFor(focus?.id)
-    ?? summaryFor(pickedSummaryId)
+    ?? summaryFor(pickedSummary.id)
     ?? favoriteSummaries[0]
     ?? null;
   /* Left alone when the conversation changes: a turn id from another favorite
@@ -749,7 +786,7 @@ export default function FavoritesPage({
   const alone = soloReading || soloScript;
 
   const selectSummary = (summary: FavoriteSummary) => {
-    setPickedSummaryId(summary.id);
+    setPickedSummary({ id: summary.id, focus });
     // Only counted as opened where there is something upstream to open it.
     if (!onSelect) return;
     autoSelectedSummaryRef.current = openedKey(summary);
@@ -774,6 +811,34 @@ export default function FavoritesPage({
     onSelect(first);
   }, [active, error, isSummaryMode, onSelect, selectedSummary]);
 
+  /* Deleting asks first, here as well as on the phone.
+   *
+   * The desktop's other two moves report themselves afterwards and hold an undo
+   * open behind the report — which is the right shape for a move that can be
+   * taken back. A deletion cannot: the session goes, and the notice for it has
+   * nothing to offer but an acknowledgement. So it is the one act on this page
+   * that asks before it acts, in the same words the phone asks in, and the bin
+   * in the caption opens the question rather than carrying it out.
+   */
+  const [askingDelete, setAskingDelete] = useState(false);
+  /* Only ever up over the page it was asked from, and about an entry that is
+     still there to delete. A question standing on a page nobody is looking at
+     is not answered by being hidden, so it is not cleared either — it is the
+     same question when the page comes back. */
+  const confirmingDelete = askingDelete && active;
+  const confirmCancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!confirmingDelete) return;
+    /* The way out that costs nothing takes the focus, so the key already under
+       the hand is the one that leaves the favorite alone. */
+    confirmCancelRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAskingDelete(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirmingDelete]);
+
   const selectConversation = (conversation: FavoriteConversation) => {
     const conversationScripts = favoriteScripts(conversation);
     setPicked({ id: conversation.id, focus });
@@ -793,6 +858,60 @@ export default function FavoritesPage({
     && !remoteSearchActive
     && favoriteSummaries.length === 0
     && Boolean(error);
+
+  /* Everything above is what a favorite *is* — which entry is open, which take
+     it is pointed at, what the reading holds — and none of it changes with the
+     width of the screen. What changes is where those go, so the two layouts
+     part here and nowhere else: one page of state, two rooms to put it in.
+     See MobileFavoritesPage for what the phone does with it. */
+  if (isMobile) {
+    const mobileState: MobileFavoritesState = isSummaryMode && isLoading && favoriteSummaries.length === 0
+      ? 'loading'
+      : cloudListFailed
+        ? 'list-error'
+        : cloudDetailFailed
+          ? 'detail-error'
+          : cloudDetailPending
+            ? 'detail-loading'
+            : cloudListEmpty || current === null
+              ? 'empty'
+              : 'ready';
+
+    return (
+      <MobileFavoritesPage
+        state={mobileState}
+        onRetry={onRetry}
+        onRetryDetail={onRetryDetail}
+        summaries={favoriteSummaries}
+        selectedSummaryId={isSummaryMode ? selectedSummary?.id ?? null : current?.id ?? null}
+        onSelectSummary={isSummaryMode ? selectSummary : (summary) => {
+          const conversation = sortedConversations.find((item) => item.id === summary.id);
+          if (conversation) selectConversation(conversation);
+        }}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        loadMoreError={loadMoreError}
+        onLoadMore={onLoadMore}
+        onRetryLoadMore={onRetryLoadMore}
+        conversation={current}
+        messages={archiveMessages}
+        scripts={scripts}
+        selectedScript={selectedScript}
+        hasReading={hasReading}
+        onSelectScript={setSelectedScriptTurnId}
+        active={active}
+        playingCodeMessageId={playingCodeMessageId}
+        onPlayCode={onPlayCode}
+        onStopCode={onStopCode}
+        /* Letting go is only offered where there is a session to hand back,
+           the same condition the desktop caption asks. */
+        onUnfavorite={onUnfavorite && current?.sessionId ? () => onUnfavorite(current) : undefined}
+        onDelete={onDelete && current ? () => onDelete(current) : undefined}
+        onOpenNav={onOpenNav}
+        onCodeWindowChange={onCodeWindowChange}
+      />
+    );
+  }
 
   return (
     <main
@@ -1161,7 +1280,7 @@ export default function FavoritesPage({
                     <button
                       type="button"
                       data-favorites-delete
-                      onClick={() => onDelete(current)}
+                      onClick={() => setAskingDelete(true)}
                       title={t('deleteFavorite')}
                       aria-label={t('deleteFavorite')}
                       /* The same red the history panel's bin turns and the
@@ -1185,6 +1304,69 @@ export default function FavoritesPage({
           </footer>
         )}
       </div>
+
+      {/* ── The question the bin opens ── */}
+      {/* Over the whole window rather than over this page's strip of it: it is
+          the one thing on Favorites that nothing else happens around, so the
+          list, the reading and the nav all go out of reach behind it until it
+          is answered. Above the action notice's z-100, below the account
+          modal's z-300 — a question raised from the page, not a room the app
+          moved into.
+
+          The ground behind it does not dismiss it, for the reason the phone's
+          does not: a question closed by a stray click on the page behind it is
+          a question that was never answered. Escape and 「保留」 are the ways
+          out, and both leave the favorite exactly as it was. */}
+      {confirmingDelete && current && onDelete && (
+        <div
+          data-testid="favorites-delete-confirm"
+          className="animate-fade-in fixed inset-0 z-[200] flex items-center justify-center bg-[var(--color-overlay-backdrop)] px-8 backdrop-blur-[2px]"
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="favorites-delete-question"
+            className="w-full max-w-[360px] rounded-2xl border border-border bg-conversation-surface p-5 shadow-dialog-overlay"
+          >
+            <p
+              id="favorites-delete-question"
+              className="text-[15px] leading-relaxed text-text-primary"
+            >
+              {t('deleteFavoriteAsk')}
+            </p>
+            {/* Which conversation, quietly, under the question — the caption
+                that named it is behind the backdrop now. */}
+            <p className="mt-1.5 truncate text-[12px] text-text-secondary">
+              {conversationTitle(current)}
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                ref={confirmCancelRef}
+                data-testid="favorites-delete-cancel"
+                onClick={() => setAskingDelete(false)}
+                className="h-9 rounded-full border border-border px-4 text-[13px] text-text-secondary transition-colors hover:bg-surface-hover"
+              >
+                {t('keepIt')}
+              </button>
+              <button
+                type="button"
+                data-testid="favorites-delete-accept"
+                onClick={() => {
+                  setAskingDelete(false);
+                  onDelete(current);
+                }}
+                /* The red is in the word, not under it — the same weight the
+                   phone's panel gives the answer that does not come back. */
+                className="h-9 rounded-full px-4 text-[13px] font-medium text-diff-remove transition-colors hover:bg-surface-hover"
+              >
+                {t('deleteFavorite')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

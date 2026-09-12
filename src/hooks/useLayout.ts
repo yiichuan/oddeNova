@@ -45,13 +45,14 @@ export interface UseLayoutReturn {
   mainRef: RefObject<HTMLDivElement | null>;
   hDragHandlers: PointerDragHandlers;
   vDragHandlers: PointerDragHandlers;
-  historyOpen: boolean;
-  setHistoryOpen: Dispatch<SetStateAction<boolean>>;
-  drawerOpen: boolean;
-  setDrawerOpen: Dispatch<SetStateAction<boolean>>;
+  /** The centred code window the mobile top bar's right-hand button opens. */
+  codeSheetOpen: boolean;
+  setCodeSheetOpen: Dispatch<SetStateAction<boolean>>;
+  /** The full-height navigation drawer that slides in from the left. */
+  navDrawerOpen: boolean;
+  setNavDrawerOpen: Dispatch<SetStateAction<boolean>>;
   mobileFocusedArea: 'chat' | 'code' | null;
   shouldLiftBottomBar: boolean;
-  mobileDrawerHeight: number | string;
   handleChatFocusChange: (focused: boolean) => void;
   handleCodeFocusChange: (focused: boolean) => void;
 }
@@ -66,21 +67,18 @@ export function useLayout(): UseLayoutReturn {
   const keyboardHeight = useKeyboardHeight();
 
   // ── Mobile chrome ──────────────────────────────────────────────────────────
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [codeSheetOpen, setCodeSheetOpen] = useState(false);
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [mobileFocusedArea, setMobileFocusedArea] = useState<'chat' | 'code' | null>(null);
   const shouldLiftBottomBar = mobileFocusedArea === 'chat' && keyboardHeight > 0;
-  const mobileDrawerHeight = !drawerOpen
-    ? 0
-    : mobileFocusedArea === 'code'
-      ? '50dvh'
-      : '33dvh';
 
+  // Either overlay covers the page outright, so the page behind it must not be
+  // the thing that scrolls under a drag meant for the panel on top.
   useEffect(() => {
     if (!isMobile) return;
-    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    document.body.style.overflow = codeSheetOpen || navDrawerOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [drawerOpen, isMobile]);
+  }, [codeSheetOpen, isMobile, navDrawerOpen]);
 
   useEffect(() => {
     if (!isMobile || keyboardHeight > 0) return;
@@ -211,13 +209,12 @@ export function useLayout(): UseLayoutReturn {
     mainRef,
     hDragHandlers: { onPointerDown: startHDrag, onPointerMove: moveHDrag, onPointerUp: endHDrag },
     vDragHandlers: { onPointerDown: startVDrag, onPointerMove: moveVDrag, onPointerUp: endVDrag },
-    historyOpen,
-    setHistoryOpen,
-    drawerOpen,
-    setDrawerOpen,
+    codeSheetOpen,
+    setCodeSheetOpen,
+    navDrawerOpen,
+    setNavDrawerOpen,
     mobileFocusedArea,
     shouldLiftBottomBar,
-    mobileDrawerHeight,
     handleChatFocusChange,
     handleCodeFocusChange,
   };

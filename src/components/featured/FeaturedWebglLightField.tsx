@@ -67,8 +67,26 @@ float softEllipse(vec2 point, vec2 centre, vec2 radius, float falloff) {
 }
 
 void main() {
+  /* The room, framed to the window it is seen through.
+
+     The composition below is laid out in a square around the origin and was
+     framed the one way a wide window can be framed: divide by the short side,
+     and the five sources fill the height with the width left to run past them.
+     A phone turned upright is the same window on its end — twice as tall as it
+     is wide — and that framing puts every source in a band across the middle of
+     it, with a third of the screen above and below holding no light at all.
+
+     So a tall window steps back instead. The zoom below is how much further off the
+     room is stood, and it is 1.0 for anything wider than it is high — a display
+     sees exactly what it always saw, down to the pixel — rising to a limit as
+     the window grows taller than a phone. What it buys is the whole
+     composition on a screen shaped nothing like the one it was drawn for: the
+     key still comes in from the right, the overhead still lands at the top, and
+     the shelf light still gathers at the foot. */
+  float tall = u_resolution.y / max(u_resolution.x, 1.0);
+  float zoom = clamp(tall / 1.6, 1.0, 1.6);
   vec2 point = (2.0 * gl_FragCoord.xy - u_resolution.xy)
-    / min(u_resolution.x, u_resolution.y);
+    / (min(u_resolution.x, u_resolution.y) * zoom);
 
   // One five-source composition, lit twice. Both grounds below add these the
   // same way; what differs is where the ramp they are added onto begins, and

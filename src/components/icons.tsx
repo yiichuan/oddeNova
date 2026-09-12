@@ -12,6 +12,7 @@ import {
   Sparkles,
   Settings,
   Menu,
+  Ellipsis,
   BookOpen,
   ArrowUp,
   Trash2,
@@ -22,6 +23,10 @@ import {
   Copy,
   X,
   Search,
+  List,
+  Sun,
+  Moon,
+  SquareTerminal,
   RefreshCw,
   Split,
   SquareArrowOutUpRight,
@@ -127,6 +132,9 @@ export const SettingsIcon = ({ size = 16, className }: IconProps) => <Settings s
 // mark across both layouts.
 export const UserIcon = ({ size = 16, className }: IconProps) => <User size={size} className={className} />;
 export const MenuIcon = ({ size = 16, className }: IconProps) => <Menu size={size} className={className} />;
+// The same mark the desktop nav's More row wears, so "everything else" is
+// one glyph across both layouts.
+export const EllipsisIcon = ({ size = 16, className }: IconProps) => <Ellipsis size={size} className={className} />;
 export const BookOpenIcon = ({ size = 16, className }: IconProps) => <BookOpen size={size} className={className} />;
 export const ArrowUpIcon = ({ size = 16, className }: IconProps) => <ArrowUp size={size} className={className} />;
 export const TrashIcon = ({ size = 16, className }: IconProps) => <Trash2 size={size} className={className} />;
@@ -137,6 +145,16 @@ export const CheckIcon = ({ size = 16, className }: IconProps) => <Check size={s
 export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={size} className={className} />;
 export const XIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;
 export const SearchIcon = ({ size = 16, className }: IconProps) => <Search size={size} className={className} />;
+// What is being kept, as a list of it. The mobile Favorites page hangs its
+// collection off this the way the desktop page stands it in a corner.
+export const ListIcon = ({ size = 16, className }: IconProps) => <List size={size} className={className} />;
+// The code window's door on mobile: a terminal is the plainest picture of
+// "the script behind this", and the studio's editor is exactly that.
+export const SquareTerminalIcon = ({ size = 16, className }: IconProps) => <SquareTerminal size={size} className={className} />;
+// The two halves of the colour-scheme switch. Each stands for the palette the
+// press would move to, not the one already on — the button is an action.
+export const SunIcon = ({ size = 16, className }: IconProps) => <Sun size={size} className={className} />;
+export const MoonIcon = ({ size = 16, className }: IconProps) => <Moon size={size} className={className} />;
 export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 // Strudel's own "update" glyph: re-evaluate the running pattern in place.
 export const UpdateIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;

@@ -221,6 +221,35 @@ export default function ChatInput({
     }
   };
 
+  // Where the phone's return key is actually caught.
+  //
+  // `keydown` is not reliable for it: with an IME in the loop a phone reports a
+  // bare `keyCode: 229` and no `key`, so the handler below never recognises the
+  // press and the field takes a blank line instead of the suggestion. Every
+  // mobile keyboard does agree on the *edit* the key is asking for, and this is
+  // it — `insertLineBreak`, identical however the keydown came out.
+  //
+  // A native listener rather than React's `onBeforeInput`, which is still the
+  // `textInput` polyfill: it only dispatches when the event carries character
+  // data, and a line break carries none, so it never fires here at all.
+  //
+  // Narrowly gated. The moment there is anything typed `suggestionActive` is
+  // false and the newline goes in exactly as it always did.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || !isMobile || replayValue !== undefined) return;
+    if (!suggestionActive || !currentSuggestion) return;
+
+    const onBeforeInput = (e: Event) => {
+      if ((e as InputEvent).inputType !== 'insertLineBreak') return;
+      e.preventDefault();
+      adoptedSuggestionRef.current = currentSuggestion;
+      setText(currentSuggestion);
+    };
+    el.addEventListener('beforeinput', onBeforeInput);
+    return () => el.removeEventListener('beforeinput', onBeforeInput);
+  }, [isMobile, replayValue, suggestionActive, currentSuggestion]);
+
   const handleCardClick = (e: React.MouseEvent<HTMLFormElement>) => {
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
@@ -290,6 +319,12 @@ export default function ChatInput({
                   // field is still empty (suggestionActive). Once the user is
                   // typing it falls through as a plain newline — sending is the
                   // send button's job there, not the keyboard's.
+                  //
+                  // The phone's own return key often does not arrive here at all
+                  // (an IME in the loop reports a bare `keyCode: 229` with no
+                  // `key`). The native `beforeinput` listener above is what
+                  // actually catches it there; this stays as the plain-keyboard
+                  // path and as the belt to its braces.
                   if (isMobile) {
                     if (suggestionActive && currentSuggestion) {
                       e.preventDefault();
@@ -306,7 +341,13 @@ export default function ChatInput({
                 : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
               rows={1}
               disabled={inputDisabled}
-              className="w-full min-h-[73px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed"
+              // The composer's resting height, and so the whole card's: the
+              // floor holds the field open at more than the one line it starts
+              // with. 20px shorter on a phone, where the card is standing on a
+              // screen the conversation also has to fit on and that slack is
+              // taken out of the reading. The auto-grow cap above is untouched,
+              // so typing still opens it exactly as far as it ever did.
+              className={`w-full ${isMobile ? 'min-h-[53px]' : 'min-h-[73px]'} resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed`}
               style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
             />
 
@@ -318,7 +359,12 @@ export default function ChatInput({
                 to stop iOS auto-zoom on focus and can't be lowered, so the
                 overlay matches it to avoid a jump when a suggestion is adopted. */}
             {suggestionActive && (
-              <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-text-muted">
+              <div
+                // Clamped to what the shorter mobile field can actually show,
+                // so a long suggestion ends on a line rather than on one sliced
+                // through the middle.
+                className={`pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden ${isMobile ? 'line-clamp-2' : 'line-clamp-3'} text-base md:text-sm text-text-muted`}
+              >
                 {/* Only the suggestion text blurs/fades between rotations — blur
                     runs first, then opacity fades in on its heels (sequential, not
                     simultaneous), via an explicit transition-delay on opacity.

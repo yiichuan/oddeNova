@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../lib/i18n';
 import type { FavoriteSummary } from '../../../shared/session-api';
 import {
@@ -14,6 +6,7 @@ import {
   type FavoriteConversation,
 } from '../../lib/favorite-conversations';
 import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
+import ScrollingTitle from '../common/ScrollingTitle';
 import { SearchIcon, XIcon } from '../icons';
 
 /** One entry, one row — set in the same metrics the Featured title column uses. */
@@ -108,143 +101,12 @@ const LIST_GUTTER = '2rem';
  */
 export const LIST_COLUMN = `calc(${LIST_RIGHT_INSET} + ${LIST_WIDTH} + ${LIST_GUTTER})`;
 
-const MARQUEE_DELAY_MS = 500;
-const MARQUEE_SPEED_PX_PER_SECOND = 32;
-const MARQUEE_MIN_DURATION_MS = 1_800;
-
 const ROW_STYLE = {
   fontSize: 12,
   fontWeight: 400,
   letterSpacing: '0.08em',
   lineHeight: `${ROW_HEIGHT}px`,
 } as const;
-
-interface FavoriteTitleMarqueeProps {
-  id: string;
-  title: string;
-}
-
-function prefersReducedMotion() {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-function FavoriteTitleMarquee({ id, title }: FavoriteTitleMarqueeProps) {
-  const viewportRef = useRef<HTMLSpanElement>(null);
-  const contentWidthRef = useRef(0);
-  const timerRef = useRef<number | null>(null);
-  const activeRef = useRef(false);
-  const overflowRef = useRef(false);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const [isActive, setIsActive] = useState(false);
-  const [distance, setDistance] = useState(0);
-
-  const clearTimer = useCallback(() => {
-    if (timerRef.current === null) return;
-    window.clearTimeout(timerRef.current);
-    timerRef.current = null;
-  }, []);
-
-  const resetMarquee = useCallback(() => {
-    clearTimer();
-    activeRef.current = false;
-    setIsActive(false);
-  }, [clearTimer]);
-
-  useLayoutEffect(() => {
-    const viewport = viewportRef.current;
-    if (viewport === null) return undefined;
-
-    const measure = () => {
-      if (!activeRef.current || contentWidthRef.current === 0) {
-        contentWidthRef.current = viewport.scrollWidth;
-      }
-
-      const overflow = contentWidthRef.current - viewport.clientWidth;
-      overflowRef.current = overflow > 0;
-      if (overflow <= 0) {
-        clearTimer();
-        setIsOverflowing(false);
-        setDistance(0);
-        return;
-      }
-
-      setIsOverflowing(true);
-      setDistance(overflow);
-    };
-
-    const handleResize = () => {
-      const wasActive = activeRef.current;
-      clearTimer();
-      measure();
-      if (wasActive) resetMarquee();
-    };
-
-    if (typeof ResizeObserver === 'undefined') return undefined;
-
-    measure();
-    const observer = new ResizeObserver(handleResize);
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, [clearTimer, resetMarquee]);
-
-  useEffect(() => () => clearTimer(), [clearTimer]);
-
-  const handlePointerEnter = () => {
-    if (!overflowRef.current || prefersReducedMotion()) return;
-
-    clearTimer();
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = null;
-      if (!overflowRef.current || prefersReducedMotion()) return;
-      activeRef.current = true;
-      setIsActive(true);
-    }, MARQUEE_DELAY_MS);
-  };
-
-  const duration = Math.max(
-    MARQUEE_MIN_DURATION_MS,
-    Math.round((distance / MARQUEE_SPEED_PX_PER_SECOND) * 1000),
-  );
-
-  return (
-    <span
-      ref={viewportRef}
-      data-favorite-title={id}
-      data-favorite-title-overflowing={isOverflowing ? 'true' : 'false'}
-      data-favorite-title-marquee={isActive ? 'active' : 'idle'}
-      className={`relative min-w-0 overflow-hidden whitespace-nowrap ${
-        isActive ? 'text-clip' : 'text-ellipsis'
-      }`}
-      onPointerEnter={handlePointerEnter}
-      onPointerLeave={resetMarquee}
-    >
-      <span aria-hidden={isActive || undefined} className={isActive ? 'invisible' : undefined}>
-        {title}
-      </span>
-      {isActive && (
-        <span
-          data-favorite-title-track={id}
-          className="favorite-title-marquee-track pointer-events-none absolute left-0 top-0"
-          style={{
-            '--favorite-title-marquee-distance': `-${distance}px`,
-            '--favorite-title-marquee-duration': `${duration}ms`,
-          } as CSSProperties}
-        >
-          <span>{title}</span>
-          <span
-            aria-hidden="true"
-            data-favorite-title-clone={id}
-            className="favorite-title-marquee-clone"
-          >
-            {title}
-          </span>
-        </span>
-      )}
-    </span>
-  );
-}
 
 interface SearchFieldProps {
   value: string;
@@ -587,11 +449,15 @@ export default function FavoritesList({
                 />
                 {/* The title gives up its width first — the date is five
                     characters and holding them keeps the column of days
-                    readable however long a name runs. */}
-                <FavoriteTitleMarquee
+                    readable however long a name runs. What it gives up is
+                    shown by an ellipsis on the rows standing by, and run
+                    round on the one being read. */}
+                <ScrollingTitle
                   key={`${summary.id}:${summary.title}`}
-                  id={summary.id}
+                  data-favorite-title={summary.id}
                   title={summary.title}
+                  active={selected}
+                  className="relative min-w-0"
                 />
                 <time
                   dateTime={new Date(summary.favoritedAt).toISOString()}

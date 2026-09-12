@@ -831,6 +831,90 @@ describe('CodePanel editor focus reporting', () => {
     expect(strudelService.setLineWrappingEnabled).toHaveBeenLastCalledWith(false);
   });
 
+  it('gives the mobile bar the key that puts the editor over the whole window', () => {
+    installMatchMedia(true);
+    const onToggleViz = vi.fn();
+    const { container, root, rerender } = renderCodePanel({ onToggleViz });
+    roots.push(root);
+
+    const bar = container.querySelector('[data-testid="code-panel-mobile-controls"]');
+    const toggle = bar?.querySelector<HTMLButtonElement>(
+      '[data-testid="code-panel-mobile-viz-toggle"]',
+    );
+
+    // Open, it offers to shut the animation — the label names the pane, which
+    // is what actually moves. Which way the glyph runs is a separate question
+    // and has a test of its own below.
+    expect(toggle?.getAttribute('aria-label')).toBe(t('collapseViz'));
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    // Not a disc: the two keys to its left act on the sound and wear the cap
+    // that says so, and a third one here would read as a third transport key.
+    expect(toggle?.classList.contains('control-button-surface')).toBe(false);
+
+    act(() => toggle?.click());
+    expect(onToggleViz).toHaveBeenCalledTimes(1);
+
+    rerender({ vizCollapsed: true });
+    expect(toggle?.getAttribute('aria-label')).toBe(t('expandViz'));
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('drops the mobile viz key when there is no animation to shut', () => {
+    installMatchMedia(true);
+    const { container, root } = renderCodePanel({ vizEnabled: false });
+    roots.push(root);
+
+    const bar = container.querySelector('[data-testid="code-panel-mobile-controls"]');
+    expect(bar?.querySelector('[data-testid="code-panel-mobile-viz-toggle"]')).toBeNull();
+    // The bar takes its full right margin back: the padding was cut to seat a
+    // key that is no longer there.
+    expect(bar?.classList.contains('pr-4')).toBe(true);
+  });
+
+  it('stands the mobile bar on a flat ground instead of the desktop glass', () => {
+    installMatchMedia(true);
+    const { container, root } = renderCodePanel();
+    roots.push(root);
+
+    const bar = container.querySelector('[data-testid="code-panel-mobile-controls"]');
+
+    // No lit field: the glass and its lights describe a strip raised above a
+    // page, and this bar has an opaque window under it rather than a page.
+    expect(bar?.querySelector('[data-testid="code-panel-light-field"]')).toBeNull();
+    expect(bar?.querySelectorAll('svg.code-panel-light-blob')).toHaveLength(0);
+    // The ground is stated in CSS, on the class that carries it — nothing here
+    // may paint the editor's own colour over it.
+    expect(bar?.classList.contains('code-panel-mobile-controls')).toBe(true);
+    expect(bar?.classList.contains('bg-conversation-surface')).toBe(false);
+    // The desktop bar keeps all of it — the glass is not gone, it is where the
+    // page it stands on is real.
+    installMatchMedia(false);
+    const desktop = renderCodePanel();
+    roots.push(desktop.root);
+    const desktopBar = desktop.container.querySelector('[data-testid="code-panel-controls-layer"]');
+    expect(desktopBar?.querySelector('[data-testid="code-panel-light-field"]')).not.toBeNull();
+  });
+
+  it('turns the mobile viz key on what happens to the editor', () => {
+    installMatchMedia(true);
+    const { container, root, rerender } = renderCodePanel();
+    roots.push(root);
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="code-panel-mobile-viz-toggle"]',
+    );
+
+    // With the animation up, pressing this expands the editor over it: the
+    // arrows point out. The label still names the pane, which is what moves.
+    expect(toggle?.querySelector('.lucide-maximize-2')).not.toBeNull();
+    expect(toggle?.getAttribute('aria-label')).toBe(t('collapseViz'));
+
+    // With the animation gone, pressing it gives the height back: arrows in.
+    rerender({ vizCollapsed: true });
+    expect(toggle?.querySelector('.lucide-minimize-2')).not.toBeNull();
+    expect(toggle?.getAttribute('aria-label')).toBe(t('expandViz'));
+  });
+
   it('updates line wrapping when the layout crosses the mobile breakpoint', () => {
     const setMobile = installMatchMedia(false);
     const { root } = renderCodePanel();

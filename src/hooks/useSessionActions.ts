@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { deleteCloudSession } from '../services/cloud-session-repository';
+import type { SessionSummary } from '../../shared/session-api';
 import type { useCloudSessionLibrary } from './useCloudSessionLibrary';
 import type { useSessions } from './useSessions';
 
@@ -13,6 +14,15 @@ interface SessionActionsOptions {
     'history' | 'historySearch' | 'openSession' | 'removeSummary'
     | 'upsertHistorySummary' | 'refreshSearches'>;
   onError: ActionErrorHandler;
+  /**
+   * How a conversation is brought into working state before its name is
+   * written. Opening it is the default, and opening it is also activating it,
+   * which is right where the rename happens in the conversation you are
+   * already in. The phone renames rows from a list it is not leaving, so it
+   * hands down a read that loads the session without making it the current
+   * one.
+   */
+  prepareForRename?: (summary: SessionSummary) => Promise<unknown>;
 }
 
 /** Owns the ordering between working Sessions, cloud summaries and search.
@@ -20,7 +30,13 @@ interface SessionActionsOptions {
  * queue; only its cloud-completion callback refreshes search. A delete call is
  * deliberately not a promise that could be mistaken for durable completion.
  */
-export function useSessionActions({ ownerId, sessions, library, onError }: SessionActionsOptions) {
+export function useSessionActions({
+  ownerId,
+  sessions,
+  library,
+  onError,
+  prepareForRename,
+}: SessionActionsOptions) {
   // A new scope even when an account leaves and later returns. Comparing only
   // owner IDs would let a result from the previous visit affect the new one.
   const scope = useMemo(() => Symbol(ownerId), [ownerId]);
@@ -64,7 +80,7 @@ export function useSessionActions({ ownerId, sessions, library, onError }: Sessi
       ?? library.history.items.find((item) => item.id === id);
     if (!summary) return;
     try {
-      await library.openSession(summary);
+      await (prepareForRename ?? library.openSession)(summary);
       if (activeScope.current !== scope) return;
       await sessions.renameSession(id, title);
       if (activeScope.current !== scope) return;
@@ -74,7 +90,7 @@ export function useSessionActions({ ownerId, sessions, library, onError }: Sessi
     } catch (error) {
       if (activeScope.current === scope) onError(error);
     }
-  }, [library, onError, ownerId, scope, sessions]);
+  }, [library, onError, ownerId, prepareForRename, scope, sessions]);
 
   return { deleteSession, renameSession };
 }

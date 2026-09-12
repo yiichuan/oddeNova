@@ -79,9 +79,45 @@
             // weight units projectGalaxy accumulates, where one star in the outer
             // disk is worth roughly 0.04 and an arm ridge cell lands near 1.
             const SPARSE_FADE_DENSITY = 0.15;
+            /* Set by a host whose pane is far narrower than a studio's — see the
+               font-size floor in the resize handler. */
+            const COMPACT = new URLSearchParams(location.search).get('compact') === '1';
             const isCompactCanvas = window.innerHeight < 420;
-            const STAR_COUNT = isCompactCanvas ? 30000 : 56000;
+            /* A budget, not a length — the gap rationing in createGalaxy drops
+               stars out of it — so what it really sets is how many stars land in
+               a cell, and that is the number the exposure curve is tuned to.
+
+               A phone's pane holds well under half the cells a studio's does
+               (see COMPACT_TARGET_COLUMNS), so the studio budget put around
+               half again as many stars in every cell of it: the field came out
+               denser than the desktop pane has ever shown, which is a different
+               galaxy, and it cost a phone one Math.sin and a projection per
+               star to arrive at it. Cutting to a phone's own budget holds the
+               density the desktop pane holds — near enough 4.5 stars a cell
+               either way — and takes a third off the most expensive thing in
+               the frame, which is what the loop needs to make its 30fps on a
+               handset. */
+            const COMPACT_STAR_COUNT = 20000;
+            const STAR_COUNT = COMPACT
+                ? COMPACT_STAR_COUNT
+                : isCompactCanvas ? 30000 : 56000;
             const TARGET_COLUMNS = 178;
+            /* What a phone's pane is designed around instead.
+
+               178 columns is a studio measurement: across the ~360px the mobile
+               code window gives this pane it works out at a 4px glyph, which is
+               below what a phone renders as a letterform at all — the field came
+               out as grey texture — and it put *more* cells on screen than a
+               full-width desktop pane carries, at three times the device pixels.
+               Every frame then cost more than the phone had, the loop fell well
+               under its 30fps, and a beat detector that only sees the spectrum
+               when a frame runs lost the transients it exists to find: meteors
+               landed late and the shockwave's accent gate, which measures one
+               hit against its neighbours, never cleared.
+
+               96 is the same field at a size a phone can draw — a glyph half
+               again as large, and under half the cells to fill. */
+            const COMPACT_TARGET_COLUMNS = 96;
             const TARGET_FPS = 30;
             const FRAME_INTERVAL = 1000 / TARGET_FPS;
             const FOV = 50 * Math.PI / 180;
@@ -165,6 +201,15 @@
             // and hat noise overlap most, and listening to it makes the two
             // indistinguishable.
             const AUDIO_FLOOR = 0.015;
+            // Ceiling on the latency compensation (see `outputLatency`). A reading
+            // this large is a
+            // misreport rather than a route — past it the effects would read as
+            // answering the beat before rather than the beat they belong to, which
+            // is worse than being early.
+            const MAX_OUTPUT_LATENCY = 0.4;
+            // Under this, firing straight away and firing on a timer are the same
+            // thing to the eye, and the queue is pure overhead.
+            const MIN_OUTPUT_LATENCY = 0.008;
             // Narrow bands, in Hz, resolved against the real sample rate. A wide
             // "everything under 1.4kHz" band tracks the bass line, chords and vocals
             // as much as the kick, so once an arrangement fills in the glitch fires on
@@ -438,13 +483,37 @@
             // how big it is drawn, so the arms keep their default shape instead of
             // being squeezed. Only a width change rescales it, which keeps the galaxy
             // in step with the glyph size (which is derived from width as well).
+            // The panel shape the camera is framed against — see the projection in
+            // resize(). Only their ratio is ever used, and it stays open to being
+            // re-read until the layout has stopped moving; see referenceSettleTimer.
             let referenceWidth = 0;
             let referenceHeight = 0;
+            let referenceLocked = false;
+            let referenceSettleTimer = 0;
             let projectionRows = 0;
             let analyser = null;
             let analyserSource = null;
             let dataArray = null;
             let audioConnected = false;
+            /**
+             * How far ahead of the speaker the tap is, in seconds.
+             *
+             * The analyser hangs off the engine's output gain, which is the signal
+             * on its way to the device — not the sound in the room. Everything
+             * between the two costs time: the output buffer, the OS mixer, and on
+             * a phone a route that may be Bluetooth. On a desktop that is a frame
+             * or two and nobody notices; on a phone it is tens of milliseconds and
+             * upwards, which is exactly the range the ear reads as "the picture is
+             * early". So an effect is not fired when the transient is *seen*, it is
+             * fired when the transient will be *heard*.
+             */
+            let outputLatency = 0;
+            /**
+             * Effects waiting out that latency, in the order they were detected.
+             * Every entry is held for the same delay, so the queue is already in
+             * due order and the frame below can stop at the first one not ready.
+             */
+            const pendingEffects = [];
             let simAudio = null;
             let simTime = null;
             let lastFrameTime = -Infinity;
@@ -686,7 +755,20 @@
                 }
                 context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
 
-                fontSize = clamp(width / (TARGET_COLUMNS * 0.62), 8, 15);
+                // The floor keeps a glyph from shrinking below what the display can
+                // draw, which also means any panel narrower than ~880px falls short
+                // of TARGET_COLUMNS and holds the glyph at the floor instead.
+                //
+                // `?compact=1` — set by the mobile pane and nothing else — asks for the
+                // column count instead of the glyph size, so the field is the one thing
+                // that scales down to a phone and the character stays a character. At
+                // 360px that lands near 6px, which is what a phone can actually draw,
+                // and the 5 floor is only there for a pane narrower than any this is
+                // mounted in. Every other host keeps the flat 8 it has always had,
+                // narrow desktop windows included — a size the pane is drawn at on a
+                // screen someone is sitting in front of is not this fix's business.
+                const targetColumns = COMPACT ? COMPACT_TARGET_COLUMNS : TARGET_COLUMNS;
+                fontSize = clamp(width / (targetColumns * 0.62), COMPACT ? 5 : 8, 15);
                 context.font = `600 ${fontSize}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
                 context.textBaseline = 'top';
                 cellWidth = context.measureText('@').width;
@@ -704,9 +786,27 @@
                 accentColumnLimit = Math.max(0, Math.floor(width / cellWidth) - 1);
                 accentRowLimit = Math.max(0, Math.floor(height / cellHeight) - 1);
 
-                if (referenceWidth === 0 && width > 0 && height > 0) {
+                // Hold the reference open until the panel has stopped changing size,
+                // then fix it for good.
+                //
+                // Only the ratio of these two is used: the projection is `width /
+                // referenceAspect` tall, so a later width change rescales the view and
+                // a later height change crops it — dragging the pane taller should
+                // show more galaxy, not a bigger one. That is the intent, and it needs
+                // an aspect read off a settled panel.
+                //
+                // Taking the very first measurement is what broke it. The script runs
+                // while the layout is still moving — a window dragged from the mobile
+                // breakpoint back to full width mounts this pane and starts it
+                // mid-drag — so the aspect got sampled at a transient narrow size, and
+                // every pixel of width gained afterwards read as `width /
+                // referenceWidth` above 1 and lengthened the focal. The camera crept
+                // in and the field shrank, with nothing to put it back.
+                if (!referenceLocked && width > 0 && height > 0) {
                     referenceWidth = width;
                     referenceHeight = height;
+                    clearTimeout(referenceSettleTimer);
+                    referenceSettleTimer = setTimeout(() => { referenceLocked = true; }, 400);
                 }
                 const projectionHeight = referenceWidth > 0
                     ? referenceHeight * (width / referenceWidth)
@@ -814,6 +914,16 @@
                     tapNode.connect(analyser);
                     analyserSource = tapNode;
                     dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    // `outputLatency` is the whole path to the speaker and the one
+                    // that matters; `baseLatency` is only the buffer the engine
+                    // writes into, and stands in where the browser reports nothing
+                    // better. Read once per connection: the route can change, but
+                    // changing it rebuilds the context, which drops this one.
+                    outputLatency = clamp(
+                        audioContext.outputLatency || audioContext.baseLatency || 0,
+                        0,
+                        MAX_OUTPUT_LATENCY,
+                    );
 
                     const binHz = audioContext.sampleRate / analyser.fftSize;
                     const lastBin = analyser.frequencyBinCount - 1;
@@ -844,6 +954,36 @@
                 analyserSource = null;
                 dataArray = null;
                 audioConnected = false;
+                outputLatency = 0;
+                pendingEffects.length = 0;
+            }
+
+            /**
+             * Run an effect when the transient that earned it reaches the speaker.
+             *
+             * Everything the detector fires goes through here, so the whole glitch
+             * layer moves as one and the relative timing between a meteor and the
+             * ring it lands next to is untouched.
+             */
+            function onHeard(effect) {
+                if (outputLatency <= MIN_OUTPUT_LATENCY) {
+                    effect();
+                    return;
+                }
+                pendingEffects.push({ due: outputLatency, effect });
+            }
+
+            /** Fire whatever has come due this frame, oldest first. */
+            function releaseHeardEffects(delta) {
+                let released = 0;
+                for (let index = 0; index < pendingEffects.length; index += 1) {
+                    const pending = pendingEffects[index];
+                    pending.due -= delta;
+                    if (pending.due > 0) break;
+                    pending.effect();
+                    released += 1;
+                }
+                if (released > 0) pendingEffects.splice(0, released);
             }
 
             function createBand(hz, refractory, dominance, weight) {
@@ -1109,6 +1249,9 @@
              * rather than as rhythm.
              */
             function updateGlitch(delta) {
+                // Before anything else this frame: what the tap heard a latency ago
+                // is reaching the speaker now, and this is the moment it shows.
+                releaseHeardEffects(delta);
                 const slope = meteorSlope();
                 for (let index = meteors.length - 1; index >= 0; index -= 1) {
                     const meteor = meteors[index];
@@ -1183,23 +1326,25 @@
                         // sets how much meteor the hit earns rather than which effect
                         // it gets.
                         if (voiceDecay >= SHORT_HIT_DECAY) {
-                            spawnMeteors(strength);
+                            onHeard(() => spawnMeteors(strength));
                         } else if (sinceShortHit >= SHORT_HIT_REFRACTORY) {
                             sinceShortHit = 0;
-                            spawnMeteor(strength * SHORT_HIT_METEOR_SCALE, true);
+                            onHeard(() => spawnMeteor(strength * SHORT_HIT_METEOR_SCALE, true));
                         }
                     } else if (voice === 0 && accent >= RING_ACCENT && loudest >= RING_MIN_LEVEL) {
                         // A low hit that genuinely towers over its neighbours.
-                        spawnRing(strength);
+                        onHeard(() => spawnRing(strength));
                     } else {
                         // Every other low hit. The ring is the only accent-gated tier:
                         // repeated identical hits measure several tens of a percent
                         // apart, so a second gate lower down would sit inside that noise
                         // and alternate the effect from beat to beat — the same flicker
                         // the arbitration window exists to remove. 1.55 clears it.
-                        burstEnergy = Math.max(burstEnergy, strength);
-                        // Re-seed so each hit lights a different set of cells.
-                        accentSeed = (Math.imul(accentSeed, 1103515245) + 12345) & 0x7fffffff;
+                        onHeard(() => {
+                            burstEnergy = Math.max(burstEnergy, strength);
+                            // Re-seed so each hit lights a different set of cells.
+                            accentSeed = (Math.imul(accentSeed, 1103515245) + 12345) & 0x7fffffff;
+                        });
                     }
                 }
                 // No idle pulse any more. Firing an accent every couple of seconds just
@@ -1744,6 +1889,65 @@
                 context.textBaseline = 'top';
             }
 
+            /**
+             * One step of the listening half: connect if the engine has come up,
+             * read the spectrum, and advance every follower, onset detector and
+             * effect that hangs off them.
+             *
+             * Separated from the drawing half because the two want different
+             * rates, and on a phone they get them. Detection wants resolution —
+             * it is looking for the leading edge of a drum, and a kick's bands do
+             * not peak together, which is the whole reason the arbitration below
+             * holds a 20ms window open before it decides which effect a hit
+             * earns. Drawing wants a budget: 30fps of a full projection is what
+             * this pane costs.
+             *
+             * Run from the frame loop, the first inherits the second. A desktop
+             * frame is 16ms so the window still spans two or three samples, but a
+             * phone drawing at 25fps samples every 40ms — wider than the window
+             * itself, so the window opened and closed on a single sample and
+             * whichever band happened to be ahead at that instant took the hit.
+             * The kick's fundamental needs ~10ms to develop under its pitch
+             * envelope while its beater click speaks immediately and reaches every
+             * band, so the band that was ahead was never the sub one: the
+             * shockwave, which is the only effect the sub band owns, could not
+             * fire at all on a handset, and everything else landed a frame late
+             * and quantised to the frame grid.
+             */
+            function stepAudio(delta) {
+                if (!audioConnected) tryConnectAudio();
+                updateAudio(delta);
+                updateGlitch(delta);
+            }
+
+            /* Fine enough that the arbitration window is several samples wide
+               whatever the frame rate does, and coarse enough to be free: one
+               getByteFrequencyData over 512 bins and a few dozen followers. */
+            const AUDIO_TICK_MS = 8;
+            let lastAudioTime = null;
+
+            function audioTick() {
+                // Two cases where the frame loop owns the audio clock instead:
+                // an offline render steps it from the rendered timeline, and a
+                // pane collapsed to nothing by the host has no visuals to drive.
+                // Dropping the mark means the tick after either one measures its
+                // own interval rather than the whole gap.
+                if (simTime !== null
+                    || window.innerWidth === 0
+                    || window.innerHeight === 0) {
+                    lastAudioTime = null;
+                    return;
+                }
+                const now = performance.now() * 0.001;
+                const delta = lastAudioTime === null
+                    ? AUDIO_TICK_MS / 1000
+                    : clamp(now - lastAudioTime, 0, 0.25);
+                lastAudioTime = now;
+                stepAudio(delta);
+            }
+
+            setInterval(audioTick, AUDIO_TICK_MS);
+
             function animate(timestamp) {
                 requestAnimationFrame(animate);
                 // Collapsed to nothing by the host layout. The loop has to stay
@@ -1768,13 +1972,11 @@
                     : clamp(time - lastVisualTime, 0, 0.25);
                 lastVisualTime = time;
 
-                // Listen every frame, draw at 30fps. Sampling the spectrum only on
-                // drawn frames costs half the temporal resolution of the beat
-                // detection, and loses more as a heavier track drags the frame rate
-                // down — the visuals slide off the music exactly when it gets busy.
-                if (!audioConnected) tryConnectAudio();
-                updateAudio(delta);
-                updateGlitch(delta);
+                // Live audio listens on its own clock (see stepAudio); this branch
+                // is the offline renderer's, where the audio has to be stepped by
+                // the same clock that drives the visuals so a render flies meteors
+                // at the rendered rate rather than at wall time.
+                if (simTime !== null) stepAudio(delta);
 
                 if (simTime === null && timestamp - lastFrameTime < FRAME_INTERVAL) return;
                 lastFrameTime = timestamp;

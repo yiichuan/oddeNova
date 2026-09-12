@@ -184,28 +184,43 @@ describe('importGuestSessions', () => {
     expect(deleteGuestSession).toHaveBeenCalledWith(normalized.id);
   });
 
-  it('stops after a failed import and leaves the failed and later guest sources for retry', async () => {
+  it('does not let one bad session block the ones behind it', async () => {
     const first = makeSession({ id: 'guest-1' });
     const failed = makeSession({ id: 'guest-2' });
     const later = makeSession({ id: 'guest-3' });
     const error = new Error('Cloud save failed');
     const importSession = vi.fn()
       .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(error);
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(undefined);
     const deleteGuestSession = vi.fn(async () => undefined);
 
     const result = await importGuestSessions([first, failed, later], importSession, deleteGuestSession);
+    // `later` went in even though `failed` — the one before it — did not.
     expect(result.error).toBe(error);
-    expect(result.remaining).toHaveLength(2);
+    expect(result.remaining).toHaveLength(1);
     expect(result.remaining[0]).toEqual(expect.objectContaining({ code: failed.code }));
     expect(result.remaining[0].id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
-    expect(result.remaining[1]).toEqual(later);
-    expect(deleteGuestSession).toHaveBeenCalledTimes(1);
-    expect(deleteGuestSession).toHaveBeenCalledWith(expect.stringMatching(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    ));
-    expect(importSession).toHaveBeenCalledTimes(2);
+    expect(importSession).toHaveBeenCalledTimes(3);
+    // Only the two that actually landed lose their guest copy.
+    expect(deleteGuestSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports the last failure while still finishing every item', async () => {
+    const first = makeSession({ id: 'guest-1' });
+    const second = makeSession({ id: 'guest-2' });
+    const firstError = new Error('First save failed');
+    const secondError = new Error('Second save failed');
+    const importSession = vi.fn()
+      .mockRejectedValueOnce(firstError)
+      .mockRejectedValueOnce(secondError);
+    const deleteGuestSession = vi.fn(async () => undefined);
+
+    const result = await importGuestSessions([first, second], importSession, deleteGuestSession);
+    expect(result.error).toBe(secondError);
+    expect(result.remaining).toHaveLength(2);
+    expect(deleteGuestSession).not.toHaveBeenCalled();
   });
 });

@@ -26,6 +26,11 @@ describe('appearance preferences', () => {
     localStorage.clear();
     delete document.documentElement.dataset.theme;
     delete document.documentElement.dataset.editorTheme;
+    document.head.querySelector('meta[name="theme-color"]')?.remove();
+    const themeColor = document.createElement('meta');
+    themeColor.name = 'theme-color';
+    themeColor.content = '#F7F7FA';
+    document.head.append(themeColor);
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -62,6 +67,16 @@ describe('appearance preferences', () => {
     expect(getThemePreference()).toBe('light');
     expect(resolveTheme('light')).toBe(painted);
     expect(document.documentElement.dataset.theme).toBe(painted);
+  });
+
+  it('keeps browser chrome in sync with the resolved app theme', () => {
+    const themeColor = document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+
+    setThemePreference('dark');
+    expect(themeColor?.content).toBe('#0D0D0D');
+
+    setThemePreference('light');
+    expect(themeColor?.content).toBe(LIGHT_THEME_READY ? '#F7F7FA' : '#0D0D0D');
   });
 
   it('resolves "match system" against the OS preference', () => {

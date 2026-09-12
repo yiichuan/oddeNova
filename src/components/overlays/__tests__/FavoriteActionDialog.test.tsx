@@ -7,6 +7,7 @@ import { t } from '../../../lib/i18n';
 import FavoriteActionDialog, {
   LEAVING_MS,
   LINGER_MS,
+  REPORT_LINGER_MS,
   type FavoriteActionKind,
 } from '../FavoriteActionDialog';
 
@@ -30,6 +31,7 @@ function render(kind: FavoriteActionKind, props: {
   onView?: () => void;
   onUndo?: () => void;
   onClose?: () => void;
+  reportOnly?: boolean;
 } = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -47,6 +49,7 @@ function render(kind: FavoriteActionKind, props: {
         onView={kind === 'deleted' ? undefined : onView}
         onUndo={onUndo}
         onClose={onClose}
+        reportOnly={props.reportOnly}
       />,
     );
   });
@@ -77,7 +80,9 @@ describe('FavoriteActionDialog', () => {
     // Nothing here is waiting on an answer, so the page keeps its colour, its
     // focus and its clicks: a strip across the top, and only the bar in it
     // takes the pointer.
-    expect(dialog.className).toContain('top-6');
+    // Laid across the page's own top row rather than hung below it, and
+    // starting below the notch on the phones that have one.
+    expect(dialog.className).toContain('favorite-notice-strip');
     expect(dialog.className).toContain('justify-center');
     expect(dialog.className).toContain('pointer-events-none');
     expect(dialog.className).not.toContain('backdrop-blur');
@@ -101,6 +106,53 @@ describe('FavoriteActionDialog', () => {
     // The mark and the headline are one phrase, so they carry one colour.
     expect(parts[0]?.className).toContain('text-brand-accent');
     expect(parts[1]?.className).toContain('text-brand-accent');
+  });
+
+  /* The phone's form of the same bar: it asked before it acted, so the report
+     is the whole of what is left to say. */
+  describe('reporting only', () => {
+    it('says what happened and offers nothing', () => {
+      const { dialog, card } = render('kept', { reportOnly: true });
+
+      expect(dialog.textContent).toContain(t('favoriteDoneTitle'));
+      expect(dialog.textContent).toContain('午夜霓虹');
+      // No undo, no way onward, not even a cross.
+      expect(dialog.querySelectorAll('button')).toHaveLength(0);
+      // And with nothing on it to press, it takes no presses: the page under a
+      // report is as reachable as it was without one.
+      expect(card.className).toContain('pointer-events-none');
+      expect(card.className).not.toContain('pointer-events-auto');
+    });
+
+    it('reports a release the same way', () => {
+      const { dialog } = render('released', { reportOnly: true });
+
+      expect(dialog.textContent).toContain(t('unfavoriteDoneTitle'));
+      expect(dialog.querySelectorAll('button')).toHaveLength(0);
+    });
+
+    it('goes sooner than a notice with a way back in it', () => {
+      const { onClose } = render('kept', { reportOnly: true });
+
+      expect(REPORT_LINGER_MS).toBeLessThan(LINGER_MS);
+      // Not still standing at the moment the undo notice would only just be
+      // giving up.
+      act(() => { vi.advanceTimersByTime(REPORT_LINGER_MS); });
+      expect(onClose).not.toHaveBeenCalled();
+      settle();
+      expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it('is not cut short by a thumb resting on it', () => {
+      const { card, onClose } = render('kept', { reportOnly: true });
+
+      // Nothing on it holds it open either: there is nothing to reach for, so
+      // a touch that lands on it is a touch meant for the page underneath.
+      act(() => { card.dispatchEvent(new MouseEvent('pointerenter', { bubbles: true })); });
+      act(() => { vi.advanceTimersByTime(REPORT_LINGER_MS); });
+      settle();
+      expect(onClose).toHaveBeenCalledOnce();
+    });
   });
 
   it('reports a deletion in the delete red instead', () => {

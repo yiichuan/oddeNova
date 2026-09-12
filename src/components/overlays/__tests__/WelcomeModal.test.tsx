@@ -79,6 +79,7 @@ describe('WelcomeModal', () => {
     }
     document.body.innerHTML = '';
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('opens on the invitation: Google, an email address, and nothing else to fill in', () => {
@@ -90,6 +91,31 @@ describe('WelcomeModal', () => {
     expect(findButton(container, 'Continue with email')).toBeDefined();
     expect(inputs(container)).toHaveLength(1);
     expect(container.textContent).not.toContain('Already have an account?');
+  });
+
+  it('keeps mobile IME confirmation in the email field, including after clearing it', () => {
+    const media = window.matchMedia('(max-width: 460px)');
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ ...media, matches: true,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    });
+    const { container, root } = renderModal();
+    roots.push(root);
+    const input = inputs(container)[0];
+    expect(input.type).toBe('text');
+    expect(input.inputMode).toBe('email');
+    for (const value of ['中文', '', '重新输入']) {
+      setInput(input, value);
+      act(() => {
+        input.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', isComposing: true, bubbles: true,
+        }));
+      });
+      expect(inputs(container)).toHaveLength(1);
+      expect(input.value).toBe(value);
+    }
+    setInput(input, 'listener@example.com');
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    expect(inputs(container)).toHaveLength(2);
   });
 
   it('turns into an account on the first press rather than submitting one', () => {

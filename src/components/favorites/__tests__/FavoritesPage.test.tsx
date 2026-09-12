@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -25,65 +23,10 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 vi.mock('../../conversation/ThinkingLottie', () => ({ ThinkingLottie: () => null }));
 vi.mock('lottie-react', () => ({ default: () => null }));
 const roots: Root[] = [];
-const resizeCallbacks = new Map<Element, ResizeObserverCallback>();
-
-function installResizeObserverMock() {
-  vi.stubGlobal('ResizeObserver', class {
-    private readonly callback: ResizeObserverCallback;
-
-    constructor(callback: ResizeObserverCallback) {
-      this.callback = callback;
-    }
-
-    observe(element: Element) {
-      resizeCallbacks.set(element, this.callback);
-    }
-
-    unobserve(element: Element) {
-      resizeCallbacks.delete(element);
-    }
-
-    disconnect() {}
-  } as unknown as typeof ResizeObserver);
-}
-
-function notifyResize(element: Element) {
-  act(() => {
-    resizeCallbacks.get(element)?.([], {} as ResizeObserver);
-  });
-}
-
-function setTitleMetrics(
-  title: HTMLElement,
-  metrics: { clientWidth: number; scrollWidth: number },
-) {
-  Object.defineProperty(title, 'clientWidth', {
-    configurable: true,
-    value: metrics.clientWidth,
-  });
-  Object.defineProperty(title, 'scrollWidth', {
-    configurable: true,
-    value: metrics.scrollWidth,
-  });
-  notifyResize(title);
-}
-
-function dispatchPointer(element: Element, type: 'pointerenter' | 'pointerleave') {
-  const eventType = type === 'pointerenter' ? 'pointerover' : 'pointerout';
-  act(() => {
-    element.dispatchEvent(new Event(eventType, { bubbles: true }));
-  });
-}
-
-function cleanupMarqueeTestGlobals() {
-  resizeCallbacks.clear();
-  vi.unstubAllGlobals();
-}
 
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   document.body.innerHTML = '';
-  cleanupMarqueeTestGlobals();
 });
 
 function render(element: React.ReactNode) {
@@ -292,6 +235,51 @@ describe('FavoritesPage', () => {
     expect(container.querySelector('[data-testid="favorites-empty"]')).toBeNull();
     expect(openEntry(container)).toBe('newest');
     expect(onSelect).toHaveBeenCalledWith(THREE_KEPT[0]);
+  });
+
+  /* Being sent to a favorite has to beat the entry the page was left on: the
+     one that was just kept is the reason for the visit. */
+  it('opens on the entry it was sent to rather than the one it was left on', () => {
+    const onSelect = vi.fn();
+    const focus = { id: 'newest' };
+    const { container, root } = render(
+      <FavoritesPage
+        active
+        summaries={THREE_KEPT}
+        selectedId="oldest"
+        focus={focus}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(openEntry(container)).toBe('newest');
+    expect(onSelect).toHaveBeenCalledWith(THREE_KEPT[0]);
+
+    /* And the arrival is spent once it has been answered: the list is back in
+       charge, with the same focus still hanging off the parent. */
+    act(() => listRows(container)[1].click());
+    act(() => root.render(
+      <FavoritesPage
+        active
+        summaries={THREE_KEPT}
+        selectedId="middle"
+        focus={focus}
+        onSelect={onSelect}
+      />,
+    ));
+    expect(openEntry(container)).toBe('middle');
+
+    // A later send wins again — it is a new arrival, even to the same entry.
+    act(() => root.render(
+      <FavoritesPage
+        active
+        summaries={THREE_KEPT}
+        selectedId="middle"
+        focus={{ id: 'oldest' }}
+        onSelect={onSelect}
+      />,
+    ));
+    expect(openEntry(container)).toBe('oldest');
   });
 
   it('still says the account has kept nothing when nothing is left', () => {
@@ -857,225 +845,6 @@ describe('FavoritesPage', () => {
       .toBe(conversationTitle(CONVERSATIONS[1]));
   });
 
-  it('starts an overflowing title marquee only after the hover delay and resets on leave', () => {
-    vi.useFakeTimers();
-    installResizeObserverMock();
-
-    try {
-      const onSelect = vi.fn();
-      const { container } = render(
-        <FavoritesPage
-          active={false}
-          summaries={SUMMARIES}
-          onSelect={onSelect}
-        />,
-      );
-      const row = listRows(container)[0]!;
-      const title = row.querySelector<HTMLElement>('[data-favorite-title="summary-first"]')!;
-      setTitleMetrics(title, { clientWidth: 80, scrollWidth: 220 });
-
-      expect(title.dataset.favoriteTitleOverflowing).toBe('true');
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-
-      dispatchPointer(title, 'pointerenter');
-      act(() => vi.advanceTimersByTime(499));
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-      expect(title.querySelector('[data-favorite-title-track="summary-first"]')).toBeNull();
-      expect(title.querySelector('[data-favorite-title-clone="summary-first"]')).toBeNull();
-
-      act(() => vi.advanceTimersByTime(1));
-      expect(title.dataset.favoriteTitleMarquee).toBe('active');
-      expect(title.classList.contains('truncate')).toBe(false);
-      expect(title.classList.contains('text-clip')).toBe(true);
-      expect(title.querySelectorAll('[data-favorite-title-track="summary-first"]'))
-        .toHaveLength(1);
-      const track = title.querySelector<HTMLElement>(
-        '[data-favorite-title-track="summary-first"]',
-      );
-      expect(track?.style.getPropertyValue('--favorite-title-marquee-distance'))
-        .toBe('-140px');
-      const clones = title.querySelectorAll('[data-favorite-title-clone="summary-first"]');
-      expect(clones).toHaveLength(1);
-      expect(clones[0]?.getAttribute('aria-hidden'))
-        .toBe('true');
-
-      dispatchPointer(title, 'pointerleave');
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-      expect(title.querySelectorAll('[data-favorite-title-track="summary-first"]'))
-        .toHaveLength(0);
-      expect(title.querySelectorAll('[data-favorite-title-clone="summary-first"]'))
-        .toHaveLength(0);
-      expect(row.querySelector('time')?.textContent).toBe('01/01');
-
-      act(() => row.click());
-      expect(onSelect).toHaveBeenCalledWith(SUMMARIES[0]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('plays the title marquee once and holds its final position', () => {
-    const favoritesStyles = readFileSync(resolve(__dirname, '../../../index.css'), 'utf8');
-
-    expect(favoritesStyles).toMatch(
-      /\.favorite-title-marquee-track\s*\{[^}]*animation:\s*favorite-title-marquee\s+var\(--favorite-title-marquee-duration\)\s+linear\s+1\s+forwards;/s,
-    );
-  });
-
-  it('does not start an overflowing title marquee after leaving before the hover delay', () => {
-    vi.useFakeTimers();
-    installResizeObserverMock();
-
-    try {
-      const { container } = render(
-        <FavoritesPage active={false} summaries={SUMMARIES} onSelect={vi.fn()} />,
-      );
-      const title = listRows(container)[0]!
-        .querySelector<HTMLElement>('[data-favorite-title="summary-first"]')!;
-      setTitleMetrics(title, { clientWidth: 80, scrollWidth: 220 });
-
-      dispatchPointer(title, 'pointerenter');
-      act(() => vi.advanceTimersByTime(499));
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-
-      dispatchPointer(title, 'pointerleave');
-      act(() => vi.advanceTimersByTime(1));
-
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-      expect(title.querySelectorAll('[data-favorite-title-track="summary-first"]'))
-        .toHaveLength(0);
-      expect(title.querySelectorAll('[data-favorite-title-clone="summary-first"]'))
-        .toHaveLength(0);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not start an overflowing title marquee from focus alone', () => {
-    vi.useFakeTimers();
-    installResizeObserverMock();
-
-    try {
-      const { container } = render(
-        <FavoritesPage active={false} summaries={SUMMARIES} onSelect={vi.fn()} />,
-      );
-      const title = listRows(container)[0]!
-        .querySelector<HTMLElement>('[data-favorite-title="summary-first"]')!;
-      setTitleMetrics(title, { clientWidth: 80, scrollWidth: 220 });
-
-      act(() => {
-        title.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        vi.advanceTimersByTime(500);
-      });
-
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-      expect(title.querySelectorAll('[data-favorite-title-track="summary-first"]'))
-        .toHaveLength(0);
-      expect(title.querySelectorAll('[data-favorite-title-clone="summary-first"]'))
-        .toHaveLength(0);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps a short title static even when it is hovered', () => {
-    vi.useFakeTimers();
-    installResizeObserverMock();
-
-    try {
-      const { container } = render(
-        <FavoritesPage active={false} summaries={SUMMARIES} onSelect={vi.fn()} />,
-      );
-      const title = listRows(container)[0]!
-        .querySelector<HTMLElement>('[data-favorite-title="summary-first"]')!;
-      setTitleMetrics(title, { clientWidth: 220, scrollWidth: 220 });
-
-      dispatchPointer(title, 'pointerenter');
-      act(() => vi.advanceTimersByTime(500));
-
-      expect(title.dataset.favoriteTitleOverflowing).toBe('false');
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-      expect(title.querySelector('[data-favorite-title-track="summary-first"]')).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('clears an active marquee when a resize removes the overflow', () => {
-    vi.useFakeTimers();
-    installResizeObserverMock();
-
-    try {
-      const { container } = render(
-        <FavoritesPage active={false} summaries={SUMMARIES} onSelect={vi.fn()} />,
-      );
-      const title = listRows(container)[0]!
-        .querySelector<HTMLElement>('[data-favorite-title="summary-first"]')!;
-      setTitleMetrics(title, { clientWidth: 80, scrollWidth: 220 });
-      dispatchPointer(title, 'pointerenter');
-      act(() => vi.advanceTimersByTime(500));
-      expect(title.dataset.favoriteTitleMarquee).toBe('active');
-
-      setTitleMetrics(title, { clientWidth: 220, scrollWidth: 220 });
-      expect(title.dataset.favoriteTitleOverflowing).toBe('false');
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-      expect(title.querySelector('[data-favorite-title-track="summary-first"]')).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('falls back to a static title when ResizeObserver is unavailable', () => {
-    vi.useFakeTimers();
-    vi.stubGlobal('ResizeObserver', undefined);
-
-    try {
-      const { container } = render(
-        <FavoritesPage active={false} summaries={SUMMARIES} onSelect={vi.fn()} />,
-      );
-      const title = listRows(container)[0]!
-        .querySelector<HTMLElement>('[data-favorite-title="summary-first"]')!;
-      setTitleMetrics(title, { clientWidth: 80, scrollWidth: 220 });
-
-      dispatchPointer(title, 'pointerenter');
-      act(() => vi.advanceTimersByTime(500));
-
-      expect(title.dataset.favoriteTitleOverflowing).toBe('false');
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-      expect(title.querySelector('[data-favorite-title-track="summary-first"]')).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps the title static when reduced motion is requested', () => {
-    vi.useFakeTimers();
-    installResizeObserverMock();
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
-      matches: true,
-      media: '(prefers-reduced-motion: reduce)',
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })));
-
-    try {
-      const { container } = render(
-        <FavoritesPage active={false} summaries={SUMMARIES} onSelect={vi.fn()} />,
-      );
-      const title = listRows(container)[0]!
-        .querySelector<HTMLElement>('[data-favorite-title="summary-first"]')!;
-      setTitleMetrics(title, { clientWidth: 80, scrollWidth: 220 });
-
-      dispatchPointer(title, 'pointerenter');
-      act(() => vi.advanceTimersByTime(500));
-
-      expect(title.dataset.favoriteTitleOverflowing).toBe('true');
-      expect(title.dataset.favoriteTitleMarquee).toBe('idle');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it('truncates a long title rather than letting the row outgrow its column', () => {
     const long: FavoriteConversation = {
       ...CONVERSATIONS[0],
@@ -1090,13 +859,74 @@ describe('FavoritesPage', () => {
 
     // The title gives up its width; the date holds its five characters, so the
     // column of days stays readable however long a name runs.
-    const title = row.querySelector('[data-favorite-title="long"]');
-    expect(title?.className).toContain('min-w-0');
-    expect(title?.className).toContain('overflow-hidden');
-    expect(title?.className).toContain('whitespace-nowrap');
-    expect(title?.className).toContain('text-ellipsis');
+    const title = row.querySelector('[data-favorite-title="long"]')!;
+    expect(title.className).toContain('truncate');
+    expect(title.className).toContain('min-w-0');
     expect(row.querySelector('time')?.className).toContain('shrink-0');
     expect(row.querySelector('time')?.textContent).toBe(favoritedDateLabel(long.favoritedAt));
+  });
+
+  it('runs the open entry\'s name round when it will not fit, and only that one', () => {
+    const long = (id: string): FavoriteConversation => ({
+      ...CONVERSATIONS[0],
+      id,
+      title: [
+        '深夜末班地铁车厢里的环境音草稿',
+        'An Ambient Sketch from the Last Subway Car of the Night',
+      ],
+    });
+    /* happy-dom lays nothing out, so the two measurements this turns on have
+       to be stood in for: a name twice as wide as the room it has. */
+    const nameWidth = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ ...new DOMRect(), width: 240 } as DOMRect);
+    const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(120);
+    try {
+      const { container } = render(
+        <FavoritesPage conversations={[long('first-long'), long('second-long')]} />,
+      );
+      const titleFor = (id: string) => container
+        .querySelector<HTMLElement>(`[data-favorite-title="${id}"]`)!;
+
+      // The one being read runs; the one waiting to be picked says what it is
+      // giving up with an ellipsis, as before.
+      expect(titleFor('first-long').dataset.marquee).toBe('true');
+      // One lap is the name and the gap it comes round after — 240 + 48 — and
+      // it takes that many pixels at the reading pace.
+      expect(titleFor('first-long').style.getPropertyValue('--scrolling-title-lap'))
+        .toBe('-288px');
+      expect(titleFor('first-long').style.getPropertyValue('--scrolling-title-gap'))
+        .toBe('48px');
+      expect(titleFor('first-long').style.getPropertyValue('--scrolling-title-duration'))
+        .toBe('12.00s');
+      // Said twice, because the row is a circle — but only once in the row's
+      // own text: the copy is drawn by CSS out of this attribute.
+      expect(titleFor('first-long').querySelector('.scrolling-title-line')
+        ?.getAttribute('data-title')).toBe(conversationTitle(long('first-long')));
+      expect(titleFor('first-long').textContent).toBe(conversationTitle(long('first-long')));
+      expect(titleFor('second-long').dataset.marquee).toBeUndefined();
+
+      // And it goes with the selection rather than staying where it started.
+      act(() => container.querySelector<HTMLButtonElement>('[data-favorite-id="second-long"]')!.click());
+      expect(titleFor('second-long').dataset.marquee).toBe('true');
+      expect(titleFor('first-long').dataset.marquee).toBeUndefined();
+    } finally {
+      nameWidth.mockRestore();
+      clientWidth.mockRestore();
+    }
+  });
+
+  it('leaves a name that fits alone', () => {
+    const width = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ ...new DOMRect(), width: 120 } as DOMRect);
+    const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(120);
+    try {
+      const { container } = render(<FavoritesPage conversations={CONVERSATIONS} />);
+
+      expect(container.querySelector('[data-marquee]')).toBeNull();
+    } finally {
+      width.mockRestore();
+      room.mockRestore();
+    }
   });
 
   it('opens a favorite at its end rather than at its first instruction', () => {
@@ -1356,10 +1186,48 @@ describe('FavoritesPage', () => {
       expect(unfavorite.querySelector('svg')?.getAttribute('fill')).toBe('currentColor');
 
       act(() => unfavorite.click());
+      // The bin opens the question rather than carrying it out; answering it is
+      // what deletes.
       act(() => remove.click());
+      act(() => document.querySelector<HTMLButtonElement>('[data-testid="favorites-delete-accept"]')!.click());
 
       expect(onUnfavorite).toHaveBeenCalledWith(KEPT[0]);
       expect(onDelete).toHaveBeenCalledWith(KEPT[0]);
+    });
+
+    it('asks before deleting, and deletes nothing until the question is answered', () => {
+      const onDelete = vi.fn();
+      const { container } = render(
+        <FavoritesPage conversations={KEPT} onUnfavorite={vi.fn()} onDelete={onDelete} />,
+      );
+      const remove = container.querySelector<HTMLButtonElement>('[data-favorites-delete]')!;
+      const confirm = () => document.querySelector<HTMLElement>('[data-testid="favorites-delete-confirm"]');
+
+      expect(confirm()).toBeNull();
+      act(() => remove.click());
+
+      // The question says what happens, and which conversation it happens to.
+      expect(confirm()?.textContent).toContain(t('deleteFavoriteAsk'));
+      expect(confirm()?.textContent).toContain(conversationTitle(KEPT[0]));
+      expect(onDelete).not.toHaveBeenCalled();
+
+      // Standing back leaves the favorite exactly as it was.
+      act(() => document.querySelector<HTMLButtonElement>('[data-testid="favorites-delete-cancel"]')!.click());
+      expect(confirm()).toBeNull();
+      expect(onDelete).not.toHaveBeenCalled();
+
+      // And Escape is the other way out of it.
+      act(() => remove.click());
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      });
+      expect(confirm()).toBeNull();
+      expect(onDelete).not.toHaveBeenCalled();
+
+      act(() => remove.click());
+      act(() => document.querySelector<HTMLButtonElement>('[data-testid="favorites-delete-accept"]')!.click());
+      expect(onDelete).toHaveBeenCalledWith(KEPT[0]);
+      expect(confirm()).toBeNull();
     });
 
     it('still allows deleting a favorite whose source session is gone', () => {

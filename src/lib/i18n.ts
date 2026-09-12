@@ -23,7 +23,7 @@ export const FAVORITES_EMPTY_ZH = '收藏的对话会在这里显示';
  * conversation — the pool in `greetings.ts` is the register it has to sit in,
  * and a paragraph there reads as a notice rather than an opening.
  */
-export const THEME_SONG_INTRO_ZH = '听听看 《迟来的信使》，接收 创作 的 邀约';
+export const THEME_SONG_INTRO_ZH = '听听看 《奥德诺娃的梦呓》，接收 创作 的 邀约';
 
 const S: Record<string, readonly [string, string]> = {
   // Common
@@ -80,6 +80,7 @@ const S: Record<string, readonly [string, string]> = {
   featuredSourcePattern: ['Strudel 源码', 'Strudel source'],
   featuredSourceCollection: ['收录仓库', 'Collection repo'],
   featuredNowPlaying:  ['播放中', 'Now playing'],
+  featuredEnableTilt:  ['开启倾斜效果', 'Enable tilt'],
   openInStudio:        ['在工作室打开', 'Open in Studio'],
   featuredBack:        ['返回', 'Back'],
   featuredCode:        ['代码', 'Code'],
@@ -127,6 +128,19 @@ const S: Record<string, readonly [string, string]> = {
   favoriteActionView:   ['查看', 'View'],
   favoriteActionUndo:   ['撤销', 'Undo'],
   favoriteActionFailed: ['收藏操作失败，请重试。', 'Favorite action failed. Please try again.'],
+  /* Asked before the act rather than reported after it, which is what a phone
+     has to do: there is no room down there for a strip offering an undo, and a
+     thumb resting at the foot of a reading is exactly where these two keys
+     are. Each says what happens, not "are you sure". */
+  unfavoriteAsk:        ['不再收藏这段对话？它会回到会话列表里。', 'Let this conversation go? It returns to your sessions.'],
+  /* The way out of every question that would take a conversation away — this
+     page's two, and the history list's bin. Not 「取消」, which beside
+     「取消收藏」 is the same two characters meaning the opposite thing — one is
+     the way out of the question, the other is the answer to it. Both options
+     are verbs on the conversation instead: keep it as it is, or do the thing
+     that was asked. */
+  keepIt:               ['保留', 'Keep it'],
+  deleteFavoriteAsk:    ['永久删除这段对话？删除后无法恢复。', 'Delete this conversation for good? It cannot be brought back.'],
 
   // Account
   account:      ['账号', 'Account'],
@@ -164,14 +178,17 @@ const S: Record<string, readonly [string, string]> = {
   importUnsupported:['导入链接版本不受支持，请更新 oddeNova 或 oddenova-strudel skill', 'This import link version is unsupported. Update oddeNova or the oddenova-strudel skill'],
   importInvalid:    ['导入链接无效', 'Invalid import link'],
   importMemoryWarning: ['当前无法持久保存，刷新后可能丢失', 'Persistent storage is unavailable; this import may be lost after refresh'],
-  collapseCode:     ['收起代码 ↓', 'Collapse ↓'],
-  viewCode:         ['查看代码 ↑', 'View code ↑'],
+  /* The mobile top bar's right-hand door. Named for what it opens onto rather
+     than for the gesture, so the label reads the same whether the window is
+     currently up or not — the way back out is the backdrop. */
+  expandCode:       ['代码展开', 'Code'],
   newSession:       ['新建会话', 'New session'],
   sessionHistory:   ['会话历史', 'Session history'],
+  navSearch:        ['搜索', 'Search'],
   newSessionTitle:  ['新会话', 'New session'],
-  themeSongTitle:   ['Beta 1.0 主题曲', 'Beta 1.0 Theme Song'],
+  themeSongTitle:   ['oddeNova beta 1.0 默认印象', 'oddeNova beta 1.0 Default Impression'],
   themeSongIntro:   [THEME_SONG_INTRO_ZH,
-                     'Hear “The Late Messenger” — and take up the invitation to write.'],
+                     'Hear “Reverie of oddeNova” — and take up the invitation to write.'],
   branchSuffix:     ['（分支）', ' (branch)'],
   sessionSyncOffline: ['未同步到云端 · 联网后自动上传', 'Not synced to cloud · uploads when online'],
   sessionSyncRetrying:['同步失败，正在重试', 'Sync failed; retrying'],
@@ -250,6 +267,11 @@ const S: Record<string, readonly [string, string]> = {
   syncingLocalHistory:  ['正在同步本机历史', 'Syncing local history'],
   syncingLocalHistoryDesc:['正在将本机游客模式下的对话记录导入当前账号并同步到云端，请稍候。', 'Importing local guest conversations into this account and syncing them to the cloud. Please wait.'],
   syncLocalHistoryFailed:['本机历史同步失败', 'Local history sync failed'],
+  syncLocalHistoryOffline:['当前网络不可用，这些对话已保存在本机，联网后会自动继续同步。',
+                           "You're offline right now. These conversations are saved on this device and will keep syncing automatically once you're back online."],
+  syncLocalHistoryRejected:['部分对话未能同步到云端，已留在本机，下次登录会继续尝试。',
+                            'Some conversations could not be synced to the cloud. They remain on this device, and importing will resume the next time you sign in.'],
+  syncLocalHistoryLater:['稍后再说', 'Later'],
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
@@ -307,6 +329,8 @@ const S: Record<string, readonly [string, string]> = {
   themeSystem: ['跟随系统', 'Match system'],
   themeDark: ['深色', 'Dark'],
   themeLight: ['浅色', 'Light'],
+  switchToLight: ['切换到浅色', 'Switch to light'],
+  switchToDark: ['切换到深色', 'Switch to dark'],
   comingSoon: ['即将推出', 'Coming soon'],
   lightThemeUnavailable: ['浅色主题仍在制作中，目前所有选项都以深色显示。', 'The light theme is still in the works — every option renders dark for now.'],
 
@@ -359,6 +383,13 @@ const S: Record<string, readonly [string, string]> = {
   historySearchHint:  ['搜索', 'Search'],
   historySearchClear: ['清除搜索', 'Clear search'],
   historySearchEmpty: ['没有匹配的对话', 'No matching conversations'],
+  /* What the pencil does, said in a word rather than drawn. The mark in the
+     row can be a pencil because it stands on the row it renames; a line in a
+     menu has to name the thing it acts on. */
+  rename:             ['重命名', 'Rename'],
+  /* The bin in the list asks this first. A session deleted here is gone from
+     this device and from the account, and 「保留」 is the other answer. */
+  deleteSessionAsk:   ['删除这段对话？删除后无法恢复。', 'Delete this conversation? It cannot be brought back.'],
 
   // Sidebar
   choosePersona: ['选择人物', 'Choose persona'],

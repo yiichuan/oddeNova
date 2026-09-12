@@ -1,5 +1,6 @@
 import type { CloudSessionRepository, Session } from '../hooks/useSessions';
 import { createLatestSaveQueue } from './latest-save-queue';
+import { isOnline as detectOnline } from './network-status';
 import {
   clearPendingSessionDelete,
   clearPendingSessionSync,
@@ -92,7 +93,7 @@ export function createSessionCloudSync(options: {
     ownerKey,
     repository,
     onStatus,
-    isOnline = () => typeof navigator === 'undefined' || navigator.onLine,
+    isOnline = detectOnline,
     setTimer = setTimeout,
     clearTimer = clearTimeout,
   } = options;

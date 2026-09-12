@@ -65,6 +65,12 @@
   /* The well an account form's fields sit in — one step up from the modal
      surface they stand on, so a stack of them reads as a stack of boxes. */
   --color-auth-field: #141414;
+  /* The strip the phone's code window carries its transport on. A flat fill,
+     because there is no page under that bar for glass to be glass over — see
+     `.code-panel-mobile-controls`. One step off the editor it closes, which is
+     what tells a row of controls from the code above it without drawing a line
+     between the two. */
+  --color-control-bar-surface: #141414;
   --color-accent: #434343;
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
@@ -287,6 +293,7 @@ html[data-theme='light'] {
   --color-conversation-surface: #F7F7FA;
   --color-settings-surface: #FCFCFE;
   --color-auth-field: #E9E9ED;
+  --color-control-bar-surface: #EDEDF1;
   --color-accent: #0668E5;
   --color-accent-light: #237AE8;
   --color-accent-glow: rgba(6, 104, 229, 0.22);
@@ -439,9 +446,71 @@ html[data-editor-theme='solarized-light'] {
   --hap-highlight: #292D33;
 }
 
+/* Mobile browsers can expose the document canvas behind their floating
+   chrome. Paint both roots so that area follows the same theme as the app. */
+html,
+body {
+  background-color: var(--color-bg-primary);
+}
+
+/* iOS Safari zooms the page whenever focus lands in a field set below 16px,
+   and it does not zoom back out — the page is left magnified and the layout
+   has to be pinched back. It is the *computed* size that decides it, so no
+   field on a phone may be set smaller than this, whatever the design of the
+   panel it sits in. Stated once here rather than per field: this is a platform
+   rule, and the next field added should not have to rediscover it.
+
+   `max()` so a field that is already larger keeps its own size. */
+@media (max-width: 460px) {
+  .mobile-nav-no-select,
+  .mobile-nav-no-select * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .mobile-nav-no-select input,
+  .mobile-nav-no-select textarea,
+  .mobile-nav-no-select [contenteditable='true'] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* On a phone there is no page ground: the studio stands directly on the
+   conversation surface, and the strips the browser keeps for itself — the
+   notch at the top, the toolbar at the bottom — are the only places the
+   document canvas is ever seen. They have to continue the page rather than
+   frame it, so both roots take that surface instead.
+
+   `--browser-chrome-color` is what actually decides which colour that is; see
+   browser-chrome-color.ts. The declaration below is only its fallback, for the
+   instant before that module's boot call runs (and for a document that never
+   runs it at all) — a plain reference to the studio's own surface, which
+   resolves under either palette on its own since --color-conversation-surface
+   already does, so this needs no light-mode override of its own. JS overtakes
+   it with an inline style on <html> once a real page is known, and repaints it
+   on every navigation after — see useBrowserChromeColor. */
+:root {
+  --browser-chrome-color: var(--color-conversation-surface);
+}
+
+@media (max-width: 460px) {
+  html,
+  body {
+    background-color: var(--browser-chrome-color);
+  }
+}
+
 body {
   margin: 0;
-  background: var(--color-bg-primary);
   color: var(--color-text-primary);
   /* The platform's own UI face — Inter was named here but never loaded, so
      this is what the app has always actually rendered in. */
@@ -685,6 +754,16 @@ body {
   /* The one filled pill, likewise. */
   --featured-fill: rgba(255, 255, 255, 0.10);
   --featured-fill-hover: rgba(255, 255, 255, 0.16);
+  /* The band a played lap is drawn on inside a record. The phone's transport
+     draws its band as a box and its shelf lap as a stroke inside an SVG, which
+     cannot take a class — so both colours are named rather than written into
+     either. Keep this in step with `.featured-progress-track`, which is the
+     same band on a display. */
+  --featured-track: rgba(255, 255, 255, 0.10);
+  /* The same band while it is still a lap around a shelf pill. One colour here:
+     over a dark field the pill's edge and a record's band want the same thin
+     white. They part on paper — see the light overrides. */
+  --featured-track-lap: var(--featured-track);
   /* The disc that fades in behind an icon. */
   --featured-wash: rgba(255, 255, 255, 0.05);
   /* Light caught on a sleeve's edge as the pointer crosses it, and the two
@@ -759,6 +838,16 @@ body {
   background: rgba(255, 255, 255, 0.10);
 }
 
+/* A bar whose edge is its own lap has no edge of its own to draw: the phone's
+   transport is outlined by the played loop — the band it runs on, with the
+   accent over as much of it as has sounded — and a glass ring under that would
+   be a second hairline a pixel off the first, in a colour the lap is not. The
+   fill, the blur and the paper shadow are still this class's; only the rim
+   goes. See BarProgressLap in MobileFeaturedBar. */
+.featured-bar-glass[data-edge='lap']::before {
+  content: none;
+}
+
 /* The bar keeps a 1px transparent border so the width it is measured at is
    unchanged, so its ring is pulled back out over that border to sit on the box
    the eye reads as the bar's edge. Keep the stops in step with
@@ -803,38 +892,6 @@ body {
   --favorites-search-text: #fff8f1;
   --favorites-search-rule: rgba(255, 248, 241, 0.16);
   --favorites-search-rule-active: var(--color-brand-accent);
-}
-
-.favorite-title-marquee-track {
-  display: inline-flex;
-  width: max-content;
-  white-space: nowrap;
-  will-change: transform;
-  animation: favorite-title-marquee
-    var(--favorite-title-marquee-duration)
-    linear
-    1
-    forwards;
-}
-
-.favorite-title-marquee-clone {
-  margin-left: 24px;
-}
-
-@keyframes favorite-title-marquee {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(var(--favorite-title-marquee-distance));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .favorite-title-marquee-track {
-    animation: none;
-  }
 }
 
 /* ── Favorites page · the frozen 构思过程 header ──────────────────────────────
@@ -896,6 +953,28 @@ body {
 
 html[data-theme='light'] .favorites-reasoning-sticky {
   --favorites-reading-veil: #F4F4F7;
+}
+
+/* Except on a phone, where the reading is not held in glass at all.
+ *
+ * The two values above are a composite: the desktop window's fill over the
+ * light field behind it, which is what the glass resolves to at the one place
+ * the band ever appears. The mobile page has neither — the reading stands
+ * directly on the page's own ground — so that composite is simply the wrong
+ * colour there, and it shows the moment the band freezes: three levels darker
+ * than the page on paper, which is a grey rectangle drawn across the top of the
+ * reading with the text passing under it.
+ *
+ * Here the veil is not a composite of anything. It is the page, named, so it
+ * follows the theme without a second value being written down.
+ *
+ * Two selectors because the light rule above outranks a single-class override.
+ * The declaration is the same in both: `--color-conversation-surface` already
+ * knows which room it is in.
+ */
+.favorites-reading-mobile .favorites-reasoning-sticky,
+html[data-theme='light'] .favorites-reading-mobile .favorites-reasoning-sticky {
+  --favorites-reading-veil: var(--color-conversation-surface);
 }
 
 /* ── Favorites page · the take widget in the reading ─────────────────────────
@@ -1148,6 +1227,82 @@ html[data-theme='light'] .favorites-code-chip:hover {
   padding-right: 8px;
 }
 
+/* The same reading on a phone.
+ *
+ * What it has to be held off at the foot is the row of controls rather than a
+ * bar beside it. That gap goes inside the scrollport, not around it: the box
+ * already stands off the foot, and moving the box moves the window without
+ * moving what is in it — scrolled to the end, the last reply still comes to
+ * rest on the window's own bottom edge, and a line stopping exactly where its
+ * container does reads as text that has been cut rather than text that has
+ * finished. This is the air it finishes into, and it scrolls with the reading,
+ * so it is only ever spent at the end.
+ *
+ * Down the right it is the bar, and the arrangement is the desktop reading's
+ * above, cut to a page that has no window border to stand off. The band the
+ * bar is drawn in is reserved whether or not there is a bar in it, and with
+ * nothing said about it the reading's own right-hand edge lands on that band —
+ * so a user's bubble, which is a surface with a visible edge and no padding of
+ * its own outside it, finishes against the rule and the two read as touching.
+ *
+ * So the box reaches 6px further right than the page's inset, which is where
+ * the band goes, and the scrollport hands 8px of it back as the gap the
+ * messages keep off it — and the same 8px goes on the other end, so the
+ * scrollport stands off both of its own edges by the same amount. That is what
+ * squares the reading: the 6px the box reaches out by and the 6px the band
+ * takes back cancel, and every row's ink then lands the same distance from
+ * either edge of the page. Without the left-hand 8px the right-hand one is
+ * simply extra room down one side, and a reading with more air on its right
+ * than its left reads as having slipped rather than as having a bar.
+ */
+.favorites-reading-mobile {
+  margin-right: -6px;
+}
+
+.favorites-reading-mobile .conversation-scroll {
+  padding-left: 8px;
+  padding-right: 8px;
+  padding-bottom: 120px;
+}
+
+/* The take widget, squared to the reading it stands in.
+ *
+ * It is pulled a hair left of the text it hangs under, so the key's fill lands
+ * on the reading's margin rather than inside it — a filled surface set flush
+ * with bare ink reads as indented. That pull is a left-hand one because in the
+ * stream the widget is read against the text above it, and only its left edge
+ * has anything to line up with.
+ *
+ * Here the widget runs the full measure, so both of its edges are on a page
+ * margin and only one of them was being let out to it. The matching pull on the
+ * right is what makes the key sit square in the reading instead of leaning into
+ * it. */
+.favorites-reading-mobile .favorites-code-chip-row {
+  margin-right: -4px;
+}
+
+/* The delete answer's plate in the mobile Favorites question.
+ *
+ * Its partner, 取消收藏, wears the brand colour in both rooms —
+ * `--color-brand-accent`, which is the orange in the dark room and the blue on
+ * paper — and that is the one that is safe to fill: it is the answer that keeps
+ * the conversation.
+ *
+ * This one carries the delete's own red in the word rather than across the
+ * whole key, so what it needs underneath is a plate that stays out of the way
+ * of that red. The dark room's is the same near-black the other key stands on;
+ * paper's cannot be — the accent there is a saturated blue, and red on blue is
+ * the one pairing that is unreadable in either direction. So on paper it is a
+ * grey, and the red is the only colour on the key.
+ */
+.favorites-confirm-delete {
+  background: var(--color-accent);
+}
+
+html[data-theme='light'] .favorites-confirm-delete {
+  background: var(--color-surface-hover);
+}
+
 /* The list of kept conversations, top right.
  *
  * Its gutter is reserved in FavoritesList's own layout, so the only thing left
@@ -1173,6 +1328,73 @@ html[data-theme='light'] .favorites-code-chip:hover {
 .favorites-list-scroll::-webkit-scrollbar-thumb {
   background-color: var(--color-border);
   border-radius: 0;
+}
+
+/* A name that will not fit, on the line that is the answer to "what am I
+ * looking at" — the open row of a collection or of the shelf, and the caption
+ * under the phone's reading.
+ *
+ * Every other row in a list says what it has to give up with an ellipsis,
+ * which is the right answer for a row you are choosing between: the shape of
+ * the name is enough to tell it from the ones around it. The line being read
+ * is a different question — it is the only one whose whole name is the point —
+ * so there the name runs, and keeps running: it leaves by the left edge and is
+ * already coming back in at the right, a gap behind itself.
+ *
+ * The second copy is what makes that a loop rather than a return trip. One lap
+ * is the name plus that gap, which is exactly where the copy stands, so the
+ * frame the lap ends on and the frame it starts on are the same picture and
+ * the seam has nothing in it to see.
+ *
+ * Everything below is driven from three custom properties written onto the row
+ * by `useTitleMarquee` — the gap, the length of a lap, and how long a lap
+ * should take at a reading pace. The copy is drawn here, out of the line's own
+ * `data-title`, and exists only while the row is running: left in the flow the
+ * rest of the time it would push a name that fits perfectly well past its own
+ * edge and hang an ellipsis on it, and left in the markup it would put the
+ * name into the row twice for anything reading the row rather than looking
+ * at it. */
+.scrolling-title-clip[data-marquee='true'] {
+  /* Nothing is being cut short any more, so nothing should be saying it is. */
+  text-overflow: clip;
+  /* And it starts at its start. A centred line centres its overflow too —
+     which on the phone's caption would have the first word already gone
+     before the name had moved at all. */
+  text-align: start;
+}
+
+.scrolling-title-clip[data-marquee='true'] > .scrolling-title-line {
+  display: inline-block;
+  white-space: nowrap;
+  /* Linear, because a lap has no beginning: any easing would put a slow spot
+     somewhere in the middle of a name and say something happens there. */
+  animation: scrollingTitleLoop var(--scrolling-title-duration, 8s) linear infinite;
+}
+
+.scrolling-title-clip[data-marquee='true'] > .scrolling-title-line::after {
+  content: attr(data-title);
+  margin-left: var(--scrolling-title-gap, 48px);
+}
+
+@keyframes scrollingTitleLoop {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--scrolling-title-lap, 0px)); }
+}
+
+/* Asked for less motion, the row goes back to saying it in punctuation. */
+@media (prefers-reduced-motion: reduce) {
+  .scrolling-title-clip[data-marquee='true'] {
+    text-overflow: ellipsis;
+  }
+
+  .scrolling-title-clip[data-marquee='true'] > .scrolling-title-line {
+    display: inline;
+    animation: none;
+  }
+
+  .scrolling-title-clip[data-marquee='true'] > .scrolling-title-line::after {
+    content: none;
+  }
 }
 
 .code-panel-controls {
@@ -1242,6 +1464,98 @@ html[data-theme='light'] .favorites-code-chip:hover {
   gap: var(--code-panel-progress-to-time-gap);
   padding-left: var(--code-panel-play-to-progress-gap);
   padding-right: var(--code-panel-time-to-volume-gap);
+}
+
+/* The keys hung above the mobile code window — download, share, close. They
+   stand on the backdrop rather than on a surface, so they are bare glyphs — no
+   plate, no ring — and their only job is to be legible against whatever the
+   dimmed page behind them happens to be.
+
+   Disabled is carried by opacity rather than by a second colour, so the same
+   rule holds in both themes. */
+.code-window-action {
+  color: var(--color-text-secondary);
+  transition: color 150ms ease, opacity 150ms ease;
+}
+
+/* On paper they take the action ramp instead — the same ink the window's own
+   play key is cut in. The scrim below has been lightened to the point where the
+   text ramp's mid grey no longer has the page to sit against, and these three
+   are the only marks standing on the bare backdrop; matching the transport
+   makes every glyph on this window one weight. */
+html[data-theme='light'] .code-window-action {
+  color: var(--color-action-fill);
+}
+
+.code-window-action:hover:not(:disabled) {
+  color: var(--color-text-primary);
+}
+
+.code-window-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* The code window's own scrim, kept off `--color-overlay-backdrop`.
+ *
+ * That token dims a page for a modal that has taken the session over — an
+ * account dialog, an API key — and it is right to be heavy there. This window
+ * is a drawer you look into and step back out of, with the conversation still
+ * running behind it, and it is stacked on a 6px blur that is already doing most
+ * of the separating. So: lifted off pure black and thinned, enough to hold the
+ * page down without shutting it away. */
+.code-window-scrim {
+  background: rgba(26, 26, 26, 0.44);
+}
+
+html[data-theme='light'] .code-window-scrim {
+  background: rgba(72, 73, 86, 0.2);
+}
+
+/* The phone bar: its ground, and its rhythm.
+ *
+ * The rhythm first, because it is the shorter half — none of it is derived
+ * from the desktop numbers, since the thing being spaced is different. A phone
+ * bar has no volume control to hold the clock away from, and its two ends are
+ * a finger's width apart.
+ *
+ * The ground is flat, and that is the whole of it. `.code-panel-controls`
+ * above describes a pane of glass — a translucent fill over an 18px backdrop
+ * blur, grain across the top of it, six lit blobs drifting behind — and every
+ * part of that is about a strip standing above a page it lets through, which
+ * is what the desktop bar is. This bar has no page under it: the window is
+ * opaque from the editor's top edge down to here, so the blur had nothing to
+ * gather, and the lights spent themselves covering the one strip of a phone's
+ * window that has to stay legible at arm's length.
+ *
+ * So: no field, no grain, no blur, no lift on paper — one colour, one step off
+ * the editor above it, which is what tells a row of controls from the code
+ * without a rule drawn between them. The glass is desktop's, where the page it
+ * stands on is real.
+ *
+ * Everything here restates a declaration `.code-panel-controls` already made,
+ * at the same one-class specificity, so it is source order that decides it —
+ * this block must stay below that rule. The paper branch is separate for the
+ * same reason in reverse: its selector carries an attribute and outranks a
+ * class, so it has to be answered in kind. */
+.code-panel-mobile-controls {
+  --code-panel-play-to-progress-gap: 12px;
+  --code-panel-progress-to-time-gap: 10px;
+  --code-panel-time-to-volume-gap: 0px;
+
+  background-color: var(--color-control-bar-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-theme='light'] .code-panel-mobile-controls {
+  background-color: var(--color-control-bar-surface);
+  box-shadow: none;
+}
+
+/* The grain belongs to the glass and goes with it. */
+.code-panel-mobile-controls::after {
+  content: none;
 }
 
 .code-panel-right-actions {
@@ -1349,8 +1663,12 @@ html[data-theme='light'] .favorites-code-chip:hover {
   mix-blend-mode: screen;
   /* The resting value. Also the boot animation's last keyframe, which `both`
      holds afterwards; this line is what the reduced-motion branch falls back
-     to. */
-  opacity: 0.64;
+     to — which is why it is a variable and not a number. `both` means the
+     keyframe wins once the boot has run, so anything that wants the field at a
+     different brightness has to move both, and one custom property is what
+     keeps the two from drifting apart. */
+  --code-panel-light-rest: 0.64;
+  opacity: var(--code-panel-light-rest);
   animation: code-panel-light-boot 3s cubic-bezier(0.37, 0, 0.63, 1) both;
   /* Diagnostic, and defensible on its own. An opacity animation gets this
      element its own composited layer for the 3s it runs; without the hint,
@@ -1392,7 +1710,7 @@ html[data-theme='light'] .favorites-code-chip:hover {
 @keyframes code-panel-light-boot {
   0% { opacity: 0; }
   12% { opacity: 0.04; }
-  100% { opacity: 0.64; }
+  100% { opacity: var(--code-panel-light-rest); }
 }
 
 /* The collapsed-state particle layer: ASCII characters falling through the bar
@@ -1754,6 +2072,39 @@ html[data-theme='light'] .history-search-field {
   border-radius: 0;
 }
 
+/* An account field is one line tall and stays one line tall. A phone keyboard
+   does not only suggest above the field: while a word is being composed it
+   hands the browser a marked run that the field has to render inside itself,
+   and clearing the field and typing again is exactly what re-arms that run.
+   Left to lay itself out the control finds room for it by taking a second
+   line, and the form steps down with it.
+
+   So the geometry is stated rather than left to the control: one line's
+   height, that same line-height, the text held on a single unbroken run, and
+   anything past the right edge scrolled to rather than wrapped. `overflow`
+   hidden on the vertical axis is the backstop — even a second line laid out in
+   spite of all this has nowhere to be drawn. `field-sizing: fixed` says the
+   same thing to the browsers that would otherwise let the control size itself
+   to its content. */
+.auth-field {
+  height: 1.5rem;
+  min-height: 1.5rem;
+  max-height: 1.5rem;
+  line-height: 1.5rem;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-overflow: clip;
+  overflow-x: auto;
+  overflow-y: hidden;
+  field-sizing: fixed;
+  scrollbar-width: none;
+}
+
+.auth-field::-webkit-scrollbar {
+  display: none;
+}
+
 /* The inputs inside an account form's fields. They are transparent — the box
    around them carries the fill — but an autofilled input is not: Chrome paints
    it with its own pale blue wash through an internal `!important` rule that no
@@ -1805,6 +2156,44 @@ html[data-theme='light'] .history-search-field {
   animation: slideIn 0.2s ease-out;
 }
 
+/* Where the keep / let-go / delete notice hangs: across the page's own top
+   row, not below it.
+
+   A bar under the heading splits the top of the page into two bands — the name
+   of the page, and then a line about something that just happened to it — for
+   a report that is over in a few seconds. Laid across that row instead, it
+   reads as the head of the page speaking for a moment and then handing the
+   name back.
+
+   A floor over the notch inset rather than a fixed offset: on a phone the row
+   it covers begins below that inset, so the bar has to begin where the row
+   does. Everywhere else the inset is zero and the floor is the whole of it. */
+.favorite-notice-strip {
+  top: max(10px, env(safe-area-inset-top));
+}
+
+@media (max-width: 460px) {
+  .auth-field {
+    display: block;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .favorite-notice-strip {
+    padding-inline: 60px;
+  }
+
+  .favorites-code-chip[data-favorites-code-play]:hover,
+  .favorites-code-chip[data-favorites-code-play]:active {
+    background: #191919;
+  }
+
+  html[data-theme='light'] .favorites-code-chip[data-favorites-code-play]:hover,
+  html[data-theme='light'] .favorites-code-chip[data-favorites-code-play]:active {
+    background: #fcfcfc;
+  }
+}
+
 /* The keep / let-go / delete notice's entrance. It comes down from above the
    page's top edge, which is where a bar pinned to that edge has to have come
    from — the same easing the app's own panes travel on. */
@@ -1843,6 +2232,30 @@ html[data-theme='light'] .history-search-field {
   }
   .animate-favorite-dialog-out {
     animation: fadeOut 120ms ease-out forwards;
+  }
+}
+
+/* The plate a held conversation row opens (see HistoryPanel). It stands off the
+   row rather than on it, so it has to be seen coming *from* the row: it grows
+   out of the edge nearest it — the origin is set per side where it is placed —
+   quickly enough to feel like the answer to a press that has already been
+   waited out. */
+@keyframes historyRowMenuIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-row-menu-in {
+  animation: historyRowMenuIn 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-row-menu-in {
+    animation: fadeIn 120ms ease-out;
   }
 }
 
@@ -2217,6 +2630,38 @@ html[data-theme='light'] .history-search-field {
   .scrollbar-on-hover::-webkit-scrollbar-thumb { transition: none; }
 }
 
+/* The same bar, answering movement instead of the pointer — for the layout that
+   has no pointer to answer with. The mobile Favorites reading wears it, and
+   what it is cut from is the mobile code window's own bar
+   (`.code-scroll-autohide` below): transparent at rest, up while the reading is
+   being moved, gone again a couple of seconds after it stops. Which is how a
+   phone's own scrollbars behave, and the only way a bar can both say how much
+   is left and not stand permanently down the side of a page that is otherwise
+   only text.
+
+   The flag is set in JS on the scroller that moved — see
+   ArchivedConversationView — because a scrollbar cannot be styled by the fact
+   that it is scrolling. Same 200ms and same idle wait as the code window's, so
+   the two bars on this layout are one behaviour. */
+.scrollbar-on-scroll::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 200ms ease;
+}
+
+.scrollbar-on-scroll[data-scrolling]::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+}
+
+/* Firefox only, for the reason the hover block above gives. */
+@supports not selector(::-webkit-scrollbar) {
+  .scrollbar-on-scroll { scrollbar-color: transparent transparent; }
+  .scrollbar-on-scroll[data-scrolling] { scrollbar-color: var(--color-border) transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrollbar-on-scroll::-webkit-scrollbar-thumb { transition: none; }
+}
+
 .mobile-rollback-bubble-no-select,
 .mobile-rollback-bubble-no-select * {
   -webkit-touch-callout: none;
@@ -2233,16 +2678,86 @@ html[data-theme='light'] .history-search-field {
 }
 .cm-editor .cm-scroller::-webkit-scrollbar-corner { background: transparent; }
 
+/* ── The archive's code window ────────────────────────────────────────────────
+   A read-only CodeMirror view (see lib/read-only-code-editor.ts). Everything
+   about how the code is *set* — face, size, measure, gutter, wrap indent, the
+   fades, the bar — it inherits from the `.cm-editor` rules above by being one,
+   so what is left here is only what a window with nothing to type into wants
+   differently from one you compose in.
+
+   All of it is drawn by CodeMirror inside the element the component hands it, so
+   the host is the box and the editor fills it. */
+.code-readonly { height: 100%; }
+
+/* No caret and no active-line plate. The palette injected by
+   editor-preferences.ts paints both with `!important`, so these have to as well;
+   they are a line under the reader's finger and an insertion point in a document
+   that has no insertion to make. The selection is deliberately left alone —
+   copying a few lines out of an archive is the one edit-like thing this window is
+   for. */
+.code-readonly .cm-cursor,
+.code-readonly .cm-cursorLayer { display: none !important; }
+.code-readonly .cm-activeLine,
+.code-readonly .cm-activeLineGutter { background-color: transparent !important; }
+
+/* The line the reader is standing on is not a thing here, so the gutter is
+   quieter than the composing editor's. */
+.code-readonly .cm-gutters { border-right: 0 !important; }
+
 ::-webkit-scrollbar-thumb:hover,
 .conversation-scroll:not(.scrollbar-hidden)::-webkit-scrollbar-thumb:hover,
 .cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-scrollbar-thumb-hover);
 }
 
+/* ── The mobile editor's bar, only while the code is moving ──────────────────
+   On a phone the code window floats over a dimmed page, and a grey rule
+   standing permanently down its right edge is a second frame on a window that
+   already has one. So the bar is transparent at rest and fades up while the
+   scroller is being dragged, which is also how the phone's own scrollbars
+   behave — CodePanel sets `data-scrolling` on whichever scroller moved and
+   drops it once the gesture has settled.
+
+   Transparent rather than removed: the gutter stays reserved, so the code
+   doesn't shift sideways by 6px every time the bar comes and goes. These sit
+   after the editor rules above deliberately — same specificity, and source
+   order is what lets them win. */
+.code-scroll-autohide .cm-scroller::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 200ms ease;
+}
+
+.code-scroll-autohide .cm-scroller[data-scrolling]::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+}
+
+/* Firefox only: in Chromium, setting scrollbar-color would disable the
+   ::-webkit-scrollbar styles above and change the scrollbar width. */
+@supports not selector(::-webkit-scrollbar) {
+  .code-scroll-autohide .cm-scroller { scrollbar-color: transparent transparent; }
+  .code-scroll-autohide .cm-scroller[data-scrolling] {
+    scrollbar-color: var(--color-border) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-scroll-autohide .cm-scroller::-webkit-scrollbar-thumb { transition: none; }
+}
+
 /* Mobile: prevent iOS Safari auto-zoom on editor focus (font-size < 16px triggers zoom) */
 @media (pointer: coarse) {
   .cm-editor .cm-content { font-size: 16px !important; }
   .cm-editor .cm-lineNumbers .cm-gutterElement { font-size: 16px !important; }
+
+  /* The caret at a finger's scale. CodeMirror draws it 1.2px wide, which is a
+     hairline meant for a screen at arm's length; on a phone held close, in a
+     line the thumb is about to cover, it takes the weight the platform's own
+     caret has. The negative margin stays half the width, which is what keeps
+     the stroke centred on the insertion point rather than beside it. */
+  .cm-editor .cm-cursor {
+    border-left-width: 2px;
+    margin-left: -1px;
+  }
 }
 
 /* Narrow the gutter below the mobile breakpoint (matches useIsMobile, i.e. the
@@ -2579,6 +3094,71 @@ html[data-theme='light'] .featured-glow-field {
   opacity: 0.6;
 }
 
+/* The same wash, laid out for the window a phone is.
+   Kept in step with MOBILE_BREAKPOINT in useIsMobile.ts by hand — the same
+   threshold stated twice, once where JS can read it and once where CSS can.
+
+   Nothing here changes what the field is: it is the same thirteen blobs, the
+   same one colour, the same weighting of the strong ones into the middle band
+   where the cover and the two panels stand. What changes is that vw and vh
+   have swapped magnitudes. A blob written as 26vw x 38vh is a wide soft
+   ellipse on a display and a tall narrow sliver on a phone — thirteen of those
+   read as a column of stripes down the page, which is the one shape this field
+   was built to avoid. So the widths are spent generously and the heights
+   sparingly, which comes out at about the same body of light in about the same
+   places, drawn for a page that is tall rather than wide.
+
+   The blur comes down with them. It is a length, so on a field a third as wide
+   it fuses three times as much: left at 58px the blobs stop being separate
+   bodies at all and the metaballs collapse into one even haze. */
+@media (max-width: 460px) {
+  .featured-glow-field {
+    filter: blur(42px);
+  }
+
+  .featured-glow-blob:nth-child(1) {
+    width: 86vw; height: 25vh; left: 26vw; top: 62vh;
+  }
+  .featured-glow-blob:nth-child(2) {
+    width: 68vw; height: 19vh; left: 44vw; top: 14vh;
+  }
+  .featured-glow-blob:nth-child(3) {
+    width: 54vw; height: 22vh; left: 0vw; top: 40vh;
+  }
+  .featured-glow-blob:nth-child(4) {
+    width: 76vw; height: 17vh; left: 12vw; top: 50vh;
+  }
+  .featured-glow-blob:nth-child(5) {
+    width: 50vw; height: 15vh; left: -6vw; top: 27vh;
+  }
+  .featured-glow-blob:nth-child(6) {
+    width: 44vw; height: 13vh; left: 38vw; top: 34vh;
+  }
+  .featured-glow-blob:nth-child(7) {
+    width: 60vw; height: 14vh; left: 42vw; top: 45vh;
+  }
+  .featured-glow-blob:nth-child(8) {
+    width: 40vw; height: 12vh; left: 4vw; top: 68vh;
+  }
+  .featured-glow-blob:nth-child(9) {
+    width: 46vw; height: 12vh; left: 54vw; top: 25vh;
+  }
+
+  /* The ends, which bleed past the window's own edges here as they do there. */
+  .featured-glow-blob:nth-child(10) {
+    width: 72vw; height: 13vh; left: -8vw; top: 0vh;
+  }
+  .featured-glow-blob:nth-child(11) {
+    width: 58vw; height: 12vh; left: 38vw; top: 3vh;
+  }
+  .featured-glow-blob:nth-child(12) {
+    width: 82vw; height: 15vh; left: 2vw; top: 87vh;
+  }
+  .featured-glow-blob:nth-child(13) {
+    width: 54vw; height: 13vh; left: 46vw; top: 93vh;
+  }
+}
+
 /* ── Light material adaptations ─────────────────────────────────────────────
    These pieces have effects that are intentionally more specific than the
    shared colour tokens (glass gradients, canvas blend modes, and progressive
@@ -2596,6 +3176,31 @@ html[data-theme='light'] .chat-input-surface {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: 0 12px 34px rgba(44, 45, 61, 0.10);
+}
+
+/* Except on a phone, where there is nothing to raise it off.
+ *
+ * The shadow above is the whole of how the paper composer says it stands above
+ * the page, and on a desktop it has a page to say it to: the column sits on
+ * `--color-bg-primary`, a clear step under both of them. The phone layout has
+ * no page ground at all. The studio stands directly on the conversation
+ * surface, both document roots are painted that same surface, and so is the
+ * strip of browser chrome under the composer — so the shadow had nothing to
+ * fall on but the reading surface itself, and what it put there was a band a
+ * shade deeper than the page, graded downward, in the last few pixels before a
+ * toolbar painted the flat page colour. A gradient across the one part of this
+ * layout that is meant to be one colour throughout.
+ *
+ * The fill stays. A step under the surface is how a field says it is a field,
+ * and it is flat — it is only the raising that goes, because there is nothing
+ * here to be raised above.
+ *
+ * Kept in step with MOBILE_BREAKPOINT in useIsMobile.ts by hand, same as the
+ * document roots this is answering to. */
+@media (max-width: 460px) {
+  html[data-theme='light'] .chat-input-surface {
+    box-shadow: none;
+  }
 }
 
 /* The nav column is the composer's sibling and gets the same flat fill, so the
@@ -2902,6 +3507,18 @@ html[data-theme='light'] .featured-immersive-surface {
   --featured-hairline-hover: rgba(44, 45, 61, 0.30);
   --featured-fill: rgba(44, 45, 61, 0.08);
   --featured-fill-hover: rgba(44, 45, 61, 0.14);
+  /* The band takes a flat grey rather than thinned ink: it is a track with a
+     bright accent running along it, and thinned ink under paper-bright artwork
+     leaves nothing for the accent to run on. A shade lighter than the display's
+     `.featured-progress-track` — on a phone the band sits on the record's own
+     pale panel rather than on a dark one, and the display's grey reads as a
+     bar in its own right there rather than as the room the accent runs in. */
+  --featured-track: #DCDCE0;
+  /* Around a shelf pill the band is not a track on a panel but a line drawn on
+     artwork, so it is read off the covers rather than off the page: near-white,
+     stopped short of the paper's own white, which against pale artwork is a
+     hole rather than a line. */
+  --featured-track-lap: #F7F7F9;
   --featured-wash: rgba(44, 45, 61, 0.06);
   --featured-cover-ring: rgba(44, 45, 61, 0.18);
   /* Both keyboard rings take the accent instead of white. White on paper is

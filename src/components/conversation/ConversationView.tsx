@@ -3,7 +3,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
-import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, RetryIcon } from '../icons';
+import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
 import { ThinkingLottie } from './ThinkingLottie';
 import { t, zh } from '../../lib/i18n';
 import { CodeDiffView } from './CodeDiffView';
@@ -478,6 +478,22 @@ interface ConversationViewProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  /**
+   * Sound the take a reply committed, from the widget in the reading that
+   * reports it.
+   *
+   * Handed down by both shells. Whether the key is drawn at all is this prop's
+   * question and no layout's: a widget in the stream names one *version*, and
+   * the transport beside the desktop's editor plays whatever the editor is
+   * holding — the latest take, not the one being read about. So where a take is
+   * named is where it can be heard, on either layout.
+   */
+  onPlayCode?: (code: string) => void;
+  onStopCode?: () => void;
+  /** Whether anything is sounding, and what — together these say which widget,
+   *  if any, is the one currently playing. */
+  isPlaying?: boolean;
+  playingCode?: string;
 }
 
 export default function ConversationView({
@@ -489,6 +505,10 @@ export default function ConversationView({
   onRollback,
   onBranch,
   onRetry,
+  onPlayCode,
+  onStopCode,
+  isPlaying = false,
+  playingCode = '',
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -536,6 +556,30 @@ export default function ConversationView({
   // User-collapsed state of the live streaming reasoning window.
   const [reasoningCollapsed, setReasoningCollapsed] = useState(false);
   const isMobile = useIsMobile();
+  /* The stream's reading sizes.
+   *
+   * A phone is set at the platform's own 16px — the size every other app it
+   * sits beside is read at, and the size below which the browser magnifies the
+   * page out from under a focused field (see the floor in index.css). The
+   * studio's column keeps its 14: there the stream is one panel of a workspace
+   * being worked in, not the whole of what is on screen.
+   *
+   * Reasoning is deliberately one step under the reply in both. It is the
+   * work, not the answer — something to be able to look into rather than to
+   * read — and set level with the reply it competes with it for the same
+   * attention. That relationship is the point, so it is stated as its own
+   * constant rather than left to be rediscovered per call site. */
+  const bodyText = isMobile ? 'text-base' : 'text-sm';
+  /* Only the resolved reasoning *body* moves. Everything else that belongs to
+     the thinking — the sticky header over it, the actions heading, the status
+     lines, the live window — is already at 14px on both layouts, which is
+     exactly the step under the phone's reading size this wants, so those stay
+     the literal `text-sm` they were rather than being routed through here and
+     dragging the studio's own column down with them. */
+  const reasoningText = isMobile ? 'text-sm' : 'text-[12px]';
+  /* Marks set against `bodyText`: a glyph reads lighter than a letterform, so
+     it runs a step over the type it stands beside rather than level with it. */
+  const markSize = isMobile ? 16 : 14;
   // On mobile, long-pressing a message reveals the rollback button (no real hover state on touch screens)
   const [longPressedId, setLongPressedId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1062,7 +1106,7 @@ export default function ConversationView({
               }`}
             >
               <ChevronRightIcon
-                size={14}
+                size={markSize}
                 className={`flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
               />
               <span>{t('reasoningTitle')}</span>
@@ -1071,7 +1115,7 @@ export default function ConversationView({
               )}
             </button>
             {isExpanded && (
-              <div className="mt-1.5 text-[12px] text-text-reasoning font-mono break-words leading-relaxed animate-fade-in">
+              <div className={`mt-1.5 ${reasoningText} text-text-reasoning font-mono break-words leading-relaxed animate-fade-in`}>
                 <MarkdownText content={msg.content} tone="muted" />
               </div>
             )}
@@ -1132,9 +1176,13 @@ export default function ConversationView({
             // message id without unmounting this block, so the key is what
             // forces a fresh node — and with it, the mount animation to replay.
             key={greetingMsg.id}
+            // A step larger on a phone: this is the one line on an empty
+            // screen, read at arm's length on a display the width of a hand,
+            // where the desktop's 14px reads as fine print rather than as an
+            // opening.
             className={`animate-blur-fade-in text-center text-text-greeting leading-relaxed ${
-              zh ? 'font-jinghua-laosongti tracking-wider text-sm' : 'font-eb-garamond text-sm'
-            }`}
+              zh ? 'font-jinghua-laosongti tracking-wider' : 'font-eb-garamond'
+            } ${isMobile ? 'text-base' : 'text-sm'}`}
           >
             {greetingMsg.content}
           </p>
@@ -1173,7 +1221,7 @@ export default function ConversationView({
                         <span>· {formatThinkDuration(actionGroupDurationSec.get(gid)!)}</span>
                       )}
                       <ChevronRightIcon
-                        size={14}
+                        size={markSize}
                         className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
                       />
                     </button>
@@ -1195,7 +1243,7 @@ export default function ConversationView({
               className="flex justify-end items-end gap-1.5 animate-fade-in group"
             >
               <div
-                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-message-user text-text-primary${
+                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary${
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}
@@ -1250,7 +1298,7 @@ export default function ConversationView({
             className={`flex justify-start items-start animate-fade-in group${showsTurnActions ? ' mb-16' : ''}`}
             style={assistantStyle}
           >
-            <div className={`relative w-full rounded-xl px-2 pb-2 text-sm bg-transparent text-text-primary ${
+            <div className={`relative w-full rounded-xl px-2 pb-2 ${bodyText} bg-transparent text-text-primary ${
               followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
             }`}>
               <MarkdownText content={msg.content} />
@@ -1260,6 +1308,11 @@ export default function ConversationView({
                   revision={revisionsById.get(msg.revisionId)!}
                   expanded={expandedCode.has(msg.id)}
                   onToggle={() => toggleCode(msg.id)}
+                  playing={isPlaying && playingCode === revisionsById.get(msg.revisionId)!.afterCode}
+                  onPlay={onPlayCode
+                    ? () => onPlayCode(revisionsById.get(msg.revisionId!)!.afterCode)
+                    : undefined}
+                  onStop={onStopCode}
                 />
               )}
               {msg.code && (!msg.revisionId || !revisionsById.has(msg.revisionId)) && (() => {
@@ -1268,26 +1321,46 @@ export default function ConversationView({
                 const lineCount = code.split('\n').length;
                 return (
                   <div className="conversation-code-bar mt-4 -ml-1 rounded-md border border-diff-accent/70 overflow-hidden animate-fade-in">
-                    <div className="w-full flex items-center bg-bg-primary/60 text-[11px] text-diff-accent/70">
-                      <button
-                        onClick={() => toggleCode(msg.id)}
-                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
-                      >
-                        <span>{t('strudelCode')}</span>
-                        <span>· {lineCount} {t('lines')}</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(code).then(() => {
-                            setCopiedId(msg.id);
-                            setTimeout(() => setCopiedId(null), 2000);
-                          });
-                        }}
-                        className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
-                        title={t('copyCode')}
-                      >
-                        {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-                      </button>
+                    {/* The same split as the widget beside it (see
+                        CodeDiffView): the fill sits on the keys, and the seam
+                        between the reading half and the play key is the one
+                        place the box shows through. */}
+                    <div className="w-full flex items-stretch gap-0.5 text-[11px] text-diff-accent/70">
+                      <div className="flex min-w-0 flex-1 items-stretch bg-bg-primary/60">
+                        <button
+                          onClick={() => toggleCode(msg.id)}
+                          className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
+                        >
+                          <span>{t('strudelCode')}</span>
+                          <span>· {lineCount} {t('lines')}</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(code).then(() => {
+                              setCopiedId(msg.id);
+                              setTimeout(() => setCopiedId(null), 2000);
+                            });
+                          }}
+                          className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+                          title={t('copyCode')}
+                        >
+                          {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                        </button>
+                      </div>
+                      {onPlayCode && (() => {
+                        const sounding = isPlaying && playingCode === code;
+                        return (
+                          <button
+                            type="button"
+                            data-code-bar-play={msg.id}
+                            aria-label={sounding ? t('stop') : t('play')}
+                            onClick={() => (sounding ? onStopCode?.() : onPlayCode(code))}
+                            className="grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+                          >
+                            {sounding ? <StopIcon size={12} /> : (isMobile ? <PlayIcon size={13} /> : <PlayOutlineIcon size={13} />)}
+                          </button>
+                        );
+                      })()}
                     </div>
                     {isExpanded && (
                       <pre className="p-2 bg-bg-primary/60 text-[11px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap animate-fade-in">
@@ -1311,14 +1384,14 @@ export default function ConversationView({
                     className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-icon-idle transition-colors hover:bg-surface-hover"
                     title={t('retry')}
                   >
-                    <RetryIcon size={14} />
+                    <RetryIcon size={markSize} />
                   </button>
                   <button
                     onClick={() => onBranch(msg.id)}
                     className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-icon-idle transition-colors hover:bg-surface-hover"
                     title={t('branchFrom')}
                   >
-                    <GitBranchIcon size={14} />
+                    <GitBranchIcon size={markSize} />
                   </button>
                 </div>
               )}
@@ -1342,7 +1415,7 @@ export default function ConversationView({
                 data-live-reasoning-toggle
                 onClick={() => setReasoningCollapsed((v) => !v)}
                 aria-expanded={reasoningWindowExpanded}
-                className="flex min-w-0 items-center gap-1.5 text-left text-sm text-text-primary transition-colors hover:text-text-secondary"
+                className={`flex min-w-0 items-center gap-1.5 text-left ${bodyText} text-text-primary transition-colors hover:text-text-secondary`}
                 title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
               >
                 <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
@@ -1352,7 +1425,7 @@ export default function ConversationView({
                 />
               </button>
             ) : (
-              <div className="min-w-0 text-sm text-text-primary">{liveStatusLabel}</div>
+              <div className={`min-w-0 ${bodyText} text-text-primary`}>{liveStatusLabel}</div>
             )}
           </div>
           {reasoningWindowExpanded && streamingReasoningMsg && (

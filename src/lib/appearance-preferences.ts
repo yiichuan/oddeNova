@@ -9,6 +9,7 @@
  */
 
 import { applyAppEditorTheme } from './editor-preferences';
+import { refreshBrowserChromeTheme } from './browser-chrome-color';
 
 export type ThemePreference = 'system' | 'dark' | 'light';
 export type ResolvedTheme = 'dark' | 'light';
@@ -125,6 +126,13 @@ function applyTheme(preference: ThemePreference, keepEditorTheme = false): void 
   const resolved = resolveTheme(preference);
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
+  /* The system's own chrome — see browser-chrome-color.ts — is repainted for
+     whichever page is currently in front of the reader. There is no page yet
+     the first time this runs, before React has mounted anything, so boot
+     assumes the studio: it is where the app always opens. App.tsx's own hook
+     corrects this the moment a real page is known, and again on every
+     navigation after. */
+  refreshBrowserChromeTheme(resolved);
   if (!keepEditorTheme && previous !== resolved) applyAppEditorTheme(resolved);
 }
 

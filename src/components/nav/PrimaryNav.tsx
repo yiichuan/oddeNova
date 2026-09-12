@@ -22,6 +22,7 @@ import {
 import { t } from '../../lib/i18n';
 import { GITHUB_URL, LEARN_URL } from '../../lib/external-links';
 import { BookOpenIcon } from '../icons';
+import AccountAvatar from './AccountAvatar';
 import {
   clamp,
   liquidOutline,
@@ -441,26 +442,6 @@ function MoreMenu({
         </a>
       </div>
     </>
-  );
-}
-
-/* A full-width script — CJK, kana — comes through as the single character of a
-   family name, and one glyph set at the size two Latin letters want would sit
-   lost in the disc. Latin, digits, and the accented and Cyrillic ranges that
-   set at Latin width all sit below U+0500. */
-const WIDE_INITIALS = /[^\u0020-\u04FF]/;
-
-/** The signed-in face of the account row: initials cut out of a grey disc. */
-function AccountAvatar({ initials }: { initials: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`flex size-[26px] items-center justify-center rounded-full bg-avatar-fill font-semibold leading-none tracking-[0.01em] text-avatar-text ${
-        WIDE_INITIALS.test(initials) ? 'text-[13px]' : 'text-[11px]'
-      }`}
-    >
-      {initials}
-    </span>
   );
 }
 

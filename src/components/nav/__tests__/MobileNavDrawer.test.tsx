@@ -1,0 +1,443 @@
+// @vitest-environment happy-dom
+
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { t } from '../../../lib/i18n';
+import MobileNavDrawer, { type MobileNavDrawerHistory } from '../MobileNavDrawer';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const roots: Root[] = [];
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const root of roots.splice(0)) act(() => root.unmount());
+  document.body.innerHTML = '';
+});
+
+const session = (id: string, title: string, updatedAt: number) => ({
+  id,
+  title,
+  messages: [{ role: 'user' as const, content: 'hi' }],
+  code: '',
+  createdAt: 1,
+  updatedAt,
+});
+
+function renderDrawer(
+  sessions = [session('a', 'Acid bassline', 2), session('b', 'Ambient pads', 1)],
+  extraHistory: Partial<MobileNavDrawerHistory> = {},
+) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  roots.push(root);
+  const onSwitch = vi.fn();
+  const onFavorite = vi.fn();
+  const draw = (overrides: Partial<MobileNavDrawerHistory> = {}) => {
+    const history = {
+      sessions,
+      currentId: 'a',
+      onSwitch,
+      onDelete: vi.fn(),
+      onRename: vi.fn(),
+      onFavorite,
+      ...extraHistory,
+      ...overrides,
+    } as unknown as MobileNavDrawerHistory;
+    act(() => {
+      root.render(
+        <MobileNavDrawer
+          open
+          onClose={vi.fn()}
+          accountLabel="ada@example.com"
+          onNewSession={vi.fn()}
+          onOpenAccount={vi.fn()}
+          history={history}
+        />,
+      );
+    });
+  };
+  draw();
+  return { container, onSwitch, onFavorite, rerender: draw };
+}
+
+const searchKey = (container: HTMLElement) =>
+  container.querySelector<HTMLButtonElement>('[data-testid="drawer-search-open"]');
+const searchField = (container: HTMLElement) =>
+  container.querySelector<HTMLInputElement>('[data-testid="drawer-search-input"]');
+const titles = (container: HTMLElement) =>
+  [...container.querySelectorAll('[data-session-title-edit] span')].map((n) => n.textContent);
+
+/* A finger on a row: happy-dom has no PointerEvent of its own, and the fields
+   the panel reads off one are the two coordinates and the kind of pointer. */
+function pointer(type: string, x: number, y: number) {
+  const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+  Object.defineProperty(event, 'pointerType', { value: 'touch' });
+  return event;
+}
+
+const press = (row: HTMLElement) => { row.dispatchEvent(pointer('pointerdown', 40, 200)); };
+const move = (row: HTMLElement, dx: number, dy: number) => {
+  row.dispatchEvent(pointer('pointermove', 40 + dx, 200 + dy));
+};
+
+function type(input: HTMLInputElement, value: string) {
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype, 'value',
+    )?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+describe('MobileNavDrawer search', () => {
+  it('removes the mouse-only row controls from the mobile hit targets', () => {
+    const { container } = renderDrawer();
+    for (const row of container.querySelectorAll('[data-session-title-edit]')) {
+      expect(row.parentElement!.querySelectorAll('button')).toHaveLength(1);
+    }
+  });
+  it('opens the field from the head key and takes the focus', () => {
+    const { container } = renderDrawer();
+    expect(searchField(container)).toBeNull();
+
+    act(() => searchKey(container)?.click());
+
+    const field = searchField(container);
+    expect(field).not.toBeNull();
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('filters the conversation list by what is typed', () => {
+    const { container } = renderDrawer();
+    act(() => searchKey(container)?.click());
+    type(searchField(container)!, 'acid');
+
+    expect(titles(container)).toEqual(['Acid bassline']);
+  });
+
+  it('says so rather than showing an empty list when nothing matches', () => {
+    const { container } = renderDrawer();
+    act(() => searchKey(container)?.click());
+    type(searchField(container)!, 'techno');
+
+    expect(titles(container)).toEqual([]);
+    expect(container.textContent).toContain(t('historySearchEmpty'));
+  });
+
+  it('stands the destinations aside while the search is up, and back after', () => {
+    const { container } = renderDrawer();
+    /* The block the four fixed rows live in — found through one of them, so
+       the test is not pinned to the drawer's box structure. */
+    const destinations = () => [...container.querySelectorAll('button')]
+      .find((b) => b.textContent === t('newSession'))
+      ?.parentElement;
+
+    expect(destinations()?.hidden).toBe(false);
+
+    act(() => searchKey(container)?.click());
+    expect(destinations()?.hidden).toBe(true);
+
+    /* Escape on an empty field backs out of the search only. */
+    act(() => {
+      searchField(container)!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    expect(searchField(container)).toBeNull();
+    expect(destinations()?.hidden).toBe(false);
+  });
+
+  it('takes the whole window while the search is up, and gives it back after', () => {
+    const { container } = renderDrawer();
+    const panel = () =>
+      container.querySelector<HTMLElement>('[data-testid="mobile-nav-drawer"]')!;
+
+    expect(panel().className).toContain('w-2/3');
+
+    act(() => searchKey(container)?.click());
+    expect(panel().className).toContain('w-full');
+    expect(panel().className).not.toContain('w-2/3');
+
+    act(() => {
+      searchField(container)!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    expect(panel().className).toContain('w-2/3');
+  });
+
+  it('offers a held row the three moves, and opens nothing on the way', () => {
+    vi.useFakeTimers();
+    const { container, onSwitch } = renderDrawer();
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!
+      .parentElement!;
+
+    act(() => { press(row); });
+    act(() => { vi.advanceTimersByTime(600); });
+
+    const menu = document.querySelector<HTMLElement>('[data-testid="history-row-menu"]');
+    expect([...menu!.querySelectorAll('button')].map((b) => b.textContent))
+      .toEqual([t('rename'), t('favorite'), t('delete')]);
+    // The word that does not come back is the only one carrying the red.
+    expect(menu!.querySelector('[data-history-row-menu="delete"]')!.className)
+      .toContain('text-diff-remove');
+
+    // The press that opened the plate is not also the tap that opens the row.
+    act(() => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onSwitch).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  /* The plate stands over the row, not under the hand that called it, and the
+     row it belongs to rises to meet it. */
+  it('opens the held row menu above the row, and raises the row under it', () => {
+    vi.useFakeTimers();
+    const removeAllRanges = vi.fn();
+    vi.spyOn(window, 'getSelection')
+      .mockReturnValue({ removeAllRanges } as unknown as Selection);
+    const { container } = renderDrawer();
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!
+      .parentElement!;
+    /* The box the plate is placed off: a row low enough in the window to have
+       room above it. */
+    row.getBoundingClientRect = () => ({
+      top: 400, bottom: 440, left: 20, right: 320, width: 300, height: 40,
+      x: 20, y: 400, toJSON: () => ({}),
+    });
+
+    act(() => { press(row); });
+    act(() => { vi.advanceTimersByTime(600); });
+
+    const menu = document.querySelector<HTMLElement>('[data-testid="history-row-menu"]')!;
+    // Three lines of 44 and the plate's own 8, standing 8 clear of the row's top.
+    expect(menu.style.top).toBe('252px');
+    // Centred on the row: 170 less half the plate's 176.
+    expect(menu.style.left).toBe('82px');
+    expect(menu.style.transformOrigin).toBe('bottom center');
+    // The row says which one the plate is about, and holds it while it is up.
+    expect(row.style.transform).toContain('scale(');
+    expect(row.style.backgroundColor).toBe('var(--color-surface-hover)');
+    // Nothing the browser had begun selecting survives into the plate.
+    expect(removeAllRanges).toHaveBeenCalled();
+
+    // The row settles back when the plate goes.
+    act(() => {
+      document.querySelector<HTMLElement>('[data-testid="history-row-menu-layer"]')
+        ?.dispatchEvent(pointer('pointerdown', 40, 40));
+    });
+    expect(document.querySelector('[data-testid="history-row-menu"]')).toBeNull();
+    expect(row.style.transform).toBe('');
+    expect(row.style.backgroundColor).toBe('');
+    vi.useRealTimers();
+  });
+
+  /* A row near the top of the window has nothing above it to stand in. */
+  it('flips the held row menu below a row with no room above it', () => {
+    vi.useFakeTimers();
+    const { container } = renderDrawer();
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!
+      .parentElement!;
+    row.getBoundingClientRect = () => ({
+      top: 20, bottom: 60, left: 20, right: 320, width: 300, height: 40,
+      x: 20, y: 20, toJSON: () => ({}),
+    });
+
+    act(() => { press(row); });
+    act(() => { vi.advanceTimersByTime(600); });
+
+    const menu = document.querySelector<HTMLElement>('[data-testid="history-row-menu"]')!;
+    expect(menu.style.top).toBe('68px');
+    expect(menu.style.transformOrigin).toBe('top center');
+    vi.useRealTimers();
+  });
+
+  it('reads a press that travels as a scroll rather than a hold', () => {
+    vi.useFakeTimers();
+    const { container } = renderDrawer();
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!
+      .parentElement!;
+
+    act(() => { press(row); });
+    act(() => { move(row, 0, 40); });
+    act(() => { vi.advanceTimersByTime(600); });
+
+    expect(document.querySelector('[data-testid="history-row-menu"]')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('hands a kept conversation up to the app from the held row', () => {
+    vi.useFakeTimers();
+    const { container, onFavorite } = renderDrawer();
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!
+      .parentElement!;
+
+    act(() => { press(row); });
+    act(() => { vi.advanceTimersByTime(600); });
+    act(() => {
+      document.querySelector<HTMLButtonElement>('[data-history-row-menu="favorite"]')?.click();
+    });
+    // The star fills where the row stood and the row leaves under it; the
+    // conversation is handed over once both have been seen.
+    act(() => { vi.advanceTimersByTime(500); });
+
+    // The row goes up with the id: what is being kept may be a search result
+    // the app's own history collection has never held.
+    expect(onFavorite).toHaveBeenCalledWith('a', expect.objectContaining({ id: 'a' }));
+    expect(document.querySelector('[data-testid="history-row-menu"]')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('sends the held row to the same question the bin asks', () => {
+    vi.useFakeTimers();
+    const { container } = renderDrawer();
+    const row = container.querySelector<HTMLElement>('[data-session-title-edit]')!
+      .parentElement!;
+
+    act(() => { press(row); });
+    act(() => { vi.advanceTimersByTime(600); });
+    act(() => {
+      document.querySelector<HTMLButtonElement>('[data-history-row-menu="delete"]')?.click();
+    });
+
+    expect(document.querySelector('[data-testid="history-delete-confirm"]')?.textContent)
+      .toContain(t('deleteSessionAsk'));
+    vi.useRealTimers();
+  });
+
+  /* Signed in, the field is the account's rather than this device's: the same
+     pair the desktop column is handed. See `searchQuery` on the history prop. */
+  it('hands what is typed to the account instead of filtering the rows it has', () => {
+    const onSearchQueryChange = vi.fn();
+    const { container, rerender } = renderDrawer(undefined, {
+      searchQuery: '',
+      onSearchQueryChange,
+    });
+    act(() => searchKey(container)?.click());
+    type(searchField(container)!, 'techno');
+
+    expect(onSearchQueryChange).toHaveBeenLastCalledWith('techno');
+    // Held by the account, so the field only carries it once it is handed back.
+    rerender({ searchQuery: 'techno' });
+    expect(searchField(container)?.value).toBe('techno');
+    // And the rows are the account's answer: listed as they came, not narrowed
+    // a second time against a word none of their titles hold.
+    expect(titles(container)).toEqual(['Acid bassline', 'Ambient pads']);
+  });
+
+  it('says nothing matched when the account comes back with no rows', () => {
+    const { container } = renderDrawer([], {
+      searchQuery: 'techno',
+      onSearchQueryChange: vi.fn(),
+    });
+    act(() => searchKey(container)?.click());
+
+    expect(titles(container)).toEqual([]);
+    expect(container.textContent).toContain(t('historySearchEmpty'));
+  });
+
+  it('drops the account search when the field is closed', () => {
+    const onSearchQueryChange = vi.fn();
+    const { container } = renderDrawer(undefined, {
+      searchQuery: 'techno',
+      onSearchQueryChange,
+    });
+    act(() => searchKey(container)?.click());
+    act(() => {
+      searchField(container)!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+
+    expect(onSearchQueryChange).toHaveBeenLastCalledWith('');
+  });
+
+  it('clears the words before it closes the field', () => {
+    const { container } = renderDrawer();
+    act(() => searchKey(container)?.click());
+    type(searchField(container)!, 'acid');
+
+    act(() => {
+      searchField(container)!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    expect(searchField(container)?.value).toBe('');
+    expect(titles(container)).toEqual(['Acid bassline', 'Ambient pads']);
+  });
+});
+
+describe('MobileNavDrawer long press on its own furniture', () => {
+  const panel = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-testid="mobile-nav-drawer"]')!;
+
+  /* The rule that keeps the browser from starting a selection lives in
+     index.css, so what is checked here is that the panel wears the class it is
+     written against — the whole panel, not each row. */
+  it('wears the panel-wide no-select class', () => {
+    const { container } = renderDrawer();
+    expect(panel(container).className).toContain('mobile-nav-no-select');
+  });
+
+  it('cancels the browser callout on a press that is not in a field', () => {
+    const { container } = renderDrawer();
+    const heading = [...panel(container).querySelectorAll('button')]
+      .find((button) => button.textContent?.includes(t('navMore')))!;
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    act(() => { heading.dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(true);
+
+    // And the gap below the last row, which no row-level rule covered.
+    const blank = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    act(() => { panel(container).dispatchEvent(blank); });
+    expect(blank.defaultPrevented).toBe(true);
+  });
+
+  it('leaves the platform menu alone inside the search field', () => {
+    const { container } = renderDrawer();
+    act(() => { searchKey(container)?.click(); });
+    const field = searchField(container)!;
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    act(() => { field.dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('drops only a selection made inside the drawer', () => {
+    const { container } = renderDrawer();
+    const outside = document.createElement('p');
+    outside.textContent = 'a line of code in the editor behind the drawer';
+    document.body.appendChild(outside);
+
+    const removeAllRanges = vi.fn();
+    const rangeIn = document.createRange();
+    rangeIn.selectNodeContents(panel(container));
+    const rangeOut = document.createRange();
+    rangeOut.selectNodeContents(outside);
+    const selectionOf = (range: Range) => ({
+      isCollapsed: false,
+      rangeCount: 1,
+      getRangeAt: () => range,
+      removeAllRanges,
+    } as unknown as Selection);
+
+    // A band the browser left across the drawer's own rows: dropped.
+    vi.spyOn(window, 'getSelection').mockReturnValue(selectionOf(rangeIn));
+    act(() => {
+      panel(container).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    expect(removeAllRanges).toHaveBeenCalledTimes(1);
+
+    // A selection the reader made somewhere else entirely: left alone.
+    removeAllRanges.mockClear();
+    vi.spyOn(window, 'getSelection').mockReturnValue(selectionOf(rangeOut));
+    act(() => {
+      panel(container).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    expect(removeAllRanges).not.toHaveBeenCalled();
+  });
+});

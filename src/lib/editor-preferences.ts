@@ -66,6 +66,13 @@ export function setEditorTheme(theme: EditorThemeId | null, save = true): void {
     document.head.appendChild(el);
   }
 
+  // The caret is CodeMirror's own, drawn by `drawSelection` into the cursor
+  // layer, and the native one is turned off — which is what the editor already
+  // asks for, in a `Prec.highest` theme this sheet was overriding by being
+  // later in the head. Two carets in one place is what a phone shows you and a
+  // desktop does not: there the two are a pixel wide at the same spot and read
+  // as one line, while a phone draws its own thicker and over the whole line
+  // box, so the pair blinked between two different sizes.
   el.innerHTML = `
 .cm-editor {
   background-color: ${vars.background} !important;
@@ -79,7 +86,7 @@ export function setEditorTheme(theme: EditorThemeId | null, save = true): void {
   --gutterForeground: ${vars.gutterForeground} !important;
   --gutterBorder: ${vars.gutterBorder} !important;
 }
-.cm-editor .cm-content { caret-color: ${vars.caret} !important; }
+.cm-editor .cm-content { caret-color: transparent !important; }
 .cm-editor .cm-cursor { border-left-color: ${vars.caret} !important; }
 .cm-editor .cm-selectionBackground,
 .cm-editor.cm-focused .cm-selectionBackground { background-color: ${vars.selection} !important; }

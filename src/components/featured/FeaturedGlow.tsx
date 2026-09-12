@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { FeaturedPiece } from '../../lib/featured-pieces';
-import { readCoverColor } from './featured-accent';
+import { useCoverAccent } from './featured-accent';
 
 /** Matches the `.featured-glow-blob:nth-child(n)` geometry in index.css. */
 const GLOW_BLOBS = 13;
@@ -31,28 +31,22 @@ const GLOW_BLOBS = 13;
  * cleaner than resetting it.
  */
 export default function FeaturedGlow({ piece }: { piece: FeaturedPiece }) {
-  const [accent, setAccent] = useState<string | null>(null);
-  const coverUrl = piece.coverUrl;
+  // Shared with the shell's own safe-area tint (useBrowserChromeColor) — see
+  // useCoverAccent for why a canvas read is not repeated per consumer.
+  const accent = useCoverAccent(piece.coverUrl);
 
+  // A transition needs a change to animate, and this field is mounted rather
+  // than always present — see MobileFeaturedPage/FeaturedPage for why. A
+  // cover whose colour another consumer has already read (the shell's own
+  // safe-area tint asks for the same one, see useCoverAccent) would otherwise
+  // arrive here pre-lit, mounting straight at its final opacity with nothing
+  // for the transition to run across. Held one tick behind the colour itself
+  // so the field always has a frame at zero to rise from, known colour or not.
+  const [entered, setEntered] = useState(false);
   useEffect(() => {
-    if (!coverUrl) return;
-
-    let cancelled = false;
-    const image = new Image();
-    // Same-origin in practice (covers live in public/), but declared so a
-    // future remote cover has a chance of being readable rather than tainting.
-    image.crossOrigin = 'anonymous';
-    const read = () => {
-      if (!cancelled) setAccent(readCoverColor(image));
-    };
-    image.addEventListener('load', read);
-    image.src = coverUrl;
-
-    return () => {
-      cancelled = true;
-      image.removeEventListener('load', read);
-    };
-  }, [coverUrl]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEntered(true);
+  }, []);
 
   return (
     <div
@@ -63,7 +57,7 @@ export default function FeaturedGlow({ piece }: { piece: FeaturedPiece }) {
       // Nothing shows until the cover has been read; the black stand-in only
       // keeps the colour value valid behind an opacity of zero.
       style={{
-        opacity: accent ? 1 : 0,
+        opacity: accent && entered ? 1 : 0,
         '--glow-color': accent ?? '0, 0, 0',
       } as CSSProperties}
     >

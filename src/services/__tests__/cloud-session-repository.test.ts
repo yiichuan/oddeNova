@@ -53,10 +53,11 @@ describe('cloud-session-repository', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       '/api/sessions?limit=20&cursor=previous+cursor&q=%E9%9B%A8+%26+bass',
-      {
+      expect.objectContaining({
         method: 'GET',
         headers: { Authorization: 'Bearer token-123' },
-      },
+        signal: expect.any(AbortSignal),
+      }),
     );
     expect(authMocks.getAccessToken).toHaveBeenCalledWith('user-1');
   });
@@ -69,10 +70,11 @@ describe('cloud-session-repository', () => {
     const { getCloudSession } = await import('../cloud-session-repository');
     await expect(getCloudSession(session.id, 'user-1')).resolves.toEqual(session);
 
-    expect(fetch).toHaveBeenCalledWith('/api/sessions/session%2Fwith-special-id', {
+    expect(fetch).toHaveBeenCalledWith('/api/sessions/session%2Fwith-special-id', expect.objectContaining({
       method: 'GET',
       headers: { Authorization: 'Bearer token-123' },
-    });
+      signal: expect.any(AbortSignal),
+    }));
   });
 
   it.each([401, 404, 500])('exposes the HTTP status through SessionApiError (%s)', async (status) => {
@@ -106,17 +108,19 @@ describe('cloud-session-repository', () => {
     await saveCloudSession(session, 'user-1');
     await deleteCloudSession(session.id, 'user-1');
 
-    expect(fetch).toHaveBeenNthCalledWith(1, '/api/sessions/00000000-0000-4000-8000-000000000001', {
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/sessions/00000000-0000-4000-8000-000000000001', expect.objectContaining({
       method: 'PUT',
       headers: {
         Authorization: 'Bearer token-123',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(session),
-    });
-    expect(fetch).toHaveBeenNthCalledWith(2, '/api/sessions/00000000-0000-4000-8000-000000000001', {
+      signal: expect.any(AbortSignal),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/sessions/00000000-0000-4000-8000-000000000001', expect.objectContaining({
       method: 'DELETE',
       headers: { Authorization: 'Bearer token-123' },
-    });
+      signal: expect.any(AbortSignal),
+    }));
   });
 });

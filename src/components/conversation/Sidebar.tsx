@@ -56,6 +56,10 @@ interface SidebarProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  onPlayCode?: (code: string) => void;
+  onStopCode?: () => void;
+  isPlaying?: boolean;
+  playingCode?: string;
 }
 
 export default function Sidebar({
@@ -100,6 +104,10 @@ export default function Sidebar({
   onRollback,
   onBranch,
   onRetry,
+  onPlayCode,
+  onStopCode,
+  isPlaying = false,
+  playingCode = '',
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(1);
@@ -225,6 +233,10 @@ export default function Sidebar({
             onRollback={onRollback}
             onBranch={onBranch}
             onRetry={onRetry}
+            onPlayCode={onPlayCode}
+            onStopCode={onStopCode}
+            isPlaying={isPlaying}
+            playingCode={playingCode}
           />
         </div>
       </div>

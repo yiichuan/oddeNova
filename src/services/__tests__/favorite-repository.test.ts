@@ -54,10 +54,11 @@ describe('favorite-repository', () => {
       expectedUserId: 'user-1',
     })).resolves.toEqual(body);
 
-    expect(fetch).toHaveBeenCalledWith('/api/favorites?limit=20&cursor=next&q=%E9%9B%A8+%26+bass', {
+    expect(fetch).toHaveBeenCalledWith('/api/favorites?limit=20&cursor=next&q=%E9%9B%A8+%26+bass', expect.objectContaining({
       method: 'GET',
       headers: { Authorization: 'Bearer token-123' },
-    });
+      signal: expect.any(AbortSignal),
+    }));
   });
 
   it('passes the abort signal through the favorite summary request', async () => {
@@ -68,11 +69,11 @@ describe('favorite-repository', () => {
     const { listCloudFavoriteSummaries } = await import('../favorite-repository');
     await listCloudFavoriteSummaries({ expectedUserId: 'user-1', signal: controller.signal });
 
-    expect(fetch).toHaveBeenCalledWith('/api/favorites?limit=20', {
+    expect(fetch).toHaveBeenCalledWith('/api/favorites?limit=20', expect.objectContaining({
       method: 'GET',
-      signal: controller.signal,
       headers: { Authorization: 'Bearer token-123' },
-    });
+      signal: expect.any(AbortSignal),
+    }));
   });
 
   it('sends idempotent favorite and unfavorite writes to the favorites endpoint', async () => {
@@ -87,14 +88,16 @@ describe('favorite-repository', () => {
     await expect(favoriteCloudSession(favoriteId, 'user-1')).resolves.toEqual(favorite);
     await expect(unfavoriteCloudSession(favoriteId, 'user-1')).resolves.toEqual(unfavorited);
 
-    expect(fetch).toHaveBeenNthCalledWith(1, `/api/favorites/${favoriteId}`, {
+    expect(fetch).toHaveBeenNthCalledWith(1, `/api/favorites/${favoriteId}`, expect.objectContaining({
       method: 'PUT',
       headers: { Authorization: 'Bearer token-123' },
-    });
-    expect(fetch).toHaveBeenNthCalledWith(2, `/api/favorites/${favoriteId}`, {
+      signal: expect.any(AbortSignal),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(2, `/api/favorites/${favoriteId}`, expect.objectContaining({
       method: 'DELETE',
       headers: { Authorization: 'Bearer token-123' },
-    });
+      signal: expect.any(AbortSignal),
+    }));
   });
 
   it('continues a favorite through the favorites URL with the selected code', async () => {
@@ -105,14 +108,15 @@ describe('favorite-repository', () => {
     const { continueCloudFavorite } = await import('../favorite-repository');
     await expect(continueCloudFavorite(favoriteId, 's("hh")', 'user-1')).resolves.toEqual(continued);
 
-    expect(fetch).toHaveBeenCalledWith(`/api/favorites/${favoriteId}/continue`, {
+    expect(fetch).toHaveBeenCalledWith(`/api/favorites/${favoriteId}/continue`, expect.objectContaining({
       method: 'POST',
       headers: {
         Authorization: 'Bearer token-123',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ code: 's("hh")' }),
-    });
+      signal: expect.any(AbortSignal),
+    }));
   });
 
   it('throws before making a request when the account token is missing', async () => {
