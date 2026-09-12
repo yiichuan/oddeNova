@@ -9,6 +9,7 @@ import type { Session } from '../hooks/useSessions';
 import type { FavoriteConversation } from '../lib/favorite-conversations';
 import { t } from '../lib/i18n';
 import { LEAVING_MS, REPORT_LINGER_MS } from '../components/overlays/FavoriteActionDialog';
+import { resetDeviceTiltStateForTests } from '../components/featured/featured-device-tilt';
 
 const mocks = vi.hoisted(() => ({
   getAllSessions: vi.fn(),
@@ -1260,6 +1261,84 @@ describe('App session sync boundaries', () => {
       await Promise.resolve();
     });
     expect(mocks.strudel.stop).toHaveBeenCalled();
+  });
+
+  it('asks for the device readings from the press that opens the shelf, before it opens', async () => {
+    mocks.isMobile = true;
+    /* iOS hands out the readings only after a request made from inside a real
+       gesture. Entering the shelf from the drawer and then only *turning* the
+       phone produces no further gesture — so the row that opens the page is the
+       gesture, and the ask goes out on it rather than waiting for a touch that
+       may never come. Started, not awaited: an await here would spend the
+       activation the request needs. */
+    const requestPermission = vi.fn(async () => 'granted');
+    vi.stubGlobal('DeviceOrientationEvent', Object.assign(
+      function DeviceOrientationEvent() {},
+      { requestPermission },
+    ));
+    resetDeviceTiltStateForTests();
+    await renderApp();
+
+    const row = [...container
+      .querySelectorAll<HTMLButtonElement>('[data-testid="mobile-nav-drawer"] button')]
+      .find((button) => button.textContent?.includes(t('navFeatured')))!;
+    expect(row).not.toBeUndefined();
+
+    await act(async () => {
+      row.click();
+      await Promise.resolve();
+    });
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    /* And the shelf opened without waiting on the answer — the highlight going
+       out is the studio no longer being the page in front of the reader. */
+    expect(mocks.historyProps?.currentId).toBeNull();
+
+    resetDeviceTiltStateForTests();
+    vi.unstubAllGlobals();
+  });
+
+  it('drops the history highlight when a phone leaves the studio, and gets it back on return', async () => {
+    mocks.isMobile = true;
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    mocks.cloudLibrary.history.items = [{ id: 's-1', title: 'Session', updatedAt: 1 }];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    await renderApp();
+
+    /* A phone navigates from the drawer: there is no PrimaryNav on this layout,
+       and these rows are the only way to either gallery. */
+    const goToGallery = async (label: string) => {
+      const row = [...container
+        .querySelectorAll<HTMLButtonElement>('[data-testid="mobile-nav-drawer"] button')]
+        .find((button) => button.textContent?.includes(label));
+      expect(row).not.toBeUndefined();
+      await act(async () => {
+        row?.click();
+        await Promise.resolve();
+      });
+    };
+
+    expect(mocks.historyProps?.currentId).toBe('s-1');
+
+    /* The studio stays mounted behind a gallery and keeps holding the
+       conversation — which is what the list used to read, and why a row stayed
+       lit on a page it had nothing to do with. The session itself is untouched:
+       nothing switches away, nothing is cleared. */
+    await goToGallery(t('navFavorites'));
+    expect(mocks.historyProps?.currentId).toBeNull();
+    expect(mocks.sessions.switchTo).not.toHaveBeenCalled();
+
+    await goToGallery(t('navFeatured'));
+    expect(mocks.historyProps?.currentId).toBeNull();
+    expect(mocks.sessions.switchTo).not.toHaveBeenCalled();
+
+    // Picking a row out of the drawer carries the shell back to the studio
+    // first, and the highlight follows the conversation that actually opens.
+    await act(async () => {
+      (mocks.historyProps!.onSwitch as (id: string) => void)('s-1');
+      await Promise.resolve();
+    });
+    expect(mocks.historyProps?.currentId).toBe('s-1');
   });
 
   it.each(['s("bd sd")', ''])(

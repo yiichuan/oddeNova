@@ -14,6 +14,7 @@ import { t } from '../../lib/i18n';
 import { strudelService } from '../../services/strudel';
 import { isDemoMode } from '../../demo/demo-config';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useScrollActivity } from '../../hooks/useScrollActivity';
 import {
   formatPlaybackTime,
   getStrudelLoopCycles,
@@ -142,11 +143,6 @@ const METABALL_LINEAR_SCALE = Math.sqrt(3);
 const METABALL_DURATION_SCALE = 2;
 const COMPOSITE_LIGHT_GROUP_ORDER = [0, 3, 1, 4, 2, 5] as const;
 
-/** How long the mobile editor's scrollbar stays up after the last scroll, in
-    ms. Long enough that a flick, its glide, and the pause you take to read
-    where you landed all sit inside one showing of the bar — it goes away when
-    you are done with the code, not the moment your thumb leaves the glass. */
-const SCROLLBAR_IDLE_MS = 2000;
 
 
 /**
@@ -505,42 +501,10 @@ export default function CodePanel({
      below the fold — so it says it at the moment the question is being asked
      and stops afterwards.
 
-     Listening on the container in the capture phase rather than on the
-     scroller itself: scroll events don't bubble, but they do capture, and
-     CodeMirror mounts its scroller some time after this effect runs. Capturing
-     from the box that is always there means no waiting for a child that may
-     not exist yet, and no re-binding when the editor is rebuilt.
-
-     The flag goes on the scroller that actually moved, so a mobile editor with
-     both bars lights only the one being used. */
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!isMobile || !container) return;
-
-    const timers = new Map<Element, number>();
-
-    const handleScroll = (event: Event) => {
-      const scroller = event.target;
-      if (!(scroller instanceof HTMLElement)) return;
-      scroller.dataset.scrolling = 'true';
-      const pending = timers.get(scroller);
-      if (pending !== undefined) window.clearTimeout(pending);
-      timers.set(scroller, window.setTimeout(() => {
-        timers.delete(scroller);
-        delete scroller.dataset.scrolling;
-      }, SCROLLBAR_IDLE_MS));
-    };
-
-    container.addEventListener('scroll', handleScroll, true);
-    return () => {
-      container.removeEventListener('scroll', handleScroll, true);
-      for (const [scroller, timer] of timers) {
-        window.clearTimeout(timer);
-        delete (scroller as HTMLElement).dataset.scrolling;
-      }
-      timers.clear();
-    };
-  }, [isMobile]);
+     `useScrollActivity` is the rule itself, shared with the read-only window the
+     Favorites page opens: two code windows showing the same script should not
+     disagree about when their bars are up. */
+  useScrollActivity(containerRef, isMobile);
 
   // Demo mode plays at a quiet 10% by default; the master engine otherwise
   // starts at full, so push the demo default down on mount.

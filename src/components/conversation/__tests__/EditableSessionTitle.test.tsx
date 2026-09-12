@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import EditableSessionTitle from '../EditableSessionTitle';
+import { SESSION_TITLE_LIMIT, sessionTitleLength } from '../../../lib/session-title';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -27,10 +28,15 @@ function renderTitle(props: Partial<React.ComponentProps<typeof EditableSessionT
   return { container, root, onRename };
 }
 
-function changeInput(input: HTMLInputElement, value: string) {
+/** Write through React's own value descriptor so the controlled input sees it. */
+function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')?.set;
+  setter?.call(input, value);
+}
+
+function changeInput(input: HTMLInputElement, value: string) {
   act(() => {
-    setter?.call(input, value);
+    setInputValue(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
@@ -102,6 +108,57 @@ describe('EditableSessionTitle', () => {
     });
 
     expect(onRename).toHaveBeenCalledWith('新标题');
+  });
+
+  it('holds the field to the shared limit in visible characters, not code units', () => {
+    const { container, root, onRename } = renderTitle();
+    roots.push(root);
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
+    });
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]')!;
+    // No `maxLength`: the browser would count UTF-16 units and would enforce it
+    // mid-composition.
+    expect(input.getAttribute('maxlength')).toBeNull();
+
+    // An astronaut costs seven code units and reads as one character. Pasting
+    // seventy of them leaves sixty, not eight.
+    changeInput(input, '👩🏽‍🚀'.repeat(70));
+    expect(sessionTitleLength(input.value)).toBe(SESSION_TITLE_LIMIT);
+
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(onRename).toHaveBeenCalledWith('👩🏽‍🚀'.repeat(60));
+  });
+
+  it('lets an IME finish its word before measuring it', () => {
+    const { container, root, onRename } = renderTitle();
+    roots.push(root);
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[data-session-title-edit]')?.click();
+    });
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Edit session title"]')!;
+
+    // While a composition is open the buffer is left alone — cutting it here is
+    // what makes an IME rewrite text that is no longer there.
+    act(() => { input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); });
+    changeInput(input, '字'.repeat(70));
+    expect(input.value).toBe('字'.repeat(70));
+
+    // It is measured the moment the word is committed.
+    act(() => {
+      setInputValue(input, '字'.repeat(70));
+      input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    });
+    expect(input.value).toBe('字'.repeat(60));
+
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(onRename).toHaveBeenCalledWith('字'.repeat(60));
   });
 
   it('cancels without saving on Escape', () => {

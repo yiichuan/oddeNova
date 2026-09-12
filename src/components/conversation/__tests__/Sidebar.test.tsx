@@ -117,6 +117,132 @@ describe('Sidebar code revisions', () => {
     const toggle = container.querySelector('[data-code-diff-toggle="m-2"]');
     expect(toggle).not.toBeNull();
   });
+
+  /* The desktop studio draws the same widgets the phone does, and until now it
+     forwarded no transport to them: the props existed on the shared view and
+     stopped at this shell, so the key was never drawn on a desktop. */
+  it('draws a key on both kinds of widget and plays the version each one names', () => {
+    const messages: Session['messages'] = [
+      { id: 'm-1', role: 'user', content: '改鼓点', timestamp: 1 },
+      // A take from before revisions were recorded: a plain code widget.
+      { id: 'm-2', role: 'assistant', content: 'V1', code: 's("bd")', timestamp: 2 },
+      // A take with a diff behind it.
+      {
+        id: 'm-3',
+        role: 'assistant',
+        content: 'V2',
+        code: 's("bd*2")',
+        revisionId: 'rev-1',
+        timestamp: 3,
+      },
+    ];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 's("bd")',
+      afterCode: 's("bd*2")',
+      playbackStatus: 'played',
+      createdAt: 3,
+    }];
+    const onPlayCode = vi.fn();
+    const onStopCode = vi.fn();
+    const { container, root } = renderSidebar({
+      messages,
+      revisions,
+      onPlayCode,
+      onStopCode,
+      isPlaying: false,
+      playingCode: '',
+    });
+    roots.push(root);
+
+    const plainKey = container.querySelector<HTMLButtonElement>('[data-code-bar-play="m-2"]')!;
+    const diffKey = container.querySelector<HTMLButtonElement>('[data-code-diff-play="m-3"]')!;
+    expect(plainKey).not.toBeNull();
+    expect(diffKey).not.toBeNull();
+    expect(plainKey.getAttribute('aria-label')).toBe(t('play'));
+    expect(diffKey.getAttribute('aria-label')).toBe(t('play'));
+
+    // Each key sounds its own version in full.
+    act(() => plainKey.click());
+    expect(onPlayCode).toHaveBeenCalledWith('s("bd")');
+    act(() => diffKey.click());
+    expect(onPlayCode).toHaveBeenLastCalledWith('s("bd*2")');
+    expect(onStopCode).not.toHaveBeenCalled();
+  });
+
+  it('reads which version is sounding off activeCode, not the editor draft', () => {
+    const messages: Session['messages'] = [
+      { id: 'm-1', role: 'user', content: '改鼓点', timestamp: 1 },
+      { id: 'm-2', role: 'assistant', content: 'V1', code: 's("bd")', timestamp: 2 },
+      { id: 'm-3', role: 'assistant', content: 'V2', code: 's("bd*2")', revisionId: 'rev-1', timestamp: 3 },
+    ];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 's("bd")',
+      afterCode: 's("bd*2")',
+      playbackStatus: 'played',
+      createdAt: 3,
+    }];
+    const onPlayCode = vi.fn();
+    const onStopCode = vi.fn();
+    const { container, root } = renderSidebar({
+      messages,
+      revisions,
+      onPlayCode,
+      onStopCode,
+      isPlaying: true,
+      // V2 is what is sounding. `playingCode` is the engine's active script, not
+      // the editor's draft — App hands down `strudel.activeCode`, and an
+      // unexecuted edit in the window cannot light a widget.
+      playingCode: 's("bd*2")',
+    });
+    roots.push(root);
+
+    const plainKey = container.querySelector<HTMLButtonElement>('[data-code-bar-play="m-2"]')!;
+    const diffKey = container.querySelector<HTMLButtonElement>('[data-code-diff-play="m-3"]')!;
+    expect(diffKey.getAttribute('aria-label')).toBe(t('stop'));
+    expect(plainKey.getAttribute('aria-label')).toBe(t('play'));
+
+    // The one that is sounding stops; the other one starts.
+    act(() => diffKey.click());
+    expect(onStopCode).toHaveBeenCalledTimes(1);
+    expect(onPlayCode).not.toHaveBeenCalled();
+    act(() => plainKey.click());
+    expect(onPlayCode).toHaveBeenCalledWith('s("bd")');
+  });
+
+  it('draws no key at all when the shell forwards no transport', () => {
+    const messages: Session['messages'] = [
+      { id: 'm-1', role: 'user', content: '改鼓点', timestamp: 1 },
+      { id: 'm-2', role: 'assistant', content: 'V1', code: 's("bd")', timestamp: 2 },
+    ];
+    const { container, root } = renderSidebar({ messages });
+    roots.push(root);
+
+    expect(container.querySelector('[data-code-bar-play="m-2"]')).toBeNull();
+  });
+
+  it('leaves expanding and copying alone — neither sounds anything', () => {
+    const messages: Session['messages'] = [
+      { id: 'm-1', role: 'user', content: '改鼓点', timestamp: 1 },
+      { id: 'm-2', role: 'assistant', content: 'V1', code: 's("bd")', timestamp: 2 },
+    ];
+    const onPlayCode = vi.fn();
+    const onStopCode = vi.fn();
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue({ writeText } as unknown as Clipboard);
+    const { container, root } = renderSidebar({ messages, onPlayCode, onStopCode });
+    roots.push(root);
+
+    const bar = container.querySelector<HTMLButtonElement>('[data-code-bar-play="m-2"]')!.parentElement!;
+    const [expand, copy] = [...bar.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((button) => !button.hasAttribute('data-code-bar-play'));
+    act(() => expand?.click());
+    act(() => copy?.click());
+    expect(writeText).toHaveBeenCalledWith('s("bd")');
+    expect(onPlayCode).not.toHaveBeenCalled();
+    expect(onStopCode).not.toHaveBeenCalled();
+  });
 });
 
 describe('Sidebar session title editing layout', () => {

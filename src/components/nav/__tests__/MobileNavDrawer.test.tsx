@@ -315,3 +315,75 @@ describe('MobileNavDrawer search', () => {
     expect(titles(container)).toEqual(['Acid bassline', 'Ambient pads']);
   });
 });
+
+describe('MobileNavDrawer long press on its own furniture', () => {
+  const panel = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-testid="mobile-nav-drawer"]')!;
+
+  /* The rule that keeps the browser from starting a selection lives in
+     index.css, so what is checked here is that the panel wears the class it is
+     written against — the whole panel, not each row. */
+  it('wears the panel-wide no-select class', () => {
+    const { container } = renderDrawer();
+    expect(panel(container).className).toContain('mobile-nav-no-select');
+  });
+
+  it('cancels the browser callout on a press that is not in a field', () => {
+    const { container } = renderDrawer();
+    const heading = [...panel(container).querySelectorAll('button')]
+      .find((button) => button.textContent?.includes(t('navMore')))!;
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    act(() => { heading.dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(true);
+
+    // And the gap below the last row, which no row-level rule covered.
+    const blank = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    act(() => { panel(container).dispatchEvent(blank); });
+    expect(blank.defaultPrevented).toBe(true);
+  });
+
+  it('leaves the platform menu alone inside the search field', () => {
+    const { container } = renderDrawer();
+    act(() => { searchKey(container)?.click(); });
+    const field = searchField(container)!;
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    act(() => { field.dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('drops only a selection made inside the drawer', () => {
+    const { container } = renderDrawer();
+    const outside = document.createElement('p');
+    outside.textContent = 'a line of code in the editor behind the drawer';
+    document.body.appendChild(outside);
+
+    const removeAllRanges = vi.fn();
+    const rangeIn = document.createRange();
+    rangeIn.selectNodeContents(panel(container));
+    const rangeOut = document.createRange();
+    rangeOut.selectNodeContents(outside);
+    const selectionOf = (range: Range) => ({
+      isCollapsed: false,
+      rangeCount: 1,
+      getRangeAt: () => range,
+      removeAllRanges,
+    } as unknown as Selection);
+
+    // A band the browser left across the drawer's own rows: dropped.
+    vi.spyOn(window, 'getSelection').mockReturnValue(selectionOf(rangeIn));
+    act(() => {
+      panel(container).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    expect(removeAllRanges).toHaveBeenCalledTimes(1);
+
+    // A selection the reader made somewhere else entirely: left alone.
+    removeAllRanges.mockClear();
+    vi.spyOn(window, 'getSelection').mockReturnValue(selectionOf(rangeOut));
+    act(() => {
+      panel(container).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    expect(removeAllRanges).not.toHaveBeenCalled();
+  });
+});

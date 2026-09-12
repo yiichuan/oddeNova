@@ -6,10 +6,10 @@ import { t } from '../../lib/i18n';
 import { takeLabel } from '../../lib/favorite-conversations';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
 import { MarkdownText, UserMessageBubble } from './ConversationView';
+import { useScrollActivity } from '../../hooks/useScrollActivity';
 
 /** How long the bar stays up after the last scroll, in ms — the mobile code
     editor's own wait, so the two bars on that layout behave as one. */
-const SCROLLBAR_IDLE_MS = 2000;
 
 interface ArchivedConversationViewProps {
   messages: readonly ChatMessage[];
@@ -273,33 +273,14 @@ export default function ArchivedConversationView({
        what the dependency is there to say. */
   }, [streamShape, active, scrollRef]);
 
-  /* The bar, while the reading is moving and for a moment after. The wait is
-     the mobile code editor's own (see SCROLLBAR_IDLE_MS in CodePanel): long
-     enough that a flick, its glide, and the pause taken to read where it landed
-     all sit inside one showing of the bar, so it goes away when you are done
-     with the reading rather than the moment your thumb leaves the glass.
+  /* The bar, while the reading is moving and for a moment after — the same rule
+     the code windows wear, from the same place (`useScrollActivity`), so every
+     bar on this layout is one behaviour rather than three copies of it.
 
-     What the flag drives is `.scrollbar-on-scroll` in index.css. It is set here
+     What the flag drives is `.scrollbar-on-scroll` in index.css. It is set in JS
      rather than in CSS because a scrollbar cannot be styled by the fact that it
      is scrolling. */
-  useEffect(() => {
-    const scroller = scrollRef.current;
-    if (!autoHideScrollbar || !scroller) return undefined;
-
-    let idle = 0;
-    const handleScroll = () => {
-      scroller.dataset.scrolling = 'true';
-      window.clearTimeout(idle);
-      idle = window.setTimeout(() => { delete scroller.dataset.scrolling; }, SCROLLBAR_IDLE_MS);
-    };
-
-    scroller.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener('scroll', handleScroll);
-      window.clearTimeout(idle);
-      delete scroller.dataset.scrolling;
-    };
-  }, [autoHideScrollbar, scrollRef]);
+  useScrollActivity(scrollRef, autoHideScrollbar);
 
   /* Which thoughts' headers are frozen at the top of the reading right now.
      The band a frozen header is drawn on is a flat colour standing in for

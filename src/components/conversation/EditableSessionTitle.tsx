@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../../lib/i18n';
+import { normalizeSessionTitle } from '../../lib/session-title';
+import { useSessionTitleInput } from '../../hooks/useSessionTitleInput';
 import { EditIcon } from '../icons';
 
 /** How wide the field opens to when the title alone would not fill it. Fits
@@ -28,6 +30,7 @@ export default function EditableSessionTitle({
   const [draft, setDraft] = useState(title);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
+  const titleInput = useSessionTitleInput(setDraft);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -39,7 +42,10 @@ export default function EditableSessionTitle({
   const sizingText = displayTitle;
 
   const save = () => {
-    const nextTitle = draft.trim();
+    // Straightened here rather than only where it is stored, so what the field
+    // reports is what gets filed, what the cloud is told, and what the list
+    // redraws with — one name, arrived at once.
+    const nextTitle = normalizeSessionTitle(draft, '');
     setIsEditing(false);
     if (!nextTitle || nextTitle === title) return;
     onRename(nextTitle);
@@ -108,9 +114,8 @@ export default function EditableSessionTitle({
             ref={inputRef}
             aria-label="Edit session title"
             value={draft}
-            maxLength={60}
             onClick={(e) => e.stopPropagation()}
-            onChange={(e) => setDraft(e.currentTarget.value)}
+            {...titleInput}
             onBlur={() => {
               if (cancelRef.current) {
                 cancelRef.current = false;

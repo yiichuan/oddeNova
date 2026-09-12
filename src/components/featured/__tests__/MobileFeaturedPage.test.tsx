@@ -45,6 +45,7 @@ import { featuredPlayer } from '../../../services/featured-player';
 import type { FeaturedPiece } from '../../../lib/featured-pieces';
 import { readPlayheadProgress, resetPlayhead, seekPlayhead } from '../featured-playhead';
 import FeaturedPage from '../FeaturedPage';
+import { resetDeviceTiltStateForTests } from '../featured-device-tilt';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -685,5 +686,102 @@ describe('MobileFeaturedDetail', () => {
       `${window.location.origin}/s/share123`,
       expect.stringContaining('360'),
     );
+  });
+});
+
+describe('MobileFeaturedPage asking for the device', () => {
+  const gate = () => vi.fn(async () => 'granted');
+  const invite = (container: HTMLElement) =>
+    container.querySelector<HTMLButtonElement>('[data-testid="featured-enable-tilt"]');
+
+  afterEach(() => {
+    resetDeviceTiltStateForTests();
+    vi.unstubAllGlobals();
+  });
+
+  it('offers one way in where the reader has pressed nothing, and takes it away once answered', async () => {
+    const requestPermission = gate();
+    vi.stubGlobal('DeviceOrientationEvent', Object.assign(
+      function DeviceOrientationEvent() {},
+      { requestPermission },
+    ));
+    resetDeviceTiltStateForTests();
+    const { container } = render(page());
+
+    /* A reader who arrives by a link and only turns the phone never produces the
+       gesture the ask needs, so the page offers one. */
+    expect(invite(container)).not.toBeNull();
+
+    await act(async () => {
+      invite(container)?.click();
+      await Promise.resolve();
+    });
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(invite(container)).toBeNull();
+  });
+
+  it('offers nothing where there is nothing to ask', () => {
+    // A platform that just sends the events, and one that has none at all.
+    vi.stubGlobal('DeviceOrientationEvent', function DeviceOrientationEvent() {});
+    resetDeviceTiltStateForTests();
+    expect(invite(render(page()).container)).toBeNull();
+
+    vi.stubGlobal('DeviceOrientationEvent', undefined);
+    resetDeviceTiltStateForTests();
+    expect(invite(render(page()).container)).toBeNull();
+  });
+
+  it('asks again on the next press after an ask that never got an answer', async () => {
+    const requestPermission = vi.fn()
+      .mockRejectedValueOnce(new Error('not a user gesture'))
+      .mockResolvedValueOnce('granted');
+    vi.stubGlobal('DeviceOrientationEvent', Object.assign(
+      function DeviceOrientationEvent() {},
+      { requestPermission },
+    ));
+    resetDeviceTiltStateForTests();
+    const { container } = render(page());
+    const stage = container.querySelector<HTMLElement>('[data-testid="featured-page-mobile"]')!;
+
+    const press = async () => {
+      await act(async () => {
+        const event = new Event('pointerdown', { bubbles: true }) as PointerEvent;
+        Object.assign(event, { button: 0, pointerType: 'touch', clientX: 40, clientY: 200 });
+        stage.dispatchEvent(event);
+        await Promise.resolve();
+      });
+    };
+
+    /* The old code latched "asked" before the request was made, so a first ask
+       that threw — the usual case being "not called from a gesture" — put the
+       sensor out of reach for the rest of the page's life. */
+    await press();
+    await press();
+    expect(requestPermission).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not ask again after the reader has said no', async () => {
+    const requestPermission = vi.fn(async () => 'denied');
+    vi.stubGlobal('DeviceOrientationEvent', Object.assign(
+      function DeviceOrientationEvent() {},
+      { requestPermission },
+    ));
+    resetDeviceTiltStateForTests();
+    const { container } = render(page());
+
+    await act(async () => {
+      invite(container)?.click();
+      await Promise.resolve();
+    });
+    const stage = container.querySelector<HTMLElement>('[data-testid="featured-page-mobile"]')!;
+    await act(async () => {
+      const event = new Event('pointerdown', { bubbles: true }) as PointerEvent;
+      Object.assign(event, { button: 0, pointerType: 'touch', clientX: 40, clientY: 200 });
+      stage.dispatchEvent(event);
+      await Promise.resolve();
+    });
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(invite(container)).toBeNull();
   });
 });

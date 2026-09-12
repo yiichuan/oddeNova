@@ -14,11 +14,12 @@ interface CodeDiffViewProps {
   /**
    * Sound this take, where the surface has somewhere to press for it.
    *
-   * The key is drawn only when this is given. On the desktop the code window
-   * is open beside the reading with a transport of its own, and a second play
-   * in the stream would be a second answer to a question already answered; on
-   * a phone the code is behind a key in the corner, so the widget in the
-   * reading is the only place the take can be heard from.
+   * The key is drawn only when this is given, and both layouts now give it. It
+   * was a phone's affordance first — there the code is folded behind one key in
+   * the corner, so the widget naming a take was the only place to hear it — but
+   * the desktop's transport plays whatever the editor is holding, which is the
+   * latest take and not this one. A version named in the reading is a version
+   * you should be able to press, wherever you are reading it.
    */
   onPlay?: () => void;
   onStop?: () => void;

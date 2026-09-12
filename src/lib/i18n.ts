@@ -80,6 +80,7 @@ const S: Record<string, readonly [string, string]> = {
   featuredSourcePattern: ['Strudel 源码', 'Strudel source'],
   featuredSourceCollection: ['收录仓库', 'Collection repo'],
   featuredNowPlaying:  ['播放中', 'Now playing'],
+  featuredEnableTilt:  ['开启倾斜效果', 'Enable tilt'],
   openInStudio:        ['在工作室打开', 'Open in Studio'],
   featuredBack:        ['返回', 'Back'],
   featuredCode:        ['代码', 'Code'],

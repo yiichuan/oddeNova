@@ -5,6 +5,7 @@ import {
   type SessionSummary,
 } from '../shared/session-api.js';
 import { isUuid, toEpochMillis, type SessionRow } from './session-utils.js';
+import { normalizeSessionTitle } from '../shared/session-title.js';
 
 export interface SessionCursor {
   sortValue: string;
@@ -70,7 +71,7 @@ export function rowToSessionSummary(
 ): SessionSummary {
   return {
     id: row.id,
-    title: row.title,
+    title: normalizeSessionTitle(row.title, 'New Session'),
     updatedAt: toEpochMillis(row.updated_at),
   };
 }

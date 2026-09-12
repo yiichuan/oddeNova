@@ -13,6 +13,7 @@ import {
   isSessionStoragePersistent,
 } from '../lib/session-storage';
 import { t } from '../lib/i18n';
+import { deriveSessionTitle, normalizeSessionTitle, titleWithSuffix } from '../lib/session-title';
 import { pickGreeting } from '../lib/greetings';
 import {
   hasSeededThemeSong,
@@ -251,8 +252,7 @@ function deriveTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser) return t('newSessionTitle');
   const text = firstUser.content.trim();
-  if (text.length <= 20) return text;
-  return text.slice(0, 20) + '…';
+  return deriveSessionTitle(text, t('newSessionTitle'));
 }
 
 function makeEmptySession(): Session {
@@ -1164,7 +1164,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       if (!nextTitle) return;
       updateSession(
         sessionId,
-        (s) => ({ ...s, title: nextTitle.slice(0, 60) }),
+        (s) => ({ ...s, title: normalizeSessionTitle(nextTitle, s.title) }),
         'checkpoint',
       );
     },
@@ -1261,7 +1261,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       const now = Date.now();
       const session: Session = {
         id,
-        title: `${payload.title}`,
+        title: normalizeSessionTitle(`${payload.title}`, t('newSessionTitle')),
         messages: payload.messages,
         code: payload.code,
         inputMode: payload.inputMode ?? inputModeReferencedBy(payload.messages),
@@ -1303,7 +1303,12 @@ export function useSessions(options: UseSessionsOptions = {}) {
       content: message.content,
       timestamp: now + index,
     }));
-    const incomingHash = hashImportedContent(payload);
+    /* Hashed over the title as it will be *stored*, not as it arrived. The
+       comparison below reads the stored title back, so hashing the raw one would
+       make every long imported name mismatch itself on the next identical
+       import — read as an edit the user never made, and branched. */
+    const importedTitle = normalizeSessionTitle(payload.title, t('newSessionTitle'));
+    const incomingHash = hashImportedContent({ ...payload, title: importedTitle });
     const source: ExternalSessionSource = {
       type: 'oddenova-strudel-skill',
       projectId: payload.projectId,
@@ -1317,7 +1322,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     if (!target) {
       const created: Session = {
         id: newSessionId(),
-        title: payload.title,
+        title: importedTitle,
         code: payload.code,
         messages,
         externalSource: source,
@@ -1335,7 +1340,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     }
 
     const currentHash = hashImportedContent({
-      title: target.title,
+      title: normalizeSessionTitle(target.title, t('newSessionTitle')),
       code: target.code,
       messages: target.messages
         .filter((message) => message.role === 'user' || message.role === 'assistant')
@@ -1348,7 +1353,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     if (currentHash === target.externalSource?.importedContentHash) {
       const updated: Session = {
         ...target,
-        title: payload.title,
+        title: importedTitle,
         code: payload.code,
         messages,
         externalSource: source,
@@ -1364,7 +1369,12 @@ export function useSessions(options: UseSessionsOptions = {}) {
     }
 
     const detached: Session = { ...target, externalSource: undefined, updatedAt: now };
-    const branchTitle = `${payload.title}${t('branchSuffix')}`;
+    /* The suffix is reserved out of the budget rather than appended past it, so
+       a long imported name loses its own tail and still says which copy this
+       is. The hash is taken over the same string that gets stored: hashing the
+       untrimmed one would make the next identical import look edited and branch
+       again. */
+    const branchTitle = titleWithSuffix(importedTitle, t('branchSuffix'), t('newSessionTitle'));
     const branchSource: ExternalSessionSource = {
       ...source,
       importedContentHash: hashImportedContent({
@@ -1414,7 +1424,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       const now = Date.now();
       const branched: Session = {
         id,
-        title: `${session.title}${t('branchSuffix')}`,
+        title: titleWithSuffix(session.title, t('branchSuffix'), t('newSessionTitle')),
         messages: sliced,
         code,
         inputMode: inputModeReferencedBy(sliced),

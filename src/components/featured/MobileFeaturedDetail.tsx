@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useRef,
   type CSSProperties,
@@ -14,6 +13,7 @@ import { featuredSessionDraft } from '../../lib/featured-session';
 import { ShareButton } from '../studio/TopActionBar';
 import ScrollingTitle from '../common/ScrollingTitle';
 import { FeaturedCover } from './featured-cover';
+import { useScrollActivity } from '../../hooks/useScrollActivity';
 
 /* Laid out under a phone's own top bar, the same as every other mobile page
    here: the view is the whole window, so the device's furniture has to be kept
@@ -46,14 +46,6 @@ const FOOT_FADE = '28px';
  */
 const COLUMN_MASK = `linear-gradient(to bottom, transparent 0%, transparent ${HEAD_CLEAR}, `
   + `#000 ${HEAD}, #000 calc(100% - ${FOOT_FADE}), transparent 100%)`;
-
-/**
- * How long a bar stays up after the reading stops moving — the mobile code
- * editor's own wait (see SCROLLBAR_IDLE_MS in CodePanel), so every scrollbar on
- * this layout is one behaviour: a flick, its glide, and the pause taken to read
- * where it landed all sit inside a single showing.
- */
-const SCROLLBAR_IDLE_MS = 2000;
 
 /**
  * How tall the script's window stands.
@@ -92,36 +84,7 @@ const PILL_OUTLINE = `${PILL_SHAPE} h-8 px-3 text-xs border`
 const PILL_FILLED = `${PILL_SHAPE} h-8 px-3 text-xs`
   + ' bg-[var(--featured-fill)] hover:bg-[var(--featured-fill-hover)]';
 
-/**
- * The bar, while the reading is moving and for a moment after.
- *
- * The collection's own windows are read with a thumb, so nothing stands
- * permanently down their side: the bar comes up while the reading is being
- * moved and goes away once it has been left alone — which is how a phone's own
- * scrollbars behave, and what the mobile Favorites reading wears. The flag is
- * set here rather than in CSS because a scrollbar cannot be styled by the fact
- * that it is scrolling; `.scrollbar-on-scroll` in index.css is what reads it.
- */
-function useScrollbarOnScroll(ref: RefObject<HTMLElement | null>) {
-  useEffect(() => {
-    const scroller = ref.current;
-    if (!scroller) return undefined;
 
-    let idle = 0;
-    const onScroll = () => {
-      scroller.dataset.scrolling = 'true';
-      window.clearTimeout(idle);
-      idle = window.setTimeout(() => { delete scroller.dataset.scrolling; }, SCROLLBAR_IDLE_MS);
-    };
-
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener('scroll', onScroll);
-      window.clearTimeout(idle);
-      delete scroller.dataset.scrolling;
-    };
-  }, [ref]);
-}
 
 /**
  * A credit that goes somewhere: the mark of the place it goes to, then its
@@ -290,8 +253,17 @@ export default function MobileFeaturedDetail({
 }: MobileFeaturedDetailProps) {
   const columnRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLDivElement>(null);
-  useScrollbarOnScroll(columnRef);
-  useScrollbarOnScroll(codeRef);
+  /* The bar, while the reading is moving and for a moment after.
+   *
+   * The collection's own windows are read with a thumb, so nothing stands
+   * permanently down their side: the bar comes up while the reading is being
+   * moved and goes away once it has been left alone — which is how a phone's own
+   * scrollbars behave, and what every other window on this layout wears, from
+   * the same rule. The flag is set in JS rather than in CSS because a scrollbar
+   * cannot be styled by the fact that it is scrolling; `.scrollbar-on-scroll` in
+   * index.css is what reads it. */
+  useScrollActivity(columnRef);
+  useScrollActivity(codeRef);
 
   const source = sourceCredit(track.sourceUrl);
   const isPlaying = playingId === track.id;

@@ -23,6 +23,7 @@ import {
 import ArchivedConversationView, { ArchiveCodeChip } from '../conversation/ArchivedConversationView';
 import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
 import ScrollingTitle from '../common/ScrollingTitle';
+import ReadOnlyCodeView from '../common/ReadOnlyCodeView';
 import { useSwipeDismiss } from '../../hooks/useSwipeDismiss';
 
 /** How long the code window takes to arrive and to leave, in ms. */
@@ -604,9 +605,15 @@ export default function MobileFavoritesPage({
           aria-modal="true"
           aria-label={t('favoritesCodeTitle')}
           className="relative z-10 flex w-full max-w-[520px] flex-col transition-[opacity,transform] duration-[240ms] ease-out motion-reduce:transition-none"
+          /* The studio's own code window's measure: the two are the same window
+             showing the same kind of thing, and a shorter one here made the
+             archive look like a lesser view of a script rather than another way
+             into it. Height from the room the overlay has rather than from the
+             viewport, because the row of actions hangs in the overlay's top
+             padding and the window may not be centred in ground that row needs. */
           style={{
-            height: '76%',
-            maxHeight: 640,
+            height: '88%',
+            maxHeight: 700,
             opacity: codeOpen ? 1 : 0,
             transform: codeOpen ? 'scale(1)' : 'scale(0.97)',
           }}
@@ -657,28 +664,17 @@ export default function MobileFavoritesPage({
           </div>
 
           {/* The window itself holds the script and nothing else. It is an
-              archive — there is no editing it here — so it is set as the
-              desktop panel sets it: the same face, the same measure, the same
-              grey, wrapped in nothing but the window's own edge. */}
+              archive — there is no editing it here — so it is set as the studio's
+              own code window sets it, by being the same kind of editor with
+              nothing to type into: the same face, measure, gutter, wrap indent,
+              fades and only-while-moving scrollbar, wrapped in nothing but the
+              window's own edge.
+
+              Told when it is the window being looked at: the box is hidden rather
+              than unmounted between openings, and a code view built against a
+              hidden box has no width to wrap a line to. */}
           <div className="min-h-0 flex-1 overflow-hidden rounded-region border border-border bg-conversation-surface">
-            {/* One axis only. A phone is narrower than the measure a Strudel
-                line is written to, so a script set as written would be read by
-                dragging it sideways a line at a time — and a window you have to
-                move in two directions to read is one you cannot keep your place
-                in. The lines wrap instead, which is what the studio's own
-                editor does at this width. */}
-            <div className="h-full overflow-y-auto p-4">
-              <pre
-                /* `break-words` for the case wrapping alone cannot answer: a
-                    single unbroken token — a long sample name, a URL — wider
-                    than the window, which would otherwise push the box out and
-                    put the sideways drag back. */
-                className="whitespace-pre-wrap break-words text-[12px] text-text-secondary"
-                style={{ fontFamily: "'ABeeZee', monospace", lineHeight: 1.7, letterSpacing: '0.04em' }}
-              >
-                <code>{selectedScript?.code ?? ''}</code>
-              </pre>
-            </div>
+            <ReadOnlyCodeView code={selectedScript?.code ?? ''} active={codeOpen} />
           </div>
         </div>
       </div>

@@ -482,13 +482,11 @@ interface ConversationViewProps {
    * Sound the take a reply committed, from the widget in the reading that
    * reports it.
    *
-   * Handed down by the phone's layout and by nothing else, which is what
-   * decides whether the key is drawn at all: on the desktop the code window
-   * stands open beside the stream with a transport in it, so a second play
-   * among the messages would be a second answer to a question already
-   * answered. On a phone the code is folded away behind one key in the corner,
-   * and the widget is where a take is named — so it is also where it can be
-   * heard.
+   * Handed down by both shells. Whether the key is drawn at all is this prop's
+   * question and no layout's: a widget in the stream names one *version*, and
+   * the transport beside the desktop's editor plays whatever the editor is
+   * holding — the latest take, not the one being read about. So where a take is
+   * named is where it can be heard, on either layout.
    */
   onPlayCode?: (code: string) => void;
   onStopCode?: () => void;

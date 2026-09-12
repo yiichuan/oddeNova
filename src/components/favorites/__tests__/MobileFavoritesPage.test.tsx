@@ -97,6 +97,22 @@ const listRows = (container: HTMLElement) => (
 );
 const open = (element: HTMLElement) => element.style.visibility === 'visible';
 
+/* The archive's code window is a read-only CodeMirror view, imported the first
+   time the window is opened — so what it is showing has to be waited for, and is
+   read off the editor's own lines rather than out of a `<pre>`. */
+async function shownCode(container: HTMLElement): Promise<string> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const content = codeWindow(container).querySelector('.cm-content');
+    if (content) {
+      return [...content.querySelectorAll('.cm-line')]
+        .map((line) => line.textContent)
+        .join('\n');
+    }
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  }
+  throw new Error('the code window never built its view');
+}
+
 /* Kept with a name longer than any line this layout can give it. */
 const LONG_NAME: FavoriteConversation[] = [
   {
@@ -156,7 +172,7 @@ describe('MobileFavoritesPage', () => {
     expect(open(listDrawer(container).parentElement!)).toBe(false);
   });
 
-  it('opens the take a widget points at, and hands it to the three keys above it', () => {
+  it('opens the take a widget points at, and hands it to the three keys above it', async () => {
     const onPlayCode = vi.fn();
     const onOpenInStudio = vi.fn();
     const { container } = render(
@@ -174,7 +190,7 @@ describe('MobileFavoritesPage', () => {
 
     act(() => chips(container)[0]!.click());
     expect(open(codeWindow(container))).toBe(true);
-    expect(codeWindow(container).querySelector('code')?.textContent).toBe('s("bd*4")');
+    expect(await shownCode(container)).toBe('s("bd*4")');
 
     act(() => container
       .querySelector<HTMLButtonElement>('[data-testid="favorites-mobile-script-play"]')!
@@ -188,10 +204,10 @@ describe('MobileFavoritesPage', () => {
 
     // A second widget re-points the window rather than opening another.
     act(() => chips(container)[1]!.click());
-    expect(codeWindow(container).querySelector('code')?.textContent).toBe('s("bd*4, hh*8")');
+    expect(await shownCode(container)).toBe('s("bd*4, hh*8")');
   });
 
-  it('hangs a 最新 widget under the whole reading when the last take is not the last word', () => {
+  it('hangs a 最新 widget under the whole reading when the last take is not the last word', async () => {
     const { container } = render(<FavoritesPage active conversations={CARRIED_ON} />);
 
     const all = chips(container);
@@ -203,8 +219,7 @@ describe('MobileFavoritesPage', () => {
 
     act(() => all[2]!.click());
     expect(open(codeWindow(container))).toBe(true);
-    expect(codeWindow(container).querySelector('code')?.textContent)
-      .toBe('s("bd*4, hh*8, ~ cp")');
+    expect(await shownCode(container)).toBe('s("bd*4, hh*8, ~ cp")');
   });
 
   it('hangs no such widget when the last take is the whole of what was kept', () => {
@@ -214,7 +229,7 @@ describe('MobileFavoritesPage', () => {
     expect(page(container).textContent).not.toContain(t('favoritesLatestScript'));
   });
 
-  it('stands the only take in the middle of the page when there is no reading', () => {
+  it('stands the only take in the middle of the page when there is no reading', async () => {
     const { container } = render(<FavoritesPage active conversations={SCRIPT_ONLY} />);
 
     const solo = container.querySelector<HTMLElement>('[data-testid="favorites-mobile-solo-script"]')!;
@@ -224,7 +239,7 @@ describe('MobileFavoritesPage', () => {
 
     act(() => chips(container)[0]!.click());
     expect(open(codeWindow(container))).toBe(true);
-    expect(codeWindow(container).querySelector('code')?.textContent).toBe('setcps(0.5)');
+    expect(await shownCode(container)).toBe('setcps(0.5)');
   });
 
   const confirmPanel = (container: HTMLElement) => (

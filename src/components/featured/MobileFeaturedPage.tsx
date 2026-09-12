@@ -36,7 +36,12 @@ import {
 import FeaturedGlow from './FeaturedGlow';
 import FeaturedTiltSurface from './FeaturedTiltSurface';
 import FeaturedWebglLightField from './FeaturedWebglLightField';
-import { requestDeviceTilt } from './featured-device-tilt';
+import {
+  deviceTiltNeedsPermission,
+  deviceTiltState,
+  requestDeviceTilt,
+  subscribeDeviceTiltState,
+} from './featured-device-tilt';
 import ScrollingTitle from '../common/ScrollingTitle';
 import MobileFeaturedBar from './MobileFeaturedBar';
 import MobileFeaturedDetail from './MobileFeaturedDetail';
@@ -779,13 +784,24 @@ export default function MobileFeaturedPage({
      has touched yet has had no gesture to ask from. So the first press anywhere
      on the page is the one that asks — the reader is reaching for a record, not
      answering a question about sensors. A refusal costs nothing: the sleeve
-     stands square, which is where it starts. */
-  const askedRef = useRef(false);
-  const askForTilt = () => {
-    if (askedRef.current) return;
-    askedRef.current = true;
-    void requestDeviceTilt();
-  };
+     stands square, which is where it starts.
+
+     No "asked already" latch here any more. There used to be one, and it was set
+     *before* the request was made, so a call that landed at the wrong moment or
+     threw took the whole page's remaining life with it: one bad ask and the
+     sensor was unreachable until a reload. The module keeps the answer instead,
+     and it can tell a refusal (kept, never nagged) from a call that never got an
+     answer (worth trying on the next deliberate press). */
+  const askForTilt = () => { void requestDeviceTilt(); };
+
+  /* Whether there is still an ask to make, so the shelf can offer somewhere to
+     make it from. Subscribed rather than read once: the drawer row that opens
+     this page asks on the way in, and by the time the shelf is up the question
+     may already be answered. */
+  const [tiltAskable, setTiltAskable] = useState(deviceTiltNeedsPermission);
+  useEffect(() => subscribeDeviceTiltState(() => {
+    setTiltAskable(deviceTiltNeedsPermission());
+  }), []);
 
   /**
    * The whole shelf is one thing you can take hold of, sleeves included: the
@@ -914,6 +930,15 @@ export default function MobileFeaturedPage({
   const openTrack = openAlbum
     ? openAlbum.tracks.find((track) => track.id === currentPiece?.id) ?? openAlbum.tracks[0]
     : null;
+
+  /* Offered only where it is the only way in: a reader who arrived without a
+     press — a shared link, a page restored from the background — and who turns
+     the phone rather than touching it would otherwise never produce the gesture
+     the ask needs. It goes away for good the moment the question is answered
+     either way, and it is never shown where there is nothing to ask.
+
+     Not shown while a record is open: the shelf is what leans. */
+  const showTiltInvite = active && tiltAskable && deviceTiltState() === 'prompt' && openAlbum === null;
 
   return (
     <main
@@ -1249,6 +1274,24 @@ export default function MobileFeaturedPage({
           <ListIcon size={20} />
         </button>
       </div>
+
+      {/* ── The one way to ask, where a press was never made ── */}
+      {/* Under the bar, in the register of a caption rather than a control: it is
+          an offer, not something the page needs answered, and the shelf works
+          perfectly without it. Shown only while there is genuinely an ask left to
+          make (see showTiltInvite), and gone for good once it has been. */}
+      {showTiltInvite && (
+        <div className={`pointer-events-none relative z-20 flex shrink-0 justify-center ${shelfFade}`}>
+          <button
+            type="button"
+            data-testid="featured-enable-tilt"
+            onClick={askForTilt}
+            className="pointer-events-auto rounded-full border border-border/70 px-3 py-1 text-[12px] text-text-secondary transition-colors active:bg-surface-hover"
+          >
+            {t('featuredEnableTilt')}
+          </button>
+        </div>
+      )}
 
 
       {/* ── The record, opened ── */}

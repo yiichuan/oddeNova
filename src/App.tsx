@@ -37,6 +37,7 @@ import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
 import MobileNavDrawer from './components/nav/MobileNavDrawer';
 import FeaturedPage from './components/featured/FeaturedPage';
 import FavoritesPage from './components/favorites/FavoritesPage';
+import { requestDeviceTilt } from './components/featured/featured-device-tilt';
 import SettingsSidebar, { type SettingsSection } from './components/settings/SettingsSidebar';
 import ModelSettingsPanel from './components/settings/ModelSettingsPanel';
 import AppearanceSettingsPanel from './components/settings/AppearanceSettingsPanel';
@@ -1457,6 +1458,15 @@ export default function App() {
   /* The studio stands behind both gallery pages rather than in place of
      either: it holds the editor the audio engine is bound to. */
   const onStudioPage = !onFavoritesPage && !onFeaturedPage;
+  /* Which conversation the history list draws as open — a question about the
+     page in front of the reader, not about which session is loaded.
+     `sessions.currentId` is the second of those and stays set while a gallery is
+     up, because the studio behind it is still holding that conversation and
+     anything still generating still belongs to it. So the highlight asks the
+     narrower question, and asks it by naming the studio rather than by ruling
+     out the pages that are not it: a page added later would arrive inside
+     `onStudioPage` and inherit a highlight that is not about it. */
+  const historyHighlightId = primaryNavItem === 'home' ? sessions.currentId : null;
 
   /* Wired once and hung in whichever shell is up, the same as the collection
      below it: it is one page that works out for itself what a phone does with
@@ -1926,10 +1936,21 @@ export default function App() {
           onOpenAccount={() => setAccountOpen(true)}
           current={onFavoritesPage ? 'favorites' : onFeaturedPage ? 'featured' : 'home'}
           onOpenFavorites={() => handlePrimaryNavSelect('favorites')}
-          onOpenFeatured={() => handlePrimaryNavSelect('featured')}
+          /* The shelf's sleeves lean with the device, and on iOS the readings
+             have to be asked for from inside a real gesture. This press is that
+             gesture — the row that opens the page — and the ask is started
+             *before* the page opens and without being waited on: the spec ties
+             the request to a transient user activation, so anything awaited first
+             spends it, and a reader who walks in and only turns the phone never
+             produces another gesture to ask from. Nothing here depends on the
+             answer; without readings the sleeves stand square. */
+          onOpenFeatured={() => {
+            void requestDeviceTilt();
+            handlePrimaryNavSelect('featured');
+          }}
           history={{
             sessions: historyItems,
-            currentId: sessions.currentId,
+            currentId: historyHighlightId,
             isLoading: historyInitialLoading,
             initialError: historyInitialError,
             onRetryInitial: auth.user ? cloudLibrary.history.retryInitial : undefined,
@@ -2043,6 +2064,10 @@ export default function App() {
               onRollback={handleRollback}
               onBranch={sessions.branchFromMessage}
               onRetry={handleRetry}
+              isPlaying={strudel.isPlaying}
+              playingCode={strudel.activeCode}
+              onPlayCode={(code) => { void strudel.play(code); }}
+              onStopCode={strudel.stop}
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>

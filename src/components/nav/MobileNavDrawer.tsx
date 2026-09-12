@@ -213,6 +213,33 @@ interface MobileNavDrawerProps {
   history: MobileNavDrawerHistory;
 }
 
+/** Whether a press landed on something the reader is meant to be able to edit. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && target.closest('input, textarea, select, [contenteditable="true"]') !== null;
+}
+
+/**
+ * Drop a selection the browser made inside the drawer — and only one made there.
+ *
+ * A long press on a row is answered by the drawer's own menu, but a browser that
+ * has already decided the press was a text selection leaves a blue band behind
+ * under the menu. Clearing it has to be narrow: `removeAllRanges` is global, and
+ * the reader may well have a line selected in the editor or a word in a field on
+ * the page behind this panel. So both ends of every range have to be inside the
+ * panel before anything is dropped.
+ */
+function clearSelectionInside(panel: HTMLElement | null): void {
+  if (!panel || typeof window === 'undefined') return;
+  const selection = window.getSelection?.();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+  for (let index = 0; index < selection.rangeCount; index += 1) {
+    const range = selection.getRangeAt(index);
+    if (!panel.contains(range.startContainer) || !panel.contains(range.endContainer)) return;
+  }
+  selection.removeAllRanges();
+}
+
 /**
  * The mobile counterpart to the desktop's PrimaryNav column: everything that
  * column reaches, written out as one full-height list that slides in from the
@@ -238,6 +265,7 @@ export default function MobileNavDrawer({
 }: MobileNavDrawerProps) {
   const theme = useResolvedTheme();
   const swipeDismiss = useSwipeDismiss('left', onClose);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   /* Search is a mode the whole panel goes into rather than a field added to
      it. The conversation list is the only thing in the drawer there is any
@@ -311,6 +339,27 @@ export default function MobileNavDrawer({
         aria-modal="true"
         aria-label={t('primaryNavigation')}
         data-testid="mobile-nav-drawer"
+        ref={panelRef}
+        /* The panel's own answer to a long press, at its boundary rather than on
+           each row: `mobile-nav-no-select` in index.css keeps the browser from
+           starting a selection, and this keeps it from raising the callout that
+           would have come with one — over the headings, over the gap below the
+           last row, over an empty list, all of which the row-level rules left
+           uncovered.
+
+           Fields are let through untouched. Selecting, copying and pasting a
+           search term or a name being typed is the one place in this panel where
+           the platform's own menu is the right answer, so anything inside an
+           input keeps it.
+
+           Deliberately not a touchstart/touchmove handler: cancelling those
+           would take the drawer's vertical scrolling and the swipe that shuts it
+           with them. */
+        onContextMenu={(event) => {
+          if (isEditableTarget(event.target)) return;
+          event.preventDefault();
+          clearSelectionInside(panelRef.current);
+        }}
         {...swipeDismiss}
         // Two thirds of the window at rest. It is a panel you step into and
         // back out of rather than somewhere to stay, so leaving a strip of the
@@ -331,7 +380,7 @@ export default function MobileNavDrawer({
         // Width is in the transition alongside the transform so the panel opens
         // out rather than jumping, on the same curve and duration it slid in
         // on — the two are the same panel moving, and they should move alike.
-        className={`absolute inset-y-0 left-0 flex flex-col border-r border-border bg-conversation-surface shadow-menu-overlay transition-[transform,width] duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${
+        className={`mobile-nav-no-select absolute inset-y-0 left-0 flex flex-col border-r border-border bg-conversation-surface shadow-menu-overlay transition-[transform,width] duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${
           searchOpen ? 'w-full' : 'w-2/3'
         }`}
         style={{

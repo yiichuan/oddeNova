@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { t } from '../../lib/i18n';
 import type { OddeNovaImportPayload } from '../../lib/oddenova-import';
+import { SESSION_TITLE_LIMIT, sessionTitleLength } from '../../lib/session-title';
 import {
   applyAppendAssistantDelta,
   applyAppendProgressDelta,
@@ -1338,26 +1339,41 @@ describe('useSessions', () => {
     expect(getHook().currentSession?.title).toBe(t('newSessionTitle'));
   });
 
-  it('renameSession trims, ignores blank strings, and slices to 60 chars', async () => {
+  it('renameSession straightens a name, ignores blank ones, and holds the shared limit', async () => {
     const { root, getHook } = await renderUseSessions();
     roots.push(root);
     const sessionId = getHook().currentId!;
-    const longTitle = '一'.repeat(61);
 
     act(() => {
       getHook().renameSession(sessionId, '  周末广告配乐  ');
     });
     expect(getHook().currentSession?.title).toBe('周末广告配乐');
 
+    // A name pasted out of a document arrives with its line breaks; a title is
+    // one line.
+    act(() => {
+      getHook().renameSession(sessionId, ' 周末\n 广告   配乐 ');
+    });
+    expect(getHook().currentSession?.title).toBe('周末 广告 配乐');
+
     act(() => {
       getHook().renameSession(sessionId, '   ');
     });
-    expect(getHook().currentSession?.title).toBe('周末广告配乐');
+    expect(getHook().currentSession?.title).toBe('周末 广告 配乐');
 
+    // Over the limit: 59 characters and the ellipsis that says so, 60 in all —
+    // the same count an untruncated title is allowed.
     act(() => {
-      getHook().renameSession(sessionId, longTitle);
+      getHook().renameSession(sessionId, '一'.repeat(61));
     });
-    expect(getHook().currentSession?.title).toBe(longTitle.slice(0, 60));
+    expect(getHook().currentSession?.title).toBe(`${'一'.repeat(59)}…`);
+
+    // Renaming again with what is already stored appends no second ellipsis.
+    const settled = getHook().currentSession!.title;
+    act(() => {
+      getHook().renameSession(sessionId, settled);
+    });
+    expect(getHook().currentSession?.title).toBe(settled);
   });
 
   it('seeds a fresh session with exactly one greeting message', async () => {
@@ -1596,6 +1612,55 @@ describe('useSessions', () => {
     expect(outcome).toBe('updated');
     expect(getHook().currentSession?.id).toBe(branchId);
     expect(getHook().sessions).toHaveLength(sessionCount);
+  });
+
+  it('re-imports a long-titled skill session as an update, not a branch', async () => {
+    /* The stored title is cut to the shared limit; the import hash has to be
+       taken over that same string. Hashing the name as it arrived would make the
+       very next identical import mismatch the row it created, read as an edit
+       nobody made, and branch. */
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'long-title-project',
+      title: `深夜末班地铁车厢里的环境音草稿${'字'.repeat(120)}`,
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make it' }],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession(payload);
+    });
+    expect(outcome).toBe('created');
+    const importedId = getHook().currentId;
+    expect(sessionTitleLength(getHook().currentSession!.title)).toBe(SESSION_TITLE_LIMIT);
+
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession(payload);
+    });
+    expect(outcome).toBe('updated');
+    expect(getHook().currentId).toBe(importedId);
+    expect(getHook().sessions.filter((session) => session.externalSource?.projectId === 'long-title-project'))
+      .toHaveLength(1);
+  });
+
+  it('keeps the branch suffix when the name it is added to is already at the limit', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+    act(() => {
+      getHook().renameSession(sessionId, '字'.repeat(90));
+    });
+    const firstMessageId = getHook().currentSession!.messages[0]!.id;
+
+    act(() => getHook().branchFromMessage(firstMessageId));
+
+    const branched = getHook().currentSession!.title;
+    expect(branched.endsWith(t('branchSuffix'))).toBe(true);
+    expect(sessionTitleLength(branched)).toBe(SESSION_TITLE_LIMIT);
   });
 
   it('cloud-saves oddeNova skill creates, updates, and both sides of a conflict branch', async () => {

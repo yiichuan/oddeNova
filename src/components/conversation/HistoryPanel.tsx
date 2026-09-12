@@ -10,6 +10,8 @@ import type { SessionSummary } from '../../../shared/session-api';
 import type { Session } from '../../hooks/useSessions';
 import { EditIcon, SearchIcon, StarIcon, TrashIcon, XIcon } from '../icons';
 import { t } from '../../lib/i18n';
+import { normalizeSessionTitle } from '../../lib/session-title';
+import { useSessionTitleInput } from '../../hooks/useSessionTitleInput';
 import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
 
 /**
@@ -155,6 +157,7 @@ export default function HistoryPanel({
 }: HistoryPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const titleInput = useSessionTitleInput(setDraft);
   const [ownQuery, setOwnQuery] = useState('');
   /* Whoever is asking the question owns it. */
   const query = hostQuery ?? ownQuery;
@@ -306,7 +309,9 @@ export default function HistoryPanel({
   };
 
   const save = (session: HistoryItem) => {
-    const nextTitle = draft.trim();
+    // Same straightening the studio's own title field does — the two fields
+    // rename the same thing and may not disagree about what the name became.
+    const nextTitle = normalizeSessionTitle(draft, '');
     setEditingId(null);
     if (!nextTitle || nextTitle === session.title) return;
     onRename(session.id, nextTitle);
@@ -475,6 +480,11 @@ export default function HistoryPanel({
                       in the host's ground, see --history-search-bg), so they
                       have no reason to be opaque at all. */}
                   <div
+                    data-session-row={s.id}
+                    /* Which row is drawn as open, stated where a test can read
+                       it: the fill itself is a colour, and a colour is not a
+                       thing an assertion can ask a question of. */
+                    data-session-active={active || undefined}
                     className={`group flex items-stretch gap-2 rounded-[4px] border px-2 cursor-pointer transition-[color,background-color,border-color,transform] ${
                       active
                         ? 'border-transparent bg-[var(--color-selected-item-bg)] text-on-accent'
@@ -513,9 +523,8 @@ export default function HistoryPanel({
                         ref={inputRef}
                         aria-label="Edit session title"
                         value={draft}
-                        maxLength={60}
                         onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => setDraft(e.currentTarget.value)}
+                        {...titleInput}
                         onBlur={() => {
                           if (cancelRef.current) {
                             cancelRef.current = false;

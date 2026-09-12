@@ -462,6 +462,21 @@ body {
 
    `max()` so a field that is already larger keeps its own size. */
 @media (max-width: 460px) {
+  .mobile-nav-no-select,
+  .mobile-nav-no-select * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .mobile-nav-no-select input,
+  .mobile-nav-no-select textarea,
+  .mobile-nav-no-select [contenteditable='true'] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
   input,
   textarea,
   select {
@@ -2651,6 +2666,32 @@ html[data-theme='light'] .history-search-field {
   border-radius: 0;
 }
 .cm-editor .cm-scroller::-webkit-scrollbar-corner { background: transparent; }
+
+/* ── The archive's code window ────────────────────────────────────────────────
+   A read-only CodeMirror view (see lib/read-only-code-editor.ts). Everything
+   about how the code is *set* — face, size, measure, gutter, wrap indent, the
+   fades, the bar — it inherits from the `.cm-editor` rules above by being one,
+   so what is left here is only what a window with nothing to type into wants
+   differently from one you compose in.
+
+   All of it is drawn by CodeMirror inside the element the component hands it, so
+   the host is the box and the editor fills it. */
+.code-readonly { height: 100%; }
+
+/* No caret and no active-line plate. The palette injected by
+   editor-preferences.ts paints both with `!important`, so these have to as well;
+   they are a line under the reader's finger and an insertion point in a document
+   that has no insertion to make. The selection is deliberately left alone —
+   copying a few lines out of an archive is the one edit-like thing this window is
+   for. */
+.code-readonly .cm-cursor,
+.code-readonly .cm-cursorLayer { display: none !important; }
+.code-readonly .cm-activeLine,
+.code-readonly .cm-activeLineGutter { background-color: transparent !important; }
+
+/* The line the reader is standing on is not a thing here, so the gutter is
+   quieter than the composing editor's. */
+.code-readonly .cm-gutters { border-right: 0 !important; }
 
 ::-webkit-scrollbar-thumb:hover,
 .conversation-scroll:not(.scrollbar-hidden)::-webkit-scrollbar-thumb:hover,
