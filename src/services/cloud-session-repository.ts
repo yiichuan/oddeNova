@@ -2,6 +2,8 @@ import { DEFAULT_PAGE_LIMIT, type CursorPage, type SessionSummary } from '../../
 import type { Session } from '../hooks/useSessions';
 import { getAccessToken } from './auth-service';
 
+const CLOUD_REQUEST_TIMEOUT_MS = 15_000;
+
 export interface CloudSessionListOptions {
   cursor?: string;
   limit?: number;
@@ -16,6 +18,31 @@ export class SessionApiError extends Error {
     super(message);
     this.name = 'SessionApiError';
     this.status = status;
+  }
+}
+
+async function withRequestTimeout<T>(
+  upstreamSignal: AbortSignal | undefined,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const abortFromUpstream = () => controller.abort(upstreamSignal?.reason);
+  if (upstreamSignal?.aborted) abortFromUpstream();
+  else upstreamSignal?.addEventListener('abort', abortFromUpstream, { once: true });
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      reject(new SessionApiError(408, 'Cloud session request timed out'));
+    }, CLOUD_REQUEST_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeout]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    upstreamSignal?.removeEventListener('abort', abortFromUpstream);
   }
 }
 
@@ -42,12 +69,15 @@ export async function requestJson<T>(
   init: RequestInit,
   expectedUserId?: string,
 ): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: await authHeaders(Boolean(init.body), expectedUserId),
+  return withRequestTimeout(init.signal ?? undefined, async (signal) => {
+    const res = await fetch(url, {
+      ...init,
+      signal,
+      headers: await authHeaders(Boolean(init.body), expectedUserId),
+    });
+    if (!res.ok) throw await parseError(res);
+    return await res.json() as T;
   });
-  if (!res.ok) throw await parseError(res);
-  return await res.json() as T;
 }
 
 export async function requestNoContent(
@@ -55,11 +85,14 @@ export async function requestNoContent(
   init: RequestInit,
   expectedUserId?: string,
 ): Promise<void> {
-  const res = await fetch(url, {
-    ...init,
-    headers: await authHeaders(Boolean(init.body), expectedUserId),
+  await withRequestTimeout(init.signal ?? undefined, async (signal) => {
+    const res = await fetch(url, {
+      ...init,
+      signal,
+      headers: await authHeaders(Boolean(init.body), expectedUserId),
+    });
+    if (!res.ok) throw await parseError(res);
   });
-  if (!res.ok) throw await parseError(res);
 }
 
 export async function listCloudSessionSummaries(

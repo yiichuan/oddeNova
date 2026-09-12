@@ -67,6 +67,7 @@ type CollectionAction<T> =
   | { type: 'more-start' }
   | { type: 'more-success'; items: T[]; nextCursor: string | null }
   | { type: 'more-error'; error: Error }
+  | { type: 'abandon-loading' }
   | { type: 'remove'; id: string }
   | { type: 'upsert'; item: T; index?: number }
   | { type: 'reset' };
@@ -164,6 +165,12 @@ function collectionReducer<T extends { id: string }>(
         ...state,
         moreStatus: 'error',
         moreError: action.error,
+      };
+    case 'abandon-loading':
+      return {
+        ...state,
+        initialStatus: state.initialStatus === 'loading' ? 'idle' : state.initialStatus,
+        moreStatus: state.moreStatus === 'loading' ? 'idle' : state.moreStatus,
       };
     case 'remove':
       return {
@@ -279,6 +286,8 @@ export function useCloudSessionLibrary({
       controllers.clear();
       requests.clear();
       detailRequests.clear();
+      dispatchHistory({ type: 'abandon-loading' });
+      dispatchFavorites({ type: 'abandon-loading' });
     };
     discardInFlight();
     return discardInFlight;
@@ -415,7 +424,13 @@ export function useCloudSessionLibrary({
     const state = historyRef.current;
     if (!enabled || !ownerId || state.initialStatus === 'ready') return;
     if (state.initialStatus === 'loading') {
-      await requestsRef.current.get('history:initial');
+      const request = requestsRef.current.get('history:initial');
+      if (request) {
+        await request;
+        return;
+      }
+      dispatchHistory({ type: 'initial-start' });
+      await runCollectionRequest({ key: 'history:initial', collection: 'history', more: false });
       return;
     }
     dispatchHistory({ type: 'initial-start' });
@@ -427,7 +442,18 @@ export function useCloudSessionLibrary({
     if (!enabled || !ownerId || state.initialStatus !== 'ready' || !state.nextCursor) return;
     const cursor = state.nextCursor;
     if (state.moreStatus === 'loading') {
-      await requestsRef.current.get(`history:more:${cursor}`);
+      const request = requestsRef.current.get(`history:more:${cursor}`);
+      if (request) {
+        await request;
+        return;
+      }
+      dispatchHistory({ type: 'more-start' });
+      await runCollectionRequest({
+        key: `history:more:${cursor}`,
+        collection: 'history',
+        more: true,
+        cursor,
+      });
       return;
     }
     dispatchHistory({ type: 'more-start' });
@@ -443,7 +469,13 @@ export function useCloudSessionLibrary({
     const state = favoritesRef.current;
     if (!enabled || !ownerId || state.initialStatus === 'ready') return;
     if (state.initialStatus === 'loading') {
-      await requestsRef.current.get('favorites:initial');
+      const request = requestsRef.current.get('favorites:initial');
+      if (request) {
+        await request;
+        return;
+      }
+      dispatchFavorites({ type: 'initial-start' });
+      await runCollectionRequest({ key: 'favorites:initial', collection: 'favorites', more: false });
       return;
     }
     dispatchFavorites({ type: 'initial-start' });
@@ -455,7 +487,18 @@ export function useCloudSessionLibrary({
     if (!enabled || !ownerId || state.initialStatus !== 'ready' || !state.nextCursor) return;
     const cursor = state.nextCursor;
     if (state.moreStatus === 'loading') {
-      await requestsRef.current.get(`favorites:more:${cursor}`);
+      const request = requestsRef.current.get(`favorites:more:${cursor}`);
+      if (request) {
+        await request;
+        return;
+      }
+      dispatchFavorites({ type: 'more-start' });
+      await runCollectionRequest({
+        key: `favorites:more:${cursor}`,
+        collection: 'favorites',
+        more: true,
+        cursor,
+      });
       return;
     }
     dispatchFavorites({ type: 'more-start' });

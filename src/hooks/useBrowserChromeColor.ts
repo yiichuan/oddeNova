@@ -30,5 +30,9 @@ export function useBrowserChromeColor(page: BrowserChromePage, options: BrowserC
   const { tint = null, overlay = null } = options;
   useLayoutEffect(() => {
     applyBrowserChromeColor(page, theme, { tint, overlay });
+    const frame = requestAnimationFrame(() => {
+      applyBrowserChromeColor(page, theme, { tint, overlay });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [page, theme, tint, overlay]);
 }
