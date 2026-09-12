@@ -493,6 +493,8 @@ export default function HistoryPanel({
                        once at the top of the file. */
                     style={longPressMenu ? {
                       transform: pressedId === s.id ? `scale(${HELD_ROW_SCALE})` : undefined,
+                      backgroundColor: pressedId === s.id || rowMenu?.id === s.id ? 'var(--color-surface-hover)' : undefined,
+                      color: pressedId === s.id || rowMenu?.id === s.id ? 'var(--color-text-primary)' : undefined,
                       transitionDuration: `${pressedId === s.id ? LONG_PRESS_MS : HELD_ROW_RELEASE_MS}ms`,
                     } : undefined}
                     onClick={() => {
@@ -570,6 +572,7 @@ export default function HistoryPanel({
                               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--color-success)' }} />
                             </span>
                           )}
+                          {!longPressMenu && <>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -635,6 +638,7 @@ export default function HistoryPanel({
                           >
                             <TrashIcon size={16} />
                           </button>
+                          </>}
                         </>
                       )}
                     </span>

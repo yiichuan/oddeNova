@@ -23,6 +23,7 @@ import {
 import ArchivedConversationView, { ArchiveCodeChip } from '../conversation/ArchivedConversationView';
 import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
 import ScrollingTitle from '../common/ScrollingTitle';
+import { useSwipeDismiss } from '../../hooks/useSwipeDismiss';
 
 /** How long the code window takes to arrive and to leave, in ms. */
 const WINDOW_MS = 240;
@@ -166,6 +167,7 @@ export default function MobileFavoritesPage({
 }: MobileFavoritesPageProps) {
   const [listOpen, setListOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
+  const swipeDismiss = useSwipeDismiss('right', () => setListOpen(false));
   const [copied, setCopied] = useState(false);
   /* Which of the two acts at the foot of the page is waiting on an answer. */
   const [asking, setAsking] = useState<'unfavorite' | 'delete' | null>(null);
@@ -704,6 +706,7 @@ export default function MobileFavoritesPage({
           aria-modal="true"
           aria-label={t('favoritesList')}
           data-testid="favorites-list-drawer"
+          {...swipeDismiss}
           className="absolute inset-y-0 right-0 flex w-2/3 flex-col border-l border-border bg-conversation-surface shadow-menu-overlay transition-transform duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
           style={{
             transform: listOpen ? 'translateX(0)' : 'translateX(100%)',

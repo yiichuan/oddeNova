@@ -89,6 +89,12 @@ function type(input: HTMLInputElement, value: string) {
 }
 
 describe('MobileNavDrawer search', () => {
+  it('removes the mouse-only row controls from the mobile hit targets', () => {
+    const { container } = renderDrawer();
+    for (const row of container.querySelectorAll('[data-session-title-edit]')) {
+      expect(row.parentElement!.querySelectorAll('button')).toHaveLength(1);
+    }
+  });
   it('opens the field from the head key and takes the focus', () => {
     const { container } = renderDrawer();
     expect(searchField(container)).toBeNull();
@@ -209,6 +215,7 @@ describe('MobileNavDrawer search', () => {
     expect(menu.style.transformOrigin).toBe('bottom center');
     // The row says which one the plate is about, and holds it while it is up.
     expect(row.style.transform).toContain('scale(');
+    expect(row.style.backgroundColor).toBe('var(--color-surface-hover)');
     // Nothing the browser had begun selecting survives into the plate.
     expect(removeAllRanges).toHaveBeenCalled();
 
@@ -219,6 +226,7 @@ describe('MobileNavDrawer search', () => {
     });
     expect(document.querySelector('[data-testid="history-row-menu"]')).toBeNull();
     expect(row.style.transform).toBe('');
+    expect(row.style.backgroundColor).toBe('');
     vi.useRealTimers();
   });
 

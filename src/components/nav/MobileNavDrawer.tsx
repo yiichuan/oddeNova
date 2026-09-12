@@ -15,6 +15,7 @@ import {
   XIcon,
 } from '../icons';
 import HistoryPanel from '../conversation/HistoryPanel';
+import { useSwipeDismiss } from '../../hooks/useSwipeDismiss';
 import { useResolvedTheme } from '../../hooks/useAppearance';
 import { setThemePreference } from '../../lib/appearance-preferences';
 
@@ -236,6 +237,7 @@ export default function MobileNavDrawer({
   history,
 }: MobileNavDrawerProps) {
   const theme = useResolvedTheme();
+  const swipeDismiss = useSwipeDismiss('left', onClose);
   const [moreOpen, setMoreOpen] = useState(false);
   /* Search is a mode the whole panel goes into rather than a field added to
      it. The conversation list is the only thing in the drawer there is any
@@ -309,6 +311,7 @@ export default function MobileNavDrawer({
         aria-modal="true"
         aria-label={t('primaryNavigation')}
         data-testid="mobile-nav-drawer"
+        {...swipeDismiss}
         // Two thirds of the window at rest. It is a panel you step into and
         // back out of rather than somewhere to stay, so leaving a strip of the
         // page standing beside it says the way back is still there — but the
@@ -581,7 +584,7 @@ export default function MobileNavDrawer({
             reads as a control that stays put while the list above it scrolls.
             No rule above them: the fade is that line's soft form, and drawing
             both would be saying it twice. */}
-        <div className="flex shrink-0 items-center justify-between gap-2 px-2 pt-2">
+        <div className="flex shrink-0 items-center justify-between gap-2 pl-2.5 pr-2 pt-2">
           {/* Just the disc. The address it used to carry is the one thing in
               the foot nobody needs read back to them — you know whose account
               you are signed into — and spelled out across a plate it made the

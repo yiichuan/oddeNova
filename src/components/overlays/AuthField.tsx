@@ -1,5 +1,6 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { t } from '../../lib/i18n';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 /**
  * One field of an account form, standing two lines tall: what it is on top, what
@@ -32,6 +33,8 @@ export default function AuthField({
   type = 'email',
 }: AuthFieldProps) {
   const [show, setShow] = useState(false);
+  const isMobile = useIsMobile();
+  const composing = useRef(false);
 
   return (
     /* The box is held at the height of the two lines it carries — the label and
@@ -42,11 +45,19 @@ export default function AuthField({
     <label className="relative block h-[3.625rem] overflow-hidden rounded-lg border border-border bg-auth-field px-3 py-2 transition-colors focus-within:border-accent">
       <span className="block text-[11px] leading-4 text-text-muted">{label}</span>
       <input
-        type={secret ? (show ? 'text' : 'password') : type}
+        // Use a plain single-line editing host for mobile IME input, while
+        // keeping the email keyboard and autofill hints below.
+        type={secret ? (show ? 'text' : 'password') : isMobile ? 'text' : type}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.currentTarget.value)}
-        onKeyDown={onKeyDown}
+        onCompositionStart={() => { composing.current = true; }}
+        onCompositionEnd={() => { composing.current = false; }}
+        onKeyDown={(event) => {
+          if (isMobile && (composing.current || event.nativeEvent.isComposing || event.keyCode === 229)) return;
+          if (isMobile && event.key === 'Enter') event.preventDefault();
+          onKeyDown?.(event);
+        }}
         autoFocus={autoFocus}
         /* An address is not prose. A phone keyboard that treats it as prose
            capitalises the first letter, autocorrects the domain and offers

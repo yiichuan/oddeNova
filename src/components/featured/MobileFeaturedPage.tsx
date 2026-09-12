@@ -394,6 +394,7 @@ export default function MobileFeaturedPage({
   const stageRef = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState<Metrics>(EMPTY);
   const [listOpen, setListOpen] = useState(false);
+  const swipeDismiss = useSwipeDismiss('right', () => setListOpen(false));
   const [reducedMotion, setReducedMotion] = useState(false);
   const room: CoverRoom = useResolvedTheme() === 'light' ? 'paper' : 'space';
 
@@ -1339,6 +1340,7 @@ export default function MobileFeaturedPage({
           aria-modal="true"
           aria-label={t('featuredList')}
           data-testid="featured-list-drawer"
+          {...swipeDismiss}
           className="absolute inset-y-0 right-0 flex w-2/3 flex-col border-l border-border bg-conversation-surface shadow-menu-overlay transition-transform duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
           style={{
             transform: listOpen ? 'translateX(0)' : 'translateX(100%)',
@@ -1407,3 +1409,4 @@ export default function MobileFeaturedPage({
     </main>
   );
 }
+import { useSwipeDismiss } from '../../hooks/useSwipeDismiss';

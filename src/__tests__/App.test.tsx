@@ -58,7 +58,7 @@ const mocks = vi.hoisted(() => ({
     setManualCode: vi.fn(async () => undefined),
     checkpointSession: vi.fn(async () => undefined),
     flushCloudSaves: vi.fn(async () => undefined),
-    acceptCloudDetail: vi.fn(async (_session: Session) => undefined),
+    acceptCloudDetail: vi.fn(async (_session: Session): Promise<Session | undefined> => undefined),
     newSession: vi.fn(),
     switchTo: vi.fn(),
     branchFromMessage: vi.fn(),
@@ -106,6 +106,9 @@ const mocks = vi.hoisted(() => ({
     ensureFavorites: vi.fn(async () => undefined),
     loadMoreFavorites: vi.fn(async () => undefined),
     openSession: vi.fn(async () => undefined),
+    readSession: vi.fn(async (summary: SessionSummary): Promise<Session> => ({
+      ...summary, code: '', messages: [], createdAt: 1,
+    })),
     openFavorite: vi.fn(async () => undefined),
     favoriteSession: vi.fn(async (summary: SessionSummary): Promise<FavoriteSummary> => ({
       ...summary,
@@ -117,6 +120,7 @@ const mocks = vi.hoisted(() => ({
   },
   codePanelProps: null as Record<string, unknown> | null,
   sidebarProps: null as Record<string, unknown> | null,
+  historyProps: null as Record<string, unknown> | null,
   accountModalProps: null as Record<string, unknown> | null,
   agentRunnerConfig: null as Record<string, unknown> | null,
   isMobile: true,
@@ -244,7 +248,10 @@ vi.mock('../components/conversation/ConversationView', () => ({
   MarkdownText: ({ content }: { content: string }) => content,
   UserMessageBubble: ({ content }: { content: string }) => content,
 }));
-vi.mock('../components/conversation/HistoryPanel', () => ({ default: () => null }));
+vi.mock('../components/conversation/HistoryPanel', () => ({ default: (props: Record<string, unknown>) => {
+  mocks.historyProps = props;
+  return null;
+} }));
 vi.mock('../components/conversation/ChatInput', () => ({ default: () => null }));
 // ShareButton too: the featured player bar shares a piece on the studio's own
 // button, so it comes through this module.
@@ -1516,6 +1523,101 @@ describe('App session sync boundaries', () => {
       await transition;
     });
     expect(mocks.sessions.switchTo).toHaveBeenCalledWith('s-2');
+  });
+
+  it('switches mobile history immediately while the outgoing cloud write is pending', async () => {
+    const held = heldAccountSession(20);
+    mocks.isMobile = true;
+    let release!: () => void;
+    mocks.sessions.flushCloudSaves.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      release = () => resolve(undefined);
+    }));
+    await renderApp();
+    await act(async () => {
+      (mocks.historyProps!.onSwitch as (id: string) => void)(held.id);
+    });
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(held.id);
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("bd")', 's-1');
+    await act(async () => release());
+  });
+
+  it('keeps the last mobile selection when cloud reads resolve in reverse order', async () => {
+    mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+    const first = { id: 'remote-a', title: 'Remote A', updatedAt: 10 };
+    const last = { id: 'remote-b', title: 'Remote B', updatedAt: 10 };
+    mocks.cloudLibrary.history.items = [first, last];
+    mocks.cloudLibrary.history.initialStatus = 'ready';
+    let resolveFirst!: (session: Session) => void;
+    let resolveLast!: (session: Session) => void;
+    mocks.cloudLibrary.readSession
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveLast = resolve; }));
+    await renderApp();
+    await act(async () => {
+      (mocks.historyProps!.onSwitch as (id: string) => void)(first.id);
+      (mocks.historyProps!.onSwitch as (id: string) => void)(last.id);
+    });
+    const lastDetail = { ...last, code: 's("hh")', messages: [], createdAt: 1 };
+    await act(async () => resolveLast(lastDetail));
+    await act(async () => resolveFirst({ ...first, code: 's("bd")', messages: [], createdAt: 1 }));
+    expect(mocks.sessions.acceptCloudDetail).toHaveBeenCalledTimes(1);
+    expect(mocks.sessions.acceptCloudDetail).toHaveBeenCalledWith(lastDetail, { activate: false });
+    expect(mocks.sessions.switchTo).toHaveBeenCalledTimes(1);
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(last.id);
+  });
+
+  it('does not let a late mobile favorite completion leave a newer history selection', async () => {
+    const held = heldAccountSession(20);
+    mocks.isMobile = true;
+    const source = { id: mocks.session.id, title: mocks.session.title, updatedAt: 1 };
+    mocks.cloudLibrary.history.items.push(source);
+    let finishFavorite!: (summary: FavoriteSummary) => void;
+    mocks.cloudLibrary.favoriteSession.mockImplementationOnce(() => new Promise((resolve) => {
+      finishFavorite = resolve;
+    }));
+    await renderApp();
+    await act(async () => {
+      (mocks.historyProps!.onFavorite as (id: string) => void)(source.id);
+    });
+    await act(async () => {
+      (mocks.historyProps!.onSwitch as (id: string) => void)(held.id);
+    });
+    await act(async () => finishFavorite({ ...source, favoritedAt: 100 }));
+    expect(mocks.sessions.switchTo).toHaveBeenCalledWith(held.id);
+    expect(mocks.sessions.newSession).not.toHaveBeenCalled();
+  });
+
+  it('renames another mobile history row without activating it or replacing editor code', async () => {
+    const held = heldAccountSession(20);
+    mocks.isMobile = true;
+    await renderApp();
+    mocks.strudel.setCode.mockClear();
+    await act(async () => {
+      (mocks.historyProps!.onRename as (id: string, title: string) => void)(held.id, 'Renamed');
+    });
+    expect(mocks.sessions.renameSession).toHaveBeenCalledWith(held.id, 'Renamed');
+    expect(mocks.cloudLibrary.openSession).not.toHaveBeenCalled();
+    expect(mocks.sessions.switchTo).not.toHaveBeenCalled();
+    expect(mocks.strudel.setCode).not.toHaveBeenCalled();
+  });
+
+  it('does not save the previous mobile editor code into the incoming session before restoration', async () => {
+    await renderApp();
+    const incoming = { ...mocks.session, id: 'incoming', code: 's("hh")' };
+    mocks.sessions.sessions = [mocks.session, incoming];
+    mocks.sessions.currentId = incoming.id;
+    mocks.sessions.currentSession = incoming;
+    await renderApp();
+    mocks.sessions.setManualCode.mockClear();
+    // An unrelated session update arrives before the REPL publishes its new code.
+    mocks.sessions.currentSession = { ...incoming, code: 's("hh").gain(.8)' };
+    await renderApp();
+    expect(mocks.sessions.setManualCode).not.toHaveBeenCalled();
+    mocks.strudel.code = incoming.code;
+    await renderApp();
+    mocks.strudel.code = 's("hh").gain(.5)';
+    await renderApp();
+    expect(mocks.sessions.setManualCode).toHaveBeenCalledWith('s("hh").gain(.5)', incoming.id);
   });
 
   it('checkpoints rollback after restoring code and truncating messages', async () => {

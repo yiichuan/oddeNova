@@ -835,7 +835,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
    * first subsequent editor mutation the only operation that can enqueue a
    * save.
    */
-  const acceptCloudDetail = useCallback(async (session: Session): Promise<void> => {
+  const acceptCloudDetail = useCallback(async (session: Session, options: { activate?: boolean } = {}): Promise<Session | undefined> => {
     if (!ownerLoaded) return;
     const workingCopy = sessionsRef.current.find((existing) => existing.id === session.id);
     const workingCopyIsAhead = workingCopy !== undefined
@@ -855,8 +855,11 @@ export function useSessions(options: UseSessionsOptions = {}) {
       // that is not in the list would strand the studio on an empty current id.
       return;
     }
-    setCurrentId(session.id);
-    await dbPutCurrentSessionId(session.id, ownerKey);
+    if (options.activate ?? true) {
+      setCurrentId(session.id);
+      await dbPutCurrentSessionId(session.id, ownerKey);
+    }
+    return adopted ? session : workingCopy;
   }, [ownerKey, ownerLoaded, sessionCloudSync]);
 
   const updateCurrent = useCallback(

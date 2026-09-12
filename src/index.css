@@ -2146,6 +2146,28 @@ html[data-theme='light'] .history-search-field {
   top: max(10px, env(safe-area-inset-top));
 }
 
+@media (max-width: 460px) {
+  .auth-field {
+    display: block;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .favorite-notice-strip {
+    padding-inline: 60px;
+  }
+
+  .favorites-code-chip[data-favorites-code-play]:hover,
+  .favorites-code-chip[data-favorites-code-play]:active {
+    background: #191919;
+  }
+
+  html[data-theme='light'] .favorites-code-chip[data-favorites-code-play]:hover,
+  html[data-theme='light'] .favorites-code-chip[data-favorites-code-play]:active {
+    background: #fcfcfc;
+  }
+}
+
 /* The keep / let-go / delete notice's entrance. It comes down from above the
    page's top edge, which is where a bar pinned to that edge has to have come
    from — the same easing the app's own panes travel on. */

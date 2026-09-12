@@ -515,6 +515,23 @@ describe('useSessions', () => {
     expect(getHook().currentSyncStatus).not.toBe('synced');
   });
 
+  it('can cache a mobile cloud read without changing the active session', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const activeId = getHook().currentId;
+    const incoming = makeSession({
+      id: '00000000-0000-4000-8000-000000000091',
+      code: 's("hh")', updatedAt: 42,
+    });
+    storageMocks.putCurrentSessionId.mockClear();
+    await act(async () => {
+      expect(await getHook().acceptCloudDetail(incoming, { activate: false })).toEqual(incoming);
+    });
+    expect(getHook().sessions.find((session) => session.id === incoming.id)).toEqual(incoming);
+    expect(getHook().currentId).toBe(activeId);
+    expect(storageMocks.putCurrentSessionId).not.toHaveBeenCalled();
+  });
+
   it('keeps streamed changes local until a terminal checkpoint saves one latest snapshot', async () => {
     const cloud = {
       listSessions: vi.fn(async () => []),

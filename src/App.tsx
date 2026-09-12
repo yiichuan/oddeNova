@@ -47,6 +47,8 @@ import type { AgentEntryPoint } from './lib/analytics';
 import { FEATURED_PIECES, findFeaturedPiece, type FeaturedPiece } from './lib/featured-pieces';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { sessionAsFavorite } from './lib/session-favorites';
+import { fullSessionTitle } from './lib/full-session-title';
+import { useVisualViewport } from './hooks/useVisualViewport';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
 import { featuredPlayer } from './services/featured-player';
 import { featuredSessionDraft } from './lib/featured-session';
@@ -177,6 +179,7 @@ export default function App() {
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
+  const mobileNavigationRef = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('model');
   // The Featured page opens on a piece rather than on an empty panel; there is
   // no browsing state worth preserving in an unpicked list.
@@ -201,6 +204,7 @@ export default function App() {
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const skipNextManualSyncSessionRef = useRef<string | null>(null);
+  const mobileCodeRestoreRef = useRef<{ id: string; code: string } | null>(null);
   const prevLoadingRef = useRef<Set<string>>(new Set());
   const importPromptUserRef = useRef<string | null>(null);
   const latestGuestSessionsRef = useRef<Session[]>([]);
@@ -265,6 +269,7 @@ export default function App() {
   const loadMoreCloudFavorites = cloudLibrary.loadMoreFavorites;
   const ensureCloudFavorites = cloudLibrary.ensureFavorites;
   const openCloudSession = cloudLibrary.openSession;
+  const readCloudSession = cloudLibrary.readSession;
   const openCloudFavorite = cloudLibrary.openFavorite;
   const favoriteCloudSession = cloudLibrary.favoriteSession;
   const unfavoriteCloudSession = cloudLibrary.unfavoriteSession;
@@ -422,6 +427,7 @@ export default function App() {
   const stopStudio = strudel.stop;
 
   const handlePrimaryNavSelect = useCallback((item: PrimaryNavItem) => {
+    if (isMobile) ++mobileNavigationRef.current;
     if (item === 'favorites' && !auth.user) {
       setAccountOpen(true);
       return;
@@ -436,7 +442,7 @@ export default function App() {
     if (item !== 'featured') stopFeaturedPreview();
     if (item !== 'home') stopStudio();
     setPrimaryNavItem(item);
-  }, [auth.user, stopFeaturedPreview, stopStudio]);
+  }, [auth.user, stopFeaturedPreview, stopStudio, isMobile]);
 
   useEffect(() => {
     // A sign-out or expired auth session must not leave the account-only page
@@ -610,6 +616,7 @@ export default function App() {
   const visibleSuggestions = demoSuggestions;
 
   const accountLabel = auth.user?.email || (auth.user ? t('account') : t('signIn'));
+  const syncViewport = useVisualViewport(isMobile && Boolean(guestImportSessions));
 
   const accountOverlays = (
     <>
@@ -635,7 +642,9 @@ export default function App() {
       {guestImportSessions && (
         // The editor's bottom fade uses z-index 240/250, so this app-level
         // progress dialog must sit above those masks.
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]"
+          style={isMobile ? { top: syncViewport?.top ?? 0, height: syncViewport?.height ?? '100dvh', bottom: 'auto' } : undefined}
+        >
           <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-dialog-overlay">
             <h2 className="text-lg font-semibold text-text-primary mb-2">
               {guestImportError ? t('syncLocalHistoryFailed') : t('syncingLocalHistory')}
@@ -672,6 +681,7 @@ export default function App() {
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
     if (!current) return;
+    if (isMobile) mobileCodeRestoreRef.current = { id: current.id, code: current.code };
     skipNextManualSyncSessionRef.current = current.id;
     strudel.setCode(current.code);
     strudel.stop();
@@ -682,6 +692,12 @@ export default function App() {
   const flushCloudSaves = sessions.flushCloudSaves;
   useEffect(() => {
     if (!current?.id || isLoading || isReplaying || isVideoMode) return;
+    // The REPL publishes code asynchronously. Until it acknowledges the
+    // incoming session, its previous value still belongs to the outgoing one.
+    if (isMobile && mobileCodeRestoreRef.current?.id === current.id) {
+      if (strudel.code !== mobileCodeRestoreRef.current.code) return;
+      mobileCodeRestoreRef.current = null;
+    }
     if (skipNextManualSyncSessionRef.current === current.id) {
       skipNextManualSyncSessionRef.current = null;
       return;
@@ -696,6 +712,7 @@ export default function App() {
     isVideoMode,
     setManualCode,
     strudel.code,
+    isMobile,
   ]);
 
   // Option+. (Alt+.) global play/stop toggle — matches strudel's Alt+. keybinding
@@ -870,14 +887,16 @@ export default function App() {
 
   const persistAndFlushOutgoingSession = useCallback(async (id: string, code: string) => {
     try {
-      await setManualCode(code, id);
+      const restoring = isMobile && mobileCodeRestoreRef.current?.id === id
+        ? mobileCodeRestoreRef.current : null;
+      await setManualCode(restoring?.code ?? code, id);
       await flushCloudSaves(id);
     } catch (error) {
       // Local persistence and the durable pending marker remain authoritative;
       // the coordinator will retry while the user continues navigating.
       console.warn('[sessions] outgoing session flush failed.', error);
     }
-  }, [flushCloudSaves, setManualCode]);
+  }, [flushCloudSaves, setManualCode, isMobile]);
 
   const handlePlay = useCallback(async () => {
     if (sessions.currentId) {
@@ -933,16 +952,19 @@ export default function App() {
   }, [importSession, stopFeaturedPreview]);
 
   const handleNewSession = useCallback(async () => {
+    const navigation = ++mobileNavigationRef.current;
     if (sessions.currentId) {
-      await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      const save = persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      if (!isMobile) await save;
     }
+    if (isMobile && mobileNavigationRef.current !== navigation) return;
     strudel.stop();
     // The last turn's next-step chips belong to the conversation being left,
     // exactly as on a switch — a fresh session opens on its own placeholder.
     setCommitSuggestions(null);
     sessions.newSession();
     if (isDemoMode()) setDemoStep(0);
-  }, [strudel, sessions, persistAndFlushOutgoingSession]);
+  }, [strudel, sessions, persistAndFlushOutgoingSession, isMobile]);
 
   /* The notice delays release/delete writes long enough for Undo to remain a
      real cancellation while the session stays in its current collection. */
@@ -965,11 +987,14 @@ export default function App() {
      behind it does, and at no other time. */
   const selectedAccountFavorite = useMemo(
     () => (selectedAccountFavoriteDetail && selectedAccountFavoriteSummary
-      ? sessionAsFavorite(selectedAccountFavoriteDetail, {
+      ? sessionAsFavorite(isMobile ? {
+        ...selectedAccountFavoriteDetail,
+        title: fullSessionTitle(selectedAccountFavoriteDetail.title, selectedAccountFavoriteDetail.messages),
+      } : selectedAccountFavoriteDetail, {
         favoritedAt: selectedAccountFavoriteSummary.favoritedAt,
       })
       : null),
-    [selectedAccountFavoriteDetail, selectedAccountFavoriteSummary],
+    [isMobile, selectedAccountFavoriteDetail, selectedAccountFavoriteSummary],
   );
   const selectedAccountFavoriteError = cloudDetailError
     && cloudDetailError.id === selectedAccountFavoriteSummary?.id
@@ -1005,8 +1030,13 @@ export default function App() {
     ? favoriteNotice.favorite.id
     : null;
   const cloudFavoriteConversations = useMemo(
-    () => cloudFavoriteItems.filter((summary) => summary.id !== pendingFavoriteId),
-    [cloudFavoriteItems, pendingFavoriteId],
+    () => cloudFavoriteItems.filter((summary) => summary.id !== pendingFavoriteId).map((summary) => {
+      if (!isMobile) return summary;
+      const detail = cloudDetails.get(summary.id)?.session
+        ?? sessions.sessions.find((session) => session.id === summary.id);
+      return detail ? { ...summary, title: fullSessionTitle(summary.title, detail.messages) } : summary;
+    }),
+    [cloudFavoriteItems, pendingFavoriteId, isMobile, cloudDetails, sessions.sessions],
   );
 
   const commitPendingDelete = useCallback(async (notice: FavoriteNotice | null): Promise<boolean> => {
@@ -1057,6 +1087,7 @@ export default function App() {
   }, [commitPendingDelete, favoriteNotice]);
 
   const handleFavoriteSession = useCallback(async (id: string) => {
+    const navigation = mobileNavigationRef.current;
     if (!auth.user) {
       setAccountOpen(true);
       return;
@@ -1066,7 +1097,9 @@ export default function App() {
     const isCurrentSession = sessions.currentId === id;
     try {
       if (isCurrentSession) {
-        await setManualCode(strudel.code, id);
+        const restoring = isMobile && mobileCodeRestoreRef.current?.id === id
+          ? mobileCodeRestoreRef.current : null;
+        await setManualCode(restoring?.code ?? strudel.code, id);
         await flushCloudSaves(id);
       }
       const favoriteSummary = await favoriteCloudSession(summary);
@@ -1081,13 +1114,15 @@ export default function App() {
        * 'view', the nav, the drawer — rather than only the one with a button on
        * it. */
       setFavoritesFocus({ id: favoriteSummary.id });
-      if (isCurrentSession) await handleNewSession();
+      if (isCurrentSession && (!isMobile || (
+        currentIdRef.current === id && mobileNavigationRef.current === navigation
+      ))) await handleNewSession();
     } catch (error) {
       console.warn('[favorites] failed to favorite cloud session.', error);
       if (cloudErrorStatus(error) === 401) setAccountOpen(true);
       strudel.setError(t('favoriteActionFailed'));
     }
-  }, [auth.user, cloudHistoryItems, favoriteCloudSession, flushCloudSaves, handleNewSession, noticeFor, sessions.currentId, setManualCode, strudel]);
+  }, [auth.user, cloudHistoryItems, favoriteCloudSession, flushCloudSaves, handleNewSession, noticeFor, sessions.currentId, setManualCode, strudel, isMobile]);
 
   const handleUnfavorite = useCallback((conversation: FavoriteConversation) => {
     if (!auth.user) {
@@ -1183,9 +1218,11 @@ export default function App() {
   }, [auth.user, favoriteNotice, strudel, unfavoriteCloudSession]);
 
   const handleSwitchSession = useCallback(async (id: string) => {
+    const navigation = ++mobileNavigationRef.current;
     if (sessions.currentId !== id) {
       if (sessions.currentId) {
-        await persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+        const save = persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+        if (!isMobile) await save;
       }
     }
     setCommitSuggestions(null);
@@ -1209,7 +1246,15 @@ export default function App() {
       sessions.switchTo(id);
       const cloudIsAhead = summary !== undefined && summary.updatedAt > workingCopy.updatedAt;
       if (cloudIsAhead && !loadingSessions.has(id)) {
-        void openCloudSession(summary).catch((error) => {
+        // Revalidation may update this copy, but cannot activate an old row.
+        const revalidate = isMobile ? readCloudSession(summary).then(async (detail) => {
+          if (mobileNavigationRef.current !== navigation) return;
+          const accepted = await sessions.acceptCloudDetail(detail, { activate: false });
+          if (!accepted || mobileNavigationRef.current !== navigation) return;
+          mobileCodeRestoreRef.current = { id, code: accepted.code };
+          strudel.setCode(accepted.code);
+        }) : openCloudSession(summary);
+        void revalidate.catch((error) => {
           console.warn('[sessions] background session revalidation failed.', error);
           if (cloudErrorStatus(error) === 401) setAccountOpen(true);
         });
@@ -1221,7 +1266,15 @@ export default function App() {
     if (auth.user) {
       if (!summary) return;
       try {
-        await openCloudSession(summary);
+        if (isMobile) {
+          const detail = await readCloudSession(summary);
+          if (mobileNavigationRef.current !== navigation) return;
+          await sessions.acceptCloudDetail(detail, { activate: false });
+          if (mobileNavigationRef.current !== navigation) return;
+          sessions.switchTo(id);
+        } else {
+          await openCloudSession(summary);
+        }
       } catch (error) {
         console.warn('[sessions] failed to open cloud session.', error);
         if (cloudErrorStatus(error) === 401) setAccountOpen(true);
@@ -1238,12 +1291,15 @@ export default function App() {
     cloudHistoryItems,
     loadingSessions,
     openCloudSession,
+    readCloudSession,
+    isMobile,
     persistAndFlushOutgoingSession,
     sessions,
     strudel,
   ]);
 
   const handleDeleteSession = useCallback((id: string) => {
+    if (isMobile) ++mobileNavigationRef.current;
     if (!auth.user) {
       sessions.deleteSession(id);
       return;
@@ -1260,7 +1316,7 @@ export default function App() {
           if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
         });
     }
-  }, [auth.user, removeCloudSummary, sessions, strudel]);
+  }, [auth.user, removeCloudSummary, sessions, strudel, isMobile]);
 
   const handleRenameSession = useCallback(async (id: string, title: string) => {
     if (!auth.user) {
@@ -1270,7 +1326,14 @@ export default function App() {
     const summary = cloudHistoryItems.find((candidate) => candidate.id === id);
     if (!summary) return;
     try {
-      await openCloudSession(summary);
+      if (isMobile) {
+        if (!sessions.sessions.some((session) => session.id === id)) {
+          const detail = await readCloudSession(summary);
+          await sessions.acceptCloudDetail(detail, { activate: false });
+        }
+      } else {
+        await openCloudSession(summary);
+      }
       sessions.renameSession(id, title);
       upsertCloudHistorySummary({ ...summary, title }, 0);
     } catch (error) {
@@ -1278,7 +1341,7 @@ export default function App() {
       if (cloudErrorStatus(error) === 401) setAccountOpen(true);
       if (cloudErrorStatus(error) !== 404) strudel.setError(t('requestFailed'));
     }
-  }, [auth.user, cloudHistoryItems, openCloudSession, sessions, strudel, upsertCloudHistorySummary]);
+  }, [auth.user, cloudHistoryItems, openCloudSession, readCloudSession, isMobile, sessions, strudel, upsertCloudHistorySummary]);
 
   const handleOpenFavoriteInStudio = useCallback((code: string) => {
     if (!auth.user) {

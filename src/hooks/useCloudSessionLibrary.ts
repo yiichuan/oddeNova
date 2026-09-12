@@ -41,7 +41,7 @@ export interface CloudDetailError {
 export interface UseCloudSessionLibraryOptions {
   enabled: boolean;
   ownerId?: string;
-  acceptCloudDetail?: (session: Session) => Promise<void>;
+  acceptCloudDetail?: (session: Session) => Promise<unknown>;
   /** The lists as this device last saw them, drawn before the request lands. */
   readCachedSummaries?: () => Promise<CachedSummaries | null>;
   writeCachedSummaries?: (value: CachedSummaries) => void;
@@ -695,6 +695,10 @@ export function useCloudSessionLibrary({
     (item: SessionSummary): Promise<Session> => openSummary(item),
     [openSummary],
   );
+  const readSession = useCallback(
+    (item: SessionSummary): Promise<Session> => openSummary(item, { acceptCloudDetail: false }),
+    [openSummary],
+  );
   const openFavorite = useCallback(
     (item: FavoriteSummary): Promise<Session> => openSummary(item, { acceptCloudDetail: false }),
     [openSummary],
@@ -711,6 +715,7 @@ export function useCloudSessionLibrary({
     ensureFavorites,
     loadMoreFavorites,
     openSession,
+    readSession,
     openFavorite,
     favoriteSession,
     unfavoriteSession,
