@@ -887,7 +887,6 @@ export default function FavoritesPage({
            the same condition the desktop caption asks. */
         onUnfavorite={onUnfavorite && current?.sessionId ? () => onUnfavorite(current) : undefined}
         onDelete={onDelete && current ? () => onDelete(current) : undefined}
-        onOpenInStudio={onOpenInStudio}
         onOpenNav={onOpenNav}
       />
     );

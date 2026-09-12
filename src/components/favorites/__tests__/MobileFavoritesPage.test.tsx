@@ -172,15 +172,13 @@ describe('MobileFavoritesPage', () => {
     expect(open(listDrawer(container).parentElement!)).toBe(false);
   });
 
-  it('opens the take a widget points at, and hands it to the three keys above it', async () => {
+  it('opens the take a widget points at, and hands it to the two keys above it', async () => {
     const onPlayCode = vi.fn();
-    const onOpenInStudio = vi.fn();
     const { container } = render(
       <FavoritesPage
         active
         conversations={KEPT}
         onPlayCode={onPlayCode}
-        onOpenInStudio={onOpenInStudio}
       />,
     );
 
@@ -197,14 +195,36 @@ describe('MobileFavoritesPage', () => {
       .click());
     expect(onPlayCode).toHaveBeenCalledWith('s("bd*4")');
 
-    act(() => container
-      .querySelector<HTMLButtonElement>('[data-testid="favorites-mobile-script-open-in-studio"]')!
-      .click());
-    expect(onOpenInStudio).toHaveBeenCalledWith('s("bd*4")');
-
     // A second widget re-points the window rather than opening another.
     act(() => chips(container)[1]!.click());
     expect(await shownCode(container)).toBe('s("bd*4, hh*8")');
+  });
+
+  it('holds play and copy on the left, closes on the right, and drops the studio key entirely', async () => {
+    const onOpenInStudio = vi.fn();
+    const { container } = render(
+      <FavoritesPage active conversations={KEPT} onOpenInStudio={onOpenInStudio} />,
+    );
+
+    act(() => chips(container)[0]!.click());
+    expect(open(codeWindow(container))).toBe(true);
+
+    // The studio's own mobile code sheet reads left-to-right as "what the
+    // window can do" then "the way out" — this window now reads the same way.
+    const bar = container.querySelector<HTMLElement>('[data-testid="favorites-mobile-script-play"]')!
+      .parentElement!;
+    const actionOrder = [...bar.querySelectorAll('button')].map((button) => button.dataset.testid);
+    expect(actionOrder).toEqual(['favorites-mobile-script-play', 'favorites-mobile-script-copy']);
+
+    // Passing onOpenInStudio still lets the desktop pane use it; the phone
+    // window no longer offers a way to reach it at all.
+    expect(container.querySelector('[data-testid="favorites-mobile-script-open-in-studio"]')).toBeNull();
+    expect(onOpenInStudio).not.toHaveBeenCalled();
+
+    const close = container.querySelector<HTMLButtonElement>('[data-testid="favorites-mobile-script-close"]')!;
+    expect(close.getAttribute('aria-label')).toBe(t('close'));
+    act(() => close.click());
+    expect(open(codeWindow(container))).toBe(false);
   });
 
   it('hangs a 最新 widget under the whole reading when the last take is not the last word', async () => {

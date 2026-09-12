@@ -119,6 +119,21 @@ describe('FeaturedTiltSurface answering the device', () => {
     expect(Number(surface.style.getPropertyValue('--tilt-highlight-opacity'))).toBeGreaterThan(0.1);
   });
 
+  it('exposes the same amount of turn as --tilt-edge, for a plain edge to key off', () => {
+    /* The mobile ring (MobileFeaturedPage's data-featured-cover-ring) reads
+       this rather than --tilt-highlight-opacity, so a highlight tuned to a
+       0.16 ceiling later does not also mute how far the edge is allowed to
+       show. */
+    const { surface } = render();
+    tip(0, 0);
+    settleFrames();
+    expect(Number(surface.style.getPropertyValue('--tilt-edge'))).toBeCloseTo(0, 3);
+
+    tip(TILT_RANGE_DEG, 0);
+    settleFrames();
+    expect(Number(surface.style.getPropertyValue('--tilt-edge'))).toBeCloseTo(1, 1);
+  });
+
   it('ignores a reading with nothing in it', () => {
     const { surface } = render();
     tip(0, 0);

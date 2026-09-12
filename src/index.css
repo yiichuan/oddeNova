@@ -488,13 +488,24 @@ body {
    conversation surface, and the strips the browser keeps for itself — the
    notch at the top, the toolbar at the bottom — are the only places the
    document canvas is ever seen. They have to continue the page rather than
-   frame it, so both roots take that surface instead. `theme-color` in
-   appearance-preferences.ts carries the same pair for the bars the browser
-   paints itself. */
+   frame it, so both roots take that surface instead.
+
+   `--browser-chrome-color` is what actually decides which colour that is; see
+   browser-chrome-color.ts. The declaration below is only its fallback, for the
+   instant before that module's boot call runs (and for a document that never
+   runs it at all) — a plain reference to the studio's own surface, which
+   resolves under either palette on its own since --color-conversation-surface
+   already does, so this needs no light-mode override of its own. JS overtakes
+   it with an inline style on <html> once a real page is known, and repaints it
+   on every navigation after — see useBrowserChromeColor. */
+:root {
+  --browser-chrome-color: var(--color-conversation-surface);
+}
+
 @media (max-width: 460px) {
   html,
   body {
-    background-color: var(--color-conversation-surface);
+    background-color: var(--browser-chrome-color);
   }
 }
 

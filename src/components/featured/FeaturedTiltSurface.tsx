@@ -21,6 +21,14 @@ interface TiltValues extends CSSProperties {
   '--tilt-highlight-x': string;
   '--tilt-highlight-y': string;
   '--tilt-highlight-opacity': number;
+  /**
+   * How far the sleeve is turned, 0..1 — the same number `gloss` already is,
+   * named separately from `--tilt-highlight-opacity` so a consumer wanting the
+   * bare amount of turn is not stuck multiplying it back out of that property's
+   * own 0.16 ceiling. What reads this today is the edge a leaning sleeve
+   * catches — see MobileFeaturedPage's `data-featured-cover-ring`.
+   */
+  '--tilt-edge': number;
   '--tilt-shadow': string;
 }
 
@@ -74,6 +82,7 @@ export default function FeaturedTiltSurface({
       surface.style.setProperty('--tilt-x', '0deg');
       surface.style.setProperty('--tilt-y', '0deg');
       surface.style.setProperty('--tilt-highlight-opacity', '0');
+      surface.style.setProperty('--tilt-edge', '0');
       surface.style.setProperty('--tilt-shadow', resting);
     };
     reset();
@@ -123,6 +132,7 @@ export default function FeaturedTiltSurface({
       surface.style.setProperty('--tilt-highlight-x', `${(current.x + 1) * 50}%`);
       surface.style.setProperty('--tilt-highlight-y', `${(current.y + 1) * 50}%`);
       surface.style.setProperty('--tilt-highlight-opacity', `${current.gloss * 0.16}`);
+      surface.style.setProperty('--tilt-edge', `${current.gloss}`);
       surface.style.setProperty(
         '--tilt-shadow',
         `${shadowX}px ${shadowY}px ${shadowBlur}px ${sleeveShadowColor(room, current.gloss)}`,
@@ -248,6 +258,7 @@ export default function FeaturedTiltSurface({
     '--tilt-highlight-x': '50%',
     '--tilt-highlight-y': '50%',
     '--tilt-highlight-opacity': 0,
+    '--tilt-edge': 0,
     '--tilt-shadow': resting,
   };
 

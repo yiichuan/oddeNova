@@ -9,6 +9,7 @@
  */
 
 import { applyAppEditorTheme } from './editor-preferences';
+import { applyBrowserChromeColor } from './browser-chrome-color';
 
 export type ThemePreference = 'system' | 'dark' | 'light';
 export type ResolvedTheme = 'dark' | 'light';
@@ -27,23 +28,6 @@ export const LIGHT_THEME_READY = true;
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'light';
 export const DEFAULT_ANIMATION: AnimationPreference = 'galaxy-ascii';
 export const DEFAULT_STUDIO_ANIMATION_VISIBLE = true;
-
-/**
- * What a mobile browser paints its own bars with — the notch strip at the top
- * and the toolbar strip at the bottom, the two edges of the screen the page
- * never reaches.
- *
- * These are `--color-conversation-surface`, not `--color-bg-primary`. The
- * phone layout has no page ground: the studio stands directly on the
- * conversation surface (see the mobile branch in App.tsx), so that is the
- * colour running to both edges of the screen, and anything else leaves two
- * bands that don't belong to the page they are framing. The desktop shell,
- * which does stand on `--color-bg-primary`, never shows these bars at all.
- */
-const BROWSER_THEME_COLORS: Record<ResolvedTheme, string> = {
-  dark: '#0D0D0D',
-  light: '#F7F7FA',
-};
 
 /** i18n keys for the user-facing name of each choice. */
 export const THEME_LABEL_KEYS: Record<ThemePreference, string> = {
@@ -142,9 +126,13 @@ function applyTheme(preference: ThemePreference, keepEditorTheme = false): void 
   const resolved = resolveTheme(preference);
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
-  document
-    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-    ?.setAttribute('content', BROWSER_THEME_COLORS[resolved]);
+  /* The system's own chrome — see browser-chrome-color.ts — is repainted for
+     whichever page is currently in front of the reader. There is no page yet
+     the first time this runs, before React has mounted anything, so boot
+     assumes the studio: it is where the app always opens. App.tsx's own hook
+     corrects this the moment a real page is known, and again on every
+     navigation after. */
+  applyBrowserChromeColor('studio', resolved);
   if (!keepEditorTheme && previous !== resolved) applyAppEditorTheme(resolved);
 }
 

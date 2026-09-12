@@ -50,6 +50,7 @@ import { conversationTitle, type FavoriteConversation } from './lib/favorite-con
 import { sessionAsFavorite } from './lib/session-favorites';
 import { fullSessionTitle } from './lib/full-session-title';
 import { useVisualViewport } from './hooks/useVisualViewport';
+import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
 import { featuredPlayer } from './services/featured-player';
 import { featuredSessionDraft } from './lib/featured-session';
@@ -85,6 +86,7 @@ import {
   getNextImportPromptUserMarker,
   importGuestSessions,
 } from './lib/session-import';
+import { isOnline } from './lib/network-status';
 import { type Session } from './hooks/useSessions';
 
 /**
@@ -95,6 +97,12 @@ const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites']);
 
 /** How long the summary cache holds a change before writing it down. */
 const SUMMARY_CACHE_WRITE_MS = 1000;
+
+/* A failure this many times running stops asking and hands the rest to the
+   ordinary sync queue instead — see the note on guestImportFailureCountRef.
+   Two: one automatic attempt on discovery, one manual retry, and then no more
+   standing in the reader's way. */
+const GUEST_IMPORT_MAX_PROMPTS = 2;
 
 function cloudErrorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object' || !('status' in error)) return undefined;
@@ -198,10 +206,19 @@ export default function App() {
   const studioAnimationVisible = useStudioAnimationVisible();
   const [accountOpen, setAccountOpen] = useState(false);
   const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
-  const [guestImportError, setGuestImportError] = useState('');
+  /* `null` while nothing has gone wrong; otherwise which of the two things
+     went wrong, since the dialog reads differently for each — see the render
+     below and GUEST_IMPORT_MAX_PROMPTS. */
+  const [guestImportError, setGuestImportError] = useState<'offline' | 'rejected' | null>(null);
   const [importingGuestHistory, setImportingGuestHistory] = useState(false);
   const [guestImportGateUserId, setGuestImportGateUserId] = useState<string | null>(null);
   const guestImportRunningRef = useRef(false);
+  /* How many *consecutive* failures the reader has been asked about. The first
+     failure gets a dialog with Retry and Later; a second failure right after
+     it does not get a second dialog — see importGuestHistory. Zeroed on
+     success and whenever a fresh check starts (sign-out, then a different
+     account signing in). */
+  const guestImportFailureCountRef = useRef(0);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const skipNextManualSyncSessionRef = useRef<string | null>(null);
@@ -327,9 +344,10 @@ export default function App() {
     const nextMarker = getNextImportPromptUserMarker(auth.user?.id ?? null, importPromptUserRef.current);
     if (nextMarker !== importPromptUserRef.current) {
       importPromptUserRef.current = nextMarker;
-      setGuestImportError('');
+      setGuestImportError(null);
       setGuestImportSessions(null);
       setGuestImportGateUserId(null);
+      guestImportFailureCountRef.current = 0;
     }
   }, [auth.user]);
 
@@ -474,7 +492,7 @@ export default function App() {
       if (cancelled) return;
       const importable = collectImportableGuestSessions(guestSessions, latestGuestSessionsRef.current);
       if (importable.length > 0) {
-        setGuestImportError('');
+        setGuestImportError(null);
         // The import starts automatically on the next effect. Put the blocking
         // state up in this commit so the old confirmation dialog never flashes
         // between discovering local history and beginning its cloud save.
@@ -492,6 +510,23 @@ export default function App() {
     return () => { cancelled = true; };
   }, [auth.user, auth.loading, auth.recoveringPassword, sessions.isLoading]);
 
+  /* What both "Later" and the second failure do: stop treating the remaining
+     guest sessions as something the app is blocked on.
+     
+     This does not lose anything. Every item that reaches this point already
+     wrote its way into the *account's* local session list — importSession
+     writes that row before it ever touches the cloud — so what remains
+     outstanding is only the cloud copy, and session-cloud-sync.ts is already
+     retrying that on its own ordinary schedule (see the 'retrying'/'offline'
+     status it set when the checkpoint first failed). The guest-side row is
+     also left alone rather than deleted, so the next sign-in re-offers
+     exactly what never made it up. */
+  const dismissGuestImportBlock = useCallback(() => {
+    setGuestImportSessions(null);
+    setGuestImportError(null);
+    setGuestImportGateUserId(auth.user?.id ?? null);
+  }, [auth.user?.id]);
+
   const importGuestHistory = useCallback(async () => {
     // The cloud save keeps the dialog up for as long as the request takes.
     // Guard on a ref set before the first await so an effect replay or a retry
@@ -500,25 +535,32 @@ export default function App() {
     guestImportRunningRef.current = true;
     setImportingGuestHistory(true);
     const items = guestImportSessions ?? [];
-    setGuestImportError('');
+    setGuestImportError(null);
     try {
       const result = await importGuestSessions(
         items,
         (item) => sessions.importSession(item, { activate: false, awaitCloud: true }),
         (id) => deleteSession(id, 'guest'),
       );
-      setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
       if (result.error) {
         console.warn('[account] failed to import guest sessions to cloud.', result.error);
-        setGuestImportError(t('accountActionFailed'));
+        guestImportFailureCountRef.current += 1;
+        if (guestImportFailureCountRef.current >= GUEST_IMPORT_MAX_PROMPTS) {
+          dismissGuestImportBlock();
+        } else {
+          setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
+          setGuestImportError(isOnline() ? 'rejected' : 'offline');
+        }
       } else {
+        guestImportFailureCountRef.current = 0;
+        setGuestImportSessions(result.remaining.length > 0 ? result.remaining : null);
         setGuestImportGateUserId(auth.user?.id ?? null);
       }
     } finally {
       guestImportRunningRef.current = false;
       setImportingGuestHistory(false);
     }
-  }, [auth.user?.id, guestImportSessions, sessions]);
+  }, [auth.user?.id, dismissGuestImportBlock, guestImportSessions, sessions]);
 
   useEffect(() => {
     if (!guestImportSessions || guestImportError || guestImportRunningRef.current) return;
@@ -651,7 +693,11 @@ export default function App() {
               {guestImportError ? t('syncLocalHistoryFailed') : t('syncingLocalHistory')}
             </h2>
             <p className="text-xs text-text-muted">
-              {guestImportError || t('syncingLocalHistoryDesc')}
+              {guestImportError === 'offline'
+                ? t('syncLocalHistoryOffline')
+                : guestImportError === 'rejected'
+                  ? t('syncLocalHistoryRejected')
+                  : t('syncingLocalHistoryDesc')}
             </p>
             {importingGuestHistory && !guestImportError && (
               <div
@@ -665,13 +711,24 @@ export default function App() {
                 />
               </div>
             )}
+            {/* Two ways out rather than one: a stuck retry used to be the only
+                door in the room. Later leaves quietly — see
+                dismissGuestImportBlock for why that loses nothing. */}
             {guestImportError && (
-              <button
-                onClick={() => void importGuestHistory()}
-                className="mt-5 w-full rounded-lg bg-accent py-2.5 text-sm text-on-accent transition-colors hover:bg-accent-light"
-              >
-                {t('retry')}
-              </button>
+              <div className="mt-5 flex gap-2">
+                <button
+                  onClick={dismissGuestImportBlock}
+                  className="flex-1 rounded-lg border border-border py-2.5 text-sm text-text-secondary transition-colors hover:text-text-primary hover:border-accent/50"
+                >
+                  {t('syncLocalHistoryLater')}
+                </button>
+                <button
+                  onClick={() => void importGuestHistory()}
+                  className="flex-1 rounded-lg bg-accent py-2.5 text-sm text-on-accent transition-colors hover:bg-accent-light"
+                >
+                  {t('retry')}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1467,6 +1524,11 @@ export default function App() {
      out the pages that are not it: a page added later would arrive inside
      `onStudioPage` and inherit a highlight that is not about it. */
   const historyHighlightId = primaryNavItem === 'home' ? sessions.currentId : null;
+  /* The system's own chrome follows the same question — see
+     useBrowserChromeColor. Featured stands on its own ground; every other
+     page (including the two full-width mobile pages folded into onStudioPage's
+     opposite) shares the studio's. */
+  useBrowserChromeColor(onFeaturedPage ? 'featured' : 'studio');
 
   /* Wired once and hung in whichever shell is up, the same as the collection
      below it: it is one page that works out for itself what a phone does with

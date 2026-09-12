@@ -219,19 +219,20 @@ describe('MobileFeaturedPage', () => {
     expect(slotAt(container, 1)?.dataset.featuredAlbum).toBe('Two Sides');
   });
 
-  it('rings the sleeve in the middle under a cursor, and only that one', () => {
+  it('gives the centred sleeve an edge that follows the tilt, and no other slot one at all', () => {
     const { container } = render(page());
 
     const ring = (slot: HTMLElement | null) => slot!
       .querySelector<HTMLElement>('[data-featured-cover-ring]')!;
-    // Caught by a pointer crossing the sleeve, as the display's is — so on a
-    // phone, which has no pointer, it never shows at all.
-    expect(centred(container)!.querySelector('button')!.className).toContain('group');
-    expect(ring(centred(container)).className).toContain('group-hover:ring-1');
+    // A phone has no pointer to catch a hairline under, so the ring now reads
+    // the same amount of turn the sheen and the shadow already do — the
+    // surface's own --tilt-edge, at 0 until the phone is actually tipped.
+    expect(ring(centred(container)).style.boxShadow).toBe('inset 0 0 0 1px var(--featured-cover-ring)');
+    expect(ring(centred(container)).style.opacity).toBe('var(--tilt-edge)');
     // And nothing else on the wheel answers: the sleeves either side are the
-    // wheel rather than the record.
-    expect(ring(slotAt(container, 1)).className).not.toContain('group-hover:ring-1');
-    expect(ring(slotAt(container, -1)).className).not.toContain('group-hover:ring-1');
+    // wheel rather than the record, and never take a style at all.
+    expect(ring(slotAt(container, 1)).getAttribute('style')).toBeNull();
+    expect(ring(slotAt(container, -1)).getAttribute('style')).toBeNull();
   });
 
   it('leaves the artwork to be artwork: nothing of the record is written beside its sleeve', () => {

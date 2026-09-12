@@ -267,6 +267,11 @@ const S: Record<string, readonly [string, string]> = {
   syncingLocalHistory:  ['正在同步本机历史', 'Syncing local history'],
   syncingLocalHistoryDesc:['正在将本机游客模式下的对话记录导入当前账号并同步到云端，请稍候。', 'Importing local guest conversations into this account and syncing them to the cloud. Please wait.'],
   syncLocalHistoryFailed:['本机历史同步失败', 'Local history sync failed'],
+  syncLocalHistoryOffline:['当前网络不可用，这些对话已保存在本机，联网后会自动继续同步。',
+                           "You're offline right now. These conversations are saved on this device and will keep syncing automatically once you're back online."],
+  syncLocalHistoryRejected:['部分对话未能同步到云端，已留在本机，下次登录会继续尝试。',
+                            'Some conversations could not be synced to the cloud. They remain on this device, and importing will resume the next time you sign in.'],
+  syncLocalHistoryLater:['稍后再说', 'Later'],
 
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],

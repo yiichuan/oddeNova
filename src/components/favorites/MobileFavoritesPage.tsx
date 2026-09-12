@@ -14,11 +14,11 @@ import {
   CopyIcon,
   EllipsisIcon,
   ListIcon,
-  OpenInStudioIcon,
   PlayOutlineIcon,
   StarIcon,
   StopIcon,
   TrashIcon,
+  XIcon,
 } from '../icons';
 import ArchivedConversationView, { ArchiveCodeChip } from '../conversation/ArchivedConversationView';
 import InfiniteScrollSentinel from '../common/InfiniteScrollSentinel';
@@ -78,7 +78,6 @@ export interface MobileFavoritesPageProps {
   onStopCode: () => void;
   onUnfavorite?: () => void;
   onDelete?: () => void;
-  onOpenInStudio?: (code: string) => void;
   /** Opens the shell's navigation drawer — the page has no column of its own. */
   onOpenNav?: () => void;
 }
@@ -163,7 +162,6 @@ export default function MobileFavoritesPage({
   onStopCode,
   onUnfavorite,
   onDelete,
-  onOpenInStudio,
   onOpenNav,
 }: MobileFavoritesPageProps) {
   const [listOpen, setListOpen] = useState(false);
@@ -618,26 +616,27 @@ export default function MobileFavoritesPage({
             transform: codeOpen ? 'scale(1)' : 'scale(0.97)',
           }}
         >
-          {/* Hearing it goes on one side, taking it away on the other: one acts
-              on the script where it is, the two beside each other carry it out
-              of the page. A thumb reaching for either is nowhere near the
-              other, and the way out of the window is the backdrop. */}
+          {/* What the window can do goes left, the way out goes right — the
+              studio's own mobile code sheet reads the same way, so the two
+              windows are one pattern rather than two. A thumb reaching for
+              either end is nowhere near the other, and the backdrop still
+              closes the window besides. */}
           <div className="absolute -top-11 left-0 right-0 flex items-center justify-between">
-            <button
-              type="button"
-              data-testid="favorites-mobile-script-play"
-              onClick={() => {
-                if (!selectedScript) return;
-                if (scriptPlaying) onStopCode();
-                else onPlayCode(selectedScript.code);
-              }}
-              className="code-window-action flex h-9 w-9 items-center justify-center"
-              aria-label={scriptPlaying ? t('stop') : t('play')}
-              title={scriptPlaying ? t('stop') : t('play')}
-            >
-              {scriptPlaying ? <StopIcon size={15} /> : <PlayOutlineIcon size={19} />}
-            </button>
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                data-testid="favorites-mobile-script-play"
+                onClick={() => {
+                  if (!selectedScript) return;
+                  if (scriptPlaying) onStopCode();
+                  else onPlayCode(selectedScript.code);
+                }}
+                className="code-window-action flex h-9 w-9 items-center justify-center"
+                aria-label={scriptPlaying ? t('stop') : t('play')}
+                title={scriptPlaying ? t('stop') : t('play')}
+              >
+                {scriptPlaying ? <StopIcon size={15} /> : <PlayOutlineIcon size={19} />}
+              </button>
               <button
                 type="button"
                 data-testid="favorites-mobile-script-copy"
@@ -648,19 +647,20 @@ export default function MobileFavoritesPage({
               >
                 {copied ? <CheckIcon size={17} /> : <CopyIcon size={17} />}
               </button>
-              {onOpenInStudio && (
-                <button
-                  type="button"
-                  data-testid="favorites-mobile-script-open-in-studio"
-                  onClick={() => selectedScript && onOpenInStudio(selectedScript.code)}
-                  className="code-window-action flex h-9 w-9 items-center justify-center"
-                  aria-label={t('openInStudio')}
-                  title={t('openInStudio')}
-                >
-                  <OpenInStudioIcon size={17} />
-                </button>
-              )}
             </div>
+            {/* The same act the backdrop already answers, given a target for a
+                reach that does not want to find the one strip of page the
+                window is not covering. */}
+            <button
+              type="button"
+              data-testid="favorites-mobile-script-close"
+              onClick={() => setCodeOpen(false)}
+              className="code-window-action flex h-9 w-9 items-center justify-center"
+              aria-label={t('close')}
+              title={t('close')}
+            >
+              <XIcon size={19} />
+            </button>
           </div>
 
           {/* The window itself holds the script and nothing else. It is an

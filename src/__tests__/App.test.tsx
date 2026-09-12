@@ -507,6 +507,159 @@ describe('App password recovery', () => {
     expect(mocks.importSession).toHaveBeenCalledWith(guestSession, { activate: false, awaitCloud: true });
     expect(mocks.deleteSession).toHaveBeenCalledWith('guest-session', 'guest');
   });
+
+  /* The bug: a cloud save that fails once used to be retried under the same
+     item forever, and the dialog's only door was that retry button — so a
+     server that would never accept one particular payload parked the whole
+     app in front of it. These four cover the fix: the app gives up asking
+     after a second failure in a row, a reader can leave sooner than that on
+     their own, and the two reasons a save can fail get told apart. */
+  it('gives up asking after a second consecutive failure, instead of leaving the app stuck in the dialog', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    // Every attempt fails — a payload the server will never accept, say.
+    mocks.importSession.mockRejectedValue(new Error('rejected'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // First failure: the dialog stays up and offers a retry.
+    expect(container.textContent).toContain(t('syncLocalHistoryFailed'));
+    const retryButton = () => [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === t('retry'));
+    expect(retryButton()).not.toBeUndefined();
+    // The cloud library reads as still loading while the dialog holds it shut
+    // — see cloudLibraryEnabled in App.tsx.
+    expect(mocks.historyProps?.isLoading).toBe(true);
+
+    await act(async () => {
+      retryButton()?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Second consecutive failure: no third prompt, and the app is not left
+    // parked on it. The old code either stayed here forever or, if the
+    // dialog were simply dismissed, left the account's own history
+    // permanently unloaded — this checks both did not happen.
+    expect(container.textContent).not.toContain(t('syncLocalHistoryFailed'));
+    expect(container.textContent).not.toContain(t('syncingLocalHistory'));
+    expect(mocks.historyProps?.isLoading).toBe(false);
+    // Never having succeeded, the guest copy is left in place for next time.
+    expect(mocks.deleteSession).not.toHaveBeenCalled();
+  });
+
+  it('opens the cloud library the moment the reader chooses to leave it for later', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    mocks.importSession.mockRejectedValueOnce(new Error('rejected'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const laterButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === t('syncLocalHistoryLater'));
+    expect(laterButton).not.toBeUndefined();
+    expect(mocks.historyProps?.isLoading).toBe(true);
+
+    await act(async () => {
+      laterButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain(t('syncLocalHistoryFailed'));
+    // Closing the dialog alone reopens no gate; this is the second half of the
+    // fix, not just "the dialog goes away."
+    expect(mocks.historyProps?.isLoading).toBe(false);
+  });
+
+  it('tells a rejected save apart from a lost connection', async () => {
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    mocks.importSession.mockRejectedValueOnce(new Error('rejected'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(t('syncLocalHistoryRejected'));
+    expect(container.textContent).not.toContain(t('syncLocalHistoryOffline'));
+  });
+
+  it('names a lost connection as one, while the device is offline', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const guestSession: Session = {
+      id: 'guest-session',
+      title: 'Guest history',
+      code: 'sound("bd")',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    mocks.getAllSessions.mockResolvedValue([guestSession]);
+    mocks.importSession.mockRejectedValueOnce(new Error('network request failed'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(t('syncLocalHistoryOffline'));
+    expect(container.textContent).not.toContain(t('syncLocalHistoryRejected'));
+    onLine.mockRestore();
+  });
 });
 
 describe('App session sync boundaries', () => {
@@ -1261,6 +1414,47 @@ describe('App session sync boundaries', () => {
       await Promise.resolve();
     });
     expect(mocks.strudel.stop).toHaveBeenCalled();
+  });
+
+  it('repaints the system\'s own chrome for whichever page is in front of the reader', async () => {
+    localStorage.setItem('vibe_theme', 'dark');
+    document.head.querySelector('meta[name="theme-color"]')?.remove();
+    const meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    document.head.append(meta);
+    mocks.isMobile = false;
+
+    try {
+      await renderApp();
+
+      const chromeVar = () => document.documentElement.style.getPropertyValue('--browser-chrome-color');
+      const navButton = (labelKey: 'navFeatured' | 'navHome' | 'navFavorites') =>
+        container.querySelector<HTMLButtonElement>(`button[aria-label="${t(labelKey)}"]`);
+
+      // The studio's own colour, on the page the app always opens on.
+      expect(meta.content).toBe('#0D0D0D');
+      expect(chromeVar()).toBe('#0D0D0D');
+
+      // Featured stands on its own ground, and the system's own strips follow
+      // it there — this is the fix: they used to stay on the studio's colour.
+      await act(async () => {
+        navButton('navFeatured')?.click();
+        await Promise.resolve();
+      });
+      expect(meta.content).toBe('#05070a');
+      expect(chromeVar()).toBe('#05070a');
+
+      // Favorites shares the studio's ground, not Featured's.
+      await act(async () => {
+        navButton('navHome')?.click();
+        await Promise.resolve();
+      });
+      expect(meta.content).toBe('#0D0D0D');
+    } finally {
+      localStorage.removeItem('vibe_theme');
+      meta.remove();
+      document.documentElement.style.removeProperty('--browser-chrome-color');
+    }
   });
 
   it('asks for the device readings from the press that opens the shelf, before it opens', async () => {

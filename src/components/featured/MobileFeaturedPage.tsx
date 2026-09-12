@@ -1095,9 +1095,7 @@ export default function MobileFeaturedPage({
                   ? `${t('featuredOpenDetail')} — ${album.title}`
                   : album.title}
                 data-testid={`featured-mobile-cover-${logicalIndex}`}
-                // `group`: the ring on the artwork is caught by a cursor over
-                // the sleeve, and this is the sleeve.
-                className="group block w-full cursor-[inherit] outline-none"
+                className="block w-full cursor-[inherit] outline-none"
               >
                 {/* `active` is what subscribes to the device, so the sleeves
                     either side cost nothing while they wait, and a wheel in
@@ -1184,23 +1182,28 @@ export default function MobileFeaturedPage({
                       style={{ backgroundImage: coverGlazeCss(sleeveLight) }}
                     />
 
-                    {/* The hairline the desktop tile catches under the pointer,
-                        caught here the same way and by the same thing: a cursor
-                        crossing the sleeve. A phone has none, so on a phone this
-                        never shows — which is right, because what the ring says
-                        is "the pointer is on this", and a page with no pointer
-                        has nothing to say it about. The record you are on is
-                        said by the middle of the wheel instead.
+                    {/* The desktop tile catches its hairline under the
+                        pointer; a phone has none, so this one catches it under
+                        the tilt instead — the same edge a lean already puts
+                        light and shadow on, both driven by the surface's own
+                        `--tilt-edge` (see FeaturedTiltSurface). Turned all the
+                        way to square, the record has no edge at all; turning it
+                        is what draws one, on the same curve the sheen and the
+                        shadow already move on — no separate transition needed,
+                        the surface's own smoothing already eases it.
 
                         Only the centred sleeve answers, as only the centred
                         sleeve leans: the ones either side are the wheel rather
-                        than the record. */}
+                        than the record, and their surface is never active, so
+                        their `--tilt-edge` never leaves the 0 it starts at. */}
                     <span
                       aria-hidden="true"
                       data-featured-cover-ring={centred}
-                      className={`pointer-events-none absolute inset-0 rounded-[2px] ring-inset ring-white/0 transition-[box-shadow] duration-200 motion-reduce:transition-none ${
-                        centred ? 'group-hover:ring-1 group-hover:ring-[color:var(--featured-cover-ring)]' : ''
-                      }`}
+                      className="pointer-events-none absolute inset-0 rounded-[2px]"
+                      style={centred ? {
+                        boxShadow: 'inset 0 0 0 1px var(--featured-cover-ring)',
+                        opacity: 'var(--tilt-edge)',
+                      } : undefined}
                     />
                   </div>
                 </FeaturedTiltSurface>
