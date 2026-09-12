@@ -839,9 +839,12 @@ describe('featured page', () => {
       expect(container.querySelector<HTMLElement>('[data-featured-cover="detail"]')!.className)
         .toContain('invisible');
 
-      // The trip's own animate() call is put off one frame — see
-      // featured-cover-flight.ts — so the destination view's mount is off the
-      // thread before the clock the flight is timed against starts ticking.
+      // The trip's own animate() call is put off two frames — see
+      // featured-cover-flight.ts — so the destination view's first paint is
+      // flushed before the clock the flight is timed against starts ticking.
+      await act(async () => {
+        await new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
+      });
       await act(async () => {
         await new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
       });
