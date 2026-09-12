@@ -141,6 +141,7 @@ export function liftCover(node: Element, from: FlightRect, fromRadius: number): 
   document.body.append(clone);
 
   let animation: Animation | null = null;
+  let pendingFrame: number | null = null;
 
   return {
     land(to, toRadius) {
@@ -154,6 +155,7 @@ export function liftCover(node: Element, from: FlightRect, fromRadius: number): 
       const inverse = `translate(${dx}px, ${dy}px) scale(${scale}, ${scaleY})`;
 
       Object.assign(clone.style, {
+        borderRadius: `${fromRadius / scale}px`,
         height: `${to.height}px`,
         left: `${to.left}px`,
         top: `${to.top}px`,
@@ -161,19 +163,34 @@ export function liftCover(node: Element, from: FlightRect, fromRadius: number): 
         width: `${to.width}px`,
       });
 
-      animation = clone.animate(
-        [
-          // Divided by the scale it is seen at, so the corner reads as the
-          // source's own radius rather than that radius magnified.
-          { borderRadius: `${fromRadius / scale}px`, transform: inverse },
-          { borderRadius: `${toRadius}px`, transform: 'none' },
-        ],
-        { duration: FLIGHT_DURATION_MS, easing: FLIGHT_EASING, fill: 'forwards' },
-      );
-
-      return animation.finished.then(() => undefined, () => undefined);
+      // The style above already parks the copy exactly where the source sat,
+      // so nothing is seen to move yet. Starting the animation is put off one
+      // frame rather than done in the same breath: this call lands in the same
+      // commit that swaps in the destination view, and on a phone that view is
+      // not free — a record's worth of markup, its glow, its own effects. The
+      // animation's clock is wall time, not paint count, so beginning it before
+      // that work is flushed spends the trip's opening beats on a thread that
+      // is not free to show them, and what finally paints is close to where it
+      // lands. Waiting a frame hands the clock to a thread that is free to keep
+      // up with it.
+      return new Promise<void>((resolve) => {
+        pendingFrame = requestAnimationFrame(() => {
+          pendingFrame = null;
+          animation = clone.animate(
+            [
+              // Divided by the scale it is seen at, so the corner reads as the
+              // source's own radius rather than that radius magnified.
+              { borderRadius: `${fromRadius / scale}px`, transform: inverse },
+              { borderRadius: `${toRadius}px`, transform: 'none' },
+            ],
+            { duration: FLIGHT_DURATION_MS, easing: FLIGHT_EASING, fill: 'forwards' },
+          );
+          animation.finished.then(() => resolve(), () => resolve());
+        });
+      });
     },
     remove() {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
       animation?.cancel();
       clone.remove();
     },
