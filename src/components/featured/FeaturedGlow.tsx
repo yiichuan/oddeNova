@@ -1,6 +1,6 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import type { FeaturedPiece } from '../../lib/featured-pieces';
-import { readCoverColor } from './featured-accent';
+import { useCoverAccent } from './featured-accent';
 
 /** Matches the `.featured-glow-blob:nth-child(n)` geometry in index.css. */
 const GLOW_BLOBS = 13;
@@ -31,28 +31,9 @@ const GLOW_BLOBS = 13;
  * cleaner than resetting it.
  */
 export default function FeaturedGlow({ piece }: { piece: FeaturedPiece }) {
-  const [accent, setAccent] = useState<string | null>(null);
-  const coverUrl = piece.coverUrl;
-
-  useEffect(() => {
-    if (!coverUrl) return;
-
-    let cancelled = false;
-    const image = new Image();
-    // Same-origin in practice (covers live in public/), but declared so a
-    // future remote cover has a chance of being readable rather than tainting.
-    image.crossOrigin = 'anonymous';
-    const read = () => {
-      if (!cancelled) setAccent(readCoverColor(image));
-    };
-    image.addEventListener('load', read);
-    image.src = coverUrl;
-
-    return () => {
-      cancelled = true;
-      image.removeEventListener('load', read);
-    };
-  }, [coverUrl]);
+  // Shared with the shell's own safe-area tint (useBrowserChromeColor) — see
+  // useCoverAccent for why a canvas read is not repeated per consumer.
+  const accent = useCoverAccent(piece.coverUrl);
 
   return (
     <div

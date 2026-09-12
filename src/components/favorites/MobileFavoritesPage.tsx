@@ -80,6 +80,13 @@ export interface MobileFavoritesPageProps {
   onDelete?: () => void;
   /** Opens the shell's navigation drawer — the page has no column of its own. */
   onOpenNav?: () => void;
+  /**
+   * Whether the code window is standing over the page right now. The window's
+   * own scrim only ever reaches the document; the shell uses this to dim the
+   * phone's own notch and toolbar strips along with it (see
+   * useBrowserChromeColor).
+   */
+  onCodeWindowChange?: (open: boolean) => void;
 }
 
 /* Both of the page's overlays are laid over the whole window rather than over
@@ -163,6 +170,7 @@ export default function MobileFavoritesPage({
   onUnfavorite,
   onDelete,
   onOpenNav,
+  onCodeWindowChange,
 }: MobileFavoritesPageProps) {
   const [listOpen, setListOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
@@ -170,6 +178,10 @@ export default function MobileFavoritesPage({
   const [copied, setCopied] = useState(false);
   /* Which of the two acts at the foot of the page is waiting on an answer. */
   const [asking, setAsking] = useState<'unfavorite' | 'delete' | null>(null);
+
+  useEffect(() => {
+    onCodeWindowChange?.(codeOpen);
+  }, [codeOpen, onCodeWindowChange]);
 
   /* A window onto a take belongs to the favorite it was opened from. Moving to
      another entry leaves it holding a script the reading behind it no longer

@@ -506,6 +506,21 @@ body {
   html,
   body {
     background-color: var(--browser-chrome-color);
+    /* The variable now also carries the code window's own scrim and a
+       record's own colour (see browser-chrome-color.ts), both of which fade
+       rather than cut on the surfaces they come from — the scrim over
+       240ms, the glow over 700ms. This picks the scrim's own timing: it is
+       the toggle a reader sees far more often, and the two strips catching
+       up to a wash that is still fading in is a smaller mismatch than the
+       strips outrunning a dialog that is visibly still arriving. */
+    transition: background-color 240ms ease-out;
+  }
+}
+
+@media (max-width: 460px) and (prefers-reduced-motion: reduce) {
+  html,
+  body {
+    transition: none;
   }
 }
 

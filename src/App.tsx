@@ -38,6 +38,7 @@ import MobileNavDrawer from './components/nav/MobileNavDrawer';
 import FeaturedPage from './components/featured/FeaturedPage';
 import FavoritesPage from './components/favorites/FavoritesPage';
 import { requestDeviceTilt } from './components/featured/featured-device-tilt';
+import { useCoverAccent } from './components/featured/featured-accent';
 import SettingsSidebar, { type SettingsSection } from './components/settings/SettingsSidebar';
 import ModelSettingsPanel from './components/settings/ModelSettingsPanel';
 import AppearanceSettingsPanel from './components/settings/AppearanceSettingsPanel';
@@ -196,10 +197,17 @@ export default function App() {
     () => FEATURED_PIECES[0]?.id ?? null,
   );
   const [openingFeatured, setOpeningFeatured] = useState(false);
-  // Which of Featured's two views is up. The page owns that; the shell only
-  // needs it because the primary nav breaks apart for the collection and
-  // re-forms into a column for a piece.
-  const [featuredPieceOpen, setFeaturedPieceOpen] = useState(false);
+  // Which of Featured's two views is up, and which record if it is the
+  // second one. The page owns that; the shell needs it for two reasons — the
+  // primary nav breaks apart for the collection and re-forms into a column
+  // for a piece, and a phone's own chrome takes the open record's own colour
+  // (see useBrowserChromeColor) — so the piece is kept rather than a bare flag.
+  const [openFeaturedPiece, setOpenFeaturedPiece] = useState<FeaturedPiece | null>(null);
+  const featuredPieceOpen = openFeaturedPiece !== null;
+  const featuredAccent = useCoverAccent(openFeaturedPiece?.coverUrl);
+  // Mobile only: the code window standing over the Favorites page — see
+  // MobileFavoritesPage's onCodeWindowChange and useBrowserChromeColor.
+  const [favoritesCodeOpen, setFavoritesCodeOpen] = useState(false);
   const modelSettings = useModelSettingsDraft(resetClient);
   const themePreference = useThemePreference();
   const animationPreference = useResolvedAnimation();
@@ -1527,8 +1535,16 @@ export default function App() {
   /* The system's own chrome follows the same question — see
      useBrowserChromeColor. Featured stands on its own ground; every other
      page (including the two full-width mobile pages folded into onStudioPage's
-     opposite) shares the studio's. */
-  useBrowserChromeColor(onFeaturedPage ? 'featured' : 'studio');
+     opposite) shares the studio's. Two more things ride along on top of that
+     base answer rather than needing a bucket of their own: a record open on
+     Featured tints it with that record's own colour, and the code window's
+     scrim — which as a `fixed inset-0` backdrop can only ever reach the
+     document — is mixed in by hand so the phone's own notch and toolbar strips
+     go dark with the rest of the page instead of staying lit. */
+  useBrowserChromeColor(onFeaturedPage ? 'featured' : 'studio', {
+    tint: onFeaturedPage ? featuredAccent : null,
+    dimmed: codeSheetOpen || favoritesCodeOpen,
+  });
 
   /* Wired once and hung in whichever shell is up, the same as the collection
      below it: it is one page that works out for itself what a phone does with
@@ -1551,7 +1567,7 @@ export default function App() {
       onStop={featuredPreview.stop}
       onPause={featuredPreview.pause}
       onOpenInStudio={(piece) => void handleOpenFeaturedInStudio(piece)}
-      onOpenChange={setFeaturedPieceOpen}
+      onOpenChange={setOpenFeaturedPiece}
       /* Mobile only: on a phone this page draws its own top bar, and the key
          in it that reaches the rest of the app opens the shell's drawer. */
       onOpenNav={() => setNavDrawerOpen(true)}
@@ -1611,6 +1627,7 @@ export default function App() {
       /* Mobile only: on a phone this page draws its own top bar, and the key
          in it that reaches the rest of the app opens the shell's drawer. */
       onOpenNav={() => setNavDrawerOpen(true)}
+      onCodeWindowChange={setFavoritesCodeOpen}
     />
   );
 

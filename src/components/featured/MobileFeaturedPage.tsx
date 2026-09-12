@@ -319,6 +319,12 @@ interface MobileFeaturedPageProps {
   onOpenInStudio: (piece: FeaturedPiece) => void;
   /** Opens the shell's navigation drawer — the page has no column of its own. */
   onOpenNav?: () => void;
+  /**
+   * Which record is open, if any — see FeaturedPage's own prop of the same
+   * name, which this mirrors so the shell reads one answer regardless of which
+   * layout is up.
+   */
+  onOpenChange?: (piece: FeaturedPiece | null) => void;
 }
 
 /**
@@ -394,6 +400,7 @@ export default function MobileFeaturedPage({
   onPause,
   onOpenInStudio,
   onOpenNav,
+  onOpenChange,
 }: MobileFeaturedPageProps) {
   const pageRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -911,6 +918,14 @@ export default function MobileFeaturedPage({
     : null;
 
   const openAlbum = albums.find((album) => album.id === openId) ?? null;
+
+  useEffect(() => {
+    // The same track FeaturedGlow itself reads a colour from — tracks[0]
+    // rather than whichever one is centred, since every track in an album
+    // shares the album's own cover. Mirrors FeaturedPage's own desktop effect.
+    onOpenChange?.(openAlbum ? openAlbum.tracks[0] : null);
+  }, [openAlbum, onOpenChange]);
+
   /* The record is still on the page while its cover is flying off it, so that
      the sleeve it left has something to fade out from — the same beat the
      display gives its own carousel. */
@@ -1128,8 +1143,15 @@ export default function MobileFeaturedPage({
                        that what crosses the page is one picture rather than a
                        copy with the original's shading left standing where it
                        took off. Its place is kept, because the shelf behind is
-                       still being read. */
-                    className={`relative isolate aspect-square w-full overflow-hidden rounded-[2px] bg-[#05070a] ${
+                       still being read.
+                       No `overflow-hidden` of its own: FeaturedCover clips its
+                       own artwork to the same radius, and the light/glaze
+                       layers below now carry the radius on themselves rather
+                       than counting on this box to cut their square corners
+                       off for them — a second clip stacked on the first one
+                       antialiased the exact same edge twice, which on a light
+                       cover read as a hairline drawn round the sleeve. */
+                    className={`relative isolate aspect-square w-full rounded-[2px] bg-[#05070a] ${
                       centred && coverFlying ? 'invisible' : ''
                     }`}
                     style={{ boxShadow: 'var(--tilt-shadow)' }}
@@ -1162,7 +1184,7 @@ export default function MobileFeaturedPage({
                     <span
                       aria-hidden="true"
                       data-featured-cover-light
-                      className="pointer-events-none absolute inset-0"
+                      className="pointer-events-none absolute inset-0 rounded-[2px]"
                       style={{
                         backgroundImage: coverLightCss(sleeveLight),
                       }}
@@ -1178,7 +1200,7 @@ export default function MobileFeaturedPage({
                     <span
                       aria-hidden="true"
                       data-featured-cover-glaze
-                      className="pointer-events-none absolute inset-0 mix-blend-soft-light"
+                      className="pointer-events-none absolute inset-0 rounded-[2px] mix-blend-soft-light"
                       style={{ backgroundImage: coverGlazeCss(sleeveLight) }}
                     />
 

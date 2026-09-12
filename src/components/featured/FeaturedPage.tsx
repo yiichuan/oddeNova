@@ -68,12 +68,17 @@ interface FeaturedPageProps {
   onPause: () => void;
   onOpenInStudio: (piece: FeaturedPiece) => void;
   /**
-   * Which of the two views is up. The page keeps that to itself, but the shell
-   * around it does not look the same for a piece as for the collection — the
-   * primary nav stands apart into pods for the shelf and re-forms into a column
-   * for a record — so the change is reported outwards.
+   * Which of the two views is up, and which record if it is the second one.
+   * The page keeps that to itself otherwise, but the shell around it does not
+   * look the same for a piece as for the collection — the primary nav stands
+   * apart into pods for the shelf and re-forms into a column for a record, and
+   * a phone's own chrome takes the record's own colour (see
+   * useBrowserChromeColor) — so the change is reported outwards. The piece
+   * rather than a bare boolean: a consumer that only needs "is one open" reads
+   * that off `!== null`, and one that needs the record itself — reading its
+   * cover for a colour — does not have to go find it again.
    */
-  onOpenChange?: (open: boolean) => void;
+  onOpenChange?: (piece: FeaturedPiece | null) => void;
   /**
    * Whether this is the page on screen. The shelf stays mounted while you are
    * elsewhere in the app, and on a phone what it stands in is the device's own
@@ -243,8 +248,11 @@ export default function FeaturedPage({
   }, [stage]);
 
   useEffect(() => {
-    onOpenChange?.(openId !== null);
-  }, [openId, onOpenChange]);
+    // The same track FeaturedGlow itself reads a colour from — tracks[0]
+    // rather than whichever one is centred, since every track in an album
+    // shares the album's own cover.
+    onOpenChange?.(openAlbum ? openAlbum.tracks[0] : null);
+  }, [openAlbum, onOpenChange]);
 
   useEffect(() => {
     parkedRef.current = currentPiece?.id ?? null;
@@ -328,6 +336,7 @@ export default function FeaturedPage({
         onPause={onPause}
         onOpenInStudio={onOpenInStudio}
         onOpenNav={onOpenNav}
+        onOpenChange={onOpenChange}
       />
     );
   }

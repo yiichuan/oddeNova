@@ -1,5 +1,9 @@
 import { useEffect } from 'react';
-import { applyBrowserChromeColor, type BrowserChromePage } from '../lib/browser-chrome-color';
+import {
+  applyBrowserChromeColor,
+  type BrowserChromeOptions,
+  type BrowserChromePage,
+} from '../lib/browser-chrome-color';
 import { useResolvedTheme } from './useAppearance';
 
 /**
@@ -15,10 +19,16 @@ import { useResolvedTheme } from './useAppearance';
  * on a theme flip too, since the same page reads a different colour in each
  * palette — that half comes for free from `useResolvedTheme`, which already
  * re-renders on both a stored preference change and the OS's own flip.
+ *
+ * `tint` and `dimmed` (see BrowserChromeOptions) are read out to primitives up
+ * front rather than compared as one options object, so a caller that passes a
+ * fresh `{}` literal every render does not repaint the chrome every render
+ * along with it.
  */
-export function useBrowserChromeColor(page: BrowserChromePage): void {
+export function useBrowserChromeColor(page: BrowserChromePage, options: BrowserChromeOptions = {}): void {
   const theme = useResolvedTheme();
+  const { tint = null, dimmed = false } = options;
   useEffect(() => {
-    applyBrowserChromeColor(page, theme);
-  }, [page, theme]);
+    applyBrowserChromeColor(page, theme, { tint, dimmed });
+  }, [page, theme, tint, dimmed]);
 }

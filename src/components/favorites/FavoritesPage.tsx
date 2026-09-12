@@ -259,6 +259,11 @@ interface FavoritesPageProps {
    * key that reaches the rest of the app stands in it.
    */
   onOpenNav?: () => void;
+  /**
+   * Mobile only: whether the code window is standing over the page right now.
+   * See MobileFavoritesPage's own prop of the same name.
+   */
+  onCodeWindowChange?: (open: boolean) => void;
 }
 
 /**
@@ -643,6 +648,7 @@ export default function FavoritesPage({
   onDelete,
   onOpenInStudio,
   onOpenNav,
+  onCodeWindowChange,
 }: FavoritesPageProps) {
   const isMobile = useIsMobile();
   const isSummaryMode = summaries !== undefined;
@@ -888,6 +894,7 @@ export default function FavoritesPage({
         onUnfavorite={onUnfavorite && current?.sessionId ? () => onUnfavorite(current) : undefined}
         onDelete={onDelete && current ? () => onDelete(current) : undefined}
         onOpenNav={onOpenNav}
+        onCodeWindowChange={onCodeWindowChange}
       />
     );
   }

@@ -12,8 +12,13 @@ import { useResolvedTheme } from '../../hooks/useAppearance';
 
 /* `isolate`: the glaze over the artwork is laid on in soft light, and what it
    is meant to light is the artwork under it — not the sleeve standing behind
-   this one on the wheel, nor the room behind that. */
-const TILE_COVER = 'relative isolate aspect-square w-full overflow-hidden rounded-[2px]';
+   this one on the wheel, nor the room behind that.
+   No `overflow-hidden` of its own: FeaturedCover clips its own artwork to the
+   same radius, and the light/glaze layers below now carry the radius on
+   themselves rather than counting on this box to cut their square corners off
+   for them — a second clip stacked on the first one antialiased the exact same
+   edge twice, which on a light cover read as a hairline drawn round the tile. */
+const TILE_COVER = 'relative isolate aspect-square w-full rounded-[2px]';
 
 /** Two names on one line are a list, and a list is punctuated per language. */
 const CREDIT_SEPARATOR = zh ? '、' : ', ';
@@ -133,7 +138,7 @@ export default function FeaturedCard({
           <span
             aria-hidden="true"
             data-featured-cover-light
-            className="pointer-events-none absolute inset-0"
+            className="pointer-events-none absolute inset-0 rounded-[2px]"
             style={{ backgroundImage: coverLightCss(sleeveLight) }}
           />
 
@@ -146,7 +151,7 @@ export default function FeaturedCard({
           <span
             aria-hidden="true"
             data-featured-cover-glaze
-            className="pointer-events-none absolute inset-0 mix-blend-soft-light"
+            className="pointer-events-none absolute inset-0 rounded-[2px] mix-blend-soft-light"
             style={{ backgroundImage: coverGlazeCss(sleeveLight) }}
           />
 

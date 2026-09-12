@@ -93,7 +93,15 @@ export default function AccountModal({
 
   const handleSignOut = () => {
     void run(async () => {
-      await beforeSignOut?.();
+      // Best-effort only: a save still in flight (or a token already dead —
+      // see the other device that triggered this sign-out) must never stop
+      // the sign-out itself. Nothing is lost either way — an unsent save
+      // stays in IndexedDB with its pending-sync marker and session-cloud-sync
+      // picks it back up on the next sign-in, exactly like the guest-import
+      // "later" path already relies on.
+      await beforeSignOut?.().catch((error) => {
+        console.warn('[account] cloud flush before sign-out failed.', error);
+      });
       await signOut();
       onClose();
     });
