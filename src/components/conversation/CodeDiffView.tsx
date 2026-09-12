@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { buildCodeDiff, type DiffRow } from '../../lib/code-diff';
 import { t } from '../../lib/i18n';
-import { CheckIcon, ChevronRightIcon, CopyIcon, PlayIcon, StopIcon } from '../icons';
+import { CheckIcon, ChevronRightIcon, CopyIcon, PlayOutlineIcon, StopIcon } from '../icons';
 
 interface CodeDiffViewProps {
   messageId: string;
@@ -134,7 +134,7 @@ export function CodeDiffView({
                changes are opened out underneath. */
             className="grid w-7 shrink-0 place-items-center bg-settings-surface transition-colors hover:bg-surface-hover hover:text-text-primary"
           >
-            {playing ? <StopIcon size={12} /> : <PlayIcon size={13} />}
+            {playing ? <StopIcon size={12} /> : <PlayOutlineIcon size={13} />}
           </button>
         )}
       </div>

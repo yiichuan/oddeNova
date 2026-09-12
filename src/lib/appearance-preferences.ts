@@ -9,7 +9,7 @@
  */
 
 import { applyAppEditorTheme } from './editor-preferences';
-import { applyBrowserChromeColor } from './browser-chrome-color';
+import { refreshBrowserChromeTheme } from './browser-chrome-color';
 
 export type ThemePreference = 'system' | 'dark' | 'light';
 export type ResolvedTheme = 'dark' | 'light';
@@ -132,7 +132,7 @@ function applyTheme(preference: ThemePreference, keepEditorTheme = false): void 
      assumes the studio: it is where the app always opens. App.tsx's own hook
      corrects this the moment a real page is known, and again on every
      navigation after. */
-  applyBrowserChromeColor('studio', resolved);
+  refreshBrowserChromeTheme(resolved);
   if (!keepEditorTheme && previous !== resolved) applyAppEditorTheme(resolved);
 }
 

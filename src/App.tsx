@@ -220,6 +220,7 @@ export default function App() {
   const [guestImportError, setGuestImportError] = useState<'offline' | 'rejected' | null>(null);
   const [importingGuestHistory, setImportingGuestHistory] = useState(false);
   const [guestImportGateUserId, setGuestImportGateUserId] = useState<string | null>(null);
+  void guestImportGateUserId;
   const guestImportRunningRef = useRef(false);
   /* How many *consecutive* failures the reader has been asked about. The first
      failure gets a dialog with Retry and Later; a second failure right after
@@ -238,10 +239,7 @@ export default function App() {
     auth.user
     && !auth.loading
     && !auth.recoveringPassword
-    && !sessions.isLoading
-    && guestImportGateUserId === auth.user.id
-    && guestImportSessions === null
-    && !importingGuestHistory,
+    && !sessions.isLoading,
   );
   /* The cloud library's local half. Everything it reads for this account is
      kept where the account's own working copies are kept, under the same owner
@@ -693,10 +691,10 @@ export default function App() {
       {guestImportSessions && (
         // The editor's bottom fade uses z-index 240/250, so this app-level
         // progress dialog must sit above those masks.
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]"
+        <div className="pointer-events-none fixed inset-0 z-[300] flex items-end justify-center px-4 pb-20"
           style={isMobile ? { top: syncViewport?.top ?? 0, height: syncViewport?.height ?? '100dvh', bottom: 'auto' } : undefined}
         >
-          <div className="bg-bg-secondary border border-border rounded-2xl p-6 w-[420px] max-w-[90vw] shadow-dialog-overlay">
+          <div className="pointer-events-auto z-[300] bg-bg-secondary border border-border rounded-2xl p-4 w-[420px] max-w-[90vw] shadow-dialog-overlay">
             <h2 className="text-lg font-semibold text-text-primary mb-2">
               {guestImportError ? t('syncLocalHistoryFailed') : t('syncingLocalHistory')}
             </h2>
@@ -1544,6 +1542,9 @@ export default function App() {
   useBrowserChromeColor(onFeaturedPage ? 'featured' : 'studio', {
     tint: onFeaturedPage ? featuredAccent : null,
     dimmed: codeSheetOpen || favoritesCodeOpen,
+    overlay: (welcomeOpen && !auth.oauthErrorKey && !auth.user) || (accountOpen || auth.oauthErrorKey)
+      ? 'auth'
+      : null,
   });
 
   /* Wired once and hung in whichever shell is up, the same as the collection

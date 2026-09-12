@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import {
   applyBrowserChromeColor,
   type BrowserChromeOptions,
@@ -28,7 +28,7 @@ import { useResolvedTheme } from './useAppearance';
 export function useBrowserChromeColor(page: BrowserChromePage, options: BrowserChromeOptions = {}): void {
   const theme = useResolvedTheme();
   const { tint = null, dimmed = false } = options;
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyBrowserChromeColor(page, theme, { tint, dimmed });
   }, [page, theme, tint, dimmed]);
 }

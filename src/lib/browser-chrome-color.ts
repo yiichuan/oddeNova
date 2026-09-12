@@ -143,22 +143,37 @@ export interface BrowserChromeOptions {
   tint?: string | null;
   /** Whether the code window's scrim is standing over the page right now. */
   dimmed?: boolean;
+  /** Additional page overlay, such as the sign-in modal. */
+  overlay?: 'auth' | null;
+}
+
+let lastContext: { page: BrowserChromePage; theme: ResolvedTheme; options: BrowserChromeOptions } = {
+  page: 'studio', theme: 'dark', options: {},
+};
+
+export function refreshBrowserChromeTheme(theme: ResolvedTheme): void {
+  lastContext = { ...lastContext, theme };
+  applyBrowserChromeColor(lastContext.page, theme, lastContext.options);
 }
 
 function resolveBrowserChromeColor(
   page: BrowserChromePage,
   theme: ResolvedTheme,
-  { tint, dimmed }: BrowserChromeOptions,
+  { tint, dimmed, overlay }: BrowserChromeOptions,
 ): string {
   const base = BROWSER_CHROME_COLORS[page][theme];
   const tintTriple = page === 'featured' && tint ? parseRgbTriple(tint) : null;
-  if (!tintTriple && !dimmed) return base;
+  if (!tintTriple && !dimmed && !overlay) return base;
 
   let rgb: readonly [number, number, number] = hexToRgb(base);
   if (tintTriple) rgb = mixOver(rgb, tintTriple, FEATURED_EDGE_TINT_ALPHA[theme]);
   if (dimmed) {
     const scrim = CODE_WINDOW_SCRIM[theme];
     rgb = mixOver(rgb, scrim.rgb, scrim.alpha);
+  }
+  if (overlay === 'auth') {
+    const scrim = CODE_WINDOW_SCRIM[theme];
+    rgb = mixOver(rgb, scrim.rgb, theme === 'dark' ? 0.6 : 0.35);
   }
   return rgbString(rgb);
 }
@@ -174,6 +189,7 @@ export function applyBrowserChromeColor(
 ): void {
   if (typeof document === 'undefined') return;
   const color = resolveBrowserChromeColor(page, theme, options);
+  lastContext = { page, theme, options };
   document
     .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
     ?.setAttribute('content', color);

@@ -3,7 +3,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
-import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, RetryIcon, StopIcon } from '../icons';
+import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
 import { ThinkingLottie } from './ThinkingLottie';
 import { t, zh } from '../../lib/i18n';
 import { CodeDiffView } from './CodeDiffView';
@@ -1357,7 +1357,7 @@ export default function ConversationView({
                             onClick={() => (sounding ? onStopCode?.() : onPlayCode(code))}
                             className="grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
                           >
-                            {sounding ? <StopIcon size={12} /> : <PlayIcon size={13} />}
+                            {sounding ? <StopIcon size={12} /> : (isMobile ? <PlayIcon size={13} /> : <PlayOutlineIcon size={13} />)}
                           </button>
                         );
                       })()}

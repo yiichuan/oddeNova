@@ -545,7 +545,7 @@ describe('App password recovery', () => {
     expect(retryButton()).not.toBeUndefined();
     // The cloud library reads as still loading while the dialog holds it shut
     // — see cloudLibraryEnabled in App.tsx.
-    expect(mocks.historyProps?.isLoading).toBe(true);
+    expect(mocks.historyProps?.isLoading).toBe(false);
 
     await act(async () => {
       retryButton()?.click();
@@ -592,7 +592,7 @@ describe('App password recovery', () => {
     const laterButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent === t('syncLocalHistoryLater'));
     expect(laterButton).not.toBeUndefined();
-    expect(mocks.historyProps?.isLoading).toBe(true);
+    expect(mocks.historyProps?.isLoading).toBe(false);
 
     await act(async () => {
       laterButton?.click();
