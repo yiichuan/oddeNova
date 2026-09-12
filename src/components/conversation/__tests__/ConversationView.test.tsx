@@ -34,30 +34,44 @@ function setMobileViewport(matches: boolean) {
   });
 }
 
+/* What the phone's layout hands down and the desktop's does not: the take's
+   own transport, drawn in the widget under the reply. */
+type PlaybackProps = {
+  isPlaying?: boolean;
+  playingCode?: string;
+  onPlayCode?: (code: string) => void;
+  onStopCode?: () => void;
+};
+
 function renderConversationView(
   messages: ChatMessage[],
   onRollback = vi.fn(),
   isLoading = false,
   revisions?: CodeRevision[],
+  playback: PlaybackProps = {},
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
-  act(() => {
-    root.render(
-      <ConversationView
-        messages={messages}
-        revisions={revisions}
-        isLoading={isLoading}
-        onRollback={onRollback}
-        onBranch={vi.fn()}
-        onRetry={vi.fn()}
-      />,
-    );
-  });
+  const render = (next: PlaybackProps = playback) => {
+    act(() => {
+      root.render(
+        <ConversationView
+          messages={messages}
+          revisions={revisions}
+          isLoading={isLoading}
+          onRollback={onRollback}
+          onBranch={vi.fn()}
+          onRetry={vi.fn()}
+          {...next}
+        />,
+      );
+    });
+  };
+  render();
 
-  return { container, root };
+  return { container, root, render };
 }
 
 describe('ConversationView code revisions', () => {
@@ -104,6 +118,77 @@ describe('ConversationView code revisions', () => {
     expect(container.textContent).toContain('DRUMS');
     expect(container.querySelector('[data-diff-kind="remove"]')?.textContent).toContain('s("bd")');
     expect(container.querySelector('[data-diff-kind="add"]')?.textContent).toContain('s("bd*2")');
+  });
+
+  /* The phone's code window is shut behind a key in the corner, so the widget
+     under the reply is where a take is heard from. */
+  it('sounds the take from its widget, and offers to stop the one sounding', () => {
+    setMobileViewport(true);
+    const afterCode = 'stack(\n/* @layer drums */\ns("bd*2")\n)';
+    const messages: ChatMessage[] = [{
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '完成',
+      code: afterCode,
+      revisionId: 'rev-1',
+      timestamp: 1,
+    }];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 'stack(\n/* @layer drums */\ns("bd")\n)',
+      afterCode,
+      playbackStatus: 'played',
+      createdAt: 1,
+    }];
+    const onPlayCode = vi.fn();
+    const onStopCode = vi.fn();
+    const { container, root, render } = renderConversationView(
+      messages, vi.fn(), false, revisions, { onPlayCode, onStopCode },
+    );
+    roots.push(root);
+
+    const key = () => container.querySelector<HTMLButtonElement>('[data-code-diff-play="assistant-1"]');
+    expect(key()?.getAttribute('aria-label')).toBe('Play');
+    act(() => key()?.click());
+    expect(onPlayCode).toHaveBeenCalledWith(afterCode);
+    expect(onStopCode).not.toHaveBeenCalled();
+
+    // What is sounding is what the widget reports, so the key turns over.
+    render({ onPlayCode, onStopCode, isPlaying: true, playingCode: afterCode });
+    expect(key()?.getAttribute('aria-label')).toBe('Stop');
+    act(() => key()?.click());
+    expect(onStopCode).toHaveBeenCalled();
+    expect(onPlayCode).toHaveBeenCalledTimes(1);
+
+    // Something else sounding is not this take sounding.
+    render({ onPlayCode, onStopCode, isPlaying: true, playingCode: 's("hh*4")' });
+    expect(key()?.getAttribute('aria-label')).toBe('Play');
+  });
+
+  /* The desktop hands none of this down: the code window is already open
+     beside the reading, with a transport of its own. */
+  it('draws no play key where the reading was given no transport', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '完成',
+      code: 's("bd*2")',
+      revisionId: 'rev-1',
+      timestamp: 1,
+    }];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 's("bd")',
+      afterCode: 's("bd*2")',
+      playbackStatus: 'played',
+      createdAt: 1,
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), false, revisions);
+    roots.push(root);
+
+    expect(container.querySelector('[data-code-diff-play="assistant-1"]')).toBeNull();
+    expect(container.querySelector('[data-code-diff-toggle="assistant-1"]')).not.toBeNull();
   });
 
   it('marks a persisted revision whose playback failed', () => {

@@ -2,13 +2,26 @@ import { useMemo, useState, type ReactNode } from 'react';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { buildCodeDiff, type DiffRow } from '../../lib/code-diff';
 import { t } from '../../lib/i18n';
-import { CheckIcon, ChevronRightIcon, CopyIcon } from '../icons';
+import { CheckIcon, ChevronRightIcon, CopyIcon, PlayIcon, StopIcon } from '../icons';
 
 interface CodeDiffViewProps {
   messageId: string;
   revision: CodeRevision;
   expanded: boolean;
   onToggle: () => void;
+  /** Whether the take this widget reports is the one currently sounding. */
+  playing?: boolean;
+  /**
+   * Sound this take, where the surface has somewhere to press for it.
+   *
+   * The key is drawn only when this is given. On the desktop the code window
+   * is open beside the reading with a transport of its own, and a second play
+   * in the stream would be a second answer to a question already answered; on
+   * a phone the code is behind a key in the corner, so the widget in the
+   * reading is the only place the take can be heard from.
+   */
+  onPlay?: () => void;
+  onStop?: () => void;
 }
 
 function counterpartFor(rows: DiffRow[], index: number): string | undefined {
@@ -49,47 +62,80 @@ function highlightedText(text: string, counterpart: string | undefined, kind: 'a
   );
 }
 
-export function CodeDiffView({ messageId, revision, expanded, onToggle }: CodeDiffViewProps) {
+export function CodeDiffView({
+  messageId,
+  revision,
+  expanded,
+  onToggle,
+  playing = false,
+  onPlay,
+  onStop,
+}: CodeDiffViewProps) {
   const [copied, setCopied] = useState(false);
   const diff = useMemo(
     () => buildCodeDiff(revision.beforeCode, revision.afterCode),
     [revision.beforeCode, revision.afterCode],
   );
 
+  /* The fill has moved off the outer box and onto the keys inside it, so that
+     the hairline between them shows the reading through rather than more of
+     the same plate. The box keeps the rounding and the clip, which is what
+     turns the pair into one shape: the left key's outer corners and the right
+     key's are cut by this radius, and the seam between them is the only
+     straight edge either of them has. Same object as the widget on the
+     Favorites page's reading (`ArchiveCodeChip`), built the other way up —
+     there two keys are given a shared radius, here one shape is split. */
   return (
-    <div className="conversation-code-bar mt-4 -ml-1 overflow-hidden rounded-md bg-settings-surface animate-fade-in">
-      <div className="flex w-full items-stretch bg-settings-surface text-[11px] text-text-primary">
-        <button
-          type="button"
-          data-code-diff-toggle={messageId}
-          aria-expanded={expanded}
-          onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-surface-hover hover:text-text-primary"
-        >
-          <ChevronRightIcon
-            size={14}
-            className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
-          />
-          <span>{t('viewChanges')}</span>
-          <span className="text-diff-add">+{diff.additions}</span>
-          <span className="text-diff-remove">−{diff.deletions}</span>
-          {revision.playbackStatus === 'failed' && (
-            <span className="ml-1 truncate text-amber-300/70">{t('revisionPlaybackFailed')}</span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            navigator.clipboard.writeText(revision.afterCode).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
-          }}
-          className="px-2 py-1.5 transition-colors hover:bg-surface-hover hover:text-text-primary"
-          title={t('copyCode')}
-        >
-          {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-        </button>
+    <div className="conversation-code-bar mt-4 -ml-1 overflow-hidden rounded-md animate-fade-in">
+      <div className="flex w-full items-stretch gap-0.5 text-[11px] text-text-primary">
+        <div className="flex min-w-0 flex-1 items-stretch bg-settings-surface">
+          <button
+            type="button"
+            data-code-diff-toggle={messageId}
+            aria-expanded={expanded}
+            onClick={onToggle}
+            className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-surface-hover hover:text-text-primary"
+          >
+            <ChevronRightIcon
+              size={14}
+              className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
+            />
+            <span>{t('viewChanges')}</span>
+            <span className="text-diff-add">+{diff.additions}</span>
+            <span className="text-diff-remove">−{diff.deletions}</span>
+            {revision.playbackStatus === 'failed' && (
+              <span className="ml-1 truncate text-amber-300/70">{t('revisionPlaybackFailed')}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(revision.afterCode).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              });
+            }}
+            className="px-2 py-1.5 transition-colors hover:bg-surface-hover hover:text-text-primary"
+            title={t('copyCode')}
+          >
+            {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+          </button>
+        </div>
+        {onPlay && (
+          <button
+            type="button"
+            data-code-diff-play={messageId}
+            aria-label={playing ? t('stop') : t('play')}
+            onClick={playing ? onStop : onPlay}
+            /* A width of its own and no height of its own: it takes the line
+               beside it, so the two keys stop at the same edge however the
+               reading is set, and it stays the height of that line when the
+               changes are opened out underneath. */
+            className="grid w-7 shrink-0 place-items-center bg-settings-surface transition-colors hover:bg-surface-hover hover:text-text-primary"
+          >
+            {playing ? <StopIcon size={12} /> : <PlayIcon size={13} />}
+          </button>
+        )}
       </div>
 
       {expanded && (

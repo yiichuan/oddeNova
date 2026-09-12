@@ -3,7 +3,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
-import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, RetryIcon } from '../icons';
+import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, RetryIcon, StopIcon } from '../icons';
 import { ThinkingLottie } from './ThinkingLottie';
 import { t, zh } from '../../lib/i18n';
 import { CodeDiffView } from './CodeDiffView';
@@ -478,6 +478,24 @@ interface ConversationViewProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  /**
+   * Sound the take a reply committed, from the widget in the reading that
+   * reports it.
+   *
+   * Handed down by the phone's layout and by nothing else, which is what
+   * decides whether the key is drawn at all: on the desktop the code window
+   * stands open beside the stream with a transport in it, so a second play
+   * among the messages would be a second answer to a question already
+   * answered. On a phone the code is folded away behind one key in the corner,
+   * and the widget is where a take is named — so it is also where it can be
+   * heard.
+   */
+  onPlayCode?: (code: string) => void;
+  onStopCode?: () => void;
+  /** Whether anything is sounding, and what — together these say which widget,
+   *  if any, is the one currently playing. */
+  isPlaying?: boolean;
+  playingCode?: string;
 }
 
 export default function ConversationView({
@@ -489,6 +507,10 @@ export default function ConversationView({
   onRollback,
   onBranch,
   onRetry,
+  onPlayCode,
+  onStopCode,
+  isPlaying = false,
+  playingCode = '',
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -1288,6 +1310,11 @@ export default function ConversationView({
                   revision={revisionsById.get(msg.revisionId)!}
                   expanded={expandedCode.has(msg.id)}
                   onToggle={() => toggleCode(msg.id)}
+                  playing={isPlaying && playingCode === revisionsById.get(msg.revisionId)!.afterCode}
+                  onPlay={onPlayCode
+                    ? () => onPlayCode(revisionsById.get(msg.revisionId!)!.afterCode)
+                    : undefined}
+                  onStop={onStopCode}
                 />
               )}
               {msg.code && (!msg.revisionId || !revisionsById.has(msg.revisionId)) && (() => {
@@ -1296,26 +1323,46 @@ export default function ConversationView({
                 const lineCount = code.split('\n').length;
                 return (
                   <div className="conversation-code-bar mt-4 -ml-1 rounded-md border border-diff-accent/70 overflow-hidden animate-fade-in">
-                    <div className="w-full flex items-center bg-bg-primary/60 text-[11px] text-diff-accent/70">
-                      <button
-                        onClick={() => toggleCode(msg.id)}
-                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
-                      >
-                        <span>{t('strudelCode')}</span>
-                        <span>· {lineCount} {t('lines')}</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(code).then(() => {
-                            setCopiedId(msg.id);
-                            setTimeout(() => setCopiedId(null), 2000);
-                          });
-                        }}
-                        className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
-                        title={t('copyCode')}
-                      >
-                        {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-                      </button>
+                    {/* The same split as the widget beside it (see
+                        CodeDiffView): the fill sits on the keys, and the seam
+                        between the reading half and the play key is the one
+                        place the box shows through. */}
+                    <div className="w-full flex items-stretch gap-0.5 text-[11px] text-diff-accent/70">
+                      <div className="flex min-w-0 flex-1 items-stretch bg-bg-primary/60">
+                        <button
+                          onClick={() => toggleCode(msg.id)}
+                          className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
+                        >
+                          <span>{t('strudelCode')}</span>
+                          <span>· {lineCount} {t('lines')}</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(code).then(() => {
+                              setCopiedId(msg.id);
+                              setTimeout(() => setCopiedId(null), 2000);
+                            });
+                          }}
+                          className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+                          title={t('copyCode')}
+                        >
+                          {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                        </button>
+                      </div>
+                      {onPlayCode && (() => {
+                        const sounding = isPlaying && playingCode === code;
+                        return (
+                          <button
+                            type="button"
+                            data-code-bar-play={msg.id}
+                            aria-label={sounding ? t('stop') : t('play')}
+                            onClick={() => (sounding ? onStopCode?.() : onPlayCode(code))}
+                            className="grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+                          >
+                            {sounding ? <StopIcon size={12} /> : <PlayIcon size={13} />}
+                          </button>
+                        );
+                      })()}
                     </div>
                     {isExpanded && (
                       <pre className="p-2 bg-bg-primary/60 text-[11px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap animate-fade-in">

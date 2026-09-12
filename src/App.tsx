@@ -1592,6 +1592,21 @@ export default function App() {
               onRollback={handleRollback}
               onBranch={sessions.branchFromMessage}
               onRetry={handleRetry}
+              /* The phone only. Its code window is shut behind a key in the
+                 corner, so the widget under a reply is the nearest thing the
+                 reading has to a transport — the same key the Favorites
+                 reading carries, doing the same job. The desktop's stream
+                 (rendered from Sidebar) hands none of this down: the window is
+                 already open beside it. */
+              isPlaying={strudel.isPlaying}
+              /* What is sounding, not what is in the buffer. The studio's
+                 window is editable while a take plays, so the two part company
+                 the moment anything is typed in it — and a widget that
+                 answered to the buffer would offer to stop a take the reader
+                 has already edited away from. */
+              playingCode={strudel.activeCode}
+              onPlayCode={(code) => { void strudel.play(code); }}
+              onStopCode={strudel.stop}
             />
           </div>
 
