@@ -599,6 +599,14 @@ describe('MobileFeaturedDetail', () => {
     enter(container);
 
     const seek = container.querySelector<HTMLInputElement>('[data-testid="featured-bar-mobile-seek"]')!;
+    // The clock is held still across the drag. What is being asserted is that
+    // the lap was moved to the place it was dragged to, and the lap is read off
+    // wall-clock time — so with the clock running, what comes back is that place
+    // plus however long the test took to get from the drag to the read. Under a
+    // loaded suite that is enough to miss a half-a-per-cent window for reasons
+    // that have nothing to do with the seek.
+    const frozen = performance.now();
+    vi.spyOn(performance, 'now').mockReturnValue(frozen);
     // React dedupes a controlled input against the value it last wrote, so the
     // drag has to go in through the prototype's own setter to be seen at all.
     act(() => {
