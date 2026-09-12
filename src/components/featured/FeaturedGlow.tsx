@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import type { FeaturedPiece } from '../../lib/featured-pieces';
 import { useCoverAccent } from './featured-accent';
 
@@ -35,6 +35,19 @@ export default function FeaturedGlow({ piece }: { piece: FeaturedPiece }) {
   // useCoverAccent for why a canvas read is not repeated per consumer.
   const accent = useCoverAccent(piece.coverUrl);
 
+  // A transition needs a change to animate, and this field is mounted rather
+  // than always present — see MobileFeaturedPage/FeaturedPage for why. A
+  // cover whose colour another consumer has already read (the shell's own
+  // safe-area tint asks for the same one, see useCoverAccent) would otherwise
+  // arrive here pre-lit, mounting straight at its final opacity with nothing
+  // for the transition to run across. Held one tick behind the colour itself
+  // so the field always has a frame at zero to rise from, known colour or not.
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEntered(true);
+  }, []);
+
   return (
     <div
       aria-hidden="true"
@@ -44,7 +57,7 @@ export default function FeaturedGlow({ piece }: { piece: FeaturedPiece }) {
       // Nothing shows until the cover has been read; the black stand-in only
       // keeps the colour value valid behind an opacity of zero.
       style={{
-        opacity: accent ? 1 : 0,
+        opacity: accent && entered ? 1 : 0,
         '--glow-color': accent ?? '0, 0, 0',
       } as CSSProperties}
     >
