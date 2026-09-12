@@ -691,10 +691,13 @@ export default function App() {
       {guestImportSessions && (
         // The editor's bottom fade uses z-index 240/250, so this app-level
         // progress dialog must sit above those masks.
-        <div className="pointer-events-none fixed inset-0 z-[300] flex items-end justify-center px-4 pb-20"
+        <div className={isMobile
+          ? 'pointer-events-none fixed inset-0 z-[300] flex items-end justify-center px-4 pb-20'
+          : 'fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]'
+        }
           style={isMobile ? { top: syncViewport?.top ?? 0, height: syncViewport?.height ?? '100dvh', bottom: 'auto' } : undefined}
         >
-          <div className="pointer-events-auto z-[300] bg-bg-secondary border border-border rounded-2xl p-4 w-[420px] max-w-[90vw] shadow-dialog-overlay">
+          <div className={`pointer-events-auto bg-bg-secondary border border-border rounded-2xl w-[420px] max-w-[90vw] shadow-dialog-overlay ${isMobile ? 'p-4' : 'p-6'}`}>
             <h2 className="text-lg font-semibold text-text-primary mb-2">
               {guestImportError ? t('syncLocalHistoryFailed') : t('syncingLocalHistory')}
             </h2>
@@ -1539,12 +1542,14 @@ export default function App() {
      scrim — which as a `fixed inset-0` backdrop can only ever reach the
      document — is mixed in by hand so the phone's own notch and toolbar strips
      go dark with the rest of the page instead of staying lit. */
+  const browserChromeOverlay = (welcomeOpen && !auth.oauthErrorKey && !auth.user) || accountOpen || auth.oauthErrorKey
+    ? 'auth'
+    : codeSheetOpen || favoritesCodeOpen
+      ? 'code'
+      : null;
   useBrowserChromeColor(onFeaturedPage ? 'featured' : 'studio', {
     tint: onFeaturedPage ? featuredAccent : null,
-    dimmed: codeSheetOpen || favoritesCodeOpen,
-    overlay: (welcomeOpen && !auth.oauthErrorKey && !auth.user) || (accountOpen || auth.oauthErrorKey)
-      ? 'auth'
-      : null,
+    overlay: browserChromeOverlay,
   });
 
   /* Wired once and hung in whichever shell is up, the same as the collection

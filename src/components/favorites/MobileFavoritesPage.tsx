@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { t, zh } from '../../lib/i18n';
 import type { FavoriteSummary } from '../../../shared/session-api';
@@ -179,7 +179,7 @@ export default function MobileFavoritesPage({
   /* Which of the two acts at the foot of the page is waiting on an answer. */
   const [asking, setAsking] = useState<'unfavorite' | 'delete' | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     onCodeWindowChange?.(codeOpen);
   }, [codeOpen, onCodeWindowChange]);
 

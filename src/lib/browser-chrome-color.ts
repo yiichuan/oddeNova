@@ -99,6 +99,11 @@ const CODE_WINDOW_SCRIM: Record<ResolvedTheme, { rgb: readonly [number, number, 
   light: { rgb: [72, 73, 86], alpha: 0.2 },
 };
 
+const AUTH_OVERLAY: Record<ResolvedTheme, { rgb: readonly [number, number, number]; alpha: number }> = {
+  dark: { rgb: [0, 0, 0], alpha: 0.6 },
+  light: { rgb: [39, 40, 52], alpha: 0.28 },
+};
+
 function hexToRgb(hex: string): [number, number, number] {
   const value = hex.replace('#', '');
   return [
@@ -141,10 +146,8 @@ export interface BrowserChromeOptions {
    * page falls back to its plain unlit ground exactly as before.
    */
   tint?: string | null;
-  /** Whether the code window's scrim is standing over the page right now. */
-  dimmed?: boolean;
-  /** Additional page overlay, such as the sign-in modal. */
-  overlay?: 'auth' | null;
+  /** The visible layer standing over the page. */
+  overlay?: 'code' | 'auth' | null;
 }
 
 let lastContext: { page: BrowserChromePage; theme: ResolvedTheme; options: BrowserChromeOptions } = {
@@ -159,21 +162,21 @@ export function refreshBrowserChromeTheme(theme: ResolvedTheme): void {
 function resolveBrowserChromeColor(
   page: BrowserChromePage,
   theme: ResolvedTheme,
-  { tint, dimmed, overlay }: BrowserChromeOptions,
+  { tint, overlay }: BrowserChromeOptions,
 ): string {
   const base = BROWSER_CHROME_COLORS[page][theme];
   const tintTriple = page === 'featured' && tint ? parseRgbTriple(tint) : null;
-  if (!tintTriple && !dimmed && !overlay) return base;
+  if (!tintTriple && !overlay) return base;
 
   let rgb: readonly [number, number, number] = hexToRgb(base);
   if (tintTriple) rgb = mixOver(rgb, tintTriple, FEATURED_EDGE_TINT_ALPHA[theme]);
-  if (dimmed) {
+  if (overlay === 'code') {
     const scrim = CODE_WINDOW_SCRIM[theme];
     rgb = mixOver(rgb, scrim.rgb, scrim.alpha);
   }
   if (overlay === 'auth') {
-    const scrim = CODE_WINDOW_SCRIM[theme];
-    rgb = mixOver(rgb, scrim.rgb, theme === 'dark' ? 0.6 : 0.35);
+    const scrim = AUTH_OVERLAY[theme];
+    rgb = mixOver(rgb, scrim.rgb, scrim.alpha);
   }
   return rgbString(rgb);
 }
@@ -194,4 +197,6 @@ export function applyBrowserChromeColor(
     .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
     ?.setAttribute('content', color);
   document.documentElement.style.setProperty(BROWSER_CHROME_CSS_VAR, color);
+  document.documentElement.style.backgroundColor = color;
+  document.body.style.backgroundColor = color;
 }

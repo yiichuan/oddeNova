@@ -415,6 +415,7 @@ describe('App password recovery', () => {
   });
 
   it('keeps the guest-history sync dialog above the playback layer', async () => {
+    mocks.isMobile = false;
     const guestSession: Session = {
       id: 'guest-session',
       title: 'Guest history',
@@ -441,6 +442,8 @@ describe('App password recovery', () => {
       element.textContent?.includes('Syncing local history'),
     );
     expect(importDialog?.classList.contains('z-[300]')).toBe(true);
+    expect(importDialog?.classList.contains('items-center')).toBe(true);
+    expect(importDialog?.classList.contains('backdrop-blur-[2px]')).toBe(true);
 
     await act(async () => {
       finishImport();

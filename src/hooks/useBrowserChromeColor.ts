@@ -20,15 +20,15 @@ import { useResolvedTheme } from './useAppearance';
  * palette — that half comes for free from `useResolvedTheme`, which already
  * re-renders on both a stored preference change and the OS's own flip.
  *
- * `tint` and `dimmed` (see BrowserChromeOptions) are read out to primitives up
+ * `tint` and `overlay` (see BrowserChromeOptions) are read out to primitives up
  * front rather than compared as one options object, so a caller that passes a
  * fresh `{}` literal every render does not repaint the chrome every render
  * along with it.
  */
 export function useBrowserChromeColor(page: BrowserChromePage, options: BrowserChromeOptions = {}): void {
   const theme = useResolvedTheme();
-  const { tint = null, dimmed = false } = options;
+  const { tint = null, overlay = null } = options;
   useLayoutEffect(() => {
-    applyBrowserChromeColor(page, theme, { tint, dimmed });
-  }, [page, theme, tint, dimmed]);
+    applyBrowserChromeColor(page, theme, { tint, overlay });
+  }, [page, theme, tint, overlay]);
 }

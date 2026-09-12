@@ -12,8 +12,8 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const roots: Root[] = [];
 
-function Probe({ page }: { page: BrowserChromePage }) {
-  useBrowserChromeColor(page);
+function Probe({ page, overlay = null }: { page: BrowserChromePage; overlay?: 'code' | 'auth' | null }) {
+  useBrowserChromeColor(page, { overlay });
   return null;
 }
 
@@ -70,5 +70,18 @@ describe('useBrowserChromeColor', () => {
 
     act(() => { setThemePreference('light'); });
     expect(meta()?.content).toBe('#DEDEE0');
+  });
+
+  it('forwards overlay changes to the browser chrome writer', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+
+    act(() => root.render(<Probe page="studio" overlay="auth" />));
+    expect(meta()?.content).toBe('rgb(5, 5, 5)');
+
+    act(() => root.render(<Probe page="studio" overlay="code" />));
+    expect(meta()?.content).toBe('rgb(19, 19, 19)');
   });
 });

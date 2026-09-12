@@ -51,6 +51,14 @@ describe('browser-chrome-color', () => {
     expect(document.documentElement.style.getPropertyValue(BROWSER_CHROME_CSS_VAR)).toBe('#DEDEE0');
   });
 
+  it('uses the visible overlay instead of leaving chrome at the undimmed page colour', () => {
+    applyBrowserChromeColor('studio', 'dark', { overlay: 'code' });
+    expect(document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe('rgb(19, 19, 19)');
+
+    applyBrowserChromeColor('studio', 'dark', { overlay: 'auth' });
+    expect(document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe('rgb(5, 5, 5)');
+  });
+
   it('does nothing where there is no document to write to', () => {
     const original = globalThis.document;
     // @ts-expect-error -- simulating an environment with no document
