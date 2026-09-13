@@ -26,7 +26,7 @@ const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
   getAllSessions: vi.fn(async () => [] as Session[]),
   getCurrentSessionId: vi.fn(async () => null as string | null),
-  putSession: vi.fn(async () => undefined),
+  putSession: vi.fn(async (_session: Session, _ownerKey?: string) => undefined),
   putCurrentSessionId: vi.fn(async () => undefined),
   putImportedSession: vi.fn(async (_session: unknown) => undefined),
   putImportedSessionBranch: vi.fn(async (_detached: unknown, _branch: unknown) => undefined),
@@ -1524,6 +1524,65 @@ describe('useSessions', () => {
       items: ['加入贝斯', '让鼓点更密'],
     });
     expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses a streamed turn into one local write per window, not one per delta', async () => {
+    // The crash this guards: one IndexedDB transaction per streamed token, each
+    // carrying a full clone of a session that grows with the very text
+    // producing it, until the renderer runs out of memory on a long answer.
+    vi.useFakeTimers();
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+    storageMocks.putSession.mockClear();
+
+    const deltas = Array.from({ length: 40 }, (_, index) => `delta-${index}`);
+    act(() => {
+      for (const delta of deltas) getHook().appendToLastReasoning(delta, sessionId);
+    });
+
+    // Leading edge only: the turn is on disk from its first token, and the 39
+    // deltas behind it are holding one scheduled write between them.
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(2);
+    const written = storageMocks.putSession.mock.lastCall?.[0] as Session | undefined;
+    expect(written?.messages.at(-1)?.content).toBe(deltas.join(''));
+
+    // What the reader sees never lagged the store — only the writes did.
+    expect(getHook().currentSession?.messages.at(-1)?.content).toBe(deltas.join(''));
+  });
+
+  it('lets the committed reply overtake the write a stream had scheduled', async () => {
+    vi.useFakeTimers();
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+    storageMocks.putSession.mockClear();
+
+    act(() => {
+      getHook().appendToLastReasoning('构思', sessionId);
+      getHook().appendToLastReasoning('中', sessionId);
+    });
+    act(() => {
+      getHook().addAssistantMessage('好了', 'note("c3")', sessionId);
+    });
+
+    // The leading streamed write plus the reply's own — and the scheduled
+    // snapshot in between is dropped rather than landing on top of the reply.
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(2);
+    const afterReply = storageMocks.putSession.mock.lastCall?.[0] as Session | undefined;
+    expect(afterReply?.messages.at(-1)?.content).toBe('好了');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(2);
   });
 
   it('persists choice input mode with the successful assistant message', async () => {

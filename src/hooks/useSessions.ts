@@ -29,6 +29,7 @@ import {
   readPendingSessionOperations,
   type PendingSessionOperations,
 } from '../lib/session-sync-storage';
+import { createSessionWriteThrottle } from '../lib/session-write-throttle';
 
 export interface ExternalSessionSource {
   type: 'oddenova-strudel-skill';
@@ -85,7 +86,13 @@ export interface UseSessionsOptions {
   startNewSessionToken?: number;
 }
 
-type CloudIntent = 'deferred' | 'debounced' | 'checkpoint';
+/**
+ * `streaming` is the one that is not about the cloud: it marks a mutation that
+ * arrives once per streamed token, so the local store rate-limits it (see
+ * `createSessionWriteThrottle`). It reaches the cloud exactly as `deferred`
+ * does — a dirty mark, nothing more.
+ */
+type CloudIntent = 'streaming' | 'deferred' | 'debounced' | 'checkpoint';
 
 interface ManualSyncPresentation {
   markPending: (sessionId: string) => void;
@@ -93,6 +100,13 @@ interface ManualSyncPresentation {
   handleStatus: (sessionId: string, status: SessionSyncStatus | undefined) => void;
   dispose: () => void;
 }
+
+/**
+ * How long the local store is held shut after a streamed write. Long enough
+ * that a burst of tokens costs one write instead of hundreds, short enough
+ * that a reload mid-answer loses at most a line of it.
+ */
+const LOCAL_WRITE_THROTTLE_MS = 1000;
 
 function createManualSyncPresentation(options: {
   onStatus: (sessionId: string, status: SessionSyncStatus | undefined) => void;
@@ -773,8 +787,39 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const currentSession =
     sessionsForOwner.find((s) => s.id === currentIdForOwner) || sessionsForOwner[0] || null;
 
+  // One rate limiter per owner: the store is keyed by owner, so a sign-in must
+  // not let a write scheduled for the previous account land under the new one.
+  const localWrites = useMemo(
+    () => createSessionWriteThrottle<Session>(
+      (session) => dbPutSession(session, ownerKey),
+      LOCAL_WRITE_THROTTLE_MS,
+    ),
+    [ownerKey],
+  );
+
+  // Whatever a turn streamed since its last write is still only scheduled.
+  // Unmounting or switching owners has to put it down before the limiter that
+  // holds it is replaced, or the tail of the answer is lost.
+  useEffect(() => () => { void localWrites.flush(); }, [localWrites]);
+
+  // Same tail, lost a different way: a phone discards a backgrounded tab
+  // without unmounting anything, so put the scheduled write down on the way
+  // out rather than on the way back.
+  useEffect(() => {
+    const flush = (): void => { void localWrites.flush(); };
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [localWrites]);
+
   const persistLocalSession = useCallback(
-    (session: Session, options: { force?: boolean } = {}) => {
+    (session: Session, options: { force?: boolean; streaming?: boolean } = {}) => {
       // A late writer (suggestion chips, a finishing agent turn) can fire during
       // that window. Persisting then would file the previous owner's session
       // under the new owner — leaking account history into the guest list.
@@ -788,9 +833,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
         return;
       }
       persistedSessionIdsRef.current.add(session.id);
-      void dbPutSession(session, ownerKey);
+      if (options.streaming) localWrites.schedule(session);
+      else void localWrites.writeNow(session);
     },
-    [isAccountOwner, ownerLoaded, ownerKey],
+    [isAccountOwner, ownerLoaded, localWrites],
   );
 
   const persistSession = useCallback(
@@ -801,7 +847,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
         && !persistedSessionIdsRef.current.has(session.id)
         && isEffectivelyEmpty(session);
       if (isNewEmptyAccountSession && intent !== 'checkpoint') return;
-      persistLocalSession(session, { force: intent === 'checkpoint' });
+      persistLocalSession(session, {
+        force: intent === 'checkpoint',
+        streaming: intent === 'streaming',
+      });
       if (!sessionCloudSync) return;
       if (intent === 'checkpoint') {
         manualSyncPresentation.clear(session.id);
@@ -843,7 +892,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     const adopted = !workingCopyIsAhead
       && (sessionCloudSync?.acceptCloudSession(session) ?? true);
     if (adopted) {
-      await dbPutSession(session, ownerKey);
+      await localWrites.writeNow(session);
       persistedSessionIdsRef.current.add(session.id);
       setSessions((previous) => [
         session,
@@ -860,7 +909,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       await dbPutCurrentSessionId(session.id, ownerKey);
     }
     return adopted ? session : workingCopy;
-  }, [ownerKey, ownerLoaded, sessionCloudSync]);
+  }, [localWrites, ownerKey, ownerLoaded, sessionCloudSync]);
 
   const updateCurrent = useCallback(
     (mut: (s: Session) => Session, intent: CloudIntent = 'deferred') => {
@@ -903,8 +952,13 @@ export function useSessions(options: UseSessionsOptions = {}) {
   // Pick the mutator for a given session: a specific one by id, or the current
   // session when no id is passed. Centralizes the branch reused by every writer.
   const getApply = useCallback(
-    (sessionId?: string): ((fn: (s: Session) => Session) => void) =>
-      sessionId ? (fn) => updateSession(sessionId, fn) : updateCurrent,
+    (
+      sessionId?: string,
+      intent: CloudIntent = 'deferred',
+    ): ((fn: (s: Session) => Session) => void) =>
+      sessionId
+        ? (fn) => updateSession(sessionId, fn, intent)
+        : (fn) => updateCurrent(fn, intent),
     [updateCurrent, updateSession]
   );
 
@@ -1010,7 +1064,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       sessionId?: string,
       agentAttemptId?: string,
     ): void => {
-      const apply = getApply(sessionId);
+      const apply = getApply(sessionId, 'streaming');
       apply((s) => applyAppendProgressDelta(s, delta, kind, agentAttemptId));
     },
     [getApply]
@@ -1030,7 +1084,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
 
   const appendToLastAssistant = useCallback(
     (delta: string, sessionId?: string, agentAttemptId?: string): void => {
-      const apply = getApply(sessionId);
+      const apply = getApply(sessionId, 'streaming');
       apply((s) => applyAppendAssistantDelta(s, delta, agentAttemptId));
     },
     [getApply]
@@ -1207,6 +1261,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
         const next = prev.filter((s) => s.id !== id);
         const wasPersisted = persistedSessionIdsRef.current.has(id);
         persistedSessionIdsRef.current.delete(id);
+        // Drop anything still scheduled for this id: a trailing streamed write
+        // landing after the delete would put the row back.
+        localWrites.discard(id);
         if (sessionCloudSync && (wasPersisted || !isAccountOwner)) {
           void sessionCloudSync.deleteSession(
             id,
@@ -1254,6 +1311,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       activateSession,
       currentId,
       isAccountOwner,
+      localWrites,
       noteCreatedSession,
       ownerKey,
       persistLocalSession,
@@ -1283,7 +1341,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         createdAt: payload.createdAt ?? now,
         updatedAt: payload.updatedAt ?? now,
       };
-      await dbPutSession(session, ownerKey);
+      await localWrites.writeNow(session);
       persistedSessionIdsRef.current.add(id);
       noteCreatedSession(id);
       setSessions((prev) => [session, ...prev.filter((existing) => existing.id !== id)]);
@@ -1301,7 +1359,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         await sessionCloudSync?.checkpoint(session);
       }
     },
-    [noteCreatedSession, ownerKey, sessionCloudSync],
+    [localWrites, noteCreatedSession, ownerKey, sessionCloudSync],
   );
 
   const importOddeNovaSession = useCallback(async (

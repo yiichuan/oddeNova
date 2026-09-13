@@ -25,6 +25,21 @@ export const FAVORITES_EMPTY_ZH = '收藏的对话会在这里显示';
  */
 export const THEME_SONG_INTRO_ZH = '听听看 《奥德诺娃的梦呓》，接收 创作 的 邀约';
 
+/**
+ * The opening line of a session started from a featured piece, 中文, named for
+ * the same reason as the two above: it lands in the greeting slot — the draft
+ * in `featured-session.ts` flags it `isGreeting` — so the subset build has to
+ * be able to read it as text rather than as a lookup.
+ *
+ * Only the template's own characters need covering. What the three
+ * placeholders carry is a piece's title, its original artist and whoever coded
+ * it, and those are Latin, drawn by EB Garamond ahead of this face (see
+ * --font-jinghua-laosongti). A featured piece with a Chinese title would need
+ * its characters added here.
+ */
+export const FEATURED_OPENED_INTRO_ZH =
+  '{coder} 用 Strudel 写的《{title}》（原作 {originalArtist}），已在工作室中。';
+
 const S: Record<string, readonly [string, string]> = {
   // Common
   cancel:       ['取消', 'Cancel'],
@@ -91,7 +106,7 @@ const S: Record<string, readonly [string, string]> = {
   featuredOpenDetail:  ['查看详情', 'View details'],
   featuredAlbumTracks: ['《{album}》的曲目', '{album} tracks'],
   featuredAlbumOf:     ['专辑《{album}》', 'Album {album}'],
-  featuredOpenedIntro: ['{coder} 用 Strudel 写的《{title}》（原作 {originalArtist}），已在工作室中。',
+  featuredOpenedIntro: [FEATURED_OPENED_INTRO_ZH,
                         '{coder}’s Strudel rendition of “{title}” (originally by {originalArtist}), now in the studio.'],
 
   // Favorites
@@ -366,6 +381,7 @@ const S: Record<string, readonly [string, string]> = {
   reasoningTitle:['构思', 'Ideation'],
   collapseReasoning: ['收起推理过程', 'Collapse reasoning'],
   expandReasoning:   ['展开推理过程', 'Expand reasoning'],
+  jumpToLatest:      ['回到最新', 'Jump to latest'],
   actionsTitle:  ['思考过程', 'Process'],
   rollbackHere:  ['回滚到此处', 'Roll back to here'],
   showMore:      ['显示更多', 'Show more'],

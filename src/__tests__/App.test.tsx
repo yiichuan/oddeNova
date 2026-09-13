@@ -2070,6 +2070,26 @@ describe('App session sync boundaries', () => {
       .toBeLessThan(mocks.sessions.checkpointSession.mock.invocationCallOrder[0]);
   });
 
+  it('hands the rolled-back instruction to the input without waiting for the cloud', async () => {
+    mocks.isMobile = false;
+    mocks.session.messages = [
+      { id: 'assistant-code', role: 'assistant', content: 'old', code: 's("bd")', timestamp: 1 },
+      { id: 'user-turn', role: 'user', content: 'change it', timestamp: 2 },
+    ];
+    // A checkpoint that never lands — a slow connection, or none at all.
+    // Consumed by this test's one rollback, so it cannot leak into the next.
+    mocks.sessions.checkpointSession.mockReturnValueOnce(new Promise<undefined>(() => {}));
+    await renderApp();
+
+    await act(async () => {
+      await (mocks.sidebarProps?.onRollback as ((id: string) => Promise<void>))('user-turn');
+    });
+
+    expect(mocks.sessions.checkpointSession).toHaveBeenCalledWith('s-1');
+    // The text is back in the input all the same, ready to be typed over.
+    expect(mocks.sidebarProps?.prefill).toBe('change it');
+  });
+
   it('passes only manual save state to Code Plane without overstating fallback storage', async () => {
     mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
     mocks.sessions.currentSyncStatus = 'synced';

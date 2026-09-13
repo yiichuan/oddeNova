@@ -31,10 +31,15 @@ export default function VizPlaceholder({
   const animation = useResolvedAnimation();
 
   return (
-    <div className={`h-full overflow-hidden rounded-region${bordered ? ' border border-border' : ''}`}>
+    // .viz-frame is the ground the frame stands on before its document has
+    // painted a single pixel — without it that gap shows as a white card. It is
+    // carried on both boxes: the wrapper covers the pane's rounded corners, and
+    // the frame itself covers the box the browser would otherwise paint white.
+    <div className={`viz-frame h-full overflow-hidden rounded-region${bordered ? ' border border-border' : ''}`}>
       <iframe
         src={`${getAnimationSource(animation)}${compact ? '?compact=1' : ''}`}
         title={t('animationVisual')}
+        className="viz-frame"
         style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
         allow="autoplay"
       />

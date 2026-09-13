@@ -295,6 +295,34 @@ describe('runAgentTurn', () => {
       .toBeLessThan(checkpointOrder);
   });
 
+  it('takes the thinking indicator down without waiting for the turn to be saved', async () => {
+    // What a press of stop used to look like: "已中断" written above a spinner
+    // that hung there until the cloud answered.
+    const controller = new AbortController();
+    let releaseCheckpoint!: () => void;
+    const deps = makeDeps({
+      beginLoading: () => controller,
+      runAgent: vi.fn(async () => {
+        controller.abort();
+        throw new DOMException('Aborted', 'AbortError');
+      }),
+      checkpointSession: vi.fn(() => new Promise<void>((resolve) => {
+        releaseCheckpoint = resolve;
+      })),
+    });
+
+    const turn = runAgentTurn(makeInput(), deps);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('interrupted'), 'S1');
+    expect(deps.checkpointSession).toHaveBeenCalledOnce();
+    expect(deps.endLoading).toHaveBeenCalledWith('S1', controller);
+
+    releaseCheckpoint();
+    await turn;
+  });
+
   it('always ends the loading lifecycle with the controller it began', async () => {
     const controller = new AbortController();
     const deps = makeDeps({ beginLoading: () => controller });

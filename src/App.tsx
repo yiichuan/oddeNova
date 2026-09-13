@@ -924,13 +924,21 @@ export default function App() {
       if (!rewound) return;
 
       sessions.truncate(messageId);
-      if (currentSessionId) {
-        await sessions.checkpointSession(currentSessionId);
-      }
 
-      // Prefill the input with the message content and focus
+      // Hand the instruction back to the input in the same commit as the
+      // truncation. This used to sit behind the checkpoint below, which is a
+      // cloud round trip: a signed-in user pressed rollback and watched the
+      // messages go before their own text arrived to type over.
       setRollbackPrefill(rewound.target.content);
       setInputFocusTrigger((n) => n + 1);
+
+      // The checkpoint still goes out, just not in front of the user. Its
+      // snapshot is read inside a state updater queued after the truncation
+      // above, so it carries the rewound conversation either way, and the
+      // durable retry queue is what actually guarantees it lands.
+      if (currentSessionId) {
+        void sessions.checkpointSession(currentSessionId);
+      }
     },
     [sessions, rewindBeforeMessage]
   );

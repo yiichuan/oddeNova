@@ -43,6 +43,40 @@ type PlaybackProps = {
   onStopCode?: () => void;
 };
 
+/** A ResizeObserver whose reports this test fires itself. */
+function stubResizeObserver() {
+  const callbacks = new Set<ResizeObserverCallback>();
+  const original = globalThis.ResizeObserver;
+  class Stub {
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+      callbacks.add(callback);
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() { callbacks.delete(this.callback); }
+  }
+  globalThis.ResizeObserver = Stub as unknown as typeof ResizeObserver;
+  return {
+    fire: () => {
+      for (const callback of callbacks) callback([], {} as ResizeObserver);
+    },
+    restore: () => { globalThis.ResizeObserver = original; },
+  };
+}
+
+/** Stand in for layout happy-dom does not do: a live rect read off the stub. */
+function stubRect(el: HTMLElement, read: () => { top: number; bottom: number }) {
+  Object.defineProperty(el, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => {
+      const { top, bottom } = read();
+      return { top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top };
+    },
+  });
+}
+
 function renderConversationView(
   messages: ChatMessage[],
   onRollback = vi.fn(),
@@ -54,11 +88,11 @@ function renderConversationView(
   document.body.appendChild(container);
   const root = createRoot(container);
 
-  const render = (next: PlaybackProps = playback) => {
+  const render = (next: PlaybackProps = playback, nextMessages: ChatMessage[] = messages) => {
     act(() => {
       root.render(
         <ConversationView
-          messages={messages}
+          messages={nextMessages}
           revisions={revisions}
           isLoading={isLoading}
           onRollback={onRollback}
@@ -617,6 +651,115 @@ describe('ConversationView chat streaming', () => {
     expect(scrollBox?.className).toContain('break-words');
     expect(scrollBox?.className).toContain('overflow-x-hidden');
     expect(scrollBox?.className).toContain('overflow-y-auto');
+  });
+
+  it('leaves the streamed reasoning where it is and jumps a window past its last line', () => {
+    setMobileViewport(false);
+    // happy-dom lays nothing out and never resizes, so the window's geometry,
+    // and the observer that reports changes to it, are driven by hand here.
+    const resize = stubResizeObserver();
+    try {
+      const reasoning: ChatMessage = {
+        id: 'r1',
+        role: 'progress',
+        content: '一段很长的推理'.repeat(40),
+        timestamp: 2,
+        progressKind: 'reasoning',
+      };
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', content: '来点好听的', timestamp: 1 },
+        reasoning,
+      ];
+      const { container, root, render } = renderConversationView(messages, vi.fn(), true);
+      roots.push(root);
+
+      const scrollBox = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
+      const content = container.querySelector<HTMLElement>('[data-markdown-text]');
+      expect(scrollBox).not.toBeNull();
+      expect(content).not.toBeNull();
+
+      const WINDOW_HEIGHT = 300;
+      let contentHeight = 200;
+      stubRect(scrollBox!, () => ({ top: 0, bottom: WINDOW_HEIGHT }));
+      stubRect(content!, () => ({
+        top: -scrollBox!.scrollTop,
+        bottom: contentHeight - scrollBox!.scrollTop,
+      }));
+
+      // Text that still fits inside the window: nothing below the fold.
+      act(() => resize.fire());
+      expect(container.querySelector('[data-reasoning-jump-latest]')).toBeNull();
+
+      // It outgrows the window, and the way to the live end is offered.
+      contentHeight = 1200;
+      act(() => resize.fire());
+      expect(container.querySelector('[data-reasoning-jump-latest]')).not.toBeNull();
+
+      // Where the reader put the window, and where more text finds it: the
+      // stream does not drag it along.
+      act(() => {
+        scrollBox!.scrollTop = 100;
+        scrollBox!.dispatchEvent(new Event('scroll'));
+      });
+      contentHeight = 1500;
+      render(undefined, [messages[0], { ...reasoning, content: `${reasoning.content}继续推理` }]);
+      act(() => resize.fire());
+      expect(scrollBox!.scrollTop).toBe(100);
+
+      act(() => container.querySelector<HTMLButtonElement>('[data-reasoning-jump-latest]')!.click());
+
+      // The newest line comes to rest at the top of the window, with nearly the
+      // whole window left open under it for what is written next.
+      const lastLineFromTop = contentHeight - scrollBox!.scrollTop;
+      expect(lastLineFromTop).toBeGreaterThan(0);
+      expect(lastLineFromTop).toBeLessThan(40);
+      expect(WINDOW_HEIGHT - lastLineFromTop).toBeGreaterThan(WINDOW_HEIGHT * 0.8);
+
+      // Arrived at the live end, there is nothing left to jump to.
+      expect(container.querySelector('[data-reasoning-jump-latest]')).toBeNull();
+    } finally {
+      resize.restore();
+    }
+  });
+
+  it('opens each later reasoning window at its own beginning', () => {
+    setMobileViewport(false);
+    // Back-to-back reasoning: the iteration between them called only
+    // `validate`, which puts nothing in the stream, so the run is unbroken and
+    // the window is never unmounted between the two.
+    const first: ChatMessage = {
+      id: 'r1',
+      role: 'progress',
+      content: '第一轮推理'.repeat(40),
+      timestamp: 2,
+      progressKind: 'reasoning',
+    };
+    const second: ChatMessage = {
+      id: 'r2',
+      role: 'progress',
+      content: '第二轮推理',
+      timestamp: 3,
+      progressKind: 'reasoning',
+    };
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: '来点好听的', timestamp: 1 },
+      first,
+    ];
+    const { container, root, render } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    const firstBox = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
+    expect(firstBox).not.toBeNull();
+    act(() => { firstBox!.scrollTop = 420; });
+
+    render(undefined, [...messages, second]);
+
+    const secondBox = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
+    expect(secondBox).not.toBeNull();
+    // A new window, not the previous one handed over mid-scroll.
+    expect(secondBox).not.toBe(firstBox);
+    expect(secondBox!.scrollTop).toBe(0);
+    expect(secondBox!.textContent).toContain('第二轮推理');
   });
 
   it('renders always-visible top and bottom fades around the conversation viewport', () => {
