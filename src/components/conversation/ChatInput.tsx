@@ -250,9 +250,18 @@ export default function ChatInput({
     return () => el.removeEventListener('beforeinput', onBeforeInput);
   }, [isMobile, replayValue, suggestionActive, currentSuggestion]);
 
+  // Only the card's non-interactive blank space pulls focus back to the
+  // textarea. The thinking level control opts itself out via
+  // [data-chat-input-focus-ignore] (see ThinkingLevelControl) so opening,
+  // adjusting or closing it never re-focuses the textarea — and never yanks
+  // the soft keyboard back up. defaultPrevented presses (the control's own
+  // focus protection) are skipped for the same reason.
   const handleCardClick = (e: React.MouseEvent<HTMLFormElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('button')) return;
+    if (e.defaultPrevented) return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('[data-chat-input-focus-ignore]')) return;
+    if (target.closest('button, input, textarea, select, a[href], [contenteditable="true"]')) return;
     textareaRef.current?.focus();
   };
 
@@ -292,6 +301,7 @@ export default function ChatInput({
           <div className="relative pr-3">
             <textarea
               ref={textareaRef}
+              data-chat-input-textarea
               value={replayValue !== undefined ? replayValue : text}
               onChange={replayValue !== undefined ? undefined : (e) => {
                 adoptedSuggestionRef.current = null;
@@ -413,7 +423,16 @@ export default function ChatInput({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {replayValue === undefined && <ThinkingLevelControl disabled={inputDisabled} />}
+              {replayValue === undefined && (
+                <ThinkingLevelControl
+                  disabled={inputDisabled}
+                  // Read at press time from the DOM, not from React's `focused`
+                  // state: the event handler needs the fact as it is right now,
+                  // and only an actual textarea focus is worth protecting (see
+                  // ThinkingLevelControl's pointerdown protection).
+                  shouldPreserveInputFocus={() => document.activeElement === textareaRef.current}
+                />
+              )}
               {replayValue !== undefined ? (
                 <button
                   type="button"
