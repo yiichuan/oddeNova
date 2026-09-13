@@ -549,6 +549,12 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
 
+/* Preserve input focus/keyboard while the thinking popover is visible. */
+.chat-input-surface:has([data-thinking-level-popover])
+  [data-chat-input-textarea] {
+  caret-color: transparent;
+}
+
 /* The column stands above the page, and a shadow is how it says so. It takes
    three layers, one job each.
 
