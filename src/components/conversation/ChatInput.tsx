@@ -266,6 +266,9 @@ export default function ChatInput({
   };
 
   const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
+  // The waiting fade, applied per part (see the card below): everything that
+  // is genuinely out of reach while the agent answers, and nothing else.
+  const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
 
   return (
     <form onSubmit={handleSubmit} onClick={handleCardClick} className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -286,8 +289,16 @@ export default function ChatInput({
             and on paper that ring is only a few levels off the fill it is
             drawn on — halve that difference and the composer loses its edge
             entirely for as long as the agent is answering. Dimming what is
-            *inside* says the same thing and leaves the panel its outline. */}
-        <div className={`transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`}>
+            *inside* says the same thing and leaves the panel its outline.
+
+            Taken on each dimmable part rather than on this wrapper, because
+            the one thing in here that must not fade is the key on the right:
+            while the agent answers it is the *stop* control, the only live
+            action on the card, and a dimmed one reads as unavailable exactly
+            when it is the only thing left to press. (Opacity is inherited by
+            a subtree, so a child cannot win it back — the fade has to skip it
+            on the way down.) */}
+        <div>
           {/* Wraps just the textarea so the suggestion overlay below can be
               positioned absolute against its box, not the card as a whole
               (which also includes the footer). Top padding lives on the card
@@ -298,7 +309,7 @@ export default function ChatInput({
               from the card edge, giving the scrollbar an 8px gap. The textarea's
               own pr below is reduced by the same 8px so the text position is
               unchanged. */}
-          <div className="relative pr-3">
+          <div className={`relative pr-3 ${waitingDim}`}>
             <textarea
               ref={textareaRef}
               data-chat-input-textarea
@@ -399,7 +410,7 @@ export default function ChatInput({
           {/* Footer row — hint/status on the left, send button on the right.
               Real layout, always visible regardless of textarea scroll state. */}
           <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
-            <div className="min-w-0">
+            <div className={`min-w-0 ${waitingDim}`}>
               {engineStatus !== 'ready' ? (
                 <div className="flex items-center gap-2 text-[12px] text-text-muted">
                   <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
@@ -449,11 +460,11 @@ export default function ChatInput({
                   className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover"
                   title={t('stop')}
                 >
-                  {/* A step under the arrow it stands in for: a solid square
-                      carries more ink than an outlined glyph, so matching their
-                      nominal sizes makes the stop mark read as the larger of
-                      the two. */}
-                  <StopIcon size={16} />
+                  {/* Well under the arrow it stands in for: a solid square
+                      carries far more ink than an outlined glyph, so anywhere
+                      near the arrow's nominal size the stop mark reads as the
+                      larger of the two and the disc as crowded. */}
+                  <StopIcon size={12} />
                 </button>
               ) : (
                 <button

@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
-import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
 import { ThinkingLottie } from './ThinkingLottie';
 import { t, zh } from '../../lib/i18n';
 import { CodeDiffView } from './CodeDiffView';
@@ -13,6 +13,26 @@ type MobileNoSelectStyle = CSSProperties & {
 };
 
 export type MarkdownTone = 'default' | 'muted';
+
+/* How much text has to sit below the fold before the window says so. Wide
+   enough to absorb the sub-pixel drift a fractional line height leaves behind,
+   so a window scrolled to its end does not claim there is more to read. */
+const REASONING_BOTTOM_EPS = 20;             // px
+/* Used when the box cannot say what its own line height is (`normal`, or no
+   stylesheet at all). The window is set in text-sm at leading-relaxed. */
+const REASONING_FALLBACK_LINE = 23;          // px
+
+/**
+ * How far the streamed text runs past the bottom of its window, in px. Read
+ * off the content element rather than the box's own scrollHeight: the box
+ * carries a window-height of empty space after the text (see the spacer in the
+ * window below), and that space is not something there is left to read.
+ */
+function reasoningTailBelowFold(box: HTMLElement): number {
+  const content = box.firstElementChild;
+  if (!content) return 0;
+  return content.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
+}
 
 const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
   userSelect: 'none',
@@ -199,7 +219,15 @@ function handleUserBubbleCopy(e: ClipboardEvent<HTMLElement>) {
   e.clipboardData.setData('text/plain', trimmed);
 }
 
-export function MarkdownText({ content, tone = 'default' }: { content: string; tone?: MarkdownTone }) {
+/**
+ * Memoized on purpose, not out of habit. The whole conversation re-renders on
+ * every streamed token — the session object it reads changes once per delta —
+ * and re-parsing every finished message's markdown each time is O(messages ×
+ * tokens) of regex and element building for output that cannot have changed.
+ * Both props are primitives, so the default comparison is the right one: only
+ * the message actually being streamed re-parses.
+ */
+export const MarkdownText = memo(function MarkdownText({ content, tone = 'default' }: { content: string; tone?: MarkdownTone }) {
   const lines = content.split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -395,7 +423,7 @@ export function MarkdownText({ content, tone = 'default' }: { content: string; t
       {blocks}
     </div>
   );
-}
+});
 
 // User message text with a "show more / less" affordance. Long messages are
 // clamped to five lines with the fifth faded into the bubble background; the
@@ -548,14 +576,43 @@ export default function ConversationView({
   // test).
   const anchorTargetRef = useRef<number | null>(null);
   const reasoningScrollRef = useRef<HTMLDivElement>(null);
-  const reasoningUserScrolledRef = useRef(false);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   // User-collapsed state of the live streaming reasoning window.
   const [reasoningCollapsed, setReasoningCollapsed] = useState(false);
+  // Whether the stream has written past the bottom of its window — what puts
+  // the jump-to-latest button on screen. Nothing drags the window along as the
+  // answer arrives, so this is the ordinary state of a reasoning chain of any
+  // length, and the button is the way to the live end.
+  const [reasoningOverflows, setReasoningOverflows] = useState(false);
   const isMobile = useIsMobile();
+
+  /**
+   * Take the reasoning window to the live end of the stream — which is further
+   * than the last line. Landing that line flush against the bottom edge would
+   * put the next token below the fold again, so the jump goes a window-height
+   * past it: the newest line comes to rest at the top with the whole window
+   * open underneath it, and what streams in next is read where it lands.
+   *
+   * Instant rather than animated: the press is a request to be at the live end
+   * now, and the text keeps arriving while any glide would still be travelling.
+   */
+  const jumpToLatestReasoning = useCallback((): void => {
+    const el = reasoningScrollRef.current;
+    const content = el?.firstElementChild;
+    if (!el || !content) return;
+    const parsedLine = Number.parseFloat(getComputedStyle(el).lineHeight);
+    const line = Number.isFinite(parsedLine) && parsedLine > 0
+      ? parsedLine
+      : REASONING_FALLBACK_LINE;
+    // Travel the distance that brings the text's last line to the window's top.
+    const boxTop = el.getBoundingClientRect().top;
+    el.scrollTop += content.getBoundingClientRect().bottom - boxTop - line;
+    setReasoningOverflows(reasoningTailBelowFold(el) > REASONING_BOTTOM_EPS);
+  }, []);
+
   /* The stream's reading sizes.
    *
    * A phone is set at the platform's own 16px — the size every other app it
@@ -824,15 +881,9 @@ export default function ConversationView({
           el.scrollTop = target;
         }
       }
-      // Auto-scroll the reasoning <pre> to the bottom (follow content during streaming output)
-      const preEl = reasoningScrollRef.current;
-      if (preEl && !reasoningUserScrolledRef.current) {
-        preEl.scrollTop = preEl.scrollHeight;
-      }
-      // Reset the user-scrolled flag for the reasoning area when isLoading ends
-      if (!isLoading) {
-        reasoningUserScrolledRef.current = false;
-      }
+      // Deliberately nothing here for the reasoning window's own scroll: the
+      // streamed text is left where the reader put it, and the jump-to-latest
+      // button below is what takes them to the live end when they want it.
     }
   }, [messages, isLoading, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive]);
 
@@ -1038,6 +1089,30 @@ export default function ConversationView({
   const reasoningWindowAvailable =
     isLoading && !!streamingReasoningMsg?.content && reasoningPhaseActive;
   const reasoningWindowExpanded = reasoningWindowAvailable && !reasoningCollapsed;
+
+  // Watch the live reasoning window for text arriving below its fold. The box's
+  // own border box never changes as the answer streams — its content is what
+  // grows — so the content element is observed alongside the window itself,
+  // which covers the case where the viewport is what moved. Subscribing reports
+  // once, and that first report is the initial measurement; a reader scrolling
+  // the box re-measures through its own onScroll.
+  // A layout effect, not a plain one: this reads layout, and measuring after
+  // paint would show the window for a frame with the previous turn's answer.
+  useLayoutEffect(() => {
+    const measure = (): void => {
+      const box = reasoningScrollRef.current;
+      setReasoningOverflows(box !== null && reasoningTailBelowFold(box) > REASONING_BOTTOM_EPS);
+    };
+    measure();
+    const el = reasoningScrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    // MarkdownText's own root: the single child holding the streamed text.
+    const content = el.firstElementChild;
+    if (content) observer.observe(content);
+    return () => observer.disconnect();
+  }, [reasoningWindowExpanded, streamingReasoningMsg?.id]);
 
   // Live status shown in the loading indicator. Tool-call / commit labels
   // ("编排段落…", "准备播放…") aren't kept in the scrollback (they return null
@@ -1437,18 +1512,53 @@ export default function ConversationView({
             // min-h-0 lets it size below its content's natural height, which
             // is what lets the scroll box's own h-full resolve to a real,
             // clipped value instead of just growing to fit the streamed text.
-            <div className="mt-3 w-full px-2 flex-1 min-h-0 animate-fade-in">
+            <div className="relative mt-3 w-full px-2 flex-1 min-h-0 animate-fade-in">
               <div
+                // Keyed by the reasoning it shows, so each one opens at its own
+                // beginning. A turn runs many of these, and two land back to
+                // back whenever the iteration between them called only
+                // `validate` or `commit` — neither of which puts a message in
+                // the stream, so nothing breaks the reasoning run and the
+                // window is never unmounted. Reused, it would carry the last
+                // window's scroll into the new one: with nothing following the
+                // stream any more, the reader would be handed a box already
+                // scrolled past text they have not seen — or, once the browser
+                // clamps that offset against shorter content, the empty tail
+                // below it.
+                key={streamingReasoningMsg.id}
                 ref={reasoningScrollRef}
                 onScroll={(e) => {
-                  const el = e.currentTarget;
-                  const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-                  reasoningUserScrolledRef.current = distFromBottom > 20;
+                  setReasoningOverflows(
+                    reasoningTailBelowFold(e.currentTarget) > REASONING_BOTTOM_EPS,
+                  );
                 }}
                 className="h-full min-h-[160px] text-sm text-text-reasoning font-mono break-words overflow-y-auto overflow-x-hidden leading-relaxed"
               >
                 <MarkdownText content={streamingReasoningMsg.content} tone="muted" />
+                {/* The room the jump lands in: a window's worth of empty space
+                    after the text, so the newest line can come to rest at the
+                    top with everything below it still to be written. Nothing
+                    measures the box's scrollHeight for the button — that reads
+                    the content element — so this adds travel without ever
+                    claiming there is more to read. */}
+                <div aria-hidden className="h-full" />
               </div>
+              {/* Offered whenever streamed text sits below the fold — which,
+                  with nothing following the stream, is most of a long answer.
+                  Opaque on the conversation surface so the line it overlays
+                  stays hidden rather than showing through it. */}
+              {reasoningOverflows && (
+                <button
+                  type="button"
+                  data-reasoning-jump-latest
+                  onClick={jumpToLatestReasoning}
+                  aria-label={t('jumpToLatest')}
+                  title={t('jumpToLatest')}
+                  className="reasoning-jump-latest animate-fade-in absolute bottom-2 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border text-text-secondary shadow-[0_2px_8px_rgba(0,0,0,0.25)] transition-colors hover:text-text-primary"
+                >
+                  <ChevronDownIcon size={18} />
+                </button>
+              )}
             </div>
           )}
         </div>

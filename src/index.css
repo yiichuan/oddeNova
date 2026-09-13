@@ -242,7 +242,21 @@
   --shadow-primary-nav: 0 0 12px rgba(0, 0, 0, 0.6);
 
   --font-dm-serif: 'DM Serif Display', Georgia, serif;
-  --font-jinghua-laosongti: '京華老宋体', serif;
+  /* 京華老宋体 draws the Chinese; EB Garamond, ahead of it, draws everything
+     Latin. The face has no Latin worth the name — the shipped subset carries a
+     handful of letters only because two greetings happen to contain them — so
+     without a Latin serif named first, a title or a name inside a Chinese line
+     fell through to generic `serif`, which on iOS is Times with no CJK behind
+     it and lands the line in PingFang: one sentence set in two voices, half
+     serif and half sans. Per-glyph fallback does the rest: EB Garamond has no
+     CJK, so the Chinese passes straight through to 京華老宋体.
+
+     EB Garamond rather than DM Serif Display because this stack draws the
+     greeting slot, and EB Garamond is what that same slot is set in when the
+     app is in English — the Latin inside a Chinese opening and an English one
+     are then the same face. DM Serif is the display face for a work's name
+     (a featured title, a favorite's caption), which is a different job. */
+  --font-jinghua-laosongti: 'EB Garamond', '京華老宋体', serif;
   --font-eb-garamond: 'EB Garamond', serif;
 }
 
@@ -2570,6 +2584,48 @@ html[data-theme='light'] .history-search-field {
   background: linear-gradient(to top, var(--color-conversation-surface), transparent);
 }
 
+/* ── The live reasoning window's jump-to-latest disc ─────────────────────────
+   A control that floats over the text it interrupts, so it has to read as a
+   thing laid on the stream rather than a hole cut in it — which means a fill
+   of its own, opaque, clear of the ground.
+
+   The dark room takes the app's raised grey. `--color-conversation-surface`
+   (#0D0D0D) is what the stream itself is painted in: a disc in that value is
+   findable only by its hairline, which is the same mistake the favorites chip
+   above documents. #242424 is a real step off the ground and still quiet
+   enough to sit under running text without pulling the eye off it.
+
+   The edge is stated here too, rather than left to `--color-border` (#242424):
+   that token and this fill are the same value, so the disc came out rimless —
+   a circle of flat grey with no line around it. An edge has to clear what it
+   encloses, not match it.
+
+   Hover moves fill and edge one step further up together, the same direction
+   every other control in the dark room answers a pointer in. */
+.reasoning-jump-latest {
+  border-color: #3A3A3A;
+  background: #242424;
+}
+
+.reasoning-jump-latest:hover {
+  border-color: #464646;
+  background: #2E2E2E;
+}
+
+/* Paper's disc is white against the stream's #F7F7FA — the one value left
+   above it that still reads as a surface rather than a tint, and the direction
+   the light room's own controls take. Hover goes down instead of up, as it
+   does everywhere else on paper. */
+html[data-theme='light'] .reasoning-jump-latest {
+  border-color: var(--color-border);
+  background: #FFFFFF;
+}
+
+html[data-theme='light'] .reasoning-jump-latest:hover {
+  border-color: var(--color-border-hover);
+  background: #F0F0F5;
+}
+
 .reasoning-header--expanded::after {
   position: absolute;
   top: 100%;
@@ -3747,3 +3803,20 @@ html[data-theme='light'] .favorites-version-option[aria-selected='true'] {
 .static-code .tok-variableName,
 .static-code .tok-definition { color: #e1e4e8; }
 .static-code .tok-invalid { color: #f97583; text-decoration: underline wavy; }
+
+/* The animation pane's own ground, held by the frame rather than by the page
+   inside it. An <iframe> paints nothing until its document arrives, and what
+   shows through until then is the element's own background — white by default.
+   On a phone that is a white card flashed under the code window every time the
+   window is opened, and in the dark palette it is the brightest thing on the
+   screen for as long as the galaxy takes to start.
+   The two values are galaxy-ascii.html's own body colours, repeated here
+   because a frame cannot read them across the document boundary: change them
+   there and change them here. */
+.viz-frame {
+  background: #080908;
+}
+
+html[data-theme='light'] .viz-frame {
+  background: #F7F7FA;
+}
