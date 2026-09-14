@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="oddeNova 隐私政策：说明我们如何收集、使用、保存和分享你的数据，包括登录、音乐创作、存储、分享和分析。 / oddeNova Privacy Policy: how we collect, use, store and share your data."
+    />
+    <meta name="robots" content="index, follow" />
+    <meta name="application-name" content="oddeNova" />
+    <meta name="theme-color" content="#F7F7FA" />
+    <link rel="canonical" href="https://oddenova.com/privacy" />
+    <title>隐私政策 / Privacy Policy | oddeNova</title>
+    <link rel="stylesheet" href="/src/legal/privacy.css" />
+  </head>
+  <body>
+    <header class="privacy-header">
+      <div class="privacy-shell privacy-header-row">
+        <a class="privacy-brand" href="/">
+          <span
+            class="privacy-brand-mark"
+            style="mask-image: url('/logo/logo-o.svg'); -webkit-mask-image: url('/logo/logo-o.svg');"
+            aria-hidden="true"
+          ></span>
+          <span class="privacy-brand-name">oddeNova</span>
+        </a>
+        <nav class="privacy-lang-nav" aria-label="语言 / Language">
+          <a href="#privacy-zh">中文</a>
+          <span class="privacy-lang-divider" aria-hidden="true">/</span>
+          <a href="#privacy-en">English</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="privacy-shell">
+      <h1 class="privacy-title">隐私政策 / Privacy Policy</h1>
+      <p class="privacy-meta">
+        <span lang="zh-CN">生效日期：2026年9月15日 · 最后更新：2026年9月15日</span><br />
+        <span lang="en">Effective date: September 15, 2026 · Last updated: September 15, 2026</span>
+      </p>
+
+      <p class="privacy-intro" lang="zh-CN">
+        本政策涵盖 oddeNova 的登录与账户、音乐创作、本地与云端存储、公开分享以及产品分析。中文与英文正文内容一致，可任意切换阅读。
+      </p>
+
+      <!-- ============================================================
+           Chinese body. Sections, numbering and dates match the English
+           block below. PLACEHOLDER: operator identity must be confirmed by
+           the operator before publishing (see
+           docs/design/2026-09-15-privacy-content-and-route-repair-plan.md §5).
+           ============================================================ -->
+      <section id="privacy-zh" lang="zh-CN">
+        <nav class="privacy-toc" aria-label="目录">
+          <h2>目录</h2>
+          <ol>
+            <li><a href="#zh-scope">适用范围与联系方式</a></li>
+            <li><a href="#zh-account">账户与登录信息</a></li>
+            <li><a href="#zh-content">创作内容与保存方式</a></li>
+            <li><a href="#zh-ai">AI 服务与 API Key</a></li>
+            <li><a href="#zh-integrations">外部资源</a></li>
+            <li><a href="#zh-analytics">分析与服务运行信息</a></li>
+            <li><a href="#zh-processors">我们使用的服务商</a></li>
+            <li><a href="#zh-sharing">公开分享</a></li>
+            <li><a href="#zh-retention">保存期限与删除</a></li>
+            <li><a href="#zh-choices">你的选择和请求</a></li>
+            <li><a href="#zh-security">安全与处理地域</a></li>
+            <li><a href="#zh-minors">未成年人及政策更新</a></li>
+          </ol>
+        </nav>
+
+        <h2 id="zh-scope">1. 适用范围与联系方式</h2>
+        <p>本政策说明你使用 oddeNova 网站及音乐生成、编辑、播放、会话保存、收藏和分享功能时，我们如何处理相关信息。</p>
+        <p>如果你对数据处理有疑问，或者希望提出访问、更正、删除等请求，请联系 <a href="mailto:oddenova@gmail.com">oddenova@gmail.com</a>。</p>
+
+        <h2 id="zh-account">2. 账户与登录信息</h2>
+        <p>使用邮箱注册或登录时，认证服务会处理你的邮箱地址、密码凭据和相关认证信息，用于建立账户、验证身份、恢复访问和保护账户安全。</p>
+        <p>使用 Google 登录时，Google 与我们的认证服务商 Supabase 会处理你的登录请求。我们会获得用于识别账户的标识、邮箱地址和基本资料，例如显示名称；认证服务保存的身份元数据也可能包含头像地址等资料。我们使用这些信息建立和识别你的 oddeNova 账户。</p>
+        <p>Google 登录使用 openid、email 和 profile 基础身份权限。我们不通过该登录读取 Gmail 邮件、Google Drive 文件或日历内容。</p>
+        <p>你可以在 <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">Google 账户的第三方访问设置</a>中撤销授权。撤销授权不会自动删除 oddeNova 账户、已同步会话或已创建的公开分享。</p>
+
+        <h2 id="zh-content">3. 创作内容与保存方式</h2>
+        <p>使用音乐创作功能时，我们会处理你输入的指令、对话消息、生成或编辑的 Strudel 代码，以及会话标题、修订和收藏状态等信息，以完成生成、编辑、播放、保存和恢复操作。</p>
+        <p>浏览器会通过 IndexedDB 或 localStorage 保存本机历史、工作副本、同步所需状态和偏好设置。你登录后，账户中的会话和收藏可通过云端保存和同步；符合导入条件的本机游客历史也可能导入到当前账户。</p>
+        <p>未登录使用不代表所有数据都留在本机。你发起 AI 生成、创建公开分享或加载外部资源时，相关请求仍需要发送到对应服务。</p>
+
+        <h2 id="zh-ai">4. AI 服务与 API Key</h2>
+        <p>当你请求生成或修改音乐时，完成请求所需的指令、相关对话、代码和工具执行结果等上下文会发送到当前配置的 AI 服务接口。当前预设包括 DeepSeek、Kimi（Moonshot）、OpenAI、Anthropic 和 GLM（智谱）。请求按所用通道处理，不会因为列出这些服务商就把同一请求发送给全部服务商。</p>
+        <p>使用官方通道时，请求通过 oddeNova 的服务器转发至 DeepSeek。服务器会处理转发所需的请求内容，并可能记录请求状态、请求标识和部分上游错误信息以排查故障。</p>
+        <p>使用自带 API Key 时，Key 保存在当前浏览器的 localStorage 中，并作为凭据发送到对应接口。如果部署配置使用了代理接口，该代理也会处理经过它的请求。请勿在创作指令中填写密码、API Key 或与你的创作无关的个人信息。</p>
+        <p>AI 服务商对请求数据的保存、使用和删除安排，取决于所用 API 服务条款、账户设置及适用约定。我们不会以本政策代替这些约定，也不承诺所有供应商都不保存请求或不将请求用于模型改进。</p>
+
+        <h2 id="zh-integrations">5. 外部资源</h2>
+        <p>播放音乐时，浏览器可能从外部服务加载采样和音色资源，例如 GitHub 托管的资源。资源提供方可能接收 IP 地址、请求时间和浏览器请求信息；具体请求取决于所播放的代码和使用的资源。</p>
+
+        <h2 id="zh-analytics">6. 分析与服务运行信息</h2>
+        <p>在分析功能已配置并启用时，我们使用 PostHog 了解应用打开、音乐生成结果、分享和音频导出等功能的使用情况。事件可包含模型或通道、执行耗时、结果类别、语言、浏览器和设备类别，以及随机生成的访问标识。</p>
+        <p>当前产品分析采用允许字段列表，业务事件不包含你的提示词正文、完整对话、代码或 API Key，并关闭自动捕获与会话录制。随机标识仍可能用于关联同一浏览器的访问，因此这些信息不能一概视为匿名数据。</p>
+        <p>应用托管和性能服务由 Vercel 等服务商提供。它们可能处理访问日志、网络请求信息和性能数据。产品分析的过滤规则不自动适用于托管日志或其他服务商。</p>
+
+        <h2 id="zh-processors">7. 我们使用的服务商</h2>
+        <p>Supabase 提供账户认证及云端会话、收藏存储。Vercel 提供网站托管、服务器接口、公开分享存储及访问和性能服务。PostHog 提供产品分析。所用 AI 服务商处理音乐生成所需的请求。外部采样和音色提供方处理资源加载请求。</p>
+        <p>这些服务方在承担对应功能时接收或处理必要的信息。我们也可能在适用法律要求，或处理安全事件、滥用和权利保护所必需的范围内披露信息。</p>
+
+        <h2 id="zh-sharing">8. 公开分享</h2>
+        <p>创建分享链接时，你会把该次分享所包含的标题、代码、会话消息、修订记录等内容保存为公开分享副本。获得链接的人可以查看、复制和再次传播这些内容。分享包含的内容可能超过最终音乐或音频本身，请在分享前检查。</p>
+        <p>删除原会话、取消收藏、退出账户或清除浏览器数据，不会自动撤回已创建的公开分享。即使服务器上的分享副本被删除，也无法收回他人已经保存的内容。</p>
+
+        <h2 id="zh-retention">9. 保存期限与删除</h2>
+        <p>本机数据会保留到你删除对应记录、清除浏览器站点数据，或浏览器自行移除这些数据。清除站点数据还会移除本机登录状态、偏好设置和已保存的 API Key，但不会自动删除云端副本。</p>
+        <p>云端会话和收藏为提供账户功能而保存。你可以删除会话或取消收藏；取消收藏只改变收藏状态。删除操作需要完成服务器同步，离线或失败的操作可能需要在联网后重试。</p>
+        <p>公开分享采用定期清理机制，清理规则针对创建时间超过 30 天的对象。实际删除取决于清理任务的运行，链接可能在超过 30 天后仍然可访问；请勿将这一规则视为准时失效保证。</p>
+        <p>认证记录、运行日志和备份按提供服务、安全维护及适用法律要求所需的期间保存，并受相应服务配置和保留规则约束。备份中的记录可能在后续轮换时移除。有关你个人数据的具体保存或删除问题，可通过本政策中的邮箱联系我们。</p>
+
+        <h2 id="zh-choices">10. 你的选择和请求</h2>
+        <p>你可以管理会话和收藏，在浏览器设置中清除本站数据，在模型设置中调整使用的通道和 Key，或在 Google 账户中撤销登录授权。不提供某项功能所需的信息，可能使该项功能无法使用。</p>
+        <p>你可以通过隐私联系邮箱提出访问、更正、获取副本或删除账户相关数据的请求，也可以就特定数据处理提出异议或撤回适用的同意。我们会结合适用法律和实际处理情况答复，并在必要时核验账户归属。核验不要求你提供账户密码或 API Key。</p>
+        <p>目前产品未提供完整数据导出或自助账户注销入口，此类请求请通过邮箱提出。导出音乐音频不等于导出全部账户数据，Google 授权撤销也不等于注销 oddeNova 账户。</p>
+
+        <h2 id="zh-security">11. 安全与处理地域</h2>
+        <p>我们通过账户访问控制、正式网站的 HTTPS 传输及服务商提供的安全措施保护数据。任何网络服务都无法保证绝对安全；请妥善保护你的设备、账户和自行配置的 API Key。</p>
+        <p>数据可能由位于你所在国家或地区之外的服务商处理。具体地点取决于部署区域、所选 AI 通道和供应商的处理安排。我们会按照适用要求处理涉及跨境的数据活动；关于具体地域和安排，可通过隐私联系邮箱询问。</p>
+
+        <h2 id="zh-minors">12. 未成年人及政策更新</h2>
+        <p>如果你尚未达到所在地可自行使用相关服务的年龄，请由监护人了解本政策并按适用要求提供指导或同意。监护人如认为未成年人的信息被不当提供给我们，可以通过隐私联系邮箱提出处理请求。</p>
+        <p>功能、服务商或数据处理方式发生变化时，我们会更新本政策和最后更新日期。涉及重大变化时，我们会通过适当方式通知，并在适用要求下另行取得同意。</p>
+      </section>
+
+      <!-- ============================================================
+           English body. Section numbering, scope and dates match the
+           Chinese block above.
+           ============================================================ -->
+      <section id="privacy-en" lang="en">
+        <nav class="privacy-toc" aria-label="Table of contents">
+          <h2>Contents</h2>
+          <ol>
+            <li><a href="#en-scope">Scope and contact</a></li>
+            <li><a href="#en-account">Account and sign-in information</a></li>
+            <li><a href="#en-content">Creation content and storage</a></li>
+            <li><a href="#en-ai">AI services and API keys</a></li>
+            <li><a href="#en-integrations">External resources</a></li>
+            <li><a href="#en-analytics">Analytics and service operations</a></li>
+            <li><a href="#en-processors">Service providers we use</a></li>
+            <li><a href="#en-sharing">Public sharing</a></li>
+            <li><a href="#en-retention">Retention and deletion</a></li>
+            <li><a href="#en-choices">Your choices and requests</a></li>
+            <li><a href="#en-security">Security and processing regions</a></li>
+            <li><a href="#en-minors">Minors and policy updates</a></li>
+          </ol>
+        </nav>
+
+        <h2 id="en-scope">1. Scope and contact</h2>
+        <p>This policy explains how we handle related information when you use the oddeNova website and its music generation, editing, playback, session storage, favorites and sharing features.</p>
+        <p>If you have questions about data processing, or want to submit access, correction or deletion requests, contact <a href="mailto:oddenova@gmail.com">oddenova@gmail.com</a>.</p>
+
+        <h2 id="en-account">2. Account and sign-in information</h2>
+        <p>When you register or sign in with email, the authentication service processes your email address, password credentials and related authentication information to create the account, verify identity, restore access and protect account security.</p>
+        <p>When you sign in with Google, Google and our authentication provider Supabase process your sign-in request. We receive the identifier, email address and basic profile used to identify your account, such as a display name; identity metadata kept by the authentication service may also include profile details like an avatar URL. We use this information to create and identify your oddeNova account.</p>
+        <p>Google sign-in uses the basic identity scopes openid, email and profile. We do not read your Gmail messages, Google Drive files or calendar content through that sign-in.</p>
+        <p>You can revoke authorization in your <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">Google Account's third-party access settings</a>. Revoking authorization does not automatically delete your oddeNova account, synced sessions or public shares you created.</p>
+
+        <h2 id="en-content">3. Creation content and storage</h2>
+        <p>When you use the music creation features, we process the prompts you enter, conversation messages, generated or edited Strudel code, and information such as session titles, revisions and favorite status, in order to generate, edit, play, save and restore your work.</p>
+        <p>Your browser keeps local history, working copies, sync state and preferences through IndexedDB or localStorage. Once you sign in, sessions and favorites in your account can be stored and synced through the cloud; eligible guest history on your device may also be imported into your account.</p>
+        <p>Using oddeNova without signing in does not mean all data stays on your device. When you start an AI generation, create a public share or load external resources, the related requests still need to be sent to the corresponding services.</p>
+
+        <h2 id="en-ai">4. AI services and API keys</h2>
+        <p>When you request music generation or revision, the instructions, related conversations, code and tool results needed to complete the request are sent to the AI service endpoint currently configured. The current presets include DeepSeek, Kimi (Moonshot), OpenAI, Anthropic and GLM (Zhipu). Requests are processed by the channel you use; listing these providers does not mean the same request is sent to all of them.</p>
+        <p>On the official channel, requests are forwarded through oddeNova's servers to DeepSeek. The servers process the request content needed for forwarding and may log request status, request identifiers and part of the upstream error for troubleshooting.</p>
+        <p>When you bring your own API key, the key is stored in your browser's localStorage and sent as a credential to the corresponding endpoint. If the deployment uses a proxy endpoint, that proxy also processes requests passing through it. Do not put passwords, API keys or personal information unrelated to your creation into your prompts.</p>
+        <p>How AI providers store, use and delete request data depends on the applicable API terms, account settings and agreements. This policy does not replace those terms, and we do not promise that every provider retains no requests or never uses requests for model improvement.</p>
+
+        <h2 id="en-integrations">5. External resources</h2>
+        <p>When music plays, your browser may load samples and soundfonts from external services, such as resources hosted on GitHub. Resource providers may receive your IP address, request time and browser request information; the actual requests depend on the code being played and the resources used.</p>
+
+        <h2 id="en-analytics">6. Analytics and service operations</h2>
+        <p>When analytics are configured and enabled, we use PostHog to understand how features such as app opens, music generation results, sharing and audio export are used. Events may include the model or channel, execution duration, result category, language, browser and device categories, and a randomly generated visitor identifier.</p>
+        <p>Current product analytics use an allowlist of fields; business events do not include your prompt text, full conversations, code or API keys, and automatic capture and session recording are turned off. The random identifier may still be used to correlate visits from the same browser, so this data cannot be treated as anonymous across the board.</p>
+        <p>Application hosting and performance services are provided by providers such as Vercel. They may process access logs, network request information and performance data. The filtering rules of product analytics do not automatically apply to hosting logs or other providers.</p>
+
+        <h2 id="en-processors">7. Service providers we use</h2>
+        <p>Supabase provides account authentication and cloud session and favorites storage. Vercel provides website hosting, server endpoints, public share storage, and access and performance services. PostHog provides product analytics. The AI providers in use process the requests needed for music generation. External sample and soundfont providers handle resource loading requests.</p>
+        <p>These providers receive or process the necessary information while performing their functions. We may also disclose information when required by applicable law, or as necessary to handle security incidents, abuse and rights protection.</p>
+
+        <h2 id="en-sharing">8. Public sharing</h2>
+        <p>When you create a share link, the title, code, conversation messages, revision history and other content included in that share are saved as a public share copy. Anyone who obtains the link can view, copy and redistribute that content. A share may include more than the final music or audio; please check before sharing.</p>
+        <p>Deleting the original session, unfavoriting, signing out or clearing browser data does not automatically withdraw a share you already created. Even if the share copy is removed from our servers, content others have already saved cannot be recalled.</p>
+
+        <h2 id="en-retention">9. Retention and deletion</h2>
+        <p>Local data is kept until you delete the corresponding records, clear the browser's site data, or the browser removes it itself. Clearing site data also removes local sign-in state, preferences and saved API keys, but does not automatically delete cloud copies.</p>
+        <p>Cloud sessions and favorites are kept to provide account features. You can delete sessions or unfavorite; unfavoriting only changes the favorite status. Deletion needs to complete server sync, and offline or failed operations may need to be retried once you are back online.</p>
+        <p>Public shares use a scheduled cleanup mechanism targeting objects older than 30 days by creation time. Actual deletion depends on the cleanup task running, and links may remain accessible past 30 days; do not treat this rule as an on-time expiry guarantee.</p>
+        <p>Authentication records, operational logs and backups are kept for the periods needed to provide the service, maintain security and meet applicable legal requirements, subject to the corresponding service configurations and retention rules. Records in backups may be removed in later rotations. For specific questions about retention or deletion of your personal data, contact us via the email in this policy.</p>
+
+        <h2 id="en-choices">10. Your choices and requests</h2>
+        <p>You can manage sessions and favorites, clear this site's data in your browser settings, adjust channels and keys in the model settings, or revoke Google authorization in your Google Account. Not providing information required for a feature may make that feature unavailable.</p>
+        <p>You can submit requests for access, correction, a copy, or deletion of account-related data via the privacy contact email, and may object to specific processing or withdraw applicable consent. We respond based on applicable law and actual processing, and verify account ownership when necessary. Verification never requires your account password or API keys.</p>
+        <p>The product currently does not offer full data export or self-service account deletion; please use the email for such requests. Exporting music audio is not the same as exporting all account data, and revoking Google authorization is not the same as deleting your oddeNova account.</p>
+
+        <h2 id="en-security">11. Security and processing regions</h2>
+        <p>We protect data through account access controls, HTTPS transmission on the official website, and security measures provided by our service providers. No network service can guarantee absolute security; please protect your devices, account and self-configured API keys.</p>
+        <p>Data may be processed by providers located outside your country or region. The specific locations depend on the deployment region, the AI channel you select and each provider's processing arrangements. We handle cross-border data activities according to applicable requirements; for specific regions and arrangements, ask via the privacy contact email.</p>
+
+        <h2 id="en-minors">12. Minors and policy updates</h2>
+        <p>If you have not reached the age at which you may use such services on your own where you live, please have a guardian read this policy and provide guidance or consent as applicable. Guardians who believe a minor's information was improperly provided to us can submit a request via the privacy contact email.</p>
+        <p>When features, providers or data processing change, we update this policy and its last-updated date. For material changes, we notify through appropriate means and obtain separate consent where applicable.</p>
+      </section>
+    </main>
+
+    <footer class="privacy-footer">
+      <div class="privacy-shell privacy-footer-row">
+        <p>隐私联系邮箱 / Privacy contact: <a href="mailto:oddenova@gmail.com">oddenova@gmail.com</a></p>
+        <a href="/">返回 oddeNova / Back to oddeNova</a>
+      </div>
+    </footer>
+  </body>
+</html>

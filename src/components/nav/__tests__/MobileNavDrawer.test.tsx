@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../../../lib/i18n';
+import { GITHUB_URL, LEARN_URL } from '../../../lib/external-links';
 import MobileNavDrawer, { type MobileNavDrawerHistory } from '../MobileNavDrawer';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -367,6 +368,34 @@ describe('MobileNavDrawer search', () => {
     });
     expect(searchField(container)?.value).toBe('');
     expect(titles(container)).toEqual(['Acid bassline', 'Ambient pads']);
+  });
+});
+
+describe('MobileNavDrawer More section links', () => {
+  const openMore = (container: HTMLElement) => {
+    const more = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes(t('navMore')))!;
+    act(() => more.click());
+  };
+
+  it('reaches the privacy policy from the drawer as a document in its own tab', () => {
+    const { container } = renderDrawer();
+    openMore(container);
+
+    const policy = container.querySelector<HTMLAnchorElement>('a[href="/privacy"]');
+    expect(policy).not.toBeNull();
+    expect(policy?.target).toBe('_blank');
+    expect(policy?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(policy?.textContent).toContain(t('privacyPolicy'));
+  });
+
+  it('keeps GitHub and Learn rows alongside the policy row', () => {
+    const { container } = renderDrawer();
+    openMore(container);
+
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/privacy"]')).not.toBeNull();
+    expect(container.querySelector<HTMLAnchorElement>(`a[href="${GITHUB_URL}"]`)).not.toBeNull();
+    expect(container.querySelector<HTMLAnchorElement>(`a[href="${LEARN_URL}"]`)).not.toBeNull();
   });
 });
 
