@@ -373,6 +373,33 @@ function syncAnimationHtml(): Plugin {
   }
 }
 
+// Exact /privacy paths only — the Vercel rewrite for the same paths is not
+// visible to Vite, so dev and preview servers get this small alias instead of
+// a copy of the routing table. GET/HEAD only; every other path falls through.
+const PRIVACY_PATHS = new Set(['/privacy', '/privacy/'])
+
+function privacyDevMiddleware(): Plugin {
+  const rewrite = (req: IncomingMessage): boolean => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return false
+    const pathname = (req.url ?? '').split('?')[0]
+    if (!PRIVACY_PATHS.has(pathname)) return false
+    req.url = '/privacy.html'
+    return true
+  }
+  const middleware = (req: IncomingMessage, _res: ServerResponse, next: () => void) => {
+    if (!rewrite(req)) next()
+  }
+  return {
+    name: 'privacy-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use(middleware)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(middleware)
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   // Vite only exposes VITE_-prefixed vars to import.meta.env and does not
   // populate process.env from .env files. The dev API middlewares
@@ -384,12 +411,13 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
     build: {
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
           presentation: resolve(__dirname, 'presentation.html'),
+          privacy: resolve(__dirname, 'privacy.html'),
         },
       },
     },

@@ -157,6 +157,23 @@ describe('PrimaryNav', () => {
     expect(more?.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('reaches the privacy policy from More as a document, not a workspace page', () => {
+    const { container, onSelect } = renderPrimaryNav();
+    const more = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navMore')}"]`);
+    const menu = container.querySelector<HTMLElement>('[role="menu"]');
+
+    act(() => more?.click());
+
+    const policy = menu?.querySelector<HTMLAnchorElement>('a[href="/privacy"]');
+    expect(policy).not.toBeNull();
+    // A standalone document: a real link in its own tab, never a PrimaryNavItem
+    // that would put the studio into a page state.
+    expect(policy?.target).toBe('_blank');
+    expect(policy?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(policy?.getAttribute('role')).toBe('menuitem');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it('shows collapsed button labels directly to the right after a short hover delay', () => {
     vi.useFakeTimers();
     const { container } = renderPrimaryNav();

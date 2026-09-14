@@ -273,6 +273,11 @@ const S: Record<string, readonly [string, string]> = {
                             'Some conversations could not be synced to the cloud. They remain on this device, and importing will resume the next time you sign in.'],
   syncLocalHistoryLater:['稍后再说', 'Later'],
 
+  // Privacy policy
+  privacyPolicy:       ['隐私政策', 'Privacy Policy'],
+  privacyNotice:       ['了解我们如何处理你的数据，请阅读隐私政策。', 'Learn how we handle your data in the privacy policy.'],
+  opensInNewTab:       ['（在新标签页中打开）', '(opens in a new tab)'],
+
   // ChatInput
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
   choiceInputPlaceholder: ['回复序号，或直接说出你的想法...', 'Reply with a number or describe your idea...'],

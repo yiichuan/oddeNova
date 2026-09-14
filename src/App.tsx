@@ -27,6 +27,7 @@ import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
 import ConversationView from './components/conversation/ConversationView';
 import ChatInput from './components/conversation/ChatInput';
+import PrivacyPolicyLink from './components/legal/PrivacyPolicyLink';
 import { ExportPopover, ShareButton } from './components/studio/TopActionBar';
 import { useExportPopoverController } from './hooks/useExportPopoverController';
 import AccountModal from './components/overlays/AccountModal';
@@ -1836,6 +1837,12 @@ export default function App() {
               suggestions={isVideoMode ? [] : visibleSuggestions}
               isVideoMode={isVideoMode}
             />
+            {/* The policy entry a guest can always find: a quiet line under the
+                field rather than over it, opening in its own tab so nothing in
+                flight — generation, playback, pending sync — is disturbed. */}
+            <p className="pt-1.5 text-center text-[11px] text-text-muted">
+              <PrivacyPolicyLink className="hover:text-text-primary underline-offset-2 hover:underline" />
+            </p>
           </div>
         </div>
 

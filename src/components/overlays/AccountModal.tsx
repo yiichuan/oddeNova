@@ -14,6 +14,7 @@ import type { GoogleOAuthErrorKey } from '../../lib/google-oauth-return';
 import { XIcon } from '../icons';
 import AuthField from './AuthField';
 import CommunityInviteCard from './CommunityInviteCard';
+import PrivacyPolicyLink from '../legal/PrivacyPolicyLink';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
 
@@ -294,6 +295,15 @@ export default function AccountModal({
             </div>
           )}
         </div>
+
+        {/* The policy note is a real link on its own line rather than part of
+            the window above: it is not a step of signing in, and it must stay
+            reachable from every view — sign-in, sign-up, reset, signed-in,
+            busy or not. */}
+        <p className="flex items-center justify-center gap-1.5 px-2 text-xs text-text-muted">
+          {t('privacyNotice')}
+          <PrivacyPolicyLink className="text-accent hover:text-accent-light underline-offset-2 hover:underline" />
+        </p>
 
         <CommunityInviteCard />
       </div>

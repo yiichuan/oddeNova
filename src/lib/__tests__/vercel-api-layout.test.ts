@@ -35,6 +35,14 @@ describe('Vercel API layout', () => {
 
     expect(config.rewrites).toEqual([
       {
+        source: '/privacy',
+        destination: '/privacy.html',
+      },
+      {
+        source: '/privacy/',
+        destination: '/privacy.html',
+      },
+      {
         source: '/s/:id',
         destination: '/api/share-page?id=:id',
       },
@@ -98,6 +106,23 @@ describe('Vercel API layout', () => {
     expect(sessionIndex).toBeGreaterThan(favoriteCollectionIndex);
     expect(postHogIndex).toBeGreaterThan(sessionIndex);
     expect(spaIndex).toBeGreaterThan(sessionIndex);
+  });
+
+  it('rewrites the privacy policy before the SPA fallback', async () => {
+    const config = JSON.parse(await readFile('vercel.json', 'utf8')) as {
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+    const privacyIndex = config.rewrites.findIndex((rewrite) => rewrite.destination === '/privacy.html');
+    const spaIndex = config.rewrites.findIndex((rewrite) => rewrite.destination === '/index.html');
+
+    expect(privacyIndex).toBeGreaterThanOrEqual(0);
+    expect(spaIndex).toBeGreaterThan(privacyIndex);
+    // Both the bare path and the trailing-slash path serve the same page, and
+    // neither is allowed to swallow neighbours like /privacy-other or /api/*.
+    expect(config.rewrites.map((rewrite) => rewrite.source)).toEqual(
+      expect.arrayContaining(['/privacy', '/privacy/']),
+    );
+    expect(config.rewrites.filter((rewrite) => rewrite.source.startsWith('/privacy'))).toHaveLength(2);
   });
 
   it('keeps public Cron windows routed to the single maintenance adapter', async () => {

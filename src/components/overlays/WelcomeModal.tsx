@@ -9,6 +9,7 @@ import { t, zh } from '../../lib/i18n';
 import { XIcon } from '../icons';
 import AuthField from './AuthField';
 import CommunityInviteCard from './CommunityInviteCard';
+import PrivacyPolicyLink from '../legal/PrivacyPolicyLink';
 
 /**
  * The three faces of the first-entry window, in the order someone meets them:
@@ -197,6 +198,14 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
             </div>
           )}
         </div>
+
+        {/* Same policy note the account window carries: the first-entry window
+            is where a guest meets oddeNova, so the policy has to be readable
+            before any account is made. */}
+        <p className="flex items-center justify-center gap-1.5 px-2 text-xs text-text-muted">
+          {t('privacyNotice')}
+          <PrivacyPolicyLink className="text-accent hover:text-accent-light underline-offset-2 hover:underline" />
+        </p>
 
         <CommunityInviteCard />
       </div>

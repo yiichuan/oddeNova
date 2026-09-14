@@ -4,6 +4,7 @@ import type { SessionSummary } from '../../../shared/session-api';
 import type { Session } from '../../hooks/useSessions';
 import { t } from '../../lib/i18n';
 import { GITHUB_URL, LEARN_URL } from '../../lib/external-links';
+import { PRIVACY_URL } from '../legal/PrivacyPolicyLink';
 import { isWideInitials } from '../../lib/account-identity';
 import {
   BookOpenIcon,
@@ -555,7 +556,7 @@ export default function MobileNavDrawer({
               section
               expanded={moreOpen}
             />
-            <DrawerSection open={moreOpen} maxHeight={128}>
+            <DrawerSection open={moreOpen} maxHeight={176}>
               <div className="px-2">
                 <a
                   href={GITHUB_URL}
@@ -580,6 +581,16 @@ export default function MobileNavDrawer({
                 >
                   <BookOpenIcon size={16} className="shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{t('navLearnStrudel')}</span>
+                </a>
+                <a
+                  href={PRIVACY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={onClose}
+                  className={`${SUB_ROW_CLASS} ${ROW_TEXT}`}
+                >
+                  <span className="flex w-4 shrink-0 justify-center text-base leading-none" aria-hidden="true">§</span>
+                  <span className="min-w-0 flex-1 truncate">{t('privacyPolicy')}</span>
                 </a>
               </div>
             </DrawerSection>

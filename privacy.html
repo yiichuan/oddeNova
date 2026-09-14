@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="oddeNova 隐私政策：说明我们如何收集、使用、保存和分享你的数据，包括登录、音乐创作、存储、分享和分析。 / oddeNova Privacy Policy: how we collect, use, store and share your data."
+    />
+    <meta name="robots" content="index, follow" />
+    <meta name="application-name" content="oddeNova" />
+    <meta name="theme-color" content="#F7F7FA" />
+    <link rel="canonical" href="https://oddenova.com/privacy" />
+    <title>隐私政策 / Privacy Policy | oddeNova</title>
+    <link rel="stylesheet" href="/src/legal/privacy.css" />
+  </head>
+  <body>
+    <header class="privacy-header">
+      <div class="privacy-shell privacy-header-row">
+        <a class="privacy-brand" href="/">
+          <span
+            class="privacy-brand-mark"
+            style="mask-image: url('/logo/logo-o.svg'); -webkit-mask-image: url('/logo/logo-o.svg');"
+            aria-hidden="true"
+          ></span>
+          <span class="privacy-brand-name">oddeNova</span>
+        </a>
+        <nav class="privacy-lang-nav" aria-label="语言 / Language">
+          <a href="#privacy-zh">中文</a>
+          <span class="privacy-lang-divider" aria-hidden="true">/</span>
+          <a href="#privacy-en">English</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="privacy-shell">
+      <h1 class="privacy-title">隐私政策 / Privacy Policy</h1>
+      <p class="privacy-meta">
+        <span lang="zh-CN">生效日期：2026 年 9 月 14 日 · 最后更新：2026 年 9 月 14 日</span><br />
+        <span lang="en">Effective date: September 14, 2026 · Last updated: September 14, 2026</span>
+      </p>
+
+      <p class="privacy-intro" lang="zh-CN">
+        本政策涵盖 oddeNova 的登录与账户、音乐创作、本地与云端存储、公开分享以及产品分析。中文与英文正文内容一致，可任意切换阅读。
+      </p>
+
+      <!-- ============================================================
+           Chinese body. Sections, numbering and dates match the English
+           block below. PLACEHOLDER: operator identity and contact email
+           must be confirmed by the operator before publishing (see
+           docs/design/2026-09-14-privacy-page-implementation-plan.md §8).
+           ============================================================ -->
+      <section id="privacy-zh" lang="zh-CN">
+        <nav class="privacy-toc" aria-label="目录">
+          <h2>目录</h2>
+          <ol>
+            <li><a href="#zh-scope">适用范围与运营方</a></li>
+            <li><a href="#zh-data">我们收集的数据</a></li>
+            <li><a href="#zh-google">Google 用户数据</a></li>
+            <li><a href="#zh-uses">数据用途</a></li>
+            <li><a href="#zh-ai">AI 服务</a></li>
+            <li><a href="#zh-processors">服务商与披露</a></li>
+            <li><a href="#zh-local">本地存储和分析</a></li>
+            <li><a href="#zh-sharing">公开分享</a></li>
+            <li><a href="#zh-retention">保存与删除</a></li>
+            <li><a href="#zh-choices">用户选择与请求</a></li>
+            <li><a href="#zh-security">安全与地域</a></li>
+            <li><a href="#zh-minors">未成年人、变更与联系</a></li>
+          </ol>
+        </nav>
+
+        <h2 id="zh-scope">1. 适用范围与运营方</h2>
+        <p>本政策适用于 oddeNova 网站（oddenova.com）及其音乐创作、会话保存、收藏、分享等功能。oddeNova 由 <!-- TODO(operator): 运营方名称 -->【运营方名称待补充】提供。</p>
+        <p>如对本政策或数据处理有任何疑问、请求，可通过 <!-- TODO(operator): 联系邮箱 -->【联系邮箱待补充】与我们联系。</p>
+
+        <h2 id="zh-data">2. 我们收集的数据</h2>
+        <ul>
+          <li><strong>登录资料。</strong>使用 Google 登录时，我们会获得你的 Google 账户标识、邮箱地址和基本资料（如显示名），用于建立和识别你的 oddeNova 账户。使用邮箱密码登录时，认证服务会处理你的邮箱和密码凭据。</li>
+          <li><strong>创作内容。</strong>你发送的指令、生成的对话消息和 Strudel 代码，以及会话标题等。</li>
+          <li><strong>收藏与分享。</strong>你收藏的会话，以及你主动创建的公开分享内容。</li>
+          <li><strong>本地设置与凭据。</strong>偏好设置、会话历史等保存在你的浏览器（IndexedDB 或 localStorage）中；如果你选择自带 API Key，该 Key 也保存在当前浏览器的 localStorage 中。</li>
+          <li><strong>访问与性能数据。</strong>产品分析事件（见第 7 节）以及托管平台记录的访问与性能信息。</li>
+        </ul>
+
+        <h2 id="zh-google">3. Google 用户数据</h2>
+        <p>当你使用 Google 登录时，我们通过 Google 和 Supabase 完成身份认证，并使用获得的账户标识、邮箱地址和基本资料来建立和识别你的 oddeNova 账户。该登录仅请求基础身份资料范围（openid、email、profile），我们不会读取你的 Gmail、云端硬盘、日历或其他 Google 服务内容。</p>
+        <p>Supabase 作为认证服务商会保存与该登录相关的身份信息，其中可能包含超出界面所显示内容的身份元数据。</p>
+        <p>你可以随时在 Google 账户的<a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">第三方访问权限设置</a>中撤销对 oddeNova 的授权。撤销 Google 授权不会自动删除你的 oddeNova 账户或已同步的数据；如需删除账户数据，请参见第 10 节。</p>
+
+        <h2 id="zh-uses">4. 数据用途</h2>
+        <ul>
+          <li>建立、识别和保护你的账户，保障服务安全；</li>
+          <li>保存并跨设备同步你的会话和收藏；</li>
+          <li>根据你的请求生成和修改音乐；</li>
+          <li>提供你主动创建的公开分享功能；</li>
+          <li>衡量性能、排查故障并改进功能。</li>
+        </ul>
+
+        <h2 id="zh-ai">5. AI 服务</h2>
+        <p>当你请求生成或修改音乐时，完成该请求所需的指令、相关会话内容和代码会发送给你选择的 AI 服务。当前可选的服务商包括 DeepSeek、Kimi（Moonshot）、OpenAI、Anthropic 和 GLM（智谱），只有你为当前请求选择的服务商会收到相关内容。</p>
+        <p>使用官方通道时，请求通过我们的服务器转发至 DeepSeek，服务器会记录错误日志（包含状态、请求标识和部分上游错误信息）。使用自带 API Key 模式时，你的 Key 保存在当前浏览器的 localStorage 中，并在调用相应服务商时作为凭据发送。</p>
+
+        <h2 id="zh-processors">6. 服务商与披露</h2>
+        <ul>
+          <li><strong>Supabase</strong>：账户认证、云端会话与收藏存储。</li>
+          <li><strong>Vercel</strong>：应用托管、API 接口、公开分享内容（Vercel Blob）以及访问与性能分析。</li>
+          <li><strong>PostHog</strong>：产品分析（见第 7 节）。</li>
+          <li><strong>AI 服务商</strong>：DeepSeek、Kimi（Moonshot）、OpenAI、Anthropic、GLM（智谱），按你在每次生成中的选择接收创作上下文。</li>
+        </ul>
+        <p>除上述情形外，我们仅在法律要求或为保护权利所必需时披露数据。</p>
+
+        <h2 id="zh-local">7. 本地存储和分析</h2>
+        <p>oddeNova 在你的浏览器中通过 IndexedDB 和 localStorage 保存会话历史、同步工作副本、偏好设置、认证状态以及可选的 API Key。清除浏览器站点数据会移除该浏览器保存的内容和设置，但不会自动删除已同步或已分享到服务器的数据。</p>
+        <p>在配置了分析服务且未被禁用时，产品分析会记录有限的业务事件、浏览器与设备类别以及随机生成的标识。分析功能关闭了自动捕获和会话录制，并采用事件字段白名单。托管平台（如 Vercel）仍可能记录访问与性能信息。本政策不做"零跟踪"或"绝对匿名"的承诺。</p>
+
+        <h2 id="zh-sharing">8. 公开分享</h2>
+        <p>当你创建分享链接时，该分享可能包含标题、代码、会话消息和修订记录。分享内容以公开对象保存，获得链接的人可以访问和保存这些内容。请只分享你不介意公开的创作。删除分享链接或会话不会召回他人已保存的副本。</p>
+
+        <h2 id="zh-retention">9. 保存与删除</h2>
+        <ul>
+          <li><strong>本地数据</strong>保存在你的浏览器中，直到你清除站点数据或删除对应内容。</li>
+          <li><strong>云端会话与收藏</strong>在你的账户存续期间保存；你可以随时删除单个会话或取消收藏。</li>
+          <li><strong>公开分享内容</strong>会定期清理：系统按计划清理超过 30 天的分享对象，实际删除时间取决于清理任务的执行情况，可能晚于 30 天。</li>
+          <li><strong>认证数据</strong>由认证服务商按其保留规则处理。</li>
+          <li><strong>日志与备份</strong>按服务商的保留规则保存，我们无法承诺立即彻底删除所有备份。</li>
+        </ul>
+
+        <h2 id="zh-choices">10. 用户选择与请求</h2>
+        <ul>
+          <li>在应用内删除单个会话、取消收藏、清除本地数据；</li>
+          <li>在 Google 账户设置中撤销对 oddeNova 的授权（见第 3 节）；</li>
+          <li>通过第 1 节的联系邮箱申请访问、更正或删除与你的账户相关的数据。我们会在处理请求前核验账户归属。</li>
+        </ul>
+        <p>目前产品内暂未提供自助注销账号或完整数据导出功能；此类请求请通过联系邮箱提出。</p>
+
+        <h2 id="zh-security">11. 安全与地域</h2>
+        <p>我们通过 HTTPS 传输数据，并依赖 Supabase、Vercel 等服务商的安全措施保护数据。数据由位于中国境外的服务商（按其服务区域）处理和存储，具体区域以各服务商实际配置为准。任何安全措施都无法提供绝对安全的保证，我们也不使用端到端加密。</p>
+
+        <h2 id="zh-minors">12. 未成年人、变更与联系</h2>
+        <p>oddeNova 面向一般用户，不针对儿童定向收集信息。如果你是儿童的监护人并认为儿童向我们提供了个人信息，请通过第 1 节的联系邮箱与我们联系。</p>
+        <p>我们可能不时更新本政策，并在本页顶部更新"最后更新"日期。重大变更会通过应用内公告或其他合理方式提示。</p>
+        <p>如需联系，请使用第 1 节列出的联系邮箱。</p>
+      </section>
+
+      <!-- ============================================================
+           English body. Section numbering, scope and dates match the
+           Chinese block above.
+           ============================================================ -->
+      <section id="privacy-en" lang="en">
+        <nav class="privacy-toc" aria-label="Table of contents">
+          <h2>Contents</h2>
+          <ol>
+            <li><a href="#en-scope">Scope and operator</a></li>
+            <li><a href="#en-data">Data we collect</a></li>
+            <li><a href="#en-google">Google user data</a></li>
+            <li><a href="#en-uses">How we use data</a></li>
+            <li><a href="#en-ai">AI services</a></li>
+            <li><a href="#en-processors">Service providers and disclosure</a></li>
+            <li><a href="#en-local">Local storage and analytics</a></li>
+            <li><a href="#en-sharing">Public sharing</a></li>
+            <li><a href="#en-retention">Retention and deletion</a></li>
+            <li><a href="#en-choices">Your choices and requests</a></li>
+            <li><a href="#en-security">Security and regions</a></li>
+            <li><a href="#en-minors">Minors, changes and contact</a></li>
+          </ol>
+        </nav>
+
+        <h2 id="en-scope">1. Scope and operator</h2>
+        <p>This policy applies to the oddeNova website (oddenova.com) and its music creation, session storage, favorites and sharing features. oddeNova is provided by <!-- TODO(operator): operator name -->[operator name to be added].</p>
+        <p>For any question or request about this policy or our data practices, contact us at <!-- TODO(operator): contact email -->[contact email to be added].</p>
+
+        <h2 id="en-data">2. Data we collect</h2>
+        <ul>
+          <li><strong>Sign-in information.</strong> When you sign in with Google, we receive your Google account identifier, email address and basic profile (such as your display name) to create and identify your oddeNova account. When you sign in with email and password, the authentication service processes your credentials.</li>
+          <li><strong>Creation content.</strong> The prompts you send, the conversation messages and Strudel code generated for you, and session titles.</li>
+          <li><strong>Favorites and shares.</strong> Conversations you favorite, and public shares you create.</li>
+          <li><strong>Local settings and credentials.</strong> Preferences, session history and similar data stored in your browser (IndexedDB or localStorage). If you bring your own API key, that key is also stored in your browser's localStorage.</li>
+          <li><strong>Access and performance data.</strong> Product analytics events (see section 7) and access and performance information recorded by hosting platforms.</li>
+        </ul>
+
+        <h2 id="en-google">3. Google user data</h2>
+        <p>When you sign in with Google, we complete authentication through Google and Supabase and use the account identifier, email address and basic profile we receive to create and identify your oddeNova account. The sign-in requests only basic identity scopes (openid, email, profile); we do not read your Gmail, Drive, Calendar or other Google service content.</p>
+        <p>Supabase, as the authentication provider, retains identity information associated with the sign-in, which may include metadata beyond what the interface displays.</p>
+        <p>You can revoke oddeNova's access at any time in your Google Account's <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">third-party access settings</a>. Revoking Google access does not automatically delete your oddeNova account or synced data; to delete account data, see section 10.</p>
+
+        <h2 id="en-uses">4. How we use data</h2>
+        <ul>
+          <li>To create, identify and protect your account and keep the service secure;</li>
+          <li>To store and sync your sessions and favorites across devices;</li>
+          <li>To generate and revise music at your request;</li>
+          <li>To provide the public sharing you create;</li>
+          <li>To measure performance, debug failures and improve features.</li>
+        </ul>
+
+        <h2 id="en-ai">5. AI services</h2>
+        <p>When you ask oddeNova to generate or revise music, the instructions, relevant session content and code needed to complete the request are sent to the AI service you select. The available providers include DeepSeek, Kimi (Moonshot), OpenAI, Anthropic and GLM (Zhipu); only the provider you choose for a given request receives that content.</p>
+        <p>On the official channel, requests are forwarded through our servers to DeepSeek, and the server records error logs (including status, request identifiers and part of the upstream error). In the bring-your-own-key mode, your key is stored in your browser's localStorage and is sent as a credential when calling the corresponding provider.</p>
+
+        <h2 id="en-processors">6. Service providers and disclosure</h2>
+        <ul>
+          <li><strong>Supabase</strong>: account authentication, cloud sessions and favorites storage.</li>
+          <li><strong>Vercel</strong>: application hosting, API endpoints, public share content (Vercel Blob), and access and performance analytics.</li>
+          <li><strong>PostHog</strong>: product analytics (see section 7).</li>
+          <li><strong>AI providers</strong>: DeepSeek, Kimi (Moonshot), OpenAI, Anthropic and GLM (Zhipu), which receive creation context according to your selection for each generation.</li>
+        </ul>
+        <p>Beyond the cases above, we disclose data only when required by law or necessary to protect rights.</p>
+
+        <h2 id="en-local">7. Local storage and analytics</h2>
+        <p>oddeNova stores session history, sync working copies, preferences, authentication state and your optional API key in your browser via IndexedDB and localStorage. Clearing your browser's site data removes what that browser stored, but does not automatically delete data already synced or shared to our servers.</p>
+        <p>When analytics are configured and not disabled, product analytics record a limited set of business events, browser and device categories, and randomly generated identifiers. Automatic capture and session recording are turned off, and event fields are whitelisted. Hosting platforms (such as Vercel) may still record access and performance information. This policy makes no "zero tracking" or "fully anonymous" claim.</p>
+
+        <h2 id="en-sharing">8. Public sharing</h2>
+        <p>When you create a share link, the share may include a title, code, conversation messages and revision history. Shares are stored as public objects; anyone who obtains the link can access and keep that content. Share only creations you are comfortable making public. Deleting a share link or a session does not recall copies others have already saved.</p>
+
+        <h2 id="en-retention">9. Retention and deletion</h2>
+        <ul>
+          <li><strong>Local data</strong> stays in your browser until you clear site data or delete the content.</li>
+          <li><strong>Cloud sessions and favorites</strong> are kept while your account exists; you can delete individual sessions or unfavorite at any time.</li>
+          <li><strong>Public shares</strong> are cleaned up on a schedule: shares older than 30 days are queued for removal, and actual deletion depends on the cleanup task running, so it may happen later than 30 days.</li>
+          <li><strong>Authentication data</strong> is handled according to the authentication provider's retention rules.</li>
+          <li><strong>Logs and backups</strong> are kept per provider retention rules; we cannot promise immediate, complete deletion from all backups.</li>
+        </ul>
+
+        <h2 id="en-choices">10. Your choices and requests</h2>
+        <ul>
+          <li>Delete individual sessions, unfavorite, or clear local data in the app;</li>
+          <li>Revoke oddeNova's access in your Google Account settings (see section 3);</li>
+          <li>Request access to, correction of, or deletion of the data tied to your account via the contact email in section 1. We verify account ownership before acting on a request.</li>
+        </ul>
+        <p>In-product self-service account deletion and full data export are not yet available; please use the contact email for such requests.</p>
+
+        <h2 id="en-security">11. Security and regions</h2>
+        <p>We transmit data over HTTPS and rely on the security measures of providers such as Supabase and Vercel. Data is processed and stored by providers located outside China, in the regions each provider actually operates. No security measure offers an absolute guarantee, and we do not use end-to-end encryption.</p>
+
+        <h2 id="en-minors">12. Minors, changes and contact</h2>
+        <p>oddeNova is directed to a general audience and does not knowingly collect information from children. If you are a guardian and believe a child provided us personal information, contact us via the email in section 1.</p>
+        <p>We may update this policy from time to time and will update the "last updated" date at the top of this page. Material changes will be flagged in the app or by other reasonable means.</p>
+        <p>To reach us, use the contact email listed in section 1.</p>
+      </section>
+    </main>
+
+    <footer class="privacy-footer">
+      <div class="privacy-shell privacy-footer-row">
+        <p><!-- TODO(operator): 联系邮箱 / contact email -->【联系邮箱待补充】</p>
+        <a href="/">返回 oddeNova / Back to oddeNova</a>
+      </div>
+    </footer>
+  </body>
+</html>

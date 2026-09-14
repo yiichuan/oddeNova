@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { GITHUB_URL, LEARN_URL } from '../../lib/external-links';
+import { PRIVACY_URL } from '../legal/PrivacyPolicyLink';
 import { BookOpenIcon } from '../icons';
 import AccountAvatar from './AccountAvatar';
 import {
@@ -438,6 +439,26 @@ function MoreMenu({
           </span>
           <span aria-hidden={!expanded} className={expanded ? 'ml-2 whitespace-nowrap text-sm' : 'sr-only'}>
             GitHub
+          </span>
+        </a>
+        <a
+          role="menuitem"
+          aria-label={t('privacyPolicy')}
+          href={PRIVACY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => {
+            hideTooltip();
+            closeMenu();
+          }}
+          {...getTooltipTriggerProps(t('privacyPolicy'))}
+          className={linkClass}
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center text-[21px] leading-none" aria-hidden="true">
+            §
+          </span>
+          <span aria-hidden={!expanded} className={expanded ? 'ml-2 whitespace-nowrap text-sm' : 'sr-only'}>
+            {t('privacyPolicy')}
           </span>
         </a>
       </div>

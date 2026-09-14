@@ -1,0 +1,269 @@
+/* Styles for the standalone privacy policy page (privacy.html).
+ *
+ * Self-contained: this page must not load the app bundle, so nothing here
+ * may depend on index.css tokens — colours are restated locally. Reading
+ * typography only, scoped under .privacy-* classes so the page can never
+ * restyle the app even if the stylesheet is mistakenly loaded there.
+ */
+
+:root {
+  --privacy-bg: #f7f7fa;
+  --privacy-text: #212121;
+  --privacy-text-secondary: #515151;
+  --privacy-text-muted: #696969;
+  --privacy-border: #d7d7de;
+  --privacy-accent: #0668e5;
+  --privacy-surface: #fcfcfe;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--privacy-bg);
+  color: var(--privacy-text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+.privacy-shell {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+.privacy-header {
+  border-bottom: 1px solid var(--privacy-border);
+  background: var(--privacy-surface);
+}
+
+.privacy-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.privacy-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--privacy-text);
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.privacy-brand-mark {
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(to bottom, #202024, #73737a);
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.privacy-lang-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.privacy-lang-nav a {
+  color: var(--privacy-accent);
+  text-decoration: none;
+}
+
+.privacy-lang-nav a:hover,
+.privacy-lang-nav a:focus-visible {
+  text-decoration: underline;
+}
+
+.privacy-lang-divider {
+  color: var(--privacy-text-muted);
+}
+
+.privacy-title {
+  margin: 40px 0 8px;
+  font-size: 30px;
+  line-height: 1.3;
+}
+
+.privacy-meta {
+  margin: 0 0 24px;
+  color: var(--privacy-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.privacy-intro {
+  margin: 0 0 32px;
+  color: var(--privacy-text-secondary);
+}
+
+.privacy-toc {
+  margin: 0 0 40px;
+  padding: 20px 24px;
+  background: var(--privacy-surface);
+  border: 1px solid var(--privacy-border);
+  border-radius: 12px;
+}
+
+.privacy-toc h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.privacy-toc ol {
+  margin: 0;
+  padding-left: 20px;
+  columns: 2;
+  column-gap: 32px;
+}
+
+.privacy-toc li {
+  break-inside: avoid;
+  margin: 2px 0;
+  font-size: 15px;
+}
+
+.privacy-toc a {
+  color: var(--privacy-accent);
+  text-decoration: none;
+}
+
+.privacy-toc a:hover,
+.privacy-toc a:focus-visible {
+  text-decoration: underline;
+}
+
+section h2 {
+  margin: 40px 0 12px;
+  font-size: 21px;
+  line-height: 1.4;
+  scroll-margin-top: 24px;
+}
+
+section p,
+section ul {
+  margin: 0 0 16px;
+  color: var(--privacy-text-secondary);
+}
+
+section ul {
+  padding-left: 24px;
+}
+
+section li {
+  margin: 6px 0;
+}
+
+section strong {
+  color: var(--privacy-text);
+}
+
+a {
+  color: var(--privacy-accent);
+  overflow-wrap: anywhere;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--privacy-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.privacy-footer {
+  margin-top: 56px;
+  border-top: 1px solid var(--privacy-border);
+  background: var(--privacy-surface);
+}
+
+.privacy-footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding-top: 20px;
+  padding-bottom: 20px;
+  font-size: 15px;
+  color: var(--privacy-text-secondary);
+}
+
+.privacy-footer-row p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .privacy-shell {
+    padding: 0 20px;
+  }
+
+  body {
+    font-size: 16px;
+  }
+
+  .privacy-title {
+    margin-top: 28px;
+    font-size: 25px;
+  }
+
+  .privacy-toc ol {
+    columns: 1;
+  }
+
+  section h2 {
+    font-size: 19px;
+  }
+}
+
+@media print {
+  .privacy-header,
+  .privacy-footer,
+  .privacy-lang-nav {
+    display: none;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+    font-size: 12pt;
+  }
+
+  .privacy-toc {
+    border: none;
+    background: none;
+    padding: 0;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  section h2 {
+    scroll-margin-top: 0;
+  }
+
+  section {
+    break-before: page;
+  }
+}

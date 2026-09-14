@@ -489,3 +489,62 @@ describe('AccountModal Google sign in', () => {
     expect(container.textContent).toContain('Google sign-in was cancelled.');
   });
 });
+
+describe('AccountModal privacy policy link', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  const findPrivacyLink = (container: HTMLElement): HTMLAnchorElement => {
+    const link = [...container.querySelectorAll('a')]
+      .find((candidate) => candidate.getAttribute('href') === '/privacy');
+    if (!(link instanceof HTMLAnchorElement)) {
+      throw new Error('privacy policy link not found');
+    }
+    return link;
+  };
+
+  it('stays reachable from the sign-in, signed-in and recovery views', () => {
+    for (const render of [renderSignInModal, renderSignedInModal, renderRecoveryModal]) {
+      const { container, root } = render();
+      roots.push(root);
+      const link = findPrivacyLink(container);
+      expect(link.getAttribute('href')).toBe('/privacy');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toContain('noopener');
+      expect(link.textContent).toContain('Privacy Policy');
+      document.body.innerHTML = '';
+    }
+  });
+
+  it('stays clickable while a form is busy and never triggers sign-in', async () => {
+    let finishOAuth: (() => void) | undefined;
+    authMocks.signInWithGoogle.mockReturnValueOnce(new Promise<void>((resolve) => {
+      finishOAuth = resolve;
+    }));
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+
+    await act(async () => {
+      findButton(container, 'Continue with Google').click();
+    });
+
+    const link = findPrivacyLink(container);
+    expect(link.closest('button')).toBeNull();
+    expect(link.hasAttribute('disabled')).toBe(false);
+    // A plain anchor with no click handler of its own: pressing it navigates,
+    // it never calls the sign-in or submit callbacks the form around it uses.
+    expect(link.onclick).toBeNull();
+    expect(authMocks.signInWithGoogle).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      finishOAuth?.();
+    });
+  });
+});
