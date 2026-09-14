@@ -7,6 +7,7 @@ import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
 import sessionsHandler from './api/sessions'
+import { privacyRouteMiddleware } from './server/privacy-route'
 
 interface AirJellyRuntime {
   port: number
@@ -375,27 +376,16 @@ function syncAnimationHtml(): Plugin {
 
 // Exact /privacy paths only — the Vercel rewrite for the same paths is not
 // visible to Vite, so dev and preview servers get this small alias instead of
-// a copy of the routing table. GET/HEAD only; every other path falls through.
-const PRIVACY_PATHS = new Set(['/privacy', '/privacy/'])
-
+// a copy of the routing table. The rewrite itself lives in
+// server/privacy-route.ts so it can be regression-tested directly.
 function privacyDevMiddleware(): Plugin {
-  const rewrite = (req: IncomingMessage): boolean => {
-    if (req.method !== 'GET' && req.method !== 'HEAD') return false
-    const pathname = (req.url ?? '').split('?')[0]
-    if (!PRIVACY_PATHS.has(pathname)) return false
-    req.url = '/privacy.html'
-    return true
-  }
-  const middleware = (req: IncomingMessage, _res: ServerResponse, next: () => void) => {
-    if (!rewrite(req)) next()
-  }
   return {
     name: 'privacy-dev-middleware',
     configureServer(server) {
-      server.middlewares.use(middleware)
+      server.middlewares.use(privacyRouteMiddleware)
     },
     configurePreviewServer(server) {
-      server.middlewares.use(middleware)
+      server.middlewares.use(privacyRouteMiddleware)
     },
   }
 }

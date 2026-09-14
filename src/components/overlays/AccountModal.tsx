@@ -130,13 +130,18 @@ export default function AccountModal({
       ? t('sendResetEmail')
       : t('signIn');
 
+  const showPrivacyLink = configured
+    && !user
+    && !recoveringPassword
+    && (mode === 'sign-in' || mode === 'sign-up');
+
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
       <div className="flex w-[420px] max-w-[90vw] flex-col gap-3">
-        {/* Deeper at the foot than at the head: the top edge carries only the
-            close button, which is mostly its own empty hit area, while the last
-            row down here is a solid one that needs the room around it. */}
-        <div className="bg-conversation-surface border border-border rounded-2xl px-6 pt-6 pb-10 shadow-dialog-overlay">
+        {/* When the privacy footer shows, the card keeps the link snug instead
+            of deep foot padding; without it, the last row still needs the room
+            the padding gives it. */}
+        <div className={`bg-conversation-surface border border-border rounded-2xl px-6 pt-6 shadow-dialog-overlay ${showPrivacyLink ? 'pb-4' : 'pb-10'}`}>
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <h2 className="text-lg font-semibold text-text-primary">{t('account')}</h2>
@@ -294,16 +299,13 @@ export default function AccountModal({
               </div>
             </div>
           )}
-        </div>
 
-        {/* The policy note is a real link on its own line rather than part of
-            the window above: it is not a step of signing in, and it must stay
-            reachable from every view — sign-in, sign-up, reset, signed-in,
-            busy or not. */}
-        <p className="flex items-center justify-center gap-1.5 px-2 text-xs text-text-muted">
-          {t('privacyNotice')}
-          <PrivacyPolicyLink className="text-accent hover:text-accent-light underline-offset-2 hover:underline" />
-        </p>
+          {showPrivacyLink && (
+            <p className="mt-3 flex items-center justify-center px-2 text-xs text-text-muted">
+              <PrivacyPolicyLink className="inline-flex min-h-6 items-center rounded-sm px-2 underline underline-offset-2 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" />
+            </p>
+          )}
+        </div>
 
         <CommunityInviteCard />
       </div>

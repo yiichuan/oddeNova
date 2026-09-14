@@ -26,13 +26,25 @@ Before filling it into Google Auth Platform → **Branding**:
    published with placeholders.
 2. Verify on the Production URL (not Preview): the page must render its full
    bilingual body with JavaScript disabled, without app/analytics scripts.
-3. Check the bare domain `oddenova.com` and `www.oddenova.com` both resolve
+3. Verify all three addresses return HTTP 200 with an HTML body and do not
+   hang: `/privacy`, `/privacy/` and `/privacy.html`. On local Vite dev and
+   preview this is served by the shared alias middleware
+   (`server/privacy-route.ts`); on Production it is served by the exact
+   rewrites in `vercel.json`. Check the query string survives
+   (`/privacy?lang=zh`) and that `HEAD /privacy` completes with no body.
+4. Check the bare domain `oddenova.com` and `www.oddenova.com` both resolve
    over HTTPS and that `https://oddenova.com/privacy` is publicly readable;
    keep the canonical address consistent with the host the homepage actually
    uses. Do not put the policy URL into an OAuth callback or redirect URI.
-4. Confirm the in-app entries render: homepage footer link (desktop sidebar and
-   mobile bottom bar), desktop More menu, mobile drawer More section, and the
-   welcome/account modals.
+5. Confirm the in-app entries render: the desktop More menu and the mobile
+   drawer More section on the public homepage, and the single link in the
+   sign-in/sign-up views of the welcome and account modals.
+6. Confirm the pre-publish facts from
+   `docs/design/2026-09-15-privacy-content-and-route-repair-plan.md` §5 are
+   resolved: operator/contact, real dates, provider regions and retention
+   config, share cleanup actually running, a working deletion-request
+   process, target regions/age policy, and whether the AirJelly paragraph
+   applies to the production deployment.
 
 ## 2. Create the Google Cloud projects
 

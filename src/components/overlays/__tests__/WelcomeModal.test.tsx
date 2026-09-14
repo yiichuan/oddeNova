@@ -230,3 +230,61 @@ describe('WelcomeModal', () => {
     expect(container.textContent).toContain('Supabase is not configured');
   });
 });
+
+describe('WelcomeModal privacy policy link', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  const countPrivacyLinks = (container: HTMLElement): number =>
+    [...container.querySelectorAll('a')]
+      .filter((candidate) => candidate.getAttribute('href') === '/privacy')
+      .length;
+
+  const expectExternalPrivacyLink = (container: HTMLElement) => {
+    const links = [...container.querySelectorAll('a')]
+      .filter((candidate) => candidate.getAttribute('href') === '/privacy');
+    expect(links).toHaveLength(1);
+    const [link] = links;
+    expect(link instanceof HTMLAnchorElement).toBe(true);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.textContent).toContain('Privacy Policy');
+    expect(link.textContent).not.toContain('Learn how we handle your data');
+  };
+
+  it('shows exactly one link on each of the three steps', () => {
+    const { container, root } = renderModal();
+    roots.push(root);
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+
+    setInput(inputs(container)[0], 'listener@example.com');
+    click(getButton(container, 'Continue with email'));
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+
+    click(getButton(container, 'Sign in'));
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+  });
+
+  it('hides the link when auth is not configured', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+
+    act(() => {
+      root.render(<WelcomeModal configured={false} onClose={vi.fn()} />);
+    });
+
+    expect(container.querySelector('a[href="/privacy"]')).toBeNull();
+  });
+});

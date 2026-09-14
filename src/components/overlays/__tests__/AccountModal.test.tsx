@@ -88,6 +88,21 @@ function renderSignedInModal(beforeSignOut?: () => Promise<void>) {
   return { container, root, onClose };
 }
 
+function renderUnconfiguredModal() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+
+  act(() => {
+    root.render(
+      <AccountModal user={null} configured={false} onClose={onClose} />,
+    );
+  });
+
+  return { container, root, onClose };
+}
+
 function findButton(container: HTMLElement, label: string): HTMLButtonElement {
   const button = [...container.querySelectorAll('button')]
     .find((candidate) => candidate.textContent === label);
@@ -501,24 +516,52 @@ describe('AccountModal privacy policy link', () => {
     vi.clearAllMocks();
   });
 
-  const findPrivacyLink = (container: HTMLElement): HTMLAnchorElement => {
-    const link = [...container.querySelectorAll('a')]
-      .find((candidate) => candidate.getAttribute('href') === '/privacy');
-    if (!(link instanceof HTMLAnchorElement)) {
-      throw new Error('privacy policy link not found');
-    }
-    return link;
+  const countPrivacyLinks = (container: HTMLElement): number =>
+    [...container.querySelectorAll('a')]
+      .filter((candidate) => candidate.getAttribute('href') === '/privacy')
+      .length;
+
+  const expectExternalPrivacyLink = (container: HTMLElement) => {
+    const links = [...container.querySelectorAll('a')]
+      .filter((candidate) => candidate.getAttribute('href') === '/privacy');
+    expect(links).toHaveLength(1);
+    const [link] = links;
+    expect(link instanceof HTMLAnchorElement).toBe(true);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.textContent).toContain('Privacy Policy');
+    expect(link.textContent).not.toContain('Learn how we handle your data');
   };
 
-  it('stays reachable from the sign-in, signed-in and recovery views', () => {
-    for (const render of [renderSignInModal, renderSignedInModal, renderRecoveryModal]) {
+  it('shows exactly one link in sign-in and sign-up, hiding it in reset', () => {
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+
+    act(() => {
+      findButton(container, 'Create account').click();
+    });
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+
+    act(() => {
+      findButton(container, 'Forgot password?').click();
+    });
+    expect(container.querySelector('a[href="/privacy"]')).toBeNull();
+
+    act(() => {
+      findButton(container, 'Back to sign in').click();
+    });
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+  });
+
+  it('hides the link in the signed-in, recovery and unconfigured views', () => {
+    for (const render of [renderSignedInModal, renderRecoveryModal, renderUnconfiguredModal]) {
       const { container, root } = render();
       roots.push(root);
-      const link = findPrivacyLink(container);
-      expect(link.getAttribute('href')).toBe('/privacy');
-      expect(link.getAttribute('target')).toBe('_blank');
-      expect(link.getAttribute('rel')).toContain('noopener');
-      expect(link.textContent).toContain('Privacy Policy');
+      expect(container.querySelector('a[href="/privacy"]')).toBeNull();
       document.body.innerHTML = '';
     }
   });
@@ -535,7 +578,11 @@ describe('AccountModal privacy policy link', () => {
       findButton(container, 'Continue with Google').click();
     });
 
-    const link = findPrivacyLink(container);
+    const link = [...container.querySelectorAll('a')]
+      .find((candidate) => candidate.getAttribute('href') === '/privacy');
+    if (!(link instanceof HTMLAnchorElement)) {
+      throw new Error('privacy policy link not found');
+    }
     expect(link.closest('button')).toBeNull();
     expect(link.hasAttribute('disabled')).toBe(false);
     // A plain anchor with no click handler of its own: pressing it navigates,

@@ -275,7 +275,6 @@ const S: Record<string, readonly [string, string]> = {
 
   // Privacy policy
   privacyPolicy:       ['隐私政策', 'Privacy Policy'],
-  privacyNotice:       ['了解我们如何处理你的数据，请阅读隐私政策。', 'Learn how we handle your data in the privacy policy.'],
   opensInNewTab:       ['（在新标签页中打开）', '(opens in a new tab)'],
 
   // ChatInput

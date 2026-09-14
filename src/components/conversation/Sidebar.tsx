@@ -6,7 +6,6 @@ import type { CodeRevision, Session } from '../../hooks/useSessions';
 import { MessageCirclePlusIcon, HistoryIcon, PlayIcon } from '../icons';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
-import PrivacyPolicyLink from '../legal/PrivacyPolicyLink';
 import { isPresentationMode } from '../../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
@@ -244,12 +243,6 @@ export default function Sidebar({
 
       <div className="-mt-px w-full shrink-0">
         <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
-        {/* The policy entry a guest can always find: a quiet line under the
-            field rather than over it, opening in its own tab so nothing in
-            flight — generation, playback, pending sync — is disturbed. */}
-        <p className="pt-1 pb-2 text-center text-[11px] text-text-muted">
-          <PrivacyPolicyLink className="hover:text-text-primary underline-offset-2 hover:underline" />
-        </p>
       </div>
     </aside>
   );
