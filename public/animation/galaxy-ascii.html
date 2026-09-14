@@ -432,7 +432,8 @@
             //
             // Neutrals are stored as `"r, g, b"` triples, the form the rgba()
             // templates in the draw passes want. The burst is a triple too, because
-            // it doubles as the fallback for a piece's own `.color()`.
+            // it doubles as the fallback for a piece's own `.color()` — as does the
+            // ring, which the same accent now strikes when a piece names one.
             const PALETTES = {
                 dark: {
                     background: '#080908',
@@ -460,7 +461,9 @@
                     // A wavefront cannot gain brightness on paper, so it gains weight
                     // instead: a step darker than the grid, on the same hue, which is
                     // what keeps the swell legible as a swell without introducing a
-                    // second colour to the page.
+                    // second colour to the page. This is where the wavefront sits when
+                    // the piece names no colour of its own; when it names one, it is
+                    // struck in that instead.
                     ring: '186, 187, 205',
                     // The dark room's grey-white inverted, and turned with everything
                     // else here.
@@ -1851,11 +1854,13 @@
              * separation is what keeps the three voices from looking alike:
              *
              *   ring     size + colour — the wavefront, one size up, one step off
-             *                            the grid's own neutral
+             *                            the grid's own neutral — or the piece's own
+             *                            `.color()` when it set one, which is the
+             *                            one thing that puts hue on the wavefront
              *   burst    size + colour — oversized and struck in the app's accent
              *                            (`palette.burst`: orange on the dark theme,
-             *                            blue on the light one), the only colour on
-             *                            screen, grown out of the arm ridges
+             *                            blue on the light one), or in the piece's
+             *                            own `.color()`, grown out of the arm ridges
              *   meteor   motion        — base size, hueless, a diagonal trail
              *                            travelling across the frame; it is the only
              *                            accent that moves, which is what tells it
@@ -1889,11 +1894,21 @@
                 context.textBaseline = 'middle';
 
                 // Lifted from the playing piece's own `.color()` when the studio has
-                // one latched (see StrudelService/codepanel-accent.ts) — same source,
-                // same fallback, as the playback controls' own accent. Read fresh each
-                // repaint rather than cached: this call is one property lookup, cheap
-                // next to everything else this function draws.
-                const burstRgb = hexToRgbTriple(getHostWindow().getStrudelAccentColor?.()) ?? palette.burst;
+                // one latched (see StrudelService/codepanel-accent.ts) — same source
+                // as the playback controls' own accent. Read fresh each repaint rather
+                // than cached: this call is one property lookup, cheap next to
+                // everything else this function draws.
+                //
+                // Both struck tiers take it, so a piece that names a colour is played
+                // in that colour rather than having one gesture in it and the other
+                // beside it. They part on what they fall back to when it names none,
+                // which is where the palette's own division stands: the burst is the
+                // app's accent and the one colour on the frame, the wavefront is a
+                // step off the grid's neutral and carries no hue at all. A piece's
+                // `.color()` is the only thing that puts hue on the wavefront.
+                const accentRgb = hexToRgbTriple(getHostWindow().getStrudelAccentColor?.());
+                const burstRgb = accentRgb ?? palette.burst;
+                const ringRgb = accentRgb ?? palette.ring;
 
                 for (let tier = ACCENT_RING; tier <= ACCENT_BURST; tier += 1) {
                     const isRing = tier === ACCENT_RING;
@@ -1901,7 +1916,7 @@
                     const scale = isRing ? 1.4 + ringPeak * 0.6 : 2.1 + burstEnergy * 0.9;
                     context.font = `700 ${fontSize * scale}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
                     context.fillStyle = isRing
-                        ? `rgba(${palette.ring}, ${lerp(RING_ACCENT_ALPHA_MIN, RING_ACCENT_ALPHA_MAX, clamp(ringPeak, 0, 1))})`
+                        ? `rgba(${ringRgb}, ${lerp(RING_ACCENT_ALPHA_MIN, RING_ACCENT_ALPHA_MAX, clamp(ringPeak, 0, 1))})`
                         : `rgba(${burstRgb}, ${lerp(0.6, 1, burstEnergy)})`;
 
                     for (let cellIndex = 0; cellIndex < accentBuffer.length; cellIndex += 1) {
