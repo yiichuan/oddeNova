@@ -509,8 +509,9 @@
             // Projection scale is anchored to the layout the panel first loads with.
             // Dragging the splitter changes how much of the galaxy is visible, never
             // how big it is drawn, so the arms keep their default shape instead of
-            // being squeezed. Only a width change rescales it, which keeps the galaxy
-            // in step with the glyph size (which is derived from width as well).
+            // being squeezed. Only a width change rescales it — and the glyph does
+            // not follow, so what a wider pane buys is the same field drawn across
+            // more characters, not the same characters drawn larger.
             // The panel shape the camera is framed against — see the projection in
             // resize(). Only their ratio is ever used, and it stays open to being
             // re-read until the layout has stopped moving; see referenceSettleTimer.
@@ -783,6 +784,38 @@
                 }
                 context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
 
+                // Hold the reference open until the panel has stopped changing size,
+                // then fix it for good. It is what both the projection and the glyph
+                // below are measured against.
+                //
+                // The projection uses only the ratio: it is `width / referenceAspect`
+                // tall, so a later width change rescales the view and a later height
+                // change crops it — dragging the pane taller should show more galaxy,
+                // not a bigger one. That is the intent, and it needs an aspect read
+                // off a settled panel.
+                //
+                // Taking the very first measurement is what broke it. The script runs
+                // while the layout is still moving — a window dragged from the mobile
+                // breakpoint back to full width mounts this pane and starts it
+                // mid-drag — so the aspect got sampled at a transient narrow size, and
+                // every pixel of width gained afterwards read as `width /
+                // referenceWidth` above 1 and lengthened the focal. The camera crept
+                // in and the field shrank, with nothing to put it back.
+                if (!referenceLocked && width > 0 && height > 0) {
+                    referenceWidth = width;
+                    referenceHeight = height;
+                    clearTimeout(referenceSettleTimer);
+                    referenceSettleTimer = setTimeout(() => { referenceLocked = true; }, 400);
+                }
+
+                // The glyph is measured against the settled width rather than the
+                // current one, so that a pane the user resizes shows more of the
+                // field at the size it was already drawing rather than the same
+                // field blown up. Dragging the sidebar shut is the case: it hands
+                // the studio pane a few hundred pixels at once, which is enough to
+                // carry it over the ~880px where the floor below stops holding, and
+                // every character on screen grew mid-drag.
+                //
                 // The floor keeps a glyph from shrinking below what the display can
                 // draw, which also means any panel narrower than ~880px falls short
                 // of TARGET_COLUMNS and holds the glyph at the floor instead.
@@ -796,7 +829,8 @@
                 // narrow desktop windows included — a size the pane is drawn at on a
                 // screen someone is sitting in front of is not this fix's business.
                 const targetColumns = COMPACT ? COMPACT_TARGET_COLUMNS : TARGET_COLUMNS;
-                fontSize = clamp(width / (targetColumns * 0.62), COMPACT ? 5 : 8, 15);
+                const glyphWidth = referenceWidth > 0 ? referenceWidth : width;
+                fontSize = clamp(glyphWidth / (targetColumns * 0.62), COMPACT ? 5 : 8, 15);
                 context.font = `600 ${fontSize}px "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono", monospace`;
                 context.textBaseline = 'top';
                 cellWidth = context.measureText('@').width;
@@ -814,28 +848,6 @@
                 accentColumnLimit = Math.max(0, Math.floor(width / cellWidth) - 1);
                 accentRowLimit = Math.max(0, Math.floor(height / cellHeight) - 1);
 
-                // Hold the reference open until the panel has stopped changing size,
-                // then fix it for good.
-                //
-                // Only the ratio of these two is used: the projection is `width /
-                // referenceAspect` tall, so a later width change rescales the view and
-                // a later height change crops it — dragging the pane taller should
-                // show more galaxy, not a bigger one. That is the intent, and it needs
-                // an aspect read off a settled panel.
-                //
-                // Taking the very first measurement is what broke it. The script runs
-                // while the layout is still moving — a window dragged from the mobile
-                // breakpoint back to full width mounts this pane and starts it
-                // mid-drag — so the aspect got sampled at a transient narrow size, and
-                // every pixel of width gained afterwards read as `width /
-                // referenceWidth` above 1 and lengthened the focal. The camera crept
-                // in and the field shrank, with nothing to put it back.
-                if (!referenceLocked && width > 0 && height > 0) {
-                    referenceWidth = width;
-                    referenceHeight = height;
-                    clearTimeout(referenceSettleTimer);
-                    referenceSettleTimer = setTimeout(() => { referenceLocked = true; }, 400);
-                }
                 const projectionHeight = referenceWidth > 0
                     ? referenceHeight * (width / referenceWidth)
                     : height;
