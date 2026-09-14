@@ -22,7 +22,25 @@ function tokenizeForTyping(s: string): string[] {
 // internal scrollbar instead of pushing the layout further down.
 const MAX_TEXTAREA_HEIGHT = 180;
 
+/**
+ * Grow the field to fit its text, up to the cap.
+ *
+ * Bails when the field has no width to be measured against — the studio's
+ * conversation column dragged shut (width 0), or `display: none`'d by a
+ * full-width page. `scrollHeight` there is not a smaller answer, it is a
+ * meaningless one: with no content width every word wraps onto its own line,
+ * so any text at all saturates the cap. And the answer is written back as an
+ * inline pixel height, which is not a measurement the layout takes again —
+ * it is a value that stays until something re-measures. A reading taken while
+ * the column is shut therefore comes back with it, as a composer standing at
+ * its full 180px over one line of text.
+ *
+ * Leaving the last good height in place costs nothing while the field is not
+ * on screen to be wrong, and the observer below re-measures the moment it has
+ * a box again.
+ */
 function resizeTextarea(el: HTMLTextAreaElement) {
+  if (el.clientWidth === 0) return;
   el.style.height = 'auto';
   const next = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT);
   el.style.height = `${next}px`;
@@ -182,12 +200,34 @@ export default function ChatInput({
     resizeTextarea(el);
   }, [text]);
 
+  // How tall the field has to be is a question about how wide it is, and in the
+  // studio almost nothing that changes its width is a window resize: the
+  // sidebar divider is dragged, the column is shut and pulled back open, the
+  // nav column expands, a full-width page takes the column away and hands it
+  // back. None of those fired this, so the height stayed at whatever the last
+  // window resize or keystroke had worked out for a column of a different
+  // width — text clipped in a field too short for it, or a field standing tall
+  // over one line.
+  //
+  // Watching the element itself answers all of them, the window included.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     const recalc = () => resizeTextarea(el);
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', recalc);
+      return () => window.removeEventListener('resize', recalc);
+    }
+    // Width only. The callback's whole job is to write this element's *height*,
+    // and reacting to that would be the observer answering itself.
+    let lastWidth = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth) return;
+      lastWidth = el.clientWidth;
+      recalc();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   const doSubmit = () => {
