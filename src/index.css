@@ -3815,8 +3815,18 @@ html[data-theme='light'] .favorites-version-option[aria-selected='true'] {
    there and change them here. */
 .viz-frame {
   background: #080908;
+  /* The element's own background only covers the gap before the frame's
+     document exists. What covers the gap *after* it exists — the loading
+     document's canvas, which the browser paints from the embedder's used
+     colour scheme and which sits on top of the background above — is this.
+     Left unsaid it resolves to light, i.e. white, which is the flash itself.
+     It also crosses the document boundary: `prefers-color-scheme` inside the
+     frame answers to the embedder's used scheme, so this is also what keeps a
+     dark app on a light OS from loading the light half of the page inside. */
+  color-scheme: dark;
 }
 
 html[data-theme='light'] .viz-frame {
   background: #F7F7FA;
+  color-scheme: light;
 }
