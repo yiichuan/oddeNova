@@ -6,10 +6,13 @@
     <title>ASCII GALAXY — Strudel Live</title>
     <style>
         /* Only ever seen in the gap before a frame lands — the canvas covers the
-           viewport and repaints its own ground. The OS preference is the best
-           guess available at parse time; inside the studio `syncDocumentTheme()`
-           corrects it to the host's own theme on the first frame, which is what
-           covers a light app on a dark system and the reverse. */
+           viewport and repaints its own ground. That gap is real: inside the
+           studio the mobile code window mounts this frame from scratch every
+           time it opens, and whatever stands here is what flashes under it.
+           `data-theme` is the host's answer, stamped by the script below before
+           anything paints; the OS preference is the fallback for standalone and
+           cross-origin, where there is no host to ask. `syncDocumentTheme()`
+           takes over on the first frame and on every flip after it. */
         :root { color-scheme: light dark; }
         * { box-sizing: border-box; }
         html, body { width: 100%; height: 100%; }
@@ -21,12 +24,37 @@
         @media (prefers-color-scheme: light) {
             body { background: #F7F7FA; }
         }
+        html[data-theme='dark'] body { background: #080908; }
+        html[data-theme='light'] body { background: #F7F7FA; }
         #asciiScreen {
             display: block;
             width: 100%;
             height: 100%;
         }
     </style>
+    <script>
+        /* The host's palette, on the root element before the first paint.
+           Everything else in this file resolves the theme per frame, which is
+           right for a page that is already up — but the first frame costs a
+           galaxy's worth of setup, and until it lands the document is painting
+           whatever the stylesheet guessed. Guessing from the OS is wrong
+           exactly when the user has overridden it, and being wrong here is a
+           white card flashed under a dark app. Same origin inside the studio,
+           so the host's own attribute is readable directly; standalone or
+           cross-origin this writes nothing and the media query stands in. */
+        (function () {
+            try {
+                var host = window.parent && window.parent !== window ? window.parent : window;
+                var theme = host.document.documentElement.dataset.theme;
+                if (theme === 'light' || theme === 'dark') {
+                    document.documentElement.dataset.theme = theme;
+                    document.documentElement.style.colorScheme = theme;
+                }
+            } catch (err) {
+                /* A host that can't be read from leaves the OS preference. */
+            }
+        })();
+    </script>
 </head>
 <body>
     <canvas id="asciiScreen" aria-label="随音乐运动的二维 ASCII 银河动画"></canvas>
@@ -875,6 +903,7 @@
             function syncDocumentTheme(theme) {
                 if (documentTheme === theme) return;
                 documentTheme = theme;
+                document.documentElement.dataset.theme = theme;
                 document.documentElement.style.colorScheme = theme;
                 document.body.style.background = PALETTES[theme].background;
             }
