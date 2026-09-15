@@ -25,6 +25,8 @@ import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
+import type { TrackRevealTiming } from './components/studio/StudioVisualizer';
+import { getPlaybackTimeline } from './lib/strudel-timing';
 import ConversationView from './components/conversation/ConversationView';
 import HistoryPanel from './components/conversation/HistoryPanel';
 import ChatInput from './components/conversation/ChatInput';
@@ -288,6 +290,7 @@ export default function App() {
     vizHeight,
     vizCollapsed,
     toggleVizCollapsed,
+    ensureEditorVisible,
     isDragging,
     mainRef,
     hDragHandlers,
@@ -528,7 +531,35 @@ export default function App() {
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
   const currentBpm = parseScore(currentCode).bpm ?? 120;
+  // The one timeline the playback bar and the track view share: it names the
+  // code the transport measures (activeCode while a piece sounds), its loop
+  // length and its own setcps. Without a setcps the hover time hint stays in
+  // cycles.
+  const playbackTimeline = useMemo(
+    () => getPlaybackTimeline(strudel.code, strudel.activeCode, strudel.isPlaying, strudel.isPaused),
+    [strudel.code, strudel.activeCode, strudel.isPlaying, strudel.isPaused],
+  );
+  const trackSeekEnabled = strudel.engineReady && strudel.exportState.status !== 'exporting';
+  const revealTrackInEditor = useCallback((): TrackRevealTiming => {
+    if (isMobile) {
+      // The code pane is hidden right now: swap panes first, and let the
+      // visualizer's deferred reveal wait for the layout.
+      setMobileStudioView('code');
+      setDrawerOpen(true);
+      return 'deferred';
+    }
+    ensureEditorVisible();
+    return 'immediate';
+  }, [ensureEditorVisible, isMobile, setDrawerOpen]);
   const isLoading = !!current?.id && loadingSessions.has(current.id);
+  // Renaming writes through the live editor into the current session, so it
+  // needs the same conditions the manual code sync already requires — plus an
+  // engine that is not busy compiling, exporting or recovering playback.
+  const trackRenameEnabled = trackSeekEnabled
+    && !isLoading
+    && !isReplaying
+    && !isVideoMode
+    && Boolean(sessions.currentSession?.id);
   const historyItems: readonly (Session | SessionSummary)[] = auth.user
     ? displayedHistoryItems
     : sessions.sessions.filter((session) => session.favoritedAt === undefined);
@@ -1503,8 +1534,11 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={handlePlay}
                 onPause={strudel.pause}
+                getPlaybackPosition={strudel.getPlaybackPosition}
+                seekPlayback={strudel.seekPlayback}
                 isDirty={strudel.isDirty}
                 activeCode={strudel.activeCode}
+                playbackTimeline={playbackTimeline}
                 onUpdate={() => { void handleUpdate(); }}
                 onEditorFocusChange={handleCodeFocusChange}
                 syncStatus={visibleSyncStatus}
@@ -1520,6 +1554,10 @@ export default function App() {
                 scopeKey={sessions.currentSession?.id ?? ''}
                 hasCode={Boolean(strudel.code.trim())}
                 engineReady={strudel.engineReady}
+                seekEnabled={trackSeekEnabled}
+                playbackTimeline={playbackTimeline}
+                onTrackReveal={revealTrackInEditor}
+                renameEnabled={trackRenameEnabled}
               />
             </div>
           </div>
@@ -1811,8 +1849,11 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={handlePlay}
                 onPause={strudel.pause}
+                getPlaybackPosition={strudel.getPlaybackPosition}
+                seekPlayback={strudel.seekPlayback}
                 isDirty={strudel.isDirty}
                 activeCode={strudel.activeCode}
+                playbackTimeline={playbackTimeline}
                 onUpdate={() => { void handleUpdate(); }}
                 vizEnabled
                 vizAnimationEnabled={studioAnimationVisible}
@@ -1859,6 +1900,10 @@ export default function App() {
                   scopeKey={sessions.currentSession?.id ?? ''}
                   hasCode={Boolean(strudel.code.trim())}
                   engineReady={strudel.engineReady}
+                  seekEnabled={trackSeekEnabled}
+                  playbackTimeline={playbackTimeline}
+                  onTrackReveal={revealTrackInEditor}
+                  renameEnabled={trackRenameEnabled}
                 />
               </div>
             </div>

@@ -12,12 +12,14 @@ import {
 } from '../icons';
 import { t } from '../../lib/i18n';
 import { strudelService } from '../../services/strudel';
+import { useTransportRevision } from '../../hooks/useStrudel';
 import { isDemoMode } from '../../demo/demo-config';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import {
+  type PlaybackTimeline,
   formatPlaybackTime,
-  getStrudelLoopCycles,
-  getStrudelLoopDurationSeconds,
+  getPlaybackTimeline,
+  projectPlaybackCycle,
 } from '../../lib/strudel-timing';
 import {
   ExportPopover,
@@ -56,6 +58,10 @@ interface CodePanelProps {
   onMount: (el: HTMLDivElement) => void;
   onPlay: () => void;
   onPause: () => void;
+  /** Reads the transport cycle used by both the progress bar and track view. */
+  getPlaybackPosition: () => number;
+  /** Accepts a normalized seek and returns whether the service applied it. */
+  seekPlayback: (progress: number, loopCycles: number) => boolean;
   /**
    * The editor holds an edit the sounding pattern hasn't heard yet
    * (`StrudelState.isDirty`). Together with `isPlaying` this is what puts the
@@ -69,6 +75,13 @@ interface CodePanelProps {
    * playhead alone; both follow once the edit is played or updated in.
    */
   activeCode?: string;
+  /**
+   * The shared timeline the playback bar and the track view both read: the
+   * code the transport measures, its estimated loop length, duration and
+   * tempo. App derives it once from `code`/`activeCode`/`isPlaying`/`isPaused`
+   * so both displays can never disagree about where the piece ends.
+   */
+  playbackTimeline?: PlaybackTimeline;
   /**
    * Re-evaluates the edited code into the running transport, without stopping
    * it. Only reachable while that swap would change something.
@@ -182,68 +195,66 @@ function usePrefersReducedMotion() {
 }
 
 function PlaybackProgress({
-  code,
+  timeline,
   isPlaying,
   isPaused,
   accentColor,
+  getPlaybackPosition,
+  seekPlayback,
 }: {
-  code: string;
+  timeline: PlaybackTimeline;
   isPlaying: boolean;
   isPaused: boolean;
   accentColor?: string | null;
+  getPlaybackPosition: () => number;
+  seekPlayback: (progress: number, loopCycles: number) => boolean;
 }) {
-  const totalSeconds = useMemo(() => getStrudelLoopDurationSeconds(code), [code]);
-  const loopCycles = useMemo(() => code.trim() ? getStrudelLoopCycles(code) : 0, [code]);
+  const { code, loopCycles, durationSeconds: totalSeconds } = timeline;
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const elapsedRef = useRef(0);
   const seekInputRef = useRef<HTMLInputElement>(null);
   const pointerFocusedRef = useRef(false);
-  const playbackOriginRef = useRef({ elapsedSeconds: 0, startedAt: 0 });
-  const wasPlayingRef = useRef(false);
 
-  const updateElapsedSeconds = useCallback((seconds: number) => {
-    elapsedRef.current = seconds;
-    setElapsedSeconds(seconds);
-  }, []);
+  const elapsedFromCycle = useCallback((cycle: number): number => {
+    if (totalSeconds <= 0 || loopCycles <= 0 || !Number.isFinite(cycle)) return 0;
+    // The same projection the track view runs: a playing transport wraps each
+    // pass back onto [0, L); a stopped/paused seek to the exact loop end is
+    // an intentional endpoint and keeps 100%.
+    return (projectPlaybackCycle(cycle, loopCycles, isPlaying).displayNow / loopCycles) * totalSeconds;
+  }, [isPlaying, loopCycles, totalSeconds]);
 
-  // Stopping (unlike pausing) rewinds the playhead, and so does losing a
-  // playable duration. Adjusted on the transition during render rather than in
-  // an effect, which would cost a cascading render.
-  const isRewound = (!isPlaying || totalSeconds <= 0) && !isPaused;
-  const [wasRewound, setWasRewound] = useState(isRewound);
-  if (isRewound !== wasRewound) {
-    setWasRewound(isRewound);
-    if (isRewound) setElapsedSeconds(0);
-  }
+  const sampleElapsed = useCallback(() => {
+    setElapsedSeconds(elapsedFromCycle(getPlaybackPosition()));
+  }, [elapsedFromCycle, getPlaybackPosition]);
+
+  // Every discrete transport event — an accepted seek from either entry
+  // point, a pause, a stop, a code rewind, the pending seek a play applied —
+  // carries the authoritative cycle. Resampling on its revision keeps this
+  // bar on the same clock as the track view; there is no local time origin
+  // that could drift away from the transport.
+  const transportRevision = useTransportRevision();
 
   useEffect(() => {
-    if (!isPlaying || totalSeconds <= 0) {
-      // Rewinding the resume origin belongs here: refs cannot be written during render.
-      if (!isPaused) elapsedRef.current = 0;
-      wasPlayingRef.current = false;
+    if (totalSeconds <= 0 || loopCycles <= 0) {
       return;
     }
 
-    wasPlayingRef.current = true;
-    playbackOriginRef.current = {
-      elapsedSeconds: elapsedRef.current,
-      startedAt: performance.now(),
-    };
     let frame = 0;
-    const update = (now: number) => {
-      const origin = playbackOriginRef.current;
-      updateElapsedSeconds((origin.elapsedSeconds + (now - origin.startedAt) / 1000) % totalSeconds);
-      frame = window.requestAnimationFrame(update);
+    const update = () => {
+      // A pause can happen between two RAF callbacks, so the service's saved
+      // cycle must win over the previous local frame. A stopped/paused panel
+      // gets this one sample and no continuing loop.
+      sampleElapsed();
+      if (isPlaying) frame = window.requestAnimationFrame(update);
     };
     frame = window.requestAnimationFrame(update);
     return () => window.cancelAnimationFrame(frame);
-  }, [code, isPaused, isPlaying, totalSeconds, updateElapsedSeconds]);
+  }, [code, isPaused, isPlaying, loopCycles, sampleElapsed, totalSeconds, transportRevision]);
 
   // Clamped because a code swap can shorten the loop under a playhead that is
   // already past the new end: the next frame's modulo brings it back, this
   // keeps the one render in between from overrunning the track.
-  const progress = totalSeconds > 0 ? Math.min(1, elapsedSeconds / totalSeconds) : 0;
+  const progress = totalSeconds > 0 ? Math.min(1, Math.max(0, elapsedSeconds / totalSeconds)) : 0;
   const elapsedLabel = formatPlaybackTime(elapsedSeconds);
   const totalLabel = formatPlaybackTime(totalSeconds);
   const seekDisabled = totalSeconds <= 0 || loopCycles <= 0;
@@ -251,13 +262,11 @@ function PlaybackProgress({
   const handleSeek = (nextProgress: number) => {
     if (seekDisabled) return;
     const normalizedProgress = Math.min(1, Math.max(0, nextProgress));
-    const nextElapsedSeconds = normalizedProgress * totalSeconds;
-    updateElapsedSeconds(nextElapsedSeconds);
-    playbackOriginRef.current = {
-      elapsedSeconds: nextElapsedSeconds,
-      startedAt: performance.now(),
-    };
-    strudelService.seekPlayback(normalizedProgress, loopCycles);
+    // The service owns the position: it applies the seek and notifies, and
+    // the notification re-samples from the authoritative cycle. A rejected
+    // seek must not paint an optimistic position, so re-read it either way.
+    seekPlayback(normalizedProgress, loopCycles);
+    sampleElapsed();
   };
 
   return (
@@ -351,8 +360,11 @@ export default function CodePanel({
   activeCode = '',
   onPlay,
   onPause,
+  getPlaybackPosition,
+  seekPlayback,
   onUpdate,
   onEditorFocusChange,
+  playbackTimeline,
   vizEnabled = true,
   vizAnimationEnabled = true,
   vizCollapsed = false,
@@ -579,13 +591,14 @@ export default function CodePanel({
   const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
   // Only a playing piece with an unheard edit has anything to update into.
   const canUpdate = isPlaying && isDirty;
-  // What the transport is on, which is what the progress bar measures. While a
-  // piece sounds that is the last evaluated code, not the editor buffer: typing
-  // must not restretch the duration or move the playhead of a pattern that is
-  // still playing the old bars. With nothing sounding there is no transport to
-  // describe, so the buffer is the piece — its duration is a preview of what
-  // pressing play would start.
-  const timelineCode = (isPlaying || isPaused) && activeCode ? activeCode : code;
+  // What the transport measures is the shared timeline's business (activeCode
+  // while a piece sounds, the buffer otherwise). App derives it once so the
+  // progress bar and the track view cannot disagree; a caller that does not
+  // supply it (or the component on its own) falls back to the same rule.
+  const timeline = useMemo(
+    () => playbackTimeline ?? getPlaybackTimeline(code, activeCode, isPlaying, isPaused),
+    [playbackTimeline, code, activeCode, isPlaying, isPaused],
+  );
 
   return (
     <div ref={panelRef} className="h-full flex flex-col overflow-hidden rounded-region">
@@ -782,10 +795,12 @@ export default function CodePanel({
               The rewind cases — stop, and an edit that resets a paused piece —
               come through `isPlaying`/`isPaused` instead. */}
           <PlaybackProgress
-            code={timelineCode}
+            timeline={timeline}
             isPlaying={isPlaying}
             isPaused={isPaused}
             accentColor={accentColor}
+            getPlaybackPosition={getPlaybackPosition}
+            seekPlayback={seekPlayback}
           />
 
           <div

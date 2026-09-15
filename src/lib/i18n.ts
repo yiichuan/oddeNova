@@ -52,11 +52,34 @@ const S: Record<string, readonly [string, string]> = {
   animationView: ['动画', 'Animation'],
   tracksCycle: ['循环 / cycle', 'Cycle'],
   trackSolo: ['独听音轨', 'Solo track'],
+  trackMute: ['静音音轨', 'Mute track'],
   trackNotes: ['音符时间线', 'Note timeline'],
   tracksUnsupported: ['当前代码暂不支持分轨，可继续使用原有播放和可视化', 'Track preview is unavailable for this code. Playback and animation remain available.'],
   tracksPreparing: ['正在准备音轨', 'Preparing tracks'],
   tracksNoCode: ['输入或加载代码后可查看音轨', 'Enter or load code to view tracks'],
   visualizerView: ['可视化视图', 'Visualizer view'],
+  trackTimelineSeek: ['音轨时间定位，点击或拖动标尺跳到对应位置；左右键移动 1/4 cycle，Shift 加速，Home 回到开头', 'Track time scrubber: click or drag the ruler to jump; arrow keys move by 1/4 cycle, Shift by 1, Home returns to 0'],
+  trackSeekHint: ['定位提示', 'Scrub position'],
+  trackBrowseEarlier: ['查看更早', 'View earlier'],
+  trackBrowseLater: ['查看更晚', 'View later'],
+  trackReturnToPlayback: ['恢复跟随', 'Return to follow'],
+  trackTools: ['音轨浏览与缩放', 'Track browse and zoom'],
+  trackZoomIn: ['放大，看清短音与起音间隔', 'Zoom in to see short notes'],
+  trackZoomOut: ['缩小，看更长时间', 'Zoom out to see more time'],
+  trackZoomReset: ['恢复默认缩放（4 cycle），不改变当前位置', 'Reset to the default zoom (4 cycles); the position stays'],
+  trackZoomSlider: ['音轨缩放', 'Track zoom'],
+  trackZoomSliderValue: ['显示 {span}', 'Showing {span}'],
+  trackPreviewLimited: ['预览不完整，放大查看', 'Preview incomplete — zoom in to see it fully'],
+  trackNameNavigate: ['查看此轨对应代码', 'Show this track\u2019s code'],
+  trackNameHint: ['单击定位代码，双击或按 F2 重命名', 'Click to locate the code; double-click or press F2 to rename'],
+  trackCodeStale: ['代码已修改，更新音轨后可定位', 'The code has changed. Update the tracks to locate it again.'],
+  trackRenameLabel: ['音轨名称', 'Track name'],
+  trackRenamePlaceholder: ['请输入音轨名称', 'Enter a track name'],
+  trackRenameTooLong: ['名称最多 64 个字符', 'Names are limited to 64 characters'],
+  trackRenameInvalidCharacter: ['名称不能包含换行、控制字符或 *', 'Names cannot contain line breaks, control characters, or *'],
+  trackRenameStale: ['代码已修改，请先更新音轨后再重命名', 'The code has changed. Update the tracks before renaming.'],
+  trackRenameUnavailable: ['当前暂时无法重命名，请稍后重试', 'Renaming is unavailable right now — try again shortly'],
+  cycleAt: ['cycle', 'cycle'],
   collapseViz:  ['收起可视化', 'Collapse visuals'],
   expandViz:    ['展开可视化', 'Expand visuals'],
 
@@ -411,4 +434,13 @@ export function t(key: string): string {
   const entry = S[key];
   if (!entry) return key;
   return zh ? entry[0] : entry[1];
+}
+
+/** Simple {token} interpolation over the shared string table. */
+export function tf(key: string, vars: Record<string, string>): string {
+  let text: string = t(key);
+  for (const [name, value] of Object.entries(vars)) {
+    text = text.replaceAll(`{${name}}`, value);
+  }
+  return text;
 }

@@ -232,7 +232,7 @@ vi.mock('../hooks/useLayout', () => ({
   VIZ_DIVIDER_HEIGHT: 6,
   useLayout: () => ({
     isMobile: mocks.isMobile, keyboardHeight: 0, sidebarWidth: 0, sidebarCollapsed: false, vizHeight: 0, isDragging: false,
-    vizCollapsed: false, toggleVizCollapsed: vi.fn(),
+    vizCollapsed: false, toggleVizCollapsed: vi.fn(), ensureEditorVisible: vi.fn(),
     mainRef: { current: null }, topActionsRef: { current: null }, hDragHandlers: {}, vDragHandlers: {},
     historyOpen: false, setHistoryOpen: vi.fn(), drawerOpen: false, setDrawerOpen: vi.fn(),
     mobileFocusedArea: null, shouldLiftBottomBar: false, mobileDrawerHeight: 0,

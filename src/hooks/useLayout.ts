@@ -50,6 +50,8 @@ export interface UseLayoutReturn {
   vizHeight: number;
   vizCollapsed: boolean;
   toggleVizCollapsed: () => void;
+  /** Hands the editor back a working height after the viz pane squeezed it. */
+  ensureEditorVisible: () => void;
   isDragging: 'h' | 'v' | null;
   mainRef: RefObject<HTMLDivElement | null>;
   hDragHandlers: PointerDragHandlers;
@@ -203,6 +205,16 @@ export function useLayout(): UseLayoutReturn {
     setVizCollapsed((v) => !v);
   }, [vizCollapsed]);
 
+  // Track-name navigation: when the viz pane has squeezed the editor down to
+  // its controls row, hand the editor its working height back. The viz pane
+  // stays mounted either way.
+  const ensureEditorVisible = useCallback(() => {
+    const h = mainRef.current?.offsetHeight ?? window.innerHeight;
+    if (!vizCollapsed && vizHeight >= maxVizHeight(h) - 8) {
+      setVizHeight(h * VIZ_RATIO_DEFAULT);
+    }
+  }, [vizCollapsed, vizHeight]);
+
   const endVDrag = useCallback<PointerEventHandler<HTMLDivElement>>((e) => {
     e.currentTarget.releasePointerCapture(e.pointerId);
     vDragRef.current = null;
@@ -217,6 +229,7 @@ export function useLayout(): UseLayoutReturn {
     vizHeight,
     vizCollapsed,
     toggleVizCollapsed,
+    ensureEditorVisible,
     isDragging,
     mainRef,
     hDragHandlers: { onPointerDown: startHDrag, onPointerMove: moveHDrag, onPointerUp: endHDrag },

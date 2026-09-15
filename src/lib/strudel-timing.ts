@@ -550,6 +550,100 @@ export function getStrudelLoopDurationSeconds(code: string): number {
   return getStrudelLoopCycles(code) / cps;
 }
 
+/**
+ * The code's own setcps tempo, or null when the tempo is not statically
+ * known — position hints only convert to seconds when the piece itself fixed
+ * its tempo, so a plain division by the current default never masquerades as
+ * an exact historical time.
+ */
+export function getStrudelCps(code: string): number | null {
+  if (!code.trim()) return null;
+  const cps = parseScore(code).cps;
+  return cps !== null && Number.isFinite(cps) && cps > 0 ? cps : null;
+}
+
+/**
+ * Everything the playback bar and the track timeline agree on: which code the
+ * transport is actually running, how long its loop is, and where a real
+ * absolute cycle sits inside that finite range.
+ */
+export interface PlaybackTimeline {
+  /** The code the transport measures: activeCode while sounding, else the buffer. */
+  code: string;
+  /** Estimated loop length in cycles; 0 when no usable range exists. */
+  loopCycles: number;
+  /** The loop's duration in seconds, 0 alongside a zero loopCycles. */
+  durationSeconds: number;
+  /** The code's own setcps tempo, or null when statically unknown. */
+  estimatedCps: number | null;
+}
+
+/**
+ * The one timeline source for the playback bar and the track view. While a
+ * piece sounds (or is paused mid-piece) the transport runs `activeCode`; an
+ * unheard edit must not restretch what is playing. Stopped, the buffer is the
+ * piece — its duration previews what play would start. Empty code or an
+ * invalid estimate yields `loopCycles: 0`: no timeline, never an unbounded one.
+ */
+export function getPlaybackTimeline(
+  code: string,
+  activeCode: string,
+  isPlaying: boolean,
+  isPaused: boolean,
+): PlaybackTimeline {
+  const selected = (isPlaying || isPaused) && activeCode ? activeCode : code;
+  const timeline: PlaybackTimeline = {
+    code: selected,
+    loopCycles: 0,
+    durationSeconds: 0,
+    estimatedCps: getStrudelCps(selected),
+  };
+  if (!selected.trim()) return timeline;
+  const loopCycles = getStrudelLoopCycles(selected);
+  if (!Number.isFinite(loopCycles) || loopCycles <= 0) return timeline;
+  return {
+    ...timeline,
+    loopCycles,
+    durationSeconds: getStrudelLoopDurationSeconds(selected),
+  };
+}
+
+/** Non-negative modulo: a wrapped playhead never lands left of the origin. */
+export function positiveModulo(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+/** Where an absolute cycle sits on the finite [0, L] timeline. */
+export interface PlaybackProjection {
+  /** Position on the finite timeline, always inside [0, L]. */
+  displayNow: number;
+  /** Absolute start of the current pass through the loop. */
+  loopOffset: number;
+}
+
+/**
+ * Project an absolute transport cycle onto the finite loop range the playback
+ * bar and track view share. A running transport wraps each pass back onto
+ * [0, L); a stopped or paused transport that sits exactly on the loop end
+ * keeps it — that is a deliberate endpoint (the bar shows 100%), while a
+ * paused position of 2L is the start of the next pass and reads as 0. Invalid
+ * or negative positions clamp to the origin.
+ */
+export function projectPlaybackCycle(absoluteNow: number, loopCycles: number, isPlaying: boolean): PlaybackProjection {
+  if (!Number.isFinite(absoluteNow) || absoluteNow <= 0
+    || !Number.isFinite(loopCycles) || loopCycles <= 0) {
+    return { displayNow: 0, loopOffset: 0 };
+  }
+  if (!isPlaying && absoluteNow === loopCycles) {
+    return { displayNow: loopCycles, loopOffset: 0 };
+  }
+  const clamped = Math.max(0, absoluteNow);
+  return {
+    displayNow: positiveModulo(clamped, loopCycles),
+    loopOffset: Math.floor(clamped / loopCycles) * loopCycles,
+  };
+}
+
 export function formatPlaybackTime(seconds: number): string {
   const wholeSeconds = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(wholeSeconds / 60);
