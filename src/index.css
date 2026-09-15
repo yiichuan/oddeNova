@@ -3513,6 +3513,71 @@ html[data-theme='light'] .mobile-menu-item:active {
    rather than by new ones, because every surface in here is a shared token
    that keeps its tint everywhere else. `--color-bg-primary` covers the
    fallback bar shown for a take with no recorded revision. */
+/* ── The take widgets in the reading · the edge that says which one sounds ───
+   Every widget in the stream is a pair of keys: the half that names a version
+   and opens its changes, and the play key butted onto its right. At rest the
+   pair is two plain fills — nothing is drawn around them, because at rest there
+   is nothing to say. The version that is *sounding* takes an edge, one per half,
+   so the pair reads as one shape parted down the middle rather than as a plate
+   with a line drawn on it. It follows the transport: it arrives when the take is
+   put on, moves when another is, and goes when the room goes quiet — the same
+   thing the widget's own key says at arm's length by turning over to a stop
+   mark, said here at the size of the whole widget.
+
+   Inset rather than a border: the halves are laid out to the pixel against each
+   other and against the box that clips them, and a real border would push that
+   layout out by its own width on every side — so an edge that comes and goes
+   with playback would shift the reading every time it did. Drawn inside, the
+   geometry above it never moves.
+
+   One grey per room, stated here rather than borrowed from `--color-border`:
+   that token is a hairline between surfaces, and this edge has to hold a shape
+   on its own against a fill only a step away from it. Each is a step clear of
+   the fills it works over — the diff widget's `--color-settings-surface` and the
+   plain bar's `--color-bg-primary` at 60%.
+
+   Grey and not the accent. `--color-diff-accent` is #0668E5 on paper, so an edge
+   in it put a saturated blue rectangle around every version named in the
+   reading — a frame competing with the code it framed, and saying nothing, since
+   every widget wore it at once. */
+.conversation-code-bar {
+  --code-bar-stroke: #343434;
+}
+
+html[data-theme='light'] .conversation-code-bar {
+  --code-bar-stroke: #CFCFD8;
+}
+
+.conversation-code-bar--sounding .conversation-code-bar-part {
+  box-shadow: inset 0 0 0 1px var(--code-bar-stroke);
+}
+
+/* The edge has to carry the corners itself. The box around the pair is what
+   rounds them — it clips two square halves to its own radius — and a clip takes
+   the corner away rather than bending what is drawn into it, so an inset edge on
+   a square half simply stops where the corner used to be: four gaps, one at each
+   outside corner. Rounding each half to the same radius the box clips at
+   (`--radius-md`, which is where the parent's `rounded-md` reads it from, so the
+   two cannot drift apart) puts the edge on the curve instead of under the cut.
+
+   Unconditional, not tied to the sounding state: the fills are rounded the same
+   way whether or not an edge is on them, so putting a take on adds an edge and
+   changes nothing else about the shape.
+
+   Outside corners only: the two facing the seam stay square, so the pair still
+   reads as one shape parted down the middle rather than as two loose keys. A
+   widget drawn without its play key has one half doing both jobs — `:first-
+   child` and `:last-child` both land on it, and it rounds all four. */
+.conversation-code-bar-part:first-child {
+  border-start-start-radius: var(--radius-md);
+  border-end-start-radius: var(--radius-md);
+}
+
+.conversation-code-bar-part:last-child {
+  border-start-end-radius: var(--radius-md);
+  border-end-end-radius: var(--radius-md);
+}
+
 html[data-theme='light'] .conversation-code-bar {
   --color-settings-surface: #FDFDFD;
   --color-auth-field: #E9E9E9;

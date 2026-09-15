@@ -23,6 +23,12 @@ interface CodeDiffViewProps {
    */
   onPlay?: () => void;
   onStop?: () => void;
+  /**
+   * `draft` is the segment at the tail of the reading that reports the typist's
+   * own edit rather than a turn's. It is still moving, and nothing generated
+   * it, so it names itself differently and has no playback result to report.
+   */
+  variant?: 'turn' | 'draft';
 }
 
 function counterpartFor(rows: DiffRow[], index: number): string | undefined {
@@ -71,6 +77,7 @@ export function CodeDiffView({
   playing = false,
   onPlay,
   onStop,
+  variant = 'turn',
 }: CodeDiffViewProps) {
   const [copied, setCopied] = useState(false);
   const diff = useMemo(
@@ -87,9 +94,19 @@ export function CodeDiffView({
      Favorites page's reading (`ArchiveCodeChip`), built the other way up —
      there two keys are given a shared radius, here one shape is split. */
   return (
-    <div className="conversation-code-bar mt-4 -ml-1 overflow-hidden rounded-md animate-fade-in">
+    <div
+      data-code-diff-variant={variant}
+      data-code-diff-sounding={playing || undefined}
+      /* `mt-4` sets the widget off the paragraph it hangs under inside a reply.
+         The draft variant hangs under nothing — it is a block of the reading in
+         its own right — so it drops the margin and takes its distance from the
+         reply above it the way every other block does. */
+      className={`conversation-code-bar -ml-1 overflow-hidden rounded-md animate-fade-in${
+        variant === 'draft' ? '' : ' mt-4'
+      }${playing ? ' conversation-code-bar--sounding' : ''}`}
+    >
       <div className="flex w-full items-stretch gap-0.5 text-[11px] text-text-primary">
-        <div className="flex min-w-0 flex-1 items-stretch bg-settings-surface">
+        <div className="conversation-code-bar-part flex min-w-0 flex-1 items-stretch bg-settings-surface">
           <button
             type="button"
             data-code-diff-toggle={messageId}
@@ -101,10 +118,10 @@ export function CodeDiffView({
               size={14}
               className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
             />
-            <span>{t('viewChanges')}</span>
+            <span>{variant === 'draft' ? t('yourEdits') : t('viewChanges')}</span>
             <span className="text-diff-add">+{diff.additions}</span>
             <span className="text-diff-remove">−{diff.deletions}</span>
-            {revision.playbackStatus === 'failed' && (
+            {variant === 'turn' && revision.playbackStatus === 'failed' && (
               <span className="ml-1 truncate text-amber-300/70">{t('revisionPlaybackFailed')}</span>
             )}
           </button>
@@ -132,7 +149,7 @@ export function CodeDiffView({
                beside it, so the two keys stop at the same edge however the
                reading is set, and it stays the height of that line when the
                changes are opened out underneath. */
-            className="grid w-7 shrink-0 place-items-center bg-settings-surface transition-colors hover:bg-surface-hover hover:text-text-primary"
+            className="conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-settings-surface transition-colors hover:bg-surface-hover hover:text-text-primary"
           >
             {playing ? <StopIcon size={12} /> : <PlayOutlineIcon size={13} />}
           </button>

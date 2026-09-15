@@ -8,6 +8,7 @@ import type { FavoriteSummary, SessionSummary } from '../../shared/session-api';
 import type { Session } from '../hooks/useSessions';
 import type { FavoriteConversation } from '../lib/favorite-conversations';
 import { t } from '../lib/i18n';
+import { DRAFT_SEGMENT_ID } from '../lib/draft-diff';
 import { LEAVING_MS, REPORT_LINGER_MS } from '../components/overlays/FavoriteActionDialog';
 import { resetDeviceTiltStateForTests } from '../components/featured/featured-device-tilt';
 
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     play: vi.fn(async () => true),
     stop: vi.fn(),
     setCode: vi.fn(),
+    setReadOnly: vi.fn(),
     setRoot: vi.fn(),
     isPlaying: false,
     engineReady: true,
@@ -1743,6 +1745,102 @@ describe('App session sync boundaries', () => {
     const playOrder = mocks.strudel.play.mock.invocationCallOrder[0];
     expect(manualOrder).toBeLessThan(flushOrder);
     expect(flushOrder).toBeLessThan(playOrder);
+  });
+
+  /* The whole point of the preview state. An edit the typist has not committed
+     lives in one place — the session's code — and going back to listen to an
+     earlier take used to walk straight over it: play() puts its argument in the
+     editor, and the mirror below wrote the editor back to the session. */
+  describe('reading an older take', () => {
+    const older = 's("bd")';
+    const edit = 's("bd sd hh")';
+
+    const playSegment = () =>
+      mocks.sidebarProps?.onPlaySegment as (segmentId: string, code: string) => void;
+
+    async function withUnsavedEdit() {
+      mocks.isMobile = false;
+      await renderApp();
+      mocks.strudel.code = edit;
+      await renderApp();
+      mocks.sessions.currentSession = { ...mocks.session, code: edit };
+      mocks.sessions.setManualCode.mockClear();
+      mocks.strudel.setCode.mockClear();
+      mocks.strudel.setReadOnly.mockClear();
+    }
+
+    it('leaves the unsaved edit where it is while an older take is on screen', async () => {
+      await withUnsavedEdit();
+
+      await act(async () => { playSegment()('assistant-1', older); });
+      // The editor went to look at the older take...
+      expect(mocks.strudel.play).toHaveBeenCalledWith(older);
+      mocks.strudel.code = older;
+      await renderApp();
+
+      // ...and the draft did not follow it. Nothing wrote the older take back
+      // over the session's code, which is where the edit lives.
+      expect(mocks.sessions.setManualCode).not.toHaveBeenCalled();
+      expect(mocks.sidebarProps?.draftCode).toBe(edit);
+    });
+
+    it('refuses edits for as long as it is showing one', async () => {
+      await withUnsavedEdit();
+
+      await act(async () => { playSegment()('assistant-1', older); });
+      await renderApp();
+      expect(mocks.strudel.setReadOnly).toHaveBeenLastCalledWith(true);
+
+      await act(async () => { playSegment()(DRAFT_SEGMENT_ID, edit); });
+      await renderApp();
+      expect(mocks.strudel.setReadOnly).toHaveBeenLastCalledWith(false);
+    });
+
+    it('hands the edit back when the draft\'s own key is pressed', async () => {
+      await withUnsavedEdit();
+      await act(async () => { playSegment()('assistant-1', older); });
+      mocks.strudel.code = older;
+      await renderApp();
+      mocks.strudel.setCode.mockClear();
+
+      await act(async () => { playSegment()(DRAFT_SEGMENT_ID, edit); });
+      await renderApp();
+
+      expect(mocks.strudel.setCode).toHaveBeenCalledWith(edit);
+      expect(mocks.strudel.play).toHaveBeenLastCalledWith(edit);
+    });
+
+    it('says the window is read-only, and offers the way back', async () => {
+      await withUnsavedEdit();
+      expect(mocks.codePanelProps?.previewing).toBe(false);
+
+      await act(async () => { playSegment()('assistant-1', older); });
+      mocks.strudel.code = older;
+      await renderApp();
+      expect(mocks.codePanelProps?.previewing).toBe(true);
+
+      mocks.strudel.setCode.mockClear();
+      await act(async () => { (mocks.codePanelProps?.onExitPreview as (() => void))(); });
+      await renderApp();
+
+      expect(mocks.strudel.setCode).toHaveBeenCalledWith(edit);
+      expect(mocks.codePanelProps?.previewing).toBe(false);
+    });
+
+    it('takes the reading back to the draft before a turn works on it', async () => {
+      await withUnsavedEdit();
+      await act(async () => { playSegment()('assistant-1', older); });
+      mocks.strudel.code = older;
+      await renderApp();
+      mocks.strudel.setCode.mockClear();
+
+      await act(async () => {
+        await (mocks.sidebarProps?.onSendText as ((text: string, entryPoint: string) => Promise<unknown>))('再响一点', 'text');
+      });
+      await renderApp();
+
+      expect(mocks.strudel.setCode).toHaveBeenCalledWith(edit);
+    });
   });
 
   it('checkpoints the live editor code before creating an account favorite', async () => {

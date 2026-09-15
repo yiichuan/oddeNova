@@ -475,8 +475,8 @@ describe('StrudelService editor preferences', () => {
 
     await service.attach(document.createElement('div'));
 
-    // Syntax highlight, scroll margins, tooltip bounds.
-    expect(dispatch).toHaveBeenCalledTimes(3);
+    // Syntax highlight, scroll margins, tooltip bounds, read-only compartment.
+    expect(dispatch).toHaveBeenCalledTimes(4);
     expect(reconfigure).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith({ effects: themeEffect });
     expect(dispatch.mock.calls[1][0]).toHaveProperty('effects');

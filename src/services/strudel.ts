@@ -8,6 +8,7 @@ import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '.
 import { createCodePanelDrawContext, type CodePanelDrawContext } from '../lib/codepanel-canvas';
 import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
 import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
+import { installCodeEditorReadOnly, setCodeEditorReadOnly } from '../lib/code-editor-read-only';
 import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bounds';
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
@@ -629,6 +630,7 @@ export class StrudelService {
           themes,
         });
         installCodeEditorScrollMargins(editor.editor);
+        installCodeEditorReadOnly(editor.editor);
         // Keeps the completion popup inside the editor instead of under the
         // control bar — see code-editor-tooltip-bounds.ts.
         installCodeEditorTooltipBounds(editor.editor);
@@ -893,6 +895,16 @@ export class StrudelService {
 
     // setcps is registered globally by @strudel/core via evalScope — apply immediately
     (window as unknown as Record<string, ((v: number) => void) | undefined>).setcps?.(cps);
+  };
+
+  /**
+   * Turn the typist away without turning the program away — see
+   * `code-editor-read-only.ts`. Used while the reading has an older take in the
+   * window; `setCode` keeps working through it.
+   */
+  setReadOnly = (on: boolean): void => {
+    const view = this.editorInstance?.editor;
+    if (view) setCodeEditorReadOnly(view, on);
   };
 
   setCode = (code: string): void => {

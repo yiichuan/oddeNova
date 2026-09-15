@@ -6,6 +6,7 @@ import { Undo2 } from 'lucide-react';
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
 import { ThinkingLottie } from './ThinkingLottie';
 import { t, zh } from '../../lib/i18n';
+import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
 
 type MobileNoSelectStyle = CSSProperties & {
@@ -21,6 +22,27 @@ const REASONING_BOTTOM_EPS = 20;             // px
 /* Used when the box cannot say what its own line height is (`normal`, or no
    stylesheet at all). The window is set in text-sm at leading-relaxed. */
 const REASONING_FALLBACK_LINE = 23;          // px
+
+/* Manual-scroll takeover, in px.
+   A reader who puts a hand on the wheel or the screen means it, so while a
+   gesture is live the smallest movement off the anchor hands the reading over
+   (GESTURE). Reasoning streams in deltas, and each one re-runs the scroll
+   effect: with a distance to clear first, a trackpad's few-px increments would
+   be pinned back between one delta and the next and the reading would never
+   move at all. Without a gesture behind it — a layout shift, the browser's own
+   scroll anchoring — it still takes a real distance to count (IDLE), so nothing
+   the page does to itself silently stops the stream from following.
+   Following resumes only once the reading is back where the anchor holds it, or
+   at the very bottom of the scrollback (RESUME); anywhere in between, the
+   takeover stands. */
+const TAKEOVER_GESTURE_EPS = 2;
+const TAKEOVER_IDLE_EPS = 80;
+const FOLLOW_RESUME_EPS = 4;
+/* How long after a wheel/touch/press the reading is still considered to be
+   under the reader's hand — one gesture spreads its scroll events over a good
+   while (momentum, the browser's smooth-wheel interpolation, a scrollbar held
+   mid-drag). */
+const SCROLL_GESTURE_MS = 700;
 
 /**
  * How far the streamed text runs past the bottom of its window, in px. Read
@@ -516,13 +538,54 @@ interface ConversationViewProps {
    * holding — the latest take, not the one being read about. So where a take is
    * named is where it can be heard, on either layout.
    */
-  onPlayCode?: (code: string) => void;
+  onPlaySegment?: (segmentId: string, code: string) => void;
   onStopCode?: () => void;
   /** Whether anything is sounding, and what — together these say which widget,
    *  if any, is the one currently playing. */
   isPlaying?: boolean;
   playingCode?: string;
+  /**
+   * The working draft — what the studio's editor is holding, and what the next
+   * turn will be asked to change.
+   *
+   * Where it has parted from the last committed take, a segment of its own
+   * appears at the tail of the reading showing that difference. It is the one
+   * version in the stream that nobody generated, so it carries no retry and no
+   * branch: there is no turn to run again. Giving it a place is what makes an
+   * edit survive reading an older take — the editor can go and show that older
+   * take without the edit having anywhere to fall out of.
+   */
+  draftCode?: string;
+  /**
+   * The key that started what is sounding, and the code it put on — see App.
+   * Which widget is sounding is a question of which key was pressed, not of
+   * whose text matches: two versions in one reading are often identical, and
+   * matching on text would light every one of them.
+   */
+  pressedSegmentId?: string | null;
+  pressedSegmentCode?: string | null;
 }
+
+/**
+ * A value that settles rather than tracks.
+ *
+ * The editor is never debounced — it is what the typist is looking at. This is
+ * for the derived diff beside it: `lineDiff` is O(n·m) and allocates a fresh
+ * table per call (`code-diff.ts`), and where `parser.ts` cannot find a
+ * `stack(...)` the whole script lands in one group, so a long piece would
+ * allocate a large table on every keystroke. Arriving a fraction of a second
+ * later costs the reading nothing.
+ */
+function useSettled<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
+}
+
+const DRAFT_DIFF_SETTLE_MS = 180;
 
 export default function ConversationView({
   messages,
@@ -533,10 +596,13 @@ export default function ConversationView({
   onRollback,
   onBranch,
   onRetry,
-  onPlayCode,
+  onPlaySegment,
   onStopCode,
   isPlaying = false,
   playingCode = '',
+  draftCode = '',
+  pressedSegmentId = null,
+  pressedSegmentCode = null,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -564,6 +630,11 @@ export default function ConversationView({
   // In-flight programmatic smooth scroll (turn-start anchoring): its target
   // and a deadline after which it's considered interrupted/finished.
   const autoScrollRef = useRef<{ target: number; until: number } | null>(null);
+  // When the reader last touched the scroll themselves (wheel, touch, or a
+  // press that may be a scrollbar drag). Programmatic scrolls never set it, so
+  // it is what separates "the reader moved this" from "the page moved under
+  // them" — see the two takeover thresholds above.
+  const lastGestureRef = useRef(0);
   // The scroll position the layout effect last anchored to — the top of the
   // current turn's user bubble in turn-anchor mode, or the bottom pin
   // otherwise. Manual-scroll detection measures deviation from THIS, not from
@@ -576,6 +647,7 @@ export default function ConversationView({
   // test).
   const anchorTargetRef = useRef<number | null>(null);
   const reasoningScrollRef = useRef<HTMLDivElement>(null);
+  const draftSegmentRef = useRef<HTMLDivElement>(null);
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set());
@@ -655,6 +727,65 @@ export default function ConversationView({
     [revisions],
   );
 
+  const draftBase = useMemo(() => draftBaseCode(messages), [messages]);
+  const settledDraft = useSettled(draftCode, DRAFT_DIFF_SETTLE_MS);
+  /**
+   * The manual edit, as a revision the widget beside a turn would recognise —
+   * synthesised each render rather than stored, so it cannot fall out of step
+   * with the editor.
+   *
+   * Absent when there is nothing to show: type a character and delete it again
+   * and the segment goes rather than sitting there claiming +0/−0. Absent for
+   * the length of a turn as well — the turn's own baseline was taken when it
+   * started (`useAgentRunner`), and once it lands its take becomes the new base
+   * and the difference closes on its own.
+   */
+  const draftRevision = useMemo<CodeRevision | null>(() => {
+    if (isLoading) return null;
+    if (draftBase === null) return null;
+    if (settledDraft === draftBase) return null;
+    return {
+      id: DRAFT_SEGMENT_ID,
+      beforeCode: draftBase,
+      afterCode: settledDraft,
+      playbackStatus: 'not_attempted',
+      createdAt: 0,
+    };
+  }, [isLoading, settledDraft, draftBase]);
+  /* Presence, deliberately not content: this is what the scroll effect watches,
+     so the reading is brought to the segment once, when it appears, and then
+     left alone for every keystroke that follows. */
+  const hasDraftSegment = draftRevision !== null;
+
+  /**
+   * The one widget that is sounding, or none — resolved here so it cannot be
+   * two.
+   *
+   * The pressed key wins while what it put on is still what sounds; its code is
+   * the code that was *played*, so typing on past a draft that is still playing
+   * does not hand the light to some older take that happens to match the text.
+   *
+   * Falling back to the text covers the takes nobody pressed: a turn plays
+   * itself the moment it commits, and the studio's transport plays whatever the
+   * editor holds. Where several match, the last one wins — the nearest to the
+   * live end is the one a reader means.
+   */
+  const soundingSegmentId = useMemo(() => {
+    if (!isPlaying) return null;
+    if (pressedSegmentId && pressedSegmentCode === playingCode) return pressedSegmentId;
+    const widgets: { id: string; code: string }[] = [];
+    for (const message of messages) {
+      if (message.role !== 'assistant' || message.code == null) continue;
+      const revision = message.revisionId ? revisionsById.get(message.revisionId) : undefined;
+      widgets.push({ id: message.id, code: revision ? revision.afterCode : message.code });
+    }
+    if (draftRevision) widgets.push({ id: DRAFT_SEGMENT_ID, code: draftRevision.afterCode });
+    for (let index = widgets.length - 1; index >= 0; index--) {
+      if (widgets[index].code === playingCode) return widgets[index].id;
+    }
+    return null;
+  }, [isPlaying, pressedSegmentId, pressedSegmentCode, playingCode, messages, revisionsById, draftRevision]);
+
   // Detect manual user scroll: stop auto-following when more than 80px from
   // the bottom, resume when scrolled back. Scroll events produced by our own
   // smooth turn-start animation must not count as manual — its intermediate
@@ -674,31 +805,56 @@ export default function ConversationView({
         if (performance.now() < auto.until) return;
         autoScrollRef.current = null; // stale flight (interrupted); fall through
       }
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      // The anchor is where the scroll effect holds the reading — the top of
+      // the current turn's user bubble in turn-anchor mode, the bottom pin
+      // otherwise. Deviation is measured from it in *either* direction: with a
+      // user bubble taller than the viewport the anchor sits near the top, so
+      // scrolling down past it to reach the reasoning window is as much a
+      // takeover as scrolling up, and a bottom-distance test misfires there.
       const anchorTarget = anchorTargetRef.current;
-      if (anchorTarget != null) {
-        // Turn-anchor mode: the view is pinned near the top (bubble anchored),
-        // so a real takeover is moving away from that anchor in *either*
-        // direction — most importantly, scrolling down past it to reach the
-        // reasoning window below the fold. A bottom-distance test misfires here.
-        userScrolledRef.current = Math.abs(el.scrollTop - anchorTarget) > 80;
-      } else {
-        const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-        userScrolledRef.current = distFromBottom > 80;
+      const dist = anchorTarget != null
+        ? Math.abs(el.scrollTop - anchorTarget)
+        : distFromBottom;
+      // Back at the anchor, or at the very end of the scrollback: following
+      // again. (The anchor rests a little above the bottom pin while the
+      // reasoning window is up, so the bottom is its own way back.)
+      if (dist <= FOLLOW_RESUME_EPS || distFromBottom <= FOLLOW_RESUME_EPS) {
+        userScrolledRef.current = false;
+        return;
+      }
+      // Otherwise the takeover is sticky: anything short of the thresholds
+      // leaves the current state alone rather than declaring the reader is
+      // following again, which is what used to snap a part-scrolled reading
+      // back on the next streamed delta.
+      const gesturing = performance.now() - lastGestureRef.current < SCROLL_GESTURE_MS;
+      if (dist > (gesturing ? TAKEOVER_GESTURE_EPS : TAKEOVER_IDLE_EPS)) {
+        userScrolledRef.current = true;
       }
     };
     const handleUserScrollIntent = () => {
+      lastGestureRef.current = performance.now();
       if (autoScrollRef.current) {
         autoScrollRef.current = null;
         userScrolledRef.current = true;
       }
     };
+    // A press is only a *possible* scroll gesture (a scrollbar drag, which
+    // fires no wheel or touch events of its own), so it lowers the takeover
+    // threshold without cancelling an in-flight glide the way a wheel does —
+    // clicking in the scrollback shouldn't abort the turn-start animation.
+    const handlePointerDown = () => {
+      lastGestureRef.current = performance.now();
+    };
     el.addEventListener('scroll', handleScroll, { passive: true });
     el.addEventListener('wheel', handleUserScrollIntent, { passive: true });
     el.addEventListener('touchmove', handleUserScrollIntent, { passive: true });
+    el.addEventListener('pointerdown', handlePointerDown, { passive: true });
     return () => {
       el.removeEventListener('scroll', handleScroll);
       el.removeEventListener('wheel', handleUserScrollIntent);
       el.removeEventListener('touchmove', handleUserScrollIntent);
+      el.removeEventListener('pointerdown', handlePointerDown);
     };
   }, []);
 
@@ -805,59 +961,82 @@ export default function ConversationView({
     } else {
       // Turn start overrides any manual scroll (the user just acted on this turn).
       if (turnJustStarted) userScrolledRef.current = false;
+      const bottomPin = el.scrollHeight - el.clientHeight;
+      let target = bottomPin;
+      if (turnAnchorActive && lastUserMsgId) {
+        const bubble = el.querySelector<HTMLElement>(
+          `[data-rollback-bubble="${CSS.escape(lastUserMsgId)}"]`,
+        );
+        if (bubble) {
+          // Walk the offsetParent chain up to the scroll container: a plain
+          // bubble.offsetTop is unreliable because the fade-in-up animation's
+          // transform makes the freshly mounted row itself the offsetParent.
+          // offsetTop is pure layout geometry, so the summed chain is immune
+          // to in-flight transforms.
+          let top = 0;
+          let node: HTMLElement | null = bubble;
+          while (node && node !== el) {
+            top += node.offsetTop;
+            node = node.offsetParent as HTMLElement | null;
+          }
+          // Rest the bubble on the scrollport's own top padding instead of
+          // flush with its edge: that band is what holds the rollback key
+          // hanging off the bubble's corner clear of the top veil. Measured
+          // rather than repeated, so the two can't drift apart.
+          const topInset = parseFloat(getComputedStyle(el).paddingTop) || 0;
+          if (node === el) target = Math.min(bottomPin, top - topInset);
+        }
+      }
+      // Reveal the live reasoning window. A user bubble taller than the
+      // viewport pushes the streaming reasoning box below the fold at the
+      // top-anchor position above, so it would never be seen. Measure the
+      // box's own bottom (it's mounted only while reasoning streams) and, if
+      // it sits below the visible area, scroll down just enough to bring
+      // that bottom — the last streamed line, which the box's own internal
+      // scroll tracks — into view. Only ever scrolls further down than the
+      // top anchor (revealTarget > target), so short bubbles that already
+      // show the box keep it pinned at the top, untouched.
+      const preEl = reasoningScrollRef.current;
+      if (preEl) {
+        let rBottom = preEl.offsetHeight;
+        let walk: HTMLElement | null = preEl;
+        while (walk && walk !== el) {
+          rBottom += walk.offsetTop;
+          walk = walk.offsetParent as HTMLElement | null;
+        }
+        if (walk === el) {
+          const revealTarget = rBottom - el.clientHeight + 16;
+          if (revealTarget > target) target = Math.min(bottomPin, revealTarget);
+        }
+      }
+      // Reveal the manual-edit segment, the same way and for the same reason
+      // as the reasoning window above. It arrives at the very end of the
+      // reading, below a reply the turn anchor is holding near the top — so
+      // the first edit after a turn would otherwise put it out of sight, and
+      // a typist would have no way of knowing their change had been recorded
+      // at all. Runs when the segment appears and not as it grows (see the
+      // dependency list): the reveal is news, the keystrokes after it are
+      // not, and a reading that chased every one of them would be unusable.
+      const draftEl = draftSegmentRef.current;
+      if (draftEl) {
+        let dBottom = draftEl.offsetHeight;
+        let walk: HTMLElement | null = draftEl;
+        while (walk && walk !== el) {
+          dBottom += walk.offsetTop;
+          walk = walk.offsetParent as HTMLElement | null;
+        }
+        if (walk === el) {
+          const revealTarget = dBottom - el.clientHeight + 16;
+          if (revealTarget > target) target = Math.min(bottomPin, revealTarget);
+        }
+      }
+      target = Math.max(0, target);
+      // Recorded on every commit, taken-over or not: it is what the takeover
+      // test measures deviation from, and an anchor left stale under a growing
+      // scrollback would never let a reader who scrolls back down resume
+      // following (see handleScroll / anchorTargetRef).
+      anchorTargetRef.current = target;
       if (!userScrolledRef.current) {
-        const bottomPin = el.scrollHeight - el.clientHeight;
-        let target = bottomPin;
-        if (turnAnchorActive && lastUserMsgId) {
-          const bubble = el.querySelector<HTMLElement>(
-            `[data-rollback-bubble="${CSS.escape(lastUserMsgId)}"]`,
-          );
-          if (bubble) {
-            // Walk the offsetParent chain up to the scroll container: a plain
-            // bubble.offsetTop is unreliable because the fade-in-up animation's
-            // transform makes the freshly mounted row itself the offsetParent.
-            // offsetTop is pure layout geometry, so the summed chain is immune
-            // to in-flight transforms.
-            let top = 0;
-            let node: HTMLElement | null = bubble;
-            while (node && node !== el) {
-              top += node.offsetTop;
-              node = node.offsetParent as HTMLElement | null;
-            }
-            // Rest the bubble on the scrollport's own top padding instead of
-            // flush with its edge: that band is what holds the rollback key
-            // hanging off the bubble's corner clear of the top veil. Measured
-            // rather than repeated, so the two can't drift apart.
-            const topInset = parseFloat(getComputedStyle(el).paddingTop) || 0;
-            if (node === el) target = Math.min(bottomPin, top - topInset);
-          }
-        }
-        // Reveal the live reasoning window. A user bubble taller than the
-        // viewport pushes the streaming reasoning box below the fold at the
-        // top-anchor position above, so it would never be seen. Measure the
-        // box's own bottom (it's mounted only while reasoning streams) and, if
-        // it sits below the visible area, scroll down just enough to bring
-        // that bottom — the last streamed line, which the box's own internal
-        // scroll tracks — into view. Only ever scrolls further down than the
-        // top anchor (revealTarget > target), so short bubbles that already
-        // show the box keep it pinned at the top, untouched.
-        const preEl = reasoningScrollRef.current;
-        if (preEl) {
-          let rBottom = preEl.offsetHeight;
-          let walk: HTMLElement | null = preEl;
-          while (walk && walk !== el) {
-            rBottom += walk.offsetTop;
-            walk = walk.offsetParent as HTMLElement | null;
-          }
-          if (walk === el) {
-            const revealTarget = rBottom - el.clientHeight + 16;
-            if (revealTarget > target) target = Math.min(bottomPin, revealTarget);
-          }
-        }
-        target = Math.max(0, target);
-        // Record where we're anchoring so manual-scroll detection can measure
-        // deviation from it (see handleScroll / anchorTargetRef).
-        anchorTargetRef.current = target;
         const auto = autoScrollRef.current;
         if (turnJustStarted) {
           autoScrollRef.current = { target, until: performance.now() + 800 };
@@ -885,7 +1064,7 @@ export default function ConversationView({
       // streamed text is left where the reader put it, and the jump-to-latest
       // button below is what takes them to the live end when they want it.
     }
-  }, [messages, isLoading, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive]);
+  }, [messages, isLoading, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
   const { absorbedReasoningIds } = useMemo(() => {
@@ -1361,7 +1540,12 @@ export default function ConversationView({
         const followsCollapsedActionGroup =
           previousActionGroupId !== undefined && !expandedActions.has(previousActionGroupId);
         const assistantStyle: CSSProperties = {
-          ...(msg.id === lastMessageId && !isVideoMode && turnAnchorActive && !isLoading
+          /* The turn filler reserves the room the turn anchor needs below the
+             reading's last block. Once a manual edit is standing at the tail,
+             that block is the edit's, not this reply's — so the reservation
+             goes with it. Held here as well as there, the reply would push the
+             segment a whole viewport down the page. */
+          ...(msg.id === lastMessageId && !hasDraftSegment && !isVideoMode && turnAnchorActive && !isLoading
             ? { minHeight: assistantFillerMinHeight }
             : {}),
         };
@@ -1383,9 +1567,9 @@ export default function ConversationView({
                   revision={revisionsById.get(msg.revisionId)!}
                   expanded={expandedCode.has(msg.id)}
                   onToggle={() => toggleCode(msg.id)}
-                  playing={isPlaying && playingCode === revisionsById.get(msg.revisionId)!.afterCode}
-                  onPlay={onPlayCode
-                    ? () => onPlayCode(revisionsById.get(msg.revisionId!)!.afterCode)
+                  playing={soundingSegmentId === msg.id}
+                  onPlay={onPlaySegment
+                    ? () => onPlaySegment(msg.id, revisionsById.get(msg.revisionId!)!.afterCode)
                     : undefined}
                   onStop={onStopCode}
                 />
@@ -1394,14 +1578,22 @@ export default function ConversationView({
                 const isExpanded = expandedCode.has(msg.id);
                 const code = msg.code;
                 const lineCount = code.split('\n').length;
+                // Hoisted out of the play key below: the firmer edge is worn by
+                // the whole widget, not just the key that started it.
+                const sounding = soundingSegmentId === msg.id;
                 return (
-                  <div className="conversation-code-bar mt-4 -ml-1 rounded-md border border-diff-accent/70 overflow-hidden animate-fade-in">
+                  <div
+                    data-code-bar-sounding={sounding || undefined}
+                    className={`conversation-code-bar mt-4 -ml-1 rounded-md overflow-hidden animate-fade-in${
+                      sounding ? ' conversation-code-bar--sounding' : ''
+                    }`}
+                  >
                     {/* The same split as the widget beside it (see
                         CodeDiffView): the fill sits on the keys, and the seam
                         between the reading half and the play key is the one
                         place the box shows through. */}
                     <div className="w-full flex items-stretch gap-0.5 text-[11px] text-diff-accent/70">
-                      <div className="flex min-w-0 flex-1 items-stretch bg-bg-primary/60">
+                      <div className="conversation-code-bar-part flex min-w-0 flex-1 items-stretch bg-bg-primary/60">
                         <button
                           onClick={() => toggleCode(msg.id)}
                           className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
@@ -1422,20 +1614,17 @@ export default function ConversationView({
                           {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
                         </button>
                       </div>
-                      {onPlayCode && (() => {
-                        const sounding = isPlaying && playingCode === code;
-                        return (
+                      {onPlaySegment && (() => (
                           <button
                             type="button"
                             data-code-bar-play={msg.id}
                             aria-label={sounding ? t('stop') : t('play')}
-                            onClick={() => (sounding ? onStopCode?.() : onPlayCode(code))}
-                            className="grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+                            onClick={() => (sounding ? onStopCode?.() : onPlaySegment(msg.id, code))}
+                            className="conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
                           >
                             {sounding ? <StopIcon size={12} /> : (isMobile ? <PlayIcon size={13} /> : <PlayOutlineIcon size={13} />)}
                           </button>
-                        );
-                      })()}
+                      ))()}
                     </div>
                     {isExpanded && (
                       <pre className="p-2 bg-bg-primary/60 text-[11px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap animate-fade-in">
@@ -1474,6 +1663,46 @@ export default function ConversationView({
           </div>
         );
       })}
+
+      {/* The manual edit, standing on its own at the end of the reading.
+          Derived from the draft rather than stored in `messages`, which is what
+          keeps a keystroke from re-running the scroll layout effect below (its
+          dependencies are the messages, not the code) — so the segment can
+          appear and grow under a typist's hands without the reading moving. No
+          bubble, no retry, no branch: nothing generated this, so there is no
+          turn to run again. */}
+      {draftRevision && (
+        <div
+          ref={draftSegmentRef}
+          // items-start holds the segment at the top of the row when the turn
+          // filler stretches it — the same arrangement the assistant block uses.
+          className="flex justify-start items-start animate-fade-in"
+          style={!isVideoMode && turnAnchorActive && !isLoading
+            ? { minHeight: assistantFillerMinHeight }
+            : undefined}
+        >
+          {/* No top padding, and the widget inside drops its own top margin (see
+              CodeDiffView's draft variant). Standing on its own, the segment is
+              not a widget hung under a paragraph: it is a block of the reading,
+              and it should sit off the reply above it by exactly what a user
+              bubble sits off one — the collapsed margin between siblings, and
+              nothing added on top. */}
+          <div className="w-full rounded-xl px-2 pb-2">
+            <CodeDiffView
+              messageId={DRAFT_SEGMENT_ID}
+              revision={draftRevision}
+              variant="draft"
+              expanded={expandedCode.has(DRAFT_SEGMENT_ID)}
+              onToggle={() => toggleCode(DRAFT_SEGMENT_ID)}
+              playing={soundingSegmentId === DRAFT_SEGMENT_ID}
+              onPlay={onPlaySegment
+                ? () => onPlaySegment(DRAFT_SEGMENT_ID, draftRevision.afterCode)
+                : undefined}
+              onStop={onStopCode}
+            />
+          </div>
+        </div>
+      )}
 
       {/* No bottom margin here (unlike the assistant block): the full outer
           height goes to content, so the reasoning window can reach down —
