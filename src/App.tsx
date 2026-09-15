@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
+import { DRAFT_SEGMENT_ID } from './lib/draft-diff';
 import CodePanel from './components/studio/CodePanel';
 import Sidebar from './components/conversation/Sidebar';
 import VizPlaceholder from './components/studio/VizPlaceholder';
@@ -763,11 +764,52 @@ export default function App() {
     </>
   );
 
+  /**
+   * The older take the editor is showing instead of the working draft, named by
+   * the segment in the reading that put it there.
+   *
+   * Deliberately not persisted and not part of the session: it says what is
+   * being *read*, never what is being *changed*. The draft stays where it is —
+   * in `session.code` — for the whole time, which is what lets an edit survive
+   * going back to listen to an earlier version.
+   */
+  const [preview, setPreview] = useState<{ segmentId: string; code: string } | null>(null);
+
+  /**
+   * The key that started what is sounding, and the code it put on.
+   *
+   * Which widget is sounding cannot be read off the code alone: two versions in
+   * one reading are often the same text — edit a take back to what an earlier
+   * one produced and they match exactly — and a widget that answered to the
+   * text would light both. The code is kept beside the id all the same, as what
+   * was *played* rather than what the widget now shows, so playback moving
+   * elsewhere puts the light out instead of stranding it.
+   */
+  const [soundingSegment, setSoundingSegment] = useState<{ id: string; code: string } | null>(null);
+
+  /** Put the draft back in the editor and hand the typist their keys back. */
+  const exitPreview = useCallback(() => {
+    if (!preview) return;
+    setPreview(null);
+    strudel.setCode(current?.code ?? '');
+  }, [preview, current?.code, strudel]);
+
+  /* Reading an older take is reading, so the editor refuses edits for as long
+     as it is showing one. CodeMirror's `readOnly` stops the typist and not the
+     program, so `setCode` still puts the next version on screen. */
+  useEffect(() => {
+    strudel.setReadOnly(preview !== null);
+  }, [preview, strudel]);
+
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
     if (!current) return;
     if (isMobile) mobileCodeRestoreRef.current = { id: current.id, code: current.code };
     skipNextManualSyncSessionRef.current = current.id;
+    // Both belong to the reading they were opened from; the outgoing session
+    // takes them with it.
+    setPreview(null);
+    setSoundingSegment(null);
     strudel.setCode(current.code);
     strudel.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
@@ -776,7 +818,11 @@ export default function App() {
   const setManualCode = sessions.setManualCode;
   const flushCloudSaves = sessions.flushCloudSaves;
   useEffect(() => {
-    if (!current?.id || isLoading || isReplaying || isVideoMode) return;
+    // `preview` is the one that protects unsaved work. The draft only ever
+    // moves from the editor through this mirror, so while the editor is showing
+    // somebody else's version, the mirror is off and the draft is frozen
+    // exactly where the typist left it.
+    if (!current?.id || isLoading || isReplaying || isVideoMode || preview) return;
     // The REPL publishes code asynchronously. Until it acknowledges the
     // incoming session, its previous value still belongs to the outgoing one.
     if (isMobile && mobileCodeRestoreRef.current?.id === current.id) {
@@ -795,6 +841,7 @@ export default function App() {
     isLoading,
     isReplaying,
     isVideoMode,
+    preview,
     setManualCode,
     strudel.code,
     isMobile,
@@ -848,6 +895,12 @@ export default function App() {
         setDemoStep((s) => s + 1);
       }
 
+      // A turn works on the draft (`getCurrentCode` reads the session), so the
+      // editor has to be back on the draft before it starts — otherwise the
+      // reader watches an older take sit there while something else is being
+      // rewritten underneath it.
+      exitPreview();
+
       return runTurn({
         text,
         entryPoint: options?.entryPoint ?? 'text',
@@ -857,7 +910,31 @@ export default function App() {
         suppliedHistory: options?.history,
       });
     },
-    [runTurn, demoStep, activeSet]
+    [runTurn, demoStep, activeSet, exitPreview]
+  );
+
+  /**
+   * The one way a version named in the reading reaches the transport.
+   *
+   * Pressing an older take's key shows it in the editor as well as sounding it:
+   * what you are hearing and what you are looking at should be the same thing,
+   * and with the draft held safe behind `preview` there is nothing to lose by
+   * the editor going to look. The draft's own key is the way back.
+   */
+  const handlePlaySegment = useCallback(
+    (segmentId: string, code: string) => {
+      if (segmentId === DRAFT_SEGMENT_ID) {
+        const draft = current?.code ?? '';
+        exitPreview();
+        setSoundingSegment({ id: segmentId, code: draft });
+        void strudel.play(draft);
+        return;
+      }
+      setPreview({ segmentId, code });
+      setSoundingSegment({ id: segmentId, code });
+      void strudel.play(code); // play() puts it in the editor on its way through
+    },
+    [current?.code, exitPreview, strudel],
   );
 
   const handleChatInstruction = useCallback(
@@ -890,6 +967,10 @@ export default function App() {
       // stop current audio (it belongs to the rolled-away version), put the
       // code back in the editor, and persist it. Playback stays a user action.
       strudel.stop();
+      // Not `exitPreview` — a rewind is not a return to the draft, it replaces
+      // it. Clearing the preview hands the editor back; the line below makes
+      // the rollback target the draft it is now holding.
+      setPreview(null);
       strudel.setCode(previousCode);
       if (sessions.currentId) sessions.setCurrentCode(previousCode, sessions.currentId);
 
@@ -1806,8 +1887,11 @@ export default function App() {
                  answered to the buffer would offer to stop a take the reader
                  has already edited away from. */
               playingCode={strudel.activeCode}
-              onPlayCode={(code) => { void strudel.play(code); }}
+              onPlaySegment={handlePlaySegment}
               onStopCode={strudel.stop}
+              draftCode={current?.code ?? ''}
+              pressedSegmentId={soundingSegment?.id ?? null}
+              pressedSegmentCode={soundingSegment?.code ?? null}
             />
           </div>
 
@@ -1979,6 +2063,8 @@ export default function App() {
                 bottom of the window instead of yielding to it. */}
             <div className="min-h-0 flex-1">
               <CodePanel
+                previewing={preview !== null}
+                onExitPreview={exitPreview}
                 code={strudel.code}
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
@@ -2190,7 +2276,7 @@ export default function App() {
               onRetryLoadMoreHistory={auth.user ? retryMoreDisplayedHistory : undefined}
               historySearchQuery={auth.user ? historySearch.query : undefined}
               onHistorySearchQueryChange={auth.user ? historySearch.setQuery : undefined}
-              onReplay={current ? () => { strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
+              onReplay={current ? () => { setPreview(null); strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
               isReplaying={isReplaying}
               replayInputText={replayInputText}
               prefill={rollbackPrefill}
@@ -2200,8 +2286,11 @@ export default function App() {
               onRetry={handleRetry}
               isPlaying={strudel.isPlaying}
               playingCode={strudel.activeCode}
-              onPlayCode={(code) => { void strudel.play(code); }}
+              onPlaySegment={handlePlaySegment}
               onStopCode={strudel.stop}
+              draftCode={current?.code ?? ''}
+              pressedSegmentId={soundingSegment?.id ?? null}
+              pressedSegmentCode={soundingSegment?.code ?? null}
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>
@@ -2253,6 +2342,8 @@ export default function App() {
           <div className={primaryNavItem === 'home' ? 'flex h-full min-h-0 flex-col' : 'hidden'}>
             <div className="flex-1 min-h-0">
               <CodePanel
+                previewing={preview !== null}
+                onExitPreview={exitPreview}
                 code={strudel.code}
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}

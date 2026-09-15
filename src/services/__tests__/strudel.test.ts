@@ -475,12 +475,183 @@ describe('StrudelService editor preferences', () => {
 
     await service.attach(document.createElement('div'));
 
-    // Syntax highlight, scroll margins, tooltip bounds.
-    expect(dispatch).toHaveBeenCalledTimes(3);
+    // Syntax highlight, scroll margins, tooltip bounds, read-only compartment.
+    expect(dispatch).toHaveBeenCalledTimes(4);
     expect(reconfigure).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith({ effects: themeEffect });
     expect(dispatch.mock.calls[1][0]).toHaveProperty('effects');
     expect(dispatch.mock.calls[2][0]).toHaveProperty('effects');
+  });
+});
+
+/* The engine can be rebuilt under a running piece — crossing the mobile
+   breakpoint swaps which layout's CodePanel is mounted, and `reinit()` asks for
+   a new one outright. `StrudelMirror` has no teardown of its own, so a replaced
+   instance used to stay alive: still sounding, still listening on `document`,
+   and still holding a callback into this service. That is what left the studio
+   bar and the reading's widgets showing a play button under audible music —
+   the sound was the new engine's, the state was the old engine's last word. */
+describe('StrudelService editor replacement', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('@strudel/codemirror');
+    vi.doUnmock('@strudel/transpiler');
+    vi.doUnmock('@strudel/draw');
+    vi.doUnmock('@strudel/webaudio');
+    vi.doUnmock('../../lib/soundfont-loader');
+    vi.doUnmock('../../lib/analytics');
+  });
+
+  /** As much of StrudelMirror as the replacement path touches. */
+  class FakeMirror {
+    static built: FakeMirror[] = [];
+    onUpdateState: (state: unknown) => void;
+    code: string;
+    scheduler = { started: false };
+    repl: { setCode: () => void; stop: () => void; scheduler: { started: boolean } };
+    drawer = { stop: vi.fn() };
+    editor = { dispatch: vi.fn(), destroy: vi.fn() };
+    onStartRepl: EventListener;
+    id: string;
+    setCode = vi.fn();
+    setAutocompletionEnabled = vi.fn();
+    setLineWrappingEnabled = vi.fn();
+    changeSetting = vi.fn();
+    evaluate = vi.fn(async () => { this.takeTheFloor(); });
+
+    constructor(options: { initialCode?: string; onUpdateState: (state: unknown) => void }) {
+      this.onUpdateState = options.onUpdateState;
+      this.code = options.initialCode ?? '';
+      this.repl = {
+        setCode: vi.fn(),
+        stop: vi.fn(() => { this.report(false); }),
+        scheduler: this.scheduler,
+      };
+      // The real one answers every *other* instance's `start-repl` by stopping
+      // itself, and never removes the listener.
+      this.id = `mirror-${FakeMirror.built.length}`;
+      this.onStartRepl = ((event: Event) => {
+        if ((event as CustomEvent<string>).detail !== this.id) this.repl.stop();
+      }) as EventListener;
+      document.addEventListener('start-repl', this.onStartRepl);
+      FakeMirror.built.push(this);
+    }
+
+    /** What the Cyclist's onToggle does: report, whether or not it changed. */
+    report(started: boolean): void {
+      this.scheduler.started = started;
+      this.onUpdateState({ started, code: this.code, activeCode: this.code, isDirty: false });
+    }
+
+    /** Starting a solo repl tells every other repl on the page to stop. */
+    takeTheFloor(): void {
+      this.report(true);
+      document.dispatchEvent(new CustomEvent('start-repl', { detail: this.id }));
+    }
+  }
+
+  async function attachTwice() {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    vi.doMock('@strudel/codemirror', () => ({
+      compartments: { theme: { reconfigure: vi.fn() } },
+      themes: {},
+      settings: {},
+      StrudelMirror: FakeMirror,
+    }));
+    vi.doMock('@strudel/transpiler', () => ({ transpiler: vi.fn() }));
+    // The panel's own canvas context: `play()` clears it before evaluating.
+    vi.doMock('@strudel/draw', () => ({
+      getDrawContext: vi.fn(() => ({ clearRect: vi.fn(), canvas: { width: 1, height: 1 } })),
+    }));
+    vi.doMock('@strudel/webaudio', () => ({ webaudioOutput: vi.fn() }));
+
+    FakeMirror.built = [];
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    (service as unknown as { _isVideoMode: boolean })._isVideoMode = true;
+    const playing: boolean[] = [];
+    service.onStateChange((state) => playing.push(state.isPlaying));
+
+    await service.attach(document.createElement('div'));
+    await service.attach(document.createElement('div'));
+
+    return { service, playing, outgoing: FakeMirror.built[0], current: FakeMirror.built[1] };
+  }
+
+  it('silences and unhooks the outgoing editor', async () => {
+    const { outgoing, current } = await attachTwice();
+
+    expect(outgoing).not.toBe(current);
+    expect(outgoing.repl.stop).toHaveBeenCalled();
+    expect(outgoing.drawer.stop).toHaveBeenCalled();
+    expect(outgoing.editor.destroy).toHaveBeenCalled();
+  });
+
+  it('keeps the outgoing editor from reporting the new one stopped', async () => {
+    const { service, playing, current } = await attachTwice();
+
+    // The piece starts on the engine that is actually on screen. The old one
+    // used to hear the `start-repl` that goes with it, stop itself, and report
+    // that stop as this service's transport state.
+    await service.play();
+
+    expect(current.scheduler.started).toBe(true);
+    expect(playing.at(-1)).toBe(true);
+  });
+
+  it('ignores a superseded editor that reports anyway', async () => {
+    const { service, playing, outgoing } = await attachTwice();
+    await service.play();
+
+    outgoing.report(false);
+
+    expect(playing.at(-1)).toBe(true);
+  });
+});
+
+/* `isPlaying` used to have exactly one source: the Cyclist's `onToggle`, which
+   fires only when the scheduler crosses between stopped and started. Evaluating
+   into a scheduler that is already running toggles nothing — so a state that had
+   gone out of step with the transport stayed wrong through every later press of
+   play. A successful evaluate now ends by asserting what the scheduler says. */
+describe('StrudelService transport truth', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('../../lib/soundfont-loader');
+    vi.doUnmock('../../lib/analytics');
+  });
+
+  async function serviceOnRunningScheduler() {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const mutable = service as unknown as {
+      _isVideoMode: boolean;
+      editorInstance: {
+        evaluate: () => Promise<void>;
+        repl: { stop: () => void; scheduler: { started: boolean } };
+      };
+    };
+    mutable._isVideoMode = true;
+    // Already running, and saying nothing about it.
+    mutable.editorInstance = {
+      evaluate: vi.fn(async () => {}),
+      repl: { stop: vi.fn(), scheduler: { started: true } },
+    };
+    const states: { isPlaying: boolean; isPaused: boolean }[] = [];
+    service.onStateChange(({ isPlaying, isPaused }) => states.push({ isPlaying, isPaused }));
+    return { service, states };
+  }
+
+  it('reports the transport the scheduler is actually running after a play', async () => {
+    const { service, states } = await serviceOnRunningScheduler();
+    expect(states.at(-1)).toEqual({ isPlaying: false, isPaused: false });
+
+    await service.play();
+
+    expect(states.at(-1)).toEqual({ isPlaying: true, isPaused: false });
   });
 });
 

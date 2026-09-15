@@ -88,6 +88,15 @@ interface CodePanelProps {
   onToggleViz?: () => void;
   syncStatus?: SyncStatus;
   showSyncStatus?: boolean;
+  /**
+   * Set while the window is showing an older take from the reading rather than
+   * the working draft. The editor refuses edits for as long as it is — so it
+   * has to say so, or a press that does nothing reads as a broken window.
+   * `onExitPreview` is the way back to the draft, which has been sitting
+   * untouched the whole time.
+   */
+  previewing?: boolean;
+  onExitPreview?: () => void;
 }
 
 interface Metaball {
@@ -416,6 +425,8 @@ export default function CodePanel({
   onToggleViz,
   syncStatus,
   showSyncStatus = false,
+  previewing = false,
+  onExitPreview,
 }: CodePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -664,6 +675,37 @@ export default function CodePanel({
             isMobile ? ' code-scroll-autohide' : ''
           }`}
         />
+
+        {previewing && (
+          <div
+            data-testid="code-panel-preview-banner"
+            /* Left of the error banner's corner and below nothing: a broken
+               script and a read-only window are separate pieces of news and
+               both have to be readable at once.
+
+               Opaque, and no backdrop filter. The panel's outline is drawn on
+               the box that clips this one, and `backdrop-filter` paints its
+               result as a rectangle that the clip's rounded corners do not cut —
+               so a blurred band across the top squared off the two corners and
+               took that much of the outline with them. Nothing is lost by the
+               fill being solid: this sits over code, which a 95% ground let
+               ghost through it anyway. The rounding is its own as well, so the
+               band keeps out of the corners whatever happens to the clip. */
+            className="absolute inset-x-0 top-0 z-[255] flex items-center gap-3 rounded-t-region border-b border-border bg-conversation-surface px-3 py-1.5 text-[11px] text-text-secondary"
+          >
+            <span className="min-w-0 truncate">{t('viewingVersion')}</span>
+            {onExitPreview && (
+              <button
+                type="button"
+                data-code-panel-exit-preview
+                onClick={onExitPreview}
+                className="ml-auto shrink-0 rounded-[4px] px-2 py-0.5 text-text-primary transition-colors hover:bg-surface-hover"
+              >
+                {t('backToMyEdits')}
+              </button>
+            )}
+          </div>
+        )}
 
         {error && (
           <div

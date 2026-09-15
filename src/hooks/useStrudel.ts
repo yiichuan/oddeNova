@@ -86,6 +86,10 @@ export function useStrudel() {
     strudelService.setCode(code);
   }, []);
 
+  const setReadOnly = useCallback((on: boolean) => {
+    strudelService.setReadOnly(on);
+  }, []);
+
   const setError = useCallback((error: string | null) => {
     setState(s => ({ ...s, error }));
   }, []);
@@ -151,6 +155,7 @@ export function useStrudel() {
     update,
     stop,
     setCode,
+    setReadOnly,
     setError,
     undo,
     init: stop, // no-op; engine initializes on first attach

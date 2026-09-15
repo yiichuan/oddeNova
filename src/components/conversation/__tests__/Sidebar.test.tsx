@@ -143,12 +143,12 @@ describe('Sidebar code revisions', () => {
       playbackStatus: 'played',
       createdAt: 3,
     }];
-    const onPlayCode = vi.fn();
+    const onPlaySegment = vi.fn();
     const onStopCode = vi.fn();
     const { container, root } = renderSidebar({
       messages,
       revisions,
-      onPlayCode,
+      onPlaySegment,
       onStopCode,
       isPlaying: false,
       playingCode: '',
@@ -164,9 +164,9 @@ describe('Sidebar code revisions', () => {
 
     // Each key sounds its own version in full.
     act(() => plainKey.click());
-    expect(onPlayCode).toHaveBeenCalledWith('s("bd")');
+    expect(onPlaySegment).toHaveBeenCalledWith('m-2', 's("bd")');
     act(() => diffKey.click());
-    expect(onPlayCode).toHaveBeenLastCalledWith('s("bd*2")');
+    expect(onPlaySegment).toHaveBeenLastCalledWith('m-3', 's("bd*2")');
     expect(onStopCode).not.toHaveBeenCalled();
   });
 
@@ -183,12 +183,12 @@ describe('Sidebar code revisions', () => {
       playbackStatus: 'played',
       createdAt: 3,
     }];
-    const onPlayCode = vi.fn();
+    const onPlaySegment = vi.fn();
     const onStopCode = vi.fn();
     const { container, root } = renderSidebar({
       messages,
       revisions,
-      onPlayCode,
+      onPlaySegment,
       onStopCode,
       isPlaying: true,
       // V2 is what is sounding. `playingCode` is the engine's active script, not
@@ -206,9 +206,9 @@ describe('Sidebar code revisions', () => {
     // The one that is sounding stops; the other one starts.
     act(() => diffKey.click());
     expect(onStopCode).toHaveBeenCalledTimes(1);
-    expect(onPlayCode).not.toHaveBeenCalled();
+    expect(onPlaySegment).not.toHaveBeenCalled();
     act(() => plainKey.click());
-    expect(onPlayCode).toHaveBeenCalledWith('s("bd")');
+    expect(onPlaySegment).toHaveBeenCalledWith('m-2', 's("bd")');
   });
 
   it('draws no key at all when the shell forwards no transport', () => {
@@ -227,11 +227,11 @@ describe('Sidebar code revisions', () => {
       { id: 'm-1', role: 'user', content: '改鼓点', timestamp: 1 },
       { id: 'm-2', role: 'assistant', content: 'V1', code: 's("bd")', timestamp: 2 },
     ];
-    const onPlayCode = vi.fn();
+    const onPlaySegment = vi.fn();
     const onStopCode = vi.fn();
     const writeText = vi.fn(() => Promise.resolve());
     vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue({ writeText } as unknown as Clipboard);
-    const { container, root } = renderSidebar({ messages, onPlayCode, onStopCode });
+    const { container, root } = renderSidebar({ messages, onPlaySegment, onStopCode });
     roots.push(root);
 
     const bar = container.querySelector<HTMLButtonElement>('[data-code-bar-play="m-2"]')!.parentElement!;
@@ -240,7 +240,7 @@ describe('Sidebar code revisions', () => {
     act(() => expand?.click());
     act(() => copy?.click());
     expect(writeText).toHaveBeenCalledWith('s("bd")');
-    expect(onPlayCode).not.toHaveBeenCalled();
+    expect(onPlaySegment).not.toHaveBeenCalled();
     expect(onStopCode).not.toHaveBeenCalled();
   });
 });
