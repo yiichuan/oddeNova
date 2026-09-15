@@ -38,10 +38,29 @@ interface StrudelPattern {
 }
 
 interface StrudelMirrorType {
+  /**
+   * Upstream has never shipped one (checked against the installed
+   * `@strudel/codemirror`: zero occurrences in both source and dist), which is
+   * why `teardownEditor` below does the work by hand. Kept optional and still
+   * called, so the day upstream adds one it is used.
+   */
   dispose?: () => void;
   editor?: {
     dispatch: (transaction: { effects: unknown }) => void;
+    /** CodeMirror's own teardown — the EditorView is a live DOM+state object. */
+    destroy?: () => void;
   };
+  /** The frame loop behind the highlight boxes and the painters. */
+  drawer?: { stop?: () => void };
+  /* Each instance registers these four on `document` in its constructor and
+     never removes them (there is no dispose). They are held on the instance,
+     so they can be removed by reference — `onStartRepl` above all: it answers
+     the `start-repl` event every *other* instance fires when it starts, by
+     stopping itself, and a stop is a state change this service listens to. */
+  onStartRepl?: EventListener;
+  onEvaluateRequest?: EventListener;
+  onStopRequest?: EventListener;
+  onToggleComment?: EventListener;
   repl: {
     setCode: (code: string) => void;
     stop: () => void;
@@ -232,6 +251,16 @@ export class StrudelService {
   private lineWrappingEnabled = false;
   private isAudioInitialized = false;
   private isInitializing = false;
+  /**
+   * Which editor generation is allowed to speak.
+   *
+   * Every `StrudelMirror` this service builds holds a `onUpdateState` closure
+   * pointing back here, and nothing upstream ever takes that away. A replaced
+   * instance that is still alive can therefore still write this service's
+   * state — see `teardownEditor` for why one can survive at all. Bumped as the
+   * new instance is built; callbacks carrying an older number are ignored.
+   */
+  private editorGeneration = 0;
 
   // Video mode: drive the Strudel scheduler clock from postMessage frame time
   // instead of AudioContext.currentTime, so mini-notation highlights work in
@@ -426,6 +455,44 @@ export class StrudelService {
     }
   };
 
+  /**
+   * Take a replaced editor out of the world.
+   *
+   * `StrudelMirror` has no teardown of its own, and none of what it owns is
+   * anchored to the DOM node React removes: the Cyclist's clock keeps ticking,
+   * keeps querying the pattern, and keeps triggering voices through the one
+   * shared superdough output. So a replaced instance goes on *sounding* — and,
+   * because it is still listening on `document`, answers the `start-repl` the
+   * next instance fires when it starts by stopping itself, which reports
+   * `started: false` back into this service through its own still-live
+   * `onUpdateState`. That is how the transport came to be playing while the
+   * studio bar and the reading's widgets showed a play button: the sound was
+   * the new engine's, and the state was the old engine's last word.
+   *
+   * Every step is optional-called: the fakes in the tests implement only the
+   * parts of `StrudelMirror` the case under test needs.
+   */
+  private teardownEditor(instance: StrudelMirrorType): void {
+    // Silence first, so nothing is left sounding with no transport to reach it.
+    try { instance.repl?.stop?.(); } catch { /* already gone */ }
+    try { instance.drawer?.stop?.(); } catch { /* never started */ }
+
+    if (typeof document !== 'undefined') {
+      const listeners: [string, EventListener | undefined][] = [
+        ['start-repl', instance.onStartRepl],
+        ['repl-evaluate', instance.onEvaluateRequest],
+        ['repl-stop', instance.onStopRequest],
+        ['repl-toggle-comment', instance.onToggleComment],
+      ];
+      for (const [type, listener] of listeners) {
+        if (listener) document.removeEventListener(type, listener);
+      }
+    }
+
+    try { instance.editor?.destroy?.(); } catch { /* view already detached */ }
+    instance.dispose?.();
+  }
+
   attach = async (container: HTMLElement): Promise<void> => {
     if (this.containerElement === container && this.editorInstance) return;
     if (this.isInitializing) return;
@@ -462,7 +529,12 @@ export class StrudelService {
         // properties on the old panel.
         this.panelTheme?.reset();
         this.panelTheme = null;
-        this.editorInstance.dispose?.();
+        // Torn down *before* the generation is bumped below, deliberately: the
+        // stop this performs is the last thing the outgoing engine has to say,
+        // it is true (the sound really is ending), and nothing else would put
+        // the transport state back to stopped for the silent engine replacing
+        // it.
+        this.teardownEditor(this.editorInstance);
         this.editorInstance = null;
       }
 
@@ -492,6 +564,11 @@ export class StrudelService {
       // strudel.cc's own painters scroll through.
       const drawTime: [number, number] = [-2, 2];
 
+      // From here only the instance about to be built may write this service's
+      // state; anything still holding an older number is talking about an
+      // engine that no longer exists.
+      const generation = ++this.editorGeneration;
+
       const editor = new StrudelMirror({
         root: this.containerElement,
         initialCode: currentCode,
@@ -507,10 +584,12 @@ export class StrudelService {
         // and piggybacks the accent-colour sampling on the same frame instead
         // of a second, redundant animation loop — see codepanel-accent.ts.
         onDraw: (haps: unknown[], time: number, painters?: ((...args: unknown[]) => void)[]) => {
+          if (generation !== this.editorGeneration) return;
           painters?.forEach((paint) => paint(this.panelCanvas?.context, time, haps, drawTime));
           this.panelAccent?.sample(haps as Parameters<CodePanelAccent['sample']>[0], time);
         },
         onUpdateState: (state: StrudelReplState) => {
+          if (generation !== this.editorGeneration) return;
           const evalError = state.evalError;
           const error = evalError ? getErrorMessage(evalError) : null;
           const nextCode = state.code ?? this._state.code;
@@ -531,6 +610,7 @@ export class StrudelService {
           });
         },
         onError: (error: Error) => {
+          if (generation !== this.editorGeneration) return;
           this.notify({ error: error.message });
         },
         prebake: this.prebake,
@@ -900,6 +980,31 @@ export class StrudelService {
     return true;
   };
 
+  /**
+   * Read the transport back off the scheduler and make the state agree.
+   *
+   * `isPlaying` otherwise has exactly one source: the Cyclist's `onToggle`,
+   * which fires only when the scheduler actually crosses between stopped and
+   * started. `setPattern(pattern, autostart)` starts it only `if (autostart &&
+   * !this.started)` — so evaluating into an already-running scheduler toggles
+   * nothing, and a state that had gone out of step with the transport could
+   * never come back: every later press of play re-evaluated, said nothing, and
+   * left the button reading the same wrong thing.
+   *
+   * So a successful evaluate ends by asserting what the scheduler says, the
+   * way the Featured transport already does (`featured-player.play`). This is
+   * the self-healing half of the fix; `teardownEditor` is the half that keeps
+   * the divergence from happening in the first place.
+   */
+  private syncTransportState(): void {
+    const started = this.editorInstance?.repl.scheduler?.started;
+    // A fake or a future scheduler that does not expose the flag: an evaluate
+    // that resolved without throwing started the transport, so take that.
+    const playing = typeof started === 'boolean' ? started : true;
+    if (playing === this._state.isPlaying && !(playing && this._state.isPaused)) return;
+    this.notify({ isPlaying: playing, isPaused: playing ? false : this._state.isPaused });
+  }
+
   play = async (): Promise<void> => {
     if (!this.editorInstance) throw new Error('Engine not initialized');
     // One transport at a time: a featured audition stops here.
@@ -922,6 +1027,7 @@ export class StrudelService {
       await this.ensurePlayableAudioGraph();
       await this.editorInstance.evaluate();
       this.applyPendingSeek();
+      this.syncTransportState();
       this.pageAudioRecovery?.clearResumeIntent();
       void this.setupMasterChain();
     } catch (error) {
@@ -930,6 +1036,7 @@ export class StrudelService {
           await this.resetLiveAudioGraph();
           await this.editorInstance.evaluate();
           this.applyPendingSeek();
+          this.syncTransportState();
           this.pageAudioRecovery?.clearResumeIntent();
           void this.setupMasterChain();
           return;
@@ -1336,7 +1443,7 @@ export class StrudelService {
     this.isAudioInitialized = false;
     this.isInitializing = false;
     if (this.editorInstance) {
-      this.editorInstance.dispose?.();
+      this.teardownEditor(this.editorInstance);
       this.editorInstance = null;
     }
     this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
