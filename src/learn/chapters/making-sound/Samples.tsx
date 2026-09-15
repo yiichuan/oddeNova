@@ -84,7 +84,7 @@ export default function Samples() {
         href="https://de.wikipedia.org/wiki/Schlagzeug#/media/Datei:Drum_set.svg"
         target="_blank"
         rel="noopener noreferrer"
-        className="block text-right text-[11px] text-white/40 hover:text-white/60 mb-3"
+        className="learn-figure-source block text-right text-[11px] mb-3"
       >
         原图作者 Pbroks13
       </a>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { midi2note } from '@strudel/core';
 import ClaviatureView from './Claviature';
+import { usePitchColors } from './pitch-theme';
 
 /**
  * The interactive pitch explorer used throughout the "Understanding Pitch"
@@ -16,10 +17,6 @@ import ClaviatureView from './Claviature';
  * master chain — same as upstream, since this is a raw reference tone rather
  * than part of a pattern.
  */
-
-/** Shared with the chapter prose, which colour-codes "frequency" and "pitch" the same way. */
-export const FREQUENCY_COLOR = '#3b82f6';
-export const PITCH_COLOR = '#eab308';
 
 type GetAudioContext = () => AudioContext;
 
@@ -86,6 +83,17 @@ export default function PitchSlider({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const getAudioContextRef = useRef<GetAudioContext | null>(null);
   const [hz, setHz] = useState(initial);
+  // Actual colour values — canvas paint calls cannot take a `var(…)` string,
+  // so the palette is resolved through the app theme here. learn.css mirrors
+  // the same table as `--learn-frequency`/`--learn-pitch` for CSS uses.
+  const colors = usePitchColors();
+  // The draw loop reads the palette through a ref, so a theme flip repaints
+  // the very next frame without tearing the loop down — no history loss, no
+  // restarted sweep.
+  const colorsRef = useRef(colors);
+  useEffect(() => {
+    colorsRef.current = colors;
+  }, [colors]);
 
   useEffect(() => {
     freqRef.current = hz;
@@ -185,11 +193,11 @@ export default function PitchSlider({
       if (ctx) {
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         if (showFrequencySlider) {
-          plotValues(ctx, historyRef.current, min, max, FREQUENCY_COLOR);
+          plotValues(ctx, historyRef.current, min, max, colorsRef.current.frequency);
         }
         if (showPitchSlider) {
           const perceptual = historyRef.current.map((v) => Math.log2(v));
-          plotValues(ctx, perceptual, Math.log2(min), Math.log2(max), PITCH_COLOR);
+          plotValues(ctx, perceptual, Math.log2(min), Math.log2(max), colorsRef.current.pitch);
         }
       }
       raf = requestAnimationFrame(frame);
@@ -224,26 +232,26 @@ export default function PitchSlider({
       activeNoteLabel = (isWhole ? '' : '~') + activeNote;
       exponent = (
         <>
-          (<span style={{ color: PITCH_COLOR }}>{isWhole ? midi : midi.toFixed(2)}</span> - {zeroOffset})/12
+          (<span style={{ color: colors.pitch }}>{isWhole ? midi : midi.toFixed(2)}</span> - {zeroOffset})/12
         </>
       );
     } else if (semitones % 12 === 0) {
-      exponent = <span style={{ color: PITCH_COLOR }}>{semitones / 12}</span>;
+      exponent = <span style={{ color: colors.pitch }}>{semitones / 12}</span>;
     } else if (semitones % 1 === 0) {
       exponent = (
         <>
-          <span style={{ color: PITCH_COLOR }}>{semitones}</span>/12
+          <span style={{ color: colors.pitch }}>{semitones}</span>/12
         </>
       );
     } else {
-      exponent = <span style={{ color: PITCH_COLOR }}>{rawExponent.toFixed(2)}</span>;
+      exponent = <span style={{ color: colors.pitch }}>{rawExponent.toFixed(2)}</span>;
     }
   }
 
   return (
     <div className="mb-4 select-none">
       <div className="font-mono text-[13px]">
-        {showFrequencySlider && <span style={{ color: FREQUENCY_COLOR }}>{hz.toFixed(0)}Hz</span>}
+        {showFrequencySlider && <span style={{ color: colors.frequency }}>{hz.toFixed(0)}Hz</span>}
         {showFrequencySlider && showPitchSlider && <> = </>}
         {showPitchSlider && (
           <>
@@ -253,7 +261,7 @@ export default function PitchSlider({
         {claviature && (
           <>
             {' = '}
-            <span style={{ color: PITCH_COLOR }}>{activeNoteLabel}</span>
+            <span style={{ color: colors.pitch }}>{activeNoteLabel}</span>
           </>
         )}
       </div>
@@ -269,7 +277,7 @@ export default function PitchSlider({
           onMouseDown={handleMouseDown}
           onChange={(e) => handleChangeFrequency(freqSlider2freq(parseFloat(e.target.value)))}
           className="block w-full max-w-[600px] mt-1"
-          style={{ accentColor: FREQUENCY_COLOR }}
+          style={{ accentColor: colors.frequency }}
         />
       )}
       {showPitchSlider && (
@@ -283,7 +291,7 @@ export default function PitchSlider({
           onMouseDown={handleMouseDown}
           onChange={(e) => handleChangeFrequency(pitchSlider2freq(parseFloat(e.target.value)))}
           className="block w-full max-w-[600px] mt-1"
-          style={{ accentColor: PITCH_COLOR }}
+          style={{ accentColor: colors.pitch }}
         />
       )}
 
@@ -294,16 +302,16 @@ export default function PitchSlider({
           <button
             type="button"
             onClick={() => startSweep()}
-            className="px-3 py-1.5 text-[13px] border border-[#323232] bg-[#111] hover:border-white/30 transition-colors"
-            style={{ color: FREQUENCY_COLOR }}
+            className="px-3 py-1.5 text-[13px] border border-[var(--learn-border)] bg-[var(--learn-editor-bg)] hover:border-[var(--learn-border-strong)] transition-colors"
+            style={{ color: colors.frequency }}
           >
             频率扫描
           </button>
           <button
             type="button"
             onClick={() => startSweep(true)}
-            className="px-3 py-1.5 text-[13px] border border-[#323232] bg-[#111] hover:border-white/30 transition-colors"
-            style={{ color: PITCH_COLOR }}
+            className="px-3 py-1.5 text-[13px] border border-[var(--learn-border)] bg-[var(--learn-editor-bg)] hover:border-[var(--learn-border-strong)] transition-colors"
+            style={{ color: colors.pitch }}
           >
             音高扫描
           </button>
@@ -321,7 +329,7 @@ export default function PitchSlider({
               range: ['A1', 'A5'],
               scaleY: 0.75,
               scaleX: 0.86,
-              colorize: activeNote ? [{ keys: [activeNote], color: PITCH_COLOR }] : [],
+              colorize: activeNote ? [{ keys: [activeNote], color: colors.pitch }] : [],
               labels: activeNote ? { [activeNote]: activeNote } : {},
             }}
           />
