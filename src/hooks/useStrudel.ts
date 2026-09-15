@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { getEngineUnavailableMessage } from '../lib/engine-status';
 import { getErrorMessage } from '../lib/errors';
 import { t } from '../lib/i18n';
-import { strudelService, type StrudelState } from '../services/strudel';
+import { strudelService, type StrudelState, type TransportEvent } from '../services/strudel';
 
 const MAX_HISTORY = 50;
 
@@ -154,6 +154,8 @@ export function useStrudel() {
     pause,
     update,
     stop,
+    getPlaybackPosition: strudelService.getPlaybackPosition,
+    seekPlayback: strudelService.seekPlayback,
     setCode,
     setReadOnly,
     setError,
@@ -171,5 +173,57 @@ export function useStrudel() {
     triggerFadeIn: () => strudelService.triggerFadeIn(),
     // [video] Allow App.tsx's postMessage handler to inject Remotion frame time into the Strudel scheduler, driving the highlight box
     setVideoTime: (t: number) => strudelService.setVideoTime(t),
+  };
+}
+
+/**
+ * The latest discrete transport event, re-read only when the service publishes
+ * a new one. Frame-level positions never come through here — consumers sample
+ * `getPlaybackPosition` locally for those; these notifications are for the
+ * one redraw a seek, pause, stop or code rewind needs.
+ */
+export function useTransportEvent(): TransportEvent {
+  return useSyncExternalStore(
+    strudelService.onTransportChange,
+    () => strudelService.transportSnapshot,
+  );
+}
+
+/** Just the transport notification revision, for consumers that only redraw. */
+export function useTransportRevision(): number {
+  return useSyncExternalStore(
+    strudelService.onTransportChange,
+    () => strudelService.transportSnapshot.revision,
+  );
+}
+
+/** Keeps animation-frame data out of App's shared playback state. */
+export function useStrudelTracks(scopeKey: string) {  const preview = strudelService.trackPreview;
+  const snapshot = useSyncExternalStore(preview.subscribe, () => preview.snapshot);
+  const previousScope = useRef(scopeKey);
+  useEffect(() => {
+    if (previousScope.current !== scopeKey) preview.reset();
+    previousScope.current = scopeKey;
+  }, [preview, scopeKey]);
+  return {
+    ...snapshot,
+    /**
+     * One finite-domain frame sample; the request must carry loopCycles.
+     * The service's bound arrow method is returned as-is, so the reference
+     * is stable across re-renders: an unrelated parent update must never
+     * remount the panel's sampling effects or restart its RAF loop.
+     */
+    getFrame: strudelService.getTrackFrame,
+    prepareTrackPreview: strudelService.prepareTrackPreview,
+    toggleSolo: preview.toggleSolo,
+    toggleMute: preview.toggleMute,
+    /** Restores the full mix (drops solo and mutes) when leaving audition. */
+    clearMix: preview.clearSolo,
+    /** Absolute-cycle seek from the track timeline; returns false when refused. */
+    seekToCycle: strudelService.seekToCycle,
+    /** Scrolls the editor to a track's source slot, or reports why it cannot. */
+    revealTrackSource: strudelService.revealTrackSource,
+    /** Renames a track by splicing its @layer marker; returns an explicit result. */
+    renameTrack: strudelService.renameTrack,
   };
 }

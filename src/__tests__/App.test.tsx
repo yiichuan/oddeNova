@@ -240,7 +240,7 @@ vi.mock('../hooks/useLayout', () => ({
   VIZ_DIVIDER_HEIGHT: 6,
   useLayout: () => ({
     isMobile: mocks.isMobile, keyboardHeight: 0, sidebarWidth: 0, sidebarCollapsed: false, vizHeight: 0, isDragging: false,
-    vizCollapsed: false, toggleVizCollapsed: vi.fn(),
+    vizCollapsed: false, toggleVizCollapsed: vi.fn(), ensureEditorVisible: vi.fn(),
     mainRef: { current: null }, topActionsRef: { current: null }, hDragHandlers: {}, vDragHandlers: {},
     codeSheetOpen: false, setCodeSheetOpen: vi.fn(), navDrawerOpen: false, setNavDrawerOpen: vi.fn(),
     mobileFocusedArea: null, shouldLiftBottomBar: false,
@@ -276,7 +276,7 @@ vi.mock('../components/conversation/Sidebar', () => ({
     return null;
   },
 }));
-vi.mock('../components/studio/VizPlaceholder', () => ({ default: () => null }));
+vi.mock('../components/studio/StudioVisualizer', () => ({ default: () => null }));
 vi.mock('../components/overlays/ApiKeyModal', () => ({ default: () => null }));
 // ArchivedConversationView (rendered under the Favorites tab) imports these
 // named exports from the real module; the mock must carry them too or it
@@ -353,6 +353,19 @@ describe('App password recovery', () => {
     document.body.innerHTML = '';
     mocks.auth.recoveringPassword = false;
     vi.clearAllMocks();
+  });
+
+  it('opens the mobile track view without unmounting the code drawer', async () => {
+    mocks.getAllSessions.mockResolvedValue([]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => { root?.render(<App />); });
+    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('tracksView')}"]`);
+    expect(button).not.toBeNull();
+    await act(async () => { button?.click(); });
+    expect(container.querySelector('[data-testid="mobile-track-pane"]')?.hasAttribute('hidden')).toBe(false);
+    expect(container.querySelector('[data-testid="mobile-code-pane"]')).not.toBeNull();
   });
 
   it('does not start the guest-history import during password recovery', async () => {
