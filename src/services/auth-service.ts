@@ -102,8 +102,20 @@ export async function signInWithGoogle(): Promise<void> {
 
 export async function signOut(): Promise<void> {
   if (!supabase) return;
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  // Local scope: the default ('global') revokes every refresh token this
+  // account holds, so leaving on a phone would also kick out a desktop tab
+  // still signed in — which then can't sign out either, since the session it
+  // would present to do that is already gone.
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (!error) return;
+  // A session the server has already dropped can't be "signed out of", and
+  // gotrue's own refresh attempt inside signOut() has by this point usually
+  // already cleared it locally too. What was asked for — leaving, and no
+  // longer being signed in — has already happened; only a signOut that still
+  // leaves a live session behind is a real failure.
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) return;
+  throw error;
 }
 
 export async function resetPasswordForEmail(email: string, _language: AuthEmailLanguage): Promise<void> {

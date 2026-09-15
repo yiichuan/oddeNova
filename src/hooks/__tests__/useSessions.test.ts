@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { t } from '../../lib/i18n';
 import type { OddeNovaImportPayload } from '../../lib/oddenova-import';
+import { SESSION_TITLE_LIMIT, sessionTitleLength } from '../../lib/session-title';
 import {
   applyAppendAssistantDelta,
   applyAppendProgressDelta,
@@ -25,7 +26,7 @@ const storageMocks = vi.hoisted(() => ({
   openDB: vi.fn(async () => undefined),
   getAllSessions: vi.fn(async () => [] as Session[]),
   getCurrentSessionId: vi.fn(async () => null as string | null),
-  putSession: vi.fn(async () => undefined),
+  putSession: vi.fn(async (_session: Session, _ownerKey?: string) => undefined),
   putCurrentSessionId: vi.fn(async () => undefined),
   putImportedSession: vi.fn(async (_session: unknown) => undefined),
   putImportedSessionBranch: vi.fn(async (_detached: unknown, _branch: unknown) => undefined),
@@ -513,6 +514,23 @@ describe('useSessions', () => {
     expect(storageMocks.putSession).not.toHaveBeenCalledWith(behind, 'user:u-1');
     // The write that was on its way up is still on its way up.
     expect(getHook().currentSyncStatus).not.toBe('synced');
+  });
+
+  it('can cache a mobile cloud read without changing the active session', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const activeId = getHook().currentId;
+    const incoming = makeSession({
+      id: '00000000-0000-4000-8000-000000000091',
+      code: 's("hh")', updatedAt: 42,
+    });
+    storageMocks.putCurrentSessionId.mockClear();
+    await act(async () => {
+      expect(await getHook().acceptCloudDetail(incoming, { activate: false })).toEqual(incoming);
+    });
+    expect(getHook().sessions.find((session) => session.id === incoming.id)).toEqual(incoming);
+    expect(getHook().currentId).toBe(activeId);
+    expect(storageMocks.putCurrentSessionId).not.toHaveBeenCalled();
   });
 
   it('keeps streamed changes local until a terminal checkpoint saves one latest snapshot', async () => {
@@ -1345,26 +1363,41 @@ describe('useSessions', () => {
     expect(getHook().currentSession?.title).toBe(t('newSessionTitle'));
   });
 
-  it('renameSession trims, ignores blank strings, and slices to 60 chars', async () => {
+  it('renameSession straightens a name, ignores blank ones, and holds the shared limit', async () => {
     const { root, getHook } = await renderUseSessions();
     roots.push(root);
     const sessionId = getHook().currentId!;
-    const longTitle = '一'.repeat(61);
 
     act(() => {
       getHook().renameSession(sessionId, '  周末广告配乐  ');
     });
     expect(getHook().currentSession?.title).toBe('周末广告配乐');
 
+    // A name pasted out of a document arrives with its line breaks; a title is
+    // one line.
+    act(() => {
+      getHook().renameSession(sessionId, ' 周末\n 广告   配乐 ');
+    });
+    expect(getHook().currentSession?.title).toBe('周末 广告 配乐');
+
     act(() => {
       getHook().renameSession(sessionId, '   ');
     });
-    expect(getHook().currentSession?.title).toBe('周末广告配乐');
+    expect(getHook().currentSession?.title).toBe('周末 广告 配乐');
 
+    // Over the limit: 59 characters and the ellipsis that says so, 60 in all —
+    // the same count an untruncated title is allowed.
     act(() => {
-      getHook().renameSession(sessionId, longTitle);
+      getHook().renameSession(sessionId, '一'.repeat(61));
     });
-    expect(getHook().currentSession?.title).toBe(longTitle.slice(0, 60));
+    expect(getHook().currentSession?.title).toBe(`${'一'.repeat(59)}…`);
+
+    // Renaming again with what is already stored appends no second ellipsis.
+    const settled = getHook().currentSession!.title;
+    act(() => {
+      getHook().renameSession(sessionId, settled);
+    });
+    expect(getHook().currentSession?.title).toBe(settled);
   });
 
   it('seeds a fresh session with exactly one greeting message', async () => {
@@ -1493,6 +1526,65 @@ describe('useSessions', () => {
     expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
   });
 
+  it('collapses a streamed turn into one local write per window, not one per delta', async () => {
+    // The crash this guards: one IndexedDB transaction per streamed token, each
+    // carrying a full clone of a session that grows with the very text
+    // producing it, until the renderer runs out of memory on a long answer.
+    vi.useFakeTimers();
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+    storageMocks.putSession.mockClear();
+
+    const deltas = Array.from({ length: 40 }, (_, index) => `delta-${index}`);
+    act(() => {
+      for (const delta of deltas) getHook().appendToLastReasoning(delta, sessionId);
+    });
+
+    // Leading edge only: the turn is on disk from its first token, and the 39
+    // deltas behind it are holding one scheduled write between them.
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(2);
+    const written = storageMocks.putSession.mock.lastCall?.[0] as Session | undefined;
+    expect(written?.messages.at(-1)?.content).toBe(deltas.join(''));
+
+    // What the reader sees never lagged the store — only the writes did.
+    expect(getHook().currentSession?.messages.at(-1)?.content).toBe(deltas.join(''));
+  });
+
+  it('lets the committed reply overtake the write a stream had scheduled', async () => {
+    vi.useFakeTimers();
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+    storageMocks.putSession.mockClear();
+
+    act(() => {
+      getHook().appendToLastReasoning('构思', sessionId);
+      getHook().appendToLastReasoning('中', sessionId);
+    });
+    act(() => {
+      getHook().addAssistantMessage('好了', 'note("c3")', sessionId);
+    });
+
+    // The leading streamed write plus the reply's own — and the scheduled
+    // snapshot in between is dropped rather than landing on top of the reply.
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(2);
+    const afterReply = storageMocks.putSession.mock.lastCall?.[0] as Session | undefined;
+    expect(afterReply?.messages.at(-1)?.content).toBe('好了');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(storageMocks.putSession).toHaveBeenCalledTimes(2);
+  });
+
   it('persists choice input mode with the successful assistant message', async () => {
     const { root, getHook } = await renderUseSessions();
     roots.push(root);
@@ -1603,6 +1695,55 @@ describe('useSessions', () => {
     expect(outcome).toBe('updated');
     expect(getHook().currentSession?.id).toBe(branchId);
     expect(getHook().sessions).toHaveLength(sessionCount);
+  });
+
+  it('re-imports a long-titled skill session as an update, not a branch', async () => {
+    /* The stored title is cut to the shared limit; the import hash has to be
+       taken over that same string. Hashing the name as it arrived would make the
+       very next identical import mismatch the row it created, read as an edit
+       nobody made, and branch. */
+    const payload: OddeNovaImportPayload = {
+      protocolVersion: 1,
+      source: 'oddenova-strudel-skill',
+      projectId: 'long-title-project',
+      title: `深夜末班地铁车厢里的环境音草稿${'字'.repeat(120)}`,
+      code: 'stack(s("bd"))',
+      messages: [{ role: 'user', content: 'Make it' }],
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession(payload);
+    });
+    expect(outcome).toBe('created');
+    const importedId = getHook().currentId;
+    expect(sessionTitleLength(getHook().currentSession!.title)).toBe(SESSION_TITLE_LIMIT);
+
+    await act(async () => {
+      outcome = await getHook().importOddeNovaSession(payload);
+    });
+    expect(outcome).toBe('updated');
+    expect(getHook().currentId).toBe(importedId);
+    expect(getHook().sessions.filter((session) => session.externalSource?.projectId === 'long-title-project'))
+      .toHaveLength(1);
+  });
+
+  it('keeps the branch suffix when the name it is added to is already at the limit', async () => {
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    const sessionId = getHook().currentId!;
+    act(() => {
+      getHook().renameSession(sessionId, '字'.repeat(90));
+    });
+    const firstMessageId = getHook().currentSession!.messages[0]!.id;
+
+    act(() => getHook().branchFromMessage(firstMessageId));
+
+    const branched = getHook().currentSession!.title;
+    expect(branched.endsWith(t('branchSuffix'))).toBe(true);
+    expect(sessionTitleLength(branched)).toBe(SESSION_TITLE_LIMIT);
   });
 
   it('cloud-saves oddeNova skill creates, updates, and both sides of a conflict branch', async () => {

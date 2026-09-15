@@ -1,10 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { useClippedEnds } from '../../hooks/useClippedEnds';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { t } from '../../lib/i18n';
 import { takeLabel } from '../../lib/favorite-conversations';
 import { ChevronRightIcon, PlayIcon, StopIcon } from '../icons';
 import { MarkdownText, UserMessageBubble } from './ConversationView';
+import { useScrollActivity } from '../../hooks/useScrollActivity';
+
+/** How long the bar stays up after the last scroll, in ms — the mobile code
+    editor's own wait, so the two bars on that layout behave as one. */
 
 interface ArchivedConversationViewProps {
   messages: readonly ChatMessage[];
@@ -36,6 +41,31 @@ interface ArchivedConversationViewProps {
    * the stylesheet, not on the page.
    */
   scrollRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * Something to stand at the end of the reading, inside the scrollport.
+   *
+   * What it is for is the take a conversation came to rest on without ever
+   * committing it in a reply — there is no turn for a widget to hang under, so
+   * the widget hangs under the whole reading instead. Inside rather than below,
+   * because it belongs to the stream: it has to scroll up with the last reply
+   * and be the thing an archive opened at its end lands on.
+   */
+  footer?: ReactNode;
+  /**
+   * Whether the bar shows itself only while the reading is being moved.
+   *
+   * The window this stands in on desktop has edges, and a window that clips
+   * what it holds has to say how much more there is — so there the bar stands.
+   * A phone has no room for a rule down the side of a page that is otherwise
+   * only text, and no pointer to reveal one with either; what it has instead is
+   * the moment the question is being asked, which is while the reading is under
+   * a thumb. So the bar answers movement: up as the reading moves, gone a
+   * couple of seconds after it stops, exactly as the mobile code window's does.
+   *
+   * The gutter stays reserved either way — the bar turns transparent rather
+   * than leaving — so nothing reflows as it comes and goes.
+   */
+  autoHideScrollbar?: boolean;
 }
 
 /**
@@ -64,6 +94,77 @@ interface ArchivedConversationViewProps {
  * index.css for why the value is not the studio's.
  */
 
+/**
+ * The widget that points at one take of the script: what it is called, how long
+ * it runs, and a key to hear it with.
+ *
+ * Its own component because it is drawn in two places now. In the stream it
+ * hangs under the reply that committed the take; on the mobile Favorites page
+ * one more is hung under the whole reading, for the snapshot the conversation
+ * came to rest on when no reply committed it (see `favoriteScripts`). Both are
+ * the same object pointing at the same kind of thing, so a reader following one
+ * to the other must not meet two different controls.
+ *
+ * The two halves share one fill and read as one key with a seam down it: the
+ * wide half opens the take, the narrow one sounds it. What that fill is, in
+ * either palette, is `.favorites-code-chip` in index.css.
+ */
+export function ArchiveCodeChip({
+  id,
+  label,
+  code,
+  selected,
+  playing,
+  onSelect,
+  onPlay,
+  onStop,
+  className = 'mt-4 -ml-1',
+}: {
+  id: string;
+  label: string;
+  code: string;
+  selected: boolean;
+  playing: boolean;
+  onSelect: () => void;
+  onPlay: () => void;
+  onStop: () => void;
+  /**
+   * Where the widget stands. In the stream that is under the reply it belongs
+   * to, pulled a little left of the text so the key's edge lands on the
+   * reading's own margin rather than inside it — which is the default. A
+   * widget standing on its own has no text to answer to, so it says so here.
+   */
+  className?: string;
+}) {
+  return (
+    <div className={`favorites-code-chip-row flex gap-0.5 animate-fade-in ${className}`}>
+      <button
+        type="button"
+        data-favorites-chip={id}
+        aria-pressed={selected}
+        onClick={onSelect}
+        className="favorites-code-chip flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none px-2 py-1.5 text-left text-[11px] text-brand-accent transition-colors"
+      >
+        <span>{label}</span>
+        <span aria-hidden="true">·</span>
+        <span>{code.split('\n').length} {t('lines')}</span>
+      </button>
+      <button
+        type="button"
+        data-favorites-code-play={id}
+        aria-label={playing ? t('stop') : t('play')}
+        onClick={playing ? onStop : onPlay}
+        // `self-stretch` rather than a second fixed size: the chip beside it is
+        // as tall as its own line, and two edges that stop at different heights
+        // would read as a misprint now that both are drawn.
+        className="favorites-code-chip grid w-7 self-stretch place-items-center rounded-l-none rounded-r-md text-brand-accent transition-colors"
+      >
+        {playing ? <StopIcon size={12} /> : <PlayIcon size={13} />}
+      </button>
+    </div>
+  );
+}
+
 export default function ArchivedConversationView({
   messages,
   onSelectCode,
@@ -74,7 +175,21 @@ export default function ArchivedConversationView({
   numberTakes = true,
   active = true,
   scrollRef: externalScrollRef,
+  footer,
+  autoHideScrollbar = false,
 }: ArchivedConversationViewProps) {
+  /* The same reading scale the studio's stream is set at, and set here for the
+     same reasons — see `bodyText` in ConversationView. An archive is a
+     conversation being read; that it is being read back rather than taken part
+     in is no reason for it to be a different size from the one it was had at,
+     and a collection that set its own type would be the second answer to a
+     question the studio has already answered. Reasoning stays the step under
+     the reply that it is there too. */
+  const isMobile = useIsMobile();
+  const bodyText = isMobile ? 'text-base' : 'text-sm';
+  const reasoningText = isMobile ? 'text-sm' : 'text-[12px]';
+  const markSize = isMobile ? 16 : 14;
+
   /* Thoughts begin folded. What a favorite is kept for is the conversation and
      the music it arrived at; how the piece was worked out is there for whoever
      wants it, one line down. Left open, a run's thinking is several screens of
@@ -157,6 +272,15 @@ export default function ArchivedConversationView({
        send the reading back to its end on every render, which is exactly
        what the dependency is there to say. */
   }, [streamShape, active, scrollRef]);
+
+  /* The bar, while the reading is moving and for a moment after — the same rule
+     the code windows wear, from the same place (`useScrollActivity`), so every
+     bar on this layout is one behaviour rather than three copies of it.
+
+     What the flag drives is `.scrollbar-on-scroll` in index.css. It is set in JS
+     rather than in CSS because a scrollbar cannot be styled by the fact that it
+     is scrolling. */
+  useScrollActivity(scrollRef, autoHideScrollbar);
 
   /* Which thoughts' headers are frozen at the top of the reading right now.
      The band a frozen header is drawn on is a flat colour standing in for
@@ -276,7 +400,9 @@ export default function ArchivedConversationView({
           so the glass and the reading in it come up as one thing. */}
       <div
         ref={scrollRef}
-        className="conversation-scroll favorites-window-fade isolate h-full overflow-y-auto space-y-[40px] relative"
+        className={`conversation-scroll favorites-window-fade isolate h-full overflow-y-auto space-y-[40px] relative${
+          autoHideScrollbar ? ' scrollbar-on-scroll' : ''
+        }`}
         style={{ scrollbarGutter: 'stable' }}
       >
         {visibleMessages.map((message, index) => {
@@ -351,13 +477,13 @@ export default function ArchivedConversationView({
                     }`}
                   >
                     <ChevronRightIcon
-                      size={14}
+                      size={markSize}
                       className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
                     />
                     <span>{t('favoritesReasoningTitle')}</span>
                   </button>
                   {expanded && (
-                    <div className="mt-1.5 text-[12px] text-text-reasoning font-mono break-words leading-relaxed animate-fade-in">
+                    <div className={`mt-1.5 ${reasoningText} text-text-reasoning font-mono break-words leading-relaxed animate-fade-in`}>
                       <MarkdownText content={message.content} tone="muted" />
                     </div>
                   )}
@@ -381,7 +507,7 @@ export default function ArchivedConversationView({
                 data-favorites-turn={message.id}
                 className="flex justify-end items-end gap-1.5 animate-fade-in"
               >
-                <div className="relative max-w-[85%] rounded-[6px] px-3 py-2 text-sm bg-message-user text-text-primary">
+                <div className={`relative max-w-[85%] rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary`}>
                   <UserMessageBubble content={message.content} />
                 </div>
               </div>
@@ -399,7 +525,7 @@ export default function ArchivedConversationView({
               data-favorites-turn={message.id}
               className="flex justify-start items-start animate-fade-in"
             >
-              <div className={`relative w-full rounded-xl px-2 text-sm bg-transparent text-text-primary ${
+              <div className={`relative w-full rounded-xl px-2 ${bodyText} bg-transparent text-text-primary ${
                 followsReasoning || isFirst ? 'pt-0' : 'pt-2'
               } ${isLast ? 'pb-0' : 'pb-2'}`}>
                 <MarkdownText content={message.content} />
@@ -432,40 +558,22 @@ export default function ArchivedConversationView({
                      is the room's: the dark room lights its controls to answer
                      the pointer and paper shades them, the same way the
                      Featured transport's play button is drawn. */
-                  <div className="mt-4 -ml-1 flex gap-0.5 animate-fade-in">
-                    <button
-                      type="button"
-                      data-favorites-chip={message.id}
-                      aria-pressed={selectedCodeMessageId === message.id}
-                      onClick={() => onSelectCode(message.id)}
-                      className="favorites-code-chip flex flex-1 items-center gap-1.5 rounded-l-md rounded-r-none px-2 py-1.5 text-left text-[11px] text-brand-accent transition-colors"
-                    >
-                      <span>{numberTakes ? takeLabel(codeVersion) : t('favoritesCodeTitle')}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{message.code.split('\n').length} {t('lines')}</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-favorites-code-play={message.id}
-                      aria-label={isPlaying ? t('stop') : t('play')}
-                      onClick={() => {
-                        if (isPlaying) onStopCode();
-                        else onPlayCode(message.id, message.code!);
-                      }}
-                      // `self-stretch` rather than a second fixed size: the
-                      // chip beside it is as tall as its own line, and two
-                      // edges that stop at different heights would read as a
-                      // misprint now that both are drawn.
-                      className="favorites-code-chip grid w-7 self-stretch place-items-center rounded-l-none rounded-r-md text-brand-accent transition-colors"
-                    >
-                      {isPlaying ? <StopIcon size={12} /> : <PlayIcon size={13} />}
-                    </button>
-                  </div>
+                  <ArchiveCodeChip
+                    id={message.id}
+                    label={numberTakes ? takeLabel(codeVersion) : t('favoritesCodeTitle')}
+                    code={message.code}
+                    selected={selectedCodeMessageId === message.id}
+                    playing={isPlaying}
+                    onSelect={() => onSelectCode(message.id)}
+                    onPlay={() => onPlayCode(message.id, message.code!)}
+                    onStop={onStopCode}
+                  />
                 )}
               </div>
             </div>
           );
         })}
+        {footer}
       </div>
       </div>
 

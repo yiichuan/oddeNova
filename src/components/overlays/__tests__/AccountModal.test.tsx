@@ -88,6 +88,21 @@ function renderSignedInModal(beforeSignOut?: () => Promise<void>) {
   return { container, root, onClose };
 }
 
+function renderUnconfiguredModal() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+
+  act(() => {
+    root.render(
+      <AccountModal user={null} configured={false} onClose={onClose} />,
+    );
+  });
+
+  return { container, root, onClose };
+}
+
 function findButton(container: HTMLElement, label: string): HTMLButtonElement {
   const button = [...container.querySelectorAll('button')]
     .find((candidate) => candidate.textContent === label);
@@ -378,7 +393,12 @@ describe('AccountModal sign out', () => {
     expect(callOrder).toEqual(['flush', 'signOut', 'onClose']);
   });
 
-  it('keeps the user signed in when pending cloud saves cannot be flushed', async () => {
+  it('still signs out when pending cloud saves cannot be flushed', async () => {
+    // A flush failure must never trap the user in an account they just asked
+    // to leave — the unsent save stays in IndexedDB with its pending-sync
+    // marker and session-cloud-sync retries it on the next sign-in, the same
+    // as the guest-import "later" path already relies on.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const beforeSignOut = vi.fn(async () => {
       throw new Error('Cloud save failed');
     });
@@ -388,11 +408,13 @@ describe('AccountModal sign out', () => {
     await act(async () => {
       findButton(container, 'Sign out').click();
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(beforeSignOut).toHaveBeenCalledOnce();
-    expect(authMocks.signOut).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
+    expect(authMocks.signOut).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 });
 
@@ -480,5 +502,96 @@ describe('AccountModal Google sign in', () => {
     roots.push(root);
 
     expect(container.textContent).toContain('Google sign-in was cancelled.');
+  });
+});
+
+describe('AccountModal privacy policy link', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  const countPrivacyLinks = (container: HTMLElement): number =>
+    [...container.querySelectorAll('a')]
+      .filter((candidate) => candidate.getAttribute('href') === '/privacy')
+      .length;
+
+  const expectExternalPrivacyLink = (container: HTMLElement) => {
+    const links = [...container.querySelectorAll('a')]
+      .filter((candidate) => candidate.getAttribute('href') === '/privacy');
+    expect(links).toHaveLength(1);
+    const [link] = links;
+    expect(link instanceof HTMLAnchorElement).toBe(true);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.textContent).toContain('Privacy Policy');
+    expect(link.textContent).not.toContain('Learn how we handle your data');
+  };
+
+  it('shows exactly one link in sign-in and sign-up, hiding it in reset', () => {
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+
+    act(() => {
+      findButton(container, 'Create account').click();
+    });
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+
+    act(() => {
+      findButton(container, 'Forgot password?').click();
+    });
+    expect(container.querySelector('a[href="/privacy"]')).toBeNull();
+
+    act(() => {
+      findButton(container, 'Back to sign in').click();
+    });
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+  });
+
+  it('hides the link in the signed-in, recovery and unconfigured views', () => {
+    for (const render of [renderSignedInModal, renderRecoveryModal, renderUnconfiguredModal]) {
+      const { container, root } = render();
+      roots.push(root);
+      expect(container.querySelector('a[href="/privacy"]')).toBeNull();
+      document.body.innerHTML = '';
+    }
+  });
+
+  it('stays clickable while a form is busy and never triggers sign-in', async () => {
+    let finishOAuth: (() => void) | undefined;
+    authMocks.signInWithGoogle.mockReturnValueOnce(new Promise<void>((resolve) => {
+      finishOAuth = resolve;
+    }));
+    const { container, root } = renderSignInModal();
+    roots.push(root);
+
+    await act(async () => {
+      findButton(container, 'Continue with Google').click();
+    });
+
+    const link = [...container.querySelectorAll('a')]
+      .find((candidate) => candidate.getAttribute('href') === '/privacy');
+    if (!(link instanceof HTMLAnchorElement)) {
+      throw new Error('privacy policy link not found');
+    }
+    expect(link.closest('button')).toBeNull();
+    expect(link.hasAttribute('disabled')).toBe(false);
+    // A plain anchor with no click handler of its own: pressing it navigates,
+    // it never calls the sign-in or submit callbacks the form around it uses.
+    expect(link.onclick).toBeNull();
+    expect(authMocks.signInWithGoogle).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      finishOAuth?.();
+    });
   });
 });

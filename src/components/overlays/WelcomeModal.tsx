@@ -9,6 +9,7 @@ import { t, zh } from '../../lib/i18n';
 import { XIcon } from '../icons';
 import AuthField from './AuthField';
 import CommunityInviteCard from './CommunityInviteCard';
+import PrivacyPolicyLink from '../legal/PrivacyPolicyLink';
 
 /**
  * The three faces of the first-entry window, in the order someone meets them:
@@ -92,10 +93,10 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay-backdrop)] backdrop-blur-[2px]">
       <div className="flex w-[420px] max-w-[90vw] flex-col gap-3">
-        {/* Deeper at the foot than at the head: the top edge carries only the
-            close button, which is mostly its own empty hit area, while the last
-            row down here is a solid one that needs the room around it. */}
-        <div className="bg-conversation-surface border border-border rounded-2xl px-6 pt-6 pb-10 shadow-dialog-overlay">
+        {/* When the privacy footer shows, the card keeps the link snug instead
+            of deep foot padding; without it, the last row still needs the room
+            the padding gives it. */}
+        <div className={`bg-conversation-surface border border-border rounded-2xl px-6 pt-6 shadow-dialog-overlay ${configured ? 'pb-4' : 'pb-10'}`}>
           {/* The cross keeps the corner to itself and the title takes the width
               below it, so the title's centre is the window's centre rather than
               the centre of whatever is left over beside the button. */}
@@ -195,6 +196,12 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
                 </p>
               )}
             </div>
+          )}
+
+          {configured && (
+            <p className="mt-3 flex items-center justify-center px-2 text-xs text-text-muted">
+              <PrivacyPolicyLink className="inline-flex min-h-6 items-center rounded-sm px-2 underline underline-offset-2 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" />
+            </p>
           )}
         </div>
 

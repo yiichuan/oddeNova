@@ -18,6 +18,7 @@ import {
   rowToSessionSummary,
   type SessionCursor,
 } from '../server/session-pagination.js';
+import { normalizeSessionTitle } from '../shared/session-title.js';
 import { titleSearchPattern } from '../server/session-search.js';
 
 const FULL_SESSION_COLUMNS = 'id,title,code,messages,input_mode,revisions,suggestions,external_source,favorited_at,created_at,updated_at';
@@ -196,7 +197,7 @@ async function continueFavorite(req: VercelRequest, res: VercelResponse, id: str
       .insert({
         id: randomUUID(),
         user_id: auth.user.id,
-        title: source.title,
+        title: normalizeSessionTitle(source.title, 'New Session'),
         code,
         messages: Array.isArray(source.messages) ? source.messages : [],
         input_mode: source.input_mode,

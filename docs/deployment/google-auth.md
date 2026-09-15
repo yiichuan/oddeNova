@@ -12,7 +12,41 @@ Preview.
 The application requests only `openid`, email, and profile. It does not request
 offline access and does not store Google provider tokens.
 
-## 1. Create the Google Cloud projects
+## 1. Privacy policy URL
+
+The public privacy policy lives at `https://oddenova.com/privacy`
+(the canonical address; `/privacy/` and `/privacy.html` serve the same page).
+It is a standalone static page built by Vite (`privacy.html`) and routed by two
+exact rewrites in `vercel.json` ahead of the SPA fallback.
+
+Before filling it into Google Auth Platform → **Branding**:
+
+1. Confirm the operator name and contact email in the page body are real and
+   the effective date matches the actual release — the page must not be
+   published with placeholders.
+2. Verify on the Production URL (not Preview): the page must render its full
+   bilingual body with JavaScript disabled, without app/analytics scripts.
+3. Verify all three addresses return HTTP 200 with an HTML body and do not
+   hang: `/privacy`, `/privacy/` and `/privacy.html`. On local Vite dev and
+   preview this is served by the shared alias middleware
+   (`server/privacy-route.ts`); on Production it is served by the exact
+   rewrites in `vercel.json`. Check the query string survives
+   (`/privacy?lang=zh`) and that `HEAD /privacy` completes with no body.
+4. Check the bare domain `oddenova.com` and `www.oddenova.com` both resolve
+   over HTTPS and that `https://oddenova.com/privacy` is publicly readable;
+   keep the canonical address consistent with the host the homepage actually
+   uses. Do not put the policy URL into an OAuth callback or redirect URI.
+5. Confirm the in-app entries render: the desktop More menu and the mobile
+   drawer More section on the public homepage, and the single link in the
+   sign-in/sign-up views of the welcome and account modals.
+6. Confirm the pre-publish facts from
+   `docs/design/2026-09-15-privacy-content-and-route-repair-plan.md` §5 are
+   resolved: operator/contact, real dates, provider regions and retention
+   config, share cleanup actually running, a working deletion-request
+   process, target regions/age policy, and whether the AirJelly paragraph
+   applies to the production deployment.
+
+## 2. Create the Google Cloud projects
 
 Create two Google Cloud projects in
 [Google Cloud Console](https://console.cloud.google.com/projectcreate):
@@ -34,7 +68,7 @@ In each project, open **Google Auth Platform**:
 Google requires separate projects for testing and production deployment tiers:
 [OAuth 2.0 Policies](https://developers.google.com/identity/protocols/oauth2/policies).
 
-## 2. Connect each Google client to its Supabase project
+## 3. Connect each Google client to its Supabase project
 
 Perform these steps once in the Production Supabase project and once in the
 Preview Supabase project:
@@ -55,7 +89,7 @@ return URLs and do not need to be added as Google redirect URIs.
 Supabase's current Google setup guide is
 [Login with Google](https://supabase.com/docs/guides/auth/social-login/auth-google).
 
-## 3. Configure Supabase return URLs
+## 4. Configure Supabase return URLs
 
 Open **Supabase Dashboard → Authentication → URL Configuration**.
 
@@ -83,7 +117,7 @@ Vercel team/account URL. Do not widen this to `https://**.vercel.app/**`.
 Supabase documents the restricted Vercel glob format in
 [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
 
-## 4. Configure Vercel environments
+## 5. Configure Vercel environments
 
 Open **Vercel Project → Settings → Environment Variables**.
 
@@ -105,7 +139,7 @@ and rely on RLS.
 Open **Vercel Project → Settings → Deployment Protection** and require Vercel
 Authentication for Preview deployments. Production remains public.
 
-## 5. Configure local development
+## 6. Configure local development
 
 Create an ignored `.env` file from `.env.example` and fill all four Supabase
 variables with the Preview project values:
@@ -125,7 +159,21 @@ The optional `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` and
 when running a fully local Supabase stack with `supabase start`; they are not
 required when local Vite connects to the hosted Preview project.
 
-## 6. Manual acceptance
+## 7. Branding publication and verification
+
+When the Production policy page is live and its facts are confirmed:
+
+1. In the Production Google project's **Branding** page, fill the application
+   name, homepage, privacy policy URL (`https://oddenova.com/privacy`), support
+   email and authorized domain, using the verified primary host.
+2. Check **Data Access** still matches the real sign-in request
+   (`openid`, email, profile). Do not add scopes for the policy page.
+3. Verify and publish the branding. Saving a draft is not publishing.
+4. Record the deployment version and the policy's effective date separately
+   from the branding verification result; brand verification and
+   sensitive/restricted scope review are different steps.
+
+## 8. Manual acceptance
 
 After all dashboard settings are applied:
 
@@ -143,6 +191,11 @@ After all dashboard settings are applied:
 6. **Failure:** cancel Google authorization. Confirm the account modal reopens
    with localized copy and the current local work is unchanged.
 7. **Isolation:** confirm a Preview user/session does not exist in Production.
+8. **Privacy policy:** on the deployed Production URL, confirm `/privacy`,
+   `/privacy/` and `/privacy.html` all render the policy (refresh safe, with
+   query strings and JavaScript disabled), that opening it from the studio in a
+   new tab leaves generation, playback and pending sync untouched, and that the
+   OAuth consent screen shows a working policy link.
 
 Until both external tiers are configured and these checks pass, repository
 tests prove only the application behavior—not a live Google OAuth integration.

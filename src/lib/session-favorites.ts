@@ -8,6 +8,7 @@ import type { ChatMessage } from '../hooks/useChat';
 import type { Session } from '../hooks/useSessions';
 import { t } from './i18n';
 import type { FavoriteConversation, FavoriteTurn } from './favorite-conversations';
+import { normalizeSessionTitle } from './session-title';
 
 /**
  * What the conversation actually said: the greeting is the app talking to
@@ -56,7 +57,7 @@ export function sessionAsFavorite(
     id: session.id,
     sessionId: session.id,
     sourceSessionId: session.id,
-    title: session.title || t('newSessionTitle'),
+    title: normalizeSessionTitle(session.title, t('newSessionTitle')),
     // A session with no `favoritedAt` is not one this is called for, but a
     // favorite without a date would sort to the bottom of time rather than
     // fail loudly, so it falls back to when the session was last touched.

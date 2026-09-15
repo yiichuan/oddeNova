@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -11,18 +12,20 @@ import {
 import { t } from '../../lib/i18n';
 import type { FeaturedAlbum } from '../../lib/featured-pieces';
 import FeaturedCard from './FeaturedCard';
-import { useResolvedTheme } from '../../hooks/useAppearance';
-import type { CoverRoom } from './featured-cover-light';
 import FeaturedTitleWheel from './FeaturedTitleWheel';
 import { wheelLabel } from './featured-wheel';
 import {
   easeOutQuint,
-  MAX_TURN_DEG,
   nearestEquivalent,
+  PAPER_X_ROTATIONS,
   positiveModulo,
   SIDE_SCALE,
   slotGap,
+  slotOffsets,
   snapDuration,
+  STAGE_PERSPECTIVE_PX,
+  turnAt,
+  VISIBLE_RADIUS,
   WHEEL_PIXELS_PER_SLOT,
 } from './featured-carousel-motion';
 
@@ -42,17 +45,22 @@ export interface FeaturedCarouselHandle {
 interface FeaturedCarouselProps {
   /** The shelf: one sleeve per album, singles included. */
   albums: readonly FeaturedAlbum[];
-  /** The track currently sounding, if any — a sleeve lights up for its own. */
-  playingId: string | null;
-  engineReady: boolean;
   /**
    * Opens a record. The sleeve's own cover is handed over with it: a record
    * picked from the side of the wheel leaves from where it was standing rather
    * than from the middle.
    */
   onOpen: (album: FeaturedAlbum, cover: Element | null) => void;
-  onPlay: (album: FeaturedAlbum) => void;
-  onStop: () => void;
+  /**
+   * The record the wheel has come to rest on, reported every time it stops.
+   *
+   * What is centred and what the transport is pointed at are one thing on this
+   * page, and the wheel is one of the two ends of that: turning the shelf is
+   * choosing what the bar is parked on, exactly as pressing a sleeve is. Fired
+   * on arrival rather than frame by frame — a flick passes over half the
+   * collection on the way, and the records it goes by are not choices.
+   */
+  onCentre?: (album: FeaturedAlbum) => void;
   /**
    * The record whose detail view is up, if any — which is to say whether the
    * collection is on screen at all.
@@ -91,61 +99,41 @@ interface Sweep {
 }
 
 /**
- * How far either side of centre a sleeve is still drawn. Slots past this are
- * mounted but transparent — the ring is rendered a little wider than it reads
- * (SLOT_RADIUS) so a sleeve is already in place by the time it fades in.
- *
- * The collection is shorter than the window is wide, so the outermost slot on
- * each side comes back round to a piece already on screen. That is the ring
- * being a ring: at this distance a sleeve is far down the fade and turned 28°,
- * and reads as the wheel continuing rather than as the same record twice.
+ * How many slots are mounted either side of the centre — one wider than the
+ * turn is spent over (VISIBLE_RADIUS), so a sleeve thrown in by a flick is
+ * already in place before it arrives.
  */
-const VISIBLE_RADIUS = 3;
 const SLOT_RADIUS = 4;
-const SNAP_IDLE_MS = 120;
-/**
- * The angle each sleeve's paper has come to rest at, dealt out around the
- * collection. Read against the record rather than against the slot it happens
- * to be standing in: the slot numbering runs on for as long as the wheel is
- * turned, so an angle pinned to it would deal the same record a different
- * angle on every lap.
- */
-const PAPER_X_ROTATIONS = [10, -12.5, 7.5, -9.5, 12, -9, 14] as const;
-const PAPER_Z_ROTATIONS = [0, 0, 0, 0, 0, 0, 0] as const;
 
 /**
  * How solid a sleeve is at each slot out from the centre.
  *
- * A sleeve going back into a dark room loses itself in it, and a quarter of a
- * cover is still plainly a cover against near-black — so the dark room can
- * spend most of the fade on depth and let the far slots go.
+ * Flat across everything the shelf is actually read by. Opacity does not send a
+ * sleeve back into the room, it pours the room into the artwork — on paper that
+ * is a near-white page mixed into a cover, which is a cover with milk in it, and
+ * in the dark room it is the picture going out. The depth is carried by the
+ * scale, the turn and the shadow each sleeve drops, all of which cost the
+ * artwork nothing.
  *
- * On paper the same fade is spent on nothing. What shows through a sleeve here
- * is the page, so opacity does not send it back into the room, it pours the
- * room into the artwork: at seven tenths a cover is a cover with milk in it,
- * which is the fog the shelf reads with when it is lit for the wrong room.
- *
- * So the paper ramp is nearly flat where the shelf is actually read — the two
- * sleeves either side of the centre keep all but a few parts of their ink —
- * and steepens only at the ends, which is where the fade's real job is: hiding
- * the ring coming back round to a record already on screen. Even a twelfth of
- * the page mixed into a neighbouring sleeve was enough to read as haze once
- * the covers beside it were clean, so what is left there is a hair, not a
- * step. The depth it gives up is carried twice over by the scale, the turn and
- * the shadow each sleeve drops.
+ * What is left of the fade is its other job, and the only one it is good at:
+ * the collection is shorter than the window is wide, so the outermost slot on
+ * each side comes back round to a record already on screen. By then the sleeve
+ * is three quarters of the way onto its side and showing a quarter of its
+ * cover, and this takes the rest — one slot of fade at the very edge of the
+ * wheel, where nothing is being read.
  */
-const SLEEVE_FADE: Record<CoverRoom, readonly number[]> = {
-  space: [1, 0.72, 0.46, 0.25, 0],
-  paper: [1, 0.97, 0.88, 0.55, 0],
-};
+const SLEEVE_FADE = [1, 1, 1, 0.4, 0] as const;
 
-const interpolateStops = (distance: number, stops: readonly number[]) => {
-  const bounded = Math.min(Math.abs(distance), stops.length - 1);
+/** That ramp, read at a fractional distance and mixed across the gap. */
+const sleeveFade = (distance: number) => {
+  const bounded = Math.min(Math.abs(distance), SLEEVE_FADE.length - 1);
   const lower = Math.floor(bounded);
-  const upper = Math.min(lower + 1, stops.length - 1);
-  const mix = bounded - lower;
-  return stops[lower] + (stops[upper] - stops[lower]) * mix;
+  const upper = Math.min(lower + 1, SLEEVE_FADE.length - 1);
+  return SLEEVE_FADE[lower] + (SLEEVE_FADE[upper] - SLEEVE_FADE[lower]) * (bounded - lower);
 };
+const SNAP_IDLE_MS = 120;
+/** The turn each sleeve's paper is dealt in the plane of the page: none, yet. */
+const PAPER_Z_ROTATIONS = [0, 0, 0, 0, 0, 0, 0] as const;
 
 /**
  * The record a slot shows. Logical index 0 is the first record in the
@@ -158,11 +146,8 @@ function itemAt(albums: readonly FeaturedAlbum[], logicalIndex: number) {
 
 export default function FeaturedCarousel({
   albums,
-  playingId,
-  engineReady,
   onOpen,
-  onPlay,
-  onStop,
+  onCentre,
   openId = null,
   centerCoverHidden = false,
   transition = null,
@@ -200,9 +185,14 @@ export default function FeaturedCarousel({
   const [cardSize, setCardSize] = useState(266);
   const [stageFrame, setStageFrame] = useState({ top: 0, height: 0 });
   const [reducedMotion, setReducedMotion] = useState(false);
-  /* The room the shelf is standing in, which is what says how far back a sleeve
-     goes as it leaves the centre. */
-  const room: CoverRoom = useResolvedTheme() === 'light' ? 'paper' : 'space';
+
+  /* Read from a ref inside the settle below, so that a fresh handler each
+     render does not rebuild `snapTo` — and with it every trip that is in the
+     air at the time. */
+  const onCentreRef = useRef(onCentre);
+  useEffect(() => {
+    onCentreRef.current = onCentre;
+  });
 
   const setLogicalPosition = useCallback((value: number) => {
     positionRef.current = value;
@@ -275,6 +265,7 @@ export default function FeaturedCarousel({
       // which is what `flightSlot` falls back to.
       setFlightSlot(null);
       settleTimerRef.current = null;
+      onCentreRef.current?.(itemAt(albums, Math.round(target)));
     };
 
     if (reducedMotion || Math.abs(target - from) < 0.001) {
@@ -306,7 +297,7 @@ export default function FeaturedCarousel({
     /* The clock, not the frames, is what says the trip is over: a page that is
        not being painted still has to arrive. */
     settleTimerRef.current = window.setTimeout(settle, duration);
-  }, [albums.length, clearTimers, reducedMotion, setLogicalPosition, stopSweep]);
+  }, [albums, clearTimers, reducedMotion, setLogicalPosition, stopSweep]);
 
   const settleScrub = useCallback(() => {
     snapTo(Math.round(positionRef.current));
@@ -335,23 +326,12 @@ export default function FeaturedCarousel({
   }), [albums, snapTo]);
 
   /**
-   * The three things a sleeve can be asked to do. Each of them first asks
-   * whether it was actually asked: a press that lands at the end of a pull on
-   * the wheel is the tail of that pull, and whichever sleeve happened to be
-   * under the hand when it stopped should not be acted on.
-   */
-  const playSlot = useCallback((album: FeaturedAlbum) => {
-    if (draggedRef.current) return;
-    onPlay(album);
-  }, [onPlay]);
-
-  const stopSlot = useCallback(() => {
-    if (draggedRef.current) return;
-    onStop();
-  }, [onStop]);
-
-  /**
    * Open the record in one slot — including a sleeve picked off the side.
+   *
+   * The one thing a sleeve can be asked to do, and it first asks whether it was
+   * actually asked: a press that lands at the end of a pull on the wheel is the
+   * tail of that pull, and whichever sleeve happened to be under the hand when
+   * it stopped should not be acted on.
    *
    * Two things happen at once, and they are the same move seen from either end.
    * The cover leaves from the sleeve that was actually pressed, so it is handed
@@ -380,9 +360,12 @@ export default function FeaturedCarousel({
       // frame means the stage is already in the right place the instant the
       // collection is shown again, rather than a beat later.
       if (rect.height > 0) setStageFrame({ top: rect.top, height: rect.height });
+      /* The sleeve held out in the middle, which is the one the page is for:
+         as much of the window as it can have while the wheel either side of it
+         still reads as a wheel. */
       setCardSize(Math.min(
-        320,
-        Math.max(160, Math.min(window.innerWidth * 0.26, window.innerHeight * 0.38)),
+        360,
+        Math.max(160, Math.min(window.innerWidth * 0.3, window.innerHeight * 0.42)),
       ));
     };
     measure();
@@ -505,6 +488,22 @@ export default function FeaturedCarousel({
 
   const baseIndex = Math.round(position);
   const gap = slotGap(stageWidth);
+
+  /* Where each slot stands, laid out against the perspective — see
+     `slotOffsets`. One further out than the ring mounts, so that a slot caught
+     mid-scrub has somewhere to be read from. */
+  const slotLayout = useMemo(
+    () => slotOffsets(cardSize, gap, SLOT_RADIUS + 1),
+    [cardSize, gap],
+  );
+
+  /** That table, read at a fractional distance and mixed across the gap. */
+  const slotTravel = (distance: number) => {
+    const bounded = Math.min(Math.abs(distance), slotLayout.length - 1);
+    const lower = Math.floor(bounded);
+    const upper = Math.min(lower + 1, slotLayout.length - 1);
+    return slotLayout[lower] + (slotLayout[upper] - slotLayout[lower]) * (bounded - lower);
+  };
   /* The wheel sits a little below the middle of its stage rather than on it:
      the page title and the title column both live up at the top of the page,
      and the collection reads as hung under them instead of pressed against
@@ -547,7 +546,7 @@ export default function FeaturedCarousel({
         className={`fixed left-0 z-[1] cursor-grab touch-pan-y select-none overflow-hidden outline-none active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[color:var(--featured-focus-ring)] ${viewFade}`}
         style={{
           height: stageFrame.height,
-          perspective: '800px',
+          perspective: `${STAGE_PERSPECTIVE_PX}px`,
           perspectiveOrigin: '50% 50%',
           top: stageFrame.top,
           visibility: stageFrame.height > 0 ? 'visible' : 'hidden',
@@ -564,21 +563,16 @@ export default function FeaturedCarousel({
           const visible = magnitude <= VISIBLE_RADIUS + 0.05;
           const hidden = magnitude > VISIBLE_RADIUS + 0.55;
           const scale = SIDE_SCALE + Math.max(0, 1 - magnitude) * (1 - SIDE_SCALE);
-          const opacity = interpolateStops(magnitude, SLEEVE_FADE[room]);
-          const turnProgress = Math.min(magnitude / VISIBLE_RADIUS, 1);
-          const rotateY = -Math.sign(distance)
-            * MAX_TURN_DEG
-            * (1 - (1 - turnProgress) ** 1.5);
+          const rotateY = -Math.sign(distance) * turnAt(magnitude);
           const restingRotateX = PAPER_X_ROTATIONS[albumIndex % PAPER_X_ROTATIONS.length];
           const restingRotateZ = PAPER_Z_ROTATIONS[albumIndex % PAPER_Z_ROTATIONS.length];
           const rotateX = restingRotateX * Math.min(magnitude, 1);
           const rotateZ = restingRotateZ * Math.min(magnitude, 1);
-          /* One slot on is one side sleeve plus the gap; the first step out of
-             the centre also has to clear the half-width the centred sleeve has
-             that the others gave up. Same air between every pair either way. */
-          const translateMagnitude = magnitude * (cardSize * SIDE_SCALE + gap)
-            + Math.min(magnitude, 1) * cardSize * ((1 - SIDE_SCALE) / 2);
-          const translateX = Math.sign(distance) * translateMagnitude;
+          const translateX = Math.sign(distance) * slotTravel(magnitude);
+          /* Whether this tile's cover is somewhere else — in the air on its way
+             to a record, or on its way back. Only ever one tile: the flight
+             leaves from the slot the record was opened at. */
+          const coverAway = centerCoverHidden && logicalIndex === (flightSlot ?? baseIndex);
 
           return (
             <div
@@ -594,7 +588,7 @@ export default function FeaturedCarousel({
               className="absolute left-1/2 top-1/2"
 
               style={{
-                opacity,
+                opacity: sleeveFade(distance),
                 pointerEvents: hidden ? 'none' : undefined,
                 marginLeft: -cardSize / 2,
                 // The slot is centred as a cover-plus-metadata group: the
@@ -626,20 +620,25 @@ export default function FeaturedCarousel({
               >
                 <FeaturedCard
                   album={album}
-                  isPlaying={album.tracks.some((track) => track.id === playingId)}
-                  engineReady={engineReady}
                   onOpen={() => openSlot(logicalIndex, album)}
-                  onPlay={() => playSlot(album)}
-                  onStop={stopSlot}
                   showMetadata={centred}
                   // The sleeves either side are read out as part of the wheel
                   // rather than one at a time, so none of them takes focus.
                   focusable={centred}
                   turn={rotateY}
-                  // Not while the wheel is travelling, and not while a piece is
-                  // up: a hidden shelf has no pointer over it to answer.
-                  tiltable={visible && !snapping && openId === null}
-                  coverHidden={centerCoverHidden && logicalIndex === (flightSlot ?? baseIndex)}
+                  /* Not while the wheel is travelling, and not while a piece
+                     is up: a hidden shelf has no pointer over it to answer.
+
+                     It also stands down for as long as the cover is away
+                     from this tile, and not only while a record is open: a
+                     surface left reading the pointer through the flight hands
+                     the tile its lean, its sheen and its cast shadow in the
+                     frame it reappears in — every light on it at once, where
+                     what it should do is settle. Switched off it resets to
+                     square, and switching it back on at the landing lets its
+                     own smoothing walk all three back up. */
+                  tiltable={visible && !snapping && openId === null && !coverAway}
+                  coverHidden={coverAway}
                 />
               </div>
             </div>

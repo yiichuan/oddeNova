@@ -22,7 +22,25 @@ function tokenizeForTyping(s: string): string[] {
 // internal scrollbar instead of pushing the layout further down.
 const MAX_TEXTAREA_HEIGHT = 180;
 
+/**
+ * Grow the field to fit its text, up to the cap.
+ *
+ * Bails when the field has no width to be measured against — the studio's
+ * conversation column dragged shut (width 0), or `display: none`'d by a
+ * full-width page. `scrollHeight` there is not a smaller answer, it is a
+ * meaningless one: with no content width every word wraps onto its own line,
+ * so any text at all saturates the cap. And the answer is written back as an
+ * inline pixel height, which is not a measurement the layout takes again —
+ * it is a value that stays until something re-measures. A reading taken while
+ * the column is shut therefore comes back with it, as a composer standing at
+ * its full 180px over one line of text.
+ *
+ * Leaving the last good height in place costs nothing while the field is not
+ * on screen to be wrong, and the observer below re-measures the moment it has
+ * a box again.
+ */
 function resizeTextarea(el: HTMLTextAreaElement) {
+  if (el.clientWidth === 0) return;
   el.style.height = 'auto';
   const next = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT);
   el.style.height = `${next}px`;
@@ -182,12 +200,34 @@ export default function ChatInput({
     resizeTextarea(el);
   }, [text]);
 
+  // How tall the field has to be is a question about how wide it is, and in the
+  // studio almost nothing that changes its width is a window resize: the
+  // sidebar divider is dragged, the column is shut and pulled back open, the
+  // nav column expands, a full-width page takes the column away and hands it
+  // back. None of those fired this, so the height stayed at whatever the last
+  // window resize or keystroke had worked out for a column of a different
+  // width — text clipped in a field too short for it, or a field standing tall
+  // over one line.
+  //
+  // Watching the element itself answers all of them, the window included.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     const recalc = () => resizeTextarea(el);
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', recalc);
+      return () => window.removeEventListener('resize', recalc);
+    }
+    // Width only. The callback's whole job is to write this element's *height*,
+    // and reacting to that would be the observer answering itself.
+    let lastWidth = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth) return;
+      lastWidth = el.clientWidth;
+      recalc();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   const doSubmit = () => {
@@ -221,13 +261,54 @@ export default function ChatInput({
     }
   };
 
+  // Where the phone's return key is actually caught.
+  //
+  // `keydown` is not reliable for it: with an IME in the loop a phone reports a
+  // bare `keyCode: 229` and no `key`, so the handler below never recognises the
+  // press and the field takes a blank line instead of the suggestion. Every
+  // mobile keyboard does agree on the *edit* the key is asking for, and this is
+  // it — `insertLineBreak`, identical however the keydown came out.
+  //
+  // A native listener rather than React's `onBeforeInput`, which is still the
+  // `textInput` polyfill: it only dispatches when the event carries character
+  // data, and a line break carries none, so it never fires here at all.
+  //
+  // Narrowly gated. The moment there is anything typed `suggestionActive` is
+  // false and the newline goes in exactly as it always did.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || !isMobile || replayValue !== undefined) return;
+    if (!suggestionActive || !currentSuggestion) return;
+
+    const onBeforeInput = (e: Event) => {
+      if ((e as InputEvent).inputType !== 'insertLineBreak') return;
+      e.preventDefault();
+      adoptedSuggestionRef.current = currentSuggestion;
+      setText(currentSuggestion);
+    };
+    el.addEventListener('beforeinput', onBeforeInput);
+    return () => el.removeEventListener('beforeinput', onBeforeInput);
+  }, [isMobile, replayValue, suggestionActive, currentSuggestion]);
+
+  // Only the card's non-interactive blank space pulls focus back to the
+  // textarea. The thinking level control opts itself out via
+  // [data-chat-input-focus-ignore] (see ThinkingLevelControl) so opening,
+  // adjusting or closing it never re-focuses the textarea — and never yanks
+  // the soft keyboard back up. defaultPrevented presses (the control's own
+  // focus protection) are skipped for the same reason.
   const handleCardClick = (e: React.MouseEvent<HTMLFormElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('button')) return;
+    if (e.defaultPrevented) return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('[data-chat-input-focus-ignore]')) return;
+    if (target.closest('button, input, textarea, select, a[href], [contenteditable="true"]')) return;
     textareaRef.current?.focus();
   };
 
   const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
+  // The waiting fade, applied per part (see the card below): everything that
+  // is genuinely out of reach while the agent answers, and nothing else.
+  const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
 
   return (
     <form onSubmit={handleSubmit} onClick={handleCardClick} className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -248,8 +329,16 @@ export default function ChatInput({
             and on paper that ring is only a few levels off the fill it is
             drawn on — halve that difference and the composer loses its edge
             entirely for as long as the agent is answering. Dimming what is
-            *inside* says the same thing and leaves the panel its outline. */}
-        <div className={`transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`}>
+            *inside* says the same thing and leaves the panel its outline.
+
+            Taken on each dimmable part rather than on this wrapper, because
+            the one thing in here that must not fade is the key on the right:
+            while the agent answers it is the *stop* control, the only live
+            action on the card, and a dimmed one reads as unavailable exactly
+            when it is the only thing left to press. (Opacity is inherited by
+            a subtree, so a child cannot win it back — the fade has to skip it
+            on the way down.) */}
+        <div>
           {/* Wraps just the textarea so the suggestion overlay below can be
               positioned absolute against its box, not the card as a whole
               (which also includes the footer). Top padding lives on the card
@@ -260,9 +349,10 @@ export default function ChatInput({
               from the card edge, giving the scrollbar an 8px gap. The textarea's
               own pr below is reduced by the same 8px so the text position is
               unchanged. */}
-          <div className="relative pr-3">
+          <div className={`relative pr-3 ${waitingDim}`}>
             <textarea
               ref={textareaRef}
+              data-chat-input-textarea
               value={replayValue !== undefined ? replayValue : text}
               onChange={replayValue !== undefined ? undefined : (e) => {
                 adoptedSuggestionRef.current = null;
@@ -290,6 +380,12 @@ export default function ChatInput({
                   // field is still empty (suggestionActive). Once the user is
                   // typing it falls through as a plain newline — sending is the
                   // send button's job there, not the keyboard's.
+                  //
+                  // The phone's own return key often does not arrive here at all
+                  // (an IME in the loop reports a bare `keyCode: 229` with no
+                  // `key`). The native `beforeinput` listener above is what
+                  // actually catches it there; this stays as the plain-keyboard
+                  // path and as the belt to its braces.
                   if (isMobile) {
                     if (suggestionActive && currentSuggestion) {
                       e.preventDefault();
@@ -306,7 +402,13 @@ export default function ChatInput({
                 : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
               rows={1}
               disabled={inputDisabled}
-              className="w-full min-h-[73px] resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed"
+              // The composer's resting height, and so the whole card's: the
+              // floor holds the field open at more than the one line it starts
+              // with. 20px shorter on a phone, where the card is standing on a
+              // screen the conversation also has to fit on and that slack is
+              // taken out of the reading. The auto-grow cap above is untouched,
+              // so typing still opens it exactly as far as it ever did.
+              className={`w-full ${isMobile ? 'min-h-[53px]' : 'min-h-[73px]'} resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed`}
               style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
             />
 
@@ -318,7 +420,12 @@ export default function ChatInput({
                 to stop iOS auto-zoom on focus and can't be lowered, so the
                 overlay matches it to avoid a jump when a suggestion is adopted. */}
             {suggestionActive && (
-              <div className="pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden line-clamp-3 text-base md:text-sm text-text-muted">
+              <div
+                // Clamped to what the shorter mobile field can actually show,
+                // so a long suggestion ends on a line rather than on one sliced
+                // through the middle.
+                className={`pointer-events-none absolute left-4 top-0 right-5 bottom-2 overflow-hidden ${isMobile ? 'line-clamp-2' : 'line-clamp-3'} text-base md:text-sm text-text-muted`}
+              >
                 {/* Only the suggestion text blurs/fades between rotations — blur
                     runs first, then opacity fades in on its heels (sequential, not
                     simultaneous), via an explicit transition-delay on opacity.
@@ -343,7 +450,7 @@ export default function ChatInput({
           {/* Footer row — hint/status on the left, send button on the right.
               Real layout, always visible regardless of textarea scroll state. */}
           <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
-            <div className="min-w-0">
+            <div className={`min-w-0 ${waitingDim}`}>
               {engineStatus !== 'ready' ? (
                 <div className="flex items-center gap-2 text-[12px] text-text-muted">
                   <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
@@ -367,7 +474,16 @@ export default function ChatInput({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {replayValue === undefined && <ThinkingLevelControl disabled={inputDisabled} />}
+              {replayValue === undefined && (
+                <ThinkingLevelControl
+                  disabled={inputDisabled}
+                  // Read at press time from the DOM, not from React's `focused`
+                  // state: the event handler needs the fact as it is right now,
+                  // and only an actual textarea focus is worth protecting (see
+                  // ThinkingLevelControl's pointerdown protection).
+                  shouldPreserveInputFocus={() => document.activeElement === textareaRef.current}
+                />
+              )}
               {replayValue !== undefined ? (
                 <button
                   type="button"
@@ -384,11 +500,11 @@ export default function ChatInput({
                   className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover"
                   title={t('stop')}
                 >
-                  {/* A step under the arrow it stands in for: a solid square
-                      carries more ink than an outlined glyph, so matching their
-                      nominal sizes makes the stop mark read as the larger of
-                      the two. */}
-                  <StopIcon size={16} />
+                  {/* Well under the arrow it stands in for: a solid square
+                      carries far more ink than an outlined glyph, so anywhere
+                      near the arrow's nominal size the stop mark reads as the
+                      larger of the two and the disc as crowded. */}
+                  <StopIcon size={12} />
                 </button>
               ) : (
                 <button

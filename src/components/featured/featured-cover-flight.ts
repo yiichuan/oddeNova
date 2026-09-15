@@ -24,7 +24,8 @@ export const FLIGHT_DURATION_MS = 420;
 /** The outgoing view's content is gone before the cover leaves after it. */
 export const CONTENT_FADE_MS = 180;
 
-const FLIGHT_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+/** Exported so anything changing shape alongside the cover moves on its curve. */
+export const FLIGHT_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 /**
  * Whether the trip is worth taking. Without the Web Animations API — or with a
@@ -35,6 +36,66 @@ export function coverFlightSupported() {
   return typeof Element !== 'undefined'
     && typeof Element.prototype.animate === 'function'
     && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * How the light comes back on to a sleeve the cover has just been flown back to.
+ *
+ * The copy that crosses the page is the artwork and nothing else — no lamp, no
+ * sheen, no cast shadow — because those belong to a sleeve standing on a shelf,
+ * and for the length of the flight this record is not on one. So the artwork
+ * itself is handed over in a single frame, which is what the sleeve being
+ * hidden under the copy is for, and everything the copy did not carry is raised
+ * on to it after: a record settling into the room it has been put back in.
+ *
+ * A third of a second, which is long enough to be seen rising rather than
+ * switched on, and near enough the beat a sleeve's own lean takes to walk back
+ * up from square that the two read as one thing settling.
+ */
+const COVER_LIGHT_MS = 320;
+const COVER_LIGHT_EASING = 'cubic-bezier(0.33, 1, 0.68, 1)';
+
+/**
+ * Raises it, on one sleeve, in the commit the cover landed on.
+ *
+ * Asked for rather than declared, because the frame this has to happen on is not
+ * a frame React knows anything about: the sleeve is hidden for the whole flight
+ * and comes back in the same commit that puts its light up, and a transition
+ * between two styles resolved in one pass is a transition the browser is free to
+ * skip — which is exactly what it does here, and what makes the light appear all
+ * at once. An animation asked for by hand cannot be skipped, and asking for it
+ * from a layout effect puts its first frame on the same paint the sleeve arrives
+ * in.
+ *
+ * Nothing to fall back to where the page has no Web Animations, or for a reader
+ * who has asked for less motion: the light is simply there, which is where this
+ * started.
+ */
+export function raiseCoverLight(sleeve: Element | null | undefined): void {
+  if (!sleeve || typeof Element === 'undefined' || typeof Element.prototype.animate !== 'function') {
+    return;
+  }
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const timing = { duration: COVER_LIGHT_MS, easing: COVER_LIGHT_EASING };
+  for (const layer of sleeve.querySelectorAll('[data-featured-cover-light], [data-featured-cover-glaze]')) {
+    layer.animate([{ opacity: 0 }, { opacity: 1 }], timing);
+  }
+
+  /* And what the sleeve throws, which the copy had none of either. Read back
+     rather than written: the cast is a custom property the tilt surface keeps,
+     so what it is at this moment is a question for the browser. A computed
+     shadow names its colour first, and the same shadow in no colour at all is
+     where it comes up from — a browser that writes the colour last simply
+     animates a shadow to itself, which is where this started. */
+  const shell = sleeve.querySelector<HTMLElement>('[data-featured-sleeve]');
+  const cast = shell ? window.getComputedStyle(shell).boxShadow : '';
+  if (shell && cast && cast !== 'none') {
+    shell.animate(
+      [{ boxShadow: cast.replace(/^rgba?\([^)]*\)/, 'rgba(0, 0, 0, 0)') }, { boxShadow: cast }],
+      timing,
+    );
+  }
 }
 
 export function flightRect(node: Element): FlightRect {
@@ -80,6 +141,8 @@ export function liftCover(node: Element, from: FlightRect, fromRadius: number): 
   document.body.append(clone);
 
   let animation: Animation | null = null;
+  let pendingFrame: number | null = null;
+  let pendingFrame2: number | null = null;
 
   return {
     land(to, toRadius) {
@@ -93,6 +156,7 @@ export function liftCover(node: Element, from: FlightRect, fromRadius: number): 
       const inverse = `translate(${dx}px, ${dy}px) scale(${scale}, ${scaleY})`;
 
       Object.assign(clone.style, {
+        borderRadius: `${fromRadius / scale}px`,
         height: `${to.height}px`,
         left: `${to.left}px`,
         top: `${to.top}px`,
@@ -100,19 +164,38 @@ export function liftCover(node: Element, from: FlightRect, fromRadius: number): 
         width: `${to.width}px`,
       });
 
-      animation = clone.animate(
-        [
-          // Divided by the scale it is seen at, so the corner reads as the
-          // source's own radius rather than that radius magnified.
-          { borderRadius: `${fromRadius / scale}px`, transform: inverse },
-          { borderRadius: `${toRadius}px`, transform: 'none' },
-        ],
-        { duration: FLIGHT_DURATION_MS, easing: FLIGHT_EASING, fill: 'forwards' },
-      );
-
-      return animation.finished.then(() => undefined, () => undefined);
+      // The style above already parks the copy exactly where the source sat,
+      // so nothing is seen to move yet. Starting the animation is put off two
+      // frames rather than done in the same breath: this call lands in the
+      // same commit that swaps in the destination view, and that view's first
+      // layout and paint — a record's worth of markup, its glow, its own
+      // effects — has not happened yet at all, and is going to happen on
+      // whichever frame comes next regardless of when in this task `animate`
+      // is called. One frame's wait lands inside that same paint; the clock
+      // only gets a thread that is actually free to keep up with it a frame
+      // after that one has been flushed to the screen.
+      return new Promise<void>((resolve) => {
+        pendingFrame = requestAnimationFrame(() => {
+          pendingFrame = null;
+          pendingFrame2 = requestAnimationFrame(() => {
+            pendingFrame2 = null;
+            animation = clone.animate(
+              [
+                // Divided by the scale it is seen at, so the corner reads as
+                // the source's own radius rather than that radius magnified.
+                { borderRadius: `${fromRadius / scale}px`, transform: inverse },
+                { borderRadius: `${toRadius}px`, transform: 'none' },
+              ],
+              { duration: FLIGHT_DURATION_MS, easing: FLIGHT_EASING, fill: 'forwards' },
+            );
+            animation.finished.then(() => resolve(), () => resolve());
+          });
+        });
+      });
     },
     remove() {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      if (pendingFrame2 !== null) cancelAnimationFrame(pendingFrame2);
       animation?.cancel();
       clone.remove();
     },

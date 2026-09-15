@@ -14,6 +14,7 @@ import {
   IDBTransaction,
   IDBVersionChangeEvent,
 } from 'fake-indexeddb';
+import { SESSION_TITLE_LIMIT, sessionTitleLength } from '../session-title';
 
 function stubLocalStorage() {
   const store = new Map<string, string>();
@@ -497,6 +498,37 @@ describe('normalizeSession', () => {
       createdAt: 1,
       updatedAt: 2,
     });
+  });
+
+  it('holds a title written before the shared limit to it, and changes nothing else', async () => {
+    const { normalizeSession } = await import('../session-storage');
+    const stored = {
+      id: 'legacy-long',
+      title: ` 一段\n很长的 标题${'字'.repeat(200)}`,
+      messages: [],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    const normalized = normalizeSession(stored);
+    expect(sessionTitleLength(normalized.title)).toBe(SESSION_TITLE_LIMIT);
+    expect(normalized.title.endsWith('…')).toBe(true);
+    // Read-side only: the row is not touched, so nothing re-sorts or re-saves.
+    expect(normalized.updatedAt).toBe(2);
+    expect(normalized.code).toBe('s("bd")');
+  });
+
+  it('leaves an empty title empty, for the caller\u2019s own stand-in', async () => {
+    const { normalizeSession } = await import('../session-storage');
+    expect(normalizeSession({
+      id: 'blank',
+      title: '   ',
+      messages: [],
+      code: '',
+      createdAt: 1,
+      updatedAt: 2,
+    }).title).toBe('');
   });
 });
 

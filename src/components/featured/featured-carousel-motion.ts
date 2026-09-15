@@ -20,9 +20,12 @@ export const MAX_TURN_DEG = 76;
 /**
  * How small a sleeve stands once it is off the centre. Every slot either side
  * gives up the same amount: the wheel is read as one record held out in front
- * of the rest, not as a row that recedes.
+ * of the rest, not as a row that recedes — and the further the two sizes are
+ * apart, the more plainly it is the one record rather than the row that is
+ * being offered. A little over half is where the sides are still records rather
+ * than thumbnails of them.
  */
-export const SIDE_SCALE = 0.66;
+export const SIDE_SCALE = 0.54;
 
 /**
  * The air between one sleeve and the next, edge to edge and the same all the
@@ -30,6 +33,78 @@ export const SIDE_SCALE = 0.66;
  * window opens the collection out instead of only drawing it larger.
  */
 export const slotGap = (stageWidth: number) => Math.min(76, Math.max(40, stageWidth * 0.048));
+
+/**
+ * How far either side of centre the turn is spent: the sleeve at that distance
+ * is the one standing edge-on to the reader.
+ */
+export const VISIBLE_RADIUS = 3;
+
+/** How deep the room behind the shelf is — the stage's own `perspective`. */
+export const STAGE_PERSPECTIVE_PX = 800;
+
+/**
+ * The angle each sleeve's paper has come to rest at, dealt out around the
+ * collection. Read against the record rather than against the slot it happens
+ * to be standing in: the slot numbering runs on for as long as the wheel is
+ * turned, so an angle pinned to it would deal the same record a different angle
+ * on every lap.
+ */
+export const PAPER_X_ROTATIONS = [10, -12.5, 7.5, -9.5, 12, -9, 14] as const;
+
+/** Half the widest of those, which is what the wheel's spacing allows for. */
+const PAPER_TILT_ALLOWANCE_DEG = 7;
+
+const RADIANS = Math.PI / 180;
+
+/** How far a sleeve has turned at a given distance from the centre. */
+export const turnAt = (distance: number) => MAX_TURN_DEG
+  * (1 - (1 - Math.min(Math.abs(distance) / VISIBLE_RADIUS, 1)) ** 1.5);
+
+/**
+ * Where each slot out from the centre stands, so that the air between one
+ * sleeve and the next is `gap` — the same all the way along the wheel.
+ *
+ * It has to be laid out slot by slot because the stage has a perspective, and a
+ * perspective does not move a sleeve, it moves each of its edges by a different
+ * amount. The edge that has turned towards the reader is nearer, so it is drawn
+ * larger and further out; the edge that has turned away is drawn smaller and
+ * further in. Two sleeves side by side therefore lean into each other's air:
+ * the outer one's near edge is thrown out while the next one's far edge is
+ * pulled back, and by the time the wheel is fully turned the two have converged
+ * by more than a hundred pixels.
+ *
+ * Spaced by a flat step — one sleeve's width and a gap, which is what this was
+ * — the wheel looks evenly spread at the centre and closes up towards the
+ * edges, the last pair of sleeves overlapping while the first pair stand a
+ * finger's width apart. So each slot is placed against where the one before it
+ * actually landed: project the previous sleeve's near edge, add the air, and
+ * solve for where this one's far edge has to start.
+ */
+export const slotOffsets = (cardSize: number, gap: number, slots: number) => {
+  const half = (cardSize * SIDE_SCALE) / 2;
+  const offsets = [0];
+  // The centred sleeve is square to the reader and full size, so its own edge
+  // is where it is drawn.
+  let reach = cardSize / 2;
+  for (let slot = 1; slot <= slots; slot += 1) {
+    const turn = turnAt(slot) * RADIANS;
+    /* Half the sleeve as it is seen, and how far its edges stand out of the
+       screen — the near one towards the reader, the far one away. The paper
+       each sleeve is dealt is tilted too, which lifts its corners out of the
+       line its edges run along and a little further forward again; half the
+       widest angle dealt is the allowance that keeps the air even measured
+       corner to corner rather than edge to edge. */
+    const seen = Math.cos(turn) * half;
+    const depth = (Math.sin(turn) + Math.sin(PAPER_TILT_ALLOWANCE_DEG * RADIANS)) * half;
+    const near = STAGE_PERSPECTIVE_PX / (STAGE_PERSPECTIVE_PX - depth);
+    const far = STAGE_PERSPECTIVE_PX / (STAGE_PERSPECTIVE_PX + depth);
+    const offset = (reach + gap) / far + seen;
+    offsets.push(offset);
+    reach = (offset + seen) * near;
+  }
+  return offsets;
+};
 
 /** One sleeve's worth of settling. */
 export const SNAP_DURATION_MS = 360;

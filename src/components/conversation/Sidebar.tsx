@@ -56,6 +56,15 @@ interface SidebarProps {
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
+  onPlaySegment?: (segmentId: string, code: string) => void;
+  onStopCode?: () => void;
+  isPlaying?: boolean;
+  playingCode?: string;
+  /** The working draft, and the key that started what is sounding — both
+   *  straight through to the reading. See ConversationView. */
+  draftCode?: string;
+  pressedSegmentId?: string | null;
+  pressedSegmentCode?: string | null;
 }
 
 export default function Sidebar({
@@ -100,6 +109,13 @@ export default function Sidebar({
   onRollback,
   onBranch,
   onRetry,
+  onPlaySegment,
+  onStopCode,
+  isPlaying = false,
+  playingCode = '',
+  draftCode = '',
+  pressedSegmentId = null,
+  pressedSegmentCode = null,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(1);
@@ -225,6 +241,13 @@ export default function Sidebar({
             onRollback={onRollback}
             onBranch={onBranch}
             onRetry={onRetry}
+            onPlaySegment={onPlaySegment}
+            onStopCode={onStopCode}
+            isPlaying={isPlaying}
+            playingCode={playingCode}
+            draftCode={draftCode}
+            pressedSegmentId={pressedSegmentId}
+            pressedSegmentCode={pressedSegmentCode}
           />
         </div>
       </div>

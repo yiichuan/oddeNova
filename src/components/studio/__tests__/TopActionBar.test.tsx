@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../../hooks/useChat';
 import type { Session } from '../../../hooks/useSessions';
 import { MOBILE_TOP_ACTIONS } from '../mobileTopActions';
-import TopActionBar, { ShareButton } from '../TopActionBar';
+import TopActionBar, { ExportPopover, ShareButton } from '../TopActionBar';
+import { getStrudelLoopCycles, getStrudelLoopDurationSeconds } from '../../../lib/strudel-timing';
 
 const uploadShareMock = vi.hoisted(() => vi.fn());
 const shareUrlMock = vi.hoisted(() => vi.fn());
@@ -24,7 +25,8 @@ vi.mock('../../../lib/analytics', () => ({
   trackShareCompleted: trackShareCompletedMock,
 }));
 
-vi.mock('../../../hooks/useIsMobile', () => ({ useIsMobile: () => false }));
+const viewport = vi.hoisted(() => ({ mobile: false }));
+vi.mock('../../../hooks/useIsMobile', () => ({ useIsMobile: () => viewport.mobile }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -483,10 +485,12 @@ describe('TopActionBar export title generation', () => {
       getLastButton(container, 'Download').click();
     });
 
+    // One whole time through the piece: this fixture's pattern comes round
+    // after a single cycle.
     expect(onExport).toHaveBeenCalledWith({
       filename: 'manual-title',
       beginCycle: 0,
-      endCycle: 4,
+      endCycle: 1,
       sampleRate: 48000,
     });
     consoleError.mockRestore();
@@ -560,5 +564,85 @@ describe('TopActionBar export title generation', () => {
     await waitFor(() => {
       expect(getFilenameInput(container).value).toBe('manual-title');
     });
+  });
+});
+
+describe('ExportPopover window and form', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.innerHTML = '';
+    viewport.mobile = false;
+  });
+
+  /* A piece that does not come round after one cycle, so opening on the whole
+     of it is visibly different from opening on a fixed number of cycles. */
+  const LOOPING_CODE = 'setcps(0.6)\ns("bd*4").slow(8)';
+
+  function renderPopover(code: string, extra: Partial<React.ComponentProps<typeof ExportPopover>> = {}) {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    act(() => {
+      root.render(
+        <ExportPopover
+          open
+          onClose={vi.fn()}
+          exportState={{ status: 'idle', progress: 0 }}
+          onResetState={vi.fn()}
+          onExport={vi.fn().mockResolvedValue(true)}
+          code={code}
+          messages={messages}
+          onGenerateTitle={vi.fn().mockResolvedValue('Generated groove')}
+          bpm={144}
+          {...extra}
+        />,
+      );
+    });
+    return { container, root };
+  }
+
+  const cycleInputs = (scope: ParentNode) => (
+    [...scope.querySelectorAll<HTMLInputElement>('input[inputmode="numeric"]')]
+  );
+
+  it('opens on one whole time through the piece, and estimates what the transport shows', () => {
+    const { container } = renderPopover(LOOPING_CODE);
+
+    const loopCycles = getStrudelLoopCycles(LOOPING_CODE);
+    expect(loopCycles).toBeGreaterThan(1);
+    expect(cycleInputs(container).map((input) => input.value)).toEqual(['0', String(loopCycles)]);
+    // The same seconds the playback bar under the editor is drawn from.
+    expect(container.textContent)
+      .toContain(`${getStrudelLoopDurationSeconds(LOOPING_CODE).toFixed(1)}s`);
+  });
+
+  it('falls back to a few cycles for code with no loop to measure', () => {
+    const { container } = renderPopover('   ');
+
+    expect(cycleInputs(container).map((input) => input.value)).toEqual(['0', '4']);
+  });
+
+  /* The phone's form of the same dialog. It is opened from a row of keys hung
+     on the code window, and that window is drawn at a scale — so anything
+     `fixed` left inside it measures itself against the window rather than the
+     page, which is what laid a dark rectangle over a rounded panel and squared
+     off its corners. */
+  it('stands the phone dialog on the page rather than inside what opened it', () => {
+    viewport.mobile = true;
+    const { container } = renderPopover(LOOPING_CODE);
+
+    const dialog = document.querySelector<HTMLElement>('[data-testid="export-dialog-mobile"]')!;
+    expect(dialog).not.toBeNull();
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.parentElement).toBe(document.body);
+
+    // In the middle of the page, over a page that has gone soft behind it.
+    expect(dialog.className).toContain('items-center');
+    expect(dialog.className).toContain('justify-center');
+    expect(dialog.firstElementChild?.className).toContain('backdrop-blur');
+    expect(dialog.querySelector('[role="dialog"]')).not.toBeNull();
   });
 });

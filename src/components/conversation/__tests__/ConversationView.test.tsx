@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../../hooks/useChat';
 import type { CodeRevision } from '../../../hooks/useSessions';
 import ConversationView from '../ConversationView';
+import { DRAFT_SEGMENT_ID } from '../../../lib/draft-diff';
+import { t } from '../../../lib/i18n';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -34,30 +36,85 @@ function setMobileViewport(matches: boolean) {
   });
 }
 
+/* What the phone's layout hands down and the desktop's does not: the take's
+   own transport, drawn in the widget under the reply. */
+type PlaybackProps = {
+  isPlaying?: boolean;
+  playingCode?: string;
+  onPlaySegment?: (segmentId: string, code: string) => void;
+  onStopCode?: () => void;
+  draftCode?: string;
+  /** Overrides the helper's own, so one render can run a turn and the next end
+   *  it — which is what arms the turn anchor. */
+  isLoading?: boolean;
+  /** Which key started what is sounding, and the code it put on. */
+  pressedSegmentId?: string | null;
+  pressedSegmentCode?: string | null;
+};
+
+/** A ResizeObserver whose reports this test fires itself. */
+function stubResizeObserver() {
+  const callbacks = new Set<ResizeObserverCallback>();
+  const original = globalThis.ResizeObserver;
+  class Stub {
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+      callbacks.add(callback);
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() { callbacks.delete(this.callback); }
+  }
+  globalThis.ResizeObserver = Stub as unknown as typeof ResizeObserver;
+  return {
+    fire: () => {
+      for (const callback of callbacks) callback([], {} as ResizeObserver);
+    },
+    restore: () => { globalThis.ResizeObserver = original; },
+  };
+}
+
+/** Stand in for layout happy-dom does not do: a live rect read off the stub. */
+function stubRect(el: HTMLElement, read: () => { top: number; bottom: number }) {
+  Object.defineProperty(el, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => {
+      const { top, bottom } = read();
+      return { top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top };
+    },
+  });
+}
+
 function renderConversationView(
   messages: ChatMessage[],
   onRollback = vi.fn(),
   isLoading = false,
   revisions?: CodeRevision[],
+  playback: PlaybackProps = {},
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
 
-  act(() => {
-    root.render(
-      <ConversationView
-        messages={messages}
-        revisions={revisions}
-        isLoading={isLoading}
-        onRollback={onRollback}
-        onBranch={vi.fn()}
-        onRetry={vi.fn()}
-      />,
-    );
-  });
+  const render = (next: PlaybackProps = playback, nextMessages: ChatMessage[] = messages) => {
+    act(() => {
+      root.render(
+        <ConversationView
+          messages={nextMessages}
+          revisions={revisions}
+          isLoading={isLoading}
+          onRollback={onRollback}
+          onBranch={vi.fn()}
+          onRetry={vi.fn()}
+          {...next}
+        />,
+      );
+    });
+  };
+  render();
 
-  return { container, root };
+  return { container, root, render };
 }
 
 describe('ConversationView code revisions', () => {
@@ -104,6 +161,77 @@ describe('ConversationView code revisions', () => {
     expect(container.textContent).toContain('DRUMS');
     expect(container.querySelector('[data-diff-kind="remove"]')?.textContent).toContain('s("bd")');
     expect(container.querySelector('[data-diff-kind="add"]')?.textContent).toContain('s("bd*2")');
+  });
+
+  /* The phone's code window is shut behind a key in the corner, so the widget
+     under the reply is where a take is heard from. */
+  it('sounds the take from its widget, and offers to stop the one sounding', () => {
+    setMobileViewport(true);
+    const afterCode = 'stack(\n/* @layer drums */\ns("bd*2")\n)';
+    const messages: ChatMessage[] = [{
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '完成',
+      code: afterCode,
+      revisionId: 'rev-1',
+      timestamp: 1,
+    }];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 'stack(\n/* @layer drums */\ns("bd")\n)',
+      afterCode,
+      playbackStatus: 'played',
+      createdAt: 1,
+    }];
+    const onPlaySegment = vi.fn();
+    const onStopCode = vi.fn();
+    const { container, root, render } = renderConversationView(
+      messages, vi.fn(), false, revisions, { onPlaySegment, onStopCode },
+    );
+    roots.push(root);
+
+    const key = () => container.querySelector<HTMLButtonElement>('[data-code-diff-play="assistant-1"]');
+    expect(key()?.getAttribute('aria-label')).toBe('Play');
+    act(() => key()?.click());
+    expect(onPlaySegment).toHaveBeenCalledWith('assistant-1', afterCode);
+    expect(onStopCode).not.toHaveBeenCalled();
+
+    // What is sounding is what the widget reports, so the key turns over.
+    render({ onPlaySegment, onStopCode, isPlaying: true, playingCode: afterCode });
+    expect(key()?.getAttribute('aria-label')).toBe('Stop');
+    act(() => key()?.click());
+    expect(onStopCode).toHaveBeenCalled();
+    expect(onPlaySegment).toHaveBeenCalledTimes(1);
+
+    // Something else sounding is not this take sounding.
+    render({ onPlaySegment, onStopCode, isPlaying: true, playingCode: 's("hh*4")' });
+    expect(key()?.getAttribute('aria-label')).toBe('Play');
+  });
+
+  /* The desktop hands none of this down: the code window is already open
+     beside the reading, with a transport of its own. */
+  it('draws no play key where the reading was given no transport', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '完成',
+      code: 's("bd*2")',
+      revisionId: 'rev-1',
+      timestamp: 1,
+    }];
+    const revisions: CodeRevision[] = [{
+      id: 'rev-1',
+      beforeCode: 's("bd")',
+      afterCode: 's("bd*2")',
+      playbackStatus: 'played',
+      createdAt: 1,
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), false, revisions);
+    roots.push(root);
+
+    expect(container.querySelector('[data-code-diff-play="assistant-1"]')).toBeNull();
+    expect(container.querySelector('[data-code-diff-toggle="assistant-1"]')).not.toBeNull();
   });
 
   it('marks a persisted revision whose playback failed', () => {
@@ -534,6 +662,177 @@ describe('ConversationView chat streaming', () => {
     expect(scrollBox?.className).toContain('overflow-y-auto');
   });
 
+  it('leaves the streamed reasoning where it is and jumps a window past its last line', () => {
+    setMobileViewport(false);
+    // happy-dom lays nothing out and never resizes, so the window's geometry,
+    // and the observer that reports changes to it, are driven by hand here.
+    const resize = stubResizeObserver();
+    try {
+      const reasoning: ChatMessage = {
+        id: 'r1',
+        role: 'progress',
+        content: '一段很长的推理'.repeat(40),
+        timestamp: 2,
+        progressKind: 'reasoning',
+      };
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', content: '来点好听的', timestamp: 1 },
+        reasoning,
+      ];
+      const { container, root, render } = renderConversationView(messages, vi.fn(), true);
+      roots.push(root);
+
+      const scrollBox = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
+      const content = container.querySelector<HTMLElement>('[data-markdown-text]');
+      expect(scrollBox).not.toBeNull();
+      expect(content).not.toBeNull();
+
+      const WINDOW_HEIGHT = 300;
+      let contentHeight = 200;
+      stubRect(scrollBox!, () => ({ top: 0, bottom: WINDOW_HEIGHT }));
+      stubRect(content!, () => ({
+        top: -scrollBox!.scrollTop,
+        bottom: contentHeight - scrollBox!.scrollTop,
+      }));
+
+      // Text that still fits inside the window: nothing below the fold.
+      act(() => resize.fire());
+      expect(container.querySelector('[data-reasoning-jump-latest]')).toBeNull();
+
+      // It outgrows the window, and the way to the live end is offered.
+      contentHeight = 1200;
+      act(() => resize.fire());
+      expect(container.querySelector('[data-reasoning-jump-latest]')).not.toBeNull();
+
+      // Where the reader put the window, and where more text finds it: the
+      // stream does not drag it along.
+      act(() => {
+        scrollBox!.scrollTop = 100;
+        scrollBox!.dispatchEvent(new Event('scroll'));
+      });
+      contentHeight = 1500;
+      render(undefined, [messages[0], { ...reasoning, content: `${reasoning.content}继续推理` }]);
+      act(() => resize.fire());
+      expect(scrollBox!.scrollTop).toBe(100);
+
+      act(() => container.querySelector<HTMLButtonElement>('[data-reasoning-jump-latest]')!.click());
+
+      // The newest line comes to rest at the top of the window, with nearly the
+      // whole window left open under it for what is written next.
+      const lastLineFromTop = contentHeight - scrollBox!.scrollTop;
+      expect(lastLineFromTop).toBeGreaterThan(0);
+      expect(lastLineFromTop).toBeLessThan(40);
+      expect(WINDOW_HEIGHT - lastLineFromTop).toBeGreaterThan(WINDOW_HEIGHT * 0.8);
+
+      // Arrived at the live end, there is nothing left to jump to.
+      expect(container.querySelector('[data-reasoning-jump-latest]')).toBeNull();
+    } finally {
+      resize.restore();
+    }
+  });
+
+  it('opens each later reasoning window at its own beginning', () => {
+    setMobileViewport(false);
+    // Back-to-back reasoning: the iteration between them called only
+    // `validate`, which puts nothing in the stream, so the run is unbroken and
+    // the window is never unmounted between the two.
+    const first: ChatMessage = {
+      id: 'r1',
+      role: 'progress',
+      content: '第一轮推理'.repeat(40),
+      timestamp: 2,
+      progressKind: 'reasoning',
+    };
+    const second: ChatMessage = {
+      id: 'r2',
+      role: 'progress',
+      content: '第二轮推理',
+      timestamp: 3,
+      progressKind: 'reasoning',
+    };
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: '来点好听的', timestamp: 1 },
+      first,
+    ];
+    const { container, root, render } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    const firstBox = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
+    expect(firstBox).not.toBeNull();
+    act(() => { firstBox!.scrollTop = 420; });
+
+    render(undefined, [...messages, second]);
+
+    const secondBox = container.querySelector<HTMLElement>('[data-markdown-text]')?.parentElement;
+    expect(secondBox).not.toBeNull();
+    // A new window, not the previous one handed over mid-scroll.
+    expect(secondBox).not.toBe(firstBox);
+    expect(secondBox!.scrollTop).toBe(0);
+    expect(secondBox!.textContent).toContain('第二轮推理');
+  });
+
+  /* The bug: while reasoning streamed, the reading outside the window could not
+     be scrolled at all — every delta re-ran the scroll effect, and a takeover
+     that had not yet cleared a fixed distance was read as "still following" and
+     pinned straight back. A trackpad, which moves a few px per event, never got
+     out of that hole. A gesture now hands the reading over on the first px that
+     moves, and the takeover stands until the reader brings it back. */
+  it('leaves the reading where a reader scrolls it while reasoning streams', () => {
+    setMobileViewport(false);
+    const reasoning: ChatMessage = {
+      id: 'r1',
+      role: 'progress',
+      content: '一段推理',
+      timestamp: 2,
+      progressKind: 'reasoning',
+    };
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: '来点好听的', timestamp: 1 },
+      reasoning,
+    ];
+    const { container, root, render } = renderConversationView(messages, vi.fn(), true);
+    roots.push(root);
+
+    // A window 300 tall over 1000 of reading. Set by hand: happy-dom lays
+    // nothing out, so the anchor resolves to the bottom pin (700).
+    const box = container.querySelector<HTMLElement>('.conversation-scroll')!;
+    Object.defineProperty(box, 'clientHeight', { configurable: true, value: 300 });
+    Object.defineProperty(box, 'scrollHeight', { configurable: true, writable: true, value: 1000 });
+    box.scrollTo = ((options: { top: number }) => { box.scrollTop = options.top; }) as typeof box.scrollTo;
+
+    const delta = (content: string) => {
+      render(undefined, [messages[0], { ...reasoning, content }]);
+    };
+    delta('一段推理，继续');
+    expect(box.scrollTop).toBe(700);
+    // The turn-start glide arrives: from here on the reading is at rest, and
+    // only the reader moves it.
+    act(() => { box.dispatchEvent(new Event('scroll')); });
+
+    // A short scroll up — shorter than the old distance test — with a wheel
+    // behind it, which is what says a reader did this.
+    act(() => {
+      box.scrollTop = 660;
+      box.dispatchEvent(new Event('wheel'));
+      box.dispatchEvent(new Event('scroll'));
+    });
+    delta('一段推理，继续，再继续');
+    expect(box.scrollTop).toBe(660);
+
+    // And it keeps standing as the stream runs on.
+    delta('一段推理，继续，再继续，还在继续');
+    expect(box.scrollTop).toBe(660);
+
+    // Back at the end of the reading, the stream has it again.
+    act(() => {
+      box.scrollTop = 700;
+      box.dispatchEvent(new Event('scroll'));
+    });
+    Object.defineProperty(box, 'scrollHeight', { configurable: true, writable: true, value: 1100 });
+    delta('一段推理，继续，再继续，还在继续，收尾');
+    expect(box.scrollTop).toBe(800);
+  });
+
   it('renders always-visible top and bottom fades around the conversation viewport', () => {
     setMobileViewport(false);
     const { container, root } = renderConversationView([
@@ -850,5 +1149,381 @@ describe('ConversationView chat streaming', () => {
     expect(event.defaultPrevented).toBe(false);
 
     getSelectionSpy.mockRestore();
+  });
+});
+
+/* The typist's own edit, standing at the end of the reading. It is the one
+   version in the stream nobody generated — and the reason reading an older take
+   no longer costs an unsaved change its only home. */
+describe('ConversationView manual draft segment', () => {
+  const roots: Root[] = [];
+
+  const base = 'stack(\n/* @layer drums */\ns("bd")\n)';
+  const edited = 'stack(\n/* @layer drums */\ns("bd*4")\n)';
+
+  const committed: ChatMessage[] = [{
+    id: 'assistant-1',
+    role: 'assistant',
+    content: '好了',
+    code: base,
+    revisionId: 'rev-1',
+    timestamp: 1,
+  }];
+  const revisions: CodeRevision[] = [{
+    id: 'rev-1',
+    beforeCode: '',
+    afterCode: base,
+    playbackStatus: 'played',
+    createdAt: 1,
+  }];
+
+  const segment = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-code-diff-variant="draft"]');
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('reports the edit against the last committed take', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView(
+      committed, vi.fn(), false, revisions, { draftCode: edited },
+    );
+    roots.push(root);
+
+    const drawn = segment(container)!;
+    expect(drawn).not.toBeNull();
+    expect(drawn.textContent).toContain(t('yourEdits'));
+    // One line changed against the take above it, not against an empty script.
+    expect(drawn.textContent).toContain('+1');
+    expect(drawn.textContent).toContain('−1');
+  });
+
+  it('stays away while the draft still matches the take', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView(
+      committed, vi.fn(), false, revisions, { draftCode: base },
+    );
+    roots.push(root);
+    expect(segment(container)).toBeNull();
+  });
+
+  it('goes again once the edit is typed back out', async () => {
+    vi.useFakeTimers();
+    try {
+      setMobileViewport(false);
+      const { container, root, render } = renderConversationView(
+        committed, vi.fn(), false, revisions, { draftCode: edited },
+      );
+      roots.push(root);
+      expect(segment(container)).not.toBeNull();
+
+      render({ draftCode: base });
+      // The diff settles rather than tracks — see useSettled.
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(segment(container)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('carries no retry and no branch: nothing generated it', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView(
+      committed, vi.fn(), false, revisions, { draftCode: edited },
+    );
+    roots.push(root);
+
+    const block = segment(container)!.closest('div.flex.justify-start')!;
+    expect(block.querySelector('[data-assistant-turn-actions]')).toBeNull();
+  });
+
+  /* Write a script by hand into a session that has held no conversation and
+     there is no earlier version for it to be a change from. The reading stays
+     empty until a turn gives it something to say — and nothing is lost by that
+     silence: the first turn takes the hand-written script as its own baseline,
+     so it shows up as the thing that turn changed. */
+  it('stays empty for a script hand-written into a session with no conversation', () => {
+    setMobileViewport(false);
+    const greeting: ChatMessage[] = [{
+      id: 'greeting-1',
+      role: 'assistant',
+      content: '想做点什么？',
+      isGreeting: true,
+      timestamp: 1,
+    }];
+    const { container, root } = renderConversationView(
+      greeting, vi.fn(), false, [], { draftCode: edited },
+    );
+    roots.push(root);
+    expect(segment(container)).toBeNull();
+
+    // And once a turn has committed a take, later edits are measured against it.
+    const { container: after, root: afterRoot } = renderConversationView(
+      committed, vi.fn(), false, revisions, { draftCode: edited },
+    );
+    roots.push(afterRoot);
+    expect(segment(after)).not.toBeNull();
+  });
+
+  /* A session can also open already holding a script the reading never
+     produced — the theme song does exactly that. */
+  it('says nothing about a script the reading never committed', () => {
+    setMobileViewport(false);
+    const greetingOnly: ChatMessage[] = [{
+      id: 'greeting-1',
+      role: 'assistant',
+      content: '主题曲',
+      isGreeting: true,
+      timestamp: 1,
+    }];
+    const { container, root } = renderConversationView(
+      greetingOnly, vi.fn(), false, [], { draftCode: edited },
+    );
+    roots.push(root);
+    expect(segment(container)).toBeNull();
+  });
+
+  it('keeps to itself for the length of a turn, whose baseline is already fixed', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView(
+      committed, vi.fn(), true, revisions, { draftCode: edited },
+    );
+    roots.push(root);
+    expect(segment(container)).toBeNull();
+  });
+
+  it('sounds the draft under its own id, which is the way back from a preview', () => {
+    setMobileViewport(false);
+    const onPlaySegment = vi.fn();
+    const { container, root } = renderConversationView(
+      committed, vi.fn(), false, revisions, { draftCode: edited, onPlaySegment },
+    );
+    roots.push(root);
+
+    const key = container.querySelector<HTMLButtonElement>(
+      `[data-code-diff-play="${DRAFT_SEGMENT_ID}"]`,
+    )!;
+    act(() => key.click());
+    expect(onPlaySegment).toHaveBeenCalledWith(DRAFT_SEGMENT_ID, edited);
+  });
+
+  /* The turn filler reserves nearly a viewport below the reading's last block,
+     so the anchor has somewhere to pin the user bubble to. Held by the reply
+     while a segment stands after it, that reservation lands *between* the two
+     and pushes the segment a whole screen down. */
+  it('takes the turn filler off the reply above it, rather than sitting below it', async () => {
+    vi.useFakeTimers();
+    setMobileViewport(false);
+    const withTurn: ChatMessage[] = [
+      { id: 'u-1', role: 'user', content: '来点鼓', timestamp: 1 },
+      { id: 'assistant-1', role: 'assistant', content: '好了', code: base, revisionId: 'rev-1', timestamp: 2 },
+    ];
+    const { container, root, render } = renderConversationView(
+      withTurn, vi.fn(), false, revisions, { draftCode: base },
+    );
+    roots.push(root);
+    // The anchor arms itself when a turn runs in this component's lifetime —
+    // and the filler exists only to give that anchor somewhere to pin to.
+    render({ draftCode: base, isLoading: true });
+    render({ draftCode: base, isLoading: false });
+
+    const replyRow = () => container
+      .querySelector<HTMLElement>('[data-assistant-turn-actions]')!
+      .closest<HTMLElement>('div.flex.justify-start')!;
+    const draftRow = () => segment(container)!.closest<HTMLElement>('div.flex.justify-start')!;
+
+    // No edit yet: the reply is last, so the reply holds the reservation.
+    expect(replyRow().style.minHeight).not.toBe('');
+
+    render({ draftCode: edited, isLoading: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    // The edit is last now. The reservation moved with it, and exactly one
+    // block holds it — two would stack a second screen between them.
+    expect(replyRow().style.minHeight).toBe('');
+    expect(draftRow().style.minHeight).not.toBe('');
+    vi.useRealTimers();
+  });
+
+  /* It should sit off the reply above by what a user bubble sits off one: the
+     collapsed sibling margin, with nothing added on top. */
+  it('adds no spacing of its own above the widget', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView(
+      committed, vi.fn(), false, revisions, { draftCode: edited },
+    );
+    roots.push(root);
+
+    // The top margin a widget wears when it hangs under a paragraph in a reply.
+    expect(segment(container)!.className).not.toContain('mt-4');
+    expect(segment(container)!.parentElement!.className).not.toContain('pt-2');
+  });
+
+  /* The segment arrives at the very end of the reading, under a reply the turn
+     anchor is holding near the top — so without this it lands below the fold and
+     a typist has no way of knowing their edit was recorded at all. That was the
+     bug: the segment was there, and nothing ever brought it into view.
+
+     What is asserted here is the contract that broke, not the arithmetic on top
+     of it: the reading re-anchors when the segment APPEARS, and does not when it
+     merely grows. The pixel the reveal lands on is layout, which happy-dom does
+     not do. */
+  it('re-anchors the reading when the segment appears, and not as it grows', async () => {
+    vi.useFakeTimers();
+    try {
+      setMobileViewport(false);
+      const { container, root, render } = renderConversationView(
+        committed, vi.fn(), false, revisions, { draftCode: base },
+      );
+      roots.push(root);
+      expect(segment(container)).toBeNull();
+
+      // A window 300 tall over 1000 of reading — enough for an anchor to have
+      // somewhere to move to. Set by hand: happy-dom lays nothing out.
+      const box = container.querySelector<HTMLElement>('.conversation-scroll')!;
+      Object.defineProperty(box, 'clientHeight', { configurable: true, value: 300 });
+      Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 1000 });
+      const scrollTo = vi.fn((options: { top: number }) => { box.scrollTop = options.top; });
+      box.scrollTo = scrollTo as unknown as typeof box.scrollTo;
+
+      // It appears: the reading goes to it.
+      render({ draftCode: edited });
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(segment(container)).not.toBeNull();
+      expect(scrollTo).toHaveBeenCalled();
+
+      // It grows under a typist's hands: the reading stays where it is. A
+      // reading that chased every keystroke would be unusable while editing.
+      scrollTo.mockClear();
+      const resting = box.scrollTop;
+      render({ draftCode: edited + '\n\ns("hh*8")' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(scrollTo).not.toHaveBeenCalled();
+      expect(box.scrollTop).toBe(resting);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /* The edge follows the transport: whichever version is sounding wears it, and
+     it moves as playback moves. */
+  it('wears the edge while it is the one sounding', () => {
+    setMobileViewport(false);
+    const { container, root, render } = renderConversationView(
+      committed, vi.fn(), false, revisions, { draftCode: edited },
+    );
+    roots.push(root);
+
+    const sounding = () => [...container.querySelectorAll<HTMLElement>('[data-code-diff-sounding]')]
+      .map((el) => el.getAttribute('data-code-diff-variant'));
+
+    // Nothing playing: nothing wears it.
+    expect(sounding()).toEqual([]);
+
+    // The draft is put on from its own key: the draft's segment wears it.
+    render({
+      draftCode: edited,
+      isPlaying: true,
+      playingCode: edited,
+      pressedSegmentId: DRAFT_SEGMENT_ID,
+      pressedSegmentCode: edited,
+    });
+    expect(sounding()).toEqual(['draft']);
+
+    // The take above is put on instead, and the edge moves with the sound.
+    render({
+      draftCode: edited,
+      isPlaying: true,
+      playingCode: base,
+      pressedSegmentId: 'assistant-1',
+      pressedSegmentCode: base,
+    });
+    expect(sounding()).toEqual(['turn']);
+  });
+
+  /* Two versions in one reading are often the same text — edit a take back to
+     what an earlier one produced and they match exactly. Answering to the text
+     lit both of them at once. */
+  it('lights only the key that was pressed, where two versions share their text', () => {
+    setMobileViewport(false);
+    const sameText: ChatMessage[] = [
+      { id: 'assistant-1', role: 'assistant', content: 'V1', code: base, revisionId: 'rev-1', timestamp: 1 },
+      { id: 'assistant-2', role: 'assistant', content: 'V2', code: edited, revisionId: 'rev-2', timestamp: 2 },
+    ];
+    const bothRevisions: CodeRevision[] = [
+      { id: 'rev-1', beforeCode: '', afterCode: base, playbackStatus: 'played', createdAt: 1 },
+      { id: 'rev-2', beforeCode: base, afterCode: edited, playbackStatus: 'played', createdAt: 2 },
+    ];
+    // The draft has been edited back to exactly what the first take produced.
+    const { container, root, render } = renderConversationView(
+      sameText, vi.fn(), false, bothRevisions, { draftCode: base },
+    );
+    roots.push(root);
+
+    const lit = () => [...container.querySelectorAll<HTMLElement>('[data-code-diff-sounding]')]
+      .map((el) => el.getAttribute('data-code-diff-variant'));
+
+    // Pressing the draft's key sounds text an older take holds too.
+    render({
+      draftCode: base,
+      isPlaying: true,
+      playingCode: base,
+      pressedSegmentId: DRAFT_SEGMENT_ID,
+      pressedSegmentCode: base,
+    });
+    expect(lit()).toEqual(['draft']);
+
+    // And the other way round: the same text, the other key.
+    render({
+      draftCode: base,
+      isPlaying: true,
+      playingCode: base,
+      pressedSegmentId: 'assistant-1',
+      pressedSegmentCode: base,
+    });
+    expect(lit()).toEqual(['turn']);
+  });
+
+  /* A turn plays itself the moment it commits, and the studio's transport plays
+     whatever the editor holds — neither goes through a key in the reading. The
+     text is what is left to go on, and it still may only light one. */
+  it('falls back to the text for a take nobody pressed, and lights one', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView(
+      committed, vi.fn(), false, revisions, {
+        draftCode: base,
+        isPlaying: true,
+        playingCode: base,
+        pressedSegmentId: null,
+      },
+    );
+    roots.push(root);
+
+    expect(container.querySelectorAll('[data-code-diff-sounding]')).toHaveLength(1);
+  });
+
+  /* Typing on while a draft is still playing moves the segment's text away from
+     what is sounding. The light must stay on the key that was pressed rather
+     than wandering off to whichever older take now matches. */
+  it('keeps the light on the pressed key when the draft is typed on past it', () => {
+    setMobileViewport(false);
+    const { container, root } = renderConversationView(
+      committed, vi.fn(), false, revisions, {
+        draftCode: edited,
+        isPlaying: true,
+        // The draft was played, then typed on: what sounds is no longer what
+        // the segment shows, and it is the take above that now matches it.
+        playingCode: base,
+        pressedSegmentId: DRAFT_SEGMENT_ID,
+        pressedSegmentCode: base,
+      },
+    );
+    roots.push(root);
+
+    const lit = [...container.querySelectorAll<HTMLElement>('[data-code-diff-sounding]')];
+    expect(lit).toHaveLength(1);
+    expect(lit[0].getAttribute('data-code-diff-variant')).toBe('draft');
   });
 });

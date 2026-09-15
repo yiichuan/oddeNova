@@ -79,6 +79,7 @@ describe('WelcomeModal', () => {
     }
     document.body.innerHTML = '';
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('opens on the invitation: Google, an email address, and nothing else to fill in', () => {
@@ -90,6 +91,31 @@ describe('WelcomeModal', () => {
     expect(findButton(container, 'Continue with email')).toBeDefined();
     expect(inputs(container)).toHaveLength(1);
     expect(container.textContent).not.toContain('Already have an account?');
+  });
+
+  it('keeps mobile IME confirmation in the email field, including after clearing it', () => {
+    const media = window.matchMedia('(max-width: 460px)');
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ ...media, matches: true,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    });
+    const { container, root } = renderModal();
+    roots.push(root);
+    const input = inputs(container)[0];
+    expect(input.type).toBe('text');
+    expect(input.inputMode).toBe('email');
+    for (const value of ['中文', '', '重新输入']) {
+      setInput(input, value);
+      act(() => {
+        input.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', isComposing: true, bubbles: true,
+        }));
+      });
+      expect(inputs(container)).toHaveLength(1);
+      expect(input.value).toBe(value);
+    }
+    setInput(input, 'listener@example.com');
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    expect(inputs(container)).toHaveLength(2);
   });
 
   it('turns into an account on the first press rather than submitting one', () => {
@@ -202,5 +228,63 @@ describe('WelcomeModal', () => {
 
     expect(findButton(container, 'Continue with Google')).toBeUndefined();
     expect(container.textContent).toContain('Supabase is not configured');
+  });
+});
+
+describe('WelcomeModal privacy policy link', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  const countPrivacyLinks = (container: HTMLElement): number =>
+    [...container.querySelectorAll('a')]
+      .filter((candidate) => candidate.getAttribute('href') === '/privacy')
+      .length;
+
+  const expectExternalPrivacyLink = (container: HTMLElement) => {
+    const links = [...container.querySelectorAll('a')]
+      .filter((candidate) => candidate.getAttribute('href') === '/privacy');
+    expect(links).toHaveLength(1);
+    const [link] = links;
+    expect(link instanceof HTMLAnchorElement).toBe(true);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.textContent).toContain('Privacy Policy');
+    expect(link.textContent).not.toContain('Learn how we handle your data');
+  };
+
+  it('shows exactly one link on each of the three steps', () => {
+    const { container, root } = renderModal();
+    roots.push(root);
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+
+    setInput(inputs(container)[0], 'listener@example.com');
+    click(getButton(container, 'Continue with email'));
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+
+    click(getButton(container, 'Sign in'));
+    expectExternalPrivacyLink(container);
+    expect(countPrivacyLinks(container)).toBe(1);
+  });
+
+  it('hides the link when auth is not configured', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+
+    act(() => {
+      root.render(<WelcomeModal configured={false} onClose={vi.fn()} />);
+    });
+
+    expect(container.querySelector('a[href="/privacy"]')).toBeNull();
   });
 });

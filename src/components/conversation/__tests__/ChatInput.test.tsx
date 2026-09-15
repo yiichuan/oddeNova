@@ -2,7 +2,7 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatInput from '../ChatInput';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -340,6 +340,10 @@ describe('ChatInput engine initialization status', () => {
 describe('ChatInput Thinking level control', () => {
   const roots: Root[] = [];
 
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   afterEach(() => {
     for (const root of roots.splice(0)) {
       act(() => root.unmount());
@@ -368,5 +372,165 @@ describe('ChatInput Thinking level control', () => {
     roots.push(root);
 
     expect(container.querySelector('button[title="Thinking level"]')).toBeNull();
+  });
+});
+
+describe('ChatInput thinking level focus decoupling', () => {
+  const roots: Root[] = [];
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+    localStorage.clear();
+  });
+
+  function getTrigger(container: HTMLElement): HTMLButtonElement {
+    const trigger = container.querySelector<HTMLButtonElement>('button[title="Thinking level"]');
+    if (!trigger) throw new Error('thinking level trigger not found');
+    return trigger;
+  }
+
+  function getPopover(container: HTMLElement): HTMLElement {
+    const popover = container.querySelector<HTMLElement>('[data-testid="thinking-level-popover"]');
+    if (!popover) throw new Error('thinking level popover not found');
+    return popover;
+  }
+
+  function getSlider(container: HTMLElement): HTMLInputElement {
+    const slider = container.querySelector<HTMLInputElement>('[data-testid="thinking-level-slider"]');
+    if (!slider) throw new Error('thinking level slider not found');
+    return slider;
+  }
+
+  function press(el: Element, type: string, init: PointerEventInit = {}): PointerEvent {
+    const event = new PointerEvent(type, { bubbles: true, cancelable: true, ...init });
+    act(() => el.dispatchEvent(event));
+    return event;
+  }
+
+  it('does not focus the textarea when tapping the control while it is unfocused', () => {
+    const onFocusChange = vi.fn();
+    const { container, root } = renderChatInput({ onFocusChange });
+    roots.push(root);
+    const textarea = container.querySelector('textarea');
+
+    act(() => getTrigger(container).click());
+
+    expect(getPopover(container)).not.toBeNull();
+    expect(document.activeElement).not.toBe(textarea);
+    expect(onFocusChange).not.toHaveBeenCalledWith(true);
+
+    act(() => getSlider(container).click());
+    const heading = container.querySelector<HTMLElement>('[data-testid="thinking-level-heading"]');
+    if (!heading) throw new Error('thinking level heading not found');
+    act(() => heading.click());
+
+    expect(document.activeElement).not.toBe(textarea);
+    expect(onFocusChange).not.toHaveBeenCalledWith(true);
+  });
+
+  it('still focuses the textarea when the card blank area is clicked', () => {
+    const onFocusChange = vi.fn();
+    const { container, root } = renderChatInput({ onFocusChange });
+    roots.push(root);
+    const textarea = container.querySelector('textarea');
+
+    const card = container.querySelector<HTMLElement>('.chat-input-surface');
+    if (!card) throw new Error('input card not found');
+    act(() => card.click());
+
+    expect(document.activeElement).toBe(textarea);
+    expect(onFocusChange).toHaveBeenCalledWith(true);
+  });
+
+  it('clicking the send button sends without focusing the textarea', () => {
+    const onSendText = vi.fn();
+    const onFocusChange = vi.fn();
+    const { container, root } = renderChatInput({ onSendText, onFocusChange });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(textarea), 'value')?.set;
+
+    act(() => {
+      setter?.call(textarea, '来一段 house');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    onFocusChange.mockClear();
+    act(() => getSubmitButton(container).click());
+
+    expect(onSendText).toHaveBeenCalledOnce();
+    expect(document.activeElement).not.toBe(textarea);
+    expect(onFocusChange).not.toHaveBeenCalled();
+  });
+
+  it('cancels press defaults on the control while the textarea is focused and keeps text intact', () => {
+    const onFocusChange = vi.fn();
+    const { container, root } = renderChatInput({ onFocusChange });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('textarea not found');
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(textarea), 'value')?.set;
+
+    act(() => {
+      setter?.call(textarea, 'hello world');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => textarea.setSelectionRange(3, 7));
+    act(() => textarea.focus());
+    expect(onFocusChange).toHaveBeenCalledWith(true);
+    onFocusChange.mockClear();
+
+    act(() => getTrigger(container).click());
+
+    for (const el of [getTrigger(container), getSlider(container), getPopover(container)]) {
+      const pointerDown = press(el, 'pointerdown', {
+        pointerId: 1,
+        isPrimary: true,
+        pointerType: 'touch',
+        button: 0,
+      });
+      expect(pointerDown.defaultPrevented).toBe(true);
+      const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 });
+      act(() => el.dispatchEvent(mouseDown));
+      expect(mouseDown.defaultPrevented).toBe(true);
+    }
+
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.value).toBe('hello world');
+    expect(textarea.selectionStart).toBe(3);
+    expect(textarea.selectionEnd).toBe(7);
+    expect(onFocusChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps native press defaults while the textarea is unfocused', () => {
+    const { container, root } = renderChatInput();
+    roots.push(root);
+
+    const pointerDown = press(getTrigger(container), 'pointerdown', {
+      pointerId: 1,
+      isPrimary: true,
+      pointerType: 'touch',
+      button: 0,
+    });
+    const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 });
+    act(() => getTrigger(container).dispatchEvent(mouseDown));
+
+    expect(pointerDown.defaultPrevented).toBe(false);
+    expect(mouseDown.defaultPrevented).toBe(false);
+  });
+
+  it('still focuses through focusTrigger after the decoupling changes', () => {
+    const { container, root } = renderChatInput({ focusTrigger: 1 });
+    roots.push(root);
+    const textarea = container.querySelector('textarea');
+
+    expect(document.activeElement).toBe(textarea);
   });
 });

@@ -248,8 +248,14 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       iterations,
     };
     safelyTrackAnalytics(() => deps.trackAgentTurnFinished(finishedProperties));
-    await deps.checkpointSession(sessionId);
+    // The indicator goes down before the turn is saved, not after. The
+    // checkpoint is a cloud round trip, and behind it the thinking indicator
+    // outlived the message that ended the turn — pressing stop wrote "已中断"
+    // above a spinner that then hung there until the network answered.
+    // Ordering is unaffected: the checkpoint reads its snapshot inside a state
+    // updater queued after every message this turn wrote, whenever it runs.
     deps.endLoading(sessionId, controller);
+    await deps.checkpointSession(sessionId);
   }
 }
 

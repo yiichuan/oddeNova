@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   getActiveModelConfig,
   getSelectedModel,
@@ -27,6 +27,8 @@ beforeEach(() => {
   vi.stubEnv('VITE_BASE_URL', '');
   installLocalStorage();
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('normalizeProvider', () => {
   it('returns "official" when raw is null', () => {

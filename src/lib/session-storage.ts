@@ -5,6 +5,7 @@ import {
   decodePendingSessionId,
   pendingSessionMarkerKey,
 } from './session-sync-keys';
+import { normalizeSessionTitle } from './session-title';
 
 export const DB_NAME = 'oddenova-db';
 export const DB_VERSION = 5;
@@ -41,6 +42,13 @@ export function normalizeSession(session: StoredSession): Session {
     tokenStats: _ignoredTokenStats,
     ...normalized
   } = session;
+  /* Titles written before the shared limit existed are held to it here, on the
+     way out of storage, rather than by a pass over the database: a name is only
+     ever read through this function, so one place is enough, and nothing about
+     the row changes — no rewrite, no `updatedAt`, no re-sort, no save queued.
+     The empty title stays empty; its stand-in is interface copy, and the call
+     sites that draw a title already supply it in the reader's language. */
+  const title = normalizeSessionTitle(normalized.title ?? '', '');
   const failedRevisionIds = new Set(
     normalized.revisions
       ?.filter((revision) => revision.playbackStatus === 'failed')
@@ -65,8 +73,8 @@ export function normalizeSession(session: StoredSession): Session {
   )?.inputMode;
 
   return inferredInputMode === undefined
-    ? normalized
-    : { ...normalized, messages, inputMode: normalized.inputMode ?? inferredInputMode };
+    ? { ...normalized, title }
+    : { ...normalized, title, messages, inputMode: normalized.inputMode ?? inferredInputMode };
 }
 
 function isUuid(value: string): boolean {

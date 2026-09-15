@@ -23,6 +23,7 @@ import {
   nearestEquivalent,
   SIDE_SCALE,
   slotGap,
+  slotOffsets,
   SNAP_MAX_MS,
   WHEEL_PIXELS_PER_SLOT,
 } from '../featured-carousel-motion';
@@ -145,10 +146,6 @@ function card(container: HTMLElement, id: string) {
   return container.querySelector<HTMLElement>(`[data-testid="featured-card-${id}"]`)!;
 }
 
-function playButton(container: HTMLElement, id: string) {
-  return container.querySelector<HTMLButtonElement>(`[data-testid="featured-card-play-${id}"]`)!;
-}
-
 function openButton(container: HTMLElement, id: string) {
   return container.querySelector<HTMLButtonElement>(`[data-testid="featured-card-open-${id}"]`)!;
 }
@@ -224,16 +221,19 @@ describe('featured page', () => {
     expect(sideSlots.every((slot) => slot.style.marginTop === centred.style.marginTop)).toBe(true);
     expect(sideSlots.every((slot) => slot.style.transformOrigin === centred.style.transformOrigin)).toBe(true);
 
+    /* Where the slots stand: the wheel's own layout, mirrored either side of
+       the centre. It is not a flat step — see `slotOffsets`, which places each
+       slot against where the perspective actually put the one before it — so
+       what this pins is that the carousel is drawing that layout and not a
+       width-and-a-gap of its own. */
     const centres = visibleSlots.map((slot) => Number(
       slot.style.transform.match(/translateX\((-?[\d.]+)px\)/)?.[1],
     ));
-    const renderedWidths = visibleSlots.map((slot) => (
-      Number.parseFloat(slot.style.width) * (slot === centred ? 1 : SIDE_SCALE)
-    ));
-    const edgeGaps = centres.slice(1).map((value, index) => (
-      value - centres[index] - (renderedWidths[index] + renderedWidths[index + 1]) / 2
-    ));
-    expect(edgeGaps.every((gap) => Math.abs(gap - edgeGaps[0]) < 0.001)).toBe(true);
+    const cardSize = Number.parseFloat(centred.style.width);
+    const offsets = slotOffsets(cardSize, slotGap(window.innerWidth), 3);
+    const expected = [...offsets.slice(1).reverse().map((offset) => -offset), ...offsets];
+    expect(centres).toHaveLength(expected.length);
+    centres.forEach((centre, index) => expect(centre).toBeCloseTo(expected[index], 6));
   });
 
   it('reaches a slot by whichever way round the ring is shorter', () => {
@@ -662,25 +662,105 @@ describe('featured page', () => {
     }
   });
 
-  it('plays the tile whose transport was clicked, and stops the one sounding', () => {
+  it('parks the transport on whatever the wheel stops at', () => {
+    vi.useFakeTimers();
+    try {
+      const onSelect = vi.fn();
+      const props = pageProps({ pieces: RING_PIECES, onSelect });
+      const { container, root } = render(<FeaturedPage {...props} />);
+      roots.push(root);
+      const carousel = container.querySelector<HTMLElement>('[data-testid="featured-carousel"]')!;
+
+      act(() => {
+        carousel.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        vi.advanceTimersByTime(SNAP_MAX_MS);
+      });
+
+      // What is centred and what the bar names are one thing: the wheel came to
+      // rest on the second record, so that is what the transport is pointed at.
+      expect(onSelect).toHaveBeenLastCalledWith(RING_PIECES[1]);
+      // Turning the shelf is not playing it — the bar is parked, not started.
+      expect(props.onPlay).not.toHaveBeenCalled();
+
+      // And coming back to the record the bar is already parked on says
+      // nothing. The page never accepted the selection above — the piece in
+      // props has not moved — so this stop is where the transport already is,
+      // and re-pointing it there would silence what is playing for nothing.
+      onSelect.mockClear();
+      act(() => {
+        carousel.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        vi.advanceTimersByTime(SNAP_MAX_MS);
+      });
+      expect(onSelect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('turns the shelf from the bar, in the gallery as well as behind a piece', () => {
+    vi.useFakeTimers();
+    try {
+      const props = pageProps({ pieces: RING_PIECES });
+      const { container, root } = render(<FeaturedPage {...props} />);
+      roots.push(root);
+
+      act(() => barButton(container, 'next').click());
+      expect(props.onPlay).toHaveBeenLastCalledWith(RING_PIECES[1]);
+
+      // The piece comes back parked, and the wheel is already on its way there:
+      // the shelf is the only thing this view has to say which record the bar
+      // is on, so it has to be the record the bar is on.
+      act(() => root.render(<FeaturedPage {...props} currentPiece={RING_PIECES[1]} />));
+      act(() => vi.advanceTimersByTime(SNAP_MAX_MS));
+      expect(container.querySelector<HTMLElement>('[data-carousel-centered="true"]')!.textContent)
+        .toContain('Ring 1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a skip inside a record on the track it skipped to', () => {
+    vi.useFakeTimers();
+    try {
+      const props = pageProps({ pieces: ALBUM_PIECES, currentPiece: ALBUM_PIECES[1] });
+      const { container, root } = render(<FeaturedPage {...props} />);
+      roots.push(root);
+
+      // Side A to Side B is a step within one sleeve: the shelf has nowhere to
+      // go, and nothing may re-point the bar at the record's first track.
+      act(() => barButton(container, 'next').click());
+      expect(props.onPlay).toHaveBeenLastCalledWith(ALBUM_PIECES[2]);
+      act(() => root.render(<FeaturedPage {...props} currentPiece={ALBUM_PIECES[2]} />));
+      act(() => vi.advanceTimersByTime(SNAP_MAX_MS));
+      expect(props.onSelect).not.toHaveBeenCalled();
+      expect(container.querySelector<HTMLElement>('[data-carousel-centered="true"]')!.textContent)
+        .toContain('Two Sides');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps no transport on the sleeve: the bar under it is the shelf’s one transport', () => {
     const props = pageProps();
     const { container, root } = render(<FeaturedPage {...props} />);
     roots.push(root);
 
-    act(() => playButton(container, 'first').click());
-    expect(props.onPlay).toHaveBeenCalledWith(PIECES[0]);
+    // The tile used to carry a play button in the corner of its artwork. The
+    // record in the middle is the record the bar is parked on, so that button
+    // was a second transport for the same record, a hover away from the first.
+    expect(container.querySelector('[data-testid^="featured-card-play-"]')).toBeNull();
 
-    act(() => root.render(<FeaturedPage {...props} playingId="first" />));
-    act(() => playButton(container, 'first').click());
-    expect(props.onStop).toHaveBeenCalled();
+    act(() => container.querySelector<HTMLButtonElement>('[data-testid="featured-bar-play"]')!.click());
+    expect(props.onPlay).toHaveBeenCalledWith(PIECES[0]);
   });
 
-  it('holds the transports back until the engine is up, and still opens pieces', () => {
+  it('holds the transport back until the engine is up, and still opens pieces', () => {
     const props = pageProps({ engineReady: false });
     const { container, root } = render(<FeaturedPage {...props} />);
     roots.push(root);
 
-    expect(playButton(container, 'first').disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[data-testid="featured-bar-play"]')!.disabled)
+      .toBe(true);
     // Reading about a piece does not need the audio engine.
     expect(openButton(container, 'first').disabled).toBe(false);
   });
@@ -758,6 +838,16 @@ describe('featured page', () => {
       expect(document.querySelector('[data-testid="featured-cover-flight"]')).not.toBeNull();
       expect(container.querySelector<HTMLElement>('[data-featured-cover="detail"]')!.className)
         .toContain('invisible');
+
+      // The trip's own animate() call is put off two frames — see
+      // featured-cover-flight.ts — so the destination view's first paint is
+      // flushed before the clock the flight is timed against starts ticking.
+      await act(async () => {
+        await new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
+      });
+      await act(async () => {
+        await new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
+      });
 
       await act(async () => {
         land.forEach((resolve) => resolve());
@@ -878,26 +968,21 @@ describe('featured page', () => {
     );
     const faded = container.querySelector<HTMLElement>('[data-carousel-visible="false"]')!;
 
-    // The lean under the pointer and the transport that fades in with it are
-    // what make a sleeve feel pressable, so a side sleeve has both.
+    // The lean under the pointer is what makes a sleeve feel pressable, so a
+    // side sleeve has it too.
     expect(visible.every((slot) => (
       slot.querySelector<HTMLElement>('[data-testid="featured-tilt-surface"]')!.dataset.tiltActive === 'true'
-    ))).toBe(true);
-    expect(visible.every((slot) => (
-      !slot.querySelector<HTMLButtonElement>('[data-testid^="featured-card-play-"]')!.disabled
     ))).toBe(true);
     // Nothing off the side of the wheel is a stop on the way through the page.
     const sideSlots = visible.filter((slot) => slot.dataset.carouselCentered !== 'true');
     expect(sideSlots.every((slot) => (
       Array.from(slot.querySelectorAll('button')).every((button) => button.tabIndex === -1)
     ))).toBe(true);
-    // The centred sleeve's own two controls are. Named rather than taken by
-    // position: what opens the record is the tile itself, so the buttons in a
-    // slot are the credits and the transport and nothing is guaranteed first.
+    // The centred sleeve's own control is. Named rather than taken by position:
+    // what opens the record is the tile itself, and the one thing in a slot
+    // that a keyboard can land on is the credits that name it.
     const centredSlot = container.querySelector<HTMLElement>('[data-carousel-centered="true"]')!;
     expect(centredSlot.querySelector<HTMLElement>('[data-featured-card-meta]')!.tabIndex).toBe(0);
-    expect(centredSlot
-      .querySelector<HTMLElement>('[data-testid^="featured-card-play-"]')!.tabIndex).toBe(0);
     // Past the fade a sleeve is out of reach entirely.
     expect(faded.firstElementChild!.hasAttribute('inert')).toBe(true);
   });
@@ -934,19 +1019,6 @@ describe('featured page', () => {
       act(() => part(card).dispatchEvent(new MouseEvent('click', { bubbles: true })));
       expect(detail(container), `a press on ${name} should open the record`).not.toBeNull();
     }
-  });
-
-  it('keeps the transport out of the press that opens the record', () => {
-    const { container, root } = render(<FeaturedPage {...pageProps()} />);
-    roots.push(root);
-
-    const play = container
-      .querySelector<HTMLElement>('[data-carousel-centered="true"]')!
-      .querySelector<HTMLButtonElement>('[data-testid^="featured-card-play-"]')!;
-    // Playing is not opening: the tile answers every press that reaches it, so
-    // the transport's own has to stop where it lands.
-    act(() => play.click());
-    expect(detail(container)).toBeNull();
   });
 
   it('leaves the sleeve being pressed where it is while the wheel settles behind it', () => {
@@ -1273,23 +1345,39 @@ describe('featured page', () => {
     expect(fill().style.width).toBe('0%');
   });
 
-  it('skips to the piece either side of the parked one, and stops at the ends', () => {
-    const props = pageProps();
+  it('walks the collection as a ring, so next never runs out', () => {
+    const props = pageProps({ pieces: RING_PIECES });
     const { container, root } = render(<FeaturedPage {...props} />);
     roots.push(root);
 
     const skip = (side: 'prev' | 'next') => bar(container)
       .querySelector<HTMLButtonElement>(`[data-testid="featured-bar-${side}"]`)!;
 
-    // Parked on the first piece: nothing before it.
-    expect(skip('prev').disabled).toBe(true);
-    act(() => skip('next').click());
-    expect(props.onPlay).toHaveBeenCalledWith(PIECES[1]);
-
-    act(() => root.render(<FeaturedPage {...props} currentPiece={PIECES[1]} />));
-    expect(skip('next').disabled).toBe(true);
+    const last = RING_PIECES[RING_PIECES.length - 1];
+    // Parked on the first piece, and prev is live: off the front of the
+    // collection is the back of it, the way the shelf itself comes round.
+    expect(skip('prev').disabled).toBe(false);
     act(() => skip('prev').click());
-    expect(props.onPlay).toHaveBeenCalledWith(PIECES[0]);
+    expect(props.onPlay).toHaveBeenLastCalledWith(last);
+
+    // And past the last is the first again, so the key can go on being pressed.
+    act(() => root.render(<FeaturedPage {...props} currentPiece={last} />));
+    expect(skip('next').disabled).toBe(false);
+    act(() => skip('next').click());
+    expect(props.onPlay).toHaveBeenLastCalledWith(RING_PIECES[0]);
+  });
+
+  it('has nowhere to skip to in a collection of one', () => {
+    const props = pageProps({ pieces: [PIECES[0]] });
+    const { container, root } = render(<FeaturedPage {...props} />);
+    roots.push(root);
+
+    const skip = (side: 'prev' | 'next') => bar(container)
+      .querySelector<HTMLButtonElement>(`[data-testid="featured-bar-${side}"]`)!;
+    // A ring of one is the track already parked: pressing either key would
+    // restart it rather than go anywhere.
+    expect(skip('prev').disabled).toBe(true);
+    expect(skip('next').disabled).toBe(true);
   });
 
   it('opens the parked piece in the studio, and locks the button while it does', () => {

@@ -5,6 +5,8 @@
  * which colour wins — is a pure function over pixels, testable without a canvas.
  */
 
+import { useEffect, useState } from 'react';
+
 /**
  * The cover is read at this size rather than full resolution: the browser's own
  * downscale is a cheap box filter over every pixel, so nothing is missed, and
@@ -216,4 +218,65 @@ export function readCoverColor(image: HTMLImageElement): string | null {
     // and nothing to do about it here — the page simply goes without a glow.
     return null;
   }
+}
+
+/**
+ * One canvas read per cover for the whole app, not one per consumer. Both
+ * FeaturedGlow and the shell's own safe-area tint (see useBrowserChromeColor)
+ * want the same record's colour at once — the wash a record stands in and the
+ * strips a phone paints outside the document, lit from the same swatch — and a
+ * cache keyed on the URL is what keeps a second mount (or a second consumer
+ * mounting at the same time) from drawing the same image to a canvas twice.
+ *
+ * Never evicted: covers are a small fixed collection shipped with the app, not
+ * user content, so the cache can only ever grow to the size of that collection.
+ */
+const accentCache = new Map<string, string | null>();
+
+/**
+ * The colour a cover is mostly made of, read once and shared. Null until the
+ * image has loaded and been read (or has none to read at all) — see
+ * `readCoverColor` for how a same-origin cover can still fail this and leave
+ * the caller correctly without a colour rather than a stale one.
+ */
+export function useCoverAccent(coverUrl: string | undefined): string | null {
+  const [accent, setAccent] = useState<string | null>(
+    coverUrl ? accentCache.get(coverUrl) ?? null : null,
+  );
+
+  useEffect(() => {
+    if (!coverUrl) {
+      // Resetting on a change away from a cover is the point here — the
+      // initial mount either has no cover to begin with (this is a no-op) or
+      // already read one into the lazy initializer above.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAccent(null);
+      return;
+    }
+    const cached = accentCache.get(coverUrl);
+    if (cached !== undefined) {
+      setAccent(cached);
+      return;
+    }
+
+    let cancelled = false;
+    const image = new Image();
+    // Same-origin in practice (covers live in public/), but declared so a
+    // future remote cover has a chance of being readable rather than tainting.
+    image.crossOrigin = 'anonymous';
+    const read = () => {
+      const color = readCoverColor(image);
+      accentCache.set(coverUrl, color);
+      if (!cancelled) setAccent(color);
+    };
+    image.addEventListener('load', read);
+    image.src = coverUrl;
+
+    return () => {
+      cancelled = true;
+      image.removeEventListener('load', read);
+    };
+  }, [coverUrl]);
+
+  return accent;
 }
