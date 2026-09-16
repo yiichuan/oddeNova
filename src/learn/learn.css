@@ -1,0 +1,309 @@
+/*
+ * Theme boundary for the /learn docs (src/learn/LearnPage.tsx roots here).
+ *
+ * Everything under `.learn-page` reads the site-wide semantic palette, so the
+ * page follows 设置 → 外观 in both directions without any JS. Code areas map
+ * onto the oddeNova editor palettes — re-declared here keyed to the app theme,
+ * which is what breaks the root's `data-editor-theme` inheritance: a
+ * third-party editor theme saved in the studio must not leak into these docs.
+ *
+ * Colours live in this file's local variables only; JSX carries classes, never
+ * literal colours.
+ */
+
+.learn-page {
+  --learn-surface: var(--color-conversation-surface);
+  --learn-panel: var(--color-settings-surface);
+  --learn-text-primary: var(--color-text-primary);
+  --learn-text-secondary: var(--color-text-secondary);
+  --learn-text-muted: var(--color-text-muted);
+  --learn-border: var(--color-border);
+  --learn-border-strong: var(--color-border-hover);
+  --learn-accent: var(--color-brand-accent);
+  --learn-error: var(--color-error);
+  --learn-hover: var(--color-surface-hover);
+  --learn-selected: var(--color-surface-selected);
+  /* Raised content fill — static code, callouts, QAs, inline code chips. */
+  --learn-chip: var(--color-surface-hover);
+  /* App-theme aliases into the canonical oddeNova editor palette. */
+  --learn-editor-bg: var(--oddenova-editor-dark-background);
+  --learn-editor-fg: var(--oddenova-editor-dark-foreground);
+  --learn-editor-caret: var(--oddenova-editor-dark-caret);
+  --learn-editor-selection: var(--oddenova-editor-dark-selection);
+  --learn-editor-line: var(--oddenova-editor-dark-line);
+  --learn-editor-gutter-fg: var(--oddenova-editor-dark-gutter-foreground);
+  --learn-editor-gutter-border: var(--oddenova-editor-dark-gutter-border);
+  /* Strudel plot areas keep pattern-authored hap colours while this surface
+     follows the surrounding docs palette. */
+  --learn-viz-bg: #0d0d0d;
+  /* App-theme aliases into the canonical syntax palette. */
+  --syntax-atom: var(--oddenova-syntax-dark-atom);
+  --syntax-label: var(--oddenova-syntax-dark-label);
+  --syntax-keyword: var(--oddenova-syntax-dark-keyword);
+  --syntax-operator: var(--oddenova-syntax-dark-operator);
+  --syntax-special-variable: var(--oddenova-syntax-dark-special-variable);
+  --syntax-type: var(--oddenova-syntax-dark-type);
+  --syntax-number: var(--oddenova-syntax-dark-number);
+  --syntax-definition: var(--oddenova-syntax-dark-definition);
+  --syntax-string: var(--oddenova-syntax-dark-string);
+  --syntax-comment: var(--oddenova-syntax-dark-comment);
+  --syntax-variable: var(--oddenova-syntax-dark-variable);
+  --syntax-tag: var(--oddenova-syntax-dark-tag);
+  --syntax-bracket: var(--oddenova-syntax-dark-bracket);
+  --syntax-meta: var(--oddenova-syntax-dark-meta);
+  --syntax-attribute: var(--oddenova-syntax-dark-attribute);
+  --syntax-property: var(--oddenova-syntax-dark-property);
+  --syntax-invalid: var(--oddenova-syntax-dark-invalid);
+  --syntax-punctuation: var(--oddenova-syntax-dark-punctuation);
+  --hap-highlight: var(--oddenova-syntax-dark-hap-highlight);
+
+  background: var(--learn-surface);
+  color: var(--learn-text-secondary);
+}
+
+html[data-theme='light'] .learn-page {
+  --learn-editor-bg: var(--oddenova-editor-light-background);
+  --learn-editor-fg: var(--oddenova-editor-light-foreground);
+  --learn-editor-caret: var(--oddenova-editor-light-caret);
+  --learn-editor-selection: var(--oddenova-editor-light-selection);
+  --learn-editor-line: var(--oddenova-editor-light-line);
+  --learn-editor-gutter-fg: var(--oddenova-editor-light-gutter-foreground);
+  --learn-editor-gutter-border: var(--oddenova-editor-light-gutter-border);
+  --learn-viz-bg: var(--oddenova-editor-light-background);
+  --syntax-atom: var(--oddenova-syntax-light-atom);
+  --syntax-label: var(--oddenova-syntax-light-label);
+  --syntax-keyword: var(--oddenova-syntax-light-keyword);
+  --syntax-operator: var(--oddenova-syntax-light-operator);
+  --syntax-special-variable: var(--oddenova-syntax-light-special-variable);
+  --syntax-type: var(--oddenova-syntax-light-type);
+  --syntax-number: var(--oddenova-syntax-light-number);
+  --syntax-definition: var(--oddenova-syntax-light-definition);
+  --syntax-string: var(--oddenova-syntax-light-string);
+  --syntax-comment: var(--oddenova-syntax-light-comment);
+  --syntax-variable: var(--oddenova-syntax-light-variable);
+  --syntax-tag: var(--oddenova-syntax-light-tag);
+  --syntax-bracket: var(--oddenova-syntax-light-bracket);
+  --syntax-meta: var(--oddenova-syntax-light-meta);
+  --syntax-attribute: var(--oddenova-syntax-light-attribute);
+  --syntax-property: var(--oddenova-syntax-light-property);
+  --syntax-invalid: var(--oddenova-syntax-light-invalid);
+  --syntax-punctuation: var(--oddenova-syntax-light-punctuation);
+  --hap-highlight: var(--oddenova-syntax-light-hap-highlight);
+}
+
+/* Keyboard focus is a marker, so it takes the accent everywhere on the page. */
+.learn-page a:focus-visible,
+.learn-page button:focus-visible,
+.learn-page summary:focus-visible,
+.learn-page input:focus-visible {
+  outline: 2px solid var(--learn-accent);
+  outline-offset: 1px;
+}
+
+/* ── Reading flow ──────────────────────────────────────────────────────────── */
+
+.learn-prose {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--learn-text-secondary);
+}
+
+.learn-prose h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--learn-text-primary);
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  scroll-margin-top: 1rem;
+}
+
+.learn-prose h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--learn-text-primary);
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.learn-prose p {
+  margin-bottom: 1rem;
+}
+
+.learn-prose ul {
+  list-style: disc;
+  padding-left: 1.625em;
+  margin-bottom: 1rem;
+}
+
+.learn-prose ol {
+  list-style: decimal;
+  padding-left: 1.625em;
+  margin-bottom: 1rem;
+}
+
+.learn-prose li {
+  padding-left: 0.375em;
+  margin-bottom: 0.25rem;
+}
+
+.learn-prose li ul,
+.learn-prose li ol {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+/* A fenced `pre` is its own surface; inline `code` only — a `pre > code`
+   carries no chip of its own, the pre around it already is one. */
+.learn-prose pre {
+  background: var(--learn-editor-bg);
+  border: 1px solid var(--learn-border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+
+.learn-prose code {
+  background: var(--learn-chip);
+  padding: 0.125rem 0.25rem;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.learn-prose pre > code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.learn-prose a {
+  color: var(--learn-accent);
+  text-decoration: underline;
+}
+
+/* Figure captions and image-source credits stay quiet ink, not accent links. */
+.learn-prose figcaption,
+.learn-prose .learn-figure-source {
+  color: var(--learn-text-muted);
+}
+
+.learn-prose .learn-figure-source:hover {
+  color: var(--learn-text-secondary);
+}
+
+/* ── Playable examples (CodeBlock → StrudelMirror) ───────────────────────────
+   editor-preferences.ts pins its palette on bare `.cm-editor` with
+   `!important`; these restate every one of those pins under the page scope so
+   the docs' editors follow the app theme instead of the saved editor theme,
+   whatever the injection order was. */
+
+.learn-page .mini-repl-code {
+  /* StrudelMirror paints this host, not `.cm-editor`, with an inline
+     `background-color: var(--background)`. @strudel/codemirror also installs
+     its dark `--background` on `:root` as a module side effect, so binding the
+     variable at the host is what prevents that inherited value from showing
+     through on the light docs page. */
+  --background: var(--learn-editor-bg) !important;
+  background-color: var(--learn-editor-bg) !important;
+}
+
+.learn-page .mini-repl-code .cm-editor {
+  background-color: transparent !important;
+  color: var(--learn-editor-fg) !important;
+  --background: var(--learn-editor-bg) !important;
+  --foreground: var(--learn-editor-fg) !important;
+  --caret: var(--learn-editor-caret) !important;
+  --selection: var(--learn-editor-selection) !important;
+  --lineHighlight: var(--learn-editor-line) !important;
+  --gutterBackground: transparent !important;
+  --gutterForeground: var(--learn-editor-gutter-fg) !important;
+  --gutterBorder: var(--learn-editor-gutter-border) !important;
+}
+
+.learn-page .mini-repl-code .cm-editor .cm-content {
+  caret-color: transparent !important;
+}
+
+.learn-page .mini-repl-code .cm-editor .cm-cursor {
+  border-left-color: var(--learn-editor-caret) !important;
+}
+
+.learn-page .mini-repl-code .cm-editor .cm-selectionBackground,
+.learn-page .mini-repl-code .cm-editor.cm-focused .cm-selectionBackground {
+  background-color: var(--learn-editor-selection) !important;
+}
+
+.learn-page .mini-repl-code .cm-editor .cm-activeLine {
+  background-color: var(--learn-editor-line) !important;
+}
+
+.learn-page .mini-repl-code .cm-editor .cm-gutters {
+  background-color: transparent !important;
+  border-right-color: var(--learn-editor-gutter-border) !important;
+}
+
+.learn-page .mini-repl-code .cm-editor .cm-lineNumbers .cm-gutterElement {
+  color: var(--learn-editor-gutter-fg) !important;
+}
+
+/* Unprefixed Strudel visualizers normally ask @strudel/draw for a fixed,
+   body-level `#test-canvas`. CodeBlock gives them a canvas inside the example
+   instead, so their surface follows the docs theme without covering the page. */
+.learn-page .mini-repl-code.learn-global-visualization {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--learn-editor-bg) !important;
+}
+
+.learn-page .learn-global-visualization-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: var(--learn-viz-bg);
+}
+
+.learn-page .mini-repl-code.learn-global-visualization .cm-editor {
+  position: relative;
+  z-index: 1;
+}
+
+/* The main composing editor fades its top and bottom edges into the page with
+   `::before`/`::after` masks sized for a tall scroller; on a 1-4 line docs
+   snippet they would lie across the code itself. These masks read
+   `--color-conversation-surface` — the docs page's own ground — so drop them
+   here; the block border keeps the editor seated. */
+.learn-page .mini-repl-code .cm-editor::before,
+.learn-page .mini-repl-code .cm-editor::after {
+  content: none;
+}
+
+/* The autocomplete popup inherits the editor variables above through the
+   index.css tooltip rules — no separate palette needed. */
+
+/* ── Strudel's own plot areas ────────────────────────────────────────────────
+   Keep the pattern-authored hap colours intact, but let the canvas surface
+   follow the app theme alongside the surrounding example editor. */
+
+.learn-page canvas[id*='_widget__scope_'],
+.learn-page canvas[id*='_widget__pianoroll_'],
+.learn-page canvas[id*='_widget__spiral_'],
+.learn-page canvas[id*='_widget__punchcard_'],
+.learn-page canvas[id*='_widget__pitchwheel_'],
+.learn-page canvas[id*='_widget__spectrum_'] {
+  background: var(--learn-viz-bg);
+  border: 1px solid var(--learn-editor-gutter-border);
+}
+
+/* CodeBlock's own punchcard canvas (`.mini-punchcard` in components.tsx). */
+.learn-page canvas.mini-punchcard {
+  background: var(--learn-viz-bg);
+}
+
+/* The pitch explorer's plot canvas is ordinary page content — it stays
+   transparent and follows the page ground, drawn per palette from
+   PitchSlider.tsx. */

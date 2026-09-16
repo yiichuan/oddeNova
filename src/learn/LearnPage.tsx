@@ -4,6 +4,7 @@ import ChapterLayout from './ChapterLayout';
 import { t, zh } from '../lib/i18n';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { MenuIcon, XIcon } from '../components/icons';
+import './learn.css';
 
 export const LEARN_PATH_PREFIX = '/learn';
 
@@ -49,33 +50,36 @@ export default function LearnPage() {
   const Body = chapter.Component;
 
   return (
-    <div className="h-dvh bg-black text-white flex flex-col">
-      <header className="h-12 border-b border-[#232323] flex items-center justify-between px-4 shrink-0">
+    <div className="learn-page h-dvh flex flex-col">
+      <header className="h-12 border-b border-[var(--learn-border)] flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
           {isMobile && (
             <button onClick={() => setSidebarOpen((v) => !v)} aria-label={t('tableOfContents')}>
               {sidebarOpen ? <XIcon size={18} /> : <MenuIcon size={18} />}
             </button>
           )}
-          <a href="/" className="text-[16px] leading-none" aria-label="oddeNova">
+          <a href="/" className="text-[16px] leading-none text-[var(--learn-text-primary)]" aria-label="oddeNova">
             <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
             <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
           </a>
-          <span className="w-px h-4 bg-[#323232]" />
-          <span className="text-[14px] font-bold">{t('learnPageTitle')}</span>
+          <span className="w-px h-4 bg-[var(--learn-border)]" />
+          <span className="text-[14px] font-bold text-[var(--learn-text-primary)]">{t('learnPageTitle')}</span>
         </div>
-        <a href="/" className="text-[13px] text-white/60 hover:text-white transition-colors">
+        <a
+          href="/"
+          className="text-[13px] text-[var(--learn-text-secondary)] hover:text-[var(--learn-text-primary)] transition-colors"
+        >
           {t('backToApp')}
         </a>
       </header>
 
       <div className="flex flex-1 min-h-0">
         <nav
-          className={`${isMobile ? (sidebarOpen ? 'block absolute z-20 bg-black inset-x-0 top-12 bottom-0 overflow-y-auto' : 'hidden') : 'block w-[220px] shrink-0 border-r border-[#232323] overflow-y-auto'} py-4 px-4`}
+          className={`${isMobile ? (sidebarOpen ? 'block absolute z-20 bg-[var(--learn-panel)] inset-x-0 top-12 bottom-0 overflow-y-auto' : 'hidden') : 'block w-[220px] shrink-0 border-r border-[var(--learn-border)] overflow-y-auto bg-[var(--learn-panel)]'} py-4 px-4`}
         >
           {SECTIONS.map((s) => (
             <div key={s.id} className="mb-5">
-              <div className="text-[11px] uppercase tracking-wide text-white/35 mb-2">
+              <div className="text-[11px] uppercase tracking-wide text-[var(--learn-text-muted)] mb-2">
                 {zh ? s.titleZh : s.titleEn}
               </div>
               <ul className="space-y-1">
@@ -86,7 +90,9 @@ export default function LearnPage() {
                       <button
                         onClick={() => navigate(s.id, c.id)}
                         className={`text-left text-[13px] w-full px-2 py-1 rounded-sm transition-colors ${
-                          active ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'
+                          active
+                            ? 'bg-[var(--learn-selected)] text-[var(--learn-text-primary)]'
+                            : 'text-[var(--learn-text-secondary)] hover:text-[var(--learn-text-primary)] hover:bg-[var(--learn-hover)]'
                         }`}
                       >
                         {zh ? c.titleZh : c.titleEn}
@@ -100,7 +106,7 @@ export default function LearnPage() {
         </nav>
 
         <main className="flex-1 overflow-y-auto">
-          <Suspense fallback={<div className="p-10 text-white/40 text-[13px]">{t('loading')}</div>}>
+          <Suspense fallback={<div className="p-10 text-[13px] text-[var(--learn-text-muted)]">{t('loading')}</div>}>
             <ChapterLayout section={section} chapter={chapter} prev={prev} next={next} onNavigate={navigate}>
               <Body />
             </ChapterLayout>

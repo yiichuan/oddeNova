@@ -21,6 +21,44 @@ import {
   subscribeAppearance,
 } from '../appearance-preferences';
 
+// The boot pass registers its OS-scheme listener on whatever `matchMedia`
+// answers at that moment, so the shared stub captures the listeners into a
+// hoisted list the cross-tab tests can drive later.
+const systemSchemeListeners = vi.hoisted(() => [] as Array<() => void>);
+
+/**
+ * Storage events only ever arrive from *another* tab; tests simulate the
+ * arriving half by dispatching one at the window with its own payload.
+ * (`StorageEvent`'s constructor is not uniform across DOM shims, so an
+ * `Event` carrying the two fields the listener reads is used directly.)
+ */
+function fireStorageEvent(key: string | null): void {
+  const event = new Event('storage') as StorageEvent;
+  Object.assign(event, { key, storageArea: localStorage });
+  window.dispatchEvent(event);
+}
+
+// The OS scheme's current answer — mutable so tests can stage an OS flip.
+const systemScheme = vi.hoisted(() => ({ matches: true }));
+
+// One `matchMedia` stub for the whole file: the boot pass registers its
+// OS-scheme listener on whatever `matchMedia` answers at the moment of the
+// first `loadAppearancePreferences()`, so a per-test stub would swallow that
+// listener. This one answers `systemScheme.matches` and captures the
+// listeners into a hoisted list the boot tests drive directly. The captured
+// listeners are never cleared — the module registers them exactly once for
+// the whole file, like it does in the browser.
+beforeEach(() => {
+  systemScheme.matches = true;
+  vi.stubGlobal('matchMedia', vi.fn(() => ({
+    matches: systemScheme.matches,
+    addEventListener: (_type: string, listener: () => void) => {
+      systemSchemeListeners.push(listener);
+    },
+    removeEventListener: vi.fn(),
+  })));
+});
+
 describe('appearance preferences', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -80,8 +118,6 @@ describe('appearance preferences', () => {
   });
 
   it('resolves "match system" against the OS preference', () => {
-    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn() })));
-
     // The flag is what gates it; with light shipped the OS choice comes through.
     expect(resolveTheme('system')).toBe(LIGHT_THEME_READY ? 'light' : 'dark');
   });
@@ -132,7 +168,6 @@ describe('appearance preferences', () => {
 
   it('does not disturb the editor theme while painting the stored theme at boot', () => {
     document.documentElement.dataset.editorTheme = 'dracula';
-    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn() })));
 
     loadAppearancePreferences();
 
@@ -166,5 +201,190 @@ describe('appearance preferences', () => {
     unsubscribe();
     setAnimationPreference('galaxy-ascii');
     expect(listener).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('appearance boot', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    delete document.documentElement.dataset.theme;
+    delete document.documentElement.dataset.editorTheme;
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('paints a stored dark preference before React mounts', () => {
+    localStorage.setItem('vibe_theme', 'dark');
+
+    loadAppearancePreferences();
+
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('paints a stored light preference before React mounts', () => {
+    localStorage.setItem('vibe_theme', 'light');
+
+    loadAppearancePreferences();
+
+    expect(document.documentElement.dataset.theme).toBe(LIGHT_THEME_READY ? 'light' : 'dark');
+  });
+
+  it('paints "match system" against the OS scheme at boot', () => {
+    localStorage.setItem('vibe_theme', 'system');
+
+    loadAppearancePreferences();
+
+    expect(document.documentElement.dataset.theme).toBe(LIGHT_THEME_READY ? 'light' : 'dark');
+  });
+
+  it('falls back to the default palette when the stored preference is not a known option', () => {
+    localStorage.setItem('vibe_theme', 'solarized');
+
+    loadAppearancePreferences();
+
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(getThemePreference()).toBe(DEFAULT_THEME_PREFERENCE);
+  });
+
+  it('follows an OS scheme change while matching the system', () => {
+    const listener = vi.fn();
+    subscribeAppearance(listener);
+    systemScheme.matches = false;
+    localStorage.setItem('vibe_theme', 'system');
+    loadAppearancePreferences();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(listener).toHaveBeenCalledTimes(0);
+
+    systemScheme.matches = true;
+    systemSchemeListeners.forEach((notify) => notify());
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('keeps an explicit palette through an OS scheme change', () => {
+    const listener = vi.fn();
+    subscribeAppearance(listener);
+    localStorage.setItem('vibe_theme', 'dark');
+    loadAppearancePreferences();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(listener).toHaveBeenCalledTimes(0);
+
+    systemSchemeListeners.forEach((notify) => notify());
+
+    expect(listener).toHaveBeenCalledTimes(0);
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+});
+
+describe('appearance across tabs', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    delete document.documentElement.dataset.theme;
+    delete document.documentElement.dataset.editorTheme;
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('repaints when another tab changes the theme preference', () => {
+    loadAppearancePreferences();
+    expect(document.documentElement.dataset.theme).toBe('light');
+
+    localStorage.setItem('vibe_theme', 'dark');
+    fireStorageEvent('vibe_theme');
+
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    localStorage.setItem('vibe_theme', 'light');
+    fireStorageEvent('vibe_theme');
+
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('notifies subscribers about the arriving change', () => {
+    const listener = vi.fn();
+    subscribeAppearance(listener);
+    loadAppearancePreferences();
+
+    localStorage.setItem('vibe_theme', 'dark');
+    fireStorageEvent('vibe_theme');
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the default palette when another tab deleted the preference', () => {
+    localStorage.setItem('vibe_theme', 'dark');
+    loadAppearancePreferences();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    localStorage.removeItem('vibe_theme');
+    fireStorageEvent('vibe_theme');
+
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(getThemePreference()).toBe(DEFAULT_THEME_PREFERENCE);
+  });
+
+  it('falls back to the default palette when another tab cleared the storage', () => {
+    localStorage.setItem('vibe_theme', 'dark');
+    loadAppearancePreferences();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    // The other tab's clear has already emptied the shared store by the time
+    // this tab receives the event, so simulate the arriving half of exactly
+    // that: an emptied store and the keyless event it produces.
+    localStorage.clear();
+    fireStorageEvent(null);
+
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('ignores a preference another tab stored under an unknown value', () => {
+    loadAppearancePreferences();
+
+    localStorage.setItem('vibe_theme', 'solarized');
+    fireStorageEvent('vibe_theme');
+
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('does not repaint for a key that is not the theme preference', () => {
+    localStorage.setItem('vibe_theme', 'dark');
+    loadAppearancePreferences();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    const listener = vi.fn();
+    subscribeAppearance(listener);
+
+    localStorage.setItem('vibe_animation', 'galaxy');
+    fireStorageEvent('vibe_animation');
+
+    expect(listener).toHaveBeenCalledTimes(0);
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('reads the arriving change without writing back', () => {
+    loadAppearancePreferences();
+
+    localStorage.setItem('vibe_theme', 'dark');
+    fireStorageEvent('vibe_theme');
+
+    // The arriving tab re-reads and repaints only; the stored value and any
+    // adjacent keys are exactly as the other tab left them.
+    expect(localStorage.getItem('vibe_theme')).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('notifies once per arriving event no matter how often boot ran', () => {
+    const listener = vi.fn();
+    subscribeAppearance(listener);
+
+    loadAppearancePreferences();
+    loadAppearancePreferences();
+
+    localStorage.setItem('vibe_theme', 'dark');
+    fireStorageEvent('vibe_theme');
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.dataset.theme).toBe('dark');
   });
 });

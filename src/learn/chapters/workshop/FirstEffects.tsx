@@ -79,7 +79,7 @@ $: note("<[c3,g3,e4] [bb2,f3,d4] [a2,f3,c4] [bb2,g3,eb4]>")
         </ul>
         <figure className="mt-3">
           <img src="/learn-img/adsr.png" alt="ADSR 包络的起音、衰减、延音和释音示意图" className="max-w-full" />
-          <figcaption className="mt-1 text-center text-[11px] text-white/40">ADSR 包络</figcaption>
+          <figcaption className="mt-1 text-center text-[11px]">ADSR 包络</figcaption>
         </figure>
       </QA>
 

@@ -66,7 +66,7 @@ export default function Pwa() {
       </p>
       <figure className="mb-4">
         <img src="/learn-img/strudel-macos.png" alt="Strudel 在 macOS 上的独立应用" className="max-w-full" />
-        <figcaption className="mt-1 text-center text-[11px] text-white/40">Strudel 在 macOS 上的独立应用</figcaption>
+        <figcaption className="mt-1 text-center text-[11px]">Strudel 在 macOS 上的独立应用</figcaption>
       </figure>
 
       <h3>桌面端</h3>
@@ -97,7 +97,7 @@ export default function Pwa() {
       </ol>
       <figure className="mb-4">
         <img src="/learn-img/strudel-linux.png" alt="Strudel 在 Linux 上的独立应用" className="max-w-full" />
-        <figcaption className="mt-1 text-center text-[11px] text-white/40">Strudel 在 Linux 上的独立应用</figcaption>
+        <figcaption className="mt-1 text-center text-[11px]">Strudel 在 Linux 上的独立应用</figcaption>
       </figure>
 
       <h3>iOS</h3>
