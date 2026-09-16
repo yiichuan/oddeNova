@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./styles/oddenova-editor-palette.css";
 
 @font-face {
   font-family: 'ABeeZee';
@@ -149,31 +150,31 @@
   --color-form-ok-text: #AFC6A3;
   --color-form-error: #A34C35;
   --color-form-error-text: #C97960;
-  --syntax-atom: #4BA3B9;
-  --syntax-label: #DFB234;
-  --syntax-keyword: #ECB43C;
-  --syntax-operator: #797977;
-  --syntax-special-variable: #C4C73D;
-  --syntax-type: #9AD345;
-  --syntax-number: #D9D9D9;
-  --syntax-definition: #AF8BE5;
-  --syntax-string: #D9D9D9;
-  --syntax-comment: #646973;
-  --syntax-variable: #D9542B;
-  --syntax-tag: #5184D6;
-  --syntax-bracket: #9E9E9E;
-  --syntax-meta: #C55F0D;
-  --syntax-attribute: #CF59CB;
-  --syntax-property: #B0B0B0;
-  --syntax-invalid: #E01A1A;
-  --syntax-punctuation: #8A8A8A;
+  --syntax-atom: var(--oddenova-syntax-dark-atom);
+  --syntax-label: var(--oddenova-syntax-dark-label);
+  --syntax-keyword: var(--oddenova-syntax-dark-keyword);
+  --syntax-operator: var(--oddenova-syntax-dark-operator);
+  --syntax-special-variable: var(--oddenova-syntax-dark-special-variable);
+  --syntax-type: var(--oddenova-syntax-dark-type);
+  --syntax-number: var(--oddenova-syntax-dark-number);
+  --syntax-definition: var(--oddenova-syntax-dark-definition);
+  --syntax-string: var(--oddenova-syntax-dark-string);
+  --syntax-comment: var(--oddenova-syntax-dark-comment);
+  --syntax-variable: var(--oddenova-syntax-dark-variable);
+  --syntax-tag: var(--oddenova-syntax-dark-tag);
+  --syntax-bracket: var(--oddenova-syntax-dark-bracket);
+  --syntax-meta: var(--oddenova-syntax-dark-meta);
+  --syntax-attribute: var(--oddenova-syntax-dark-attribute);
+  --syntax-property: var(--oddenova-syntax-dark-property);
+  --syntax-invalid: var(--oddenova-syntax-dark-invalid);
+  --syntax-punctuation: var(--oddenova-syntax-dark-punctuation);
   /* The outline Strudel draws around the mini-notation step that is sounding
      right now (`@strudel/codemirror`'s highlight decoration, read through the
      patched default in `patches/@strudel+codemirror+1.3.0.patch`). Drawn in
      the same ink as the plain tokens it boxes — a box is a position, not a
      colour of its own — so it follows `--syntax-number`/`--syntax-string`
      across the two rooms. A pattern's own `.color()` still outranks it. */
-  --hap-highlight: #D9D9D9;
+  --hap-highlight: var(--oddenova-syntax-dark-hap-highlight);
 
   --radius-region: 6px;
   --spacing-region: 10px;
@@ -439,25 +440,25 @@ html[data-theme='light'] {
 html[data-editor-theme='oddenova-light'],
 html[data-editor-theme='github-light'],
 html[data-editor-theme='solarized-light'] {
-  --syntax-atom: #0B6D85;
-  --syntax-label: #6F47CE;
-  --syntax-keyword: #7434CF;
-  --syntax-operator: #6C747E;
-  --syntax-special-variable: #0B655E;
-  --syntax-type: #0B6739;
-  --syntax-number: #292D33;
-  --syntax-definition: #D93E17;
-  --syntax-string: #292D33;
-  --syntax-comment: #7C8591;
-  --syntax-variable: #0863DA;
-  --syntax-tag: #505BD6;
-  --syntax-bracket: #4D545C;
-  --syntax-meta: #2D7599;
-  --syntax-attribute: #AC2BA6;
-  --syntax-property: #41464C;
-  --syntax-invalid: #B6142F;
-  --syntax-punctuation: #5D646D;
-  --hap-highlight: #292D33;
+  --syntax-atom: var(--oddenova-syntax-light-atom);
+  --syntax-label: var(--oddenova-syntax-light-label);
+  --syntax-keyword: var(--oddenova-syntax-light-keyword);
+  --syntax-operator: var(--oddenova-syntax-light-operator);
+  --syntax-special-variable: var(--oddenova-syntax-light-special-variable);
+  --syntax-type: var(--oddenova-syntax-light-type);
+  --syntax-number: var(--oddenova-syntax-light-number);
+  --syntax-definition: var(--oddenova-syntax-light-definition);
+  --syntax-string: var(--oddenova-syntax-light-string);
+  --syntax-comment: var(--oddenova-syntax-light-comment);
+  --syntax-variable: var(--oddenova-syntax-light-variable);
+  --syntax-tag: var(--oddenova-syntax-light-tag);
+  --syntax-bracket: var(--oddenova-syntax-light-bracket);
+  --syntax-meta: var(--oddenova-syntax-light-meta);
+  --syntax-attribute: var(--oddenova-syntax-light-attribute);
+  --syntax-property: var(--oddenova-syntax-light-property);
+  --syntax-invalid: var(--oddenova-syntax-light-invalid);
+  --syntax-punctuation: var(--oddenova-syntax-light-punctuation);
+  --hap-highlight: var(--oddenova-syntax-light-hap-highlight);
 }
 
 /* Mobile browsers can expose the document canvas behind their floating

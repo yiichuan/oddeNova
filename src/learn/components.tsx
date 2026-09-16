@@ -4,6 +4,9 @@ import { PlayIcon, StopIcon, RetryIcon, ChevronLeftIcon, ChevronRightIcon } from
 import ClaviatureView from './Claviature';
 import { highlightLines } from './static-highlight';
 import { installOddenovaSyntaxHighlight } from '../lib/oddenova-syntax-highlight';
+import { usePitchColors } from './pitch-theme';
+
+const GLOBAL_VISUALIZATION_CALL = /\.(?:punchcard|pianoroll|scope|spiral|pitchwheel|spectrum)\s*\(/;
 
 interface EditorViewLike {
   dispatch: (transaction: { effects: unknown }) => void;
@@ -48,6 +51,28 @@ interface CodeBlockProps {
   claviatureRange?: [string, string];
 }
 
+function ThemedClaviature({
+  activeNotes,
+  labels,
+  range,
+}: {
+  activeNotes: number[];
+  labels: Record<string, string | number>;
+  range: [string, string];
+}) {
+  const colors = usePitchColors();
+  return (
+    <ClaviatureView
+      options={{
+        range,
+        scaleY: 0.75,
+        colorize: [{ keys: activeNotes, color: colors.pitch }],
+        labels,
+      }}
+    />
+  );
+}
+
 /**
  * A playable Strudel code example — each instance is its own independent
  * `StrudelMirror` (editor + scheduler), same approach strudel.cc's own
@@ -65,15 +90,18 @@ export function CodeBlock({
   claviatureRange = ['C2', 'C6'],
 }: CodeBlockProps) {
   const tunes = Array.isArray(code) ? code : null;
-  const initialCode = tunes ? tunes[0] : code;
+  const initialCode = Array.isArray(code) ? code[0] : code;
+  const hasGlobalVisualization = (tunes ?? [initialCode]).some((tune) => GLOBAL_VISUALIZATION_CALL.test(tune));
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const globalVisualizationCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const editorRef = useRef<StrudelMirrorInstance | null>(null);
   // StrudelMirror derives inline widget ids (._scope(), ._pianoroll(), etc.) from
   // this `id` — without one, every block computes the same id (e.g.
   // `_widget__scope_0`) and they clobber each other's analyser/canvas wiring,
   // matching strudel.cc's own MiniRepl passing a per-instance id for the same reason.
   const replId = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const globalVisualizationCanvasId = `${replId}-global-visualization`;
 
   // Best-effort: size the canvas as soon as React attaches it (commit
   // phase), same as strudel.cc's own MiniRepl, so the common case never
@@ -150,14 +178,16 @@ export function CodeBlock({
         // query to nothing and makes `cycles` zero, so inline visuals go blank.
         drawTime: claviature ? [0, 0] : punchcard ? [0, 4] : [-2, 2],
         autodraw: punchcard || claviature || autodraw,
-        // Also matches strudel.cc's MiniRepl: a block with its own punchcard
-        // canvas draws into that, everything else draws into the page-level
-        // background canvas from `getDrawContext()`. This is what the
-        // unprefixed visual functions (`punchcard()`, `spiral()`) render into —
-        // unlike `pianoroll()`/`scope()`/`spectrum()`/`pitchwheel()`, they have
-        // no `getDrawContext()` fallback of their own, so leaving this undefined
-        // makes them throw inside the draw loop and silently paint nothing.
-        drawContext: punchcard ? canvas?.getContext('2d') : getDrawContext(),
+        // A prop-driven punchcard owns the canvas below the editor. Unprefixed
+        // visualizers instead paint into a per-example canvas behind the code:
+        // keeping that context inside the block avoids @strudel/draw's default
+        // `#test-canvas`, which is fixed to the viewport and prepended to body.
+        // Blocks without either kind of painter need no draw context at all.
+        drawContext: punchcard
+          ? canvas?.getContext('2d')
+          : hasGlobalVisualization
+            ? getDrawContext(globalVisualizationCanvasId)
+            : undefined,
         editPattern,
         onUpdateState: (state: { started?: boolean; isDirty?: boolean; evalError?: unknown }) => {
           setStarted(!!state.started);
@@ -203,6 +233,26 @@ export function CodeBlock({
     observer.observe(canvas);
     return () => observer.disconnect();
   }, [punchcard]);
+
+  // The global-visualization canvas is absolutely positioned, so its bitmap
+  // must follow the editor host rather than contributing layout of its own.
+  useEffect(() => {
+    if (!hasGlobalVisualization) return;
+    const host = containerRef.current;
+    const canvas = globalVisualizationCanvasRef.current;
+    if (!host || !canvas) return;
+    const resize = () => {
+      const pixelRatio = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.round(host.clientWidth * pixelRatio));
+      const height = Math.max(1, Math.round(host.clientHeight * pixelRatio));
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [hasGlobalVisualization]);
 
   // On macOS, Option+Period (the Alt-. stop shortcut) is a dead-key combo that
   // produces a composed character (e.g. "≥") as `event.key`, not ".". CodeMirror's
@@ -264,19 +314,28 @@ export function CodeBlock({
           </div>
         )}
       </div>
-      <div ref={containerRef} className="mini-repl-code p-2 text-[13px]" />
+      <div
+        ref={containerRef}
+        className={`mini-repl-code p-2 text-[13px]${hasGlobalVisualization ? ' learn-global-visualization' : ''}`}
+      >
+        {hasGlobalVisualization && (
+          <canvas
+            ref={globalVisualizationCanvasRef}
+            id={globalVisualizationCanvasId}
+            aria-hidden="true"
+            className="learn-global-visualization-canvas"
+          />
+        )}
+      </div>
       {punchcard && (
         <canvas ref={setCanvasRef} height={100} className="mini-punchcard block w-full border-t border-[var(--learn-border)]" />
       )}
       {claviature && (
         <div className="border-t border-[var(--learn-border)] p-2 [&_svg]:max-w-full [&_svg]:h-auto">
-          <ClaviatureView
-            options={{
-              range: claviatureRange,
-              scaleY: 0.75,
-              colorize: [{ keys: activeNotes, color: 'steelblue' }],
-              labels: claviatureLabels ?? {},
-            }}
+          <ThemedClaviature
+            activeNotes={activeNotes}
+            labels={claviatureLabels ?? {}}
+            range={claviatureRange}
           />
         </div>
       )}

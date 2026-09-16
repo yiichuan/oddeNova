@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const { installHighlight, replInstance } = vi.hoisted(() => ({
+const { getDrawContext, installHighlight, replInstance } = vi.hoisted(() => ({
+  getDrawContext: vi.fn(() => ({})),
   installHighlight: vi.fn(),
   replInstance: {
     dispatch: vi.fn(),
@@ -48,7 +49,13 @@ vi.mock('@strudel/transpiler', () => ({ transpiler: {} }));
 vi.mock('@strudel/webaudio', () => ({ webaudioOutput: {} }));
 vi.mock('superdough', () => ({ getAudioContext: () => ({}) }));
 vi.mock('@strudel/core', () => ({ noteToMidi: () => 0 }));
-vi.mock('@strudel/draw', () => ({ getDrawContext: () => undefined }));
+vi.mock('@strudel/draw', () => ({ getDrawContext }));
+
+vi.mock('../Claviature', () => ({
+  default: ({ options }: { options: { colorize?: Array<{ color: string }> } }) => (
+    <div data-testid="claviature" data-highlight-color={options.colorize?.[0]?.color} />
+  ),
+}));
 
 vi.mock('../../lib/oddenova-syntax-highlight', () => ({
   installOddenovaSyntaxHighlight: installHighlight,
@@ -64,27 +71,32 @@ const learnCss = readFileSync(resolve(__dirname, '../learn.css'), 'utf8');
 
 describe('learn.css theme scoping', () => {
   it('declares the oddeNova dark syntax set under .learn-page', () => {
-    expect(learnCss).toMatch(/--syntax-atom:\s*#4BA3B9/);
-    expect(learnCss).toMatch(/--syntax-keyword:\s*#ECB43C/);
-    expect(learnCss).toMatch(/--hap-highlight:\s*#D9D9D9/);
+    expect(learnCss).toMatch(/--syntax-atom:\s*var\(--oddenova-syntax-dark-atom\)/);
+    expect(learnCss).toMatch(/--syntax-keyword:\s*var\(--oddenova-syntax-dark-keyword\)/);
+    expect(learnCss).toMatch(/--hap-highlight:\s*var\(--oddenova-syntax-dark-hap-highlight\)/);
   });
 
   it('re-declares the light syntax set under the light theme only', () => {
     const lightBlock = learnCss.match(/html\[data-theme='light'\] \.learn-page \{[\s\S]*?\n\}/);
     expect(lightBlock).not.toBeNull();
-    expect(lightBlock?.[0]).toMatch(/--syntax-atom:\s*#0B6D85/);
-    expect(lightBlock?.[0]).toMatch(/--syntax-keyword:\s*#7434CF/);
-    expect(lightBlock?.[0]).toMatch(/--hap-highlight:\s*#292D33/);
+    expect(lightBlock?.[0]).toMatch(/--syntax-atom:\s*var\(--oddenova-syntax-light-atom\)/);
+    expect(lightBlock?.[0]).toMatch(/--syntax-keyword:\s*var\(--oddenova-syntax-light-keyword\)/);
+    expect(lightBlock?.[0]).toMatch(/--hap-highlight:\s*var\(--oddenova-syntax-light-hap-highlight\)/);
   });
 
-  it('declares the editor surface and pitch palettes per theme', () => {
-    expect(learnCss).toMatch(/--learn-editor-bg:\s*#0D0D0D/);
-    expect(learnCss).toMatch(/--learn-frequency:\s*#3b82f6/);
-    expect(learnCss).toMatch(/--learn-pitch:\s*#eab308/);
+  it('aliases the canonical editor surface palette per app theme', () => {
+    expect(learnCss).toMatch(/--learn-editor-bg:\s*var\(--oddenova-editor-dark-background\)/);
     const lightBlock = learnCss.match(/html\[data-theme='light'\] \.learn-page \{[\s\S]*?\n\}/);
-    expect(lightBlock?.[0]).toMatch(/--learn-editor-bg:\s*#F7F7FA/);
-    expect(lightBlock?.[0]).toMatch(/--learn-frequency:\s*#1d4ed8/);
-    expect(lightBlock?.[0]).toMatch(/--learn-pitch:\s*#854d0e/);
+    expect(lightBlock?.[0]).toMatch(/--learn-editor-bg:\s*var\(--oddenova-editor-light-background\)/);
+    expect(lightBlock?.[0]).toMatch(/--learn-viz-bg:\s*var\(--oddenova-editor-light-background\)/);
+    expect(learnCss).not.toMatch(/--learn-(?:frequency|pitch):/);
+  });
+
+  it('binds StrudelMirror host background to the docs editor palette', () => {
+    const hostBlock = learnCss.match(/\.learn-page \.mini-repl-code \{[\s\S]*?\n\}/);
+    expect(hostBlock).not.toBeNull();
+    expect(hostBlock?.[0]).toMatch(/--background:\s*var\(--learn-editor-bg\)\s*!important/);
+    expect(hostBlock?.[0]).toMatch(/background-color:\s*var\(--learn-editor-bg\)\s*!important/);
   });
 });
 
@@ -96,6 +108,7 @@ describe('learn example editor across theme flips', () => {
     localStorage.clear();
     delete document.documentElement.dataset.theme;
     installHighlight.mockClear();
+    getDrawContext.mockClear();
     (Object.keys(replInstance) as Array<keyof typeof replInstance>).forEach((key) => {
       replInstance[key].mockClear();
     });
@@ -149,5 +162,45 @@ describe('learn example editor across theme flips', () => {
     expect(replInstance.setCode).not.toHaveBeenCalled();
     expect(replInstance.stop).not.toHaveBeenCalled();
     expect(replInstance.toggle).not.toHaveBeenCalled();
+  });
+
+  it('keeps unprefixed visualizers on a theme-aware canvas inside their example', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<CodeBlockHost code={'note("c3").punchcard()'} />);
+      await Promise.resolve();
+    });
+
+    const stage = container.querySelector('.learn-global-visualization');
+    const canvas = stage?.querySelector<HTMLCanvasElement>('.learn-global-visualization-canvas');
+    expect(stage).not.toBeNull();
+    expect(canvas).not.toBeNull();
+    expect(getDrawContext).toHaveBeenCalledWith(canvas?.id);
+    const stageBlock = learnCss.match(/\.learn-page \.mini-repl-code\.learn-global-visualization \{[\s\S]*?\n\}/);
+    expect(stageBlock?.[0]).toMatch(/background:\s*var\(--learn-editor-bg\)\s*!important/);
+    expect(stageBlock?.[0]).not.toMatch(/--oddenova-editor-dark-/);
+  });
+
+  it('repaints the claviature highlight with the app theme', async () => {
+    setThemePreference('dark');
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(<CodeBlockHost code={'note("c3")'} claviature />);
+      await Promise.resolve();
+    });
+    const keyboard = container.querySelector<HTMLElement>('[data-testid="claviature"]');
+    expect(keyboard?.dataset.highlightColor).toBe('#eab308');
+
+    act(() => setThemePreference('light'));
+
+    expect(keyboard?.dataset.highlightColor).toBe('#854d0e');
+    expect(installHighlight).toHaveBeenCalledTimes(1);
+    expect(replInstance.evaluate).not.toHaveBeenCalled();
   });
 });

@@ -25,79 +25,70 @@
   --learn-selected: var(--color-surface-selected);
   /* Raised content fill — static code, callouts, QAs, inline code chips. */
   --learn-chip: var(--color-surface-hover);
-  /* The editor palettes (EDITOR_THEME_VARS['oddenova-dark']), app-theme keyed. */
-  --learn-editor-bg: #0D0D0D;
-  --learn-editor-fg: #e2e8f0;
-  --learn-editor-caret: #91a3e0;
-  --learn-editor-selection: rgba(172, 185, 225, 0.25);
-  --learn-editor-line: rgba(108, 92, 231, 0.08);
-  --learn-editor-gutter-fg: #898989;
-  --learn-editor-gutter-border: #323232;
-  /* Strudel's own plot areas (punchcard, pianoroll, scope, …) draw hap colours
-     from @strudel/draw's fixed dark-stage theme, so they keep a dark ground in
-     both palettes — see the viz rules further down. */
+  /* App-theme aliases into the canonical oddeNova editor palette. */
+  --learn-editor-bg: var(--oddenova-editor-dark-background);
+  --learn-editor-fg: var(--oddenova-editor-dark-foreground);
+  --learn-editor-caret: var(--oddenova-editor-dark-caret);
+  --learn-editor-selection: var(--oddenova-editor-dark-selection);
+  --learn-editor-line: var(--oddenova-editor-dark-line);
+  --learn-editor-gutter-fg: var(--oddenova-editor-dark-gutter-foreground);
+  --learn-editor-gutter-border: var(--oddenova-editor-dark-gutter-border);
+  /* Strudel plot areas keep pattern-authored hap colours while this surface
+     follows the surrounding docs palette. */
   --learn-viz-bg: #0d0d0d;
-  /* The pitch explorer's two voices, per palette (PitchSlider.tsx reads the
-     same pair through useResolvedTheme for canvas pixels). */
-  --learn-frequency: #3b82f6;
-  --learn-pitch: #eab308;
-
-  /* oddeNova's dark syntax palette (index.css @theme defaults), so the docs
-     read the app palette no matter which editor theme the root declares. */
-  --syntax-atom: #4BA3B9;
-  --syntax-label: #DFB234;
-  --syntax-keyword: #ECB43C;
-  --syntax-operator: #797977;
-  --syntax-special-variable: #C4C73D;
-  --syntax-type: #9AD345;
-  --syntax-number: #D9D9D9;
-  --syntax-definition: #AF8BE5;
-  --syntax-string: #D9D9D9;
-  --syntax-comment: #646973;
-  --syntax-variable: #D9542B;
-  --syntax-tag: #5184D6;
-  --syntax-bracket: #9E9E9E;
-  --syntax-meta: #C55F0D;
-  --syntax-attribute: #CF59CB;
-  --syntax-property: #B0B0B0;
-  --syntax-invalid: #E01A1A;
-  --syntax-punctuation: #8A8A8A;
-  --hap-highlight: #D9D9D9;
+  /* App-theme aliases into the canonical syntax palette. */
+  --syntax-atom: var(--oddenova-syntax-dark-atom);
+  --syntax-label: var(--oddenova-syntax-dark-label);
+  --syntax-keyword: var(--oddenova-syntax-dark-keyword);
+  --syntax-operator: var(--oddenova-syntax-dark-operator);
+  --syntax-special-variable: var(--oddenova-syntax-dark-special-variable);
+  --syntax-type: var(--oddenova-syntax-dark-type);
+  --syntax-number: var(--oddenova-syntax-dark-number);
+  --syntax-definition: var(--oddenova-syntax-dark-definition);
+  --syntax-string: var(--oddenova-syntax-dark-string);
+  --syntax-comment: var(--oddenova-syntax-dark-comment);
+  --syntax-variable: var(--oddenova-syntax-dark-variable);
+  --syntax-tag: var(--oddenova-syntax-dark-tag);
+  --syntax-bracket: var(--oddenova-syntax-dark-bracket);
+  --syntax-meta: var(--oddenova-syntax-dark-meta);
+  --syntax-attribute: var(--oddenova-syntax-dark-attribute);
+  --syntax-property: var(--oddenova-syntax-dark-property);
+  --syntax-invalid: var(--oddenova-syntax-dark-invalid);
+  --syntax-punctuation: var(--oddenova-syntax-dark-punctuation);
+  --hap-highlight: var(--oddenova-syntax-dark-hap-highlight);
 
   background: var(--learn-surface);
   color: var(--learn-text-secondary);
 }
 
 html[data-theme='light'] .learn-page {
-  /* EDITOR_THEME_VARS['oddenova-light'] — the dark values above, re-lit. */
-  --learn-editor-bg: #F7F7FA;
-  --learn-editor-fg: #202024;
-  --learn-editor-caret: #0668E5;
-  --learn-editor-selection: rgba(6, 104, 229, 0.16);
-  --learn-editor-line: rgba(6, 104, 229, 0.07);
-  --learn-editor-gutter-fg: #686870;
-  --learn-editor-gutter-border: #D5D5DE;
-  --learn-frequency: #1d4ed8;
-  --learn-pitch: #854d0e;
-  --syntax-atom: #0B6D85;
-  --syntax-label: #6F47CE;
-  --syntax-keyword: #7434CF;
-  --syntax-operator: #6C747E;
-  --syntax-special-variable: #0B655E;
-  --syntax-type: #0B6739;
-  --syntax-number: #292D33;
-  --syntax-definition: #D93E17;
-  --syntax-string: #292D33;
-  --syntax-comment: #7C8591;
-  --syntax-variable: #0863DA;
-  --syntax-tag: #505BD6;
-  --syntax-bracket: #4D545C;
-  --syntax-meta: #2D7599;
-  --syntax-attribute: #AC2BA6;
-  --syntax-property: #41464C;
-  --syntax-invalid: #B6142F;
-  --syntax-punctuation: #5D646D;
-  --hap-highlight: #292D33;
+  --learn-editor-bg: var(--oddenova-editor-light-background);
+  --learn-editor-fg: var(--oddenova-editor-light-foreground);
+  --learn-editor-caret: var(--oddenova-editor-light-caret);
+  --learn-editor-selection: var(--oddenova-editor-light-selection);
+  --learn-editor-line: var(--oddenova-editor-light-line);
+  --learn-editor-gutter-fg: var(--oddenova-editor-light-gutter-foreground);
+  --learn-editor-gutter-border: var(--oddenova-editor-light-gutter-border);
+  --learn-viz-bg: var(--oddenova-editor-light-background);
+  --syntax-atom: var(--oddenova-syntax-light-atom);
+  --syntax-label: var(--oddenova-syntax-light-label);
+  --syntax-keyword: var(--oddenova-syntax-light-keyword);
+  --syntax-operator: var(--oddenova-syntax-light-operator);
+  --syntax-special-variable: var(--oddenova-syntax-light-special-variable);
+  --syntax-type: var(--oddenova-syntax-light-type);
+  --syntax-number: var(--oddenova-syntax-light-number);
+  --syntax-definition: var(--oddenova-syntax-light-definition);
+  --syntax-string: var(--oddenova-syntax-light-string);
+  --syntax-comment: var(--oddenova-syntax-light-comment);
+  --syntax-variable: var(--oddenova-syntax-light-variable);
+  --syntax-tag: var(--oddenova-syntax-light-tag);
+  --syntax-bracket: var(--oddenova-syntax-light-bracket);
+  --syntax-meta: var(--oddenova-syntax-light-meta);
+  --syntax-attribute: var(--oddenova-syntax-light-attribute);
+  --syntax-property: var(--oddenova-syntax-light-property);
+  --syntax-invalid: var(--oddenova-syntax-light-invalid);
+  --syntax-punctuation: var(--oddenova-syntax-light-punctuation);
+  --hap-highlight: var(--oddenova-syntax-light-hap-highlight);
 }
 
 /* Keyboard focus is a marker, so it takes the accent everywhere on the page. */
@@ -207,6 +198,16 @@ html[data-theme='light'] .learn-page {
    the docs' editors follow the app theme instead of the saved editor theme,
    whatever the injection order was. */
 
+.learn-page .mini-repl-code {
+  /* StrudelMirror paints this host, not `.cm-editor`, with an inline
+     `background-color: var(--background)`. @strudel/codemirror also installs
+     its dark `--background` on `:root` as a module side effect, so binding the
+     variable at the host is what prevents that inherited value from showing
+     through on the light docs page. */
+  --background: var(--learn-editor-bg) !important;
+  background-color: var(--learn-editor-bg) !important;
+}
+
 .learn-page .mini-repl-code .cm-editor {
   background-color: transparent !important;
   color: var(--learn-editor-fg) !important;
@@ -246,6 +247,31 @@ html[data-theme='light'] .learn-page {
   color: var(--learn-editor-gutter-fg) !important;
 }
 
+/* Unprefixed Strudel visualizers normally ask @strudel/draw for a fixed,
+   body-level `#test-canvas`. CodeBlock gives them a canvas inside the example
+   instead, so their surface follows the docs theme without covering the page. */
+.learn-page .mini-repl-code.learn-global-visualization {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--learn-editor-bg) !important;
+}
+
+.learn-page .learn-global-visualization-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: var(--learn-viz-bg);
+}
+
+.learn-page .mini-repl-code.learn-global-visualization .cm-editor {
+  position: relative;
+  z-index: 1;
+}
+
 /* The main composing editor fades its top and bottom edges into the page with
    `::before`/`::after` masks sized for a tall scroller; on a 1-4 line docs
    snippet they would lie across the code itself. These masks read
@@ -260,10 +286,8 @@ html[data-theme='light'] .learn-page {
    index.css tooltip rules — no separate palette needed. */
 
 /* ── Strudel's own plot areas ────────────────────────────────────────────────
-   punchcard/pianoroll/scope/spiral draw hap colours from the pattern's own
-   `.color()` calls and @strudel/draw's fixed dark-stage theme, so they cannot
-   be repainted per palette. They keep the dark stage in both; on paper the
-   border is what seats them against the pale page. */
+   Keep the pattern-authored hap colours intact, but let the canvas surface
+   follow the app theme alongside the surrounding example editor. */
 
 .learn-page canvas[id*='_widget__scope_'],
 .learn-page canvas[id*='_widget__pianoroll_'],
