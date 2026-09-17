@@ -22,7 +22,7 @@
 
 **[Try it now → www.oddenova.com](https://www.oddenova.com)**
 
-[How You Interact](#how-you-interact) • [Quick Start](#quick-start) • [How It Works](#how-it-works) • [Project Structure](#project-structure)
+[How You Interact](#how-you-interact) • [Local Quick Start](#local-quick-start) • [How It Works](#how-it-works) • [Project Structure](#project-structure)
 
 </div>
 
@@ -60,31 +60,33 @@ Your ideas and your choices are what the work is made of
 
 **AI & Interaction**
 
-- **Visible thinking process** — Sidebar shows the Agent's reasoning and tool calls in real time
-- **AI smart suggestions** — Automatically generates next-step suggestions based on the current musical context
-- **Multiple LLM providers** — Supports DeepSeek, Kimi, OpenAI, Claude, GLM; switch freely in the UI
+- **Composition in stages** — The Agent never drops a finished track on you at once; it builds the layers up from simple to complex, the way writing music actually goes
+- **Visible thinking** — The reasoning stays on screen, so you can see at a glance how the Agent structures a section in code
+- **Arrangement suggestions** — Next-step suggestions offered automatically from the current context
+- **Multiple LLM providers** — DeepSeek, OpenAI, Claude and GLM, switchable in Settings
 
 **Session & History**
 
 - **Multi-session management** — Create and switch between multiple independent music creation sessions
-- **Session replay** — Step through any past session's creative process
+- **Session replay** — Every stage of the work is kept; switch back to any of them at any time
 - **Undo** — Roll back to any historical version (up to 50 steps)
 - **Share link** — Generate a shareable URL to share your creation in one click
 
 **UI & Other**
 
-- **Code panel** — View real-time syntax-highlighted Strudel code with direct editing support
-- **Mobile-friendly** — Three-column layout automatically switches to a single-column drawer layout on mobile
-- **Demo mode** — Append `?demo=true` to the URL to enter a preset demo flow without an API key
+- **Code panel** — Syntax-highlighted Strudel code in real time, editable right where it sits
+- **Animation panel** — VJ visuals themed to the release, moving with the groove while a track plays
+- **Featured page** — A collection of tracks recreated in Strudel
+- **Mobile-friendly** — The full experience works in a phone browser too
+- **Learn Strudel** — Strudel is a JS-based language for live music playback: powerful, and easy to pick up. oddeNova links to a full tutorial.
 
-## Quick Start
+## Local Quick Start
 
 ### Requirements
 
 - Node.js >= 18
 - API key from any of the following AI providers (optional):
   - [DeepSeek](https://platform.deepseek.com/)
-  - [Kimi (Moonshot)](https://platform.moonshot.cn/)
   - [OpenAI](https://platform.openai.com/)
   - [Anthropic](https://console.anthropic.com/) (Claude)
   - [GLM](https://open.bigmodel.cn/)
@@ -110,12 +112,6 @@ Open your browser at `http://localhost:5173`. On first use, select a provider an
 | `npm run lint` | ESLint code check |
 | `npm test` | Run unit tests (Vitest) |
 
-### One-Click Deploy to Vercel
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyiichuan%2FoddeNova)
-
-> LLM API keys are entered in the in-app UI. For the cron cleanup feature, configure `CRON_SECRET` in your Vercel project settings.
-
 ## How It Works
 
 Every text message you send triggers an AI Agent inference loop:
@@ -139,8 +135,8 @@ The Agent manages the complete Strudel code directly via `setCode`. Each convers
 
 > "I want some relaxing background music"
 > "Add something upbeat, like the vibe of a lazy afternoon coffee"
-> "The drum beat is too heavy, make it lighter"
-> "Speed up the rhythm, I want to dance"
+> "A simple drum part"
+> "Faster rhythm, brighter sound"
 
 **Advanced users · Precise control over every detail**
 
