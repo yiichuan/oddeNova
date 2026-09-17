@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { t } from '../../lib/i18n';
 import type { OddeNovaImportPayload } from '../../lib/oddenova-import';
+import type { OddeNovaBridgeSnapshot } from '../../lib/oddenova-bridge';
 import { SESSION_TITLE_LIMIT, sessionTitleLength } from '../../lib/session-title';
 import {
   applyAppendAssistantDelta,
@@ -1695,6 +1696,108 @@ describe('useSessions', () => {
     expect(outcome).toBe('updated');
     expect(getHook().currentSession?.id).toBe(branchId);
     expect(getHook().sessions).toHaveLength(sessionCount);
+  });
+
+  it('applies cumulative v2 history once and rejects inconsistent versions', async () => {
+    const snapshot = (revision: number): OddeNovaBridgeSnapshot => ({
+      protocolVersion: 2,
+      source: 'oddenova-strudel-skill',
+      projectId: 'bridge-project',
+      revision,
+      title: 'Bridge piece',
+      code: `stack(s("bd*${revision}"))`,
+      messages: Array.from({ length: revision * 2 }, (_, index) => ({
+        id: `message-${index + 1}`,
+        role: index % 2 === 0 ? 'user' as const : 'assistant' as const,
+        content: `${index % 2 === 0 ? 'request' : 'summary'} ${Math.floor(index / 2) + 1}`,
+        receivedAt: 1_000 + index,
+      })),
+      locale: 'en',
+      contentHash: `hash-${revision}`,
+    });
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+
+    for (let revision = 1; revision <= 3; revision += 1) {
+      await act(async () => {
+        await getHook().importOddeNovaBridgeSnapshot(snapshot(revision));
+      });
+    }
+    const importedId = getHook().currentId!;
+    expect(getHook().currentSession?.messages).toHaveLength(6);
+    expect(getHook().currentSession?.messages.map((message) => message.id))
+      .toEqual(snapshot(3).messages.map((message) => message.id));
+    expect(getHook().currentSession?.externalSource).toMatchObject({
+      protocolVersion: 2,
+      revision: 3,
+      bridgeContentHash: 'hash-3',
+    });
+
+    let repeated;
+    await act(async () => {
+      repeated = await getHook().importOddeNovaBridgeSnapshot(snapshot(3));
+    });
+    expect(repeated).toEqual({ outcome: 'unchanged', sessionId: importedId });
+    expect(storageMocks.putImportedSession).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      await expect(getHook().importOddeNovaBridgeSnapshot({ ...snapshot(3), contentHash: 'different' }))
+        .rejects.toThrow('same bridge revision');
+      await expect(getHook().importOddeNovaBridgeSnapshot({
+        ...snapshot(4),
+        messages: snapshot(4).messages.slice(2),
+      })).rejects.toThrow('shortens or changes');
+    });
+    expect(getHook().currentSession?.messages).toHaveLength(6);
+  });
+
+  it('preserves an active editor draft in a v2 branch and updates that branch next', async () => {
+    const first: OddeNovaBridgeSnapshot = {
+      protocolVersion: 2,
+      source: 'oddenova-strudel-skill',
+      projectId: 'draft-project',
+      revision: 1,
+      title: 'Draft piece',
+      code: 'stack(s("bd"))',
+      messages: [
+        { id: 'm1', role: 'user', content: 'make it', receivedAt: 1 },
+        { id: 'm2', role: 'assistant', content: 'made it', receivedAt: 2 },
+      ],
+      contentHash: 'h1',
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => { await getHook().importOddeNovaBridgeSnapshot(first); });
+    const originalId = getHook().currentId!;
+    const second: OddeNovaBridgeSnapshot = {
+      ...first,
+      revision: 2,
+      code: 'stack(s("sd"))',
+      messages: [...first.messages, { id: 'm3', role: 'user', content: 'change it', receivedAt: 3 }],
+      contentHash: 'h2',
+    };
+    let result;
+    await act(async () => {
+      result = await getHook().importOddeNovaBridgeSnapshot(second, { sessionId: originalId, code: 'website draft' });
+    });
+    expect(result).toMatchObject({ outcome: 'branched' });
+    expect(getHook().sessions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: originalId, code: 'website draft', externalSource: undefined }),
+      expect.objectContaining({ code: second.code, externalSource: expect.objectContaining({ revision: 2 }) }),
+    ]));
+
+    const branchId = getHook().currentId!;
+    await act(async () => {
+      result = await getHook().importOddeNovaBridgeSnapshot({
+        ...second,
+        revision: 3,
+        code: 'stack(s("hh"))',
+        messages: [...second.messages, { id: 'm4', role: 'assistant', content: 'changed', receivedAt: 4 }],
+        contentHash: 'h3',
+      });
+    });
+    expect(result).toEqual({ outcome: 'updated', sessionId: branchId });
+    expect(getHook().currentId).toBe(branchId);
   });
 
   it('re-imports a long-titled skill session as an update, not a branch', async () => {

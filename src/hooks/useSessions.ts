@@ -21,6 +21,7 @@ import {
   themeSongCode,
 } from '../lib/theme-song';
 import { hashImportedContent, type OddeNovaImportPayload } from '../lib/oddenova-import';
+import { digestOddeNovaBridgeMessage, type OddeNovaBridgeSnapshot } from '../lib/oddenova-bridge';
 import {
   createSessionCloudSync,
   type SessionSyncStatus,
@@ -35,9 +36,17 @@ export interface ExternalSessionSource {
   type: 'oddenova-strudel-skill';
   projectId: string;
   importedContentHash: string;
+  protocolVersion?: 2;
+  revision?: number;
+  bridgeContentHash?: string;
+  importedMessageDigests?: string[];
 }
 
 export type OddeNovaImportOutcome = 'created' | 'updated' | 'branched';
+export interface OddeNovaBridgeImportResult {
+  outcome: OddeNovaImportOutcome | 'unchanged';
+  sessionId: string;
+}
 
 export type PlaybackStatus = 'played' | 'failed' | 'not_attempted';
 
@@ -1388,6 +1397,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
       session.externalSource.projectId === source.projectId
     );
 
+    if (target?.externalSource?.protocolVersion === 2) {
+      throw new Error('This project is managed by the v2 local connection');
+    }
+
     if (!target) {
       const created: Session = {
         id: newSessionId(),
@@ -1479,6 +1492,148 @@ export function useSessions(options: UseSessionsOptions = {}) {
     return 'branched';
   }, [noteCreatedSession, ownerKey, sessions, sessionCloudSync]);
 
+  const importOddeNovaBridgeSnapshot = useCallback(async (
+    snapshot: OddeNovaBridgeSnapshot,
+    activeDraft?: { sessionId: string; code: string },
+  ): Promise<OddeNovaBridgeImportResult> => {
+    const incomingDigests = await Promise.all(snapshot.messages.map(digestOddeNovaBridgeMessage));
+    const importedTitle = normalizeSessionTitle(snapshot.title, t('newSessionTitle'));
+    const incomingHash = hashImportedContent({
+      title: importedTitle,
+      code: snapshot.code,
+      messages: snapshot.messages.map(({ role, content }) => ({ role, content })),
+    });
+    const source: ExternalSessionSource = {
+      type: 'oddenova-strudel-skill',
+      projectId: snapshot.projectId,
+      importedContentHash: incomingHash,
+      protocolVersion: 2,
+      revision: snapshot.revision,
+      bridgeContentHash: snapshot.contentHash,
+      importedMessageDigests: incomingDigests,
+    };
+    const now = Date.now();
+    const messages: ChatMessage[] = snapshot.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      timestamp: message.receivedAt,
+    }));
+    const storedTarget = sessionsRef.current.find((session) =>
+      session.externalSource?.type === source.type
+      && session.externalSource.projectId === source.projectId
+    );
+    if (!storedTarget) {
+      const created: Session = {
+        id: newSessionId(),
+        title: importedTitle,
+        code: snapshot.code,
+        messages,
+        externalSource: source,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await dbPutImportedSession(created, ownerKey);
+      persistedSessionIdsRef.current.add(created.id);
+      noteCreatedSession(created.id);
+      setSessions((previous) => [created, ...previous]);
+      setCurrentId(created.id);
+      await dbPutCurrentSessionId(created.id, ownerKey);
+      await sessionCloudSync?.checkpoint(created);
+      return { outcome: 'created', sessionId: created.id };
+    }
+
+    await localWrites.flush(storedTarget.id);
+    const target = activeDraft?.sessionId === storedTarget.id
+      ? { ...storedTarget, code: activeDraft.code }
+      : storedTarget;
+    const previousSource = target.externalSource;
+    if (previousSource?.protocolVersion === 2) {
+      const previousRevision = previousSource.revision ?? 0;
+      if (snapshot.revision < previousRevision) return { outcome: 'unchanged', sessionId: target.id };
+      if (snapshot.revision === previousRevision) {
+        if (snapshot.contentHash !== previousSource.bridgeContentHash) {
+          throw new Error('The same bridge revision arrived with different content');
+        }
+        return { outcome: 'unchanged', sessionId: target.id };
+      }
+      const previousDigests = previousSource.importedMessageDigests ?? [];
+      if (
+        previousDigests.length > incomingDigests.length
+        || previousDigests.some((digest, index) => digest !== incomingDigests[index])
+      ) throw new Error('The incoming bridge snapshot shortens or changes imported history');
+    } else {
+      const previousCreative = target.messages.filter((message) => message.role === 'user' || message.role === 'assistant');
+      if (
+        previousCreative.length > snapshot.messages.length
+        || previousCreative.some((message, index) => {
+          const incoming = snapshot.messages[index];
+          return !incoming || message.role !== incoming.role || message.content !== incoming.content;
+        })
+      ) throw new Error('The v2 snapshot does not contain the existing v1 history prefix');
+    }
+
+    const currentHash = hashImportedContent({
+      title: normalizeSessionTitle(target.title, t('newSessionTitle')),
+      code: target.code,
+      messages: target.messages
+        .filter((message) => message.role === 'user' || message.role === 'assistant')
+        .map(({ role, content }) => ({ role: role as 'user' | 'assistant', content })),
+    });
+    if (currentHash === previousSource?.importedContentHash) {
+      const updated: Session = {
+        ...target,
+        title: importedTitle,
+        code: snapshot.code,
+        messages,
+        externalSource: source,
+        updatedAt: now,
+      };
+      await dbPutImportedSession(updated, ownerKey);
+      persistedSessionIdsRef.current.add(updated.id);
+      setSessions((previous) => previous.map((session) => session.id === target.id ? updated : session));
+      setCurrentId(updated.id);
+      await dbPutCurrentSessionId(updated.id, ownerKey);
+      await sessionCloudSync?.checkpoint(updated);
+      return { outcome: 'updated', sessionId: updated.id };
+    }
+
+    const detached: Session = { ...target, externalSource: undefined, updatedAt: now };
+    const branchTitle = titleWithSuffix(importedTitle, t('branchSuffix'), t('newSessionTitle'));
+    const branchSource: ExternalSessionSource = {
+      ...source,
+      importedContentHash: hashImportedContent({
+        title: branchTitle,
+        code: snapshot.code,
+        messages: snapshot.messages.map(({ role, content }) => ({ role, content })),
+      }),
+    };
+    const branch: Session = {
+      id: newSessionId(),
+      title: branchTitle,
+      code: snapshot.code,
+      messages,
+      externalSource: branchSource,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await dbPutImportedSessionBranch(detached, branch, ownerKey);
+    persistedSessionIdsRef.current.add(detached.id);
+    persistedSessionIdsRef.current.add(branch.id);
+    noteCreatedSession(branch.id);
+    setSessions((previous) => [
+      branch,
+      ...previous.map((session) => session.id === target.id ? detached : session),
+    ]);
+    setCurrentId(branch.id);
+    await dbPutCurrentSessionId(branch.id, ownerKey);
+    await Promise.all([
+      sessionCloudSync?.checkpoint(detached),
+      sessionCloudSync?.checkpoint(branch),
+    ]);
+    return { outcome: 'branched', sessionId: branch.id };
+  }, [localWrites, noteCreatedSession, ownerKey, sessionCloudSync]);
+
   const branchFromMessage = useCallback(
     (targetMessageId: string): void => {
       const session = sessions.find((s) => s.id === currentId) || sessions[0];
@@ -1569,6 +1724,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     deleteSession,
     importSession,
     importOddeNovaSession,
+    importOddeNovaBridgeSnapshot,
     branchFromMessage,
     setSuggestions,
     flushCloudSaves,
