@@ -6,9 +6,13 @@
 
 <div align="center">
 
-<img src="logo/oddenova-logo.png" alt="oddeNova" height="80" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo/oddenova-logo-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="logo/oddenova-logo-light.png" />
+  <img src="logo/oddenova-logo-light.png" alt="oddeNova" height="80" />
+</picture>
 
-## **Your space for improvised music-making**
+## **Start now — vibe a track of your own**
 
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-blue?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -18,35 +22,41 @@
 
 **[Try it now → www.oddenova.com](https://www.oddenova.com)**
 
-[Features](#features) • [Quick Start](#quick-start) • [How It Works](#how-it-works) • [Project Structure](#project-structure)
+[How You Interact](#how-you-interact) • [Quick Start](#quick-start) • [How It Works](#how-it-works) • [Project Structure](#project-structure)
 
 </div>
 
 ---
 
-oddeNova is an Agent platform for improvised music creation. Describe a feeling, theme, or image in a single sentence — the AI Agent breaks it into visible track layers, and you shape the music through a loop of listening, judging, and refining.
+oddeNova is an【Agent for improvised music-making】. Talk to it, and build the music you want step by step.
 
-**Not a one-click generator — a private space where you participate in the full creative process.**
+**Like vibe coding, but for music**
 
 <img src="docs/images/oddenova-demo.gif" alt="oddeNova Demo" width="100%" />
 
 ## For Whom
 
-You have something to express and the taste to know when it sounds right —  
-but you don't have a music theory background, production training, or experience with electronic music tools.  
-You have a mood, a scene, an idea — and you'd rather shape it yourself than spin a random wheel.
+For creators who care about music
+Whether you are scoring your own work, or the music is the work itself
+Whether you have no arrangement knowledge and have never opened a DAW, or know all of it by heart
 
-## Features
+You are tired of formulaic template "hits", tired of gacha-style AI music
+You want the rhythm, the notes, the chords to be entirely part of what you are saying
 
-Describe a feeling, shape the structure, until the track becomes yours.
+
+## How You Interact
+
+Talk to oddeNova to generate and adjust the music, or edit the Strudel code driving playback yourself
+Your ideas and your choices are what the work is made of
+
 
 **Core Creation Experience**
 
-- **Natural language composition** — Describe your musical intent directly; no knowledge of code or music theory required
-- **Layered track management** — Kick drum, snare, bass, synthesizer, etc. each as independent layers, add or remove on demand
-- **Precise iterative editing** — Each conversation only modifies the relevant layers; other tracks remain unchanged
-- **Instant playback** — Code executes and plays in the browser immediately after generation; no backend needed
-- **WAV export** — Render and download WAV audio files via OfflineAudioContext
+- **Natural language composition** — Describe your ideas and your notes; keep iterating on the result
+- **Layered track management** — Drums, strings, synths and more, each an independent layer you can manage in detail
+- **Precise iterative editing** — From the whole track down to a single note, all through conversation
+- **Instant playback** — Code runs in the browser the moment it is generated, and updates splice in seamlessly
+- **WAV export** — Once a demo sounds right, export it as a WAV file
 
 **AI & Interaction**
 
