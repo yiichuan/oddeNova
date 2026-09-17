@@ -32,7 +32,11 @@ oddeNova is an【Agent for improvised music-making】. Talk to it, and build the
 
 **Like vibe coding, but for music**
 
-<img src="docs/images/oddenova-demo.gif" alt="oddeNova Demo" width="100%" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/oddenova-demo-dark.gif" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/oddenova-demo-light.gif" />
+  <img src="docs/images/oddenova-demo-light.gif" alt="oddeNova Demo" width="100%" />
+</picture>
 
 ## For Whom
 

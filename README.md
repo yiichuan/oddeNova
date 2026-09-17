@@ -33,7 +33,11 @@ oddeNova 是一个【即兴音乐制作的 Agent】。通过与它的对话，�
 
 **像 vibe coding 一样，vibe 音乐**
 
-<img src="docs/images/oddenova-demo.gif" alt="oddeNova 演示" width="100%" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/oddenova-demo-dark.gif" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/oddenova-demo-light.gif" />
+  <img src="docs/images/oddenova-demo-light.gif" alt="oddeNova 演示" width="100%" />
+</picture>
 
 ## 为谁而生
 
