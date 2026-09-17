@@ -6,9 +6,13 @@
 
 <div align="center">
 
-<img src="logo/oddenova-logo.png" alt="oddeNova" height="80" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo/oddenova-logo-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="logo/oddenova-logo-light.png" />
+  <img src="logo/oddenova-logo-light.png" alt="oddeNova" height="80" />
+</picture>
 
-## **Your space for improvised music-making**
+## **Start now — vibe a track of your own**
 
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-blue?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -18,63 +22,75 @@
 
 **[Try it now → www.oddenova.com](https://www.oddenova.com)**
 
-[Features](#features) • [Quick Start](#quick-start) • [How It Works](#how-it-works) • [Project Structure](#project-structure)
+[How You Interact](#how-you-interact) • [Local Quick Start](#local-quick-start) • [How It Works](#how-it-works) • [Project Structure](#project-structure)
 
 </div>
 
 ---
 
-oddeNova is an Agent platform for improvised music creation. Describe a feeling, theme, or image in a single sentence — the AI Agent breaks it into visible track layers, and you shape the music through a loop of listening, judging, and refining.
+oddeNova is an【Agent for improvised music-making】. Talk to it, and build the music you want step by step.
 
-**Not a one-click generator — a private space where you participate in the full creative process.**
+**Like vibe coding, but for music**
 
-<img src="docs/images/oddenova-demo.gif" alt="oddeNova Demo" width="100%" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/oddenova-demo-dark.gif" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/oddenova-demo-light.gif" />
+  <img src="docs/images/oddenova-demo-light.gif" alt="oddeNova Demo" width="100%" />
+</picture>
 
 ## For Whom
 
-You have something to express and the taste to know when it sounds right —  
-but you don't have a music theory background, production training, or experience with electronic music tools.  
-You have a mood, a scene, an idea — and you'd rather shape it yourself than spin a random wheel.
+For creators who care about music
+Whether you are scoring your own work, or the music is the work itself
+Whether you have no arrangement knowledge and have never opened a DAW, or know all of it by heart
 
-## Features
+You are tired of formulaic template "hits", tired of gacha-style AI music
+You want the rhythm, the notes, the chords to be entirely part of what you are saying
 
-Describe a feeling, shape the structure, until the track becomes yours.
+
+## How You Interact
+
+Talk to oddeNova to generate and adjust the music, or edit the Strudel code driving playback yourself
+Your ideas and your choices are what the work is made of
+
 
 **Core Creation Experience**
 
-- **Natural language composition** — Describe your musical intent directly; no knowledge of code or music theory required
-- **Layered track management** — Kick drum, snare, bass, synthesizer, etc. each as independent layers, add or remove on demand
-- **Precise iterative editing** — Each conversation only modifies the relevant layers; other tracks remain unchanged
-- **Instant playback** — Code executes and plays in the browser immediately after generation; no backend needed
-- **WAV export** — Render and download WAV audio files via OfflineAudioContext
+- **Natural language composition** — Describe your ideas and your notes; keep iterating on the result
+- **Layered track management** — Drums, strings, synths and more, each an independent layer you can manage in detail
+- **Precise iterative editing** — From the whole track down to a single note, all through conversation
+- **Instant playback** — Code runs in the browser the moment it is generated, and updates splice in seamlessly
+- **WAV export** — Once a demo sounds right, export it as a WAV file
 
 **AI & Interaction**
 
-- **Visible thinking process** — Sidebar shows the Agent's reasoning and tool calls in real time
-- **AI smart suggestions** — Automatically generates next-step suggestions based on the current musical context
-- **Multiple LLM providers** — Supports DeepSeek, Kimi, OpenAI, Claude, GLM; switch freely in the UI
+- **Composition in stages** — The Agent never drops a finished track on you at once; it builds the layers up from simple to complex, the way writing music actually goes
+- **Visible thinking** — The reasoning stays on screen, so you can see at a glance how the Agent structures a section in code
+- **Arrangement suggestions** — Next-step suggestions offered automatically from the current context
+- **Multiple LLM providers** — DeepSeek, OpenAI, Claude and GLM, switchable in Settings
 
 **Session & History**
 
 - **Multi-session management** — Create and switch between multiple independent music creation sessions
-- **Session replay** — Step through any past session's creative process
+- **Session replay** — Every stage of the work is kept; switch back to any of them at any time
 - **Undo** — Roll back to any historical version (up to 50 steps)
 - **Share link** — Generate a shareable URL to share your creation in one click
 
 **UI & Other**
 
-- **Code panel** — View real-time syntax-highlighted Strudel code with direct editing support
-- **Mobile-friendly** — Three-column layout automatically switches to a single-column drawer layout on mobile
-- **Demo mode** — Append `?demo=true` to the URL to enter a preset demo flow without an API key
+- **Code panel** — Syntax-highlighted Strudel code in real time, editable right where it sits
+- **Animation panel** — VJ visuals themed to the release, moving with the groove while a track plays
+- **Featured page** — A collection of tracks recreated in Strudel
+- **Mobile-friendly** — The full experience works in a phone browser too
+- **Learn Strudel** — Strudel is a JS-based language for live music playback: powerful, and easy to pick up. oddeNova links to a full tutorial.
 
-## Quick Start
+## Local Quick Start
 
 ### Requirements
 
 - Node.js >= 18
 - API key from any of the following AI providers (optional):
   - [DeepSeek](https://platform.deepseek.com/)
-  - [Kimi (Moonshot)](https://platform.moonshot.cn/)
   - [OpenAI](https://platform.openai.com/)
   - [Anthropic](https://console.anthropic.com/) (Claude)
   - [GLM](https://open.bigmodel.cn/)
@@ -100,12 +116,6 @@ Open your browser at `http://localhost:5173`. On first use, select a provider an
 | `npm run lint` | ESLint code check |
 | `npm test` | Run unit tests (Vitest) |
 
-### One-Click Deploy to Vercel
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyiichuan%2FoddeNova)
-
-> LLM API keys are entered in the in-app UI. For the cron cleanup feature, configure `CRON_SECRET` in your Vercel project settings.
-
 ## How It Works
 
 Every text message you send triggers an AI Agent inference loop:
@@ -129,8 +139,8 @@ The Agent manages the complete Strudel code directly via `setCode`. Each convers
 
 > "I want some relaxing background music"
 > "Add something upbeat, like the vibe of a lazy afternoon coffee"
-> "The drum beat is too heavy, make it lighter"
-> "Speed up the rhythm, I want to dance"
+> "A simple drum part"
+> "Faster rhythm, brighter sound"
 
 **Advanced users · Precise control over every detail**
 
@@ -138,29 +148,6 @@ The Agent manages the complete Strudel code directly via `setCode`. Each convers
 > "Add a synth melody, more ambient, using a Fender Rhodes tone"
 > "Swap the snare for something more trap, add 808 bass"
 > "Shift everything to A minor, bump the tempo to 140"
-
-### Built-in Music Styles
-
-| Style | BPM Range | Character |
-|-------|-----------|-----------|
-| lo-fi | 70–90 | Lazy, grainy, soft drum hits |
-| house | 118–128 | Four-on-the-floor hi-hats, groove bass line |
-| dnb | 165–180 | High-speed breakbeats, deep low end |
-| ambient | 60–90 | Lots of space, atmospheric layering |
-| techno | 125–140 | Industrial percussion, looping groove |
-| synthwave | 90–110 | Retro synthesizers, 80s aesthetic |
-| trap | 130–160 | Hi-hat rolls, 808 bass |
-| jazz | 90–110 | Swing feel, jazz harmony |
-| blues | 72–100 | Soulful, earthy, 12-bar blues feel |
-| funk | 90–115 | Syncopated rhythms, strong groove |
-| bossanova | 90–130 | Brazilian jazz, elegant and flowing |
-| reggae | 60–90 | Jamaican roots, off-beat emphasis |
-| classical | 60–120 | Orchestral textures, structured harmony |
-| rnb | 70–100 | Soulful, laid-back groove |
-| folk | 70–100 | Warm and intimate, acoustic storytelling |
-| country | 80–130 | Southern American roots, twangy character |
-| latin | 100–135 | Latin heat, clave-driven rhythm |
-| afrobeat | 92–120 | West African groove, polyrhythmic layers |
 
 ## Tech Stack
 
