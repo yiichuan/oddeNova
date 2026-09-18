@@ -1,12 +1,11 @@
 /**
- * Node ≥26 ships its own `localStorage` global getter, which resolves to
- * undefined unless --localstorage-file is provided — and when the DOM
- * environment is installed onto globalThis that getter shadows the shim's
- * own Storage. The storage-backed code under test only ever needs the four
- * DOM calls, so a minimal stand-in is pinned in place — the guard keeps this
- * a no-op wherever the environment's own Storage is intact.
+ * Node ≥26 ships its own `localStorage` global. Without
+ * --localstorage-file it resolves to undefined and shadows happy-dom's
+ * Storage; with the flag it exposes native methods that Vitest cannot spy on
+ * reliably. Pin DOM tests to one in-memory implementation so both invocation
+ * modes have identical, isolated, spy-friendly behaviour.
  */
-if (typeof window !== 'undefined' && typeof localStorage === 'undefined') {
+if (typeof window !== 'undefined') {
   const entries = new Map<string, string>();
   const storage: Storage = {
     get length(): number {
