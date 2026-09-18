@@ -33,24 +33,28 @@ oddeNova is an【Agent for improvised music-making】. Talk to it, and build the
 **Like vibe coding, but for music**
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/oddenova-demo-dark.gif" />
-  <source media="(prefers-color-scheme: light)" srcset="docs/images/oddenova-demo-light.gif" />
-  <img src="docs/images/oddenova-demo-light.gif" alt="oddeNova Demo" width="100%" />
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/oddenova-demo-english-dark.gif" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/oddenova-demo-english-light.gif" />
+  <img src="docs/images/oddenova-demo-english-light.gif" alt="oddeNova Demo" width="100%" />
 </picture>
 
 ## For Whom
 
 For creators who care about music
+
 Whether you are scoring your own work, or the music is the work itself
+
 Whether you have no arrangement knowledge and have never opened a DAW, or know all of it by heart
 
 You are tired of formulaic template "hits", tired of gacha-style AI music
+
 You want the rhythm, the notes, the chords to be entirely part of what you are saying
 
 
 ## How You Interact
 
 Talk to oddeNova to generate and adjust the music, or edit the Strudel code driving playback yourself
+
 Your ideas and your choices are what the work is made of
 
 
