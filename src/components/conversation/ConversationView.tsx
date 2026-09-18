@@ -607,6 +607,7 @@ export default function ConversationView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const prevIsLoadingRef = useRef(false);
+  const prevHasDraftSegmentRef = useRef(false);
   // Once the first turn starts (in this component's lifetime — it remounts
   // per session, see the `key` in App.tsx), stays true so the top-anchor and
   // the turn filler survive a turn ending — whether by completion or
@@ -659,6 +660,7 @@ export default function ConversationView({
   // answer arrives, so this is the ordinary state of a reasoning chain of any
   // length, and the button is the way to the live end.
   const [reasoningOverflows, setReasoningOverflows] = useState(false);
+  const [reasoningViewportSize, setReasoningViewportSize] = useState({ width: 0, height: 0 });
   const isMobile = useIsMobile();
 
   /**
@@ -743,6 +745,11 @@ export default function ConversationView({
   const draftRevision = useMemo<CodeRevision | null>(() => {
     if (isLoading) return null;
     if (draftBase === null) return null;
+    // A commit updates the live draft and baseline together, while the
+    // debounced draft can still hold the previous take for 180ms. Do not let
+    // that stale value mount a phantom edit, move the filler, and scroll the
+    // reading away only to scroll it back when the debounce catches up.
+    if (draftCode === draftBase) return null;
     if (settledDraft === draftBase) return null;
     return {
       id: DRAFT_SEGMENT_ID,
@@ -751,7 +758,7 @@ export default function ConversationView({
       playbackStatus: 'not_attempted',
       createdAt: 0,
     };
-  }, [isLoading, settledDraft, draftBase]);
+  }, [isLoading, draftCode, settledDraft, draftBase]);
   /* Presence, deliberately not content: this is what the scroll effect watches,
      so the reading is brought to the segment once, when it appears, and then
      left alone for every keystroke that follows. */
@@ -954,6 +961,8 @@ export default function ConversationView({
     if (!el) return;
     const turnJustStarted = isLoading && !prevIsLoadingRef.current;
     prevIsLoadingRef.current = isLoading;
+    const draftJustAppeared = hasDraftSegment && !prevHasDraftSegmentRef.current;
+    prevHasDraftSegmentRef.current = hasDraftSegment;
     if (isVideoMode && !scrollBottom) {
       // [video] Video mode: display from the top; only scroll to bottom when scrollBottom=true
       el.scrollTop = 0;
@@ -987,24 +996,27 @@ export default function ConversationView({
           if (node === el) target = Math.min(bottomPin, top - topInset);
         }
       }
-      // Reveal the live reasoning window. A user bubble taller than the
-      // viewport pushes the streaming reasoning box below the fold at the
-      // top-anchor position above, so it would never be seen. Measure the
-      // box's own bottom (it's mounted only while reasoning streams) and, if
-      // it sits below the visible area, scroll down just enough to bring
-      // that bottom — the last streamed line, which the box's own internal
-      // scroll tracks — into view. Only ever scrolls further down than the
-      // top anchor (revealTarget > target), so short bubbles that already
-      // show the box keep it pinned at the top, untouched.
+      // Fit the reasoning window into the space below the anchored user
+      // bubble AND any progress rows. The loading filler still reserves a
+      // full viewport for stable scroll range, but its inner window must not
+      // fill all of that height: revealing that oversized window scrolls the
+      // user bubble offscreen, then brings it back when reasoning ends.
       const preEl = reasoningScrollRef.current;
       if (preEl) {
-        let rBottom = preEl.offsetHeight;
+        let reasoningTop = 0;
         let walk: HTMLElement | null = preEl;
         while (walk && walk !== el) {
-          rBottom += walk.offsetTop;
+          reasoningTop += walk.offsetTop;
           walk = walk.offsetParent as HTMLElement | null;
         }
         if (walk === el) {
+          const frame = preEl.parentElement;
+          if (frame && !isVideoMode) {
+            // Match the window's CSS min-height so long prompts still get a
+            // readable window, revealed below only when it truly cannot fit.
+            frame.style.maxHeight = `${Math.max(160, el.clientHeight - (reasoningTop - target) - 16)}px`;
+          }
+          const rBottom = reasoningTop + preEl.offsetHeight;
           const revealTarget = rBottom - el.clientHeight + 16;
           if (revealTarget > target) target = Math.min(bottomPin, revealTarget);
         }
@@ -1038,24 +1050,17 @@ export default function ConversationView({
       anchorTargetRef.current = target;
       if (!userScrolledRef.current) {
         const auto = autoScrollRef.current;
-        if (turnJustStarted) {
+        if (turnJustStarted || draftJustAppeared) {
           autoScrollRef.current = { target, until: performance.now() + 800 };
           el.scrollTo({ top: target, behavior: 'smooth' });
-        } else if (auto && performance.now() < auto.until) {
-          // Smooth flight in progress: retarget only if layout shifted.
-          if (Math.abs(auto.target - target) > 1) {
-            auto.target = target;
-            el.scrollTo({ top: target, behavior: 'smooth' });
-          }
-        } else if (Math.abs(el.scrollTop - target) > 8) {
-          // Target moved without a fresh turn — the reasoning window just
-          // appeared (or vanished) and the anchor needs to shift. Glide there
-          // smoothly, marking the flight so the scroll handler doesn't read
-          // its intermediate frames as a manual takeover.
-          autoScrollRef.current = { target, until: performance.now() + 800 };
-          el.scrollTo({ top: target, behavior: 'smooth' });
+        } else if (auto && performance.now() < auto.until && Math.abs(auto.target - target) <= 1) {
+          // Let an intentional reveal finish while its destination is stable.
         } else {
-          // Already in place (the common per-delta case): set exactly, no motion.
+          // Layout changes are not navigation. In particular, the reasoning
+          // window disappears before playback finishes and the final reply
+          // arrives. Animating that correction leaves the new reply moving
+          // through the old window's scroll position. Settle before paint and
+          // cancel any flight whose destination no longer matches the layout.
           autoScrollRef.current = null;
           el.scrollTop = target;
         }
@@ -1064,7 +1069,7 @@ export default function ConversationView({
       // streamed text is left where the reader put it, and the jump-to-latest
       // button below is what takes them to the live end when they want it.
     }
-  }, [messages, isLoading, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment]);
+  }, [messages, isLoading, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
   const { absorbedReasoningIds } = useMemo(() => {
@@ -1270,9 +1275,8 @@ export default function ConversationView({
   const reasoningWindowExpanded = reasoningWindowAvailable && !reasoningCollapsed;
 
   // Watch the live reasoning window for text arriving below its fold. The box's
-  // own border box never changes as the answer streams — its content is what
-  // grows — so the content element is observed alongside the window itself,
-  // which covers the case where the viewport is what moved. Subscribing reports
+  // content can grow without resizing the window, so observe both, plus the
+  // scrollport whose available height caps the window. Subscribing reports
   // once, and that first report is the initial measurement; a reader scrolling
   // the box re-measures through its own onScroll.
   // A layout effect, not a plain one: this reads layout, and measuring after
@@ -1281,12 +1285,18 @@ export default function ConversationView({
     const measure = (): void => {
       const box = reasoningScrollRef.current;
       setReasoningOverflows(box !== null && reasoningTailBelowFold(box) > REASONING_BOTTOM_EPS);
+      const width = scrollRef.current?.clientWidth ?? 0;
+      const height = scrollRef.current?.clientHeight ?? 0;
+      setReasoningViewportSize((previous) => previous.width === width && previous.height === height
+        ? previous
+        : { width, height });
     };
     measure();
     const el = reasoningScrollRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
     observer.observe(el);
+    if (scrollRef.current) observer.observe(scrollRef.current);
     // MarkdownText's own root: the single child holding the streamed text.
     const content = el.firstElementChild;
     if (content) observer.observe(content);
@@ -1734,10 +1744,9 @@ export default function ConversationView({
           </div>
           {reasoningWindowExpanded && streamingReasoningMsg && (
             // flex-1 (rather than a calc'd height) fills exactly whatever
-            // room the fixed height above leaves after the indicator row, so
-            // the reasoning box always reaches the loading block's own
-            // bottom — which, via turnFillerHeight, is the conversation's
-            // bottom edge — with no magic-number arithmetic to keep in sync.
+            // room the fixed height above leaves after the indicator row.
+            // The scroll layout effect caps this frame to the visible room
+            // below preceding messages; the outer filler keeps its height.
             // min-h-0 lets it size below its content's natural height, which
             // is what lets the scroll box's own h-full resolve to a real,
             // clipped value instead of just growing to fit the streamed text.
