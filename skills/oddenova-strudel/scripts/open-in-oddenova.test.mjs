@@ -20,10 +20,11 @@ import {
 
 const scriptPath = fileURLToPath(new URL('./open-in-oddenova.mjs', import.meta.url));
 const payload = {
-  protocolVersion: 2,
+  protocolVersion: 3,
   source: 'oddenova-strudel-skill',
   projectId: 'project-1',
   turnId: 'turn-1',
+  baseRevision: 0,
   title: '雨夜 Lo-fi',
   code: 'setcps(0.375)\nstack(s("bd"))',
   messages: [
@@ -49,7 +50,7 @@ test('explicit v1 link preserves all messages and Unicode', () => {
 
 test('explicit link refuses oversized content instead of truncating history', () => {
   const oversized = { ...payload, messages: [{ role: 'user', content: Buffer.from(crypto.getRandomValues(new Uint8Array(40_000))).toString('base64') }] };
-  assert.throws(() => fitPayloadToUrl(oversized), /use the local v2 connection/);
+  assert.throws(() => fitPayloadToUrl(oversized), /use the local v3 connection/);
 });
 
 test('launchImportUrl selects a detached platform command', () => {
@@ -108,12 +109,13 @@ test('main-module detection works through installed symlinks', () => {
   }
 });
 
-test('SKILL example is a valid v2 incremental turn with parseable code', () => {
+test('SKILL example is a valid v3 incremental turn with parseable code', () => {
   const skill = readFileSync(new URL('../SKILL.md', import.meta.url), 'utf8');
   const block = skill.match(/<<'JSON'\n([\s\S]*?)\nJSON/);
   assert.ok(block);
   const example = JSON.parse(block[1]);
-  assert.equal(example.protocolVersion, 2);
+  assert.equal(example.protocolVersion, 3);
+  assert.equal(example.baseRevision, 0);
   assert.equal(example.messages.length, 2);
   assert.equal(typeof example.turnId, 'string');
   assert.doesNotThrow(() => new Function(example.code));

@@ -1800,6 +1800,47 @@ describe('useSessions', () => {
     expect(getHook().currentId).toBe(branchId);
   });
 
+  it('merges v3 snapshots into the bound session without branching and preserves rich message fields', async () => {
+    const first = {
+      protocolVersion: 3 as const, source: 'oddenova-strudel-skill' as const,
+      projectId: 'v3-project', baseUrl: 'https://www.oddenova.com', revision: 1, skillRevision: 1, bindingId: 'binding-1',
+      title: 'V3 piece', code: 'skill one',
+      messages: [
+        { id: 'skill:turn-1:0', role: 'user' as const, content: 'make it', createdAt: 1, order: 1, updatedRevision: 1 },
+        { id: 'skill:turn-1:1', role: 'assistant' as const, content: 'made it', createdAt: 2, order: 2, updatedRevision: 1 },
+      ],
+      contentHash: 'v3-h1',
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => { await getHook().importOddeNovaBridgeSnapshot(first); });
+    const sessionId = getHook().currentId!;
+    act(() => getHook().addAssistantMessage('local rich reply', 'local code', sessionId, { beforeCode: 'a', afterCode: 'b', playbackStatus: 'played' }));
+    const local = getHook().currentSession!.messages.at(-1)!;
+    const second = {
+      ...first, revision: 3, skillRevision: 3, title: 'Skill wins', code: 'skill two', contentHash: 'v3-h3',
+      messages: [
+        ...first.messages,
+        { id: local.id, role: 'assistant' as const, content: local.content, createdAt: local.timestamp, order: 3, updatedRevision: 2 },
+        { id: 'skill:turn-2:0', role: 'user' as const, content: 'change it', createdAt: 4, order: 4, updatedRevision: 3 },
+      ],
+    };
+    let result;
+    await act(async () => {
+      result = await getHook().importOddeNovaBridgeSnapshot(second, { sessionId, code: 'unsent page draft' });
+    });
+    expect(result).toMatchObject({ outcome: 'updated', sessionId, codeChanged: true, skillRevision: 3 });
+    expect(getHook().sessions.filter((session) => session.externalSource?.projectId === 'v3-project')).toHaveLength(1);
+    expect(getHook().currentSession).toMatchObject({ id: sessionId, title: 'Skill wins', code: 'skill two' });
+    expect(getHook().currentSession!.messages.find((message) => message.id === local.id)).toMatchObject({
+      code: 'local code', revisionId: local.revisionId,
+    });
+    await act(async () => {
+      await getHook().importOddeNovaBridgeSnapshot({ ...second, bindingId: 'binding-2' });
+    });
+    expect(getHook().currentSession?.externalSource?.bindingId).toBe('binding-2');
+  });
+
   it('re-imports a long-titled skill session as an update, not a branch', async () => {
     /* The stored title is cut to the shared limit; the import hash has to be
        taken over that same string. Hashing the name as it arrived would make the

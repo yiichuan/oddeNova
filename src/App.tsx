@@ -7,7 +7,7 @@ import Sidebar from './components/conversation/Sidebar';
 import VizPlaceholder from './components/studio/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { makeGreetingMessage, useSessions, type OddeNovaBridgeImportResult } from './hooks/useSessions';
-import type { OddeNovaBridgeSnapshot } from './lib/oddenova-bridge';
+import type { AnyOddeNovaBridgeSnapshot } from './lib/oddenova-bridge';
 import type { OddeNovaImportPayload } from './lib/oddenova-import';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useDailySuggestions } from './hooks/useDailySuggestions';
@@ -811,7 +811,7 @@ export default function App() {
     sessions.isPersistent,
   );
   const importBridgeSnapshot = useCallback(
-    (snapshot: OddeNovaBridgeSnapshot) =>
+    (snapshot: AnyOddeNovaBridgeSnapshot) =>
       sessions.importOddeNovaBridgeSnapshot(
         snapshot,
         current?.id ? { sessionId: current.id, code: strudel.code } : undefined,
@@ -819,11 +819,17 @@ export default function App() {
     [current?.id, sessions, strudel.code],
   );
   const handleBridgeApplied = useCallback((
-    snapshot: OddeNovaBridgeSnapshot,
+    snapshot: AnyOddeNovaBridgeSnapshot,
     result: OddeNovaBridgeImportResult,
   ) => {
-    applyImportedCode(result.sessionId, snapshot.code);
-  }, [applyImportedCode]);
+    if (result.codeChanged !== false && (result.outcome === 'created' || current?.id === result.sessionId)) {
+      applyImportedCode(result.sessionId, snapshot.code);
+    }
+  }, [applyImportedCode, current?.id]);
+  const bridgeBoundSession = sessions.sessions.find((session) =>
+    session.externalSource?.type === 'oddenova-strudel-skill'
+    && (session.externalSource.protocolVersion === 2 || session.externalSource.protocolVersion === 3)
+  );
   const oddeNovaBridgeStatus = useOddeNovaBridge({
     importer: importBridgeSnapshot,
     isReady: !sessions.isLoading && !auth.loading && !auth.recoveringPassword,
@@ -834,6 +840,14 @@ export default function App() {
     isPersistent: sessions.isPersistent,
     ownerKey,
     onApplied: handleBridgeApplied,
+    pageState: bridgeBoundSession ? {
+      sessionId: bridgeBoundSession.id,
+      projectId: bridgeBoundSession.externalSource!.projectId,
+      revision: bridgeBoundSession.externalSource!.revision ?? 0,
+      title: bridgeBoundSession.title,
+      code: current?.id === bridgeBoundSession.id ? strudel.code : bridgeBoundSession.code,
+      messages: bridgeBoundSession.messages,
+    } : undefined,
   });
 
   /** Put the draft back in the editor and hand the typist their keys back. */

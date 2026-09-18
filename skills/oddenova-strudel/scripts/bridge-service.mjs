@@ -7,9 +7,14 @@ import { join } from 'node:path';
 
 import {
   MAX_BRIDGE_BODY_BYTES,
+  applyPageChange,
+  applySkillSubmission,
   appendSubmission,
   atomicWriteJson,
   makeSnapshot,
+  makeSnapshotV3,
+  migrateProjectToV3,
+  normalizeBaseUrl,
   projectPath,
   readJson,
   sha256,
@@ -24,6 +29,7 @@ const portPath = join(cacheDir, 'port.json');
 const serial = new Map();
 const waiters = new Map();
 const leases = new Map();
+const readRequests = new Map();
 let activePolls = 0;
 let lastActivityAt = Date.now();
 
@@ -57,14 +63,17 @@ async function readBody(request) {
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
-function notify(projectId) {
-  for (const resolve of waiters.get(projectId) ?? []) resolve();
-  waiters.delete(projectId);
+function identityKey(baseUrl, projectId) {
+  return `${normalizeBaseUrl(baseUrl)}\0${projectId}`;
 }
-function waitForUpdate(projectId, timeoutMs = 25_000) {
+function notify(key) {
+  for (const resolve of waiters.get(key) ?? []) resolve();
+  waiters.delete(key);
+}
+function waitForUpdate(key, timeoutMs = 25_000) {
   return new Promise((resolve) => {
-    const set = waiters.get(projectId) ?? new Set();
-    waiters.set(projectId, set);
+    const set = waiters.get(key) ?? new Set();
+    waiters.set(key, set);
     const done = () => { clearTimeout(timer); set.delete(done); resolve(); };
     const timer = setTimeout(done, timeoutMs);
     set.add(done);
@@ -72,7 +81,7 @@ function waitForUpdate(projectId, timeoutMs = 25_000) {
 }
 function bootstrapUrl(project, port, pairingToken) {
   const payload = Buffer.from(JSON.stringify({
-    protocolVersion: 2,
+    protocolVersion: project.schemaVersion === 2 ? 3 : 2,
     projectId: project.projectId,
     baseUrl: project.baseUrl,
     serviceOrigin: `http://127.0.0.1:${port}`,
@@ -84,6 +93,45 @@ async function findProject(projectId, baseUrl) {
   if (!baseUrl) throw new Error('baseUrl is required');
   const path = projectPath(cacheDir, baseUrl, projectId);
   return { path, project: await readJson(path) };
+}
+
+async function backupLegacyProject(path, project) {
+  if (!project || project.schemaVersion === 2) return;
+  const backupPath = `${path}.schema1.backup.json`;
+  if (!await readJson(backupPath)) await atomicWriteJson(backupPath, project);
+}
+
+async function readV3ProjectLocked(projectId, baseUrl, { delivery = false } = {}) {
+  const key = identityKey(baseUrl, projectId);
+  return withProjectLock(key, async () => {
+    const { path, project: raw } = await findProject(projectId, baseUrl);
+    if (!raw) return { key, path, project: undefined };
+    await backupLegacyProject(path, raw);
+    const project = migrateProjectToV3(raw);
+    if (delivery) project.lastDeliveryAt = Date.now();
+    if (raw.schemaVersion !== 2 || delivery) await atomicWriteJson(path, project);
+    return { key, path, project };
+  });
+}
+
+function authorizedPage(project, request, bodyOrUrl, { requireLease = true } = {}) {
+  const clientId = bodyOrUrl instanceof URLSearchParams ? bodyOrUrl.get('clientId') : bodyOrUrl.clientId;
+  if (!project || request.headers.origin !== project.targetOrigin || bearer(request) !== project.pageToken) return false;
+  if (project.schemaVersion === 2 && bodyOrUrl.bindingId !== project.bindingId) return false;
+  if (!requireLease) return true;
+  const lease = leases.get(identityKey(project.baseUrl, project.projectId));
+  return Boolean(clientId && lease?.clientId === clientId && lease.expiresAt > Date.now());
+}
+
+function waitForReadResponse(requestId, timeoutMs = 10_000) {
+  return new Promise((resolve) => {
+    const request = readRequests.get(requestId);
+    if (!request) return resolve(false);
+    const timer = setTimeout(() => {
+      if (readRequests.delete(requestId)) resolve(false);
+    }, timeoutMs);
+    request.resolve = (status = 'ready') => { clearTimeout(timer); readRequests.delete(requestId); resolve(status); };
+  });
 }
 
 const server = createServer(async (request, response) => {
@@ -110,15 +158,269 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === '/v2/health' && request.method === 'GET') {
       if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
-      return send(response, 200, { service: 'oddenova-strudel-bridge', pid: process.pid });
+      return send(response, 200, { service: 'oddenova-strudel-bridge', pid: process.pid, protocols: [2, 3], capabilities: ['bidirectional-sync', 'read-barrier'] });
+    }
+
+    if (url.pathname === '/v3/submit' && request.method === 'POST') {
+      if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
+      const submission = await readBody(request);
+      const key = identityKey(submission.baseUrl, submission.projectId);
+      const result = await withProjectLock(key, async () => {
+        const { path, project: raw } = await findProject(submission.projectId, submission.baseUrl);
+        await backupLegacyProject(path, raw);
+        const appended = applySkillSubmission(raw, submission);
+        let pairingToken;
+        if (!appended.project.pageToken && !appended.project.openedAt) {
+          pairingToken = token();
+          appended.project.pairTokenHash = sha256(pairingToken);
+          appended.project.pairTokenExpiresAt = Date.now() + 10 * 60_000;
+          appended.project.openedAt = Date.now();
+        }
+        await atomicWriteJson(path, appended.project);
+        notify(key);
+        return { ...appended, pairingToken };
+      });
+      return send(response, 200, {
+        accepted: true,
+        repeated: result.repeated,
+        acceptedRevision: result.acceptedRevision,
+        skillRevision: result.project.skillRevision,
+        overwroteConcurrentPageChange: result.overwroteConcurrentPageChange,
+        paired: Boolean(result.project.pageToken),
+        acknowledged: result.project.lastAck?.appliedRevision >= result.acceptedRevision,
+        bootstrapUrl: result.pairingToken ? bootstrapUrl(result.project, server.address().port, result.pairingToken) : undefined,
+      });
+    }
+
+    if (url.pathname === '/v3/pair' && request.method === 'POST') {
+      const body = await readBody(request);
+      const key = identityKey(body.baseUrl, body.projectId);
+      const result = await withProjectLock(key, async () => {
+        const { path, project: raw } = await findProject(body.projectId, body.baseUrl);
+        if (!raw || request.headers.origin !== raw.targetOrigin) throw Object.assign(new Error('Pairing origin does not match'), { status: 403 });
+        if (!raw.pairTokenHash || raw.pairTokenExpiresAt < Date.now() || sha256(body.pairingToken ?? '') !== raw.pairTokenHash) {
+          throw Object.assign(new Error('Pairing token is invalid or expired'), { status: 401 });
+        }
+        await backupLegacyProject(path, raw);
+        const project = migrateProjectToV3(raw);
+        project.pageToken = token();
+        project.bindingId = token();
+        project.pairedAt = Date.now();
+        project.pairTokenHash = undefined;
+        project.pairTokenExpiresAt = undefined;
+        await atomicWriteJson(path, project);
+        leases.delete(key);
+        return project;
+      });
+      return send(response, 200, { pageToken: result.pageToken, bindingId: result.bindingId, revision: result.revision, skillRevision: result.skillRevision }, cors(result, request));
+    }
+
+    if (url.pathname === '/v3/upgrade' && request.method === 'POST') {
+      const body = await readBody(request);
+      const key = identityKey(body.baseUrl, body.projectId);
+      const project = await withProjectLock(key, async () => {
+        const { path, project: raw } = await findProject(body.projectId, body.baseUrl);
+        if (!raw || request.headers.origin !== raw.targetOrigin || bearer(request) !== raw.pageToken) {
+          throw Object.assign(new Error('Connection is not authorized'), { status: 401 });
+        }
+        await backupLegacyProject(path, raw);
+        const migrated = migrateProjectToV3(raw);
+        migrated.bindingId ||= token();
+        await atomicWriteJson(path, migrated);
+        leases.set(key, { clientId: body.clientId, expiresAt: Date.now() + 35_000 });
+        return migrated;
+      });
+      return send(response, 200, { bindingId: project.bindingId, revision: project.revision, skillRevision: project.skillRevision, snapshot: makeSnapshotV3(project) }, cors(project, request));
+    }
+
+    if (url.pathname === '/v3/poll' && request.method === 'GET') {
+      const projectId = url.searchParams.get('projectId');
+      const baseUrl = url.searchParams.get('baseUrl');
+      const clientId = url.searchParams.get('clientId');
+      const bindingId = url.searchParams.get('bindingId');
+      const after = Number(url.searchParams.get('after') ?? 0);
+      const key = identityKey(baseUrl, projectId);
+      let found = await readV3ProjectLocked(projectId, baseUrl);
+      let project = found.project;
+      if (!project || request.headers.origin !== project.targetOrigin || bearer(request) !== project.pageToken || bindingId !== project.bindingId) {
+        return send(response, 401, { error: 'Connection is not authorized' }, project ? cors(project, request) : {});
+      }
+      const lease = leases.get(key);
+      if (lease && lease.clientId !== clientId && lease.expiresAt > Date.now()) {
+        return send(response, 409, { error: 'Another page is receiving this project' }, cors(project, request));
+      }
+      leases.set(key, { clientId, expiresAt: Date.now() + 35_000 });
+      const pendingReads = [...readRequests.entries()].filter(([, item]) => item.key === key && item.bindingId === bindingId).map(([requestId]) => requestId);
+      if (project.revision <= after && pendingReads.length === 0) {
+        activePolls += 1;
+        try { await waitForUpdate(key); } finally { activePolls -= 1; }
+        found = await readV3ProjectLocked(projectId, baseUrl);
+        project = found.project;
+      }
+      if (!project || request.headers.origin !== project.targetOrigin || bearer(request) !== project.pageToken || bindingId !== project.bindingId) {
+        return send(response, 401, { error: 'Connection is no longer authorized' }, project ? cors(project, request) : {});
+      }
+      const refreshRequestIds = [...readRequests.entries()].filter(([, item]) => item.key === key && item.bindingId === bindingId).map(([requestId]) => requestId);
+      if (project.revision <= after && refreshRequestIds.length === 0) return send(response, 204, undefined, cors(project, request));
+      found = await readV3ProjectLocked(projectId, baseUrl, { delivery: true });
+      project = found.project;
+      if (!project || bindingId !== project.bindingId) return send(response, 409, { error: 'Binding changed while polling' });
+      return send(response, 200, { snapshot: makeSnapshotV3(project), refreshRequestIds }, cors(project, request));
+    }
+
+    if (url.pathname === '/v3/page-change' && request.method === 'POST') {
+      const change = await readBody(request);
+      const key = identityKey(change.baseUrl, change.projectId);
+      const result = await withProjectLock(key, async () => {
+        const { path, project: raw } = await findProject(change.projectId, change.baseUrl);
+        const project = migrateProjectToV3(raw);
+        if (!authorizedPage(project, request, change)) throw Object.assign(new Error('Connection is not authorized or active'), { status: 401 });
+        const changed = applyPageChange(project, change);
+        await atomicWriteJson(path, changed.project);
+        notify(key);
+        return changed;
+      });
+      return send(response, 200, {
+        accepted: true,
+        repeated: result.repeated,
+        acceptedRevision: result.acceptedRevision,
+        staleContent: result.staleContent,
+        contentApplied: result.contentApplied,
+        messageChanged: result.messageChanged,
+        snapshot: result.snapshot,
+      }, cors(result.project, request));
+    }
+
+    if (url.pathname === '/v3/read' && request.method === 'POST') {
+      if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
+      const body = await readBody(request);
+      const key = identityKey(body.baseUrl, body.projectId);
+      const found = await readV3ProjectLocked(body.projectId, body.baseUrl);
+      const project = found.project;
+      if (!project) return send(response, 200, { status: 'not_found', freshness: 'none' });
+      const lease = leases.get(key);
+      if (!project.pageToken || !lease || lease.expiresAt <= Date.now()) {
+        return send(response, 200, { status: 'page_unavailable', freshness: 'cached', snapshot: makeSnapshotV3(project) });
+      }
+      const requestId = token();
+      readRequests.set(requestId, { key, bindingId: project.bindingId });
+      notify(key);
+      const confirmed = await waitForReadResponse(requestId);
+      const latest = (await readV3ProjectLocked(body.projectId, body.baseUrl)).project;
+      return send(response, 200, confirmed === 'ready'
+        ? { status: 'ready', freshness: 'page_confirmed', confirmedAt: Date.now(), snapshot: makeSnapshotV3(latest) }
+        : { status: confirmed === 'busy' ? 'busy' : 'page_unavailable', freshness: 'cached', snapshot: makeSnapshotV3(latest) });
+    }
+
+    if (url.pathname === '/v3/read-response' && request.method === 'POST') {
+      const body = await readBody(request);
+      const key = identityKey(body.baseUrl, body.projectId);
+      const { project: raw } = await findProject(body.projectId, body.baseUrl);
+      const project = migrateProjectToV3(raw);
+      if (!authorizedPage(project, request, body)) return send(response, 401, { error: 'Connection is not authorized or active' }, project ? cors(project, request) : {});
+      const pending = readRequests.get(body.requestId);
+      if (!pending || pending.key !== key || pending.bindingId !== body.bindingId) return send(response, 409, { error: 'Read request is no longer active' }, cors(project, request));
+      if (body.status === 'busy') {
+        pending.resolve?.('busy');
+        return send(response, 200, { completed: true, busy: true }, cors(project, request));
+      }
+      pending.resolve?.('ready');
+      return send(response, 200, { completed: true }, cors(project, request));
+    }
+
+    if (url.pathname === '/v3/ack' && request.method === 'POST') {
+      const body = await readBody(request);
+      const key = identityKey(body.baseUrl, body.projectId);
+      const project = await withProjectLock(key, async () => {
+        const { path, project: raw } = await findProject(body.projectId, body.baseUrl);
+        const current = migrateProjectToV3(raw);
+        if (!authorizedPage(current, request, body)) throw Object.assign(new Error('Connection is not authorized or active'), { status: 401 });
+        if (!Number.isInteger(body.appliedRevision) || body.appliedRevision < 0 || body.appliedRevision > current.revision) throw new Error('Invalid appliedRevision');
+        if (!current.lastAck || body.appliedRevision >= (current.lastAck.appliedRevision ?? current.lastAck.revision ?? 0)) {
+          current.lastAck = { appliedRevision: body.appliedRevision, appliedSkillRevision: body.appliedSkillRevision, sessionId: body.sessionId, outcome: body.outcome, persistent: body.persistent, at: Date.now() };
+          await atomicWriteJson(path, current);
+        }
+        return current;
+      });
+      return send(response, 200, { acknowledged: true }, cors(project, request));
+    }
+
+    if (url.pathname === '/v3/disconnect' && request.method === 'POST') {
+      const body = await readBody(request);
+      const key = identityKey(body.baseUrl, body.projectId);
+      const project = await withProjectLock(key, async () => {
+        const { path, project: raw } = await findProject(body.projectId, body.baseUrl);
+        const current = migrateProjectToV3(raw);
+        if (!authorizedPage(current, request, body)) throw Object.assign(new Error('Connection is not authorized or active'), { status: 401 });
+        current.pageToken = undefined;
+        current.bindingId = undefined;
+        current.pairedAt = undefined;
+        await atomicWriteJson(path, current);
+        return current;
+      });
+      leases.delete(key);
+      notify(key);
+      return send(response, 200, { disconnected: true }, cors(project, request));
+    }
+
+    if (url.pathname === '/v3/status' && request.method === 'GET') {
+      if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
+      const { project } = await readV3ProjectLocked(url.searchParams.get('projectId'), url.searchParams.get('baseUrl'));
+      if (!project) return send(response, 404, { error: 'Project cache not found' });
+      const lease = leases.get(identityKey(project.baseUrl, project.projectId));
+      return send(response, 200, {
+        projectId: project.projectId, revision: project.revision, skillRevision: project.skillRevision,
+        paired: Boolean(project.pageToken), messageCount: project.messages.length, lastAck: project.lastAck,
+        pageConnected: Boolean(lease && lease.expiresAt > Date.now()),
+        pending: !project.lastAck || (project.lastAck.appliedRevision ?? 0) < project.revision,
+      });
+    }
+
+    if (url.pathname === '/v3/retry' && request.method === 'POST') {
+      if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
+      const body = await readBody(request);
+      const { project } = await readV3ProjectLocked(body.projectId, body.baseUrl);
+      if (!project) return send(response, 404, { error: 'Project cache not found' });
+      notify(identityKey(project.baseUrl, project.projectId));
+      return send(response, 200, { projectId: project.projectId, revision: project.revision, pending: !project.lastAck || (project.lastAck.appliedRevision ?? 0) < project.revision });
+    }
+
+    if (url.pathname === '/v3/reopen' && request.method === 'POST') {
+      if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
+      const body = await readBody(request);
+      const key = identityKey(body.baseUrl, body.projectId);
+      const result = await withProjectLock(key, async () => {
+        const { path, project: raw } = await findProject(body.projectId, body.baseUrl);
+        await backupLegacyProject(path, raw);
+        const project = migrateProjectToV3(raw);
+        if (!project) throw Object.assign(new Error('Project cache not found'), { status: 404 });
+        const pairingToken = token();
+        project.pairTokenHash = sha256(pairingToken);
+        project.pairTokenExpiresAt = Date.now() + 10 * 60_000;
+        project.openedAt = Date.now();
+        await atomicWriteJson(path, project);
+        return { project, pairingToken };
+      });
+      return send(response, 200, { bootstrapUrl: bootstrapUrl(result.project, server.address().port, result.pairingToken) });
+    }
+
+    if (url.pathname === '/v3/clear' && request.method === 'POST') {
+      if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
+      const body = await readBody(request);
+      const key = identityKey(body.baseUrl, body.projectId);
+      await rm(projectPath(cacheDir, body.baseUrl, body.projectId), { force: true });
+      leases.delete(key);
+      notify(key);
+      return send(response, 200, { cleared: true });
     }
 
     if (url.pathname === '/v2/submit' && request.method === 'POST') {
       if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
       const submission = await readBody(request);
-      const key = `${submission.baseUrl}\0${submission.projectId}`;
+      const key = identityKey(submission.baseUrl, submission.projectId);
       const result = await withProjectLock(key, async () => {
         const { path, project: existing } = await findProject(submission.projectId, submission.baseUrl);
+        if (existing?.schemaVersion === 2) throw Object.assign(new Error('Project requires protocol v3'), { status: 409 });
         const appended = appendSubmission(existing, submission);
         let pairingToken;
         if (!appended.project.pageToken && !appended.project.openedAt) {
@@ -128,7 +430,7 @@ const server = createServer(async (request, response) => {
           appended.project.openedAt = Date.now();
         }
         await atomicWriteJson(path, appended.project);
-        notify(appended.project.projectId);
+        notify(key);
         return { ...appended, pairingToken };
       });
       return send(response, 200, {
@@ -145,6 +447,7 @@ const server = createServer(async (request, response) => {
       const body = await readBody(request);
       const { path, project } = await findProject(body.projectId, body.baseUrl);
       if (!project || request.headers.origin !== project.targetOrigin) return send(response, 403, { error: 'Pairing origin does not match' });
+      if (project.schemaVersion === 2) return send(response, 426, { error: 'Project requires protocol v3' }, cors(project, request));
       if (!project.pairTokenHash || project.pairTokenExpiresAt < Date.now() || sha256(body.pairingToken ?? '') !== project.pairTokenHash) {
         return send(response, 401, { error: 'Pairing token is invalid or expired' }, cors(project, request));
       }
@@ -161,19 +464,21 @@ const server = createServer(async (request, response) => {
       const baseUrl = url.searchParams.get('baseUrl');
       const clientId = url.searchParams.get('clientId');
       const after = Number(url.searchParams.get('after') ?? 0);
+      const key = identityKey(baseUrl, projectId);
       let found = await findProject(projectId, baseUrl);
       const project = found.project;
       if (!project || request.headers.origin !== project.targetOrigin || bearer(request) !== project.pageToken) {
         return send(response, 401, { error: 'Connection is not authorized' }, project ? cors(project, request) : {});
       }
-      const lease = leases.get(projectId);
+      if (project.schemaVersion === 2) return send(response, 426, { error: 'Project requires protocol v3' }, cors(project, request));
+      const lease = leases.get(key);
       if (lease && lease.clientId !== clientId && lease.expiresAt > Date.now()) {
         return send(response, 409, { error: 'Another page is receiving this project' }, cors(project, request));
       }
-      leases.set(projectId, { clientId, expiresAt: Date.now() + 35_000 });
+      leases.set(key, { clientId, expiresAt: Date.now() + 35_000 });
       if (project.revision <= after) {
         activePolls += 1;
-        try { await waitForUpdate(projectId); } finally { activePolls -= 1; }
+        try { await waitForUpdate(key); } finally { activePolls -= 1; }
         found = await findProject(projectId, baseUrl);
       }
       const latest = found.project;
@@ -189,6 +494,7 @@ const server = createServer(async (request, response) => {
       if (!project || request.headers.origin !== project.targetOrigin || bearer(request) !== project.pageToken) {
         return send(response, 401, { error: 'Connection is not authorized' }, project ? cors(project, request) : {});
       }
+      if (project.schemaVersion === 2) return send(response, 426, { error: 'Project requires protocol v3' }, cors(project, request));
       if (!Number.isInteger(body.revision) || body.revision < 1 || body.revision > project.revision) {
         return send(response, 400, { error: 'Invalid revision' }, cors(project, request));
       }
@@ -218,7 +524,7 @@ const server = createServer(async (request, response) => {
       const body = await readBody(request);
       const { project } = await findProject(body.projectId, body.baseUrl);
       if (!project) return send(response, 404, { error: 'Project cache not found' });
-      notify(project.projectId);
+      notify(identityKey(project.baseUrl, project.projectId));
       return send(response, 200, {
         projectId: project.projectId,
         revision: project.revision,
@@ -243,8 +549,9 @@ const server = createServer(async (request, response) => {
       if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
       const body = await readBody(request);
       await rm(projectPath(cacheDir, body.baseUrl, body.projectId), { force: true });
-      leases.delete(body.projectId);
-      notify(body.projectId);
+      const key = identityKey(body.baseUrl, body.projectId);
+      leases.delete(key);
+      notify(key);
       return send(response, 200, { cleared: true });
     }
 

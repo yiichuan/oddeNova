@@ -3,7 +3,7 @@ export const ODDENOVA_BRIDGE_BOOTSTRAP_KEY = 'oddenova_bridge_bootstrap_v2';
 export const ODDENOVA_BRIDGE_CONNECTION_KEY = 'oddenova_bridge_connection_v2';
 
 export interface OddeNovaBridgeBootstrap {
-  protocolVersion: 2;
+  protocolVersion: 2 | 3;
   projectId: string;
   baseUrl: string;
   serviceOrigin: string;
@@ -15,6 +15,15 @@ export interface OddeNovaBridgeMessage {
   role: 'user' | 'assistant';
   content: string;
   receivedAt: number;
+}
+
+export interface OddeNovaBridgeMessageV3 {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+  order: number;
+  updatedRevision: number;
 }
 
 export interface OddeNovaBridgeSnapshot {
@@ -29,6 +38,23 @@ export interface OddeNovaBridgeSnapshot {
   contentHash: string;
 }
 
+export interface OddeNovaBridgeSnapshotV3 {
+  protocolVersion: 3;
+  source: 'oddenova-strudel-skill';
+  projectId: string;
+  baseUrl: string;
+  revision: number;
+  skillRevision: number;
+  bindingId?: string;
+  title: string;
+  code: string;
+  messages: OddeNovaBridgeMessageV3[];
+  locale?: 'zh-CN' | 'en';
+  contentHash: string;
+}
+
+export type AnyOddeNovaBridgeSnapshot = OddeNovaBridgeSnapshot | OddeNovaBridgeSnapshotV3;
+
 export interface StoredOddeNovaBridgeConnection {
   projectId: string;
   baseUrl: string;
@@ -37,6 +63,8 @@ export interface StoredOddeNovaBridgeConnection {
   ownerKey: string;
   clientId: string;
   lastRevision: number;
+  lastSkillRevision?: number;
+  bindingId?: string;
 }
 
 function decodeJson(encoded: string): unknown {
@@ -61,7 +89,7 @@ export function parseOddeNovaBridgeBootstrap(value: unknown): OddeNovaBridgeBoot
   if (!value || typeof value !== 'object') return undefined;
   const candidate = value as Record<string, unknown>;
   if (
-    candidate.protocolVersion !== 2
+    (candidate.protocolVersion !== 2 && candidate.protocolVersion !== 3)
     || typeof candidate.projectId !== 'string' || !candidate.projectId
     || typeof candidate.baseUrl !== 'string'
     || typeof candidate.pairingToken !== 'string' || !candidate.pairingToken
@@ -99,12 +127,15 @@ export function readStoredBridgeConnection(): StoredOddeNovaBridgeConnection | u
   }
 }
 
-export function isOddeNovaBridgeSnapshot(value: unknown): value is OddeNovaBridgeSnapshot {
+export function isOddeNovaBridgeSnapshot(value: unknown): value is AnyOddeNovaBridgeSnapshot {
   if (!value || typeof value !== 'object') return false;
   const snapshot = value as Record<string, unknown>;
-  return snapshot.protocolVersion === 2
+  const version = snapshot.protocolVersion;
+  return (version === 2 || version === 3)
     && snapshot.source === 'oddenova-strudel-skill'
     && typeof snapshot.projectId === 'string'
+    && (version === 2 || typeof snapshot.baseUrl === 'string')
+    && (version === 2 || snapshot.bindingId === undefined || typeof snapshot.bindingId === 'string')
     && Number.isInteger(snapshot.revision) && Number(snapshot.revision) > 0
     && typeof snapshot.title === 'string'
     && typeof snapshot.code === 'string'
@@ -116,7 +147,11 @@ export function isOddeNovaBridgeSnapshot(value: unknown): value is OddeNovaBridg
       return typeof item.id === 'string'
         && (item.role === 'user' || item.role === 'assistant')
         && typeof item.content === 'string'
-        && typeof item.receivedAt === 'number';
+        && (version === 2
+          ? typeof item.receivedAt === 'number'
+          : typeof item.createdAt === 'number'
+            && Number.isInteger(item.order)
+            && Number.isInteger(item.updatedRevision));
     });
 }
 
@@ -134,11 +169,11 @@ async function stableSha256(value: unknown): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function digestOddeNovaBridgeMessage(message: OddeNovaBridgeMessage): Promise<string> {
+export function digestOddeNovaBridgeMessage(message: OddeNovaBridgeMessage | OddeNovaBridgeMessageV3): Promise<string> {
   return stableSha256(message);
 }
 
-export async function verifyOddeNovaBridgeSnapshot(snapshot: OddeNovaBridgeSnapshot): Promise<boolean> {
+export async function verifyOddeNovaBridgeSnapshot(snapshot: AnyOddeNovaBridgeSnapshot): Promise<boolean> {
   const content: Record<string, unknown> = {
     projectId: snapshot.projectId,
     revision: snapshot.revision,
@@ -146,6 +181,10 @@ export async function verifyOddeNovaBridgeSnapshot(snapshot: OddeNovaBridgeSnaps
     code: snapshot.code,
     messages: snapshot.messages,
   };
+  if (snapshot.protocolVersion === 3) {
+    content.baseUrl = snapshot.baseUrl;
+    content.skillRevision = snapshot.skillRevision;
+  }
   if (snapshot.locale !== undefined) content.locale = snapshot.locale;
   return await stableSha256(content) === snapshot.contentHash;
 }

@@ -30,7 +30,7 @@ export function buildImportUrl(payload, baseUrl = DEFAULT_BASE_URL) {
 export function fitPayloadToUrl(payload, baseUrl = DEFAULT_BASE_URL) {
   const url = buildImportUrl(payload, baseUrl);
   if (Buffer.byteLength(url, 'utf8') > MAX_IMPORT_URL_BYTES) {
-    throw new Error('Import URL exceeds 32 KiB; use the local v2 connection instead');
+    throw new Error('Import URL exceeds 32 KiB; use the local v3 connection instead');
   }
   return { payload: structuredClone(payload), url };
 }
@@ -85,7 +85,7 @@ function parseArguments(argv) {
       options.baseUrl = value;
     } else if (argument === '--link') options.link = true;
     else if (argument === '--print-only') { options.link = true; options.printOnly = true; }
-    else if (['--status', '--retry', '--reopen', '--stop', '--clear'].includes(argument)) options.command = argument.slice(2);
+    else if (['--pull', '--status', '--retry', '--reopen', '--stop', '--clear'].includes(argument)) options.command = argument.slice(2);
     else throw new Error(`Unknown argument: ${argument}`);
   }
   return options;
@@ -113,7 +113,7 @@ async function healthyRuntime(cacheDir) {
   if (!runtime?.port || !runtime?.adminToken) return undefined;
   try {
     const health = await bridgeRequest(runtime, '/v2/health');
-    return health.service === 'oddenova-strudel-bridge' ? runtime : undefined;
+    return health.service === 'oddenova-strudel-bridge' ? { ...runtime, capabilities: health.capabilities ?? [], protocols: health.protocols ?? [2] } : undefined;
   } catch {
     return undefined;
   }
@@ -188,26 +188,33 @@ export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
       deps.stdout.write('Stopped the oddeNova local bridge. Pending project caches were kept.\n');
       return 0;
     }
+    if (!runtime.protocols?.includes(3)) {
+      if (options.command === 'pull') {
+        deps.stdout.write(`${JSON.stringify({ status: 'upgrade_required', freshness: 'none' })}\n`);
+        return 2;
+      }
+      throw new Error('The running oddeNova bridge is outdated. Run --stop, then retry to start the v3 bridge.');
+    }
     if (!input.projectId) throw new Error(`${options.command} requires projectId on stdin`);
     const identity = { projectId: input.projectId, baseUrl };
     if (options.command === 'status') {
       const query = new URLSearchParams(identity).toString();
-      const status = await bridgeRequest(runtime, `/v2/status?${query}`);
+      const status = await bridgeRequest(runtime, `/v3/status?${query}`);
       deps.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
       return 0;
     }
     if (options.command === 'retry') {
-      const status = await bridgeRequest(runtime, '/v2/retry', { method: 'POST', body: identity });
+      const status = await bridgeRequest(runtime, '/v3/retry', { method: 'POST', body: identity });
       deps.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
       return 0;
     }
     if (options.command === 'clear') {
-      await bridgeRequest(runtime, '/v2/clear', { method: 'POST', body: identity });
+      await bridgeRequest(runtime, '/v3/clear', { method: 'POST', body: identity });
       deps.stdout.write(`Cleared cached project ${input.projectId}.\n`);
       return 0;
     }
     if (options.command === 'reopen') {
-      const result = await bridgeRequest(runtime, '/v2/reopen', { method: 'POST', body: identity });
+      const result = await bridgeRequest(runtime, '/v3/reopen', { method: 'POST', body: identity });
       const fallbackPath = writeFallbackLinkFile(result.bootstrapUrl, input.projectId);
       deps.stdout.write(`Opening a new connection entry page for project ${input.projectId}.\n`);
       deps.stdout.write(`If the browser did not open, open this file: ${fallbackPath}\n`);
@@ -215,18 +222,26 @@ export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
       return 0;
     }
 
+    if (options.command === 'pull') {
+      const result = await bridgeRequest(runtime, '/v3/read', { method: 'POST', body: identity });
+      deps.stdout.write(`${JSON.stringify(result)}\n`);
+      return result.status === 'ready' || result.status === 'not_found' ? 0 : 2;
+    }
+
     const submission = { ...input, protocolVersion: BRIDGE_PROTOCOL_VERSION, source: BRIDGE_SOURCE, baseUrl };
     validateSubmission(submission);
-    const result = await bridgeRequest(runtime, '/v2/submit', { method: 'POST', body: submission });
+    const result = await bridgeRequest(runtime, '/v3/submit', { method: 'POST', body: submission });
     if (result.bootstrapUrl) {
       const fallbackPath = writeFallbackLinkFile(result.bootstrapUrl, input.projectId);
-      deps.stdout.write(`Saved revision ${result.revision}; opening oddeNova to connect this project.\n`);
+      deps.stdout.write(`Saved revision ${result.acceptedRevision}; opening oddeNova to connect this project.\n`);
       deps.stdout.write(`If the browser did not open, open this file: ${fallbackPath}\n`);
       launchImportUrl(result.bootstrapUrl, { platform: deps.platform, spawn: deps.spawn, warn: (message) => deps.stderr.write(`${message}\n`) });
     } else if (result.acknowledged) {
-      deps.stdout.write(`Revision ${result.revision} is already applied in the connected oddeNova page.\n`);
+      deps.stdout.write(`Revision ${result.acceptedRevision} is already applied in the connected oddeNova page.\n`);
+    } else if (!result.paired) {
+      deps.stdout.write(`Saved revision ${result.acceptedRevision}; no page is paired. Run --reopen to reconnect explicitly.\n`);
     } else {
-      deps.stdout.write(`Saved revision ${result.revision}; it is queued for the connected oddeNova page.\n`);
+      deps.stdout.write(`Saved revision ${result.acceptedRevision}; it is queued for the connected oddeNova page.\n`);
     }
     if (runtime.portChanged) {
       deps.stdout.write('The previous local port could not be reused. Run --reopen for this project to pair a page with the new port.\n');

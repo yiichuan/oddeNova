@@ -519,6 +519,28 @@ describe('normalizeSession', () => {
     expect(normalized.code).toBe('s("bd")');
   });
 
+  it('persists bridge outbox entries within owner, project, and binding boundaries', async () => {
+    const { deleteBridgeOutboxEntry, getBridgeOutboxEntries, putBridgeOutboxEntry, rebindBridgeOutboxEntries } = await import('../session-storage');
+    const entry = {
+      ownerKey: 'user:u-1', projectKey: 'origin\0project', bindingId: 'binding-1', changeId: 'change-1',
+      payload: { code: 'page edit' }, createdAt: 1,
+    };
+    await putBridgeOutboxEntry(entry);
+    await putBridgeOutboxEntry({ ...entry, ownerKey: 'user:u-2', changeId: 'change-2', createdAt: 2 });
+    expect(await getBridgeOutboxEntries('user:u-1', entry.projectKey, entry.bindingId)).toEqual([entry]);
+    await deleteBridgeOutboxEntry(entry);
+    expect(await getBridgeOutboxEntries('user:u-1', entry.projectKey, entry.bindingId)).toEqual([]);
+    expect(await getBridgeOutboxEntries('user:u-2', entry.projectKey, entry.bindingId)).toHaveLength(1);
+    await rebindBridgeOutboxEntries('user:u-2', entry.projectKey, 'binding-2', 'client-2');
+    expect(await getBridgeOutboxEntries('user:u-2', entry.projectKey, entry.bindingId)).toEqual([]);
+    expect(await getBridgeOutboxEntries('user:u-2', entry.projectKey, 'binding-2')).toEqual([
+      expect.objectContaining({
+        bindingId: 'binding-2',
+        payload: expect.objectContaining({ bindingId: 'binding-2', clientId: 'client-2' }),
+      }),
+    ]);
+  });
+
   it('leaves an empty title empty, for the caller\u2019s own stand-in', async () => {
     const { normalizeSession } = await import('../session-storage');
     expect(normalizeSession({

@@ -56,3 +56,13 @@ it('validates stable-message v2 snapshots', () => {
     contentHash: 'hash',
   })).toBe(true);
 });
+
+it('accepts canonical v3 snapshots and rejects incomplete v3 message metadata', () => {
+  const snapshot = {
+    protocolVersion: 3, source: 'oddenova-strudel-skill', projectId: 'p-1', baseUrl: window.location.origin, revision: 2, skillRevision: 1,
+    title: 'Piece', code: 'stack()', contentHash: 'hash',
+    messages: [{ id: 'm1', role: 'user', content: 'make it', createdAt: 1, order: 1, updatedRevision: 1 }],
+  };
+  expect(isOddeNovaBridgeSnapshot(snapshot)).toBe(true);
+  expect(isOddeNovaBridgeSnapshot({ ...snapshot, messages: [{ id: 'm1', role: 'user', content: 'make it', createdAt: 1 }] })).toBe(false);
+});
