@@ -3,7 +3,6 @@ import { ArrowUpIcon, StopIcon } from '../icons';
 import ThinkingLevelControl from './ThinkingLevelControl';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
-import { isDemoMode } from '../../demo/demo-config';
 import type { AgentEntryPoint } from '../../lib/analytics';
 import type { InputMode } from '../../hooks/useChat';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -66,9 +65,9 @@ interface ChatInputProps {
   /**
    * Triggers mood-based generation (fetches AirJelly context, then runs a
    * no-history turn). When provided, a "mood generate" suggestion is appended
-   * to the rotation — but only once AirJelly is confirmed reachable (or in
-   * demo mode), same gating as the button this replaced. Adopting that one
-   * specific suggestion and sending it calls this instead of onSendText.
+   * to the rotation — but only once AirJelly is confirmed reachable. Adopting
+   * that one specific suggestion and sending it calls this instead of
+   * onSendText.
    */
   onMoodGenerate?: () => Promise<void> | void;
 }
@@ -99,12 +98,11 @@ export default function ChatInput({
   // on-screen keyboard is up.
   const [focused, setFocused] = useState(false);
 
-  // AirJelly reachability, checked once on mount — same gating the removed
-  // mood button used: Windows is excluded (AirJelly Desktop doesn't support
-  // it), demo mode always shows it regardless of a real connection. Runs
-  // once regardless of onMoodGenerate's identity (a fresh useCallback most
-  // renders) — only whether the caller passes one at all matters, and that's
-  // fixed per call site (Sidebar always does, the mobile layout never does).
+  // AirJelly reachability, checked once on mount — Windows is excluded
+  // (AirJelly Desktop doesn't support it). Runs once regardless of
+  // onMoodGenerate's identity (a fresh useCallback most renders) — only
+  // whether the caller passes one at all matters, and that's fixed per call
+  // site (Sidebar owns the desktop entry point, the mobile layout never does).
   const [airjellyAvailable, setAirjellyAvailable] = useState(false);
   useEffect(() => {
     if (!onMoodGenerate) return;
@@ -112,7 +110,7 @@ export default function ChatInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const moodSuggestionActive =
-    !!onMoodGenerate && !isVideoMode && !navigator.userAgent.includes('Windows') && (airjellyAvailable || isDemoMode());
+    !!onMoodGenerate && !isVideoMode && !navigator.userAgent.includes('Windows') && airjellyAvailable;
   const moodSuggestion = t('moodGenerate');
   // Disables the input for the gap between adopting the mood suggestion and
   // `runTurn` actually starting (isLoading only flips true once the AirJelly
