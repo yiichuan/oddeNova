@@ -833,6 +833,106 @@ describe('ConversationView chat streaming', () => {
     expect(box.scrollTop).toBe(800);
   });
 
+  it.each([350, 430, 900])('fits reasoning below progress at %ipx before considering a scroll', (reasoningTop) => {
+    const resize = stubResizeObserver();
+    try {
+      setMobileViewport(false);
+      const user: ChatMessage = { id: 'u1', role: 'user', content: '来点鼓', timestamp: 1 };
+      const reasoning: ChatMessage = {
+        id: 'r1', role: 'progress', content: '检查鼓点', progressKind: 'reasoning', timestamp: 2,
+      };
+      const { container, root, render } = renderConversationView([user]);
+      roots.push(root);
+      const box = container.querySelector<HTMLElement>('.conversation-scroll')!;
+      const bubble = box.querySelector<HTMLElement>('[data-rollback-bubble="u1"]')!;
+      Object.defineProperties(box, {
+        clientHeight: { configurable: true, writable: true, value: 500 },
+        scrollHeight: { configurable: true, value: 1500 },
+      });
+      Object.defineProperties(bubble, {
+        offsetParent: { configurable: true, value: box },
+        offsetTop: { configurable: true, value: 200 },
+      });
+      box.scrollTo = ((options: ScrollToOptions) => { box.scrollTop = options.top ?? 0; }) as typeof box.scrollTo;
+      render({ isLoading: true }, [user, reasoning]);
+      act(() => box.dispatchEvent(new Event('scroll')));
+      const window = box.querySelector<HTMLElement>('[data-markdown-text]')!.parentElement!;
+      const frame = window.parentElement!;
+      // Model flex sizing: the window normally fills 600px, but must respect
+      // the available-space cap. happy-dom does not calculate CSS layout.
+      Object.defineProperties(window, {
+        offsetParent: { configurable: true, value: box },
+        offsetTop: { configurable: true, value: reasoningTop },
+        offsetHeight: { configurable: true, get: () => Math.min(600, parseFloat(frame.style.maxHeight) || 600) },
+      });
+      render({ isLoading: true }, [user, { ...reasoning, content: '检查完成' }]);
+      expect(frame.style.maxHeight).toBe(`${Math.max(160, 500 - (reasoningTop - 200) - 16)}px`);
+      // Only a genuinely long prompt needs a scroll to reveal the minimum
+      // readable window; ordinary progress rows must not move the user bubble.
+      expect(box.scrollTop).toBe(Math.max(200, reasoningTop + 160 - 500 + 16));
+      Object.defineProperty(box, 'clientHeight', { configurable: true, value: 450 });
+      act(() => resize.fire());
+      expect(frame.style.maxHeight).toBe(`${Math.max(160, 450 - (reasoningTop - 200) - 16)}px`);
+      expect(box.scrollTop).toBe(Math.max(200, reasoningTop + 160 - 450 + 16));
+      render({ isLoading: false }, [user, {
+        id: 'a1', role: 'assistant', content: '好了', timestamp: 3,
+      }]);
+      expect(box.scrollTop).toBe(200);
+    } finally {
+      resize.restore();
+    }
+  });
+
+  it('settles reasoning layout changes before paint instead of animating through completion', () => {
+    setMobileViewport(false);
+    const user: ChatMessage = { id: 'u1', role: 'user', content: '来点鼓', timestamp: 1 };
+    const reasoning: ChatMessage = {
+      id: 'r1', role: 'progress', content: '检查鼓点', progressKind: 'reasoning', timestamp: 2,
+    };
+    const { container, root, render } = renderConversationView([user]);
+    roots.push(root);
+    const box = container.querySelector<HTMLElement>('.conversation-scroll')!;
+    const bubble = box.querySelector<HTMLElement>('[data-rollback-bubble="u1"]')!;
+    Object.defineProperties(box, {
+      clientHeight: { configurable: true, value: 500 },
+      scrollHeight: { configurable: true, value: 1500 },
+    });
+    Object.defineProperties(bubble, {
+      offsetParent: { configurable: true, value: box },
+      offsetTop: { configurable: true, value: 200 },
+    });
+    // Leave smooth scrolls in flight, as a browser does; do not mock them as
+    // synchronous jumps or a second animation across completion goes unnoticed.
+    const scrollTo = vi.fn();
+    box.scrollTo = scrollTo;
+    render({ isLoading: true }, [user, reasoning]);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 200, behavior: 'smooth' });
+
+    const window = box.querySelector<HTMLElement>('[data-markdown-text]')!.parentElement!;
+    Object.defineProperties(window, {
+      offsetParent: { configurable: true, value: box },
+      offsetTop: { configurable: true, value: 350 },
+      offsetHeight: { configurable: true, value: 600 },
+    });
+    scrollTo.mockClear();
+    render({ isLoading: true }, [user, { ...reasoning, content: '检查完毕' }]);
+    expect(box.scrollTop).toBe(466);
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    // The reasoning window disappears before loading ends (prepare playback).
+    const preparing: ChatMessage = {
+      id: 'p1', role: 'progress', content: '准备播放', progressKind: 'thinking', timestamp: 3,
+    };
+    render({ isLoading: true }, [user, reasoning, preparing]);
+    expect(box.scrollTop).toBe(200);
+    expect(scrollTo).not.toHaveBeenCalled();
+    render({ isLoading: false }, [user, reasoning, preparing, {
+      id: 'a1', role: 'assistant', content: '好了', timestamp: 4,
+    }]);
+    expect(box.scrollTop).toBe(200);
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
   it('renders always-visible top and bottom fades around the conversation viewport', () => {
     setMobileViewport(false);
     const { container, root } = renderConversationView([
@@ -1208,6 +1308,39 @@ describe('ConversationView manual draft segment', () => {
     );
     roots.push(root);
     expect(segment(container)).toBeNull();
+  });
+
+  it('never mounts a stale draft segment when an AI reply commits new code', async () => {
+    vi.useFakeTimers();
+    try {
+      setMobileViewport(false);
+      const { container, root, render } = renderConversationView(
+        committed, vi.fn(), false, revisions, { draftCode: base },
+      );
+      roots.push(root);
+      render({ draftCode: base, isLoading: true });
+      const completed: ChatMessage[] = [
+        ...committed,
+        { id: 'u2', role: 'user', content: '加快鼓点', timestamp: 2 },
+        { id: 'a2', role: 'assistant', content: '好了', code: edited, timestamp: 3 },
+      ];
+      render({ draftCode: edited, isLoading: false }, completed);
+
+      // No transient widget to steal the filler and trigger a scroll reveal.
+      expect(segment(container)).toBeNull();
+      // The reply keeps the reservation throughout the debounce window.
+      const rows = container.querySelectorAll<HTMLElement>('div.flex.justify-start');
+      expect(rows[rows.length - 1].style.minHeight).toBe('calc(100cqh - 132px)');
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(segment(container)).toBeNull();
+
+      // A real edit after completion still appears once its diff settles.
+      render({ draftCode: base, isLoading: false }, completed);
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(segment(container)).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('goes again once the edit is typed back out', async () => {
