@@ -16,7 +16,15 @@ import {
 } from '../agent/tools';
 import { getActiveModelConfig, getSelectedThinkingLevel } from './llm-config';
 import { resolveAnthropicThinkingParam, resolveOpenAIThinkingParams } from './thinking-params';
-import { isDemoMode, resolveDemoScenario, getActiveDemoSet, DEMO_MOOD_SCENARIO, DEMO_PREFILL, DEMO_PREFILL_SCENARIO } from '../demo/demo-config';
+import {
+  isDemoMode,
+  resolveDemoScenario,
+  getActiveDemoSet,
+  getDemoMoodInstruction,
+  getDemoMoodScenario,
+  getDemoPrefill,
+  getDemoPrefillScenario,
+} from '../demo/demo-config';
 import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 import { getActivePersonaSync } from '../lib/persona-storage';
 import { isZh } from '../lib/i18n';
@@ -441,24 +449,26 @@ export async function runAgent(
     locale,
   });
 
-  const isMoodDemo = isDemoMode() && instruction === '根据我的心情生成音乐';
-  const isPrefillDemo = isDemoMode() && instruction === DEMO_PREFILL;
+  const moodInstruction = getDemoMoodInstruction();
+  const prefillInstruction = getDemoPrefill();
+  const isMoodDemo = isDemoMode() && instruction === moodInstruction;
+  const isPrefillDemo = isDemoMode() && instruction === prefillInstruction;
 
   // Select the LLMCaller implementation corresponding to the current provider
   const activeLLMCaller = getActiveLLMCaller();
 
   const llm = isDemoMode()
     ? isMoodDemo
-      ? createDemoMoodLLMCaller(DEMO_MOOD_SCENARIO)
+      ? createDemoMoodLLMCaller(getDemoMoodScenario())
       : isPrefillDemo
-        ? createDemoMoodLLMCaller(DEMO_PREFILL_SCENARIO)
+        ? createDemoMoodLLMCaller(getDemoPrefillScenario())
         : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
     : activeLLMCaller;
 
   // Classify intent up front (thinking-disabled) so we only stream a reasoning
   // chain for composition turns. Demo/mood-generation flows are always
   // compositions — skip the extra call for them.
-  const isMoodGeneration = instruction === '根据我的心情生成音乐';
+  const isMoodGeneration = instruction === moodInstruction;
   const skipClassification = isDemoMode() || isMoodGeneration;
   const intent: Intent = skipClassification
     ? 'compose'
