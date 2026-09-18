@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => ({
       | undefined,
     importSession: vi.fn(async () => undefined),
     importOddeNovaSession: vi.fn(),
+    importOddeNovaBridgeSnapshot: vi.fn(),
     setSuggestions: vi.fn(),
     setCurrentCode: vi.fn(),
     setManualCode: vi.fn(async () => undefined),
@@ -161,6 +162,7 @@ const mocks = vi.hoisted(() => ({
   historyProps: null as Record<string, unknown> | null,
   accountModalProps: null as Record<string, unknown> | null,
   agentRunnerConfig: null as Record<string, unknown> | null,
+  bridgeOptions: null as Record<string, unknown> | null,
   isMobile: true,
   auth: {
     user: { id: 'user-1', email: 'listener@example.com' } as
@@ -214,6 +216,12 @@ vi.mock('../services/cloud-session-repository', () => ({
 vi.mock('../hooks/useSuggestions', () => ({ useSuggestions: () => ({ suggestions: [] }) }));
 vi.mock('../hooks/useImportShare', () => ({ useImportShare: () => ({ status: 'idle' }) }));
 vi.mock('../hooks/useOddeNovaImport', () => ({ useOddeNovaImport: () => ({ status: 'idle' }) }));
+vi.mock('../hooks/useOddeNovaBridge', () => ({
+  useOddeNovaBridge: (options: Record<string, unknown>) => {
+    mocks.bridgeOptions = options;
+    return { status: 'idle' };
+  },
+}));
 vi.mock('../hooks/useReplay', () => ({ useReplay: () => ({ isReplaying: false, replayMessages: [], replayInputText: '', startReplay: vi.fn() }) }));
 vi.mock('../hooks/useAgentRunner', () => ({
   useAgentRunner: (config: Record<string, unknown>) => {
@@ -332,6 +340,7 @@ describe('App password recovery', () => {
     mocks.sidebarProps = null;
     mocks.accountModalProps = null;
     mocks.agentRunnerConfig = null;
+    mocks.bridgeOptions = null;
     mocks.favorites.create.mockResolvedValue({
       id: 'favorite-1',
       sourceSessionId: 's-1',
@@ -743,6 +752,7 @@ describe('App session sync boundaries', () => {
     mocks.sidebarProps = null;
     mocks.accountModalProps = null;
     mocks.agentRunnerConfig = null;
+    mocks.bridgeOptions = null;
     mocks.favorites.create.mockResolvedValue({
       id: 'favorite-1',
       sourceSessionId: 's-1',
@@ -1575,6 +1585,33 @@ describe('App session sync boundaries', () => {
       await Promise.resolve();
     });
     expect(mocks.strudel.stop).toHaveBeenCalled();
+  });
+
+  it('applies a bridge revision by stopping old audio, replacing code, and never autoplaying', async () => {
+    mocks.strudel.isPlaying = true;
+    await renderApp();
+    expect(mocks.bridgeOptions?.isBusy).toBe(false);
+    mocks.strudel.stop.mockClear();
+    mocks.strudel.setCode.mockClear();
+    mocks.strudel.play.mockClear();
+
+    act(() => {
+      (mocks.bridgeOptions?.onApplied as (snapshot: unknown, result: unknown) => void)({
+        protocolVersion: 2,
+        source: 'oddenova-strudel-skill',
+        projectId: 'p-1',
+        revision: 2,
+        title: 'Piece',
+        code: 'stack(s("sd"))',
+        messages: [],
+        contentHash: 'hash',
+      }, { outcome: 'updated', sessionId: 's-1' });
+    });
+
+    expect(mocks.strudel.stop).toHaveBeenCalledTimes(1);
+    expect(mocks.strudel.setCode).toHaveBeenCalledWith('stack(s("sd"))');
+    expect(mocks.strudel.play).not.toHaveBeenCalled();
+    mocks.strudel.isPlaying = false;
   });
 
   it('repaints the system\'s own chrome for whichever page is in front of the reader', async () => {

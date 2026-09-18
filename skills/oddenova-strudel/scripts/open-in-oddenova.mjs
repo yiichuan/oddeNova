@@ -1,39 +1,38 @@
 #!/usr/bin/env node
 
+import { randomBytes } from 'node:crypto';
 import { spawn as spawnProcess } from 'node:child_process';
-import { realpathSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, platform as osPlatform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
 
+import {
+  BRIDGE_PROTOCOL_VERSION,
+  BRIDGE_SOURCE,
+  normalizeBaseUrl,
+  readJson,
+  validateSubmission,
+} from './bridge-core.mjs';
+
 export const ODDENOVA_IMPORT_PROTOCOL_VERSION = 1;
-export const ODDENOVA_IMPORT_SOURCE = 'oddenova-strudel-skill';
+export const ODDENOVA_IMPORT_SOURCE = BRIDGE_SOURCE;
 export const DEFAULT_BASE_URL = 'https://www.oddenova.com';
 export const MAX_IMPORT_URL_BYTES = 32 * 1024;
 
-// `z:` marks a deflate-raw compressed payload; the app also accepts the legacy
-// uncompressed base64url form for links minted by older helper versions.
 export function buildImportUrl(payload, baseUrl = DEFAULT_BASE_URL) {
-  const root = baseUrl.replace(/[?#].*$/, '').replace(/\/+$/, '');
+  const root = normalizeBaseUrl(baseUrl);
   const compressed = deflateRawSync(Buffer.from(JSON.stringify(payload), 'utf8'), { level: 9 });
   return `${root}/#oddenova=z:${compressed.toString('base64url')}`;
 }
 
 export function fitPayloadToUrl(payload, baseUrl = DEFAULT_BASE_URL) {
-  const fitted = structuredClone(payload);
-  while (
-    Buffer.byteLength(buildImportUrl(fitted, baseUrl), 'utf8') > MAX_IMPORT_URL_BYTES
-    && fitted.messages.length > 2
-  ) {
-    fitted.messages.shift();
-  }
-
-  const url = buildImportUrl(fitted, baseUrl);
+  const url = buildImportUrl(payload, baseUrl);
   if (Buffer.byteLength(url, 'utf8') > MAX_IMPORT_URL_BYTES) {
-    throw new Error('Import URL exceeds 32 KiB without truncating Strudel code');
+    throw new Error('Import URL exceeds 32 KiB; use the local v3 connection instead');
   }
-  return { payload: fitted, url };
+  return { payload: structuredClone(payload), url };
 }
 
 function browserCommand(url, platform) {
@@ -42,20 +41,15 @@ function browserCommand(url, platform) {
   return ['xdg-open', [url]];
 }
 
-export function launchImportUrl(
-  url,
-  {
-    platform = process.platform,
-    spawn = spawnProcess,
-    warn = (message) => process.stderr.write(`${message}\n`),
-  } = {},
-) {
+export function launchImportUrl(url, {
+  platform = process.platform,
+  spawn = spawnProcess,
+  warn = (message) => process.stderr.write(`${message}\n`),
+} = {}) {
   try {
     const [command, args] = browserCommand(url, platform);
     const child = spawn(command, args, { detached: true, stdio: 'ignore' });
-    child.once?.('error', (error) => {
-      warn(`Warning: Could not open browser: ${error.message}`);
-    });
+    child.once?.('error', (error) => warn(`Warning: Could not open browser: ${error.message}`));
     child.unref();
   } catch (error) {
     warn(`Warning: Could not open browser: ${error.message}`);
@@ -63,104 +57,205 @@ export function launchImportUrl(
 }
 
 function escapeHtml(value) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
-// The full import URL is several KiB of encoded text, so the CLI keeps it out
-// of the terminal by default and stores it in a clickable redirect file the
-// user can open when the automatic browser launch fails.
 export function writeFallbackLinkFile(url, projectId, { directory = tmpdir(), writeFile = writeFileSync } = {}) {
   const safeId = projectId.replace(/[^A-Za-z0-9._-]/g, '-');
   const path = join(directory, `oddenova-import-${safeId}.html`);
   const escaped = escapeHtml(url);
-  writeFile(
-    path,
-    `<!doctype html>\n<meta charset="utf-8">\n<meta http-equiv="refresh" content="0;url=${escaped}">\n<title>oddeNova import</title>\n<p><a href="${escaped}">Open in oddeNova</a></p>\n`,
-    'utf8',
-  );
+  writeFile(path, `<!doctype html>\n<meta charset="utf-8">\n<meta http-equiv="refresh" content="0;url=${escaped}">\n<title>oddeNova import</title>\n<p><a href="${escaped}">Open in oddeNova</a></p>\n`, 'utf8');
   return path;
 }
 
-function parseArguments(argv) {
-  let baseUrl = DEFAULT_BASE_URL;
-  let printOnly = false;
+export function defaultCacheDir(platform = osPlatform(), home = homedir(), env = process.env) {
+  if (env.ODDENOVA_STRUDEL_CACHE_DIR) return env.ODDENOVA_STRUDEL_CACHE_DIR;
+  if (platform === 'darwin') return join(home, 'Library', 'Caches', 'oddenova-strudel');
+  if (platform === 'win32') return join(env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'oddenova-strudel');
+  return join(env.XDG_CACHE_HOME || join(home, '.cache'), 'oddenova-strudel');
+}
 
+function parseArguments(argv) {
+  const options = { baseUrl: DEFAULT_BASE_URL, command: 'submit', link: false, printOnly: false };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === '--print-only') {
-      printOnly = true;
-    } else if (argument === '--base-url') {
-      const value = argv[index + 1];
+    if (argument === '--base-url') {
+      const value = argv[++index];
       if (!value || value.startsWith('--')) throw new Error('--base-url requires a value');
-      baseUrl = value;
-      index += 1;
-    } else {
-      throw new Error(`Unknown argument: ${argument}`);
-    }
+      options.baseUrl = value;
+    } else if (argument === '--link') options.link = true;
+    else if (argument === '--print-only') { options.link = true; options.printOnly = true; }
+    else if (['--pull', '--status', '--retry', '--reopen', '--stop', '--clear'].includes(argument)) options.command = argument.slice(2);
+    else throw new Error(`Unknown argument: ${argument}`);
   }
-
-  return { baseUrl, printOnly };
+  return options;
 }
 
 async function readInput(stream) {
   let input = '';
   for await (const chunk of stream) input += chunk;
-  return input;
+  return input.trim() ? JSON.parse(input) : {};
 }
 
-export async function runCli(
-  argv = process.argv.slice(2),
-  {
-    stdin = process.stdin,
-    stdout = process.stdout,
-    stderr = process.stderr,
-    platform = process.platform,
-    spawn = spawnProcess,
-  } = {},
-) {
-  try {
-    const { baseUrl, printOnly } = parseArguments(argv);
-    const payload = JSON.parse(await readInput(stdin));
-    const { payload: fitted, url } = fitPayloadToUrl(payload, baseUrl);
+async function bridgeRequest(runtime, path, { method = 'GET', body } = {}) {
+  const response = await fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+    method,
+    headers: { authorization: `Bearer ${runtime.adminToken}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const value = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(value.error || `Bridge request failed (${response.status})`);
+  return value;
+}
 
-    if (printOnly) {
-      stdout.write(`${url}\n`);
+async function healthyRuntime(cacheDir) {
+  const runtime = await readJson(join(cacheDir, 'runtime.json'));
+  if (!runtime?.port || !runtime?.adminToken) return undefined;
+  try {
+    const health = await bridgeRequest(runtime, '/v2/health');
+    return health.service === 'oddenova-strudel-bridge' ? { ...runtime, capabilities: health.capabilities ?? [], protocols: health.protocols ?? [2] } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function ensureBridge(cacheDir, { spawn = spawnProcess, retried = false } = {}) {
+  const existing = await healthyRuntime(cacheDir);
+  if (existing) return existing;
+  mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
+  const lock = join(cacheDir, 'start.lock');
+  try {
+    mkdirSync(lock);
+    const adminToken = randomBytes(32).toString('base64url');
+    const servicePath = fileURLToPath(new URL('./bridge-service.mjs', import.meta.url));
+    const child = spawn(process.execPath, [servicePath, cacheDir], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, ODDENOVA_BRIDGE_ADMIN_TOKEN: adminToken },
+    });
+    child.unref();
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+  }
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const runtime = await healthyRuntime(cacheDir);
+    if (runtime) { rmSync(lock, { recursive: true, force: true }); return runtime; }
+  }
+  rmSync(lock, { recursive: true, force: true });
+  if (!retried) return ensureBridge(cacheDir, { spawn, retried: true });
+  throw new Error('Could not start the oddeNova local bridge');
+}
+
+function v1Payload(payload) {
+  return {
+    protocolVersion: 1,
+    source: ODDENOVA_IMPORT_SOURCE,
+    projectId: payload.projectId,
+    title: payload.title,
+    code: payload.code,
+    messages: payload.messages,
+    locale: payload.locale,
+  };
+}
+
+async function runLink(payload, options, dependencies) {
+  const { url } = fitPayloadToUrl(v1Payload(payload), options.baseUrl);
+  if (options.printOnly) { dependencies.stdout.write(`${url}\n`); return 0; }
+  const fallbackPath = writeFallbackLinkFile(url, payload.projectId);
+  dependencies.stdout.write(`Opening an explicit oddeNova import link for project ${payload.projectId}.\n`);
+  dependencies.stdout.write(`If the browser did not open, open this file: ${fallbackPath}\n`);
+  launchImportUrl(url, { platform: dependencies.platform, spawn: dependencies.spawn, warn: (message) => dependencies.stderr.write(`${message}\n`) });
+  return 0;
+}
+
+export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
+  const deps = {
+    stdin: process.stdin, stdout: process.stdout, stderr: process.stderr,
+    platform: process.platform, spawn: spawnProcess, cacheDir: undefined,
+    ...dependencies,
+  };
+  try {
+    const options = parseArguments(argv);
+    const input = await readInput(deps.stdin);
+    const baseUrl = normalizeBaseUrl(input.baseUrl ?? options.baseUrl);
+    if (options.link) return runLink(input, options, deps);
+    const cacheDir = deps.cacheDir ?? defaultCacheDir();
+    const runtime = await ensureBridge(cacheDir, { spawn: deps.spawn });
+
+    if (options.command === 'stop') {
+      await bridgeRequest(runtime, '/v2/stop', { method: 'POST' });
+      deps.stdout.write('Stopped the oddeNova local bridge. Pending project caches were kept.\n');
+      return 0;
+    }
+    if (!runtime.protocols?.includes(3)) {
+      if (options.command === 'pull') {
+        deps.stdout.write(`${JSON.stringify({ status: 'upgrade_required', freshness: 'none' })}\n`);
+        return 2;
+      }
+      throw new Error('The running oddeNova bridge is outdated. Run --stop, then retry to start the v3 bridge.');
+    }
+    if (!input.projectId) throw new Error(`${options.command} requires projectId on stdin`);
+    const identity = { projectId: input.projectId, baseUrl };
+    if (options.command === 'status') {
+      const query = new URLSearchParams(identity).toString();
+      const status = await bridgeRequest(runtime, `/v3/status?${query}`);
+      deps.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+      return 0;
+    }
+    if (options.command === 'retry') {
+      const status = await bridgeRequest(runtime, '/v3/retry', { method: 'POST', body: identity });
+      deps.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+      return 0;
+    }
+    if (options.command === 'clear') {
+      await bridgeRequest(runtime, '/v3/clear', { method: 'POST', body: identity });
+      deps.stdout.write(`Cleared cached project ${input.projectId}.\n`);
+      return 0;
+    }
+    if (options.command === 'reopen') {
+      const result = await bridgeRequest(runtime, '/v3/reopen', { method: 'POST', body: identity });
+      const fallbackPath = writeFallbackLinkFile(result.bootstrapUrl, input.projectId);
+      deps.stdout.write(`Opening a new connection entry page for project ${input.projectId}.\n`);
+      deps.stdout.write(`If the browser did not open, open this file: ${fallbackPath}\n`);
+      launchImportUrl(result.bootstrapUrl, { platform: deps.platform, spawn: deps.spawn, warn: (message) => deps.stderr.write(`${message}\n`) });
       return 0;
     }
 
-    const fallbackPath = writeFallbackLinkFile(url, fitted.projectId);
-    const sizeKiB = (Buffer.byteLength(url, 'utf8') / 1024).toFixed(1);
-    stdout.write(`Opening oddeNova import in the browser (project ${fitted.projectId}, URL ${sizeKiB} KiB).\n`);
-    stdout.write(`If the browser did not open, open this file: ${fallbackPath}\n`);
-    launchImportUrl(url, {
-      platform,
-      spawn,
-      warn: (message) => stderr.write(`${message}\n`),
-    });
+    if (options.command === 'pull') {
+      const result = await bridgeRequest(runtime, '/v3/read', { method: 'POST', body: identity });
+      deps.stdout.write(`${JSON.stringify(result)}\n`);
+      return result.status === 'ready' || result.status === 'not_found' ? 0 : 2;
+    }
+
+    const submission = { ...input, protocolVersion: BRIDGE_PROTOCOL_VERSION, source: BRIDGE_SOURCE, baseUrl };
+    validateSubmission(submission);
+    const result = await bridgeRequest(runtime, '/v3/submit', { method: 'POST', body: submission });
+    if (result.bootstrapUrl) {
+      const fallbackPath = writeFallbackLinkFile(result.bootstrapUrl, input.projectId);
+      deps.stdout.write(`Saved revision ${result.acceptedRevision}; opening oddeNova to connect this project.\n`);
+      deps.stdout.write(`If the browser did not open, open this file: ${fallbackPath}\n`);
+      launchImportUrl(result.bootstrapUrl, { platform: deps.platform, spawn: deps.spawn, warn: (message) => deps.stderr.write(`${message}\n`) });
+    } else if (result.acknowledged) {
+      deps.stdout.write(`Revision ${result.acceptedRevision} is already applied in the connected oddeNova page.\n`);
+    } else if (!result.paired) {
+      deps.stdout.write(`Saved revision ${result.acceptedRevision}; no page is paired. Run --reopen to reconnect explicitly.\n`);
+    } else {
+      deps.stdout.write(`Saved revision ${result.acceptedRevision}; it is queued for the connected oddeNova page.\n`);
+    }
+    if (runtime.portChanged) {
+      deps.stdout.write('The previous local port could not be reused. Run --reopen for this project to pair a page with the new port.\n');
+    }
     return 0;
   } catch (error) {
-    stderr.write(`${error.message}\n`);
+    deps.stderr.write(`${error.message}\n`);
     return 1;
   }
 }
 
-// Compare real filesystem paths, not the raw URL/argv strings: the skill is
-// installed under ~/.claude/skills via a symlink, so `import.meta.url` is the
-// symlink-resolved real path while `process.argv[1]` keeps the symlink path.
-// Resolving both sides makes the check hold whichever path Node reports.
 export function isMainModule(metaUrl, entryPath = process.argv[1]) {
   if (!entryPath) return false;
-  try {
-    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(entryPath);
-  } catch {
-    return false;
-  }
+  try { return realpathSync(fileURLToPath(metaUrl)) === realpathSync(entryPath); } catch { return false; }
 }
 
-if (isMainModule(import.meta.url)) {
-  process.exitCode = await runCli();
-}
+if (isMainModule(import.meta.url)) process.exitCode = await runCli();

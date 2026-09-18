@@ -8,12 +8,13 @@ import {
 import { normalizeSessionTitle } from './session-title';
 
 export const DB_NAME = 'oddenova-db';
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 const LEGACY_SESSION_STORE_NAME = 'sessions';
 const LEGACY_FAVORITE_STORE_NAME = 'favorites_by_owner';
 export const SESSION_STORE_NAME = 'sessions_by_owner';
 export const PERSONA_STORE_NAME = 'personas';
 export const SETTINGS_STORE_NAME = 'settings';
+export const BRIDGE_OUTBOX_STORE_NAME = 'oddenova_bridge_outbox';
 export const GUEST_OWNER_KEY = 'guest';
 
 // localStorage keys for one-time migration
@@ -30,6 +31,20 @@ type StoredSetting = {
   key: string;
   value: string;
 };
+
+export interface StoredBridgeOutboxEntry {
+  ownerKey: string;
+  projectKey: string;
+  bindingId: string;
+  changeId: string;
+  payload: unknown;
+  createdAt: number;
+}
+
+const memoryBridgeOutbox = new Map<string, StoredBridgeOutboxEntry>();
+function bridgeOutboxKey(entry: Pick<StoredBridgeOutboxEntry, 'ownerKey' | 'projectKey' | 'bindingId' | 'changeId'>): string {
+  return `${entry.ownerKey}\0${entry.projectKey}\0${entry.bindingId}\0${entry.changeId}`;
+}
 
 function currentSessionSettingKey(ownerKey: string): string {
   return `currentSessionId:${ownerKey}`;
@@ -136,6 +151,9 @@ export async function openDB(): Promise<void> {
           if (!database.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
             database.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
           }
+          if (!database.objectStoreNames.contains(BRIDGE_OUTBOX_STORE_NAME)) {
+            database.createObjectStore(BRIDGE_OUTBOX_STORE_NAME, { keyPath: ['ownerKey', 'projectKey', 'bindingId', 'changeId'] });
+          }
           // Favorites used to be stored as duplicated snapshots. They now live
           // on the session row, so discard the obsolete store when upgrading a
           // database that still has it. No legacy snapshot is imported: the
@@ -170,6 +188,50 @@ export async function openDB(): Promise<void> {
   })();
 
   return openPromise;
+}
+
+export async function putBridgeOutboxEntry(entry: StoredBridgeOutboxEntry): Promise<void> {
+  await openDB();
+  if (memoryFallback || !db) {
+    memoryBridgeOutbox.set(bridgeOutboxKey(entry), entry);
+    return;
+  }
+  await db.put(BRIDGE_OUTBOX_STORE_NAME, entry);
+}
+
+export async function getBridgeOutboxEntries(ownerKey: string, projectKey: string, bindingId: string): Promise<StoredBridgeOutboxEntry[]> {
+  await openDB();
+  if (memoryFallback || !db) {
+    return [...memoryBridgeOutbox.values()].filter((entry) => entry.ownerKey === ownerKey && entry.projectKey === projectKey && entry.bindingId === bindingId)
+      .sort((left, right) => left.createdAt - right.createdAt);
+  }
+  const all = await db.getAll(BRIDGE_OUTBOX_STORE_NAME) as StoredBridgeOutboxEntry[];
+  return all.filter((entry) => entry.ownerKey === ownerKey && entry.projectKey === projectKey && entry.bindingId === bindingId)
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+export async function deleteBridgeOutboxEntry(entry: Pick<StoredBridgeOutboxEntry, 'ownerKey' | 'projectKey' | 'bindingId' | 'changeId'>): Promise<void> {
+  await openDB();
+  if (memoryFallback || !db) {
+    memoryBridgeOutbox.delete(bridgeOutboxKey(entry));
+    return;
+  }
+  await db.delete(BRIDGE_OUTBOX_STORE_NAME, [entry.ownerKey, entry.projectKey, entry.bindingId, entry.changeId]);
+}
+
+export async function rebindBridgeOutboxEntries(ownerKey: string, projectKey: string, bindingId: string, clientId: string): Promise<void> {
+  await openDB();
+  const all = memoryFallback || !db
+    ? [...memoryBridgeOutbox.values()]
+    : await db.getAll(BRIDGE_OUTBOX_STORE_NAME) as StoredBridgeOutboxEntry[];
+  const matching = all.filter((entry) => entry.ownerKey === ownerKey && entry.projectKey === projectKey && entry.bindingId !== bindingId);
+  for (const entry of matching) {
+    await deleteBridgeOutboxEntry(entry);
+    const payload = entry.payload && typeof entry.payload === 'object'
+      ? { ...entry.payload, bindingId, clientId }
+      : entry.payload;
+    await putBridgeOutboxEntry({ ...entry, bindingId, payload });
+  }
 }
 
 async function migrateFromLocalStorage(): Promise<void> {

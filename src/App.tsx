@@ -6,7 +6,9 @@ import CodePanel from './components/studio/CodePanel';
 import Sidebar from './components/conversation/Sidebar';
 import VizPlaceholder from './components/studio/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
-import { makeGreetingMessage, useSessions } from './hooks/useSessions';
+import { makeGreetingMessage, useSessions, type OddeNovaBridgeImportResult } from './hooks/useSessions';
+import type { AnyOddeNovaBridgeSnapshot } from './lib/oddenova-bridge';
+import type { OddeNovaImportPayload } from './lib/oddenova-import';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
@@ -22,6 +24,7 @@ import { DownloadIcon, EllipsisIcon, SquareTerminalIcon, XIcon } from './compone
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useOddeNovaImport } from './hooks/useOddeNovaImport';
+import { useOddeNovaBridge } from './hooks/useOddeNovaBridge';
 import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
@@ -33,6 +36,7 @@ import { useExportPopoverController } from './hooks/useExportPopoverController';
 import AccountModal from './components/overlays/AccountModal';
 import WelcomeModal from './components/overlays/WelcomeModal';
 import OddeNovaImportNotice from './components/overlays/OddeNovaImportNotice';
+import OddeNovaBridgeNotice from './components/overlays/OddeNovaBridgeNotice';
 import FavoriteActionDialog, { type FavoriteActionKind } from './components/overlays/FavoriteActionDialog';
 import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
 import MobileNavDrawer from './components/nav/MobileNavDrawer';
@@ -181,11 +185,6 @@ export default function App() {
   });
   const dailySuggestionDefaults = useDailySuggestions(zh);
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
-  const oddeNovaImportResult = useOddeNovaImport(
-    sessions.importOddeNovaSession,
-    !sessions.isLoading,
-    sessions.isPersistent,
-  );
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
@@ -786,6 +785,70 @@ export default function App() {
    * elsewhere puts the light out instead of stranding it.
    */
   const [soundingSegment, setSoundingSegment] = useState<{ id: string; code: string } | null>(null);
+
+  const applyImportedCode = useCallback((sessionId: string, code: string) => {
+    skipNextManualSyncSessionRef.current = sessionId;
+    if (isMobile) mobileCodeRestoreRef.current = { id: sessionId, code };
+    setPreview(null);
+    setSoundingSegment(null);
+    strudel.stop();
+    strudel.setCode(code);
+  }, [isMobile, strudel]);
+  const importLegacyOddeNovaPayload = useCallback(async (
+    payload: OddeNovaImportPayload,
+  ) => {
+    const existingId = sessions.sessions.find((session) =>
+      session.externalSource?.type === 'oddenova-strudel-skill'
+      && session.externalSource.projectId === payload.projectId
+    )?.id;
+    const outcome = await sessions.importOddeNovaSession(payload);
+    if (outcome === 'updated' && existingId) applyImportedCode(existingId, payload.code);
+    return outcome;
+  }, [applyImportedCode, sessions]);
+  const oddeNovaImportResult = useOddeNovaImport(
+    importLegacyOddeNovaPayload,
+    !sessions.isLoading,
+    sessions.isPersistent,
+  );
+  const importBridgeSnapshot = useCallback(
+    (snapshot: AnyOddeNovaBridgeSnapshot) =>
+      sessions.importOddeNovaBridgeSnapshot(
+        snapshot,
+        current?.id ? { sessionId: current.id, code: strudel.code } : undefined,
+      ),
+    [current?.id, sessions, strudel.code],
+  );
+  const handleBridgeApplied = useCallback((
+    snapshot: AnyOddeNovaBridgeSnapshot,
+    result: OddeNovaBridgeImportResult,
+  ) => {
+    if (result.codeChanged !== false && (result.outcome === 'created' || current?.id === result.sessionId)) {
+      applyImportedCode(result.sessionId, snapshot.code);
+    }
+  }, [applyImportedCode, current?.id]);
+  const bridgeBoundSession = sessions.sessions.find((session) =>
+    session.externalSource?.type === 'oddenova-strudel-skill'
+    && (session.externalSource.protocolVersion === 2 || session.externalSource.protocolVersion === 3)
+  );
+  const oddeNovaBridgeStatus = useOddeNovaBridge({
+    importer: importBridgeSnapshot,
+    isReady: !sessions.isLoading && !auth.loading && !auth.recoveringPassword,
+    isBusy: loadingSessions.size > 0
+      || isReplaying
+      || isVideoMode
+      || strudel.exportState.status === 'exporting',
+    isPersistent: sessions.isPersistent,
+    ownerKey,
+    onApplied: handleBridgeApplied,
+    pageState: bridgeBoundSession ? {
+      sessionId: bridgeBoundSession.id,
+      projectId: bridgeBoundSession.externalSource!.projectId,
+      revision: bridgeBoundSession.externalSource!.revision ?? 0,
+      title: bridgeBoundSession.title,
+      code: current?.id === bridgeBoundSession.id ? strudel.code : bridgeBoundSession.code,
+      messages: bridgeBoundSession.messages,
+    } : undefined,
+  });
 
   /** Put the draft back in the editor and hand the typist their keys back. */
   const exitPreview = useCallback(() => {
@@ -2464,6 +2527,7 @@ export default function App() {
   return (
     <>
       <OddeNovaImportNotice result={oddeNovaImportResult} />
+      <OddeNovaBridgeNotice status={oddeNovaBridgeStatus} />
       {responsiveLayout}
       {/* Outside both layouts: it is about a conversation rather than about a
           page, and it blurs whichever one you were on when you moved it. */}
