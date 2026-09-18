@@ -6,7 +6,7 @@ import type { CodeRevision, Session } from '../../hooks/useSessions';
 import { MessageCirclePlusIcon, HistoryIcon, PlayIcon } from '../icons';
 import ConversationView from './ConversationView';
 import ChatInput from './ChatInput';
-import { isPresentationMode } from '../../demo/demo-config';
+import { isDemoMode, isPresentationMode } from '../../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
 import type { AgentEntryPoint } from '../../lib/analytics';
@@ -253,7 +253,7 @@ export default function Sidebar({
       </div>
 
       <div className="-mt-px w-full shrink-0">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={onMoodGenerate} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} />
       </div>
     </aside>
   );

@@ -282,25 +282,12 @@ describe('Sidebar session title editing layout', () => {
     expect(container.querySelector('[data-session-sync-status]')).toBeNull();
   });
 
-  it('keeps the demo mood suggestion in the input rotation when suggestions are empty', () => {
+  it('removes the mood suggestion from demo mode', () => {
     vi.mocked(isDemoMode).mockReturnValue(true);
-    vi.useFakeTimers();
-    try {
-      const { container, root } = renderSidebar({ suggestions: [], onMoodGenerate: vi.fn() });
-      roots.push(root);
+    const { container, root } = renderSidebar({ suggestions: [], onMoodGenerate: vi.fn() });
+    roots.push(root);
 
-      // The mood entry now lives in ChatInput's placeholder carousel; let the
-      // typewriter reveal it (first token after 400ms, then 80ms per token).
-      for (let i = 0; i < 30; i++) {
-        act(() => {
-          vi.advanceTimersByTime(100);
-        });
-      }
-
-      expect(container.textContent).toContain(t('moodGenerate'));
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(container.textContent).not.toContain(t('moodGenerate'));
   });
 
   it('forwards choice input mode to the composer', () => {
