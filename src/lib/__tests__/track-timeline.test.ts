@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_TRACK_VIEW_SPAN,
-  MAX_ZOOM_SPAN,
+  FALLBACK_MAX_ZOOM_SPAN,
   MIN_ZOOM_SPAN,
   ZOOM_SLIDER_STEPS,
-  ZOOM_SPANS,
   anchoredWindowBegin,
   browseStepCycles,
   canStepZoom,
@@ -13,14 +12,17 @@ import {
   clampZoomSpan,
   cycleFromClientX,
   cycleTickLabel,
+  drawWindowForViewport,
   effectiveZoomSpan,
   endTickLabel,
   followWindowAt,
+  maxZoomSpan,
   nextEffectiveZoomSpan,
   pannedBegin,
   ratioFromClientX,
   rulerTicks,
-  stepZoomSpan,
+  sceneBandContainsViewport,
+  sceneBandForViewport,
   viewportForBegin,
   wheelDeltaToCycles,
   windowContains,
@@ -121,40 +123,27 @@ describe('follow window', () => {
   });
 });
 
-describe('zoom ladder', () => {
-  it('keeps the documented default and six shortcut levels from half a cycle to sixteen', () => {
+describe('zoom bounds', () => {
+  it('uses the piece length as the dynamic maximum and keeps a deterministic fallback', () => {
     expect(DEFAULT_TRACK_VIEW_SPAN).toBe(4);
-    expect(ZOOM_SPANS).toEqual([0.5, 1, 2, 4, 8, 16]);
     expect(MIN_ZOOM_SPAN).toBe(0.5);
-    expect(MAX_ZOOM_SPAN).toBe(16);
+    expect(FALLBACK_MAX_ZOOM_SPAN).toBe(16);
+    expect(maxZoomSpan(50)).toBe(50);
+    expect(maxZoomSpan(0.25)).toBe(0.5);
+    expect(maxZoomSpan(null)).toBe(16);
   });
 
-  it('clamps any span into the continuous bounds and rescues unusable values', () => {
-    for (const span of ZOOM_SPANS) expect(clampZoomSpan(span)).toBe(span);
-    // Intermediate values stay continuous — no snapping to the ladder.
-    expect(clampZoomSpan(3.7)).toBe(3.7);
-    expect(clampZoomSpan(0.75)).toBe(0.75);
-    expect(clampZoomSpan(2.6)).toBe(2.6);
-    expect(clampZoomSpan(0.2)).toBe(0.5);
+  it('clamps spans into dynamic continuous bounds and rescues unusable values', () => {
+    expect(clampZoomSpan(3.7, 50)).toBe(3.7);
+    expect(clampZoomSpan(0.75, 50)).toBe(0.75);
+    expect(clampZoomSpan(0.2, 50)).toBe(0.5);
+    expect(clampZoomSpan(20, 50)).toBe(20);
+    expect(clampZoomSpan(80, 50)).toBe(50);
     expect(clampZoomSpan(20)).toBe(16);
-    expect(clampZoomSpan(Number.NaN)).toBe(DEFAULT_TRACK_VIEW_SPAN);
+    expect(clampZoomSpan(Number.NaN, 3)).toBe(3);
     // Non-finite input keeps the existing fallback to the default.
     expect(clampZoomSpan(Number.POSITIVE_INFINITY)).toBe(DEFAULT_TRACK_VIEW_SPAN);
     expect(clampZoomSpan(Number.NEGATIVE_INFINITY)).toBe(DEFAULT_TRACK_VIEW_SPAN);
-  });
-
-  it('walks the ladder from the nearest shortcut level and stops at both ends', () => {
-    expect(stepZoomSpan(DEFAULT_TRACK_VIEW_SPAN, 1)).toBe(2);
-    expect(stepZoomSpan(DEFAULT_TRACK_VIEW_SPAN, -1)).toBe(8);
-    expect(stepZoomSpan(0.5, 1)).toBe(0.5);
-    expect(stepZoomSpan(0.5, -1)).toBe(1);
-    expect(stepZoomSpan(16, -1)).toBe(16);
-    expect(stepZoomSpan(16, 1)).toBe(8);
-    // An off-ladder span steps from its neighbouring levels, not after a snap.
-    expect(stepZoomSpan(3, 1)).toBe(2);
-    expect(stepZoomSpan(3, -1)).toBe(4);
-    expect(stepZoomSpan(3.7, 1)).toBe(2);
-    expect(stepZoomSpan(3.7, -1)).toBe(4);
   });
 
   it('moves half of the current span per browse button press', () => {
@@ -166,38 +155,30 @@ describe('zoom ladder', () => {
 });
 
 describe('effective zoom stepping', () => {
-  it('finds the neighbouring shortcut spans of the effective span', () => {
-    // The plan's contract table for L ≥ 16.
-    expect(nextEffectiveZoomSpan(3.2, 16, 1)).toBe(2);
-    expect(nextEffectiveZoomSpan(3.2, 16, -1)).toBe(4);
+  it('halves or doubles the effective span and lands exactly on the piece', () => {
+    expect(nextEffectiveZoomSpan(3.7, 50, 1)).toBe(1.85);
+    expect(nextEffectiveZoomSpan(3.7, 50, -1)).toBe(7.4);
     expect(nextEffectiveZoomSpan(2, 16, 1)).toBe(1);
     expect(nextEffectiveZoomSpan(2, 16, -1)).toBe(4);
-    // L=3 with P=4: the effective span is 3, magnify reaches 2, zoom-out
+    expect(nextEffectiveZoomSpan(32, 50, -1)).toBe(50);
+    expect(nextEffectiveZoomSpan(50, 50, 1)).toBe(25);
+    // L=3 with P=4: the effective span is 3, magnify reaches 1.5, zoom-out
     // has no wider usable span and stays put.
-    expect(nextEffectiveZoomSpan(4, 3, 1)).toBe(2);
+    expect(nextEffectiveZoomSpan(4, 3, 1)).toBe(1.5);
     expect(nextEffectiveZoomSpan(4, 3, -1)).toBe(3);
-    // A continuous 2.6 steps onto 2 / 3 — the 4 candidate clips back to L=3.
-    expect(nextEffectiveZoomSpan(2.6, 3, 1)).toBe(2);
+    expect(nextEffectiveZoomSpan(2.6, 3, 1)).toBe(1.3);
     expect(nextEffectiveZoomSpan(2.6, 3, -1)).toBe(3);
-    // L=3 with an exact 2: the wider neighbour is 4 → clipped to 3.
     expect(nextEffectiveZoomSpan(2, 3, -1)).toBe(3);
     // A degenerate piece offers nothing in either direction.
     expect(nextEffectiveZoomSpan(4, 0.25, 1)).toBe(0.25);
     expect(nextEffectiveZoomSpan(4, 0.25, -1)).toBe(0.25);
   });
 
-  it('treats float-noise spans as their exact neighbours', () => {
-    // 1.9999999999999998 must read as 2, not leave a micro-step "to 2".
-    expect(nextEffectiveZoomSpan(1.9999999999999998, 16, 1)).toBe(1);
-    expect(nextEffectiveZoomSpan(1.9999999999999998, 16, -1)).toBe(4);
-    expect(canStepZoom(1.9999999999999998, 16, 1)).toBe(true);
-  });
-
   it('judges zoom steps by whether they change the visible width', () => {
     // L=3, full at span 3: magnifying still helps, zooming out cannot.
     expect(canStepZoom(4, 3, 1)).toBe(true);
     expect(canStepZoom(4, 3, -1)).toBe(false);
-    // The default ladder ends still hold without a piece.
+    // The fallback ends still hold without a piece.
     expect(canStepZoom(8, null, -1)).toBe(true);
     expect(canStepZoom(16, null, -1)).toBe(false);
     expect(canStepZoom(16, null, 1)).toBe(true);
@@ -211,7 +192,7 @@ describe('effective zoom stepping', () => {
     expect(canStepZoom(3.7, 16, -1)).toBe(true);
     // Buttons lit by canStepZoom always have a real step to take.
     for (const L of [3, 5, 16, 20]) {
-      for (let span = 0.5; span <= 16; span += 0.3) {
+      for (let span = 0.5; span <= L; span += 0.3) {
         for (const direction of [-1, 1] as const) {
           if (!canStepZoom(span, L, direction)) continue;
           expect(nextEffectiveZoomSpan(span, L, direction))
@@ -251,8 +232,20 @@ describe('continuous zoom slider mapping', () => {
     expect(zoomSliderToSpan(1000, 16)).toBe(0.5);
     expect(zoomSliderToSpan(0, null)).toBe(16);
     expect(zoomSliderToSpan(1000, null)).toBe(0.5);
-    expect(zoomSpanToSlider(MAX_ZOOM_SPAN, null)).toBe(0);
+    expect(zoomSpanToSlider(FALLBACK_MAX_ZOOM_SPAN, null)).toBe(0);
     expect(zoomSpanToSlider(MIN_ZOOM_SPAN, null)).toBe(1000);
+  });
+
+  it('maps a long piece from its exact whole-song span', () => {
+    expect(zoomSpanToSlider(50, 50)).toBe(0);
+    expect(zoomSliderToSpan(0, 50)).toBe(50);
+    expect(zoomSliderToSpan(1000, 50)).toBe(0.5);
+    for (const value of [0, 100, 250, 500, 750, 900, 1000]) {
+      const span = zoomSliderToSpan(value, 50);
+      expect(span).toBeGreaterThanOrEqual(0.5);
+      expect(span).toBeLessThanOrEqual(50);
+      expect(zoomSpanToSlider(span, 50)).toBe(value);
+    }
   });
 
   it('keeps the mapping monotonic and inside the bounds', () => {
@@ -286,7 +279,7 @@ describe('continuous zoom slider mapping', () => {
     expect(zoomSliderToSpan(0, 0.25)).toBe(0.25);
     expect(zoomSliderToSpan(500, 0.25)).toBe(0.25);
     expect(zoomSliderToSpan(1000, 0.5)).toBe(0.5);
-    // Without a loop length the full ladder is the range.
+    // Without a loop length the fallback maximum defines the range.
     expect(zoomSpanToSlider(4, null)).toBe(400);
     // Unusable input falls back to the default span's position.
     expect(zoomSliderToSpan(Number.NaN, 16)).toBe(DEFAULT_TRACK_VIEW_SPAN);
@@ -364,6 +357,41 @@ describe('window arithmetic', () => {
     expect(viewportForBegin(-5)).toEqual({ begin: 0, end: DEFAULT_TRACK_VIEW_SPAN });
     expect(viewportForBegin(Number.NaN)).toEqual({ begin: 0, end: DEFAULT_TRACK_VIEW_SPAN });
     expect(viewportForBegin(6, 2)).toEqual({ begin: 6, end: 8 });
+  });
+
+  it('keeps one screen of margin on each side of the viewport, clipped to the piece', () => {
+    expect(sceneBandForViewport({ begin: 4, end: 8 }, 16)).toEqual({ begin: 0, end: 12 });
+    expect(sceneBandForViewport({ begin: 1, end: 3 }, 16)).toEqual({ begin: 0, end: 5 });
+    expect(sceneBandForViewport({ begin: 13, end: 15 }, 16)).toEqual({ begin: 11, end: 16 });
+    // A viewport spanning the whole piece needs no padding at all.
+    expect(sceneBandForViewport({ begin: 0, end: 16 }, 16)).toEqual({ begin: 0, end: 16 });
+  });
+
+  it('demands margin on both sides, but excuses the sides on the piece boundary', () => {
+    // Mid-piece scenes keep the 25% safety margin.
+    const mid = { begin: 2, end: 14 };
+    expect(sceneBandContainsViewport(mid, { begin: 4, end: 8 }, 0.25)).toBe(true);
+    expect(sceneBandContainsViewport(mid, { begin: 2.9, end: 6.9 }, 0.25)).toBe(false);
+    expect(sceneBandContainsViewport(mid, { begin: 4, end: 13.1 }, 0.25)).toBe(false);
+    // A band clipped at the piece's start is complete there — the work origin
+    // is always a real boundary, no loopCycles needed to know that.
+    const atStart = { begin: 0, end: 6 };
+    expect(sceneBandContainsViewport(atStart, { begin: 0, end: 4 }, 0.25, 16)).toBe(true);
+    expect(sceneBandContainsViewport(atStart, { begin: 0, end: 4 }, 0.25)).toBe(true);
+    // Same at the piece's end — but only when the piece's length is known.
+    const atEnd = { begin: 10, end: 16 };
+    expect(sceneBandContainsViewport(atEnd, { begin: 12, end: 16 }, 0.25, 16)).toBe(true);
+    expect(sceneBandContainsViewport(atEnd, { begin: 12, end: 16 }, 0.25)).toBe(false);
+    // Degenerate inputs never contain anything.
+    expect(sceneBandContainsViewport({ begin: 4, end: 4 }, { begin: 2, end: 6 })).toBe(false);
+    expect(sceneBandContainsViewport(mid, { begin: 4, end: 4 })).toBe(false);
+  });
+
+  it('cuts the draw window to one visible span each side inside the data band', () => {
+    expect(drawWindowForViewport({ begin: 4, end: 8 }, { begin: 0, end: 12 })).toEqual({ begin: 0, end: 12 });
+    expect(drawWindowForViewport({ begin: 5, end: 7 }, { begin: 0, end: 30 })).toEqual({ begin: 3, end: 9 });
+    expect(drawWindowForViewport({ begin: 14, end: 16 }, { begin: 0, end: 16 })).toEqual({ begin: 12, end: 16 });
+    expect(drawWindowForViewport({ begin: 4, end: 4 }, { begin: 0, end: 12 })).toEqual({ begin: 0, end: 12 });
   });
 });
 
@@ -571,13 +599,13 @@ describe('finite timeline', () => {
 });
 
 describe('effective zoom span', () => {
-  it('caps the ladder span at the piece\u2019s length', () => {
+  it('caps the preferred span at the piece\u2019s length', () => {
     expect(effectiveZoomSpan(4, 16)).toBe(4);
     expect(effectiveZoomSpan(8, 3)).toBe(3);
     expect(effectiveZoomSpan(4, 0.25)).toBe(0.25);
     expect(effectiveZoomSpan(4, null)).toBe(4);
     expect(effectiveZoomSpan(Number.NaN, 16)).toBe(DEFAULT_TRACK_VIEW_SPAN);
-    // Continuous values pass through unclipped by any ladder.
+    // Continuous values pass through without snapping to fixed levels.
     expect(effectiveZoomSpan(3.7, 16)).toBe(3.7);
     expect(effectiveZoomSpan(2.6, 3)).toBe(2.6);
   });

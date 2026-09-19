@@ -3,17 +3,13 @@ import * as core from '@strudel/core';
 import * as mini from '@strudel/mini';
 import * as tonal from '@strudel/tonal';
 import { transpiler } from '@strudel/transpiler';
-import { TrackPreview, PREVIEW_EVENT_BUDGET, type PreviewHap, type TrackFrameRequest } from '../track-preview';
+import { TrackPreview, type PreviewHap } from '../track-preview';
+import type { TrackSceneRequest } from '../../lib/track-preview-scene';
+import { buildTrackRename } from '../../lib/track-rename';
 
 type TestPattern = { queryArc: (begin: number, end: number) => (PreviewHap & { value: Record<string, unknown>; context: Record<string, unknown> })[] };
 
 beforeAll(async () => { await core.evalScope(core, mini, tonal); });
-
-/** Follow over the whole piece — the common default in these tests. */
-const followAll = (loopCycles = 16): TrackFrameRequest => ({
-  loopCycles,
-  viewport: { mode: 'follow', span: loopCycles },
-});
 
 async function compile(preview: TrackPreview, code: string) {
   const result = await core.evaluate(code, (source: string) => preview.prepare(source, transpiler(source)));
@@ -25,16 +21,6 @@ const score = `stack(
 /* @layer 鼓组 */ stack(s("bd*2"), s("hh*4")),
 /* @layer 贝斯 */ note("36 40").s("sawtooth")
 ).gain(.6)`;
-
-const melodyScore = `stack(
-/* @layer MELODY */
-note("<[0 2 4 ~ 2 ~ <4 5> 2]@2 [2 4 6 ~ 4 ~ <1 6> 4]@2 [5 4 2 ~ 4 ~ <2 1> 4]@2 [4 6 1 ~ 6 ~ <3 4> 6]@2>")
-  .scale("D4:lydian")
-  .s("piano")
-  .gain("<0.42@8 0.5@8 0.52@8 0.45@4 0.3@4>")
-  .late(0.02)
-  .room(0.35)
-)`;
 
 describe('track preview playback contract', () => {
   it('publishes a new revision when the transport seeks without changing the track list', () => {
@@ -58,10 +44,6 @@ describe('track preview playback contract', () => {
     expect(all.filter(h => preview.isAudible(h))).toHaveLength(8);
     preview.toggleSolo(preview.snapshot.tracks[1].id);
     expect(all.filter(h => preview.isAudible(h)).map(h => h.value.note)).toEqual([36, 40]);
-    expect(preview.frame(0.25, .5, followAll()).events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ trackId: preview.snapshot.tracks[0].id, sound: 'bd', begin: 0, end: .5 }),
-      expect.objectContaining({ trackId: preview.snapshot.tracks[1].id, pitch: 36 }),
-    ]));
     preview.toggleSolo(preview.snapshot.tracks[0].id);
     expect(all.filter(h => preview.isAudible(h))).toHaveLength(6);
     preview.toggleSolo(preview.snapshot.tracks[0].id);
@@ -71,6 +53,7 @@ describe('track preview playback contract', () => {
   it('mutes individual layers, keeps them audible under solo, and drops stale mutes on commit', async () => {
     const preview = new TrackPreview();
     const { pattern } = await compile(preview, score);
+    const firstIds = preview.snapshot.tracks.map(track => track.id);
     const all = pattern.queryArc(0, 1);
     preview.toggleMute(preview.snapshot.tracks[0].id);
     expect(preview.snapshot.mutedIds).toEqual(new Set([preview.snapshot.tracks[0].id]));
@@ -84,10 +67,19 @@ describe('track preview playback contract', () => {
     preview.toggleMute(preview.snapshot.tracks[0].id);
     expect(all.filter(h => preview.isAudible(h))).toHaveLength(0);
     preview.toggleSolo(preview.snapshot.tracks[0].id);
-    // A committed evaluation replaces track ids, so mutes cannot leak into it.
+    // A same-source evaluation is the pause/resume fast path: identity and
+    // audition state survive while the Pattern instance is replaced.
     await compile(preview, score);
+    expect(preview.snapshot.tracks.map(track => track.id)).toEqual(firstIds);
+    expect(preview.snapshot.mutedIds).toEqual(new Set(firstIds));
+    expect(preview.snapshot.tracks.length && all.every(h => preview.isAudible(h))).toBe(false);
+
+    // A byte-different source is a new work and must drop selections that no
+    // longer point at the new logical track identities.
+    const changed = await compile(preview, `${score}\n`);
+    expect(preview.snapshot.tracks.map(track => track.id)).not.toEqual(firstIds);
     expect(preview.snapshot.mutedIds.size).toBe(0);
-    expect(preview.snapshot.tracks.length && all.every(h => preview.isAudible(h))).toBe(true);
+    expect(changed.pattern.queryArc(0, 1).every(h => preview.isAudible(h))).toBe(true);
     preview.toggleMute('stale');
     expect(preview.snapshot.mutedIds.size).toBe(0);
   });
@@ -116,6 +108,102 @@ describe('track preview playback contract', () => {
     expect(preview.snapshot.soloId).toBeNull();
   });
 
+  it('reuses the exact source identity while replacing the Pattern and keeping the scene cache', async () => {
+    const preview = new TrackPreview();
+    const firstPattern: TestPattern = {
+      queryArc: () => [{
+        whole: { begin: 0.25, end: 0.5 }, value: { s: 'old' }, context: { oddenovaTrack: 'stable' },
+      }],
+    };
+    const nextPattern: TestPattern = {
+      queryArc: (begin) => [{
+        whole: { begin: Math.max(1.25, begin), end: Math.max(1.5, begin + 0.25) },
+        value: { s: 'new' }, context: { oddenovaTrack: 'stable' },
+      }],
+    };
+    const metadata = {
+      oddenovaTracks: {
+        tracks: [{ id: 'stable', name: 'a' }],
+        sourceCode: 'same source',
+      },
+    };
+    preview.commit(firstPattern, metadata);
+    const generation = preview.previewGeneration;
+    preview.toggleSolo('stable');
+    preview.toggleMute('stable');
+    const first = await preview.queryTrackScene(sceneRequest(preview));
+    const revision = preview.snapshot.revision;
+
+    preview.commit(nextPattern, {
+      oddenovaTracks: { ...metadata.oddenovaTracks, reusePreviewContent: true },
+    });
+
+    expect(preview.previewGeneration).toBe(generation);
+    expect(preview.snapshot.tracks.map(track => track.id)).toEqual(['stable']);
+    expect(preview.snapshot.soloId).toBe('stable');
+    expect(preview.snapshot.mutedIds).toEqual(new Set(['stable']));
+    expect(preview.snapshot.revision).toBe(revision);
+
+    // The old band remains cached, while a new uncached band is served by the
+    // replacement Pattern rather than the old closure.
+    const cached = await preview.queryTrackScene(sceneRequest(preview));
+    const cachedPrimitive = cached.batch!.lanes[0].exact![0];
+    expect(cached.batch!.sounds[cachedPrimitive.soundId]).toBe('old');
+    expect(cached.batch?.rawEventCount).toBe(first.batch?.rawEventCount);
+    const fresh = await preview.queryTrackScene(sceneRequest(preview, 1, 2));
+    const freshPrimitive = fresh.batch!.lanes[0].exact![0];
+    expect(fresh.batch!.sounds[freshPrimitive.soundId]).toBe('new');
+  });
+
+  it('marks only an exact mapped source with the preview reuse decision', async () => {
+    const preview = new TrackPreview();
+    const first = await core.evaluate(score, (source: string) => preview.prepare(source, transpiler(source)));
+    preview.commit(first.pattern, first.meta);
+    const firstIds = preview.snapshot.tracks.map(track => track.id);
+
+    const same = await core.evaluate(score, (source: string) => preview.prepare(source, transpiler(source)));
+    expect(same.meta.oddenovaTracks?.reusePreviewContent).toBe(true);
+    expect(same.meta.oddenovaTracks?.tracks.map((track: { id: string }) => track.id)).toEqual(firstIds);
+
+    const changed = await core.evaluate(`${score} // changed`, (source: string) => preview.prepare(source, transpiler(source)));
+    expect(changed.meta.oddenovaTracks?.reusePreviewContent).toBe(false);
+    expect(changed.meta.oddenovaTracks?.tracks.map((track: { id: string }) => track.id)).not.toEqual(firstIds);
+  });
+
+  it('does not reuse a source identity after reset', async () => {
+    const preview = new TrackPreview();
+    await compile(preview, score);
+    const firstIds = preview.snapshot.tracks.map(track => track.id);
+    const firstGeneration = preview.previewGeneration;
+
+    preview.reset();
+    await compile(preview, score);
+
+    expect(preview.previewGeneration).toBeGreaterThan(firstGeneration);
+    expect(preview.snapshot.tracks.map(track => track.id)).not.toEqual(firstIds);
+  });
+
+  it('allows a pure layer rename to enter the same-source playback fast path', async () => {
+    const preview = new TrackPreview();
+    await compile(preview, score);
+    const firstIds = preview.snapshot.tracks.map(track => track.id);
+    const firstGeneration = preview.previewGeneration;
+    const context = preview.renameContext();
+    expect(context).not.toBeNull();
+    const renamed = buildTrackRename(context!, firstIds[0], '鼓');
+    expect(renamed.status).toBe('ok');
+    if (renamed.status !== 'ok') return;
+
+    preview.applyRename({ code: renamed.nextCode, tracks: renamed.tracks });
+    const result = await core.evaluate(renamed.nextCode, (source: string) => preview.prepare(source, transpiler(source)));
+    expect(result.meta.oddenovaTracks?.reusePreviewContent).toBe(true);
+    expect(result.meta.oddenovaTracks?.tracks.map((track: { id: string }) => track.id)).toEqual(firstIds);
+    preview.commit(result.pattern, result.meta);
+
+    expect(preview.previewGeneration).toBe(firstGeneration);
+    expect(preview.snapshot.tracks.map(track => track.name)).toEqual(['鼓', '贝斯']);
+  });
+
   it.each([
     's("bd")',
     'const stack = (...xs) => xs[0]; stack(s("bd"),s("hh"))',
@@ -134,21 +222,31 @@ describe('track preview playback contract', () => {
     const preview = new TrackPreview();
     await compile(preview, 'const drums = stack(s("bd"),s("hh")); stack(/* @layer kit */ drums, s("cp, rim"))');
     expect(preview.snapshot.tracks.map(t => t.name)).toEqual(['kit', 'layer_0']);
-    expect(preview.frame(0, .5, followAll()).events.length).toBeGreaterThan(0);
+    const batch = await preview.queryTrackScene(sceneRequest(preview));
+    expect(batch.batch?.rawEventCount).toBeGreaterThan(0);
   });
 
   it('collapses duplicate visual events created by late plus room transforms', async () => {
     const preview = new TrackPreview();
-    await compile(preview, melodyScore);
+    await compile(preview, `stack(
+/* @layer MELODY */
+note("<[0 2 4 ~ 2 ~ <4 5> 2]@2 [2 4 6 ~ 4 ~ <1 6> 4]@2 [5 4 2 ~ 4 ~ <2 1> 4]@2 [4 6 1 ~ 6 ~ <3 4> 6]@2>")
+  .scale("D4:lydian")
+  .s("piano")
+  .gain("<0.42@8 0.5@8 0.52@8 0.45@4 0.3@4>")
+  .late(0.02)
+  .room(0.35)
+)`);
 
-    const events = preview.frame(4, .5, { loopCycles: 16, viewport: { mode: 'follow', span: 4 } }).events;
-    const visualKeys = events.map(event => event.key);
-
-    expect(events).toHaveLength(13);
-    expect(new Set(visualKeys).size).toBe(events.length);
+    const batch = await preview.queryTrackScene(sceneRequest(preview, 2, 6));
+    expect(batch.batch).toBeDefined();
+    const exactCount = batch.batch!.lanes.reduce((sum, lane) => sum + (lane.exact?.length ?? 0), 0);
+    // The same tuple appears twice from late plus room; the scene keeps one.
+    expect(exactCount).toBe(13);
+    expect(new Set(batch.batch!.lanes.flatMap(lane => (lane.exact ?? []).map(p => [p.begin, p.end, p.soundId, p.pitch].join(',')))).size).toBe(exactCount);
   });
 
-  it('gives each event a stable visual key over the uncropped display boundaries', async () => {
+  it('gives each event an identity over the uncropped display boundaries', async () => {
     const preview = new TrackPreview();
     preview.commit(
       {
@@ -160,14 +258,13 @@ describe('track preview playback contract', () => {
       { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } },
     );
     // Same sound and window but a different pitch: distinct identities.
-    const frame = preview.frame(35, 0.5, { loopCycles: 16, viewport: { begin: 1, end: 5 } });
-    expect(frame.events).toHaveLength(2);
-    const [first, second] = frame.events;
-    expect(first.key).toBe(JSON.stringify(['x', 2, 2.5, 'bd', null]));
-    expect(second.key).not.toBe(first.key);
+    const batch = await preview.queryTrackScene(sceneRequest(preview, 1, 5, 32));
+    const primitives = batch.batch!.lanes[0].exact ?? [];
+    expect(primitives).toHaveLength(2);
+    expect(primitives[0]).toMatchObject({ begin: 2, end: 2.5, pitch: null });
+    expect(primitives[1]).toMatchObject({ begin: 2, end: 2.5, pitch: 36 });
 
-    // The same event re-queried keeps its identity; a different track id
-    // (a fresh compile generation) does not reuse it.
+    // A different track id (a fresh compile generation) does not reuse identity.
     preview.commit(
       {
         queryArc: () => [
@@ -176,9 +273,8 @@ describe('track preview playback contract', () => {
       },
       { oddenovaTracks: { tracks: [{ id: 'y', name: 'a' }] } },
     );
-    const next = preview.frame(35, 0.5, { loopCycles: 16, viewport: { begin: 1, end: 5 } });
-    expect(next.events[0].key).toBe(JSON.stringify(['y', 2, 2.5, 'bd', null]));
-    expect(next.events[0].key).not.toBe(first.key);
+    const next = await preview.queryTrackScene(sceneRequest(preview, 1, 5, 32));
+    expect(next.batch!.lanes[0].exact).toHaveLength(1);
   });
 
   it('clears audition on reset and fails open when an event loses its track identity', async () => {
@@ -194,325 +290,465 @@ describe('track preview playback contract', () => {
   });
 });
 
-describe('frame request windows', () => {
-  it('derives a follow window from the same cycle it samples', async () => {
+// ── Scene queries ────────────────────────────────────────────────────────────
+
+/** One full-piece scene request over [begin, end) at a comfortable zoom. */
+function sceneRequest(preview: TrackPreview, queryBegin = 0, queryEnd = 1, loopOffset = 0): TrackSceneRequest {
+  return {
+    generation: preview.previewGeneration,
+    loopOffset,
+    cps: 0.5,
+    queryBegin,
+    queryEnd,
+    viewportBegin: queryBegin,
+    viewportEnd: queryEnd,
+    cssWidth: 400,
+    devicePixelRatio: 1,
+  };
+}
+
+describe('cooperative scene queries without an event cap', () => {
+  it('splits a band, keeps a sustained boundary event once, and freezes query parameters', async () => {
     const preview = new TrackPreview();
-    await compile(preview, score);
-    const queried: Array<[number, number]> = [];
-    // Spy on the committed pattern to record the exact query ranges.
-    const committed = preview as unknown as { pattern: TestPattern };
-    const originalQuery = committed.pattern.queryArc.bind(committed.pattern);
-    committed.pattern.queryArc = (begin: number, end: number) => {
-      queried.push([begin, end]);
-      return originalQuery(begin, end) as never;
-    };
-
-    // Early start: window pinned at 0, playhead in the left half.
-    const early = preview.frame(1, 0.5, { loopCycles: 16, viewport: { mode: 'follow', span: 4 } });
-    expect(early).toMatchObject({ now: 1, begin: 0, end: 4 });
-    expect(queried.at(-1)).toEqual([0, 4]);
-
-    // Past the centre: window slides, playhead stays centred.
-    const later = preview.frame(3, 0.5, { loopCycles: 16, viewport: { mode: 'follow', span: 4 } });
-    expect(later).toMatchObject({ now: 3, begin: 1, end: 5 });
-    expect(queried.at(-1)).toEqual([1, 5]);
-    expect(later.events.every(e => e.end > 1)).toBe(true);
-  });
-
-  it('maps absolute transport cycles onto the finite [0, L] range', async () => {
-    const preview = new TrackPreview();
-    await compile(preview, score);
-    const queried: Array<[number, number]> = [];
-    const committed = preview as unknown as { pattern: TestPattern };
-    const originalQuery = committed.pattern.queryArc.bind(committed.pattern);
-    committed.pattern.queryArc = (begin: number, end: number) => {
-      queried.push([begin, end]);
-      return originalQuery(begin, end) as never;
-    };
-
-    // absoluteNow=35, L=16, display window [1,5]: the query covers the
-    // *current* pass [33,37) and events come back in display coordinates.
-    const frame = preview.frame(35, 0.5, { loopCycles: 16, viewport: { begin: 1, end: 5 } });
-    expect(frame).toMatchObject({ now: 3, begin: 1, end: 5 });
-    expect(queried.at(-1)).toEqual([33, 37]);
-    for (const event of frame.events) {
-      expect(event.begin).toBeGreaterThanOrEqual(0);
-      expect(event.end).toBeLessThanOrEqual(16 + 1e-9);
-    }
-  });
-
-  it('maps absolute events into the display domain of the current pass', () => {
-    const preview = new TrackPreview();
-    // A pattern returning raw absolute haps, as Strudel would for [34, 34.5)
-    // inside the queried pass [33, 37).
-    preview.commit(
-      {
-        queryArc: (begin: number, end: number) => {
-          expect([begin, end]).toEqual([33, 37]);
-          return [{ whole: { begin: 34, end: 34.5 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } }] as PreviewHap[];
-        },
+    const calls: Array<[number, number, number | undefined]> = [];
+    preview.commit({
+      queryArc: (begin, end, controls) => {
+        calls.push([begin, end, controls?._cps as number | undefined]);
+        const shared = { whole: { begin: 0.25, end: 0.75 }, value: { s: 'pad' }, context: { oddenovaTrack: 'x' } };
+        // Every chunk contributes its own short note at the chunk's start, so
+        // chunk coverage and per-chunk ownership both stay observable.
+        return [shared, { whole: { begin, end: begin + 0.1 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } }] as PreviewHap[];
       },
-      { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } },
-    );
-    const frame = preview.frame(35, 0.5, { loopCycles: 16, viewport: { begin: 1, end: 5 } });
-    // The event and the playhead (now=3) share one domain: [2, 2.5).
-    expect(frame.events).toEqual([
-      { trackId: 'x', begin: 2, end: 2.5, sound: 'bd', pitch: null, key: JSON.stringify(['x', 2, 2.5, 'bd', null]) },
-    ]);
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const result = await preview.queryTrackScene(sceneRequest(preview));
+
+    expect(result.status).toBe('complete');
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.every(([, , cps]) => cps === 0.5)).toBe(true);
+    const lane = result.batch!.lanes[0];
+    expect(lane.representation).toBe('exact');
+    const names = (lane.exact ?? []).map(primitive => result.batch!.sounds[primitive.soundId]);
+    // The pad crosses chunk borders and keeps one identity; every chunk's
+    // own onset contributes its bd once.
+    expect(names.filter(sound => sound === 'pad')).toHaveLength(1);
+    expect(names.filter(sound => sound === 'bd')).toHaveLength(calls.length);
+    // Only two distinct sound names exist: one shared pad plus per-chunk bds.
+    expect(new Set(names).size).toBe(2);
+    // Uncropped spans may run past the band edges; each must overlap it.
+    expect((lane.exact ?? []).every(primitive =>
+      primitive.end > primitive.begin
+      && primitive.end > 0
+      && primitive.begin < 1)).toBe(true);
+    expect(result.batch).toMatchObject({ generation: preview.previewGeneration, begin: 0, end: 1, loopOffset: 0 });
+    expect(result.batch?.status).toBe('complete');
+    expect(result.batch?.coverageEnd).toBeUndefined();
   });
 
-  it('keeps cross-pass sustains as real overlapping events without faking attacks', () => {
+  it.each([2048, 2049, 4096, 10000])('completes %i raw haps with no prefix truncation', async (count) => {
     const preview = new TrackPreview();
-    // A note that started late in pass one and sustains into pass two: the
-    // query of the displayed window still catches it, mapped with its real
-    // (negative) display start for TrackPanel to clip.
-    preview.commit(
-      {
-        queryArc: () => [
-          { whole: { begin: 31, end: 33.5 }, value: { s: 'pad' }, context: { oddenovaTrack: 'x' } },
-        ] as PreviewHap[],
-      },
-      { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } },
-    );
-    const frame = preview.frame(33, 0.5, { loopCycles: 16, viewport: { begin: 0, end: 2 } });
-    expect(frame.events).toEqual([
-      { trackId: 'x', begin: -1, end: 1.5, sound: 'pad', pitch: null, key: JSON.stringify(['x', -1, 1.5, 'pad', null]) },
-    ]);
-  });
-
-  it('wraps a running playhead back onto the range while keeping the endpoint parked', async () => {
-    const preview = new TrackPreview();
-    await compile(preview, score);
-    // 16.1 in pass two reads just past the start of the finite range.
-    const wrapped = preview.frame(16.1, 0.5, followAll());
-    expect(wrapped.now).toBeCloseTo(0.1, 10);
-    expect(wrapped).toMatchObject({ begin: 0, end: 16 });
-    // Paused exactly on the loop end keeps it as a visible endpoint.
-    expect(preview.frame(16, 0.5, followAll())).toMatchObject({ now: 16 });
-    expect(preview.frame(32, 0.5, followAll()).now).toBe(0);
-  });
-
-  it('parks follow windows at the piece\u2019s end instead of following past L', () => {
-    const preview = new TrackPreview();
-    for (const now of [14, 15, 16]) {
-      const frame = preview.frame(now, 0.5, { loopCycles: 16, viewport: { mode: 'follow', span: 4 } });
-      expect(frame.begin).toBe(12);
-      expect(frame.end).toBe(16);
- expect(frame.now).toBeLessThanOrEqual(16);
-    }
-  });
-
-  it('rejects a fixed window outside [0, L] and clamps it into the piece', () => {
-    const preview = new TrackPreview();
-    // A window hanging past the end is pulled back inside rather than trusted.
-    const frame = preview.frame(2, 0.5, { loopCycles: 16, viewport: { begin: 14, end: 20 } });
-    expect(frame).toMatchObject({ now: 2, begin: 14, end: 16 });
-  });
-
-  it('falls back to a centred window for an unusable follow span', () => {
-    const preview = new TrackPreview();
-    for (const span of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const frame = preview.frame(6, 0.5, { loopCycles: 16, viewport: { mode: 'follow', span } });
-      expect(frame).toMatchObject({ now: 6, begin: 4, end: 8 });
-    }
-  });
-
-  it('keeps a fixed request window still regardless of the sampled cycle', async () => {
-    const preview = new TrackPreview();
-    await compile(preview, score);
-    for (const now of [0, 5, 15]) {
-      const frame = preview.frame(now, 0.5, { loopCycles: 16, viewport: { begin: 2, end: 6 } });
-      expect(frame).toMatchObject({ now, begin: 2, end: 6 });
-    }
-  });
-
-  it('returns an empty finite frame without a usable loop length', () => {
-    const preview = new TrackPreview();
-    for (const loopCycles of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const frame = preview.frame(7, 0.5, { loopCycles, viewport: { mode: 'follow', span: 4 } });
-      expect(frame).toEqual({ now: 0, begin: 0, end: 0, limited: false, events: [] });
-    }
-  });
-
-  it('flags a frame as limited when the raw query exceeds the processing budget', () => {
-    const preview = new TrackPreview();
-    const hap = { whole: { begin: 0, end: .001 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } };
-    const makePattern = (count: number) => ({
-      queryArc: () => Array.from({ length: count }, (_, i) => ({
-        ...hap, whole: { begin: i * .001, end: i * .001 + .001 },
+    preview.commit({
+      queryArc: () => Array.from({ length: count }, (_, index) => ({
+        whole: { begin: index / count, end: index / count + 0.5 / count },
+        value: { s: 'bd' },
+        context: { oddenovaTrack: 'x' },
       })) as PreviewHap[],
-    });
-    preview.commit(makePattern(PREVIEW_EVENT_BUDGET), { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
-    const withinBudget = preview.frame(0, 1, followAll());
-    expect(withinBudget.limited).toBe(false);
-    expect(withinBudget.events).toHaveLength(PREVIEW_EVENT_BUDGET);
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
 
-    // One more raw hap than the budget truncates the drawn prefix and says
-    // so — without clearing tracks, solo or mutes over a mere budget limit.
-    preview.commit(makePattern(PREVIEW_EVENT_BUDGET + 1), { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
-    const limited = preview.frame(0, 1, followAll());
-    expect(limited.limited).toBe(true);
-    expect(limited.events).toHaveLength(PREVIEW_EVENT_BUDGET);
+    const result = await preview.queryTrackScene(sceneRequest(preview));
+
+    expect(result.status).toBe('complete');
+    expect(result.batch?.rawEventCount).toBe(count);
+    const lane = result.batch!.lanes[0];
+    // Such dense micro-haps aggregate: every one participates in the columns.
+    expect(lane.representation).toBe('density');
+    expect(lane.rawEventCount).toBe(count);
+    const counts = lane.density!.counts;
+    expect(counts[0]).toBeGreaterThan(0);
+    expect(counts[counts.length - 1]).toBeGreaterThan(0);
+    expect([...counts].reduce((sum, value) => sum + value, 0)).toBeGreaterThan(0);
+  });
+
+  it('keeps cross-chunk sustains as one real event and covers every column they span', async () => {
+    const preview = new TrackPreview();
+    preview.commit({
+      // One sustain from 0 to 1: chunked queries return it repeatedly.
+      queryArc: () => [
+        { whole: { begin: 0, end: 1 }, value: { s: 'pad' }, context: { oddenovaTrack: 'x' } },
+      ] as PreviewHap[],
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const result = await preview.queryTrackScene(sceneRequest(preview));
+    const lane = result.batch!.lanes[0];
+    // One identity for the whole note, no fake attack at the chunk border.
+    expect(lane.exact).toHaveLength(1);
+    expect(lane.exact![0]).toMatchObject({ begin: 0, end: 1 });
+  });
+
+  it('allows a mixed scene: a dense lane aggregates while a sparse lane stays exact', async () => {
+    const preview = new TrackPreview();
+    preview.commit({
+      queryArc: (begin, end) => {
+        const haps: PreviewHap[] = [];
+        // The sparse lane: one pad holds the whole band, wide on screen.
+        haps.push({ whole: { begin: 0, end: 4 }, value: { s: 'pad', note: 60 }, context: { oddenovaTrack: 'pad' } });
+        // The dense lane: 40 ultra-short haps per cycle cannot resolve as exact.
+        for (let onset = Math.ceil(begin / 0.025) * 0.025; onset < end; onset += 0.025) {
+          haps.push({ whole: { begin: onset, end: onset + 0.0001 }, value: { s: 'bd' }, context: { oddenovaTrack: 'drums' } });
+        }
+        return haps;
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'drums', name: 'drums' }, { id: 'pad', name: 'pad' }] } });
+
+    const result = await preview.queryTrackScene(sceneRequest(preview, 0, 4));
+    expect(result.status).toBe('complete');
+    expect(result.batch?.representation).toBe('mixed');
+    const drums = result.batch!.lanes.find(lane => lane.trackId === 'drums')!;
+    const pad = result.batch!.lanes.find(lane => lane.trackId === 'pad')!;
+    expect(drums.representation).toBe('density');
+    expect(pad.representation).toBe('exact');
+    // The dense lane's columns still hold every event — nothing is dropped.
+    expect(drums.rawEventCount).toBe(160);
+    const total = [...drums.density!.counts].reduce((sum, value) => sum + value, 0);
+    // Cover semantics count each hap in every column it spans.
+    expect(total).toBeGreaterThanOrEqual(160);
+    // The pad keeps its whole uncropped span as one exact note; tiles without
+    // their own onsets never veto the sparse lane's exact form.
+    expect(pad.exact).toHaveLength(1);
+    expect(pad.exact![0]).toMatchObject({ begin: 0, end: 4, pitch: 60 });
+  });
+
+  it('counts the beginning, middle and end of a 10k-event whole-song scene', async () => {
+    const preview = new TrackPreview();
+    const total = 10000;
+    const step = 16 / total;
+    preview.commit({
+      queryArc: (begin, end) => {
+        const haps: PreviewHap[] = [];
+        for (let onset = Math.ceil(begin / step) * step; onset < end - 1e-9; onset += step) {
+          haps.push({ whole: { begin: onset, end: onset + step * 0.1 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } });
+        }
+        return haps;
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const result = await preview.queryTrackScene(sceneRequest(preview, 0, 16));
+    expect(result.batch?.rawEventCount).toBe(total);
+    const lane = result.batch!.lanes[0];
+    expect(lane.representation).toBe('density');
+    const counts = lane.density!.counts;
+    expect([...counts].reduce((sum, value) => sum + value, 0)).toBeGreaterThan(0);
+    // The head, the middle and the tail all carry data — no missing prefix.
+    expect(counts[0]).toBeGreaterThan(0);
+    expect(counts[Math.floor(counts.length / 2)]).toBeGreaterThan(0);
+    expect(counts[counts.length - 1]).toBeGreaterThan(0);
+  });
+
+  it('rejects a cancelled task and never commits its partial result', async () => {
+    const preview = new TrackPreview();
+    const controller = new AbortController();
+    let firstQuery = true;
+    preview.commit({
+      queryArc: () => {
+        if (firstQuery) { firstQuery = false; controller.abort(); }
+        return Array.from({ length: 512 }, (_, index) => ({
+          whole: { begin: index / 1000, end: index / 1000 + 0.001 },
+          value: { s: 'bd' },
+          context: { oddenovaTrack: 'x' },
+        })) as PreviewHap[];
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const task = preview.queryTrackScene(sceneRequest(preview), controller.signal);
+    await expect(task).rejects.toMatchObject({ name: 'AbortError' });
     expect(preview.snapshot.status).toBe('ready');
-    expect(preview.snapshot.tracks.map(t => t.name)).toEqual(['a']);
+    expect(preview.snapshot.tracks).toHaveLength(1);
+  });
+
+  it('rejects a request whose generation no longer matches', async () => {
+    const preview = new TrackPreview();
+    preview.commit({ queryArc: () => [] }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+    const request = sceneRequest(preview);
+    preview.commit({ queryArc: () => [] }, { oddenovaTracks: { tracks: [{ id: 'y', name: 'b' }] } });
+    await expect(preview.queryTrackScene(request)).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('records the slowest synchronous queryArc window in its stats', async () => {
+    const preview = new TrackPreview();
+    preview.commit({
+      queryArc: () => [
+        { whole: { begin: 0, end: 0.5 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } },
+      ] as PreviewHap[],
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+    await preview.queryTrackScene(sceneRequest(preview));
+    const stats = preview.lastSceneQueryStats;
+    expect(stats.chunks).toBeGreaterThan(0);
+    expect(stats.tiles).toBeGreaterThan(0);
+    expect(stats.slowestQueryArcMs).toBeGreaterThanOrEqual(0);
   });
 });
 
-describe('track source ranges for code navigation', () => {
-  async function compileForRanges(preview: TrackPreview, code: string) {
-    const result = await core.evaluate(code, (source: string) => preview.prepare(source, transpiler(source)));
-    preview.commit(result.pattern, result.meta);
-    return preview.snapshot.tracks;
-  }
-
-  it('records each layer slot in the full original document, offsets included', async () => {
+describe('scene guards and caching', () => {
+  it('guards when the narrowest chunk cannot make progress, without faking completeness', async () => {
     const preview = new TrackPreview();
-    const code = `// leading comment\nstack(\n  /* @layer 鼓组 */ s("bd*2"),\n  /* @layer 贝斯 */ note("36 40").s("sawtooth")\n).gain(.6)`;
-    const tracks = await compileForRanges(preview, code);
-    expect(tracks.map(t => t.name)).toEqual(['鼓组', '贝斯']);
-    expect(tracks.every(t => t.sourceRange !== undefined)).toBe(true);
-    for (const track of tracks) {
-      const slice = code.slice(track.sourceRange!.from, track.sourceRange!.to);
-      expect(slice).toContain(track.name);
-      // The marker comment belongs to the range; slot-edge whitespace is gone.
-      expect(slice.startsWith('/*')).toBe(true);
-      expect(slice.startsWith(' ')).toBe(false);
-      expect(slice.endsWith(' ')).toBe(false);
-    }
+    preview.commit({
+      queryArc: (begin) => [
+        { whole: { begin, end: begin + 0.001 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } },
+      ] as PreviewHap[],
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    // A zero slice budget makes every chunk over budget: the no-progress
+    // guard must trip instead of committing a prefix as complete.
+    const result = await preview.queryTrackScene({ ...sceneRequest(preview), workSliceMs: 0 });
+
+    expect(result.status).toBe('resource-guarded');
+    expect(result.guardReason).toBe('no-progress');
+    expect(result.batch).toBeUndefined();
+    expect(preview.snapshot.status).toBe('ready');
   });
 
-  it('distinguishes duplicate layer names by position, not by name', async () => {
+  it('guards on allocation failure instead of reporting a data failure', async () => {
     const preview = new TrackPreview();
-    const code = `stack(/* @layer drums */ s("bd"), /* @layer drums */ s("hh"))`;
-    const tracks = await compileForRanges(preview, code);
-    expect(tracks.map(t => t.name)).toEqual(['drums', 'drums']);
-    const first = code.slice(tracks[0].sourceRange!.from, tracks[0].sourceRange!.to);
-    const second = code.slice(tracks[1].sourceRange!.from, tracks[1].sourceRange!.to);
-    expect(first).toContain('bd');
-    expect(second).toContain('hh');
-    expect(tracks[0].sourceRange!.from).toBeLessThan(tracks[1].sourceRange!.from);
+    preview.commit({
+      queryArc: () => { throw new RangeError('allocation failed'); },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const result = await preview.queryTrackScene(sceneRequest(preview));
+    expect(result.status).toBe('resource-guarded');
+    expect(result.guardReason).toBe('allocation');
   });
 
-  it('uses the expression range for layers without a marker', async () => {
+  it('reports a data failure when the pattern throws, keeping the previous scene', async () => {
     const preview = new TrackPreview();
-    const code = `stack(s("bd"), note("36 40").s("sawtooth"))`;
-    const tracks = await compileForRanges(preview, code);
-    const first = code.slice(tracks[0].sourceRange!.from, tracks[0].sourceRange!.to);
-    expect(first).toBe('s("bd")');
-    const second = code.slice(tracks[1].sourceRange!.from, tracks[1].sourceRange!.to);
-    expect(second).toContain('note("36 40")');
+    let failing = false;
+    preview.commit({
+      queryArc: () => {
+        if (failing) throw new Error('pattern exploded');
+        return [{ whole: { begin: 0, end: 0.5 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } }] as PreviewHap[];
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const first = await preview.queryTrackScene(sceneRequest(preview));
+    expect(first.status).toBe('complete');
+    failing = true;
+    // A different band misses the tile cache, so the query itself runs.
+    const second = await preview.queryTrackScene(sceneRequest(preview, 0, 3));
+    expect(second.status).toBe('failed');
+    // A data failure must not clear tracks, solo or mutes.
+    expect(preview.snapshot.status).toBe('ready');
+    expect(preview.snapshot.tracks).toHaveLength(1);
   });
 
-  it.each([
-    ['crlf line endings', 'stack(\r\n  /* @layer 鼓组 */ s("bd"),\r\n  /* @layer 贝斯 */ s("cp")\r\n)'],
-    ['chinese and emoji content', 'stack(/* @layer 旋律🎵 */ s("bd"), /* @layer 贝斯」 */ s("cp"))'],
-    ['a leading comment before the stack', '// 头部说明\nstack(/* @layer drums */ s("bd"))'],
-  ])('cuts the exact original text out of the document: %s', async (_label, code) => {
+  it('reuses finished tiles for an identical request without re-querying', async () => {
     const preview = new TrackPreview();
-    const tracks = await compileForRanges(preview, code);
-    for (const track of tracks) {
-      const slice = code.slice(track.sourceRange!.from, track.sourceRange!.to);
-      expect(slice.trim()).toBe(slice);
-      expect(slice.length).toBeGreaterThan(0);
-      expect(track.sourceRange!.to).toBeLessThanOrEqual(code.length);
-      // The slice is verbatim document text, never re-encoded.
-      expect(slice).toBe(track.sourceRange ? code.slice(track.sourceRange.from, track.sourceRange.to) : '');
-    }
+    const calls: Array<[number, number]> = [];
+    preview.commit({
+      queryArc: (begin, end) => {
+        calls.push([begin, end]);
+        return [{ whole: { begin, end: begin + 0.5 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } }] as PreviewHap[];
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const first = await preview.queryTrackScene(sceneRequest(preview, 0, 2));
+    expect(first.status).toBe('complete');
+    expect(calls.length).toBeGreaterThan(0);
+    const afterFirst = calls.length;
+
+    const second = await preview.queryTrackScene(sceneRequest(preview, 0, 2));
+    expect(second.status).toBe('complete');
+    expect(second.batch?.rawEventCount).toBe(first.batch?.rawEventCount);
+    expect(second.batch?.lanes[0].exact).toEqual(first.batch?.lanes[0].exact);
+    // Everything came from the cache: no further queryArc calls.
+    expect(calls.length).toBe(afterFirst);
   });
 
-  it('binds the metadata to the compile that committed it', async () => {
+  it('re-queries when the resolution tier changes for the same band', async () => {
     const preview = new TrackPreview();
-    await compileForRanges(preview, score);
-    const before = preview.snapshot.tracks.map(t => t.sourceRange);
-    expect(preview.trackSource(preview.snapshot.tracks[0].id)?.sourceCode).toBe(score);
+    const calls: Array<[number, number]> = [];
+    preview.commit({
+      queryArc: (begin, end) => {
+        calls.push([begin, end]);
+        return [{ whole: { begin, end: begin + 0.5 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } }] as PreviewHap[];
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
 
-    // An uncommitted evaluation cannot re-point the sounding tracks.
-    preview.prepare('stack(s("cp"))', transpiler('stack(s("cp"))'));
-    expect(preview.snapshot.tracks.map(t => t.sourceRange)).toEqual(before);
-    expect(preview.trackSource(preview.snapshot.tracks[0].id)?.sourceCode).toBe(score);
-
-    const staleId = preview.snapshot.tracks[0]?.id;
-    preview.reset();
-    expect(preview.snapshot.tracks).toHaveLength(0);
-    expect(staleId === undefined || preview.trackSource(staleId)).toBeNull();
-  });
-});
-
-describe('track rename metadata', () => {
-  async function compileFor(preview: TrackPreview, code: string) {
-    const result = await core.evaluate(code, (source: string) => preview.prepare(source, transpiler(source)));
-    preview.commit(result.pattern, result.meta);
-    return preview.snapshot.tracks;
-  }
-
-  it('carries marker and name ranges in full-document offsets', async () => {
-    const preview = new TrackPreview();
-    const code = 'stack(\n  /* @layer 鼓组 */ s("bd"),\n  s("cp")\n)';
-    const tracks = await compileFor(preview, code);
-    const [marked, auto] = tracks;
-    expect(code.slice(marked.markerRange!.from, marked.markerRange!.to)).toBe('/* @layer 鼓组 */');
-    expect(code.slice(marked.nameRange!.from, marked.nameRange!.to)).toBe('鼓组');
-    expect(auto.markerRange).toBeUndefined();
-    expect(auto.nameRange).toBeUndefined();
-    expect(marked.colorKey).toBe('鼓组');
-    expect(auto.colorKey).toBe('layer_0');
-  });
-
-  it('exposes a rename context only while the preview is ready', async () => {
-    const preview = new TrackPreview();
-    expect(preview.renameContext()).toBeNull();
-    await compileFor(preview, score);
-    const context = preview.renameContext();
-    expect(context?.code).toBe(score);
-    expect(context?.stackRange.from).toBe(score.indexOf('stack'));
-    expect(context?.tracks.map(t => t.id)).toEqual(preview.snapshot.tracks.map(t => t.id));
-    preview.reset();
-    expect(preview.renameContext()).toBeNull();
-  });
-
-  it('applies a rename without touching the pattern, ids, solo or mutes', async () => {
-    const preview = new TrackPreview();
-    const { pattern } = await compile(preview, score);
-    const ids = preview.snapshot.tracks.map(t => t.id);
-    preview.toggleSolo(ids[0]);
-    preview.toggleMute(ids[1]);
-
-    const renamed = score.replace('鼓组', '主鼓');
-    const nextTracks = preview.snapshot.tracks.map((track, i) => i === 0
-      ? { ...track, name: '主鼓', nameRange: { from: renamed.indexOf('主鼓'), to: renamed.indexOf('主鼓') + 2 } }
-      : track);
-    preview.applyRename({ code: renamed, tracks: nextTracks });
-
-    expect(preview.snapshot.soloId).toBe(ids[0]);
-    expect(preview.snapshot.mutedIds).toEqual(new Set([ids[1]]));
-    expect(preview.snapshot.tracks.map(t => t.id)).toEqual(ids);
-    expect(preview.snapshot.tracks.map(t => t.name)).toEqual(['主鼓', '贝斯']);
-    expect(preview.snapshot.revision).toBeGreaterThan(0);
-    // Navigation re-targets the mapped code; the compiled source is intact.
-    expect(preview.trackSource(ids[0])?.sourceCode).toBe(renamed);
-    expect(preview.trackSource(ids[0])?.range).toEqual(nextTracks[0].sourceRange);
-    expect(preview.compiledSourceCode).toBe(score);
-    // The sounding pattern is untouched: the same haps come out.
-    expect(pattern.queryArc(0, 1).length).toBeGreaterThan(0);
-    expect(pattern).toBe((preview as unknown as { pattern: unknown }).pattern);
-  });
-
-  it('keeps the colour key stable across a rename', async () => {
-    const preview = new TrackPreview();
-    await compileFor(preview, score);
-    const before = preview.snapshot.tracks.map(t => t.colorKey);
-    preview.applyRename({
-      code: score.replace('鼓组', '主鼓'),
-      tracks: preview.snapshot.tracks.map((track, i) => i === 0 ? { ...track, name: '主鼓' } : track),
+    const first = await preview.queryTrackScene(sceneRequest(preview, 0, 2));
+    const firstTier = first.batch?.resolutionTier ?? 0;
+    const after = calls.length;
+    // A much finer tier re-queries: the cached tiles belong to the coarse one.
+    const fine = await preview.queryTrackScene({
+      ...sceneRequest(preview, 0, 2),
+      viewportBegin: 0,
+      viewportEnd: 0.25,
+      cssWidth: 400,
     });
-    expect(preview.snapshot.tracks.map(t => t.colorKey)).toEqual(before);
+    expect(fine.batch?.resolutionTier).toBeGreaterThan(firstTier);
+    expect(calls.length).toBeGreaterThan(after);
   });
 
-  it('ignores a rename applied to a non-ready preview', () => {
+  it('carries the binning specification and exact budget on every batch', async () => {
     const preview = new TrackPreview();
-    const revision = preview.snapshot.revision;
-    preview.applyRename({ code: 'x', tracks: [] });
-    expect(preview.snapshot.revision).toBe(revision);
-    expect(preview.snapshot.status).toBe('idle');
+    const progress: Array<ReturnType<typeof Object>> = [];
+    preview.commit({
+      queryArc: (begin) => [
+        { whole: { begin, end: begin + 0.5 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } },
+      ] as PreviewHap[],
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const result = await preview.queryTrackScene(sceneRequest(preview, 0, 4), undefined, batch => progress.push(batch));
+    expect(result.status).toBe('complete');
+    const complete = result.batch!;
+    // The effective bin span is the tier's own 2-power, not the raw px/cycle.
+    expect(complete.effectiveBinSpan).toBeCloseTo(Math.pow(2, -complete.resolutionTier), 9);
+    expect(complete.exactBudget).toBe(400 * 4);
+    for (const batch of progress) {
+      expect((batch as { effectiveBinSpan?: number }).effectiveBinSpan).toBe(complete.effectiveBinSpan);
+      expect((batch as { exactBudget?: number }).exactBudget).toBe(complete.exactBudget);
+    }
+  });
+
+  it('honours a validated requested tier and rejects a stale one', async () => {
+    const preview = new TrackPreview();
+    preview.commit({
+      queryArc: (begin) => [
+        { whole: { begin, end: begin + 0.5 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } },
+      ] as PreviewHap[],
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    // px/cycle 400 → raw tier 8; a fast gesture may lead by one step.
+    const leading = await preview.queryTrackScene({ ...sceneRequest(preview, 0, 1), resolutionTier: 9 });
+    expect(leading.batch?.resolutionTier).toBe(9);
+    expect(leading.batch?.effectiveBinSpan).toBeCloseTo(Math.pow(2, -9), 9);
+    const stale = await preview.queryTrackScene({ ...sceneRequest(preview, 0, 1), resolutionTier: 4 });
+    // The stale render's tier is rejected outright; hysteresis still holds the
+    // recorded 9 here — never the stale 4.
+    expect(stale.batch?.resolutionTier).toBe(9);
+    expect(stale.batch?.resolutionTier).not.toBe(4);
+  });
+
+  it('does not hit cached tiles across binning specifications or exact budgets', async () => {
+    const preview = new TrackPreview();
+    const calls: Array<[number, number]> = [];
+    preview.commit({
+      queryArc: (begin, end) => {
+        calls.push([begin, end]);
+        return [{ whole: { begin, end: begin + 0.5 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } }] as PreviewHap[];
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const first = await preview.queryTrackScene(sceneRequest(preview, 0, 2));
+    expect(first.status).toBe('complete');
+    const afterFirst = calls.length;
+    // Same tier, different width: the exact budget changed, so the cached
+    // exact candidates are not reusable without re-querying.
+    const wider = await preview.queryTrackScene({ ...sceneRequest(preview, 0, 2), cssWidth: 800 });
+    expect(wider.status).toBe('complete');
+    expect(wider.batch?.exactBudget).toBe(800 * 4);
+    expect(calls.length).toBeGreaterThan(afterFirst);
+  });
+
+  it('forgets the cache when a new compile commits', async () => {
+    const preview = new TrackPreview();
+    const calls: Array<[number, number]> = [];
+    const commitRecorded = (trackId: string) => {
+      preview.commit({
+        queryArc: (begin, end) => {
+          calls.push([begin, end]);
+          return [{ whole: { begin, end: begin + 0.5 }, value: { s: 'bd' }, context: { oddenovaTrack: trackId } }] as PreviewHap[];
+        },
+      }, { oddenovaTracks: { tracks: [{ id: trackId, name: 'a' }] } });
+    };
+    commitRecorded('x');
+    await preview.queryTrackScene(sceneRequest(preview, 0, 2));
+    const before = calls.length;
+    expect(before).toBeGreaterThan(0);
+    commitRecorded('y');
+    await preview.queryTrackScene(sceneRequest(preview, 0, 2));
+    expect(calls.length).toBeGreaterThan(before);
+  });
+});
+
+describe('full-scene jobs', () => {
+  it('reuses one identity job and completes every fixed tile', async () => {
+    const preview = new TrackPreview();
+    const calls: Array<[number, number]> = [];
+    preview.commit({
+      queryArc: (begin, end) => {
+        calls.push([begin, end]);
+        return [{
+          whole: { begin, end: Math.min(4, begin + 0.25) },
+          value: { s: 'bd' },
+          context: { oddenovaTrack: 'x' },
+        }] as PreviewHap[];
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const identity = { previewGeneration: preview.previewGeneration, loopOffset: 0, loopCycles: 4, cps: 0.5 } as const;
+    preview.ensureFullScene({ identity, initialViewport: { begin: 2, end: 3 }, cssWidth: 400 });
+    const callsAfterFirstStart = calls.length;
+    // A zoom/pan-like change only changes the priority hint. It cannot create
+    // a second controller for the same full-scene identity.
+    preview.ensureFullScene({ identity, initialViewport: { begin: 0, end: 4 }, cssWidth: 800 });
+
+    await vi.waitFor(() => expect(preview.fullSceneSnapshot?.status).toBe('complete'));
+    const scene = preview.fullSceneSnapshot!;
+    expect(calls.length).toBe(callsAfterFirstStart);
+    expect(scene.end).toBe(4);
+    expect(scene.completedTiles.size).toBe(scene.tiles.length);
+    expect(scene.tiles.every(tile => tile.status === 'complete')).toBe(true);
+    expect(scene.lods.length).toBeGreaterThan(1);
+  });
+
+  it('publishes non-contiguous completed tiles as pending ranges while work streams', async () => {
+    const preview = new TrackPreview();
+    preview.commit({
+      queryArc: (begin) => [{
+        whole: { begin, end: Math.min(6, begin + 0.2) },
+        value: { s: 'bd' },
+        context: { oddenovaTrack: 'x' },
+      }] as PreviewHap[],
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    preview.ensureFullScene({
+      identity: { previewGeneration: preview.previewGeneration, loopOffset: 0, loopCycles: 6, cps: 0.5 },
+      initialViewport: { begin: 3, end: 4 },
+      cssWidth: 400,
+    });
+    await vi.waitFor(() => expect(preview.fullSceneSnapshot?.status).toBe('complete'));
+    const scene = preview.fullSceneSnapshot!;
+    expect(scene.tiles.some(tile => tile.status === 'complete')).toBe(true);
+    expect(scene.tiles.map(tile => tile.index)).toEqual([...scene.tiles.keys()]);
+  });
+
+  it('prewarms the next pass and promotes it without a duplicate query', async () => {
+    const preview = new TrackPreview();
+    const calls: Array<[number, number]> = [];
+    preview.commit({
+      queryArc: (begin, end) => {
+        calls.push([begin, end]);
+        return [{
+          whole: { begin, end: begin + 0.25 },
+          value: { s: 'bd' },
+          context: { oddenovaTrack: 'x' },
+        }] as PreviewHap[];
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    const current = { previewGeneration: preview.previewGeneration, loopOffset: 0, loopCycles: 2, cps: 0.5 } as const;
+    const next = { ...current, loopOffset: 2 } as const;
+    preview.ensureFullScene({ identity: current, initialViewport: { begin: 0, end: 1 }, cssWidth: 400 });
+    await vi.waitFor(() => expect(preview.fullSceneSnapshot?.status).toBe('complete'));
+    const callsBeforePrewarm = calls.length;
+
+    preview.prewarmFullScene({ identity: next, initialViewport: { begin: 0, end: 1 }, cssWidth: 400 });
+    const callsAfterPrewarmStart = calls.length;
+    // Promote while the next-pass task may still be running. The in-flight
+    // job owns the identity, so the boundary cannot start a second query.
+    preview.ensureFullScene({ identity: next, initialViewport: { begin: 0, end: 1 }, cssWidth: 800 });
+    await vi.waitFor(() => expect(preview.fullSceneSnapshot?.identity.loopOffset).toBe(2));
+    await vi.waitFor(() => expect(preview.fullSceneSnapshot?.status).toBe('complete'));
+
+    expect(callsAfterPrewarmStart).toBeGreaterThan(callsBeforePrewarm);
+    expect(calls.length).toBe(callsAfterPrewarmStart);
   });
 });

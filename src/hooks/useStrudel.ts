@@ -200,6 +200,7 @@ export function useTransportRevision(): number {
 /** Keeps animation-frame data out of App's shared playback state. */
 export function useStrudelTracks(scopeKey: string) {  const preview = strudelService.trackPreview;
   const snapshot = useSyncExternalStore(preview.subscribe, () => preview.snapshot);
+  const fullScene = useSyncExternalStore(preview.subscribeFullScene, () => preview.fullSceneSnapshot);
   const previousScope = useRef(scopeKey);
   useEffect(() => {
     if (previousScope.current !== scopeKey) preview.reset();
@@ -208,12 +209,14 @@ export function useStrudelTracks(scopeKey: string) {  const preview = strudelSer
   return {
     ...snapshot,
     /**
-     * One finite-domain frame sample; the request must carry loopCycles.
-     * The service's bound arrow method is returned as-is, so the reference
-     * is stable across re-renders: an unrelated parent update must never
-     * remount the panel's sampling effects or restart its RAF loop.
-     */
-    getFrame: strudelService.getTrackFrame,
+     * The clock-only read is stable across re-renders. TrackPanel samples it
+     * from its own RAF without subscribing App to frame-level transport state.
+    */
+    getClock: strudelService.getTrackClock,
+    fullScene,
+    ensureFullScene: strudelService.ensureFullScene,
+    prewarmFullScene: strudelService.prewarmFullScene,
+    previewGeneration: preview.previewGeneration,
     prepareTrackPreview: strudelService.prepareTrackPreview,
     toggleSolo: preview.toggleSolo,
     toggleMute: preview.toggleMute,

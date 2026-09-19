@@ -21,8 +21,8 @@ export type TrackViewportMode = 'follow' | 'manual';
  */
 interface ViewportState {
   mode: TrackViewportMode;
-  /** The zoom preference in cycles, continuous inside [0.5, 16]; the
-   *  *effective* span is min(span, L). */
+  /** The zoom preference in cycles, continuous up to the current piece's
+   *  length; the *effective* span is always min(span, L). */
   span: number;
   manualBegin: number;
 }
@@ -120,7 +120,7 @@ export function useTrackViewport(loopCycles: number | null | undefined = null) {
     options?: { enterManual?: boolean },
   ) => {
     setState(prev => {
-      const span = clampZoomSpan(nextSpan);
+      const span = clampZoomSpan(nextSpan, loopCycles);
       const nextEffective = effectiveZoomSpan(span, loopCycles ?? null);
       const prevEffective = effectiveZoomSpan(prev.span, loopCycles ?? null);
       if (span === prev.span && nextEffective === prevEffective) return prev;

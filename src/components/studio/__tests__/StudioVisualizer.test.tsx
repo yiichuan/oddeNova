@@ -19,10 +19,11 @@ it('switches views, restores the mix when leaving audition, and resets solo acro
   ));
   render('a');
   act(() => strudelService.trackPreview.commit({ queryArc: () => [] }, { oddenovaTracks: { tracks: [{ id: 'bass', name: '贝斯' }] } }));
-  const tab = (text: string) => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(b => b.textContent === text)!;
-  expect(tab(t('animationView')).getAttribute('aria-selected')).toBe('true');
-  act(() => tab(t('tracksView')).click());
-  expect(tab(t('tracksView')).getAttribute('aria-selected')).toBe('true');
+  const tab = (view: 'animation' | 'tracks') => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    .find(button => button.getAttribute('aria-label') === t(view === 'tracks' ? 'tracksView' : 'animationView'))!;
+  expect(tab('animation').getAttribute('aria-selected')).toBe('true');
+  act(() => tab('tracks').click());
+  expect(tab('tracks').getAttribute('aria-selected')).toBe('true');
   const solo = () => container.querySelector<HTMLButtonElement>(`button[aria-label="${t('trackSolo')} 贝斯"]`)!;
   act(() => solo().click());
   expect(solo().getAttribute('aria-pressed')).toBe('true');
@@ -30,10 +31,60 @@ it('switches views, restores the mix when leaving audition, and resets solo acro
   expect(container.textContent).toContain(t('tracksPreparing'));
   act(() => strudelService.trackPreview.commit({ queryArc: () => [] }, { oddenovaTracks: { tracks: [{ id: 'bass', name: '贝斯' }] } }));
   render('b', true, true);
-  act(() => solo().click()); act(() => tab(t('animationView')).click());
+  act(() => solo().click()); act(() => tab('animation').click());
   expect(strudelService.trackPreview.snapshot.soloId).toBeNull();
   render('b', false);
   expect(solo()).not.toBeNull();
+  expect(container.querySelector('iframe')).toBeNull();
+  act(() => root.unmount());
+});
+
+it('keeps one roving view switch and activates views from the keyboard', () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  act(() => root.render(
+    <StudioVisualizer isPlaying={false} isPaused={false} visible animationEnabled scopeKey="keyboard" hasCode engineReady playbackTimeline={timeline} />,
+  ));
+
+  const viewSwitch = container.querySelector('[role="tablist"]');
+  const animationTab = () => container.querySelector<HTMLButtonElement>(`[role="tab"][aria-label="${t('animationView')}"]`)!;
+  const tracksTab = () => container.querySelector<HTMLButtonElement>(`[role="tab"][aria-label="${t('tracksView')}"]`)!;
+  expect(viewSwitch).not.toBeNull();
+  expect(animationTab().tabIndex).toBe(0);
+  expect(tracksTab().tabIndex).toBe(-1);
+
+  const focus = vi.spyOn(HTMLButtonElement.prototype, 'focus');
+  animationTab().focus();
+  const right = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+  act(() => animationTab().dispatchEvent(right));
+  expect(right.defaultPrevented).toBe(true);
+  expect(tracksTab().getAttribute('aria-selected')).toBe('true');
+  expect(focus.mock.instances[focus.mock.instances.length - 1]).toBe(tracksTab());
+  expect(container.querySelector('[role="tablist"]')).toBe(viewSwitch);
+
+  const home = new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true });
+  act(() => tracksTab().dispatchEvent(home));
+  expect(animationTab().getAttribute('aria-selected')).toBe('true');
+  expect(focus.mock.instances[focus.mock.instances.length - 1]).toBe(animationTab());
+
+  const end = new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true });
+  act(() => animationTab().dispatchEvent(end));
+  expect(tracksTab().getAttribute('aria-selected')).toBe('true');
+  expect(focus.mock.instances[focus.mock.instances.length - 1]).toBe(tracksTab());
+  act(() => root.unmount());
+});
+
+it('does not render the desktop view switch when animation is disabled', () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  act(() => root.render(
+    <StudioVisualizer isPlaying={false} isPaused={false} visible animationEnabled={false} scopeKey="no-animation" hasCode engineReady playbackTimeline={timeline} />,
+  ));
+
+  expect(container.querySelector('[role="tablist"]')).toBeNull();
+  expect(container.querySelector('[role="tab"]')).toBeNull();
   expect(container.querySelector('iframe')).toBeNull();
   act(() => root.unmount());
 });
@@ -81,7 +132,7 @@ it('prepares tracks on demand while stopped', async () => {
     <StudioVisualizer isPlaying={false} isPaused={false} visible animationEnabled scopeKey="stopped" hasCode engineReady playbackTimeline={timeline} />,
   ));
   const tracksTab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-    .find(button => button.textContent === t('tracksView'))!;
+    .find(button => button.getAttribute('aria-label') === t('tracksView'))!;
 
   await act(async () => {
     tracksTab.click();

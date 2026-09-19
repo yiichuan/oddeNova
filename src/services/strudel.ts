@@ -27,7 +27,9 @@ import { buildTrackRename, validateTrackName } from '../lib/track-rename';
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
 import { claimTransport } from './transport';
-import { TrackPreview, type PreviewHap, type PreviewPattern, type PreviewTrack, type TrackFrame, type TrackFrameRequest } from './track-preview';
+import { TrackPreview, type PreviewHap, type PreviewPattern, type PreviewTrack, type TrackFullSceneRequest, type TrackSceneQueryResult } from './track-preview';
+import type { TrackSceneBatch, TrackSceneRequest } from '../lib/track-preview-scene';
+import type { TrackClockSample } from '../lib/track-timeline';
 
 /**
  * Where an explicit seek came from. The playback progress bar and the track
@@ -332,13 +334,29 @@ export class StrudelService {
     return this.lastPlaybackCycle;
   };
 
-  getTrackFrame = (request: TrackFrameRequest): TrackFrame => {
-    const scheduler = this.editorInstance?.repl.scheduler;
-    return this.trackPreview.frame(
-      this.getPlaybackPosition(),
-      scheduler?.cps ?? 0.5,
-      request,
-    );
+  /**
+   * The only high-frequency read exposed to the track view. It samples the
+   * transport clock and tempo, but never touches a Pattern or React state.
+   */
+  getTrackClock = (): TrackClockSample => ({
+    absoluteCycle: this.getPlaybackPosition(),
+    cps: this.editorInstance?.repl.scheduler?.cps ?? 0.5,
+  });
+
+  /** Start one frozen, cancellable scene query on the preview service. */
+  queryTrackScene = (
+    request: TrackSceneRequest,
+    signal?: AbortSignal,
+    onProgress?: (batch: TrackSceneBatch) => void,
+  ): Promise<TrackSceneQueryResult> =>
+    this.trackPreview.queryTrackScene(request, signal, onProgress);
+
+  ensureFullScene = (request: TrackFullSceneRequest): void => {
+    this.trackPreview.ensureFullScene(request);
+  };
+
+  prewarmFullScene = (request: TrackFullSceneRequest): void => {
+    this.trackPreview.prewarmFullScene(request);
   };
 
   /**
@@ -1552,7 +1570,6 @@ export class StrudelService {
       }
       this.applyPendingSeek();
       this.playbackRecovery = null;
-      this.trackPreview.refresh();
       this.syncTransportState();
       this.pageAudioRecovery?.clearResumeIntent();
       void this.setupMasterChain();
@@ -1580,7 +1597,6 @@ export class StrudelService {
           }
           this.applyPendingSeek();
           this.playbackRecovery = null;
-          this.trackPreview.refresh();
           this.syncTransportState();
           this.pageAudioRecovery?.clearResumeIntent();
           void this.setupMasterChain();

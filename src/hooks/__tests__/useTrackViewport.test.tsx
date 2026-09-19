@@ -4,7 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { useTrackViewport } from '../useTrackViewport';
-import { DEFAULT_TRACK_VIEW_SPAN, ZOOM_SPANS } from '../../lib/track-timeline';
+import { DEFAULT_TRACK_VIEW_SPAN } from '../../lib/track-timeline';
 import type { TrackFrameRequest } from '../../services/track-preview';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -18,12 +18,21 @@ function Probe({ loopCycles, onValue }: { loopCycles?: number | null; onValue: (
   return null;
 }
 
-function renderHook(loopCycles: number | null | undefined = null): { current: ReturnType<typeof useTrackViewport> } {
+function renderHook(loopCycles: number | null | undefined = null): {
+  current: ReturnType<typeof useTrackViewport>;
+  rerender: (nextLoopCycles: number | null | undefined) => void;
+} {
   const box: { current: ReturnType<typeof useTrackViewport> | null } = { current: null };
   container = document.createElement('div'); document.body.append(container);
   root = createRoot(container);
-  act(() => root.render(<Probe loopCycles={loopCycles} onValue={v => { box.current = v; }} />));
-  return { get current() { return box.current!; } };
+  const render = (nextLoopCycles: number | null | undefined) => {
+    act(() => root.render(<Probe loopCycles={nextLoopCycles} onValue={v => { box.current = v; }} />));
+  };
+  render(loopCycles);
+  return {
+    get current() { return box.current!; },
+    rerender: render,
+  };
 }
 
 // The last displayed window a zoom anchors into, as TrackPanel would report it.
@@ -190,7 +199,7 @@ describe('useTrackViewport', () => {
   it('keeps mode on a zoom input that cannot change the span', () => {
     const hook = renderHook(16);
     act(() => hook.current.panTo(8));
-    act(() => hook.current.zoomTo(ZOOM_SPANS[ZOOM_SPANS.length - 1], view(8, DEFAULT_TRACK_VIEW_SPAN), 0.5));
+    act(() => hook.current.zoomTo(16, view(8, DEFAULT_TRACK_VIEW_SPAN), 0.5));
     expect(hook.current.mode).toBe('manual');
     expect(hook.current.span).toBe(16);
     // Zooming out to a span the whole piece fits in pins the window at [0, L).
@@ -217,11 +226,10 @@ describe('useTrackViewport', () => {
     expect(hook.current.request).toEqual(fixed(0.5, 2.5, 3));
   });
 
-  it('updates a clipped preference without moving the window or the mode', () => {
-    // L=3, preference already 3 (clipped): resetting to the default 4 shows
-    // the same [0,3) window — but the stored preference must become 4, so a
-    // later, longer piece restores the full default span. A preference-only
-    // change never switches the mode.
+  it('clamps a preference to the piece without moving the window or the mode', () => {
+    // L=3: resetting to the default 4 still shows [0,3), and the dynamic
+    // maximum stores the usable preference 3. No invisible wider preference
+    // survives the piece boundary or switches the mode.
     const hook = renderHook(3);
     expect(hook.current.span).toBe(4);
     expect(hook.current.effectiveSpan).toBe(3);
@@ -230,7 +238,7 @@ describe('useTrackViewport', () => {
     expect(hook.current.mode).toBe('follow');
     expect(hook.current.request).toEqual(follow(3, 3));
     act(() => hook.current.zoomTo(4, view(0, 3), 0.5));
-    expect(hook.current.span).toBe(4);
+    expect(hook.current.span).toBe(3);
     expect(hook.current.mode).toBe('follow');
     expect(hook.current.request).toEqual(follow(3, 3));
   });
@@ -241,13 +249,33 @@ describe('useTrackViewport', () => {
     act(() => hook.current.zoomTo(3.7, view(0, DEFAULT_TRACK_VIEW_SPAN), 0.5));
     expect(hook.current.span).toBe(3.7);
     expect(hook.current.request).toEqual(follow(3.7, 16));
-    // The next input reads the newly accepted span: no drift back to a ladder.
+    // The next input reads the newly accepted span: no drift to fixed levels.
     act(() => hook.current.zoomTo(2.6, view(0, 3.7), 0.5));
     expect(hook.current.span).toBe(2.6);
     expect(hook.current.request).toEqual(follow(2.6, 16));
     // A boundary input beyond 16 clamps but stays continuous inside.
     act(() => hook.current.zoomTo(2.75, view(0, 2.6), 0.5));
     expect(hook.current.span).toBe(2.75);
+  });
+
+  it('accepts a whole-song span above sixteen in follow and manual modes', () => {
+    const followHook = renderHook(50);
+    act(() => followHook.current.zoomTo(50, view(0, DEFAULT_TRACK_VIEW_SPAN), 0.5));
+    expect(followHook.current.span).toBe(50);
+    expect(followHook.current.effectiveSpan).toBe(50);
+    expect(followHook.current.request).toEqual(follow(50, 50));
+
+    act(() => followHook.current.panTo(20));
+    expect(followHook.current.request).toEqual(fixed(0, 50, 50));
+  });
+
+  it('clips an existing long-song preference immediately when the piece gets shorter', () => {
+    const hook = renderHook(50);
+    act(() => hook.current.zoomTo(50, view(0, DEFAULT_TRACK_VIEW_SPAN), 0.5));
+    hook.rerender(20);
+    expect(hook.current.span).toBe(50);
+    expect(hook.current.effectiveSpan).toBe(20);
+    expect(hook.current.request).toEqual(follow(20, 20));
   });
 
   it('anchors a manual zoom on the same start centre for every span in one drag', () => {
@@ -265,7 +293,7 @@ describe('useTrackViewport', () => {
     expect(hook.current.request).toEqual(fixed(0, 16, 16));
   });
 
-  it('steps through the ladder with the latest accepted span each time', () => {
+  it('steps with the latest accepted span each time', () => {
     const hook = renderHook(16);
     // Two zoom-in inputs in a row: each uses the newest accepted span, never
     // a stale closure, so no step is lost or repeated.

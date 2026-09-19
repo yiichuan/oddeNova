@@ -1,8 +1,8 @@
-import type { TrackViewport } from '../services/track-preview';
+import type { TrackFrameRequest, TrackViewport } from '../services/track-preview';
 
 /**
  * Pure math for the track timeline: pointer coordinates, the browsing window,
- * the zoom ladder, and the follow-the-playhead rules. The service owns the
+ * the zoom controls, and the follow-the-playhead rules. The service owns the
  * transport position; this module only turns a viewport and a cycle into
  * positions on screen, so gestures can be unit-tested without a DOM or a
  * running scheduler.
@@ -10,23 +10,29 @@ import type { TrackViewport } from '../services/track-preview';
 
 /** The default (and reset) visible window width in cycles. */
 export const DEFAULT_TRACK_VIEW_SPAN = 4;
-/** The zoom ladder in cycles: half a cycle up to sixteen, doubling each step.
- *  A shortcut table only — the slider and any continuous input keep every
- *  value between the bounds. */
-export const ZOOM_SPANS = [0.5, 1, 2, 4, 8, 16];
-/** The continuous zoom bounds: the narrowest and widest spans allowed. */
-export const MIN_ZOOM_SPAN = ZOOM_SPANS[0];
-export const MAX_ZOOM_SPAN = ZOOM_SPANS[ZOOM_SPANS.length - 1];
+/** The narrowest ordinary zoom span. A shorter piece still fills the view. */
+export const MIN_ZOOM_SPAN = 0.5;
+/** Pure-math fallback when there is no usable piece. The UI disables zoom
+ *  without a finite timeline; this only keeps invalid inputs deterministic. */
+export const FALLBACK_MAX_ZOOM_SPAN = 16;
 /** The slider's normalised range: 0..ZOOM_SLIDER_STEPS (step 1), so dragging
  *  offers ZOOM_SLIDER_STEPS + 1 positions without pretending the underlying
  *  span is quantised to them. */
 export const ZOOM_SLIDER_STEPS = 1000;
-/** Tolerance for float comparisons against the bounds and the ladder. */
+/** Tolerance for float comparisons against the zoom bounds. */
 const ZOOM_EPSILON = 1e-9;
 
 /** A valid loop length: finite and positive. Anything else means "no timeline". */
 export function validLoopCycles(loopCycles: number | null | undefined): loopCycles is number {
   return typeof loopCycles === 'number' && Number.isFinite(loopCycles) && loopCycles > 0;
+}
+
+/** The widest preferred span for the current piece. A sub-minimum piece keeps
+ *  the preference floor at 0.5 while its effective span remains its own L. */
+export function maxZoomSpan(loopCycles: number | null | undefined): number {
+  return validLoopCycles(loopCycles)
+    ? Math.max(MIN_ZOOM_SPAN, loopCycles)
+    : FALLBACK_MAX_ZOOM_SPAN;
 }
 
 /**
@@ -36,19 +42,16 @@ export function validLoopCycles(loopCycles: number | null | undefined): loopCycl
  * with blank time.
  */
 export function effectiveZoomSpan(preferredSpan: number, loopCycles: number | null | undefined): number {
-  const clamped = clampZoomSpan(preferredSpan);
+  const clamped = clampZoomSpan(preferredSpan, loopCycles);
   if (!validLoopCycles(loopCycles)) return clamped;
   return Math.min(clamped, loopCycles);
 }
 
 /**
- * The nearest ladder span strictly finer (`direction = +1`, magnify) or
- * strictly wider (`direction = -1`, zoom out) than the current *effective*
- * span, then clipped by the piece: a candidate the piece is too short to
- * show folds down to the widest usable span. Ties are decided with a small
- * tolerance so a float-noise span like 0.9999999999 still reads as 1.
- * Returns the current span when no distinct step exists — the ladder ends,
- * or the piece already fills the window.
+ * One multiplicative zoom step from the current *effective* span: magnifying
+ * halves it and zooming out doubles it. The last step clips exactly to the
+ * piece, so every finite song has a reachable whole-song overview even when
+ * its length is not a power of two.
  */
 export function nextEffectiveZoomSpan(
   preferredSpan: number,
@@ -56,46 +59,21 @@ export function nextEffectiveZoomSpan(
   direction: -1 | 1,
 ): number {
   const current = effectiveZoomSpan(preferredSpan, loopCycles);
-  let best: number | null = null;
-  for (const span of ZOOM_SPANS) {
-    const finer = direction === 1 ? span < current - ZOOM_EPSILON : span > current + ZOOM_EPSILON;
-    if (!finer) continue;
-    if (best === null
-      || (direction === 1 ? span > best : span < best)) best = span;
-  }
-  if (best === null) return current;
-  return effectiveZoomSpan(best, loopCycles);
+  const lower = validLoopCycles(loopCycles) ? Math.min(MIN_ZOOM_SPAN, loopCycles) : MIN_ZOOM_SPAN;
+  const upper = validLoopCycles(loopCycles) ? loopCycles : FALLBACK_MAX_ZOOM_SPAN;
+  if (direction === 1) return Math.max(lower, current / 2);
+  return Math.min(upper, current * 2);
 }
 
 /**
- * Whether zooming one ladder step in `direction` can still change what is on
+ * Whether zooming one multiplicative step in `direction` can still change what is on
  * screen. Shares the candidate search with the actual stepping, so a lit
  * button always has a real step to take.
  */
 export function canStepZoom(preferredSpan: number, loopCycles: number | null | undefined, direction: -1 | 1): boolean {
-  if (!validLoopCycles(loopCycles)) {
-    const current = clampZoomSpan(preferredSpan);
-    return direction === 1 ? current > MIN_ZOOM_SPAN + ZOOM_EPSILON : current < MAX_ZOOM_SPAN - ZOOM_EPSILON;
-  }
   const current = effectiveZoomSpan(preferredSpan, loopCycles);
-  if (current < MIN_ZOOM_SPAN + ZOOM_EPSILON && direction === 1) return false;
-  if (current > Math.min(MAX_ZOOM_SPAN, loopCycles) - ZOOM_EPSILON && direction === -1) return false;
-  return nextEffectiveZoomSpan(preferredSpan, loopCycles, direction) !== current;
-}
-
-/** One zoom step: `+1` magnifies (span halves), `-1` zooms out (span doubles).
- *  Judged from the *effective* span, so an off-ladder preference like 3.7
- *  still walks to the neighbouring shortcut steps instead of snapping first. */
-export function stepZoomSpan(span: number, direction: -1 | 1): number {
-  const current = clampZoomSpan(span);
-  let best: number | null = null;
-  for (const candidate of ZOOM_SPANS) {
-    const finer = direction === 1 ? candidate < current - ZOOM_EPSILON : candidate > current + ZOOM_EPSILON;
-    if (!finer) continue;
-    if (best === null
-      || (direction === 1 ? candidate > best : candidate < best)) best = candidate;
-  }
-  return best ?? current;
+  const next = nextEffectiveZoomSpan(preferredSpan, loopCycles, direction);
+  return Math.abs(next - current) > ZOOM_EPSILON;
 }
 
 /** Half the current preferred span — the step the browse-earlier/later buttons move by. */
@@ -104,12 +82,14 @@ export function browseStepCycles(span: number, loopCycles?: number | null): numb
 }
 
 /**
- * Keeps a span inside the continuous zoom bounds [0.5, 16]; unusable values
- * fall back to the default. No snapping: 0.75, 2.6 or 3.7 stay as asked.
+ * Keeps a preferred span inside the current piece's dynamic zoom bounds;
+ * unusable values fall back to the default, itself clipped to the bound. No
+ * snapping: 0.75, 2.6 or 3.7 stay as asked.
  */
-export function clampZoomSpan(span: number): number {
-  if (!Number.isFinite(span)) return DEFAULT_TRACK_VIEW_SPAN;
-  return Math.min(MAX_ZOOM_SPAN, Math.max(MIN_ZOOM_SPAN, span));
+export function clampZoomSpan(span: number, loopCycles?: number | null): number {
+  const upper = maxZoomSpan(loopCycles);
+  if (!Number.isFinite(span)) return Math.min(DEFAULT_TRACK_VIEW_SPAN, upper);
+  return Math.min(upper, Math.max(MIN_ZOOM_SPAN, span));
 }
 
 // ── Continuous zoom slider mapping ──────────────────────────────────────────
@@ -117,7 +97,7 @@ export function clampZoomSpan(span: number): number {
 /**
  * The normalised slider value for a span, 0..ZOOM_SLIDER_STEPS on a log
  * scale between the bounds. The usable range is the *effective* one — a
- * piece shorter than the ladder's widest step starts the track at its own
+ * piece shorter than the fallback maximum starts the track at its own
  * length instead of leaving a dead zone. Degenerate ranges (L ≤ Smin) have
  * no travel: every position reads as the finest end. Rounds to the input
  * scale for display only — never feed this back as a span.
@@ -126,9 +106,9 @@ export function zoomSpanToSlider(
   preferredSpan: number,
   loopCycles: number | null | undefined,
 ): number {
-  const sMax = validLoopCycles(loopCycles) ? Math.min(MAX_ZOOM_SPAN, loopCycles) : MAX_ZOOM_SPAN;
+  const sMax = validLoopCycles(loopCycles) ? loopCycles : FALLBACK_MAX_ZOOM_SPAN;
   if (sMax <= MIN_ZOOM_SPAN + ZOOM_EPSILON) return ZOOM_SLIDER_STEPS;
-  const span = Math.min(clampZoomSpan(preferredSpan), sMax);
+  const span = Math.min(clampZoomSpan(preferredSpan, loopCycles), sMax);
   const t = Math.log(sMax / span) / Math.log(sMax / MIN_ZOOM_SPAN);
   return Math.round(Math.min(1, Math.max(0, t)) * ZOOM_SLIDER_STEPS);
 }
@@ -136,14 +116,14 @@ export function zoomSpanToSlider(
 /**
  * The span a slider position stands for: the exact inverse of
  * `zoomSpanToSlider`, with both ends returned precisely. Ordinary positions
- * keep full float precision — no snapping to the ladder.
+ * keep full float precision — no snapping to fixed levels.
  */
 export function zoomSliderToSpan(
   sliderValue: number,
   loopCycles: number | null | undefined,
 ): number {
   if (!Number.isFinite(sliderValue)) return DEFAULT_TRACK_VIEW_SPAN;
-  const sMax = validLoopCycles(loopCycles) ? Math.min(MAX_ZOOM_SPAN, loopCycles) : MAX_ZOOM_SPAN;
+  const sMax = validLoopCycles(loopCycles) ? loopCycles : FALLBACK_MAX_ZOOM_SPAN;
   if (sMax <= MIN_ZOOM_SPAN + ZOOM_EPSILON) return Math.min(sMax, MIN_ZOOM_SPAN);
   const t = Math.min(1, Math.max(0, sliderValue / ZOOM_SLIDER_STEPS));
   const span = sMax * Math.pow(MIN_ZOOM_SPAN / sMax, t);
@@ -219,6 +199,158 @@ export function centeredWindowBegin(cycle: number, span: number, loopCycles?: nu
   let begin = clamped - span / 2;
   if (validLoopCycles(loopCycles)) begin = Math.min(begin, Math.max(0, loopCycles - span));
   return Math.max(0, begin);
+}
+
+/** A clock read kept separate from all preview and React work. */
+export interface TrackClockSample {
+  absoluteCycle: number;
+  cps: number;
+}
+
+/** The finite-domain projection used by the playhead, viewport and queries. */
+export interface TrackViewportFrame {
+  displayNow: number;
+  loopOffset: number;
+  begin: number;
+  end: number;
+  span: number;
+}
+
+/** The cached scene's display-domain extent. */
+export interface TrackSceneBand {
+  begin: number;
+  end: number;
+}
+
+/** CSS-friendly geometry for a scene translated through the live viewport. */
+export interface TrackSceneTransform {
+  widthPercent: number;
+  offsetPercent: number;
+}
+
+/**
+ * Project an absolute transport cycle into the finite display domain. A cycle
+ * exactly on L remains a visible endpoint; a later pass wraps to its own
+ * display coordinates while retaining its absolute loop offset for queries.
+ */
+export function projectTrackClock(absoluteCycle: number, loopCycles: number): Pick<TrackViewportFrame, 'displayNow' | 'loopOffset'> {
+  if (!validLoopCycles(loopCycles)) return { displayNow: 0, loopOffset: 0 };
+  const absolute = Number.isFinite(absoluteCycle) ? Math.max(0, absoluteCycle) : 0;
+  if (absolute === loopCycles) return { displayNow: loopCycles, loopOffset: 0 };
+  return {
+    displayNow: absolute % loopCycles,
+    loopOffset: Math.floor(absolute / loopCycles) * loopCycles,
+  };
+}
+
+function validTrackViewport(viewport: TrackViewport | undefined, loopCycles: number): TrackViewport | null {
+  if (!viewport || !Number.isFinite(viewport.begin) || !Number.isFinite(viewport.end)
+    || viewport.end <= viewport.begin || viewport.begin < 0 || viewport.end > loopCycles) return null;
+  return viewport;
+}
+
+/**
+ * Resolve the exact viewport that a clock sample belongs to. Keeping this in
+ * the timeline module makes RAF projection, query scheduling and tests share
+ * one finite-cycle rule instead of each reimplementing follow/manual math.
+ */
+export function resolveTrackViewportFrame(
+  absoluteCycle: number,
+  request: TrackFrameRequest,
+): TrackViewportFrame {
+  const loopCycles = request.loopCycles;
+  if (!validLoopCycles(loopCycles)) return { displayNow: 0, loopOffset: 0, begin: 0, end: 0, span: 0 };
+  const clock = projectTrackClock(absoluteCycle, loopCycles);
+  const viewport = request.viewport;
+  let resolved: TrackViewport;
+  if ('mode' in viewport && viewport.mode === 'follow') {
+    const span = Number.isFinite(viewport.span) && viewport.span > 0 ? viewport.span : 4;
+    const begin = centeredWindowBegin(clock.displayNow, span, loopCycles);
+    resolved = { begin, end: Math.min(begin + span, loopCycles) };
+  } else {
+    const fixedRequest = viewport as { begin: number; end: number };
+    const fixed = validTrackViewport(fixedRequest, loopCycles);
+    if (fixed) resolved = fixed;
+    else {
+      const end = Math.min(Math.max(0, fixedRequest.end || 0), loopCycles);
+      resolved = { begin: Math.min(Math.max(0, fixedRequest.begin || 0), end), end };
+    }
+  }
+  return {
+    ...clock,
+    ...resolved,
+    span: Math.max(0, resolved.end - resolved.begin),
+  };
+}
+
+/**
+ * Add one visible-span of prefetch on both sides. The result is at most three
+ * screen widths and is always clipped to the finite piece.
+ */
+export function sceneBandForViewport(frame: Pick<TrackViewportFrame, 'begin' | 'end'>, loopCycles: number): TrackSceneBand {
+  if (!validLoopCycles(loopCycles)) return { begin: 0, end: 0 };
+  const span = frame.end - frame.begin;
+  if (!Number.isFinite(span) || span <= 0 || span >= loopCycles) return { begin: 0, end: loopCycles };
+  return {
+    begin: Math.max(0, frame.begin - span),
+    end: Math.min(loopCycles, frame.end + span),
+  };
+}
+
+/** Whether a cached band has enough margin for the current viewport. Sides
+ *  that sit on the piece's own boundary need no margin: a scene clipped at
+ *  the work's beginning or end is complete there, and demanding margin would
+ *  re-query forever. */
+export function sceneBandContainsViewport(
+  band: TrackSceneBand,
+  frame: Pick<TrackViewportFrame, 'begin' | 'end'>,
+  safetyRatio = 0.25,
+  loopCycles?: number | null,
+): boolean {
+  const span = frame.end - frame.begin;
+  if (!Number.isFinite(span) || span <= 0 || band.end <= band.begin) return false;
+  const margin = span * Math.max(0, safetyRatio);
+  const beginEdge = band.begin <= 0;
+  const endEdge = validLoopCycles(loopCycles) && band.end >= loopCycles - 1e-9;
+  const leftMargin = frame.begin - band.begin;
+  const rightMargin = band.end - frame.end;
+  return (beginEdge || leftMargin >= margin) && (endEdge || rightMargin >= margin);
+}
+
+/**
+ * The cycle range the lane canvases commit to bitmaps: one visible span to
+ * each side of the viewport, never beyond the data that actually exists.
+ */
+export function drawWindowForViewport(
+  frame: Pick<TrackViewportFrame, 'begin' | 'end'>,
+  band: TrackSceneBand,
+): TrackSceneBand {
+  const span = frame.end - frame.begin;
+  if (!Number.isFinite(span) || span <= 0) return { begin: band.begin, end: band.end };
+  return {
+    begin: Math.max(band.begin, frame.begin - span),
+    end: Math.min(band.end, frame.end + span),
+  };
+}
+
+/**
+ * Convert the band into one compositor scene. The scene width and translation
+ * are shared by the ruler, grid and every lane so continuous follow motion
+ * cannot introduce coordinate drift between them.
+ */
+export function sceneTransformFor(
+  band: TrackSceneBand,
+  frame: Pick<TrackViewportFrame, 'begin' | 'end'>,
+): TrackSceneTransform {
+  const bandSpan = band.end - band.begin;
+  const visibleSpan = frame.end - frame.begin;
+  if (!Number.isFinite(bandSpan) || bandSpan <= 0 || !Number.isFinite(visibleSpan) || visibleSpan <= 0) {
+    return { widthPercent: 100, offsetPercent: 0 };
+  }
+  return {
+    widthPercent: bandSpan / visibleSpan * 100,
+    offsetPercent: -(frame.begin - band.begin) / bandSpan * 100,
+  };
 }
 
 /**

@@ -3498,6 +3498,140 @@ html[data-theme='light'] .code-panel-light-blob svg {
   filter: drop-shadow(0 0 16px rgba(233, 233, 255, 0.36));
 }
 
+/* The studio switch is a view tool, not a second navigation bar. It stays
+   anchored to the visualizer shell while the panel underneath changes. */
+.studio-visualizer {
+  --studio-view-switch-bg: rgba(18, 18, 22, 0.82);
+  --studio-view-switch-border: rgba(255, 255, 255, 0.10);
+  --studio-view-switch-active: rgba(255, 255, 255, 0.12);
+  --studio-view-switch-icon: var(--color-text-secondary);
+  --studio-view-switch-icon-active: var(--color-text-primary);
+  --studio-view-switch-reserved-space: 72px;
+}
+
+html[data-theme='light'] .studio-visualizer {
+  --studio-view-switch-bg: rgba(244, 244, 248, 0.88);
+  --studio-view-switch-border: rgba(25, 25, 32, 0.10);
+  --studio-view-switch-active: rgba(255, 255, 255, 0.96);
+}
+
+.studio-view-switch {
+  position: absolute;
+  z-index: 30;
+  top: 5px;
+  left: 8px;
+  display: flex;
+  width: 68px;
+  height: 30px;
+  gap: 2px;
+  padding: 0;
+  border: 1px solid var(--studio-view-switch-border);
+  border-radius: 8px;
+  background: var(--studio-view-switch-bg);
+  box-shadow: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.studio-view-switch-indicator {
+  position: absolute;
+  z-index: 0;
+  top: 1px;
+  left: 1px;
+  width: 32px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--studio-view-switch-active);
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition: transform 160ms cubic-bezier(0.25, 1, 0.5, 1), background-color 120ms ease-out;
+}
+
+.studio-view-switch[data-view='tracks'] .studio-view-switch-indicator {
+  transform: translate3d(34px, 0, 0);
+}
+
+.studio-view-switch-button {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 32px;
+  height: 28px;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--studio-view-switch-icon);
+  cursor: pointer;
+  transition: color 120ms ease-out;
+}
+
+.studio-view-switch-button[aria-selected='true'] {
+  color: var(--studio-view-switch-icon-active);
+}
+
+.studio-view-switch-button:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--color-playback-accent);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .studio-view-switch-button:hover {
+    color: var(--studio-view-switch-icon-active);
+  }
+
+  .studio-view-switch-button:hover[aria-selected='true'] {
+    color: var(--studio-view-switch-icon-active);
+  }
+}
+
+/* The toolbar already has 8px of horizontal breathing room. Reserve the
+   switch's remaining width inside that padding so the follow button starts
+   just after the overlay rather than underneath it. */
+.studio-visualizer[data-has-view-switch='true'] [data-track-tools] {
+  padding-left: calc(0.5rem + var(--studio-view-switch-reserved-space));
+}
+
+@media (pointer: coarse) {
+  .studio-visualizer {
+    --studio-view-switch-reserved-space: 88px;
+  }
+
+  .studio-view-switch {
+    width: 84px;
+    height: 44px;
+    border-radius: 10px;
+  }
+
+  .studio-view-switch-indicator {
+    width: 40px;
+    height: 42px;
+    border-radius: 8px;
+  }
+
+  .studio-view-switch[data-view='tracks'] .studio-view-switch-indicator {
+    transform: translate3d(42px, 0, 0);
+  }
+
+  .studio-view-switch-button {
+    width: 40px;
+    height: 42px;
+    border-radius: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-view-switch-indicator,
+  .studio-view-switch-button {
+    transition: none;
+  }
+}
+
 /* ── Studio · the track panel ────────────────────────────────────────────────
    The time-line preview paints its own grounds instead of the shared page
    tokens, so retuning it cannot reach the editor or the conversation. The
@@ -3511,6 +3645,9 @@ html[data-theme='light'] .code-panel-light-blob svg {
    same six hues at higher lightness so events read off near-black. */
 .track-panel {
   --track-scale: 30px;
+  --track-scene-width: 100%;
+  --track-scene-offset: 0%;
+  --track-playhead-x: 0%;
   --track-canvas: #0A0A0C;
   --track-header: #131316;
   --track-rule: #1B1B20;
@@ -3535,6 +3672,74 @@ html[data-theme='light'] .code-panel-light-blob svg {
   --track-solo-bg: #1C2D47;
   --track-solo-bg-hover: #253B59;
   --track-solo-bg-pressed: #2C4567;
+}
+
+/* A committed preview owns one shared scene. Follow motion changes only these
+   compositor-facing values; the note/grid/ruler nodes do not reconcile per
+   animation frame. */
+.track-ruler-scene,
+.track-lane-scene {
+  width: var(--track-scene-width);
+  transform: translate3d(var(--track-scene-offset), 0, 0);
+  will-change: transform;
+}
+
+.track-playhead-position {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 100%;
+  transform: translate3d(var(--track-playhead-x), 0, 0);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.track-playhead-position > .track-playhead-line,
+.track-playhead-position > .track-playhead-ruler-line {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.track-playhead-position > .track-playhead-ruler-line {
+  top: 5px;
+  bottom: 0;
+}
+
+.track-playhead-position > .track-playhead-caret {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.track-lane-scene [data-track-note] {
+  background: var(--track-note-color);
+  opacity: var(--track-note-opacity, 0.72);
+}
+
+/* The lane canvases sit inside the shared scene transform. The base holds
+   grid/notes/columns and repaints only on scene, mix or size changes; the
+   overlay carries the low-frequency sounding highlight alone. A lane's scene
+   is a row of finite raster blocks, each clipped to its own ownership region
+   so block seams can neither double-draw nor leave a gap. */
+.track-lane-canvas {
+  contain: strict;
+}
+
+.track-lane-block {
+  position: absolute;
+  overflow: hidden;
+}
+
+.track-lane-canvas-base,
+.track-lane-canvas-overlay {
+  display: block;
+}
+
+.track-lane-block-bitmap {
+  position: absolute;
+}
+
+.track-lane-canvas-overlay {
+  pointer-events: none;
 }
 
 html[data-theme='light'] .track-panel {

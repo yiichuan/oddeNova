@@ -643,16 +643,20 @@ describe('StrudelService transport truth', () => {
     };
     const states: { isPlaying: boolean; isPaused: boolean }[] = [];
     service.onStateChange(({ isPlaying, isPaused }) => states.push({ isPlaying, isPaused }));
-    return { service, states };
+    const refresh = vi.spyOn(service.trackPreview, 'refresh');
+    return { service, states, refresh };
   }
 
   it('reports the transport the scheduler is actually running after a play', async () => {
-    const { service, states } = await serviceOnRunningScheduler();
+    const { service, states, refresh } = await serviceOnRunningScheduler();
     expect(states.at(-1)).toEqual({ isPlaying: false, isPaused: false });
 
     await service.play();
 
     expect(states.at(-1)).toEqual({ isPlaying: true, isPaused: false });
+    // `evaluate()`/transport state already notify the panel. A second generic
+    // preview refresh would only publish an equivalent revision on play.
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 
@@ -1417,14 +1421,17 @@ describe('studio track audition integration', () => {
     expect(heard).toEqual([haps[1]]);
     expect(scheduler.now()).toBe(3.25);
     expect(evaluate).not.toHaveBeenCalled();
-    // Compilation alone, including a failed evaluation, cannot reset audition.
-    options!.transpiler(code);
+    // A freshly transpiled copy of the exact mapped source is the resume
+    // fast path: it keeps the stable track identity and audition selection.
+    const sameResult = await core.evaluate(code, options!.transpiler);
+    expect(sameResult.meta.oddenovaTracks?.reusePreviewContent).toBe(true);
     expect(service.trackPreview.snapshot.soloId).not.toBeNull();
-    options!.afterEval(result);
-    expect(service.trackPreview.snapshot.soloId).toBeNull();
+    options!.afterEval(sameResult);
+    expect(service.trackPreview.snapshot.soloId).toBe(service.trackPreview.snapshot.tracks[1].id);
     heard.length = 0;
-    for (const hap of haps) await options!.defaultOutput(hap, 0, 1, .5, 1);
-    expect(heard).toEqual(haps);
+    const sameHaps = sameResult.pattern.queryArc(0, 1);
+    for (const hap of sameHaps) await options!.defaultOutput(hap, 0, 1, .5, 1);
+    expect(heard).toEqual([sameHaps[1]]);
     service.trackPreview.toggleSolo(service.trackPreview.snapshot.tracks[0].id);
     // Stop at the audio-rendering boundary after the real exporter schedules
     // its haps. Device rendering is deliberately outside this Node test.

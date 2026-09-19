@@ -1,9 +1,79 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { ListIcon, SparkleIcon } from '../icons';
 import { useStrudelTracks, useTransportEvent } from '../../hooks/useStrudel';
 import { t } from '../../lib/i18n';
 import type { PlaybackTimeline } from '../../lib/strudel-timing';
 import TrackPanel from './TrackPanel';
 import VizPlaceholder from './VizPlaceholder';
+
+type StudioView = 'animation' | 'tracks';
+
+const STUDIO_VIEWS: readonly StudioView[] = ['animation', 'tracks'];
+
+interface VisualizerViewSwitchProps {
+  activeView: StudioView;
+  idPrefix: string;
+  onSelect: (view: StudioView) => void;
+}
+
+function VisualizerViewSwitch({ activeView, idPrefix, onSelect }: VisualizerViewSwitchProps) {
+  const buttonRefs = useRef<Record<StudioView, HTMLButtonElement | null>>({ animation: null, tracks: null });
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const currentIndex = STUDIO_VIEWS.indexOf(activeView);
+    let nextView: StudioView | null = null;
+    if (event.key === 'ArrowLeft') {
+      nextView = STUDIO_VIEWS[(currentIndex - 1 + STUDIO_VIEWS.length) % STUDIO_VIEWS.length];
+    } else if (event.key === 'ArrowRight') {
+      nextView = STUDIO_VIEWS[(currentIndex + 1) % STUDIO_VIEWS.length];
+    } else if (event.key === 'Home') {
+      nextView = STUDIO_VIEWS[0];
+    } else if (event.key === 'End') {
+      nextView = STUDIO_VIEWS[STUDIO_VIEWS.length - 1];
+    }
+    if (!nextView) return;
+
+    event.preventDefault();
+    onSelect(nextView);
+    buttonRefs.current[nextView]?.focus();
+  };
+
+  return (
+    <div
+      role="tablist"
+      aria-label={t('visualizerView')}
+      aria-orientation="horizontal"
+      data-view={activeView}
+      className="studio-view-switch"
+    >
+      <span aria-hidden="true" className="studio-view-switch-indicator" />
+      {STUDIO_VIEWS.map(view => {
+        const selected = view === activeView;
+        const Icon = view === 'animation' ? SparkleIcon : ListIcon;
+        const label = t(view === 'animation' ? 'animationView' : 'tracksView');
+        return (
+          <button
+            key={view}
+            ref={element => { buttonRefs.current[view] = element; }}
+            type="button"
+            id={`${idPrefix}-${view}-tab`}
+            role="tab"
+            aria-label={label}
+            aria-selected={selected}
+            aria-controls={`${idPrefix}-${view}`}
+            tabIndex={selected ? 0 : -1}
+            title={label}
+            className="studio-view-switch-button"
+            onClick={() => onSelect(view)}
+            onKeyDown={handleKeyDown}
+          >
+            <span aria-hidden="true"><Icon size={15} /></span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export type TrackRevealTiming = 'immediate' | 'deferred';
 
@@ -36,7 +106,7 @@ export default function StudioVisualizer({
   isPlaying, isPaused, visible, animationEnabled, scopeKey, hasCode, engineReady,
   seekEnabled = true, playbackTimeline, onTrackReveal, renameEnabled = true,
 }: StudioVisualizerProps) {
-  const [view, setView] = useState<'animation' | 'tracks'>('animation');
+  const [view, setView] = useState<StudioView>('animation');
   const [codeHint, setCodeHint] = useState<string | null>(null);
   const id = useId();
   const {
@@ -45,7 +115,11 @@ export default function StudioVisualizer({
     mutedIds,
     status,
     revision,
-    getFrame,
+    getClock,
+    fullScene,
+    ensureFullScene,
+    prewarmFullScene,
+    previewGeneration,
     prepareTrackPreview,
     toggleSolo,
     toggleMute,
@@ -56,7 +130,13 @@ export default function StudioVisualizer({
   } = useStrudelTracks(scopeKey);
   const transport = useTransportEvent();
   const showTracks = view === 'tracks' || !animationEnabled;
-  const choices = animationEnabled ? ['animation', 'tracks'] as const : ['tracks'] as const;
+  const activeView: StudioView = showTracks ? 'tracks' : 'animation';
+  const selectView = useCallback((nextView: StudioView) => {
+    if (nextView === 'animation' && !animationEnabled) return;
+    if (nextView === activeView) return;
+    if (nextView === 'animation') clearMix();
+    setView(nextView);
+  }, [activeView, animationEnabled, clearMix]);
 
   useEffect(() => {
     if (!visible || !showTracks || !hasCode || !engineReady || status !== 'idle') return;
@@ -101,25 +181,20 @@ export default function StudioVisualizer({
         ? t('tracksPreparing')
         : null;
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-region border border-border bg-bg-primary">
-      <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-3 border-b border-border px-3">
-        <div role="tablist" aria-label={t('visualizerView')} className="flex gap-4">
-          {choices.map(choice => {
-            const selected = (choice === 'tracks') === showTracks;
-            return <button key={choice} type="button" id={`${id}-${choice}-tab`} role="tab" aria-selected={selected} aria-controls={`${id}-${choice}`} onClick={() => {
-              if (choice === 'animation') clearMix();
-              setView(choice);
-            }} className={`min-h-10 cursor-pointer border-b-2 px-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-accent ${selected ? 'border-accent text-text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>{t(choice === 'tracks' ? 'tracksView' : 'animationView')}</button>;
-          })}
-        </div>
-      </div>
-      {codeHint && (
-        <div data-testid="track-code-stale-hint" className="shrink-0 px-3 py-1.5 text-[11px] text-text-secondary" role="status">
-          {codeHint}
-        </div>
-      )}
+    <section
+      className="studio-visualizer relative flex h-full min-h-0 flex-col overflow-hidden rounded-region border border-border bg-bg-primary"
+      data-has-view-switch={animationEnabled ? 'true' : undefined}
+    >
+      {animationEnabled && <VisualizerViewSwitch activeView={activeView} idPrefix={id} onSelect={selectView} />}
       {animationEnabled && <div id={`${id}-animation`} role="tabpanel" aria-labelledby={`${id}-animation-tab`} hidden={showTracks} className="min-h-0 flex-1 [&>div]:rounded-none [&>div]:border-0"><VizPlaceholder isPlaying={isPlaying} /></div>}
-      <div id={`${id}-tracks`} role="tabpanel" aria-labelledby={`${id}-tracks-tab`} hidden={!showTracks} className="min-h-0 flex-1">
+      <div
+        id={`${id}-tracks`}
+        role="tabpanel"
+        aria-labelledby={animationEnabled ? `${id}-tracks-tab` : undefined}
+        aria-label={!animationEnabled ? t('tracksView') : undefined}
+        hidden={!showTracks}
+        className="min-h-0 flex-1"
+      >
         {trackContent ? <div className="flex h-full items-center justify-center text-sm text-text-secondary">{trackContent}</div> : (
           <TrackPanel
             tracks={tracks}
@@ -127,7 +202,11 @@ export default function StudioVisualizer({
             mutedIds={mutedIds}
             toggleSolo={toggleSolo}
             toggleMute={toggleMute}
-            getFrame={getFrame}
+            getClock={getClock}
+            fullScene={fullScene}
+            ensureFullScene={ensureFullScene}
+            prewarmFullScene={prewarmFullScene}
+            previewGeneration={previewGeneration}
             refreshRevision={revision}
             transportEvent={transport}
             isPlaying={isPlaying}
@@ -143,6 +222,11 @@ export default function StudioVisualizer({
           />
         )}
       </div>
+      {showTracks && codeHint && (
+        <div data-testid="track-code-stale-hint" className="shrink-0 px-3 py-1.5 text-[11px] text-text-secondary" role="status">
+          {codeHint}
+        </div>
+      )}
     </section>
   );
 }

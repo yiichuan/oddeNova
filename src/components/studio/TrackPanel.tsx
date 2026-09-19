@@ -9,22 +9,33 @@ import {
   clampCycle,
   cycleFromClientX,
   cycleTickLabel,
+  drawWindowForViewport,
   endTickLabel,
   nextEffectiveZoomSpan,
   ratioFromClientX,
   rulerTicks,
+  resolveTrackViewportFrame,
   validLoopCycles,
   wheelDeltaToCycles,
   zoomSliderToSpan,
   zoomSpanToSlider,
+  sceneBandContainsViewport,
+  sceneBandForViewport,
+  sceneTransformFor,
 } from '../../lib/track-timeline';
 import type { RulerTickHistory } from '../../lib/track-timeline';
-import type { PreviewTrack, TrackEvent, TrackFrame, TrackFrameRequest } from '../../services/track-preview';
+import type { TrackClockSample } from '../../lib/track-timeline';
+import type { PreviewTrack, TrackFullSceneRequest, TrackSceneQueryResult } from '../../services/track-preview';
+import type { TrackFullSceneIdentity, TrackFullSceneSnapshot, TrackLaneSceneData, TrackSceneBatch, TrackSceneRequest } from '../../lib/track-preview-scene';
+import { assembleFullSceneBatch, sameTrackFullSceneIdentity, TrackHighlightCursor, densityColumnAt, planPixelPrecision } from '../../lib/track-preview-scene';
+import { RASTER_DEFAULT_BUDGET_BYTES } from '../../lib/track-preview-canvas';
 import type { TrackRenameResult, TransportEvent } from '../../services/strudel';
 import type { PlaybackTimeline } from '../../lib/strudel-timing';
 import { formatPlaybackTime } from '../../lib/strudel-timing';
-import { MutedVolumeIcon, VolumeIcon, ZoomResetIcon } from '../icons';
+import { MutedVolumeIcon, VolumeIcon } from '../icons';
 import { useTrackViewport } from '../../hooks/useTrackViewport';
+import { useDevicePixelRatio } from '../../hooks/useDevicePixelRatio';
+import TrackLaneCanvas, { type TrackLaneCanvasHandle } from './TrackLaneCanvas';
 
 interface TrackPanelProps {
   tracks: PreviewTrack[];
@@ -32,7 +43,22 @@ interface TrackPanelProps {
   mutedIds: ReadonlySet<string>;
   toggleSolo: (id: string) => void;
   toggleMute: (id: string) => void;
-  getFrame: (request: TrackFrameRequest) => TrackFrame;
+  /** Clock-only high-frequency read used by the production panel. */
+  getClock?: () => TrackClockSample;
+  /** Cancellable low-frequency scene query used by the production panel. */
+  queryScene?: (
+    request: TrackSceneRequest,
+    signal?: AbortSignal,
+    onProgress?: (batch: TrackSceneBatch) => void,
+  ) => Promise<TrackSceneQueryResult>;
+  /** Fixed-range scene snapshot used by the production panel. */
+  fullScene?: TrackFullSceneSnapshot | null;
+  /** Starts or reuses one full-scene job for an identity. */
+  ensureFullScene?: (request: TrackFullSceneRequest) => void;
+  /** Prepares the next pass without replacing the current snapshot. */
+  prewarmFullScene?: (request: TrackFullSceneRequest) => void;
+  /** Pattern/track generation; mix-only revisions do not invalidate a scene. */
+  previewGeneration?: number;
   isPlaying: boolean;
   isPaused: boolean;
   active: boolean;
@@ -58,14 +84,7 @@ interface TrackPanelProps {
   /** One identity per work session: a change resets the scale, an edit does not. */
   sessionKey?: string;
 }
-const EMPTY_FRAME: TrackFrame = { now: 0, begin: 0, end: 0, limited: false, events: [] };
 const HUE_COUNT = 6;
-const NOTE_HEIGHT = 5;
-const NOTE_RADIUS = 2;
-const NOTE_MIN_WIDTH = 2;
-const NOTE_SEP_WIDTH = 1;
-const NOTE_OPACITY = 0.72;
-const NOTE_DIMMED_OPACITY = 0.35;
 const PAN_START_THRESHOLD_PX = 6;
 /** One zoom step per ~80px of accumulated Alt+wheel; a light sweep must not cross every level. */
 const ZOOM_STEP_PX = 80;
@@ -79,19 +98,11 @@ const TRACK_NAME_DOUBLE_ACTIVATION_MS = 400;
 const TRACK_NAME_TAP_SLOP_PX = 12;
 /** Measured before the first ResizeObserver report — errs sparse on purpose. */
 const FALLBACK_CONTENT_WIDTH = 400;
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-// Vertical placement is expressed through the note's *centre*, so a note reads
-// as a point on the row. Pitched notes map MIDI 24–96 onto the middle half of
-// the row (low at the bottom, clamped outside); percussion holds one of five
-// fixed pixel lanes around the row's centreline, so a sound keeps its lane
-// even as other sounds enter/leave the window and the row stretches.
-function noteTop(event: TrackEvent): string {
-  if (event.pitch !== null) return `calc(${(25 + (1 - clamp((event.pitch - 24) / 72, 0, 1)) * 50).toFixed(3)}% - ${NOTE_HEIGHT / 2}px)`;
-  let hash = 0;
-  for (const char of event.sound) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  const offset = (hash % 5 - 2) * 4 - NOTE_HEIGHT / 2;
-  return `calc(50% ${offset < 0 ? '-' : '+'} ${Math.abs(offset)}px)`;
-}
+/** The sounding overlay samples at the same low rate as the preview work. */
+const SOUNDING_INTERVAL_MS = 80;
+/** Playback re-aims the draw window once the remaining off-screen margin
+ *  falls under this share of one visible span. */
+const DRAW_WINDOW_SAFETY_RATIO = 0.25;
 
 // Track colours key off a generation-stable colour key — the name the layer
 // first compiled with — so a hue belongs to the layer rather than to what is
@@ -142,7 +153,7 @@ function renameErrorMessage(result: TrackRenameResult): string {
 }
 
 export default function TrackPanel({
-  tracks, soloId, mutedIds, toggleSolo, toggleMute, getFrame, isPlaying, isPaused, active,
+  tracks, soloId, mutedIds, toggleSolo, toggleMute, getClock, queryScene, fullScene, ensureFullScene, prewarmFullScene, previewGeneration = 0, isPlaying, isPaused, active,
   refreshRevision = 0, transportEvent, canSeek = true, seekToCycle, onNavigateToTrack, timeline,
   sessionKey = '', canRename = true, renameTrack,
 }: TrackPanelProps) {
@@ -150,31 +161,91 @@ export default function TrackPanel({
   // [0, L]. Null (no usable code) disables the timeline instead of unbounding it.
   const loopCycles = validLoopCycles(timeline?.loopCycles) ? timeline!.loopCycles : null;
   const estimatedCps = timeline?.estimatedCps ?? null;
-  const [frame, setFrame] = useState<TrackFrame>(EMPTY_FRAME);
+  const fullSceneMode = Boolean(getClock && ensureFullScene);
+  const liveMode = fullSceneMode || Boolean(getClock && queryScene);
   const viewport = useTrackViewport(loopCycles);
+  // One DPR subscription for the whole panel: every lane draws at the same
+  // ratio, and a display change redraws without touching the query identity.
+  const devicePixelRatio = useDevicePixelRatio();
+  const [liveProjectionSnapshot, setLiveProjectionSnapshot] = useState(() => resolveTrackViewportFrame(0, viewport.request));
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [dragHint, setDragHint] = useState<{ cycle: number; clientX: number } | null>(null);
+  // The measured width of the shared content area (ruler and canvas draw at
+  // the same width); 0 until the first ResizeObserver report.
+  const [contentWidth, setContentWidth] = useState(0);
   const lanesRef = useRef<HTMLDivElement | null>(null);
   const rulerRef = useRef<HTMLDivElement | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const announceTimerRef = useRef<number | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  // The scene state: one committed immutable batch plus the in-flight
+  // progressive merge, shown only while no complete scene exists yet.
+  const [committedScene, setCommittedScene] = useState<TrackSceneBatch | null>(null);
+  const [progressScene, setProgressScene] = useState<TrackSceneBatch | null>(null);
+  const [legacyQuerying, setLegacyQuerying] = useState(false);
+  const [legacyPreviewFailure, setLegacyPreviewFailure] = useState<'resource-guarded' | 'failed' | null>(null);
+  const [rasterFailure, setRasterFailure] = useState<'resource-guarded' | null>(null);
+  const fullSceneBatch = fullSceneMode && fullScene && loopCycles !== null
+    ? assembleFullSceneBatch(
+      fullScene,
+      tracks.map(track => track.id),
+      liveProjectionSnapshot.begin,
+      liveProjectionSnapshot.end,
+      contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH,
+    )
+    : null;
+  const legacyCurrentScene = committedScene?.generation === previewGeneration ? committedScene : null;
+  const legacyDisplayScene = legacyCurrentScene
+    ?? (progressScene?.generation === previewGeneration ? progressScene : null);
+  const currentScene = fullSceneMode
+    ? (fullSceneBatch?.status === 'complete' ? fullSceneBatch : null)
+    : legacyCurrentScene;
+  const displayScene = fullSceneMode ? fullSceneBatch : legacyDisplayScene;
+  const querying = fullSceneMode ? fullScene?.status === 'preparing' : legacyQuerying;
+  const previewFailure = fullSceneMode
+    ? fullScene?.status === 'resource-guarded' ? 'resource-guarded' : fullScene?.status === 'failed' ? 'failed' : rasterFailure
+    : legacyPreviewFailure;
+  const displaySceneRef = useRef<TrackSceneBatch | null>(displayScene);
+  displaySceneRef.current = displayScene;
+  const committedSceneRef = useRef<TrackSceneBatch | null>(currentScene);
+  committedSceneRef.current = currentScene;
+  const laneHandlesRef = useRef(new Map<string, TrackLaneCanvasHandle>());
+  const highlightTrackersRef = useRef(new Map<string, TrackHighlightCursor>());
+  const sceneBandRef = useRef<{ begin: number; end: number } | null>(null);
+  const fullSceneIdentityRef = useRef<TrackFullSceneIdentity | null>(null);
+  const fullSceneRef = useRef<TrackFullSceneSnapshot | null>(fullScene);
+  fullSceneRef.current = fullScene ?? null;
+  const lastSoundingUpdateRef = useRef(-Infinity);
+  const lastSoundingNowRef = useRef(0);
+  const isPlayingRef = useRef(isPlaying);
+  const isPausedRef = useRef(isPaused);
+  isPlayingRef.current = isPlaying;
+  isPausedRef.current = isPaused;
+  const previewJobRef = useRef<{
+    timer: number | null;
+    controller: AbortController | null;
+    latest: TrackSceneRequest | null;
+  }>({ timer: null, controller: null, latest: null });
+  const liveDomRef = useRef<{
+    playhead: HTMLElement | null;
+    rulerLine: HTMLElement | null;
+    caret: HTMLElement | null;
+  }>({ playhead: null, rulerLine: null, caret: null });
   // The live sampling request, read by the RAF loop whose effect only depends
   // on lifecycle state — a per-frame window change must never re-mount it.
   const requestRef = useRef(viewport.request);
   requestRef.current = viewport.request;
   // The live displayed window, read by the non-passive wheel listener and by
   // zoom anchors whose effects only run once — state inside a closure goes stale.
-  const frameBeginRef = useRef(frame.begin);
-  frameBeginRef.current = frame.begin;
-  const frameSpanRef = useRef(frame.end - frame.begin);
-  frameSpanRef.current = frame.end - frame.begin;
+  const liveProjectionRef = useRef(resolveTrackViewportFrame(0, viewport.request));
+  const frameBeginRef = useRef(liveProjectionRef.current.begin);
+  frameBeginRef.current = liveMode ? liveProjectionRef.current.begin : 0;
+  const frameSpanRef = useRef(liveProjectionRef.current.span);
+  frameSpanRef.current = liveMode ? liveProjectionRef.current.span : 0;
   // The accepted zoom scale, read by wheel/keyboard handlers that may run
   // several times between renders.
   const zoomSpanRef = useRef(viewport.span);
   zoomSpanRef.current = viewport.span;
-  // The measured width of the shared content area (ruler and notes draw at
-  // the same width); 0 until the first ResizeObserver report.
-  const [contentWidth, setContentWidth] = useState(0);
   // The tick levels already on screen, kept across renders as pure display
   // history: the density rules ride the drawn level itself, so a continuous
   // zoom — where spans almost never repeat — cannot make the scale flap at
@@ -227,13 +298,24 @@ export default function TrackPanel({
     frame: number | null;
   } | null>(null);
 
-  const announce = useCallback((cycle: number) => {
+  const scheduleAnnouncement = useCallback((message: string) => {
     if (announceTimerRef.current !== null) window.clearTimeout(announceTimerRef.current);
+    // Clear first so repeating the same boundary/range is announced again.
+    setAnnouncement('');
     announceTimerRef.current = window.setTimeout(() => {
       announceTimerRef.current = null;
-      setAnnouncement(timeHint(clampCycle(cycle), estimatedCps));
+      setAnnouncement(message);
     }, 150);
-  }, [estimatedCps]);
+  }, []);
+  const announce = useCallback((cycle: number) => {
+    scheduleAnnouncement(timeHint(clampCycle(cycle), estimatedCps));
+  }, [estimatedCps, scheduleAnnouncement]);
+  const announceWindow = useCallback((begin: number, end: number) => {
+    scheduleAnnouncement(tf('trackBrowseRange', {
+      begin: cycleTickLabel(begin),
+      end: cycleTickLabel(end),
+    }));
+  }, [scheduleAnnouncement]);
   useEffect(() => () => {
     if (announceTimerRef.current !== null) window.clearTimeout(announceTimerRef.current);
   }, []);
@@ -450,6 +532,15 @@ export default function TrackPanel({
     scheduleNameNavigation(track.id);
   };
 
+  const handleTrackHeaderClick = (track: PreviewTrack, event: React.MouseEvent<HTMLDivElement>) => {
+    // The action row stretches across the whole header, so the space after
+    // Solo belongs to that div rather than the outer header. Treat every
+    // non-control part of the header like the name button while keeping mute,
+    // Solo and the inline editor independent.
+    if ((event.target as Element).closest('button, input')) return;
+    handleNameClick(track);
+  };
+
   const handleNameDoubleClick = (track: PreviewTrack, event: React.MouseEvent<HTMLButtonElement>) => {
     // The second click normally already opened the editor; this catches a
     // system dblclick that arrives outside the arbitration window — possibly
@@ -551,8 +642,12 @@ export default function TrackPanel({
   // must never unfreeze the window or re-aim mid-gesture — while an external
   // seek ends the drag and takes over.
   const transportRevision = transportEvent?.revision ?? 0;
+  const handledTransportRevisionRef = useRef(transportRevision);
+  const previewTransportRevisionRef = useRef(transportRevision);
   useEffect(() => {
     if (!transportEvent) return;
+    if (handledTransportRevisionRef.current === transportRevision) return;
+    handledTransportRevisionRef.current = transportRevision;
     const { reason, cycle, seek } = transportEvent;
     const externalSeek = reason === 'seek' && seek?.source === 'progress';
     if (externalSeek || reason === 'stop' || reason === 'code-change') cancelSliderZoom();
@@ -576,28 +671,354 @@ export default function TrackPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transportRevision]);
 
-  // The stable RAF loop: one sample per visible animation frame while
-  // playing, reading the latest request through the ref. Manual requests,
-  // transport notifications and refreshes redraw discretely below.
+  /**
+   * Register one lane's canvas handle; the sounding overlay reaches it
+   * imperatively, never through a re-render.
+   */
+  const registerLaneHandle = useCallback((trackId: string, handle: TrackLaneCanvasHandle | null) => {
+    if (handle) laneHandlesRef.current.set(trackId, handle);
+    else laneHandlesRef.current.delete(trackId);
+  }, []);
+
+  /**
+   * Sounding stays a low-frequency concern sampled at the preview's rate.
+   * Exact lanes scan with a cursor over their sorted index; density lanes
+   * highlight the column under the playhead. Nothing here touches React
+   * state, the base canvas or the pattern.
+   */
+  const syncSounding = useCallback((displayNow: number, force = false) => {
+    const now = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    if (!force && now - lastSoundingUpdateRef.current < SOUNDING_INTERVAL_MS) return;
+    lastSoundingUpdateRef.current = now;
+    const sounding = isPlayingRef.current || isPausedRef.current;
+    const scene = displaySceneRef.current;
+    for (const track of tracksRef.current) {
+      const handle = laneHandlesRef.current.get(track.id);
+      if (!handle) continue;
+      if (!sounding) {
+        handle.setActive(null);
+        continue;
+      }
+      const lane = scene?.lanes.find(data => data.trackId === track.id) ?? null;
+      if (!lane || lane.rawEventCount === 0) { handle.setActive(null); continue; }
+      if (lane.representation === 'exact' && lane.exact) {
+        let cursor = highlightTrackersRef.current.get(track.id);
+        if (!cursor) {
+          cursor = new TrackHighlightCursor(lane.exact);
+          highlightTrackersRef.current.set(track.id, cursor);
+        }
+        const forward = displayNow >= lastSoundingNowRef.current - 1e-9;
+        const ids = forward ? cursor.advance(displayNow) : cursor.reset(displayNow);
+        handle.setActive({ ids });
+      } else if (lane.density) {
+        handle.setActive({ bins: [densityColumnAt(lane.density, displayNow)] });
+      } else {
+        handle.setActive(null);
+      }
+    }
+    lastSoundingNowRef.current = displayNow;
+  }, []);
+
+  // A new scene rebuilds the highlight state: cursors are scene-scoped.
+  useEffect(() => {
+    highlightTrackersRef.current.clear();
+  }, [committedScene, fullScene?.identity, progressScene]);
+
+  /** Write only compositor-facing values during a clock sample. */
+  const applyLiveProjection = useCallback((projection: ReturnType<typeof resolveTrackViewportFrame>) => {
+    liveProjectionRef.current = projection;
+    frameBeginRef.current = projection.begin;
+    frameSpanRef.current = projection.span;
+    if (!liveMode) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const band = fullSceneMode && loopCycles !== null
+      ? { begin: 0, end: loopCycles }
+      : sceneBandRef.current;
+    if (band) {
+      const transform = sceneTransformFor(band, projection);
+      panel.style.setProperty('--track-scene-width', `${transform.widthPercent}%`);
+      panel.style.setProperty('--track-scene-offset', `${transform.offsetPercent}%`);
+    }
+    const ratio = projection.span > 0
+      ? (projection.displayNow - projection.begin) / projection.span * 100
+      : 0;
+    const visible = projection.displayNow >= projection.begin && projection.displayNow <= projection.end;
+    const x = `${Math.round(ratio * 10000) / 10000}%`;
+    panel.style.setProperty('--track-playhead-x', x);
+    for (const marker of [liveDomRef.current.playhead, liveDomRef.current.rulerLine, liveDomRef.current.caret]) {
+      if (!marker) continue;
+      marker.style.transform = `translate3d(${x}, 0, 0)`;
+      marker.style.visibility = visible ? '' : 'hidden';
+    }
+    syncSounding(projection.displayNow);
+  }, [fullSceneMode, liveMode, loopCycles, syncSounding]);
+
+  const sampleLiveClock = useCallback((forceSounding = false) => {
+    if (!liveMode || !getClock || loopCycles === null) return null;
+    const clock = getClock();
+    const projection = resolveTrackViewportFrame(clock.absoluteCycle, requestRef.current);
+    if (fullSceneMode && ensureFullScene && loopCycles !== null) {
+      const identity: TrackFullSceneIdentity = Object.freeze({
+        previewGeneration,
+        loopOffset: projection.loopOffset,
+        loopCycles,
+        cps: clock.cps,
+      });
+      if (!sameTrackFullSceneIdentity(fullSceneIdentityRef.current, identity)) {
+        fullSceneIdentityRef.current = identity;
+        ensureFullScene({
+          identity,
+          initialViewport: { begin: projection.begin, end: projection.end },
+          cssWidth: contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH,
+        });
+      }
+      const currentFullScene = fullSceneRef.current;
+      if (prewarmFullScene && isPlayingRef.current
+        && currentFullScene?.status === 'complete'
+        && sameTrackFullSceneIdentity(currentFullScene.identity, identity)) {
+        prewarmFullScene({
+          identity: Object.freeze({
+            ...identity,
+            loopOffset: identity.loopOffset + loopCycles,
+          }),
+          initialViewport: { begin: projection.begin, end: projection.end },
+          cssWidth: contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH,
+        });
+      }
+    }
+    applyLiveProjection(projection);
+    if (forceSounding) setLiveProjectionSnapshot(projection);
+    if (forceSounding) syncSounding(projection.displayNow, true);
+    return { clock, projection };
+  }, [applyLiveProjection, contentWidth, ensureFullScene, fullSceneMode, getClock, liveMode, loopCycles, prewarmFullScene, previewGeneration, syncSounding]);
+
+  const committedQueryRef = useRef<{
+    generation: number;
+    loopOffset: number;
+    cps: number;
+    begin: number;
+    end: number;
+    tier: number;
+    binSpan: number;
+    exactBudget: number;
+  } | null>(null);
+  // The last accepted target tier: recorded only from committed results, never
+  // from a cancelled query. Requests carry it so the service can validate and
+  // hold it against its own measurement.
+  const acceptedTierRef = useRef<number | null>(null);
+  // One queued draw window refresh: set when playback enters the safety
+  // distance, committed at most once per animation frame.
+  const drawWindowRefreshQueuedRef = useRef(false);
+
+  const makePreviewRequest = useCallback((force: boolean): TrackSceneRequest | null => {
+    if (fullSceneMode || !liveMode || !getClock || !queryScene || !tracks.length || loopCycles === null) return null;
+    const sampled = sampleLiveClock();
+    if (!sampled) return null;
+    const { clock, projection } = sampled;
+    const committed = committedQueryRef.current;
+    const currentBand = sceneBandRef.current;
+    if (!force && committed && currentBand
+      && committed.generation === previewGeneration
+      && Math.abs(committed.loopOffset - projection.loopOffset) < 1e-9
+      && Math.abs(committed.cps - clock.cps) < 1e-9
+      && sceneBandContainsViewport(currentBand, projection, 0.25, loopCycles)) {
+      // Precision-only compat check: only a genuinely finer target re-queries;
+      // DPR or lane-height changes never do.
+      const cssWidth = contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH;
+      const target = planPixelPrecision({
+        cssWidth,
+        viewportBegin: projection.begin,
+        viewportEnd: projection.end,
+        bandBegin: currentBand.begin,
+        bandEnd: currentBand.end,
+        previousTier: acceptedTierRef.current ?? undefined,
+        requestedTier: acceptedTierRef.current ?? undefined,
+      });
+      if (committed.tier >= target.resolutionTier
+        && committed.binSpan > 0
+        && committed.binSpan <= target.effectiveBinSpan + 1e-9
+        && committed.exactBudget >= target.exactBudget) return null;
+    }
+    const band = sceneBandForViewport(projection, loopCycles);
+    const cssWidth = contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH;
+    return {
+      generation: previewGeneration,
+      loopOffset: projection.loopOffset,
+      cps: clock.cps,
+      queryBegin: band.begin,
+      queryEnd: band.end,
+      viewportBegin: projection.begin,
+      viewportEnd: projection.end,
+      cssWidth,
+      devicePixelRatio,
+      resolutionTier: acceptedTierRef.current ?? undefined,
+    };
+  }, [contentWidth, devicePixelRatio, fullSceneMode, getClock, liveMode, loopCycles, previewGeneration, queryScene, sampleLiveClock, tracks.length]);
+
+  const startPreviewQuery = useCallback((request: TrackSceneRequest) => {
+    if (fullSceneMode || !queryScene) return;
+    const job = previewJobRef.current;
+    job.controller?.abort();
+    const controller = new AbortController();
+    job.controller = controller;
+    setLegacyQuerying(true);
+    void queryScene(request, controller.signal, batch => {
+      // Progressive tile merges arrive here; the committed scene below is
+      // never replaced by a partial one.
+      if (controller.signal.aborted || previewJobRef.current.controller !== controller) return;
+      if (batch.generation !== previewGeneration) return;
+      setProgressScene(batch);
+    })
+      .then(result => {
+        if (controller.signal.aborted || previewJobRef.current.controller !== controller) return;
+        if (result.status === 'complete' && result.batch && result.batch.generation === previewGeneration) {
+          sceneBandRef.current = { begin: result.batch.begin, end: result.batch.end };
+          committedQueryRef.current = {
+            generation: result.batch.generation,
+            loopOffset: result.batch.loopOffset,
+            cps: request.cps,
+            begin: result.batch.begin,
+            end: result.batch.end,
+            tier: result.batch.resolutionTier,
+            binSpan: result.batch.effectiveBinSpan ?? 0,
+            exactBudget: result.batch.exactBudget ?? 0,
+          };
+          acceptedTierRef.current = result.batch.resolutionTier;
+          setCommittedScene(result.batch);
+          setProgressScene(null);
+          setLegacyPreviewFailure(null);
+          highlightTrackersRef.current.clear();
+          sampleLiveClock(true);
+        } else if (result.status === 'resource-guarded' || result.status === 'failed') {
+          // A cancelled or guarded result must not turn the accepted tier into
+          // a lesser one; the previously committed scene stays in charge.
+          setLegacyPreviewFailure(result.status);
+        }
+      })
+      .catch(error => {
+        // Cancellation is expected during seek, code changes and unmount. A
+        // real query failure keeps the previous complete scene in place.
+        if ((error as { name?: string })?.name !== 'AbortError') setLegacyPreviewFailure('failed');
+      })
+      .finally(() => {
+        if (previewJobRef.current.controller === controller) {
+          previewJobRef.current.controller = null;
+          setLegacyQuerying(false);
+        }
+      });
+  }, [fullSceneMode, previewGeneration, queryScene, sampleLiveClock]);
+
+  const schedulePreviewQuery = useCallback((immediate: boolean, force: boolean) => {
+    const request = makePreviewRequest(force);
+    if (!request) return;
+    const job = previewJobRef.current;
+    job.latest = request;
+    const run = () => {
+      job.timer = null;
+      const latest = job.latest;
+      job.latest = null;
+      if (latest) startPreviewQuery(latest);
+    };
+    if (immediate) {
+      if (job.timer !== null) { window.clearTimeout(job.timer); job.timer = null; }
+      run();
+    } else if (job.timer === null) {
+      job.timer = window.setTimeout(run, 80);
+    }
+  }, [makePreviewRequest, startPreviewQuery]);
+
+  // One queued draw window refresh: set when playback enters the safety
+  // distance, committed at most once per animation frame with the latest
+  // target — never the stale frame that queued it.
+  const refreshDrawWindowIfNeeded = useCallback(() => {
+    if (fullSceneMode || !liveMode || loopCycles === null) return;
+    const scene = committedSceneRef.current;
+    if (!scene) return;
+    const projection = liveProjectionRef.current;
+    const band = { begin: scene.begin, end: scene.end };
+    const window = drawWindowForViewport(projection, band);
+    if (sceneBandContainsViewport(window, projection, DRAW_WINDOW_SAFETY_RATIO, loopCycles)) return;
+    if (drawWindowRefreshQueuedRef.current) return;
+    drawWindowRefreshQueuedRef.current = true;
+    requestAnimationFrame(() => {
+      drawWindowRefreshQueuedRef.current = false;
+      setLiveProjectionSnapshot(liveProjectionRef.current);
+      schedulePreviewQuery(false, false);
+    });
+  }, [fullSceneMode, liveMode, loopCycles, schedulePreviewQuery]);
+
+  // The production RAF samples only clock/viewport and writes transforms. It
+  // never calls queryArc or updates React state — except for one queued draw
+  // window refresh when playback nears the window's edge (at most one per
+  // animation frame, and still only within the prefetch band).
   useLayoutEffect(() => {
-    if (!active || !tracks.length || !isPlaying) return;
+    if (!liveMode || !active || !tracks.length || !isPlaying) return;
     let request = 0;
     const tick = () => {
       request = requestAnimationFrame(tick);
       if (document.visibilityState === 'hidden') return;
-      setFrame(getFrame(requestRef.current));
+      sampleLiveClock();
+      refreshDrawWindowIfNeeded();
     };
-    request = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(request);
-  }, [active, tracks, isPlaying, getFrame]);
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        if (request !== 0) { cancelAnimationFrame(request); request = 0; }
+      } else if (request === 0) {
+        request = requestAnimationFrame(tick);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    if (document.visibilityState !== 'hidden') request = requestAnimationFrame(tick);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (request !== 0) cancelAnimationFrame(request);
+    };
+  }, [active, isPlaying, liveMode, refreshDrawWindowIfNeeded, sampleLiveClock, tracks.length]);
 
-  // One synchronous redraw per discrete change — first paint, pause/resume,
-  // a manual pan or freeze, a seek or stop notification, a refresh — so the
-  // picture is right even when no RAF loop is running.
+  // First compile, session change and paused/stopped transitions need one
+  // synchronous coordinate sample before paint; the query itself stays in the
+  // low-frequency path below.
   useLayoutEffect(() => {
-    if (!active || !tracks.length) return;
-    setFrame(getFrame(requestRef.current));
-  }, [active, tracks, getFrame, viewport.request, isPlaying, isPaused, refreshRevision, transportRevision]);
+    if (!liveMode || !active || !tracks.length) return;
+    sampleLiveClock(true);
+    if (fullSceneMode) return;
+    schedulePreviewQuery(true, !committedSceneRef.current || committedSceneRef.current.generation !== previewGeneration);
+  }, [active, fullSceneMode, isPaused, isPlaying, liveMode, previewGeneration, schedulePreviewQuery, sampleLiveClock, tracks.length]);
+
+  // Transport seeks/pause/stop request one deterministic refresh, coalesced by
+  // the 80ms merge window so repeated scrub notifications do not overlap jobs.
+  useEffect(() => {
+    if (!liveMode || !active || !tracks.length) return;
+    if (previewTransportRevisionRef.current === transportRevision) return;
+    previewTransportRevisionRef.current = transportRevision;
+    sampleLiveClock(true);
+    if (fullSceneMode) return;
+    schedulePreviewQuery(false, true);
+  }, [active, fullSceneMode, liveMode, schedulePreviewQuery, sampleLiveClock, tracks.length, transportRevision]);
+
+  // Viewport gestures update transforms immediately; a new band is queried on
+  // demand and merged with any already pending target.
+  useEffect(() => {
+    if (!liveMode || !active || !tracks.length) return;
+    sampleLiveClock(true);
+    if (fullSceneMode) return;
+    schedulePreviewQuery(false, false);
+  }, [active, fullSceneMode, liveMode, schedulePreviewQuery, sampleLiveClock, tracks.length, viewport.request]);
+
+  // No hidden-page work or stale handle registration survives a lifecycle edge.
+  useEffect(() => {
+    if (!liveMode || active) return;
+    const job = previewJobRef.current;
+    if (job.timer !== null) { window.clearTimeout(job.timer); job.timer = null; }
+    job.controller?.abort(); job.controller = null; job.latest = null;
+  }, [active, liveMode]);
+  useEffect(() => () => {
+    const job = previewJobRef.current;
+    if (job.timer !== null) window.clearTimeout(job.timer);
+    job.controller?.abort();
+    laneHandlesRef.current.clear();
+  }, []);
 
   // Leaving the panel or the page cancels live gestures, any open rename
   // draft and the name activation; coming back redraws once from the current
@@ -612,6 +1033,9 @@ export default function TrackPanel({
       setDragHint(null);
       clearNameActivation();
       pendingNameFocusRef.current = null;
+      const job = previewJobRef.current;
+      if (job.timer !== null) { window.clearTimeout(job.timer); job.timer = null; }
+      job.controller?.abort(); job.controller = null; job.latest = null;
     }
   }, [active, clearWheelZoom, cancelSliderZoom, setRenameDraft, clearNameActivation]);
   useEffect(() => {
@@ -625,20 +1049,49 @@ export default function TrackPanel({
       setDragHint(null);
       clearNameActivation();
       pendingNameFocusRef.current = null;
+      const job = previewJobRef.current;
+      if (job.timer !== null) { window.clearTimeout(job.timer); job.timer = null; }
+      job.controller?.abort(); job.controller = null; job.latest = null;
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [active, clearWheelZoom, cancelSliderZoom, clearNameActivation]);
 
+  // A failure keeps its scene; a new successful commit clears it. A guard or
+  // a failure is the only state that occupies the warning slot — normal
+  // density is a complete preview, not a warning.
+  useEffect(() => {
+    if (committedScene?.generation === previewGeneration) setLegacyPreviewFailure(null);
+  }, [committedScene, previewGeneration]);
+
+  const liveRenderProjection = liveMode ? liveProjectionSnapshot : null;
+  const renderFrame = {
+    now: liveRenderProjection?.displayNow ?? displayScene?.viewportBegin ?? 0,
+    begin: liveRenderProjection?.begin ?? displayScene?.viewportBegin ?? 0,
+    end: liveRenderProjection?.end ?? displayScene?.viewportEnd ?? 0,
+  };
+  const sceneBand = fullSceneMode && loopCycles !== null
+    ? { begin: 0, end: loopCycles }
+    : liveMode && currentScene
+      ? { begin: currentScene.begin, end: currentScene.end }
+    : liveMode && loopCycles !== null
+      ? sceneBandForViewport(renderFrame, loopCycles)
+      : { begin: renderFrame.begin, end: renderFrame.end };
+  const sceneTransform = sceneTransformFor(sceneBand, {
+    begin: renderFrame.begin,
+    end: renderFrame.end,
+  });
+  // The drawing blocks commit at most one visible span to each side of the
+  // viewport, always inside the data that exists.
+  const drawWindow = drawWindowForViewport(renderFrame, sceneBand);
+  // The panel owns the bitmap budget: one equal share per lane keeps the
+  // estimate panel-level, and a lane whose visible area alone exceeds its
+  // share may overrun that soft budget rather than losing clarity.
+  const rasterBudgetPerLane = Math.floor(RASTER_DEFAULT_BUDGET_BYTES / Math.max(1, tracks.length));
+  const notifyRasterFailure = useCallback(() => {
+    setRasterFailure(previous => previous ?? 'resource-guarded');
+  }, []);
   const slots = useMemo(() => trackSlots(tracks), [tracks]);
-  const grouped = useMemo(() => {
-    const result = new Map<string, TrackEvent[]>();
-    for (const event of frame.events) {
-      const bucket = result.get(event.trackId) ?? [];
-      bucket.push(event); result.set(event.trackId, bucket);
-    }
-    return result;
-  }, [frame]);
   // Everything on screen — ruler, grid, notes, playhead — projects through
   // this one frame, so the window the events were queried for is exactly the
   // window they are drawn in. The tick level is fixed by the span and the
@@ -646,9 +1099,15 @@ export default function TrackPanel({
   // drawn level's own hysteresis rides across spans. Reading happens here in
   // render, but writing the history back waits for the layout commit below,
   // so an uncommitted render can never pollute the display history.
-  const viewSpan = frame.end - frame.begin;
+  const viewSpan = renderFrame.end - renderFrame.begin;
   const measuredWidth = contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH;
-  const ticks = rulerTicks(frame.begin, frame.end, measuredWidth, tickHistoryRef.current ?? undefined);
+  // Ruler labels stay in the current visible window for readability. Lane
+  // grid lines additionally use the wider scene band so follow motion has
+  // compositor-ready material on both sides.
+  const ticks = rulerTicks(renderFrame.begin, renderFrame.end, measuredWidth, tickHistoryRef.current ?? undefined);
+  const sceneTicks = liveMode
+    ? rulerTicks(sceneBand.begin, sceneBand.end, measuredWidth * sceneTransform.widthPercent / 100, tickHistoryRef.current ?? undefined)
+    : ticks;
   // Record the level only after the frame that drew it commits; a discarded
   // render must never leave its level in the display history.
   useLayoutEffect(() => {
@@ -657,17 +1116,32 @@ export default function TrackPanel({
   });
   // The piece's real end is the only place a boundary tick is drawn: an
   // ordinary mid-piece window must not imply a limit it does not have.
-  const endLabel = endTickLabel(frame.end, loopCycles, ticks.majorStep);
+  const endLabel = endTickLabel(renderFrame.end, loopCycles, ticks.majorStep);
   const position = (cycle: number) => {
-    const percent = (cycle - frame.begin) / (frame.end - frame.begin) * 100;
+    const percent = (cycle - renderFrame.begin) / (renderFrame.end - renderFrame.begin) * 100;
     // Four decimals kill float noise (a centred playhead lands at 50.000…007)
     // without disturbing the sub-pixel precision short notes rely on.
     return Math.round(percent * 10000) / 10000;
   };
-  const visibleBegin = Math.max(0, frame.begin);
-  // Inclusive at both ends: a playhead clamped onto the window's right edge is
-  // still the real position and must draw there, not vanish.
-  const playheadVisible = frame.now >= frame.begin && frame.now <= frame.end;
+  const scenePosition = (cycle: number) => {
+    const percent = (cycle - sceneBand.begin) / (sceneBand.end - sceneBand.begin) * 100;
+    return Math.round(percent * 10000) / 10000;
+  };
+  const playheadVisible = renderFrame.now >= renderFrame.begin && renderFrame.now <= renderFrame.end;
+  // Only a guard or a failure occupies the state slot; a running query over a
+  // complete scene is stale-while-revalidate and stays quiet. A first-load
+  // progress is a normal state, not an error.
+  const previewNotice = previewFailure === 'resource-guarded'
+    ? t('trackPreviewGuarded')
+    : previewFailure === 'failed'
+      ? t('trackPreviewFailed')
+      : !currentScene && querying && (fullSceneMode ? Boolean(fullSceneBatch) : Boolean(progressScene))
+        ? t('trackPreviewPending')
+        : null;
+  const representationLabelFor = (lane: TrackLaneSceneData | null): string => {
+    if (!lane) return t('trackPreviewPending');
+    return lane.representation === 'exact' ? t('trackPreviewExact') : t('trackPreviewDensity');
+  };
 
   // ── Timeline seek gesture ────────────────────────────────────────────────
   const commitSeek = useCallback((cycle: number) => {
@@ -681,8 +1155,9 @@ export default function TrackPanel({
     // A slider round owns the view until its pointer is released.
     if (sliderPointerActive()) return;
     const rect = event.currentTarget.getBoundingClientRect();
+    const liveFrame = liveMode ? liveProjectionRef.current : renderFrame;
     // Freeze ordinary seeking; only the edge-scroll loop moves this window.
-    const target = cycleFromClientX(event.clientX, rect, frame.begin, viewSpan, loopCycles);
+    const target = cycleFromClientX(event.clientX, rect, liveFrame.begin, viewSpan, loopCycles);
     if (target === null) return;
     // A valid press must not start the browser's text selection across the
     // ruler's cycle labels — pointer capture keeps the events flowing but
@@ -692,13 +1167,13 @@ export default function TrackPanel({
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
     const drag = {
-      pointerId: event.pointerId, rect, begin: frame.begin, span: viewSpan,
+      pointerId: event.pointerId, rect, begin: liveFrame.begin, span: viewSpan,
       mode: viewport.mode, target, frame: null as number | null,
       clientX: event.clientX, lastTime: null as number | null,
       committedTarget: target, scrolled: false,
     };
     seekDragRef.current = drag;
-    viewport.freezeWindow(frame.begin, frame.end);
+    viewport.freezeWindow(liveFrame.begin, liveFrame.end);
     commitSeek(target);
     setDragHint({ cycle: target, clientX: event.clientX });
     const tickDrag = (time: number) => {
@@ -772,12 +1247,13 @@ export default function TrackPanel({
     // A slider round owns the view until its pointer is released.
     if (sliderPointerActive()) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    const liveFrame = liveMode ? liveProjectionRef.current : renderFrame;
     panDragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       rect: event.currentTarget.getBoundingClientRect(),
-      begin: frame.begin,
+      begin: liveFrame.begin,
       span: viewSpan,
       panning: false,
       dx: 0,
@@ -819,9 +1295,9 @@ export default function TrackPanel({
 
   // Horizontal wheel scrolls pan the window; plain vertical wheel keeps
   // scrolling the track list. Alt/Option+wheel zooms in place, anchored at
-  // the pointer: deltas accumulate in pixels, ~80px cash in one ladder step,
+  // the pointer: deltas accumulate in pixels, ~80px cash in one zoom step,
   // and at most one step applies per animation frame — a light sweep must not
-  // cross the whole ladder. Ctrl/Cmd stays with the browser's own zoom, and
+  // cross the whole zoom range. Ctrl/Cmd stays with the browser's own zoom, and
   // an active seek/pan gesture owns the view until it ends.
   useEffect(() => {
     const lanes = lanesRef.current;
@@ -888,13 +1364,35 @@ export default function TrackPanel({
   }, [viewport, clearWheelZoom]);
 
   const handleRulerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!canSeek || !seekToCycle) return;
+    if (!canSeek) return;
+    if (event.key === 'PageUp' || event.key === 'PageDown') {
+      // The page keys browse the canvas, not the transport. Even a clamped
+      // boundary press belongs to the focused timeline, so it must not scroll
+      // the surrounding document. With no finite piece there is no page to
+      // own, and the browser keeps its ordinary key behaviour.
+      if (loopCycles === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = event.key === 'PageUp' ? -1 : 1;
+      const span = Math.min(viewSpan, loopCycles);
+      const maxBegin = Math.max(0, loopCycles - span);
+      const begin = Math.min(maxBegin, Math.max(
+        0,
+        frameBeginRef.current + direction * browseStepCycles(viewport.span, loopCycles),
+      ));
+      if (Math.abs(begin - frameBeginRef.current) < 1e-9) return;
+      viewport.panTo(begin);
+      announceWindow(begin, Math.min(loopCycles, begin + span));
+      return;
+    }
+    if (!seekToCycle) return;
     const step = event.shiftKey ? 1 : 0.25;
     let target: number | null = null;
     // Keyboard targets walk the displayed playhead and clamp inside [0, L]:
     // the piece's end is a boundary, not a place to scroll past.
-    if (event.key === 'ArrowLeft') target = clampCycle(frame.now - step, loopCycles);
-    else if (event.key === 'ArrowRight') target = clampCycle(frame.now + step, loopCycles);
+    const targetNow = liveMode ? liveProjectionRef.current.displayNow : renderFrame.now;
+    if (event.key === 'ArrowLeft') target = clampCycle(targetNow - step, loopCycles);
+    else if (event.key === 'ArrowRight') target = clampCycle(targetNow + step, loopCycles);
     else if (event.key === 'Home') target = 0;
     if (target === null) return;
     event.preventDefault();
@@ -905,8 +1403,8 @@ export default function TrackPanel({
   };
 
   // ── Zoom actions ─────────────────────────────────────────────────────────
-  // One shortcut step per input, judged by the *effective* span: steps the
-  // piece is too short to distinguish are skipped or disabled. Without a
+  // One multiplicative step per input, judged by the *effective* span: zoom
+  // out doubles, zoom in halves, and the final step lands on the piece. Without a
   // usable L there is no scale to walk at all. While a gesture or the slider
   // owns the view the input is dropped, not queued. A paused or stopped
   // transport still zooms: the request changes and the discrete redraw paints
@@ -918,13 +1416,13 @@ export default function TrackPanel({
     clearWheelZoom();
     const next = nextEffectiveZoomSpan(viewport.effectiveSpan, loopCycles, direction);
     if (next === viewport.effectiveSpan) return;
-    viewport.zoomTo(next, { begin: frame.begin, span: viewSpan }, 0.5);
+    viewport.zoomTo(next, { begin: frameBeginRef.current, span: frameSpanRef.current }, 0.5);
   };
   /** Back to the default scale only — follow/manual and the position stay. */
   const resetZoom = () => {
     if (gestureActive() || sliderPointerActive()) return;
     clearWheelZoom();
-    viewport.zoomTo(DEFAULT_TRACK_VIEW_SPAN, { begin: frame.begin, span: viewSpan }, 0.5);
+    viewport.zoomTo(DEFAULT_TRACK_VIEW_SPAN, { begin: frameBeginRef.current, span: frameSpanRef.current }, 0.5);
   };
   const handleToolsKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -1036,7 +1534,7 @@ export default function TrackPanel({
     };
   }, [active]);
 
-  // The ruler measures its own content width — the same width the note cells
+  // The ruler measures its own content width — the same width the canvases
   // draw at — so the tick level follows the real pane, not the window. A
   // hidden pane reports 0 and keeps the last valid measurement until shown.
   useLayoutEffect(() => {
@@ -1052,6 +1550,13 @@ export default function TrackPanel({
     observer.observe(ruler);
     return () => observer.disconnect();
   }, [active, tracks.length]);
+
+  // A paused/stopped panel still needs one deterministic sounding sync when
+  // the mix or the scene changes; the RAF path covers playing states.
+  useLayoutEffect(() => {
+    if (!liveMode) return;
+    syncSounding(liveProjectionRef.current.displayNow, true);
+  }, [currentScene, isPaused, isPlaying, liveMode, mutedIds, refreshRevision, soloId, syncSounding]);
 
   if (!tracks.length) return <div className="flex h-full min-h-24 items-center justify-center px-6 text-center text-sm text-text-secondary">{t('tracksUnsupported')}</div>;
 
@@ -1069,9 +1574,12 @@ export default function TrackPanel({
     onPointerCancel: finishPan,
   };
 
+  const laneFor = (trackId: string): TrackLaneSceneData | null =>
+    displayScene?.lanes.find(data => data.trackId === trackId) ?? null;
+
   return (
-    <div className="track-panel relative flex h-full min-h-0 flex-col bg-[var(--track-canvas)]" aria-label={t('tracksView')}>
-      {/* The compact tool row sits above the scrolling area: browse, follow and
+    <div ref={panelRef} className="track-panel relative flex h-full min-h-0 flex-col bg-[var(--track-canvas)]" aria-label={t('tracksView')}>
+      {/* The compact tool row sits above the scrolling area: manual follow and
           zoom share one row and never cover the ruler's click target. */}
       <div
         data-track-tools
@@ -1082,20 +1590,14 @@ export default function TrackPanel({
         className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--track-rule)] bg-[var(--track-header)] px-2 py-1 text-[11px] text-text-secondary"
       >
         <div className="flex items-center gap-1">
-          <button type="button" className="track-tool-button" aria-label={t('trackBrowseEarlier')} title={t('trackBrowseEarlier')}
-            disabled={loopCycles === null || frame.begin <= 0}
-            onClick={() => viewport.panTo(frame.begin - browseStepCycles(viewport.span, loopCycles))}>‹</button>
-          <button type="button" className="track-tool-button" aria-label={t('trackBrowseLater')} title={t('trackBrowseLater')}
-            disabled={loopCycles === null || frame.end >= loopCycles}
-            onClick={() => viewport.panTo(frame.begin + browseStepCycles(viewport.span, loopCycles))}>›</button>
           {viewport.mode === 'manual' && (
             <button type="button" className="track-tool-button px-1.5" aria-label={t('trackReturnToPlayback')} title={t('trackReturnToPlayback')}
               onClick={() => viewport.returnToPlayback()}>◎</button>
           )}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1">
-          {frame.limited && (
-            <span data-track-preview-limited role="status" className="w-full px-1 text-right text-[10px] text-text-secondary sm:w-auto sm:text-left">{t('trackPreviewLimited')}</span>
+          {previewNotice && (
+            <span data-track-preview-state role="status" className="w-full px-1 text-right text-[10px] text-text-secondary sm:w-auto sm:text-left">{previewNotice}</span>
           )}
           <button type="button" className="track-tool-button" aria-label={t('trackZoomOut')} title={t('trackZoomOut')}
             disabled={loopCycles === null || !canStepZoom(viewport.effectiveSpan, loopCycles, -1)}
@@ -1120,14 +1622,11 @@ export default function TrackPanel({
           <button type="button" className="track-tool-button" aria-label={t('trackZoomIn')} title={t('trackZoomIn')}
             disabled={loopCycles === null || !canStepZoom(viewport.effectiveSpan, loopCycles, 1)}
             onClick={() => zoomBy(1)}>＋</button>
-          <button type="button" className="track-tool-button px-1.5" aria-label={t('trackZoomReset')} title={t('trackZoomReset')}
-            disabled={loopCycles === null}
-            onClick={resetZoom}><ZoomResetIcon aria-hidden /></button>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="track-panel-ruler track-panel-grid sticky top-0 z-20 border-b border-[var(--track-rule)] bg-[var(--track-canvas)]">
-          <div className="flex min-w-0 items-center bg-[var(--track-header)] pl-3 pr-2 text-[11px] text-text-secondary">{t('tracksCycle')}</div>
+          <div aria-hidden="true" className="flex min-w-0 items-center bg-[var(--track-header)] pl-3 pr-2 text-[11px] text-text-secondary" />
           <div
             ref={rulerRef}
             data-track-timeline
@@ -1139,15 +1638,39 @@ export default function TrackPanel({
             {...rulerInteractions}
             onKeyDown={handleRulerKeyDown}
           >
-            <span data-playhead-ruler-line aria-hidden className="track-playhead-ruler-line" style={{ left: `${position(frame.now)}%`, visibility: playheadVisible ? undefined : 'hidden' }} />
-            <div className="track-ruler-minor-clip">
-              {ticks.minor.map(cycle => <span key={`minor-${cycle}`} aria-hidden className="track-ruler-minor absolute bottom-0" style={{ left: `${position(cycle)}%` }} />)}
-            </div>
-            <div className="track-ruler-ticks-clip">
-              {ticks.major.map(cycle => <span key={`major-${cycle}`} className="track-ruler-tick absolute top-2" style={{ left: `${position(cycle)}%` }}>{cycleTickLabel(cycle)}</span>)}
-              {endLabel && <span data-ruler-end-tick className="track-ruler-tick absolute top-2 -translate-x-full" style={{ left: `${position(frame.end)}%` }}>{endLabel}</span>}
-            </div>
-            <span data-playhead-caret aria-hidden className="track-playhead-caret" style={{ left: `${position(frame.now)}%`, visibility: playheadVisible ? undefined : 'hidden' }} />
+            {liveMode ? (
+              <>
+                <span ref={el => { liveDomRef.current.rulerLine = el; }} data-playhead-ruler-line data-live-playhead aria-hidden className="track-playhead-position track-playhead-ruler-position">
+                  <span className="track-playhead-ruler-line" />
+                </span>
+                <div className="track-ruler-minor-clip track-ruler-scene-clip">
+                  <div data-track-scene className="track-ruler-scene absolute inset-y-0 left-0">
+                    {ticks.minor.map(cycle => <span key={`minor-${cycle}`} aria-hidden className="track-ruler-minor absolute bottom-0" style={{ left: `${scenePosition(cycle)}%` }} />)}
+                  </div>
+                </div>
+                <div className="track-ruler-ticks-clip track-ruler-scene-clip">
+                  <div data-track-scene className="track-ruler-scene absolute inset-y-0 left-0">
+                    {ticks.major.map(cycle => <span key={`major-${cycle}`} className="track-ruler-tick absolute top-2" style={{ left: `${scenePosition(cycle)}%` }}>{cycleTickLabel(cycle)}</span>)}
+                    {endLabel && <span data-ruler-end-tick className="track-ruler-tick absolute top-2 -translate-x-full" style={{ left: `${scenePosition(renderFrame.end)}%` }}>{endLabel}</span>}
+                  </div>
+                </div>
+                <span ref={el => { liveDomRef.current.caret = el; }} data-live-playhead aria-hidden className="track-playhead-position">
+                  <span data-playhead-caret className="track-playhead-caret" />
+                </span>
+              </>
+            ) : (
+              <>
+                <span data-playhead-ruler-line aria-hidden className="track-playhead-ruler-line" style={{ left: `${position(renderFrame.now)}%`, visibility: playheadVisible ? undefined : 'hidden' }} />
+                <div className="track-ruler-minor-clip">
+                  {ticks.minor.map(cycle => <span key={`minor-${cycle}`} aria-hidden className="track-ruler-minor absolute bottom-0" style={{ left: `${position(cycle)}%` }} />)}
+                </div>
+                <div className="track-ruler-ticks-clip">
+                  {ticks.major.map(cycle => <span key={`major-${cycle}`} className="track-ruler-tick absolute top-2" style={{ left: `${position(cycle)}%` }}>{cycleTickLabel(cycle)}</span>)}
+                  {endLabel && <span data-ruler-end-tick className="track-ruler-tick absolute top-2 -translate-x-full" style={{ left: `${position(renderFrame.end)}%` }}>{endLabel}</span>}
+                </div>
+                <span data-playhead-caret aria-hidden className="track-playhead-caret" style={{ left: `${position(renderFrame.now)}%`, visibility: playheadVisible ? undefined : 'hidden' }} />
+              </>
+            )}
             <div className="track-ruler-hint-clip">
               {dragHint && (
                 <span
@@ -1168,12 +1691,15 @@ export default function TrackPanel({
           // solo; only the manual half may show the crossed speaker.
           const quiet = mutedIds.has(track.id) || (soloId !== null && !soloed);
           const hue = `var(--track-hue-${slots[index]})`;
-          const hueStrong = `var(--track-hue-${slots[index]}-strong)`;
-          const events = grouped.get(track.id) ?? [];
+          const lane = laneFor(track.id);
           const selected = selectedTrackId === track.id;
           return (
             <div key={track.id} data-track-id={track.id} data-muted={mutedIds.has(track.id)} data-selected={selected} data-track-color={slots[index]} className="track-row track-panel-grid border-b border-[var(--track-rule)]">
-              <div className="track-row-header bg-[var(--track-header)] pl-3 pr-2">
+              <div
+                data-track-row-header
+                className="track-row-header cursor-pointer bg-[var(--track-header)] pl-3 pr-2"
+                onClick={(event) => handleTrackHeaderClick(track, event)}
+              >
                 <div className="track-row-title">
                   <span data-track-color-dot aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: hue }} />
                   {renameDraft?.trackId === track.id ? (
@@ -1263,38 +1789,30 @@ export default function TrackPanel({
                 </div>
               </div>
               <div {...panInteractions} data-notes-cell className={`relative mr-2 min-h-0 min-w-0 overflow-hidden ${canSeek ? 'cursor-grab touch-pan-y active:cursor-grabbing' : ''}`}>
-                {ticks.minor.map(cycle => <div key={`minor-${cycle}`} className="track-grid-line track-grid-line-minor pointer-events-none absolute inset-y-0 w-px bg-[var(--track-grid-minor)]" style={{ left: `${position(cycle)}%` }} />)}
-                {ticks.major.map(cycle => <div key={`major-${cycle}`} className="track-grid-line pointer-events-none absolute inset-y-0 w-px bg-[var(--track-grid)]" style={{ left: `${position(cycle)}%` }} />)}
-                <div role="img" aria-label={`${track.name} · ${t('trackNotes')}`} className="absolute inset-0">
-                  {events.map(event => {
-                  // Clip against both the visible window and the work's real
-                  // origin before drawing. An event with no overlap stays
-                  // invisible instead of turning into an edge dot from the
-                  // min-width floor, and edges cut by either boundary read as
-                  // flat cuts while real starts/ends stay rounded with a quiet
-                  // attack separation.
-                  const clippedBegin = Math.max(event.begin, visibleBegin);
-                  const clippedEnd = Math.min(event.end, frame.end);
-                  if (clippedEnd <= clippedBegin) return null;
-                  const x = clamp(position(clippedBegin), 0, 100);
-                  const width = clamp(position(clippedEnd), 0, 100) - x;
-                  const startsInside = event.begin >= visibleBegin;
-                  const endsInside = event.end <= frame.end;
-                   const sounding = (isPlaying || isPaused) && !quiet && event.begin <= frame.now && event.end > frame.now;
-                   // The service's dedup tuple doubles as the DOM identity: a
-                   // shared event keeps its node across adjacent windows and
-                   // only its geometry updates — no key/index mismatch churn.
-                   return <div key={event.key} data-track-note data-sounding={sounding} className="absolute"
-                    style={{
-                      left: `${x}%`, top: noteTop(event), width: `${width}%`, minWidth: NOTE_MIN_WIDTH,
-                      height: NOTE_HEIGHT,
-                      borderRadius: `${startsInside ? NOTE_RADIUS : 0}px ${endsInside ? NOTE_RADIUS : 0}px ${endsInside ? NOTE_RADIUS : 0}px ${startsInside ? NOTE_RADIUS : 0}px`,
-                      background: sounding ? hueStrong : hue,
-                      boxShadow: startsInside ? `inset ${NOTE_SEP_WIDTH}px 0 0 var(--track-note-sep)` : undefined,
-                      opacity: quiet ? NOTE_DIMMED_OPACITY : sounding ? 1 : NOTE_OPACITY,
-                    }} />;
-                })}
-                </div>
+                <TrackLaneCanvas
+                  ref={handle => registerLaneHandle(track.id, handle)}
+                  trackName={track.name}
+                  lane={lane}
+                  sounds={displayScene?.sounds ?? []}
+                  slot={slots[index]}
+                  quiet={quiet}
+                  bandBegin={sceneBand.begin}
+                  bandEnd={sceneBand.end}
+                  viewportBegin={renderFrame.begin}
+                  viewportEnd={renderFrame.end}
+                  drawBegin={drawWindow.begin}
+                  drawEnd={drawWindow.end}
+                  devicePixelRatio={devicePixelRatio}
+                  rasterBudgetBytes={rasterBudgetPerLane}
+                  onRasterFailure={notifyRasterFailure}
+                  minorTicks={sceneTicks.minor}
+                  majorTicks={sceneTicks.major}
+                  coverageEnd={displayScene?.coverageEnd}
+                  pendingRanges={displayScene?.pendingRanges}
+                  representationLabel={representationLabelFor(lane)}
+                  notesLabel={t('trackNotes')}
+                  rawEventCount={lane?.rawEventCount ?? 0}
+                />
               </div>
             </div>
           );
@@ -1302,7 +1820,8 @@ export default function TrackPanel({
         <div data-playhead className="track-playhead-overlay track-panel-grid pointer-events-none absolute inset-0">
           <div />
           <div className="relative mr-2 min-w-0">
-            {playheadVisible && <div data-playhead-line className="track-playhead-line" style={{ left: `${position(frame.now)}%` }} />}
+            {liveMode ? <div ref={el => { liveDomRef.current.playhead = el; }} data-playhead-line data-live-playhead className="track-playhead-position"><span className="track-playhead-line" /></div>
+              : playheadVisible && <div data-playhead-line className="track-playhead-line" style={{ left: `${position(renderFrame.now)}%` }} />}
           </div>
         </div>
         </div>
