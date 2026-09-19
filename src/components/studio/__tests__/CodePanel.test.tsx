@@ -4,16 +4,26 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// A stopped seek must read back from the transport position, so the stand-in
+// keeps the cycle a seek left behind instead of a frozen zero. Hoisted so the
+// factory can close over it, and reset between tests like the rest of the mocks.
+const seekState = vi.hoisted(() => ({ cycle: 0 }));
 vi.mock('../../../services/strudel', () => ({
   strudelService: {
     code: '',
     onStateChange: vi.fn(() => vi.fn()),
+    onTransportChange: vi.fn(() => vi.fn()),
+    transportSnapshot: { revision: 0, cycle: 0, seek: null, reason: 'apply' },
     setMasterLPF: vi.fn().mockResolvedValue(undefined),
     setMasterVolume: vi.fn().mockResolvedValue(undefined),
     setTempo: vi.fn(),
     setAutocompletionEnabled: vi.fn(),
     setLineWrappingEnabled: vi.fn(),
-    seekPlayback: vi.fn(),
+    getPlaybackPosition: vi.fn(() => seekState.cycle),
+    seekPlayback: vi.fn((progress: number, loopCycles: number) => {
+      seekState.cycle = Math.min(1, Math.max(0, progress)) * loopCycles;
+      return true;
+    }),
     sampleAudioSpectrum: vi.fn(() => null),
   },
 }));
@@ -71,6 +81,8 @@ function renderCodePanel(props: Partial<Parameters<typeof CodePanel>[0]> = {}) {
     onMount: vi.fn(),
     onPlay: vi.fn(),
     onPause: vi.fn(),
+    getPlaybackPosition: strudelService.getPlaybackPosition,
+    seekPlayback: strudelService.seekPlayback,
     onUpdate: vi.fn(),
   };
 
@@ -94,7 +106,9 @@ describe('CodePanel editor focus reporting', () => {
     }
     document.body.innerHTML = '';
     localStorage.clear();
+    seekState.cycle = 0;
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -236,6 +250,62 @@ describe('CodePanel editor focus reporting', () => {
       expect(blob.querySelectorAll('circle').length).toBeGreaterThanOrEqual(2);
       expect(blob.querySelectorAll('circle').length).toBeLessThanOrEqual(3);
     });
+  });
+
+  it('removes the editor border when only the playback controls remain', () => {
+    installMatchMedia(false);
+    const resizeCallbacks: ResizeObserverCallback[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallbacks.push(callback);
+      }
+
+      observe() {}
+      disconnect() {}
+    });
+
+    const { container, root } = renderCodePanel();
+    roots.push(root);
+    const panel = container.firstElementChild as HTMLElement;
+    const codeLayer = container.querySelector<HTMLElement>('[data-testid="code-panel-code-layer"]');
+    const lightBorder = container.querySelector<HTMLElement>('[data-testid="code-panel-controls-light-border"]');
+    const getPanelRect = vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      right: 780,
+      bottom: 47,
+      left: 80,
+      width: 700,
+      height: 47,
+      x: 80,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    act(() => {
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver));
+    });
+
+    expect(codeLayer?.classList.contains('border-0')).toBe(true);
+    expect(codeLayer?.classList.contains('border')).toBe(false);
+    expect(lightBorder?.style.borderTopColor).toBe('transparent');
+
+    getPanelRect.mockReturnValue({
+      top: 0,
+      right: 780,
+      bottom: 200,
+      left: 80,
+      width: 700,
+      height: 200,
+      x: 80,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    act(() => {
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver));
+    });
+
+    expect(codeLayer?.classList.contains('border')).toBe(true);
+    expect(lightBorder?.style.borderTopColor).toBe('');
   });
 
   it('keeps the playback button and timeline in the desktop controls layer', () => {
@@ -380,6 +450,51 @@ describe('CodePanel editor focus reporting', () => {
     expect(thumb?.classList.contains('opacity-0')).toBe(true);
   });
 
+  it('keeps an exact loop-end seek at 100% and wraps a running position past the loop', () => {
+    installMatchMedia(false);
+    let nextFrame = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const id = ++nextFrame;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id); });
+    const tick = () => {
+      const pending = [...frames.values()];
+      frames.clear();
+      act(() => pending.forEach((callback) => callback(0)));
+    };
+    const { container, root, rerender } = renderCodePanel();
+    roots.push(root);
+    const time = () => container.querySelector('[data-testid="code-panel-playback-time"]')?.textContent;
+
+    // A stopped seek to the exact loop end is an intentional endpoint.
+    act(() => {
+      const input = container.querySelector<HTMLInputElement>('[data-testid="code-panel-playback-seek"]');
+      if (!input) return;
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setValue?.call(input, '1000');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(time()).toBe('01:04/01:04');
+
+    // Two full loops in, a playing transport shows the phase inside one loop.
+    rerender({ isPlaying: true, getPlaybackPosition: vi.fn(() => 64.25) });
+    tick();
+    expect(time()).toBe('00:00/01:04');
+
+    // Just before the loop end it stays inside the same loop...
+    rerender({ getPlaybackPosition: vi.fn(() => 31.75) });
+    tick();
+    expect(time()).toBe('01:03/01:04');
+
+    // ...and just past it rolls back to the loop's opening.
+    rerender({ getPlaybackPosition: vi.fn(() => 32.5) });
+    tick();
+    expect(time()).toBe('00:01/01:04');
+  });
+
   it('keeps the sounding piece on the progress bar until an edit is evaluated', () => {
     installMatchMedia(false);
     const playingCode = 'setcps(0.5)\ns("bd sd").mask("<1 0>/16")';
@@ -439,6 +554,56 @@ describe('CodePanel editor focus reporting', () => {
 
     expect(container.querySelector('[data-testid="code-panel-playback-time"]')?.textContent).toBe('00:32/01:04');
     expect(container.querySelector<HTMLButtonElement>(`button[aria-label="${t('play')}"]`)).not.toBeNull();
+  });
+
+  it('samples the service cycle instead of advancing from wall-clock time', () => {
+    installMatchMedia(false);
+    let cycle = 4;
+    let nextFrame = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const id = ++nextFrame;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id); });
+    const tick = (time: number) => {
+      const pending = [...frames.values()];
+      frames.clear();
+      act(() => pending.forEach((callback) => callback(time)));
+    };
+    const getPlaybackPosition = vi.fn(() => cycle);
+    const { container, root, rerender } = renderCodePanel({
+      isPlaying: true,
+      getPlaybackPosition,
+      seekPlayback: vi.fn(() => true),
+    });
+    roots.push(root);
+
+    const time = () => container.querySelector('[data-testid="code-panel-playback-time"]')?.textContent;
+    tick(0);
+    expect(time()).toBe('00:08/01:04');
+
+    // Advancing the callback timestamp cannot move the UI when the scheduler
+    // has not moved.
+    tick(60_000);
+    expect(time()).toBe('00:08/01:04');
+
+    cycle = 8;
+    tick(60_016);
+    expect(time()).toBe('00:16/01:04');
+
+    cycle = 32;
+    rerender({ isPlaying: false, isPaused: true });
+    tick(60_032);
+    expect(time()).toBe('01:04/01:04');
+
+    cycle = 33;
+    rerender({ isPlaying: true, isPaused: false });
+    tick(60_048);
+    rerender({ isPlaying: false, isPaused: true });
+    tick(60_048);
+    expect(time()).toBe('00:02/01:04');
   });
 
   it('releases pointer-originated seek focus after the pointer leaves', () => {
@@ -577,6 +742,16 @@ describe('CodePanel editor focus reporting', () => {
     // The motes stand in for the visualizer, so they must not intercept
     // clicks meant for the transport controls underneath.
     expect(particles?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('keeps track-pane controls without particles when decorative animation is disabled', () => {
+    installMatchMedia(false);
+    localStorage.setItem('vibe_theme', 'dark');
+    localStorage.setItem('vibe_animation', 'galaxy');
+    const { container, root } = renderCodePanel({ vizEnabled: true, vizCollapsed: true, vizAnimationEnabled: false });
+    roots.push(root);
+    expect(container.querySelector(`[aria-label="${t('expandViz')}"]`)).not.toBeNull();
+    expect(container.querySelector('[data-testid="code-panel-particle-field"]')?.getAttribute('data-active')).toBe('false');
   });
 
   it('leaves the bar clear when the collapsed pane is the ASCII animation', () => {

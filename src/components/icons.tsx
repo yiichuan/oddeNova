@@ -28,6 +28,7 @@ import {
   Moon,
   SquareTerminal,
   RefreshCw,
+  RotateCcw,
   Split,
   SquareArrowOutUpRight,
   Star,
@@ -156,6 +157,9 @@ export const SquareTerminalIcon = ({ size = 16, className }: IconProps) => <Squa
 export const SunIcon = ({ size = 16, className }: IconProps) => <Sun size={size} className={className} />;
 export const MoonIcon = ({ size = 16, className }: IconProps) => <Moon size={size} className={className} />;
 export const RetryIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
+// A small reset arrow for the track zoom tools — the same glyph family as
+// RetryIcon, at the size the tool row's other marks draw at.
+export const ZoomResetIcon = ({ size = 12, className }: IconProps) => <RotateCcw size={size} className={className} />;
 // Strudel's own "update" glyph: re-evaluate the running pattern in place.
 export const UpdateIcon = ({ size = 16, className }: IconProps) => <RefreshCw size={size} className={className} />;
 export const GitBranchIcon = ({ size = 16, className }: IconProps) => <Split size={size} className={className} />;

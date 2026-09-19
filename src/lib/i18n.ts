@@ -63,8 +63,43 @@ const S: Record<string, readonly [string, string]> = {
   volume:       ['音量', 'Volume'],
   mute:         ['静音', 'Mute'],
   unmute:       ['取消静音', 'Unmute'],
-  collapseViz:  ['收起动画', 'Collapse visuals'],
-  expandViz:    ['展开动画', 'Expand visuals'],
+  tracksView: ['音轨', 'Tracks'],
+  animationView: ['动画', 'Animation'],
+  trackSolo: ['独听音轨', 'Solo track'],
+  trackMute: ['静音音轨', 'Mute track'],
+  trackNotes: ['音符时间线', 'Note timeline'],
+  tracksUnsupported: ['当前代码暂不支持分轨，可继续使用原有播放和可视化', 'Track preview is unavailable for this code. Playback and animation remain available.'],
+  tracksPreparing: ['正在准备音轨', 'Preparing tracks'],
+  tracksNoCode: ['输入或加载代码后可查看音轨', 'Enter or load code to view tracks'],
+  visualizerView: ['可视化视图', 'Visualizer view'],
+  trackTimelineSeek: ['音轨时间定位，点击或拖动标尺跳到对应位置；左右键移动 1/4 cycle，Shift 加速，Home 回到开头，PageUp 和 PageDown 前后浏览半屏', 'Track time scrubber: click or drag the ruler to jump; arrow keys move by 1/4 cycle, Shift by 1, Home returns to 0, and PageUp or PageDown browses half a screen'],
+  trackSeekHint: ['定位提示', 'Scrub position'],
+  trackBrowseRange: ['正在查看第 {begin}–{end} cycle', 'Viewing cycles {begin}–{end}'],
+  trackReturnToPlayback: ['恢复跟随', 'Return to follow'],
+  trackTools: ['音轨缩放与跟随', 'Track zoom and follow'],
+  trackZoomIn: ['放大，看清短音与起音间隔', 'Zoom in to see short notes'],
+  trackZoomOut: ['缩小，看更长时间', 'Zoom out to see more time'],
+  trackZoomReset: ['恢复默认缩放（4 cycle），不改变当前位置', 'Reset to the default zoom (4 cycles); the position stays'],
+  trackZoomSlider: ['音轨缩放', 'Track zoom'],
+  trackZoomSliderValue: ['显示 {span}', 'Showing {span}'],
+  trackPreviewExact: ['精确音符预览', 'Exact note preview'],
+  trackPreviewDensity: ['完整密度预览', 'Full density preview'],
+  trackPreviewMixed: ['精确与密度混合预览', 'Exact and density preview'],
+  trackPreviewPending: ['预览处理中…', 'Building preview…'],
+  trackPreviewGuarded: ['此模式过于密集，预览已暂停', 'This pattern is too dense — the preview is paused'],
+  trackPreviewFailed: ['预览查询失败，已保留上一画面', 'The preview query failed — the previous view is kept'],
+  trackNameNavigate: ['查看此轨对应代码', 'Show this track\u2019s code'],
+  trackNameHint: ['单击定位代码，双击或按 F2 重命名', 'Click to locate the code; double-click or press F2 to rename'],
+  trackCodeStale: ['代码已修改，更新音轨后可定位', 'The code has changed. Update the tracks to locate it again.'],
+  trackRenameLabel: ['音轨名称', 'Track name'],
+  trackRenamePlaceholder: ['请输入音轨名称', 'Enter a track name'],
+  trackRenameTooLong: ['名称最多 64 个字符', 'Names are limited to 64 characters'],
+  trackRenameInvalidCharacter: ['名称不能包含换行、控制字符或 *', 'Names cannot contain line breaks, control characters, or *'],
+  trackRenameStale: ['代码已修改，请先更新音轨后再重命名', 'The code has changed. Update the tracks before renaming.'],
+  trackRenameUnavailable: ['当前暂时无法重命名，请稍后重试', 'Renaming is unavailable right now — try again shortly'],
+  cycleAt: ['cycle', 'cycle'],
+  collapseViz:  ['收起可视化', 'Collapse visuals'],
+  expandViz:    ['展开可视化', 'Expand visuals'],
 
   // Primary navigation
   primaryNavigation: ['一级菜单', 'Primary navigation'],
@@ -456,4 +491,13 @@ export function t(key: string): string {
   const entry = S[key];
   if (!entry) return key;
   return zh ? entry[0] : entry[1];
+}
+
+/** Simple {token} interpolation over the shared string table. */
+export function tf(key: string, vars: Record<string, string>): string {
+  let text: string = t(key);
+  for (const [name, value] of Object.entries(vars)) {
+    text = text.replaceAll(`{${name}}`, value);
+  }
+  return text;
 }

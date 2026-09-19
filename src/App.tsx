@@ -4,6 +4,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import { DRAFT_SEGMENT_ID } from './lib/draft-diff';
 import CodePanel from './components/studio/CodePanel';
 import Sidebar from './components/conversation/Sidebar';
+import StudioVisualizer from './components/studio/StudioVisualizer';
 import VizPlaceholder from './components/studio/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
 import { makeGreetingMessage, useSessions } from './hooks/useSessions';
@@ -18,7 +19,7 @@ import { isDemoMode, getActiveDemoSet, getDemoMoodInstruction } from './demo/dem
 import ApiKeyModal from './components/overlays/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
-import { DownloadIcon, EllipsisIcon, SquareTerminalIcon, XIcon } from './components/icons';
+import { DownloadIcon, EllipsisIcon, ListIcon, SquareTerminalIcon, XIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useOddeNovaImport } from './hooks/useOddeNovaImport';
@@ -26,6 +27,8 @@ import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
+import type { TrackRevealTiming } from './components/studio/StudioVisualizer';
+import { getPlaybackTimeline } from './lib/strudel-timing';
 import ConversationView from './components/conversation/ConversationView';
 import ChatInput from './components/conversation/ChatInput';
 import { ExportPopover, ShareButton } from './components/studio/TopActionBar';
@@ -162,6 +165,7 @@ interface FavoriteNotice {
 
 export default function App() {
   const strudel = useStrudel();
+  const [mobileStudioView, setMobileStudioView] = useState<'code' | 'tracks'>('code');
   const auth = useAuth();
   const cloudRepository = useMemo(() => ({
     saveSession: saveCloudSession,
@@ -329,6 +333,7 @@ export default function App() {
     vizHeight,
     vizCollapsed,
     toggleVizCollapsed,
+    ensureEditorVisible,
     isDragging,
     mainRef,
     hDragHandlers,
@@ -531,7 +536,7 @@ export default function App() {
 
   /* What both "Later" and the second failure do: stop treating the remaining
      guest sessions as something the app is blocked on.
-     
+
      This does not lose anything. Every item that reaches this point already
      wrote its way into the *account's* local session list — importSession
      writes that row before it ever touches the cloud — so what remains
@@ -596,7 +601,35 @@ export default function App() {
   // Fall back to live editor code so manually-pasted code is visible to the agent.
   const currentCode = strudel.code || (current?.code ?? '');
   const currentBpm = parseScore(currentCode).bpm ?? 120;
+  // The one timeline the playback bar and the track view share: it names the
+  // code the transport measures (activeCode while a piece sounds), its loop
+  // length and its own setcps. Without a setcps the hover time hint stays in
+  // cycles.
+  const playbackTimeline = useMemo(
+    () => getPlaybackTimeline(strudel.code, strudel.activeCode, strudel.isPlaying, strudel.isPaused),
+    [strudel.code, strudel.activeCode, strudel.isPlaying, strudel.isPaused],
+  );
+  const trackSeekEnabled = strudel.engineReady && strudel.exportState.status !== 'exporting';
+  const revealTrackInEditor = useCallback((): TrackRevealTiming => {
+    if (isMobile) {
+      // The code pane is hidden right now: swap panes first, and let the
+      // visualizer's deferred reveal wait for the layout.
+      setMobileStudioView('code');
+      setCodeSheetOpen(true);
+      return 'deferred';
+    }
+    ensureEditorVisible();
+    return 'immediate';
+  }, [ensureEditorVisible, isMobile, setCodeSheetOpen]);
   const isLoading = !!current?.id && loadingSessions.has(current.id);
+  // Renaming writes through the live editor into the current session, so it
+  // needs the same conditions the manual code sync already requires — plus an
+  // engine that is not busy compiling, exporting or recovering playback.
+  const trackRenameEnabled = trackSeekEnabled
+    && !isLoading
+    && !isReplaying
+    && !isVideoMode
+    && Boolean(sessions.currentSession?.id);
   const historyItems: readonly (Session | SessionSummary)[] = auth.user
     ? displayedHistoryItems
     : sessions.sessions.filter((session) => session.favoritedAt === undefined);
@@ -2013,6 +2046,16 @@ export default function App() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
+                  onClick={() => setMobileStudioView((view) => view === 'code' ? 'tracks' : 'code')}
+                  className="code-window-action flex h-9 w-9 items-center justify-center"
+                  aria-label={t('tracksView')}
+                  aria-pressed={mobileStudioView === 'tracks'}
+                  title={t('tracksView')}
+                >
+                  <ListIcon size={19} />
+                </button>
+                <button
+                  type="button"
                   onClick={() => mobileExport.setExportOpen((open) => !open)}
                   disabled={!strudel.engineReady || !strudel.code.trim() || strudel.exportState.status === 'exporting'}
                   className="code-window-action flex h-9 w-9 items-center justify-center"
@@ -2061,7 +2104,11 @@ export default function App() {
                 panel's own scroller is inside it: without it the editor's
                 content sets the flex base and pushes the animation off the
                 bottom of the window instead of yielding to it. */}
-            <div className="min-h-0 flex-1">
+            <div
+              data-testid="mobile-code-pane"
+              hidden={mobileStudioView !== 'code'}
+              className="min-h-0 flex-1"
+            >
               <CodePanel
                 previewing={preview !== null}
                 onExitPreview={exitPreview}
@@ -2081,8 +2128,11 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={handlePlay}
                 onPause={strudel.pause}
+                getPlaybackPosition={strudel.getPlaybackPosition}
+                seekPlayback={strudel.seekPlayback}
                 isDirty={strudel.isDirty}
                 activeCode={strudel.activeCode}
+                playbackTimeline={playbackTimeline}
                 onUpdate={() => { void handleUpdate(); }}
                 onEditorFocusChange={handleCodeFocusChange}
                 vizEnabled={studioAnimationVisible}
@@ -2090,6 +2140,21 @@ export default function App() {
                 onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
                 showSyncStatus={showSessionSyncStatus}
+              />
+            </div>
+            <div data-testid="mobile-track-pane" hidden={mobileStudioView !== 'tracks'} className="flex-1 min-h-0">
+              <StudioVisualizer
+                isPlaying={strudel.isPlaying}
+                isPaused={strudel.isPaused}
+                visible={codeSheetOpen && mobileStudioView === 'tracks'}
+                animationEnabled={false}
+                scopeKey={sessions.currentSession?.id ?? ''}
+                hasCode={Boolean(strudel.code.trim())}
+                engineReady={strudel.engineReady}
+                seekEnabled={trackSeekEnabled}
+                playbackTimeline={playbackTimeline}
+                onTrackReveal={revealTrackInEditor}
+                renameEnabled={trackRenameEnabled}
               />
             </div>
 
@@ -2340,7 +2405,7 @@ export default function App() {
               tear that binding down — including under a featured audition,
               which plays through this very editor. */}
           <div className={primaryNavItem === 'home' ? 'flex h-full min-h-0 flex-col' : 'hidden'}>
-            <div className="flex-1 min-h-0">
+            <div className="h-0 flex-1 min-h-0 overflow-hidden">
               <CodePanel
                 previewing={preview !== null}
                 onExitPreview={exitPreview}
@@ -2360,10 +2425,14 @@ export default function App() {
                 onMount={strudel.setRoot}
                 onPlay={handlePlay}
                 onPause={strudel.pause}
+                getPlaybackPosition={strudel.getPlaybackPosition}
+                seekPlayback={strudel.seekPlayback}
                 isDirty={strudel.isDirty}
                 activeCode={strudel.activeCode}
+                playbackTimeline={playbackTimeline}
                 onUpdate={() => { void handleUpdate(); }}
-                vizEnabled={studioAnimationVisible}
+                vizEnabled
+                vizAnimationEnabled={studioAnimationVisible}
                 vizCollapsed={vizCollapsed}
                 onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
@@ -2379,34 +2448,41 @@ export default function App() {
                 The transition is dropped mid-drag: there, every pointer move
                 sets a new height, and easing would trail the cursor.
 
-                Unmounted outright — not collapsed — when Settings → Appearance
-                turns the studio animation off: collapsing keeps the iframe
-                alive to preserve the one galaxy it generated, and that is only
-                worth paying for while the pane is something you can reopen. */}
-            {studioAnimationVisible && (
+                Tracks remain available when the decorative animation is off. */}
+            <div
+              data-testid="viz-pane"
+              className={`flex shrink-0 flex-col overflow-hidden ${
+                isDragging === 'v'
+                  ? ''
+                  : 'transition-[height] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none'
+              }`}
+              style={{ height: vizCollapsed ? 0 : vizHeight + VIZ_DIVIDER_HEIGHT }}
+            >
               <div
-                data-testid="viz-pane"
-                className={`flex shrink-0 flex-col overflow-hidden ${
-                  isDragging === 'v'
-                    ? ''
-                    : 'transition-[height] duration-[320ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none'
-                }`}
-                style={{ height: vizCollapsed ? 0 : vizHeight + VIZ_DIVIDER_HEIGHT }}
-              >
-                <div
-                  {...vDragHandlers}
-                  data-resize-handle="vertical"
-                  className="h-divider shrink-0"
-                  style={{ cursor: 'row-resize' }}
-                />
+                {...vDragHandlers}
+                data-resize-handle="vertical"
+                className="h-divider shrink-0"
+                style={{ cursor: 'row-resize' }}
+              />
 
-                {/* Always mounted, even collapsed: remounting rebuilds the
-                    galaxy from scratch, so it would come back a different one. */}
-                <div className="min-h-0 flex-1">
-                  <VizPlaceholder isPlaying={strudel.isPlaying} />
-                </div>
+              {/* Always mounted, even collapsed: remounting rebuilds the
+                  galaxy from scratch, so it would come back a different one. */}
+              <div className="min-h-0 flex-1">
+                <StudioVisualizer
+                  isPlaying={strudel.isPlaying}
+                  isPaused={strudel.isPaused}
+                  visible={!vizCollapsed && primaryNavItem === 'home'}
+                  animationEnabled={studioAnimationVisible}
+                  scopeKey={sessions.currentSession?.id ?? ''}
+                  hasCode={Boolean(strudel.code.trim())}
+                  engineReady={strudel.engineReady}
+                  seekEnabled={trackSeekEnabled}
+                  playbackTimeline={playbackTimeline}
+                  onTrackReveal={revealTrackInEditor}
+                  renameEnabled={trackRenameEnabled}
+                />
               </div>
-            )}
+            </div>
           </div>
           <div className={onFeaturedPage ? 'flex h-full min-h-0' : 'hidden'}>
             {featuredPage}
