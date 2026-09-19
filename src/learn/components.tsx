@@ -3,6 +3,14 @@ import { getMiniReplPrebake } from './mini-repl-engine';
 import { PlayIcon, StopIcon, RetryIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
 import ClaviatureView from './Claviature';
 import { highlightLines } from './static-highlight';
+import { installOddenovaSyntaxHighlight } from '../lib/oddenova-syntax-highlight';
+import { usePitchColors } from './pitch-theme';
+
+const GLOBAL_VISUALIZATION_CALL = /\.(?:punchcard|pianoroll|scope|spiral|pitchwheel|spectrum)\s*\(/;
+
+interface EditorViewLike {
+  dispatch: (transaction: { effects: unknown }) => void;
+}
 
 interface StrudelMirrorInstance {
   dispose?: () => void;
@@ -11,6 +19,8 @@ interface StrudelMirrorInstance {
   stop: () => void;
   toggle: () => Promise<void> | void;
   drawFirstFrame?: () => Promise<void>;
+  /** The CodeMirror view under this REPL — what the docs' syntax highlighter installs into. */
+  editor?: EditorViewLike;
 }
 
 interface PaintHap {
@@ -41,6 +51,28 @@ interface CodeBlockProps {
   claviatureRange?: [string, string];
 }
 
+function ThemedClaviature({
+  activeNotes,
+  labels,
+  range,
+}: {
+  activeNotes: number[];
+  labels: Record<string, string | number>;
+  range: [string, string];
+}) {
+  const colors = usePitchColors();
+  return (
+    <ClaviatureView
+      options={{
+        range,
+        scaleY: 0.75,
+        colorize: [{ keys: activeNotes, color: colors.pitch }],
+        labels,
+      }}
+    />
+  );
+}
+
 /**
  * A playable Strudel code example — each instance is its own independent
  * `StrudelMirror` (editor + scheduler), same approach strudel.cc's own
@@ -58,15 +90,18 @@ export function CodeBlock({
   claviatureRange = ['C2', 'C6'],
 }: CodeBlockProps) {
   const tunes = Array.isArray(code) ? code : null;
-  const initialCode = tunes ? tunes[0] : code;
+  const initialCode = Array.isArray(code) ? code[0] : code;
+  const hasGlobalVisualization = (tunes ?? [initialCode]).some((tune) => GLOBAL_VISUALIZATION_CALL.test(tune));
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const globalVisualizationCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const editorRef = useRef<StrudelMirrorInstance | null>(null);
   // StrudelMirror derives inline widget ids (._scope(), ._pianoroll(), etc.) from
   // this `id` — without one, every block computes the same id (e.g.
   // `_widget__scope_0`) and they clobber each other's analyser/canvas wiring,
   // matching strudel.cc's own MiniRepl passing a per-instance id for the same reason.
   const replId = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const globalVisualizationCanvasId = `${replId}-global-visualization`;
 
   // Best-effort: size the canvas as soon as React attaches it (commit
   // phase), same as strudel.cc's own MiniRepl, so the common case never
@@ -102,7 +137,7 @@ export function CodeBlock({
     let disposed = false;
 
     void (async () => {
-      const [{ StrudelMirror }, { transpiler }, { webaudioOutput }, { getAudioContext }, { noteToMidi }, { getDrawContext }] = await Promise.all([
+      const [{ StrudelMirror, compartments }, { transpiler }, { webaudioOutput }, { getAudioContext }, { noteToMidi }, { getDrawContext }] = await Promise.all([
         import('@strudel/codemirror'),
         import('@strudel/transpiler'),
         import('@strudel/webaudio'),
@@ -143,14 +178,16 @@ export function CodeBlock({
         // query to nothing and makes `cycles` zero, so inline visuals go blank.
         drawTime: claviature ? [0, 0] : punchcard ? [0, 4] : [-2, 2],
         autodraw: punchcard || claviature || autodraw,
-        // Also matches strudel.cc's MiniRepl: a block with its own punchcard
-        // canvas draws into that, everything else draws into the page-level
-        // background canvas from `getDrawContext()`. This is what the
-        // unprefixed visual functions (`punchcard()`, `spiral()`) render into —
-        // unlike `pianoroll()`/`scope()`/`spectrum()`/`pitchwheel()`, they have
-        // no `getDrawContext()` fallback of their own, so leaving this undefined
-        // makes them throw inside the draw loop and silently paint nothing.
-        drawContext: punchcard ? canvas?.getContext('2d') : getDrawContext(),
+        // A prop-driven punchcard owns the canvas below the editor. Unprefixed
+        // visualizers instead paint into a per-example canvas behind the code:
+        // keeping that context inside the block avoids @strudel/draw's default
+        // `#test-canvas`, which is fixed to the viewport and prepended to body.
+        // Blocks without either kind of painter need no draw context at all.
+        drawContext: punchcard
+          ? canvas?.getContext('2d')
+          : hasGlobalVisualization
+            ? getDrawContext(globalVisualizationCanvasId)
+            : undefined,
         editPattern,
         onUpdateState: (state: { started?: boolean; isDirty?: boolean; evalError?: unknown }) => {
           setStarted(!!state.started);
@@ -159,6 +196,15 @@ export function CodeBlock({
         },
       }) as StrudelMirrorInstance;
       editorRef.current = editor;
+      // Same move the studio engine makes after creating its editor (see
+      // src/services/strudel.ts): swap Strudel's own theme compartment for the
+      // oddeNova highlighter, whose colours are `var(--syntax-…)` rules. The
+      // compartment is then never touched again — a dark/light flip repaints
+      // through the CSS variables learn.css declares per app theme, so the
+      // editor instance itself is neither recreated nor re-evaluated.
+      if (editor.editor) {
+        installOddenovaSyntaxHighlight(editor.editor, compartments.theme);
+      }
     })();
 
     return () => {
@@ -188,6 +234,26 @@ export function CodeBlock({
     return () => observer.disconnect();
   }, [punchcard]);
 
+  // The global-visualization canvas is absolutely positioned, so its bitmap
+  // must follow the editor host rather than contributing layout of its own.
+  useEffect(() => {
+    if (!hasGlobalVisualization) return;
+    const host = containerRef.current;
+    const canvas = globalVisualizationCanvasRef.current;
+    if (!host || !canvas) return;
+    const resize = () => {
+      const pixelRatio = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.round(host.clientWidth * pixelRatio));
+      const height = Math.max(1, Math.round(host.clientHeight * pixelRatio));
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [hasGlobalVisualization]);
+
   // On macOS, Option+Period (the Alt-. stop shortcut) is a dead-key combo that
   // produces a composed character (e.g. "≥") as `event.key`, not ".". CodeMirror's
   // own keymap matches on `event.key`, so it silently misses this and the browser
@@ -202,13 +268,16 @@ export function CodeBlock({
   };
 
   return (
-    <div className="mb-4 border border-[#323232] bg-[#111]" onKeyDownCapture={handleKeyDownCapture}>
-      <div className="flex items-center border-b border-[#323232]">
+    <div
+      className="mb-4 border border-[var(--learn-border)] bg-[var(--learn-editor-bg)]"
+      onKeyDownCapture={handleKeyDownCapture}
+    >
+      <div className="flex items-center border-b border-[var(--learn-border)]">
         <button
           type="button"
           onClick={() => void editorRef.current?.toggle()}
           aria-label={started ? 'stop' : 'play'}
-          className="w-9 h-8 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 shrink-0 border-r border-[#323232]"
+          className="w-9 h-8 flex items-center justify-center text-[var(--learn-text-secondary)] hover:text-[var(--learn-text-primary)] hover:bg-[var(--learn-hover)] shrink-0 border-r border-[var(--learn-border)]"
         >
           {started ? <StopIcon size={13} /> : <PlayIcon size={13} />}
         </button>
@@ -217,20 +286,20 @@ export function CodeBlock({
           onClick={() => void editorRef.current?.evaluate()}
           disabled={!isDirty}
           aria-label="update"
-          className="w-9 h-8 flex items-center justify-center text-white/70 shrink-0 disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:text-white enabled:hover:bg-white/5"
+          className="w-9 h-8 flex items-center justify-center text-[var(--learn-text-secondary)] shrink-0 disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:text-[var(--learn-text-primary)] enabled:hover:bg-[var(--learn-hover)]"
         >
           <RetryIcon size={13} />
         </button>
         {tunes && (
           <div className="flex items-center ml-auto shrink-0">
-            <span className="px-2 text-[11px] text-white/40 tabular-nums">
+            <span className="px-2 text-[11px] text-[var(--learn-text-muted)] tabular-nums">
               {tuneIndex + 1}/{tunes.length}
             </span>
             <button
               type="button"
               onClick={() => changeTune(tuneIndex - 1)}
               aria-label="previous example"
-              className="w-9 h-8 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 border-l border-[#323232]"
+              className="w-9 h-8 flex items-center justify-center text-[var(--learn-text-secondary)] hover:text-[var(--learn-text-primary)] hover:bg-[var(--learn-hover)] border-l border-[var(--learn-border)]"
             >
               <ChevronLeftIcon size={13} />
             </button>
@@ -238,28 +307,39 @@ export function CodeBlock({
               type="button"
               onClick={() => changeTune(tuneIndex + 1)}
               aria-label="next example"
-              className="w-9 h-8 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 border-l border-[#323232]"
+              className="w-9 h-8 flex items-center justify-center text-[var(--learn-text-secondary)] hover:text-[var(--learn-text-primary)] hover:bg-[var(--learn-hover)] border-l border-[var(--learn-border)]"
             >
               <ChevronRightIcon size={13} />
             </button>
           </div>
         )}
       </div>
-      <div ref={containerRef} className="mini-repl-code p-2 text-[13px] [&_.cm-editor]:bg-transparent" />
-      {punchcard && <canvas ref={setCanvasRef} height={100} className="block w-full border-t border-[#323232]" />}
+      <div
+        ref={containerRef}
+        className={`mini-repl-code p-2 text-[13px]${hasGlobalVisualization ? ' learn-global-visualization' : ''}`}
+      >
+        {hasGlobalVisualization && (
+          <canvas
+            ref={globalVisualizationCanvasRef}
+            id={globalVisualizationCanvasId}
+            aria-hidden="true"
+            className="learn-global-visualization-canvas"
+          />
+        )}
+      </div>
+      {punchcard && (
+        <canvas ref={setCanvasRef} height={100} className="mini-punchcard block w-full border-t border-[var(--learn-border)]" />
+      )}
       {claviature && (
-        <div className="border-t border-[#323232] p-2 [&_svg]:max-w-full [&_svg]:h-auto">
-          <ClaviatureView
-            options={{
-              range: claviatureRange,
-              scaleY: 0.75,
-              colorize: [{ keys: activeNotes, color: 'steelblue' }],
-              labels: claviatureLabels ?? {},
-            }}
+        <div className="border-t border-[var(--learn-border)] p-2 [&_svg]:max-w-full [&_svg]:h-auto">
+          <ThemedClaviature
+            activeNotes={activeNotes}
+            labels={claviatureLabels ?? {}}
+            range={claviatureRange}
           />
         </div>
       )}
-      {error && <div className="px-3 pb-2 text-[12px] text-red-400">{error}</div>}
+      {error && <div className="px-3 pb-2 text-[12px] text-[var(--learn-error)]">{error}</div>}
     </div>
   );
 }
@@ -279,14 +359,14 @@ export function CodeBlock({
 export function StaticCode({ code, plain = false }: { code: string; plain?: boolean }) {
   if (plain) {
     return (
-      <pre className="mb-4 rounded-md bg-white/[0.06] p-3 text-[13px] overflow-x-auto">
+      <pre className="mb-4 rounded-md bg-[var(--learn-chip)] p-3 text-[13px] overflow-x-auto">
         <code>{code}</code>
       </pre>
     );
   }
   const lines = highlightLines(code);
   return (
-    <pre className="static-code mb-4 rounded-md bg-white/[0.06] p-3 text-[13px] overflow-x-auto">
+    <pre className="static-code mb-4 rounded-md bg-[var(--learn-chip)] p-3 text-[13px] overflow-x-auto">
       <code>
         {lines.map((line, i) => (
           <Fragment key={i}>
@@ -310,7 +390,7 @@ export function StaticCode({ code, plain = false }: { code: string; plain?: bool
 /** Matches the source docs' <Box> callout — a step-by-step tip or aside. */
 export function Callout({ children }: { children: ReactNode }) {
   return (
-    <div className="border-l-2 border-white/20 pl-3 py-1 mb-4 bg-white/[0.03] text-white/75">
+    <div className="border-l-2 border-[var(--learn-border-strong)] pl-3 py-1 mb-4 bg-[var(--learn-chip)] text-[var(--learn-text-secondary)]">
       {children}
     </div>
   );
@@ -319,8 +399,8 @@ export function Callout({ children }: { children: ReactNode }) {
 /** A progressively enhanced disclosure matching strudel.cc's click-to-reveal solutions. */
 export function QA({ question, children }: { question: string; children: ReactNode }) {
   return (
-    <details className="group mb-4 bg-white/[0.06] text-white/75">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-white/90 [&::-webkit-details-marker]:hidden">
+    <details className="group mb-4 bg-[var(--learn-chip)] text-[var(--learn-text-secondary)]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-[var(--learn-text-primary)] [&::-webkit-details-marker]:hidden">
         <span>{question}</span>
         <span aria-hidden="true" className="text-lg leading-none transition-transform group-open:rotate-180">⌄</span>
       </summary>
@@ -332,7 +412,7 @@ export function QA({ question, children }: { question: string; children: ReactNo
 export function Table({ children }: { children: ReactNode }) {
   return (
     <div className="overflow-x-auto mb-4">
-      <table className="w-full text-left border-collapse [&_th]:border-b [&_th]:border-[#323232] [&_th]:pb-1 [&_th]:pr-4 [&_td]:border-b [&_td]:border-[#232323] [&_td]:py-1.5 [&_td]:pr-4 [&_td]:align-top [&_th:first-child]:whitespace-nowrap [&_td:first-child]:whitespace-nowrap">
+      <table className="w-full text-left border-collapse [&_th]:border-b [&_th]:border-[var(--learn-border-strong)] [&_th]:text-[var(--learn-text-primary)] [&_th]:pb-1 [&_th]:pr-4 [&_td]:border-b [&_td]:border-[var(--learn-border)] [&_td]:py-1.5 [&_td]:pr-4 [&_td]:align-top [&_th:first-child]:whitespace-nowrap [&_td:first-child]:whitespace-nowrap">
         {children}
       </table>
     </div>

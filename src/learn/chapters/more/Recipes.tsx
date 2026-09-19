@@ -88,7 +88,7 @@ s("amen")
         code={`note("g1 bb1 <c2 eb2> d2")
   .s("sawtooth")
   .lpf(400).lpenv(4)
-  .scope()`}
+  ._scope()`}
       />
       <p>
         包络的类型取决于你设置的方法。我们来设一下 <code>lpa</code>：
@@ -97,14 +97,14 @@ s("amen")
         code={`note("g1 bb1 <c2 eb2> d2")
   .s("sawtooth").lpq(8)
   .lpf(400).lpa(.2).lpenv(4)
-  .scope()`}
+  ._scope()`}
       />
       <p>现在滤波器变成起音（attack）而不是之前默认的衰减（decay）。也可以两个都设置：</p>
       <CodeBlock
         code={`note("g1 bb1 <c2 eb2> d2")
   .s("sawtooth").lpq(8)
   .lpf(400).lpa(.1).lpd(.1).lpenv(4)
-  .scope()`}
+  ._scope()`}
       />
       <p>
         可以试试调整 <code>lpa</code>、<code>lpd</code>、<code>lps</code>、<code>lpr</code>，看看滤波器包络会发生什么变化。
@@ -117,13 +117,13 @@ s("amen")
       <CodeBlock
         code={`note("<g1 bb1 d2 f1>")
 .s("sawtooth, square") // <------
-.scope()`}
+._scope()`}
       />
       <p>可以像这样单独控制每个声音的音量：</p>
       <CodeBlock
         code={`note("<g1 bb1 d2 f1>")
 .s("sawtooth, square:0:.5") // <--- "name:number:gain"
-.scope()`}
+._scope()`}
       />
       <p>
         如果想对每个声部做更精细的控制，可以用 <code>layer</code>：
@@ -132,7 +132,7 @@ s("amen")
         code={`note("<g1 bb1 d2 f1>").layer(
   x=>x.s("sawtooth").vib(4),
   x=>x.s("square").add(note(12))
-).scope()`}
+)._scope()`}
       />
       <p>
         这里给 sawtooth 加了颤音（vibrato），square 则被移高了一个八度。用 <code>layer</code>{' '}
@@ -144,7 +144,7 @@ s("amen")
       <CodeBlock
         code={`note("<g1 bb1 d2 f1>")
 .add(note("0,.1")) // <------ chorus
-.s("sawtooth").scope()`}
+.s("sawtooth")._scope()`}
         punchcard
       />
       <p>试试不同的数值，或者再叠加一个声部！</p>

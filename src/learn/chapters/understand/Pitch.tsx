@@ -1,12 +1,16 @@
 import { CodeBlock, Callout } from '../../components';
-import PitchSlider, { FREQUENCY_COLOR, PITCH_COLOR } from '../../PitchSlider';
+import PitchSlider from '../../PitchSlider';
+import { usePitchColors } from '../../pitch-theme';
 
 export default function Pitch() {
+  // The prose colour-codes "frequency" (blue) and "pitch" (yellow) exactly the
+  // way the sliders and the plot canvas below do.
+  const colors = usePitchColors();
   return (
     <>
       <p>
         让我们来学习音高（pitch）是怎么运作的！下面这个滑块控制着一个振荡器的
-        <span style={{ color: FREQUENCY_COLOR }}>频率</span>，从而产生音高：
+        <span style={{ color: colors.frequency }}>频率</span>，从而产生音高：
       </p>
 
       <PitchSlider showFrequencySlider min={20} max={20000} />
@@ -16,7 +20,7 @@ export default function Pitch() {
         <li>移动滑块，音高会随之改变</li>
         <li>注意观察 Hz 数字是怎么变化的</li>
         <li>
-          <span className="text-red-300">注意</span>：过高的频率可能会让儿童或动物感到不适！
+          <span className="text-[var(--learn-error)]">注意</span>：过高的频率可能会让儿童或动物感到不适！
         </li>
       </ul>
 
@@ -39,9 +43,9 @@ export default function Pitch() {
 
       <h2>频率 vs 音高感知</h2>
       <p>
-        你可能已经注意到，<span style={{ color: FREQUENCY_COLOR }}>频率滑块</span>
+        你可能已经注意到，<span style={{ color: colors.frequency }}>频率滑块</span>
         是「不均匀」的——音高在左边区域变化得更多，在右边区域变化得更少。为了让这一点更明显，我们再加一个
-        <span style={{ color: PITCH_COLOR }}>音高滑块</span>，它用另一种尺度来控制频率：
+        <span style={{ color: colors.pitch }}>音高滑块</span>，它用另一种尺度来控制频率：
       </p>
 
       <PitchSlider animatable plot showFrequencySlider showPitchSlider />
@@ -49,12 +53,12 @@ export default function Pitch() {
       <p>试试上面的两个按钮，用两种不同的方式扫过整个频率范围：</p>
       <ul>
         <li>
-          频率扫描：<span style={{ color: FREQUENCY_COLOR }}>频率线性上升</span>，
-          <span style={{ color: PITCH_COLOR }}>音高按对数上升</span>
+          频率扫描：<span style={{ color: colors.frequency }}>频率线性上升</span>，
+          <span style={{ color: colors.pitch }}>音高按对数上升</span>
         </li>
         <li>
-          音高扫描：<span style={{ color: FREQUENCY_COLOR }}>频率按指数上升</span>，
-          <span style={{ color: PITCH_COLOR }}>音高线性上升</span>
+          音高扫描：<span style={{ color: colors.frequency }}>频率按指数上升</span>，
+          <span style={{ color: colors.pitch }}>音高线性上升</span>
         </li>
       </ul>
 
@@ -68,7 +72,7 @@ export default function Pitch() {
 
       <p>
         大多数时候，我们希望以符合人类感知的方式来控制音高，而这正是
-        <span style={{ color: PITCH_COLOR }}>音高滑块</span>所做的事。
+        <span style={{ color: colors.pitch }}>音高滑块</span>所做的事。
       </p>
 
       <h2>从 Hz 到半音（Semitone）</h2>

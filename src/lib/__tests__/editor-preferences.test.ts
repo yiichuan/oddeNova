@@ -71,7 +71,7 @@ describe('editor preferences', () => {
     applyAppEditorTheme('light');
 
     const css = document.getElementById('vibe-editor-theme')?.innerHTML ?? '';
-    expect(css).toContain('#F7F7FA');
+    expect(css).toContain('var(--oddenova-editor-light-background)');
     expect(css).toContain('!important');
   });
 });

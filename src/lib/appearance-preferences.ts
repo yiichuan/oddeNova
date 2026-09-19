@@ -212,15 +212,38 @@ export function setStudioAnimationVisible(visible: boolean): void {
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
+/** Registered once, no matter how often `loadAppearancePreferences()` runs. */
+let watchersInstalled = false;
+
+function installPreferenceWatchers(): void {
+  if (watchersInstalled || typeof window === 'undefined') return;
+  watchersInstalled = true;
+
+  if (typeof window.matchMedia === 'function') {
+    const query = window.matchMedia('(prefers-color-scheme: light)');
+    query.addEventListener('change', () => {
+      if (getThemePreference() !== 'system') return;
+      applyTheme('system');
+      emit();
+    });
+  }
+
+  // Another tab changed the appearance — repaint this one. The `storage`
+  // event fires everywhere *except* the tab that wrote, so this cannot loop
+  // back into a writer, and nothing here writes back anyway.
+  window.addEventListener('storage', (event) => {
+    if (event.storageArea && event.storageArea !== localStorage) return;
+    // `vibe_theme` writes and full clears (`key === null`) are both a theme
+    // story; every other key — including the editor's own storage keys — is
+    // none of this module's business.
+    if (event.key !== STORAGE_KEYS.theme && event.key !== null) return;
+    applyTheme(getThemePreference());
+    emit();
+  });
+}
+
 /** Paint the stored theme and keep "match system" following the OS. */
 export function loadAppearancePreferences(): void {
   applyTheme(getThemePreference(), true);
-
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-  const query = window.matchMedia('(prefers-color-scheme: light)');
-  query.addEventListener('change', () => {
-    if (getThemePreference() !== 'system') return;
-    applyTheme('system');
-    emit();
-  });
+  installPreferenceWatchers();
 }

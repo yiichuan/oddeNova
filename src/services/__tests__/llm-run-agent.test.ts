@@ -75,9 +75,10 @@ vi.mock('../../demo/demo-config', () => ({
   isDemoMode: vi.fn(() => false),
   resolveDemoScenario: vi.fn(() => undefined),
   getActiveDemoSet: vi.fn(() => []),
-  DEMO_MOOD_SCENARIO: { roleSnippets: {}, rounds: [] },
-  DEMO_PREFILL: 'demo prefill',
-  DEMO_PREFILL_SCENARIO: { roleSnippets: {}, rounds: [] },
+  getDemoMoodInstruction: vi.fn(() => '根据我的心情生成音乐'),
+  getDemoMoodScenario: vi.fn(() => ({ roleSnippets: {}, rounds: [] })),
+  getDemoPrefill: vi.fn(() => 'demo prefill'),
+  getDemoPrefillScenario: vi.fn(() => ({ roleSnippets: {}, rounds: [] })),
 }));
 
 vi.mock('../../demo/demo-llm', () => ({

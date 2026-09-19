@@ -6,10 +6,14 @@
 
 <div align="center">
 
-<img src="logo/oddenova-logo.png" alt="oddenova" height="80" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo/oddenova-logo-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="logo/oddenova-logo-light.png" />
+  <img src="logo/oddenova-logo-light.png" alt="oddenova" height="80" />
+</picture>
 
 
-## **你的即兴音乐创作空间**
+## **即刻开始，vibe 一首属于自己的单曲**
 
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-blue?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -19,63 +23,79 @@
 
 **[立即体验 → www.oddenova.com](https://www.oddenova.com)**
 
-[功能特色](#功能特色) • [快速开始](#快速开始) • [工作原理](#工作原理) • [项目结构](#项目结构)
+[如何交互](#如何交互) • [本地使用快速开始](#本地使用快速开始) • [工作原理](#工作原理) • [项目结构](#项目结构)
 
 </div>
 
 ---
 
-oddeNova 是面向创作者的即兴音乐创作 Agent 平台。用一句话描述感觉、主题或画面，AI Agent 将其拆解为可见的音轨层，你在「听—判断—修改」的循环中，把音乐一步步做出来。
+oddeNova 是一个【即兴音乐制作的 Agent】。通过与它的对话，一步一步制作出想要的音乐。
 
-**不是一键生成器——是你参与完整创作过程的私密空间。**
+**像 vibe coding 一样，vibe 音乐**
 
-<img src="docs/images/oddenova-demo.gif" alt="oddeNova 演示" width="100%" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/oddenova-demo-chinese-dark.gif" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/oddenova-demo-chinese-light.gif" />
+  <img src="docs/images/oddenova-demo-chinese-light.gif" alt="oddeNova 演示" width="100%" />
+</picture>
 
 ## 为谁而生
 
-有表达欲和审美判断，但暂时缺少乐理、编曲或电子乐工具经验——  
-脑中有画面、情绪或主题，能感知音乐是否符合自己的感觉，  
-愿意参与修改和迭代，而不满足于随机抽卡式的生成结果。
+为那些在乎音乐的创作者们
 
-## 功能特色
+无论是为自己的作品制作配乐，还是音乐即是自己的作品本身
 
-描述感觉，调整结构，直到作品真正长出来。
+无论是暂时缺乏编曲知识，不会使用音乐制作软件，还是对这一切早已熟稔于心
+
+你不满足于流行到腻味的模版“神曲”，不满足于抽卡式的 AI音乐
+
+你想要让节奏，音符，和弦都完完全全成为表达的一部分
+
+
+## 如何交互
+
+与 oddeNova 对话来生成和调整音乐，或是直接修改控制音乐播放的 Strudel 代码
+
+你的想法和选择才是创作的主体
+
 
 **核心创作体验**
 
-- **自然语言编曲** — 直接描述音乐意图，无需了解任何代码或乐理
-- **分层音轨管理** — 底鼓、军鼓、贝斯、合成器等各自作为独立 layer，可按需增删替换
-- **精准迭代编辑** — 每次对话只修改涉及的 layer，其余轨道保持原样
-- **即时播放** — 代码生成后立即在浏览器中执行播放，无需后端服务
-- **WAV 导出** — 通过 OfflineAudioContext 渲染并下载 WAV 音频文件
+- **自然语言编曲** — 描述你的想法与意见，不断迭代创作结果
+- **分层音轨管理** — 鼓组、弦乐、合成器等等，各自作为独立 layer，实现精细地管理
+- **精准迭代编辑** — 修改空间从整首曲子，到单个音符，通过对话就能完成
+- **即时播放** — 代码生成后立即在浏览器中执行播放，更新代码也能无缝衔接
+- **WAV 导出** — 有了满意的demo，导出 wav 文件
 
 **AI 与交互**
 
-- **思考过程可见** — 侧边栏实时展示 Agent 的推理过程与工具调用
-- **AI 智能建议** — 根据当前音乐上下文自动生成下一步操作建议
-- **多 LLM 服务商** — 支持 DeepSeek、Kimi、OpenAI、Claude、GLM（智谱），可在界面中随时切换
+- **分布式的创作** — Agent 不会一次生成完整的曲子，而是像自然创作一样，根据想法从简单到复杂地组织音轨
+- **思考过程可见** — 推理过程可见，一眼看明白 Agent 是如何用代码结构出乐段的
+- **编曲辅助建议** — 根据当前上下文自动给出下一步的操作建议
+- **多 LLM 服务商** — 支持 DeepSeek、OpenAI、Claude、GLM（智谱），可在设置中切换
 
 **会话与历史**
 
 - **多 Session 管理** — 创建并随时切换多个独立的音乐创作会话
-- **Session 回放** — 逐步回放任意历史会话的创作过程
+- **Session 回放** — 创作过程中的阶段成果全部保留，随时切换
 - **撤销功能** — 支持回退至任意历史版本（最多 50 步）
 - **分享链接** — 生成可分享的 URL，一键分享你的创作
 
 **界面与其他**
 
-- **代码面板** — 实时展示带语法高亮的 Strudel 代码，支持直接编辑
-- **移动端适配** — 三栏布局在手机上自动切换为单栏抽屉式布局
-- **Demo 模式** — URL 附加 `?demo=true` 进入预设演示流程，无需 API Key
+- **代码面板** — 实时展示带语法高亮的 Strudel 代码，可以直接上手编辑
+- **动画面板** - 跟随版本主题的 vj 动画，在播放时跟随律动产生丰富的视觉效果
+- **精选页** - 收集了一系列 strudel 复刻曲目作品
+- **移动端适配** — 手机访问网页也可以体验完整功能
+- **学习Strudel** - Strudel代码是基于 JS 的实现实时音乐播放的代码语言，它功能强大，上手简单，oddeNova 包含了中文版教程的链接
 
-## 快速开始
+## 本地使用快速开始
 
 ### 环境要求
 
 - Node.js >= 18
 - 以下任一 AI 服务商的 API Key（可选）：
   - [DeepSeek](https://platform.deepseek.com/)
-  - [Kimi (Moonshot)](https://platform.moonshot.cn/)
   - [OpenAI](https://platform.openai.com/)
   - [Anthropic](https://console.anthropic.com/)（Claude）
   - [GLM（智谱）](https://open.bigmodel.cn/)
@@ -101,11 +121,6 @@ npm run dev
 | `npm run lint` | ESLint 代码检查 |
 | `npm test` | 运行单元测试（Vitest） |
 
-### 一键部署到 Vercel
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyiichuan%2FoddeNova)
-
-> LLM API Key 在应用内界面填写。如需 cron 清理功能，在 Vercel 项目设置中配置 `CRON_SECRET`。
 
 ## 工作原理
 
@@ -124,14 +139,14 @@ Strudel 引擎执行 → 浏览器 WebAudio 播放
 
 Agent 通过 `setCode` 直接管理完整的 Strudel 代码。每次对话写入新版本后经 `validate` 校验，最终 `commit` 触发热重载播放。代码内以 `/* @layer NAME */` 注释标记各音轨层，实现结构化的增量编辑。
 
-**任何人都可以上手——不需要会编曲，也不需要懂代码：**
+**简单上手——你可以不明白编曲，也可以看不懂代码：**
 
 **新手友好 · 用你最自然的语言描述**
 
 > "我想要一首让人放松的背景音乐"  
 > "加点活泼的感觉，像下午喝咖啡的氛围"  
-> "鼓点太沉了，换轻快一点的"  
-> "节奏再快一点，我想跳起来"
+> "一段简单的鼓"  
+> "让节奏快一些，声音亮一些"
 
 **进阶用户 · 精准控制每一个细节**
 

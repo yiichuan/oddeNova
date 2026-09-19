@@ -15,7 +15,7 @@ import { generateSongTitle } from './services/song-title';
 import type { ConversationTurn } from './services/llm';
 import { conversationHistoryBefore } from './lib/conversation-history';
 import { createAgentProgressHandler } from './lib/agent-progress-handler';
-import { isDemoMode, getActiveDemoSet } from './demo/demo-config';
+import { isDemoMode, getActiveDemoSet, getDemoMoodInstruction } from './demo/demo-config';
 import ApiKeyModal from './components/overlays/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm';
@@ -1085,7 +1085,7 @@ export default function App() {
 
     // Mood generation is a one-off creation: deliberately no conversation history.
     await runTurn({
-      text: '根据我的心情生成音乐',
+      text: getDemoMoodInstruction(),
       entryPoint: 'mood',
       moodContext: moodContext ?? undefined,
       includeHistory: false,

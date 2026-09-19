@@ -18,5 +18,6 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.{test,spec}.{ts,tsx}', 'tests/**/*.{test,spec}.{ts,tsx}'],
     server: { deps: { inline: [/@strudel/, /@kabelsalat/] } },
+    setupFiles: ['./vitest.setup.ts'],
   },
 });
