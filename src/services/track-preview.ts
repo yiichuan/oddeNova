@@ -117,8 +117,6 @@ const EMPTY: Omit<TrackSnapshot, 'revision'> = { tracks: [], soloId: null, muted
 export const PREVIEW_WORK_SLICE_MS = 4;
 /** A single synchronous queryArc past this is an unfixable long task. */
 export const PREVIEW_LONG_TASK_MS = 50;
-/** Slow minimum-width chunks in a row without visible progress trip the guard. */
-const NO_PROGRESS_CHUNKS = 8;
 /** Progressive tile commits merge at most this often (10–15 FPS). */
 export const PREVIEW_PROGRESS_INTERVAL_MS = 80;
 /** The first probe of a band is this narrow, so a dense pattern is found
@@ -871,6 +869,13 @@ export class TrackPreview {
       });
     }
 
+    // A non-positive or non-finite slice cannot make cooperative progress.
+    // Positive budgets may still be exceeded by a completed slice under load;
+    // that work has progressed and will yield, so it must not become a data cap.
+    if (!Number.isFinite(workSliceMs) || workSliceMs <= 0) {
+      return Promise.resolve({ status: 'resource-guarded', guardReason: 'no-progress' });
+    }
+
     return new Promise<TrackSceneQueryResult>((resolve, reject) => {
       let handle: CooperativeHandle | null = null;
       let settled = false;
@@ -947,13 +952,13 @@ export class TrackPreview {
       let currentChunkBegin = queryBegin;
       let currentChunkEnd = queryBegin;
       let currentChunkStarted = 0;
+      let currentQueryDuration = 0;
       let currentAccumulators: TrackLaneTileAccumulator[] | null = null;
       let currentTileDedup: Set<string>[] | null = null;
       let currentTileIndex = -1;
       let haps: PreviewHap[] | null = null;
       let hapIndex = 0;
       let firstBandChunk = true;
-      let slowMinimumChunks = 0;
       let lastProgressAt = -Infinity;
       let cachedTiles = 0;
       let slowestQueryArcMs = 0;
@@ -1149,15 +1154,14 @@ export class TrackPreview {
               ) ?? [];
               hapIndex = 0;
               chunkCount += 1;
-              // A synchronous query may itself be expensive; the unbreakable
-              // window is measured alone for the guard, and together with
-              // its projection work when adapting the next chunk.
-              const queryDuration = monotonicNow() - currentChunkStarted;
-              if (queryDuration > slowestQueryArcMs) {
-                slowestQueryArcMs = queryDuration;
+              // A synchronous query may itself be expensive; measure that
+              // unbreakable window alone for both the guard and adaptation.
+              currentQueryDuration = monotonicNow() - currentChunkStarted;
+              if (currentQueryDuration > slowestQueryArcMs) {
+                slowestQueryArcMs = currentQueryDuration;
                 slowestChunkCycles = currentChunkEnd - currentChunkBegin;
               }
-              if (queryDuration > PREVIEW_LONG_TASK_MS) { guard('long-task'); return; }
+              if (currentQueryDuration > PREVIEW_LONG_TASK_MS) { guard('long-task'); return; }
             }
 
             while (haps && hapIndex < haps.length) {
@@ -1220,14 +1224,11 @@ export class TrackPreview {
               }
             }
 
-            const chunkDuration = monotonicNow() - currentChunkStarted;
-            if (chunkWidth <= MIN_QUERY_CHUNK_CYCLES + 1e-12) {
-              if (chunkDuration > workSliceMs) slowMinimumChunks++;
-              else slowMinimumChunks = 0;
-              if (slowMinimumChunks >= NO_PROGRESS_CHUNKS) { guard('no-progress'); return; }
-            }
-            if (chunkDuration > workSliceMs) chunkWidth = Math.max(MIN_QUERY_CHUNK_CYCLES, chunkWidth / 2);
-            else if (chunkDuration < 1) chunkWidth = Math.min(MAX_QUERY_CHUNK_CYCLES, chunkWidth * 2);
+            // Adapt only to queryArc's synchronous cost. Projection may span
+            // several scheduled slices, but every yield is observable progress
+            // rather than evidence that the minimum query width is stuck.
+            if (currentQueryDuration > workSliceMs) chunkWidth = Math.max(MIN_QUERY_CHUNK_CYCLES, chunkWidth / 2);
+            else if (currentQueryDuration < 1) chunkWidth = Math.min(MAX_QUERY_CHUNK_CYCLES, chunkWidth * 2);
             chunkBegin = currentChunkEnd;
             haps = null;
             firstBandChunk = false;

@@ -497,14 +497,37 @@ describe('scene guards and caching', () => {
       ] as PreviewHap[],
     }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
 
-    // A zero slice budget makes every chunk over budget: the no-progress
-    // guard must trip instead of committing a prefix as complete.
+    // A zero slice budget cannot schedule cooperative progress.
     const result = await preview.queryTrackScene({ ...sceneRequest(preview), workSliceMs: 0 });
 
     expect(result.status).toBe('resource-guarded');
     expect(result.guardReason).toBe('no-progress');
     expect(result.batch).toBeUndefined();
     expect(preview.snapshot.status).toBe('ready');
+  });
+
+  it('does not mistake completed cooperative slices for no progress', async () => {
+    const preview = new TrackPreview();
+    let calls = 0;
+    preview.commit({
+      queryArc: (begin) => {
+        calls++;
+        return [
+          { whole: { begin, end: begin + 0.001 }, value: { s: 'bd' }, context: { oddenovaTrack: 'x' } },
+        ] as PreviewHap[];
+      },
+    }, { oddenovaTracks: { tracks: [{ id: 'x', name: 'a' }] } });
+
+    // Even this tiny positive budget is exceeded by normal bookkeeping. Each
+    // completed chunk still advances coverage and yields before continuing.
+    const result = await preview.queryTrackScene({
+      ...sceneRequest(preview),
+      workSliceMs: Number.MIN_VALUE,
+    });
+
+    expect(result.status).toBe('complete');
+    expect(result.batch?.rawEventCount).toBe(calls);
+    expect(calls).toBeGreaterThan(8);
   });
 
   it('guards on allocation failure instead of reporting a data failure', async () => {
