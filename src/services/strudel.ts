@@ -10,9 +10,63 @@ import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-ac
 import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
 import { installCodeEditorReadOnly, setCodeEditorReadOnly } from '../lib/code-editor-read-only';
 import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bounds';
+import {
+  disposeTrackNavigation,
+  installCodeEditorTrackNavigation,
+  revealTrackCode,
+  type TrackCodeRange,
+  type TrackRevealStatus,
+} from '../lib/code-editor-track-navigation';
+import {
+  TrackRenameLedger,
+  dispatchTrackRename,
+  type RenameVersion,
+  type TrackRenameView,
+} from '../lib/code-editor-track-rename';
+import { buildTrackRename, validateTrackName } from '../lib/track-rename';
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
 import { claimTransport } from './transport';
+import { TrackPreview, type PreviewHap, type PreviewPattern, type PreviewTrack, type TrackFullSceneRequest, type TrackSceneQueryResult } from './track-preview';
+import type { TrackSceneBatch, TrackSceneRequest } from '../lib/track-preview-scene';
+import type { TrackClockSample } from '../lib/track-timeline';
+
+/**
+ * Where an explicit seek came from. The playback progress bar and the track
+ * timeline are the two entry points; the viewport and follow logic read this
+ * to decide whether a seek re-centres the browsing window or keeps it.
+ */
+export type SeekSource = 'timeline' | 'progress';
+
+/**
+ * Outcome of a track rename. Every failure is explicit — the UI must never
+ * optimistically rename and roll back, and `busy` exists so a compile, a
+ * playback recovery or an export in flight can refuse the edit cleanly.
+ */
+export type TrackRenameResult =
+  | { status: 'renamed'; name: string }
+  | { status: 'unchanged'; name: string }
+  | { status: 'invalid-name'; reason: 'empty' | 'too-long' | 'invalid-character' }
+  | { status: 'stale-code' | 'unknown-track' | 'unavailable' | 'busy' };
+
+/**
+ * Why a discrete transport notification went out. These are the moments a
+ * position display must redraw without running a frame loop: an accepted
+ * seek, a pause, a stop (position back to 0), a code change that rewound a
+ * paused piece, and the pending seek a play actually applied.
+ */
+export type TransportReason = 'seek' | 'pause' | 'stop' | 'code-change' | 'apply';
+
+export interface TransportEvent {
+  revision: number;
+  /** The authoritative absolute cycle at the moment of this event. */
+  cycle: number;
+  /** Present only when this event is an accepted seek, with its entry point. */
+  seek: { cycle: number; source: SeekSource } | null;
+  reason: TransportReason;
+}
+
+type TransportCallback = (event: TransportEvent) => void;
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
 
@@ -47,7 +101,8 @@ interface StrudelMirrorType {
    */
   dispose?: () => void;
   editor?: {
-    dispatch: (transaction: { effects: unknown }) => void;
+    dispatch: (transaction: { effects?: unknown }) => void;
+    state: { doc: { toString(): string } };
     /** CodeMirror's own teardown — the EditorView is a live DOM+state object. */
     destroy?: () => void;
   };
@@ -67,6 +122,7 @@ interface StrudelMirrorType {
     stop: () => void;
     scheduler?: {
       started?: boolean;
+      cps?: number;
       now?: () => number;
       pause?: () => void;
       stop?: () => void;
@@ -78,6 +134,7 @@ interface StrudelMirrorType {
       num_ticks_since_cps_change?: number;
       seconds_at_cps_change?: number;
     };
+    state?: { evalError?: unknown };
     [key: string]: unknown;
   };
   setCode: (code: string) => void;
@@ -142,6 +199,11 @@ type PageAudioRecoveryOptions = {
 type PageAudioRecovery = {
   clearResumeIntent: () => void;
   dispose: () => void;
+};
+
+type PlaybackRecovery = {
+  generation: number;
+  targetCycle: number;
 };
 
 function isOfflineAudioContext(ctx: BaseAudioContext): boolean {
@@ -243,6 +305,211 @@ export function installPageAudioRecovery(options: PageAudioRecoveryOptions): Pag
 export class StrudelService {
   private static _instance: StrudelService | null = null;
 
+  readonly trackPreview = new TrackPreview();
+
+  getPlaybackPosition = (): number => {
+    const recovery = this.playbackRecovery;
+    if (recovery) return recovery.targetCycle;
+
+    const pending = this.pendingSeekCycle;
+    if (!this._state.isPlaying) {
+      if (Number.isFinite(pending)) return pending as number;
+      return this._state.isPaused ? this.lastPlaybackCycle : 0;
+    }
+
+    const cycle = this.editorInstance?.repl.scheduler?.now?.();
+    if (Number.isFinite(cycle)) {
+      const accepted = this.acceptedSeekCycle;
+      if (accepted !== null) {
+        // A scheduler whose seek is queued for its next tick still reports the
+        // pre-seek cycle here. Hold the accepted target until the scheduler
+        // has caught up with it, so the playhead does not jump to the target
+        // for one frame and snap back to the old position the next.
+        if ((cycle as number) >= accepted - 1e-6) this.acceptedSeekCycle = null;
+        else return accepted;
+      }
+      this.lastPlaybackCycle = cycle as number;
+      return cycle as number;
+    }
+    return this.lastPlaybackCycle;
+  };
+
+  /**
+   * The only high-frequency read exposed to the track view. It samples the
+   * transport clock and tempo, but never touches a Pattern or React state.
+   */
+  getTrackClock = (): TrackClockSample => ({
+    absoluteCycle: this.getPlaybackPosition(),
+    cps: this.editorInstance?.repl.scheduler?.cps ?? 0.5,
+  });
+
+  /** Start one frozen, cancellable scene query on the preview service. */
+  queryTrackScene = (
+    request: TrackSceneRequest,
+    signal?: AbortSignal,
+    onProgress?: (batch: TrackSceneBatch) => void,
+  ): Promise<TrackSceneQueryResult> =>
+    this.trackPreview.queryTrackScene(request, signal, onProgress);
+
+  ensureFullScene = (request: TrackFullSceneRequest): void => {
+    this.trackPreview.ensureFullScene(request);
+  };
+
+  prewarmFullScene = (request: TrackFullSceneRequest): void => {
+    this.trackPreview.prewarmFullScene(request);
+  };
+
+  /**
+   * Scroll the editor to a track's compiled source slot and highlight it
+   * briefly. The track's range is only trusted while the editor document is
+   * byte-for-byte the code that compile ran on — anything else (an unheard
+   * edit, an unknown track, a missing view) is reported back so the UI can
+   * refuse to scroll to a stale position instead of guessing one.
+   */
+  revealTrackSource = (trackId: string): TrackRevealStatus => {
+    const view = this.editorInstance?.editor;
+    if (!view) return 'unavailable';
+    const source = this.trackPreview.trackSource(trackId);
+    if (!source) return 'unknown-track';
+    const doc = view.state.doc.toString();
+    if (doc !== source.sourceCode) return 'stale-code';
+    const range: TrackCodeRange = source.range;
+    if (range.from < 0 || range.to > doc.length || range.from >= range.to) return 'unknown-track';
+    revealTrackCode(view, range);
+    return 'revealed';
+  };
+
+  /** Whether any compile, playback operation or export owns the engine right now. */
+  private isRenameBusy(): boolean {
+    return this.playPromise !== null
+      || this.activePlayGeneration !== null
+      || this.playbackRecovery !== null
+      || this.trackPreviewPreparation !== null
+      || this.compileBusy
+      || this.isInitializing
+      || !this.isAudioInitialized;
+  }
+
+  /**
+   * Publish one trusted rename version: preview metadata first, then the
+   * service state, so every observer of either sees a consistent pair.
+   */
+  private applyRenameVersion(version: RenameVersion<PreviewTrack[]>): void {
+    this.trackPreview.applyRename(version);
+    this._state = {
+      ...this._state,
+      code: version.code,
+      isDirty: version.code !== this._state.activeCode,
+    };
+    this.stateCallbacks.forEach(cb => cb(this._state));
+  }
+
+  /**
+   * Route a document change that the repl just reported: a rename
+   * transaction's own callback, or an undo/redo that lands exactly on a
+   * registered version, syncs names and ranges without touching the
+   * transport. Anything else belongs to the ordinary editing path.
+   */
+  private consumeRenameSync(nextCode: string): boolean {
+    const editor = this.editorInstance;
+    if (!editor) return false;
+    const generation = this.trackPreview.mappingEpoch;
+    const pending = this.renameLedger.consume(editor, nextCode, generation);
+    if (pending) {
+      this.applyRenameVersion(pending);
+      return true;
+    }
+    const restored = this.renameLedger.match(this.trackPreview.mappingCode, nextCode, generation);
+    if (restored) {
+      this.applyRenameVersion(restored);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Rename one track by splicing exactly its `@layer` marker in the editor
+   * document. No re-evaluation, no transport change, no audition reset: the
+   * sounding pattern keeps coming from the compiled source while the preview
+   * metadata and the session's saved code move to the mapped version.
+   */
+  renameTrack = (trackId: string, rawName: string): TrackRenameResult => {
+    const editor = this.editorInstance;
+    const view = editor?.editor as TrackRenameView | undefined;
+    if (!editor || !view || !this.isReady) return { status: 'unavailable' };
+    if (this.isRenameBusy()) return { status: 'busy' };
+    const context = this.trackPreview.renameContext();
+    if (!context) return { status: 'unavailable' };
+
+    const doc = view.state.doc.toString();
+    // The rename is only trusted against the version the mapping was last
+    // confirmed on — never against a document carrying unheard edits.
+    if (doc !== context.code) return { status: 'stale-code' };
+    const track = context.tracks.find(t => t.id === trackId);
+    if (!track) return { status: 'unknown-track' };
+
+    const validated = validateTrackName(rawName);
+    if ('reason' in validated) return { status: 'invalid-name', reason: validated.reason };
+    if (validated.name === track.name) return { status: 'unchanged', name: validated.name };
+
+    const built = buildTrackRename(
+      { code: doc, tracks: context.tracks, stackRange: context.stackRange },
+      trackId,
+      validated.name,
+    );
+    if (built.status !== 'ok') {
+      return built.status === 'invalid-name' ? built : { status: built.status };
+    }
+
+    const beforeVersion: RenameVersion<PreviewTrack[]> = { code: doc, tracks: [...context.tracks] };
+    const afterVersion: RenameVersion<PreviewTrack[]> = { code: built.nextCode, tracks: built.tracks };
+    this.renameLedger.begin(editor, afterVersion, this.trackPreview.mappingEpoch);
+    try {
+      dispatchTrackRename(view, built.patch);
+    } catch {
+      this.renameLedger.abort();
+      return { status: 'unavailable' };
+    }
+    if (view.state.doc.toString() !== built.nextCode) {
+      this.renameLedger.abort();
+      return { status: 'unavailable' };
+    }
+    // A wired editor already applied the version from inside its own update
+    // callback; editors without that wiring get the same treatment here.
+    if (this.renameLedger.pendingActive()) {
+      this.renameLedger.abort();
+      this.applyRenameVersion(afterVersion);
+    }
+    this.renameLedger.record(beforeVersion, afterVersion, this.trackPreview.mappingEpoch);
+    return { status: 'renamed', name: validated.name };
+  };
+
+  private transportCallbacks: TransportCallback[] = [];
+  private transportEvent: TransportEvent = { revision: 0, cycle: 0, seek: null, reason: 'apply' };
+  // A seek the running scheduler accepted. While the scheduler has not yet
+  // ticked up to it (a worker-based scheduler applies a seek on its next tick
+  // message), the public position reflects the accepted target instead of the
+  // stale read — otherwise the UI would show the target once and then flash
+  // back to the old cycle.
+  private acceptedSeekCycle: number | null = null;
+
+  onTransportChange = (cb: TransportCallback): (() => void) => {
+    this.transportCallbacks.push(cb);
+    cb(this.transportEvent);
+    return () => {
+      this.transportCallbacks = this.transportCallbacks.filter(c => c !== cb);
+    };
+  };
+
+  get transportSnapshot(): TransportEvent {
+    return this.transportEvent;
+  }
+
+  private publishTransport(reason: TransportReason, cycle: number, seek: TransportEvent['seek'] = null): void {
+    this.transportEvent = { revision: this.transportEvent.revision + 1, cycle, seek, reason };
+    this.transportCallbacks.forEach(cb => cb(this.transportEvent));
+  }
+
   private editorInstance: StrudelMirrorType | null = null;
   private containerElement: HTMLElement | null = null;
   private panelTheme: CodePanelTheme | null = null;
@@ -295,6 +562,22 @@ export class StrudelService {
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
   private pendingSeekCycle: number | null = null;
+  private lastPlaybackCycle = 0;
+  private playbackGeneration = 0;
+  private activePlayGeneration: number | null = null;
+  private playbackRecovery: PlaybackRecovery | null = null;
+  private playPromise: Promise<void> | null = null;
+  private queuedPlayPromise: Promise<void> | null = null;
+  private queuedPlayRequest = false;
+  private stalePlayEditor: StrudelMirrorType | null = null;
+  private editorCallbackToken: object | null = null;
+  private trackPreviewPreparation: { code: string; promise: Promise<void> } | null = null;
+  // Set while a compile the rename path must wait out is running (live update,
+  // WAV export) — playback operations already have their own guards.
+  private compileBusy = false;
+  // Trusted rename conversions for the current compile generation: the
+  // transaction in flight plus the undo/redo history of confirmed renames.
+  private renameLedger = new TrackRenameLedger<PreviewTrack[]>();
   private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
     code: '',
@@ -324,8 +607,10 @@ export class StrudelService {
         getVisibilityState: () => document.visibilityState,
         shouldInterruptOnHidden: isTouchDevice,
         onPlaybackInterrupted: () => {
+          this.invalidatePlaybackOperation();
           this.editorInstance?.repl.stop();
           this.pendingSeekCycle = null;
+          this.lastPlaybackCycle = 0;
           this.notify({ isPlaying: false, isPaused: false });
         },
         requestUserResume: () => this.notify({ error: USER_RESUME_PROMPT, isPlaying: false, isPaused: false }),
@@ -490,6 +775,7 @@ export class StrudelService {
       }
     }
 
+    if (instance.editor) disposeTrackNavigation(instance.editor);
     try { instance.editor?.destroy?.(); } catch { /* view already detached */ }
     instance.dispose?.();
   }
@@ -498,6 +784,9 @@ export class StrudelService {
     if (this.containerElement === container && this.editorInstance) return;
     if (this.isInitializing) return;
 
+    this.editorCallbackToken = null;
+    // A new editor instance invalidates every registered rename transaction.
+    this.renameLedger.clear();
     this.containerElement = container;
     this.isInitializing = true;
     this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
@@ -564,6 +853,9 @@ export class StrudelService {
       // cycles of trailing history, two of lookahead, centred — the window
       // strudel.cc's own painters scroll through.
       const drawTime: [number, number] = [-2, 2];
+      const editorCallbackToken = {};
+      this.editorCallbackToken = editorCallbackToken;
+      const isCurrentEditorCallback = () => this.editorCallbackToken === editorCallbackToken;
 
       // From here only the instance about to be built may write this service's
       // state; anything still holding an older number is talking about an
@@ -573,8 +865,21 @@ export class StrudelService {
       const editor = new StrudelMirror({
         root: this.containerElement,
         initialCode: currentCode,
-        transpiler,
-        defaultOutput,
+        transpiler: (code: string, options: Parameters<typeof transpiler>[1]) => {
+          const result = transpiler(code, options);
+          return isCurrentEditorCallback() ? this.trackPreview.prepare(code, result) : result;
+        },
+        afterEval: ({ pattern, meta }: { pattern: PreviewPattern; meta?: Parameters<TrackPreview['commit']>[1] }) => {
+          if (!isCurrentEditorCallback()) return;
+          this.trackPreview.commit(pattern, meta);
+          // A committed compile rebuilds the mapping from the new source:
+          // pending renames and old-generation history must not leak into it.
+          this.renameLedger.clear();
+        },
+        defaultOutput: (hap: PreviewHap, deadline: number, duration: number, cps: number, time: number) => {
+          if (!isCurrentEditorCallback()) return;
+          if (this.trackPreview.isAudible(hap)) return defaultOutput(hap, deadline, duration, cps, time);
+        },
         getTime: getTimeFn,
         drawTime,
         drawContext: this.panelCanvas.context, // scoped to the panel — see codepanel-canvas.ts
@@ -590,28 +895,11 @@ export class StrudelService {
           this.panelAccent?.sample(haps as Parameters<CodePanelAccent['sample']>[0], time);
         },
         onUpdateState: (state: StrudelReplState) => {
-          if (generation !== this.editorGeneration) return;
-          const evalError = state.evalError;
-          const error = evalError ? getErrorMessage(evalError) : null;
-          const nextCode = state.code ?? this._state.code;
-          const didCodeChange = nextCode !== this._state.code;
-          if (didCodeChange) this.rewindOnCodeChange(state.started ?? false);
-          const replActiveCode = state.activeCode;
-          const nextActiveCode =
-            typeof replActiveCode !== 'string' || replActiveCode === REPL_PLACEHOLDER_CODE
-              ? this._state.activeCode
-              : replActiveCode;
-          this.notify({
-            code: nextCode,
-            activeCode: nextActiveCode,
-            isPlaying: state.started ?? false,
-            isPaused: didCodeChange || state.started ? false : this._state.isPaused,
-            isDirty: state.isDirty ?? false,
-            error,
-          });
+          if (generation !== this.editorGeneration || !isCurrentEditorCallback()) return;
+          this.handleReplUpdateState(state);
         },
         onError: (error: Error) => {
-          if (generation !== this.editorGeneration) return;
+          if (generation !== this.editorGeneration || !isCurrentEditorCallback()) return;
           this.notify({ error: error.message });
         },
         prebake: this.prebake,
@@ -634,6 +922,9 @@ export class StrudelService {
         // Keeps the completion popup inside the editor instead of under the
         // control bar — see code-editor-tooltip-bounds.ts.
         installCodeEditorTooltipBounds(editor.editor);
+        // Track-name → code navigation: highlight + scrollIntoView, cleared on
+        // edit or after ~1.2s — see code-editor-track-navigation.ts.
+        installCodeEditorTrackNavigation(editor.editor);
       }
 
       // Sync REPL internal state with initial code
@@ -648,6 +939,46 @@ export class StrudelService {
     }
     // engineReady is set by prebake() after all modules load
   };
+
+  /**
+   * The repl's own state callback, one level below the editor callback guard:
+   * the single place editor documents turn into service state. A stop or edit
+   * can invalidate an evaluate that is already in flight — its scheduler
+   * callback may still arrive after the caller has moved on, and must not
+   * resurrect playback or overwrite the current editor state.
+   */
+  private handleReplUpdateState(state: StrudelReplState): void {
+    if (this.stalePlayEditor === this.editorInstance) {
+      if (state.started) {
+        const scheduler = this.editorInstance?.repl.scheduler;
+        if (typeof scheduler?.stop === 'function') scheduler.stop();
+        else this.editorInstance?.repl.stop();
+      }
+      return;
+    }
+    const evalError = state.evalError;
+    const error = evalError ? getErrorMessage(evalError) : null;
+    const nextCode = state.code ?? this._state.code;
+    const didCodeChange = nextCode !== this._state.code;
+    // A rename transaction (or its undo/redo) reports itself here with the
+    // exact registered text: sync names and keep the transport and pause
+    // state exactly as they are. Every other edit rewinds.
+    const renameApplied = didCodeChange ? this.consumeRenameSync(nextCode) : false;
+    if (didCodeChange && !renameApplied) this.rewindOnCodeChange(state.started ?? false);
+    const replActiveCode = state.activeCode;
+    const nextActiveCode =
+      typeof replActiveCode !== 'string' || replActiveCode === REPL_PLACEHOLDER_CODE
+        ? this._state.activeCode
+        : replActiveCode;
+    this.notify({
+      code: nextCode,
+      activeCode: nextActiveCode,
+      isPlaying: state.started ?? false,
+      isPaused: renameApplied ? this._state.isPaused : didCodeChange || state.started ? false : this._state.isPaused,
+      isDirty: state.isDirty ?? false,
+      error,
+    });
+  }
 
   private setupMasterChain = async (): Promise<void> => {
     if (this.masterChainReady || this.masterChainSettingUp) return;
@@ -909,35 +1240,121 @@ export class StrudelService {
 
   setCode = (code: string): void => {
     const didChange = code !== this._state.code;
+    let invalidatedPlay = false;
     if (didChange) {
+      if (this.activePlayGeneration !== null) {
+        this.invalidatePlaybackOperation();
+        invalidatedPlay = true;
+      }
+      this.trackPreviewPreparation = null;
+      // A wholesale code replacement ends the current mapping generation:
+      // no pending rename and no old history may act on the new document.
+      this.renameLedger.clear();
+      if (this._state.isPlaying) this.trackPreview.clearSolo();
+      else this.trackPreview.reset();
       this.rewindOnCodeChange(this._state.isPlaying);
       // A different piece arrived; it does not inherit the last one's look.
       this.panelTheme?.reset();
       this.panelCanvas?.clear();
       this.panelAccent?.reset();
     }
-    this._state = { ...this._state, code, ...(didChange ? { isPaused: false } : {}) };
+    this._state = {
+      ...this._state,
+      code,
+      ...(didChange ? { isPaused: false } : {}),
+      ...(invalidatedPlay
+        ? { isPlaying: false, isPaused: false, isDirty: code !== this._state.activeCode }
+        : {}),
+    };
+    if (invalidatedPlay) this.stateCallbacks.forEach(cb => cb(this._state));
     if (this.editorInstance) {
       // Skip the full-document replace when content is unchanged — a redundant
       // setCode clears all CodeMirror decorations (miniLocation highlight boxes)
       // and shows up as a visible flash
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cmView = (this.editorInstance as any)?.editor as { state: { doc: { toString(): string } } } | undefined;
-      if (cmView?.state.doc.toString() === code) return;
-      this.editorInstance.setCode(code);
+      if (cmView?.state.doc.toString() !== code) this.editorInstance.setCode(code);
+      if (invalidatedPlay) this.stopStalePlay(this.editorInstance);
     }
+  };
+
+  /**
+   * Compile the current editor buffer for the track view without starting the
+   * scheduler. Strudel's `evaluate(false)` still runs the exact same
+   * transpiler/REPL path as playback, but leaves the transport stopped while
+   * `afterEval` supplies TrackPreview with the queryable pattern.
+   */
+  prepareTrackPreview = async (): Promise<void> => {
+    const code = this._state.code.trim();
+    const editor = this.editorInstance;
+    if (!code || !editor || this.trackPreview.snapshot.status !== 'idle') return;
+
+    if (this.trackPreviewPreparation?.code === code) {
+      await this.trackPreviewPreparation.promise;
+      return;
+    }
+
+    const promise = Promise.resolve().then(() => editor.evaluate(false));
+    this.trackPreviewPreparation = { code, promise };
+    try {
+      await promise;
+    } finally {
+      if (this.trackPreviewPreparation?.promise === promise) this.trackPreviewPreparation = null;
+    }
+  };
+
+  /**
+   * Put the playhead on an absolute cycle, however far into the piece that is.
+   * The playback progress bar normalizes its own progress against the
+   * estimated loop first (`seekPlayback` below); the track timeline submits
+   * its target in the same absolute domain — a seek in a later pass must not
+   * be folded back into the first one, and a target of L (the piece's own end
+   * boundary) reaches the service as L and reads back per the projection
+   * rules.
+   *
+   * Publishing the accepted position and refreshing the preview happen only
+   * on success — a rejected seek must not announce itself as located.
+   */
+  seekToCycle = (cycle: number, source: SeekSource): boolean => {
+    if (!Number.isFinite(cycle) || cycle < 0) return false;
+
+    if (this.playbackRecovery) {
+      // The user can scrub while evaluate() is still starting. Keep the latest
+      // target in the pending slot so the post-evaluate application cannot put
+      // the paused position back over it.
+      this.pendingSeekCycle = cycle;
+      this.playbackRecovery.targetCycle = cycle;
+      this.lastPlaybackCycle = cycle;
+      if (applySeekCycle(this.editorInstance?.repl.scheduler, cycle)) {
+        this.pendingSeekCycle = null;
+      }
+      this.publishTransport('seek', cycle, { cycle, source });
+      this.trackPreview.refresh();
+      return true;
+    }
+
+    if (!this._state.isPlaying) {
+      this.pendingSeekCycle = cycle;
+      this.lastPlaybackCycle = cycle;
+      this.publishTransport('seek', cycle, { cycle, source });
+      this.trackPreview.refresh();
+      return true;
+    }
+
+    const applied = applySeekCycle(this.editorInstance?.repl.scheduler, cycle);
+    if (applied) {
+      this.acceptedSeekCycle = cycle;
+      this.lastPlaybackCycle = cycle;
+      this.publishTransport('seek', cycle, { cycle, source });
+      this.trackPreview.refresh();
+    }
+    return applied;
   };
 
   seekPlayback = (progress: number, loopCycles: number): boolean => {
     const targetCycle = seekTargetCycle(progress, loopCycles);
     if (targetCycle === null) return false;
-
-    if (!this._state.isPlaying) {
-      this.pendingSeekCycle = targetCycle;
-      return true;
-    }
-
-    return applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle);
+    return this.seekToCycle(targetCycle, 'progress');
   };
 
   /**
@@ -956,22 +1373,89 @@ export class StrudelService {
    */
   private rewindOnCodeChange(isStarted: boolean): void {
     this.pendingSeekCycle = isStarted ? null : 0;
+    if (!isStarted) {
+      this.lastPlaybackCycle = 0;
+      this.acceptedSeekCycle = null;
+      this.publishTransport('code-change', 0);
+    }
   }
 
-  private applyPendingSeek(): void {
-    if (this.pendingSeekCycle === null) return;
-    if (applySeekCycle(this.editorInstance?.repl.scheduler, this.pendingSeekCycle)) {
+  private applyPendingSeek(): boolean {
+    const targetCycle = this.pendingSeekCycle;
+    if (targetCycle === null) return true;
+    if (!applySeekCycle(this.editorInstance?.repl.scheduler, targetCycle)) return false;
+    this.pendingSeekCycle = null;
+    this.lastPlaybackCycle = targetCycle;
+    this.publishTransport('apply', targetCycle);
+    return true;
+  }
+
+  private preparePendingSeekForPlayback(editor: StrudelMirrorType): void {
+    const targetCycle = this.pendingSeekCycle;
+    if (targetCycle === null) return;
+    if (applySeekCycle(editor.repl.scheduler, targetCycle, { resetClock: true })) {
       this.pendingSeekCycle = null;
+      this.lastPlaybackCycle = targetCycle;
     }
+  }
+
+  private isCurrentPlay(generation: number, editor: StrudelMirrorType): boolean {
+    return this.playbackGeneration === generation
+      && this.activePlayGeneration === generation
+      && this.editorInstance === editor;
+  }
+
+  private invalidatePlaybackOperation(): void {
+    this.playbackGeneration += 1;
+    this.queuedPlayRequest = false;
+    if (this.activePlayGeneration !== null) {
+      this.stalePlayEditor = this.editorInstance;
+      this.activePlayGeneration = null;
+    }
+    this.playbackRecovery = null;
+  }
+
+  private finishPlayOperation(generation: number, promise: Promise<void>): void {
+    if (this.playPromise === promise) this.playPromise = null;
+    if (this.activePlayGeneration === generation) this.activePlayGeneration = null;
+    if (this.playbackRecovery?.generation === generation) this.playbackRecovery = null;
+    if (!this.playPromise) this.stalePlayEditor = null;
+  }
+
+  private stopStalePlay(editor: StrudelMirrorType): void {
+    if (this.editorInstance !== editor || this.stalePlayEditor !== editor) return;
+    if (typeof editor.repl.scheduler?.stop === 'function') editor.repl.scheduler.stop();
+    else editor.repl.stop();
+  }
+
+  private evaluationFailed(editor: StrudelMirrorType): boolean {
+    return Boolean(editor.repl.state?.evalError || this._state.error);
+  }
+
+  private preserveRecoveryTarget(): void {
+    const targetCycle = this.playbackRecovery?.targetCycle;
+    if (Number.isFinite(targetCycle)) {
+      this.pendingSeekCycle = targetCycle as number;
+      this.lastPlaybackCycle = targetCycle as number;
+    }
+    this.playbackRecovery = null;
   }
 
   pause = (): boolean => {
     const scheduler = this.editorInstance?.repl.scheduler;
     if (!scheduler || !this._state.isPlaying) return false;
 
-    const currentCycle = scheduler.now?.();
-    if (Number.isFinite(currentCycle)) this.pendingSeekCycle = currentCycle as number;
+    const currentCycle = this.getPlaybackPosition();
+    if (Number.isFinite(currentCycle)) {
+      this.pendingSeekCycle = currentCycle;
+      this.lastPlaybackCycle = currentCycle;
+    }
+    this.invalidatePlaybackOperation();
 
+    // The scheduler synchronously reports started=false. Publish the pause
+    // intent first so consumers never observe an intermediate stopped state.
+    this.notify({ isPlaying: false, isPaused: true });
+    this.publishTransport('pause', Number.isFinite(currentCycle) ? currentCycle : 0);
     if (typeof scheduler.pause === 'function') scheduler.pause();
     else if (typeof scheduler.stop === 'function') scheduler.stop();
     else this.editorInstance?.repl.stop();
@@ -988,37 +1472,65 @@ export class StrudelService {
     // back to the studio's own orange until `play()` resumes and re-latches.
     this.panelAccent?.reset();
 
-    this.notify({ isPlaying: false, isPaused: true });
     return true;
   };
 
   /**
    * Read the transport back off the scheduler and make the state agree.
-   *
-   * `isPlaying` otherwise has exactly one source: the Cyclist's `onToggle`,
-   * which fires only when the scheduler actually crosses between stopped and
-   * started. `setPattern(pattern, autostart)` starts it only `if (autostart &&
-   * !this.started)` — so evaluating into an already-running scheduler toggles
-   * nothing, and a state that had gone out of step with the transport could
-   * never come back: every later press of play re-evaluated, said nothing, and
-   * left the button reading the same wrong thing.
-   *
-   * So a successful evaluate ends by asserting what the scheduler says, the
-   * way the Featured transport already does (`featured-player.play`). This is
-   * the self-healing half of the fix; `teardownEditor` is the half that keeps
-   * the divergence from happening in the first place.
+   * A successful evaluate may not trigger Cyclist's onToggle when its
+   * scheduler was already running, so explicitly reconcile the public state.
    */
   private syncTransportState(): void {
     const started = this.editorInstance?.repl.scheduler?.started;
-    // A fake or a future scheduler that does not expose the flag: an evaluate
-    // that resolved without throwing started the transport, so take that.
     const playing = typeof started === 'boolean' ? started : true;
     if (playing === this._state.isPlaying && !(playing && this._state.isPaused)) return;
     this.notify({ isPlaying: playing, isPaused: playing ? false : this._state.isPaused });
   }
 
-  play = async (): Promise<void> => {
-    if (!this.editorInstance) throw new Error('Engine not initialized');
+  private startPlayOperation = (): Promise<void> => {
+    const generation = ++this.playbackGeneration;
+    const promise = this.runPlay(generation);
+    this.playPromise = promise;
+    void promise.then(
+      () => this.finishPlayOperation(generation, promise),
+      () => this.finishPlayOperation(generation, promise),
+    );
+    return promise;
+  };
+
+  private continueQueuedPlay = (): Promise<void> => {
+    this.queuedPlayPromise = null;
+    if (!this.queuedPlayRequest) return Promise.resolve();
+    this.queuedPlayRequest = false;
+    return this.startPlayOperation();
+  };
+
+  play = (): Promise<void> => {
+    if (!this.playPromise) return this.startPlayOperation();
+    if (this.activePlayGeneration !== null) return this.playPromise;
+
+    // Stop/code-change invalidation leaves the old evaluate promise alive until
+    // its own cleanup finishes. Queue a new request behind it so the two
+    // operations never share scheduler callbacks or stale stop handling.
+    this.queuedPlayRequest = true;
+    if (!this.queuedPlayPromise) {
+      const previous = this.playPromise;
+      this.queuedPlayPromise = previous.then(
+        this.continueQueuedPlay,
+        this.continueQueuedPlay,
+      );
+    }
+    return this.queuedPlayPromise;
+  };
+
+  private async runPlay(generation: number): Promise<void> {
+    const editor = this.editorInstance;
+    if (!editor) throw new Error('Engine not initialized');
+    this.activePlayGeneration = generation;
+    this.playbackRecovery = {
+      generation,
+      targetCycle: this.pendingSeekCycle ?? 0,
+    };
     // One transport at a time: a featured audition stops here.
     claimTransport('studio', this.stop);
     // Hand the panel back to oddeNova's palette before evaluating, so the code
@@ -1037,32 +1549,75 @@ export class StrudelService {
     this.notify({ error: null });
     try {
       await this.ensurePlayableAudioGraph();
-      await this.editorInstance.evaluate();
+      if (!this.isCurrentPlay(generation, editor)) {
+        this.stopStalePlay(editor);
+        return;
+      }
+      // A paused Cyclist retains Zyklus's phase. Rebase it before evaluate()
+      // starts the scheduler so a long pause cannot be replayed as overdue
+      // ticks. A successfully applied target is consumed here; a seek received
+      // during this await creates a new pending target for the post-evaluate
+      // pass, so the latest user action still wins.
+      this.preparePendingSeekForPlayback(editor);
+      await editor.evaluate();
+      if (!this.isCurrentPlay(generation, editor)) {
+        this.stopStalePlay(editor);
+        return;
+      }
+      if (this.evaluationFailed(editor)) {
+        this.preserveRecoveryTarget();
+        return;
+      }
       this.applyPendingSeek();
+      this.playbackRecovery = null;
       this.syncTransportState();
       this.pageAudioRecovery?.clearResumeIntent();
       void this.setupMasterChain();
     } catch (error) {
+      if (!this.isCurrentPlay(generation, editor)) {
+        this.stopStalePlay(editor);
+        return;
+      }
       if (this.isLikelyAudioGraphError(error)) {
         try {
           await this.resetLiveAudioGraph();
-          await this.editorInstance.evaluate();
+          if (!this.isCurrentPlay(generation, editor)) {
+            this.stopStalePlay(editor);
+            return;
+          }
+          this.preparePendingSeekForPlayback(editor);
+          await editor.evaluate();
+          if (!this.isCurrentPlay(generation, editor)) {
+            this.stopStalePlay(editor);
+            return;
+          }
+          if (this.evaluationFailed(editor)) {
+            this.preserveRecoveryTarget();
+            return;
+          }
           this.applyPendingSeek();
+          this.playbackRecovery = null;
           this.syncTransportState();
           this.pageAudioRecovery?.clearResumeIntent();
           void this.setupMasterChain();
           return;
         } catch (retryError) {
+          if (!this.isCurrentPlay(generation, editor)) {
+            this.stopStalePlay(editor);
+            return;
+          }
+          this.preserveRecoveryTarget();
           const message = getErrorMessage(retryError);
           this.notify({ error: message });
           throw retryError;
         }
       }
+      this.preserveRecoveryTarget();
       const message = getErrorMessage(error);
       this.notify({ error: message });
       throw error;
     }
-  };
+  }
 
   /**
    * Strudel's own live update — what Ctrl+Enter does in its REPL.
@@ -1079,7 +1634,7 @@ export class StrudelService {
    * is `play()`'s job.
    */
   update = async (): Promise<void> => {
-    if (!this.editorInstance || !this._state.isPlaying) return;
+    if (!this.editorInstance || !this._state.isPlaying || this.playPromise) return;
     // Same reasoning as play(): the code about to run decides the look from
     // scratch, so a `.theme()` or `.color()` the user just edited out stops
     // applying. Both re-latch on the next painted frame, and the Drawer never
@@ -1095,12 +1650,21 @@ export class StrudelService {
     // Eval failures surface through onUpdateState's `evalError`, which is why
     // this doesn't try to catch them: the pattern that is already playing
     // keeps playing, and the error lands in the panel's error banner.
-    await this.editorInstance.evaluate();
+    this.compileBusy = true;
+    try {
+      await this.editorInstance.evaluate();
+    } finally {
+      this.compileBusy = false;
+    }
   };
 
   stop = (): void => {
+    this.invalidatePlaybackOperation();
+    this.trackPreview.clearSolo();
     this.pageAudioRecovery?.clearResumeIntent();
     this.pendingSeekCycle = null;
+    this.lastPlaybackCycle = 0;
+    this.acceptedSeekCycle = null;
     // The Drawer stops with the transport, so the painter cannot undo its own
     // work.
     this.panelTheme?.reset();
@@ -1108,6 +1672,10 @@ export class StrudelService {
     this.panelAccent?.reset();
     this.editorInstance?.repl.stop();
     this.notify({ isPlaying: false, isPaused: false });
+    // Stopping and seeking back to a cycle are independent events: the
+    // notification carries the rewind to 0 without touching the pending-seek
+    // slot, so a seek that arrives after stop survives it.
+    this.publishTransport('stop', 0);
   };
 
   scrollCodeToBottom = (): void => {
@@ -1188,12 +1756,17 @@ export class StrudelService {
     if (!this.editorInstance) throw new Error('Engine not initialized');
     if (endCycle <= beginCycle) throw new Error(t('cycleError'));
 
-    this.editorInstance.repl.stop();
-    // evaluate() defaults to autostart=true which kicks the scheduler back on
-    // (the user sees playback resume the moment they click Export). We just
-    // need the pattern compiled, not played — pass false.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (this.editorInstance as any).evaluate(false);
+    this.compileBusy = true;
+    try {
+      this.editorInstance.repl.stop();
+      // evaluate() defaults to autostart=true which kicks the scheduler back on
+      // (the user sees playback resume the moment they click Export). We just
+      // need the pattern compiled, not played — pass false.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (this.editorInstance as any).evaluate(false);
+    } finally {
+      this.compileBusy = false;
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const replAny = this.editorInstance.repl as any;
@@ -1452,6 +2025,9 @@ export class StrudelService {
 
   reinit = async (): Promise<void> => {
     if (!this.containerElement) return;
+    this.invalidatePlaybackOperation();
+    this.editorCallbackToken = null;
+    this.renameLedger.clear();
     this.isAudioInitialized = false;
     this.isInitializing = false;
     if (this.editorInstance) {

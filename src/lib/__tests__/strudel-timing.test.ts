@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatPlaybackTime,
+  getPlaybackTimeline,
   getStrudelLoopCycles,
   getStrudelLoopDurationSeconds,
+  projectPlaybackCycle,
 } from '../strudel-timing';
 
 describe('Strudel playback timing', () => {
@@ -258,5 +260,64 @@ arrange(
   it('formats playback time as zero-padded minutes and seconds', () => {
     expect(formatPlaybackTime(0)).toBe('00:00');
     expect(formatPlaybackTime(96.9)).toBe('01:36');
+  });
+});
+
+describe('getPlaybackTimeline', () => {
+  const playingCode = 'setcps(0.5)\ns("bd sd").mask("<1 0>/16")';
+  const editedCode = 'setcps(0.5)\ns("bd sd hh").mask("<1 0>/8")';
+
+  it('reads activeCode while a piece sounds or is paused mid-piece', () => {
+    for (const isPlaying of [true, false]) {
+      const timeline = getPlaybackTimeline(editedCode, playingCode, isPlaying, isPlaying ? false : true);
+      expect(timeline.code).toBe(playingCode);
+      expect(timeline.loopCycles).toBe(32);
+      expect(timeline.durationSeconds).toBe(64);
+      expect(timeline.estimatedCps).toBe(0.5);
+    }
+  });
+
+  it('reads the editor buffer while nothing is sounding', () => {
+    const timeline = getPlaybackTimeline(editedCode, playingCode, false, false);
+    expect(timeline.code).toBe(editedCode);
+    expect(timeline.loopCycles).toBe(16);
+    expect(timeline.estimatedCps).toBe(0.5);
+  });
+
+  it('reports no usable range for empty code instead of an unbounded timeline', () => {
+    for (const code of ['', '   ']) {
+      const timeline = getPlaybackTimeline(code, '', false, false);
+      expect(timeline.loopCycles).toBe(0);
+      expect(timeline.durationSeconds).toBe(0);
+      expect(timeline.estimatedCps).toBeNull();
+    }
+  });
+});
+
+describe('projectPlaybackCycle', () => {
+  const L = 16;
+
+  it('maps absolute positions onto the finite range per the contract table', () => {
+    for (const [absolute, expected] of [[15.9, 15.9], [16, 0], [16.1, 0.1], [35, 3]] as const) {
+      expect(projectPlaybackCycle(absolute, L, true).displayNow).toBeCloseTo(expected, 10);
+    }
+  });
+
+  it('reports each pass\u2019s absolute start as the loop offset', () => {
+    expect(projectPlaybackCycle(35, L, true).loopOffset).toBe(32);
+    expect(projectPlaybackCycle(15.9, L, true).loopOffset).toBe(0);
+  });
+
+  it('keeps a non-playing transport exactly on the loop end as the endpoint', () => {
+    expect(projectPlaybackCycle(16, L, false)).toEqual({ displayNow: 16, loopOffset: 0 });
+    // Paused at 2L is the start of the next pass, not the endpoint.
+    expect(projectPlaybackCycle(32, L, false).displayNow).toBe(0);
+  });
+
+  it('clamps invalid or negative positions to the origin', () => {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY, -3]) {
+      expect(projectPlaybackCycle(value, L, true)).toEqual({ displayNow: 0, loopOffset: 0 });
+    }
+    expect(projectPlaybackCycle(5, 0, true)).toEqual({ displayNow: 0, loopOffset: 0 });
   });
 });

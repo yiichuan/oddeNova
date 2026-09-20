@@ -2386,6 +2386,15 @@ html[data-theme='light'] .history-search-field {
   position: relative;
 }
 
+/* A track navigation's temporary highlight: a quiet wash plus a left edge on
+   the block's own lines. An independent mark decoration — never the text
+   selection, which typing would overwrite. Removed by the extension after
+   ~1.2s or on the next document edit. */
+.cm-editor .code-editor-track-highlight {
+  background: var(--color-surface-hover);
+  box-shadow: inset 2px 0 0 var(--color-playback-accent);
+}
+
 .code-editor-fade-top::before {
   position: absolute;
   z-index: 240;
@@ -3487,6 +3496,697 @@ html[data-theme='light'] .code-panel-light-blob {
 /* The same colour as the body it haloes, so the two read as one light. */
 html[data-theme='light'] .code-panel-light-blob svg {
   filter: drop-shadow(0 0 16px rgba(233, 233, 255, 0.36));
+}
+
+/* The studio switch is a view tool, not a second navigation bar. It stays
+   anchored to the visualizer shell while the panel underneath changes. */
+.studio-visualizer {
+  --studio-view-switch-bg: rgba(18, 18, 22, 0.82);
+  --studio-view-switch-border: rgba(255, 255, 255, 0.10);
+  --studio-view-switch-active: rgba(255, 255, 255, 0.12);
+  --studio-view-switch-icon: var(--color-text-secondary);
+  --studio-view-switch-icon-active: var(--color-text-primary);
+  --studio-view-switch-reserved-space: 72px;
+}
+
+html[data-theme='light'] .studio-visualizer {
+  --studio-view-switch-bg: rgba(244, 244, 248, 0.88);
+  --studio-view-switch-border: rgba(25, 25, 32, 0.10);
+  --studio-view-switch-active: rgba(255, 255, 255, 0.96);
+}
+
+.studio-view-switch {
+  position: absolute;
+  z-index: 30;
+  top: 5px;
+  left: 8px;
+  display: flex;
+  width: 68px;
+  height: 30px;
+  gap: 2px;
+  padding: 0;
+  border: 1px solid var(--studio-view-switch-border);
+  border-radius: 8px;
+  background: var(--studio-view-switch-bg);
+  box-shadow: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.studio-view-switch-indicator {
+  position: absolute;
+  z-index: 0;
+  top: 1px;
+  left: 1px;
+  width: 32px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--studio-view-switch-active);
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition: transform 160ms cubic-bezier(0.25, 1, 0.5, 1), background-color 120ms ease-out;
+}
+
+.studio-view-switch[data-view='tracks'] .studio-view-switch-indicator {
+  transform: translate3d(34px, 0, 0);
+}
+
+.studio-view-switch-button {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 32px;
+  height: 28px;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--studio-view-switch-icon);
+  cursor: pointer;
+  transition: color 120ms ease-out;
+}
+
+.studio-view-switch-button[aria-selected='true'] {
+  color: var(--studio-view-switch-icon-active);
+}
+
+.studio-view-switch-button:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--color-playback-accent);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .studio-view-switch-button:hover {
+    color: var(--studio-view-switch-icon-active);
+  }
+
+  .studio-view-switch-button:hover[aria-selected='true'] {
+    color: var(--studio-view-switch-icon-active);
+  }
+}
+
+/* The toolbar already has 8px of horizontal breathing room. Reserve the
+   switch's remaining width inside that padding so the follow button starts
+   just after the overlay rather than underneath it. */
+.studio-visualizer[data-has-view-switch='true'] [data-track-tools] {
+  padding-left: calc(0.5rem + var(--studio-view-switch-reserved-space));
+}
+
+@media (pointer: coarse) {
+  .studio-visualizer {
+    --studio-view-switch-reserved-space: 88px;
+  }
+
+  .studio-view-switch {
+    width: 84px;
+    height: 44px;
+    border-radius: 10px;
+  }
+
+  .studio-view-switch-indicator {
+    width: 40px;
+    height: 42px;
+    border-radius: 8px;
+  }
+
+  .studio-view-switch[data-view='tracks'] .studio-view-switch-indicator {
+    transform: translate3d(42px, 0, 0);
+  }
+
+  .studio-view-switch-button {
+    width: 40px;
+    height: 42px;
+    border-radius: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-view-switch-indicator,
+  .studio-view-switch-button {
+    transition: none;
+  }
+}
+
+/* ── Studio · the track panel ────────────────────────────────────────────────
+   The time-line preview paints its own grounds instead of the shared page
+   tokens, so retuning it cannot reach the editor or the conversation. The
+   canvas is the bright field the notes are read against, the header strip is
+   the one step the track names sit on, and both rule colours stay weaker than
+   any note or text ink so the grid recedes behind the content.
+
+   The six hues are low-saturation and named per hue slot (`--track-hue-N`);
+   TrackPanel picks a slot per layer from the layer's own name and deepens the
+   same hue, never swaps it, for the note sounding right now. Dark keeps the
+   same six hues at higher lightness so events read off near-black. */
+.track-panel {
+  --track-scale: 30px;
+  --track-scene-width: 100%;
+  --track-scene-offset: 0%;
+  --track-playhead-x: 0%;
+  --track-canvas: #0A0A0C;
+  --track-header: #131316;
+  --track-rule: #1B1B20;
+  --track-grid: #232329;
+  --track-grid-minor: #191921;
+  --track-control-border: #1D1D23;
+  --track-note-sep: var(--track-canvas);
+  --track-selected-bg: #17171E;
+  --track-hue-0: #8E97D8;
+  --track-hue-0-strong: #ABB3F2;
+  --track-hue-1: #B49CC9;
+  --track-hue-1-strong: #CFB9E2;
+  --track-hue-2: #66B2C0;
+  --track-hue-2-strong: #86CBD8;
+  --track-hue-3: #D4AE68;
+  --track-hue-3-strong: #ECC486;
+  --track-hue-4: #93B8D6;
+  --track-hue-4-strong: #B0CFEA;
+  --track-hue-5: #96B9A1;
+  --track-hue-5-strong: #B3D6BC;
+  --track-solo-fg: #91BCFF;
+  --track-solo-bg: #1C2D47;
+  --track-solo-bg-hover: #253B59;
+  --track-solo-bg-pressed: #2C4567;
+}
+
+/* A committed preview owns one shared scene. Follow motion changes only these
+   compositor-facing values; the note/grid/ruler nodes do not reconcile per
+   animation frame. */
+.track-ruler-scene,
+.track-lane-scene {
+  width: var(--track-scene-width);
+  transform: translate3d(var(--track-scene-offset), 0, 0);
+  will-change: transform;
+}
+
+.track-playhead-position {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 100%;
+  transform: translate3d(var(--track-playhead-x), 0, 0);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.track-playhead-position > .track-playhead-line,
+.track-playhead-position > .track-playhead-ruler-line {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.track-playhead-position > .track-playhead-ruler-line {
+  top: 5px;
+  bottom: 0;
+}
+
+.track-playhead-position > .track-playhead-caret {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.track-lane-scene [data-track-note] {
+  background: var(--track-note-color);
+  opacity: var(--track-note-opacity, 0.72);
+}
+
+/* The lane canvases sit inside the shared scene transform. The base holds
+   grid/notes/columns and repaints only on scene, mix or size changes; the
+   overlay carries the low-frequency sounding highlight alone. A lane's scene
+   is a row of finite raster blocks, each clipped to its own ownership region
+   so block seams can neither double-draw nor leave a gap. */
+.track-lane-canvas {
+  contain: strict;
+}
+
+.track-lane-block {
+  position: absolute;
+  overflow: hidden;
+}
+
+.track-lane-canvas-base,
+.track-lane-canvas-overlay {
+  display: block;
+}
+
+.track-lane-block-bitmap {
+  position: absolute;
+}
+
+.track-lane-canvas-overlay {
+  pointer-events: none;
+}
+
+html[data-theme='light'] .track-panel {
+  --track-canvas: #F7F7FA;
+  --track-header: #F0F0F4;
+  --track-rule: #EAEAF0;
+  --track-grid: #E1E1E9;
+  --track-grid-minor: #EBEBF2;
+  --track-control-border: #E0E0E8;
+  --track-note-sep: var(--track-canvas);
+  --track-selected-bg: #E4E4EE;
+  --track-hue-0: #707BC0;
+  --track-hue-0-strong: #5A64B4;
+  --track-hue-1: #9980AD;
+  --track-hue-1-strong: #7F6494;
+  --track-hue-2: #478C9A;
+  --track-hue-2-strong: #35707D;
+  --track-hue-3: #AE8748;
+  --track-hue-3-strong: #8E6B2E;
+  --track-hue-4: #7295B5;
+  --track-hue-4-strong: #5A7DA0;
+  --track-hue-5: #789581;
+  --track-hue-5-strong: #5E7C68;
+  --track-solo-fg: #1265D6;
+  --track-solo-bg: #E8F1FF;
+  --track-solo-bg-hover: #DCEAFF;
+  --track-solo-bg-pressed: #CFE1FC;
+}
+
+/* Ruler, track rows and the playhead overlay share one grid, so tick labels,
+   track names and notes all measure from the same two columns and cannot
+   drift out of alignment. */
+.track-panel-grid {
+  display: grid;
+  grid-template-columns: calc(8rem + 4px) minmax(0, 1fr);
+}
+
+/* Track header rows: a fixed two-row stack — name on top, actions below — so
+   a long name keeps the whole title column instead of sharing its line with
+   the buttons. The row height includes its bottom rule and never shrinks or
+   grows: short track lists leave the leftover lane space blank, and the notes
+   cell stretches with the same grid row rather than recomputing a height.
+   Coarse pointers get taller rows and hit areas from the same media query. */
+.track-row {
+  height: 60px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.track-row-header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.track-row-title,
+.track-row-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.track-row-title {
+  gap: 4px;
+  height: 24px;
+}
+
+.track-row-actions {
+  gap: 4px;
+  height: 28px;
+}
+
+@media (pointer: coarse) {
+  .track-row {
+    height: 68px;
+  }
+
+  .track-row-title {
+    height: 28px;
+  }
+
+  .track-row-actions {
+    height: 32px;
+  }
+}
+
+/* The playhead overlay sits above the grid, notes and row rules within the
+   isolated lane stack. The sticky ruler stays above that stack at z-20. */
+.track-grid-line {
+  z-index: 0;
+}
+
+/* Minor grid lines sit behind the majors at a weaker contrast: they subdivide
+   without competing, and at coarse zoom levels they thin out instead. */
+
+/* The compact tool row above the ruler: browse, follow and zoom. Buttons keep
+   a 28px desktop hit area and grow to the 44px touch size on coarse pointers;
+   the row wraps as two groups on narrow screens, order intact. */
+.track-tool-button {
+  display: inline-flex;
+  height: 28px;
+  min-width: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 1px solid var(--track-control-border);
+  border-radius: 4px;
+  background: var(--track-canvas);
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.track-tool-button:hover:not(:disabled) {
+  color: var(--color-text-primary);
+}
+
+.track-tool-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.track-tool-button:focus-visible {
+  outline: 2px solid var(--color-playback-accent);
+  outline-offset: 2px;
+}
+
+/* The continuous zoom slider between the −/＋ shortcut buttons. A native
+   range, restyled only in its own class — the volume sliders keep theirs.
+   The visible track is ~3px with a 12px thumb; the input's own box keeps a
+   28px desktop hit height (44px on coarse pointers below) so the touch
+   target clears the control without stretching the visible parts. No
+   transition on thumb or geometry: a drag must never lag behind the finger. */
+.track-zoom-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 144px;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.track-zoom-slider:focus-visible {
+  outline: 2px solid var(--color-playback-accent);
+  outline-offset: 2px;
+}
+
+.track-zoom-slider:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.track-zoom-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border: 0;
+  border-radius: 999px;
+  /* A touch lighter than the control border so the track reads on both
+     themes without inventing a new token. */
+  background: color-mix(in srgb, var(--track-control-border) 70%, var(--color-text-secondary));
+}
+
+.track-zoom-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  /* Centre the thumb on the 3px track inside the 28px input box. */
+  margin-top: -4.5px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+}
+
+.track-zoom-slider:hover:not(:disabled)::-webkit-slider-thumb {
+  background: var(--color-text-primary);
+}
+
+.track-zoom-slider::-moz-range-track {
+  height: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--track-control-border) 70%, var(--color-text-secondary));
+}
+
+.track-zoom-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+}
+
+.track-zoom-slider:hover:not(:disabled)::-moz-range-thumb {
+  background: var(--color-text-primary);
+}
+
+/* Narrow panels: the slider stretches with the wrapping row instead of
+   keeping its desktop width, so the zoom group never squeezes its buttons
+   below their hit size. */
+@media (max-width: 480px) {
+  .track-zoom-slider {
+    width: 112px;
+  }
+}
+
+@media (pointer: coarse) {
+  .track-zoom-slider {
+    width: 160px;
+    height: 44px;
+  }
+
+  .track-zoom-slider::-webkit-slider-thumb {
+    margin-top: -8px;
+  }
+}
+
+/* The per-track Solo button: a bare 28px hit area (32px on coarse pointers)
+   holding a 24px visual plate, so the resting state reads as a bare letter
+   rather than as a filled chip. One shared blue for every track regardless of
+   its hue; focus keeps a visible outline as the only decorative edge. */
+.track-solo-button {
+  display: flex;
+  height: 28px;
+  width: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.track-solo-button:focus-visible {
+  outline: 2px solid var(--track-solo-fg);
+  outline-offset: 2px;
+}
+
+.track-solo-button-mark {
+  display: flex;
+  height: 24px;
+  width: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  background: transparent;
+  pointer-events: none;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.track-solo-button[aria-pressed='true'] .track-solo-button-mark {
+  color: var(--track-solo-fg);
+  background: var(--track-solo-bg);
+}
+
+@media (hover: hover) {
+  .track-solo-button:hover:not([aria-pressed='true']) .track-solo-button-mark {
+    color: var(--color-text-primary);
+    background: var(--color-surface-hover);
+  }
+
+  .track-solo-button:hover[aria-pressed='true'] .track-solo-button-mark {
+    background: var(--track-solo-bg-hover);
+  }
+}
+
+.track-solo-button:active:not([aria-pressed='true']) .track-solo-button-mark {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+}
+
+.track-solo-button:active[aria-pressed='true'] .track-solo-button-mark {
+  background: var(--track-solo-bg-pressed);
+}
+
+@media (pointer: coarse) {
+  .track-solo-button {
+    height: 32px;
+    width: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track-solo-button-mark {
+    transition: none;
+  }
+}
+
+/* The ruler's faint in-between marks: short lines hanging from its bottom
+   edge, quiet enough to read as structure rather than as labels. */
+.track-ruler-minor {
+  height: 5px;
+  width: 1px;
+  background: var(--track-grid);
+  z-index: 1;
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .track-tool-button {
+    height: 44px;
+    min-width: 44px;
+  }
+}
+
+.track-grid-line-minor {
+  z-index: 0;
+}
+
+.track-panel-ruler {
+  height: var(--track-scale);
+  isolation: isolate;
+  /* Keep the rule inside the content box: the separator paints within the
+     ruler's own background while the playhead keeps its overflow ability and
+     meets the lane overlay without a one-pixel gap. */
+  border-bottom-width: 0;
+  box-shadow: inset 0 -1px 0 var(--track-rule);
+  /* A press on the ruler is a seek gesture, never a text selection: without
+     this the browser starts selecting the cycle labels mid-drag. Scoped to
+     the ruler only — the editor and the rest of the workspace keep their
+     normal selection behaviour. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.track-panel-ruler * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* A coarse pointer gets a full touch-sized ruler: the seek gesture's hit
+   area is the ruler itself, so its height is the touch target. */
+@media (pointer: coarse) {
+  .track-panel-ruler {
+    height: 44px;
+  }
+}
+
+/* A track picked for code navigation: a quiet fill plus a left edge on the
+   header, distinct from a Solo button's blue plate or a mute's dimming. */
+.track-panel-lanes [data-selected='true'] .track-row-header {
+  background: var(--track-selected-bg);
+  box-shadow: inset 2px 0 0 var(--color-playback-accent);
+}
+
+/* The ruler surface itself stays open: the playhead caret and ruler line keep
+   their true time coordinate at both edges, so at 0% or 100% the caret's 4px
+   wings and the line's half width spill past the content box into the panel's
+   own margins instead of being clipped. Overflow only closes on the inner
+   clip layers below — ticks and the drag hint keep the old edge contract. */
+.track-ruler-surface {
+  overflow: visible;
+}
+
+/* Ticks and the drag hint clip exactly as the whole ruler used to, but in
+   their own layers, so the playhead decorations can sit outside them and
+   draw whole at the edges. All three are transparent, paint in the ruler's
+   isolated context, and pass every click through to the ruler itself. The
+   minor marks live in their own layer *below* the ruler line so the line
+   keeps its full width and colour where it crosses them; digits stay above
+   the line for readability. */
+.track-ruler-minor-clip,
+.track-ruler-ticks-clip,
+.track-ruler-hint-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.track-ruler-minor-clip {
+  z-index: 0;
+}
+
+.track-ruler-ticks-clip {
+  z-index: 2;
+}
+
+.track-ruler-hint-clip {
+  z-index: 4;
+}
+
+.track-ruler-tick {
+  z-index: 2;
+}
+
+.track-playhead-overlay {
+  z-index: 1;
+}
+
+.track-playhead-line {
+  position: absolute;
+  inset-block: 0;
+  width: 1.5px;
+  transform: translateX(-50%);
+  background: var(--color-playback-accent);
+}
+
+@media (min-width: 640px) {
+  .track-panel-grid {
+    grid-template-columns: calc(9.5rem + 4px) minmax(0, 1fr);
+  }
+}
+
+/* The ruler's own mark: a small triangle hanging from its top edge, in the
+   playback accent, sitting exactly over the playhead line below it. It stays
+   centred on the real time coordinate at both edges — the surface lets its
+   wings spill past the content box — and never catches a pointer, so the
+   seek gesture reads the ruler underneath. */
+.track-playhead-caret {
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--color-playback-accent);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* The ruler's slice of the unified playhead: same width, colour and centring
+   as the line through the lanes, running from the caret's tip to the ruler's
+   bottom edge so the two segments join across the sticky boundary. Painted
+   above the minor marks — the line keeps its full width and colour where it
+   crosses them — but below the tick labels so digits stay readable where
+   they cross. */
+.track-playhead-ruler-line {
+  position: absolute;
+  top: 5px;
+  bottom: 0;
+  z-index: 1;
+  width: 1.5px;
+  transform: translateX(-50%);
+  background: var(--color-playback-accent);
+  pointer-events: none;
 }
 
 html[data-theme='light'] .primary-nav-more-menu,
