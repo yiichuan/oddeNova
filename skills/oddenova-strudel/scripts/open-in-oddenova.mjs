@@ -20,6 +20,8 @@ export const ODDENOVA_IMPORT_PROTOCOL_VERSION = 1;
 export const ODDENOVA_IMPORT_SOURCE = BRIDGE_SOURCE;
 export const DEFAULT_BASE_URL = 'https://www.oddenova.com';
 export const MAX_IMPORT_URL_BYTES = 32 * 1024;
+export const AUTO_RECONNECT_TIMEOUT_MS = 30_000;
+export const AUTO_RECONNECT_RETRY_INTERVAL_MS = 1_000;
 
 export function buildImportUrl(payload, baseUrl = DEFAULT_BASE_URL) {
   const root = normalizeBaseUrl(baseUrl);
@@ -76,7 +78,7 @@ export function defaultCacheDir(platform = osPlatform(), home = homedir(), env =
 }
 
 function parseArguments(argv) {
-  const options = { baseUrl: DEFAULT_BASE_URL, command: 'submit', link: false, printOnly: false };
+  const options = { baseUrl: DEFAULT_BASE_URL, command: 'submit', link: false, printOnly: false, autoReconnect: false };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--base-url') {
@@ -85,8 +87,12 @@ function parseArguments(argv) {
       options.baseUrl = value;
     } else if (argument === '--link') options.link = true;
     else if (argument === '--print-only') { options.link = true; options.printOnly = true; }
+    else if (argument === '--auto-reconnect') options.autoReconnect = true;
     else if (['--pull', '--status', '--retry', '--reopen', '--stop', '--clear'].includes(argument)) options.command = argument.slice(2);
     else throw new Error(`Unknown argument: ${argument}`);
+  }
+  if (options.autoReconnect && (options.command !== 'pull' || options.link)) {
+    throw new Error('--auto-reconnect can only be used with --pull');
   }
   return options;
 }
@@ -106,6 +112,67 @@ async function bridgeRequest(runtime, path, { method = 'GET', body } = {}) {
   const value = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(value.error || `Bridge request failed (${response.status})`);
   return value;
+}
+
+function isConfirmedRead(result) {
+  return result?.status === 'ready' && result?.freshness === 'page_confirmed';
+}
+
+function isSuccessfulPull(result) {
+  return isConfirmedRead(result) || result?.status === 'not_found';
+}
+
+async function openPairingEntry(runtime, identity, dependencies) {
+  const result = await dependencies.request(runtime, '/v3/reopen', { method: 'POST', body: identity });
+  const startedAt = dependencies.now();
+  const fallbackPath = dependencies.writeFallback(result.bootstrapUrl, identity.projectId);
+  try {
+    dependencies.launch(result.bootstrapUrl, {
+      platform: dependencies.platform,
+      spawn: dependencies.spawn,
+      warn: (message) => dependencies.stderr.write(`${message}\n`),
+    });
+  } catch (error) {
+    dependencies.stderr.write(`Warning: Could not open browser: ${error.message}\n`);
+  }
+  return { fallbackPath, startedAt };
+}
+
+export async function pullWithOptionalReconnect(runtime, identity, options = {}, dependencies = {}) {
+  const deps = {
+    stderr: process.stderr,
+    platform: process.platform,
+    spawn: spawnProcess,
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    request: bridgeRequest,
+    launch: launchImportUrl,
+    writeFallback: writeFallbackLinkFile,
+    ...dependencies,
+  };
+  let result = await deps.request(runtime, '/v3/read', { method: 'POST', body: identity });
+  if (!options.autoReconnect || result?.status !== 'page_unavailable') return result;
+
+  deps.stderr.write('Page unavailable; attempting one automatic reconnect.\n');
+  const pairing = await openPairingEntry(runtime, identity, deps);
+  deps.stderr.write('Opening a new connection entry page.\n');
+  if (pairing.fallbackPath) deps.stderr.write(`If the browser did not open, use this file: ${pairing.fallbackPath}\n`);
+  const deadline = pairing.startedAt + AUTO_RECONNECT_TIMEOUT_MS;
+
+  while (true) {
+    const remaining = deadline - deps.now();
+    if (remaining <= 0) {
+      deps.stderr.write('Automatic reconnect timed out before the page was confirmed.\n');
+      return result;
+    }
+    await deps.sleep(Math.min(AUTO_RECONNECT_RETRY_INTERVAL_MS, remaining));
+    if (deps.now() >= deadline) {
+      deps.stderr.write('Automatic reconnect timed out before the page was confirmed.\n');
+      return result;
+    }
+    result = await deps.request(runtime, '/v3/read', { method: 'POST', body: identity });
+    if (result?.status !== 'page_unavailable') return result;
+  }
 }
 
 async function healthyRuntime(cacheDir) {
@@ -173,6 +240,12 @@ export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
   const deps = {
     stdin: process.stdin, stdout: process.stdout, stderr: process.stderr,
     platform: process.platform, spawn: spawnProcess, cacheDir: undefined,
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    request: bridgeRequest,
+    launch: launchImportUrl,
+    writeFallback: writeFallbackLinkFile,
+    ensureBridge,
     ...dependencies,
   };
   try {
@@ -181,7 +254,7 @@ export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
     const baseUrl = normalizeBaseUrl(input.baseUrl ?? options.baseUrl);
     if (options.link) return runLink(input, options, deps);
     const cacheDir = deps.cacheDir ?? defaultCacheDir();
-    const runtime = await ensureBridge(cacheDir, { spawn: deps.spawn });
+    const runtime = await deps.ensureBridge(cacheDir, { spawn: deps.spawn });
 
     if (options.command === 'stop') {
       await bridgeRequest(runtime, '/v2/stop', { method: 'POST' });
@@ -214,18 +287,16 @@ export async function runCli(argv = process.argv.slice(2), dependencies = {}) {
       return 0;
     }
     if (options.command === 'reopen') {
-      const result = await bridgeRequest(runtime, '/v3/reopen', { method: 'POST', body: identity });
-      const fallbackPath = writeFallbackLinkFile(result.bootstrapUrl, input.projectId);
+      const { fallbackPath } = await openPairingEntry(runtime, identity, deps);
       deps.stdout.write(`Opening a new connection entry page for project ${input.projectId}.\n`);
       deps.stdout.write(`If the browser did not open, open this file: ${fallbackPath}\n`);
-      launchImportUrl(result.bootstrapUrl, { platform: deps.platform, spawn: deps.spawn, warn: (message) => deps.stderr.write(`${message}\n`) });
       return 0;
     }
 
     if (options.command === 'pull') {
-      const result = await bridgeRequest(runtime, '/v3/read', { method: 'POST', body: identity });
+      const result = await pullWithOptionalReconnect(runtime, identity, options, deps);
       deps.stdout.write(`${JSON.stringify(result)}\n`);
-      return result.status === 'ready' || result.status === 'not_found' ? 0 : 2;
+      return isSuccessfulPull(result) ? 0 : 2;
     }
 
     const submission = { ...input, protocolVersion: BRIDGE_PROTOCOL_VERSION, source: BRIDGE_SOURCE, baseUrl };

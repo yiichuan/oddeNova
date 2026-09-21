@@ -11,6 +11,9 @@ import {
   deleteSession as dbDeleteSession,
   deleteSessionStrict as dbDeleteSessionStrict,
   isSessionStoragePersistent,
+  commitBridgeSessionState as dbCommitBridgeSessionState,
+  rebindBridgeSessionState as dbRebindBridgeSessionState,
+  type StoredBridgeCheckpoint,
 } from '../lib/session-storage';
 import { t } from '../lib/i18n';
 import { deriveSessionTitle, normalizeSessionTitle, titleWithSuffix } from '../lib/session-title';
@@ -21,7 +24,11 @@ import {
   themeSongCode,
 } from '../lib/theme-song';
 import { hashImportedContent, type OddeNovaImportPayload } from '../lib/oddenova-import';
-import { digestOddeNovaBridgeMessage, type AnyOddeNovaBridgeSnapshot } from '../lib/oddenova-bridge';
+import {
+  digestOddeNovaBridgeMessage,
+  normalizeOddeNovaBridgeBaseUrl,
+  type AnyOddeNovaBridgeSnapshot,
+} from '../lib/oddenova-bridge';
 import { mergeBridgeMessages } from '../lib/oddenova-bridge-messages';
 import {
   createSessionCloudSync,
@@ -36,6 +43,8 @@ import { createSessionWriteThrottle } from '../lib/session-write-throttle';
 export interface ExternalSessionSource {
   type: 'oddenova-strudel-skill';
   projectId: string;
+  /** v3 identity; v1/v2 records intentionally remain compatible without it. */
+  baseUrl?: string;
   importedContentHash: string;
   protocolVersion?: 2 | 3;
   revision?: number;
@@ -51,6 +60,34 @@ export interface OddeNovaBridgeImportResult {
   sessionId: string;
   codeChanged?: boolean;
   skillRevision?: number;
+}
+
+export interface OddeNovaBridgeImportBinding {
+  ownerKey: string;
+  projectId: string;
+  baseUrl: string;
+  bindingId?: string;
+  sessionId?: string;
+  clientId?: string;
+}
+
+export interface OddeNovaBridgeImportContext {
+  checkpoint?: StoredBridgeCheckpoint;
+  deleteOutboxChangeIds?: string[];
+}
+
+export interface OddeNovaBridgeRebindInput {
+  ownerKey: string;
+  projectKey: string;
+  previousBindingId: string;
+  bindingId: string;
+  clientId: string;
+}
+
+export interface OddeNovaBridgeRebindResult {
+  sessionId: string;
+  previousBindingId: string;
+  bindingId: string;
 }
 
 export type PlaybackStatus = 'played' | 'failed' | 'not_attempted';
@@ -203,6 +240,27 @@ function newSessionId(): string {
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function bridgeSourceMatchesSnapshot(
+  session: Session,
+  snapshot: AnyOddeNovaBridgeSnapshot,
+  binding?: OddeNovaBridgeImportBinding,
+): boolean {
+  const source = session.externalSource;
+  if (
+    source?.type !== 'oddenova-strudel-skill'
+    || source.projectId !== snapshot.projectId
+  ) return false;
+  if (snapshot.protocolVersion !== 3 || source.baseUrl === undefined) return true;
+  try {
+    return normalizeOddeNovaBridgeBaseUrl(source.baseUrl) === normalizeOddeNovaBridgeBaseUrl(snapshot.baseUrl)
+      && (!binding?.baseUrl || normalizeOddeNovaBridgeBaseUrl(binding.baseUrl) === normalizeOddeNovaBridgeBaseUrl(snapshot.baseUrl))
+      && (!snapshot.bindingId || source.bindingId === snapshot.bindingId)
+      && (!binding?.bindingId || source.bindingId === binding.bindingId);
+  } catch {
+    return false;
+  }
 }
 
 export type SessionImportPayload = Pick<Session, 'title' | 'code' | 'messages'> &
@@ -497,6 +555,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const sessionsRef = useRef<Session[]>(sessions);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const currentIdRef = useRef<string | null>(currentId);
+  const ownerKeyRef = useRef(ownerKey);
   const [isLoading, setIsLoading] = useState(true);
   const [isPersistent, setIsPersistent] = useState(false);
   const [loadedOwnerKey, setLoadedOwnerKey] = useState(ownerKey);
@@ -527,6 +586,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
   useEffect(() => {
     currentIdRef.current = currentId;
   }, [currentId]);
+  useEffect(() => {
+    ownerKeyRef.current = ownerKey;
+  }, [ownerKey]);
 
   const noteCreatedSession = useCallback((sessionId: string): void => {
     const tracked = createdDuringLoadRef.current;
@@ -814,6 +876,50 @@ export function useSessions(options: UseSessionsOptions = {}) {
     ),
     [ownerKey],
   );
+
+  const flushLocalWrites = useCallback(async (sessionId?: string): Promise<void> => {
+    await localWrites.flush(sessionId);
+  }, [localWrites]);
+
+  const rebindOddeNovaBridgeSession = useCallback(async (
+    input: OddeNovaBridgeRebindInput,
+  ): Promise<OddeNovaBridgeRebindResult> => {
+    const ownerAtStart = ownerKey;
+    if (
+      input.ownerKey !== ownerAtStart
+      || ownerKeyRef.current !== ownerAtStart
+      || loadedOwnerKey !== ownerAtStart
+    ) {
+      throw new Error('Bridge rebind started for an inactive session owner');
+    }
+    const rebound = await dbRebindBridgeSessionState(input);
+    if (ownerKeyRef.current !== ownerAtStart || loadedOwnerKey !== ownerAtStart) {
+      throw new Error('Bridge rebind completed after the session owner changed');
+    }
+    if (!sessionsRef.current.some((session) => session.id === rebound.session.id)) {
+      throw new Error('Bridge rebind returned a session that is not loaded for this owner');
+    }
+
+    // Publish only after the storage transaction has committed. Updating the
+    // ref first lets the bridge resolver see the new binding before React's
+    // next render; the visible session, order, draft, and current id remain
+    // unchanged.
+    sessionsRef.current = sessionsRef.current.map((session) => (
+      session.id === rebound.session.id ? rebound.session : session
+    ));
+    setSessions((previous) => previous.map((session) => (
+      session.id === rebound.session.id ? rebound.session : session
+    )));
+    persistedSessionIdsRef.current.add(rebound.session.id);
+    if (sessionCloudSync) {
+      void sessionCloudSync.checkpoint(rebound.session).catch(() => undefined);
+    }
+    return {
+      sessionId: rebound.session.id,
+      previousBindingId: input.previousBindingId,
+      bindingId: input.bindingId,
+    };
+  }, [loadedOwnerKey, ownerKey, sessionCloudSync]);
 
   // Whatever a turn streamed since its last write is still only scheduled.
   // Unmounting or switching owners has to put it down before the limiter that
@@ -1504,8 +1610,39 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const importOddeNovaBridgeSnapshot = useCallback(async (
     snapshot: AnyOddeNovaBridgeSnapshot,
     activeDraft?: { sessionId: string; code: string },
+    binding?: OddeNovaBridgeImportBinding,
+    context?: OddeNovaBridgeImportContext,
   ): Promise<OddeNovaBridgeImportResult> => {
     if (snapshot.protocolVersion === 3) {
+      const persistBridgeSession = async (session: Session): Promise<void> => {
+        if (binding?.bindingId) {
+          const checkpoint: StoredBridgeCheckpoint = {
+            ...(context?.checkpoint ?? {
+              schemaVersion: 1,
+              ownerKey,
+              projectKey: `${normalizeOddeNovaBridgeBaseUrl(snapshot.baseUrl)}\0${snapshot.projectId}`,
+              bindingId: binding.bindingId,
+              sessionId: session.id,
+              snapshot,
+              updatedAt: Date.now(),
+            }),
+            ownerKey,
+            bindingId: binding.bindingId,
+            sessionId: session.id,
+            projectKey: `${normalizeOddeNovaBridgeBaseUrl(snapshot.baseUrl)}\0${snapshot.projectId}`,
+            snapshot: { ...snapshot, bindingId: snapshot.bindingId ?? binding.bindingId },
+            updatedAt: Date.now(),
+          };
+          await dbCommitBridgeSessionState({
+            ownerKey,
+            session,
+            checkpoint,
+            deleteOutboxChangeIds: context?.deleteOutboxChangeIds,
+          });
+          return;
+        }
+        await dbPutImportedSession(session, ownerKey);
+      };
       const importedTitle = normalizeSessionTitle(snapshot.title, t('newSessionTitle'));
       const incomingHash = hashImportedContent({
         title: importedTitle,
@@ -1514,22 +1651,32 @@ export function useSessions(options: UseSessionsOptions = {}) {
       });
       const source: ExternalSessionSource = {
         type: 'oddenova-strudel-skill', projectId: snapshot.projectId,
+        baseUrl: normalizeOddeNovaBridgeBaseUrl(snapshot.baseUrl),
         importedContentHash: incomingHash, protocolVersion: 3,
         revision: snapshot.revision, skillRevision: snapshot.skillRevision,
-        bindingId: snapshot.bindingId,
+        bindingId: snapshot.bindingId ?? binding?.bindingId,
         bridgeContentHash: snapshot.contentHash,
       };
       const now = Date.now();
-      const storedTarget = sessionsRef.current.find((session) =>
-        session.externalSource?.type === source.type && session.externalSource.projectId === source.projectId
-      );
+      const bridgeCandidates = sessionsRef.current.filter((session) => bridgeSourceMatchesSnapshot(session, snapshot, binding));
+      const storedTarget = binding?.sessionId
+        ? sessionsRef.current.find((session) => session.id === binding.sessionId)
+        : bridgeCandidates.length === 1
+          ? bridgeCandidates[0]
+          : undefined;
+      if (binding?.sessionId && (!storedTarget || !bridgeSourceMatchesSnapshot(storedTarget, snapshot, binding))) {
+        throw new Error('The bound bridge session is missing or has a different project identity');
+      }
+      if (!binding?.sessionId && bridgeCandidates.length > 1) {
+        throw new Error('The bridge binding is ambiguous; choose the explicitly paired session');
+      }
       if (!storedTarget) {
         const created: Session = {
           id: newSessionId(), title: importedTitle, code: snapshot.code,
           messages: mergeBridgeMessages([], snapshot.messages), externalSource: source,
           createdAt: now, updatedAt: now,
         };
-        await dbPutImportedSession(created, ownerKey);
+        await persistBridgeSession(created);
         persistedSessionIdsRef.current.add(created.id);
         noteCreatedSession(created.id);
         setSessions((previous) => [created, ...previous]);
@@ -1542,18 +1689,41 @@ export function useSessions(options: UseSessionsOptions = {}) {
       await localWrites.flush(storedTarget.id);
       const target = activeDraft?.sessionId === storedTarget.id ? { ...storedTarget, code: activeDraft.code } : storedTarget;
       const previousSource = target.externalSource;
-      const previousRevision = previousSource?.protocolVersion === 3 ? previousSource.revision ?? 0 : 0;
-      if (snapshot.revision < previousRevision) return { outcome: 'unchanged', sessionId: target.id, codeChanged: false, skillRevision: previousSource?.skillRevision };
+      const previousRevision = previousSource?.revision ?? 0;
+      if (previousSource?.protocolVersion === 2 && previousSource.revision === snapshot.revision) {
+        const migrated = { ...target, externalSource: source, updatedAt: now };
+        await persistBridgeSession(migrated);
+        setSessions((previous) => previous.map((session) => session.id === migrated.id ? migrated : session));
+        await sessionCloudSync?.checkpoint(migrated);
+        return { outcome: 'unchanged', sessionId: migrated.id, codeChanged: false, skillRevision: snapshot.skillRevision };
+      }
+      if (
+        snapshot.revision < previousRevision
+        && snapshot.skillRevision <= (previousSource?.skillRevision ?? 0)
+      ) return { outcome: 'unchanged', sessionId: target.id, codeChanged: false, skillRevision: previousSource?.skillRevision };
       if (snapshot.revision === previousRevision) {
-        if (snapshot.contentHash !== previousSource?.bridgeContentHash) throw new Error('The same bridge revision arrived with different content');
+        if (snapshot.skillRevision <= (previousSource?.skillRevision ?? 0)) {
+          if (snapshot.contentHash !== previousSource?.bridgeContentHash) throw new Error('The same bridge revision arrived with different content');
+          if (snapshot.bindingId && snapshot.bindingId !== previousSource?.bindingId) {
+            const rebound = { ...target, externalSource: { ...source, bindingId: snapshot.bindingId } };
+            await persistBridgeSession(rebound);
+            setSessions((previous) => previous.map((session) => session.id === rebound.id ? rebound : session));
+            await sessionCloudSync?.checkpoint(rebound);
+            return { outcome: 'updated', sessionId: rebound.id, codeChanged: false, skillRevision: snapshot.skillRevision };
+          }
+          // A remounted page can have lost its in-memory baseline while the
+          // session still records the exact helper revision/hash. Persist the
+          // checkpoint without replacing the user's local working copy.
+          await persistBridgeSession(target);
+          return { outcome: 'unchanged', sessionId: target.id, codeChanged: false, skillRevision: snapshot.skillRevision };
+        }
         if (snapshot.bindingId && snapshot.bindingId !== previousSource?.bindingId) {
           const rebound = { ...target, externalSource: { ...source, bindingId: snapshot.bindingId } };
-          await dbPutImportedSession(rebound, ownerKey);
+          await persistBridgeSession(rebound);
           setSessions((previous) => previous.map((session) => session.id === rebound.id ? rebound : session));
           await sessionCloudSync?.checkpoint(rebound);
           return { outcome: 'updated', sessionId: rebound.id, codeChanged: false, skillRevision: snapshot.skillRevision };
         }
-        return { outcome: 'unchanged', sessionId: target.id, codeChanged: false, skillRevision: snapshot.skillRevision };
       }
       const codeChanged = target.code !== snapshot.code;
       const updated: Session = {
@@ -1565,7 +1735,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         externalSource: source,
         updatedAt: now,
       };
-      await dbPutImportedSession(updated, ownerKey);
+      await persistBridgeSession(updated);
       persistedSessionIdsRef.current.add(updated.id);
       setSessions((previous) => previous.map((session) => session.id === updated.id ? updated : session));
       if (currentIdRef.current === updated.id) {
@@ -1598,10 +1768,18 @@ export function useSessions(options: UseSessionsOptions = {}) {
       content: message.content,
       timestamp: message.receivedAt,
     }));
-    const storedTarget = sessionsRef.current.find((session) =>
-      session.externalSource?.type === source.type
-      && session.externalSource.projectId === source.projectId
-    );
+    const bridgeCandidates = sessionsRef.current.filter((session) => bridgeSourceMatchesSnapshot(session, snapshot, binding));
+    const storedTarget = binding?.sessionId
+      ? sessionsRef.current.find((session) => session.id === binding.sessionId)
+      : bridgeCandidates.length === 1
+        ? bridgeCandidates[0]
+        : undefined;
+    if (binding?.sessionId && (!storedTarget || !bridgeSourceMatchesSnapshot(storedTarget, snapshot, binding))) {
+      throw new Error('The bound bridge session is missing or has a different project identity');
+    }
+    if (!binding?.sessionId && bridgeCandidates.length > 1) {
+      throw new Error('The bridge binding is ambiguous; choose the explicitly paired session');
+    }
     if (!storedTarget) {
       const created: Session = {
         id: newSessionId(),
@@ -1765,6 +1943,13 @@ export function useSessions(options: UseSessionsOptions = {}) {
     [getApply]
   );
 
+  const clearSuggestions = useCallback((sessionId?: string): void => {
+    const apply = getApply(sessionId);
+    apply((session) => session.suggestions === undefined
+      ? session
+      : { ...session, suggestions: undefined });
+  }, [getApply]);
+
   return {
     sessions: sessionsForOwner,
     currentSession,
@@ -1806,6 +1991,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
     importOddeNovaBridgeSnapshot,
     branchFromMessage,
     setSuggestions,
+    clearSuggestions,
+    flushLocalWrites,
+    rebindOddeNovaBridgeSession,
     flushCloudSaves,
   };
 }

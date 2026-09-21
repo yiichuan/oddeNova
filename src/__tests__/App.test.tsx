@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     play: vi.fn(async () => true),
     stop: vi.fn(),
     setCode: vi.fn(),
+    getDisplayedCode: vi.fn(() => ''),
     setReadOnly: vi.fn(),
     setRoot: vi.fn(),
     isPlaying: false,
@@ -57,9 +58,16 @@ const mocks = vi.hoisted(() => ({
     importSession: vi.fn(async () => undefined),
     importOddeNovaSession: vi.fn(),
     importOddeNovaBridgeSnapshot: vi.fn(),
+    rebindOddeNovaBridgeSession: vi.fn(async () => ({
+      sessionId: 's-1',
+      previousBindingId: 'binding-old',
+      bindingId: 'binding-new',
+    })),
+    clearSuggestions: vi.fn(),
     setSuggestions: vi.fn(),
     setCurrentCode: vi.fn(),
     setManualCode: vi.fn(async () => undefined),
+    flushLocalWrites: vi.fn(async () => undefined),
     checkpointSession: vi.fn(async () => undefined),
     flushCloudSaves: vi.fn(async () => undefined),
     acceptCloudDetail: vi.fn(async (_session: Session): Promise<Session | undefined> => undefined),
@@ -1596,7 +1604,7 @@ describe('App session sync boundaries', () => {
     mocks.strudel.play.mockClear();
 
     act(() => {
-      (mocks.bridgeOptions?.onApplied as (snapshot: unknown, result: unknown) => void)({
+      (mocks.bridgeOptions?.presentAppliedSnapshot as (snapshot: unknown, result: unknown, presentation: unknown) => void)({
         protocolVersion: 2,
         source: 'oddenova-strudel-skill',
         projectId: 'p-1',
@@ -1605,13 +1613,18 @@ describe('App session sync boundaries', () => {
         code: 'stack(s("sd"))',
         messages: [],
         contentHash: 'hash',
-      }, { outcome: 'updated', sessionId: 's-1' });
+      }, { outcome: 'updated', sessionId: 's-1' }, { reason: 'new-skill-version' });
     });
 
     expect(mocks.strudel.stop).toHaveBeenCalledTimes(1);
     expect(mocks.strudel.setCode).toHaveBeenCalledWith('stack(s("sd"))');
     expect(mocks.strudel.play).not.toHaveBeenCalled();
     mocks.strudel.isPlaying = false;
+  });
+
+  it('passes the session hook exact rebind callback into the Bridge hook', async () => {
+    await renderApp();
+    expect(mocks.bridgeOptions?.rebindSession).toBe(mocks.sessions.rebindOddeNovaBridgeSession);
   });
 
   it('repaints the system\'s own chrome for whichever page is in front of the reader', async () => {

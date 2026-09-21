@@ -203,6 +203,7 @@ const server = createServer(async (request, response) => {
         }
         await backupLegacyProject(path, raw);
         const project = migrateProjectToV3(raw);
+        const previousBindingId = project.bindingId;
         project.pageToken = token();
         project.bindingId = token();
         project.pairedAt = Date.now();
@@ -210,9 +211,16 @@ const server = createServer(async (request, response) => {
         project.pairTokenExpiresAt = undefined;
         await atomicWriteJson(path, project);
         leases.delete(key);
-        return project;
+        return { project, previousBindingId };
       });
-      return send(response, 200, { pageToken: result.pageToken, bindingId: result.bindingId, revision: result.revision, skillRevision: result.skillRevision }, cors(result, request));
+      return send(response, 200, {
+        pageToken: result.project.pageToken,
+        bindingId: result.project.bindingId,
+        ...(result.previousBindingId ? { previousBindingId: result.previousBindingId } : {}),
+        pairingKind: result.previousBindingId ? 'rebind' : 'initial',
+        revision: result.project.revision,
+        skillRevision: result.project.skillRevision,
+      }, cors(result.project, request));
     }
 
     if (url.pathname === '/v3/upgrade' && request.method === 'POST') {
@@ -320,9 +328,16 @@ const server = createServer(async (request, response) => {
       if (!authorizedPage(project, request, body)) return send(response, 401, { error: 'Connection is not authorized or active' }, project ? cors(project, request) : {});
       const pending = readRequests.get(body.requestId);
       if (!pending || pending.key !== key || pending.bindingId !== body.bindingId) return send(response, 409, { error: 'Read request is no longer active' }, cors(project, request));
+      if (!['busy', 'ready', 'unavailable'].includes(body.status)) {
+        return send(response, 400, { error: 'Read response status must be busy, ready, or unavailable' }, cors(project, request));
+      }
       if (body.status === 'busy') {
         pending.resolve?.('busy');
         return send(response, 200, { completed: true, busy: true }, cors(project, request));
+      }
+      if (body.status === 'unavailable') {
+        pending.resolve?.('unavailable');
+        return send(response, 200, { completed: true, unavailable: true }, cors(project, request));
       }
       pending.resolve?.('ready');
       return send(response, 200, { completed: true }, cors(project, request));
@@ -351,7 +366,11 @@ const server = createServer(async (request, response) => {
       const project = await withProjectLock(key, async () => {
         const { path, project: raw } = await findProject(body.projectId, body.baseUrl);
         const current = migrateProjectToV3(raw);
-        if (!authorizedPage(current, request, body)) throw Object.assign(new Error('Connection is not authorized or active'), { status: 401 });
+        // A freshly paired page has not acquired the receiver lease yet. Its
+        // current pageToken is still sufficient authority to release the
+        // binding after a local rebind failure, while the origin and token
+        // checks continue to protect the endpoint from arbitrary callers.
+        if (!authorizedPage(current, request, body, { requireLease: false })) throw Object.assign(new Error('Connection is not authorized or active'), { status: 401 });
         current.pageToken = undefined;
         current.bindingId = undefined;
         current.pairedAt = undefined;

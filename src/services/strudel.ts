@@ -50,6 +50,11 @@ interface StrudelMirrorType {
     dispatch: (transaction: { effects: unknown }) => void;
     /** CodeMirror's own teardown — the EditorView is a live DOM+state object. */
     destroy?: () => void;
+    state?: {
+      doc?: {
+        toString: () => string;
+      };
+    };
   };
   /** The frame loop behind the highlight boxes and the painters. */
   drawer?: { stop?: () => void };
@@ -355,6 +360,22 @@ export class StrudelService {
   get code(): string {
     return this._state.code;
   }
+
+  /**
+   * Read the document that is actually mounted in CodeMirror. The service
+   * state is intentionally not a fallback here: it can be updated before a
+   * replacement editor has committed its document, which is not enough to
+   * confirm what the user can see.
+   */
+  getDisplayedCode = (): string | undefined => {
+    try {
+      const doc = this.editorInstance?.editor?.state?.doc;
+      return doc?.toString();
+    } catch {
+      // A view can be torn down between reading the instance and its state.
+      return undefined;
+    }
+  };
 
   setAutocompletionEnabled(enabled: boolean): void {
     this.autocompletionEnabled = enabled;

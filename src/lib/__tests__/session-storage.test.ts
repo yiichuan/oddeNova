@@ -56,6 +56,31 @@ const fakeSession = {
   updatedAt: 0,
 };
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function hashBridgeSnapshot(snapshot: {
+  projectId: string;
+  baseUrl: string;
+  revision: number;
+  skillRevision: number;
+  title: string;
+  code: string;
+  messages: unknown[];
+}): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(stableJson(snapshot)),
+  );
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 describe('session-storage fallback path', () => {
   // IndexedDB does not exist in the Node environment; openDB() triggers the fallback,
   // after which all write operations are silently ignored and read operations return an empty array.
@@ -541,6 +566,284 @@ describe('normalizeSession', () => {
     ]);
   });
 
+  it('commits a bridge session, checkpoint, and processed outbox atomically by owner', async () => {
+    const storage = await import('../session-storage');
+    const projectKey = 'https://oddenova.example/studio\0project-a';
+    const bindingId = 'binding-1';
+    const session = {
+      ...fakeSession,
+      id: '00000000-0000-4000-8000-000000000021',
+      title: 'Bridge piece',
+      code: 'note("page")',
+      messages: [{ id: 'm-1', role: 'user' as const, content: 'make a page', timestamp: 1 }],
+      externalSource: {
+        type: 'oddenova-strudel-skill' as const,
+        projectId: 'project-a',
+        baseUrl: 'https://oddenova.example/studio',
+        importedContentHash: 'local-hash-4',
+        protocolVersion: 3 as const,
+        revision: 4,
+        skillRevision: 7,
+        bridgeContentHash: 'hash-4',
+      },
+    };
+    const checkpoint = {
+      schemaVersion: 1 as const,
+      ownerKey: 'user:u-1',
+      projectKey,
+      bindingId,
+      sessionId: session.id,
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        projectId: 'project-a',
+        baseUrl: 'https://oddenova.example/studio',
+        bindingId,
+        revision: 4,
+        skillRevision: 7,
+        title: session.title,
+        code: session.code,
+        messages: [{ id: 'm-1', role: 'user' as const, content: 'make a page', createdAt: 1, order: 1, updatedRevision: 4 }],
+        contentHash: 'hash-4',
+      },
+      updatedAt: 10,
+    };
+    const outbox = {
+      ownerKey: checkpoint.ownerKey,
+      projectKey,
+      bindingId,
+      changeId: 'change-1',
+      payload: { changeId: 'change-1' },
+      createdAt: 9,
+    };
+
+    await storage.putBridgeOutboxEntry(outbox);
+    await storage.commitBridgeSessionState({
+      ownerKey: checkpoint.ownerKey,
+      session,
+      checkpoint,
+      deleteOutboxChangeIds: [outbox.changeId],
+    });
+
+    expect(await storage.getBridgeCheckpoint(checkpoint.ownerKey, projectKey, bindingId)).toEqual(checkpoint);
+    expect(await storage.getAllSessions(checkpoint.ownerKey)).toEqual([session]);
+    expect(await storage.getBridgeOutboxEntries(checkpoint.ownerKey, projectKey, bindingId)).toEqual([]);
+    expect(await storage.getBridgeCheckpoint('user:u-2', projectKey, bindingId)).toBeUndefined();
+
+    const rebound = await storage.rebindBridgeCheckpoint(checkpoint.ownerKey, projectKey, 'binding-2');
+    expect(rebound).toMatchObject({ bindingId: 'binding-2', snapshot: { bindingId: 'binding-2', contentHash: 'hash-4' } });
+    expect(await storage.getBridgeCheckpoint(checkpoint.ownerKey, projectKey, bindingId)).toBeUndefined();
+  });
+
+  it('rebinds one exact binding to the same session and leaves older generations untouched', async () => {
+    const storage = await import('../session-storage');
+    const ownerKey = 'user:rebind';
+    const projectKey = 'https://oddenova.example/studio\0rebind-project';
+    const baseUrl = 'https://oddenova.example/studio';
+    const sessionId = '00000000-0000-4000-8000-000000000041';
+    const previousBindingId = 'binding-1';
+    const bindingId = 'binding-2';
+    const messages = [{ id: 'm-1', role: 'user' as const, content: 'make it', createdAt: 1, order: 1, updatedRevision: 4 }];
+    const snapshotContent = {
+      projectId: 'rebind-project',
+      baseUrl,
+      revision: 4,
+      skillRevision: 7,
+      title: 'Rebind piece',
+      code: 'note("page")',
+      messages,
+    };
+    const contentHash = await hashBridgeSnapshot(snapshotContent);
+    const session = {
+      ...fakeSession,
+      id: sessionId,
+      title: 'Rebind piece',
+      code: 'note("page")',
+      messages: [{ id: 'm-1', role: 'user' as const, content: 'make it', timestamp: 1 }],
+      updatedAt: 44,
+      externalSource: {
+        type: 'oddenova-strudel-skill' as const,
+        projectId: 'rebind-project',
+        baseUrl,
+        importedContentHash: 'local-content-hash',
+        protocolVersion: 3 as const,
+        revision: 4,
+        skillRevision: 7,
+        bindingId: previousBindingId,
+        bridgeContentHash: contentHash,
+      },
+    };
+    const checkpoint = {
+      schemaVersion: 1 as const,
+      ownerKey,
+      projectKey,
+      bindingId: previousBindingId,
+      sessionId,
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        ...snapshotContent,
+        bindingId: previousBindingId,
+        contentHash,
+      },
+      editorPresentation: { revision: 4, skillRevision: 7, status: 'pending' as const },
+      updatedAt: 44,
+    };
+    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint });
+    await storage.putBridgeOutboxEntry({
+      ownerKey,
+      projectKey,
+      bindingId: 'binding-0',
+      changeId: 'old-generation',
+      payload: { bindingId: 'binding-0', clientId: 'old-client', code: 'old' },
+      createdAt: 1,
+    });
+    await storage.putBridgeOutboxEntry({
+      ownerKey,
+      projectKey,
+      bindingId: previousBindingId,
+      changeId: 'pending-change',
+      payload: { bindingId: previousBindingId, clientId: 'old-client', code: 'draft' },
+      createdAt: 2,
+    });
+
+    const result = await storage.rebindBridgeSessionState({
+      ownerKey,
+      projectKey,
+      previousBindingId,
+      bindingId,
+      clientId: 'new-client',
+    });
+
+    expect(result.session.id).toBe(sessionId);
+    expect(result.session.updatedAt).toBe(44);
+    expect(result.session.externalSource).toEqual(expect.objectContaining({ bindingId }));
+    expect(result.checkpoint).toEqual(expect.objectContaining({
+      bindingId,
+      sessionId,
+      editorPresentation: { revision: 4, skillRevision: 7, status: 'pending' },
+    }));
+    expect(result.checkpoint.snapshot.bindingId).toBe(bindingId);
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toBeUndefined();
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, bindingId)).toEqual(result.checkpoint);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, 'binding-0')).toHaveLength(1);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, previousBindingId)).toEqual([]);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, bindingId)).toEqual([
+      expect.objectContaining({
+        changeId: 'pending-change',
+        payload: { bindingId, clientId: 'new-client', code: 'draft' },
+      }),
+    ]);
+  });
+
+  it('fails closed when the exact previous session was deleted', async () => {
+    const storage = await import('../session-storage');
+    const ownerKey = 'user:deleted-rebind';
+    const projectKey = 'https://oddenova.example/studio\0deleted-project';
+    const baseUrl = 'https://oddenova.example/studio';
+    const sessionId = '00000000-0000-4000-8000-000000000042';
+    const messages: never[] = [];
+    const snapshotContent = {
+      projectId: 'deleted-project', baseUrl, revision: 1, skillRevision: 1,
+      title: 'Deleted', code: 'note("deleted")', messages,
+    };
+    const contentHash = await hashBridgeSnapshot(snapshotContent);
+    const session = {
+      ...fakeSession,
+      id: sessionId,
+      title: 'Deleted',
+      code: 'note("deleted")',
+      externalSource: {
+        type: 'oddenova-strudel-skill' as const,
+        projectId: 'deleted-project', baseUrl,
+        importedContentHash: 'deleted-local', protocolVersion: 3 as const,
+        revision: 1, skillRevision: 1, bindingId: 'binding-old', bridgeContentHash: contentHash,
+      },
+    };
+    const checkpoint = {
+      schemaVersion: 1 as const,
+      ownerKey,
+      projectKey,
+      bindingId: 'binding-old',
+      sessionId,
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        ...snapshotContent,
+        bindingId: 'binding-old',
+        contentHash,
+      },
+      updatedAt: 1,
+    };
+    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint });
+    await storage.deleteSessionStrict(sessionId, ownerKey);
+
+    await expect(storage.rebindBridgeSessionState({
+      ownerKey,
+      projectKey,
+      previousBindingId: 'binding-old',
+      bindingId: 'binding-new',
+      clientId: 'new-client',
+    })).rejects.toMatchObject({ code: 'recovery-required' });
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, 'binding-old')).toEqual(checkpoint);
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, 'binding-new')).toBeUndefined();
+  });
+
+  it('confirms only the exact pending editor presentation', async () => {
+    const storage = await import('../session-storage');
+    const ownerKey = 'user:u-presentation';
+    const projectKey = 'https://oddenova.example/studio\0presentation-project';
+    const bindingId = 'presentation-binding';
+    const sessionId = '00000000-0000-4000-8000-000000000031';
+    const checkpoint = {
+      schemaVersion: 1 as const,
+      ownerKey,
+      projectKey,
+      bindingId,
+      sessionId,
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        projectId: 'presentation-project',
+        baseUrl: 'https://oddenova.example/studio',
+        bindingId,
+        revision: 8,
+        skillRevision: 5,
+        title: 'Presentation',
+        code: 'note("new")',
+        messages: [],
+        contentHash: 'presentation-hash',
+      },
+      editorPresentation: { revision: 8, skillRevision: 5, status: 'pending' as const },
+      updatedAt: 10,
+    };
+    await storage.putBridgeCheckpoint(checkpoint);
+
+    await expect(storage.confirmBridgeCheckpointPresentation({
+      ownerKey,
+      projectKey,
+      bindingId,
+      sessionId,
+      revision: 7,
+      skillRevision: 4,
+    })).resolves.toBe(false);
+    expect((await storage.getBridgeCheckpoint(ownerKey, projectKey, bindingId))?.editorPresentation?.status).toBe('pending');
+
+    await expect(storage.confirmBridgeCheckpointPresentation({
+      ownerKey,
+      projectKey,
+      bindingId,
+      sessionId,
+      revision: 8,
+      skillRevision: 5,
+    })).resolves.toBe(true);
+    expect((await storage.getBridgeCheckpoint(ownerKey, projectKey, bindingId))?.editorPresentation).toEqual({
+      revision: 8,
+      skillRevision: 5,
+      status: 'confirmed',
+    });
+  });
+
   it('leaves an empty title empty, for the caller\u2019s own stand-in', async () => {
     const { normalizeSession } = await import('../session-storage');
     expect(normalizeSession({
@@ -610,5 +913,74 @@ describe('session-storage strict import writes', () => {
     expect(transaction).toHaveBeenCalledWith('sessions_by_owner', 'readwrite');
     expect(put).toHaveBeenNthCalledWith(1, { ...detached, ownerKey: 'guest' });
     expect(put).toHaveBeenNthCalledWith(2, { ...branch, ownerKey: 'guest' });
+  });
+
+  it('does not expose staged bridge state after its transaction is aborted', async () => {
+    const failure = new Error('bridge transaction aborted');
+    const committed = {
+      sessions: new Map<string, unknown>(),
+      checkpoints: new Map<string, unknown>(),
+      outbox: new Set(['change-1']),
+    };
+    const staged = {
+      sessions: new Map(committed.sessions),
+      checkpoints: new Map(committed.checkpoints),
+      outbox: new Set(committed.outbox),
+    };
+    const transaction = vi.fn(() => ({
+      objectStore: (name: string) => ({
+        put: vi.fn(async (value: { id?: string; sessionId?: string }) => {
+          if (name === 'sessions_by_owner') staged.sessions.set(value.id ?? '', value);
+          if (name === 'oddenova_bridge_checkpoints') staged.checkpoints.set(value.sessionId ?? '', value);
+        }),
+        delete: vi.fn(async () => {
+          if (name === 'oddenova_bridge_outbox') staged.outbox.delete('change-1');
+        }),
+      }),
+      done: Promise.reject(failure),
+    }));
+    vi.doMock('idb', () => ({
+      openDB: vi.fn(async () => ({
+        objectStoreNames: { contains: () => true },
+        transaction,
+      })),
+    }));
+    const storage = await import('../session-storage');
+    await storage.openDB();
+
+    const session = { ...fakeSession, id: 'bridge-session' };
+    const checkpoint = {
+      schemaVersion: 1 as const,
+      ownerKey: 'guest',
+      projectKey: 'origin\0project',
+      bindingId: 'binding-1',
+      sessionId: session.id,
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        projectId: 'project',
+        baseUrl: 'https://origin.example',
+        bindingId: 'binding-1',
+        revision: 1,
+        skillRevision: 1,
+        title: 'Test',
+        code: '',
+        messages: [],
+        contentHash: 'hash',
+      },
+      updatedAt: 1,
+    };
+
+    await expect(storage.commitBridgeSessionState({ ownerKey: 'guest', session, checkpoint }))
+      .rejects.toThrow('bridge transaction aborted');
+    expect(transaction).toHaveBeenCalledWith(
+      ['sessions_by_owner', 'oddenova_bridge_checkpoints', 'oddenova_bridge_outbox'],
+      'readwrite',
+    );
+    expect(committed.sessions).toEqual(new Map());
+    expect(committed.checkpoints).toEqual(new Map());
+    expect(committed.outbox).toEqual(new Set(['change-1']));
+    expect(staged.sessions.size).toBe(1);
+    expect(staged.checkpoints.size).toBe(1);
   });
 });

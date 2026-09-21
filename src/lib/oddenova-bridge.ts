@@ -2,12 +2,31 @@ export const ODDENOVA_BRIDGE_HASH_PREFIX = '#oddenova-connect=';
 export const ODDENOVA_BRIDGE_BOOTSTRAP_KEY = 'oddenova_bridge_bootstrap_v2';
 export const ODDENOVA_BRIDGE_CONNECTION_KEY = 'oddenova_bridge_connection_v2';
 
+/** The browser-side representation of the identity owned by one bridge. */
+export interface OddeNovaBridgeIdentity {
+  ownerKey: string;
+  projectId: string;
+  baseUrl: string;
+  bindingId?: string;
+}
+
 export interface OddeNovaBridgeBootstrap {
   protocolVersion: 2 | 3;
   projectId: string;
   baseUrl: string;
   serviceOrigin: string;
   pairingToken: string;
+}
+
+export interface OddeNovaBridgePairResponse {
+  pageToken: string;
+  bindingId?: string;
+  /** The binding that was active immediately before this pair, if any. */
+  previousBindingId?: string;
+  /** New helpers make the initial/rebind branch explicit. */
+  pairingKind?: 'initial' | 'rebind';
+  revision?: number;
+  skillRevision?: number;
 }
 
 export interface OddeNovaBridgeMessage {
@@ -65,6 +84,63 @@ export interface StoredOddeNovaBridgeConnection {
   lastRevision: number;
   lastSkillRevision?: number;
   bindingId?: string;
+  /** The local session explicitly paired with this bridge, when known. */
+  sessionId?: string;
+}
+
+/**
+ * Keep this deliberately equivalent to bridge-core.mjs's normalizeBaseUrl.
+ * It is kept here instead of sharing a Node module so browser code does not
+ * acquire a Node dependency merely to compare two page identities.
+ */
+export function normalizeOddeNovaBridgeBaseUrl(value: string): string {
+  const url = new URL(value);
+  url.hash = '';
+  url.search = '';
+  url.pathname = url.pathname.replace(/\/+$/, '') || '/';
+  return url.toString().replace(/\/$/, '');
+}
+
+export function oddeNovaBridgeProjectKey(baseUrl: string, projectId: string): string {
+  return `${normalizeOddeNovaBridgeBaseUrl(baseUrl)}\0${projectId}`;
+}
+
+export function oddeNovaBridgeIdentityMatches(
+  left: Pick<OddeNovaBridgeIdentity, 'projectId' | 'baseUrl'>,
+  right: Pick<OddeNovaBridgeIdentity, 'projectId' | 'baseUrl'>,
+): boolean {
+  try {
+    return left.projectId === right.projectId
+      && normalizeOddeNovaBridgeBaseUrl(left.baseUrl) === normalizeOddeNovaBridgeBaseUrl(right.baseUrl);
+  } catch {
+    return false;
+  }
+}
+
+export function parseOddeNovaBridgePairResponse(
+  value: unknown,
+  protocolVersion: 2 | 3,
+): OddeNovaBridgePairResponse | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.pageToken !== 'string' || candidate.pageToken.length === 0) return undefined;
+  if (protocolVersion === 3 && (typeof candidate.bindingId !== 'string' || candidate.bindingId.length === 0)) return undefined;
+  if (candidate.bindingId !== undefined && (typeof candidate.bindingId !== 'string' || candidate.bindingId.length === 0)) return undefined;
+  if (candidate.previousBindingId !== undefined && (typeof candidate.previousBindingId !== 'string' || candidate.previousBindingId.length === 0)) return undefined;
+  if (candidate.pairingKind !== undefined && candidate.pairingKind !== 'initial' && candidate.pairingKind !== 'rebind') return undefined;
+  if (candidate.pairingKind === 'initial' && candidate.previousBindingId !== undefined) return undefined;
+  if (candidate.pairingKind === 'rebind' && candidate.previousBindingId === undefined) return undefined;
+  for (const key of ['revision', 'skillRevision'] as const) {
+    if (candidate[key] !== undefined && (!Number.isInteger(candidate[key]) || Number(candidate[key]) < 0)) return undefined;
+  }
+  return {
+    pageToken: candidate.pageToken,
+    ...(candidate.bindingId !== undefined ? { bindingId: candidate.bindingId } : {}),
+    ...(candidate.previousBindingId !== undefined ? { previousBindingId: candidate.previousBindingId } : {}),
+    ...(candidate.pairingKind !== undefined ? { pairingKind: candidate.pairingKind } : {}),
+    ...(candidate.revision !== undefined ? { revision: candidate.revision as number } : {}),
+    ...(candidate.skillRevision !== undefined ? { skillRevision: candidate.skillRevision as number } : {}),
+  };
 }
 
 function decodeJson(encoded: string): unknown {
@@ -96,7 +172,9 @@ export function parseOddeNovaBridgeBootstrap(value: unknown): OddeNovaBridgeBoot
     || !isLoopbackServiceOrigin(candidate.serviceOrigin)
   ) return undefined;
   try {
-    if (new URL(candidate.baseUrl).origin !== window.location.origin) return undefined;
+    const baseUrl = normalizeOddeNovaBridgeBaseUrl(candidate.baseUrl);
+    if (new URL(baseUrl).origin !== window.location.origin) return undefined;
+    candidate.baseUrl = baseUrl;
   } catch {
     return undefined;
   }
@@ -120,8 +198,21 @@ export function consumeOddeNovaBridgeBootstrapHash(): boolean {
 export function readStoredBridgeConnection(): StoredOddeNovaBridgeConnection | undefined {
   try {
     const value = JSON.parse(sessionStorage.getItem(ODDENOVA_BRIDGE_CONNECTION_KEY) ?? 'null') as StoredOddeNovaBridgeConnection | null;
-    if (!value || !value.projectId || !value.pageToken || !isLoopbackServiceOrigin(value.serviceOrigin)) return undefined;
-    return value;
+    if (
+      !value
+      || typeof value.projectId !== 'string' || !value.projectId
+      || typeof value.baseUrl !== 'string'
+      || !value.pageToken
+      || !isLoopbackServiceOrigin(value.serviceOrigin)
+      || typeof value.ownerKey !== 'string' || !value.ownerKey
+      || typeof value.clientId !== 'string' || !value.clientId
+      || !Number.isInteger(value.lastRevision) || value.lastRevision < 0
+      || (value.lastSkillRevision !== undefined && (!Number.isInteger(value.lastSkillRevision) || value.lastSkillRevision < 0))
+      || (value.bindingId !== undefined && (typeof value.bindingId !== 'string' || !value.bindingId))
+      || (value.sessionId !== undefined && (typeof value.sessionId !== 'string' || !value.sessionId))
+    ) return undefined;
+    const baseUrl = normalizeOddeNovaBridgeBaseUrl(value.baseUrl);
+    return { ...value, baseUrl };
   } catch {
     return undefined;
   }
@@ -134,7 +225,9 @@ export function isOddeNovaBridgeSnapshot(value: unknown): value is AnyOddeNovaBr
   return (version === 2 || version === 3)
     && snapshot.source === 'oddenova-strudel-skill'
     && typeof snapshot.projectId === 'string'
-    && (version === 2 || typeof snapshot.baseUrl === 'string')
+    && (version === 2 || (typeof snapshot.baseUrl === 'string' && (() => {
+      try { return normalizeOddeNovaBridgeBaseUrl(snapshot.baseUrl) === snapshot.baseUrl; } catch { return false; }
+    })()))
     && (version === 2 || snapshot.bindingId === undefined || typeof snapshot.bindingId === 'string')
     && Number.isInteger(snapshot.revision) && Number(snapshot.revision) > 0
     && typeof snapshot.title === 'string'
