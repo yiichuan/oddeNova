@@ -4134,7 +4134,8 @@ html[data-theme='light'] .track-panel {
   z-index: 4;
 }
 
-.track-ruler-tick {
+.track-ruler-tick,
+.track-ruler-prefetch-tick {
   z-index: 2;
 }
 

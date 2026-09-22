@@ -26,7 +26,7 @@ import {
 import type { RulerTickHistory } from '../../lib/track-timeline';
 import type { TrackClockSample } from '../../lib/track-timeline';
 import type { PreviewTrack, TrackFullSceneRequest, TrackSceneQueryResult } from '../../services/track-preview';
-import type { TrackFullSceneIdentity, TrackFullSceneSnapshot, TrackLaneSceneData, TrackSceneBatch, TrackSceneRequest } from '../../lib/track-preview-scene';
+import type { ExactTrackPrimitive, TrackFullSceneIdentity, TrackFullSceneSnapshot, TrackLaneSceneData, TrackSceneBatch, TrackSceneRequest } from '../../lib/track-preview-scene';
 import { assembleFullSceneBatch, sameTrackFullSceneIdentity, TrackHighlightCursor, densityColumnAt, planPixelPrecision } from '../../lib/track-preview-scene';
 import { RASTER_DEFAULT_BUDGET_BYTES } from '../../lib/track-preview-canvas';
 import type { TrackRenameResult, TransportEvent } from '../../services/strudel';
@@ -210,7 +210,10 @@ export default function TrackPanel({
   const committedSceneRef = useRef<TrackSceneBatch | null>(currentScene);
   committedSceneRef.current = currentScene;
   const laneHandlesRef = useRef(new Map<string, TrackLaneCanvasHandle>());
-  const highlightTrackersRef = useRef(new Map<string, TrackHighlightCursor>());
+  const highlightTrackersRef = useRef(new Map<string, {
+    primitives: readonly ExactTrackPrimitive[];
+    cursor: TrackHighlightCursor;
+  }>());
   const sceneBandRef = useRef<{ begin: number; end: number } | null>(null);
   const fullSceneIdentityRef = useRef<TrackFullSceneIdentity | null>(null);
   const fullSceneRef = useRef<TrackFullSceneSnapshot | null>(fullScene);
@@ -702,13 +705,23 @@ export default function TrackPanel({
       const lane = scene?.lanes.find(data => data.trackId === track.id) ?? null;
       if (!lane || lane.rawEventCount === 0) { handle.setActive(null); continue; }
       if (lane.representation === 'exact' && lane.exact) {
-        let cursor = highlightTrackersRef.current.get(track.id);
-        if (!cursor) {
-          cursor = new TrackHighlightCursor(lane.exact);
-          highlightTrackersRef.current.set(track.id, cursor);
+        let tracker = highlightTrackersRef.current.get(track.id);
+        // Full-scene progress keeps the same identity while publishing newly
+        // assembled lane arrays. Exact ids are lane-scoped and may be
+        // renumbered as tiles arrive, so a cursor is valid only for the exact
+        // primitive array it indexed.
+        let rebuilt = false;
+        if (!tracker || tracker.primitives !== lane.exact) {
+          tracker = { primitives: lane.exact, cursor: new TrackHighlightCursor(lane.exact) };
+          highlightTrackersRef.current.set(track.id, tracker);
+          rebuilt = true;
         }
         const forward = displayNow >= lastSoundingNowRef.current - 1e-9;
-        const ids = forward ? cursor.advance(displayNow) : cursor.reset(displayNow);
+        // A new cursor has no previous position even if the transport itself
+        // moved forward; reset seeds every note already sounding at this time.
+        const ids = rebuilt || !forward
+          ? tracker.cursor.reset(displayNow)
+          : tracker.cursor.advance(displayNow);
         handle.setActive({ ids });
       } else if (lane.density) {
         handle.setActive({ bins: [densityColumnAt(lane.density, displayNow)] });
@@ -810,6 +823,11 @@ export default function TrackPanel({
   // One queued draw window refresh: set when playback enters the safety
   // distance, committed at most once per animation frame.
   const drawWindowRefreshQueuedRef = useRef(false);
+  // The raster blocks and ruler labels currently committed by React. The live
+  // clock may move the shared scene transform every RAF without rendering, so
+  // this boundary — rather than a window derived from that newest clock —
+  // decides when React must advance its low-frequency drawing snapshot.
+  const committedDrawWindowRef = useRef<ReturnType<typeof drawWindowForViewport> | null>(null);
 
   const makePreviewRequest = useCallback((force: boolean): TrackSceneRequest | null => {
     if (fullSceneMode || !liveMode || !getClock || !queryScene || !tracks.length || loopCycles === null) return null;
@@ -932,19 +950,20 @@ export default function TrackPanel({
   // distance, committed at most once per animation frame with the latest
   // target — never the stale frame that queued it.
   const refreshDrawWindowIfNeeded = useCallback(() => {
-    if (fullSceneMode || !liveMode || loopCycles === null) return;
-    const scene = committedSceneRef.current;
-    if (!scene) return;
+    if (!liveMode || loopCycles === null) return;
+    const window = committedDrawWindowRef.current;
+    if (!window) return;
     const projection = liveProjectionRef.current;
-    const band = { begin: scene.begin, end: scene.end };
-    const window = drawWindowForViewport(projection, band);
     if (sceneBandContainsViewport(window, projection, DRAW_WINDOW_SAFETY_RATIO, loopCycles)) return;
     if (drawWindowRefreshQueuedRef.current) return;
     drawWindowRefreshQueuedRef.current = true;
     requestAnimationFrame(() => {
       drawWindowRefreshQueuedRef.current = false;
       setLiveProjectionSnapshot(liveProjectionRef.current);
-      schedulePreviewQuery(false, false);
+      // Full-scene mode already owns all music data. It only needs fresh ruler
+      // labels and raster blocks; the compatibility path still extends its
+      // queried scene when necessary.
+      if (!fullSceneMode) schedulePreviewQuery(false, false);
     });
   }, [fullSceneMode, liveMode, loopCycles, schedulePreviewQuery]);
 
@@ -1084,6 +1103,11 @@ export default function TrackPanel({
   // The drawing blocks commit at most one visible span to each side of the
   // viewport, always inside the data that exists.
   const drawWindow = drawWindowForViewport(renderFrame, sceneBand);
+  // Publish the boundary only after this render commits. A discarded
+  // concurrent render must not make the RAF believe its blocks are visible.
+  useLayoutEffect(() => {
+    committedDrawWindowRef.current = drawWindow;
+  });
   // The panel owns the bitmap budget: one equal share per lane keeps the
   // estimate panel-level, and a lane whose visible area alone exceeds its
   // share may overrun that soft budget rather than losing clarity.
@@ -1101,10 +1125,27 @@ export default function TrackPanel({
   // so an uncommitted render can never pollute the display history.
   const viewSpan = renderFrame.end - renderFrame.begin;
   const measuredWidth = contentWidth > 0 ? contentWidth : FALLBACK_CONTENT_WIDTH;
-  // Ruler labels stay in the current visible window for readability. Lane
-  // grid lines additionally use the wider scene band so follow motion has
-  // compositor-ready material on both sides.
+  // The primary ruler labels describe the committed visible window. Extra
+  // visual-only labels cover its raster draw window below, while lane grid
+  // lines use the wider scene band.
   const ticks = rulerTicks(renderFrame.begin, renderFrame.end, measuredWidth, tickHistoryRef.current ?? undefined);
+  // The DOM ruler needs the same ahead/behind coverage as the raster blocks.
+  // Its scene transform moves every RAF, while React updates only when the
+  // draw window nears an edge; without these off-screen ticks, the old visible
+  // labels slide away before the shared draw window needs to advance.
+  const rulerDrawSpan = drawWindow.end - drawWindow.begin;
+  const rulerDrawTicks = liveMode && viewSpan > 0 && rulerDrawSpan > 0
+    ? rulerTicks(
+      drawWindow.begin,
+      drawWindow.end,
+      measuredWidth * rulerDrawSpan / viewSpan,
+      tickHistoryRef.current ?? undefined,
+    )
+    : ticks;
+  const visibleMajorTicks = new Set(ticks.major);
+  const visibleMinorTicks = new Set(ticks.minor);
+  const prefetchedMajorTicks = rulerDrawTicks.major.filter(cycle => !visibleMajorTicks.has(cycle));
+  const prefetchedMinorTicks = rulerDrawTicks.minor.filter(cycle => !visibleMinorTicks.has(cycle));
   const sceneTicks = liveMode
     ? rulerTicks(sceneBand.begin, sceneBand.end, measuredWidth * sceneTransform.widthPercent / 100, tickHistoryRef.current ?? undefined)
     : ticks;
@@ -1646,11 +1687,13 @@ export default function TrackPanel({
                 <div className="track-ruler-minor-clip track-ruler-scene-clip">
                   <div data-track-scene className="track-ruler-scene absolute inset-y-0 left-0">
                     {ticks.minor.map(cycle => <span key={`minor-${cycle}`} aria-hidden className="track-ruler-minor absolute bottom-0" style={{ left: `${scenePosition(cycle)}%` }} />)}
+                    {prefetchedMinorTicks.map(cycle => <span key={`minor-prefetch-${cycle}`} aria-hidden className="track-ruler-minor absolute bottom-0" style={{ left: `${scenePosition(cycle)}%` }} />)}
                   </div>
                 </div>
                 <div className="track-ruler-ticks-clip track-ruler-scene-clip">
                   <div data-track-scene className="track-ruler-scene absolute inset-y-0 left-0">
                     {ticks.major.map(cycle => <span key={`major-${cycle}`} className="track-ruler-tick absolute top-2" style={{ left: `${scenePosition(cycle)}%` }}>{cycleTickLabel(cycle)}</span>)}
+                    {prefetchedMajorTicks.map(cycle => <span key={`major-prefetch-${cycle}`} aria-hidden className="track-ruler-prefetch-tick absolute top-2" style={{ left: `${scenePosition(cycle)}%` }}>{cycleTickLabel(cycle)}</span>)}
                     {endLabel && <span data-ruler-end-tick className="track-ruler-tick absolute top-2 -translate-x-full" style={{ left: `${scenePosition(renderFrame.end)}%` }}>{endLabel}</span>}
                   </div>
                 </div>

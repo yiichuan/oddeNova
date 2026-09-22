@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import TrackPanel from '../TrackPanel';
 import { t, tf } from '../../../lib/i18n';
-import type { ExactTrackPrimitive, TrackLaneSceneData, TrackSceneBatch, TrackSceneRequest } from '../../../lib/track-preview-scene';
+import type { ExactTrackPrimitive, TrackFullSceneSnapshot, TrackLaneSceneData, TrackSceneBatch, TrackSceneRequest } from '../../../lib/track-preview-scene';
 import type { TrackSceneQueryResult } from '../../../services/track-preview';
 import type { TransportEvent } from '../../../services/strudel';
 
@@ -197,6 +197,7 @@ const renderPanel = async (props: Partial<Parameters<typeof TrackPanel>[0]> = {}
 
 const ruler = () => container.querySelector<HTMLElement>('[data-track-timeline]')!;
 const tickLabels = () => [...container.querySelectorAll<HTMLElement>('.track-ruler-tick')].map(node => node.textContent);
+const prefetchedTickLabels = () => [...container.querySelectorAll<HTMLElement>('.track-ruler-prefetch-tick')].map(node => node.textContent);
 /** Live markers move through a compositor transform; read its percentage. */
 const markerX = (selector: string): string | null => {
   const marker = container.querySelector(selector) as HTMLElement | null;
@@ -2101,4 +2102,124 @@ it('keeps the full-scene identity while zooming and does not start viewport quer
 
   expect(ensureFullScene).toHaveBeenCalledTimes(callsBeforeZoom);
   expect(queryScene).not.toHaveBeenCalled();
+});
+
+it('advances full-scene ruler labels and raster blocks as a stable clock moves', async () => {
+  let absoluteCycle = 1;
+  const getClock = vi.fn(() => ({ absoluteCycle, cps: 0.5 }));
+  const ensureFullScene = vi.fn();
+  const fullScene: TrackFullSceneSnapshot = {
+    identity: { previewGeneration: 1, loopOffset: 0, loopCycles: LOOP, cps: 0.5 },
+    status: 'complete',
+    begin: 0,
+    end: LOOP,
+    completedTiles: new Set(),
+    tiles: [],
+    sounds: ['bd', 'sawtooth'],
+    resolutionTier: 8,
+    effectiveBinSpan: 1 / 256,
+    exactBudget: 6400,
+    lods: [{
+      level: 0,
+      binSpan: 1 / 256,
+      lanes: [
+        exactLane('a', [ev(0.9, 1.2, 0), ev(8, 8.25, 0), ev(14, 14.5, 0)]),
+        exactLane('b', [ev(1.5, 2, 1, 36), ev(8.5, 9, 1, 40)]),
+      ],
+    }],
+  };
+
+  await renderPanel({
+    getClock,
+    queryScene: undefined,
+    fullScene,
+    ensureFullScene,
+    isPlaying: true,
+  });
+  await fireCanvasSizesAndFlush();
+  expect(tickLabels()).toEqual(['0', '1', '2', '3']);
+  expect(prefetchedTickLabels()).toEqual(['4', '5', '6', '7']);
+  const firstBlocks = [...laneRow('a').querySelectorAll<HTMLElement>('[data-track-raster-block]')]
+    .map(block => block.dataset.trackRasterBlock);
+
+  // Moving one half-window does not need new Canvas blocks or a React commit.
+  // The labels entering from the right must already exist in the shared draw
+  // window, otherwise the ruler becomes half-empty while notes remain visible.
+  absoluteCycle = 3;
+  tick(8);
+  expect(tickLabels()).toEqual(['0', '1', '2', '3']);
+  expect(prefetchedTickLabels()).toEqual(['4', '5', '6', '7']);
+
+  // The function identity stays fixed, as it does in production; only the
+  // sampled transport cycle advances. One RAF detects the exhausted draw
+  // margin and the queued RAF commits the newest window.
+  absoluteCycle = 8;
+  tick(16);
+  tick(32);
+  await fireCanvasSizesAndFlush();
+
+  expect(tickLabels()).toEqual(['6', '7', '8', '9']);
+  expect([...laneRow('a').querySelectorAll<HTMLElement>('[data-track-raster-block]')]
+    .map(block => block.dataset.trackRasterBlock)).not.toEqual(firstBlocks);
+
+  // Crossing later raster boundaries mounts fresh overlay canvases. The
+  // currently sounding note must be drawn into those new bitmaps too.
+  absoluteCycle = 14.25;
+  tick(48);
+  tick(64);
+  await fireCanvasSizesAndFlush();
+  const overlayCalls = laneCanvases('a')
+    .filter(canvas => canvas.classList.contains('track-lane-canvas-overlay'))
+    .flatMap(canvas => contextCalls(canvas));
+  expect(overlayCalls.some(([method]) => method === 'beginPath' || method === 'fill')).toBe(true);
+  expect(ensureFullScene).toHaveBeenCalledTimes(1);
+});
+
+it('rebuilds the exact-note highlight cursor when the same full scene publishes new lanes', async () => {
+  let absoluteCycle = 1;
+  const identity = { previewGeneration: 1, loopOffset: 0, loopCycles: LOOP, cps: 0.5 };
+  const snapshot = (notes: ExactTrackPrimitive[]): TrackFullSceneSnapshot => ({
+    identity,
+    status: 'complete',
+    begin: 0,
+    end: LOOP,
+    completedTiles: new Set(),
+    tiles: [],
+    sounds: ['bd', 'sawtooth'],
+    resolutionTier: 8,
+    effectiveBinSpan: 1 / 256,
+    exactBudget: 6400,
+    lods: [{
+      level: 0,
+      binSpan: 1 / 256,
+      lanes: [exactLane('a', notes), exactLane('b', [])],
+    }],
+  });
+  const early = ev(0.9, 1.2, 0);
+  const late = ev(14, 14.5, 0);
+  const panel = await renderPanel({
+    getClock: () => ({ absoluteCycle, cps: 0.5 }),
+    queryScene: undefined,
+    fullScene: snapshot([early]),
+    ensureFullScene: vi.fn(),
+    isPlaying: true,
+  });
+  await fireCanvasSizesAndFlush();
+  tick(8);
+
+  // Full-scene progress keeps one identity while publishing newly assembled
+  // lane arrays whose exact ids may have changed as earlier tiles arrive.
+  absoluteCycle = 14.25;
+  await panel.rerender({ fullScene: snapshot([early, late]) });
+  tick(16);
+  tick(32);
+  await fireCanvasSizesAndFlush();
+
+  const overlayCalls = laneCanvases('a')
+    .filter(canvas => canvas.classList.contains('track-lane-canvas-overlay'))
+    .flatMap(canvas => contextCalls(canvas));
+  expect(overlayCalls.some(([method, args]) => (
+    (method === 'moveTo' || method === 'lineTo' || method === 'arcTo')
+      && typeof args[0] === 'number' && args[0] > 1300
+  ))).toBe(true);
 });

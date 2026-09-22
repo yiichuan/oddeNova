@@ -79,13 +79,26 @@ function contextOf(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D |
 
 function blockKey(block: RasterBlock): string { return `${block.column}:${block.row}`; }
 
+function blockGeometryKey(block: RasterBlock): string {
+  return [
+    block.cssLeft, block.cssTop, block.cssWidth, block.cssHeight,
+    block.cssOwnLeft, block.cssOwnTop, block.cssOwnWidth, block.cssOwnHeight,
+    block.backingWidth, block.backingHeight, block.scaleX, block.scaleY,
+  ].join(':');
+}
+
+interface DrawnBaseBlock {
+  canvas: HTMLCanvasElement;
+  geometry: string;
+}
+
 /**
  * One lane's scene as a row of finite raster blocks. Each block holds a
  * device-pixel-accurate base (grid, exact notes or density columns) and an
  * overlay for the low-frequency sounding highlight. The element keeps the
  * shared scene transform from CSS; React redraws on scene, mix, label, size
  * or raster-version changes — never per animation frame. Blocks the budget
- * released stay released; a pan only draws the blocks that newly entered.
+ * released stay released; a pan only redraws new or re-clipped blocks.
  */
 
 const EMPTY_TICKS: readonly number[] = [];
@@ -101,7 +114,10 @@ const TrackLaneCanvas = memo(forwardRef<TrackLaneCanvasHandle, TrackLaneCanvasPr
   const baseCanvasesRef = useRef(new Map<string, HTMLCanvasElement>());
   const overlayCanvasesRef = useRef(new Map<string, HTMLCanvasElement>());
   const backingSizesRef = useRef(new WeakMap<HTMLCanvasElement, string>());
-  const baseDrawnRef = useRef<{ epoch: string; keys: Set<string> }>({ epoch: '', keys: new Set() });
+  const baseDrawnRef = useRef<{ epoch: string; blocks: Map<string, DrawnBaseBlock> }>({
+    epoch: '',
+    blocks: new Map(),
+  });
   const failureReportedRef = useRef(false);
   // Fractional CSS sizes: rounding happens only when physical bounds are cut.
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -212,7 +228,7 @@ const TrackLaneCanvas = memo(forwardRef<TrackLaneCanvasHandle, TrackLaneCanvasPr
   useEffect(() => {
     const element = containerRef.current;
     if (!plan || !element || !(size.width > 0) || !(size.height > 0)) {
-      baseDrawnRef.current = { epoch: '', keys: new Set() };
+      baseDrawnRef.current = { epoch: '', blocks: new Map() };
       dataIdentityRef.current = { lane: null, sounds: [] };
       return;
     }
@@ -237,13 +253,19 @@ const TrackLaneCanvas = memo(forwardRef<TrackLaneCanvasHandle, TrackLaneCanvasPr
       pendingRanges,
       pixelSnap: plan.devicePixelRatio,
     });
-    if (full) baseDrawnRef.current.keys.clear();
+    if (full) baseDrawnRef.current.blocks.clear();
+    const plannedKeys = new Set(plan.blocks.map(blockKey));
+    for (const key of baseDrawnRef.current.blocks.keys()) {
+      if (!plannedKeys.has(key)) baseDrawnRef.current.blocks.delete(key);
+    }
     for (const block of plan.blocks) {
       const key = blockKey(block);
-      if (baseDrawnRef.current.keys.has(key)) continue;
       const canvas = baseCanvasesRef.current.get(key);
       if (!canvas) continue;
-      if (paintBlock(canvas, block, commands)) baseDrawnRef.current.keys.add(key);
+      const geometry = blockGeometryKey(block);
+      const drawn = baseDrawnRef.current.blocks.get(key);
+      if (drawn?.canvas === canvas && drawn.geometry === geometry) continue;
+      if (paintBlock(canvas, block, commands)) baseDrawnRef.current.blocks.set(key, { canvas, geometry });
       else reportFailure();
     }
     baseDrawnRef.current.epoch = epoch;
@@ -285,7 +307,7 @@ const TrackLaneCanvas = memo(forwardRef<TrackLaneCanvasHandle, TrackLaneCanvasPr
   useEffect(() => () => {
     baseCanvasesRef.current.clear();
     overlayCanvasesRef.current.clear();
-    baseDrawnRef.current = { epoch: '', keys: new Set() };
+    baseDrawnRef.current = { epoch: '', blocks: new Map() };
   }, []);
 
   const style = {

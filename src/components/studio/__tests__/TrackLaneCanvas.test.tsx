@@ -186,23 +186,67 @@ describe('TrackLaneCanvas raster blocks', () => {
     }
   });
 
-  it('repaints only newly entered blocks when panning within one raster version', () => {
+  it('reuses stable blocks and repaints newly entered or re-clipped blocks while panning', () => {
     const lane = renderLane({
       bandBegin: 0, bandEnd: 16, viewportBegin: 0, viewportEnd: 4,
       drawBegin: 0, drawEnd: 8,
     });
-    const canvasesBefore = lane.canvases;
-    const fillsBefore = canvasesBefore.map(canvas => harness_context(lane, canvas)!.fills.length);
+    lane.resize(3600, 40);
+    const blocksBefore = new Map(lane.blocks.map(block => {
+      const canvas = block.querySelector('.track-lane-canvas-base') as HTMLCanvasElement;
+      return [block.dataset.trackRasterBlock!, {
+        canvas,
+        geometry: `${block.style.left}:${block.style.width}:${canvas.style.left}:${canvas.style.width}`,
+        fills: harness_context(lane, canvas)!.fills.length,
+      }];
+    }));
     // Pan right: the drawn window's right edge crosses a grid-cell boundary
     // while the raster version (px/cycle, height, DPR) holds.
     lane.rerender({ viewportBegin: 2, viewportEnd: 6, drawBegin: 0, drawEnd: 10 });
-    const canvases = lane.canvases;
-    // Blocks already drawn are untouched.
-    for (let index = 0; index < fillsBefore.length; index++) {
-      expect(harness_context(lane, canvases[index])!.fills.length).toBe(fillsBefore[index]);
+    let stableCount = 0;
+    let changedCount = 0;
+    let newCount = 0;
+    for (const block of lane.blocks) {
+      const canvas = block.querySelector('.track-lane-canvas-base') as HTMLCanvasElement;
+      const geometry = `${block.style.left}:${block.style.width}:${canvas.style.left}:${canvas.style.width}`;
+      const before = blocksBefore.get(block.dataset.trackRasterBlock!);
+      if (!before) {
+        newCount++;
+      } else if (before.geometry === geometry) {
+        stableCount++;
+        expect(canvas).toBe(before.canvas);
+        expect(harness_context(lane, canvas)!.fills.length).toBe(before.fills);
+      } else {
+        changedCount++;
+        expect(harness_context(lane, canvas)!.fills.length).toBeGreaterThan(before.fills);
+      }
     }
-    // At least one new block entered on the right edge.
-    expect(canvases.length).toBeGreaterThan(canvasesBefore.length);
+    expect(stableCount).toBeGreaterThan(0);
+    expect(changedCount).toBeGreaterThan(0);
+    expect(newCount).toBeGreaterThan(0);
+  });
+
+  it('repaints a raster block after seeking away and mounting that block again', () => {
+    const lane = renderLane({
+      bandBegin: 0, bandEnd: 32, viewportBegin: 0, viewportEnd: 4,
+      drawBegin: 0, drawEnd: 8,
+    });
+    const firstBlock = lane.blocks[0];
+    const firstKey = firstBlock.dataset.trackRasterBlock;
+    const firstCanvas = firstBlock.querySelector('.track-lane-canvas-base') as HTMLCanvasElement;
+    expect(harness_context(lane, firstCanvas)!.clears.length).toBeGreaterThan(0);
+
+    // A progress-bar seek drops the old bitmap blocks entirely.
+    lane.rerender({ viewportBegin: 24, viewportEnd: 28, drawBegin: 20, drawEnd: 32 });
+    expect(lane.blocks.some(block => block.dataset.trackRasterBlock === firstKey)).toBe(false);
+
+    // Seeking back creates a fresh canvas for the same global raster key. It
+    // must be painted even though that key appeared earlier in this epoch.
+    lane.rerender({ viewportBegin: 0, viewportEnd: 4, drawBegin: 0, drawEnd: 8 });
+    const remountedBlock = lane.blocks.find(block => block.dataset.trackRasterBlock === firstKey)!;
+    const remountedCanvas = remountedBlock.querySelector('.track-lane-canvas-base') as HTMLCanvasElement;
+    expect(remountedCanvas).not.toBe(firstCanvas);
+    expect(harness_context(lane, remountedCanvas)!.clears.length).toBeGreaterThan(0);
   });
 
   it('repaints every block when the raster version changes (zoom, height, DPR)', () => {
