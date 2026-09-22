@@ -373,6 +373,14 @@ describe('CodePanel editor focus reporting', () => {
     expect(thumb?.classList.contains('opacity-100')).toBe(true);
 
     act(() => {
+      if (!seek) return;
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setValue?.call(seek, '1000');
+      seek.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(strudelService.seekPlayback).toHaveBeenLastCalledWith(1, 32);
+
+    act(() => {
       seek?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
     });
     expect(track?.classList.contains('h-[2px]')).toBe(true);
@@ -402,6 +410,37 @@ describe('CodePanel editor focus reporting', () => {
     // Updated into the running pattern — now it is the sounding piece.
     rerender({ code: editedCode, activeCode: editedCode, isDirty: false });
     expect(time()).toBe('00:00/00:32');
+  });
+
+  it('wraps the display after its span without seeking or restarting playback', () => {
+    installMatchMedia(false);
+    let nextFrame: FrameRequestCallback | null = null;
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      nextFrame = callback;
+      return 1;
+    });
+    const onPlay = vi.fn();
+    const onPause = vi.fn();
+    const onUpdate = vi.fn();
+    const { container, root } = renderCodePanel({
+      code: 'setcps(0.5)\nn("<0 1>")',
+      isPlaying: true,
+      onPlay,
+      onPause,
+      onUpdate,
+    });
+    roots.push(root);
+
+    expect(container.querySelector('[data-testid="code-panel-playback-time"]')?.textContent)
+      .toBe('00:00/00:04');
+    act(() => nextFrame?.(5_000));
+    expect(container.querySelector('[data-testid="code-panel-playback-time"]')?.textContent)
+      .toBe('00:01/00:04');
+    expect(strudelService.seekPlayback).not.toHaveBeenCalled();
+    expect(onPlay).not.toHaveBeenCalled();
+    expect(onPause).not.toHaveBeenCalled();
+    expect(onUpdate).not.toHaveBeenCalled();
   });
 
   it('shows the editor buffer duration while nothing is sounding', () => {

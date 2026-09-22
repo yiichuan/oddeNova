@@ -24,7 +24,7 @@ interface Playhead {
 
 let playhead: Playhead = { pieceId: null, elapsedSeconds: 0, startedAt: null };
 
-/** Where the playhead stands right now, in seconds, wrapped into the loop. */
+/** Where the playhead stands right now, wrapped into the current display span. */
 function positionSeconds(now: number, totalSeconds: number): number {
   const running = playhead.startedAt === null ? 0 : (now - playhead.startedAt) / 1000;
   const elapsed = playhead.elapsedSeconds + running;
@@ -65,7 +65,7 @@ export function syncPlayhead(
 }
 
 /**
- * How far through the loop the record is, 0 to 1.
+ * How far through the display span the record is, 0 to 1.
  *
  * Zero for any record the clock is not on — a transport reading it the frame
  * before its own sync has run is asking about the record it is being pointed
@@ -81,7 +81,7 @@ export function readPlayheadProgress(
 }
 
 /**
- * Puts the playhead somewhere else in the loop.
+ * Puts the playhead somewhere else in the display span.
  *
  * The clock's half of a seek: the engine is told separately (see
  * `featuredPlayer.seek`), and this is what keeps the drawn lap in step with what
