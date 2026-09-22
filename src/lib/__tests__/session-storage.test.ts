@@ -140,6 +140,139 @@ describe('session-storage fallback path', () => {
     await expect(deleteSession('nonexistent-id')).resolves.toBeUndefined();
   });
 
+  /**
+   * Memory fallback must keep the same validation, idempotency, and rollback
+   * semantics as the IndexedDB path — including the async hash validation
+   * being re-checked against the authoritative maps before the write.
+   */
+  it('rebinds in memory fallback and keeps idempotency and drift fail-closed', async () => {
+    const storage = await import('../session-storage');
+    await storage.openDB();
+    expect(storage.isSessionStoragePersistent()).toBe(false);
+    const ownerKey = 'guest';
+    const baseUrl = 'https://oddenova.example/studio';
+    const projectId = 'memory-rebind-project';
+    const projectKey = `${baseUrl}\0${projectId}`;
+    const previousBindingId = 'memory-binding-old';
+    const sessionId = 'memory-session';
+    const snapshotContent = {
+      projectId,
+      baseUrl,
+      revision: 4,
+      skillRevision: 7,
+      title: 'Memory piece',
+      code: 'note("page")',
+      messages: [{ id: 'm-1', role: 'user' as const, content: 'make it', createdAt: 1, order: 1, updatedRevision: 4 }],
+    };
+    const contentHash = await hashBridgeSnapshot(snapshotContent);
+    const session = {
+      ...fakeSession,
+      id: sessionId,
+      title: 'Atomic piece',
+      code: 'note("page")',
+      messages: [{ id: 'm-1', role: 'user' as const, content: 'make it', timestamp: 1 }],
+      updatedAt: 44,
+      externalSource: {
+        type: 'oddenova-strudel-skill' as const,
+        projectId,
+        baseUrl,
+        importedContentHash: 'memory-local-hash',
+        protocolVersion: 3 as const,
+        revision: 4,
+        skillRevision: 7,
+        bindingId: previousBindingId,
+        bridgeContentHash: contentHash,
+      },
+    };
+    const checkpoint = {
+      schemaVersion: 1 as const,
+      ownerKey,
+      projectKey,
+      bindingId: previousBindingId,
+      sessionId,
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        ...snapshotContent,
+        bindingId: previousBindingId,
+        contentHash,
+      },
+      editorPresentation: { revision: 4, skillRevision: 7, status: 'pending' as const },
+      updatedAt: 44,
+    };
+    const rebindInput = {
+      ownerKey,
+      projectKey,
+      previousBindingId,
+      bindingId: 'memory-binding-new',
+      clientId: 'memory-client-new',
+    };
+
+    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint });
+    await storage.putBridgeOutboxEntry({
+      ownerKey,
+      projectKey,
+      bindingId: previousBindingId,
+      changeId: 'memory-change',
+      payload: { protocolVersion: 3, bindingId: previousBindingId, clientId: 'old-client', code: 'draft' },
+      createdAt: 2,
+    });
+
+    const result = await storage.rebindBridgeSessionState(rebindInput);
+
+    expect(result.session).toEqual(expect.objectContaining({
+      id: sessionId,
+      updatedAt: 44,
+      externalSource: expect.objectContaining({ bindingId: rebindInput.bindingId }),
+    }));
+    expect(result.checkpoint).toEqual(expect.objectContaining({
+      bindingId: rebindInput.bindingId,
+      sessionId,
+      editorPresentation: { revision: 4, skillRevision: 7, status: 'pending' },
+    }));
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toBeUndefined();
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, rebindInput.bindingId)).toEqual(result.checkpoint);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, rebindInput.bindingId)).toEqual([
+      expect.objectContaining({
+        changeId: 'memory-change',
+        payload: { protocolVersion: 3, bindingId: rebindInput.bindingId, clientId: rebindInput.clientId, code: 'draft' },
+      }),
+    ]);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, previousBindingId)).toEqual([]);
+
+    // A chained rebind from the current generation stays allowed, but it must
+    // move the exact session identity with it.
+    const chained = await storage.rebindBridgeSessionState({
+      ...rebindInput,
+      previousBindingId: rebindInput.bindingId,
+      bindingId: 'memory-binding-older',
+    });
+    expect(chained.session.externalSource).toEqual(expect.objectContaining({ bindingId: 'memory-binding-older' }));
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, rebindInput.bindingId)).toBeUndefined();
+
+    // Drift between validation and the authoritative read stays fail-closed.
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const digestSpy = vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (algorithm, data) => {
+      const resultDigest = await digest(algorithm, data);
+      const mutated = {
+        ...checkpoint,
+        bindingId: 'memory-binding-older',
+        snapshot: { ...checkpoint.snapshot, bindingId: 'memory-binding-older', code: 'note("drifted")' },
+      };
+      await storage.putBridgeCheckpoint(mutated);
+      return resultDigest;
+    });
+    try {
+      await expect(storage.rebindBridgeSessionState({
+        ...rebindInput,
+        previousBindingId: 'memory-binding-older',
+        bindingId: 'memory-binding-stale',
+      })).rejects.toMatchObject({ code: 'recovery-required' });
+    } finally {
+      digestSpy.mockRestore();
+    }
+  });
+
 });
 
 describe('session-storage owner namespaces', () => {
@@ -422,6 +555,325 @@ describe('session-storage owner namespaces', () => {
     expect((await storage.getAllSessions('guest'))[0]).not.toHaveProperty('tokenStats');
     const raw = await storage.getStorageDb()?.get(storage.SESSION_STORE_NAME, ['guest', legacy.id]);
     expect(raw).not.toHaveProperty('tokenStats');
+  });
+  /**
+   * Fixture for the atomic rebind tests: one previous generation with a
+   * session, a valid checkpoint hash, and two outbox generations.
+   */
+  async function setupRebindFixture(options: {
+    ownerKey: string;
+    projectKey?: string;
+    previousBindingId?: string;
+  }) {
+    const storage = await import('../session-storage');
+    const ownerKey = options.ownerKey;
+    const baseUrl = 'https://oddenova.example/studio';
+    const projectId = 'atomic-rebind-project';
+    const projectKey = options.projectKey ?? `${baseUrl}\0${projectId}`;
+    const previousBindingId = options.previousBindingId ?? 'binding-old';
+    const sessionId = '00000000-0000-4000-8000-000000000091';
+    const snapshotContent = {
+      projectId,
+      baseUrl,
+      revision: 4,
+      skillRevision: 7,
+      title: 'Atomic piece',
+      code: 'note("page")',
+      messages: [{ id: 'm-1', role: 'user' as const, content: 'make it', createdAt: 1, order: 1, updatedRevision: 4 }],
+    };
+    const contentHash = await hashBridgeSnapshot(snapshotContent);
+    const session = {
+      ...fakeSession,
+      id: sessionId,
+      title: 'Atomic piece',
+      code: 'note("page")',
+      messages: [{ id: 'm-1', role: 'user' as const, content: 'make it', timestamp: 1 }],
+      updatedAt: 44,
+      externalSource: {
+        type: 'oddenova-strudel-skill' as const,
+        projectId,
+        baseUrl,
+        importedContentHash: 'atomic-local-hash',
+        protocolVersion: 3 as const,
+        revision: 4,
+        skillRevision: 7,
+        bindingId: previousBindingId,
+        bridgeContentHash: contentHash,
+      },
+    };
+    const checkpoint = {
+      schemaVersion: 1 as const,
+      ownerKey,
+      projectKey,
+      bindingId: previousBindingId,
+      sessionId,
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        ...snapshotContent,
+        bindingId: previousBindingId,
+        contentHash,
+      },
+      editorPresentation: { revision: 4, skillRevision: 7, status: 'pending' as const },
+      updatedAt: 44,
+    };
+    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint });
+    await storage.putBridgeOutboxEntry({
+      ownerKey,
+      projectKey,
+      bindingId: previousBindingId,
+      changeId: 'pending-change',
+      payload: { protocolVersion: 3, bindingId: previousBindingId, clientId: 'old-client', code: 'draft' },
+      createdAt: 2,
+    });
+    const rebindInput = {
+      ownerKey,
+      projectKey,
+      previousBindingId,
+      bindingId: 'binding-new',
+      clientId: 'new-client',
+    };
+    return { storage, ownerKey, projectKey, baseUrl, projectId, sessionId, previousBindingId, session, checkpoint, snapshotContent, contentHash, rebindInput };
+  }
+
+  /** Run an action while the rebind pre-validation hash is being computed. */
+  function injectDuringRebindValidation(storage: {
+    SESSION_STORE_NAME: string;
+    BRIDGE_CHECKPOINT_STORE_NAME: string;
+    getStorageDb: () => unknown;
+  }, action: () => Promise<void> | void): void {
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (algorithm, data) => {
+      const result = await digest(algorithm, data);
+      await action();
+      return result;
+    });
+    void storage;
+  }
+
+  it('reads the authoritative session inside the rebind transaction', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:atomic-session' });
+    const { storage, ownerKey, rebindInput } = fixture;
+    // A draft write lands between the pre-validation reads and the
+    // transaction: the rebind must carry it forward, not overwrite it.
+    injectDuringRebindValidation(storage, async () => {
+      const db = storage.getStorageDb();
+      await db?.put(storage.SESSION_STORE_NAME, {
+        ...fixture.session,
+        ownerKey,
+        messages: [...fixture.session.messages, { id: 'm-2', role: 'assistant' as const, content: 'late draft', timestamp: 2 }],
+        updatedAt: 99,
+        suggestions: { forCode: 'note("page")', items: ['late chip'] },
+      });
+    });
+
+    const result = await storage.rebindBridgeSessionState(rebindInput);
+
+    expect(result.session.updatedAt).toBe(99);
+    expect(result.session.messages.map(({ id }) => id)).toEqual(['m-1', 'm-2']);
+    expect(result.session.suggestions).toEqual({ forCode: 'note("page")', items: ['late chip'] });
+    expect(result.session.externalSource).toEqual(expect.objectContaining({ bindingId: 'binding-new' }));
+    const stored = (await storage.getAllSessions(ownerKey)).find((s) => s.id === fixture.sessionId);
+    expect(stored?.messages.map(({ id }) => id)).toEqual(['m-1', 'm-2']);
+  });
+
+  it('migrates an outbox entry queued after the pre-validation reads', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:atomic-outbox' });
+    const { storage, projectKey, rebindInput } = fixture;
+    injectDuringRebindValidation(storage, () => storage.putBridgeOutboxEntry({
+      ownerKey: fixture.ownerKey,
+      projectKey,
+      bindingId: 'binding-old',
+      changeId: 'late-entry',
+      payload: { protocolVersion: 3, bindingId: 'binding-old', clientId: 'old-client', code: 'queued later' },
+      createdAt: 3,
+    }));
+
+    await storage.rebindBridgeSessionState(rebindInput);
+
+    const rebound = await storage.getBridgeOutboxEntries(fixture.ownerKey, projectKey, 'binding-new');
+    expect(rebound.map((entry) => entry.changeId).sort()).toEqual(['late-entry', 'pending-change']);
+    expect(rebound.every((entry) => entry.bindingId === 'binding-new' && (entry.payload as { clientId?: string }).clientId === 'new-client')).toBe(true);
+    expect(await storage.getBridgeOutboxEntries(fixture.ownerKey, projectKey, 'binding-old')).toEqual([]);
+  });
+
+  it('aborts once on a validation-time record change and fails closed with zero writes when it persists', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:atomic-drift' });
+    const { storage, ownerKey, projectKey, previousBindingId, checkpoint } = fixture;
+    let mutations = 0;
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const digestSpy = vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (algorithm, data) => {
+      const result = await digest(algorithm, data);
+      // Rewrite the checkpoint between validation and the transaction, every
+      // time validation runs.
+      mutations += 1;
+      const db = storage.getStorageDb();
+      await db?.put(storage.BRIDGE_CHECKPOINT_STORE_NAME, {
+        ...checkpoint,
+        snapshot: { ...checkpoint.snapshot, code: `note("changed-${mutations}")` },
+      });
+      return result;
+    });
+
+    await expect(storage.rebindBridgeSessionState(fixture.rebindInput)).rejects.toMatchObject({ code: 'recovery-required' });
+
+    expect(mutations).toBeGreaterThanOrEqual(2);
+    digestSpy.mockRestore();
+    // The rebind itself wrote nothing: no target checkpoint, no migrated
+    // outbox, and the session still carries the previous binding.
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, 'binding-new')).toBeUndefined();
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, previousBindingId)).toHaveLength(1);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, 'binding-new')).toEqual([]);
+    const storedSession = (await storage.getAllSessions(ownerKey)).find((s) => s.id === fixture.sessionId);
+    expect(storedSession?.externalSource).toEqual(expect.objectContaining({ bindingId: previousBindingId }));
+  });
+
+  it('keeps the previous state when a store write fails inside the rebind transaction', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:atomic-failure' });
+    const { storage, ownerKey, projectKey, previousBindingId, checkpoint } = fixture;
+    const putSpy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, ...args: unknown[]) {
+      putCalls += 1;
+      if (putCalls === 1) throw new Error('disk write failed');
+      return IDBObjectStore.prototype.put.apply(this, args as never);
+    });
+    let putCalls = 0;
+
+    await expect(storage.rebindBridgeSessionState(fixture.rebindInput)).rejects.toThrow('disk write failed');
+    putSpy.mockRestore();
+
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toEqual(checkpoint);
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, 'binding-new')).toBeUndefined();
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, previousBindingId)).toHaveLength(1);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, 'binding-new')).toEqual([]);
+  });
+
+  it('rejects a conflicting target checkpoint with zero writes', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:atomic-conflict' });
+    const { storage, ownerKey, projectKey, previousBindingId, snapshotContent } = fixture;
+    // A half-finished retry left a different, self-consistent target
+    // checkpoint behind.
+    const conflictingContent = { ...snapshotContent, code: 'note("other")' };
+    const conflictingTarget = {
+      ...fixture.checkpoint,
+      bindingId: 'binding-new',
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        ...conflictingContent,
+        bindingId: 'binding-new',
+        contentHash: await hashBridgeSnapshot(conflictingContent),
+      },
+      updatedAt: 50,
+    };
+    await storage.putBridgeCheckpoint(conflictingTarget);
+    await storage.putSession(
+      { ...fixture.session, externalSource: { ...fixture.session.externalSource, bindingId: 'binding-new' } },
+      ownerKey,
+    );
+
+    await expect(storage.rebindBridgeSessionState({
+      ...fixture.rebindInput,
+    })).rejects.toMatchObject({ code: 'conflict' });
+
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toEqual(fixture.checkpoint);
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, 'binding-new')).toEqual(conflictingTarget);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, previousBindingId)).toHaveLength(1);
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, 'binding-new')).toEqual([]);
+  });
+
+  it('allows a fully identical target checkpoint as an idempotent rebind retry', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:atomic-idempotent' });
+    const { storage, ownerKey, projectKey, previousBindingId, session, snapshotContent, contentHash } = fixture;
+    const expectedTarget = {
+      ...fixture.checkpoint,
+      bindingId: 'binding-new',
+      snapshot: {
+        protocolVersion: 3 as const,
+        source: 'oddenova-strudel-skill' as const,
+        ...snapshotContent,
+        bindingId: 'binding-new',
+        contentHash,
+      },
+      updatedAt: 50,
+    };
+    await storage.putBridgeCheckpoint(expectedTarget);
+    const reboundSession = { ...session, externalSource: { ...session.externalSource, bindingId: 'binding-new' } };
+    await storage.putSession(reboundSession, ownerKey);
+    await storage.putBridgeOutboxEntry({
+      ownerKey,
+      projectKey,
+      bindingId: 'binding-new',
+      changeId: 'pending-change',
+      payload: { protocolVersion: 3, bindingId: 'binding-new', clientId: 'new-client', code: 'draft' },
+      createdAt: 2,
+    });
+
+    const result = await storage.rebindBridgeSessionState(fixture.rebindInput);
+
+    expect(result.checkpoint).toEqual(expectedTarget);
+    expect(result.session).toEqual(expect.objectContaining({
+      id: session.id,
+      externalSource: expect.objectContaining({ bindingId: 'binding-new' }),
+    }));
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toBeUndefined();
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, 'binding-new')).toEqual(expectedTarget);
+    expect((await storage.getBridgeOutboxEntries(ownerKey, projectKey, 'binding-new')).map((entry) => entry.changeId).sort()).toEqual(['pending-change']);
+  });
+
+  it('rejects a v3 outbox write whose checkpoint generation no longer exists', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:atomic-guard' });
+    const { storage, ownerKey, projectKey, previousBindingId } = fixture;
+
+    // The rebind commits first and removes the previous checkpoint.
+    await storage.rebindBridgeSessionState(fixture.rebindInput);
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toBeUndefined();
+
+    // A stale page that still holds the old connection must not resurrect the
+    // old generation by queueing an outbox entry for it.
+    await expect(storage.putBridgeOutboxEntry({
+      ownerKey,
+      projectKey,
+      bindingId: previousBindingId,
+      changeId: 'stale-write',
+      payload: { protocolVersion: 3, bindingId: previousBindingId, clientId: 'old-client', code: 'late' },
+      createdAt: 9,
+    }, { generationGuard: true })).rejects.toThrow();
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, previousBindingId)).toEqual([]);
+
+    // The current generation still accepts guarded writes.
+    await expect(storage.putBridgeOutboxEntry({
+      ownerKey,
+      projectKey,
+      bindingId: 'binding-new',
+      changeId: 'fresh-write',
+      payload: { protocolVersion: 3, bindingId: 'binding-new', clientId: 'new-client', code: 'current' },
+      createdAt: 10,
+    }, { generationGuard: true })).resolves.toBeUndefined();
+    expect(await storage.getBridgeOutboxEntries(ownerKey, projectKey, 'binding-new')).toHaveLength(2);
+  });
+
+  it('rejects a bridge session commit that would recreate a moved generation', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:atomic-commit' });
+    const { storage, ownerKey, projectKey, previousBindingId, sessionId } = fixture;
+    await storage.rebindBridgeSessionState(fixture.rebindInput);
+
+    await expect(storage.commitBridgeSessionState({
+      ownerKey,
+      session: fixture.session,
+      checkpoint: fixture.checkpoint,
+      checkpointExpectation: 'update',
+    })).rejects.toThrow();
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toBeUndefined();
+
+    // The first commit for a binding may still create the checkpoint.
+    await expect(storage.commitBridgeSessionState({
+      ownerKey,
+      session: fixture.session,
+      checkpoint: fixture.checkpoint,
+      checkpointExpectation: 'initial',
+    })).resolves.toBeUndefined();
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toEqual(fixture.checkpoint);
+    expect((await storage.getAllSessions(ownerKey)).some((s) => s.id === sessionId)).toBe(true);
   });
 });
 
@@ -855,6 +1307,7 @@ describe('normalizeSession', () => {
       updatedAt: 2,
     }).title).toBe('');
   });
+
 });
 
 describe('session-storage strict import writes', () => {

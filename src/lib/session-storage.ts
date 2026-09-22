@@ -73,6 +73,13 @@ export interface BridgeSessionStateCommit {
   session: Session;
   checkpoint: StoredBridgeCheckpoint;
   deleteOutboxChangeIds?: string[];
+  /**
+   * `update` requires the checkpoint row to exist before the commit: after an
+   * atomic rebind moved (and deleted) an older generation, a stale page must
+   * not be able to recreate it by writing a session back. `initial` creates
+   * the first checkpoint for a binding and skips the existence check.
+   */
+  checkpointExpectation?: 'initial' | 'update';
 }
 
 export interface BridgeSessionRebindInput {
@@ -260,13 +267,50 @@ export async function openDB(): Promise<void> {
   return openPromise;
 }
 
-export async function putBridgeOutboxEntry(entry: StoredBridgeOutboxEntry): Promise<void> {
+const BRIDGE_OUTBOX_GENERATION_GUARD_MESSAGE = 'Bridge checkpoint generation is missing; refusing to queue an outbox entry for a moved binding';
+
+/**
+ * A checkpoint generation is live only while the checkpoint row itself and
+ * both binding identities still agree with the generation being written.
+ */
+function isLiveBridgeGeneration(checkpoint: StoredBridgeCheckpoint | undefined, bindingId: string): boolean {
+  return Boolean(
+    checkpoint
+    && checkpoint.bindingId === bindingId
+    && checkpoint.snapshot.bindingId === bindingId,
+  );
+}
+
+export async function putBridgeOutboxEntry(
+  entry: StoredBridgeOutboxEntry,
+  options: { generationGuard?: boolean } = {},
+): Promise<void> {
   await openDB();
   if (memoryFallback || !db) {
+    if (options.generationGuard && !isLiveBridgeGeneration(memoryBridgeCheckpoints.get(bridgeCheckpointKey(entry)), entry.bindingId)) {
+      throw new Error(BRIDGE_OUTBOX_GENERATION_GUARD_MESSAGE);
+    }
     memoryBridgeOutbox.set(bridgeOutboxKey(entry), entry);
     return;
   }
-  await db.put(BRIDGE_OUTBOX_STORE_NAME, entry);
+  if (!options.generationGuard) {
+    await db.put(BRIDGE_OUTBOX_STORE_NAME, entry);
+    return;
+  }
+  // Checkpoint-guarded write: the generation the entry belongs to must still
+  // exist, and the guard and the write share one transaction so a concurrent
+  // rebind either migrates this entry or has already removed its checkpoint.
+  const tx = db.transaction([BRIDGE_CHECKPOINT_STORE_NAME, BRIDGE_OUTBOX_STORE_NAME], 'readwrite');
+  const checkpoints = tx.objectStore(BRIDGE_CHECKPOINT_STORE_NAME);
+  const outbox = tx.objectStore(BRIDGE_OUTBOX_STORE_NAME);
+  const checkpoint = await checkpoints.get([entry.ownerKey, entry.projectKey, entry.bindingId]) as StoredBridgeCheckpoint | undefined;
+  if (!isLiveBridgeGeneration(checkpoint, entry.bindingId)) {
+    try { tx.abort(); } catch { /* already finished */ }
+    await tx.done.catch(() => undefined);
+    throw new Error(BRIDGE_OUTBOX_GENERATION_GUARD_MESSAGE);
+  }
+  await outbox.put(entry);
+  await tx.done;
 }
 
 export async function getBridgeCheckpoint(
@@ -534,17 +578,39 @@ function reboundOutboxEntry(
   };
 }
 
-async function prepareBridgeSessionRebind(
+interface BridgeRebindValues {
+  previousCheckpoint?: StoredBridgeCheckpoint;
+  targetCheckpoint?: StoredBridgeCheckpoint;
+  previousSession?: Session;
+  targetSession?: Session;
+  previousOutbox: StoredBridgeOutboxEntry[];
+  targetOutbox: StoredBridgeOutboxEntry[];
+}
+
+/**
+ * Expensive rebind pre-validation, deliberately run outside any IndexedDB
+ * transaction: the WebCrypto content hash must not be awaited inside one, and
+ * a browser may auto-commit a transaction that waits on a non-IndexedDB
+ * promise. The outcome is a validated candidate only — the authoritative
+ * transaction re-reads every record and re-checks it exactly before writing.
+ */
+async function validateBridgeRebindCandidate(
   input: BridgeSessionRebindInput,
-  values: {
-    previousCheckpoint?: StoredBridgeCheckpoint;
-    targetCheckpoint?: StoredBridgeCheckpoint;
-    previousSession?: Session;
-    targetSession?: Session;
-    previousOutbox: StoredBridgeOutboxEntry[];
-    targetOutbox: StoredBridgeOutboxEntry[];
-  },
-): Promise<PreparedBridgeSessionRebind> {
+  candidates: Pick<BridgeRebindValues, 'previousCheckpoint' | 'targetCheckpoint'>,
+): Promise<void> {
+  const identity = parseBridgeProjectKey(input.projectKey);
+  if (candidates.previousCheckpoint) {
+    await assertRebindCheckpoint(candidates.previousCheckpoint, input, identity, input.previousBindingId);
+  }
+  if (candidates.targetCheckpoint) {
+    await assertRebindCheckpoint(candidates.targetCheckpoint, input, identity, input.bindingId);
+  }
+}
+
+function prepareBridgeSessionRebindSync(
+  input: BridgeSessionRebindInput,
+  values: BridgeRebindValues,
+): PreparedBridgeSessionRebind {
   if (!input.ownerKey || !input.projectKey || !input.previousBindingId || !input.bindingId || !input.clientId) {
     throw bridgeRebindFailure('Bridge rebind identity is incomplete');
   }
@@ -556,7 +622,7 @@ async function prepareBridgeSessionRebind(
   const targetCheckpoint = values.targetCheckpoint;
 
   if (!previousCheckpoint && targetCheckpoint) {
-    await assertRebindCheckpoint(targetCheckpoint, input, identity, input.bindingId);
+    assertRebindCheckpointShape(targetCheckpoint, input, identity, input.bindingId);
     const targetSession = values.targetSession;
     if (!targetSession || targetCheckpoint.sessionId !== targetSession.id) {
       throw bridgeRebindFailure('Rebound Bridge checkpoint points to a missing session');
@@ -574,7 +640,7 @@ async function prepareBridgeSessionRebind(
   }
 
   if (!previousCheckpoint) throw bridgeRebindFailure('The previous Bridge checkpoint is missing');
-  await assertRebindCheckpoint(previousCheckpoint, input, identity, input.previousBindingId);
+  assertRebindCheckpointShape(previousCheckpoint, input, identity, input.previousBindingId);
   const previousSession = values.previousSession;
   if (!previousSession || previousSession.id !== previousCheckpoint.sessionId) {
     throw bridgeRebindFailure('The previous Bridge session is missing');
@@ -591,7 +657,7 @@ async function prepareBridgeSessionRebind(
   assertRebindCheckpointShape(expectedCheckpoint, input, identity, input.bindingId);
   const updatedSession = reboundSession(previousSession, input.bindingId);
   if (targetCheckpoint) {
-    await assertRebindCheckpoint(targetCheckpoint, input, identity, input.bindingId);
+    assertRebindCheckpointShape(targetCheckpoint, input, identity, input.bindingId);
     if (
       targetCheckpoint.sessionId !== expectedCheckpoint.sessionId
       || !sameJson(checkpointWithoutTimestamp(targetCheckpoint), checkpointWithoutTimestamp(expectedCheckpoint))
@@ -639,103 +705,160 @@ async function prepareBridgeSessionRebind(
   };
 }
 
+/** Exact content re-check of the authoritative records against validated candidates. */
+function rebindRecordsMatch(
+  candidates: Pick<BridgeRebindValues, 'previousCheckpoint' | 'targetCheckpoint'>,
+  authoritative: Pick<BridgeRebindValues, 'previousCheckpoint' | 'targetCheckpoint'>,
+): boolean {
+  return sameJson(candidates.previousCheckpoint ?? null, authoritative.previousCheckpoint ?? null)
+    && sameJson(candidates.targetCheckpoint ?? null, authoritative.targetCheckpoint ?? null);
+}
+
+function memoryRebindValues(input: BridgeSessionRebindInput): BridgeRebindValues {
+  const previousCheckpoint = memoryBridgeCheckpoints.get(bridgeCheckpointKey({
+    ownerKey: input.ownerKey,
+    projectKey: input.projectKey,
+    bindingId: input.previousBindingId,
+  }));
+  const targetCheckpoint = memoryBridgeCheckpoints.get(bridgeCheckpointKey({
+    ownerKey: input.ownerKey,
+    projectKey: input.projectKey,
+    bindingId: input.bindingId,
+  }));
+  const previousSessionId = previousCheckpoint?.sessionId ?? targetCheckpoint?.sessionId;
+  return {
+    previousCheckpoint,
+    targetCheckpoint,
+    previousSession: previousSessionId ? memoryBridgeSessions.get(bridgeSessionKey(input.ownerKey, previousSessionId)) : undefined,
+    targetSession: targetCheckpoint?.sessionId ? memoryBridgeSessions.get(bridgeSessionKey(input.ownerKey, targetCheckpoint.sessionId)) : undefined,
+    previousOutbox: [...memoryBridgeOutbox.values()].filter((entry) => entry.ownerKey === input.ownerKey && entry.projectKey === input.projectKey && entry.bindingId === input.previousBindingId),
+    targetOutbox: [...memoryBridgeOutbox.values()].filter((entry) => entry.ownerKey === input.ownerKey && entry.projectKey === input.projectKey && entry.bindingId === input.bindingId),
+  };
+}
+
 /**
  * Rebind one exact Bridge generation to the same local session. The session,
- * checkpoint, and generation-scoped outbox move together; no caller may
- * migrate a "latest" project candidate by timestamp or list order.
+ * checkpoint, and generation-scoped outbox move together in one readwrite
+ * transaction; no caller may migrate a "latest" project candidate by
+ * timestamp or list order.
  */
 export async function rebindBridgeSessionState(
   input: BridgeSessionRebindInput,
 ): Promise<BridgeSessionRebindResult> {
   await openDB();
   if (memoryFallback || !db) {
-    const previousCheckpoint = memoryBridgeCheckpoints.get(bridgeCheckpointKey({
-      ownerKey: input.ownerKey,
-      projectKey: input.projectKey,
-      bindingId: input.previousBindingId,
-    }));
-    const targetCheckpoint = memoryBridgeCheckpoints.get(bridgeCheckpointKey({
-      ownerKey: input.ownerKey,
-      projectKey: input.projectKey,
-      bindingId: input.bindingId,
-    }));
-    const previousSessionId = previousCheckpoint?.sessionId ?? targetCheckpoint?.sessionId;
-    const values = await prepareBridgeSessionRebind(input, {
-      previousCheckpoint,
-      targetCheckpoint,
-      previousSession: previousSessionId ? memoryBridgeSessions.get(bridgeSessionKey(input.ownerKey, previousSessionId)) : undefined,
-      targetSession: targetCheckpoint?.sessionId ? memoryBridgeSessions.get(bridgeSessionKey(input.ownerKey, targetCheckpoint.sessionId)) : undefined,
-      previousOutbox: [...memoryBridgeOutbox.values()].filter((entry) => entry.ownerKey === input.ownerKey && entry.projectKey === input.projectKey && entry.bindingId === input.previousBindingId),
-      targetOutbox: [...memoryBridgeOutbox.values()].filter((entry) => entry.ownerKey === input.ownerKey && entry.projectKey === input.projectKey && entry.bindingId === input.bindingId),
-    });
-    const sessionsBefore = new Map(memoryBridgeSessions);
-    const checkpointsBefore = new Map(memoryBridgeCheckpoints);
-    const outboxBefore = new Map(memoryBridgeOutbox);
+    // The hash validation is async, so it may interleave with other callers.
+    // Re-read the authoritative maps afterwards and run the prepare and the
+    // writes with no await in between: within one event-loop turn this is an
+    // undividable critical section.
+    let attempt = 0;
+    for (;;) {
+      const candidates = memoryRebindValues(input);
+      await validateBridgeRebindCandidate(input, candidates);
+      const values = memoryRebindValues(input);
+      if (!rebindRecordsMatch(candidates, values)) {
+        attempt += 1;
+        if (attempt > 1) {
+          throw bridgeRebindFailure('Bridge rebind records changed between validation and the authoritative read');
+        }
+        continue;
+      }
+      const prepared = prepareBridgeSessionRebindSync(input, values);
+      const sessionsBefore = new Map(memoryBridgeSessions);
+      const checkpointsBefore = new Map(memoryBridgeCheckpoints);
+      const outboxBefore = new Map(memoryBridgeOutbox);
+      try {
+        memoryBridgeSessions.set(bridgeSessionKey(input.ownerKey, prepared.session.id), prepared.session);
+        memoryBridgeCheckpoints.set(bridgeCheckpointKey(prepared.checkpoint), prepared.checkpoint);
+        for (const entry of prepared.reboundOutbox) memoryBridgeOutbox.set(bridgeOutboxKey(entry), entry);
+        memoryBridgeCheckpoints.delete(bridgeCheckpointKey({ ownerKey: input.ownerKey, projectKey: input.projectKey, bindingId: input.previousBindingId }));
+        for (const entry of prepared.previousOutbox) memoryBridgeOutbox.delete(bridgeOutboxKey(entry));
+      } catch (error) {
+        memoryBridgeSessions.clear();
+        for (const [key, value] of sessionsBefore) memoryBridgeSessions.set(key, value);
+        memoryBridgeCheckpoints.clear();
+        for (const [key, value] of checkpointsBefore) memoryBridgeCheckpoints.set(key, value);
+        memoryBridgeOutbox.clear();
+        for (const [key, value] of outboxBefore) memoryBridgeOutbox.set(key, value);
+        throw error;
+      }
+      return { session: prepared.session, checkpoint: prepared.checkpoint };
+    }
+  }
+
+  // Two phases: validate the (expensive) hash checks outside the transaction,
+  // then re-read every authoritative record inside one readwrite transaction
+  // and re-check them exactly. Writes use only the in-transaction records, so
+  // a write committed between the two phases is either migrated or aborts the
+  // rebind — it can never be silently overwritten by a stale snapshot.
+  let attempt = 0;
+  for (;;) {
+    const candidateValues: Pick<BridgeRebindValues, 'previousCheckpoint' | 'targetCheckpoint'> = {
+      previousCheckpoint: await db.get(
+        BRIDGE_CHECKPOINT_STORE_NAME,
+        [input.ownerKey, input.projectKey, input.previousBindingId],
+      ) as StoredBridgeCheckpoint | undefined,
+      targetCheckpoint: await db.get(
+        BRIDGE_CHECKPOINT_STORE_NAME,
+        [input.ownerKey, input.projectKey, input.bindingId],
+      ) as StoredBridgeCheckpoint | undefined,
+    };
+    await validateBridgeRebindCandidate(input, candidateValues);
+
+    const tx = db.transaction(
+      [SESSION_STORE_NAME, BRIDGE_CHECKPOINT_STORE_NAME, BRIDGE_OUTBOX_STORE_NAME],
+      'readwrite',
+    );
     try {
-      memoryBridgeSessions.set(bridgeSessionKey(input.ownerKey, values.session.id), values.session);
-      memoryBridgeCheckpoints.set(bridgeCheckpointKey(values.checkpoint), values.checkpoint);
-      memoryBridgeCheckpoints.delete(bridgeCheckpointKey({ ownerKey: input.ownerKey, projectKey: input.projectKey, bindingId: input.previousBindingId }));
-      for (const entry of values.previousOutbox) memoryBridgeOutbox.delete(bridgeOutboxKey(entry));
-      for (const entry of values.reboundOutbox) memoryBridgeOutbox.set(bridgeOutboxKey(entry), entry);
+      const sessionsStore = tx.objectStore(SESSION_STORE_NAME);
+      const checkpointsStore = tx.objectStore(BRIDGE_CHECKPOINT_STORE_NAME);
+      const outboxStore = tx.objectStore(BRIDGE_OUTBOX_STORE_NAME);
+      const previousCheckpoint = await checkpointsStore.get([input.ownerKey, input.projectKey, input.previousBindingId]) as StoredBridgeCheckpoint | undefined;
+      const targetCheckpoint = await checkpointsStore.get([input.ownerKey, input.projectKey, input.bindingId]) as StoredBridgeCheckpoint | undefined;
+      if (!rebindRecordsMatch(candidateValues, { previousCheckpoint, targetCheckpoint })) {
+        tx.abort();
+        await tx.done.catch(() => undefined);
+        attempt += 1;
+        if (attempt > 1) {
+          throw bridgeRebindFailure('Bridge rebind records changed between validation and the authoritative transaction');
+        }
+        continue;
+      }
+      const allOutbox = await outboxStore.getAll() as StoredBridgeOutboxEntry[];
+      const previousOutbox = allOutbox.filter((entry) => entry.ownerKey === input.ownerKey && entry.projectKey === input.projectKey && entry.bindingId === input.previousBindingId);
+      const targetOutbox = allOutbox.filter((entry) => entry.ownerKey === input.ownerKey && entry.projectKey === input.projectKey && entry.bindingId === input.bindingId);
+      const checkpointSessionId = previousCheckpoint?.sessionId ?? targetCheckpoint?.sessionId;
+      const previousSession = checkpointSessionId
+        ? await sessionsStore.get([input.ownerKey, checkpointSessionId]) as Session | undefined
+        : undefined;
+      const targetSession = targetCheckpoint?.sessionId
+        ? await sessionsStore.get([input.ownerKey, targetCheckpoint.sessionId]) as Session | undefined
+        : undefined;
+
+      const prepared = prepareBridgeSessionRebindSync(input, {
+        previousCheckpoint,
+        targetCheckpoint,
+        previousSession,
+        targetSession,
+        previousOutbox,
+        targetOutbox,
+      });
+
+      await sessionsStore.put(withOwner(prepared.session, input.ownerKey));
+      await checkpointsStore.put(prepared.checkpoint);
+      for (const entry of prepared.reboundOutbox) await outboxStore.put(entry);
+      await checkpointsStore.delete([input.ownerKey, input.projectKey, input.previousBindingId]);
+      for (const entry of prepared.previousOutbox) {
+        await outboxStore.delete([entry.ownerKey, entry.projectKey, entry.bindingId, entry.changeId]);
+      }
+      await tx.done;
+      return { session: prepared.session, checkpoint: prepared.checkpoint };
     } catch (error) {
-      memoryBridgeSessions.clear();
-      for (const [key, value] of sessionsBefore) memoryBridgeSessions.set(key, value);
-      memoryBridgeCheckpoints.clear();
-      for (const [key, value] of checkpointsBefore) memoryBridgeCheckpoints.set(key, value);
-      memoryBridgeOutbox.clear();
-      for (const [key, value] of outboxBefore) memoryBridgeOutbox.set(key, value);
+      try { tx.abort(); } catch { /* the transaction may already be finished */ }
+      await tx.done.catch(() => undefined);
       throw error;
     }
-    return { session: values.session, checkpoint: values.checkpoint };
   }
-
-  const readOutbox = await db.getAll(BRIDGE_OUTBOX_STORE_NAME) as StoredBridgeOutboxEntry[];
-  const previousCheckpoint = await db.get(
-    BRIDGE_CHECKPOINT_STORE_NAME,
-    [input.ownerKey, input.projectKey, input.previousBindingId],
-  ) as StoredBridgeCheckpoint | undefined;
-  const targetCheckpoint = await db.get(
-    BRIDGE_CHECKPOINT_STORE_NAME,
-    [input.ownerKey, input.projectKey, input.bindingId],
-  ) as StoredBridgeCheckpoint | undefined;
-  const checkpointSessionId = previousCheckpoint?.sessionId ?? targetCheckpoint?.sessionId;
-  const previousSession = checkpointSessionId
-    ? await db.get(SESSION_STORE_NAME, [input.ownerKey, checkpointSessionId]) as Session | undefined
-    : undefined;
-  const targetSession = targetCheckpoint?.sessionId
-    ? await db.get(SESSION_STORE_NAME, [input.ownerKey, targetCheckpoint.sessionId]) as Session | undefined
-    : undefined;
-  const prepared = await prepareBridgeSessionRebind(input, {
-    previousCheckpoint,
-    targetCheckpoint,
-    previousSession,
-    targetSession,
-    previousOutbox: readOutbox.filter((entry) => entry.ownerKey === input.ownerKey && entry.projectKey === input.projectKey && entry.bindingId === input.previousBindingId),
-    targetOutbox: readOutbox.filter((entry) => entry.ownerKey === input.ownerKey && entry.projectKey === input.projectKey && entry.bindingId === input.bindingId),
-  });
-
-  const tx = db.transaction(
-    [SESSION_STORE_NAME, BRIDGE_CHECKPOINT_STORE_NAME, BRIDGE_OUTBOX_STORE_NAME],
-    'readwrite',
-  );
-  try {
-    const sessions = tx.objectStore(SESSION_STORE_NAME);
-    const checkpoints = tx.objectStore(BRIDGE_CHECKPOINT_STORE_NAME);
-    const outbox = tx.objectStore(BRIDGE_OUTBOX_STORE_NAME);
-    await sessions.put(withOwner(prepared.session, input.ownerKey));
-    await checkpoints.put(prepared.checkpoint);
-    await checkpoints.delete([input.ownerKey, input.projectKey, input.previousBindingId]);
-    for (const entry of prepared.previousOutbox) {
-      await outbox.delete([entry.ownerKey, entry.projectKey, entry.bindingId, entry.changeId]);
-    }
-    for (const entry of prepared.reboundOutbox) await outbox.put(entry);
-    await tx.done;
-  } catch (error) {
-    try { tx.abort(); } catch { /* the transaction may already be finished */ }
-    await tx.done.catch(() => undefined);
-    throw error;
-  }
-  return { session: prepared.session, checkpoint: prepared.checkpoint };
 }
 
 export async function rebindBridgeCheckpoint(
@@ -771,14 +894,19 @@ export async function commitBridgeSessionState({
   session,
   checkpoint,
   deleteOutboxChangeIds = [],
+  checkpointExpectation,
 }: BridgeSessionStateCommit): Promise<void> {
   if (checkpoint.ownerKey !== ownerKey || checkpoint.sessionId !== session.id) {
     throw new Error('Bridge checkpoint does not belong to the committed session');
   }
   await openDB();
+  const expectationMessage = 'Bridge checkpoint generation is missing; the binding was likely rebound or removed, refusing to recreate it';
   if (memoryFallback || !db) {
     const checkpointKey = bridgeCheckpointKey(checkpoint);
     const sessionKey = bridgeSessionKey(ownerKey, session.id);
+    if (checkpointExpectation === 'update' && !memoryBridgeCheckpoints.has(checkpointKey)) {
+      throw new Error(expectationMessage);
+    }
     const previousSession = memoryBridgeSessions.get(sessionKey);
     const previous = memoryBridgeCheckpoints.get(checkpointKey);
     try {
@@ -806,8 +934,17 @@ export async function commitBridgeSessionState({
     [SESSION_STORE_NAME, BRIDGE_CHECKPOINT_STORE_NAME, BRIDGE_OUTBOX_STORE_NAME],
     'readwrite',
   );
+  const checkpoints = tx.objectStore(BRIDGE_CHECKPOINT_STORE_NAME);
+  if (checkpointExpectation === 'update') {
+    const existing = await checkpoints.get([ownerKey, checkpoint.projectKey, checkpoint.bindingId]);
+    if (!existing) {
+      try { tx.abort(); } catch { /* already finished */ }
+      await tx.done.catch(() => undefined);
+      throw new Error(expectationMessage);
+    }
+  }
   await tx.objectStore(SESSION_STORE_NAME).put(withOwner(session, ownerKey));
-  await tx.objectStore(BRIDGE_CHECKPOINT_STORE_NAME).put(checkpoint);
+  await checkpoints.put(checkpoint);
   for (const changeId of deleteOutboxChangeIds) {
     await tx.objectStore(BRIDGE_OUTBOX_STORE_NAME).delete([
       ownerKey,
