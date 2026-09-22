@@ -260,7 +260,7 @@ function PlaybackProgress({
   accentColor?: string | null;
 }) {
   const totalSeconds = useMemo(() => getStrudelLoopDurationSeconds(code), [code]);
-  const loopCycles = useMemo(() => code.trim() ? getStrudelLoopCycles(code) : 0, [code]);
+  const displayCycles = useMemo(() => code.trim() ? getStrudelLoopCycles(code) : 0, [code]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const elapsedRef = useRef(0);
@@ -313,7 +313,7 @@ function PlaybackProgress({
   const progress = totalSeconds > 0 ? Math.min(1, elapsedSeconds / totalSeconds) : 0;
   const elapsedLabel = formatPlaybackTime(elapsedSeconds);
   const totalLabel = formatPlaybackTime(totalSeconds);
-  const seekDisabled = totalSeconds <= 0 || loopCycles <= 0;
+  const seekDisabled = totalSeconds <= 0 || displayCycles <= 0;
 
   const handleSeek = (nextProgress: number) => {
     if (seekDisabled) return;
@@ -324,7 +324,7 @@ function PlaybackProgress({
       elapsedSeconds: nextElapsedSeconds,
       startedAt: performance.now(),
     };
-    strudelService.seekPlayback(normalizedProgress, loopCycles);
+    strudelService.seekPlayback(normalizedProgress, displayCycles);
   };
 
   return (

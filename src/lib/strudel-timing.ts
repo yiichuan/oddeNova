@@ -1,7 +1,6 @@
 import { parseScore } from '../agent/parser';
 
 const DEFAULT_CPS = 0.5;
-const MAX_DECIMAL_PLACES = 3;
 
 // Chained calls that change how many cycles a pattern needs before repeating.
 // `slow`/`fast` scale the whole chain they sit on; the others gate a variation
@@ -44,32 +43,11 @@ const SIGNAL_ROOTS = new Set([
   'envR',
 ]);
 
-function gcd(a: number, b: number): number {
-  let x = Math.abs(a);
-  let y = Math.abs(b);
-  while (y !== 0) {
-    [x, y] = [y, x % y];
-  }
-  return x;
-}
-
-function lcm(a: number, b: number): number {
-  if (a === 0 || b === 0) return 0;
-  return Math.abs((a / gcd(a, b)) * b);
-}
-
-function decimalPlaces(value: number): number {
-  const decimal = String(value).split('.')[1];
-  return Math.min(decimal?.length ?? 0, MAX_DECIMAL_PLACES);
-}
-
-function leastCommonPeriod(periods: number[]): number {
+/** Longest finite positive display span, with a one-cycle fallback. */
+function maxSpan(periods: number[]): number {
   const valid = periods.filter((period) => Number.isFinite(period) && period > 0);
   if (valid.length === 0) return 1;
-
-  const scale = 10 ** Math.max(...valid.map(decimalPlaces));
-  const scaled = valid.map((period) => Math.round(period * scale));
-  return scaled.reduce((period, next) => lcm(period, next), scale) / scale;
+  return Math.max(...valid);
 }
 
 interface ScannedCode {
@@ -145,6 +123,12 @@ function scanCode(code: string): ScannedCode {
   }
 
   return { strings, literals, masked };
+}
+
+/** Remove the tempo declaration, which describes rate rather than structure. */
+function withoutTempoDeclaration(code: string): string {
+  const tempo = parseScore(code).setcpsMatch;
+  return tempo ? code.slice(0, tempo.start) + code.slice(tempo.end) : code;
 }
 
 /** Return string arguments belonging directly to a chained method such as `.mask("...")`. */
@@ -294,7 +278,7 @@ function alternationCycles(text: string): number[] {
         const nested = tokens.flatMap((token) =>
           (tokenCycles(token) === 1 ? alternationCycles(token) : []),
         );
-        let cycles = Math.max(1, slots) * leastCommonPeriod(nested);
+        let cycles = Math.max(1, slots) * maxSpan(nested);
 
         const operator = /^\s*([/*])\s*(\d+(?:\.\d+)?)/.exec(text.slice(index + 1));
         if (operator) {
@@ -341,15 +325,11 @@ function arrangeSectionSum(masked: string, start: number): number | null {
   return sections > 0 ? total : null;
 }
 
-/**
- * How many comma-separated arguments the call whose parenthesis opens at
- * `start` holds, counted at its own bracket depth so nested calls and
- * mini-notation brackets add none. A trailing comma leaves no argument behind.
- */
-function callArgCount(masked: string, start: number): number {
+/** Top-level argument ranges for the call whose parenthesis opens before `start`. */
+function callArgumentRanges(masked: string, start: number): { start: number; end: number }[] {
+  const ranges: { start: number; end: number }[] = [];
   let depth = 0;
-  let args = 0;
-  let filled = false;
+  let argumentStart = start;
 
   for (let index = start; index < masked.length; index += 1) {
     const character = masked[index];
@@ -357,17 +337,23 @@ function callArgCount(masked: string, start: number): number {
       depth += 1;
     } else if (')]}'.includes(character)) {
       // The paren that closes the call itself.
-      if (character === ')' && depth === 0) break;
+      if (character === ')' && depth === 0) {
+        if (masked.slice(argumentStart, index).trim()) {
+          ranges.push({ start: argumentStart, end: index });
+        }
+        break;
+      }
       depth = Math.max(0, depth - 1);
     } else if (character === ',' && depth === 0) {
-      if (filled) args += 1;
-      filled = false;
+      if (masked.slice(argumentStart, index).trim()) {
+        ranges.push({ start: argumentStart, end: index });
+      }
+      argumentStart = index + 1;
       continue;
     }
-    if (!/\s/.test(character)) filled = true;
   }
 
-  return filled ? args + 1 : args;
+  return ranges;
 }
 
 /**
@@ -379,14 +365,19 @@ function callArgCount(masked: string, start: number): number {
  * reports a 33-second tune as an 8-second one. `fastcat`/`seq` squeeze their
  * arguments into a single cycle instead, and change nothing.
  */
-function catCycles(masked: string): number[] {
+function catCycles(code: string, masked: string): number[] {
   const call = /\b(?:slow)?cat\s*\(/g;
   const spans: number[] = [];
   let match: RegExpExecArray | null;
 
   while ((match = call.exec(masked)) !== null) {
-    const slots = callArgCount(masked, match.index + match[0].length);
-    if (slots > 1) spans.push(slots);
+    const ranges = callArgumentRanges(masked, match.index + match[0].length);
+    if (ranges.length > 1) {
+      const argumentSpan = maxSpan(
+        ranges.map((range) => segmentCycles(code.slice(range.start, range.end))),
+      );
+      spans.push(ranges.length * argumentSpan);
+    }
   }
 
   return spans;
@@ -465,7 +456,8 @@ function voiceSegments(code: string, masked: string): string[] | null {
   }
   if (starts.length < 2) return null;
 
-  const segments = [code.slice(0, starts[0])];
+  const prefix = code.slice(0, starts[0]);
+  const segments = scanCode(withoutTempoDeclaration(prefix)).masked.trim() ? [prefix] : [];
   for (let index = 0; index < starts.length; index += 1) {
     segments.push(code.slice(starts[index], starts[index + 1] ?? code.length));
   }
@@ -473,12 +465,55 @@ function voiceSegments(code: string, masked: string): string[] | null {
   return segments;
 }
 
-/** Cycles one independent expression (a stack layer, or the surrounding code) runs for. */
-function segmentCycles(segment: string): number {
+/**
+ * Split declarations that live beside a top-level stack. Each binding is an
+ * independent pattern candidate, so its chain scaling must not leak into the
+ * next binding. Strings, comments, and declarations inside nested scopes have
+ * already been masked or sit above depth zero and therefore cannot split it.
+ */
+function topLevelBindingSegments(code: string): string[] {
+  const { masked } = scanCode(code);
+  const depths: number[] = [];
+  let depth = 0;
+  for (const character of masked) {
+    depths.push(depth);
+    if ('([{'.includes(character)) depth += 1;
+    else if (')]}'.includes(character)) depth = Math.max(0, depth - 1);
+  }
+
+  const declaration = /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=/g;
+  const starts: number[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = declaration.exec(masked)) !== null) {
+    const previous = match.index > 0 ? masked[match.index - 1] : '';
+    if (depths[match.index] === 0 && !/[\w$.]/.test(previous)) starts.push(match.index);
+  }
+
+  if (starts.length === 0) {
+    return masked.trim() ? [code] : [];
+  }
+
+  const boundaries = [...new Set([0, ...starts, code.length])].sort((a, b) => a - b);
+  const segments: string[] = [];
+  for (let index = 0; index < boundaries.length - 1; index += 1) {
+    const segment = code.slice(boundaries[index], boundaries[index + 1]);
+    if (scanCode(segment).masked.trim()) segments.push(segment);
+  }
+  return segments;
+}
+
+interface SegmentTiming {
+  baseSpan: number;
+  hasBaseSpan: boolean;
+  scale: number;
+}
+
+/** Timing found inside one expression that does not contain a top-level stack. */
+function flatSegmentTiming(segment: string): SegmentTiming {
   const { strings, masked } = scanCode(segment);
-  const periods: number[] = [1];
+  const periods: number[] = [];
   for (const text of strings) periods.push(...alternationCycles(text));
-  periods.push(...catCycles(masked));
+  periods.push(...catCycles(segment, masked));
 
   const depths = parenDepths(masked);
   let scale = 1;
@@ -507,13 +542,48 @@ function segmentCycles(segment: string): number {
     }
   }
 
-  const cycles = leastCommonPeriod(periods) * scale;
+  return { baseSpan: maxSpan(periods), hasBaseSpan: periods.length > 0, scale };
+}
+
+/** Cycles one independent expression (a stack layer, voice, or nested argument) displays. */
+function segmentCycles(segment: string): number {
+  if (!segment.trim()) return 0;
+
+  const parsed = parseScore(segment);
+  if (parsed.hasStack && parsed.layers.length > 0) {
+    const layerSources = parsed.layers.map((layer) => layer.source);
+    const explicitMaskSpan = consistentMaskArrangementCycles(layerSources);
+    const layerSpan = explicitMaskSpan ?? maxSpan(layerSources.map(segmentCycles));
+
+    // A chain after the stack belongs to the combined pattern. Apply its time
+    // scaling once, after the independently parallel children have merged.
+    const suffix = segment.slice(parsed.stackArgsEnd + 1);
+    const outerTiming = flatSegmentTiming(suffix);
+    const combinedSpan = outerTiming.hasBaseSpan
+      ? Math.max(layerSpan, outerTiming.baseSpan)
+      : layerSpan;
+    const stackSpan = combinedSpan * outerTiming.scale;
+
+    // Bindings before the stack are independent candidates, not children of
+    // the stack's outer chain. Empty prefixes contribute nothing.
+    const prefix = segment.slice(0, parsed.stackStart);
+    const structuralPrefix = withoutTempoDeclaration(prefix);
+    const prefixSegments = topLevelBindingSegments(structuralPrefix);
+    const prefixSpan = prefixSegments.length > 0
+      ? maxSpan(prefixSegments.map(segmentCycles))
+      : 0;
+    const cycles = Math.max(stackSpan, prefixSpan);
+    return cycles > 0 ? Math.round(cycles * 1000) / 1000 : 1;
+  }
+
+  const { baseSpan, scale } = flatSegmentTiming(segment);
+  const cycles = baseSpan * scale;
   return cycles > 0 ? Math.round(cycles * 1000) / 1000 : 1;
 }
 
 /**
- * Returns the first point at which every layer's pattern lines up again, i.e.
- * the length of the audible loop in cycles.
+ * Estimates the display span in cycles. Independent patterns use their
+ * longest structural span; explicit arrangements retain their serial length.
  */
 export function getStrudelLoopCycles(code: string): number {
   const { masked } = scanCode(code);
@@ -521,26 +591,10 @@ export function getStrudelLoopCycles(code: string): number {
   const arranged = arrangeCycles(masked);
   if (arranged !== null) return arranged;
 
-  const parsed = parseScore(code);
-  if (parsed.hasStack && parsed.layers.length > 0) {
-    const maskArrangement = consistentMaskArrangementCycles(parsed.layers.map((layer) => layer.source));
-    if (maskArrangement !== null) return maskArrangement;
-  }
-
   const voices = voiceSegments(code, masked);
-  if (voices !== null) return leastCommonPeriod(voices.map(segmentCycles));
+  if (voices !== null) return maxSpan(voices.map(segmentCycles));
 
-  const segments: string[] = [];
-
-  if (parsed.hasStack && parsed.layers.length > 0) {
-    for (const layer of parsed.layers) segments.push(layer.source);
-    // Whatever wraps the stack (setcps, shared `let` patterns, chained calls).
-    segments.push(code.slice(0, parsed.stackArgsStart) + code.slice(parsed.stackArgsEnd));
-  } else {
-    segments.push(code);
-  }
-
-  return leastCommonPeriod(segments.map(segmentCycles));
+  return segmentCycles(code);
 }
 
 export function getStrudelLoopDurationSeconds(code: string): number {

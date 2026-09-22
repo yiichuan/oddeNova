@@ -530,7 +530,7 @@ function SkipButton({
  * The progress read-out, and the seek that goes with it.
  *
  * The playhead is driven locally rather than polled off the scheduler — one
- * rAF against a known loop length is cheaper and smoother than asking the
+ * rAF against a known display span is cheaper and smoother than asking the
  * engine where it is sixty times a second. Seeking is the one place the two
  * have to meet: the origin moves here and the cycle moves in the page's own
  * scheduler, which is not the studio's.
@@ -548,7 +548,7 @@ function PlaybackProgress({
     () => (piece ? getStrudelLoopDurationSeconds(piece.code) : 0),
     [piece],
   );
-  const loopCycles = useMemo(() => (piece ? getStrudelLoopCycles(piece.code) : 0), [piece]);
+  const displayCycles = useMemo(() => (piece ? getStrudelLoopCycles(piece.code) : 0), [piece]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const elapsedRef = useRef(0);
@@ -592,7 +592,7 @@ function PlaybackProgress({
   const progress = totalSeconds > 0 ? elapsedSeconds / totalSeconds : 0;
   const elapsedLabel = formatPlaybackTime(elapsedSeconds);
   const totalLabel = formatPlaybackTime(totalSeconds);
-  const seekDisabled = totalSeconds <= 0 || loopCycles <= 0;
+  const seekDisabled = totalSeconds <= 0 || displayCycles <= 0;
 
   const handleSeek = (nextProgress: number) => {
     if (seekDisabled) return;
@@ -600,7 +600,7 @@ function PlaybackProgress({
     const nextElapsed = normalized * totalSeconds;
     updateElapsed(nextElapsed);
     originRef.current = { elapsedSeconds: nextElapsed, startedAt: performance.now() };
-    featuredPlayer.seek(normalized, loopCycles);
+    featuredPlayer.seek(normalized, displayCycles);
   };
 
   return (

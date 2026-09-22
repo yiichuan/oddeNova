@@ -29,7 +29,7 @@ describe('Strudel playback timing', () => {
 note("<c3 e3 g3>").mask("<0@2 1@4 0@2>")
 `;
 
-    expect(getStrudelLoopCycles(code)).toBe(24);
+    expect(getStrudelLoopCycles(code)).toBe(8);
   });
 
   it('uses matching weighted mask windows as the layered form length', () => {
@@ -46,14 +46,61 @@ stack(
     expect(getStrudelLoopDurationSeconds(code)).toBe(80);
   });
 
-  it('falls back to the exact LCM when mask windows disagree', () => {
+  it('uses the longest display span when mask windows disagree', () => {
     const code = `setcps(0.4)
 stack(
   note("<a b c>").mask("<0@4 1@8 0@20>"),
   note("<a b c d e>").mask("<0@2 1@4 0@24>")
 )`;
 
-    expect(getStrudelLoopCycles(code)).toBe(480);
+    expect(getStrudelLoopCycles(code)).toBe(32);
+  });
+
+  it('keeps sub-cycle spans instead of widening them to one cycle', () => {
+    expect(getStrudelLoopCycles('n("<0 1>*4")')).toBe(0.5);
+    expect(getStrudelLoopCycles('n("<0 1>*4").s("gm_piano")')).toBe(0.5);
+    expect(getStrudelLoopCycles('setcps(0.5)\nstack(n("<0 1>*4"))')).toBe(0.5);
+  });
+
+  it('uses the longest independent layer span for the Minecraft ambient fixture', () => {
+    const code = `setcps(0.2917)
+stack(
+  /* @layer PIANO */
+  note("<[e4 g4 b4] [d4 f#4 a4] [c4 e4 g4] [b3 d4 f#4] [a3 c4 e4] [g3 b3 d4] [f#3 a3 c4] [b3 d4 f#4]>")
+    .s("gm_acoustic_grand_piano"),
+
+  /* @layer LOW */
+  note("<e2 d2 c2 b1 a1 g1 f#1 b1>/2")
+    .s("gm_contrabass"),
+
+  /* @layer AIR */
+  stack(
+    s("wind").gain("<0.10 0.14 0.11 0.16 0.12 0.15 0.13>")
+      .pan(perlin.range(0.15, 0.85).slow(16)),
+    s("birds").gain("<0 0.16 0 0 0.12 0 0.18 0 0 0.14 0>"),
+    s("insects").gain("<0.08 0.11 0.09 0.13 0.10 0.12 0.08 0.14 0.09 0.11 0.13 0.10 0.12>")
+  )
+)`;
+
+    expect(getStrudelLoopCycles(code)).toBe(16);
+    expect(getStrudelLoopDurationSeconds(code)).toBeCloseTo(54.850874, 6);
+    expect(formatPlaybackTime(getStrudelLoopDurationSeconds(code))).toBe('00:54');
+  });
+
+  it('gives AIR the same span whether its branches share a layer or are split', () => {
+    const combined = `stack(
+  s("wind").gain("<0 1 0 1 0 1 0>"),
+  s("birds").gain("<0 1 0 1 0 1 0 1 0 1 0>"),
+  s("insects").gain("<0 1 0 1 0 1 0 1 0 1 0 1 0>")
+)`;
+    const split = `stack(
+  /* @layer WIND */ s("wind").gain("<0 1 0 1 0 1 0>"),
+  /* @layer BIRDS */ s("birds").gain("<0 1 0 1 0 1 0 1 0 1 0>"),
+  /* @layer INSECTS */ s("insects").gain("<0 1 0 1 0 1 0 1 0 1 0 1 0>")
+)`;
+
+    expect(getStrudelLoopCycles(combined)).toBe(13);
+    expect(getStrudelLoopCycles(split)).toBe(13);
   });
 
   it('multiplies @ weights by a trailing /N rather than letting either one win', () => {
@@ -112,6 +159,23 @@ stack(
     // `fastcat`/`seq` fit their arguments into one cycle and change nothing.
     expect(getStrudelLoopCycles('fastcat(s("bd"), s("sd"), s("hh"))')).toBe(1);
     expect(getStrudelLoopCycles('cat(s("bd"))')).toBe(1);
+  });
+
+  it('merges a nested stack before applying its outer time scale once', () => {
+    expect(getStrudelLoopCycles('stack(n("<0 1>"), n("<0 1 2>")).slow(2)')).toBe(6);
+    expect(getStrudelLoopCycles('stack(n("<0 1>"), n("<0 1 2>")).every(8, rev)')).toBe(8);
+  });
+
+  it('scales shared bindings independently before taking the longest span', () => {
+    const withSemicolons = `let a = note("<a b>").slow(2);
+let b = note("<a b c>").slow(3);
+stack(a, b)`;
+    const withoutSemicolons = `const a = note("<a b>").slow(2)
+const b = note("<a b c>").slow(3)
+stack(a, b)`;
+
+    expect(getStrudelLoopCycles(withSemicolons)).toBe(9);
+    expect(getStrudelLoopCycles(withoutSemicolons)).toBe(9);
   });
 
   it('scales a layer by chained slow/fast and fits every/iter into the loop', () => {
