@@ -1847,6 +1847,85 @@ describe('useSessions', () => {
     expect(getHook().currentSession?.externalSource?.bindingId).toBe('binding-2');
   });
 
+  it('keeps a pending local message that the imported v3 snapshot does not contain', async () => {
+    const first = {
+      protocolVersion: 3 as const, source: 'oddenova-strudel-skill' as const,
+      projectId: 'delta-project', baseUrl: 'https://www.oddenova.com', revision: 1, skillRevision: 1, bindingId: 'binding-1',
+      title: 'Delta piece', code: 'skill one',
+      messages: [
+        { id: 'm1', role: 'user' as const, content: 'make it', createdAt: 1, order: 1, updatedRevision: 1 },
+      ],
+      contentHash: 'delta-h1',
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => { await getHook().importOddeNovaBridgeSnapshot(first); });
+    const sessionId = getHook().currentId!;
+    act(() => getHook().addAssistantMessage('fresh answer', 'note("fresh")', sessionId, { beforeCode: 'a', afterCode: 'b', playbackStatus: 'played' }));
+    const local = getHook().currentSession!.messages.at(-1)!;
+    const second = {
+      ...first, revision: 2, skillRevision: 2, contentHash: 'delta-h2',
+      messages: [...first.messages, { id: 'skill:t2:0', role: 'assistant' as const, content: 'skill answer', createdAt: 5, order: 2, updatedRevision: 2 }],
+    };
+    let result;
+    await act(async () => {
+      result = await getHook().importOddeNovaBridgeSnapshot(second, undefined, undefined, {
+        pendingMessageDelta: {
+          capturedLocalSequence: 3,
+          upsertMessages: [{ id: local.id, role: local.role as 'assistant', content: local.content, createdAt: local.timestamp }],
+          deleteMessageIds: [],
+        },
+      });
+    });
+    expect(result).toMatchObject({ outcome: 'updated', sessionId, hasPendingLocalMessages: true });
+    const stored = getHook().currentSession!;
+    expect(stored.messages.map(({ id }) => id)).toEqual(['m1', local.id, 'skill:t2:0']);
+    expect(stored.messages.find((message) => message.id === local.id)).toMatchObject({
+      content: 'fresh answer', code: 'note("fresh")', revisionId: local.revisionId,
+    });
+    expect(stored.revisions?.map((revision) => revision.id)).toEqual([local.revisionId]);
+  });
+
+  it('applies a pending delete and does not resurrect canonical tombstones without a delta', async () => {
+    const first = {
+      protocolVersion: 3 as const, source: 'oddenova-strudel-skill' as const,
+      projectId: 'tombstone-project', baseUrl: 'https://www.oddenova.com', revision: 1, skillRevision: 1, bindingId: 'binding-1',
+      title: 'Tombstone piece', code: 'skill one',
+      messages: [
+        { id: 'm1', role: 'user' as const, content: 'make it', createdAt: 1, order: 1, updatedRevision: 1 },
+        { id: 'm2', role: 'assistant' as const, content: 'answer', createdAt: 2, order: 2, updatedRevision: 1 },
+      ],
+      contentHash: 'tomb-h1',
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => { await getHook().importOddeNovaBridgeSnapshot(first); });
+    const second = {
+      ...first, revision: 2, skillRevision: 2, contentHash: 'tomb-h2',
+      messages: [{ id: 'm1', role: 'user' as const, content: 'make it', createdAt: 1, order: 1, updatedRevision: 2 }],
+    };
+    let result;
+    await act(async () => {
+      result = await getHook().importOddeNovaBridgeSnapshot(second, undefined, undefined, {
+        pendingMessageDelta: {
+          capturedLocalSequence: 4,
+          upsertMessages: [],
+          deleteMessageIds: ['m2'],
+        },
+      });
+    });
+    expect(result).toMatchObject({ outcome: 'updated', hasPendingLocalMessages: true });
+    expect(getHook().currentSession!.messages.map(({ id }) => id)).toEqual(['m1']);
+
+    // Without a pending delta the canonical tombstone must stay deleted.
+    await act(async () => {
+      result = await getHook().importOddeNovaBridgeSnapshot({ ...second, revision: 3, skillRevision: 3, contentHash: 'tomb-h3' });
+    });
+    expect(result).toMatchObject({ outcome: 'updated' });
+    expect(result).not.toHaveProperty('hasPendingLocalMessages');
+    expect(getHook().currentSession!.messages.map(({ id }) => id)).toEqual(['m1']);
+  });
+
   it('updates the explicitly bound v3 session instead of the first project row', async () => {
     const baseUrl = 'https://www.oddenova.com/studio';
     const other = makeSession({

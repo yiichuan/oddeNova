@@ -29,7 +29,7 @@ import {
   normalizeOddeNovaBridgeBaseUrl,
   type AnyOddeNovaBridgeSnapshot,
 } from '../lib/oddenova-bridge';
-import { mergeBridgeMessages } from '../lib/oddenova-bridge-messages';
+import { mergeBridgeMessages, type PendingBridgeMessageDelta } from '../lib/oddenova-bridge-messages';
 import {
   createSessionCloudSync,
   type SessionSyncStatus,
@@ -60,6 +60,12 @@ export interface OddeNovaBridgeImportResult {
   sessionId: string;
   codeChanged?: boolean;
   skillRevision?: number;
+  /**
+   * Read by the bridge hook only: the import window still held local message
+   * operations that are not represented by the imported canonical snapshot,
+   * so they must be queued for the helper again after the import settles.
+   */
+  hasPendingLocalMessages?: boolean;
 }
 
 export interface OddeNovaBridgeImportBinding {
@@ -74,6 +80,20 @@ export interface OddeNovaBridgeImportBinding {
 export interface OddeNovaBridgeImportContext {
   checkpoint?: StoredBridgeCheckpoint;
   deleteOutboxChangeIds?: string[];
+  /**
+   * Local message operations captured from a fresh page read just before the
+   * import. Applied on top of the canonical snapshot so messages completed
+   * inside the import window survive; a delta is never a user deletion on its
+   * own — canonical tombstones without a pending delete stay deleted.
+   */
+  pendingMessageDelta?: PendingBridgeMessageDelta;
+  /**
+   * Whether the committed checkpoint replaces an expected existing row
+   * (`update`) or creates the first one for this binding (`initial`). A
+   * missing checkpoint must fail an update instead of silently recreating a
+   * binding generation that an atomic rebind already moved away.
+   */
+  checkpointExpectation?: 'initial' | 'update';
 }
 
 export interface OddeNovaBridgeRebindInput {
@@ -1638,6 +1658,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
             session,
             checkpoint,
             deleteOutboxChangeIds: context?.deleteOutboxChangeIds,
+            checkpointExpectation: context?.checkpointExpectation,
           });
           return;
         }
@@ -1673,7 +1694,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       if (!storedTarget) {
         const created: Session = {
           id: newSessionId(), title: importedTitle, code: snapshot.code,
-          messages: mergeBridgeMessages([], snapshot.messages), externalSource: source,
+          messages: mergeBridgeMessages([], snapshot.messages).messages, externalSource: source,
           createdAt: now, updatedAt: now,
         };
         await persistBridgeSession(created);
@@ -1726,11 +1747,13 @@ export function useSessions(options: UseSessionsOptions = {}) {
         }
       }
       const codeChanged = target.code !== snapshot.code;
+      const merged = mergeBridgeMessages(target.messages, snapshot.messages, context?.pendingMessageDelta);
       const updated: Session = {
         ...target,
         title: importedTitle,
         code: snapshot.code,
-        messages: mergeBridgeMessages(target.messages, snapshot.messages),
+        messages: merged.messages,
+        revisions: revisionsReferencedBy(merged.messages, target.revisions),
         suggestions: codeChanged ? undefined : target.suggestions,
         externalSource: source,
         updatedAt: now,
@@ -1743,7 +1766,10 @@ export function useSessions(options: UseSessionsOptions = {}) {
         await dbPutCurrentSessionId(updated.id, ownerKey);
       }
       await sessionCloudSync?.checkpoint(updated);
-      return { outcome: 'updated', sessionId: updated.id, codeChanged, skillRevision: snapshot.skillRevision };
+      return {
+        outcome: 'updated', sessionId: updated.id, codeChanged, skillRevision: snapshot.skillRevision,
+        ...(merged.hasPendingLocalMessages ? { hasPendingLocalMessages: true } : {}),
+      };
     }
     const incomingDigests = await Promise.all(snapshot.messages.map(digestOddeNovaBridgeMessage));
     const importedTitle = normalizeSessionTitle(snapshot.title, t('newSessionTitle'));

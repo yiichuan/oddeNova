@@ -193,6 +193,32 @@ helper 在 `/v3/pair` 响应中返回：
 
 迁移提交后，React 才发布新绑定，页面随后开始 poll。不得按时间戳、标题、最近使用顺序或“唯一候选项目”猜测目标 session。
 
+### 两阶段校验与单一权威事务
+
+重绑的所有权威读取和所有写入都位于同一个覆盖 `sessions_by_owner`、`oddenova_bridge_checkpoints`、`oddenova_bridge_outbox` 的 `readwrite` 事务中。WebCrypto 内容哈希校验不能在事务内 await（浏览器可能在等待非 IndexedDB Promise 时自动结束事务），因此校验分为两个阶段：
+
+1. **预验证阶段**（事务外）：读取候选 previous/target checkpoint，仅用于执行 WebCrypto 哈希校验和规范化校验，得到经过验证的候选副本。预验证结果不是权威读取，不作为写入依据。
+2. **权威事务阶段**：开启单一 `readwrite` 事务，从事务内的 object store 重新读取 previous/target checkpoint、owner-scoped session，以及 previous/target binding 的 outbox（`getAll()` 后按完整 identity 过滤）。事务内将重新读取的 checkpoint 与预验证候选做精确内容比较：
+
+```text
+记录与预验证候选不同
+  ↓ 第一次
+abort 事务 → 重新执行一次完整预验证 → 重试
+  ↓ 第二次仍变化
+recovery-required，零写入
+```
+
+写入只使用事务内重新读取并通过复核的数据；写入顺序固定为：写 session、写新 checkpoint、删除旧 checkpoint、删除并迁移旧 binding outbox，`await tx.done` 之后才向 React 发布结果。任何读取、校验或写入失败都 abort，不提交部分数据。
+
+### 旧 generation 不得复活
+
+重绑提交后，旧 binding 的 checkpoint 已被删除。两条防御保证旧页面的迟来写入不会重建旧 generation：
+
+- **outbox generation guard**：v3 outbox 写入（`generationGuard`）与 checkpoint 读取在同一事务完成。目标 binding 的 checkpoint 不存在或身份不一致时，旧页面的排队写入被拒绝，不会产生孤儿记录；guard 之前的合法旧写入会在重绑事务内被读取并迁移。
+- **checkpoint 存在性约束**：`commitBridgeSessionState()` 区分 `initial`（首次创建 checkpoint）与 `update`（必须已存在）。checkpoint 行已消失时，`update` 提交失败关闭——旧页面不能用一次普通 session 写回重建被迁移走的代次；首次创建路径显式标记 `initial`，不能靠“checkpoint 不存在”自动猜测。
+
+memory fallback 不共享跨标签页状态，但同一事件循环内的异步哈希仍可能让调用交错：异步候选验证完成后重新从 maps 读取权威值，随后的同步 prepare 与写入之间没有任何 `await`，形成不可分割临界区；异常后全量回滚，保持与 IndexedDB 路径等价的幂等与冲突语义。
+
 如果旧 checkpoint、旧 session、owner、project identity 或内容哈希不一致，重绑必须失败关闭：
 
 ```text
@@ -281,6 +307,51 @@ helper 合并修改并返回完整 snapshot
 初次检测到页面变化时会进行一个短暂聚合，连续变化可以更快排队。页面切入后台时也会尝试把最新状态加入 outbox。
 
 页面修改可以推进 `revision`，但不会推进 `skillRevision`。
+
+### pending local message delta（import 窗口内的本地消息保护）
+
+新 skill snapshot 到达时，页面会先尝试 flush 本地变更再 import。但 flush 只读取一次页面状态——flush 之后、真正 import 之前完成的本地创作消息可能不在本次 canonical snapshot 中。直接用 canonical 覆盖 session 会丢失这部分消息及其 `code`、`revisionId`、`inputMode` 等富字段。
+
+关闭这个窗口的流程：
+
+```text
+poll / recovery / 新 skill 入口收到 snapshot
+  ↓
+若页面 busy：保持 queued，等待生成/回放结束
+  ↓
+busy 结束后重新读取 localSequence 与精确绑定页面，再执行一次 flushPageChanges
+  ↓
+若本轮实际发送了 page-change，优先使用其响应 snapshot 继续 import
+（它已包含 helper 当前 skill revision 与成功合并的页面消息）
+  ↓
+localSequence 在 flush 中继续推进 → 重新循环读取并 flush；页面持续变化时保持 queued
+  ↓
+import 前用精确绑定的 resolvePage 重新读取页面，
+按 baseline 计算消息差集（upsertMessages / deleteMessageIds），
+连同捕获时的 localSequence 一起放入 import context
+  ↓
+mergeBridgeMessages 在 canonical 之上叠加 pending delta
+  ↓
+importer 返回 hasPendingLocalMessages 时：
+canonical 持久化完成后，显式重新入队最新页面状态，
+abort 当前 poll 让发送循环尽快处理 outbox
+```
+
+消息合并的显式规则：
+
+- canonical 消息的 ID、顺序、role、content 由 snapshot 决定；
+- pending delete 移除对应 canonical 消息；pending upsert 替换同 ID 投影，canonical 中没有的 pending 新消息按本地相对位置插入；
+- 未列入 pending delta、又不在 canonical 中的旧创作消息不复活（canonical 已确认删除的 tombstone 保持删除）；
+- pending upsert 优先复用本地完整 `ChatMessage`（保留富字段），找不到本地对象时才从 page-change 投影构造四字段消息；
+- progress 等网页局部消息按最近一个仍然存活的创作消息锚定，锚点被删除则一并移除，progress 不会发送给 helper；
+- 合并后过滤已失去消息引用的 revision。
+
+两条边界必须同时成立：
+
+1. pending delta 只描述创作消息，不把本地标题/代码带入 import——新 skill snapshot 的 title/code 仍然覆盖页面（skill 优先规则不变）。
+2. “当前 snapshot 不含某条本地消息”不能被解释为用户删除；删除只来自显式 pending delete 或 canonical tombstone。
+
+`read-response`/ack 中报告的 `completedLocalSequence` 只统计已经由 page-change 进入 helper canonical 的 sequence；import 窗口内尚未回传的本地消息不得让更晚的 sequence 冒充完成。
 
 ---
 
@@ -430,7 +501,9 @@ page-change.baseSkillRevision < helper.skillRevision
 - 新宿主对话默认生成新的 `projectId`；不得从缓存猜测旧项目。
 - 同一作品续作复用 `projectId`，每个新创作请求使用新的 `turnId`。
 - 页面重新配对必须使用明确的 `previousBindingId` 精确重绑。
-- session、checkpoint 和 outbox 的重绑迁移必须原子完成。
+- session、checkpoint 和 outbox 的重绑迁移必须原子完成；WebCrypto 校验在事务外完成，写入依据来自单一 readwrite 事务内的权威复核。
+- v3 outbox 写入必须经过 checkpoint generation guard；旧 binding 的 checkpoint 消失后，旧页面的排队写入与 `update` 型 session 提交都必须失败关闭。
+- import 窗口内完成的本地创作消息不得被 canonical 覆盖丢失，也不得让 canonical tombstone 复活。
 - 页面反向修改只能由 binding 独占锁持有者进入 outbox，并由当前 helper lease 持有者发送。
 - skill 的较新标题和代码不能被基于旧 `skillRevision` 的页面修改覆盖。
 - `cached`、ack、持久化成功或浏览器打开都不能冒充 `page_confirmed`。

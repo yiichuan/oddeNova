@@ -9,7 +9,9 @@ import {
   normalizeOddeNovaBridgeBaseUrl,
   type OddeNovaBridgeSnapshotV3,
   type OddeNovaBridgeSnapshot,
+  type AnyOddeNovaBridgeSnapshot,
 } from '../../lib/oddenova-bridge';
+import type { ChatMessage } from '../../hooks/useChat';
 import type { BridgePageStateResolution, OddeNovaBridgeBinding } from '../../lib/oddenova-bridge-state';
 import type { OddeNovaBridgeRebindInput } from '../useSessions';
 import { putBridgeCheckpoint } from '../../lib/session-storage';
@@ -1353,6 +1355,400 @@ describe('useOddeNovaBridge', () => {
     expect(presentAppliedSnapshot).not.toHaveBeenCalled();
     expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/ack')).toBe(true);
     expect(pageRef.current.visibleSessionId).toBe('other-session');
+  });
+
+  it('re-reads and flushes the page after busy ends before importing a queued skill snapshot', async () => {
+    const projectId = 'busy-reconcile-project';
+    const bindingId = 'busy-reconcile-binding';
+    const sessionId = 'busy-reconcile-session';
+    const baseUrl = normalizeOddeNovaBridgeBaseUrl(window.location.origin);
+    const initial = await hashV3Snapshot({
+      protocolVersion: 3,
+      source: 'oddenova-strudel-skill',
+      projectId,
+      baseUrl,
+      bindingId,
+      revision: 1,
+      skillRevision: 5,
+      title: 'Busy piece',
+      code: 'note("old")',
+      messages: [{ id: 'm1', role: 'user', content: 'make it', createdAt: 1, order: 1, updatedRevision: 1 }],
+    });
+    const incoming = await hashV3Snapshot({
+      ...initial,
+      revision: 2,
+      code: 'note("skill new")',
+      messages: [...initial.messages, { id: 'skill:t2:0', role: 'assistant' as const, content: 'skill answer', createdAt: 5, order: 2, updatedRevision: 2 }],
+    });
+    // The helper accepted the page-change messages after the skill snapshot.
+    const merged = await hashV3Snapshot({
+      ...incoming,
+      revision: 3,
+      messages: [...incoming.messages, { id: 'local-a', role: 'assistant' as const, content: 'local answer', createdAt: 9, order: 3, updatedRevision: 3 }],
+    });
+    await putBridgeCheckpoint({
+      schemaVersion: 1,
+      ownerKey: 'guest',
+      projectKey: `${baseUrl}\0${projectId}`,
+      bindingId,
+      sessionId,
+      snapshot: initial,
+      updatedAt: 1,
+    });
+    sessionStorage.setItem(ODDENOVA_BRIDGE_CONNECTION_KEY, JSON.stringify({
+      projectId,
+      baseUrl,
+      serviceOrigin: 'http://127.0.0.1:43123',
+      pageToken: 'page-token',
+      ownerKey: 'guest',
+      clientId: 'busy-client',
+      lastRevision: 1,
+      lastSkillRevision: 5,
+      bindingId,
+      sessionId,
+    }));
+
+    const pageRef = {
+      current: {
+        sessionId,
+        projectId,
+        baseUrl,
+        revision: 1,
+        title: initial.title,
+        code: initial.code,
+        messages: [{ id: 'm1', role: 'user' as const, content: 'make it', timestamp: 1 }] as ChatMessage[],
+        bridgeContentHash: initial.contentHash,
+      },
+    };
+    let pollCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = assertBridgeRequestIdentity(input, init, projectId, baseUrl);
+      if (url.pathname === '/v3/poll') {
+        pollCount += 1;
+        if (pollCount === 1) return new Response(null, { status: 204 });
+        if (pollCount === 2) return new Response(JSON.stringify({ snapshot: incoming }), { status: 200 });
+        return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))));
+      }
+      if (url.pathname === '/v3/page-change') return new Response(JSON.stringify({ snapshot: merged }), { status: 200 });
+      if (url.pathname === '/v3/ack') return new Response(JSON.stringify({ acknowledged: true }), { status: 200 });
+      throw new Error(`unexpected bridge request ${url.pathname}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const importer = vi.fn(async (value: AnyOddeNovaBridgeSnapshot, _binding: unknown, context: { checkpoint?: unknown } | undefined) => {
+      pageRef.current.revision = value.revision;
+      pageRef.current.code = value.code;
+      pageRef.current.bridgeContentHash = (value as OddeNovaBridgeSnapshotV3).contentHash;
+      pageRef.current.messages = value.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        timestamp: (value as OddeNovaBridgeSnapshotV3).protocolVersion === 3 ? (message as { createdAt: number }).createdAt : (message as { receivedAt: number }).receivedAt,
+      }));
+      if (context?.checkpoint) await putBridgeCheckpoint(context.checkpoint as never);
+      return { outcome: 'updated' as const, sessionId, codeChanged: true, skillRevision: value.protocolVersion === 3 ? value.skillRevision : undefined };
+    });
+
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    roots.push(root);
+    let status: OddeNovaBridgeStatus | undefined;
+    function Probe({ busy, version }: { busy: boolean; version: string }) {
+      const value = useOddeNovaBridge({
+        importer: importer as never,
+        isReady: true,
+        isBusy: busy,
+        isPersistent: true,
+        ownerKey: 'guest',
+        onApplied: vi.fn(),
+        pageStateVersion: version,
+        resolvePageState: (bridgeBinding) => ({
+          status: 'ready' as const,
+          binding: { ...bridgeBinding, sessionId },
+          pageState: pageRef.current,
+          visibleSessionId: sessionId,
+          editorCode: pageRef.current.code,
+        }),
+      });
+      useEffect(() => { status = value.status; }, [value]);
+      return null;
+    }
+
+    act(() => root.render(<Probe busy version={initial.code} />));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(status).toEqual({ status: 'queued', revision: 2 });
+    expect(importer).not.toHaveBeenCalled();
+
+    // The page turn completes while the import stays queued.
+    pageRef.current.messages = [...pageRef.current.messages, { id: 'local-a', role: 'assistant', content: 'local answer', timestamp: 9 }];
+    act(() => root.render(<Probe busy={false} version="local-a-done" />));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
+
+    const pageChange = vi.mocked(fetch).mock.calls.find(([input]) => new URL(String(input)).pathname === '/v3/page-change');
+    expect(pageChange).toBeDefined();
+    expect(JSON.parse(String(pageChange?.[1]?.body))).toMatchObject({
+      baseRevision: 1,
+      upsertMessages: [{ id: 'local-a', role: 'assistant', content: 'local answer' }],
+    });
+    expect(importer).toHaveBeenCalledTimes(1);
+    const importedSnapshot = importer.mock.calls[0]?.[0] as OddeNovaBridgeSnapshotV3;
+    expect(importedSnapshot.revision).toBe(3);
+    expect(importedSnapshot.messages.some((message) => message.id === 'local-a')).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/ack')).toBe(true);
+    expect(status).toEqual(expect.objectContaining({ status: 'applied' }));
+  });
+
+  it('requeues local messages completed inside the import window after the import settles', async () => {
+    const projectId = 'import-window-project';
+    const bindingId = 'import-window-binding';
+    const sessionId = 'import-window-session';
+    const baseUrl = normalizeOddeNovaBridgeBaseUrl(window.location.origin);
+    const initial = await hashV3Snapshot({
+      protocolVersion: 3,
+      source: 'oddenova-strudel-skill',
+      projectId,
+      baseUrl,
+      bindingId,
+      revision: 1,
+      skillRevision: 5,
+      title: 'Window piece',
+      code: 'note("old")',
+      messages: [{ id: 'm1', role: 'user', content: 'make it', createdAt: 1, order: 1, updatedRevision: 1 }],
+    });
+    const incoming = await hashV3Snapshot({
+      ...initial,
+      revision: 2,
+      code: 'note("skill new")',
+      messages: [...initial.messages, { id: 'skill:t2:0', role: 'assistant' as const, content: 'skill answer', createdAt: 5, order: 2, updatedRevision: 2 }],
+    });
+    // The helper accepted the late page-change after the import.
+    const merged = await hashV3Snapshot({
+      ...incoming,
+      revision: 3,
+      messages: [...incoming.messages, { id: 'late-b', role: 'assistant' as const, content: 'late answer', createdAt: 20, order: 3, updatedRevision: 3 }],
+    });
+    await putBridgeCheckpoint({
+      schemaVersion: 1,
+      ownerKey: 'guest',
+      projectKey: `${baseUrl}\0${projectId}`,
+      bindingId,
+      sessionId,
+      snapshot: initial,
+      updatedAt: 1,
+    });
+    sessionStorage.setItem(ODDENOVA_BRIDGE_CONNECTION_KEY, JSON.stringify({
+      projectId,
+      baseUrl,
+      serviceOrigin: 'http://127.0.0.1:43123',
+      pageToken: 'page-token',
+      ownerKey: 'guest',
+      clientId: 'window-client',
+      lastRevision: 1,
+      lastSkillRevision: 5,
+      bindingId,
+      sessionId,
+    }));
+
+    const pageRef = {
+      current: {
+        sessionId,
+        projectId,
+        baseUrl,
+        revision: 1,
+        title: initial.title,
+        code: initial.code,
+        messages: [{ id: 'm1', role: 'user' as const, content: 'make it', timestamp: 1 }] as ChatMessage[],
+        bridgeContentHash: initial.contentHash,
+      },
+    };
+    let pollCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = assertBridgeRequestIdentity(input, init, projectId, baseUrl);
+      if (url.pathname === '/v3/poll') {
+        pollCount += 1;
+        if (pollCount === 1) return new Response(null, { status: 204 });
+        if (pollCount === 2) return new Response(JSON.stringify({ snapshot: incoming }), { status: 200 });
+        return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))));
+      }
+      if (url.pathname === '/v3/page-change') return new Response(JSON.stringify({ snapshot: merged }), { status: 200 });
+      if (url.pathname === '/v3/ack') return new Response(JSON.stringify({ acknowledged: true }), { status: 200 });
+      throw new Error(`unexpected bridge request ${url.pathname}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    let releaseImport!: () => void;
+    const importGate = new Promise<void>((resolve) => { releaseImport = resolve; });
+    const importer = vi.fn(async (value: AnyOddeNovaBridgeSnapshot, _binding: unknown, context: { checkpoint?: unknown } | undefined) => {
+      if (value.revision === incoming.revision) {
+        await importGate;
+        // A message completes while the importer is still writing.
+        pageRef.current.messages = [...pageRef.current.messages, { id: 'late-b', role: 'assistant', content: 'late answer', timestamp: 20 }];
+      }
+      pageRef.current.revision = value.revision;
+      pageRef.current.code = value.code;
+      pageRef.current.bridgeContentHash = (value as OddeNovaBridgeSnapshotV3).contentHash;
+      if (context?.checkpoint) await putBridgeCheckpoint(context.checkpoint as never);
+      return { outcome: 'updated' as const, sessionId, codeChanged: true, skillRevision: value.protocolVersion === 3 ? value.skillRevision : undefined, hasPendingLocalMessages: true };
+    });
+
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    roots.push(root);
+    let status: OddeNovaBridgeStatus | undefined;
+    function Probe() {
+      const value = useOddeNovaBridge({
+        importer: importer as never,
+        isReady: true,
+        isBusy: false,
+        isPersistent: true,
+        ownerKey: 'guest',
+        onApplied: vi.fn(),
+        resolvePageState: (bridgeBinding) => ({
+          status: 'ready' as const,
+          binding: { ...bridgeBinding, sessionId },
+          pageState: pageRef.current,
+          visibleSessionId: sessionId,
+          editorCode: pageRef.current.code,
+        }),
+      });
+      useEffect(() => { status = value.status; }, [value]);
+      return null;
+    }
+    void status;
+
+    act(() => root.render(<Probe />));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(importer).toHaveBeenCalledTimes(1);
+    // Nothing has been queued for the late message while the importer holds.
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/page-change')).toBe(false);
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/ack')).toBe(false);
+
+    await act(async () => {
+      releaseImport();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    const pageChange = vi.mocked(fetch).mock.calls.find(([input]) => new URL(String(input)).pathname === '/v3/page-change');
+    expect(pageChange).toBeDefined();
+    expect(JSON.parse(String(pageChange?.[1]?.body))).toMatchObject({
+      baseRevision: 2,
+      upsertMessages: [{ id: 'late-b', role: 'assistant', content: 'late answer' }],
+    });
+    expect(importer.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/ack')).toBe(true);
+  });
+
+  it('keeps local messages and stays retryable when the queued page-change send fails', async () => {
+    const projectId = 'page-change-failure-project';
+    const bindingId = 'page-change-failure-binding';
+    const sessionId = 'page-change-failure-session';
+    const baseUrl = normalizeOddeNovaBridgeBaseUrl(window.location.origin);
+    const initial = await hashV3Snapshot({
+      protocolVersion: 3,
+      source: 'oddenova-strudel-skill',
+      projectId,
+      baseUrl,
+      bindingId,
+      revision: 1,
+      skillRevision: 5,
+      title: 'Failure piece',
+      code: 'note("old")',
+      messages: [{ id: 'm1', role: 'user', content: 'make it', createdAt: 1, order: 1, updatedRevision: 1 }],
+    });
+    await putBridgeCheckpoint({
+      schemaVersion: 1,
+      ownerKey: 'guest',
+      projectKey: `${baseUrl}\0${projectId}`,
+      bindingId,
+      sessionId,
+      snapshot: initial,
+      updatedAt: 1,
+    });
+    sessionStorage.setItem(ODDENOVA_BRIDGE_CONNECTION_KEY, JSON.stringify({
+      projectId,
+      baseUrl,
+      serviceOrigin: 'http://127.0.0.1:43123',
+      pageToken: 'page-token',
+      ownerKey: 'guest',
+      clientId: 'failure-client',
+      lastRevision: 1,
+      lastSkillRevision: 5,
+      bindingId,
+      sessionId,
+    }));
+
+    const pageRef = {
+      current: {
+        sessionId,
+        projectId,
+        baseUrl,
+        revision: 1,
+        title: initial.title,
+        code: initial.code,
+        messages: [{ id: 'm1', role: 'user', content: 'make it', timestamp: 1 }] as ChatMessage[],
+        bridgeContentHash: initial.contentHash,
+      },
+    };
+    let pollCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = assertBridgeRequestIdentity(input, init, projectId, baseUrl);
+      if (url.pathname === '/v3/poll') {
+        pollCount += 1;
+        if (pollCount === 1) return new Response(null, { status: 204 });
+        if (pollCount === 2) {
+          // A local message is completed after the empty poll.
+          pageRef.current.messages = [...pageRef.current.messages, { id: 'late-c', role: 'assistant', content: 'late answer', timestamp: 30 }];
+          return new Response(JSON.stringify({
+            snapshot: initial,
+            refreshRequestIds: [],
+          }), { status: 200 });
+        }
+        return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))));
+      }
+      if (url.pathname === '/v3/page-change') return new Response(JSON.stringify({ error: 'helper unavailable' }), { status: 503 });
+      if (url.pathname === '/v3/ack') return new Response(JSON.stringify({ acknowledged: true }), { status: 200 });
+      throw new Error(`unexpected bridge request ${url.pathname}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    roots.push(root);
+    let status: OddeNovaBridgeStatus | undefined;
+    let version = 'v0';
+    function Probe() {
+      const value = useOddeNovaBridge({
+        importer: async () => ({ outcome: 'updated' as const, sessionId, codeChanged: false, skillRevision: 5 }),
+        isReady: true,
+        isBusy: false,
+        isPersistent: true,
+        ownerKey: 'guest',
+        onApplied: vi.fn(),
+        pageStateVersion: version,
+        resolvePageState: (bridgeBinding) => ({
+          status: 'ready' as const,
+          binding: { ...bridgeBinding, sessionId },
+          pageState: pageRef.current,
+        }),
+      });
+      useEffect(() => { status = value.status; }, [value]);
+      return null;
+    }
+
+    act(() => root.render(<Probe />));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    // The local edit is observed and queued, then the send fails.
+    version = 'late-c-done';
+    act(() => root.render(<Probe />));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)); });
+
+    expect(status).toEqual({ status: 'error', message: '本机连接中断，正在重试。' });
+    // The pending message and its outbox entry are both still there, and no
+    // ack claimed a revision that was never applied.
+    const storage = await import('../../lib/session-storage');
+    await expect(storage.getBridgeOutboxEntries('guest', `${baseUrl}\0${projectId}`, bindingId)).resolves.toHaveLength(1);
+    expect(pageRef.current.messages.some((message) => message.id === 'late-c')).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/ack')).toBe(false);
   });
 
   it('replays a pending presentation before applying a same-skill page revision', async () => {

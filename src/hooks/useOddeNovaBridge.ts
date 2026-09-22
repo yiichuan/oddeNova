@@ -22,7 +22,7 @@ import {
   type BridgePageStateResolution,
   type OddeNovaBridgeBinding,
 } from '../lib/oddenova-bridge-state';
-import { projectCreativeMessages } from '../lib/oddenova-bridge-messages';
+import { projectCreativeMessages, diffCreativeMessages, type PendingBridgeMessageDelta } from '../lib/oddenova-bridge-messages';
 import {
   oddeNovaBridgeReceiverLockName,
   runWithOddeNovaBridgeReceiverLock,
@@ -102,13 +102,19 @@ interface UseOddeNovaBridgeOptions {
 }
 
 type FlushResult =
-  | { status: 'confirmed'; completedLocalSequence: number }
+  | { status: 'confirmed'; completedLocalSequence: number; snapshot?: OddeNovaBridgeSnapshotV3 }
   | { status: 'busy'; completedLocalSequence: number }
   | { status: 'unavailable' | 'recovery-required'; completedLocalSequence: number; message: string };
 
 interface ApplyOptions {
   forceImport?: boolean;
   deleteOutboxChangeIds?: string[];
+  /**
+   * Where this apply came from. `page-change` applies are already the product
+   * of the pre-import reconciliation, so they must not run it again; every
+   * other entry (poll, upgrade, recovery) reconciles before importing.
+   */
+  source?: 'poll' | 'page-change';
 }
 
 interface PendingPresentation {
@@ -270,7 +276,7 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
       changeId: payload.changeId,
       payload,
       createdAt: Date.now(),
-    });
+    }, { generationGuard: true });
     return localSequence.current;
   }, [resolvePage]);
 
@@ -294,7 +300,14 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
     const immediate = previous.sequence > 0;
     const delay = immediate ? 0 : Math.min(500, Math.max(0, 2_000 - (Date.now() - dirtySince.current)));
     const timer = window.setTimeout(() => {
-      void queueLatestPageState().finally(() => activePollController.current?.abort());
+      void queueLatestPageState()
+        .catch((error) => {
+          // Queueing must not lose the local change: keep it in the page and
+          // surface a retryable error. A generation guard rejection means this
+          // page's binding no longer exists and the page stays fail-closed.
+          setStatus({ status: 'error', message: statusMessage(error, '本机连接排队失败，正在重试。') });
+        })
+        .finally(() => activePollController.current?.abort());
     }, delay);
     return () => window.clearTimeout(timer);
   }, [options.pageState, options.pageStateVersion, queueLatestPageState, resolvePage]);
@@ -449,15 +462,56 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
         (confirmedSkill !== undefined && value.skillRevision > confirmedSkill)
         || (pending !== undefined && value.skillRevision > pending.snapshot.skillRevision)
       );
-      // A pending presentation is a durable recovery obligation. If the
-      // helper has advanced only through the same skill revision, replay the
-      // pending snapshot first; otherwise a page-change could overwrite the
-      // pending checkpoint or steal the editor before the new skill is shown.
-      const snapshot = pending !== undefined
+      let snapshot: AnyOddeNovaBridgeSnapshot = pending !== undefined
         && value.protocolVersion === 3
         && !isNewSkillVersion
         ? pending.snapshot
         : value;
+      // Pre-import reconciliation. A poll/recovery/new-skill entry must not
+      // import on top of a page read taken before the app went busy: wait for
+      // the busy state to end, flush the page again, and only then capture the
+      // message delta this import must preserve. The loop keeps running while
+      // the page keeps changing; cancellation, owner, binding, and session
+      // checks are the only exits — there is no "give up after N tries".
+      let pendingMessageDelta: PendingBridgeMessageDelta | undefined;
+      if (value.protocolVersion === 3 && connection.bindingId && applyOptions.source !== 'page-change') {
+        for (;;) {
+          while (latest.current.isBusy && stillCurrent()) {
+            setStatus({ status: 'queued', revision: value.revision });
+            await sleep(250);
+          }
+          if (!stillCurrent()) return undefined;
+          const targetSequence = localSequence.current;
+          if (baseline.current) {
+            const flushed = await flushPageChanges(targetSequence);
+            if (flushed.status === 'recovery-required') throw new BridgeRecoveryRequiredError(flushed.message);
+            if (flushed.status === 'busy') continue;
+            if (flushed.status === 'confirmed' && flushed.snapshot && pending === undefined && flushed.snapshot.revision >= snapshot.revision) {
+              // The flush already merged the page into the helper; its response
+              // carries the helper's current skill revision, so never apply the
+              // older snapshot that started this apply.
+              snapshot = flushed.snapshot;
+            }
+            if (localSequence.current > targetSequence) continue;
+          }
+          const freshPage = currentPage(connection);
+          if (freshPage && baseline.current) {
+            const difference = diffCreativeMessages(baseline.current.messages, projectCreativeMessages(freshPage.messages));
+            if (difference.upsertMessages.length > 0 || difference.deleteMessageIds.length > 0) {
+              pendingMessageDelta = { capturedLocalSequence: localSequence.current, ...difference };
+            }
+          }
+          break;
+        }
+      } else {
+        while (latest.current.isBusy && stillCurrent()) {
+          setStatus({ status: 'queued', revision: value.revision });
+          await sleep(250);
+        }
+        if (!stillCurrent()) return undefined;
+      }
+      if (!stillCurrent()) return undefined;
+
       const trustedExistingPage = snapshot.protocolVersion === 3
         && !baseline.current
         && !pending
@@ -502,11 +556,6 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
         }
       }
 
-      while (latest.current.isBusy && stillCurrent()) {
-        setStatus({ status: 'queued', revision: value.revision });
-        await sleep(250);
-      }
-      if (!stillCurrent()) return undefined;
       const pageBefore = currentPage(connection);
       const importBinding: OddeNovaBridgeImportBinding = {
         ownerKey: connection.ownerKey,
@@ -517,21 +566,28 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
         clientId: connection.clientId,
       };
       applying.current = { sessionId: connection.sessionId ?? pageBefore?.sessionId ?? '', code: snapshot.code };
+      let result: OddeNovaBridgeImportResult | undefined;
       try {
         const context: OddeNovaBridgeImportContext | undefined = snapshot.protocolVersion === 3 && connection.sessionId && connection.bindingId
           ? {
               checkpoint: makeCheckpoint(snapshot, connection.sessionId, presentationReason),
               deleteOutboxChangeIds: applyOptions.deleteOutboxChangeIds,
+              ...(pendingMessageDelta ? { pendingMessageDelta } : {}),
+              // The baseline is the page-confirmed boundary: with one in hand
+              // the commit must replace an existing checkpoint, and a missing
+              // row is a broken generation rather than a fresh one.
+              checkpointExpectation: baseline.current ? 'update' : 'initial',
             }
           : snapshot.protocolVersion === 3 && connection.bindingId
             ? {
                 checkpoint: makeCheckpoint(snapshot, '', presentationReason),
                 deleteOutboxChangeIds: applyOptions.deleteOutboxChangeIds,
+                checkpointExpectation: baseline.current ? 'update' : 'initial',
               }
             : applyOptions.deleteOutboxChangeIds?.length
               ? { deleteOutboxChangeIds: applyOptions.deleteOutboxChangeIds }
               : undefined;
-        const result = connection.bindingId
+        result = connection.bindingId
           ? await latest.current.importer(snapshot, importBinding, context)
           : await latest.current.importer(snapshot);
         if (!stillCurrent()) return undefined;
@@ -585,11 +641,30 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
         }
         storeConnection(connection);
         const after = currentPage(connection);
-        if (after) observedPage.current = { signature: pageSignature(after), sequence: localSequence.current };
-        return result;
+        // The merged page state only counts as observed once the import window
+        // is fully closed. A pending message delta must not let this reset
+        // claim the page is already in sync.
+        if (after && !result?.hasPendingLocalMessages) {
+          observedPage.current = { signature: pageSignature(after), sequence: localSequence.current };
+        }
       } finally {
         applying.current = undefined;
       }
+      // The apply is over and the importer already persisted the canonical
+      // state. Messages completed inside the import window are merged into the
+      // session but not yet represented by the helper canonical, so queue them
+      // again here and let the send loop pick the outbox up promptly.
+      if (result?.hasPendingLocalMessages && stillCurrent()) {
+        try {
+          await queueLatestPageState();
+        } catch (error) {
+          if (stillCurrent()) {
+            setStatus({ status: 'error', message: statusMessage(error, '本机连接排队失败，正在重试。') });
+          }
+        }
+        activePollController.current?.abort();
+      }
+      return result;
     };
 
     const flushPageChanges = async (targetSequence = localSequence.current): Promise<FlushResult> => {
@@ -628,7 +703,7 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
               payload,
               createdAt: Date.now(),
             };
-            await putBridgeOutboxEntry(entry);
+            await putBridgeOutboxEntry(entry, { generationGuard: true });
             entries = [entry];
           }
         }
@@ -639,6 +714,10 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
         if (!leaseReady.current) {
           return { status: 'unavailable', completedLocalSequence: localSequence.current, message: 'Bridge lease is not active' };
         }
+        // The last helper canonical snapshot this flush actually merged. The
+        // caller prefers it over the snapshot that started the flush, because
+        // it carries the helper's current skill revision plus the merged page.
+        let lastSnapshot: OddeNovaBridgeSnapshotV3 | undefined;
         for (const entry of entries) {
           if (!stillCurrent()) return { status: 'unavailable', completedLocalSequence: localSequence.current, message: 'Bridge binding changed' };
           const value = await responseJson(await fetch(`${connection.serviceOrigin}/v3/page-change?${connectionQuery(connection)}`, {
@@ -646,14 +725,20 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
             headers: { authorization: `Bearer ${connection.pageToken}`, 'content-type': 'application/json' },
             body: JSON.stringify(entry.payload),
           })) as { snapshot: OddeNovaBridgeSnapshotV3 };
+          lastSnapshot = value.snapshot;
           const result = await applySnapshot(value.snapshot, {
             forceImport: true,
             deleteOutboxChangeIds: [entry.changeId],
+            source: 'page-change',
           });
           if (!result) return { status: 'busy', completedLocalSequence: localSequence.current };
         }
         if (localSequence.current <= targetSequence) dirtySince.current = undefined;
-        return { status: 'confirmed', completedLocalSequence: Math.min(targetSequence, localSequence.current) };
+        return {
+          status: 'confirmed',
+          completedLocalSequence: Math.min(targetSequence, localSequence.current),
+          ...(lastSnapshot ? { snapshot: lastSnapshot } : {}),
+        };
       })();
       flushPromise.current = run;
       try {
@@ -665,13 +750,13 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
 
     let activeRefreshRequestIds: string[] = [];
 
-    const handleReadRequests = async (requestIds: string[]): Promise<boolean> => {
-      if (requestIds.length === 0 || !connection?.bindingId) return true;
+    const handleReadRequests = async (requestIds: string[]): Promise<FlushResult | undefined> => {
+      if (requestIds.length === 0 || !connection?.bindingId) return undefined;
       const target = localSequence.current;
       if (latest.current.isBusy) {
         for (const requestId of requestIds) await sendReadResponse(requestId, 'busy', localSequence.current);
         activeRefreshRequestIds = [];
-        return false;
+        return undefined;
       }
       let flushed: FlushResult;
       try {
@@ -680,16 +765,16 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
         for (const requestId of requestIds) await sendReadResponse(requestId, 'unavailable', localSequence.current);
         activeRefreshRequestIds = [];
         if (error instanceof BridgeRecoveryRequiredError) throw error;
-        return false;
+        return undefined;
       }
       if (flushed.status !== 'confirmed') {
         const responseStatus = flushed.status === 'busy' ? 'busy' : 'unavailable';
         for (const requestId of requestIds) await sendReadResponse(requestId, responseStatus, flushed.completedLocalSequence);
         activeRefreshRequestIds = [];
         if (flushed.status === 'recovery-required') throw new BridgeRecoveryRequiredError(flushed.message);
-        return false;
+        return undefined;
       }
-      return true;
+      return flushed;
     };
 
     const prepareConnection = async (): Promise<void> => {
@@ -912,6 +997,7 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
       const lockResult = await runWithOddeNovaBridgeReceiverLock(lockName, async () => {
         receiverOwned.current = true;
         setStatus({ status: 'connected' });
+        let confirmedSequence = 0;
         try {
           while (!cancelled) {
             if (!connection || !stillCurrent()) return;
@@ -960,11 +1046,13 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
                   for (const requestId of refreshRequestIds) await sendReadResponse(requestId, 'busy', localSequence.current);
                   continue;
                 }
-                const canConfirm = await handleReadRequests(refreshRequestIds);
-                if (!canConfirm) continue;
+                const confirmedFlush = await handleReadRequests(refreshRequestIds);
+                if (!confirmedFlush) continue;
+                confirmedSequence = confirmedFlush.completedLocalSequence;
               } else if (connection.bindingId) {
                 const flushed = await flushPageChanges();
                 if (flushed.status === 'recovery-required') throw new BridgeRecoveryRequiredError(flushed.message);
+                if (flushed.status === 'confirmed') confirmedSequence = flushed.completedLocalSequence;
               }
 
               let result: OddeNovaBridgeImportResult | undefined;
@@ -980,7 +1068,10 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
               if (!result.sessionId && connection.sessionId) result.sessionId = connection.sessionId;
               if (connection.bindingId && refreshRequestIds.length) {
                 for (const requestId of refreshRequestIds) {
-                  await sendReadResponse(requestId, 'ready', localSequence.current);
+                  // Only report the sequence that this poll actually confirmed;
+                  // an import that is still holding local message operations
+                  // must not let a later sequence claim completion.
+                  await sendReadResponse(requestId, 'ready', confirmedSequence);
                 }
                 activeRefreshRequestIds = [];
               }
@@ -1001,6 +1092,14 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
               }));
               setStatus({ status: 'applied', revision: connection.lastRevision, outcome: result.outcome, persistent: latest.current.isPersistent });
               retryMs = 1_000;
+              if (result.hasPendingLocalMessages) {
+                // The import is done but its window messages still have to
+                // reach the helper. Process the outbox now instead of waiting
+                // for the next long poll to time out.
+                const flushed = await flushPageChanges();
+                if (flushed.status === 'recovery-required') throw new BridgeRecoveryRequiredError(flushed.message);
+                continue;
+              }
             } catch (error) {
               if (cancelled) return;
               if (isAbortError(error)) continue;
@@ -1050,7 +1149,7 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
     const reconnectVisible = () => {
       if (!document.hidden) controller?.abort();
     };
-    const flushBeforeHide = () => { void queueLatestPageState(); };
+    const flushBeforeHide = () => { void queueLatestPageState().catch(() => undefined); };
     document.addEventListener('visibilitychange', reconnectVisible);
     window.addEventListener('pagehide', flushBeforeHide);
     return () => {
