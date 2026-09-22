@@ -37,6 +37,9 @@ coverage
 .claude/
 .agents/
 
+# Codex local environment configuration
+.codex/environments/environment.toml
+
 # skills CLI (npx skills add) install artifacts
 skills-lock.json
 
