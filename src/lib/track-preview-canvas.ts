@@ -1,4 +1,5 @@
 import type { ExactTrackPrimitive, TrackDensityScene, TrackLaneSceneData } from './track-preview-scene';
+import { MIN_NOTE_DRAW_WIDTH_PX } from './track-preview-scene';
 
 /**
  * Pure geometry and draw-command planning for the track lane canvases. The
@@ -9,7 +10,7 @@ import type { ExactTrackPrimitive, TrackDensityScene, TrackLaneSceneData } from 
 
 export const NOTE_HEIGHT_PX = 5;
 export const NOTE_RADIUS_PX = 2;
-export const NOTE_MIN_WIDTH_PX = 2;
+export const NOTE_MIN_WIDTH_PX = MIN_NOTE_DRAW_WIDTH_PX;
 export const NOTE_SEP_WIDTH_PX = 1;
 export const NOTE_OPACITY = 0.72;
 export const NOTE_DIMMED_OPACITY = 0.35;

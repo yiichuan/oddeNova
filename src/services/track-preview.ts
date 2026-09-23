@@ -733,6 +733,7 @@ export class TrackPreview {
             0,
             identity.loopCycles,
             result.batch.effectiveBinSpan ?? precision.effectiveBinSpan,
+            result.batch.sceneTiles,
           ));
         } else if (result.status === 'resource-guarded') {
           publishBatch(this.fullSceneBatchFromSnapshot(identity), 'resource-guarded', result.guardReason);

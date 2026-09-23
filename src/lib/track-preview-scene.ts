@@ -177,6 +177,8 @@ export const MIN_RESOLUTION_TIER = -16;
 export const MAX_RESOLUTION_TIER = 16;
 /** A zoom change under 25% keeps the current tier: no re-query on small resizes. */
 export const TIER_HYSTERESIS_RATIO = 0.25;
+/** A note narrower than this is drawn at the renderer's minimum width. */
+export const MIN_NOTE_DRAW_WIDTH_PX = 2;
 
 function rawTierOf(pixelsPerCycle: number): number {
   if (!Number.isFinite(pixelsPerCycle) || pixelsPerCycle <= 0) return MIN_RESOLUTION_TIER;
@@ -493,7 +495,11 @@ export interface AssembledLane extends TrackLaneSceneData {
  * columns concatenate (tiles share one bin grid). A lane demoted anywhere is
  * presented as density everywhere.
  */
-export function assembleTrackLane(trackId: string, tiles: readonly (TileLaneState | null)[]): AssembledLane {
+export function assembleTrackLane(
+  trackId: string,
+  tiles: readonly (TileLaneState | null)[],
+  retainExactDensityForLods = false,
+): AssembledLane {
   const present = tiles.filter(state => state !== null);
   // Only a tile that owns events may veto the lane's exact form: empty tiles
   // and cover-only tiles (a sustain overlapping from a neighbour) never
@@ -539,7 +545,9 @@ export function assembleTrackLane(trackId: string, tiles: readonly (TileLaneStat
   }
   const lane: AssembledLane = { trackId, representation, rawEventCount, peakColumnCount };
   if (representation === 'exact') lane.exact = exact;
-  else lane.density = density;
+  // Full-scene LOD generation can keep the complete density accumulator beside
+  // exact candidates, since exact retention may omit events too small to draw.
+  if (representation === 'density' || retainExactDensityForLods) lane.density = density;
   return lane;
 }
 
@@ -581,9 +589,7 @@ function rebinLaneDensity(
       if (density.peakConcurrency[bin] < 0xffff) density.peakConcurrency[bin] += 1;
     }
   };
-  if (lane.representation === 'exact') {
-    for (const primitive of lane.exact ?? []) addEvent(primitive);
-  } else if (lane.density) {
+  if (lane.density) {
     const source = lane.density;
     for (let sourceBin = 0; sourceBin < source.counts.length; sourceBin++) {
       const count = source.counts[sourceBin];
@@ -604,6 +610,8 @@ function rebinLaneDensity(
         density.pitchMax[bin] = Math.max(density.pitchMax[bin], source.pitchMax[sourceBin]);
       }
     }
+  } else if (lane.representation === 'exact') {
+    for (const primitive of lane.exact ?? []) addEvent(primitive);
   }
   return { trackId: lane.trackId, representation: 'density', density, rawEventCount: lane.rawEventCount };
 }
@@ -614,16 +622,35 @@ export function buildTrackSceneLods(
   bandBegin: number,
   bandEnd: number,
   baseBinSpan: number,
+  sourceTiles?: readonly TrackSceneTile[],
 ): readonly TrackSceneLod[] {
   if (!(bandEnd > bandBegin) || !(baseBinSpan > 0)) return Object.freeze([]);
-  const lods: TrackSceneLod[] = [{ level: 0, binSpan: baseBinSpan, lanes: Object.freeze([...lanes]) }];
+  const baseLanes = lanes.map(lane => {
+    if (lane.representation !== 'exact' || !lane.density) return lane;
+    return {
+      trackId: lane.trackId,
+      representation: lane.representation,
+      exact: lane.exact,
+      rawEventCount: lane.rawEventCount,
+    };
+  });
+  const lods: TrackSceneLod[] = [{ level: 0, binSpan: baseBinSpan, lanes: Object.freeze(baseLanes) }];
+  const densitySources = sourceTiles?.length
+    ? lanes.map((lane, trackIndex) => lane.representation === 'exact'
+      ? assembleTrackLane(
+        lane.trackId,
+        sourceTiles.map(tile => tile.lanes[trackIndex] ?? null),
+        true,
+      )
+      : lane)
+    : lanes;
   let binSpan = baseBinSpan * 2;
   let level = 1;
   while (Math.ceil((bandEnd - bandBegin - 1e-9) / binSpan) > 1 && level <= 16) {
     lods.push({
       level,
       binSpan,
-      lanes: Object.freeze(lanes.map(lane => rebinLaneDensity(lane, bandBegin, bandEnd, binSpan))),
+      lanes: Object.freeze(densitySources.map(lane => rebinLaneDensity(lane, bandBegin, bandEnd, binSpan))),
     });
     binSpan *= 2;
     level += 1;
@@ -798,7 +825,30 @@ export function assembleFullSceneBatch(
       Math.abs(Math.log2(candidate.binSpan / targetBinSpan))
         < Math.abs(Math.log2(best.binSpan / targetBinSpan)) ? candidate : best)
     : null;
-  return selectedLod ? { ...base, lanes: selectedLod.lanes } : base;
+  if (!selectedLod) return base;
+
+  // Coarser LODs summarize every lane as density. Preserve exact notes for a
+  // sparse lane when its complete exact data remains readable at this zoom;
+  // this lets the existing sounding overlay highlight the whole note. Dense,
+  // incomplete, or sub-pixel lanes keep the selected density representation.
+  const pxPerCycle = viewportSpan > 0 && cssWidth > 0 ? cssWidth / viewportSpan : 0;
+  const exactScreenBudget = Math.min(snapshot.exactBudget, Math.floor(cssWidth * EXACT_COUNT_SCREEN_FACTOR));
+  const baseLanes = new Map((snapshot.lods[0]?.lanes ?? []).map(lane => [lane.trackId, lane]));
+  const lanes = selectedLod.level === 0 ? selectedLod.lanes : selectedLod.lanes.map(lane => {
+    const exactLane = baseLanes.get(lane.trackId);
+    const exact = exactLane?.exact;
+    if (exactLane?.representation !== 'exact'
+      || !exact
+      || exact.length !== exactLane.rawEventCount
+      || exact.length > exactScreenBudget
+      || exact.some(note => (note.end - note.begin) * pxPerCycle < MIN_NOTE_DRAW_WIDTH_PX)) {
+      return lane;
+    }
+    return exactLane;
+  });
+  const kinds = new Set(lanes.map(lane => lane.representation));
+  const representation: TrackSceneRepresentation = kinds.size > 1 ? 'mixed' : kinds.values().next().value ?? 'exact';
+  return { ...base, lanes, representation };
 }
 
 // ── Byte estimation ──────────────────────────────────────────────────────────

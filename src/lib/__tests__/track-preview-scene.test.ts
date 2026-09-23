@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { laneProjection, planLaneOverlay } from '../track-preview-canvas';
 import {
+  assembleFullSceneBatch,
   assembleSceneBatch,
   assembleTrackLane,
   buildTrackSceneLods,
@@ -23,6 +25,8 @@ import {
   sameTrackFullSceneIdentity,
   trackFullSceneIdentityKey,
   type TrackSceneTile,
+  type TrackFullSceneSnapshot,
+  type TrackLaneSceneData,
   type AccumulatedEvent,
 } from '../track-preview-scene';
 
@@ -241,6 +245,109 @@ describe('density tile accumulators', () => {
 });
 
 describe('scene assembly', () => {
+  const fullSceneFor = (lanes: readonly TrackLaneSceneData[], exactBudget = 1_000) => {
+    const lods = buildTrackSceneLods(lanes, 0, 8, 1 / 16);
+    const snapshot: TrackFullSceneSnapshot = {
+      identity: { previewGeneration: 1, loopOffset: 0, loopCycles: 8, cps: 0.5 },
+      status: 'complete',
+      begin: 0,
+      end: 8,
+      completedTiles: new Set(),
+      tiles: [],
+      sounds: ['saw'],
+      resolutionTier: 4,
+      effectiveBinSpan: 1 / 16,
+      exactBudget,
+      lods,
+    };
+    // 8 / 64 = 0.125 cycles per pixel, selecting a coarser LOD than level 0.
+    return assembleFullSceneBatch(snapshot, lanes.map(lane => lane.trackId), 0, 8, 64);
+  };
+
+  it('keeps a complete sparse lane exact in a coarser LOD so its highlight can cover the note', () => {
+    const sparse: TrackLaneSceneData = {
+      trackId: 'melody',
+      representation: 'exact',
+      exact: [
+        { id: 0, begin: 1, end: 1.5, pitch: 60, soundId: 0 },
+        { id: 1, begin: 5, end: 5.75, pitch: 64, soundId: 0 },
+      ],
+      rawEventCount: 2,
+    };
+
+    const batch = fullSceneFor([sparse]);
+
+    expect(batch.representation).toBe('exact');
+    expect(batch.lanes[0].representation).toBe('exact');
+    expect(batch.lanes[0].exact).toEqual(sparse.exact);
+
+    const overlay = planLaneOverlay({
+      lane: batch.lanes[0],
+      sounds: ['saw'],
+      projection: laneProjection(0, 8, 64),
+      cssHeight: 40,
+      colors: {
+        color: '#123456', colorStrong: '#abcdef', grid: '#222222',
+        gridMinor: '#333333', pending: '#444444', sep: '#000000',
+      },
+      quiet: false,
+      activeIds: [0],
+    });
+    expect(overlay.find(command => command.kind === 'rect')).toMatchObject({ width: 4, fill: '#abcdef' });
+  });
+
+  it('keeps density for lanes whose exact notes are too narrow or exceed the zoomed-out budget', () => {
+    const narrow: TrackLaneSceneData = {
+      trackId: 'narrow',
+      representation: 'exact',
+      exact: [{ id: 0, begin: 1, end: 1.1, pitch: 60, soundId: 0 }],
+      rawEventCount: 1,
+    };
+    const readable: TrackLaneSceneData = {
+      trackId: 'many',
+      representation: 'exact',
+      exact: Array.from({ length: 8 }, (_, id) => ({
+        id, begin: id, end: id + 0.5, pitch: 60, soundId: 0,
+      })),
+      rawEventCount: 8,
+    };
+
+    const narrowBatch = fullSceneFor([narrow]);
+    const budgetBatch = fullSceneFor([readable], 4);
+
+    expect(narrowBatch.lanes[0].representation).toBe('density');
+    expect(budgetBatch.lanes[0].representation).toBe('density');
+  });
+
+  it('reports mixed representation when sparse exact and dense density lanes share a LOD', () => {
+    const sparse: TrackLaneSceneData = {
+      trackId: 'bass',
+      representation: 'exact',
+      exact: [{ id: 0, begin: 1, end: 1.5, pitch: 40, soundId: 0 }],
+      rawEventCount: 1,
+    };
+    const dense: TrackLaneSceneData = {
+      trackId: 'drums',
+      representation: 'density',
+      rawEventCount: 40,
+      density: {
+        binBegin: 0,
+        binSpan: 1 / 16,
+        counts: new Uint32Array(128).fill(1),
+        peakConcurrency: new Uint16Array(128).fill(1),
+        pitchMin: new Int16Array(128).fill(0x7fff),
+        pitchMax: new Int16Array(128).fill(-0x8000),
+        pitchedCounts: new Uint16Array(128),
+        unpitchedCounts: new Uint16Array(128).fill(1),
+      },
+    };
+
+    const batch = fullSceneFor([sparse, dense]);
+
+    expect(batch.representation).toBe('mixed');
+    expect(batch.lanes.map(lane => lane.representation)).toEqual(['exact', 'density']);
+  });
+
   it('builds coarser density summaries from the same full-scene data', () => {
     const lanes = [{
       trackId: 'x',
@@ -256,6 +363,36 @@ describe('scene assembly', () => {
     expect(lods[0].lanes[0].representation).toBe('exact');
     expect(lods[1].lanes[0].representation).toBe('density');
     expect([...lods[1].lanes[0].density!.counts].reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0);
+  });
+
+  it('keeps short events in density LODs when an exact lane cannot retain every event', () => {
+    const grid = planTileGrid(0, 1, 25);
+    const accumulator = new TrackLaneTileAccumulator('x', grid, 0, { maxExactCount: 100, pxPerCycle: 25 });
+    accumulator.addEvent({ begin: 0.1, end: 0.6, pitch: 60, soundId: 0 }, { ownsOnset: true });
+    accumulator.addEvent({ begin: 0.9, end: 0.91, pitch: 62, soundId: 0 }, { ownsOnset: true });
+    const state = accumulator.finalize();
+    const lane = assembleTrackLane('x', [state]);
+
+    expect(lane.representation).toBe('exact');
+    expect(lane.exact).toHaveLength(1);
+    expect(lane.rawEventCount).toBe(2);
+
+    const tile: TrackSceneTile = {
+      index: 0,
+      begin: 0,
+      end: 1,
+      binSpan: grid.binSpan,
+      binCount: grid.binCount,
+      status: 'complete',
+      lanes: [state],
+      rawEventCount: 2,
+    };
+    const lods = buildTrackSceneLods([lane], 0, 1, grid.binSpan, [tile]);
+    const coarse = lods.find(item => item.level > 0)!.lanes[0];
+    const shortEventBin = Math.floor(0.9 / coarse.density!.binSpan);
+
+    expect(lods[0].lanes[0].density).toBeUndefined();
+    expect(coarse.density!.counts[shortEventBin]).toBeGreaterThan(0);
   });
 
   it('concatenates tile columns and exact candidates with fresh ids', () => {
@@ -296,7 +433,7 @@ describe('scene assembly', () => {
     const lane = assembleTrackLane('x', [first.finalize(), second.finalize(), third.finalize()]);
     expect(lane.representation).toBe('exact');
     expect(lane.exact).toHaveLength(1);
-    // An exact lane carries no density arrays for drawing.
+    // Ordinary exact lanes do not retain density arrays outside LOD building.
     expect(lane.density).toBeUndefined();
   });
 
