@@ -215,7 +215,7 @@ export async function openDB(): Promise<void> {
 
     try {
       db = await idbOpenDB(DB_NAME, DB_VERSION, {
-        upgrade(database, _oldVersion, _newVersion, transaction) {
+        upgrade(database, oldVersion, _newVersion, transaction) {
           if (!database.objectStoreNames.contains(SESSION_STORE_NAME)) {
             database.createObjectStore(SESSION_STORE_NAME, { keyPath: ['ownerKey', 'id'] });
           }
@@ -241,8 +241,9 @@ export async function openDB(): Promise<void> {
 
           // Both parent branches shipped a v2 database: the account branch used
           // sessions_by_owner, while NOVA-90 used sessions. Migrate the latter
-          // into the guest namespace when upgrading either shape to v3.
-          if (database.objectStoreNames.contains(LEGACY_SESSION_STORE_NAME)) {
+          // into the guest namespace only once; the legacy store remains after
+          // migration and must not repopulate guest history on later upgrades.
+          if (oldVersion < 3 && database.objectStoreNames.contains(LEGACY_SESSION_STORE_NAME)) {
             const legacyStore = transaction.objectStore(LEGACY_SESSION_STORE_NAME);
             const nextStore = transaction.objectStore(SESSION_STORE_NAME);
             void legacyStore.getAll().then((sessions) => Promise.all(
