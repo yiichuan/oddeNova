@@ -29,7 +29,12 @@ import {
   normalizeOddeNovaBridgeBaseUrl,
   type AnyOddeNovaBridgeSnapshot,
 } from '../lib/oddenova-bridge';
-import { mergeBridgeMessages, type PendingBridgeMessageDelta } from '../lib/oddenova-bridge-messages';
+import {
+  diffCreativeMessages,
+  mergeBridgeMessages,
+  projectCreativeMessages,
+  type PendingBridgeMessageDelta,
+} from '../lib/oddenova-bridge-messages';
 import {
   createSessionCloudSync,
   type SessionSyncStatus,
@@ -1634,8 +1639,11 @@ export function useSessions(options: UseSessionsOptions = {}) {
     context?: OddeNovaBridgeImportContext,
   ): Promise<OddeNovaBridgeImportResult> => {
     if (snapshot.protocolVersion === 3) {
-      const persistBridgeSession = async (session: Session): Promise<void> => {
+      const persistBridgeSession = async (session: Session, expectation?: 'initial' | 'update'): Promise<void> => {
         if (binding?.bindingId) {
+          if (!context?.checkpointExpectation) {
+            throw new Error('Bridge import requires an explicit checkpoint expectation');
+          }
           const checkpoint: StoredBridgeCheckpoint = {
             ...(context?.checkpoint ?? {
               schemaVersion: 1,
@@ -1658,7 +1666,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
             session,
             checkpoint,
             deleteOutboxChangeIds: context?.deleteOutboxChangeIds,
-            checkpointExpectation: context?.checkpointExpectation,
+            checkpointExpectation: expectation ?? context.checkpointExpectation,
           });
           return;
         }
@@ -1760,15 +1768,49 @@ export function useSessions(options: UseSessionsOptions = {}) {
       };
       await persistBridgeSession(updated);
       persistedSessionIdsRef.current.add(updated.id);
-      setSessions((previous) => previous.map((session) => session.id === updated.id ? updated : session));
+      // Local message writers can finish while persistence is in flight. Use
+      // the latest React working copy when publishing, then durably commit any
+      // operations completed after the import's earlier page read.
+      let published = updated;
+      let hasLateLocalMessages = false;
+      const live = sessionsRef.current.find((session) => session.id === updated.id);
+      if (live) {
+        const late = diffCreativeMessages(
+          projectCreativeMessages(target.messages),
+          projectCreativeMessages(live.messages),
+        );
+        hasLateLocalMessages = late.upsertMessages.length > 0 || late.deleteMessageIds.length > 0;
+        if (hasLateLocalMessages) {
+          const canonical = projectCreativeMessages(updated.messages).map((message, order) => ({
+            ...message,
+            order,
+            updatedRevision: snapshot.revision,
+          }));
+          const latest = mergeBridgeMessages(live.messages, canonical, {
+            capturedLocalSequence: context?.pendingMessageDelta?.capturedLocalSequence ?? 0,
+            ...late,
+          });
+          published = {
+            ...updated,
+            messages: latest.messages,
+            revisions: revisionsReferencedBy(latest.messages, live.revisions ?? updated.revisions),
+          };
+        }
+      }
+      sessionsRef.current = sessionsRef.current.map((session) => session.id === updated.id ? published : session);
+      setSessions((previous) => previous.map((session) => session.id === updated.id ? published : session));
+      if (hasLateLocalMessages) {
+        await localWrites.flush(updated.id);
+        await persistBridgeSession(published, 'update');
+      }
       if (currentIdRef.current === updated.id) {
         setCurrentId(updated.id);
         await dbPutCurrentSessionId(updated.id, ownerKey);
       }
-      await sessionCloudSync?.checkpoint(updated);
+      await sessionCloudSync?.checkpoint(published);
       return {
         outcome: 'updated', sessionId: updated.id, codeChanged, skillRevision: snapshot.skillRevision,
-        ...(merged.hasPendingLocalMessages ? { hasPendingLocalMessages: true } : {}),
+        ...(merged.hasPendingLocalMessages || hasLateLocalMessages ? { hasPendingLocalMessages: true } : {}),
       };
     }
     const incomingDigests = await Promise.all(snapshot.messages.map(digestOddeNovaBridgeMessage));

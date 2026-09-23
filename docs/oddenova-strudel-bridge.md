@@ -215,7 +215,8 @@ recovery-required，零写入
 重绑提交后，旧 binding 的 checkpoint 已被删除。两条防御保证旧页面的迟来写入不会重建旧 generation：
 
 - **outbox generation guard**：v3 outbox 写入（`generationGuard`）与 checkpoint 读取在同一事务完成。目标 binding 的 checkpoint 不存在或身份不一致时，旧页面的排队写入被拒绝，不会产生孤儿记录；guard 之前的合法旧写入会在重绑事务内被读取并迁移。
-- **checkpoint 存在性约束**：`commitBridgeSessionState()` 区分 `initial`（首次创建 checkpoint）与 `update`（必须已存在）。checkpoint 行已消失时，`update` 提交失败关闭——旧页面不能用一次普通 session 写回重建被迁移走的代次；首次创建路径显式标记 `initial`，不能靠“checkpoint 不存在”自动猜测。
+- **checkpoint 存在性约束**：`commitBridgeSessionState()` 区分 `initial`（首次创建 checkpoint）与 `update`（必须已存在）。checkpoint 行已消失时，`update` 提交失败关闭；`initial` 同时检查当前 session 和同作品其他 binding 的 checkpoint，拒绝重建已迁移的旧代次。首次创建路径必须显式标记 `initial`，不能靠“checkpoint 不存在”自动猜测。
+- **幂等重绑校验**：previous checkpoint 已消失、target checkpoint 已存在时，target session 的 revision、skillRevision 和 contentHash 仍须与 checkpoint 完全一致，不能只凭 binding 身份接受重试。
 
 memory fallback 不共享跨标签页状态，但同一事件循环内的异步哈希仍可能让调用交错：异步候选验证完成后重新从 maps 读取权威值，随后的同步 prepare 与写入之间没有任何 `await`，形成不可分割临界区；异常后全量回滚，保持与 IndexedDB 路径等价的幂等与冲突语义。
 
@@ -343,6 +344,8 @@ abort 当前 poll 让发送循环尽快处理 outbox
 - pending delete 移除对应 canonical 消息；pending upsert 替换同 ID 投影，canonical 中没有的 pending 新消息按本地相对位置插入；
 - 未列入 pending delta、又不在 canonical 中的旧创作消息不复活（canonical 已确认删除的 tombstone 保持删除）；
 - pending upsert 优先复用本地完整 `ChatMessage`（保留富字段），找不到本地对象时才从 page-change 投影构造四字段消息；
+- importer 落盘期间又完成的消息在发布会话前从最新本地工作副本再次合并并落盘；结束 import 后重新读取页面，发现仍有差异就立即排入 outbox；
+- pending 操作若已被本次 canonical 表达（同内容 upsert 或已删除的消息），不再标记为待回传；
 - progress 等网页局部消息按最近一个仍然存活的创作消息锚定，锚点被删除则一并移除，progress 不会发送给 helper；
 - 合并后过滤已失去消息引用的 revision。
 

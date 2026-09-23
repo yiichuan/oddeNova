@@ -1886,6 +1886,49 @@ describe('useSessions', () => {
     expect(stored.revisions?.map((revision) => revision.id)).toEqual([local.revisionId]);
   });
 
+  it('keeps a message completed while a v3 import is persisting', async () => {
+    const first = {
+      protocolVersion: 3 as const, source: 'oddenova-strudel-skill' as const,
+      projectId: 'late-import-project', baseUrl: 'https://www.oddenova.com',
+      revision: 1, skillRevision: 1, bindingId: 'binding-1',
+      title: 'Late piece', code: 'old code',
+      messages: [{ id: 'm1', role: 'user' as const, content: 'make it', createdAt: 1, order: 1, updatedRevision: 1 }],
+      contentHash: 'late-h1',
+    };
+    const { root, getHook } = await renderUseSessions();
+    roots.push(root);
+    await act(async () => { await getHook().importOddeNovaBridgeSnapshot(first); });
+    const sessionId = getHook().currentId!;
+    const second = { ...first, revision: 2, skillRevision: 2, code: 'skill code', contentHash: 'late-h2' };
+    let releaseCommit!: () => void;
+    storageMocks.commitBridgeSessionState.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      releaseCommit = () => resolve(undefined);
+    }));
+
+    let importing!: Promise<unknown>;
+    act(() => {
+      importing = getHook().importOddeNovaBridgeSnapshot(second, undefined, {
+        ownerKey: 'guest', projectId: first.projectId, baseUrl: first.baseUrl,
+        bindingId: first.bindingId, sessionId,
+      }, { checkpointExpectation: 'update' });
+    });
+    await vi.waitFor(() => expect(releaseCommit).toBeDefined());
+    act(() => getHook().addAssistantMessage('completed during import', 'note("late")', sessionId));
+
+    let result: unknown;
+    await act(async () => {
+      releaseCommit();
+      result = await importing;
+    });
+    expect(result).toMatchObject({ hasPendingLocalMessages: true });
+    expect(getHook().currentSession?.messages.some((message) => message.content === 'completed during import')).toBe(true);
+    expect(storageMocks.commitBridgeSessionState).toHaveBeenLastCalledWith(expect.objectContaining({
+      session: expect.objectContaining({
+        messages: expect.arrayContaining([expect.objectContaining({ content: 'completed during import' })]),
+      }),
+    }));
+  });
+
   it('applies a pending delete and does not resurrect canonical tombstones without a delta', async () => {
     const first = {
       protocolVersion: 3 as const, source: 'oddenova-strudel-skill' as const,
@@ -1914,7 +1957,8 @@ describe('useSessions', () => {
         },
       });
     });
-    expect(result).toMatchObject({ outcome: 'updated', hasPendingLocalMessages: true });
+    expect(result).toMatchObject({ outcome: 'updated' });
+    expect(result).not.toHaveProperty('hasPendingLocalMessages');
     expect(getHook().currentSession!.messages.map(({ id }) => id)).toEqual(['m1']);
 
     // Without a pending delta the canonical tombstone must stay deleted.
@@ -1963,6 +2007,8 @@ describe('useSessions', () => {
         contentHash: 'new-hash',
       }, undefined, {
         ownerKey: 'guest', projectId: 'bound-project', baseUrl, bindingId: 'binding-1', sessionId: target.id,
+      }, {
+        checkpointExpectation: 'update',
       });
     });
 

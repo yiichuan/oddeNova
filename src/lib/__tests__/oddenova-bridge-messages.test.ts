@@ -143,6 +143,21 @@ describe('oddenova bridge message synchronization', () => {
     expect(merged.hasPendingLocalMessages).toBe(false);
   });
 
+  it('does not keep a pending flag when the canonical snapshot already includes the operation', () => {
+    const canonical = [
+      { id: 'm1', role: 'user' as const, content: 'new text', createdAt: 1, order: 1, updatedRevision: 2 },
+    ];
+    const merged = mergeBridgeMessages([
+      { id: 'm1', role: 'user', content: 'new text', timestamp: 1 },
+    ], canonical, {
+      capturedLocalSequence: 2,
+      upsertMessages: [{ id: 'm1', role: 'user', content: 'new text', createdAt: 1 }],
+      deleteMessageIds: ['m2'],
+    });
+    expect(merged.messages.map(({ id }) => id)).toEqual(['m1']);
+    expect(merged.hasPendingLocalMessages).toBe(false);
+  });
+
   it('keeps the local relative order of two pending messages between canonical anchors', () => {
     const local = [
       { id: 'm1', role: 'user' as const, content: 'make it', timestamp: 1 },

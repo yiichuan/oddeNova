@@ -14,7 +14,7 @@ import {
 import type { ChatMessage } from '../../hooks/useChat';
 import type { BridgePageStateResolution, OddeNovaBridgeBinding } from '../../lib/oddenova-bridge-state';
 import type { OddeNovaBridgeRebindInput } from '../useSessions';
-import { putBridgeCheckpoint } from '../../lib/session-storage';
+import { deleteBridgeCheckpoint, putBridgeCheckpoint } from '../../lib/session-storage';
 import type { OddeNovaBridgeLockManager } from '../../lib/oddenova-bridge-receiver-lock';
 import { useOddeNovaBridge, type OddeNovaBridgeStatus } from '../useOddeNovaBridge';
 
@@ -1498,10 +1498,10 @@ describe('useOddeNovaBridge', () => {
     expect(status).toEqual(expect.objectContaining({ status: 'applied' }));
   });
 
-  it('requeues local messages completed inside the import window after the import settles', async () => {
-    const projectId = 'import-window-project';
-    const bindingId = 'import-window-binding';
-    const sessionId = 'import-window-session';
+  it.each([false, true])('handles an import-window message when outbox queue failure is %s', async (queueFails) => {
+    const projectId = `import-window-project-${queueFails}`;
+    const bindingId = `import-window-binding-${queueFails}`;
+    const sessionId = `import-window-session-${queueFails}`;
     const baseUrl = normalizeOddeNovaBridgeBaseUrl(window.location.origin);
     const initial = await hashV3Snapshot({
       protocolVersion: 3,
@@ -1588,7 +1588,10 @@ describe('useOddeNovaBridge', () => {
       pageRef.current.code = value.code;
       pageRef.current.bridgeContentHash = (value as OddeNovaBridgeSnapshotV3).contentHash;
       if (context?.checkpoint) await putBridgeCheckpoint(context.checkpoint as never);
-      return { outcome: 'updated' as const, sessionId, codeChanged: true, skillRevision: value.protocolVersion === 3 ? value.skillRevision : undefined, hasPendingLocalMessages: true };
+      if (queueFails && value.revision === incoming.revision) {
+        await deleteBridgeCheckpoint('guest', `${baseUrl}\0${projectId}`, bindingId);
+      }
+      return { outcome: 'updated' as const, sessionId, codeChanged: true, skillRevision: value.protocolVersion === 3 ? value.skillRevision : undefined };
     });
 
     const container = document.createElement('div');
@@ -1629,13 +1632,20 @@ describe('useOddeNovaBridge', () => {
     });
 
     const pageChange = vi.mocked(fetch).mock.calls.find(([input]) => new URL(String(input)).pathname === '/v3/page-change');
-    expect(pageChange).toBeDefined();
-    expect(JSON.parse(String(pageChange?.[1]?.body))).toMatchObject({
-      baseRevision: 2,
-      upsertMessages: [{ id: 'late-b', role: 'assistant', content: 'late answer' }],
-    });
-    expect(importer.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/ack')).toBe(true);
+    const ackSent = vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/ack');
+    if (queueFails) {
+      expect(pageChange).toBeUndefined();
+      expect(ackSent).toBe(false);
+      expect(status?.status).toBe('error');
+    } else {
+      expect(pageChange).toBeDefined();
+      expect(JSON.parse(String(pageChange?.[1]?.body))).toMatchObject({
+        baseRevision: 2,
+        upsertMessages: [{ id: 'late-b', role: 'assistant', content: 'late answer' }],
+      });
+      expect(importer.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(ackSent).toBe(true);
+    }
   });
 
   it('keeps local messages and stays retryable when the queued page-change send fails', async () => {

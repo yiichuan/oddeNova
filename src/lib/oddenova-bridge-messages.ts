@@ -27,18 +27,13 @@ export interface MergeBridgeMessagesResult {
 
 export function projectCreativeMessages(messages: ChatMessage[]): PageCreativeMessage[] {
   return messages.flatMap((message) => {
-    if (
-      (message.role !== 'user' && message.role !== 'assistant')
-      || message.isGreeting
-      || message.agentAttemptId
-      || (message.role === 'assistant' && !message.content)
-    ) return [];
+    if (!isProjectableCreative(message)) return [];
     return [{ id: message.id, role: message.role, content: message.content, createdAt: message.timestamp }];
   });
 }
 
 export function diffCreativeMessages(
-  baseline: readonly OddeNovaBridgeMessageV3[],
+  baseline: readonly Pick<OddeNovaBridgeMessageV3, 'id' | 'role' | 'content'>[],
   current: readonly PageCreativeMessage[],
 ): { upsertMessages: PageCreativeMessage[]; deleteMessageIds: string[] } {
   const baselineById = new Map(baseline.map((message) => [message.id, message]));
@@ -52,7 +47,7 @@ export function diffCreativeMessages(
   };
 }
 
-function isProjectableCreative(message: ChatMessage): boolean {
+function isProjectableCreative(message: ChatMessage): message is ChatMessage & { role: 'user' | 'assistant' } {
   return (message.role === 'user' || message.role === 'assistant')
     && !message.isGreeting
     && !message.agentAttemptId
@@ -69,10 +64,13 @@ export function mergeBridgeMessages(
   const canonicalById = new Map(canonicalSorted.map((message) => [message.id, message]));
   const deletedIds = new Set(pendingDelta?.deleteMessageIds ?? []);
   const upsertById = new Map((pendingDelta?.upsertMessages ?? []).map((message) => [message.id, message]));
-  const hasPendingLocalMessages = Boolean(
-    pendingDelta
-    && (pendingDelta.upsertMessages.length > 0 || pendingDelta.deleteMessageIds.length > 0),
-  );
+  const hasPendingLocalMessages = Boolean(pendingDelta && (
+    pendingDelta.deleteMessageIds.some((id) => canonicalById.has(id))
+    || pendingDelta.upsertMessages.some((message) => {
+      const canonical = canonicalById.get(message.id);
+      return !canonical || canonical.role !== message.role || canonical.content !== message.content;
+    })
+  ));
 
   // The canonical snapshot owns the skeleton: identity, order, role, and
   // content. Pending deletes remove entries; a pending upsert replaces the

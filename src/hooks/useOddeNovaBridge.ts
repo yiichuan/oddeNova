@@ -244,15 +244,15 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
     return result.status === 'ready' ? result.pageState : undefined;
   }, [resolvePage]);
 
-  const queueLatestPageState = useCallback(async (): Promise<number> => {
-    if (!receiverOwned.current || applying.current) return localSequence.current;
+  const queueLatestPageState = useCallback(async (): Promise<boolean> => {
+    if (!receiverOwned.current || applying.current) return false;
     const connection = readStoredBridgeConnection();
     const base = baseline.current;
-    if (!connection?.bindingId || !base || connection.ownerKey !== latest.current.ownerKey) return localSequence.current;
+    if (!connection?.bindingId || !base || connection.ownerKey !== latest.current.ownerKey) return false;
     const result = resolvePage(connection);
-    if (result.status !== 'ready') return localSequence.current;
+    if (result.status !== 'ready') return false;
     const page = result.pageState;
-    if (page.revision !== base.revision) return localSequence.current;
+    if (page.revision !== base.revision) return false;
     const payload = makeOddeNovaBridgePageChange({
       connection,
       baseline: base,
@@ -261,13 +261,13 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
     });
     if (!payload) {
       dirtySince.current = undefined;
-      return localSequence.current;
+      return false;
     }
     const projectKey = oddeNovaBridgeProjectKey(connection.baseUrl, connection.projectId);
     const queued = await getBridgeOutboxEntries(connection.ownerKey, projectKey, connection.bindingId);
     const comparable = JSON.stringify({ ...payload, changeId: undefined });
     if (queued.some((entry) => JSON.stringify({ ...(entry.payload as object), changeId: undefined }) === comparable)) {
-      return localSequence.current;
+      return true;
     }
     await putBridgeOutboxEntry({
       ownerKey: connection.ownerKey,
@@ -277,7 +277,7 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
       payload,
       createdAt: Date.now(),
     }, { generationGuard: true });
-    return localSequence.current;
+    return true;
   }, [resolvePage]);
 
   // Track real page changes, not every render. The initial state is only an
@@ -640,11 +640,19 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
           connection.lastRevision = Math.max(connection.lastRevision, value.revision);
         }
         storeConnection(connection);
+        await nextPaint();
+        if (!stillCurrent()) return undefined;
         const after = currentPage(connection);
+        if (snapshot.protocolVersion === 3 && after?.revision === snapshot.revision) {
+          const difference = diffCreativeMessages(snapshot.messages, projectCreativeMessages(after.messages));
+          if (difference.upsertMessages.length > 0 || difference.deleteMessageIds.length > 0) {
+            result = { ...result, hasPendingLocalMessages: true };
+          }
+        }
         // The merged page state only counts as observed once the import window
         // is fully closed. A pending message delta must not let this reset
         // claim the page is already in sync.
-        if (after && !result?.hasPendingLocalMessages) {
+        if (after?.revision === snapshot.revision && !result?.hasPendingLocalMessages) {
           observedPage.current = { signature: pageSignature(after), sequence: localSequence.current };
         }
       } finally {
@@ -656,11 +664,14 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
       // again here and let the send loop pick the outbox up promptly.
       if (result?.hasPendingLocalMessages && stillCurrent()) {
         try {
-          await queueLatestPageState();
+          if (!await queueLatestPageState()) {
+            throw new Error('待同步的本地消息尚未进入 outbox，当前读取未确认。');
+          }
         } catch (error) {
           if (stillCurrent()) {
             setStatus({ status: 'error', message: statusMessage(error, '本机连接排队失败，正在重试。') });
           }
+          throw error;
         }
         activePollController.current?.abort();
       }
@@ -1066,6 +1077,15 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
               }
               if (!result) continue;
               if (!result.sessionId && connection.sessionId) result.sessionId = connection.sessionId;
+              if (result.hasPendingLocalMessages) {
+                // A canonical import may finish while page messages are still
+                // in the local outbox. Confirm them before reporting a ready
+                // read or acknowledging the resulting revision.
+                const flushed = await flushPageChanges();
+                if (flushed.status === 'recovery-required') throw new BridgeRecoveryRequiredError(flushed.message);
+                if (flushed.status !== 'confirmed') throw new Error('message' in flushed ? flushed.message : 'Pending page messages are not confirmed');
+                confirmedSequence = flushed.completedLocalSequence;
+              }
               if (connection.bindingId && refreshRequestIds.length) {
                 for (const requestId of refreshRequestIds) {
                   // Only report the sequence that this poll actually confirmed;
@@ -1092,14 +1112,7 @@ export function useOddeNovaBridge(options: UseOddeNovaBridgeOptions): UseOddeNov
               }));
               setStatus({ status: 'applied', revision: connection.lastRevision, outcome: result.outcome, persistent: latest.current.isPersistent });
               retryMs = 1_000;
-              if (result.hasPendingLocalMessages) {
-                // The import is done but its window messages still have to
-                // reach the helper. Process the outbox now instead of waiting
-                // for the next long poll to time out.
-                const flushed = await flushPageChanges();
-                if (flushed.status === 'recovery-required') throw new BridgeRecoveryRequiredError(flushed.message);
-                continue;
-              }
+              if (result.hasPendingLocalMessages) continue;
             } catch (error) {
               if (cancelled) return;
               if (isAbortError(error)) continue;

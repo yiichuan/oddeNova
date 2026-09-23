@@ -208,7 +208,7 @@ describe('session-storage fallback path', () => {
       clientId: 'memory-client-new',
     };
 
-    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint });
+    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint, checkpointExpectation: 'initial' });
     await storage.putBridgeOutboxEntry({
       ownerKey,
       projectKey,
@@ -617,7 +617,7 @@ describe('session-storage owner namespaces', () => {
       editorPresentation: { revision: 4, skillRevision: 7, status: 'pending' as const },
       updatedAt: 44,
     };
-    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint });
+    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint, checkpointExpectation: 'initial' });
     await storage.putBridgeOutboxEntry({
       ownerKey,
       projectKey,
@@ -865,15 +865,40 @@ describe('session-storage owner namespaces', () => {
     })).rejects.toThrow();
     expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toBeUndefined();
 
-    // The first commit for a binding may still create the checkpoint.
+    // A stale page cannot label a moved generation as an initial import.
     await expect(storage.commitBridgeSessionState({
       ownerKey,
       session: fixture.session,
       checkpoint: fixture.checkpoint,
       checkpointExpectation: 'initial',
-    })).resolves.toBeUndefined();
-    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toEqual(fixture.checkpoint);
+    })).rejects.toThrow();
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toBeUndefined();
     expect((await storage.getAllSessions(ownerKey)).some((s) => s.id === sessionId)).toBe(true);
+
+    await storage.deleteSessionStrict(sessionId, ownerKey);
+    await expect(storage.commitBridgeSessionState({
+      ownerKey,
+      session: fixture.session,
+      checkpoint: fixture.checkpoint,
+      checkpointExpectation: 'initial',
+    })).rejects.toThrow();
+    expect(await storage.getBridgeCheckpoint(ownerKey, projectKey, previousBindingId)).toBeUndefined();
+  });
+
+  it('rejects an idempotent rebind retry when the target session no longer matches its checkpoint', async () => {
+    const fixture = await setupRebindFixture({ ownerKey: 'user:rebind-target-drift' });
+    const { storage, ownerKey, rebindInput, sessionId } = fixture;
+    await storage.rebindBridgeSessionState(rebindInput);
+    const db = storage.getStorageDb();
+    const target = (await storage.getAllSessions(ownerKey)).find((session) => session.id === sessionId)!;
+    await db?.put(storage.SESSION_STORE_NAME, {
+      ...target,
+      ownerKey,
+      externalSource: { ...target.externalSource, revision: 99 },
+    });
+
+    await expect(storage.rebindBridgeSessionState(rebindInput)).rejects.toMatchObject({ code: 'recovery-required' });
+    expect(await storage.getBridgeCheckpoint(ownerKey, fixture.projectKey, rebindInput.bindingId)).toBeDefined();
   });
 });
 
@@ -1075,6 +1100,7 @@ describe('normalizeSession', () => {
       session,
       checkpoint,
       deleteOutboxChangeIds: [outbox.changeId],
+      checkpointExpectation: 'initial',
     });
 
     expect(await storage.getBridgeCheckpoint(checkpoint.ownerKey, projectKey, bindingId)).toEqual(checkpoint);
@@ -1141,7 +1167,7 @@ describe('normalizeSession', () => {
       editorPresentation: { revision: 4, skillRevision: 7, status: 'pending' as const },
       updatedAt: 44,
     };
-    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint });
+    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint, checkpointExpectation: 'initial' });
     await storage.putBridgeOutboxEntry({
       ownerKey,
       projectKey,
@@ -1227,7 +1253,7 @@ describe('normalizeSession', () => {
       },
       updatedAt: 1,
     };
-    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint });
+    await storage.commitBridgeSessionState({ ownerKey, session, checkpoint, checkpointExpectation: 'initial' });
     await storage.deleteSessionStrict(sessionId, ownerKey);
 
     await expect(storage.rebindBridgeSessionState({
@@ -1382,6 +1408,8 @@ describe('session-storage strict import writes', () => {
     };
     const transaction = vi.fn(() => ({
       objectStore: (name: string) => ({
+        get: vi.fn(async () => undefined),
+        getAll: vi.fn(async () => []),
         put: vi.fn(async (value: { id?: string; sessionId?: string }) => {
           if (name === 'sessions_by_owner') staged.sessions.set(value.id ?? '', value);
           if (name === 'oddenova_bridge_checkpoints') staged.checkpoints.set(value.sessionId ?? '', value);
@@ -1424,7 +1452,7 @@ describe('session-storage strict import writes', () => {
       updatedAt: 1,
     };
 
-    await expect(storage.commitBridgeSessionState({ ownerKey: 'guest', session, checkpoint }))
+    await expect(storage.commitBridgeSessionState({ ownerKey: 'guest', session, checkpoint, checkpointExpectation: 'initial' }))
       .rejects.toThrow('bridge transaction aborted');
     expect(transaction).toHaveBeenCalledWith(
       ['sessions_by_owner', 'oddenova_bridge_checkpoints', 'oddenova_bridge_outbox'],

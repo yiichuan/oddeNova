@@ -79,7 +79,7 @@ export interface BridgeSessionStateCommit {
    * not be able to recreate it by writing a session back. `initial` creates
    * the first checkpoint for a binding and skips the existence check.
    */
-  checkpointExpectation?: 'initial' | 'update';
+  checkpointExpectation: 'initial' | 'update';
 }
 
 export interface BridgeSessionRebindInput {
@@ -541,9 +541,9 @@ function assertSessionMatchesCheckpoint(session: Session, checkpoint: StoredBrid
   const source = session.externalSource;
   if (!source) throw bridgeRebindFailure('Bound session source is missing');
   if (
-    (source.revision !== undefined && source.revision !== checkpoint.snapshot.revision)
-    || (source.skillRevision !== undefined && source.skillRevision !== checkpoint.snapshot.skillRevision)
-    || (source.bridgeContentHash !== undefined && source.bridgeContentHash !== checkpoint.snapshot.contentHash)
+    source.revision !== checkpoint.snapshot.revision
+    || source.skillRevision !== checkpoint.snapshot.skillRevision
+    || source.bridgeContentHash !== checkpoint.snapshot.contentHash
   ) {
     throw bridgeRebindFailure('Bound session and Bridge checkpoint content are inconsistent');
   }
@@ -628,6 +628,7 @@ function prepareBridgeSessionRebindSync(
       throw bridgeRebindFailure('Rebound Bridge checkpoint points to a missing session');
     }
     assertRebindSession(targetSession, identity, [input.bindingId]);
+    assertSessionMatchesCheckpoint(targetSession, targetCheckpoint);
     if (values.previousOutbox.length > 0) {
       throw bridgeRebindFailure('Rebound Bridge state is partial and still has old outbox entries');
     }
@@ -770,9 +771,9 @@ export async function rebindBridgeSessionState(
       try {
         memoryBridgeSessions.set(bridgeSessionKey(input.ownerKey, prepared.session.id), prepared.session);
         memoryBridgeCheckpoints.set(bridgeCheckpointKey(prepared.checkpoint), prepared.checkpoint);
-        for (const entry of prepared.reboundOutbox) memoryBridgeOutbox.set(bridgeOutboxKey(entry), entry);
         memoryBridgeCheckpoints.delete(bridgeCheckpointKey({ ownerKey: input.ownerKey, projectKey: input.projectKey, bindingId: input.previousBindingId }));
         for (const entry of prepared.previousOutbox) memoryBridgeOutbox.delete(bridgeOutboxKey(entry));
+        for (const entry of prepared.reboundOutbox) memoryBridgeOutbox.set(bridgeOutboxKey(entry), entry);
       } catch (error) {
         memoryBridgeSessions.clear();
         for (const [key, value] of sessionsBefore) memoryBridgeSessions.set(key, value);
@@ -846,11 +847,11 @@ export async function rebindBridgeSessionState(
 
       await sessionsStore.put(withOwner(prepared.session, input.ownerKey));
       await checkpointsStore.put(prepared.checkpoint);
-      for (const entry of prepared.reboundOutbox) await outboxStore.put(entry);
       await checkpointsStore.delete([input.ownerKey, input.projectKey, input.previousBindingId]);
       for (const entry of prepared.previousOutbox) {
         await outboxStore.delete([entry.ownerKey, entry.projectKey, entry.bindingId, entry.changeId]);
       }
+      for (const entry of prepared.reboundOutbox) await outboxStore.put(entry);
       await tx.done;
       return { session: prepared.session, checkpoint: prepared.checkpoint };
     } catch (error) {
@@ -899,8 +900,22 @@ export async function commitBridgeSessionState({
   if (checkpoint.ownerKey !== ownerKey || checkpoint.sessionId !== session.id) {
     throw new Error('Bridge checkpoint does not belong to the committed session');
   }
+  if (checkpointExpectation !== 'initial' && checkpointExpectation !== 'update') {
+    throw new Error('Bridge checkpoint commit requires an explicit initial or update expectation');
+  }
   await openDB();
   const expectationMessage = 'Bridge checkpoint generation is missing; the binding was likely rebound or removed, refusing to recreate it';
+  const initialConflictMessage = 'Bridge checkpoint initial commit conflicts with an existing generation or a rebound session';
+  const initialSessionConflicts = (existing: Session | undefined): boolean => Boolean(
+    existing?.externalSource?.protocolVersion === 3
+    && existing.externalSource.bindingId !== checkpoint.bindingId,
+  );
+  const anotherBindingOwnsSession = (rows: readonly StoredBridgeCheckpoint[]): boolean => rows.some((row) => (
+    row.ownerKey === ownerKey
+    && row.projectKey === checkpoint.projectKey
+    && row.sessionId === session.id
+    && row.bindingId !== checkpoint.bindingId
+  ));
   if (memoryFallback || !db) {
     const checkpointKey = bridgeCheckpointKey(checkpoint);
     const sessionKey = bridgeSessionKey(ownerKey, session.id);
@@ -909,6 +924,13 @@ export async function commitBridgeSessionState({
     }
     const previousSession = memoryBridgeSessions.get(sessionKey);
     const previous = memoryBridgeCheckpoints.get(checkpointKey);
+    if (checkpointExpectation === 'initial' && (
+      previous
+      || initialSessionConflicts(previousSession)
+      || anotherBindingOwnsSession([...memoryBridgeCheckpoints.values()])
+    )) {
+      throw new Error(initialConflictMessage);
+    }
     try {
       memoryBridgeSessions.set(sessionKey, session);
       memoryBridgeCheckpoints.set(checkpointKey, checkpoint);
@@ -935,13 +957,19 @@ export async function commitBridgeSessionState({
     'readwrite',
   );
   const checkpoints = tx.objectStore(BRIDGE_CHECKPOINT_STORE_NAME);
-  if (checkpointExpectation === 'update') {
-    const existing = await checkpoints.get([ownerKey, checkpoint.projectKey, checkpoint.bindingId]);
-    if (!existing) {
+  const existing = await checkpoints.get([ownerKey, checkpoint.projectKey, checkpoint.bindingId]);
+  const previousSession = checkpointExpectation === 'initial'
+    ? await tx.objectStore(SESSION_STORE_NAME).get([ownerKey, session.id]) as Session | undefined
+    : undefined;
+  const otherCheckpoints = checkpointExpectation === 'initial'
+    ? await checkpoints.getAll() as StoredBridgeCheckpoint[]
+    : [];
+  if (checkpointExpectation === 'update'
+    ? !existing
+    : Boolean(existing || initialSessionConflicts(previousSession) || anotherBindingOwnsSession(otherCheckpoints))) {
       try { tx.abort(); } catch { /* already finished */ }
       await tx.done.catch(() => undefined);
-      throw new Error(expectationMessage);
-    }
+      throw new Error(checkpointExpectation === 'update' ? expectationMessage : initialConflictMessage);
   }
   await tx.objectStore(SESSION_STORE_NAME).put(withOwner(session, ownerKey));
   await checkpoints.put(checkpoint);
