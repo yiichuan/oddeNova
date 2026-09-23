@@ -655,6 +655,37 @@ describe('StrudelService transport truth', () => {
   });
 });
 
+describe('StrudelService displayed editor probe', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('../../lib/soundfont-loader');
+    vi.doUnmock('../../lib/analytics');
+  });
+
+  it('reads the mounted CodeMirror document without falling back to service state', async () => {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    const documentCode = vi.fn(() => 'code in CodeMirror');
+    const mutable = service as unknown as {
+      _state: { code: string };
+      editorInstance: unknown;
+    };
+    mutable._state.code = 'stale service state';
+    mutable.editorInstance = {
+      editor: { state: { doc: { toString: documentCode } } },
+    };
+
+    expect(service.getDisplayedCode()).toBe('code in CodeMirror');
+    expect(documentCode).toHaveBeenCalledOnce();
+
+    mutable.editorInstance = null;
+    expect(service.getDisplayedCode()).toBeUndefined();
+  });
+});
+
 describe('StrudelService playback seeking', () => {
   afterEach(() => {
     vi.resetModules();

@@ -6,7 +6,17 @@ import CodePanel from './components/studio/CodePanel';
 import Sidebar from './components/conversation/Sidebar';
 import VizPlaceholder from './components/studio/VizPlaceholder';
 import { useStrudel } from './hooks/useStrudel';
-import { makeGreetingMessage, useSessions } from './hooks/useSessions';
+import {
+  makeGreetingMessage,
+  useSessions,
+  type OddeNovaBridgeImportBinding,
+  type OddeNovaBridgeImportContext,
+  type OddeNovaBridgeImportResult,
+} from './hooks/useSessions';
+import type { AnyOddeNovaBridgeSnapshot } from './lib/oddenova-bridge';
+import { normalizeOddeNovaBridgeBaseUrl } from './lib/oddenova-bridge';
+import { resolveBridgeBinding, type BridgePageStateResolution, type OddeNovaBridgeBinding } from './lib/oddenova-bridge-state';
+import type { OddeNovaImportPayload } from './lib/oddenova-import';
 import { useSuggestions } from './hooks/useSuggestions';
 import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
@@ -22,6 +32,7 @@ import { DownloadIcon, EllipsisIcon, SquareTerminalIcon, XIcon } from './compone
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
 import { useOddeNovaImport } from './hooks/useOddeNovaImport';
+import { useOddeNovaBridge, type OddeNovaBridgePresentationReason } from './hooks/useOddeNovaBridge';
 import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
@@ -33,6 +44,7 @@ import { useExportPopoverController } from './hooks/useExportPopoverController';
 import AccountModal from './components/overlays/AccountModal';
 import WelcomeModal from './components/overlays/WelcomeModal';
 import OddeNovaImportNotice from './components/overlays/OddeNovaImportNotice';
+import OddeNovaBridgeNotice from './components/overlays/OddeNovaBridgeNotice';
 import FavoriteActionDialog, { type FavoriteActionKind } from './components/overlays/FavoriteActionDialog';
 import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
 import MobileNavDrawer from './components/nav/MobileNavDrawer';
@@ -181,11 +193,6 @@ export default function App() {
   });
   const dailySuggestionDefaults = useDailySuggestions(zh);
   const importStatus = useImportShare(sessions.importSession, !sessions.isLoading);
-  const oddeNovaImportResult = useOddeNovaImport(
-    sessions.importOddeNovaSession,
-    !sessions.isLoading,
-    sessions.isPersistent,
-  );
   const [loadingSessions, setLoadingSessions] = useState<Set<string>>(new Set());
   const [commitSuggestions, setCommitSuggestions] = useState<string[] | null>(null);
   const [demoStep, setDemoStep] = useState(0);
@@ -587,6 +594,19 @@ export default function App() {
   }, [guestImportError, guestImportSessions, importGuestHistory]);
 
   const current = sessions.currentSession;
+  // The bridge resolver is intentionally stable. It reads these refs so a
+  // long-poll/read barrier never closes over the session that happened to be
+  // first in an older render.
+  const bridgeSessionsRef = useRef<Session[]>([]);
+  const bridgeCurrentRef = useRef<Session | null>(null);
+  const bridgeEditorCodeRef = useRef('');
+  const bridgeDisplayedCodeRef = useRef<string | undefined>(undefined);
+  const bridgeDisplayedCodeReaderRef = useRef<() => string | undefined>(() => undefined);
+  bridgeSessionsRef.current = sessions.sessions;
+  bridgeCurrentRef.current = current;
+  bridgeEditorCodeRef.current = strudel.code;
+  bridgeDisplayedCodeReaderRef.current = strudel.getDisplayedCode;
+  bridgeDisplayedCodeRef.current = strudel.getDisplayedCode();
   const visibleSyncStatus = !sessions.isPersistent
     && sessions.currentManualSyncStatus === 'offline'
     ? 'retrying'
@@ -786,6 +806,139 @@ export default function App() {
    * elsewhere puts the light out instead of stranding it.
    */
   const [soundingSegment, setSoundingSegment] = useState<{ id: string; code: string } | null>(null);
+
+  const applyImportedCode = useCallback((sessionId: string, code: string) => {
+    skipNextManualSyncSessionRef.current = sessionId;
+    if (isMobile) mobileCodeRestoreRef.current = { id: sessionId, code };
+    setPreview(null);
+    setSoundingSegment(null);
+    strudel.stop();
+    strudel.setCode(code);
+  }, [isMobile, strudel]);
+  const importLegacyOddeNovaPayload = useCallback(async (
+    payload: OddeNovaImportPayload,
+  ) => {
+    const existingId = sessions.sessions.find((session) =>
+      session.externalSource?.type === 'oddenova-strudel-skill'
+      && session.externalSource.projectId === payload.projectId
+    )?.id;
+    const outcome = await sessions.importOddeNovaSession(payload);
+    if (outcome === 'updated' && existingId) applyImportedCode(existingId, payload.code);
+    return outcome;
+  }, [applyImportedCode, sessions]);
+  const oddeNovaImportResult = useOddeNovaImport(
+    importLegacyOddeNovaPayload,
+    !sessions.isLoading,
+    sessions.isPersistent,
+  );
+  const importBridgeSnapshot = useCallback(
+    (
+      snapshot: AnyOddeNovaBridgeSnapshot,
+      binding?: OddeNovaBridgeImportBinding,
+      context?: OddeNovaBridgeImportContext,
+    ) => sessions.importOddeNovaBridgeSnapshot(
+      snapshot,
+      // v3 skill snapshots own the target code. The active editor draft is
+      // still read by the page-change path, but must not delay or contaminate
+      // a new-version presentation.
+      snapshot.protocolVersion === 2
+        && binding?.sessionId
+        && bridgeCurrentRef.current?.id === binding.sessionId
+        ? { sessionId: binding.sessionId, code: bridgeEditorCodeRef.current }
+        : undefined,
+      binding,
+      context,
+    ),
+    [sessions],
+  );
+  const presentBridgeSnapshot = useCallback(async (
+    snapshot: AnyOddeNovaBridgeSnapshot,
+    result: OddeNovaBridgeImportResult,
+    _presentation: { reason: OddeNovaBridgePresentationReason },
+  ): Promise<void> => {
+    const currentSession = bridgeCurrentRef.current;
+    if (currentSession && currentSession.id !== result.sessionId) {
+      // The editor is a live draft, not necessarily the last session.code
+      // checkpoint. Save it before changing the active session so a Bridge
+      // update can never erase work in the session the user was viewing.
+      await sessions.setManualCode(bridgeEditorCodeRef.current, currentSession.id);
+      await sessions.flushLocalWrites(currentSession.id);
+      sessions.switchTo(result.sessionId);
+    }
+    setCommitSuggestions(null);
+    sessions.clearSuggestions(result.sessionId);
+    setPreview(null);
+    setSoundingSegment(null);
+    strudel.stop();
+    strudel.setCode(snapshot.code);
+  }, [sessions, strudel]);
+  const resolveBridgePageState = useCallback((bridgeBinding: OddeNovaBridgeBinding): BridgePageStateResolution => {
+    if (sessions.isLoading) return { status: 'loading' };
+    const resolution = resolveBridgeBinding(bridgeSessionsRef.current, bridgeBinding);
+    if (resolution.status !== 'ready') {
+      return resolution.status === 'ambiguous'
+        ? { status: 'ambiguous', candidates: resolution.candidates.map((session) => session.id), reason: '多个本地会话匹配同一 bridge 身份' }
+        : { status: 'missing', reason: resolution.reason };
+    }
+    const { session } = resolution;
+    const source = session.externalSource;
+    if (!source) return { status: 'missing', reason: 'Bridge session source is missing' };
+    return {
+      status: 'ready',
+      binding: resolution.binding,
+      pageState: {
+        sessionId: session.id,
+        projectId: bridgeBinding.projectId,
+        baseUrl: normalizeOddeNovaBridgeBaseUrl(bridgeBinding.baseUrl),
+        revision: source.revision ?? 0,
+        title: session.title,
+        code: bridgeCurrentRef.current?.id === session.id ? bridgeEditorCodeRef.current : session.code,
+        messages: session.messages,
+        bridgeContentHash: source.bridgeContentHash,
+        bridgeProtocolVersion: source.protocolVersion,
+        storedTitle: session.title,
+        storedCode: session.code,
+        storedMessages: session.messages,
+      },
+      visibleSessionId: bridgeCurrentRef.current?.id,
+      editorCode: bridgeDisplayedCodeReaderRef.current(),
+    };
+  }, [sessions.isLoading]);
+  const bridgePageStateVersion = useMemo(() => JSON.stringify({
+    currentId: current?.id,
+    editorCode: strudel.code,
+    displayedCode: bridgeDisplayedCodeRef.current,
+    sessions: sessions.sessions
+      .filter((session) => session.externalSource?.type === 'oddenova-strudel-skill')
+      .map((session) => ({
+        id: session.id,
+        title: session.title,
+        code: session.code,
+        updatedAt: session.updatedAt,
+        source: session.externalSource,
+        messages: session.messages,
+      })),
+  }), [current?.id, sessions.sessions, strudel.code]);
+  const bridgeResult = useOddeNovaBridge({
+    importer: importBridgeSnapshot,
+    isReady: !sessions.isLoading && !auth.loading && !auth.recoveringPassword,
+    isBusy: loadingSessions.size > 0
+      || isReplaying
+      || isVideoMode
+      || strudel.exportState.status === 'exporting',
+    isPersistent: sessions.isPersistent,
+    ownerKey,
+    rebindSession: sessions.rebindOddeNovaBridgeSession,
+    presentAppliedSnapshot: presentBridgeSnapshot,
+    resolvePageState: resolveBridgePageState,
+    pageStateVersion: bridgePageStateVersion,
+  });
+  // Keep the boundary tolerant of old test/integration adapters that returned
+  // the status object directly while the production hook now returns
+  // `{ status, binding }`.
+  const oddeNovaBridgeStatus = (typeof bridgeResult.status === 'string'
+    ? { status: bridgeResult.status }
+    : bridgeResult.status) as import('./hooks/useOddeNovaBridge').OddeNovaBridgeStatus;
 
   /** Put the draft back in the editor and hand the typist their keys back. */
   const exitPreview = useCallback(() => {
@@ -2464,6 +2617,7 @@ export default function App() {
   return (
     <>
       <OddeNovaImportNotice result={oddeNovaImportResult} />
+      <OddeNovaBridgeNotice status={oddeNovaBridgeStatus} />
       {responsiveLayout}
       {/* Outside both layouts: it is about a conversation rather than about a
           page, and it blurs whichever one you were on when you moved it. */}
