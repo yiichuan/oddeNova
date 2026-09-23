@@ -557,14 +557,14 @@ export function planRasterBlocks(input: RasterPlanInput): RasterPlan {
     return { blocks, bytes };
   };
 
-  // Off-screen prefetch shrinks before clarity does: full margins first,
-  // then half of each side's margin, a quarter, and finally none — the
-  // viewport itself is never shaved.
+  // Off-screen prefetch shrinks before clarity does. Even when the soft
+  // budget is exceeded, retain a small margin on both sides so follow mode
+  // can advance and schedule the next raster without showing an empty edge.
   const shrink = (fraction: number): [number, number] => [
     Math.max(pStart, vStart - Math.round((vStart - pStart) * fraction)),
     Math.min(pEnd, vEnd + Math.round((pEnd - vEnd) * fraction)),
   ];
-  const candidates: Array<[number, number]> = [shrink(1), shrink(0.5), shrink(0.25), shrink(0)];
+  const candidates: Array<[number, number]> = [shrink(1), shrink(0.5), shrink(0.25), shrink(0.1)];
   let chosenBlocks: RasterBlock[] = [];
   let chosenBytes = 0;
   for (const [left, right] of candidates) {

@@ -108,6 +108,7 @@ const exactLane = (primitives: ExactTrackPrimitive[]): TrackLaneSceneData => ({
 });
 
 const DEFAULTS = {
+  trackId: 'a',
   trackName: 'kit',
   sounds: ['bd'],
   slot: 2,

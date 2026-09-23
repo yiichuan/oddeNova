@@ -828,6 +828,12 @@ export default function TrackPanel({
   // this boundary — rather than a window derived from that newest clock —
   // decides when React must advance its low-frequency drawing snapshot.
   const committedDrawWindowRef = useRef<ReturnType<typeof drawWindowForViewport> | null>(null);
+  const committedViewportRef = useRef<{ begin: number; end: number } | null>(null);
+  const rasterCoverageRef = useRef(new Map<string, ReturnType<typeof drawWindowForViewport>>());
+  const reportRasterCoverage = useCallback((trackId: string, coverage: ReturnType<typeof drawWindowForViewport> | null) => {
+    if (coverage) rasterCoverageRef.current.set(trackId, coverage);
+    else rasterCoverageRef.current.delete(trackId);
+  }, []);
 
   const makePreviewRequest = useCallback((force: boolean): TrackSceneRequest | null => {
     if (fullSceneMode || !liveMode || !getClock || !queryScene || !tracks.length || loopCycles === null) return null;
@@ -951,10 +957,30 @@ export default function TrackPanel({
   // target — never the stale frame that queued it.
   const refreshDrawWindowIfNeeded = useCallback(() => {
     if (!liveMode || loopCycles === null) return;
-    const window = committedDrawWindowRef.current;
-    if (!window) return;
+    const committedWindow = committedDrawWindowRef.current;
+    if (!committedWindow) return;
+    // The memory budget can trim prefetched bitmaps without changing the
+    // requested draw window. Follow the shared range every painted lane owns.
+    const window = { ...committedWindow };
+    for (const track of tracksRef.current) {
+      const coverage = rasterCoverageRef.current.get(track.id);
+      if (!coverage) continue;
+      window.begin = Math.max(window.begin, coverage.begin);
+      window.end = Math.min(window.end, coverage.end);
+    }
     const projection = liveProjectionRef.current;
-    if (sceneBandContainsViewport(window, projection, DRAW_WINDOW_SAFETY_RATIO, loopCycles)) return;
+    const committedViewport = committedViewportRef.current;
+    const span = committedViewport ? committedViewport.end - committedViewport.begin : 0;
+    // A budgeted plan can retain less than the usual quarter-screen margin.
+    // Refresh halfway through the margin that was actually painted at commit.
+    const leftMargin = window.begin <= 0 || !committedViewport
+      ? Infinity : Math.max(0, committedViewport.begin - window.begin);
+    const rightMargin = window.end >= loopCycles - 1e-9 || !committedViewport
+      ? Infinity : Math.max(0, window.end - committedViewport.end);
+    const safetyRatio = span > 0
+      ? Math.min(DRAW_WINDOW_SAFETY_RATIO, Math.min(leftMargin, rightMargin) / span / 2)
+      : DRAW_WINDOW_SAFETY_RATIO;
+    if (sceneBandContainsViewport(window, projection, safetyRatio, loopCycles)) return;
     if (drawWindowRefreshQueuedRef.current) return;
     drawWindowRefreshQueuedRef.current = true;
     requestAnimationFrame(() => {
@@ -1107,6 +1133,7 @@ export default function TrackPanel({
   // concurrent render must not make the RAF believe its blocks are visible.
   useLayoutEffect(() => {
     committedDrawWindowRef.current = drawWindow;
+    committedViewportRef.current = { begin: renderFrame.begin, end: renderFrame.end };
   });
   // The panel owns the bitmap budget: one equal share per lane keeps the
   // estimate panel-level, and a lane whose visible area alone exceeds its
@@ -1834,6 +1861,7 @@ export default function TrackPanel({
               <div {...panInteractions} data-notes-cell className={`relative mr-2 min-h-0 min-w-0 overflow-hidden ${canSeek ? 'cursor-grab touch-pan-y active:cursor-grabbing' : ''}`}>
                 <TrackLaneCanvas
                   ref={handle => registerLaneHandle(track.id, handle)}
+                  trackId={track.id}
                   trackName={track.name}
                   lane={lane}
                   sounds={displayScene?.sounds ?? []}
@@ -1848,6 +1876,7 @@ export default function TrackPanel({
                   devicePixelRatio={devicePixelRatio}
                   rasterBudgetBytes={rasterBudgetPerLane}
                   onRasterFailure={notifyRasterFailure}
+                  onRasterCoverage={reportRasterCoverage}
                   minorTicks={sceneTicks.minor}
                   majorTicks={sceneTicks.major}
                   coverageEnd={displayScene?.coverageEnd}

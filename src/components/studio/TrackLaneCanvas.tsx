@@ -1,5 +1,6 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { TrackLaneSceneData } from '../../lib/track-preview-scene';
+import type { TrackSceneBand } from '../../lib/track-timeline';
 import {
   executeLaneDrawCommands,
   laneProjection,
@@ -25,6 +26,7 @@ export interface TrackLaneCanvasHandle {
 }
 
 interface TrackLaneCanvasProps {
+  trackId: string;
   trackName: string;
   lane: TrackLaneSceneData | null;
   sounds: readonly string[];
@@ -51,6 +53,8 @@ interface TrackLaneCanvasProps {
   /** Reports bitmap allocation/context failures; the caller keeps its own
    *  failure state instead of pretending the raster succeeded. */
   onRasterFailure?: () => void;
+  /** The range actually backed by bitmaps after the memory budget shrinks prefetch. */
+  onRasterCoverage?: (trackId: string, coverage: TrackSceneBand | null) => void;
   /** "Exact note preview" / "Full density preview" description for ARIA. */
   representationLabel: string;
   notesLabel: string;
@@ -104,10 +108,10 @@ interface DrawnBaseBlock {
 const EMPTY_TICKS: readonly number[] = [];
 
 const TrackLaneCanvas = memo(forwardRef<TrackLaneCanvasHandle, TrackLaneCanvasProps>(function TrackLaneCanvas({
-  trackName, lane, sounds, slot, quiet, bandBegin, bandEnd, viewportBegin, viewportEnd,
+  trackId, trackName, lane, sounds, slot, quiet, bandBegin, bandEnd, viewportBegin, viewportEnd,
   drawBegin, drawEnd, minorTicks = EMPTY_TICKS, majorTicks = EMPTY_TICKS, coverageEnd, pendingRanges,
   devicePixelRatio, rasterBudgetBytes,
-  onRasterFailure, representationLabel, notesLabel, rawEventCount, colorEpoch = 0,
+  onRasterFailure, onRasterCoverage, representationLabel, notesLabel, rawEventCount, colorEpoch = 0,
 }, forwardedRef) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef<TrackLaneActive | null>(null);
@@ -176,6 +180,17 @@ const TrackLaneCanvas = memo(forwardRef<TrackLaneCanvasHandle, TrackLaneCanvasPr
     bandBegin, bandEnd, devicePixelRatio, drawBegin, drawEnd,
     pxPerCycle, rasterBudgetBytes, size.height, size.width, viewportBegin, viewportEnd, visible,
   ]);
+
+  useLayoutEffect(() => {
+    const blocks = plan?.blocks;
+    onRasterCoverage?.(trackId, blocks?.length
+      ? {
+        begin: Math.min(...blocks.map(block => block.beginCycle)),
+        end: Math.max(...blocks.map(block => block.endCycle)),
+      }
+      : null);
+    return () => onRasterCoverage?.(trackId, null);
+  }, [onRasterCoverage, plan, trackId]);
 
   /** The stable identity of what the blocks draw (everything but geometry). */
   const contentEpoch = useMemo(

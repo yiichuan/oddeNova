@@ -135,11 +135,11 @@ const flushScene = async () => {
   await act(async () => {});
 };
 
-function fireCanvasSizes() {
+function fireCanvasSizes(height = 40) {
   // The lane canvases draw only once measured; give each a content size.
   for (const element of container.querySelectorAll('[data-track-lane-canvas]')) {
     for (const observer of resizeObservers) {
-      if (observer.observed.has(element)) observer.fire(1600, 40);
+      if (observer.observed.has(element)) observer.fire(1600, height);
     }
   }
 }
@@ -2173,6 +2173,39 @@ it('advances full-scene ruler labels and raster blocks as a stable clock moves',
     .flatMap(canvas => contextCalls(canvas));
   expect(overlayCalls.some(([method]) => method === 'beginPath' || method === 'fill')).toBe(true);
   expect(ensureFullScene).toHaveBeenCalledTimes(1);
+});
+
+it('refreshes follow raster from its budgeted bitmap edge before notes are clipped', async () => {
+  vi.stubGlobal('devicePixelRatio', 2);
+  let absoluteCycle = 1;
+  const denseTracks = Array.from({ length: 10 }, (_, index) => ({ id: `lane-${index}`, name: `lane ${index}` }));
+  const fullScene: TrackFullSceneSnapshot = {
+    identity: { previewGeneration: 1, loopOffset: 0, loopCycles: LOOP, cps: 0.5 },
+    status: 'complete', begin: 0, end: LOOP,
+    completedTiles: new Set(), tiles: [], sounds: ['bd'], resolutionTier: 8,
+    effectiveBinSpan: 1 / 256, exactBudget: 6400,
+    lods: [{ level: 0, binSpan: 1 / 256, lanes: denseTracks.map(track => exactLane(track.id, [ev(3, 6, 0)])) }],
+  };
+  await renderPanel({
+    tracks: denseTracks, fullScene, ensureFullScene: vi.fn(), queryScene: undefined,
+    getClock: () => ({ absoluteCycle, cps: 0.5 }), isPlaying: true,
+  });
+  act(() => fireCanvasSizes(400));
+  await act(async () => {});
+  const rasterRight = () => Math.max(...[...laneRow('lane-0').querySelectorAll<HTMLElement>('[data-track-raster-block]')]
+    .map(block => parseFloat(block.style.left) + parseFloat(block.style.width)));
+  const initialRight = rasterRight();
+  expect(initialRight).toBeGreaterThan(400);
+  expect(initialRight).toBeLessThan(800);
+
+  // The desired draw window still reaches cycle 8. The budgeted bitmaps end
+  // near cycle 4, so the next viewport must trigger a raster refresh early.
+  absoluteCycle = 3;
+  tick(16);
+  tick(32);
+  await act(async () => {});
+  expect(rasterRight()).toBeGreaterThan(initialRight);
+  expect(rasterRight()).toBeGreaterThanOrEqual(500);
 });
 
 it('rebuilds the exact-note highlight cursor when the same full scene publishes new lanes', async () => {

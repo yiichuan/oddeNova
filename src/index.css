@@ -4126,6 +4126,11 @@ html[data-theme='light'] .track-panel {
   z-index: 0;
 }
 
+.track-playhead-ruler-position {
+  /* The translated wrapper forms a stacking context above minor ticks. */
+  z-index: 1;
+}
+
 .track-ruler-ticks-clip {
   z-index: 2;
 }
