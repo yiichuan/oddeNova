@@ -418,6 +418,35 @@ describe('session-storage owner namespaces', () => {
     expect((await getAllSessions('guest')).map((s) => s.id)).toContain('legacy-idb-session');
   });
 
+  it('does not restore already imported legacy sessions on a later database upgrade', async () => {
+    const legacy = {
+      id: 'legacy-idb-session',
+      title: 'Already imported',
+      messages: [{ id: 'msg-1', role: 'user' as const, content: 'old local chat', timestamp: 1 }],
+      code: 's("bd")',
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('oddenova-db', 6);
+      request.onerror = () => reject(request.error);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('sessions', { keyPath: 'id' }).put(legacy);
+        request.result.createObjectStore('sessions_by_owner', { keyPath: ['ownerKey', 'id'] });
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+    });
+
+    const storage = await import('../session-storage');
+    await storage.openDB();
+
+    expect(await storage.getAllSessions('guest')).toEqual([]);
+    expect(await storage.getStorageDb()?.get('sessions', legacy.id)).toEqual(legacy);
+  });
+
   it('normalizes a legacy guest id in one transaction and moves the current-session pointer', async () => {
     const storage = await import('../session-storage');
     await storage.openDB();
