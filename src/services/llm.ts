@@ -15,7 +15,12 @@ import {
   getOpenAIToolSchemas,
 } from '../agent/tools';
 import { getActiveModelConfig, getSelectedThinkingLevel } from './llm-config';
-import { resolveAnthropicThinkingParam, resolveOpenAIThinkingParams } from './thinking-params';
+import {
+  isAnthropicAdaptiveModel,
+  resolveAnthropicThinkingParam,
+  resolveOpenAIClassificationParams,
+  resolveOpenAIThinkingParams,
+} from './thinking-params';
 import {
   isDemoMode,
   resolveDemoScenario,
@@ -44,6 +49,20 @@ import { INTENT_CLASSIFIER_PROMPT } from '../prompts/intent-classifier';
 let anthropicClient: Anthropic | null = null;
 let openaiClient: OpenAI | null = null;
 const AGENT_MAX_TOKENS = 131072;
+
+// Synchronous Messages API output caps (platform.claude.com/docs/en/models/overview):
+// fable-5-1 / opus-5* / opus-4-8 support 128k; sonnet-4-6 and haiku-4-5 cap at 64k.
+const ANTHROPIC_OUTPUT_LIMITS: Array<{ prefix: string; max: number }> = [
+  { prefix: 'claude-haiku-4-5', max: 64000 },
+  { prefix: 'claude-sonnet-4-6', max: 64000 },
+];
+
+function anthropicMaxOutputTokens(model: string): number {
+  for (const { prefix, max } of ANTHROPIC_OUTPUT_LIMITS) {
+    if (model.startsWith(prefix)) return max;
+  }
+  return AGENT_MAX_TOKENS;
+}
 
 function getAnthropicClient(): Anthropic {
   if (!anthropicClient) {
@@ -104,6 +123,7 @@ export async function chatOnce(
   const { temperature = 0.8, maxTokens = 200 } = opts;
 
   if (isOpenAIProvider()) {
+    const cfg = getActiveModelConfig();
     const oai = getOpenAIClient();
     const resp = await oai.chat.completions.create({
       model: getModel(),
@@ -111,18 +131,26 @@ export async function chatOnce(
         { role: 'system', content: system },
         { role: 'user', content: userContent },
       ],
-      temperature,
-      max_tokens: maxTokens,
+      // Kimi fixes temperature server-side when thinking is on, and OpenAI's
+      // GPT-5 reasoning models reject caller-set temperature entirely.
+      ...(cfg.provider === 'kimi' || cfg.provider === 'openai' ? {} : { temperature }),
+      // GPT-5 reasoning models dropped max_tokens in favour of
+      // max_completion_tokens; DeepSeek/Kimi/GLM still take max_tokens.
+      ...(cfg.provider === 'openai'
+        ? { max_completion_tokens: maxTokens }
+        : { max_tokens: maxTokens }),
     });
     return resp.choices[0]?.message?.content ?? '';
   } else {
     const anthropic = getAnthropicClient();
+    const model = getModel();
     const resp = await anthropic.messages.create({
-      model: getModel(),
+      model,
       system,
       messages: [{ role: 'user', content: userContent }],
-      temperature,
-      max_tokens: maxTokens,
+      // Adaptive-thinking models reject a caller-set temperature.
+      ...(!isAnthropicAdaptiveModel(model) ? { temperature } : {}),
+      max_tokens: Math.min(maxTokens, anthropicMaxOutputTokens(model)),
     });
     return resp.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -247,17 +275,19 @@ function getActiveLLMCaller(): LLMCaller {
 const anthropicLLMCaller: LLMCaller = {
   async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
     const anthropic = getAnthropicClient();
+    const model = getModel();
     const { system, messages: amsgs } = convertChatHistory(messages);
 
     const stream = anthropic.messages.stream({
-      model: getModel(),
+      model,
       system,
       messages: amsgs,
       ...(tools.length > 0 ? { tools: convertTools(tools) } : {}),
-      temperature: 1,
-      max_tokens: AGENT_MAX_TOKENS,
+      // Adaptive-thinking models reject a caller-set temperature.
+      ...(!isAnthropicAdaptiveModel(model) ? { temperature: 1 } : {}),
+      max_tokens: anthropicMaxOutputTokens(model),
       // Omit `thinking` entirely when disabled so no reasoning tokens are generated.
-      ...(enableThinking ? { thinking: resolveAnthropicThinkingParam(thinkingLevel) } : {}),
+      ...(enableThinking ? resolveAnthropicThinkingParam(model, thinkingLevel) : {}),
     // Type assertion needed: SDK types don't yet include `thinking` in the
     // stream params, but it works at runtime when the beta header is set.
     } as Parameters<typeof anthropic.messages.stream>[0], { signal });
@@ -314,9 +344,15 @@ function createOpenAILLMCaller(): LLMCaller {
     async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
       const oai = getOpenAIClient();
       const cfg = getActiveModelConfig();
+      // OpenAI's GPT-5 reasoning models and Kimi's thinking models fix
+      // temperature server-side; sending one gets the request rejected.
+      const fixedTemperature = cfg.provider === 'openai' || cfg.provider === 'kimi';
       const thinkingParams = enableThinking
         ? resolveOpenAIThinkingParams(cfg.provider, cfg.model, thinkingLevel)
-        : {};
+        // Classification call: always-thinking models (kimi-k3, kimi-k2.7-code,
+        // glm-5.3) must still get valid thinking params at their lowest
+        // strength instead of a "disable" request that would fail.
+        : resolveOpenAIClassificationParams(cfg.provider, cfg.model);
 
       const stream = await oai.chat.completions.create({
         model: getModel(),
@@ -328,8 +364,12 @@ function createOpenAILLMCaller(): LLMCaller {
               tool_choice: 'auto' as const,
             }
           : {}),
-        temperature: 0.7,
-        max_tokens: AGENT_MAX_TOKENS,
+        ...(!fixedTemperature ? { temperature: 0.7 } : {}),
+        // GPT-5 reasoning models dropped max_tokens in favour of
+        // max_completion_tokens; DeepSeek/Kimi/GLM still take max_tokens.
+        ...(cfg.provider === 'openai'
+          ? { max_completion_tokens: AGENT_MAX_TOKENS }
+          : { max_tokens: AGENT_MAX_TOKENS }),
         stream: true,
         stream_options: { include_usage: true },
         ...thinkingParams,

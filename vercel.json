@@ -3,6 +3,7 @@
   "rewrites": [
     {"source": "/privacy", "destination": "/privacy.html"},
     {"source": "/privacy/", "destination": "/privacy.html"},
+    {"source": "/api/kimi/v1/chat/completions", "destination": "/api/official/v1/chat/completions?provider=kimi"},
     {"source": "/s/:id", "destination": "/api/share-page?id=:id"},
     {"source": "/api/favorites/:id/continue", "destination": "/api/sessions?resource=favorites&id=:id&action=continue"},
     {"source": "/api/favorites/:id", "destination": "/api/sessions?resource=favorites&id=:id"},

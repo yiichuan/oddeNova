@@ -10,6 +10,7 @@ export const SETTINGS_PROVIDERS: ProviderType[] = [
   'official',
   'deepseek',
   'glm',
+  'kimi',
   'anthropic',
   'openai',
 ];

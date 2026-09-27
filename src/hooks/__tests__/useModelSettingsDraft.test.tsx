@@ -73,8 +73,9 @@ describe('useModelSettingsDraft', () => {
     expect(latest.saveStatus).toBe('saved');
   });
 
-  it('falls back to the official panel when the persisted provider is not visible', () => {
+  it('selects the persisted provider tab even when it is kimi', () => {
     localStorage.setItem('vibe_provider', 'kimi');
+    localStorage.setItem('vibe_api_key_kimi', 'kimi-key');
     let latest!: ReturnType<typeof useModelSettingsDraft>;
     const container = document.createElement('div');
     const root = createRoot(container);
@@ -82,6 +83,19 @@ describe('useModelSettingsDraft', () => {
     act(() => root.render(<Probe onSaved={vi.fn()} onValue={(value) => { latest = value; }} />));
 
     expect(latest.activeProvider).toBe('kimi');
+    expect(latest.selectedProvider).toBe('kimi');
+    expect(latest.draft.model).toBe('kimi-k2.6');
+  });
+
+  it('falls back to the official panel for a legacy persisted provider value', () => {
+    localStorage.setItem('vibe_provider', 'qiniu');
+    let latest!: ReturnType<typeof useModelSettingsDraft>;
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    roots.push(root);
+    act(() => root.render(<Probe onSaved={vi.fn()} onValue={(value) => { latest = value; }} />));
+
+    expect(latest.activeProvider).toBe('official');
     expect(latest.selectedProvider).toBe('official');
   });
 });

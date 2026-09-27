@@ -43,6 +43,10 @@ describe('Vercel API layout', () => {
         destination: '/privacy.html',
       },
       {
+        source: '/api/kimi/v1/chat/completions',
+        destination: '/api/official/v1/chat/completions?provider=kimi',
+      },
+      {
         source: '/s/:id',
         destination: '/api/share-page?id=:id',
       },
