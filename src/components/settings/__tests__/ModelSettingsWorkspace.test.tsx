@@ -38,11 +38,13 @@ describe('model settings workspace components', () => {
     roots.push(root);
 
     const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    expect(tabs).toHaveLength(5);
-    expect(container.querySelectorAll('[data-provider-logo]')).toHaveLength(5);
+    expect(tabs).toHaveLength(6);
+    expect(container.querySelectorAll('[data-provider-logo]')).toHaveLength(6);
     expect(tabs[1].getAttribute('aria-selected')).toBe('true');
     expect(tabs[0].textContent).toContain(t('currentlyActive')); // official is running
     expect(tabs[1].textContent).not.toContain(t('currentlyActive'));
+    expect(tabs[2].textContent).toContain('GLM'); // glm sits between deepseek and kimi
+    expect(tabs[3].textContent).toContain('Kimi');
 
     act(() => tabs[2].click());
     expect(onSelect).toHaveBeenCalledWith('glm');
@@ -70,9 +72,14 @@ describe('model settings workspace components', () => {
     expect(onSelect).toHaveBeenLastCalledWith('glm');
 
     act(() => {
-      tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+      tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     });
     expect(onSelect).toHaveBeenLastCalledWith('official');
+
+    act(() => {
+      tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    });
+    expect(onSelect).toHaveBeenLastCalledWith('openai');
   });
 
   it('swaps the configuration when another provider tab is chosen', () => {
@@ -81,7 +88,7 @@ describe('model settings workspace components', () => {
       <ModelSettingsPanel
         activeProvider="official"
         onSelectProvider={onSelectProvider}
-        draft={{ apiKey: '', model: 'deepseek-v4-flash' }}
+        draft={{ apiKey: '', model: 'deepseek-flash' }}
         isDirty
         onSave={vi.fn(() => true)}
         onUpdate={vi.fn()}
@@ -108,7 +115,7 @@ describe('model settings workspace components', () => {
       <ModelSettingsPanel
         activeProvider="official"
         onSelectProvider={vi.fn()}
-        draft={{ apiKey: '', model: 'deepseek-v4-flash' }}
+        draft={{ apiKey: '', model: 'deepseek-flash' }}
         isDirty
         onSave={onSave}
         onUpdate={vi.fn()}
@@ -169,14 +176,15 @@ describe('model settings workspace components', () => {
     expect(selectedOption.className).toContain('bg-surface-selected');
 
     const nextOption = Array.from(container.querySelectorAll('[role="option"]'))
-      .find((option) => option.textContent === 'gpt-5.5-mini') as HTMLButtonElement;
+      .find((option) => option.textContent === 'gpt-5.4-mini') as HTMLButtonElement;
     act(() => nextOption.click());
-    expect(onUpdate).toHaveBeenCalledWith({ model: 'gpt-5.5-mini' });
+    expect(onUpdate).toHaveBeenCalledWith({ model: 'gpt-5.4-mini' });
     expect(container.querySelector('[role="listbox"]')).toBeNull();
   });
 
   it.each([
     ['deepseek', 'sk-…'],
+    ['kimi', 'sk-…'],
     ['glm', 'id.secret'],
     ['anthropic', 'sk-ant-api…'],
     ['openai', 'sk-…'],

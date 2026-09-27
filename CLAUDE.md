@@ -110,8 +110,10 @@ Key modules:
   `official`, `glm`) each map to a base URL, protocol (`anthropic` or
   `openai`), and model. `official` proxies through
   `api/official/v1/chat/completions.ts` (Vercel serverless / Vite dev
-  middleware) using a server-side key; other providers use a
-  `localStorage` key entered via `ApiKeyModal`.
+  middleware) using a server-side key. `kimi` proxies through
+  `api/kimi/v1/chat/completions.ts` (also available in Vite dev middleware)
+  and forwards the user's `localStorage` key entered via `ApiKeyModal`; the
+  other providers call their API directly with that user key.
 
 - **`src/services/strudel.ts`** + **`src/hooks/useStrudel.ts`** — wraps the
   `superdough`/Strudel audio engine as a singleton. Components must go

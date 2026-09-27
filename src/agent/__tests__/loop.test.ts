@@ -762,3 +762,118 @@ describe('runAgentLoop — timeout warning', () => {
     });
   });
 });
+
+describe('runAgentLoop — multi-turn tool round-trip (always-thinking models, e.g. kimi-k3)', () => {
+  it('echoes reasoning_content, tool_calls and the tool result back in order on the next request', async () => {
+    const captured: unknown[][] = [];
+    let calls = 0;
+    const llm: LLMCaller = {
+      async chatWithTools(messages) {
+        captured.push([...messages]);
+        calls += 1;
+        if (calls === 1) {
+          return {
+            content: null,
+            reasoning_content: 'set the kick first, then commit',
+            toolCalls: [
+              {
+                id: 'set-code-1',
+                name: 'setCode',
+                arguments: JSON.stringify({ code: 's("bd")', explanation: 'kick' }),
+              },
+            ],
+          };
+        }
+        return {
+          content: null,
+          reasoning_content: 'committed',
+          toolCalls: [
+            { id: 'commit-1', name: 'commit', arguments: JSON.stringify({ explanation: 'done' }) },
+          ],
+        };
+      },
+    };
+
+    const result = await runWithTimers(() => runAgentLoop({
+      initialCode: '',
+      instruction: 'add drums',
+      locale: 'en',
+      systemPrompt: 'system',
+      llm,
+    }));
+
+    expect(result).toMatchObject({ code: 's("bd")', committed: true, iterations: 2 });
+
+    const secondCall = captured[1] as Array<Record<string, unknown>>;
+    // The full assistant message — reasoning_content echoed verbatim, tool_calls paired.
+    expect(secondCall[2]).toEqual({
+      role: 'assistant',
+      content: null,
+      reasoning_content: 'set the kick first, then commit',
+      tool_calls: [
+        {
+          id: 'set-code-1',
+          type: 'function',
+          function: { name: 'setCode', arguments: '{"code":"s(\\"bd\\")","explanation":"kick"}' },
+        },
+      ],
+    });
+    // The tool result follows the assistant turn, pairing with its tool_call id.
+    expect(secondCall[3]).toMatchObject({ role: 'tool', tool_call_id: 'set-code-1', name: 'setCode' });
+    expect(secondCall).toHaveLength(4);
+  });
+
+  it('keeps thinking blocks (with signature) on the echoed assistant message', async () => {
+    const captured: unknown[][] = [];
+    let calls = 0;
+    const llm: LLMCaller = {
+      async chatWithTools(messages) {
+        captured.push([...messages]);
+        calls += 1;
+        if (calls === 1) {
+          return {
+            content: null,
+            thinking_blocks: [
+              { type: 'thinking', thinking: 'pick a kick', signature: 'sig-1' },
+            ],
+            toolCalls: [
+              {
+                id: 'set-code-1',
+                name: 'setCode',
+                arguments: JSON.stringify({ code: 's("bd")' }),
+              },
+            ],
+          };
+        }
+        return {
+          content: 'ok',
+          toolCalls: [],
+        };
+      },
+    };
+
+    await runWithTimers(() => runAgentLoop({
+      initialCode: '',
+      instruction: 'add drums',
+      locale: 'en',
+      systemPrompt: 'system',
+      llm,
+    }));
+
+    const secondCall = captured[1] as Array<Record<string, unknown>>;
+    expect(secondCall[2]).toEqual({
+      role: 'assistant',
+      content: null,
+      thinking_blocks: [
+        { type: 'thinking', thinking: 'pick a kick', signature: 'sig-1' },
+      ],
+      tool_calls: [
+        {
+          id: 'set-code-1',
+          type: 'function',
+          function: { name: 'setCode', arguments: '{"code":"s(\\"bd\\")"}' },
+        },
+      ],
+    });
+  });
+});

@@ -9,6 +9,7 @@ describe('ApiKeyModal official provider behavior', () => {
 
   it('requires an API key for user-configured providers', () => {
     expect(isApiKeyRequiredForProvider('deepseek')).toBe(true);
+    expect(isApiKeyRequiredForProvider('kimi')).toBe(true);
     expect(isApiKeyRequiredForProvider('anthropic')).toBe(true);
     expect(isApiKeyRequiredForProvider('glm')).toBe(true);
   });

@@ -16,6 +16,7 @@ interface ProviderTabsProps {
 const PROVIDER_LOGOS: Partial<Record<ProviderType, string>> = {
   official: '/logo/logo-o.svg',
   deepseek: '/logo/logo-deepseek.svg',
+  kimi: '/logo/logo-kimi.svg',
   glm: '/logo/logo-glm.svg',
   anthropic: '/logo/logo-anthropic.svg',
   openai: '/logo/logo-openai.svg',

@@ -2,9 +2,10 @@
 // LLM configuration file — centralised management of switchable models and API credentials.
 //
 // Provider routing rules：
-//   anthropic  → api.anthropic.com + LEGACY_MODELS + VITE_API_KEY takes priority
+//   anthropic  → api.anthropic.com + model catalog + VITE_API_KEY takes priority
 //   deepseek   → api.deepseek.com + built-in model + localStorage vibe_api_key
-//   kimi       → api.moonshot.cn  + built-in model + localStorage vibe_api_key
+//   kimi       → VITE_BASE_URL override or same-origin /api/kimi/v1 proxy → api.moonshot.cn
+//                 + built-in model + localStorage vibe_api_key
 //   openai     → api.openai.com   + built-in model + localStorage vibe_api_key
 //   official   → /api/official/v1 + built-in model + server OFFICIAL_API_KEY / VITE_API_KEY
 //   glm        → open.bigmodel.cn + built-in model + localStorage vibe_api_key
@@ -48,9 +49,9 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
   deepseek: {
     label: 'DeepSeek',
     baseURL: 'https://api.deepseek.com/v1',
-    model: 'deepseek-v4-flash', // current official model, supports function calling
+    model: 'deepseek-flash', // current official model, supports function calling
     protocol: 'openai',
-    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
     apiKeyPlaceholder: 'sk-…',
   },
   kimi: {
@@ -58,28 +59,29 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     baseURL: 'https://api.moonshot.cn/v1',
     model: 'kimi-k2.6',         // model shown in the official tool-calling documentation examples
     protocol: 'openai',
-    models: ['kimi-k2.6', 'kimi-k2.5'],
+    models: ['kimi-k2.6', 'kimi-k3', 'kimi-k2.7-code'],
+    apiKeyPlaceholder: 'sk-…',
   },
   openai: {
     label: 'OpenAI',
     baseURL: 'https://api.openai.com/v1',
     model: 'gpt-5.5',           // current flagship model, supports Chat Completions API + function calling
     protocol: 'openai',
-    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.5-mini', 'gpt-5.1', 'gpt-5'],
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.1', 'gpt-5'],
     apiKeyPlaceholder: 'sk-…',
   },
   anthropic: {
     label: 'Anthropic',
     baseURL: 'https://api.anthropic.com',
-    model: 'claude-opus-5',             // display only; actual model uses LEGACY_MODELS
+    model: 'claude-opus-5',             // display only; actual model uses getSelectedModel
     protocol: 'anthropic',
-    models: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+    models: ['claude-opus-5', 'claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
     apiKeyPlaceholder: 'sk-ant-api…',
   },
   official: {
     label: t('officialLabel'),
     baseURL: '/api/official/v1',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     protocol: 'openai',
   },
   glm: {
@@ -87,7 +89,7 @@ export const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     baseURL: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-5.2',
     protocol: 'openai',
-    models: ['glm-5.2', 'glm-5.1', 'glm-5.1-air', 'glm-5'],
+    models: ['glm-5.2', 'glm-5.3', 'glm-5.1', 'glm-5.1-air', 'glm-5'],
     apiKeyPlaceholder: 'id.secret',
   },
 };
@@ -128,9 +130,16 @@ function resolveOpenAICompatConfig(
     provider,
     protocol: 'openai',
     apiKey: isOfficial ? 'official-proxy' : apiKey,
-    baseURL: isOfficial ? resolveOfficialBaseURL() : (import.meta.env.VITE_BASE_URL || preset.baseURL),
+    baseURL: isOfficial
+      ? resolveOfficialBaseURL()
+      : (import.meta.env.VITE_BASE_URL || (provider === 'kimi' ? resolveKimiBaseURL() : preset.baseURL)),
     model:   getSelectedModel(provider),
   };
+}
+
+function resolveKimiBaseURL(): string {
+  if (typeof window === 'undefined') return '/api/kimi/v1';
+  return `${window.location.origin}/api/kimi/v1`;
 }
 
 function resolveOfficialBaseURL(): string {

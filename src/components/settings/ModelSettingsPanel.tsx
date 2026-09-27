@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Eye, EyeOff } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { providerTabId, type ProviderSettingsDraft } from '../../lib/model-settings';
@@ -31,8 +31,11 @@ export default function ModelSettingsPanel({
   const [showKey, setShowKey] = useState(false);
   const [keyTouched, setKeyTouched] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [modelMenuPlacement, setModelMenuPlacement] = useState<'above' | 'below'>('below');
+  const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(320);
   const [shownProvider, setShownProvider] = useState(provider);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const modelSectionRef = useRef<HTMLElement>(null);
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const selectedModelRef = useRef<HTMLButtonElement>(null);
   const idBase = useId();
@@ -55,8 +58,31 @@ export default function ModelSettingsPanel({
     setModelMenuOpen(false);
   }
 
-  useEffect(() => {
+  // The window clips its own overflow, so the menu can only ever live inside
+  // it. Measured before paint (a post-paint measure would show one frame of an
+  // unclipped menu reaching past the window's bottom edge): the room left on
+  // each side of the trigger decides which way the menu opens, and the side it
+  // opens towards also caps its height, so the longest list scrolls inside the
+  // window rather than running past its edge.
+  useLayoutEffect(() => {
     if (!modelMenuOpen) return;
+
+    const wrapperRect = modelMenuRef.current?.getBoundingClientRect();
+    const sectionRect = modelSectionRef.current?.getBoundingClientRect();
+    if (wrapperRect && sectionRect) {
+      const gap = 4;
+      const padding = 8;
+      const cap = 320;
+      const below = sectionRect.bottom - wrapperRect.bottom - gap - padding;
+      const above = wrapperRect.top - sectionRect.top - gap - padding;
+      if (above > below && below < 160) {
+        setModelMenuPlacement('above');
+        setModelMenuMaxHeight(Math.max(120, Math.min(cap, above)));
+      } else {
+        setModelMenuPlacement('below');
+        setModelMenuMaxHeight(Math.max(120, Math.min(cap, below)));
+      }
+    }
 
     selectedModelRef.current?.focus();
     const closeOnOutsidePress = (event: PointerEvent) => {
@@ -91,6 +117,7 @@ export default function ModelSettingsPanel({
           {/* One window: the providers run along the top, the selected one's
               model and API Key sit below, and saving lives on its bottom edge. */}
           <section
+            ref={modelSectionRef}
             className="overflow-hidden rounded-[9px] border border-border bg-settings-surface"
             aria-label={t('modelConfiguration')}
           >
@@ -169,7 +196,10 @@ export default function ModelSettingsPanel({
                             options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
                           }
                         }}
-                        className="absolute left-0 right-0 top-full z-20 mt-1 rounded-[7px] border border-border-hover bg-popover-surface p-1.5 shadow-menu-overlay"
+                        className={`absolute left-0 right-0 z-20 overflow-y-auto overscroll-contain rounded-[7px] border border-border-hover bg-popover-surface p-1.5 shadow-menu-overlay ${
+                          modelMenuPlacement === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'
+                        }`}
+                        style={{ maxHeight: modelMenuMaxHeight }}
                       >
                         {preset.models?.map((model) => {
                           const selected = draft.model === model;
