@@ -31,12 +31,11 @@ export default function ModelSettingsPanel({
   const [showKey, setShowKey] = useState(false);
   const [keyTouched, setKeyTouched] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [modelMenuPlacement, setModelMenuPlacement] = useState<'above' | 'below'>('below');
-  const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(320);
   const [shownProvider, setShownProvider] = useState(provider);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const modelSectionRef = useRef<HTMLElement>(null);
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
+  const modelMenuListRef = useRef<HTMLDivElement>(null);
   const selectedModelRef = useRef<HTMLButtonElement>(null);
   const idBase = useId();
   const modelId = `${idBase}-model`;
@@ -69,19 +68,22 @@ export default function ModelSettingsPanel({
 
     const wrapperRect = modelMenuRef.current?.getBoundingClientRect();
     const sectionRect = modelSectionRef.current?.getBoundingClientRect();
-    if (wrapperRect && sectionRect) {
+    const modelMenuList = modelMenuListRef.current;
+    if (wrapperRect && sectionRect && modelMenuList) {
       const gap = 4;
       const padding = 8;
       const cap = 320;
       const below = sectionRect.bottom - wrapperRect.bottom - gap - padding;
       const above = wrapperRect.top - sectionRect.top - gap - padding;
-      if (above > below && below < 160) {
-        setModelMenuPlacement('above');
-        setModelMenuMaxHeight(Math.max(120, Math.min(cap, above)));
-      } else {
-        setModelMenuPlacement('below');
-        setModelMenuMaxHeight(Math.max(120, Math.min(cap, below)));
-      }
+      const openAbove = above > below && below < 160;
+      const maxHeight = Math.max(120, Math.min(cap, openAbove ? above : below));
+
+      // This layout effect runs before paint, so apply measured placement to
+      // the menu element directly instead of scheduling a synchronous React
+      // state update and rendering the panel a second time.
+      modelMenuList.style.top = openAbove ? 'auto' : `calc(100% + ${gap}px)`;
+      modelMenuList.style.bottom = openAbove ? `calc(100% + ${gap}px)` : 'auto';
+      modelMenuList.style.maxHeight = `${maxHeight}px`;
     }
 
     selectedModelRef.current?.focus();
@@ -175,6 +177,7 @@ export default function ModelSettingsPanel({
                     </span>
                     {modelMenuOpen && (
                       <div
+                        ref={modelMenuListRef}
                         id={modelListId}
                         role="listbox"
                         aria-label={t('modelVersion')}
@@ -196,10 +199,8 @@ export default function ModelSettingsPanel({
                             options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
                           }
                         }}
-                        className={`absolute left-0 right-0 z-20 overflow-y-auto overscroll-contain rounded-[7px] border border-border-hover bg-popover-surface p-1.5 shadow-menu-overlay ${
-                          modelMenuPlacement === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'
-                        }`}
-                        style={{ maxHeight: modelMenuMaxHeight }}
+                        className="absolute left-0 right-0 z-20 overflow-y-auto overscroll-contain rounded-[7px] border border-border-hover bg-popover-surface p-1.5 shadow-menu-overlay"
+                        style={{ top: 'calc(100% + 4px)', maxHeight: 320 }}
                       >
                         {preset.models?.map((model) => {
                           const selected = draft.model === model;
