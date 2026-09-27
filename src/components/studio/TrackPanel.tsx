@@ -29,7 +29,7 @@ import type { PreviewTrack, TrackFullSceneRequest, TrackSceneQueryResult } from 
 import type { ExactTrackPrimitive, TrackFullSceneIdentity, TrackFullSceneSnapshot, TrackLaneSceneData, TrackSceneBatch, TrackSceneRequest } from '../../lib/track-preview-scene';
 import { assembleFullSceneBatch, sameTrackFullSceneIdentity, TrackHighlightCursor, densityColumnAt, planPixelPrecision } from '../../lib/track-preview-scene';
 import { RASTER_DEFAULT_BUDGET_BYTES } from '../../lib/track-preview-canvas';
-import type { TrackRenameResult, TransportEvent } from '../../services/strudel';
+import type { TrackRenameResult, TrackReorderAvailability, TrackReorderResult, TransportEvent } from '../../services/strudel';
 import type { PlaybackTimeline } from '../../lib/strudel-timing';
 import { formatPlaybackTime } from '../../lib/strudel-timing';
 import { MutedVolumeIcon, VolumeIcon } from '../icons';
@@ -74,6 +74,11 @@ interface TrackPanelProps {
   canRename?: boolean;
   /** Commits a rename through the service and reports the explicit result. */
   renameTrack?: (trackId: string, name: string) => TrackRenameResult;
+  /** Whether the current editor source can be reordered safely. */
+  canReorder?: boolean;
+  reorderBlockedReason?: TrackReorderAvailability;
+  /** Moves one layer to its final position in the top-level stack. */
+  reorderTrack?: (trackId: string, targetIndex: number) => TrackReorderResult;
   /**
    * The shared playback timeline (the sounding code's loop length, duration
    * and tempo). Its loopCycles is the finite range every window, playhead and
@@ -84,8 +89,21 @@ interface TrackPanelProps {
   /** One identity per work session: a change resets the scale, an edit does not. */
   sessionKey?: string;
 }
+interface TrackReorderVisual {
+  trackId: string;
+  /** Insert into this index after removing the dragged track. */
+  targetIndex: number;
+}
+interface TrackReorderGesture extends TrackReorderVisual {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  sourceIndex: number;
+  active: boolean;
+}
 const HUE_COUNT = 6;
 const PAN_START_THRESHOLD_PX = 6;
+const TRACK_REORDER_THRESHOLD_PX = 6;
 /** One zoom step per ~80px of accumulated Alt+wheel; a light sweep must not cross every level. */
 const ZOOM_STEP_PX = 80;
 /** Idle time that drops an uncommitted wheel remainder. */
@@ -109,9 +127,15 @@ const DRAW_WINDOW_SAFETY_RATIO = 0.25;
 // happening to it: playback, seeking, muting, solo and later renames never
 // move it. Clashes are walked off deterministically within one list.
 function trackSlots(tracks: PreviewTrack[]): number[] {
-  const slots: number[] = [];
+  const slotsById = new Map<string, number>();
   const taken = new Set<number>();
-  for (const track of tracks) {
+  // Resolve collisions by stable identity, never by the current display order.
+  const stableOrder = [...tracks].sort((left, right) => {
+    const leftKey = left.colorKey ?? left.name;
+    const rightKey = right.colorKey ?? right.name;
+    return leftKey.localeCompare(rightKey) || left.id.localeCompare(right.id);
+  });
+  for (const track of stableOrder) {
     const colorKey = track.colorKey ?? track.name;
     let hash = 2166136261;
     for (let i = 0; i < colorKey.length; i++) {
@@ -120,9 +144,10 @@ function trackSlots(tracks: PreviewTrack[]): number[] {
     }
     let slot = hash % HUE_COUNT;
     if (taken.size < HUE_COUNT) while (taken.has(slot)) slot = (slot + 1) % HUE_COUNT;
-    taken.add(slot); slots.push(slot);
+    taken.add(slot);
+    slotsById.set(track.id, slot);
   }
-  return slots;
+  return tracks.map(track => slotsById.get(track.id) ?? 0);
 }
 
 function timeHint(cycle: number, estimatedCps: number | null): string {
@@ -156,6 +181,7 @@ export default function TrackPanel({
   tracks, soloId, mutedIds, toggleSolo, toggleMute, getClock, queryScene, fullScene, ensureFullScene, prewarmFullScene, previewGeneration = 0, isPlaying, isPaused, active,
   refreshRevision = 0, transportEvent, canSeek = true, seekToCycle, onNavigateToTrack, timeline,
   sessionKey = '', canRename = true, renameTrack,
+  canReorder = false, reorderBlockedReason = 'unavailable', reorderTrack,
 }: TrackPanelProps) {
   // The piece's finite range: every window, playhead and seek target lives in
   // [0, L]. Null (no usable code) disables the timeline instead of unbounding it.
@@ -174,8 +200,15 @@ export default function TrackPanel({
   // the same width); 0 until the first ResizeObserver report.
   const [contentWidth, setContentWidth] = useState(0);
   const lanesRef = useRef<HTMLDivElement | null>(null);
+  const trackScrollRef = useRef<HTMLDivElement | null>(null);
   const rulerRef = useRef<HTMLDivElement | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  const [reorderFeedback, setReorderFeedback] = useState<string | null>(null);
+  const [reorderVisual, setReorderVisual] = useState<TrackReorderVisual | null>(null);
+  const reorderVisualRef = useRef<TrackReorderVisual | null>(null);
+  const reorderGestureRef = useRef<TrackReorderGesture | null>(null);
+  const reorderPointerYRef = useRef<number | null>(null);
+  const reorderAutoScrollFrameRef = useRef<number | null>(null);
   const announceTimerRef = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   // The scene state: one committed immutable batch plus the in-flight
@@ -358,6 +391,10 @@ export default function TrackPanel({
     setRenameDraft(null);
     clearNameActivation();
     pendingNameFocusRef.current = null;
+    reorderGestureRef.current = null;
+    reorderVisualRef.current = null;
+    setReorderVisual(null);
+    trackScrollRef.current?.removeAttribute('data-track-reorder-pressed');
     // The old display history belongs to the old work; the new session
     // starts its tick levels from scratch.
     tickHistoryRef.current = null;
@@ -373,6 +410,7 @@ export default function TrackPanel({
   const renameDraftRef = useRef(renameDraft);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const trackNameButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const trackHeaderRefs = useRef(new Map<string, HTMLDivElement>());
   // The last submit that the service refused, keyed by the exact draft: the
   // click that follows a failed blur commit must not resubmit the same
   // unchanged value; editing the draft re-enables the retry.
@@ -454,6 +492,12 @@ export default function TrackPanel({
   // world as it is when it fires, not as it was when it was scheduled.
   const tracksRef = useRef(tracks);
   tracksRef.current = tracks;
+  const canReorderRef = useRef(canReorder);
+  canReorderRef.current = canReorder;
+  const reorderReasonRef = useRef(reorderBlockedReason);
+  reorderReasonRef.current = reorderBlockedReason;
+  const reorderTrackRef = useRef(reorderTrack);
+  reorderTrackRef.current = reorderTrack;
   const activeRef = useRef(active);
   activeRef.current = active;
   const sessionKeyRef = useRef(sessionKey);
@@ -466,6 +510,10 @@ export default function TrackPanel({
     setRenameDraft(null);
     clearNameActivation();
     pendingNameFocusRef.current = null;
+    reorderGestureRef.current = null;
+    reorderVisualRef.current = null;
+    setReorderVisual(null);
+    trackScrollRef.current?.removeAttribute('data-track-reorder-pressed');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackIdentityKey]);
   useEffect(() => {
@@ -487,6 +535,7 @@ export default function TrackPanel({
   const touchTapRef = useRef<{ trackId: string; x: number; y: number; time: number } | null>(null);
   const touchGestureRef = useRef<{ pointerId: number; x: number; y: number; moved: boolean } | null>(null);
   const suppressNameClickRef = useRef(false);
+  const suppressNameDoubleClickUntilRef = useRef(0);
 
   /** Drop the pending activation candidate and the touch tap recognition. */
   const cancelNameCandidate = useCallback(() => {
@@ -517,6 +566,7 @@ export default function TrackPanel({
 
   const handleNameClick = (track: PreviewTrack) => {
     if (suppressNameClickRef.current) { suppressNameClickRef.current = false; return; }
+    if (Date.now() < suppressNameDoubleClickUntilRef.current) return;
     setSelectedTrackId(track.id);
     const pending = nameActivateRef.current;
     if (pending && pending.trackId === track.id) {
@@ -540,20 +590,222 @@ export default function TrackPanel({
     // Solo belongs to that div rather than the outer header. Treat every
     // non-control part of the header like the name button while keeping mute,
     // Solo and the inline editor independent.
+    if (suppressNameClickRef.current) {
+      suppressNameClickRef.current = false;
+      return;
+    }
+    if (Date.now() < suppressNameDoubleClickUntilRef.current) return;
     if ((event.target as Element).closest('button, input')) return;
     handleNameClick(track);
   };
+
+  const setTrackReorderBlockedFeedback = () => {
+    setReorderFeedback(reorderReasonRef.current === 'stale-code' ? t('trackReorderStale') : t('trackReorderUnavailable'));
+  };
+
+  const submitTrackReorder = (trackId: string, targetIndex: number) => {
+    const operation = reorderTrackRef.current;
+    if (!operation) { setReorderFeedback(t('trackReorderUnavailable')); return; }
+    const result = operation(trackId, targetIndex);
+    if (result.status === 'reordered') {
+      const moved = tracksRef.current.find(track => track.id === trackId);
+      setReorderFeedback(null);
+      scheduleAnnouncement(tf('trackReordered', { name: moved?.name ?? '', position: String(targetIndex + 1) }));
+    } else if (result.status === 'unchanged') {
+      setReorderFeedback(null);
+    } else if (result.status === 'stale-code') {
+      setReorderFeedback(t('trackReorderStale'));
+    } else {
+      setReorderFeedback(t('trackReorderUnavailable'));
+    }
+  };
+  const submitTrackReorderRef = useRef(submitTrackReorder);
+  submitTrackReorderRef.current = submitTrackReorder;
+
+  const handleTrackHeaderPointerDown = (track: PreviewTrack, event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    if ((event.target as Element).closest('[data-track-action], input')) return;
+    // A new press distinguishes the next intentional click from the browser's
+    // trailing click/dblclick generated by the previous drag.
+    suppressNameClickRef.current = false;
+    suppressNameDoubleClickUntilRef.current = 0;
+    const list = tracksRef.current;
+    const sourceIndex = list.findIndex(item => item.id === track.id);
+    if (sourceIndex < 0 || list.length < 2) return;
+    if (!canReorderRef.current) {
+      setTrackReorderBlockedFeedback();
+      return;
+    }
+    reorderGestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      trackId: track.id,
+      sourceIndex,
+      targetIndex: sourceIndex,
+      active: false,
+    };
+    trackScrollRef.current?.setAttribute('data-track-reorder-pressed', 'true');
+    setReorderFeedback(null);
+  };
+
+  useEffect(() => {
+    let autoScrollFrame: number | null = null;
+    const stopAutoScroll = () => {
+      if (autoScrollFrame !== null) cancelAnimationFrame(autoScrollFrame);
+      autoScrollFrame = null;
+      reorderAutoScrollFrameRef.current = null;
+      reorderPointerYRef.current = null;
+    };
+    const clearGesture = () => {
+      stopAutoScroll();
+      reorderGestureRef.current = null;
+      reorderVisualRef.current = null;
+      trackScrollRef.current?.removeAttribute('data-track-reorder-pressed');
+      setReorderVisual(null);
+    };
+    const updateDropTarget = (clientY: number) => {
+      const gesture = reorderGestureRef.current;
+      if (!gesture) return;
+      const list = tracksRef.current;
+      const peers = list.filter(track => track.id !== gesture.trackId);
+      let targetIndex = peers.length;
+      for (let index = 0; index < peers.length; index++) {
+        const header = trackHeaderRefs.current.get(peers[index].id);
+        if (!header) continue;
+        const rect = header.getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) {
+          targetIndex = index;
+          break;
+        }
+      }
+      if (targetIndex === gesture.targetIndex) return;
+      gesture.targetIndex = targetIndex;
+      const next = { trackId: gesture.trackId, targetIndex };
+      reorderVisualRef.current = next;
+      setReorderVisual(next);
+    };
+    const autoScrollTick = () => {
+      autoScrollFrame = null;
+      reorderAutoScrollFrameRef.current = null;
+      const clientY = reorderPointerYRef.current;
+      const scroll = trackScrollRef.current;
+      if (clientY === null || !scroll || !reorderGestureRef.current?.active) return;
+      const rect = scroll.getBoundingClientRect();
+      const edgeSize = 40;
+      const topDistance = clientY - rect.top;
+      const bottomDistance = rect.bottom - clientY;
+      let delta = 0;
+      if (topDistance >= 0 && topDistance < edgeSize && scroll.scrollTop > 0) {
+        delta = -Math.max(3, Math.round((edgeSize - topDistance) * 0.35));
+      } else if (bottomDistance >= 0 && bottomDistance < edgeSize
+        && scroll.scrollTop + scroll.clientHeight < scroll.scrollHeight) {
+        delta = Math.max(3, Math.round((edgeSize - bottomDistance) * 0.35));
+      }
+      if (delta === 0) return;
+      scroll.scrollTop += delta;
+      updateDropTarget(clientY);
+      autoScrollFrame = requestAnimationFrame(autoScrollTick);
+      reorderAutoScrollFrameRef.current = autoScrollFrame;
+    };
+    const updateAutoScroll = (clientY: number) => {
+      const scroll = trackScrollRef.current;
+      if (!scroll) { stopAutoScroll(); return; }
+      const rect = scroll.getBoundingClientRect();
+      const nearEdge = clientY >= rect.top && clientY <= rect.bottom
+        && (clientY - rect.top < 40 || rect.bottom - clientY < 40);
+      if (!nearEdge) { stopAutoScroll(); return; }
+      reorderPointerYRef.current = clientY;
+      if (autoScrollFrame === null) {
+        autoScrollFrame = requestAnimationFrame(autoScrollTick);
+        reorderAutoScrollFrameRef.current = autoScrollFrame;
+      }
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      const gesture = reorderGestureRef.current;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      if (!gesture.active) {
+        if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < TRACK_REORDER_THRESHOLD_PX) return;
+        gesture.active = true;
+        cancelNameCandidate();
+        suppressNameClickRef.current = true;
+        suppressNameDoubleClickUntilRef.current = Date.now() + TRACK_NAME_DOUBLE_ACTIVATION_MS;
+        const initial = { trackId: gesture.trackId, targetIndex: gesture.targetIndex };
+        reorderVisualRef.current = initial;
+        setReorderVisual(initial);
+      }
+      event.preventDefault();
+      updateDropTarget(event.clientY);
+      updateAutoScroll(event.clientY);
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const gesture = reorderGestureRef.current;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      if (gesture.active) {
+        event.preventDefault();
+        updateDropTarget(event.clientY);
+        const trackStillAtSource = tracksRef.current[gesture.sourceIndex]?.id === gesture.trackId;
+        const targetIndex = gesture.targetIndex;
+        clearGesture();
+        if (trackStillAtSource) submitTrackReorderRef.current(gesture.trackId, targetIndex);
+        window.setTimeout(() => { suppressNameClickRef.current = false; }, 0);
+      } else {
+        reorderGestureRef.current = null;
+        trackScrollRef.current?.removeAttribute('data-track-reorder-pressed');
+      }
+    };
+    const onPointerCancel = (event: PointerEvent) => {
+      const gesture = reorderGestureRef.current;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      clearGesture();
+      suppressNameClickRef.current = false;
+      suppressNameDoubleClickUntilRef.current = 0;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !reorderGestureRef.current?.active) return;
+      event.preventDefault();
+      clearGesture();
+      suppressNameClickRef.current = false;
+      suppressNameDoubleClickUntilRef.current = 0;
+    };
+    document.addEventListener('pointermove', onPointerMove, { passive: false });
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerCancel);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerCancel);
+      document.removeEventListener('keydown', onKeyDown);
+      clearGesture();
+    };
+  }, [cancelNameCandidate]);
 
   const handleNameDoubleClick = (track: PreviewTrack, event: React.MouseEvent<HTMLButtonElement>) => {
     // The second click normally already opened the editor; this catches a
     // system dblclick that arrives outside the arbitration window — possibly
     // after its navigation already ran, which cannot be undone here.
     event.preventDefault();
+    if (Date.now() < suppressNameDoubleClickUntilRef.current) return;
     cancelNameCandidate();
     if (canRename && renameTrack) beginRename(track);
   };
 
   const handleNameKeyDown = (track: PreviewTrack, event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      if (!canReorder || !reorderTrack) {
+        setTrackReorderBlockedFeedback();
+        return;
+      }
+      const index = tracksRef.current.findIndex(item => item.id === track.id);
+      const targetIndex = index + (event.key === 'ArrowUp' ? -1 : 1);
+      if (index >= 0 && targetIndex >= 0 && targetIndex < tracksRef.current.length) {
+        cancelNameCandidate();
+        submitTrackReorder(track.id, targetIndex);
+      }
+      return;
+    }
     if (event.key === 'F2') {
       // Renaming disallowed: the key keeps its browser meaning.
       if (!canRename || !renameTrack) return;
@@ -580,6 +832,7 @@ export default function TrackPanel({
     // A fresh gesture consumes a stale suppression left by a click that
     // never fired.
     suppressNameClickRef.current = false;
+    suppressNameDoubleClickUntilRef.current = 0;
     if (event.pointerType !== 'touch') return;
     if (touchGestureRef.current) {
       // A second finger cancels tap recognition and hands the gesture back
@@ -1692,7 +1945,7 @@ export default function TrackPanel({
             onClick={() => zoomBy(1)}>＋</button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div ref={trackScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="track-panel-ruler track-panel-grid sticky top-0 z-20 border-b border-[var(--track-rule)] bg-[var(--track-canvas)]">
           <div aria-hidden="true" className="flex min-w-0 items-center bg-[var(--track-header)] pl-3 pr-2 text-[11px] text-text-secondary" />
           <div
@@ -1763,11 +2016,32 @@ export default function TrackPanel({
           const hue = `var(--track-hue-${slots[index]})`;
           const lane = laneFor(track.id);
           const selected = selectedTrackId === track.id;
+          const reorderPeers = reorderVisual ? tracks.filter(item => item.id !== reorderVisual.trackId) : [];
+          const dropBoundary = reorderVisual
+            ? reorderVisual.targetIndex >= reorderPeers.length ? reorderPeers.at(-1)?.id : reorderPeers[reorderVisual.targetIndex]?.id
+            : undefined;
+          const dropAfter = Boolean(reorderVisual && reorderVisual.targetIndex >= reorderPeers.length);
           return (
-            <div key={track.id} data-track-id={track.id} data-muted={mutedIds.has(track.id)} data-selected={selected} data-track-color={slots[index]} className="track-row track-panel-grid border-b border-[var(--track-rule)]">
+            <div
+              key={track.id}
+              data-track-id={track.id}
+              data-muted={mutedIds.has(track.id)}
+              data-selected={selected}
+              data-track-color={slots[index]}
+              data-reorder-dragging={reorderVisual?.trackId === track.id || undefined}
+              data-reorder-before={dropBoundary === track.id && !dropAfter || undefined}
+              data-reorder-after={dropBoundary === track.id && dropAfter || undefined}
+              className="track-row track-panel-grid border-b border-[var(--track-rule)]"
+            >
               <div
                 data-track-row-header
-                className="track-row-header cursor-pointer bg-[var(--track-header)] pl-3 pr-2"
+                ref={element => {
+                  if (element) trackHeaderRefs.current.set(track.id, element);
+                  else trackHeaderRefs.current.delete(track.id);
+                }}
+                title={reorderBlockedReason === 'stale-code' ? t('trackReorderStale') : undefined}
+                className={`track-row-header ${canReorder ? 'cursor-grab' : 'cursor-pointer'} bg-[var(--track-header)] pl-3 pr-2`}
+                onPointerDown={(event) => handleTrackHeaderPointerDown(track, event)}
                 onClick={(event) => handleTrackHeaderClick(track, event)}
               >
                 <div className="track-row-title">
@@ -1780,6 +2054,7 @@ export default function TrackPanel({
                     aria-label={t('trackRenameLabel')}
                     aria-describedby={renameDraft.error ? 'track-rename-error' : undefined}
                     value={renameDraft.value}
+                    size={Math.max(1, Array.from(renameDraft.value).length * 2)}
                     placeholder={t('trackRenamePlaceholder')}
                     onChange={(event) => {
                       const draft = renameDraftRef.current;
@@ -1822,7 +2097,7 @@ export default function TrackPanel({
                         finishRenameEdit(false);
                       }
                     }}
-                    className="min-w-0 flex-1 self-stretch rounded-md border border-[var(--track-control-border)] bg-transparent px-1.5 text-xs text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    className="track-row-rename-input h-5 rounded-md border border-[var(--track-control-border)] bg-transparent px-1.5 text-xs text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
                   />
                 ) : (
                   <button
@@ -1836,7 +2111,8 @@ export default function TrackPanel({
                       ? `${t('trackNameNavigate')} · ${t('trackNameHint')} · ${track.name}`
                       : `${t('trackNameNavigate')} · ${track.name}`}
                     aria-pressed={selected}
-                    title={canRename && renameTrack ? `${track.name} · ${t('trackNameHint')}` : track.name}
+                    aria-keyshortcuts={canReorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
+                    title={`${track.name}${canRename && renameTrack ? ` · ${t('trackNameHint')}` : ''}${reorderBlockedReason === 'stale-code' ? ` · ${t('trackReorderStale')}` : ''}`}
                     onClick={() => handleNameClick(track)}
                     onDoubleClick={(event) => handleNameDoubleClick(track, event)}
                     onKeyDown={(event) => handleNameKeyDown(track, event)}
@@ -1849,11 +2125,11 @@ export default function TrackPanel({
                 )}
                 </div>
                 <div className="track-row-actions">
-                <button type="button" aria-label={`${t('trackMute')} ${track.name}`} aria-pressed={mutedIds.has(track.id)} onClick={() => toggleMute(track.id)}
+                <button type="button" data-track-action aria-label={`${t('trackMute')} ${track.name}`} aria-pressed={mutedIds.has(track.id)} onClick={() => toggleMute(track.id)}
                   className={`flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [@media(pointer:coarse)]:h-8 [@media(pointer:coarse)]:w-8 ${quiet ? 'text-text-muted' : mutedIds.has(track.id) ? 'text-text-primary' : 'text-text-secondary'}`}>
                   {mutedIds.has(track.id) ? <MutedVolumeIcon size={14} /> : <VolumeIcon size={14} />}
                 </button>
-                <button type="button" aria-label={`${t('trackSolo')} ${track.name}`} aria-pressed={soloed} onClick={() => toggleSolo(track.id)} className="track-solo-button">
+                <button type="button" data-track-action aria-label={`${t('trackSolo')} ${track.name}`} aria-pressed={soloed} onClick={() => toggleSolo(track.id)} className="track-solo-button">
                   <span className="track-solo-button-mark" aria-hidden="true">S</span>
                 </button>
                 </div>
@@ -1899,6 +2175,15 @@ export default function TrackPanel({
         </div>
       </div>
       <span aria-live="polite" className="sr-only">{announcement}</span>
+      {reorderFeedback && (
+        <div
+          data-track-reorder-feedback
+          role="status"
+          className="pointer-events-none absolute bottom-2 left-1/2 z-30 max-w-[90%] -translate-x-1/2 truncate rounded-md border border-[var(--track-control-border)] bg-[var(--track-header)] px-2 py-1 text-[11px] text-text-primary shadow"
+        >
+          {reorderFeedback}
+        </div>
+      )}
       {renameDraft?.error && (
         <div
           id="track-rename-error"

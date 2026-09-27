@@ -5,6 +5,7 @@ import { t } from '../lib/i18n';
 import { strudelService, type StrudelState, type TransportEvent } from '../services/strudel';
 
 const MAX_HISTORY = 50;
+const subscribeToStrudelState = (listener: () => void) => strudelService.onStateChange(listener);
 
 export function useStrudel() {
   const [state, setState] = useState<StrudelState>(() => ({
@@ -204,6 +205,7 @@ export function useTransportRevision(): number {
 export function useStrudelTracks(scopeKey: string) {  const preview = strudelService.trackPreview;
   const snapshot = useSyncExternalStore(preview.subscribe, () => preview.snapshot);
   const fullScene = useSyncExternalStore(preview.subscribeFullScene, () => preview.fullSceneSnapshot);
+  const publishedCode = useSyncExternalStore(subscribeToStrudelState, () => strudelService.code);
   const previousScope = useRef(scopeKey);
   useEffect(() => {
     if (previousScope.current !== scopeKey) preview.reset();
@@ -231,5 +233,8 @@ export function useStrudelTracks(scopeKey: string) {  const preview = strudelSer
     revealTrackSource: strudelService.revealTrackSource,
     /** Renames a track by splicing its @layer marker; returns an explicit result. */
     renameTrack: strudelService.renameTrack,
+    /** Reorders the top-level stack without evaluating or moving the transport. */
+    reorderTrack: strudelService.reorderTrack,
+    trackReorderAvailability: strudelService.getTrackReorderAvailability(publishedCode),
   };
 }

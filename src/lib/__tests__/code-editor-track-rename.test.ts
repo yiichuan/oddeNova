@@ -9,6 +9,7 @@ import { Decoration, EditorView } from '@codemirror/view';
 import { history, redo, undo } from '@codemirror/commands';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrudelService } from '../../services/strudel';
+import type { PreviewTrack } from '../../services/track-preview';
 
 const CODE = 'stack(\n  /* @layer 鼓组 */ s("bd*4"),\n  /* @layer 贝斯 */ note("c2")\n)';
 const MARKER_0 = '/* @layer 鼓组 */';
@@ -77,13 +78,13 @@ function makeHarness() {
       tracks: [
         {
           id: '1:0', name: '鼓组', colorKey: '鼓组',
-          sourceRange: { from: marker0, to: marker0 + MARKER_0.length + ' s("bd*4"),'.length },
+          sourceRange: { from: marker0, to: marker0 + MARKER_0.length + ' s("bd*4")'.length },
           markerRange: { from: marker0, to: marker0 + MARKER_0.length },
           nameRange: { from: marker0 + 10, to: marker0 + 12 },
         },
         {
           id: '1:1', name: '贝斯', colorKey: '贝斯',
-          sourceRange: { from: marker1, to: CODE.length - 1 },
+          sourceRange: { from: marker1, to: CODE.indexOf('\n)', marker1) },
           markerRange: { from: marker1, to: marker1 + MARKER_1.length },
           nameRange: { from: marker1 + 10, to: marker1 + 12 },
         },
@@ -190,5 +191,77 @@ describe('track rename editor integration', () => {
 
     expect(service.renameTrack('1:1', '低音')).toEqual({ status: 'stale-code' });
     expect(view.state.doc.toString()).toBe('// note\n' + CODE.replace('鼓组', '主鼓'));
+  });
+});
+
+describe('track reorder editor integration', () => {
+  it('reorders as one undo step and keeps playback plus the per-track mix attached to the layers', () => {
+    const { service, view, mutable, transportEvents } = makeHarness();
+    mutable._state.isPlaying = true;
+    service.trackPreview.toggleMute('1:0');
+    service.trackPreview.toggleSolo('1:1');
+
+    expect(service.reorderTrack('1:0', 1)).toEqual({ status: 'reordered' });
+    const reordered = 'stack(\n  /* @layer 贝斯 */ note("c2"),\n  /* @layer 鼓组 */ s("bd*4")\n)';
+    expect(view.state.doc.toString()).toBe(reordered);
+    expect(mutable._state.code).toBe(reordered);
+    expect(mutable._state.isPlaying).toBe(true);
+    expect(service.trackPreview.snapshot.tracks.map(track => [track.id, track.name])).toEqual([
+      ['1:1', '贝斯'],
+      ['1:0', '鼓组'],
+    ]);
+    expect(service.trackPreview.snapshot.soloId).toBe('1:1');
+    expect(service.trackPreview.snapshot.mutedIds).toEqual(new Set(['1:0']));
+    expect(transportEvents).toEqual(['apply']);
+
+    expect(undo(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe(CODE);
+    expect(service.trackPreview.snapshot.tracks.map(track => [track.id, track.name])).toEqual([
+      ['1:0', '鼓组'],
+      ['1:1', '贝斯'],
+    ]);
+    expect(service.trackPreview.snapshot.soloId).toBe('1:1');
+    expect(service.trackPreview.snapshot.mutedIds).toEqual(new Set(['1:0']));
+
+    expect(redo(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe(reordered);
+    expect(service.trackPreview.snapshot.tracks.map(track => track.id)).toEqual(['1:1', '1:0']);
+    expect(service.trackPreview.snapshot.soloId).toBe('1:1');
+    expect(service.trackPreview.snapshot.mutedIds).toEqual(new Set(['1:0']));
+    expect(transportEvents).toEqual(['apply']);
+  });
+
+  it('refuses to reorder after an uncompiled manual edit', () => {
+    const { service, view } = makeHarness();
+    view.dispatch({ changes: { from: 0, to: 0, insert: '// manual edit\n' } });
+
+    expect(service.reorderTrack('1:0', 1)).toEqual({ status: 'stale-code' });
+    expect(view.state.doc.toString()).toBe('// manual edit\n' + CODE);
+  });
+
+  it('keeps the reordered IDs, colors, Solo, and Mute when the exact mapped source is compiled next', () => {
+    const { service, mutable } = makeHarness();
+    service.trackPreview.toggleMute('1:0');
+    service.trackPreview.toggleSolo('1:1');
+    expect(service.reorderTrack('1:0', 1)).toEqual({ status: 'reordered' });
+
+    const reorderedCode = service.trackPreview.mappingCode!;
+    const reorderedTracks = service.trackPreview.snapshot.tracks;
+    const generation = service.trackPreview.previewGeneration;
+    const prepared = service.trackPreview.prepare(reorderedCode, {
+      output: reorderedCode,
+      oddenovaTracks: { tracks: [] as PreviewTrack[], reusePreviewContent: false },
+    });
+    expect(prepared.oddenovaTracks?.reusePreviewContent).toBe(true);
+    expect(prepared.oddenovaTracks?.tracks.map(track => [track.id, track.colorKey])).toEqual(
+      reorderedTracks.map(track => [track.id, track.colorKey]),
+    );
+
+    service.trackPreview.commit({ queryArc: () => [] }, prepared);
+    expect(service.trackPreview.previewGeneration).toBe(generation);
+    expect(service.trackPreview.snapshot.tracks.map(track => track.id)).toEqual(['1:1', '1:0']);
+    expect(service.trackPreview.snapshot.soloId).toBe('1:1');
+    expect(service.trackPreview.snapshot.mutedIds).toEqual(new Set(['1:0']));
+    expect(mutable._state.isPlaying).toBe(false);
   });
 });

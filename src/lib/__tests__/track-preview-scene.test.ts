@@ -296,6 +296,76 @@ describe('scene assembly', () => {
     expect(overlay.find(command => command.kind === 'rect')).toMatchObject({ width: 4, fill: '#abcdef' });
   });
 
+  it('projects full-scene LOD lanes by stable track ID after the UI order changes', () => {
+    const snapshot: TrackFullSceneSnapshot = {
+      identity: { previewGeneration: 1, loopOffset: 0, loopCycles: 8, cps: 0.5 },
+      trackIds: ['a', 'b'],
+      status: 'complete',
+      begin: 0,
+      end: 8,
+      completedTiles: new Set(),
+      tiles: [],
+      sounds: ['saw'],
+      resolutionTier: 4,
+      effectiveBinSpan: 1 / 16,
+      exactBudget: 1_000,
+      lods: [{
+        level: 1,
+        binSpan: 1 / 8,
+        lanes: [
+          { trackId: 'a', representation: 'density', rawEventCount: 11 },
+          { trackId: 'b', representation: 'density', rawEventCount: 22 },
+        ],
+      }],
+    };
+
+    const batch = assembleFullSceneBatch(snapshot, ['b', 'a'], 0, 8, 64);
+
+    expect(batch.lanes.map(lane => [lane.trackId, lane.rawEventCount])).toEqual([
+      ['b', 22],
+      ['a', 11],
+    ]);
+  });
+
+  it('projects full-scene tile arrays by their captured track order', () => {
+    const plan = planTileGrid(0, 1, 1, { binSpan: 0.5 });
+    const makeTileLane = (trackId: string, soundId: number) => {
+      const accumulator = new TrackLaneTileAccumulator(trackId, plan, 0, { maxExactCount: 0, pxPerCycle: 8 });
+      accumulator.addEvent({ begin: soundId * 0.5, end: soundId * 0.5 + 0.25, pitch: null, soundId }, { ownsOnset: true });
+      return accumulator.finalize();
+    };
+    const snapshot: TrackFullSceneSnapshot = {
+      identity: { previewGeneration: 1, loopOffset: 0, loopCycles: 8, cps: 0.5 },
+      trackIds: ['a', 'b'],
+      status: 'complete',
+      begin: 0,
+      end: 8,
+      completedTiles: new Set([0]),
+      tiles: [{
+        index: 0,
+        begin: 0,
+        end: 1,
+        binSpan: 0.5,
+        binCount: 2,
+        status: 'complete',
+        lanes: [makeTileLane('a', 0), makeTileLane('b', 1)],
+        rawEventCount: 2,
+      }],
+      sounds: ['a', 'b'],
+      resolutionTier: 1,
+      effectiveBinSpan: 0.5,
+      exactBudget: 0,
+      lods: [],
+    };
+
+    const batch = assembleFullSceneBatch(snapshot, ['b', 'a'], 0, 8, 64);
+
+    expect(batch.lanes.map(lane => lane.trackId)).toEqual(['b', 'a']);
+    expect(batch.lanes.map(lane => lane.density?.counts[0])).toEqual([0, 1]);
+    expect(batch.lanes[0].density?.counts[1]).toBe(1);
+    expect(batch.lanes[1].density?.counts[1]).toBe(0);
+  });
+
   it('keeps density for lanes whose exact notes are too narrow or exceed the zoomed-out budget', () => {
     const narrow: TrackLaneSceneData = {
       trackId: 'narrow',

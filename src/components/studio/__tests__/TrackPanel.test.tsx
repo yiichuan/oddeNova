@@ -1635,6 +1635,8 @@ it('blocks a seek or pan from starting while a slider round owns the view', asyn
 
 const nameButtonFor = (id: string) =>
   container.querySelector<HTMLButtonElement>(`[data-track-id="${id}"] [data-track-name]`)!;
+const trackHeaderFor = (id: string) =>
+  container.querySelector<HTMLDivElement>(`[data-track-id="${id}"] [data-track-row-header]`)!;
 const doubleClickName = (id: string) => {
   act(() => nameButtonFor(id)!.click());
   act(() => nameButtonFor(id)!.click());
@@ -1645,11 +1647,149 @@ const keydown = (target: Element, key: string, init: KeyboardEventInit = {}) =>
   target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }));
 const dblclick = (target: Element) =>
   target.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+const mockHeaderRect = (id: string, top: number) => {
+  vi.spyOn(trackHeaderFor(id), 'getBoundingClientRect').mockReturnValue({
+    left: 0, right: 240, top, bottom: top + 60, width: 240, height: 60, x: 0, y: top,
+    toJSON: () => ({}),
+  } as DOMRect);
+};
+const moveTrackPointer = (clientY: number, pointerId = 1) =>
+  document.dispatchEvent(pointerEvent('pointermove', { pointerType: 'mouse', pointerId, clientX: 40, clientY }));
+const releaseTrackPointer = (clientY: number, pointerId = 1) =>
+  document.dispatchEvent(pointerEvent('pointerup', { pointerType: 'mouse', pointerId, clientX: 40, clientY }));
 const touchTap = (button: HTMLButtonElement, x: number, y: number, pointerId = 1) => {
   act(() => button.dispatchEvent(pointerEvent('pointerdown', { pointerType: 'touch', pointerId, clientX: x, clientY: y })));
   act(() => button.dispatchEvent(pointerEvent('pointerup', { pointerType: 'touch', pointerId, clientX: x, clientY: y })));
   act(() => button.click());
 };
+
+it.each(['blank header', 'track name'])('reorders from the %s and suppresses its trailing click and double click', async (startAt) => {
+  vi.useFakeTimers();
+  const onNavigateToTrack = vi.fn();
+  const renameTrack = vi.fn(() => ({ status: 'renamed', name: '鼓组' }) as const);
+  const reorderTrack = vi.fn(() => ({ status: 'reordered' }) as const);
+  await renderPanel({ canReorder: true, reorderTrack, canRename: true, renameTrack, onNavigateToTrack });
+  mockHeaderRect('a', 20);
+  mockHeaderRect('b', 100);
+
+  const header = trackHeaderFor('a');
+  const dragOrigin = startAt === 'track name' ? nameButtonFor('a') : header;
+  act(() => dragOrigin.dispatchEvent(pointerEvent('pointerdown', {
+    pointerType: 'mouse', pointerId: 27, clientX: 40, clientY: 30,
+  })));
+  // The six-pixel threshold keeps an ordinary press a click candidate.
+  act(() => moveTrackPointer(34, 27));
+  expect(reorderTrack).not.toHaveBeenCalled();
+  act(() => moveTrackPointer(145, 27));
+  expect(laneRow('b').getAttribute('data-reorder-after')).toBe('true');
+  act(() => releaseTrackPointer(145, 27));
+  expect(reorderTrack).toHaveBeenCalledWith('a', 1);
+
+  // Browsers dispatch click/dblclick after pointerup. Neither header path may
+  // start the delayed navigation or reopen the name editor after a reorder.
+  const activationTarget = startAt === 'track name' ? nameButtonFor('a') : header;
+  act(() => activationTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+  act(() => dblclick(activationTarget));
+  expect(onNavigateToTrack).not.toHaveBeenCalled();
+  expect(nameInput()).toBeNull();
+  expect(renameTrack).not.toHaveBeenCalled();
+
+  // A new physical press clears the drag's suppression so an intentional
+  // immediate click still navigates after the usual single-click delay.
+  act(() => dragOrigin.dispatchEvent(pointerEvent('pointerdown', {
+    pointerType: 'mouse', pointerId: 28, clientX: 40, clientY: 30,
+  })));
+  act(() => releaseTrackPointer(30, 28));
+  act(() => activationTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+  await act(async () => { vi.advanceTimersByTime(400); });
+  expect(onNavigateToTrack).toHaveBeenCalledOnce();
+  expect(onNavigateToTrack).toHaveBeenCalledWith('a');
+  expect(nameInput()).toBeNull();
+  expect(renameTrack).not.toHaveBeenCalled();
+});
+
+it('does not start track reordering from Mute or Solo controls and supports Alt+ArrowUp', async () => {
+  const reorderTrack = vi.fn(() => ({ status: 'reordered' }) as const);
+  const toggleMute = vi.fn();
+  const toggleSolo = vi.fn();
+  await renderPanel({ canReorder: true, reorderTrack, toggleMute, toggleSolo });
+  mockHeaderRect('b', 100);
+  const mute = container.querySelector<HTMLButtonElement>('[data-track-id="a"] [data-track-action]')!;
+  act(() => mute.dispatchEvent(pointerEvent('pointerdown', { pointerType: 'mouse', clientY: 30 })));
+  act(() => moveTrackPointer(145));
+  act(() => releaseTrackPointer(145));
+  expect(reorderTrack).not.toHaveBeenCalled();
+
+  act(() => keydown(nameButtonFor('b'), 'ArrowUp', { altKey: true, cancelable: true }));
+  expect(reorderTrack).toHaveBeenCalledWith('b', 0);
+});
+
+it('cancels a visible reorder with Escape or pointercancel', async () => {
+  const reorderTrack = vi.fn(() => ({ status: 'reordered' }) as const);
+  await renderPanel({ canReorder: true, reorderTrack });
+  mockHeaderRect('a', 20);
+  mockHeaderRect('b', 100);
+  const header = trackHeaderFor('a');
+
+  act(() => header.dispatchEvent(pointerEvent('pointerdown', { pointerType: 'mouse', clientY: 30 })));
+  act(() => moveTrackPointer(145));
+  expect(laneRow('b').getAttribute('data-reorder-after')).toBe('true');
+  act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  expect(laneRow('b').hasAttribute('data-reorder-after')).toBe(false);
+  act(() => releaseTrackPointer(145));
+  expect(reorderTrack).not.toHaveBeenCalled();
+
+  act(() => header.dispatchEvent(pointerEvent('pointerdown', { pointerType: 'mouse', pointerId: 2, clientY: 30 })));
+  act(() => moveTrackPointer(145, 2));
+  act(() => document.dispatchEvent(pointerEvent('pointercancel', { pointerType: 'mouse', pointerId: 2 })));
+  act(() => releaseTrackPointer(145, 2));
+  expect(reorderTrack).not.toHaveBeenCalled();
+});
+
+it('auto-scrolls the track list while dragging at its lower edge', async () => {
+  const longTracks = [
+    { id: 'a', name: '鼓组' },
+    { id: 'b', name: '贝斯' },
+    { id: 'c', name: '和弦' },
+    { id: 'd', name: '旋律' },
+  ];
+  const reorderTrack = vi.fn(() => ({ status: 'reordered' }) as const);
+  await renderPanel({ tracks: longTracks, canReorder: true, reorderTrack });
+  const scroll = container.querySelector<HTMLElement>('.overflow-y-auto')!;
+  Object.defineProperties(scroll, {
+    clientHeight: { configurable: true, value: 100 },
+    scrollHeight: { configurable: true, value: 300 },
+    scrollTop: { configurable: true, writable: true, value: 0 },
+  });
+  vi.spyOn(scroll, 'getBoundingClientRect').mockReturnValue({
+    left: 0, right: 400, top: 100, bottom: 200, width: 400, height: 100, x: 0, y: 100,
+    toJSON: () => ({}),
+  } as DOMRect);
+  mockHeaderRect('a', 100);
+  mockHeaderRect('b', 160);
+  mockHeaderRect('c', 220);
+  mockHeaderRect('d', 280);
+
+  act(() => trackHeaderFor('a').dispatchEvent(pointerEvent('pointerdown', {
+    pointerType: 'mouse', clientX: 40, clientY: 110,
+  })));
+  act(() => moveTrackPointer(198));
+  tick(16);
+  expect(scroll.scrollTop).toBeGreaterThan(0);
+  act(() => document.dispatchEvent(pointerEvent('pointercancel')));
+  expect(reorderTrack).not.toHaveBeenCalled();
+});
+
+it('keeps color slots stable when colliding color keys are displayed in a new order', async () => {
+  const sameColorTracks = [
+    { id: 'a', name: '鼓组', colorKey: 'shared' },
+    { id: 'b', name: '贝斯', colorKey: 'shared' },
+  ];
+  await renderPanel({ tracks: sameColorTracks });
+  const slotsBefore = new Map(sameColorTracks.map(track => [track.id, laneRow(track.id).getAttribute('data-track-color')]));
+  await renderPanel({ tracks: [...sameColorTracks].reverse() });
+  expect(new Map(sameColorTracks.map(track => [track.id, laneRow(track.id).getAttribute('data-track-color')]))).toEqual(slotsBefore);
+});
 
 it('keeps one name button per track with mute and solo, and no pencil anywhere', async () => {
   await renderPanel({ canRename: true, renameTrack: vi.fn(() => ({ status: 'renamed', name: 'x' }) as const) });

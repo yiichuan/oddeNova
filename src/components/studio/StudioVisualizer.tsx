@@ -127,6 +127,8 @@ export default function StudioVisualizer({
     seekToCycle,
     revealTrackSource,
     renameTrack,
+    reorderTrack,
+    trackReorderAvailability,
   } = useStrudelTracks(scopeKey);
   const transport = useTransportEvent();
   const showTracks = view === 'tracks' || !animationEnabled;
@@ -217,6 +219,9 @@ export default function StudioVisualizer({
             onNavigateToTrack={handleTrackReveal}
             canRename={renameEnabled}
             renameTrack={renameTrack}
+            canReorder={renameEnabled && trackReorderAvailability === 'ready'}
+            reorderBlockedReason={renameEnabled ? trackReorderAvailability : 'unavailable'}
+            reorderTrack={reorderTrack}
             timeline={playbackTimeline}
             sessionKey={scopeKey}
           />

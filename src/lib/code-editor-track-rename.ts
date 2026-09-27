@@ -1,8 +1,7 @@
-// Editor-side adaptation for track renames: the CodeMirror history isolation
-// for the rename transaction, and the ledger that binds one pending rename to
-// a specific editor instance plus the exact before/after documents, so the
-// repl's synchronous code callback can recognise its own transaction and
-// undo/redo can be classified without touching the transport.
+// Editor-side adaptation for pure track edits: CodeMirror history isolation
+// and a ledger that binds each pending edit to one editor plus its exact
+// before/after documents, so the synchronous repl callback and undo/redo can
+// be classified without touching the transport.
 import { isolateHistory } from '@codemirror/commands';
 
 /** The narrow dispatch surface the rename path needs from an EditorView. */
@@ -15,8 +14,8 @@ export interface TrackRenameView {
 }
 
 /**
- * One dispatch, one isolated undo boundary: the rename must never merge with
- * a neighbouring manual input, and undo/redo must step over it exactly once.
+ * One dispatch, one isolated undo boundary: a track edit must never merge
+ * with neighbouring manual input, and undo/redo must step over it exactly once.
  */
 export function dispatchTrackRename(view: TrackRenameView, patch: { from: number; to: number; insert: string }): void {
   view.dispatch({ changes: patch, annotations: [isolateHistory.of('full')] });
@@ -26,6 +25,8 @@ export function dispatchTrackRename(view: TrackRenameView, patch: { from: number
 export interface RenameVersion<TTracks> {
   code: string;
   tracks: TTracks;
+  /** Source bounds may move when an edit inserts layer markers. */
+  stackRange?: { from: number; to: number };
 }
 
 interface RenameEntry<TTracks> {
@@ -34,7 +35,7 @@ interface RenameEntry<TTracks> {
 }
 
 /**
- * Registry of trusted rename conversions for one compile generation.
+ * Registry of trusted track-edit conversions for one compile generation.
  *
  * The pending entry is the transaction currently being dispatched; the history
  * entries are the confirmed before/after pairs that undo and redo walk
@@ -56,7 +57,7 @@ export class TrackRenameLedger<TTracks> {
 
   /**
    * Consume the pending transaction when `nextCode` is exactly its after-text
-   * on the same editor and compile generation. Returns the version to
+   * on the same editor and compile generation. Returns the mapped version to
    * publish, or null when this document change belongs to the ordinary
    * editing path.
    */

@@ -109,7 +109,7 @@ interface PreviewMeta {
   /** True only when prepare proved this compile can keep the visual content identity. */
   reusePreviewContent?: boolean;
 }
-interface RenameVersion { code: string; tracks: PreviewTrack[] }
+interface RenameVersion { code: string; tracks: PreviewTrack[]; stackRange?: TrackSourceRange }
 type Transpiled = { output: string; oddenovaTracks?: PreviewMeta };
 const EMPTY: Omit<TrackSnapshot, 'revision'> = { tracks: [], soloId: null, mutedIds: new Set(), status: 'idle' };
 /** Cooperative work slices target this budget; queryArc itself remains
@@ -357,7 +357,11 @@ export class TrackPreview {
           }
         : undefined,
     }));
-    const reusePreviewContent = this.canReusePreviewContent(code, parsedTracks);
+    // An explicit rename/reorder transaction updates both `mappedCode` and
+    // the ID-bearing track array before the next user-triggered evaluation.
+    // When this exact document parses back to those ordered source slots, it
+    // is still the same mapped work: keep the IDs, colors and audition mix.
+    const reusePreviewContent = this.canReuseMappedTracks(code, parsedTracks);
     if (!reusePreviewContent) this.trackIdentityGeneration++;
     const tracks = parsedTracks.map((track, index) => reusePreviewContent
       ? {
@@ -390,10 +394,11 @@ export class TrackPreview {
     };
   }
 
-  private canReusePreviewContent(code: string, parsedTracks: readonly PreviewTrack[]): boolean {
+  private canReuseMappedTracks(code: string, parsedTracks: readonly PreviewTrack[]): boolean {
     return this.current.status === 'ready'
       && this.pattern !== null
       && this.mappedCode === code
+      && new Set(this.current.tracks.map(track => track.id)).size === this.current.tracks.length
       && sameTrackStructure(this.current.tracks, parsedTracks);
   }
 
@@ -411,7 +416,9 @@ export class TrackPreview {
     const reusePreviewContent = compiled?.reusePreviewContent === true
       && this.current.status === 'ready'
       && hadCommittedPattern
+      && compiled.sourceCode === this.mappedCode
       && this.current.tracks.length === tracks.length
+      && new Set(this.current.tracks.map(track => track.id)).size === this.current.tracks.length
       && sameTrackStructure(this.current.tracks, tracks)
       && this.current.tracks.every((track, index) => track.id === tracks[index].id);
 
@@ -451,14 +458,15 @@ export class TrackPreview {
   }
 
   /**
-   * Apply one confirmed pure rename: new names and ranges for every track,
-   * same ids, same pattern, same mix. The compiled source is untouched — the
+   * Apply one confirmed pure track edit: names/order and ranges move with the
+   * same IDs, pattern and mix. The compiled source is untouched — the
    * sounding pattern still comes from it — while navigation re-targets the
    * mapped version.
    */
   applyRename = (version: RenameVersion): void => {
     if (this.current.status !== 'ready') return;
     this.mappedCode = version.code;
+    if (version.stackRange) this.stackRange = version.stackRange;
     this.publish({ ...this.current, tracks: version.tracks });
   };
 
@@ -643,6 +651,7 @@ export class TrackPreview {
       bandEnd: identity.loopCycles,
     });
     const tileOrder = this.fullSceneTileOrder(precision.tile, initialBegin, initialEnd);
+    const trackIds = this.current.tracks.map(track => track.id);
     const controller = new AbortController();
     const token = ++this.fullSceneToken;
     const job: FullSceneJob = {
@@ -664,6 +673,7 @@ export class TrackPreview {
     });
     const initialSnapshot = Object.freeze({
       identity,
+      trackIds: Object.freeze(trackIds),
       status: 'preparing',
       begin: 0,
       end: identity.loopCycles,
@@ -693,6 +703,7 @@ export class TrackPreview {
       );
       const snapshot = Object.freeze({
         identity,
+        trackIds: Object.freeze(trackIds),
         status,
         begin: 0,
         end: identity.loopCycles,
@@ -1025,9 +1036,11 @@ export class TrackPreview {
       };
 
       /** Adopt a cached tile into the scene rows, honouring lane demotions. */
-      const adoptCachedTile = (index: number, entry: { lanes: readonly (TileLaneState | null)[]; rawEventCount: number }): void => {
+      const adoptCachedTile = (index: number, entry: { trackIds?: readonly string[]; lanes: readonly (TileLaneState | null)[]; rawEventCount: number }): void => {
+        const cacheIndexById = new Map((entry.trackIds ?? tracks.map(track => track.id)).map((id, trackIndex) => [id, trackIndex]));
         tileRows.forEach((row, trackIndex) => {
-          const cached = entry.lanes[trackIndex] ?? null;
+          const cachedIndex = cacheIndexById.get(tracks[trackIndex].id) ?? -1;
+          const cached = cachedIndex < 0 ? null : entry.lanes[cachedIndex] ?? null;
           row[index] = cached && demotedTracks.has(trackIndex)
             ? { ...cached, exact: [], representation: 'density' }
             : cached;
@@ -1079,7 +1092,12 @@ export class TrackPreview {
         tileRows.forEach((row, trackIndex) => { row[currentTileIndex] = lanes[trackIndex]; });
         perTileRawCounts.set(currentTileIndex, lanes.reduce((sum, lane) => sum + lane.rawEventCount, 0));
         const key = cacheKeyFor(currentTileIndex);
-        this.sceneCache.put(key, lanes, perTileRawCounts.get(currentTileIndex) ?? 0);
+        this.sceneCache.put(
+          key,
+          lanes,
+          perTileRawCounts.get(currentTileIndex) ?? 0,
+          tracks.map(track => track.id),
+        );
         completedTiles.add(currentTileIndex);
         currentAccumulators = null;
         currentTileDedup = null;

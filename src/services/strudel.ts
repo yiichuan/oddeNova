@@ -24,6 +24,7 @@ import {
   type TrackRenameView,
 } from '../lib/code-editor-track-rename';
 import { buildTrackRename, validateTrackName } from '../lib/track-rename';
+import { buildTrackReorder } from '../lib/track-reorder';
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
 import { claimTransport } from './transport';
@@ -48,6 +49,13 @@ export type TrackRenameResult =
   | { status: 'unchanged'; name: string }
   | { status: 'invalid-name'; reason: 'empty' | 'too-long' | 'invalid-character' }
   | { status: 'stale-code' | 'unknown-track' | 'unavailable' | 'busy' };
+
+export type TrackReorderResult =
+  | { status: 'reordered' }
+  | { status: 'unchanged' }
+  | { status: 'stale-code' | 'unknown-track' | 'unavailable' | 'busy' };
+
+export type TrackReorderAvailability = 'ready' | 'stale-code' | 'unavailable';
 
 /**
  * Why a discrete transport notification went out. These are the moments a
@@ -390,6 +398,25 @@ export class StrudelService {
       || !this.isAudioInitialized;
   }
 
+  /** Reordering can happen during playback, but not while another edit or compile is in flight. */
+  private isTrackReorderBusy(): boolean {
+    return this.playPromise !== null
+      || this.activePlayGeneration !== null
+      || this.playbackRecovery !== null
+      || this.trackPreviewPreparation !== null
+      || this.compileBusy
+      || this.isInitializing
+      || !this.isAudioInitialized;
+  }
+
+  getTrackReorderAvailability = (publishedCode: string): TrackReorderAvailability => {
+    const view = this.editorInstance?.editor;
+    const context = this.trackPreview.renameContext();
+    if (!view || !context || !this.isReady) return 'unavailable';
+    const editorCode = view.state.doc.toString();
+    return editorCode === context.code && publishedCode === context.code ? 'ready' : 'stale-code';
+  };
+
   /**
    * Publish one trusted rename version: preview metadata first, then the
    * service state, so every observer of either sees a consistent pair.
@@ -405,7 +432,7 @@ export class StrudelService {
   }
 
   /**
-   * Route a document change that the repl just reported: a rename
+   * Route a document change that the repl just reported: a track edit
    * transaction's own callback, or an undo/redo that lands exactly on a
    * registered version, syncs names and ranges without touching the
    * transport. Anything else belongs to the ordinary editing path.
@@ -461,8 +488,8 @@ export class StrudelService {
       return built.status === 'invalid-name' ? built : { status: built.status };
     }
 
-    const beforeVersion: RenameVersion<PreviewTrack[]> = { code: doc, tracks: [...context.tracks] };
-    const afterVersion: RenameVersion<PreviewTrack[]> = { code: built.nextCode, tracks: built.tracks };
+    const beforeVersion: RenameVersion<PreviewTrack[]> = { code: doc, tracks: [...context.tracks], stackRange: context.stackRange };
+    const afterVersion: RenameVersion<PreviewTrack[]> = { code: built.nextCode, tracks: built.tracks, stackRange: built.stackRange };
     this.renameLedger.begin(editor, afterVersion, this.trackPreview.mappingEpoch);
     try {
       dispatchTrackRename(view, built.patch);
@@ -482,6 +509,57 @@ export class StrudelService {
     }
     this.renameLedger.record(beforeVersion, afterVersion, this.trackPreview.mappingEpoch);
     return { status: 'renamed', name: validated.name };
+  };
+
+  /**
+   * Reorder one track by moving the top-level stack argument in the editor.
+   * The edit does not evaluate the code or touch the transport; the next
+   * explicit play compiles the reordered source.
+   */
+  reorderTrack = (trackId: string, targetIndex: number): TrackReorderResult => {
+    const editor = this.editorInstance;
+    const view = editor?.editor as TrackRenameView | undefined;
+    if (!editor || !view || !this.isReady) return { status: 'unavailable' };
+    if (this.isTrackReorderBusy()) return { status: 'busy' };
+    const context = this.trackPreview.renameContext();
+    if (!context) return { status: 'unavailable' };
+
+    const doc = view.state.doc.toString();
+    if (doc !== context.code) return { status: 'stale-code' };
+    const built = buildTrackReorder(
+      { code: doc, tracks: context.tracks, stackRange: context.stackRange },
+      trackId,
+      targetIndex,
+    );
+    if (built.status !== 'ok') return built;
+
+    const beforeVersion: RenameVersion<PreviewTrack[]> = {
+      code: doc,
+      tracks: [...context.tracks],
+      stackRange: context.stackRange,
+    };
+    const afterVersion: RenameVersion<PreviewTrack[]> = {
+      code: built.nextCode,
+      tracks: built.tracks,
+      stackRange: built.stackRange,
+    };
+    this.renameLedger.begin(editor, afterVersion, this.trackPreview.mappingEpoch);
+    try {
+      dispatchTrackRename(view, built.patch);
+    } catch {
+      this.renameLedger.abort();
+      return { status: 'unavailable' };
+    }
+    if (view.state.doc.toString() !== built.nextCode) {
+      this.renameLedger.abort();
+      return { status: 'unavailable' };
+    }
+    if (this.renameLedger.pendingActive()) {
+      this.renameLedger.abort();
+      this.applyRenameVersion(afterVersion);
+    }
+    this.renameLedger.record(beforeVersion, afterVersion, this.trackPreview.mappingEpoch);
+    return { status: 'reordered' };
   };
 
   private transportCallbacks: TransportCallback[] = [];
@@ -979,8 +1057,8 @@ export class StrudelService {
     // A rename transaction (or its undo/redo) reports itself here with the
     // exact registered text: sync names and keep the transport and pause
     // state exactly as they are. Every other edit rewinds.
-    const renameApplied = didCodeChange ? this.consumeRenameSync(nextCode) : false;
-    if (didCodeChange && !renameApplied) this.rewindOnCodeChange(state.started ?? false);
+    const trackEditApplied = didCodeChange ? this.consumeRenameSync(nextCode) : false;
+    if (didCodeChange && !trackEditApplied) this.rewindOnCodeChange(state.started ?? false);
     const replActiveCode = state.activeCode;
     const nextActiveCode =
       typeof replActiveCode !== 'string' || replActiveCode === REPL_PLACEHOLDER_CODE
@@ -990,7 +1068,7 @@ export class StrudelService {
       code: nextCode,
       activeCode: nextActiveCode,
       isPlaying: state.started ?? false,
-      isPaused: renameApplied ? this._state.isPaused : didCodeChange || state.started ? false : this._state.isPaused,
+      isPaused: trackEditApplied ? this._state.isPaused : didCodeChange || state.started ? false : this._state.isPaused,
       isDirty: state.isDirty ?? false,
       error,
     });

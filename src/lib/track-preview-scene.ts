@@ -60,6 +60,8 @@ export interface TrackSceneTile {
 
 export interface TrackFullSceneSnapshot {
   readonly identity: TrackFullSceneIdentity;
+  /** Track order used by tile lane arrays when this scene job was created. */
+  readonly trackIds?: readonly string[];
   readonly status: TrackFullSceneStatus;
   readonly begin: 0;
   readonly end: number;
@@ -791,8 +793,14 @@ export function assembleFullSceneBatch(
   viewportEnd: number,
   cssWidth = 400,
 ): TrackSceneBatch {
-  const rows = trackIds.map((_, trackIndex) => snapshot.tiles.map(tile =>
-    tile.lanes[trackIndex] ?? emptyTileLane(tile)));
+  const sourceTrackIds = snapshot.trackIds ?? trackIds;
+  const sourceIndexById = new Map(sourceTrackIds.map((id, index) => [id, index]));
+  const rows = trackIds.map(trackId => {
+    const trackIndex = sourceIndexById.get(trackId) ?? -1;
+    return snapshot.tiles.map(tile => trackIndex < 0
+      ? emptyTileLane(tile)
+      : tile.lanes[trackIndex] ?? emptyTileLane(tile));
+  });
   const status: TrackSceneStatus = snapshot.status === 'complete'
     ? 'complete'
     : snapshot.status === 'failed'
@@ -834,7 +842,9 @@ export function assembleFullSceneBatch(
   const pxPerCycle = viewportSpan > 0 && cssWidth > 0 ? cssWidth / viewportSpan : 0;
   const exactScreenBudget = Math.min(snapshot.exactBudget, Math.floor(cssWidth * EXACT_COUNT_SCREEN_FACTOR));
   const baseLanes = new Map((snapshot.lods[0]?.lanes ?? []).map(lane => [lane.trackId, lane]));
-  const lanes = selectedLod.level === 0 ? selectedLod.lanes : selectedLod.lanes.map(lane => {
+  const lodByTrackId = new Map(selectedLod.lanes.map(lane => [lane.trackId, lane]));
+  const orderedLanes = trackIds.map(trackId => lodByTrackId.get(trackId) ?? base.lanes.find(lane => lane.trackId === trackId)).filter((lane): lane is TrackLaneSceneData => lane !== undefined);
+  const lanes = selectedLod.level === 0 ? orderedLanes : orderedLanes.map(lane => {
     const exactLane = baseLanes.get(lane.trackId);
     const exact = exactLane?.exact;
     if (exactLane?.representation !== 'exact'

@@ -37,6 +37,8 @@ export type TrackRenameOutcome =
       /** The single CodeMirror change: replace the name characters, nothing else. */
       patch: { from: number; to: number; insert: string };
       nextCode: string;
+      /** Updated full-document range of the stack after the patch. */
+      stackRange: TrackRenameRange;
       /** Re-derived metadata for every track, same ids in the same order. */
       tracks: TrackRenameTrack[];
     }
@@ -193,5 +195,5 @@ export function buildTrackRename(context: TrackRenameContext, trackId: string, r
       : undefined,
   }));
 
-  return { status: 'ok', patch, nextCode, tracks };
+  return { status: 'ok', patch, nextCode, stackRange: nextStackRange, tracks };
 }

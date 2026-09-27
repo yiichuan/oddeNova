@@ -3784,9 +3784,39 @@ html[data-theme='light'] .track-panel {
    cell stretches with the same grid row rather than recomputing a height.
    Coarse pointers get taller rows and hit areas from the same media query. */
 .track-row {
+  position: relative;
   height: 60px;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.track-row[data-reorder-dragging='true'] {
+  opacity: 0.55;
+}
+
+.track-row[data-reorder-before='true']::before,
+.track-row[data-reorder-after='true']::after {
+  content: '';
+  position: absolute;
+  z-index: 5;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-playback-accent);
+  pointer-events: none;
+}
+
+.track-row[data-reorder-before='true']::before {
+  top: 0;
+}
+
+.track-row[data-reorder-after='true']::after {
+  bottom: 0;
+}
+
+.track-row[data-reorder-dragging='true'] .track-row-header {
+  cursor: grabbing;
 }
 
 .track-row-header {
@@ -3795,6 +3825,15 @@ html[data-theme='light'] .track-panel {
   justify-content: center;
   gap: 2px;
   min-width: 0;
+}
+
+/* A pressed reorder handle may turn into a drag after the movement threshold.
+   Block selection across the list from pointerdown, so the browser cannot
+   highlight track titles or action labels while rows are being moved. */
+.track-panel [data-track-reorder-pressed='true'],
+.track-panel [data-track-reorder-pressed='true'] * {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .track-row-title,
@@ -3808,6 +3847,14 @@ html[data-theme='light'] .track-panel {
 .track-row-title {
   gap: 4px;
   height: 24px;
+}
+
+.track-row-rename-input {
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 2ch;
+  max-width: calc(100% - 10px);
 }
 
 .track-row-actions {

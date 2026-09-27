@@ -29,7 +29,9 @@ export interface TrackTileCacheKey {
 
 export interface TrackTileCacheEntry {
   key: TrackTileCacheKey;
-  /** One lane state per track index; null marks a track absent in the tile. */
+  /** Stable identities matching the order of lanes in this cached tile. */
+  trackIds: readonly string[];
+  /** One lane state per track ID; null marks a track absent in the tile. */
   lanes: readonly (TileLaneState | null)[];
   rawEventCount: number;
   bytes: number;
@@ -94,9 +96,15 @@ export class TrackTileCache {
     return entry;
   }
 
-  put(key: TrackTileCacheKey, lanes: readonly (TileLaneState | null)[], rawEventCount: number): TrackTileCacheEntry {
+  put(
+    key: TrackTileCacheKey,
+    lanes: readonly (TileLaneState | null)[],
+    rawEventCount: number,
+    trackIds: readonly string[] = lanes.map((_, index) => String(index)),
+  ): TrackTileCacheEntry {
     const entry: TrackTileCacheEntry = {
       key: { ...key },
+      trackIds: [...trackIds],
       lanes,
       rawEventCount,
       bytes: lanes.reduce((sum, lane) => sum + (lane ? estimateTileLaneBytes(lane) : 0), 64),

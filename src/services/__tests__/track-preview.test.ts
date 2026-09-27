@@ -3,9 +3,10 @@ import * as core from '@strudel/core';
 import * as mini from '@strudel/mini';
 import * as tonal from '@strudel/tonal';
 import { transpiler } from '@strudel/transpiler';
-import { TrackPreview, type PreviewHap } from '../track-preview';
+import { TrackPreview, type PreviewHap, type PreviewTrack } from '../track-preview';
 import type { TrackSceneRequest } from '../../lib/track-preview-scene';
 import { buildTrackRename } from '../../lib/track-rename';
+import { buildTrackReorder } from '../../lib/track-reorder';
 
 type TestPattern = { queryArc: (begin: number, end: number) => (PreviewHap & { value: Record<string, unknown>; context: Record<string, unknown> })[] };
 
@@ -202,6 +203,43 @@ describe('track preview playback contract', () => {
 
     expect(preview.previewGeneration).toBe(firstGeneration);
     expect(preview.snapshot.tracks.map(track => track.name)).toEqual(['鼓', '贝斯']);
+  });
+
+  it('keeps scene cache lanes and Solo/Mute attached to reordered layers through the next compile', async () => {
+    const preview = new TrackPreview();
+    const code = `stack(
+  /* @layer 鼓组 */ stack(s("bd*2"), s("hh*4")),
+  /* @layer 贝斯 */ note("36 40").s("sawtooth")
+)`;
+    await compile(preview, code);
+    const originalIds = preview.snapshot.tracks.map(track => track.id);
+    const firstScene = await preview.queryTrackScene(sceneRequest(preview, 0, 1));
+    expect(firstScene.status).toBe('complete');
+    const originalCounts = new Map(firstScene.batch!.lanes.map(lane => [lane.trackId, lane.rawEventCount]));
+    preview.toggleMute(originalIds[0]);
+    preview.toggleSolo(originalIds[1]);
+
+    const context = preview.renameContext();
+    expect(context).not.toBeNull();
+    const reordered = buildTrackReorder(context!, originalIds[0], 1);
+    expect(reordered.status).toBe('ok');
+    if (reordered.status !== 'ok') return;
+    preview.applyRename({ code: reordered.nextCode, tracks: reordered.tracks, stackRange: reordered.stackRange });
+
+    const cachedScene = await preview.queryTrackScene(sceneRequest(preview, 0, 1));
+    expect(cachedScene.status).toBe('complete');
+    expect(preview.lastSceneQueryStats.cachedTiles).toBeGreaterThan(0);
+    expect(cachedScene.batch!.lanes.map(lane => lane.trackId)).toEqual([originalIds[1], originalIds[0]]);
+    expect(new Map(cachedScene.batch!.lanes.map(lane => [lane.trackId, lane.rawEventCount]))).toEqual(originalCounts);
+
+    const generation = preview.previewGeneration;
+    const compiled = await core.evaluate(reordered.nextCode, (source: string) => preview.prepare(source, transpiler(source)));
+    expect(compiled.meta.oddenovaTracks?.reusePreviewContent).toBe(true);
+    expect((compiled.meta.oddenovaTracks?.tracks as PreviewTrack[] | undefined)?.map(track => track.id)).toEqual([originalIds[1], originalIds[0]]);
+    preview.commit(compiled.pattern, compiled.meta);
+    expect(preview.previewGeneration).toBe(generation);
+    expect(preview.snapshot.soloId).toBe(originalIds[1]);
+    expect(preview.snapshot.mutedIds).toEqual(new Set([originalIds[0]]));
   });
 
   it.each([
