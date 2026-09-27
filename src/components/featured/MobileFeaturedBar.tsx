@@ -197,7 +197,7 @@ export default function MobileFeaturedBar({
      stays where it is drawn. Only the lap that is showing asks for frames: the
      ring stops being given them the moment a record opens, and the band is not
      given any until one has. */
-  const { pieceId, totalSeconds, loopCycles } = useLoopClock(piece, isPlaying, isPaused);
+  const { pieceId, totalSeconds, displayCycles } = useLoopClock(piece, isPlaying, isPaused);
   const playing = isPlaying && totalSeconds > 0;
   /* Where the lap is between the pill's outline and the band above it. The two
      are one lap and never both on the page: everything up to the moment it
@@ -214,7 +214,7 @@ export default function MobileFeaturedBar({
       <BarProgressTrack
         pieceId={pieceId}
         totalSeconds={totalSeconds}
-        loopCycles={loopCycles}
+        displayCycles={displayCycles}
         playing={playing}
         expanded={expanded}
         landed={landed}
@@ -352,7 +352,7 @@ export default function MobileFeaturedBar({
 /**
  * The clock the two laps are read off.
  *
- * The playhead is run against a known loop length rather than polled off the
+ * The playhead is run against a known display span rather than polled off the
  * scheduler, the same way the desktop bar's track runs it: one rAF is cheaper
  * and steadier than asking the engine where it is sixty times a second. Where it
  * stands is `featured-playhead`'s to keep and not this component's, so the lap
@@ -368,17 +368,17 @@ function useLoopClock(piece: FeaturedPiece | null, isPlaying: boolean, isPaused:
     () => (piece ? getStrudelLoopDurationSeconds(piece.code) : 0),
     [piece],
   );
-  /* The loop in the engine's own unit. Seconds are what a lap is drawn in and
+  /* The display span in the engine's own unit. Seconds are what a lap is drawn in and
      cycles are what a scheduler is moved in, so a seek needs both — see
      `featuredPlayer.seek`. */
-  const loopCycles = useMemo(() => (piece ? getStrudelLoopCycles(piece.code) : 0), [piece]);
+  const displayCycles = useMemo(() => (piece ? getStrudelLoopCycles(piece.code) : 0), [piece]);
   const pieceId = piece?.id ?? null;
 
   useEffect(() => {
     syncPlayhead(pieceId, isPlaying, isPaused, totalSeconds);
   }, [isPaused, isPlaying, pieceId, totalSeconds]);
 
-  return { pieceId, totalSeconds, loopCycles };
+  return { pieceId, totalSeconds, displayCycles };
 }
 
 /**
@@ -509,14 +509,14 @@ function useLapMorph(expanded: boolean): number {
 function BarProgressTrack({
   pieceId,
   totalSeconds,
-  loopCycles,
+  displayCycles,
   playing,
   expanded,
   landed,
 }: {
   pieceId: string | null;
   totalSeconds: number;
-  loopCycles: number;
+  displayCycles: number;
   playing: boolean;
   expanded: boolean;
   /** The band is the lap on the page only once it has landed — until then the
@@ -536,13 +536,13 @@ function BarProgressTrack({
      it. */
   const pressFocusedRef = useRef(false);
   const progress = useLoopProgress(pieceId, totalSeconds, playing, landed, seeks);
-  const seekDisabled = pieceId === null || totalSeconds <= 0 || loopCycles <= 0;
+  const seekDisabled = pieceId === null || totalSeconds <= 0 || displayCycles <= 0;
 
   const seek = (next: number) => {
     if (seekDisabled) return;
     const normalized = Math.min(1, Math.max(0, next));
     seekPlayhead(pieceId, normalized, totalSeconds);
-    featuredPlayer.seek(normalized, loopCycles);
+    featuredPlayer.seek(normalized, displayCycles);
     setSeeks((count) => count + 1);
   };
 

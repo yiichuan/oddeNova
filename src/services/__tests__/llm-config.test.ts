@@ -110,6 +110,26 @@ describe('PROVIDER_PRESETS models lists', () => {
   it('anthropic models[0] matches the built-in anthropic default', () => {
     expect(PROVIDER_PRESETS.anthropic.models?.[0]).toBe('claude-opus-5');
   });
+
+  it('drops retired / unconfirmed model ids from every selectable list', () => {
+    const allModels = (Object.keys(PROVIDER_PRESETS) as (keyof typeof PROVIDER_PRESETS)[])
+      .flatMap((provider) => PROVIDER_PRESETS[provider].models ?? []);
+    for (const retired of ['deepseek-v4-flash', 'kimi-k2.5', 'gpt-5.5-mini']) {
+      expect(allModels).not.toContain(retired);
+    }
+  });
+
+  it('lists the catalogued options per provider in display order', () => {
+    expect(PROVIDER_PRESETS.deepseek.models).toEqual(['deepseek-flash', 'deepseek-v4-pro']);
+    expect(PROVIDER_PRESETS.kimi.models).toEqual(['kimi-k2.6', 'kimi-k3', 'kimi-k2.7-code']);
+    expect(PROVIDER_PRESETS.openai.models).toEqual([
+      'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.1', 'gpt-5',
+    ]);
+    expect(PROVIDER_PRESETS.anthropic.models).toEqual([
+      'claude-opus-5', 'claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8',
+    ]);
+    expect(PROVIDER_PRESETS.glm.models).toEqual(['glm-5.2', 'glm-5.3', 'glm-5.1', 'glm-5.1-air', 'glm-5']);
+  });
 });
 
 describe('official provider API key defaults', () => {
@@ -147,7 +167,7 @@ describe('official provider API key defaults', () => {
 
 describe('getSelectedModel', () => {
   it('returns preset.model when no override is stored', () => {
-    expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
+    expect(getSelectedModel('deepseek')).toBe('deepseek-flash');
   });
 
   it('returns glm-5.2 as the default GLM model when no override is stored', () => {
@@ -161,7 +181,16 @@ describe('getSelectedModel', () => {
 
   it('ignores an override that is not in the provider models list', () => {
     localStorage.setItem('vibe_model_deepseek', 'not-a-real-model');
-    expect(getSelectedModel('deepseek')).toBe('deepseek-v4-flash');
+    expect(getSelectedModel('deepseek')).toBe('deepseek-flash');
+  });
+
+  it('falls back to the provider default when a retired alias is stored', () => {
+    localStorage.setItem('vibe_model_deepseek', 'deepseek-v4-flash');
+    expect(getSelectedModel('deepseek')).toBe('deepseek-flash');
+    localStorage.setItem('vibe_model_kimi', 'kimi-k2.5');
+    expect(getSelectedModel('kimi')).toBe('kimi-k2.6');
+    localStorage.setItem('vibe_model_openai', 'gpt-5.5-mini');
+    expect(getSelectedModel('openai')).toBe('gpt-5.5');
   });
 
   it('falls back to the built-in anthropic default when no override is stored', () => {
@@ -185,7 +214,7 @@ describe('getSelectedModel', () => {
 
   it('returns preset.model for official regardless of any stored override', () => {
     localStorage.setItem('vibe_model_official', 'whatever');
-    expect(getSelectedModel('official')).toBe('deepseek-v4-flash');
+    expect(getSelectedModel('official')).toBe('deepseek-flash');
   });
 });
 

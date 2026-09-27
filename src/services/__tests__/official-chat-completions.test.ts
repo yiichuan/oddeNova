@@ -2,8 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import handler from '../../../api/official/v1/chat/completions';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-function makeReq(method: string, body?: unknown): VercelRequest {
-  return { method, body, headers: {} } as VercelRequest;
+function makeReq(
+  method: string,
+  body?: unknown,
+  query: VercelRequest['query'] = {},
+  headers: VercelRequest['headers'] = {},
+): VercelRequest {
+  return { method, body, query, headers } as VercelRequest;
 }
 
 interface TestResponse {
@@ -109,6 +114,44 @@ describe('/api/official/v1/chat/completions', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer sk-vite' }),
       }),
     );
+  });
+
+  it('routes Kimi requests to Moonshot with the user Bearer token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: () => Promise.resolve('{"ok":true}'),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const res = makeRes();
+
+    await handler(makeReq(
+      'POST',
+      { stream: false },
+      { provider: 'kimi' },
+      { authorization: 'Bearer sk-kimi' },
+    ), res as unknown as VercelResponse);
+
+    expect(res.statusCodeValue).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.moonshot.cn/v1/chat/completions',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer sk-kimi' }),
+      }),
+    );
+  });
+
+  it('requires a user Bearer token for Kimi requests', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const res = makeRes();
+
+    await handler(makeReq('POST', { stream: true }, { provider: 'kimi' }), res as unknown as VercelResponse);
+
+    expect(res.statusCodeValue).toBe(401);
+    expect(res.jsonBody).toEqual({ error: 'Missing Bearer token' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('proxies streaming responses as text/event-stream', async () => {

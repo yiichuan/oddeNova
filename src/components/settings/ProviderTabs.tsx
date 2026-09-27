@@ -16,6 +16,7 @@ interface ProviderTabsProps {
 const PROVIDER_LOGOS: Partial<Record<ProviderType, string>> = {
   official: '/logo/logo-o.svg',
   deepseek: '/logo/logo-deepseek.svg',
+  kimi: '/logo/logo-kimi.svg',
   glm: '/logo/logo-glm.svg',
   anthropic: '/logo/logo-anthropic.svg',
   openai: '/logo/logo-openai.svg',
@@ -68,6 +69,11 @@ export default function ProviderTabs({
         const selected = selectedProvider === provider;
         const active = activeProvider === provider;
         const logo = PROVIDER_LOGOS[provider] ?? '/logo/logo-o.svg';
+        const logoSize = provider === 'official'
+          ? 'size-[13px]'
+          : provider === 'kimi'
+            ? 'size-[14px]'
+            : 'size-[16px]';
 
         return (
           <Fragment key={provider}>
@@ -96,7 +102,7 @@ export default function ProviderTabs({
                 data-provider-logo={provider}
               >
                 <span
-                  className={`block bg-current ${provider === 'official' ? 'size-[13px]' : 'size-[16px]'}`}
+                  className={`block bg-current ${logoSize}`}
                   style={{
                     WebkitMaskImage: `url(${logo})`,
                     WebkitMaskPosition: 'center',

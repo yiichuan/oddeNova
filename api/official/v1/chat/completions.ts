@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/v1/chat/completions';
+const KIMI_CHAT_COMPLETIONS_URL = 'https://api.moonshot.cn/v1/chat/completions';
 
 function resolveOfficialApiKey(): string {
   return process.env.OFFICIAL_API_KEY || process.env.VITE_API_KEY || '';
@@ -59,17 +60,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const apiKey = resolveOfficialApiKey();
-  if (!apiKey) {
+  const isKimi = req.query?.provider === 'kimi';
+  const kimiAuthorization = req.headers.authorization;
+  if (isKimi && (typeof kimiAuthorization !== 'string' || !kimiAuthorization.startsWith('Bearer '))) {
+    res.status(401).json({ error: 'Missing Bearer token' });
+    return;
+  }
+
+  const apiKey = isKimi ? '' : resolveOfficialApiKey();
+  if (!isKimi && !apiKey) {
     res.status(500).json({ error: 'OFFICIAL_API_KEY or VITE_API_KEY is not configured' });
     return;
   }
 
   try {
-    const upstream = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
+    const upstream = await fetch(isKimi ? KIMI_CHAT_COMPLETIONS_URL : DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: isKimi ? kimiAuthorization as string : `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(req.body ?? {}),
@@ -78,7 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!upstream.ok) {
       const contentType = upstream.headers.get('content-type') || 'application/json';
       const errorBody = await upstream.text();
-      console.error('[official-proxy] Upstream request failed', {
+      console.error(`[${isKimi ? 'kimi' : 'official'}-proxy] Upstream request failed`, {
         status: upstream.status,
         contentType,
         requestId: upstream.headers.get('x-request-id'),
@@ -98,6 +106,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (contentType) res.setHeader('Content-Type', contentType);
     res.status(upstream.status).end(await upstream.text());
   } catch (_error) {
-    res.status(502).json({ error: 'Official provider request failed' });
+    if (res.headersSent) {
+      res.end();
+      return;
+    }
+    res.status(502).json({ error: isKimi ? 'Kimi provider request failed' : 'Official provider request failed' });
   }
 }

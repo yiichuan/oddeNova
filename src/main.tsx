@@ -7,6 +7,7 @@ import { loadAppearancePreferences } from './lib/appearance-preferences'
 import { initPersonaCache } from './lib/persona-storage'
 import { initializeAnalytics } from './lib/analytics'
 import { zh } from './lib/i18n'
+import { consumeOddeNovaBridgeBootstrapHash } from './lib/oddenova-bridge'
 
 const root = createRoot(document.getElementById('root')!)
 
@@ -15,6 +16,7 @@ const root = createRoot(document.getElementById('root')!)
 // has never picked an editor theme of their own.
 loadAppearancePreferences()
 loadEditorPreferences()
+consumeOddeNovaBridgeBootstrapHash()
 initializeAnalytics(zh ? 'zh-CN' : 'en')
 
 if (window.location.pathname.startsWith(LEARN_PATH_PREFIX)) {

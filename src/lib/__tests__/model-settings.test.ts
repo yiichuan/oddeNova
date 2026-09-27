@@ -7,6 +7,7 @@ import {
   isProviderSettingsDirty,
   readModelSettingsSnapshot,
   saveProviderSettings,
+  SETTINGS_PROVIDERS,
 } from '../model-settings';
 
 describe('model settings persistence', () => {
@@ -19,6 +20,10 @@ describe('model settings persistence', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
+  it('shows kimi in the settings tab order after glm', () => {
+    expect(SETTINGS_PROVIDERS).toEqual(['official', 'deepseek', 'glm', 'kimi', 'anthropic', 'openai']);
+  });
+
   it('loads the active provider and provider-specific drafts', () => {
     localStorage.setItem('vibe_provider', 'deepseek');
     localStorage.setItem('vibe_model_deepseek', 'deepseek-v4-pro');
@@ -30,6 +35,7 @@ describe('model settings persistence', () => {
     expect(snapshot.activeProvider).toBe('deepseek');
     expect(snapshot.drafts.deepseek).toEqual({ apiKey: 'deepseek-key', model: 'deepseek-v4-pro' });
     expect(snapshot.drafts.openai.apiKey).toBe('openai-key');
+    expect(snapshot.drafts.kimi).toEqual({ apiKey: '', model: 'kimi-k2.6' });
   });
 
   it('distinguishes draft edits from provider activation changes', () => {
@@ -43,13 +49,13 @@ describe('model settings persistence', () => {
     localStorage.setItem('vibe_base_url', 'https://legacy.example');
     localStorage.setItem('vibe_model', 'legacy-model');
 
-    const saved = saveProviderSettings('openai', { apiKey: '  test-key  ', model: 'gpt-5.5-mini' });
+    const saved = saveProviderSettings('openai', { apiKey: '  test-key  ', model: 'gpt-5.4-mini' });
 
-    expect(saved).toEqual({ apiKey: 'test-key', model: 'gpt-5.5-mini' });
+    expect(saved).toEqual({ apiKey: 'test-key', model: 'gpt-5.4-mini' });
     expect(localStorage.getItem('vibe_provider')).toBe('openai');
     expect(localStorage.getItem('vibe_api_key_openai')).toBe('test-key');
     expect(localStorage.getItem('vibe_api_key')).toBe('test-key');
-    expect(localStorage.getItem('vibe_model_openai')).toBe('gpt-5.5-mini');
+    expect(localStorage.getItem('vibe_model_openai')).toBe('gpt-5.4-mini');
     expect(localStorage.getItem('vibe_base_url')).toBeNull();
     expect(localStorage.getItem('vibe_model')).toBeNull();
   });
@@ -65,10 +71,20 @@ describe('model settings persistence', () => {
     localStorage.setItem('vibe_api_key', 'active-key');
     localStorage.setItem('vibe_api_key_openai', 'saved-openai-key');
 
-    saveProviderSettings('official', { apiKey: '', model: 'deepseek-v4-flash' });
+    saveProviderSettings('official', { apiKey: '', model: 'deepseek-flash' });
 
     expect(localStorage.getItem('vibe_provider')).toBe('official');
     expect(localStorage.getItem('vibe_api_key')).toBeNull();
     expect(localStorage.getItem('vibe_api_key_openai')).toBe('saved-openai-key');
+  });
+
+  it('saves kimi like the other third-party providers', () => {
+    const saved = saveProviderSettings('kimi', { apiKey: 'kimi-key', model: 'kimi-k3' });
+
+    expect(saved).toEqual({ apiKey: 'kimi-key', model: 'kimi-k3' });
+    expect(localStorage.getItem('vibe_provider')).toBe('kimi');
+    expect(localStorage.getItem('vibe_api_key_kimi')).toBe('kimi-key');
+    expect(localStorage.getItem('vibe_api_key')).toBe('kimi-key');
+    expect(localStorage.getItem('vibe_model_kimi')).toBe('kimi-k3');
   });
 });

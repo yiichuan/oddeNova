@@ -576,16 +576,30 @@ describe('ExportPopover window and form', () => {
     viewport.mobile = false;
   });
 
-  /* A piece that does not come round after one cycle, so opening on the whole
-     of it is visibly different from opening on a fixed number of cycles. */
-  const LOOPING_CODE = 'setcps(0.6)\ns("bd*4").slow(8)';
+  /* A piece whose estimated display range is longer than one cycle, so the
+     code-derived default is visibly different from a fixed range. */
+  const LOOPING_CODE = `setcps(0.2917)
+stack(
+  /* @layer PIANO */
+  note("<[e4 g4 b4] [d4 f#4 a4] [c4 e4 g4] [b3 d4 f#4] [a3 c4 e4] [g3 b3 d4] [f#3 a3 c4] [b3 d4 f#4]>")
+    .s("gm_acoustic_grand_piano"),
+  /* @layer LOW */
+  note("<e2 d2 c2 b1 a1 g1 f#1 b1>/2").s("gm_contrabass"),
+  /* @layer AIR */
+  stack(
+    s("wind").gain("<0.10 0.14 0.11 0.16 0.12 0.15 0.13>")
+      .pan(perlin.range(0.15, 0.85).slow(16)),
+    s("birds").gain("<0 0.16 0 0 0.12 0 0.18 0 0 0.14 0>"),
+    s("insects").gain("<0.08 0.11 0.09 0.13 0.10 0.12 0.08 0.14 0.09 0.11 0.13 0.10 0.12>")
+  )
+)`;
 
   function renderPopover(code: string, extra: Partial<React.ComponentProps<typeof ExportPopover>> = {}) {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
     roots.push(root);
-    act(() => {
+    const rerender = (overrides: Partial<React.ComponentProps<typeof ExportPopover>> = {}) => act(() => {
       root.render(
         <ExportPopover
           open
@@ -598,28 +612,54 @@ describe('ExportPopover window and form', () => {
           onGenerateTitle={vi.fn().mockResolvedValue('Generated groove')}
           bpm={144}
           {...extra}
+          {...overrides}
         />,
       );
     });
-    return { container, root };
+    rerender();
+    return { container, root, rerender };
   }
 
   const cycleInputs = (scope: ParentNode) => (
     [...scope.querySelectorAll<HTMLInputElement>('input[inputmode="numeric"]')]
   );
 
-  it('opens on one whole time through the piece, and estimates what the transport shows', () => {
+  it('opens on the same default display range and estimate as the transport', () => {
     const { container } = renderPopover(LOOPING_CODE);
 
-    const loopCycles = getStrudelLoopCycles(LOOPING_CODE);
-    expect(loopCycles).toBeGreaterThan(1);
-    expect(cycleInputs(container).map((input) => input.value)).toEqual(['0', String(loopCycles)]);
+    const displayCycles = getStrudelLoopCycles(LOOPING_CODE);
+    expect(displayCycles).toBe(16);
+    expect(cycleInputs(container).map((input) => input.value)).toEqual(['0', String(displayCycles)]);
     // The same seconds the playback bar under the editor is drawn from.
     expect(container.textContent)
       .toContain(`${getStrudelLoopDurationSeconds(LOOPING_CODE).toFixed(1)}s`);
   });
 
-  it('falls back to a few cycles for code with no loop to measure', () => {
+  it('rounds a fractional display range up to an integer export boundary', () => {
+    const { container } = renderPopover('setcps(0.5)\nn("<0 1>*4")');
+
+    expect(getStrudelLoopCycles('n("<0 1>*4")')).toBe(0.5);
+    expect(cycleInputs(container).map((input) => input.value)).toEqual(['0', '1']);
+    expect(container.textContent).toContain('2.0s');
+  });
+
+  it('restores the code-derived display range after a manual edit and reopen', () => {
+    const { container, rerender } = renderPopover(LOOPING_CODE);
+    const end = cycleInputs(container)[1];
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(end, '24');
+      end.dispatchEvent(new Event('input', { bubbles: true }));
+      end.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+    });
+    expect(cycleInputs(container)[1].value).toBe('24');
+
+    rerender({ open: false });
+    rerender({ open: true });
+    expect(cycleInputs(container).map((input) => input.value)).toEqual(['0', '16']);
+  });
+
+  it('falls back to a few cycles for code with no display range to measure', () => {
     const { container } = renderPopover('   ');
 
     expect(cycleInputs(container).map((input) => input.value)).toEqual(['0', '4']);

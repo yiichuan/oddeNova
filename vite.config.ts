@@ -176,6 +176,92 @@ function officialApiDevMiddleware(): Plugin {
   }
 }
 
+// Same-origin local proxy for user-key Kimi requests. The browser sends the
+// user's Bearer token to Vite; Vite forwards it to Moonshot and streams the
+// response back, avoiding Moonshot's browser CORS preflight.
+function kimiApiDevMiddleware(): Plugin {
+  const UPSTREAM = 'https://api.moonshot.cn/v1/chat/completions'
+
+  return {
+    name: 'kimi-api-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use(
+        '/api/kimi/v1/chat/completions',
+        (req: IncomingMessage, res: ServerResponse) => {
+          if (req.method !== 'POST') {
+            res.statusCode = 405
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: 'Method not allowed' }))
+            return
+          }
+
+          const authorization = req.headers.authorization
+          if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) {
+            res.statusCode = 401
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: 'Missing Bearer token' }))
+            return
+          }
+
+          const chunks: Buffer[] = []
+          req.on('data', (chunk: Buffer | string) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+          })
+          req.on('error', () => {
+            if (res.headersSent) {
+              res.end()
+              return
+            }
+            res.statusCode = 400
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: 'Invalid request body' }))
+          })
+          req.on('end', async () => {
+            try {
+              const upstream = await fetch(UPSTREAM, {
+                method: 'POST',
+                headers: {
+                  Authorization: authorization,
+                  'Content-Type': 'application/json',
+                },
+                body: Buffer.concat(chunks),
+              })
+
+              res.statusCode = upstream.status
+              res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json')
+              res.setHeader('Cache-Control', 'no-cache, no-transform')
+              res.setHeader('Connection', 'keep-alive')
+              const requestId = upstream.headers.get('x-request-id')
+              if (requestId) res.setHeader('x-request-id', requestId)
+
+              if (!upstream.body) {
+                res.end()
+                return
+              }
+
+              const reader = upstream.body.getReader()
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                res.write(Buffer.from(value))
+              }
+              res.end()
+            } catch {
+              if (res.headersSent) {
+                res.end()
+                return
+              }
+              res.statusCode = 502
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: 'Kimi provider proxy failed' }))
+            }
+          })
+        },
+      )
+    },
+  }
+}
+
 // Local dev mock for /api/share — uses an in-memory Map instead of Vercel Blob.
 // In production, Vercel routes /api/* to real serverless functions.
 function shareDevMiddleware(): Plugin {
@@ -401,7 +487,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
     build: {
       rollupOptions: {
         input: {

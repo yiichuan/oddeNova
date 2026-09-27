@@ -31,6 +31,15 @@ describe('featured playhead', () => {
     expect(readPlayheadProgress('a', LOOP, 10_000)).toBeCloseTo(0.6);
   });
 
+  it('resumes from the displayed position after pausing in a later span', () => {
+    syncPlayhead('a', true, false, LOOP, 1_000);
+    syncPlayhead('a', false, true, LOOP, 16_000);
+    expect(readPlayheadProgress('a', LOOP, 20_000)).toBeCloseTo(0.5);
+
+    syncPlayhead('a', true, false, LOOP, 20_000);
+    expect(readPlayheadProgress('a', LOOP, 22_000)).toBeCloseTo(0.7);
+  });
+
   it('rewinds on a stop, and on reaching for another record', () => {
     syncPlayhead('a', true, false, LOOP, 1_000);
     syncPlayhead('a', false, false, LOOP, 6_000);

@@ -12,8 +12,8 @@ interface ApiKeyModalProps {
 }
 
 const PROVIDER_ORDER: ProviderType[] = zh
-  ? ['official', 'deepseek', 'glm', 'anthropic', 'openai']
-  : ['official', 'anthropic', 'openai', 'deepseek', 'glm'];
+  ? ['official', 'deepseek', 'glm', 'kimi', 'anthropic', 'openai']
+  : ['official', 'anthropic', 'openai', 'deepseek', 'glm', 'kimi'];
 
 /** Read the saved API Key for each provider separately. */
 function getProviderKey(p: ProviderType): string {

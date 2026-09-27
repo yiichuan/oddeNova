@@ -86,6 +86,8 @@ export function useStrudel() {
     strudelService.setCode(code);
   }, []);
 
+  const getDisplayedCode = useCallback(() => strudelService.getDisplayedCode(), []);
+
   const setReadOnly = useCallback((on: boolean) => {
     strudelService.setReadOnly(on);
   }, []);
@@ -157,6 +159,7 @@ export function useStrudel() {
     getPlaybackPosition: strudelService.getPlaybackPosition,
     seekPlayback: strudelService.seekPlayback,
     setCode,
+    getDisplayedCode,
     setReadOnly,
     setError,
     undo,

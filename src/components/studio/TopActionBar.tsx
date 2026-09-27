@@ -340,35 +340,34 @@ export function ExportPopover({
   const [prevOpen, setPrevOpen] = useState(false);
   const { filename, filenamePlaceholder, generateTitleState } = titleForm;
 
-  /* How long one time through is, in cycles and in seconds, read off the code
+  /* The default display range, in cycles and seconds, read off the code
      by the same measure the transport under the editor is drawn from.
 
      That is the point of reading it here rather than counting cycles: the
-     window of the piece this dialog opens on is the piece — from its first
-     cycle to the one the pattern comes round on — so the length it estimates
-     and the length the playback bar shows are the same number arrived at the
-     same way, and a download left at its defaults is one whole time through
-     rather than an arbitrary four cycles of it. */
-  const loopCycles = useMemo(() => (code.trim() ? getStrudelLoopCycles(code) : 0), [code]);
-  const loopSeconds = useMemo(
+     window this dialog opens on matches the playback bar. It is an estimated
+     browsing/export range, not a promise that every layer realigns at its end. */
+  const displayCycles = useMemo(() => (code.trim() ? getStrudelLoopCycles(code) : 0), [code]);
+  const displaySeconds = useMemo(
     () => (code.trim() ? getStrudelLoopDurationSeconds(code) : 0),
     [code],
   );
-  /* Seconds per cycle, taken from the loop rather than from the tempo where
-     the loop can be measured: `bpm` has been rounded to a whole number on its
+  /* Seconds per cycle, taken from the display range rather than from the tempo
+     where the range can be measured: `bpm` has been rounded to a whole number on its
      way here, and the transport's clock has not. */
-  const cycleSeconds = loopCycles > 0 && loopSeconds > 0
-    ? loopSeconds / loopCycles
+  const cycleSeconds = displayCycles > 0 && displaySeconds > 0
+    ? displaySeconds / displayCycles
     : bpm > 0 ? 240 / bpm : 0;
 
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (open) {
-      /* Opened on the whole of the piece. Re-read every time it opens rather
+      /* Opened on the default display range. Re-read every time it opens rather
          than kept from the last export: between two openings the code has very
          likely changed, and last time's numbers would be a window on a piece
          that no longer exists. */
-      const end = loopCycles > 0 ? loopCycles : FALLBACK_END_CYCLE;
+      // Export bounds are integer cycles. Keep the playback/display estimate
+      // precise, but include its full final partial cycle in the default WAV.
+      const end = displayCycles > 0 ? Math.ceil(displayCycles) : FALLBACK_END_CYCLE;
       setBeginCycle(0);
       setBeginCycleStr('0');
       setEndCycle(end);

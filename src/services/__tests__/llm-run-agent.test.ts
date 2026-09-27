@@ -312,12 +312,71 @@ describe('anthropicLLMCaller thinking params', () => {
     return opts.llm;
   }
 
-  it('maps the requested level to the matching budget_tokens', async () => {
+  function lastBody() {
+    return anthropicStreamMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+  }
+
+  it('adaptive models use thinking: adaptive with output_config.effort and no temperature', async () => {
     const llm = await captureLLM();
     await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'high');
 
     expect(anthropicStreamMock).toHaveBeenCalledWith(
-      expect.objectContaining({ thinking: { type: 'enabled', budget_tokens: 60000 } }),
+      expect.objectContaining({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'max' },
+      }),
+      expect.any(Object),
+    );
+    expect(lastBody()).not.toHaveProperty('temperature');
+  });
+
+  it('adaptive models map medium to output_config.effort medium', async () => {
+    const llm = await captureLLM();
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'medium');
+
+    expect(anthropicStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ output_config: { effort: 'medium' } }),
+      expect.any(Object),
+    );
+  });
+
+  it('claude-haiku-4-5 keeps the legacy budget_tokens path with temperature and the 64k output cap', async () => {
+    getActiveModelConfigMock.mockReturnValue({
+      provider: 'anthropic' as const,
+      protocol: 'anthropic' as const,
+      model: 'claude-haiku-4-5',
+      apiKey: 'sk-ant-test',
+      baseURL: 'https://api.anthropic.com',
+    });
+    const llm = await captureLLM();
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'high');
+
+    expect(anthropicStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thinking: { type: 'enabled', budget_tokens: 60000 },
+        max_tokens: 64000,
+        temperature: 1,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('unknown anthropic models keep the full 131072 output budget on the legacy path', async () => {
+    getActiveModelConfigMock.mockReturnValue({
+      provider: 'anthropic' as const,
+      protocol: 'anthropic' as const,
+      model: 'claude-legacy-override',
+      apiKey: 'sk-ant-test',
+      baseURL: 'https://api.anthropic.com',
+    });
+    const llm = await captureLLM();
+    await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, true, 'high');
+
+    expect(anthropicStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thinking: { type: 'enabled', budget_tokens: 60000 },
+        max_tokens: 131072,
+      }),
       expect.any(Object),
     );
   });
@@ -326,7 +385,178 @@ describe('anthropicLLMCaller thinking params', () => {
     const llm = await captureLLM();
     await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, false);
 
-    const body = anthropicStreamMock.mock.calls[0][0];
-    expect(body).not.toHaveProperty('thinking');
+    expect(lastBody()).not.toHaveProperty('thinking');
+    expect(lastBody()).not.toHaveProperty('output_config');
+  });
+
+  it('converts echoed thinking blocks and tool calls into Anthropic-shaped multi-turn history', async () => {
+    const llm = await captureLLM();
+    await llm.chatWithTools(
+      [
+        { role: 'system', content: 'system prompt' },
+        { role: 'user', content: 'add drums' },
+        {
+          role: 'assistant',
+          content: null,
+          thinking_blocks: [{ type: 'thinking', thinking: 'pick a kick', signature: 'sig-1' }],
+          tool_calls: [{
+            id: 'tu-1',
+            type: 'function',
+            function: { name: 'setCode', arguments: '{"code":"s(\\"bd\\")"}' },
+          }],
+        },
+        { role: 'tool', tool_call_id: 'tu-1', name: 'setCode', content: '{"ok":true}' },
+      ],
+      [],
+      undefined,
+      undefined,
+      undefined,
+      true,
+      'high',
+    );
+
+    const body = lastBody() as { messages: Array<{ role: string; content: unknown }> };
+    expect(body.messages[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'pick a kick', signature: 'sig-1' },
+        { type: 'tool_use', id: 'tu-1', name: 'setCode', input: { code: 's("bd")' } },
+      ],
+    });
+    expect(body.messages[2]).toEqual({
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'tu-1', content: '{"ok":true}' }],
+    });
+  });
+});
+
+describe('createOpenAILLMCaller provider-shaped requests', () => {
+  beforeEach(() => {
+    runAgentLoopMock.mockReset();
+    openAIChatCreateMock.mockReset();
+    runAgentLoopMock.mockResolvedValue({ code: '', explanation: 'done', iterations: 1, committed: true });
+    getActiveModelConfigMock.mockReset().mockReturnValue(officialModelConfig);
+    getSelectedThinkingLevelMock.mockReset().mockReturnValue('medium');
+  });
+
+  async function captureAgentBody(cfg: {
+    provider: 'official' | 'kimi' | 'openai';
+    protocol: 'openai';
+    model: string;
+    apiKey: string;
+    baseURL: string;
+  }) {
+    getActiveModelConfigMock.mockReturnValue(cfg);
+    async function* stream() {
+      yield { choices: [{ delta: {} }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 1, completion_tokens: 1 } };
+    }
+    openAIChatCreateMock.mockResolvedValue(stream());
+    await runAgent('go', '', undefined);
+    const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    await opts.llm.chatWithTools([{ role: 'user', content: 'go' }], []);
+    return openAIChatCreateMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+  }
+
+  it('keeps temperature and max_tokens for deepseek / official', async () => {
+    const body = await captureAgentBody(officialModelConfig);
+
+    expect(body.temperature).toBe(0.7);
+    expect(body.max_tokens).toBe(131072);
+    expect(body).not.toHaveProperty('max_completion_tokens');
+  });
+
+  it('kimi requests send no temperature (fixed server-side) but keep max_tokens', async () => {
+    const body = await captureAgentBody({
+      provider: 'kimi' as const,
+      protocol: 'openai' as const,
+      model: 'kimi-k2.6',
+      apiKey: 'sk-kimi',
+      baseURL: 'https://api.moonshot.cn/v1',
+    });
+
+    expect(body).not.toHaveProperty('temperature');
+    expect(body.max_tokens).toBe(131072);
+    expect(body).not.toHaveProperty('max_completion_tokens');
+  });
+
+  it('openai GPT-5 requests use max_completion_tokens and no temperature', async () => {
+    const body = await captureAgentBody({
+      provider: 'openai' as const,
+      protocol: 'openai' as const,
+      model: 'gpt-5.5',
+      apiKey: 'sk-openai',
+      baseURL: 'https://api.openai.com/v1',
+    });
+
+    expect(body).not.toHaveProperty('temperature');
+    expect(body.max_completion_tokens).toBe(131072);
+    expect(body).not.toHaveProperty('max_tokens');
+  });
+
+  it('the classification call still sends no thinking params for non-always-thinking models', async () => {
+    async function* stream() {
+      yield { choices: [{ delta: { content: 'chat' } }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 5, completion_tokens: 1 } };
+    }
+    getActiveModelConfigMock.mockReturnValue({
+      provider: 'openai' as const,
+      protocol: 'openai' as const,
+      model: 'gpt-5.5',
+      apiKey: 'sk-openai',
+      baseURL: 'https://api.openai.com/v1',
+    });
+    openAIChatCreateMock.mockResolvedValue(stream());
+
+    await runAgent('你是谁呀', '', undefined);
+
+    // The classification call is the only create() here (agent loop is mocked).
+    const classifyBody = openAIChatCreateMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(classifyBody).not.toHaveProperty('reasoning_effort');
+    expect(classifyBody).not.toHaveProperty('thinking');
+  });
+
+  it('the classification call for kimi-k3 sends the lowest effective strength instead of a disable', async () => {
+    async function* stream() {
+      yield { choices: [{ delta: { content: 'chat' } }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 5, completion_tokens: 1 } };
+    }
+    getActiveModelConfigMock.mockReturnValue({
+      provider: 'kimi' as const,
+      protocol: 'openai' as const,
+      model: 'kimi-k3',
+      apiKey: 'sk-kimi',
+      baseURL: 'https://api.moonshot.cn/v1',
+    });
+    openAIChatCreateMock.mockResolvedValue(stream());
+
+    await runAgent('你是谁呀', '', undefined);
+
+    const classifyBody = openAIChatCreateMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(classifyBody.reasoning_effort).toBe('low');
+    expect(classifyBody).not.toHaveProperty('thinking');
+  });
+
+  it('the classification call for glm-5.3 sends the lowest effective strength instead of a disable', async () => {
+    async function* stream() {
+      yield { choices: [{ delta: { content: 'chat' } }] };
+      yield { choices: [{ delta: {} }], usage: { prompt_tokens: 5, completion_tokens: 1 } };
+    }
+    getActiveModelConfigMock.mockReturnValue({
+      provider: 'glm' as const,
+      protocol: 'openai' as const,
+      model: 'glm-5.3',
+      apiKey: 'glm-key',
+      baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+    });
+    openAIChatCreateMock.mockResolvedValue(stream());
+
+    await runAgent('你是谁呀', '', undefined);
+
+    const classifyBody = openAIChatCreateMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(classifyBody).toEqual(expect.objectContaining({
+      thinking: { type: 'enabled' },
+      reasoning_effort: 'low',
+    }));
   });
 });

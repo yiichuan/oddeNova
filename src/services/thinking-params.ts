@@ -1,7 +1,8 @@
 // Maps the user-facing Thinking level (see CONTEXT.md) to each provider's real
 // request parameters. Providers differ sharply in what they can actually
 // distinguish — see docs/superpowers/plans/2026-08-01-thinking-level-control.md
-// for the research this table is based on. getSupportedThinkingLevels() below
+// and docs/superpowers/plans/2026-09-24-provider-model-catalog-refresh.md for
+// the research these tables are based on. getSupportedThinkingLevels() below
 // mirrors this collapsing so the UI only offers levels that produce a
 // genuinely different request for the selected provider/model — models without
 // an effort dial ([] from getSupportedThinkingLevels) don't show the control
@@ -20,12 +21,14 @@ export const ANTHROPIC_THINKING_BUDGET: Record<ThinkingLevel, number> = {
   high: 60000,
 };
 
-// DeepSeek only accepts three request-level effort values — low/high/max —
-// which its backend then remaps per-model server-side (deepseek-v4-pro
-// collapses low->high, so low and medium end up identical there;
-// deepseek-v4-flash keeps all three distinct). xhigh is NOT a valid DeepSeek
-// request value.
-const DEEPSEEK_EFFORT: Record<ThinkingLevel, string> = {
+// Several providers expose exactly three request-level effort values —
+// low/high/max — which their backends then remap per-model server-side:
+//   deepseek: deepseek-v4-pro collapses low->high, so low and medium end up
+//     identical there; deepseek-flash keeps all three distinct.
+//   kimi-k3: thinking is always on and reasoning_effort is the only dial.
+//   glm-5.3: three documented intensities (low/high/max).
+// xhigh is NOT a valid request value for any of them.
+const LMH_EFFORT: Record<ThinkingLevel, string> = {
   low: 'low',
   medium: 'high',
   high: 'max',
@@ -38,10 +41,36 @@ const DEEPSEEK_EFFORT: Record<ThinkingLevel, string> = {
 const OPENAI_MAX_MODELS = new Set(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
 const OPENAI_XHIGH_MODELS = new Set(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini']);
 
+// Anthropic models that ship with adaptive thinking: their effort dial is
+// output_config.effort (low/medium/max) instead of a token budget. haiku-4-5
+// and unknown ids stay on the legacy extended-thinking budget path.
+const ANTHROPIC_EFFORT: Record<ThinkingLevel, string> = {
+  low: 'low',
+  medium: 'medium',
+  high: 'max',
+};
+
+export function isAnthropicAdaptiveModel(model: string): boolean {
+  return (
+    model.startsWith('claude-opus-4-8')
+    || model.startsWith('claude-opus-5')
+    || model.startsWith('claude-fable-5-1')
+    || model.startsWith('claude-sonnet-5')
+    || model.startsWith('claude-sonnet-4-6')
+  );
+}
+
 export function resolveAnthropicThinkingParam(
+  model: string,
   level: ThinkingLevel,
-): { type: 'enabled'; budget_tokens: number } {
-  return { type: 'enabled', budget_tokens: ANTHROPIC_THINKING_BUDGET[level] };
+): { thinking: Record<string, unknown>; output_config?: { effort: string } } {
+  if (isAnthropicAdaptiveModel(model)) {
+    return {
+      thinking: { type: 'adaptive' },
+      output_config: { effort: ANTHROPIC_EFFORT[level] },
+    };
+  }
+  return { thinking: { type: 'enabled', budget_tokens: ANTHROPIC_THINKING_BUDGET[level] } };
 }
 
 /** Extra body fields to merge into an OpenAI-protocol chat.completions.create() call. */
@@ -53,16 +82,25 @@ export function resolveOpenAIThinkingParams(
   switch (provider) {
     case 'deepseek':
     case 'official':
-      // See DEEPSEEK_EFFORT above: DeepSeek's only real request values are
+      // See LMH_EFFORT above: DeepSeek's only real request values are
       // low/high/max, remapped per-model server-side.
       return {
         thinking: { type: 'enabled' },
-        reasoning_effort: DEEPSEEK_EFFORT[level],
+        reasoning_effort: LMH_EFFORT[level],
       };
     case 'kimi':
-      // kimi-k2.x (what this app ships — not k3) has no effort dial, and
-      // Moonshot rejects requests that send `thinking` and `reasoning_effort`
-      // together, so every level just enables thinking.
+      // kimi-k3 thinks by default and exposes a reasoning_effort-only dial
+      // (sending `thinking` alongside it is rejected). kimi-k2.7-code has
+      // thinking always on and only accepts the special keep:'all' form, so
+      // we send nothing at all. kimi-k2.6 (and unknown k2.x) has no effort
+      // dial, and Moonshot rejects requests that send `thinking` and
+      // `reasoning_effort` together, so every level just enables thinking.
+      if (model === 'kimi-k3') {
+        return { reasoning_effort: LMH_EFFORT[level] };
+      }
+      if (model === 'kimi-k2.7-code') {
+        return {};
+      }
       return { thinking: { type: 'enabled' } };
     case 'openai': {
       // 'high' lands on the top tier the model actually documents: max for
@@ -76,15 +114,17 @@ export function resolveOpenAIThinkingParams(
       return { reasoning_effort: level };
     }
     case 'glm':
-      // Confirmed against Z.ai's own effort-mapping table: glm-5.2 only has 2
-      // real tiers — low/medium/high all land on 'high', xhigh/max/ultracode
-      // all land on 'max' — so the dial's low and medium stops are the same
-      // request and only 'high' reaches 'max'. We send
-      // `thinking: { type: 'enabled' }` alongside reasoning_effort (like
-      // deepseek/official) rather than relying on thinking-on-by-default, since
-      // GLM (unlike Kimi) doesn't reject the two fields sent together.
-      // glm-5.1 / glm-5.1-air / glm-5 only expose the boolean thinking switch,
-      // no reasoning_effort.
+      // glm-5.3 documents the same three intensities as DeepSeek (low/high/max)
+      // and, unlike Kimi, accepts `thinking` and `reasoning_effort` together.
+      // glm-5.2 only has 2 real tiers — low/medium/high all land on 'high',
+      // xhigh/max/ultracode all land on 'max'. glm-5.1 / glm-5.1-air / glm-5
+      // only expose the boolean thinking switch, no reasoning_effort.
+      if (model === 'glm-5.3') {
+        return {
+          thinking: { type: 'enabled' },
+          reasoning_effort: LMH_EFFORT[level],
+        };
+      }
       if (model === 'glm-5.2') {
         return {
           thinking: { type: 'enabled' },
@@ -105,6 +145,27 @@ export function resolveOpenAIThinkingParams(
 }
 
 /**
+ * Thinking params for the lightweight classification call (enableThinking=false).
+ * Models that always think (kimi-k3, kimi-k2.7-code, glm-5.3) can't be told to
+ * stop thinking — and sending them a "disable" request would fail outright — so
+ * kimi-k3 and glm-5.3 get their lowest effective strength instead of nothing,
+ * while kimi-k2.7-code (which accepts neither field explicitly) just gets {}.
+ * Everything else keeps thinking fully off.
+ */
+export function resolveOpenAIClassificationParams(
+  provider: ProviderType,
+  model: string,
+): Record<string, unknown> {
+  if (provider === 'kimi' && model === 'kimi-k3') {
+    return { reasoning_effort: 'low' };
+  }
+  if (provider === 'glm' && model === 'glm-5.3') {
+    return { thinking: { type: 'enabled' }, reasoning_effort: 'low' };
+  }
+  return {};
+}
+
+/**
  * Which Thinking levels are actually distinct for this provider/model, mirroring the
  * collapsing documented in resolveOpenAIThinkingParams/resolveAnthropicThinkingParam
  * above — the UI should only offer levels that produce a different real request.
@@ -115,27 +176,31 @@ export function resolveOpenAIThinkingParams(
 export function getSupportedThinkingLevels(provider: ProviderType, model: string): readonly ThinkingLevel[] {
   switch (provider) {
     case 'anthropic':
-      // Official models (docs.anthropic.com/en/docs/about-claude/models):
-      // fable-5 / opus-5 / sonnet-5 all support the effort ladder; only
-      // haiku-4-5 has no effort dial. Unknown model ids keep the full dial —
-      // the legacy budget_tokens wire path still works for them.
+      // Official models (platform.claude.com/docs/en/models/overview):
+      // fable-5-1 / opus-5 (incl. opus-5-5) / sonnet-5 / sonnet-4-6 /
+      // opus-4-8 all support the effort ladder; only haiku-4-5 has no effort
+      // dial. Unknown model ids keep the full dial — the legacy budget_tokens
+      // wire path still works for them.
       if (model.startsWith('claude-haiku-4-5')) return [];
       return ALL_LEVELS;
     case 'deepseek':
     case 'official':
       // deepseek-v4-pro collapses low->high server-side, which is what medium
-      // already sends, so only medium/high are distinct there; v4-flash keeps
-      // all three.
+      // already sends, so only medium/high are distinct there; deepseek-flash
+      // keeps all three.
       return model === 'deepseek-v4-pro' ? ['medium', 'high'] : ALL_LEVELS;
     case 'kimi':
-      return [];
+      // Only kimi-k3 distinguishes the three stops; kimi-k2.6 and
+      // kimi-k2.7-code have no effort dial at all.
+      return model === 'kimi-k3' ? ALL_LEVELS : [];
     case 'openai':
       // Every openai model distinguishes all three stops — only how deep the
       // top one goes (max / xhigh / high) varies by model.
       return ALL_LEVELS;
     case 'glm':
       // glm-5.2's low and medium are the same request ('high'), so the dial
-      // starts at medium there.
+      // starts at medium there; glm-5.3 distinguishes all three.
+      if (model === 'glm-5.3') return ALL_LEVELS;
       return model === 'glm-5.2' ? ['medium', 'high'] : [];
     default: {
       const _exhaustive: never = provider;
