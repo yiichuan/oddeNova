@@ -96,6 +96,54 @@ describe('parseScore — 边界 case', () => {
   });
 });
 
+describe('parseScore — marker / name 区间（UTF-16，左闭右开）', () => {
+  it('标记层给出 markerRange 与 nameRange，且切片逐字对应', () => {
+    const code = 'stack(\n  /* @layer 鼓组 */ s("bd"),\n  /* @layer 贝斯 */ s("cp")\n)';
+    const r = parseScore(code);
+    const [drums, bass] = r.layers;
+    expect(code.slice(drums.markerRange!.from, drums.markerRange!.to)).toBe('/* @layer 鼓组 */');
+    expect(code.slice(drums.nameRange!.from, drums.nameRange!.to)).toBe('鼓组');
+    expect(code.slice(bass.markerRange!.from, bass.markerRange!.to)).toBe('/* @layer 贝斯 */');
+    expect(code.slice(bass.nameRange!.from, bass.nameRange!.to)).toBe('贝斯');
+    // marker 在 slot 内、name 在 marker 内。
+    expect(drums.rawStart).toBeLessThanOrEqual(drums.markerRange!.from);
+    expect(drums.markerRange!.to).toBeLessThanOrEqual(drums.rawEnd);
+    expect(drums.markerRange!.from).toBeLessThanOrEqual(drums.nameRange!.from);
+    expect(drums.nameRange!.to).toBeLessThanOrEqual(drums.markerRange!.to);
+  });
+
+  it('标记周围多余空白不进入 nameRange', () => {
+    const code = 'stack(/*  @layer   空格名  */ s("bd"))';
+    const r = parseScore(code);
+    expect(r.layers[0].name).toBe('空格名');
+    expect(code.slice(r.layers[0].nameRange!.from, r.layers[0].nameRange!.to)).toBe('空格名');
+    expect(code.slice(r.layers[0].markerRange!.from, r.layers[0].markerRange!.to)).toBe('/*  @layer   空格名  */');
+  });
+
+  it('名称含 emoji 时区间按 UTF-16 code unit 计算且可整段替换', () => {
+    const code = 'stack(/* @layer 旋律🎵 */ s("bd"))';
+    const r = parseScore(code);
+    const range = r.layers[0].nameRange!;
+    expect(code.slice(range.from, range.to)).toBe('旋律🎵');
+    const renamed = code.slice(0, range.from) + '主鼓' + code.slice(range.to);
+    expect(parseScore(renamed).layers[0].name).toBe('主鼓');
+  });
+
+  it('自动命名层没有 markerRange / nameRange', () => {
+    const r = parseScore('stack(s("bd"), s("sd"))');
+    expect(r.layers[0].markerRange).toBeUndefined();
+    expect(r.layers[0].nameRange).toBeUndefined();
+    expect(r.layers[1].markerRange).toBeUndefined();
+  });
+
+  it('行内说明注释不影响标记区间', () => {
+    const code = 'stack(\n  /* @layer 鼓组 */ // 提供稳定的节奏\n  s("bd")\n)';
+    const r = parseScore(code);
+    expect(code.slice(r.layers[0].markerRange!.from, r.layers[0].markerRange!.to)).toBe('/* @layer 鼓组 */');
+    expect(r.layers[0].source).toContain('// 提供稳定的节奏');
+  });
+});
+
 describe('bpmToCps', () => {
   it('120 BPM = 0.5 CPS', () => {
     expect(bpmToCps(120)).toBeCloseTo(0.5);

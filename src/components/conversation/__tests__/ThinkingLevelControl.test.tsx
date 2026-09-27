@@ -7,20 +7,21 @@ import ThinkingLevelControl from '../ThinkingLevelControl';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-// Provide localStorage mock for happy-dom
-if (!globalThis.localStorage) {
-  const store: Record<string, string> = {};
-  Object.assign(globalThis, {
-    localStorage: {
-      getItem: (key: string) => store[key] ?? null,
-      setItem: (key: string, value: string) => { store[key] = value; },
-      removeItem: (key: string) => { delete store[key]; },
-      clear: () => { Object.keys(store).forEach(k => delete store[k]); },
-      key: (index: number) => Object.keys(store)[index] ?? null,
-      length: () => Object.keys(store).length,
-    },
-  });
-}
+// Always use a controllable localStorage double. Node 26 exposes a native
+// implementation when --localstorage-file is present, but its methods cannot
+// be observed reliably with vi.spyOn; these gesture tests assert write counts.
+const localStore: Record<string, string> = {};
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (key: string) => localStore[key] ?? null,
+    setItem: (key: string, value: string) => { localStore[key] = value; },
+    removeItem: (key: string) => { delete localStore[key]; },
+    clear: () => { Object.keys(localStore).forEach(k => delete localStore[k]); },
+    key: (index: number) => Object.keys(localStore)[index] ?? null,
+    get length() { return Object.keys(localStore).length; },
+  } satisfies Storage,
+});
 
 function renderControl(props: Partial<Parameters<typeof ThinkingLevelControl>[0]> = {}) {
   const container = document.createElement('div');

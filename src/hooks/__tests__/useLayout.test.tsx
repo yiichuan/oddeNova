@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { useLayout, type UseLayoutReturn } from '../useLayout';
 
 const VIZ_RATIO_DEFAULT = 1 / (1 + 1.55);
+const VIZ_DIVIDER_HEIGHT = 6;
+const CODE_PANEL_CONTROLS_HEIGHT = 47;
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -110,6 +112,58 @@ describe('useLayout vertical drag', () => {
     act(() => get().vDragHandlers.onPointerMove(pointerEvent(100)));
     expect(get().vizCollapsed).toBe(false);
     expect(get().vizHeight).toBeCloseTo(startHeight - 100);
+  });
+
+  it('maximizes the track pane while preserving the playback controls row', () => {
+    const { get } = mount();
+    const startHeight = get().vizHeight;
+    const maxHeight = window.innerHeight - VIZ_DIVIDER_HEIGHT - CODE_PANEL_CONTROLS_HEIGHT;
+
+    act(() => get().vDragHandlers.onPointerDown(pointerEvent(0)));
+    act(() => get().vDragHandlers.onPointerMove(pointerEvent(-(maxHeight - startHeight + 1))));
+
+    expect(get().vizHeight).toBeCloseTo(maxHeight);
+  });
+
+  it('reopens the code pane when dragging back down from the maximized track height', () => {
+    const { get } = mount();
+    const startHeight = get().vizHeight;
+    const maxHeight = window.innerHeight - VIZ_DIVIDER_HEIGHT - CODE_PANEL_CONTROLS_HEIGHT;
+
+    act(() => get().vDragHandlers.onPointerDown(pointerEvent(0)));
+    act(() => get().vDragHandlers.onPointerMove(pointerEvent(-(maxHeight - startHeight + 1))));
+    act(() => get().vDragHandlers.onPointerUp(pointerEvent(-(maxHeight - startHeight + 1))));
+
+    act(() => get().vDragHandlers.onPointerDown(pointerEvent(0)));
+    act(() => get().vDragHandlers.onPointerMove(pointerEvent(96)));
+
+    expect(get().vizHeight).toBeCloseTo(maxHeight - 96);
+  });
+
+  it('clamps a maximized track pane to the new available height after resize', () => {
+    const originalHeight = window.innerHeight;
+    const setWindowHeight = (height: number) => {
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+    };
+
+    try {
+      setWindowHeight(900);
+      const { get } = mount();
+      const startHeight = get().vizHeight;
+      const maxHeight = window.innerHeight - VIZ_DIVIDER_HEIGHT - CODE_PANEL_CONTROLS_HEIGHT;
+
+      act(() => get().vDragHandlers.onPointerDown(pointerEvent(0)));
+      act(() => get().vDragHandlers.onPointerMove(pointerEvent(-(maxHeight - startHeight + 1))));
+
+      setWindowHeight(500);
+      act(() => window.dispatchEvent(new Event('resize')));
+
+      expect(get().vizHeight).toBeCloseTo(
+        window.innerHeight - VIZ_DIVIDER_HEIGHT - CODE_PANEL_CONTROLS_HEIGHT,
+      );
+    } finally {
+      setWindowHeight(originalHeight);
+    }
   });
 });
 
