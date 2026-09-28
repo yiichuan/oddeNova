@@ -15,6 +15,7 @@ import { strudelService } from '../../services/strudel';
 import { isDemoMode } from '../../demo/demo-config';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useScrollActivity } from '../../hooks/useScrollActivity';
+import { getVideoClock, subscribeVideoClock } from '../../lib/video-clock';
 import {
   formatPlaybackTime,
   getStrudelLoopCycles,
@@ -204,8 +205,25 @@ function usePrefersReducedMotion() {
  * rather than a constant.
  */
 function ControlsLightField({ idPrefix }: { idPrefix: string }) {
+  const fieldRef = useRef<HTMLDivElement>(null);
+
+  // [video] The drift is CSS keyframes, which run on the page clock — and a
+  // Remotion render spends far longer than a frame's worth of it on every
+  // frame, so the blobs raced. Inside the renderer they are held on the
+  // video's time instead. Silent in normal use, where the clock never ticks.
+  useEffect(() => subscribeVideoClock(() => {
+    const seconds = getVideoClock();
+    const field = fieldRef.current;
+    if (seconds === null || typeof field?.getAnimations !== 'function') return;
+    for (const animation of field.getAnimations({ subtree: true })) {
+      animation.pause();
+      animation.currentTime = seconds * 1000;
+    }
+  }), []);
+
   return (
     <div
+      ref={fieldRef}
       data-testid="code-panel-light-field"
       className="code-panel-light-field"
       aria-hidden="true"
@@ -300,7 +318,12 @@ function PlaybackProgress({
     let frame = 0;
     const update = (now: number) => {
       const origin = playbackOriginRef.current;
-      updateElapsedSeconds((origin.elapsedSeconds + (now - origin.startedAt) / 1000) % totalSeconds);
+      // [video] The video's clock, not the wall clock: a piece that starts
+      // mid-video shows the video's time, and renders slower than real time
+      // stay in step with the frame
+      const seconds = strudelService.getVideoTime()
+        ?? origin.elapsedSeconds + (now - origin.startedAt) / 1000;
+      updateElapsedSeconds(seconds % totalSeconds);
       frame = window.requestAnimationFrame(update);
     };
     frame = window.requestAnimationFrame(update);

@@ -1,5 +1,14 @@
 export function isZh(): boolean {
-  try { return navigator.language.startsWith('zh'); } catch { return false; }
+  try {
+    // ?lang= pins the language regardless of the browser's own. The Remotion
+    // renderer uses it so a recording's language is a property of the video
+    // rather than of whichever machine renders it.
+    const forced = typeof window === 'undefined'
+      ? null
+      : new URLSearchParams(window.location.search).get('lang');
+    if (forced) return forced.startsWith('zh');
+    return navigator.language.startsWith('zh');
+  } catch { return false; }
 }
 
 export const zh: boolean = isZh();

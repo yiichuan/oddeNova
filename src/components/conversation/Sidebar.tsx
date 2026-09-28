@@ -50,7 +50,15 @@ interface SidebarProps {
   isReplaying?: boolean;
   replayInputText?: string;
   isVideoMode?: boolean;
+  /** [video] Frame-driven composer text; overrides replayInputText while set. */
+  videoInputText?: string;
+  /** [video] Shows the post-send stop key while a video turn is in flight. */
+  videoInputSubmitted?: boolean;
   scrollBottom?: boolean;
+  /** [video] Frame-driven conversation scroll, as a fraction of the maximum scrollTop. */
+  scrollProgress?: number | null;
+  /** [video] Fixed height of the in-flight turn block, so live reasoning overflows like a real turn. */
+  videoTurnHeight?: number | null;
   prefill?: string;
   prefillTrigger?: number;
   onRollback: (messageId: string) => void;
@@ -103,7 +111,11 @@ export default function Sidebar({
   isReplaying = false,
   replayInputText,
   isVideoMode = false,
+  videoInputText,
+  videoInputSubmitted = false,
   scrollBottom = false,
+  scrollProgress = null,
+  videoTurnHeight = null,
   prefill,
   prefillTrigger,
   onRollback,
@@ -238,6 +250,8 @@ export default function Sidebar({
             isLoading={isLoading && !isReplaying}
             isVideoMode={isVideoMode}
             scrollBottom={scrollBottom}
+            scrollProgress={scrollProgress}
+            videoTurnHeight={videoTurnHeight}
             onRollback={onRollback}
             onBranch={onBranch}
             onRetry={onRetry}
@@ -253,7 +267,7 @@ export default function Sidebar({
       </div>
 
       <div className="-mt-px w-full shrink-0">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={videoInputText ?? replayInputText} isVideoMode={isVideoMode} videoSubmitted={videoInputSubmitted} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} />
       </div>
     </aside>
   );

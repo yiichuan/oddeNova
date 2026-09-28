@@ -3898,3 +3898,16 @@ html[data-theme='light'] .viz-frame {
   background: #F7F7FA;
   color-scheme: light;
 }
+
+/* [video] Remotion scales the app by fractional factors, and the bar's top edge
+   lands on a fractional CSS pixel (it rides the code layer by `-mt-px`), so at
+   those scales the edge falls mid device-pixel. That half-covered row blends the
+   bar's translucent fill with the code layer's bottom rule under it and reads as
+   a grey hairline a few pixels above the bar's rim, which the app at 1x never
+   shows. A 2px band of the code surface just above the edge fills that row in.
+   Listed after the drop shadow so the shadow still falls across it the way it
+   falls across the code surface either side. Render-only: the attribute is set
+   only inside the video iframe (useVideoDemo). */
+html[data-video-mode] .code-panel-controls {
+  box-shadow: 0 10px 30px rgba(44, 45, 61, 0.09), 0 -2px 0 var(--color-conversation-surface);
+}

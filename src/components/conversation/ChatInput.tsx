@@ -57,6 +57,8 @@ interface ChatInputProps {
   focusTrigger?: number;
   replayValue?: string;
   isVideoMode?: boolean;
+  /** [video] Renders the post-send stop state while a video turn is in flight. */
+  videoSubmitted?: boolean;
   onFocusChange?: (focused: boolean) => void;
   /** Normal suggestion carousel, or a stepwise numbered-choice response. */
   inputMode?: InputMode;
@@ -83,6 +85,7 @@ export default function ChatInput({
   focusTrigger,
   replayValue,
   isVideoMode = false,
+  videoSubmitted = false,
   onFocusChange,
   inputMode = 'normal',
   suggestions,
@@ -483,13 +486,15 @@ export default function ChatInput({
                 />
               )}
               {replayValue !== undefined ? (
+                // [video] Once a video turn is submitted the text is already cleared, so the
+                // key keeps the enabled stop look a real send would show instead of fading out.
                 <button
                   type="button"
-                  disabled={!replayValue.trim()}
+                  disabled={!videoSubmitted && !replayValue.trim()}
                   className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-                  title={t('send')}
+                  title={videoSubmitted ? t('stop') : t('send')}
                 >
-                  <ArrowUpIcon size={18} />
+                  {videoSubmitted ? <StopIcon size={12} /> : <ArrowUpIcon size={18} />}
                 </button>
               ) : isLoading ? (
                 <button

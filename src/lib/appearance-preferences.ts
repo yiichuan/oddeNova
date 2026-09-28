@@ -92,7 +92,24 @@ function isAnimationPreference(value: unknown): value is AnimationPreference {
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
+/**
+ * ?theme= pins the palette for this page load without touching the stored
+ * choice. The Remotion renderer uses it so a recording's palette doesn't
+ * depend on what the rendering machine last picked in Settings.
+ */
+function readThemeOverride(): ThemePreference | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const forced = new URLSearchParams(window.location.search).get('theme');
+    return isThemePreference(forced) ? forced : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getThemePreference(): ThemePreference {
+  const forced = readThemeOverride();
+  if (forced) return forced;
   const stored = readStored(STORAGE_KEYS.theme);
   return isThemePreference(stored) ? stored : DEFAULT_THEME_PREFERENCE;
 }

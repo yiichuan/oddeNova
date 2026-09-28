@@ -24,6 +24,7 @@ import {
   perceivedIntensity,
 } from '../../lib/audio-intensity';
 import { useResolvedAnimation, useResolvedTheme } from '../../hooks/useAppearance';
+import { getVideoClock } from '../../lib/video-clock';
 
 interface ControlBarParticlesProps {
   /**
@@ -57,6 +58,16 @@ interface ControlBarParticlesProps {
 const FRAME_INTERVAL = 1000 / 30;
 /** How long the accent takes to arrive when playback starts, or leave when it stops. */
 const ACCENT_FADE_MS = 280;
+
+/**
+ * The clock the field moves on, in ms. [video] Inside the Remotion renderer
+ * that is the video's time: a render spends far longer than a frame's worth
+ * of page time on each frame, and the snow would fall at render speed.
+ */
+function clockMs(pageMs = performance.now()): number {
+  const videoSeconds = getVideoClock();
+  return videoSeconds === null ? pageMs : videoSeconds * 1000;
+}
 
 interface SpriteAtlas {
   canvas: HTMLCanvasElement;
@@ -230,7 +241,7 @@ export default function ControlBarParticles({
   }, [sampleSpectrum]);
 
   useEffect(() => {
-    if (isPlaying && !isPlayingRef.current) playbackStartRef.current = performance.now();
+    if (isPlaying && !isPlayingRef.current) playbackStartRef.current = clockMs();
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
   // The render loop reads these rather than closing over props: a departure has
@@ -250,7 +261,7 @@ export default function ControlBarParticles({
     // reversal at progress p starts the opposite transition at 1 - p, so an
     // instant flip-back is a no-op and a flip-back after a full departure plays
     // the whole entrance.
-    const now = performance.now();
+    const now = clockMs();
     const pending = transitionRef.current;
     let rewind = 0;
     if (pending) {
@@ -275,7 +286,7 @@ export default function ControlBarParticles({
     let width = 0;
     let height = 0;
     let frame = 0;
-    let lastFrameTime = 0;
+    let lastFrameTime: number | null = null;
     let running = false;
     let accentMix = isPlayingRef.current ? 1 : 0;
     // How loud the piece currently sounds, 0..1, and the shares that reading
@@ -419,12 +430,18 @@ export default function ControlBarParticles({
       else clear();
     };
 
-    const step = (timeMs: number) => {
-      if (timeMs - lastFrameTime < FRAME_INTERVAL) {
+    const step = (pageMs: number) => {
+      const timeMs = clockMs(pageMs);
+      // [video] A render runs several page frames per video frame, all at the
+      // same video time: draw once each time it moves, and let a scrub back in
+      // the Studio redraw rather than wait for the clock to catch up.
+      const due = lastFrameTime === null
+        || (getVideoClock() === null ? timeMs - lastFrameTime >= FRAME_INTERVAL : timeMs !== lastFrameTime);
+      if (!due) {
         frame = requestAnimationFrame(step);
         return;
       }
-      const elapsed = lastFrameTime === 0 ? FRAME_INTERVAL : timeMs - lastFrameTime;
+      const elapsed = lastFrameTime === null ? FRAME_INTERVAL : Math.max(0, timeMs - lastFrameTime);
       lastFrameTime = timeMs;
 
       // Eased rather than switched, so starting or stopping playback washes the
@@ -462,7 +479,7 @@ export default function ControlBarParticles({
       }
       if (running) return;
       running = true;
-      lastFrameTime = 0;
+      lastFrameTime = null;
       frame = requestAnimationFrame(step);
     };
     resumeRef.current = resume;

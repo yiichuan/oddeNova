@@ -14,6 +14,7 @@ vi.mock('../../../services/strudel', () => ({
     setAutocompletionEnabled: vi.fn(),
     setLineWrappingEnabled: vi.fn(),
     seekPlayback: vi.fn(),
+    getVideoTime: vi.fn(() => null),
     sampleAudioSpectrum: vi.fn(() => null),
   },
 }));

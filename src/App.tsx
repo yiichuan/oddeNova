@@ -326,7 +326,18 @@ export default function App() {
   useEffect(() => {
     if (auth.recoveringPassword) setAccountOpen(true);
   }, [auth.recoveringPassword]);
-  const { isVideoMode, videoDemoMsgs, videoConvScrollBottom, videoTitle } = useVideoDemo(strudelRef);
+  const {
+    isVideoMode,
+    videoDemoMsgs,
+    videoDemoLoading,
+    videoDemoRevisions,
+    videoTurnHeight,
+    videoConvScrollBottom,
+    videoConvScrollProgress,
+    videoTitle,
+    videoInputText,
+    videoInputSubmitted,
+  } = useVideoDemo(strudelRef);
 
   const {
     isMobile,
@@ -957,6 +968,11 @@ export default function App() {
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
     if (!current) return;
+    // [video] The renderer owns the editor in video mode and pushes each code
+    // version exactly once. Startup opens IndexedDB asynchronously and only
+    // then lands the session this effect would restore, so whenever that
+    // happens after a push it would blank code that never gets re-sent.
+    if (isVideoMode) return;
     if (isMobile) mobileCodeRestoreRef.current = { id: current.id, code: current.code };
     skipNextManualSyncSessionRef.current = current.id;
     // Both belong to the reading they were opened from; the outgoing session
@@ -2398,8 +2414,8 @@ export default function App() {
             <Sidebar
               title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
               messages={videoDemoMsgs ?? messages}
-              revisions={current?.revisions}
-              isLoading={isLoading || isReplaying}
+              revisions={videoDemoRevisions ?? current?.revisions}
+              isLoading={isLoading || isReplaying || videoDemoLoading}
               engineReady={strudel.engineReady}
               engineStatus={strudel.engineStatus}
               sessions={historyItems}
@@ -2408,6 +2424,10 @@ export default function App() {
               suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
               isVideoMode={isVideoMode}
               scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
+              scrollProgress={videoConvScrollProgress}  // [video] Forward the per-frame conversation scroll position
+              videoTurnHeight={videoTurnHeight}
+              videoInputText={videoInputText}
+              videoInputSubmitted={videoInputSubmitted}
               onSendText={handleChatInstruction}
               onStop={handleStop}
               onNewSession={handleNewSession}

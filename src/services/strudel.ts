@@ -77,6 +77,7 @@ interface StrudelMirrorType {
       stop?: () => void;
       setCycle?: (cycle: number) => void;
       getTime?: () => number;
+      cps?: number;
       lastBegin?: number;
       lastEnd?: number;
       num_cycles_at_cps_change?: number;
@@ -277,6 +278,8 @@ export class StrudelService {
   private _videoTime = 0;
   // [video] Remotion updates this value per frame via postMessage, replacing AudioContext.currentTime to drive highlighting
   setVideoTime = (t: number): void => { this._videoTime = t; };
+  /** [video] Playback position in seconds as the video sets it; null outside video mode */
+  getVideoTime = (): number | null => (this._isVideoMode ? this._videoTime : null);
 
   private masterLpfNode: BiquadFilterNode | null = null;
   private masterChainReady = false;
@@ -979,6 +982,19 @@ export class StrudelService {
     this.pendingSeekCycle = isStarted ? null : 0;
   }
 
+  /**
+   * [video] A piece that starts mid-video picks up at the video's time, not at
+   * cycle 0. The Cyclist counts cycles from wherever it was started, so
+   * without this the first highlighted note is always the top of the piece.
+   * Called after `evaluate()`, once the piece's own `setcps()` has set the
+   * tempo the video time converts through.
+   */
+  private seekToVideoTime(): void {
+    if (!this._isVideoMode) return;
+    const cps = this.editorInstance?.repl.scheduler?.cps;
+    if (typeof cps === 'number' && cps > 0) this.pendingSeekCycle = this._videoTime * cps;
+  }
+
   private applyPendingSeek(): void {
     if (this.pendingSeekCycle === null) return;
     if (applySeekCycle(this.editorInstance?.repl.scheduler, this.pendingSeekCycle)) {
@@ -1059,6 +1075,7 @@ export class StrudelService {
     try {
       await this.ensurePlayableAudioGraph();
       await this.editorInstance.evaluate();
+      this.seekToVideoTime();
       this.applyPendingSeek();
       this.syncTransportState();
       this.pageAudioRecovery?.clearResumeIntent();
@@ -1068,6 +1085,7 @@ export class StrudelService {
         try {
           await this.resetLiveAudioGraph();
           await this.editorInstance.evaluate();
+          this.seekToVideoTime();
           this.applyPendingSeek();
           this.syncTransportState();
           this.pageAudioRecovery?.clearResumeIntent();

@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactElement } from 'react';
-import LottieImport, { type LottieComponentProps } from 'lottie-react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react';
+import LottieImport, { type LottieComponentProps, type LottieRefCurrentProps } from 'lottie-react';
+import { getVideoClock, subscribeVideoClock } from '../../lib/video-clock';
 
 // Vite's default resolve.mainFields prefers lottie-react's UMD `browser` build,
 // whose default export is the module namespace object ({ default, useLottie, … })
@@ -52,6 +53,9 @@ export function ThinkingLottie({ className }: ThinkingLottieProps) {
   // is blank, i.e. no visible indicator at all. The network fetch stays
   // cached; only the object identity is per-mount.
   const [data, setData] = useState<object | null>(() => (cached ? structuredClone(cached) : null));
+  const lottieRef = useRef<LottieRefCurrentProps | null>(null);
+  // [video] null in normal use; inside the Remotion renderer, the video's time
+  const videoTime = useSyncExternalStore(subscribeVideoClock, getVideoClock);
 
   // `thinking-lottie` is the hook the light theme uses to re-ink the artwork
   // (see index.css); it belongs to the component, not to each call site.
@@ -73,11 +77,29 @@ export function ThinkingLottie({ className }: ThinkingLottieProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only load; `data` is only null before it resolves
   }, []);
 
+  // [video] Seek to the frame the video's time lands on, so the loop keeps the
+  // pace it has live instead of racing at render speed
+  useEffect(() => {
+    if (videoTime === null || !data) return;
+    const { fr = 30, ip = 0, op = 0 } = data as { fr?: number; ip?: number; op?: number };
+    const length = op - ip;
+    if (length <= 0) return;
+    lottieRef.current?.goToAndStop((videoTime * fr) % length, true);
+  }, [videoTime, data]);
+
   if (!data) {
     // Empty placeholder with the same footprint so the label doesn't shift
     // when the animation appears (no visible fallback by design).
     return <span className={rootClass} />;
   }
 
-  return <Lottie animationData={data} loop autoplay className={rootClass} />;
+  return (
+    <Lottie
+      lottieRef={lottieRef}
+      animationData={data}
+      loop
+      autoplay={videoTime === null}
+      className={rootClass}
+    />
+  );
 }

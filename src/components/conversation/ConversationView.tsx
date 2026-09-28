@@ -525,6 +525,17 @@ interface ConversationViewProps {
   isLoading: boolean;
   isVideoMode?: boolean;
   scrollBottom?: boolean;
+  /**
+   * [video] Frame-driven scroll position as a fraction of the maximum scrollTop.
+   * null keeps video mode pinned to the top.
+   */
+  scrollProgress?: number | null;
+  /**
+   * [video] Fixed height for the in-flight turn block, so the live reasoning
+   * window clips its text and offers the jump-to-latest key the way a real turn
+   * does. Without it the block grows to fit and nothing ever overflows.
+   */
+  videoTurnHeight?: number | null;
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
@@ -593,6 +604,8 @@ export default function ConversationView({
   isLoading,
   isVideoMode = false,
   scrollBottom = false,
+  scrollProgress = null,
+  videoTurnHeight = null,
   onRollback,
   onBranch,
   onRetry,
@@ -744,6 +757,9 @@ export default function ConversationView({
    */
   const draftRevision = useMemo<CodeRevision | null>(() => {
     if (isLoading) return null;
+    // [video] The renderer pushes the editor's code on its own schedule, so it
+    // never matches the session's stored take; there is no typist's edit to show.
+    if (isVideoMode) return null;
     if (draftBase === null) return null;
     // A commit updates the live draft and baseline together, while the
     // debounced draft can still hold the previous take for 180ms. Do not let
@@ -758,7 +774,7 @@ export default function ConversationView({
       playbackStatus: 'not_attempted',
       createdAt: 0,
     };
-  }, [isLoading, draftCode, settledDraft, draftBase]);
+  }, [isLoading, isVideoMode, draftCode, settledDraft, draftBase]);
   /* Presence, deliberately not content: this is what the scroll effect watches,
      so the reading is brought to the segment once, when it appears, and then
      left alone for every keystroke that follows. */
@@ -964,8 +980,11 @@ export default function ConversationView({
     const draftJustAppeared = hasDraftSegment && !prevHasDraftSegmentRef.current;
     prevHasDraftSegmentRef.current = hasDraftSegment;
     if (isVideoMode && !scrollBottom) {
-      // [video] Video mode: display from the top; only scroll to bottom when scrollBottom=true
-      el.scrollTop = 0;
+      // [video] Video mode: display from the top; only scroll to bottom when scrollBottom=true.
+      // scrollProgress, when the renderer drives it, positions the scroll per frame so the
+      // scroll speed follows video time instead of wall-clock easing.
+      const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      el.scrollTop = scrollProgress === null ? 0 : maxScrollTop * scrollProgress;
       anchorTargetRef.current = null;
     } else {
       // Turn start overrides any manual scroll (the user just acted on this turn).
@@ -1069,7 +1088,7 @@ export default function ConversationView({
       // streamed text is left where the reader put it, and the jump-to-latest
       // button below is what takes them to the live end when they want it.
     }
-  }, [messages, isLoading, isVideoMode, scrollBottom, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize]);
+  }, [messages, isLoading, isVideoMode, scrollBottom, scrollProgress, lastUserMsgId, turnAnchorActive, hasDraftSegment, reasoningCollapsed, reasoningViewportSize]);
 
   // Pre-process: attach each reasoning progress message to the next assistant message.
   const { absorbedReasoningIds } = useMemo(() => {
@@ -1720,7 +1739,9 @@ export default function ConversationView({
       {isLoading && (
         <div
           className="animate-fade-in flex flex-col"
-          style={!isVideoMode ? { height: turnFillerHeight } : undefined}
+          style={!isVideoMode
+            ? { height: turnFillerHeight }
+            : videoTurnHeight != null ? { height: videoTurnHeight } : undefined}
         >
           <div className="flex items-start gap-1.5 px-1.5 shrink-0">
             <ThinkingLottie className="w-5 h-5 flex-shrink-0" />
