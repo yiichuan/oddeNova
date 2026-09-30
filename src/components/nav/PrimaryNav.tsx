@@ -22,7 +22,7 @@ import {
 import { t } from '../../lib/i18n';
 import { GITHUB_URL, LEARN_URL } from '../../lib/external-links';
 import { PRIVACY_URL } from '../legal/PrivacyPolicyLink';
-import { BookOpenIcon } from '../icons';
+import { BookOpenIcon, CompassIcon } from '../icons';
 import AccountAvatar from './AccountAvatar';
 import {
   clamp,
@@ -56,6 +56,8 @@ interface PrimaryNavProps {
    * the outline figure is the honest mark for nobody in particular.
    */
   accountInitials?: string | null;
+  /** "More → Getting started". */
+  onOpenOnboarding?: () => void;
 }
 
 /**
@@ -270,11 +272,14 @@ function MoreMenu({
   getTooltipTriggerProps,
   hideTooltip,
   onOpenChange,
+  onOpenOnboarding,
 }: {
   expanded: boolean;
   getTooltipTriggerProps: GetTooltipTriggerProps;
   hideTooltip: () => void;
   onOpenChange?: (open: boolean) => void;
+  /** Reopens the first-run guide — the way back to it once it has been dismissed. */
+  onOpenOnboarding?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -401,6 +406,27 @@ function MoreMenu({
         data-open={open}
         className="primary-nav-more-menu"
       >
+        {onOpenOnboarding && (
+          <button
+            type="button"
+            role="menuitem"
+            aria-label={t('navOnboarding')}
+            onClick={() => {
+              hideTooltip();
+              closeMenu();
+              onOpenOnboarding();
+            }}
+            {...getTooltipTriggerProps(t('navOnboarding'))}
+            className={linkClass}
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center">
+              <CompassIcon size={21} />
+            </span>
+            <span aria-hidden={!expanded} className={expanded ? 'ml-2 whitespace-nowrap text-sm' : 'sr-only'}>
+              {t('navOnboarding')}
+            </span>
+          </button>
+        )}
         <a
           role="menuitem"
           aria-label={t('navLearnStrudel')}
@@ -578,6 +604,7 @@ export default function PrimaryNav({
   onSelect,
   featuredPieceOpen = false,
   accountInitials = null,
+  onOpenOnboarding,
 }: PrimaryNavProps) {
   const [navExpanded, setNavExpanded] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -1077,6 +1104,7 @@ export default function PrimaryNav({
                     getTooltipTriggerProps={getTooltipTriggerProps}
                     hideTooltip={hideTooltip}
                     onOpenChange={setMoreMenuOpen}
+                    onOpenOnboarding={onOpenOnboarding}
                   />
                 )}
               />

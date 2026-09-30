@@ -14,6 +14,31 @@ export type AgentTurnOutcome =
   | 'agent_failed'
   | 'aborted';
 export type ShareMethod = 'native' | 'clipboard' | 'prompt';
+/**
+ * The first-run guide's funnel. `preset_sent` is the practice's canned turn and
+ * is deliberately its own stage — it never counts toward the agent's success
+ * rate, which only `agent_turn_*` measures. `first_real_instruction` is the
+ * first genuine turn after the practice. No free-typed text is ever sent.
+ */
+export type OnboardingStage =
+  | 'invite_shown'
+  | 'started'
+  | 'original_heard'
+  | 'preset_sent'
+  | 'adapted_heard'
+  | 'completed'
+  | 'skipped'
+  | 'postponed'
+  | 'error'
+  | 'first_real_instruction';
+
+export interface OnboardingProgressedProperties {
+  stage: OnboardingStage;
+  /** Where the guide was — for `skipped` and `error`, the step it happened at. */
+  step?: string;
+  guide_version: number;
+  case_id: string;
+}
 
 export interface AgentTurnBaseProperties {
   entry_point: AgentEntryPoint;
@@ -61,6 +86,7 @@ export interface BusinessAnalytics {
   trackAgentTurnFinished: (properties: AgentTurnFinishedProperties) => void;
   trackShareCompleted: (properties: { share_method: ShareMethod }) => void;
   trackWavExportCompleted: () => void;
+  trackOnboardingProgressed: (properties: OnboardingProgressedProperties) => void;
 }
 
 interface SanitizableEvent {
@@ -113,6 +139,7 @@ const EVENT_PROPERTY_ALLOWLIST: Record<string, ReadonlySet<string>> = {
   ]),
   share_completed: new Set(['schema_version', 'share_method']),
   wav_export_completed: new Set(['schema_version']),
+  onboarding_progressed: new Set(['schema_version', 'surface', 'stage', 'step', 'guide_version', 'case_id']),
 };
 
 const PRIVACY_CONTROL_PROPERTIES = {
@@ -283,6 +310,18 @@ export function createAnalytics(dependencies: AnalyticsDependencies): BusinessAn
         ...PRIVACY_CONTROL_PROPERTIES,
       });
     },
+
+    trackOnboardingProgressed(properties) {
+      capture('onboarding_progressed', {
+        schema_version: ANALYTICS_SCHEMA_VERSION,
+        surface,
+        stage: properties.stage,
+        ...(properties.step !== undefined ? { step: properties.step } : {}),
+        guide_version: properties.guide_version,
+        case_id: properties.case_id,
+        ...PRIVACY_CONTROL_PROPERTIES,
+      });
+    },
   };
 }
 
@@ -312,3 +351,4 @@ export const trackAgentTurnStarted = defaultAnalytics.trackAgentTurnStarted;
 export const trackAgentTurnFinished = defaultAnalytics.trackAgentTurnFinished;
 export const trackShareCompleted = defaultAnalytics.trackShareCompleted;
 export const trackWavExportCompleted = defaultAnalytics.trackWavExportCompleted;
+export const trackOnboardingProgressed = defaultAnalytics.trackOnboardingProgressed;

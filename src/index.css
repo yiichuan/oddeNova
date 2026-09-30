@@ -3363,6 +3363,18 @@ html[data-theme='light'] .control-button-surface {
   background: #E1E1E5;
 }
 
+/* The first-run guide draws the play key inline in its copy. The key's
+   triangle takes `--color-control-icon`, which the code panel re-declares for
+   the light theme (`.code-panel-controls`); outside the panel that override is
+   not in scope, so the glyph restates it to match the real key. */
+.onboarding-play-glyph {
+  color: var(--color-control-icon);
+}
+
+html[data-theme='light'] .onboarding-play-glyph {
+  color: var(--color-text-primary);
+}
+
 /* The unlit run of the progress bar. A shade under the buttons, because it is
    two pixels tall against the bar rather than a 32px cap on it, and needs that
    much more separation to read as a track at all. The played run keeps the

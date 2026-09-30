@@ -14,6 +14,7 @@ import {
   Menu,
   Ellipsis,
   BookOpen,
+  Compass,
   ArrowUp,
   Trash2,
   Download,
@@ -136,6 +137,8 @@ export const MenuIcon = ({ size = 16, className }: IconProps) => <Menu size={siz
 // one glyph across both layouts.
 export const EllipsisIcon = ({ size = 16, className }: IconProps) => <Ellipsis size={size} className={className} />;
 export const BookOpenIcon = ({ size = 16, className }: IconProps) => <BookOpen size={size} className={className} />;
+// The first-run guide's menu entry, in both navs: finding your way around.
+export const CompassIcon = ({ size = 16, className }: IconProps) => <Compass size={size} className={className} />;
 export const ArrowUpIcon = ({ size = 16, className }: IconProps) => <ArrowUp size={size} className={className} />;
 export const TrashIcon = ({ size = 16, className }: IconProps) => <Trash2 size={size} className={className} />;
 export const DownloadIcon = ({ size = 16, className }: IconProps) => <Download size={size} className={className} />;

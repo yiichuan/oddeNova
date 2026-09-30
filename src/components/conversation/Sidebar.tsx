@@ -5,7 +5,7 @@ import { t } from '../../lib/i18n';
 import type { CodeRevision, Session } from '../../hooks/useSessions';
 import { MessageCirclePlusIcon, HistoryIcon, PlayIcon } from '../icons';
 import ConversationView from './ConversationView';
-import ChatInput from './ChatInput';
+import ChatInput, { type PresetLock } from './ChatInput';
 import { isDemoMode, isPresentationMode } from '../../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
@@ -65,6 +65,8 @@ interface SidebarProps {
   draftCode?: string;
   pressedSegmentId?: string | null;
   pressedSegmentCode?: string | null;
+  /** The first-run guide's practice turn — see ChatInput. */
+  presetLock?: PresetLock;
 }
 
 export default function Sidebar({
@@ -116,6 +118,7 @@ export default function Sidebar({
   draftCode = '',
   pressedSegmentId = null,
   pressedSegmentCode = null,
+  presetLock,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(1);
@@ -253,7 +256,7 @@ export default function Sidebar({
       </div>
 
       <div className="-mt-px w-full shrink-0">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} />
       </div>
     </aside>
   );

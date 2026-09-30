@@ -8,6 +8,7 @@ import { PRIVACY_URL } from '../legal/PrivacyPolicyLink';
 import { isWideInitials } from '../../lib/account-identity';
 import {
   BookOpenIcon,
+  CompassIcon,
   MessageCirclePlusIcon,
   MoonIcon,
   SearchIcon,
@@ -220,6 +221,8 @@ interface MobileNavDrawerProps {
   onOpenFavorites?: () => void;
   /** Go to the shelf. Absent while there is no page to go to. */
   onOpenFeatured?: () => void;
+  /** "More → Getting started": reopens the first-run guide. */
+  onOpenOnboarding?: () => void;
   history: MobileNavDrawerHistory;
 }
 
@@ -271,6 +274,7 @@ export default function MobileNavDrawer({
   current = 'home',
   onOpenFavorites,
   onOpenFeatured,
+  onOpenOnboarding,
   history,
 }: MobileNavDrawerProps) {
   const theme = useResolvedTheme();
@@ -556,8 +560,21 @@ export default function MobileNavDrawer({
               section
               expanded={moreOpen}
             />
-            <DrawerSection open={moreOpen} maxHeight={176}>
+            <DrawerSection open={moreOpen} maxHeight={onOpenOnboarding ? 220 : 176}>
               <div className="px-2">
+                {onOpenOnboarding && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenOnboarding();
+                    }}
+                    className={`${SUB_ROW_CLASS} ${ROW_TEXT}`}
+                  >
+                    <CompassIcon size={16} className="shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{t('navOnboarding')}</span>
+                  </button>
+                )}
                 <a
                   href={GITHUB_URL}
                   target="_blank"
