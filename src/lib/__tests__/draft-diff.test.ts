@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '../../hooks/useChat';
-import { DRAFT_SEGMENT_ID, draftBaseCode } from '../draft-diff';
+import { DRAFT_SEGMENT_ID, codeBeforeMessage, draftBaseCode } from '../draft-diff';
+import type { CodeRevision } from '../../hooks/useSessions';
 
 function message(partial: Partial<ChatMessage> & Pick<ChatMessage, 'role'>): ChatMessage {
   return { id: Math.random().toString(36), content: '', timestamp: 0, ...partial };
@@ -58,5 +59,61 @@ describe('draftBaseCode', () => {
 
   it('keeps the draft segment id out of the message id space', () => {
     expect(DRAFT_SEGMENT_ID).toBe('__draft__');
+  });
+});
+
+describe('codeBeforeMessage', () => {
+  function revision(id: string, beforeCode: string, afterCode: string): CodeRevision {
+    return { id, beforeCode, afterCode, playbackStatus: 'played', createdAt: 0 };
+  }
+
+  it('restores a script pasted into an empty session before its first turn', () => {
+    const first = message({ role: 'user', content: 'add hats' });
+    const messages = [
+      first,
+      message({ role: 'assistant', code: 's("bd hh")', revisionId: 'r1' }),
+      message({ role: 'user', content: 'louder' }),
+      message({ role: 'assistant', code: 's("bd hh").gain(2)', revisionId: 'r2' }),
+    ];
+    const revisions = [
+      revision('r1', 's("bd")', 's("bd hh")'),
+      revision('r2', 's("bd hh")', 's("bd hh").gain(2)'),
+    ];
+    expect(codeBeforeMessage(messages, revisions, first.id, 's("bd hh").gain(2)')).toBe('s("bd")');
+  });
+
+  it('keeps a hand edit made on top of the last take before the message', () => {
+    const second = message({ role: 'user', content: 'louder' });
+    const messages = [
+      message({ role: 'user', content: 'a beat' }),
+      message({ role: 'assistant', code: 's("bd")', revisionId: 'r1' }),
+      second,
+      message({ role: 'assistant', code: 's("bd sd").gain(2)', revisionId: 'r2' }),
+    ];
+    const revisions = [
+      revision('r1', '', 's("bd")'),
+      revision('r2', 's("bd sd")', 's("bd sd").gain(2)'),
+    ];
+    expect(codeBeforeMessage(messages, revisions, second.id, '')).toBe('s("bd sd")');
+  });
+
+  it('falls back to the last take when the turn committed nothing', () => {
+    const second = message({ role: 'user', content: 'louder' });
+    const messages = [
+      message({ role: 'assistant', code: 's("bd")' }),
+      second,
+      message({ role: 'assistant', content: 'interrupted' }),
+    ];
+    expect(codeBeforeMessage(messages, [], second.id, 's("bd sd")')).toBe('s("bd")');
+  });
+
+  it('leaves the user\'s own script when nothing in the reading wrote code', () => {
+    const first = message({ role: 'user', content: 'add hats' });
+    const messages = [first, message({ role: 'assistant', content: 'interrupted' })];
+    expect(codeBeforeMessage(messages, undefined, first.id, 's("bd")')).toBe('s("bd")');
+  });
+
+  it('reports null for a message that is not in the reading', () => {
+    expect(codeBeforeMessage([], [], 'missing', '')).toBeNull();
   });
 });
