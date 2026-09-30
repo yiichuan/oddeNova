@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
-import { DRAFT_SEGMENT_ID } from './lib/draft-diff';
+import { DRAFT_SEGMENT_ID, codeBeforeMessage } from './lib/draft-diff';
 import CodePanel from './components/studio/CodePanel';
 import Sidebar from './components/conversation/Sidebar';
 import VizPlaceholder from './components/studio/VizPlaceholder';
@@ -1103,8 +1103,10 @@ export default function App() {
    */
   const handlePlaySegment = useCallback(
     (segmentId: string, code: string) => {
-      if (segmentId === DRAFT_SEGMENT_ID) {
-        const draft = current?.code ?? '';
+      const draft = current?.code ?? '';
+      // A take the draft still is — the latest one, untouched since — has
+      // nothing to shield the draft from, so it plays as the draft does.
+      if (segmentId === DRAFT_SEGMENT_ID || code === draft) {
         exitPreview();
         setSoundingSegment({ id: segmentId, code: draft });
         void strudel.play(draft);
@@ -1137,16 +1139,13 @@ export default function App() {
       if (currentSessionId) {
         abortControllersRef.current.get(currentSessionId)?.abort();
       }
-      // Find the last assistant message with code before this message, as the rollback target
-
-      const allMessages = sessions.currentSession?.messages ?? [];
-      const idx = allMessages.findIndex((m) => m.id === messageId);
-      if (idx < 0) return null;
-      const target = allMessages[idx];
-
-      // Find the last assistant message with code before this message, as the rollback target
-      const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
-      const previousCode = prevAssistant?.code ?? '';
+      const session = sessions.currentSession;
+      const allMessages = session?.messages ?? [];
+      const target = allMessages.find((m) => m.id === messageId);
+      // What the editor held when this message was sent — including a script
+      // pasted into an empty session, which no message carries.
+      const previousCode = codeBeforeMessage(allMessages, session?.revisions, messageId, session?.code ?? '');
+      if (!target || previousCode === null) return null;
 
       // Restore the rollback target as the session truth without auto-playing:
       // stop current audio (it belongs to the rolled-away version), put the

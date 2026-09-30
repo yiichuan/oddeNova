@@ -1814,6 +1814,7 @@ describe('App session sync boundaries', () => {
       mocks.strudel.code = edit;
       await renderApp();
       mocks.sessions.currentSession = { ...mocks.session, code: edit };
+      await renderApp();
       mocks.sessions.setManualCode.mockClear();
       mocks.strudel.setCode.mockClear();
       mocks.strudel.setReadOnly.mockClear();
@@ -1875,6 +1876,17 @@ describe('App session sync boundaries', () => {
 
       expect(mocks.strudel.setCode).toHaveBeenCalledWith(edit);
       expect(mocks.codePanelProps?.previewing).toBe(false);
+    });
+
+    it('plays the latest take as the draft when nothing has been edited since', async () => {
+      await withUnsavedEdit();
+
+      await act(async () => { playSegment()('assistant-1', edit); });
+      await renderApp();
+
+      expect(mocks.strudel.play).toHaveBeenLastCalledWith(edit);
+      expect(mocks.codePanelProps?.previewing).toBe(false);
+      expect(mocks.strudel.setReadOnly).not.toHaveBeenCalledWith(true);
     });
 
     it('takes the reading back to the draft before a turn works on it', async () => {

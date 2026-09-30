@@ -664,19 +664,10 @@ export default function CodePanel({
         // off it — a drawn edge on top of that reads as a second frame inside
         // the first. On desktop the panel is inlaid in the page and the line is
         // the only thing saying where it starts.
-        className={`relative isolate flex-1 min-h-0 overflow-hidden rounded-t-region bg-conversation-surface${
+        className={`relative isolate flex flex-1 min-h-0 flex-col overflow-hidden rounded-t-region bg-conversation-surface${
           isMobile ? '' : ' border border-border'
         }`}
       >
-        <div
-          ref={containerRef}
-          data-testid="code-panel-editor-root"
-          data-onboarding-target="code"
-          className={`code-editor-fade-top h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${
-            isMobile ? ' code-scroll-autohide' : ''
-          }`}
-        />
-
         {previewing && (
           <div
             data-testid="code-panel-preview-banner"
@@ -684,15 +675,18 @@ export default function CodePanel({
                script and a read-only window are separate pieces of news and
                both have to be readable at once.
 
+               In the flow above the editor rather than laid over it: the band
+               takes its height out of the editor's, so the first line starts
+               beneath it instead of hiding behind it.
+
                Opaque, and no backdrop filter. The panel's outline is drawn on
                the box that clips this one, and `backdrop-filter` paints its
                result as a rectangle that the clip's rounded corners do not cut —
                so a blurred band across the top squared off the two corners and
-               took that much of the outline with them. Nothing is lost by the
-               fill being solid: this sits over code, which a 95% ground let
-               ghost through it anyway. The rounding is its own as well, so the
-               band keeps out of the corners whatever happens to the clip. */
-            className="absolute inset-x-0 top-0 z-[255] flex items-center gap-3 rounded-t-region border-b border-border bg-conversation-surface px-3 py-1.5 text-[11px] text-text-secondary"
+               took that much of the outline with them. The rounding is its own
+               as well, so the band keeps out of the corners whatever happens to
+               the clip. */
+            className="relative z-[255] flex shrink-0 items-center gap-3 rounded-t-region border-b border-border bg-conversation-surface px-3 py-1.5 text-[11px] text-text-secondary"
           >
             <span className="min-w-0 truncate">{t('viewingVersion')}</span>
             {onExitPreview && (
@@ -707,6 +701,15 @@ export default function CodePanel({
             )}
           </div>
         )}
+
+        <div
+          ref={containerRef}
+          data-testid="code-panel-editor-root"
+          data-onboarding-target="code"
+          className={`code-editor-fade-top flex-1 min-h-0 flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${
+            isMobile ? ' code-scroll-autohide' : ''
+          }`}
+        />
 
         {error && (
           <div
