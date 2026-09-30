@@ -671,6 +671,7 @@ export default function CodePanel({
         <div
           ref={containerRef}
           data-testid="code-panel-editor-root"
+          data-onboarding-target="code"
           className={`code-editor-fade-top h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${
             isMobile ? ' code-scroll-autohide' : ''
           }`}
@@ -790,6 +791,7 @@ export default function CodePanel({
           >
             <button
               onClick={handlePlayClick}
+              data-onboarding-target="play"
               disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
               className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover disabled:cursor-not-allowed disabled:text-control-icon-disabled disabled:opacity-100"
               aria-label={isPlaying ? t('pause') : t('play')}
@@ -1021,6 +1023,7 @@ export default function CodePanel({
             <button
               type="button"
               onClick={handlePlayClick}
+              data-onboarding-target="play"
               disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
               className={`control-button-surface flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed ${
                 !isPlaying && (!engineReady || !hasPlayableCode) ? 'text-text-muted' : 'text-action-fill'

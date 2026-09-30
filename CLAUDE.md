@@ -145,6 +145,17 @@ Key modules:
   checkpoint registration), then flushes before refreshing search. Account
   changes and unmount invalidate old action results, including error display.
 
+- **`src/onboarding/`** — the first-run guide (plan:
+  `docs/new-user-onboarding-plan.md`). One preset practice (`intro-piano-v1`)
+  whose reply and adapted script are made ahead of time in
+  `onboarding/intro-piano-v1/` — it never calls a model or the agent loop.
+  It runs as a six-step spotlight tour (`OnboardingTour.tsx`) over the real
+  controls, found by `data-onboarding-target` / `data-message-id` markers;
+  the reader presses the studio's own play and send keys, and
+  `listening.ts` pauses the studio transport at 5 s off its playhead.
+  Progress is per owner in `localStorage`, separate from the welcome and
+  theme-song flags.
+
 - **`src/demo/`** — `?demo=true` runs a scripted `demo-llm.ts` in place of a
   real LLM call, replaying canned tool-call sequences from `demo-config.ts`,
   so the agent loop can be exercised without API keys.

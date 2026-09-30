@@ -66,7 +66,14 @@ import { fullSessionTitle } from './lib/full-session-title';
 import { useVisualViewport } from './hooks/useVisualViewport';
 import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
-import { featuredPlayer } from './services/featured-player';
+import { featuredPlayer, onboardingPlayer } from './services/featured-player';
+import { useOnboarding } from './onboarding/useOnboarding';
+import OnboardingTour, { type TourTarget } from './onboarding/OnboardingTour';
+import { visibleRectOf } from './onboarding/tour-geometry';
+import { INTRO_PIANO_CHANGE } from './onboarding/intro-piano-case';
+import { isOnboardingEligible, markOnboardingEligible } from './onboarding/onboarding-state';
+import { ODDENOVA_BRIDGE_BOOTSTRAP_KEY } from './lib/oddenova-bridge';
+import { ODDENOVA_IMPORT_HASH_PREFIX } from './lib/oddenova-import';
 import { featuredSessionDraft } from './lib/featured-session';
 import { useModelSettingsDraft } from './hooks/useModelSettingsDraft';
 import {
@@ -428,15 +435,33 @@ export default function App() {
   // very first paint of a first visit, and the flag is what decides it. Waiting
   // for `auth.loading` would let the studio show through first and then have the
   // window drop on top of it.
-  const [welcomeOpen, setWelcomeOpen] = useState(() => {
-    let isTopWindow = true;
+  const [isTopWindow] = useState(() => {
     try {
-      isTopWindow = window.self === window.top;
+      return window.self === window.top;
     } catch {
       // Cross-origin frame access can throw; treat it as embedded and stay quiet.
-      isTopWindow = false;
+      return false;
     }
-    return shouldAutoOpenWelcomeModal({ isTopWindow, hasSeenWelcome: hasSeenWelcome() });
+  });
+  const [welcomeAutoOpened] = useState(() =>
+    shouldAutoOpenWelcomeModal({ isTopWindow, hasSeenWelcome: hasSeenWelcome() }));
+  const [welcomeOpen, setWelcomeOpen] = useState(welcomeAutoOpened);
+  // The first-run guide invites only a browser meeting oddeNova for the first
+  // time — the same first paint that opens the welcome. Browsers already in use
+  // before the guide shipped have seen the welcome, so they are never marked
+  // and are not interrupted; the menu still offers it.
+  const [onboardingEligible] = useState(() => welcomeAutoOpened || isOnboardingEligible());
+  // Arriving to do something else — open a shared piece, take in an import or
+  // a bridge pairing — is not the moment for a practice. Read off the URL
+  // before anything consumes it.
+  const [arrivedForTask] = useState(() => {
+    if (/^\/s\/[^/]+$/.test(window.location.pathname)) return true;
+    if (window.location.hash.startsWith(ODDENOVA_IMPORT_HASH_PREFIX)) return true;
+    try {
+      return sessionStorage.getItem(ODDENOVA_BRIDGE_BOOTSTRAP_KEY) !== null;
+    } catch {
+      return false;
+    }
   });
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
 
@@ -450,7 +475,9 @@ export default function App() {
   // to the provider and returns through a reload, so a flag written on the way
   // out is a flag that never gets written.
   useEffect(() => {
-    if (welcomeOpen) markWelcomeSeen();
+    if (!welcomeOpen) return;
+    markWelcomeSeen();
+    markOnboardingEligible();
   }, [welcomeOpen]);
 
   // Each settings entry carries the value it is currently set to, so the column
@@ -1090,9 +1117,14 @@ export default function App() {
     [current?.code, exitPreview, strudel],
   );
 
+  // Set once the guide is wired up below; a genuine instruction is what ends
+  // a practice left at its last step, and what the funnel counts after it.
+  const noteRealInstructionRef = useRef<() => void>(() => {});
   const handleChatInstruction = useCallback(
-    (text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>) =>
-      handleInstruction(text, { entryPoint }),
+    (text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>) => {
+      noteRealInstructionRef.current();
+      return handleInstruction(text, { entryPoint });
+    },
     [handleInstruction],
   );
 
@@ -1658,6 +1690,146 @@ export default function App() {
     strudel,
   ]);
 
+  /* The first-run guide: a tour over the studio's own controls, walking a
+     practice copy of the theme song. See src/onboarding/. */
+  const leaveSessionForPractice = useCallback(async () => {
+    if (sessions.currentId) {
+      // Same as a switch: a phone does not wait on the network to move on.
+      const save = persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      if (!isMobile) await save;
+    }
+    setCommitSuggestions(null);
+  }, [isMobile, persistAndFlushOutgoingSession, sessions.currentId, strudel.code]);
+  const focusChatInput = useCallback(() => setInputFocusTrigger((n) => n + 1), []);
+  const onboarding = useOnboarding({
+    ownerKey,
+    enabled: isTopWindow && !isVideoMode && !isDemoMode(),
+    canAutoInvite: !arrivedForTask
+      && !auth.loading
+      && !auth.recoveringPassword
+      && !sessions.isLoading
+      && importStatus !== 'loading'
+      && !isReplaying,
+    // Anything else that needs the screen — a sign-in, the guest import, a
+    // settings dialog — takes it; the tour steps back and returns after.
+    studioActive: primaryNavItem === 'home'
+      && !welcomeOpen
+      && !accountOpen
+      && !apiKeyModalOpen
+      && !guestImportSessions
+      && !importingGuestHistory,
+    eligible: onboardingEligible,
+    sessions: sessions.sessions,
+    currentId: sessions.currentId,
+    isPersistent: sessions.isPersistent,
+    importSession: sessions.importSession,
+    switchToSession: handleSwitchSession,
+    leaveCurrentSession: leaveSessionForPractice,
+    showCodeInEditor: applyImportedCode,
+    startNewSession: handleNewSession,
+    focusInput: focusChatInput,
+    studio: {
+      isPlaying: strudel.isPlaying,
+      engineReady: strudel.engineReady,
+      activeCode: strudel.activeCode,
+      getPlaybackCycle: strudel.getPlaybackCycle,
+      play: handlePlay,
+      pause: strudel.pause,
+      stop: strudel.stop,
+    },
+    comparePlayer: onboardingPlayer,
+  });
+  const noteRealInstruction = onboarding.noteRealInstruction;
+  useEffect(() => {
+    noteRealInstructionRef.current = noteRealInstruction;
+  }, [noteRealInstruction]);
+  const openOnboarding = onboarding.openFromMenu;
+  const handleOpenOnboarding = useCallback(() => {
+    handlePrimaryNavSelect('home');
+    openOnboarding();
+  }, [handlePrimaryNavSelect, openOnboarding]);
+
+  const onboardingStep = onboarding.view === 'step' ? onboarding.step : null;
+  /* The phone keeps the play key and the code in the code window, so the steps
+     that point at them open it, and the others put it away. */
+  const onboardingNeedsCode = onboardingStep === 'listen-original'
+    || onboardingStep === 'listen-adapted'
+    || onboardingStep === 'view-change';
+  useEffect(() => {
+    if (!isMobile || onboardingStep === null) return;
+    setCodeSheetOpen(onboardingNeedsCode);
+  }, [isMobile, onboardingStep, onboardingNeedsCode, setCodeSheetOpen]);
+
+  /* Where the added layer sits in the editor, by its marker — never a line number. */
+  const addedLayerRange = useMemo(() => {
+    if (onboardingStep !== 'view-change') return null;
+    const layer = parseScore(strudel.code).layers.find((candidate) => candidate.name === INTRO_PIANO_CHANGE.addedLayer);
+    if (!layer) return null;
+    const slot = strudel.code.slice(layer.rawStart, layer.rawEnd);
+    return {
+      from: layer.rawStart + (slot.length - slot.trimStart().length),
+      to: layer.rawStart + slot.trimEnd().length,
+    };
+  }, [onboardingStep, strudel.code]);
+
+  const listenReady = onboarding.listen.status === 'ready';
+  const onboardingSending = onboarding.sending;
+  const onboardingReplyId = onboarding.replyMessageId;
+  const getCodeRangeRect = strudel.getCodeRangeRect;
+  const scrollCodeRangeIntoView = strudel.scrollCodeRangeIntoView;
+  const onboardingTarget = useMemo((): TourTarget | null => {
+    switch (onboardingStep) {
+      case 'listen-original':
+      case 'listen-adapted':
+        return {
+          key: `${onboardingStep}:play`,
+          resolve: () => visibleRectOf('[data-onboarding-target="play"]'),
+          interactive: listenReady,
+          placement: onboardingStep === 'listen-original' ? 'below-start' : 'above-start',
+        };
+      case 'send-instruction':
+        return {
+          key: 'composer',
+          resolve: () => visibleRectOf('[data-onboarding-target="composer"]'),
+          interactive: !onboardingSending,
+          // The field's own edge, not a margin round it.
+          padding: 0,
+          placement: 'above-start',
+          matchWidth: true,
+        };
+      case 'read-reply': {
+        if (!onboardingReplyId) return null;
+        const selector = `[data-message-id="${onboardingReplyId}"]`;
+        return {
+          key: `reply:${onboardingReplyId}`,
+          resolve: () => visibleRectOf(selector),
+          interactive: false,
+          reveal: () => document.querySelector(selector)?.scrollIntoView({ block: 'nearest' }),
+        };
+      }
+      case 'view-change': {
+        const range = addedLayerRange;
+        return {
+          key: `layer:${range?.from ?? 'none'}`,
+          resolve: () => (range ? getCodeRangeRect(range.from, range.to) : null)
+            ?? visibleRectOf('[data-onboarding-target="code"]'),
+          interactive: false,
+          reveal: () => { if (range) scrollCodeRangeIntoView(range.from, range.to); },
+        };
+      }
+      default:
+        return null;
+    }
+  }, [onboardingStep, listenReady, onboardingSending, onboardingReplyId, addedLayerRange, getCodeRangeRect, scrollCodeRangeIntoView]);
+
+  const onboardingPresetLock = onboardingStep === 'send-instruction'
+    ? {
+        text: onboarding.presetText,
+        busy: onboarding.sending,
+        onSend: () => { void onboarding.sendPreset(); },
+      }
+    : undefined;
+
   /* The phone's lists are reached through a stack this can unwind under the
      reader — a row deleted from the drawer must not leave a detail view open
      on it — so the navigation this delete belongs to is noted before the
@@ -2068,6 +2240,7 @@ export default function App() {
                 same as desktop — mobile adopts one by focusing the field rather
                 than with Tab, so no separate chip row. */}
             <ChatInput
+              presetLock={onboardingPresetLock}
               isLoading={isLoading}
               engineReady={strudel.engineReady}
               engineStatus={strudel.engineStatus}
@@ -2303,6 +2476,7 @@ export default function App() {
           onOpenAccount={() => setAccountOpen(true)}
           current={onFavoritesPage ? 'favorites' : onFeaturedPage ? 'featured' : 'home'}
           onOpenFavorites={() => handlePrimaryNavSelect('favorites')}
+          onOpenOnboarding={handleOpenOnboarding}
           /* The shelf's sleeves lean with the device, and on iOS the readings
              have to be asked for from inside a real gesture. This press is that
              gesture — the row that opens the page — and the ask is started
@@ -2384,6 +2558,7 @@ export default function App() {
         onSelect={handlePrimaryNavSelect}
         featuredPieceOpen={featuredPieceOpen}
         accountInitials={accountInitials(auth.user)}
+        onOpenOnboarding={handleOpenOnboarding}
       />
 
       <>
@@ -2444,6 +2619,7 @@ export default function App() {
               draftCode={current?.code ?? ''}
               pressedSegmentId={soundingSegment?.id ?? null}
               pressedSegmentCode={soundingSegment?.code ?? null}
+              presetLock={onboardingPresetLock}
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>
@@ -2634,6 +2810,8 @@ export default function App() {
           onClose={dismissFavoriteNotice}
         />
       )}
+      {/* Over both layouts: it points at whichever one is showing. */}
+      <OnboardingTour onboarding={onboarding} target={onboardingTarget} isMobile={isMobile} />
     </>
   );
 }

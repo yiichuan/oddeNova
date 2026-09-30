@@ -168,6 +168,9 @@ export function useStrudel() {
     resetExportState,
     scrollCodeToBottom: () => strudelService.scrollCodeToBottom(),
     scrollCodeToPosition: (pos: number) => strudelService.scrollCodeToPosition(pos),
+    scrollCodeRangeIntoView: (from: number, to: number) => strudelService.scrollCodeRangeIntoView(from, to),
+    getCodeRangeRect: (from: number, to: number) => strudelService.getCodeRangeRect(from, to),
+    getPlaybackCycle: () => strudelService.getPlaybackCycle(),
     scrollCodeToBottomEased: (ms: number) => strudelService.scrollCodeToBottomEased(ms),
     // [video] Frame-driven scroll for Remotion rendering (VIDEO_SCROLL_PROGRESS); unused in normal app flow
     scrollCodeToBottomProgress: (p: number) => strudelService.scrollCodeToBottomProgress(p),

@@ -986,6 +986,18 @@ export class StrudelService {
     }
   }
 
+  /**
+   * The sounding playhead in cycles from the top of the piece, or null while
+   * nothing plays. The scheduler's own clock — the same reading `pause()`
+   * keeps — so it counts music heard, not time since a press.
+   */
+  getPlaybackCycle = (): number | null => {
+    const scheduler = this.editorInstance?.repl.scheduler;
+    if (!scheduler || !this._state.isPlaying) return null;
+    const cycle = scheduler.now?.();
+    return Number.isFinite(cycle) ? Math.max(0, cycle as number) : null;
+  };
+
   pause = (): boolean => {
     const scheduler = this.editorInstance?.repl.scheduler;
     if (!scheduler || !this._state.isPlaying) return false;
@@ -1137,6 +1149,59 @@ export class StrudelService {
     if (scrollDOM) {
       scrollDOM.scrollTop = scrollDOM.scrollHeight - scrollDOM.clientHeight;
     }
+  };
+
+  /**
+   * Scroll `from..to` into view, near the top of the editor, without touching
+   * the selection — pointing at a layer by its place in the text, which moves
+   * with every edit, rather than by a line number that does not.
+   */
+  scrollCodeRangeIntoView = (from: number, to: number): void => {
+    const view = this.editorInstance?.editor as {
+      lineBlockAt?: (pos: number) => { top: number; bottom: number };
+      scrollDOM?: HTMLElement;
+    } | undefined;
+    if (!view?.lineBlockAt || !view.scrollDOM) return;
+    const top = view.lineBlockAt(from).top;
+    const bottom = view.lineBlockAt(to).bottom;
+    const scroller = view.scrollDOM;
+    // Already wholly on screen: leave the reader's view where it is.
+    if (top >= scroller.scrollTop && bottom <= scroller.scrollTop + scroller.clientHeight) return;
+    scroller.scrollTop = Math.max(0, top - 24);
+  };
+
+  /**
+   * Where `from..to` sits on screen — the lines' own box, clipped to the
+   * editor's visible area — or null when none of it is showing. Lets a
+   * spotlight hug a layer rather than the whole panel.
+   */
+  getCodeRangeRect = (from: number, to: number): { left: number; top: number; width: number; height: number } | null => {
+    const view = this.editorInstance?.editor as {
+      coordsAtPos?: (pos: number, side?: -1 | 1) => { top: number; bottom: number; right: number } | null;
+      state?: { doc: { lineAt: (pos: number) => { number: number; to: number }; line: (n: number) => { to: number } } };
+      contentDOM?: HTMLElement;
+      scrollDOM?: HTMLElement;
+    } | undefined;
+    if (!view?.coordsAtPos || !view.state || !view.contentDOM || !view.scrollDOM) return null;
+    const start = view.coordsAtPos(from);
+    const end = view.coordsAtPos(to);
+    if (!start || !end) return null;
+    const content = view.contentDOM.getBoundingClientRect();
+    const visible = view.scrollDOM.getBoundingClientRect();
+    const top = Math.max(start.top, visible.top);
+    const bottom = Math.min(end.bottom, visible.bottom);
+    if (bottom <= top) return null;
+    // As wide as the longest line in the range, not the whole editor: the
+    // right edge follows the text. A line scrolled out of the rendered
+    // viewport has no coordinates and is skipped.
+    const { doc } = view.state;
+    let textRight = content.left;
+    for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) {
+      const lineEnd = view.coordsAtPos(doc.line(n).to, -1);
+      if (lineEnd) textRight = Math.max(textRight, lineEnd.right);
+    }
+    const right = Math.min(textRight > content.left ? textRight + 8 : content.right, content.right, visible.right);
+    return { left: content.left, top, width: right - content.left, height: bottom - top };
   };
 
   scrollCodeToPosition = (scrollTop: number): void => {
