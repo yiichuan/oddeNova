@@ -40,6 +40,15 @@ export const THEME_SONG_INTRO_ZH = '听听看 《奥德诺娃的梦呓》，接�
 export const FEATURED_OPENED_INTRO_ZH =
   '{coder} 用 Strudel 写的《{title}》（原作 {originalArtist}），已在工作室中。';
 
+/**
+ * The opening line of the first-run guide's practice session, 中文, named for
+ * the same reason as the three above: the practice session's first message is
+ * flagged `isGreeting` (see `onboarding/practice-session.ts`), so it lands in
+ * the greeting slot, in 京華老宋体, and the subset build has to read it as text.
+ * "oddeNova" is Latin and drawn by EB Garamond ahead of this face.
+ */
+export const ONBOARDING_PRACTICE_INTRO_ZH = '这是 oddeNova 的默认印象曲，也是你的练习作品。跟着指引，先听一听，再试着改变它。';
+
 const S: Record<string, readonly [string, string]> = {
   // Common
   cancel:       ['取消', 'Cancel'],
@@ -453,7 +462,7 @@ const S: Record<string, readonly [string, string]> = {
   // First-run guide (src/onboarding/)
   navOnboarding:              ['新手指引', 'Getting started'],
   onboardingPracticeTitle:    ['我的第一次创作', 'My first creation'],
-  onboardingPracticeIntro:    ['这是 oddeNova 的默认印象曲，也是你的练习作品。跟着指引，先听一听，再试着改变它。', "This is oddeNova's Default Impression, and it's your practice piece. Follow the guide: listen first, then try changing it."],
+  onboardingPracticeIntro:    [ONBOARDING_PRACTICE_INTRO_ZH, "This is oddeNova's Default Impression, and it's your practice piece. Follow the guide: listen first, then try changing it."],
   onboardingInviteTitle:      ['oddeNova：欢迎！', 'oddeNova: Welcome!'],
   onboardingInviteBody:       ['用 6 个步骤，体验如何通过和 oddeNova 对话来创作乐曲。', 'In six steps, see how you can make music by talking with oddeNova.'],
   onboardingStart:            ['开始', 'Start'],
