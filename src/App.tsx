@@ -37,7 +37,7 @@ import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
-import ConversationView from './components/conversation/ConversationView';
+import ConversationView, { type GuidedReply } from './components/conversation/ConversationView';
 import ChatInput from './components/conversation/ChatInput';
 import { ExportPopover, ShareButton } from './components/studio/TopActionBar';
 import { useExportPopoverController } from './hooks/useExportPopoverController';
@@ -69,6 +69,9 @@ import { useFeaturedPreview } from './hooks/useFeaturedPreview';
 import { featuredPlayer, onboardingPlayer } from './services/featured-player';
 import { useOnboarding } from './onboarding/useOnboarding';
 import OnboardingTour, { type TourTarget } from './onboarding/OnboardingTour';
+import MobileOnboardingTour from './onboarding/MobileOnboardingTour';
+import { advancesOnWindowClose, mobilePhaseOf, needsMobileRecovery } from './onboarding/mobile-tour-model';
+import type { OnboardingStep } from './onboarding/onboarding-state';
 import { visibleRectOf } from './onboarding/tour-geometry';
 import { INTRO_PIANO_CHANGE } from './onboarding/intro-piano-case';
 import { isOnboardingEligible, markOnboardingEligible } from './onboarding/onboarding-state';
@@ -252,6 +255,8 @@ export default function App() {
   authUserIdRef.current = auth.user?.id ?? null;
   const skipNextManualSyncSessionRef = useRef<string | null>(null);
   const mobileCodeRestoreRef = useRef<{ id: string; code: string } | null>(null);
+  /** Set once the guide is wired up below: shutting the code window can be its next step. */
+  const onCodeSheetClosedRef = useRef<() => void>(() => {});
   const prevLoadingRef = useRef<Set<string>>(new Set());
   const importPromptUserRef = useRef<string | null>(null);
   const latestGuestSessionsRef = useRef<Session[]>([]);
@@ -419,6 +424,7 @@ export default function App() {
   const closeCodeSheet = useCallback(() => {
     setCodeSheetOpen(false);
     strudel.stop();
+    onCodeSheetClosedRef.current();
   }, [setCodeSheetOpen, strudel]);
 
   /* The code window's export popover. Driven from here rather than from
@@ -1728,6 +1734,7 @@ export default function App() {
     showCodeInEditor: applyImportedCode,
     startNewSession: handleNewSession,
     focusInput: focusChatInput,
+    interruptOnHidden: isMobile,
     studio: {
       isPlaying: strudel.isPlaying,
       engineReady: strudel.engineReady,
@@ -1745,24 +1752,100 @@ export default function App() {
   }, [noteRealInstruction]);
   const openOnboarding = onboarding.openFromMenu;
   const handleOpenOnboarding = useCallback(() => {
+    setNavDrawerOpen(false);
     handlePrimaryNavSelect('home');
     openOnboarding();
-  }, [handlePrimaryNavSelect, openOnboarding]);
+  }, [handlePrimaryNavSelect, openOnboarding, setNavDrawerOpen]);
 
   const onboardingStep = onboarding.view === 'step' ? onboarding.step : null;
-  /* The phone keeps the play key and the code in the code window, so the steps
-     that point at them open it, and the others put it away. */
-  const onboardingNeedsCode = onboardingStep === 'listen-original'
-    || onboardingStep === 'listen-adapted'
-    || onboardingStep === 'view-change';
+
+  /* ── The guide on a phone ──
+     The four-stage reading of the same steps (see MobileOnboardingTour). The
+     first stage is walked through the code window, which the reader opens with
+     its own key and shuts with its own close; shutting it once the original
+     has been heard is that stage's "next". Nothing opens the window for them. */
+  const mobileOnboardingStep = isMobile ? onboardingStep : null;
+  const mobileOnboardingPhase = mobileOnboardingStep === null
+    ? null
+    : mobilePhaseOf(onboarding.progress, { codeWindowOpen: codeSheetOpen });
+  /* The guided reply's code widget, opened out at one step and shut again by
+     moving to the next: remembered with the step it was opened on. */
+  const [mobileChangeOpenAt, setMobileChangeOpenAt] = useState<OnboardingStep | null>(null);
+  const mobileChangeOpen = mobileOnboardingStep !== null && mobileChangeOpenAt === mobileOnboardingStep;
+  const setMobileChangeOpen = useCallback((open: boolean) => {
+    setMobileChangeOpenAt(open ? mobileOnboardingStep : null);
+  }, [mobileOnboardingStep]);
+
+  const onboardingProgress = onboarding.progress;
+  const onboardingNext = onboarding.next;
+  const onboardingPrev = onboarding.prev;
   useEffect(() => {
-    if (!isMobile || onboardingStep === null) return;
-    setCodeSheetOpen(onboardingNeedsCode);
-  }, [isMobile, onboardingStep, onboardingNeedsCode, setCodeSheetOpen]);
+    onCodeSheetClosedRef.current = () => {
+      if (mobileOnboardingStep !== null && advancesOnWindowClose(onboardingProgress)) onboardingNext();
+    };
+  }, [mobileOnboardingStep, onboardingProgress, onboardingNext]);
+
+  // Past the first stage the conversation is where the guide points, so a
+  // window left open from it is put away once, on arriving at the step. One
+  // the reader opens later is theirs; the guide waits for it to shut.
+  useEffect(() => {
+    if (mobileOnboardingStep === null || mobileOnboardingStep === 'listen-original') return;
+    setCodeSheetOpen(false);
+  }, [mobileOnboardingStep, setCodeSheetOpen]);
+
+  // A stored record at the close without the new version heard goes back for it.
+  useEffect(() => {
+    if (mobileOnboardingStep !== null && needsMobileRecovery(onboardingProgress)) onboardingPrev();
+  }, [mobileOnboardingStep, onboardingProgress, onboardingPrev]);
+
+  // Crossing the phone breakpoint mid-guide (a rotation, a resized pane)
+  // silences a listen under way and keeps the step: the other layout picks up
+  // the same step with its own controls, and the reader plays again there.
+  const interruptOnboardingListening = onboarding.interruptListening;
+  const onboardingOnStep = onboardingStep !== null;
+  const lastOnboardingLayoutRef = useRef(isMobile);
+  useEffect(() => {
+    if (lastOnboardingLayoutRef.current === isMobile) return;
+    lastOnboardingLayoutRef.current = isMobile;
+    if (onboardingOnStep) interruptOnboardingListening();
+  }, [isMobile, onboardingOnStep, interruptOnboardingListening]);
+
+  const mobileReplyId = mobileOnboardingStep !== null ? onboarding.replyMessageId : null;
+  const mobileListenReady = onboarding.listen.status === 'ready';
+  const guidedReply = useMemo((): GuidedReply | undefined => {
+    if (!mobileReplyId || mobileOnboardingStep === null) return undefined;
+    if (mobileOnboardingStep === 'listen-original' || mobileOnboardingStep === 'send-instruction') return undefined;
+    return {
+      id: mobileReplyId,
+      expanded: mobileChangeOpen,
+      onExpandedChange: setMobileChangeOpen,
+      // A thumb's reach round the play key while the guide has the reader
+      // press it; at the close, opened out to be read, nothing of the kind.
+      enlarged: mobileOnboardingStep === 'read-reply' || mobileOnboardingStep === 'listen-adapted',
+      playDisabled: mobileOnboardingStep === 'listen-adapted' && !mobileListenReady,
+      // Only on the step that times the listen: there every play is stopped by
+      // the guide at 5 seconds. Reading the reply, nothing would stop it.
+      stopDisabled: mobileOnboardingStep === 'listen-adapted',
+    };
+  }, [mobileReplyId, mobileOnboardingStep, mobileChangeOpen, setMobileChangeOpen, mobileListenReady]);
+
+  /* The practice reply's own play key, on a phone. That reply is the latest
+     take and the draft both, so it is played as the draft is — no preview of
+     an older version, just the piece from the top — which is what the guide's
+     listen watches for. Any other widget plays the way it always does. */
+  const handleMobilePlaySegment = useCallback((segmentId: string, code: string) => {
+    if (mobileReplyId !== null && segmentId === mobileReplyId && code === (current?.code ?? '')) {
+      exitPreview();
+      setSoundingSegment({ id: segmentId, code });
+      void strudel.play(code);
+      return;
+    }
+    handlePlaySegment(segmentId, code);
+  }, [mobileReplyId, current?.code, exitPreview, strudel, handlePlaySegment]);
 
   /* Where the added layer sits in the editor, by its marker — never a line number. */
   const addedLayerRange = useMemo(() => {
-    if (onboardingStep !== 'view-change') return null;
+    if (isMobile || onboardingStep !== 'view-change') return null;
     const layer = parseScore(strudel.code).layers.find((candidate) => candidate.name === INTRO_PIANO_CHANGE.addedLayer);
     if (!layer) return null;
     const slot = strudel.code.slice(layer.rawStart, layer.rawEnd);
@@ -1770,7 +1853,7 @@ export default function App() {
       from: layer.rawStart + (slot.length - slot.trimStart().length),
       to: layer.rawStart + slot.trimEnd().length,
     };
-  }, [onboardingStep, strudel.code]);
+  }, [isMobile, onboardingStep, strudel.code]);
 
   const listenReady = onboarding.listen.status === 'ready';
   const onboardingSending = onboarding.sending;
@@ -2163,11 +2246,14 @@ export default function App() {
               <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
               <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
             </h1>
+            {/* 44px to a thumb, 36px to the row: the negative margin gives
+                back what the reach adds, so the bar lays out as it did. */}
             <button
               onClick={() => setCodeSheetOpen(true)}
               data-testid="mobile-code-key"
+              data-onboarding-target="code-key"
               data-has-code={hasPlayableCode || undefined}
-              className={`w-9 h-9 flex items-center justify-center transition-colors ${
+              className={`-m-1 w-11 h-11 flex items-center justify-center transition-colors ${
                 hasPlayableCode
                   ? 'text-brand-accent'
                   : 'text-text-secondary hover:text-text-primary'
@@ -2212,11 +2298,12 @@ export default function App() {
                  answered to the buffer would offer to stop a take the reader
                  has already edited away from. */
               playingCode={strudel.activeCode}
-              onPlaySegment={handlePlaySegment}
+              onPlaySegment={handleMobilePlaySegment}
               onStopCode={strudel.stop}
               draftCode={current?.code ?? ''}
               pressedSegmentId={soundingSegment?.id ?? null}
               pressedSegmentCode={soundingSegment?.code ?? null}
+              guidedReply={guidedReply}
             />
           </div>
 
@@ -2225,6 +2312,7 @@ export default function App() {
               belong to the code window now, and a transport left down here would
               be a second place to press play with no code in sight. */}
           <div
+            data-mobile-bottom-bar
             className="relative shrink-0 px-3 pt-3"
             style={{
               paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
@@ -2364,7 +2452,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={closeCodeSheet}
-                className="code-window-action flex h-9 w-9 items-center justify-center"
+                data-onboarding-target="code-close"
+                className="code-window-action -m-1 flex h-11 w-11 items-center justify-center"
                 aria-label={t('close')}
                 title={t('close')}
               >
@@ -2416,6 +2505,9 @@ export default function App() {
                 onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
                 showSyncStatus={showSessionSyncStatus}
+                guidePlay={mobileOnboardingPhase === 'play-in-window'
+                  ? { playDisabled: !mobileListenReady }
+                  : undefined}
               />
             </div>
 
@@ -2811,7 +2903,17 @@ export default function App() {
         />
       )}
       {/* Over both layouts: it points at whichever one is showing. */}
-      <OnboardingTour onboarding={onboarding} target={onboardingTarget} isMobile={isMobile} />
+      {isMobile ? (
+        <MobileOnboardingTour
+          onboarding={onboarding}
+          codeWindowOpen={codeSheetOpen}
+          suspended={navDrawerOpen}
+          changeOpen={mobileChangeOpen}
+          onChangeOpenChange={setMobileChangeOpen}
+        />
+      ) : (
+        <OnboardingTour onboarding={onboarding} target={onboardingTarget} />
+      )}
     </>
   );
 }

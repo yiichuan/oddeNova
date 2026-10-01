@@ -564,6 +564,24 @@ interface ConversationViewProps {
    */
   pressedSegmentId?: string | null;
   pressedSegmentCode?: string | null;
+  /**
+   * The reply the phone's first-run guide is walking through. Its code widget
+   * opens and shuts from here rather than from this view's own state, so the
+   * guide's "view the change" and the widget's own toggle are one switch; and
+   * its keys take the guide's thumb-sized form.
+   */
+  guidedReply?: GuidedReply;
+}
+
+export interface GuidedReply {
+  id: string;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  /** The play key reaches a thumb's 44px, without the widget changing size; off, it is as any other. */
+  enlarged: boolean;
+  playDisabled: boolean;
+  /** A listen the guide is timing plays through: its stop cannot be pressed. */
+  stopDisabled: boolean;
 }
 
 /**
@@ -603,6 +621,7 @@ export default function ConversationView({
   draftCode = '',
   pressedSegmentId = null,
   pressedSegmentCode = null,
+  guidedReply,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -1575,8 +1594,13 @@ export default function ConversationView({
                 <CodeDiffView
                   messageId={msg.id}
                   revision={revisionsById.get(msg.revisionId)!}
-                  expanded={expandedCode.has(msg.id)}
-                  onToggle={() => toggleCode(msg.id)}
+                  expanded={guidedReply?.id === msg.id ? guidedReply.expanded : expandedCode.has(msg.id)}
+                  onToggle={guidedReply?.id === msg.id
+                    ? () => guidedReply.onExpandedChange(!guidedReply.expanded)
+                    : () => toggleCode(msg.id)}
+                  guided={guidedReply?.id === msg.id && guidedReply.enlarged
+                    ? { playDisabled: guidedReply.playDisabled, stopDisabled: guidedReply.stopDisabled }
+                    : undefined}
                   playing={soundingSegmentId === msg.id}
                   onPlay={onPlaySegment
                     ? () => onPlaySegment(msg.id, revisionsById.get(msg.revisionId!)!.afterCode)

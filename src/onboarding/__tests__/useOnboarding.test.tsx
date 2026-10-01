@@ -115,7 +115,7 @@ interface Harness {
   rerender: () => void;
 }
 
-function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: string | null } = {}): Harness {
+function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: string | null; interruptOnHidden?: boolean } = {}): Harness {
   const container = document.createElement('div');
   const root = createRoot(container);
   let latest: Onboarding | undefined;
@@ -157,6 +157,7 @@ function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: 
       showCodeInEditor: harness.showCodeInEditor,
       startNewSession: () => {},
       focusInput: () => {},
+      interruptOnHidden: options.interruptOnHidden,
       studio: harness.studio.transport(),
       comparePlayer: harness.compare,
     });
@@ -172,8 +173,8 @@ async function flush(ms = 0) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 }
 
-async function started(): Promise<Harness> {
-  const h = mount();
+async function started(options: Parameters<typeof mount>[0] = {}): Promise<Harness> {
+  const h = mount(options);
   await act(async () => { await h.get().start(); });
   await flush();
   return h;
@@ -478,5 +479,90 @@ describe('useOnboarding', () => {
     const stored = JSON.parse(localStorage.getItem(progressKey('guest'))!);
     expect(stored.status).toBe('skipped');
     expect(mount({ sessions: h.sessions }).get().view).toBe('hidden');
+  });
+});
+
+describe('useOnboarding listen bar', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('rests full once heard, and a restart starts the bar at 0 again', async () => {
+    const h = await started();
+    await listenThrough(h);
+    expect(h.get().progress.originalHeard).toBe(true);
+    expect(h.get().listen.progress).toBe(1);
+    // The tail is spent: nothing carries a playhead on past the end.
+    expect(h.get().readListenPlayhead()).toBeNull();
+
+    await act(async () => { await h.get().restart(); });
+    await flush();
+    expect(h.get().step).toBe('listen-original');
+    expect(h.get().progress.originalHeard).toBe(false);
+    expect(h.get().listen.progress).toBe(0);
+    expect(h.get().readListenPlayhead()).toBeNull();
+  });
+});
+
+describe('useOnboarding interrupted listens', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(document, 'visibilityState');
+  });
+
+  it('forgets a listen cut short from outside, keeps the step, and counts a full replay', async () => {
+    const h = await started();
+    await act(async () => { h.studio.pressPlay(); });
+    await flush(3_000);
+    expect(h.get().listen.progress).toBeGreaterThan(0.5);
+
+    const stopsBefore = h.studio.state.stops;
+    act(() => h.get().interruptListening());
+    expect(h.studio.state.stops).toBeGreaterThan(stopsBefore);
+    expect(h.studio.state.isPlaying).toBe(false);
+    expect(h.get().listen.progress).toBe(0);
+    await flush(5_000);
+    expect(h.get().progress.originalHeard).toBe(false);
+    expect(h.get().step).toBe('listen-original');
+
+    await listenThrough(h);
+    expect(h.get().progress.originalHeard).toBe(true);
+  });
+
+  it('does not let the tail of a stopped listen land after an interruption', async () => {
+    const h = await started();
+    await act(async () => { h.studio.pressPlay(); });
+    // Past the watch's own stop (a little before 5 s), inside the tail it
+    // waits out before reporting.
+    await flush(4_800);
+    expect(h.studio.state.isPlaying).toBe(false);
+    act(() => h.get().interruptListening());
+    await flush(1_000);
+    expect(h.get().progress.originalHeard).toBe(false);
+  });
+
+  it('ends a listen when the page goes to the background, only when asked to', async () => {
+    const h = await started({ interruptOnHidden: true });
+    await act(async () => { h.studio.pressPlay(); });
+    await flush(2_000);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(h.studio.state.isPlaying).toBe(false);
+    await flush(5_000);
+    expect(h.get().progress.originalHeard).toBe(false);
+
+    const desktop = await started();
+    await act(async () => { desktop.studio.pressPlay(); });
+    await flush(1_000);
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(desktop.studio.state.isPlaying).toBe(true);
   });
 });

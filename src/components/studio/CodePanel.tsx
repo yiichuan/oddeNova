@@ -97,6 +97,14 @@ interface CodePanelProps {
    */
   previewing?: boolean;
   onExitPreview?: () => void;
+  /**
+   * The phone's first-run guide is pointing at the play key. It grows to a
+   * thumb's 44px, waits for the guide's sounds (`playDisabled`), and once
+   * pressed cannot pause: the listen plays its 5 seconds through, and the
+   * guide stops it at the end. The timeline beside it holds still too: a
+   * listen is the first 5 seconds from the top, and a seek would move it.
+   */
+  guidePlay?: { playDisabled: boolean };
 }
 
 interface Metaball {
@@ -253,11 +261,14 @@ function PlaybackProgress({
   isPlaying,
   isPaused,
   accentColor,
+  locked = false,
 }: {
   code: string;
   isPlaying: boolean;
   isPaused: boolean;
   accentColor?: string | null;
+  /** Shown but not seekable. */
+  locked?: boolean;
 }) {
   const totalSeconds = useMemo(() => getStrudelLoopDurationSeconds(code), [code]);
   const displayCycles = useMemo(() => code.trim() ? getStrudelLoopCycles(code) : 0, [code]);
@@ -313,7 +324,7 @@ function PlaybackProgress({
   const progress = totalSeconds > 0 ? Math.min(1, elapsedSeconds / totalSeconds) : 0;
   const elapsedLabel = formatPlaybackTime(elapsedSeconds);
   const totalLabel = formatPlaybackTime(totalSeconds);
-  const seekDisabled = totalSeconds <= 0 || displayCycles <= 0;
+  const seekDisabled = locked || totalSeconds <= 0 || displayCycles <= 0;
 
   const handleSeek = (nextProgress: number) => {
     if (seekDisabled) return;
@@ -427,6 +438,7 @@ export default function CodePanel({
   showSyncStatus = false,
   previewing = false,
   onExitPreview,
+  guidePlay,
 }: CodePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -633,6 +645,10 @@ export default function CodePanel({
   // Hover labels are portalled to <body>, so they need viewport coordinates:
   // centred on the control, sitting just above it.
   const hasPlayableCode = code.trim().length > 0;
+  // Pausing is always open, except to the guide's listen (see `guidePlay`).
+  const playKeyDisabled = isPlaying
+    ? Boolean(guidePlay)
+    : !engineReady || !hasPlayableCode || Boolean(guidePlay?.playDisabled);
   const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
   // Only a playing piece with an unheard edit has anything to update into.
   const canUpdate = isPlaying && isDirty;
@@ -1019,15 +1035,18 @@ export default function CodePanel({
               layers are the shared `.code-panel-controls` scale and the desktop
               bar does put scenery at 0 and 1, so the controls stay where that
               scale puts them rather than drifting apart by platform. */}
-          <div className="relative z-10 flex shrink-0 items-center">
+          {/* Raised over the timeline while the guide points here, so the
+              play key's widened reach wins the few pixels it shares with the
+              seek track's start. */}
+          <div className={`relative ${guidePlay ? 'z-20' : 'z-10'} flex shrink-0 items-center`}>
             <button
               type="button"
               onClick={handlePlayClick}
               data-onboarding-target="play"
-              disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
+              disabled={playKeyDisabled}
               className={`control-button-surface flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed ${
-                !isPlaying && (!engineReady || !hasPlayableCode) ? 'text-text-muted' : 'text-action-fill'
-              }`}
+                playKeyDisabled ? 'text-text-muted' : 'text-action-fill'
+              }${guidePlay ? " relative before:absolute before:-inset-2 before:content-['']" : ''}`}
               aria-label={isPlaying ? t('pause') : t('play')}
             >
               {isPlaying ? <PauseIcon size={12} /> : <PlayIcon size={13} />}
@@ -1058,6 +1077,7 @@ export default function CodePanel({
             isPlaying={isPlaying}
             isPaused={isPaused}
             accentColor={accentColor}
+            locked={Boolean(guidePlay)}
           />
 
           {/* The window's own key, not the transport's: it puts the editor over

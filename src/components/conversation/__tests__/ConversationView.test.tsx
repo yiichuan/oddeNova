@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../../hooks/useChat';
 import type { CodeRevision } from '../../../hooks/useSessions';
-import ConversationView from '../ConversationView';
+import ConversationView, { type GuidedReply } from '../ConversationView';
 import { DRAFT_SEGMENT_ID } from '../../../lib/draft-diff';
 import { t } from '../../../lib/i18n';
 
@@ -50,6 +50,7 @@ type PlaybackProps = {
   /** Which key started what is sounding, and the code it put on. */
   pressedSegmentId?: string | null;
   pressedSegmentCode?: string | null;
+  guidedReply?: GuidedReply;
 };
 
 /** A ResizeObserver whose reports this test fires itself. */
@@ -206,6 +207,70 @@ describe('ConversationView code revisions', () => {
     // Something else sounding is not this take sounding.
     render({ onPlaySegment, onStopCode, isPlaying: true, playingCode: 's("hh*4")' });
     expect(key()?.getAttribute('aria-label')).toBe('Play');
+  });
+
+  /* The phone's guide walks one reply: its widget opens from the guide's
+     switch, and its play key waits for the guide's sounds. */
+  it('lets the guide hold the practice reply\'s widget, and no other', () => {
+    setMobileViewport(true);
+    const afterCode = 'stack(\n/* @layer horizon_intro */\nn("0 2")\n)';
+    const messages: ChatMessage[] = [
+      { id: 'reply', role: 'assistant', content: 'Done', code: afterCode, revisionId: 'rev-1', timestamp: 1 },
+      { id: 'other', role: 'assistant', content: 'Done', code: afterCode, revisionId: 'rev-2', timestamp: 2 },
+    ];
+    const revisions: CodeRevision[] = ['rev-1', 'rev-2'].map((id) => ({
+      id,
+      beforeCode: 'stack(\n/* @layer horizon */\nn("0")\n)',
+      afterCode,
+      playbackStatus: 'played' as const,
+      createdAt: 1,
+    }));
+    const onExpandedChange = vi.fn();
+    const onPlaySegment = vi.fn();
+    const guided = (patch: Partial<GuidedReply> = {}): GuidedReply => ({
+      id: 'reply', expanded: false, onExpandedChange, enlarged: true, playDisabled: true, stopDisabled: true, ...patch,
+    });
+    const { container, root, render } = renderConversationView(
+      messages, vi.fn(), false, revisions, { onPlaySegment, guidedReply: guided() },
+    );
+    roots.push(root);
+    const toggle = (id: string) => container.querySelector<HTMLButtonElement>(`[data-code-diff-toggle="${id}"]`)!;
+    const play = (id: string) => container.querySelector<HTMLButtonElement>(`[data-code-diff-play="${id}"]`)!;
+
+    // Not ready: the real key cannot be pressed. It reaches a thumb's 44px
+    // round itself, while the key and the widget keep their own size — the
+    // reading does not move when the guide arrives or leaves.
+    expect(play('reply').disabled).toBe(true);
+    expect(play('reply').className).toContain('w-7');
+    expect(play('reply').className).toContain('before:-inset-y-2');
+    expect(play('other').disabled).toBe(false);
+    expect(play('other').className).not.toContain('before:');
+
+    // The toggle asks the guide rather than opening by itself.
+    act(() => toggle('reply').click());
+    expect(onExpandedChange).toHaveBeenCalledWith(true);
+    expect(toggle('reply').getAttribute('aria-expanded')).toBe('false');
+
+    render({ onPlaySegment, guidedReply: guided({ expanded: true, playDisabled: false }) });
+    expect(toggle('reply').getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('[data-message-id="reply"] [data-diff-group="horizon_intro"]')).not.toBeNull();
+    expect(toggle('other').getAttribute('aria-expanded')).toBe('false');
+    act(() => play('reply').click());
+    expect(onPlaySegment).toHaveBeenCalledWith('reply', afterCode);
+
+    // Sounding, the guide's listen plays through: its stop cannot be pressed.
+    render({ onPlaySegment, onStopCode: vi.fn(), isPlaying: true, playingCode: afterCode, pressedSegmentId: 'reply', pressedSegmentCode: afterCode, guidedReply: guided({ expanded: true, playDisabled: false }) });
+    expect(play('reply').getAttribute('aria-label')).toBe('Stop');
+    expect(play('reply').disabled).toBe(true);
+    // Where the guide is not timing one, stop is open as ever.
+    render({ onPlaySegment, onStopCode: vi.fn(), isPlaying: true, playingCode: afterCode, pressedSegmentId: 'reply', pressedSegmentCode: afterCode, guidedReply: guided({ expanded: true, playDisabled: false, stopDisabled: false }) });
+    expect(play('reply').disabled).toBe(false);
+
+    // Opened out to be read at the close: still the guide's switch, at its own size.
+    render({ onPlaySegment, guidedReply: guided({ expanded: true, enlarged: false, playDisabled: false }) });
+    expect(toggle('reply').getAttribute('aria-expanded')).toBe('true');
+    expect(play('reply').className).not.toContain('before:');
+    expect(container.querySelector('[data-code-diff="reply"]')?.className).toContain('overflow-hidden');
   });
 
   /* The desktop hands none of this down: the code window is already open
