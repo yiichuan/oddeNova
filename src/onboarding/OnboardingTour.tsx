@@ -17,8 +17,8 @@ import type { CompareVersion, Onboarding } from './useOnboarding';
  * Keyboard focus is left alone — nothing here traps it.
  *
  * The card sits beside whatever it points at and follows it every frame, so
- * a panel resizing, the conversation scrolling or the phone's keyboard lifting
- * the composer does not leave it pointing at empty space.
+ * a panel resizing or the conversation scrolling does not leave it pointing
+ * at empty space.
  */
 
 export interface TourTarget {
@@ -39,7 +39,6 @@ export interface TourTarget {
 interface OnboardingTourProps {
   onboarding: Onboarding;
   target: TourTarget | null;
-  isMobile: boolean;
 }
 
 const PRIMARY =
@@ -55,7 +54,7 @@ function viewportSize(): Size {
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
-export default function OnboardingTour({ onboarding, target, isMobile }: OnboardingTourProps) {
+export default function OnboardingTour({ onboarding, target }: OnboardingTourProps) {
   const { view } = onboarding;
   const [hole, setHole] = useState<Rect | null>(null);
   const [viewport, setViewport] = useState<Size>(viewportSize);
@@ -127,9 +126,7 @@ export default function OnboardingTour({ onboarding, target, isMobile }: Onboard
 
   const onStep = view === 'step';
   const shownHole = onStep ? hole : null;
-  const cardWidth = target?.matchWidth && shownHole
-    ? shownHole.width
-    : isMobile ? Math.min(CARD_WIDTH + 40, viewport.width - 24) : CARD_WIDTH;
+  const cardWidth = target?.matchWidth && shownHole ? shownHole.width : CARD_WIDTH;
   const position = placeCard(shownHole, { width: cardWidth, height: cardSize.height }, viewport, {
     placement: target?.placement,
   });
@@ -450,7 +447,7 @@ function Compare({ onboarding }: { onboarding: Onboarding }) {
         <span className="inline-flex size-3 shrink-0 items-center justify-center" aria-hidden="true">
           {active ? <StopIcon size={10} /> : <PlayIcon size={12} />}
         </span>
-        <span className="truncate">{label}</span>
+        <CompareLabel onboarding={onboarding} version={version} label={label} />
       </button>
     );
   };
@@ -466,6 +463,28 @@ function Compare({ onboarding }: { onboarding: Onboarding }) {
 }
 
 /**
+ * "Original · 5s": the version, then the seconds of it left to hear. At rest
+ * that is the whole window; while the version plays it counts down to 0 with
+ * the playhead. The digit sits in a box one digit wide with figures of equal
+ * width, so the "s" after it stays put as the number changes.
+ */
+export function CompareLabel({ onboarding, version, label }: { onboarding: Onboarding; version: CompareVersion; label: string }) {
+  const { compare } = onboarding;
+  const seconds = Math.round(1 / onboarding.listenRate);
+  const playing = compare.version === version && compare.phase === 'playing';
+  const left = playing ? Math.max(0, Math.ceil((1 - compare.progress) * seconds - 1e-6)) : seconds;
+  return (
+    <>
+      <span className="min-w-0 truncate">{label}</span>
+      <span className="-ml-1 shrink-0 whitespace-pre">
+        {' · '}
+        <span className="inline-block w-[1ch] text-right tabular-nums">{left}</span>s
+      </span>
+    </>
+  );
+}
+
+/**
  * The listen's progress, redrawn every frame from the playhead while it plays
  * and resting at `resting` otherwise. Written straight to the element as a
  * transform: no render per frame, and no layout. The fill slides in from the
@@ -473,7 +492,7 @@ function Compare({ onboarding }: { onboarding: Onboarding }) {
  */
 const slide = (progress: number) => `translateX(${(progress - 1) * 100}%)`;
 
-function ListenBar({ read, rate, resting }: { read: () => number | null; rate: number; resting: number }) {
+export function ListenBar({ read, rate, resting }: { read: () => number | null; rate: number; resting: number }) {
   const fillRef = useRef<HTMLSpanElement>(null);
   const restingRef = useRef(resting);
   useEffect(() => {

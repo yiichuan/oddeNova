@@ -116,6 +116,11 @@ export interface UseOnboardingOptions {
   showCodeInEditor: (sessionId: string, code: string) => void;
   startNewSession: () => Promise<void> | void;
   focusInput: () => void;
+  /**
+   * A page sent to the background ends a listen under way (the phone's reading
+   * of it). Off on the desktop, where a background tab plays on as it always has.
+   */
+  interruptOnHidden?: boolean;
   studio: StudioTransport;
   comparePlayer: ComparePlayer;
 }
@@ -244,6 +249,12 @@ export function useOnboarding(options: UseOnboardingOptions) {
   const ownerRef = useRef(ownerKey);
   /** Bumped by anything that invalidates work in flight: account change, exit, unmount. */
   const generationRef = useRef(0);
+  /**
+   * Bumped by an interrupted listen. A watch that already stopped the
+   * transport still reports after its tail; one interrupted in between must
+   * not come back later and mark the window heard.
+   */
+  const listenGenerationRef = useRef(0);
   const deliveryRef = useRef<AbortController | null>(null);
   const startingRef = useRef(false);
   const preparingRef = useRef(false);
@@ -354,6 +365,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
   useEffect(() => {
     if (!watching) return;
     const generation = generationRef.current;
+    const listenGeneration = listenGenerationRef.current;
     const watchedStep = step;
     const id = ++watchIdRef.current;
     tailRef.current = null;
@@ -373,7 +385,11 @@ export function useOnboarding(options: UseOnboardingOptions) {
           if (id === watchIdRef.current) setListenProgress({ step: watchedStep, value });
         },
         onHeard: () => {
-          if (generation !== generationRef.current) return;
+          // The tail has played out: the bar rests on the heard listen from
+          // here, and a playhead carried on past the end would read full
+          // for whatever listen comes next on this step (a replay, a restart).
+          if (id === watchIdRef.current) tailRef.current = null;
+          if (generation !== generationRef.current || listenGeneration !== listenGenerationRef.current) return;
           dispatch({ type: watchedStep === 'listen-original' ? 'original-heard' : 'adapted-heard' });
         },
       },
@@ -428,6 +444,39 @@ export function useOnboarding(options: UseOnboardingOptions) {
   }, []);
 
   const retrySounds = useCallback(() => setSoundResult(null), []);
+
+  /**
+   * Silence a listen that was cut short from outside — the page going to the
+   * background, the layout changing under it — and forget how far it got. The
+   * step stays, and so does anything already heard; the reader plays again.
+   */
+  /** Drop everything a listen left behind, so the next one starts its bar at 0. */
+  const forgetListen = useCallback(() => {
+    watchIdRef.current += 1;
+    tailRef.current = null;
+    setListenProgress(null);
+  }, []);
+
+  const interruptListening = useCallback(() => {
+    listenGenerationRef.current += 1;
+    forgetListen();
+    optionsRef.current.studio.stop();
+    if (compareRef.current.phase !== 'idle') {
+      compareTokenRef.current += 1;
+      optionsRef.current.comparePlayer.stop();
+      setCompare(IDLE_COMPARE);
+    }
+  }, [forgetListen]);
+
+  const interruptOnHidden = options.interruptOnHidden ?? false;
+  useEffect(() => {
+    if (!onStep || !interruptOnHidden) return;
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') interruptListening();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [onStep, interruptOnHidden, interruptListening]);
 
   // ── The last step's old-vs-new comparison ───────────────────────────────
 
@@ -532,6 +581,9 @@ export function useOnboarding(options: UseOnboardingOptions) {
     startingRef.current = true;
     setStarting(true);
     setStartError(false);
+    // A new practice begins at the first listen, which is the step a finished
+    // one may have been left on: nothing of that listen carries over.
+    forgetListen();
     const generation = generationRef.current;
     try {
       const practiceLanguage = readerLang();
@@ -559,7 +611,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
       startingRef.current = false;
       setStarting(false);
     }
-  }, [dispatch, setPanel]);
+  }, [dispatch, forgetListen, setPanel]);
 
   const postpone = useCallback(() => {
     dispatch({ type: 'postpone', until: Date.now() + POSTPONE_MS });
@@ -738,6 +790,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
     prev,
     skip,
     retrySounds,
+    interruptListening,
     togglePlayback,
     readListenPlayhead,
     /** Progress per second through the window at the piece's tempo. */
@@ -745,6 +798,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
     studioPlaying: studio.isPlaying,
     compare,
     playCompare,
+    stopCompare,
     sendPreset,
     keepEditing,
     createNew,

@@ -898,6 +898,36 @@ describe('CodePanel editor focus reporting', () => {
     expect(toggle?.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('lets the guide\'s listen start but not pause, and holds the timeline still', () => {
+    installMatchMedia(true);
+    const onPlay = vi.fn();
+    const onPause = vi.fn();
+    const { container, root, rerender } = renderCodePanel({ onPlay, onPause, guidePlay: { playDisabled: true } });
+    roots.push(root);
+    const play = () => container.querySelector<HTMLButtonElement>(
+      '[data-testid="code-panel-mobile-controls"] [data-onboarding-target="play"]',
+    )!;
+    const seek = () => container.querySelectorAll<HTMLInputElement>('[data-testid="code-panel-playback-seek"]');
+
+    // Sounds not ready: nothing to start yet.
+    expect(play().disabled).toBe(true);
+    rerender({ guidePlay: { playDisabled: false } });
+    expect(play().disabled).toBe(false);
+    act(() => play().click());
+    expect(onPlay).toHaveBeenCalledTimes(1);
+
+    // Playing: the key shows pause but cannot be pressed until the 5 seconds end.
+    rerender({ isPlaying: true, guidePlay: { playDisabled: false } });
+    expect(play().disabled).toBe(true);
+    act(() => play().click());
+    expect(onPause).not.toHaveBeenCalled();
+    expect([...seek()].every((input) => input.disabled)).toBe(true);
+
+    // Without the guide, pausing is open as ever.
+    rerender({ isPlaying: true, guidePlay: undefined });
+    expect(play().disabled).toBe(false);
+  });
+
   it('drops the mobile viz key when there is no animation to shut', () => {
     installMatchMedia(true);
     const { container, root } = renderCodePanel({ vizEnabled: false });

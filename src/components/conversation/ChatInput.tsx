@@ -314,8 +314,11 @@ export default function ChatInput({
   // adjusting or closing it never re-focuses the textarea — and never yanks
   // the soft keyboard back up. defaultPrevented presses (the control's own
   // focus protection) are skipped for the same reason.
+  //
+  // Not while the field holds the guide's preset: it cannot be typed into, and
+  // focusing it would only raise a phone's keyboard over the send key.
   const handleCardClick = (e: React.MouseEvent<HTMLFormElement>) => {
-    if (e.defaultPrevented) return;
+    if (e.defaultPrevented || presetLock) return;
     const target = e.target;
     if (!(target instanceof Element)) return;
     if (target.closest('[data-chat-input-focus-ignore]')) return;
@@ -377,6 +380,9 @@ export default function ChatInput({
                 setText(e.target.value);
               }}
               readOnly={replayValue !== undefined || presetLock !== undefined}
+              // A read-only field can still take focus from a tap; with no
+              // keyboard asked for, a phone does not raise one over the preset.
+              inputMode={presetLock ? 'none' : undefined}
               aria-busy={presetLock?.busy || undefined}
               onFocus={() => {
                 setFocused(true);
@@ -530,9 +536,18 @@ export default function ChatInput({
               ) : (
                 <button
                   type="submit"
+                  data-onboarding-target="send"
                   disabled={presetLock ? presetLock.busy : !text.trim()}
-                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  /* The guide's send on a phone is pressed with a thumb, so
+                     its reach grows to 44px round the 30px disc. Only then:
+                     the thinking-level control that sits beside the key
+                     otherwise is not drawn while the preset holds the field,
+                     so the wider reach covers nothing else. */
+                  className={`inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-50${
+                    presetLock && isMobile ? " relative before:absolute before:-inset-[7px] before:content-['']" : ''
+                  }`}
                   title={t('send')}
+                  aria-label={t('send')}
                 >
                   <ArrowUpIcon size={18} />
                 </button>
