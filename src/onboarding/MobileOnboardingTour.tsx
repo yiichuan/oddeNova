@@ -139,7 +139,10 @@ function targetFor(phase: MobilePhase | null, onboarding: Onboarding, changeOpen
         selector: '[data-onboarding-target="composer"]',
         scope: 'page',
         interactive: !onboarding.sending,
-        padding: 0,
+        // The hole's corners are 8px round (see the scrim below) and the
+        // composer's 6px: 2px out, the two curves run concentric, and the
+        // dimming stays clear of the composer's outline at the corners.
+        padding: 2,
       };
     case 'read-reply': {
       if (!replyId) return null;
