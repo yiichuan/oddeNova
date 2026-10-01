@@ -396,6 +396,28 @@ describe('MobileOnboardingTour layout', () => {
     expect(lines).toEqual(['3/7', t('onboardingMobileCloseWindow')]);
   });
 
+  it('hangs a right-edged card by the screen as it is now, when its width changed while the guide was away', async () => {
+    const width = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(500);
+    const sheet = document.createElement('div');
+    sheet.setAttribute('data-testid', 'mobile-code-sheet');
+    sheet.appendChild(placed('<button data-onboarding-target="code-close"></button>', { left: 330, top: 60, width: 44, height: 44 }));
+    document.body.appendChild(sheet);
+    const tour = mountTour();
+    const heard = fakeOnboarding({ progress: { originalHeard: true } });
+    tour.render(heard, { codeWindowOpen: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+
+    // The drawer takes the screen; the width changes while the guide is away.
+    tour.render(heard, { codeWindowOpen: true, suspended: true });
+    width.mockReturnValue(390);
+    tour.render(heard, { codeWindowOpen: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+
+    const card = tour.container.querySelector<HTMLElement>('[role="dialog"]');
+    // Measured from 390, not the 500 it was first laid out in.
+    expect(card?.style.right).toBe('14px');
+  });
+
   it('hangs step 4 under the reply: its width while reading, right-aligned under its play key', async () => {
     vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
     vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);

@@ -97,7 +97,17 @@ const MARGIN = 12;
 const ANCHOR_GAP = 8;
 const ANCHOR_WIDTH = 280;
 
-function layoutViewport(): Size {
+/**
+ * The ground the cards are placed on: the guide's own fixed layer, which is
+ * what their `left` and `right` resolve against. The window's inner size can
+ * part from it on a phone — a page that overhangs sideways, a zoom — and a
+ * card hung by its right edge would then land short of its target by the
+ * difference. The window stands in only before the layer is laid out.
+ */
+function layoutViewport(layer?: HTMLElement | null): Size {
+  if (layer && layer.clientWidth > 0 && layer.clientHeight > 0) {
+    return { width: layer.clientWidth, height: layer.clientHeight };
+  }
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
@@ -241,10 +251,18 @@ export default function MobileOnboardingTour({
 
   const visual = useVisualViewport(visible);
   const [viewport, setViewport] = useState<Size>(layoutViewport);
-  const [hole, setHole] = useState<Rect | null>(null);
-  const [lost, setLost] = useState(false);
+  const targetKey = target?.key ?? null;
+  // Both are kept with the target they were found for: in the commit that
+  // moves to a new step, before the loop below has looked again, the old
+  // step's hole must not place the new card (the window's play key, at the
+  // left, would pull the close step's card over there for a frame).
+  const [found, setFound] = useState<{ key: string | null; hole: Rect | null }>({ key: null, hole: null });
+  const [lostKey, setLostKey] = useState<string | null>(null);
+  const hole = targetKey !== null && found.key === targetKey ? found.hole : null;
+  const lost = targetKey !== null && lostKey === targetKey;
   const [boxSize, setBoxSize] = useState<Size>({ width: 0, height: 0 });
   const boxRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
 
   // Follow the target every frame: the window scales in, replies stream,
@@ -253,7 +271,6 @@ export default function MobileOnboardingTour({
   useEffect(() => {
     targetRef.current = target;
   });
-  const targetKey = target?.key ?? null;
   const [relocateToken, setRelocateToken] = useState(0);
   useEffect(() => {
     if (!visible) return;
@@ -266,13 +283,16 @@ export default function MobileOnboardingTour({
     let shown: Rect | null | undefined;
     let missingSince = performance.now();
     let lostShown: boolean | undefined;
-    let lastViewport = layoutViewport();
+    // Null until the first frame, which always reports the size: it may have
+    // changed while the guide was away (the drawer, a window the reader
+    // opened), and nothing else would bring the stored one up to date.
+    let lastViewport: Size | null = null;
     const tick = () => {
       const now = performance.now();
-      const size = layoutViewport();
-      if (size.width !== lastViewport.width || size.height !== lastViewport.height) {
+      const size = layoutViewport(layerRef.current);
+      if (!lastViewport || size.width !== lastViewport.width || size.height !== lastViewport.height) {
         lastViewport = size;
-        setViewport(size);
+        setViewport((prev) => (prev.width === size.width && prev.height === size.height ? prev : size));
       }
       const current = targetRef.current;
       const root = current ? scopeRoot(current) : null;
@@ -287,13 +307,13 @@ export default function MobileOnboardingTour({
       const next = settled ? padded : null;
       if (shown === undefined || !sameRect(next, shown)) {
         shown = next;
-        setHole(next);
+        setFound({ key: targetKey, hole: next });
       }
       if (padded || !current) missingSince = now;
       const isLost = current !== null && now - missingSince >= LOST_MS;
       if (lostShown === undefined || isLost !== lostShown) {
         lostShown = isLost;
-        setLost(isLost);
+        setLostKey(isLost ? targetKey : null);
       }
       frame = requestAnimationFrame(tick);
     };
@@ -421,7 +441,7 @@ export default function MobileOnboardingTour({
   );
 
   return (
-    <div className="fixed inset-0 z-[80] pointer-events-none">
+    <div ref={layerRef} className="fixed inset-0 z-[80] pointer-events-none">
       <svg className="absolute inset-0 h-full w-full" aria-hidden="true">
         <path d={scrim} fillRule="evenodd" style={{ fill: 'var(--color-overlay-backdrop)', pointerEvents: 'auto' }} />
       </svg>
