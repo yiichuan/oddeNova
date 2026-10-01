@@ -68,10 +68,11 @@
   --color-auth-field: #141414;
   /* The strip the phone's code window carries its transport on. A flat fill,
      because there is no page under that bar for glass to be glass over — see
-     `.code-panel-mobile-controls`. One step off the editor it closes, which is
-     what tells a row of controls from the code above it without drawing a line
-     between the two. */
-  --color-control-bar-surface: #141414;
+     `.code-panel-mobile-controls`. Raised clearly off the editor it closes,
+     which is what tells a row of controls from the code above it without
+     drawing a line between the two — and far enough from black that the
+     transport's black caps still read as discs on it. */
+  --color-control-bar-surface: #1B1B1B;
   --color-accent: #434343;
   --color-accent-light: #434343;
   --color-accent-glow: rgba(108, 92, 231, 0.4);
@@ -308,7 +309,7 @@ html[data-theme='light'] {
   --color-conversation-surface: #F7F7FA;
   --color-settings-surface: #FCFCFE;
   --color-auth-field: #E9E9ED;
-  --color-control-bar-surface: #EDEDF1;
+  --color-control-bar-surface: #F0F0F3;
   --color-accent: #0668E5;
   --color-accent-light: #237AE8;
   --color-accent-glow: rgba(6, 104, 229, 0.22);
@@ -1558,7 +1559,9 @@ html[data-theme='light'] .code-window-scrim {
  * at the same one-class specificity, so it is source order that decides it —
  * this block must stay below that rule. The paper branch is separate for the
  * same reason in reverse: its selector carries an attribute and outranks a
- * class, so it has to be answered in kind. */
+ * class, so it has to be answered in kind — and with both classes, because
+ * the paper `.code-panel-controls` fill sits further down the sheet and would
+ * otherwise win on order, leaving the bar the editor's own colour. */
 .code-panel-mobile-controls {
   --code-panel-play-to-progress-gap: 12px;
   --code-panel-progress-to-time-gap: 10px;
@@ -1569,12 +1572,13 @@ html[data-theme='light'] .code-window-scrim {
   -webkit-backdrop-filter: none;
 }
 
-html[data-theme='light'] .code-panel-mobile-controls {
+html[data-theme='light'] .code-panel-controls.code-panel-mobile-controls {
   background-color: var(--color-control-bar-surface);
   box-shadow: none;
 }
 
-/* The grain belongs to the glass and goes with it. */
+/* The wash and the grain belong to the glass and go with it. */
+.code-panel-mobile-controls::before,
 .code-panel-mobile-controls::after {
   content: none;
 }
