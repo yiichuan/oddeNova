@@ -268,9 +268,16 @@ export default function MobileOnboardingTour({
   // Follow the target every frame: the window scales in, replies stream,
   // the conversation scrolls, the bar's own reserve moves the page.
   const targetRef = useRef(target);
+  const inviteRef = useRef(view === 'invite');
   useEffect(() => {
     targetRef.current = target;
+    inviteRef.current = view === 'invite';
   });
+  // The invitation opens over an empty session, whose greeting is centred in
+  // the conversation rather than the screen — higher, as the composer is
+  // taller than the header. Centred on the screen, the card's upper corners
+  // left the greeting's ends showing; centred on the greeting, it covers it.
+  const [greetingMiddle, setGreetingMiddle] = useState<number | null>(null);
   const [relocateToken, setRelocateToken] = useState(0);
   useEffect(() => {
     if (!visible) return;
@@ -294,6 +301,9 @@ export default function MobileOnboardingTour({
         lastViewport = size;
         setViewport((prev) => (prev.width === size.width && prev.height === size.height ? prev : size));
       }
+      const greeting = inviteRef.current ? visibleRectOf('[data-onboarding-target="greeting"]') : null;
+      const middle = greeting ? Math.round(greeting.top + greeting.height / 2) : null;
+      setGreetingMiddle((prev) => (prev === middle ? prev : middle));
       const current = targetRef.current;
       const root = current ? scopeRoot(current) : null;
       const found = current && root ? resolveIn(root, current.selector, size) : null;
@@ -371,7 +381,17 @@ export default function MobileOnboardingTour({
   if (layout === 'dialog') {
     // Laid out by the centring frame round it (below), not placed here; it
     // scrolls inside itself on a screen too short to hold it.
-    boxStyle = { maxHeight: visibleBottom - (visual?.top ?? 0) - MARGIN * 2 };
+    const screenTop = visual?.top ?? 0;
+    boxStyle = { maxHeight: visibleBottom - screenTop - MARGIN * 2 };
+    if (view === 'invite' && greetingMiddle !== null && boxSize.height > 0) {
+      // From the screen's middle to the greeting's, never past either edge.
+      const centred = (screenTop + visibleBottom - boxSize.height) / 2;
+      const wanted = Math.min(
+        Math.max(greetingMiddle - boxSize.height / 2, screenTop + MARGIN),
+        visibleBottom - MARGIN - boxSize.height,
+      );
+      if (wanted < centred) boxStyle.transform = `translateY(${wanted - centred}px)`;
+    }
     // The alerts' width with the guide cards' padding. Every guide card takes
     // the sign-in window's 16px corners (`rounded-2xl`, AccountModal).
     // Foot as deep as head, 20px: to the words of a bottom row of bare
