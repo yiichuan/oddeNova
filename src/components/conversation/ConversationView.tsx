@@ -1452,7 +1452,9 @@ export default function ConversationView({
         style={{ scrollbarGutter: 'stable' }}
       >
       {greetingMsg && !hasConversationMessages && !isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center px-8">
+        // The phone's guide centres its invitation on this frame, so the card
+        // covers the greeting rather than leaving its ends showing.
+        <div data-onboarding-target="greeting" className="absolute inset-0 flex items-center justify-center px-8">
           <p
             // Keyed by the greeting's own id (not just conditionally mounted):
             // reusing an empty session re-rolls the greeting into a new
