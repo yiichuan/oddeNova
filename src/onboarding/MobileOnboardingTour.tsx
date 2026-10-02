@@ -663,6 +663,9 @@ function Anchored({
       <ExitGuide onboarding={onboarding} />
       <StageCounter stage={stage} />
       <p className="leading-relaxed text-text-primary">{t(PHASE_COPY[phase])}</p>
+      {/* The first sound of the practice, and over in 5 seconds: said before
+          play is pressed, as no page can tell that a phone is muted. */}
+      {phase === 'play-in-window' && <p className="mt-2 text-xs text-text-secondary">{t('onboardingMobileSoundHint')}</p>}
       {listening && <ListenStatus onboarding={onboarding} />}
       {lost && <LostRow onRelocate={onRelocate} />}
       <PhaseActionRow onboarding={onboarding} phase={phase} />

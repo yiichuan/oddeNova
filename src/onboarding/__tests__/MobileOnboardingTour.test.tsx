@@ -352,13 +352,14 @@ describe('MobileOnboardingTour layout', () => {
     const path = tour.container.querySelector('path')?.getAttribute('d') ?? '';
     expect(path.match(/Z/g)).toHaveLength(2);
 
-    // Under the hole (592 + 44), left edges together; 2/7, the copy, the bar, exit.
+    // Under the hole (592 + 44), left edges together; 2/7, the copy, the
+    // sound check (before play is pressed), the bar, exit.
     const card = tour.container.querySelector<HTMLElement>('[role="dialog"]');
     expect(card?.style.left).toBe('12px');
     expect(card?.style.top).toBe('644px');
     const lines = cardLines(card);
-    expect(lines).toEqual(['2/7', t('onboardingMobilePlayOriginal'), '']);
-    expect(card?.children[3].getAttribute('role')).toBe('status');
+    expect(lines).toEqual(['2/7', t('onboardingMobilePlayOriginal'), t('onboardingMobileSoundHint'), '']);
+    expect(card?.children[4].getAttribute('role')).toBe('status');
   });
 
   it('hangs the first stage\'s card under the code window key, right edges together, with no accent ring', async () => {

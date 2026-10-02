@@ -187,6 +187,20 @@ function safeDisconnect(node: AudioNode, dest?: AudioNode): void {
   } catch { /* not connected */ }
 }
 
+/**
+ * Play as a music app does. iOS gives a page's Web Audio the "ambient"
+ * session by default, which the ring/silent switch mutes — and no page can
+ * tell that the switch is on, so a reader in silent mode just hears nothing.
+ * The "playback" session sounds through it (Safari 16.4+; elsewhere a no-op).
+ */
+function preferPlaybackAudioSession(): void {
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (!session) return;
+  try {
+    session.type = 'playback';
+  } catch { /* not settable here */ }
+}
+
 export async function ensureAudioContextResumed(): Promise<SafariAudioContextState> {
   const { getAudioContext } = await import('superdough');
   const ctx = getAudioContext() as AudioContext & { state: SafariAudioContextState };
@@ -392,6 +406,7 @@ export class StrudelService {
       const { evalScope, Pattern, reify, noteToMidi, valueToMidi } = await import('@strudel/core');
       const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
+      preferPlaybackAudioSession();
       initAudioOnFirstClick();
 
       const loadModules = evalScope(
