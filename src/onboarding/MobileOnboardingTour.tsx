@@ -269,9 +269,11 @@ export default function MobileOnboardingTour({
   // the conversation scrolls, the bar's own reserve moves the page.
   const targetRef = useRef(target);
   const inviteRef = useRef(view === 'invite');
+  const startingRef = useRef(onboarding.starting);
   useEffect(() => {
     targetRef.current = target;
     inviteRef.current = view === 'invite';
+    startingRef.current = onboarding.starting;
   });
   // The invitation opens over an empty session, whose greeting is centred in
   // the conversation rather than the screen — higher, as the composer is
@@ -301,9 +303,13 @@ export default function MobileOnboardingTour({
         lastViewport = size;
         setViewport((prev) => (prev.width === size.width && prev.height === size.height ? prev : size));
       }
-      const greeting = inviteRef.current ? visibleRectOf('[data-onboarding-target="greeting"]') : null;
-      const middle = greeting ? Math.round(greeting.top + greeting.height / 2) : null;
-      setGreetingMiddle((prev) => (prev === middle ? prev : middle));
+      // Held while the practice is being made: the conversation behind is
+      // swapped for the practice's, and the card stays put until it goes.
+      if (!startingRef.current) {
+        const greeting = inviteRef.current ? visibleRectOf('[data-onboarding-target="greeting"]') : null;
+        const middle = greeting ? Math.round(greeting.top + greeting.height / 2) : null;
+        setGreetingMiddle((prev) => (prev === middle ? prev : middle));
+      }
       const current = targetRef.current;
       const root = current ? scopeRoot(current) : null;
       const found = current && root ? resolveIn(root, current.selector, size) : null;

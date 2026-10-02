@@ -9,20 +9,27 @@
   font-display: swap;
 }
 
+/* The wordmark's "odde" and nothing else. `block`, not `swap`: a fallback
+   drawn first and then replaced reads as the logo changing shape on every
+   reload. index.html preloads the file, so the wait is a frame or two. */
 @font-face {
   font-family: 'Baskervville';
   src: url('/fonts/Baskervville-Italic.ttf') format('truetype');
   font-weight: normal;
   font-style: italic;
-  font-display: swap;
+  font-display: block;
 }
 
+/* The wordmark's "Nova" and nothing else, so it ships only N, o, v and a
+   (under 1 KB, from the 2.6 MB face in assets/fonts/; rebuild with
+   subset-font, text "Nova", woff2). Any other text set in it would fall back
+   letter by letter. Preloaded and `block` for the same reason as Baskervville. */
 @font-face {
   font-family: '42dot Sans';
-  src: url('/fonts/42dotSans-ExtraBold.ttf') format('truetype');
+  src: url('/fonts/42dotSans-ExtraBold-wordmark.woff2') format('woff2');
   font-weight: 800;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 /* Greeting-only subset — carries just the characters used by GREETINGS_ZH, so
