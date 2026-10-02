@@ -581,6 +581,11 @@ export function useOnboarding(options: UseOnboardingOptions) {
     startingRef.current = true;
     setStarting(true);
     setStartError(false);
+    // Hold the invitation until the practice is ready. A newcomer's is only
+    // inferred from having no practice; once `start` records one, and while
+    // its session is still being written, it would read as a practice to
+    // resume, and the resume card would flash up before the first step.
+    setPanel('invite');
     // A new practice begins at the first listen, which is the step a finished
     // one may have been left on: nothing of that listen carries over.
     forgetListen();

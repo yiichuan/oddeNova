@@ -15,7 +15,7 @@ licence travels with them and that they are never sold on their own.
 | `ABeeZee-Regular.ttf` | ABeeZee | Anja Meiners | OFL-1.1 |
 | `Baskervville-Italic.ttf` | Baskervville | ANRT | OFL-1.1 |
 | `EBGaramond-Regular.ttf` | EB Garamond | Georg Duffner, Octavio Pardo | OFL-1.1 |
-| `42dotSans-ExtraBold.ttf` | 42dot Sans | The 42dot Sans Project Authors | OFL-1.1 |
+| `42dotSans-ExtraBold-wordmark.woff2` | 42dot Sans (subset: N, o, v, a) | The 42dot Sans Project Authors | OFL-1.1 |
 | `jinghua-laosongti-greetings.woff2` | 京華老宋體 / KingHwaOldSong | TerryWang（特里王） | free for commercial use, not open source — see below |
 
 Copyright lines as they appear in the files:

@@ -218,6 +218,20 @@ describe('useOnboarding', () => {
     expect(h.get()).toMatchObject({ view: 'step', step: 'listen-original', stepNumber: 1, stepCount: 6 });
   });
 
+  it('keeps the invitation up while the practice is written, never flashing the resume card', async () => {
+    const h = mount();
+    const write = h.importSession.getMockImplementation()!;
+    let finish!: () => void;
+    h.importSession.mockImplementationOnce((...args: Parameters<typeof write>) => new Promise<void>((resolve) => {
+      finish = () => { void write(...args).then(resolve); };
+    }));
+    let starting!: Promise<void>;
+    await act(async () => { starting = h.get().start(); });
+    expect(h.get()).toMatchObject({ view: 'invite', starting: true });
+    await act(async () => { finish(); await starting; });
+    expect(h.get().view).toBe('step');
+  });
+
   it('walks all six steps through the studio transport, writing the preset once', async () => {
     const h = await started();
     expect(h.get().canNext).toBe(false);
