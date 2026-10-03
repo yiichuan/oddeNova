@@ -67,6 +67,7 @@ const S: Record<string, readonly [string, string]> = {
   sessionDetailNetworkError: ['会话详情加载失败，请重试', 'Could not load the session. Please try again'],
   loadMoreFailed: ['加载更多失败，请重试', 'Could not load more. Please try again'],
   play:         ['播放', 'Play'],
+  playStarting: ['正在加载声音…', 'Loading sounds…'],
   updatePattern: ['更新', 'Update'],
   playbackProgress: ['播放进度', 'Playback progress'],
   volume:       ['音量', 'Volume'],

@@ -122,6 +122,11 @@ export type StrudelState = {
    * the studio's own accent. See `codepanel-accent.ts`.
    */
   accentColor: string | null;
+  /**
+   * A press of play is loading what the piece opens with, and the transport
+   * has not started yet. See `StrudelService.loadOpening`.
+   */
+  isStarting: boolean;
 };
 
 type StateCallback = (state: StrudelState) => void;
@@ -173,6 +178,30 @@ function isTouchDevice(): boolean {
 // that floor sits far below the noise of any real mix, which squeezes
 // everything audible into the top of the 0..255 range. -80..-20 spreads a
 // musical range across the whole byte instead.
+/*
+ * How much of a piece is loaded before its transport starts, in seconds of
+ * music from where it will start playing.
+ *
+ * A sound is fetched the first time it is triggered, and the scheduler
+ * triggers only 0.1 s ahead of the clock — so a sound that is not in memory
+ * yet misses its onset, and superdough drops the note ("still loading")
+ * rather than play it late. A piece whose first chord is held for seconds
+ * then opens on seconds of silence. Loading the opening first means the first
+ * play sounds like every play after it; past this stretch, sounds still load
+ * on demand as they always have.
+ */
+const OPENING_SECONDS = 6;
+/** The longest a press waits on that loading before it plays anyway. */
+const OPENING_TIMEOUT_MS = 10_000;
+/* Distinct sounds loaded per press, at most. Loading is keyed by sound and
+   pitch, so a dense opening repeats far fewer than it has notes. */
+const OPENING_SOUND_LIMIT = 256;
+/* How long to wait for a just-resumed audio clock to start moving. A context
+   that reports `running` can hold `currentTime` still for a moment while the
+   output device comes up, and notes scheduled against a clock that then jumps
+   land in the past. */
+const CLOCK_START_TIMEOUT_MS = 500;
+
 const ANALYSER_FFT_SIZE = 512;
 const ANALYSER_SMOOTHING = 0.6;
 const ANALYSER_MIN_DB = -80;
@@ -199,6 +228,16 @@ function preferPlaybackAudioSession(): void {
   try {
     session.type = 'playback';
   } catch { /* not settable here */ }
+}
+
+/** Resolve once `ctx.currentTime` has advanced, or after CLOCK_START_TIMEOUT_MS. */
+async function waitForClockToMove(ctx: AudioContext): Promise<void> {
+  if (isOfflineAudioContext(ctx) || ctx.state !== 'running') return;
+  const start = ctx.currentTime;
+  const deadline = Date.now() + CLOCK_START_TIMEOUT_MS;
+  while (ctx.currentTime <= start && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 export async function ensureAudioContextResumed(): Promise<SafariAudioContextState> {
@@ -314,6 +353,9 @@ export class StrudelService {
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
   private pendingSeekCycle: number | null = null;
+  /* Bumped by every press of play and every stop, so a press still loading
+     its opening knows when it has been overtaken and must not start. */
+  private playToken = 0;
   private pageAudioRecovery: PageAudioRecovery | null = null;
   private _state: StrudelState = {
     code: '',
@@ -325,6 +367,7 @@ export class StrudelService {
     engineStatus: 'initializing',
     accentColor: null,
     isDirty: false,
+    isStarting: false,
   };
 
   private stateCallbacks: StateCallback[] = [];
@@ -1067,6 +1110,7 @@ export class StrudelService {
 
   play = async (): Promise<void> => {
     if (!this.editorInstance) throw new Error('Engine not initialized');
+    const token = ++this.playToken;
     // One transport at a time: a featured audition stops here.
     claimTransport('studio', this.stop);
     // Hand the panel back to oddeNova's palette before evaluating, so the code
@@ -1085,6 +1129,9 @@ export class StrudelService {
     this.notify({ error: null });
     try {
       await this.ensurePlayableAudioGraph();
+      await this.loadOpening(token);
+      // Stopped, or pressed again, while the opening loaded.
+      if (token !== this.playToken || !this.editorInstance) return;
       await this.editorInstance.evaluate();
       this.applyPendingSeek();
       this.syncTransportState();
@@ -1110,6 +1157,79 @@ export class StrudelService {
       this.notify({ error: message });
       throw error;
     }
+  };
+
+  /**
+   * Load the sounds a piece opens with before its transport starts.
+   *
+   * Compiles the editor's code without starting it, asks the pattern for the
+   * first OPENING_SECONDS from where playback will begin, and triggers each
+   * distinct sound in it once, silently, through superdough itself — the same
+   * path a real note takes, so whatever it loads (sample, soundfont, reverb)
+   * lands in the caches the real notes will read. Then waits for the audio
+   * clock to be moving, so the first notes are not scheduled against a clock
+   * that is about to jump.
+   *
+   * Never throws and never waits past OPENING_TIMEOUT_MS: a piece that plays
+   * late is still better than a press that does nothing. Skipped while a piece
+   * is already sounding — compiling would swap the new pattern in under it.
+   */
+  private loadOpening = async (token: number): Promise<void> => {
+    if (this._isVideoMode) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const repl = this.editorInstance?.repl as any;
+    if (typeof repl?.evaluate !== 'function' || repl.scheduler?.started) return;
+
+    this.notify({ isStarting: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.triggerOpeningSilently(repl),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, OPENING_TIMEOUT_MS); }),
+      ]);
+    } catch {
+      // A piece that fails to compile fails again, out loud, in evaluate().
+    } finally {
+      clearTimeout(timer);
+      if (token === this.playToken) this.notify({ isStarting: false });
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private triggerOpeningSilently = async (repl: any): Promise<void> => {
+    // What evaluate() will compile: StrudelMirror's own buffer.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const code: string | undefined = (this.editorInstance as any)?.code ?? this._state.code;
+    if (!code) return;
+    await repl.evaluate(code, false);
+    const pattern = repl.scheduler?.pattern;
+    const cps: number = repl.scheduler?.cps ?? 0.5;
+    if (!pattern) return;
+
+    const begin = this.pendingSeekCycle ?? 0;
+    const haps = pattern.queryArc(begin, begin + OPENING_SECONDS * cps, { _cps: cps });
+    const sounds = new Map<string, Record<string, unknown>>();
+    for (const hap of haps) {
+      if (sounds.size >= OPENING_SOUND_LIMIT) break;
+      if (!hap.hasOnset?.()) continue;
+      hap.ensureObjectValue?.();
+      const value = hap.value as Record<string, unknown>;
+      if (!value || typeof value !== 'object') continue;
+      const key = [value.bank, value.s, value.n, value.note ?? value.freq].join('|');
+      if (!sounds.has(key)) sounds.set(key, value);
+    }
+
+    const { superdough, getAudioContext } = await import('superdough');
+    const ctx = getAudioContext() as AudioContext;
+    await Promise.all([...sounds.values()].map(async (value) => {
+      try {
+        // Silent by its gain; a note that only finishes loading after its
+        // onset is dropped by superdough, which is just as silent.
+        await superdough({ ...value, gain: 0, postgain: 0 }, ctx.currentTime + 0.05, 0.05, cps);
+      } catch { /* an unknown sound fails again, and is reported, at play */ }
+    }));
+
+    await waitForClockToMove(ctx);
   };
 
   /**
@@ -1147,6 +1267,8 @@ export class StrudelService {
   };
 
   stop = (): void => {
+    this.playToken += 1;
+    if (this._state.isStarting) this.notify({ isStarting: false });
     this.pageAudioRecovery?.clearResumeIntent();
     this.pendingSeekCycle = null;
     // The Drawer stops with the transport, so the painter cannot undo its own
