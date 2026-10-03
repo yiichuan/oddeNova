@@ -2483,6 +2483,7 @@ export default function App() {
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 isPaused={strudel.isPaused}
+                isStarting={strudel.isStarting}
                 engineReady={strudel.engineReady}
                 accentColor={strudel.accentColor}
                 session={sessions.currentSession}
@@ -2768,6 +2769,7 @@ export default function App() {
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 isPaused={strudel.isPaused}
+                isStarting={strudel.isStarting}
                 engineReady={strudel.engineReady}
                 accentColor={strudel.accentColor}
                 session={sessions.currentSession}

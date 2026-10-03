@@ -17,6 +17,7 @@ export function useStrudel() {
     engineStatus: 'initializing',
     accentColor: null,
     isDirty: false,
+    isStarting: false,
   }));
 
   const historyRef = useRef<string[]>([]);
@@ -145,6 +146,7 @@ export function useStrudel() {
     activeCode: state.activeCode,
     isPlaying: state.isPlaying,
     isPaused: state.isPaused,
+    isStarting: state.isStarting,
     engineReady: state.engineReady,
     engineStatus: state.engineStatus,
     accentColor: state.accentColor,
