@@ -135,6 +135,16 @@ export function useStrudel() {
     [],
   );
 
+  const previewSound = useCallback(
+    (name: string, options?: { variant?: number; note?: string }) => strudelService.previewSound(name, options),
+    [],
+  );
+
+  const describeSounds = useCallback(
+    (names: readonly string[]) => strudelService.describeSounds(names),
+    [],
+  );
+
   const resetExportState = useCallback(() => {
     setExportState({ status: 'idle', progress: 0 });
   }, []);
@@ -166,6 +176,8 @@ export function useStrudel() {
     exportState,
     exportWav,
     resetExportState,
+    previewSound,
+    describeSounds,
     scrollCodeToBottom: () => strudelService.scrollCodeToBottom(),
     scrollCodeToPosition: (pos: number) => strudelService.scrollCodeToPosition(pos),
     scrollCodeRangeIntoView: (from: number, to: number) => strudelService.scrollCodeRangeIntoView(from, to),

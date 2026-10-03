@@ -2,6 +2,12 @@ import { getErrorMessage } from '../lib/errors';
 import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
+import {
+  buildPreviewEvent,
+  describeRegisteredSound,
+  type RegisteredSoundData,
+  type SoundInfo,
+} from '../lib/sample-preview';
 import { trackWavExportCompleted } from '../lib/analytics';
 import { installOddenovaSyntaxHighlight } from '../lib/oddenova-syntax-highlight';
 import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '../lib/codepanel-theme';
@@ -173,6 +179,10 @@ function isTouchDevice(): boolean {
 // that floor sits far below the noise of any real mix, which squeezes
 // everything audible into the top of the 0..255 range. -80..-20 spreads a
 // musical range across the whole byte instead.
+/* How far ahead of the audio clock an audition is scheduled. Superdough drops
+   anything aimed at the past, and the call itself takes a moment to get there. */
+const PREVIEW_LEAD_SECONDS = 0.03;
+
 const ANALYSER_FFT_SIZE = 512;
 const ANALYSER_SMOOTHING = 0.6;
 const ANALYSER_MIN_DB = -80;
@@ -765,6 +775,58 @@ export class StrudelService {
   prepareAudioForPlayback = async (): Promise<void> => {
     await this.ensurePlayableAudioGraph();
     void this.setupMasterChain();
+  };
+
+  /**
+   * What the audition page needs to know about each name before it is
+   * pressed: whether it takes a note, and how many recordings `n` can pick
+   * between. Read off superdough's own sound map, so it describes what is
+   * actually registered rather than what the allowlist expects. A name the
+   * map does not hold comes back absent.
+   */
+  describeSounds = async (names: readonly string[]): Promise<Record<string, SoundInfo>> => {
+    const { soundMap } = await import('superdough');
+    const registered = soundMap.get() as Record<string, { data?: RegisteredSoundData } | undefined>;
+    const described: Record<string, SoundInfo> = {};
+    for (const name of names) {
+      const info = describeRegisteredSound(registered[name.toLowerCase()]?.data);
+      if (info) described[name] = info;
+    }
+    return described;
+  };
+
+  /* (name:n) pairs whose audio has been fetched at least once — see previewSound. */
+  private warmedPreviews = new Set<string>();
+
+  /**
+   * Sound one name once, now — the audition page's press. Straight to
+   * superdough, the way a single hap would be: no pattern, no scheduler, and
+   * so no claim on the transport, which stays with whatever owns it.
+   *
+   * Superdough schedules against the time it is handed and only then waits for
+   * the audio to download, so a sound heard for the first time would start
+   * late and come in with its head already cut off. The first press of each
+   * recording therefore triggers it once silently, which resolves only once
+   * the audio is in, and then plays it for real against a fresh clock.
+   */
+  previewSound = async (
+    name: string,
+    options: { variant?: number; note?: string } = {},
+  ): Promise<void> => {
+    if (!this.isAudioInitialized) throw new Error(t('engineStarting'));
+    await this.prepareAudioForPlayback();
+    const { superdough, getAudioContext, getSound } = await import('superdough');
+    const info = describeRegisteredSound(getSound(name)?.data);
+    const event = () => buildPreviewEvent(name, info, options);
+
+    const key = `${name}:${info?.kind === 'sample' ? options.variant ?? 0 : options.note ?? ''}`;
+    if (!this.warmedPreviews.has(key)) {
+      const warm = event();
+      await superdough({ ...warm.value, gain: 0 }, getAudioContext().currentTime + PREVIEW_LEAD_SECONDS, warm.duration);
+      this.warmedPreviews.add(key);
+    }
+    const play = event();
+    await superdough(play.value, getAudioContext().currentTime + PREVIEW_LEAD_SECONDS, play.duration);
   };
 
   private ensurePlayableAudioGraph = async (): Promise<void> => {

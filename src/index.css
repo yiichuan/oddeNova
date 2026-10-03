@@ -3921,3 +3921,54 @@ html[data-theme='light'] .viz-frame {
   background: #F7F7FA;
   color-scheme: light;
 }
+
+/* ── Audition: the three-bar meter on a sample key ──
+   Grey stubs at rest, the playback accent bouncing while the pressed sound is
+   lit, and a slow shared pulse while its audio is still downloading — the
+   first press of a GM instrument can take a moment, and a key that does
+   nothing visible in that moment reads as a key that did not take. */
+.audition-meter {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  width: 9px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+.audition-meter > span {
+  width: 2px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--color-text-muted);
+  opacity: 0.55;
+  transition: background-color 150ms, opacity 150ms;
+}
+
+.audition-meter.is-loading > span {
+  animation: audition-meter-wait 900ms ease-in-out infinite;
+}
+
+.audition-meter.is-lit > span {
+  background: var(--color-playback-accent);
+  opacity: 1;
+  animation: audition-meter-bounce 450ms ease-in-out infinite alternate;
+}
+
+.audition-meter.is-lit > span:nth-child(2) { animation-delay: -150ms; }
+.audition-meter.is-lit > span:nth-child(3) { animation-delay: -300ms; }
+
+@keyframes audition-meter-bounce {
+  from { height: 3px; }
+  to { height: 10px; }
+}
+
+@keyframes audition-meter-wait {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audition-meter > span { animation: none !important; }
+  .audition-meter.is-lit > span { height: 10px; }
+}

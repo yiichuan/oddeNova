@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronRight, Disc3, Star } from 'lucide-react';
+import { ChevronRight, Disc3, Headphones, Star } from 'lucide-react';
 import type { SessionSummary } from '../../../shared/session-api';
 import type { Session } from '../../hooks/useSessions';
 import { t } from '../../lib/i18n';
@@ -216,11 +216,13 @@ interface MobileNavDrawerProps {
   onNewSession: () => void;
   onOpenAccount: () => void;
   /** Which of the shell's pages is up, so the drawer can say where you are. */
-  current?: 'home' | 'favorites' | 'featured';
+  current?: 'home' | 'favorites' | 'featured' | 'audition';
   /** Go to the collection. Absent while there is no page to go to. */
   onOpenFavorites?: () => void;
   /** Go to the shelf. Absent while there is no page to go to. */
   onOpenFeatured?: () => void;
+  /** Go to the sound library. Absent while there is no page to go to. */
+  onOpenAudition?: () => void;
   /** "More → Getting started": reopens the first-run guide. */
   onOpenOnboarding?: () => void;
   history: MobileNavDrawerHistory;
@@ -274,6 +276,7 @@ export default function MobileNavDrawer({
   current = 'home',
   onOpenFavorites,
   onOpenFeatured,
+  onOpenAudition,
   onOpenOnboarding,
   history,
 }: MobileNavDrawerProps) {
@@ -539,8 +542,9 @@ export default function MobileNavDrawer({
               label={t('newSession')}
               onClick={() => { onNewSession(); onClose(); }}
             />
-            {/* Both galleries have pages of their own on this layout; each row
-                goes to one and takes the drawer down behind it. */}
+            {/* The galleries and the sound library have pages of their own on
+                this layout; each row goes to one and takes the drawer down
+                behind it. */}
             <DrawerRow
               icon={Star}
               label={t('navFavorites')}
@@ -552,6 +556,12 @@ export default function MobileNavDrawer({
               label={t('navFeatured')}
               current={current === 'featured'}
               onClick={() => { onOpenFeatured?.(); onClose(); }}
+            />
+            <DrawerRow
+              icon={Headphones}
+              label={t('navAudition')}
+              current={current === 'audition'}
+              onClick={() => { onOpenAudition?.(); onClose(); }}
             />
 
             <DrawerRow

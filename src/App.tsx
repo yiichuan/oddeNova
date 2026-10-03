@@ -50,6 +50,7 @@ import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
 import MobileNavDrawer from './components/nav/MobileNavDrawer';
 import FeaturedPage from './components/featured/FeaturedPage';
 import FavoritesPage from './components/favorites/FavoritesPage';
+import AuditionPage from './components/audition/AuditionPage';
 import { requestDeviceTilt } from './components/featured/featured-device-tilt';
 import { useCoverAccent } from './components/featured/featured-accent';
 import SettingsSidebar, { type SettingsSection } from './components/settings/SettingsSidebar';
@@ -118,7 +119,7 @@ import { type Session } from './hooks/useSessions';
  * Destinations that take the whole content area, leaving no room for the
  * session column or the divider beside it.
  */
-const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites']);
+const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites', 'audition']);
 
 /** How long the summary cache holds a change before writing it down. */
 const SUMMARY_CACHE_WRITE_MS = 1000;
@@ -2048,9 +2049,11 @@ export default function App() {
      asks it of every part of itself. */
   const onFavoritesPage = primaryNavItem === 'favorites';
   const onFeaturedPage = primaryNavItem === 'featured';
-  /* The studio stands behind both gallery pages rather than in place of
-     either: it holds the editor the audio engine is bound to. */
-  const onStudioPage = !onFavoritesPage && !onFeaturedPage;
+  const onAuditionPage = primaryNavItem === 'audition';
+  /* The studio stands behind the gallery pages and the sound library rather
+     than in place of any of them: it holds the editor the audio engine is
+     bound to. */
+  const onStudioPage = !onFavoritesPage && !onFeaturedPage && !onAuditionPage;
   /* Which conversation the history list draws as open — a question about the
      page in front of the reader, not about which session is loaded.
      `sessions.currentId` is the second of those and stays set while a gallery is
@@ -2103,6 +2106,18 @@ export default function App() {
       onOpenChange={setOpenFeaturedPiece}
       /* Mobile only: on a phone this page draws its own top bar, and the key
          in it that reaches the rest of the app opens the shell's drawer. */
+      onOpenNav={() => setNavDrawerOpen(true)}
+    />
+  );
+
+  /* The sound library, hung in whichever shell is up like the two above. It
+     plays through the studio's engine, which has to be up for it to sound. */
+  const auditionPage = (
+    <AuditionPage
+      active={onAuditionPage}
+      engineReady={strudel.engineReady}
+      previewSound={strudel.previewSound}
+      describeSounds={strudel.describeSounds}
       onOpenNav={() => setNavDrawerOpen(true)}
     />
   );
@@ -2361,6 +2376,11 @@ export default function App() {
           {featuredPage}
         </div>
 
+        {/* ── Audition ── */}
+        <div className={onAuditionPage ? 'flex min-h-0 flex-1' : 'hidden'}>
+          {auditionPage}
+        </div>
+
         {/* ── Code Window ── */}
         {/* Never unmounted, only hidden. The audio engine is bound to the
             editor this panel mounts, so tearing it down with the window would
@@ -2565,8 +2585,9 @@ export default function App() {
              otherwise have to find your own way to. */
           onNewSession={() => { handlePrimaryNavSelect('home'); handleNewSession(); }}
           onOpenAccount={() => setAccountOpen(true)}
-          current={onFavoritesPage ? 'favorites' : onFeaturedPage ? 'featured' : 'home'}
+          current={onFavoritesPage ? 'favorites' : onFeaturedPage ? 'featured' : onAuditionPage ? 'audition' : 'home'}
           onOpenFavorites={() => handlePrimaryNavSelect('favorites')}
+          onOpenAudition={() => handlePrimaryNavSelect('audition')}
           onOpenOnboarding={handleOpenOnboarding}
           /* The shelf's sleeves lean with the device, and on iOS the readings
              have to be asked for from inside a real gesture. This press is that
@@ -2830,6 +2851,9 @@ export default function App() {
           </div>
           <div className={onFeaturedPage ? 'flex h-full min-h-0' : 'hidden'}>
             {featuredPage}
+          </div>
+          <div className={onAuditionPage ? 'flex h-full min-h-0' : 'hidden'}>
+            {auditionPage}
           </div>
           <div className={primaryNavItem === 'favorites' ? 'flex h-full min-h-0' : 'hidden'}>
             {favoritesPage}

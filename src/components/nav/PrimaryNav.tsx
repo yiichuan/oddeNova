@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import {
   Disc3,
   Ellipsis,
+  Headphones,
   Home,
   PanelLeft,
   Settings,
@@ -38,7 +39,7 @@ import {
   unfoldCurve,
 } from './liquid-column';
 
-export type PrimaryNavItem = 'home' | 'featured' | 'favorites' | 'more' | 'settings' | 'account';
+export type PrimaryNavItem = 'home' | 'featured' | 'audition' | 'favorites' | 'more' | 'settings' | 'account';
 
 interface PrimaryNavProps {
   selectedItem: PrimaryNavItem;
@@ -121,6 +122,7 @@ const TOP_ITEMS: NavItem[] = [
   { id: 'home', labelKey: 'navHome', icon: Home },
   { id: 'favorites', labelKey: 'navFavorites', icon: Star },
   { id: 'featured', labelKey: 'navFeatured', icon: Disc3 },
+  { id: 'audition', labelKey: 'navAudition', icon: Headphones },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
