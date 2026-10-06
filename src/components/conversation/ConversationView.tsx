@@ -1,13 +1,32 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
-import { ThinkingLottie } from './ThinkingLottie';
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
+
+// The lottie player and its JSON stay out of first paint: declared at module
+// scope (never inside render) and mounted only where the thinking indicator
+// already was. Declaring here keeps a single lazy component per module load.
+const LazyThinkingLottie = lazy(() =>
+  import('./ThinkingLottie').then((m) => ({ default: m.ThinkingLottie })),
+);
+
+/** Same footprint as an empty ThinkingLottie placeholder (h-5 beside the label). */
+function ThinkingLottieFallback({ className }: { className?: string }) {
+  return <span className={className ? `thinking-lottie ${className}` : 'thinking-lottie'} />;
+}
+
+function ThinkingLottieSuspense({ className }: { className?: string }) {
+  return (
+    <Suspense fallback={<ThinkingLottieFallback className={className} />}>
+      <LazyThinkingLottie className={className} />
+    </Suspense>
+  );
+}
 
 type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
@@ -1749,7 +1768,7 @@ export default function ConversationView({
           style={!isVideoMode ? { height: turnFillerHeight } : undefined}
         >
           <div className="flex items-start gap-1.5 px-1.5 shrink-0">
-            <ThinkingLottie className="w-5 h-5 flex-shrink-0" />
+            <ThinkingLottieSuspense className="w-5 h-5 flex-shrink-0" />
             {reasoningWindowAvailable ? (
               <button
                 data-live-reasoning-toggle

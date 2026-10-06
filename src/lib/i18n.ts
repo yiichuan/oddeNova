@@ -522,6 +522,10 @@ const S: Record<string, readonly [string, string]> = {
   onboardingMobileChangeNote:    ['新增的是 horizon_intro；原背景和声 horizon 保持原样。', 'The new layer is horizon_intro. The original background harmony, horizon, is unchanged.'],
   onboardingMobileTargetLost:    ['没找到要指向的位置。', "Couldn't find what to point at."],
   onboardingMobileRelocate:      ['重新定位', 'Find it again'],
+  // FeatureLoadBoundary (src/components/async/): lazy page/modal shell states.
+  featureLoading:       ['加载中…', 'Loading…'],
+  featureLoadFailed:    ['这一内容未能加载。', "Couldn't load this."],
+  featureLoadRetry:     ['重新加载', 'Try again'],
 };
 
 export function t(key: string): string {
