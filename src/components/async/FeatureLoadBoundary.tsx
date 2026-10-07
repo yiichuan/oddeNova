@@ -1,5 +1,6 @@
 import { Component, Suspense, type ReactNode } from 'react';
 import { t } from '../../lib/i18n';
+import { FeatureLoadAttemptContext } from './feature-load-attempt';
 
 interface FeatureLoadBoundaryProps {
   /** Shown while the lazy child is downloading. Sized by the caller's layout. */
@@ -8,25 +9,23 @@ interface FeatureLoadBoundaryProps {
 }
 
 interface FeatureLoadBoundaryState {
-  /** Bumped on every retry; keys the child so React.lazy drops its cached rejection. */
-  attempt: number;
+  attempt: object | null;
+  hasError: boolean;
 }
 
 /**
- * The lazy shell's own failure line. A rejected `React.lazy` caches that
- * rejection forever — resetting an error boundary alone keeps rendering the
- * same failed component — so a retry bumps a key that re-creates the lazy
- * child, which re-runs the dynamic import.
+ * Retry clears the error and tells retryableLazy children to create fresh
+ * lazy types, since React.lazy caches rejected loads on the type itself.
  */
 export class FeatureLoadBoundary extends Component<FeatureLoadBoundaryProps, FeatureLoadBoundaryState> {
-  state: FeatureLoadBoundaryState = { attempt: 0 };
+  state: FeatureLoadBoundaryState = { attempt: null, hasError: false };
 
   static getDerivedStateFromError(): Partial<FeatureLoadBoundaryState> {
-    return { attempt: Number.NaN };
+    return { hasError: true };
   }
 
   render() {
-    if (Number.isNaN(this.state.attempt)) {
+    if (this.state.hasError) {
       return (
         <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
           <p className="text-sm text-text-secondary">{t('featureLoadFailed')}</p>
@@ -44,15 +43,14 @@ export class FeatureLoadBoundary extends Component<FeatureLoadBoundaryProps, Fea
     }
     return (
       <Suspense fallback={this.props.fallback}>
-        <span key={this.state.attempt} className="contents">
+        <FeatureLoadAttemptContext value={this.state.attempt}>
           {this.props.children}
-        </span>
+        </FeatureLoadAttemptContext>
       </Suspense>
     );
   }
 
   private readonly retry = () => {
-    this.setState((state) => ({ attempt: state.attempt + 1 }));
+    this.setState({ attempt: {}, hasError: false });
   };
 }
-

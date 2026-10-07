@@ -27,7 +27,7 @@ import { createAgentProgressHandler } from './lib/agent-progress-handler';
 import { isDemoMode, getActiveDemoSet, getDemoMoodInstruction } from './demo/demo-config';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm-loader';
-import { lazy } from 'react';
+import { retryableLazy } from './components/async/retryable-lazy';
 import { FeatureLoadBoundary } from './components/async/FeatureLoadBoundary';
 import { DownloadIcon, EllipsisIcon, SquareTerminalIcon, XIcon } from './components/icons';
 import { parseScore } from './agent/parser';
@@ -116,17 +116,15 @@ import { type Session } from './hooks/useSessions';
  */
 const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites']);
 
-//.lazy chunk boundaries. All lazy() calls live at module scope — creating one
-// inside render would start a fresh import every render. Each boundary maps
-// the module's own default export, so no component file changes shape.
-const LazyFeaturedPage = lazy(() => import('./components/featured/FeaturedPage'));
-const LazyFavoritesPage = lazy(() => import('./components/favorites/FavoritesPage'));
-const LazySettingsSidebar = lazy(() => import('./components/settings/SettingsSidebar'));
-const LazyModelSettingsPanel = lazy(() => import('./components/settings/ModelSettingsPanel'));
-const LazyAppearanceSettingsPanel = lazy(() => import('./components/settings/AppearanceSettingsPanel'));
-const LazyApiKeyModal = lazy(() => import('./components/overlays/ApiKeyModal'));
-const LazyAccountModal = lazy(() => import('./components/overlays/AccountModal'));
-const LazyFavoriteActionDialog = lazy(() => import('./components/overlays/FavoriteActionDialog'));
+// Stable shells keep chunks lazy and renew failed loads on a boundary retry.
+const LazyFeaturedPage = retryableLazy(() => import('./components/featured/FeaturedPage'));
+const LazyFavoritesPage = retryableLazy(() => import('./components/favorites/FavoritesPage'));
+const LazySettingsSidebar = retryableLazy(() => import('./components/settings/SettingsSidebar'));
+const LazyModelSettingsPanel = retryableLazy(() => import('./components/settings/ModelSettingsPanel'));
+const LazyAppearanceSettingsPanel = retryableLazy(() => import('./components/settings/AppearanceSettingsPanel'));
+const LazyApiKeyModal = retryableLazy(() => import('./components/overlays/ApiKeyModal'));
+const LazyAccountModal = retryableLazy(() => import('./components/overlays/AccountModal'));
+const LazyFavoriteActionDialog = retryableLazy(() => import('./components/overlays/FavoriteActionDialog'));
 
 /** Neutral block the lazy shells can suspend on; height set by the container. */
 function LazyOverlayFallback() {
