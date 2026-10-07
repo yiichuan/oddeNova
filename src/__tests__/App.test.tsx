@@ -800,7 +800,9 @@ describe('App session sync boundaries', () => {
      scheduler turn (a macrotask under real timers, one tick under fake) so
      the resolved module's retry actually renders. */
   async function awaitFavoritesShell(): Promise<void> {
-    for (let i = 0; i < 100; i++) {
+    // Coverage instruments this dynamic import while other test files run too;
+    // 100 scheduler turns can expire before the page module settles in CI.
+    for (let i = 0; i < 1_000; i++) {
       if (container.querySelector('[data-testid="favorites-page"]')) return;
       await act(async () => {
         if (vi.isFakeTimers()) {
