@@ -30,6 +30,7 @@ function stubColumnBox(width = 60, height = 900) {
 function renderPrimaryNav(
   selectedItem: React.ComponentProps<typeof PrimaryNav>['selectedItem'] = 'home',
   accountInitials: string | null = null,
+  props: Partial<React.ComponentProps<typeof PrimaryNav>> = {},
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -39,7 +40,7 @@ function renderPrimaryNav(
 
   act(() => {
     root.render(
-      <PrimaryNav selectedItem={selectedItem} onSelect={onSelect} accountInitials={accountInitials} />,
+      <PrimaryNav selectedItem={selectedItem} onSelect={onSelect} accountInitials={accountInitials} {...props} />,
     );
   });
 
@@ -155,6 +156,18 @@ describe('PrimaryNav', () => {
 
     act(() => more?.click());
     expect(more?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('opens and highlights Getting started while the exit hint is visible', async () => {
+    const { container } = renderPrimaryNav('home', null, { onboardingExitHintOpen: true, onOpenOnboarding: vi.fn() });
+    await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+    const more = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navMore')}"]`);
+    const gettingStarted = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navOnboarding')}"]`);
+
+    expect(more?.getAttribute('aria-expanded')).toBe('true');
+    expect(gettingStarted?.className).toContain('bg-surface-selected');
+    expect(gettingStarted?.className).toContain('text-text-primary');
+    expect(gettingStarted?.className).not.toContain('ring-brand-accent');
   });
 
   it('reaches the privacy policy from More as a document, not a workspace page', () => {

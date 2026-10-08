@@ -62,6 +62,7 @@ import { featuredPlayer, onboardingPlayer } from './services/featured-player';
 import { useOnboarding } from './onboarding/useOnboarding';
 import OnboardingTour, { type TourTarget } from './onboarding/OnboardingTour';
 import MobileOnboardingTour from './onboarding/MobileOnboardingTour';
+import OnboardingExitHint from './onboarding/OnboardingExitHint';
 import { advancesOnWindowClose, mobilePhaseOf, needsMobileRecovery } from './onboarding/mobile-tour-model';
 import type { OnboardingStep } from './onboarding/onboarding-state';
 import { visibleRectOf } from './onboarding/tour-geometry';
@@ -1459,6 +1460,16 @@ export default function App() {
     prepareForRename,
   });
 
+  /* A skipped first-run practice is disposable. Create the ordinary blank
+     conversation before removing it, so deleting the current row can never
+     fall back to one of the reader's older conversations. */
+  const discardOnboardingPractice = useCallback((id: string) => {
+    if (sessions.currentId !== id) return;
+    setCommitSuggestions(null);
+    sessions.newSession();
+    deleteSessionAction(id);
+  }, [deleteSessionAction, sessions]);
+
   const commitPendingDelete = useCallback(async (notice: FavoriteNotice | null): Promise<boolean> => {
     if (notice?.kind !== 'released' && notice?.kind !== 'deleted') return false;
     // Already written where it was asked for. See `settled`.
@@ -1757,6 +1768,7 @@ export default function App() {
     switchToSession: handleSwitchSession,
     leaveCurrentSession: leaveSessionForPractice,
     showCodeInEditor: applyImportedCode,
+    discardPractice: discardOnboardingPractice,
     startNewSession: handleNewSession,
     focusInput: focusChatInput,
     interruptOnHidden: isMobile,
@@ -2261,6 +2273,7 @@ export default function App() {
           >
             <button
               onClick={() => setNavDrawerOpen(true)}
+              data-onboarding-entry="more"
               className="w-9 h-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
               aria-label={t('navMore')}
               aria-expanded={navDrawerOpen}
@@ -2691,6 +2704,7 @@ export default function App() {
         featuredPieceOpen={featuredPieceOpen}
         accountInitials={accountInitials(auth.user)}
         onOpenOnboarding={handleOpenOnboarding}
+        onboardingExitHintOpen={onboarding.exitHintVisible && !isMobile}
       />
 
       <>
@@ -2965,6 +2979,11 @@ export default function App() {
       ) : (
         <OnboardingTour onboarding={onboarding} target={onboardingTarget} />
       )}
+      <OnboardingExitHint
+        open={onboarding.exitHintVisible}
+        mobile={isMobile}
+        onClose={onboarding.dismissExitHint}
+      />
     </>
   );
 }
