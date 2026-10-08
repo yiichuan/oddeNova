@@ -110,6 +110,7 @@ interface Harness {
   ownerKey: string;
   importSession: ReturnType<typeof vi.fn>;
   showCodeInEditor: ReturnType<typeof vi.fn>;
+  discardPractice: ReturnType<typeof vi.fn>;
   studio: ReturnType<typeof fakeStudio>;
   compare: ReturnType<typeof fakeComparePlayer>;
   rerender: () => void;
@@ -133,6 +134,7 @@ function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: 
       harness.rerender();
     }),
     showCodeInEditor: vi.fn(),
+    discardPractice: vi.fn(),
     compare: fakeComparePlayer(),
     rerender: () => root.render(<Probe />),
   } as Harness;
@@ -155,6 +157,7 @@ function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: 
       switchToSession: (id) => { harness.currentId = id; harness.rerender(); },
       leaveCurrentSession: async () => {},
       showCodeInEditor: harness.showCodeInEditor,
+      discardPractice: harness.discardPractice,
       startNewSession: () => {},
       focusInput: () => {},
       interruptOnHidden: options.interruptOnHidden,
@@ -485,14 +488,28 @@ describe('useOnboarding', () => {
     expect(h.get().view).toBe('hidden');
   });
 
-  it('skipping keeps the practice session and never invites again by itself', async () => {
+  it('skipping discards the practice and never invites again by itself', async () => {
     const h = await started();
+    const practiceId = h.get().progress.sessionId;
     await act(async () => { h.get().skip(); });
     expect(h.get().view).toBe('hidden');
-    expect(h.sessions).toHaveLength(1);
+    expect(h.get().exitHintVisible).toBe(true);
+    expect(h.discardPractice).toHaveBeenCalledWith(practiceId);
     const stored = JSON.parse(localStorage.getItem(progressKey('guest'))!);
     expect(stored.status).toBe('skipped');
     expect(mount({ sessions: h.sessions }).get().view).toBe('hidden');
+  });
+
+  it('keeps the exit hint transient and clears it when the guide is reopened', async () => {
+    const h = await started();
+    await act(async () => { h.get().skip(); });
+    expect(h.get().exitHintVisible).toBe(true);
+
+    await act(async () => { h.get().dismissExitHint(); });
+    expect(h.get().exitHintVisible).toBe(false);
+
+    await act(async () => { h.get().openFromMenu(); });
+    expect(h.get().exitHintVisible).toBe(false);
   });
 });
 

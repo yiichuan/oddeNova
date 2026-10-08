@@ -163,7 +163,10 @@ describe('MobileOnboardingTour stages', () => {
     const reading = fakeOnboarding({ step: 'read-reply', canNext: true, progress: { delivered: true, originalHeard: true } });
     tour.render(reading);
     expect(tour.container.textContent).toContain('5/7');
-    act(() => button(tour.container, t('onboardingMobileHearChange')).click());
+    const hearChange = button(tour.container, t('onboardingMobileHearChange'));
+    expect(hearChange.parentElement?.className).toContain('justify-end');
+    expect(hearChange.className).toContain('-mr-2');
+    act(() => hearChange.click());
     expect(reading.next).toHaveBeenCalledTimes(1);
 
     tour.render(fakeOnboarding({ step: 'listen-adapted', progress: { delivered: true } }));
@@ -177,6 +180,9 @@ describe('MobileOnboardingTour stages', () => {
       progress: { delivered: true, adaptedHeard: true },
     }));
     expect(tour.container.textContent).toContain(t('onboardingMobileHeardContinue'));
+    const heardContinue = button(tour.container, t('onboardingMobileHeardContinue'));
+    expect(heardContinue.parentElement?.className).toContain('justify-end');
+    expect(heardContinue.className).toContain('-mr-2');
   });
 
   it('offers retry when sounds fail', () => {
@@ -282,6 +288,9 @@ describe('MobileOnboardingTour closing panel', () => {
     const card = tour.container.querySelector<HTMLElement>('[role="dialog"]');
     expect(card?.className).toContain('max-w-[320px]');
     expect(card?.parentElement?.className).toContain('justify-center');
+    const actions = [...card!.querySelectorAll('button')].map((item) => item.textContent);
+    expect(actions).toEqual([t('onboardingLater'), t('onboardingStart')]);
+    expect(button(tour.container, t('onboardingStart')).className).toContain('-mr-2');
     act(() => button(tour.container, t('onboardingStart')).click());
     expect(onboarding.start).toHaveBeenCalledTimes(1);
   });
