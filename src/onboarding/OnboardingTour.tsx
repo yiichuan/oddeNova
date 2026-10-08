@@ -404,11 +404,6 @@ function Step({ onboarding, titleId }: { onboarding: Onboarding; titleId: string
         </>
       ) : (
         <Footer
-          left={
-            <button type="button" className={QUIET} onClick={onboarding.skip}>
-              {t('onboardingSkip')}
-            </button>
-          }
           right={
             <>
               <button type="button" className={SECONDARY} disabled={!onboarding.canPrev} onClick={onboarding.prev}>

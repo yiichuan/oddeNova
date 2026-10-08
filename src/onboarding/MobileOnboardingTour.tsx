@@ -499,8 +499,7 @@ export default function MobileOnboardingTour({
 }
 
 /**
- * "n/7" on its own line at the head of every guide card, 12px above the copy,
- * with the card's "exit guide" (`ExitGuide`) level with it at the top right.
+ * "n/7" on its own line at the head of every guide card, 12px above the copy.
  * A bottom row, where a card has one, stands 8px further off (`mt-2`): its
  * keys are 44px tall around a 20px line, so their labels already sit 12px
  * below whatever ends above them, and 20px sets the action apart.
@@ -559,24 +558,6 @@ function PhaseActionRow({ onboarding, phase }: { onboarding: Onboarding; phase: 
 }
 
 /**
- * Leaving the guide: "exit guide" in every guide card's top-right corner, on
- * the stage number's line. The cards stand their first line 20px from the top
- * (`pt-5`); the key is 44px tall, so 6px down centres its label on that
- * line's 16px box. The label keeps to the card's 20px inset from the right.
- */
-function ExitGuide({ onboarding }: { onboarding: Onboarding }) {
-  return (
-    <button
-      type="button"
-      className="absolute right-0 top-1.5 flex h-11 items-center rounded-region px-5 text-xs text-text-muted transition-colors hover:text-text-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none"
-      onClick={onboarding.skip}
-    >
-      {t('onboardingMobileExit')}
-    </button>
-  );
-}
-
-/**
  * The resume after the original was heard with the window already shut —
  * nothing on screen to point at, so a dialog like the close: the stage, one
  * sentence, and the way on as a full-width key.
@@ -584,7 +565,6 @@ function ExitGuide({ onboarding }: { onboarding: Onboarding }) {
 function OriginalHeard({ onboarding, labelId }: { onboarding: Onboarding; labelId: string }) {
   return (
     <>
-      <ExitGuide onboarding={onboarding} />
       <StageCounter stage={mobileStageOf('original-heard')} />
       <p id={labelId} className="leading-relaxed text-text-primary">{t(PHASE_COPY['original-heard'])}</p>
       <button type="button" className={`${BLOCK_PRIMARY} mt-5 w-full`} disabled={!onboarding.canNext} onClick={onboarding.next}>
@@ -664,7 +644,6 @@ function Anchored({
   const listening = phase === 'play-in-window' || phase === 'listen-adapted';
   return (
     <>
-      <ExitGuide onboarding={onboarding} />
       <StageCounter stage={stage} />
       <p className="leading-relaxed text-text-primary">{t(PHASE_COPY[phase])}</p>
       {/* The first sound of the practice, and over in 5 seconds: said before
@@ -681,7 +660,6 @@ function Anchored({
 function SendCard({ onboarding, lost, onRelocate }: { onboarding: Onboarding; lost: boolean; onRelocate: () => void }) {
   return (
     <>
-      <ExitGuide onboarding={onboarding} />
       <StageCounter stage={mobileStageOf('send')} />
       <p className="leading-relaxed text-text-primary">{t('onboardingMobileSend')}</p>
       <div role="status" aria-live="polite">

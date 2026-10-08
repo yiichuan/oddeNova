@@ -96,15 +96,8 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
-/**
- * A guide card's lines, top to bottom. The first child is always "exit guide",
- * in the card's top-right corner; the lines follow it.
- */
 function cardLines(card: HTMLElement | null): (string | null)[] {
-  const [exit, ...rest] = [...(card?.children ?? [])];
-  expect(exit?.textContent).toBe(t('onboardingMobileExit'));
-  expect(exit?.className).toContain('absolute right-0 top-1.5');
-  return rest.map((child) => child.textContent);
+  return [...(card?.children ?? [])].map((child) => child.textContent);
 }
 
 /** A laid-out element at a fixed spot — happy-dom lays nothing out itself. */
@@ -368,7 +361,7 @@ describe('MobileOnboardingTour layout', () => {
     expect(card?.style.top).toBe('644px');
     const lines = cardLines(card);
     expect(lines).toEqual(['2/7', t('onboardingMobilePlayOriginal'), t('onboardingMobileSoundHint'), '']);
-    expect(card?.children[4].getAttribute('role')).toBe('status');
+    expect(card?.children[3].getAttribute('role')).toBe('status');
   });
 
   it('hangs the first stage\'s card under the code window key, right edges together, with no accent ring', async () => {
@@ -504,6 +497,6 @@ describe('MobileOnboardingTour layout', () => {
     expect(tour.container.textContent).not.toContain(t('onboardingMobileRelocate'));
     await act(async () => { await vi.advanceTimersByTimeAsync(1_700); });
     expect(tour.container.textContent).toContain(t('onboardingMobileTargetLost'));
-    expect(button(tour.container, t('onboardingMobileExit'))).toBeTruthy();
+    expect(tour.container.textContent).not.toContain(t('onboardingMobileExit'));
   });
 });
