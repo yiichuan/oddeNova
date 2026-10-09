@@ -78,6 +78,90 @@ const headingToneClass: Record<MarkdownTone, string> = {
   muted: '',
 };
 
+const CODE_ONLY_SEGMENT_ID = 'conversation-code-only';
+
+function ConversationCodeBar({
+  messageId,
+  code,
+  expanded,
+  onToggle,
+  playing,
+  onPlay,
+  onStop,
+  isMobile,
+  className = 'mt-4 -ml-1',
+}: {
+  messageId: string;
+  code: string;
+  expanded: boolean;
+  onToggle: () => void;
+  playing: boolean;
+  onPlay?: () => void;
+  onStop?: () => void;
+  isMobile: boolean;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const lineCount = code.split('\n').length;
+
+  return (
+    <div
+      data-code-bar={messageId}
+      data-code-bar-sounding={playing || undefined}
+      className={`conversation-code-bar ${className} rounded-md overflow-hidden animate-fade-in${
+        playing ? ' conversation-code-bar--sounding' : ''
+      }`}
+    >
+      <div className="w-full flex items-stretch gap-0.5 text-[11px] text-diff-accent/70">
+        <div className="conversation-code-bar-part flex min-w-0 flex-1 items-stretch bg-bg-primary/60">
+          <button
+            type="button"
+            data-code-bar-toggle={messageId}
+            aria-expanded={expanded}
+            onClick={onToggle}
+            className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
+          >
+            <span>{t('strudelCode')}</span>
+            <span>· {lineCount} {t('lines')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(code).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              });
+            }}
+            className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+            title={t('copyCode')}
+            aria-label={t('copyCode')}
+          >
+            {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+          </button>
+        </div>
+        {onPlay && (
+          <button
+            type="button"
+            data-code-bar-play={messageId}
+            aria-label={playing ? t('stop') : t('play')}
+            onClick={playing ? onStop : onPlay}
+            className="conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+          >
+            {playing
+              ? <StopIcon size={12} />
+              : (isMobile ? <PlayIcon size={13} /> : <PlayOutlineIcon size={13} />)}
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <pre className="p-2 bg-bg-primary/60 text-[11px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap animate-fade-in">
+          {code}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 // Thinking duration: "45s" under a minute, "2m 5s" above; whole minutes drop
 // the seconds ("5m" not "5m 0s").
 // eslint-disable-next-line react-refresh/only-export-components -- archive stream shares this formatter.
@@ -671,7 +755,6 @@ export default function ConversationView({
   const [expandedCode, setExpandedCode] = useState<Set<string>>(new Set());
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set());
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   // User-collapsed state of the live streaming reasoning window.
   const [reasoningCollapsed, setReasoningCollapsed] = useState(false);
   // Whether the stream has written past the bottom of its window — what puts
@@ -743,6 +826,9 @@ export default function ConversationView({
   // scrollback entirely rather than sitting inline as a normal reply.
   const greetingMsg = messages.find((m) => m.isGreeting);
   const hasConversationMessages = messages.some((m) => !m.isGreeting);
+  const standaloneCode = isMobile && !hasConversationMessages && !isLoading && draftCode.trim()
+    ? draftCode
+    : null;
   const revisionsById = useMemo(
     () => new Map((revisions ?? []).map((revision) => [revision.id, revision])),
     [revisions],
@@ -806,11 +892,21 @@ export default function ConversationView({
       widgets.push({ id: message.id, code: revision ? revision.afterCode : message.code });
     }
     if (draftRevision) widgets.push({ id: DRAFT_SEGMENT_ID, code: draftRevision.afterCode });
+    if (standaloneCode) widgets.push({ id: CODE_ONLY_SEGMENT_ID, code: standaloneCode });
     for (let index = widgets.length - 1; index >= 0; index--) {
       if (widgets[index].code === playingCode) return widgets[index].id;
     }
     return null;
-  }, [isPlaying, pressedSegmentId, pressedSegmentCode, playingCode, messages, revisionsById, draftRevision]);
+  }, [
+    isPlaying,
+    pressedSegmentId,
+    pressedSegmentCode,
+    playingCode,
+    messages,
+    revisionsById,
+    draftRevision,
+    standaloneCode,
+  ]);
 
   // Detect manual user scroll: stop auto-following when more than 80px from
   // the bottom, resume when scrolled back. Scroll events produced by our own
@@ -1451,7 +1547,7 @@ export default function ConversationView({
         }`}
         style={{ scrollbarGutter: 'stable' }}
       >
-      {greetingMsg && !hasConversationMessages && !isLoading && (
+      {greetingMsg && !hasConversationMessages && !isLoading && !standaloneCode && (
         // The phone's guide centres its invitation on this frame, so the card
         // covers the greeting rather than leaving its ends showing.
         <div data-onboarding-target="greeting" className="absolute inset-0 flex items-center justify-center px-8">
@@ -1471,6 +1567,24 @@ export default function ConversationView({
           >
             {greetingMsg.content}
           </p>
+        </div>
+      )}
+
+      {standaloneCode && (
+        <div data-testid="conversation-code-only-widget" className="flex justify-start items-start animate-fade-in">
+          <ConversationCodeBar
+            messageId={CODE_ONLY_SEGMENT_ID}
+            code={standaloneCode}
+            expanded={expandedCode.has(CODE_ONLY_SEGMENT_ID)}
+            onToggle={() => toggleCode(CODE_ONLY_SEGMENT_ID)}
+            playing={soundingSegmentId === CODE_ONLY_SEGMENT_ID}
+            onPlay={onPlaySegment
+              ? () => onPlaySegment(CODE_ONLY_SEGMENT_ID, standaloneCode)
+              : undefined}
+            onStop={onStopCode}
+            isMobile={isMobile}
+            className="-ml-1"
+          />
         </div>
       )}
 
@@ -1610,66 +1724,20 @@ export default function ConversationView({
                   onStop={onStopCode}
                 />
               )}
-              {msg.code && (!msg.revisionId || !revisionsById.has(msg.revisionId)) && (() => {
-                const isExpanded = expandedCode.has(msg.id);
-                const code = msg.code;
-                const lineCount = code.split('\n').length;
-                // Hoisted out of the play key below: the firmer edge is worn by
-                // the whole widget, not just the key that started it.
-                const sounding = soundingSegmentId === msg.id;
-                return (
-                  <div
-                    data-code-bar-sounding={sounding || undefined}
-                    className={`conversation-code-bar mt-4 -ml-1 rounded-md overflow-hidden animate-fade-in${
-                      sounding ? ' conversation-code-bar--sounding' : ''
-                    }`}
-                  >
-                    {/* The same split as the widget beside it (see
-                        CodeDiffView): the fill sits on the keys, and the seam
-                        between the reading half and the play key is the one
-                        place the box shows through. */}
-                    <div className="w-full flex items-stretch gap-0.5 text-[11px] text-diff-accent/70">
-                      <div className="conversation-code-bar-part flex min-w-0 flex-1 items-stretch bg-bg-primary/60">
-                        <button
-                          onClick={() => toggleCode(msg.id)}
-                          className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
-                        >
-                          <span>{t('strudelCode')}</span>
-                          <span>· {lineCount} {t('lines')}</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(code).then(() => {
-                              setCopiedId(msg.id);
-                              setTimeout(() => setCopiedId(null), 2000);
-                            });
-                          }}
-                          className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
-                          title={t('copyCode')}
-                        >
-                          {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-                        </button>
-                      </div>
-                      {onPlaySegment && (() => (
-                          <button
-                            type="button"
-                            data-code-bar-play={msg.id}
-                            aria-label={sounding ? t('stop') : t('play')}
-                            onClick={() => (sounding ? onStopCode?.() : onPlaySegment(msg.id, code))}
-                            className="conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
-                          >
-                            {sounding ? <StopIcon size={12} /> : (isMobile ? <PlayIcon size={13} /> : <PlayOutlineIcon size={13} />)}
-                          </button>
-                      ))()}
-                    </div>
-                    {isExpanded && (
-                      <pre className="p-2 bg-bg-primary/60 text-[11px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap animate-fade-in">
-                        {code}
-                      </pre>
-                    )}
-                  </div>
-                );
-              })()}
+              {msg.code && (!msg.revisionId || !revisionsById.has(msg.revisionId)) && (
+                <ConversationCodeBar
+                  messageId={msg.id}
+                  code={msg.code}
+                  expanded={expandedCode.has(msg.id)}
+                  onToggle={() => toggleCode(msg.id)}
+                  playing={soundingSegmentId === msg.id}
+                  onPlay={onPlaySegment
+                    ? () => onPlaySegment(msg.id, msg.code!)
+                    : undefined}
+                  onStop={onStopCode}
+                  isMobile={isMobile}
+                />
+              )}
 
               {/* Action buttons — bottom-left, always visible. Hidden on
                   intermediate narration (shown once per turn, on the final
