@@ -389,6 +389,7 @@ const S: Record<string, readonly [string, string]> = {
 
   // ConversationView
   strudelCode:   ['Strudel 代码', 'Strudel code'],
+  viewCode:      ['查看代码', 'View code'],
   lines:         ['行', 'lines'],
   branchFrom:    ['从此处创建分支对话', 'Branch conversation from here'],
   thinking:      ['思考中...', 'Thinking...'],

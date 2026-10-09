@@ -136,7 +136,7 @@ function ConversationCodeBar({
                 className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
               />
             )}
-            <span>{t('strudelCode')}</span>
+            <span>{t(neutral ? 'viewCode' : 'strudelCode')}</span>
             <span>· {lineCount} {t('lines')}</span>
           </button>
           <button
@@ -1589,20 +1589,22 @@ export default function ConversationView({
 
       {standaloneCode && (
         <div data-testid="conversation-code-only-widget" className="flex justify-start items-start animate-fade-in">
-          <ConversationCodeBar
-            messageId={CODE_ONLY_SEGMENT_ID}
-            code={standaloneCode}
-            expanded={expandedCode.has(CODE_ONLY_SEGMENT_ID)}
-            onToggle={() => toggleCode(CODE_ONLY_SEGMENT_ID)}
-            playing={soundingSegmentId === CODE_ONLY_SEGMENT_ID}
-            onPlay={onPlaySegment
-              ? () => onPlaySegment(CODE_ONLY_SEGMENT_ID, standaloneCode)
-              : undefined}
-            onStop={onStopCode}
-            isMobile={isMobile}
-            appearance="neutral"
-            className="-ml-1"
-          />
+          <div className="relative w-full rounded-xl px-2 pb-2">
+            <ConversationCodeBar
+              messageId={CODE_ONLY_SEGMENT_ID}
+              code={standaloneCode}
+              expanded={expandedCode.has(CODE_ONLY_SEGMENT_ID)}
+              onToggle={() => toggleCode(CODE_ONLY_SEGMENT_ID)}
+              playing={soundingSegmentId === CODE_ONLY_SEGMENT_ID}
+              onPlay={onPlaySegment
+                ? () => onPlaySegment(CODE_ONLY_SEGMENT_ID, standaloneCode)
+                : undefined}
+              onStop={onStopCode}
+              isMobile={isMobile}
+              appearance="neutral"
+              className="-ml-1"
+            />
+          </div>
         </div>
       )}
 
