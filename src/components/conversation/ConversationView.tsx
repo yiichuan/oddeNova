@@ -89,6 +89,7 @@ function ConversationCodeBar({
   onPlay,
   onStop,
   isMobile,
+  appearance = 'accent',
   className = 'mt-4 -ml-1',
 }: {
   messageId: string;
@@ -99,28 +100,42 @@ function ConversationCodeBar({
   onPlay?: () => void;
   onStop?: () => void;
   isMobile: boolean;
+  appearance?: 'accent' | 'neutral';
   className?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const lineCount = code.split('\n').length;
+  const neutral = appearance === 'neutral';
+  const surfaceClass = neutral ? 'bg-settings-surface' : 'bg-bg-primary/60';
+  const textClass = neutral ? 'text-text-primary' : 'text-diff-accent/70';
+  const hoverClass = neutral
+    ? 'hover:bg-surface-hover hover:text-text-primary'
+    : 'hover:text-diff-accent/90 hover:bg-bg-primary/80';
 
   return (
     <div
       data-code-bar={messageId}
+      data-code-bar-appearance={appearance}
       data-code-bar-sounding={playing || undefined}
       className={`conversation-code-bar ${className} rounded-md overflow-hidden animate-fade-in${
         playing ? ' conversation-code-bar--sounding' : ''
       }`}
     >
-      <div className="w-full flex items-stretch gap-0.5 text-[11px] text-diff-accent/70">
-        <div className="conversation-code-bar-part flex min-w-0 flex-1 items-stretch bg-bg-primary/60">
+      <div className={`w-full flex items-stretch gap-0.5 text-[11px] ${textClass}`}>
+        <div className={`conversation-code-bar-part flex min-w-0 flex-1 items-stretch ${surfaceClass}`}>
           <button
             type="button"
             data-code-bar-toggle={messageId}
             aria-expanded={expanded}
             onClick={onToggle}
-            className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
+            className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 transition-colors text-left ${hoverClass}`}
           >
+            {neutral && (
+              <ChevronRightIcon
+                size={14}
+                className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
+              />
+            )}
             <span>{t('strudelCode')}</span>
             <span>· {lineCount} {t('lines')}</span>
           </button>
@@ -132,7 +147,7 @@ function ConversationCodeBar({
                 setTimeout(() => setCopied(false), 2000);
               });
             }}
-            className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+            className={`px-2 py-1.5 transition-colors ${hoverClass}`}
             title={t('copyCode')}
             aria-label={t('copyCode')}
           >
@@ -145,16 +160,18 @@ function ConversationCodeBar({
             data-code-bar-play={messageId}
             aria-label={playing ? t('stop') : t('play')}
             onClick={playing ? onStop : onPlay}
-            className="conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+            className={`conversation-code-bar-part grid w-7 shrink-0 place-items-center ${surfaceClass} transition-colors ${hoverClass}`}
           >
             {playing
               ? <StopIcon size={12} />
-              : (isMobile ? <PlayIcon size={13} /> : <PlayOutlineIcon size={13} />)}
+              : (neutral || !isMobile ? <PlayOutlineIcon size={13} /> : <PlayIcon size={13} />)}
           </button>
         )}
       </div>
       {expanded && (
-        <pre className="p-2 bg-bg-primary/60 text-[11px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap animate-fade-in">
+        <pre className={`p-2 text-[11px] text-text-secondary font-mono overflow-x-auto whitespace-pre-wrap animate-fade-in ${
+          neutral ? 'border-t border-border bg-auth-field' : 'bg-bg-primary/60'
+        }`}>
           {code}
         </pre>
       )}
@@ -1583,6 +1600,7 @@ export default function ConversationView({
               : undefined}
             onStop={onStopCode}
             isMobile={isMobile}
+            appearance="neutral"
             className="-ml-1"
           />
         </div>
