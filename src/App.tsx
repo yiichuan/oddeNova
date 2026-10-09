@@ -435,16 +435,23 @@ export default function App() {
     }
   }, [sessions]);
 
-  /* Leaving the code window puts the transport down. It is the only place on a
-     phone with a play key on it — the bottom bar carries the input and nothing
-     else — so a piece left sounding behind a closed window is a piece you can
-     no longer stop, which is the same reason walking off the studio's page
-     stops it on desktop. See `handlePrimaryNavSelect`. */
-  const closeCodeSheet = useCallback(() => {
+  const finishClosingCodeSheet = useCallback(() => {
     setCodeSheetOpen(false);
-    strudel.stop();
     onCodeSheetClosedRef.current();
-  }, [setCodeSheetOpen, strudel]);
+  }, [setCodeSheetOpen]);
+
+  /* The explicit close key puts the transport down with the window. Tapping
+     the surrounding page is a lighter dismissal: it returns to the reading
+     while leaving the take sounding, where its matching conversation widget
+     remains available as the transport. */
+  const closeCodeSheet = useCallback(() => {
+    finishClosingCodeSheet();
+    strudel.stop();
+  }, [finishClosingCodeSheet, strudel]);
+
+  const dismissCodeSheet = useCallback(() => {
+    finishClosingCodeSheet();
+  }, [finishClosingCodeSheet]);
 
   /* The code window's export popover. Driven from here rather than from
      CodePanel because the two controls it belongs with — download and share —
@@ -2438,9 +2445,10 @@ export default function App() {
           inert={!codeSheetOpen}
         >
           <div
+            data-testid="mobile-code-sheet-scrim"
             className="code-window-scrim absolute inset-0 backdrop-blur-[6px] transition-opacity duration-[240ms] ease-out motion-reduce:transition-none"
             style={{ opacity: codeSheetOpen ? 1 : 0 }}
-            onClick={closeCodeSheet}
+            onClick={dismissCodeSheet}
           />
           <div
             role="dialog"
@@ -2473,8 +2481,12 @@ export default function App() {
                 two are different kinds of act — one works on the piece, the
                 other leaves — and putting them at opposite ends means a thumb
                 reaching for one is nowhere near the other. */}
-            <div className="absolute -top-11 left-0 right-0 flex items-center justify-between">
-              <div className="flex items-center gap-1">
+            <div
+              data-testid="mobile-code-sheet-top-gap"
+              className="absolute -top-11 left-0 right-0 flex items-center justify-between"
+              onClick={dismissCodeSheet}
+            >
+              <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
                 <button
                   type="button"
                   onClick={() => mobileExport.setExportOpen((open) => !open)}
@@ -2496,12 +2508,14 @@ export default function App() {
                   buttonClassName="code-window-action flex h-9 w-9 items-center justify-center"
                 />
               </div>
-              {/* The backdrop still closes the window; this is the same act
-                  given a target, for a reach that does not want to find the
-                  one strip of page the window is not covering. */}
+              {/* Unlike the backdrop's light dismissal, this explicit close
+                  key also stops the take that belongs to the window. */}
               <button
                 type="button"
-                onClick={closeCodeSheet}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeCodeSheet();
+                }}
                 data-onboarding-target="code-close"
                 className="code-window-action -m-1 flex h-11 w-11 items-center justify-center"
                 aria-label={t('close')}
