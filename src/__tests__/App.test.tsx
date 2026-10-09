@@ -2103,6 +2103,28 @@ describe('App session sync boundaries', () => {
     expect(key()?.getAttribute('aria-label')).toBe(t('expandCode'));
   });
 
+  it('stops playback from the mobile code window close key but not from its backdrop', async () => {
+    mocks.isMobile = true;
+    mocks.strudel.isPlaying = true;
+    await renderApp();
+
+    const sheet = container.querySelector<HTMLElement>('[data-testid="mobile-code-sheet"]')!;
+    const backdrop = sheet.querySelector<HTMLElement>('[data-testid="mobile-code-sheet-scrim"]')!;
+    const topGap = sheet.querySelector<HTMLElement>('[data-testid="mobile-code-sheet-top-gap"]')!;
+    const close = sheet.querySelector<HTMLButtonElement>(`button[aria-label="${t('close')}"]`)!;
+
+    mocks.strudel.stop.mockClear();
+    act(() => backdrop.click());
+    expect(mocks.strudel.stop).not.toHaveBeenCalled();
+
+    act(() => topGap.click());
+    expect(mocks.strudel.stop).not.toHaveBeenCalled();
+
+    act(() => close.click());
+    expect(mocks.strudel.stop).toHaveBeenCalledTimes(1);
+    mocks.strudel.isPlaying = false;
+  });
+
   it('persists and flushes the outgoing code when creating a new session', async () => {
     mocks.isMobile = false;
     await renderApp();
