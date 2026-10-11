@@ -134,10 +134,10 @@ function defaultEditorTheme(): EditorThemeId {
 
 const FONT_MAP: Record<string, string> = {
   monospace:
-    "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
-  "Fira Code": "'Fira Code', monospace",
-  "JetBrains Mono": "'JetBrains Mono', monospace",
-  "Hack": "'Hack', monospace",
+    "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', monospace",
+  "Fira Code": "'Fira Code', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', monospace",
+  "JetBrains Mono": "'JetBrains Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', monospace",
+  "Hack": "'Hack', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', monospace",
 };
 
 export function getFontFamily(): string | null {
