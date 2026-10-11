@@ -1930,6 +1930,10 @@ export default function App() {
         return {
           key: `reply:${onboardingReplyId}`,
           resolve: () => visibleRectOf(selector),
+          // Keep the card continuous with the send step. Returning to the
+          // fixed desktop width here can make it choose the opposite side of
+          // the reply as well as visibly growing between the two steps.
+          resolveCardWidth: () => visibleRectOf('[data-onboarding-target="composer"]')?.width ?? null,
           interactive: false,
           reveal: () => document.querySelector(selector)?.scrollIntoView({ block: 'nearest' }),
         };
@@ -2993,11 +2997,13 @@ export default function App() {
       ) : (
         <OnboardingTour onboarding={onboarding} target={onboardingTarget} />
       )}
-      <OnboardingExitHint
-        open={onboarding.exitHintVisible}
-        mobile={isMobile}
-        onClose={onboarding.dismissExitHint}
-      />
+      {onboarding.exitHintVisible && (
+        <OnboardingExitHint
+          open
+          mobile={isMobile}
+          onClose={onboarding.dismissExitHint}
+        />
+      )}
     </>
   );
 }

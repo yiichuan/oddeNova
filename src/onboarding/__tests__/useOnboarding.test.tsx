@@ -207,6 +207,32 @@ describe('useOnboarding', () => {
     expect(mount({ eligible: false }).get().view).toBe('hidden');
   });
 
+  it('settles "later" at the invitation, points out the menu entry, and never auto-invites again', async () => {
+    const h = mount();
+
+    await act(async () => { h.get().postpone(); });
+
+    expect(h.get().view).toBe('hidden');
+    expect(h.get().exitHintVisible).toBe(true);
+    expect(h.discardPractice).not.toHaveBeenCalled();
+    const stored = JSON.parse(localStorage.getItem(progressKey('guest'))!);
+    expect(stored.status).toBe('skipped');
+    expect(mount().get().view).toBe('hidden');
+  });
+
+  it('does not point out the menu entry when "later" is chosen from a manually opened invitation', async () => {
+    const h = mount({ eligible: false });
+    await act(async () => { h.get().openFromMenu(); });
+    expect(h.get().view).toBe('invite');
+
+    await act(async () => { h.get().postpone(); });
+
+    expect(h.get().view).toBe('hidden');
+    expect(h.get().exitHintVisible).toBe(false);
+    const stored = JSON.parse(localStorage.getItem(progressKey('guest'))!);
+    expect(stored.status).toBe('skipped');
+  });
+
   it('makes exactly one practice session however often start is pressed', async () => {
     const h = mount();
     await act(async () => {
