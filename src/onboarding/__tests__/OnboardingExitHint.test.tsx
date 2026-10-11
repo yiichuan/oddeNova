@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../../lib/i18n';
 import OnboardingExitHint from '../OnboardingExitHint';
 
@@ -9,9 +9,12 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const roots: Root[] = [];
 
+beforeEach(() => vi.useFakeTimers());
+
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   document.body.innerHTML = '';
+  vi.useRealTimers();
 });
 
 function renderHint(mobile: boolean) {
@@ -25,7 +28,7 @@ function renderHint(mobile: boolean) {
 }
 
 describe('OnboardingExitHint', () => {
-  it('explains the desktop More path and closes from its primary action', () => {
+  it('waits for the desktop menu to settle, explains the More path, and closes', async () => {
     const entry = document.createElement('button');
     entry.dataset.onboardingEntry = 'onboarding';
     Object.defineProperty(entry, 'getBoundingClientRect', {
@@ -33,6 +36,9 @@ describe('OnboardingExitHint', () => {
     });
     document.body.appendChild(entry);
     const { container, onClose } = renderHint(false);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
 
     expect(container.textContent).toContain(t('onboardingExitHintDesktopBody'));
     expect(container.textContent).toContain(t('navMore'));

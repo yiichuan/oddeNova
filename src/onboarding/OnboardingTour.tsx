@@ -34,6 +34,8 @@ export interface TourTarget {
   placement?: CardPlacement;
   /** Make the card exactly as wide as the hole, so the two read as one column. */
   matchWidth?: boolean;
+  /** Use another stable control as the card's width while spotlighting this target. */
+  resolveCardWidth?: () => number | null;
 }
 
 interface OnboardingTourProps {
@@ -126,7 +128,10 @@ export default function OnboardingTour({ onboarding, target }: OnboardingTourPro
 
   const onStep = view === 'step';
   const shownHole = onStep ? hole : null;
-  const cardWidth = target?.matchWidth && shownHole ? shownHole.width : CARD_WIDTH;
+  const resolvedCardWidth = target?.resolveCardWidth?.();
+  const cardWidth = target?.matchWidth && shownHole
+    ? shownHole.width
+    : resolvedCardWidth ?? CARD_WIDTH;
   const position = placeCard(shownHole, { width: cardWidth, height: cardSize.height }, viewport, {
     placement: target?.placement,
   });
@@ -160,8 +165,8 @@ export default function OnboardingTour({ onboarding, target }: OnboardingTourPro
         tabIndex={-1}
         // Only the invitation floats as a dialog; the steps sit flat beside
         // what they point at.
-        className={`pointer-events-auto absolute flex flex-col rounded-region border border-border bg-conversation-surface px-5 pb-4 pt-4 text-sm text-text-secondary outline-none transition-[left,top] duration-200 ease-out motion-reduce:transition-none${
-          onStep ? '' : ' shadow-dialog-overlay'
+        className={`pointer-events-auto absolute flex flex-col rounded-region border border-border bg-conversation-surface px-5 pb-4 pt-4 text-sm text-text-secondary outline-none${
+          onStep ? ' transition-[left,top] duration-200 ease-out motion-reduce:transition-none' : ' shadow-dialog-overlay'
         }`}
         style={{ left: position.left, top: position.top, width: cardWidth }}
       >

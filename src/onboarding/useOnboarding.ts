@@ -89,11 +89,9 @@ const IDLE_COMPARE: CompareState = { version: null, phase: 'idle', progress: 0, 
 
 /** The preset loads briefly and honestly — no imitation of a long generation. */
 const PRESET_DELAY_MS = 1200;
-/** "Later" asks again the next day, not the next page load. */
-const POSTPONE_MS = 24 * 60 * 60 * 1000;
 const PREPARE_TIMEOUT_MS = 20_000;
 
-type Panel = 'auto' | 'dismissed' | 'invite' | 'resume' | 'cannot-resume' | 'step';
+type Panel = 'auto' | 'dismissed' | 'invite' | 'manual-invite' | 'resume' | 'cannot-resume' | 'step';
 
 export interface UseOnboardingOptions {
   ownerKey: string;
@@ -304,9 +302,10 @@ export function useOnboarding(options: UseOnboardingOptions) {
       case 'dismissed':
         return 'hidden';
       case 'invite':
+      case 'manual-invite':
       case 'cannot-resume':
       case 'resume':
-        return panel;
+        return panel === 'manual-invite' ? 'invite' : panel;
       case 'step':
         if (progress.status !== 'active') return 'hidden';
         return isPracticeCurrent ? 'step' : 'resume';
@@ -624,9 +623,15 @@ export function useOnboarding(options: UseOnboardingOptions) {
   }, [dispatch, forgetListen, setPanel]);
 
   const postpone = useCallback(() => {
-    dispatch({ type: 'postpone', until: Date.now() + POSTPONE_MS });
+    // Declining the initial invitation is a settled answer: do not interrupt
+    // this reader again on a later visit. Point out the permanent menu entry
+    // once, so they still know where to start the guide on their own terms.
+    dispatch({ type: 'skip' });
     setPanel('dismissed');
-  }, [dispatch, setPanel]);
+    // The menu entry is already in front of someone who opened the guide from
+    // there. Only an automatic first invitation needs to teach that path.
+    setExitHintVisible(panel !== 'manual-invite');
+  }, [dispatch, panel, setPanel]);
 
   /** "Later" on a practice under way: out of the way for now, offered again next visit. */
   const dismiss = useCallback(() => setPanel('dismissed'), [setPanel]);
@@ -661,7 +666,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
   /** "More → Getting started": resume a practice under way, or offer a new one. */
   const openFromMenu = useCallback(() => {
     setExitHintVisible(false);
-    setPanel(progressRef.current.status === 'active' ? 'resume' : 'invite');
+    setPanel(progressRef.current.status === 'active' ? 'resume' : 'manual-invite');
   }, [setPanel]);
 
   // ── Moving through the tour ─────────────────────────────────────────────

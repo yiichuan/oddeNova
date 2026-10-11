@@ -15,14 +15,14 @@ interface Position {
 }
 
 const CARD_WIDTH = 336;
-const DESKTOP_ENTRY = '[data-onboarding-entry="more"]';
 const DESKTOP_HIGHLIGHT = '[data-onboarding-entry="onboarding"]';
+const MENU_OPEN_TRANSITION_MS = 200;
 
 function desktopPosition(): Position | null {
-  // Once the More popover has opened, its highlighted row is the visual
-  // anchor. Falling back to More keeps the first paint stable while Popover
-  // API promotion catches up.
-  const target = visibleRectOf(DESKTOP_HIGHLIGHT) ?? visibleRectOf(DESKTOP_ENTRY);
+  // Wait for the highlighted menu row itself. Using the More button as an
+  // interim anchor makes the card visibly travel vertically once the popover
+  // reaches the top layer.
+  const target = visibleRectOf(DESKTOP_HIGHLIGHT);
   if (!target) return null;
   const margin = 16;
   const height = 190;
@@ -62,21 +62,19 @@ export default function OnboardingExitHint({ open, mobile, onClose }: Onboarding
   useLayoutEffect(() => {
     if (!open || mobile) return;
     let frame = 0;
-    let last: Position | null = null;
     const update = () => {
-      // The More menu is promoted into the popover top layer after mount.
-      // Follow the selected row's painted rounded rectangle rather than
-      // keeping the More button's earlier fallback coordinate.
       const next = desktopPosition();
-      if (!last || !next || last.left !== next.left || last.top !== next.top) {
-        last = next;
-        setPosition(next);
-      }
-      frame = requestAnimationFrame(update);
+      if (next) setPosition(next);
     };
-    update();
+    // The menu itself opens with a 200 ms translateY transition. Measuring
+    // during that transition makes the reminder ride upward with it. Wait for
+    // the menu to settle, then paint once at the final target position.
+    const timer = window.setTimeout(() => {
+      frame = requestAnimationFrame(update);
+    }, MENU_OPEN_TRANSITION_MS);
     window.addEventListener('resize', update);
     return () => {
+      window.clearTimeout(timer);
       cancelAnimationFrame(frame);
       window.removeEventListener('resize', update);
     };
@@ -93,6 +91,11 @@ export default function OnboardingExitHint({ open, mobile, onClose }: Onboarding
   }, [open, onClose]);
 
   if (!open) return null;
+
+  // On desktop the menu is promoted into the popover top layer after the
+  // reminder is requested. Do not paint an interim centred card: appear once,
+  // directly beside the final highlighted entry.
+  if (!mobile && !position) return null;
 
   const anchored = !mobile && position;
   const dismissClass = mobile
