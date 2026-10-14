@@ -26,7 +26,11 @@ describe('share receipt', () => {
     expect(wrapReceiptTitle('短标题', measure)).toEqual(['短标题']);
     expect(wrapReceiptTitle('hello\nworld', measure)).toEqual(['hello world']);
   });
-  it('renders a 384-dot receipt whose printed raster decodes to the same link', async () => {
+  it.each([
+    ['短标题', undefined, 1],
+    ['中文标题'.repeat(15), '扫码听听这段音乐', 2],
+    ['My song', 'Scan to hear this music', 1],
+  ] as const)('renders a decodable 384-dot receipt for %s', async (title, instruction, lineCount) => {
     let width = 0;
     let height = 0;
     let pixels = new Uint8ClampedArray();
@@ -60,16 +64,18 @@ describe('share receipt', () => {
     });
     try {
       const url = 'https://www.oddenova.com/s/printed123';
-      const { raster, preview } = await renderShareReceipt(url, '中文标题'.repeat(15));
+      const { raster, preview } = await renderShareReceipt(url, title, instruction);
       expect(width).toBe(384);
       expect(raster.length).toBe(48 * height);
       expect(preview).toContain('data:image/png');
-      expect(fillText).toHaveBeenCalledTimes(2);
-      expect(fillText.mock.calls[1][0]).toMatch(/…$/);
-      const logoTop = 104 + createShareQr(url).size;
+      expect(fillText).toHaveBeenCalledTimes(lineCount + 1);
+      if (lineCount === 2) expect(fillText.mock.calls[1][0]).toMatch(/…$/);
+      expect(fillText.mock.calls.at(-1)?.[0]).toBe(instruction ?? '扫码听听这段音乐');
+      expect(fillText.mock.calls[0]).toEqual([expect.any(String), 192, 48]);
+      const logoTop = 48 + lineCount * 30 + 16 + createShareQr(url).size + 16 + 24 + 16;
       expect(drawImage).toHaveBeenCalledWith(expect.objectContaining({ src: '/logo/logo-oddenova.svg' }), 96, logoTop, 192, 32);
       expect(ctx.filter).toBe('brightness(0)');
-      expect(height - logoTop - 32).toBe(80);
+      expect(height - logoTop - 32).toBe(48);
       const decoded = new Uint8ClampedArray(width * height * 4);
       for (let p = 0; p < width * height; p++) {
         const value = raster[p >>> 3] & (0x80 >>> (p & 7)) ? 0 : 255;

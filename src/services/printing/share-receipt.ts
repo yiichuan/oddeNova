@@ -40,7 +40,7 @@ export function wrapReceiptTitle(title: string, measure: (text: string) => numbe
   return lines;
 }
 
-export async function renderShareReceipt(url: string, title: string): Promise<{ preview: string; raster: Uint8Array }> {
+export async function renderShareReceipt(url: string, title: string, instruction = '扫码听听这段音乐'): Promise<{ preview: string; raster: Uint8Array }> {
   const qr = createShareQr(url);
   await document.fonts?.ready;
   const logo = new Image();
@@ -48,26 +48,33 @@ export async function renderShareReceipt(url: string, title: string): Promise<{ 
   await logo.decode();
   const logoWidth = 192;
   const logoHeight = Math.round(logoWidth * logo.naturalHeight / logo.naturalWidth);
-  const logoTop = 104 + qr.size;
   const canvas = document.createElement('canvas');
   canvas.width = P1_WIDTH;
-  canvas.height = logoTop + logoHeight + 80;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas unavailable');
+  ctx.font = '22px sans-serif';
+  const lines = wrapReceiptTitle(title, text => ctx.measureText(text).width);
+  const edgePadding = 48;
+  const qrTop = edgePadding + lines.length * 30 + 16;
+  const instructionTop = qrTop + qr.size + 16;
+  const logoTop = instructionTop + 24 + 16;
+  canvas.height = logoTop + logoHeight + edgePadding;
+  // Resizing a canvas resets its drawing state.
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#000';
   ctx.font = '22px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  const lines = wrapReceiptTitle(title, text => ctx.measureText(text).width);
-  lines.forEach((line, i) => ctx.fillText(line, P1_WIDTH / 2, 16 + i * 30));
+  lines.forEach((line, i) => ctx.fillText(line, P1_WIDTH / 2, edgePadding + i * 30));
   const left = Math.floor((P1_WIDTH - qr.size) / 2);
   for (let y = 0; y < qr.size; y++) {
     for (let x = 0; x < qr.size; x++) {
-      if (qr.pixels[y * qr.size + x] === 0) ctx.fillRect(left + x, 88 + y, 1, 1);
+      if (qr.pixels[y * qr.size + x] === 0) ctx.fillRect(left + x, qrTop + y, 1, 1);
     }
   }
+  ctx.font = '20px sans-serif';
+  ctx.fillText(instruction, P1_WIDTH / 2, instructionTop);
   ctx.save();
   // The shared SVG is gray; print its original silhouette in solid black.
   ctx.filter = 'brightness(0)';

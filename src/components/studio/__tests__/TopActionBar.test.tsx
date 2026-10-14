@@ -118,6 +118,8 @@ describe('TopActionBar mobile menu', () => {
     uploadShareMock.mockReset();
     shareUrlMock.mockReset();
     trackShareCompletedMock.mockReset();
+    nativeShareMock.mockReset();
+    Reflect.deleteProperty(navigator, 'share');
   });
 
   it('keeps the requested mobile menu actions in order', () => {
@@ -131,7 +133,7 @@ describe('TopActionBar mobile menu', () => {
   });
 
   async function press(label: string) {
-    const button = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === label || b.getAttribute('aria-label') === label);
+    const button = Array.from((document.querySelector('[role="dialog"]') ?? document).querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === label || b.getAttribute('aria-label') === label);
     expect(button, label).toBeTruthy();
     await act(async () => { button?.click(); });
   }
@@ -144,7 +146,7 @@ describe('TopActionBar mobile menu', () => {
     roots.push(root);
     await press('Share');
     expect(uploadShareMock).toHaveBeenCalledWith({ title: 'Chat only', code: '', messages: session.messages, locale: 'en' });
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('/s/share123');
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/share123');
     expect(document.querySelector('img')?.getAttribute('alt')).toBe('Share QR receipt preview');
     expect(shareUrlMock).not.toHaveBeenCalled();
     expect(trackShareCompletedMock).not.toHaveBeenCalled();
@@ -188,7 +190,7 @@ describe('TopActionBar mobile menu', () => {
     expect(snapshot.code).toBe('s("bd")');
     expect(snapshot.messages[0].content).toBe('hello');
     expect(snapshot.revisions[0].id).toBe('r1');
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('/s/retry123');
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/retry123');
   });
 
   it('captures a new snapshot when the panel is closed and reopened', async () => {
@@ -202,7 +204,7 @@ describe('TopActionBar mobile menu', () => {
     await press('Share');
     expect(uploadShareMock).toHaveBeenCalledTimes(2);
     expect(uploadShareMock.mock.calls[1][0].title).toBe('Updated');
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('/s/second');
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/second');
   });
 
   it('keeps copy failures inside the panel without losing the link', async () => {
@@ -213,7 +215,7 @@ describe('TopActionBar mobile menu', () => {
     await press('Share');
     await press('Copy link');
     expect(trackShareCompletedMock).not.toHaveBeenCalled();
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('/s/share123');
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/share123');
   });
 
   it('does not capture success when the system share is cancelled', async () => {

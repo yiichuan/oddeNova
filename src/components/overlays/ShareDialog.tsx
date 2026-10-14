@@ -12,10 +12,18 @@ export interface ShareDialogProps {
   snapshot: UploadShareInput;
   onClose: () => void;
 }
-const buttonClass = 'rounded-lg border border-border px-4 py-2 text-sm transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40';
+const buttonClass = 'rounded-lg border border-border px-3 py-2 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40';
 const say = (cn: string, en: string) => zh ? cn : en;
 
 export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
+  const defaultCardTitle = snapshot.title === 'oddeNova beta 1.0 默认印象' ? '默认印象'
+    : snapshot.title === 'oddeNova beta 1.0 Default Impression' ? 'Default Impression'
+    : !snapshot.title.trim() || ['新会话', 'New session'].includes(snapshot.title) ? say('我的音乐作品', 'My music creation') : snapshot.title;
+  const [cardTitle, setCardTitle] = useState(defaultCardTitle);
+  const [draftTitle, setDraftTitle] = useState(defaultCardTitle);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [connectFailed, setConnectFailed] = useState(false);
+  const renderGeneration = useRef(0);
   const [url, setUrl] = useState('');
   const [uploading, setUploading] = useState(true);
   const [uploadError, setUploadError] = useState(false);
@@ -60,11 +68,12 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   useEffect(() => {
     if (!url) return;
     let active = true;
-    void renderShareReceipt(url, title).then(result => {
-      if (active) setReceipt(result);
-    }).catch(() => { if (active) setRenderError(true); });
+    const generation = ++renderGeneration.current;
+    void renderShareReceipt(url, cardTitle, say('扫码听听这段音乐', 'Scan to hear this music')).then(result => {
+      if (active && generation === renderGeneration.current) setReceipt(result);
+    }).catch(() => { if (active && generation === renderGeneration.current) setRenderError(true); });
     return () => { active = false; };
-  }, [url, title, renderAttempt]);
+  }, [url, cardTitle, renderAttempt]);
 
   async function retryUpload() {
     if (retryBusy.current) return;
@@ -81,16 +90,39 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     }
   }
 
-  async function share(system: boolean) {
+  function applyTitle() {
+    const next = draftTitle.trim() || defaultCardTitle;
+    setDraftTitle(next);
+    if (next === cardTitle) return;
+    renderGeneration.current++;
+    setReceipt(null);
+    setRenderError(false);
+    setCardTitle(next);
+  }
+
+  function saveImage() {
+    if (!receipt) return;
+    const link = document.createElement('a');
+    link.href = receipt.preview;
+    const filename = Array.from(cardTitle, char => char.charCodeAt(0) < 32 ? '_' : char).join('')
+      .replace(/[<>:"/\\|?*]/g, '_').replace(/[. ]+$/g, '') || 'oddeNova';
+    link.download = `${filename}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setNotice(say('已开始下载图片', 'Image download started'));
+  }
+
+  async function share(system = false) {
     if (shareBusy.current || !url) return;
     shareBusy.current = true;
     setSharing(true);
     setNotice('');
     try {
       const brandedTitle = zh ? `【oddeNova】${title}` : `[oddeNova] ${title}`;
-      const result = await (system ? nativeShare(url, brandedTitle) : shareUrl(url, brandedTitle, true));
-      if (result === 'failed') throw new Error('Share target unavailable');
+      const result = system ? await nativeShare(url, brandedTitle) : await shareUrl(url, brandedTitle, true);
       if (result === 'cancelled') return;
+      if (result === 'failed') throw new Error('Native sharing failed');
       trackShareCompleted({ share_method: result === 'shared' ? 'native' : result === 'shown' ? 'prompt' : 'clipboard' });
       if (alive.current) setNotice(result === 'shared' ? t('shared') : result === 'shown' ? say('请复制弹窗中的链接', 'Copy the link from the prompt') : t('shareDetailsCopied'));
     } catch { if (alive.current) setNotice(t('shareFailedRetry')); }
@@ -102,8 +134,10 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
 
   async function connect() {
     setNotice('');
+    setConnectFailed(false);
     try { await paperangPrinter.connect(); }
     catch (error) {
+      if (alive.current) setConnectFailed(true);
       const stage = error instanceof PrinterConnectionError ? error.stage : 'connection';
       const stages = { selection: say('选择设备', 'device selection'), connection: say('蓝牙连接', 'Bluetooth connection'), service: say('发现 P1 服务', 'P1 service discovery'), characteristic: say('发现打印通道', 'print characteristic discovery') };
       const cause = error instanceof PrinterConnectionError ? error.cause : error;
@@ -139,48 +173,58 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--color-overlay-backdrop)] p-4 backdrop-blur-sm" onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}>
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="share-dialog-title" tabIndex={-1}
-        className="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-region border border-border bg-bg-primary p-5 text-text-primary shadow-menu-overlay"
+        className="max-h-[90dvh] w-full max-w-[400px] overflow-y-auto rounded-[20px] border border-border bg-conversation-surface p-6 text-text-primary shadow-dialog-overlay"
         onKeyDown={event => {
           event.stopPropagation();
           if (event.key === 'Escape') onClose();
           if (event.key !== 'Tab') return;
-          const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]') ?? []);
+          const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]') ?? []);
           const first = controls[0];
           const last = controls.at(-1);
           if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
           else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first?.focus(); }
         }}>
-        <div className="flex items-center justify-between gap-4">
-          <h2 id="share-dialog-title" className="text-lg">{t('share')}</h2>
-          <button type="button" aria-label={say('关闭分享', 'Close sharing')} className="p-2" onClick={onClose}><XIcon size={18} /></button>
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="share-dialog-title" className="text-base font-medium">{say('分享作品', 'Share creation')}</h2>
+          <button type="button" aria-label={say('关闭分享', 'Close sharing')} className="-mr-2 grid size-9 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary" onClick={onClose}><XIcon size={18} /></button>
         </div>
-        <p className="mt-2 break-words text-sm text-text-secondary">{title}</p>
         {uploading ? <p role="status" className="my-6 text-sm">{t('sharing')}</p> : uploadError ? (
           <div className="my-6"><p role="alert">{t('shareFailedRetry')}</p><button className={buttonClass} onClick={() => void retryUpload()}>{say('重试生成链接', 'Retry creating link')}</button></div>
         ) : (
           <>
-            {receipt ? <img src={receipt.preview} width={384} alt={say('作品二维码打印预览', 'Share QR receipt preview')} className="mx-auto my-4 w-56 max-w-full bg-white" />
-              : <p role="status" className="my-4 text-sm">{renderError ? say('二维码生成失败', 'Could not generate QR code') : say('正在生成二维码…', 'Generating QR code…')}</p>}
-            {renderError && <button className={buttonClass} onClick={() => { setRenderError(false); setRenderAttempt(value => value + 1); }}>{say('重试生成二维码', 'Retry QR code')}</button>}
-            <p className="break-all text-xs text-text-secondary">{url}</p>
-            <p className="mt-2 text-xs text-text-muted">{say('分享链接有效期为 30 天', 'Share links expire after 30 days')}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className={buttonClass} disabled={sharing} onClick={() => void share(false)}>{say('复制链接', 'Copy link')}</button>
-              {typeof navigator.share === 'function' && <button className={buttonClass} disabled={sharing} onClick={() => void share(true)}>{say('系统分享', 'System share')}</button>}
+            <div className="mt-4 border-t border-border pt-4">
+              <label htmlFor="share-card-title" className="mb-2 block text-xs text-text-secondary">{say('小卡标题', 'Card title')}</label>
+              <input id="share-card-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} onBlur={applyTitle}
+                onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); applyTitle(); } }}
+                className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-text-primary" />
+              <figure className="mt-4">
+                {receipt ? <img src={receipt.preview} width={384} alt={say('作品二维码打印预览', 'Share QR receipt preview')} className="mx-auto block h-auto w-48 max-w-full bg-white" />
+                  : <div className="py-6 text-center">
+                    <p role={renderError ? 'alert' : 'status'} className="text-sm text-text-secondary">{renderError ? say('打印预览生成失败', 'Could not generate print preview') : say('正在生成打印预览…', 'Generating print preview…')}</p>
+                    {renderError && <button className={`${buttonClass} mt-3`} onClick={() => { setRenderError(false); setRenderAttempt(value => value + 1); }}>{say('重试生成预览', 'Retry print preview')}</button>}
+                  </div>}
+                <figcaption className="mt-2 text-center text-xs text-text-muted">{say('分享小卡预览', 'Share card preview')}</figcaption>
+              </figure>
             </div>
-            <div className="mt-5 border-t border-border pt-4">
-              <p className="mb-3 text-sm">{say('喵喵机 P1', 'Paperang P1')}</p>
-              {!supported ? <p className="text-xs text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p> : (
-                <div className="flex flex-wrap gap-2">
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              <button className={`${buttonClass} border-transparent bg-text-primary font-medium text-bg-primary hover:opacity-80 hover:bg-text-primary`} disabled={sharing} onClick={() => void share()}>{sharing ? t('sharing') : say('复制链接', 'Copy link')}</button>
+              <button className={buttonClass} disabled={!receipt} onClick={saveImage}>{say('保存图片', 'Save image')}</button>
+              <button className={buttonClass} aria-expanded={printOpen} aria-controls="share-printer" onClick={() => setPrintOpen(value => !value)}>{say('打印小卡', 'Print card')}</button>
+            </div>
+            {typeof navigator.share === 'function' && <button className="mt-2 rounded-lg px-2 py-2 text-xs text-text-secondary hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-text-primary disabled:opacity-40" disabled={sharing} onClick={() => void share(true)}>{say('系统分享', 'System share')}</button>}
+            {printOpen && <div id="share-printer" className="mt-4 space-y-3 border-t border-border pt-4">
+              <p role="status" className="text-xs text-text-muted">{say('喵喵机 P1', 'Paperang P1')} · {state === 'disconnected' ? say('未连接', 'Disconnected') : state === 'connecting' ? say('正在连接', 'Connecting') : state === 'printing' ? say('正在发送', 'Sending') : say('已连接', 'Connected')}</p>
+              {!supported ? <p className="w-full text-xs leading-relaxed text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p> : (
+                <div className="flex flex-wrap items-center gap-2">
                   {state === 'disconnected' || state === 'connecting'
-                    ? <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{state === 'connecting' ? say('正在连接…', 'Connecting…') : say('连接打印机', 'Connect printer')}</button>
-                    : <><button className={buttonClass} disabled={!receipt || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印一份', 'Print one copy')}</button><button className={buttonClass} disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button></>}
+                    ? <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{state === 'connecting' ? say('正在连接…', 'Connecting…') : connectFailed ? say('重新连接', 'Reconnect') : say('连接打印机', 'Connect printer')}</button>
+                    : <><button className={buttonClass} disabled={!receipt || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小卡', 'Print card')}</button><button className="rounded-lg px-2 py-2 text-xs text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40" disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button></>}
                 </div>
               )}
-            </div>
+            </div>}
           </>
         )}
-        <p role="status" aria-live="polite" className="mt-3 text-sm text-text-secondary">{notice}</p>
+        <p role="status" aria-live="polite" className={notice ? 'mt-3 break-words text-xs leading-relaxed text-text-secondary' : 'sr-only'}>{notice}</p>
       </div>
     </div>, document.body,
   );
