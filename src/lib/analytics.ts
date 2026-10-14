@@ -85,6 +85,7 @@ export interface BusinessAnalytics {
   trackAgentTurnStarted: (properties: AgentTurnBaseProperties) => void;
   trackAgentTurnFinished: (properties: AgentTurnFinishedProperties) => void;
   trackShareCompleted: (properties: { share_method: ShareMethod }) => void;
+  trackSharePrintFinished: (properties: { outcome: 'sent' | 'failed' }) => void;
   trackWavExportCompleted: () => void;
   trackOnboardingProgressed: (properties: OnboardingProgressedProperties) => void;
 }
@@ -138,6 +139,7 @@ const EVENT_PROPERTY_ALLOWLIST: Record<string, ReadonlySet<string>> = {
     'iterations',
   ]),
   share_completed: new Set(['schema_version', 'share_method']),
+  share_print_finished: new Set(['schema_version', 'outcome']),
   wav_export_completed: new Set(['schema_version']),
   onboarding_progressed: new Set(['schema_version', 'surface', 'stage', 'step', 'guide_version', 'case_id']),
 };
@@ -304,6 +306,14 @@ export function createAnalytics(dependencies: AnalyticsDependencies): BusinessAn
       });
     },
 
+    trackSharePrintFinished(properties) {
+      capture('share_print_finished', {
+        schema_version: ANALYTICS_SCHEMA_VERSION,
+        outcome: properties.outcome,
+        ...PRIVACY_CONTROL_PROPERTIES,
+      });
+    },
+
     trackWavExportCompleted() {
       capture('wav_export_completed', {
         schema_version: ANALYTICS_SCHEMA_VERSION,
@@ -350,5 +360,6 @@ export function initializeAnalytics(locale: AnalyticsLocale): void {
 export const trackAgentTurnStarted = defaultAnalytics.trackAgentTurnStarted;
 export const trackAgentTurnFinished = defaultAnalytics.trackAgentTurnFinished;
 export const trackShareCompleted = defaultAnalytics.trackShareCompleted;
+export const trackSharePrintFinished = defaultAnalytics.trackSharePrintFinished;
 export const trackWavExportCompleted = defaultAnalytics.trackWavExportCompleted;
 export const trackOnboardingProgressed = defaultAnalytics.trackOnboardingProgressed;

@@ -17,7 +17,8 @@ vi.mock('../../../services/strudel', () => ({
 const uploadShareMock = vi.hoisted(() => vi.fn());
 const shareUrlMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../services/share', () => ({ uploadShare: uploadShareMock }));
-vi.mock('../../../services/share-target', () => ({ shareUrl: shareUrlMock }));
+vi.mock('../../../services/share-target', () => ({ shareUrl: shareUrlMock, nativeShare: vi.fn() }));
+vi.mock('../../../services/printing/share-receipt', () => ({ renderShareReceipt: vi.fn(async () => ({ preview: 'data:image/png;base64,AA==', raster: new Uint8Array(48) })) }));
 vi.mock('../../../lib/analytics', () => ({ trackShareCompleted: vi.fn() }));
 // The phone layout is what this file is about, and the page asks a media query
 // for it — happy-dom's window is a desktop one.
@@ -39,6 +40,7 @@ window.matchMedia = ((query: string) => ({
   dispatchEvent: () => false,
 })) as typeof window.matchMedia;
 
+import '../../overlays/ShareDialog';
 import { t } from '../../../lib/i18n';
 import { getStrudelLoopDurationSeconds } from '../../../lib/strudel-timing';
 import { featuredPlayer } from '../../../services/featured-player';
@@ -683,10 +685,8 @@ describe('MobileFeaturedDetail', () => {
     expect(uploadShareMock).toHaveBeenCalledWith(
       expect.objectContaining({ code: PIECES[0].code, title: '360' }),
     );
-    expect(shareUrlMock).toHaveBeenCalledWith(
-      `${window.location.origin}/s/share123`,
-      expect.stringContaining('360'),
-    );
+    expect(document.getElementById('share-dialog-title')?.closest('[role="dialog"]')?.textContent).toContain('/s/share123');
+    expect(shareUrlMock).not.toHaveBeenCalled();
   });
 });
 
