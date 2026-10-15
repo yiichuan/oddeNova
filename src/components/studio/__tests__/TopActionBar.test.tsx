@@ -159,11 +159,12 @@ describe('TopActionBar mobile menu', () => {
     roots.push(root);
     await press('Share');
     await press('Copy link');
-    await press('Copy link');
+    await press('✓ Copied');
     expect(uploadShareMock).toHaveBeenCalledTimes(1);
+    expect(shareUrlMock).toHaveBeenCalledTimes(2);
     expect(shareUrlMock).toHaveBeenCalledWith(`${window.location.origin}/s/share123`, '[oddeNova] Chat only', true);
     expect(trackShareCompletedMock).toHaveBeenCalledWith({ share_method: 'clipboard' });
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Share details copied');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('✓ Copied');
   });
 
   it('uses the localized generic title for an untitled session', async () => {

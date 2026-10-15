@@ -20,14 +20,14 @@ export function createShareQr(url: string) {
   return { pixels, size, scale };
 }
 
-export function wrapReceiptTitle(title: string, measure: (text: string) => number, maxWidth = 336): string[] {
+export function wrapReceiptTitle(title: string, measure: (text: string) => number, maxWidth = 320): string[] {
   const chars = Array.from(title.replace(/\s+/g, ' ').trim());
   const lines = [''];
   for (let index = 0; index < chars.length; index++) {
     const last = lines.length - 1;
     if (measure(lines[last] + chars[index]) <= maxWidth) {
       lines[last] += chars[index];
-    } else if (lines.length < 2) {
+    } else if (lines.length < 3) {
       lines.push(chars[index]);
     } else {
       while (measure(lines[last] + '…') > maxWidth && lines[last]) {
@@ -46,27 +46,48 @@ export async function renderShareReceipt(url: string, title: string, instruction
   const logo = new Image();
   logo.src = '/logo/logo-oddenova.svg';
   await logo.decode();
-  const logoWidth = 192;
-  const logoHeight = Math.round(logoWidth * logo.naturalHeight / logo.naturalWidth);
   const canvas = document.createElement('canvas');
   canvas.width = P1_WIDTH;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas unavailable');
-  ctx.font = '22px sans-serif';
-  const lines = wrapReceiptTitle(title, text => ctx.measureText(text).width);
-  const edgePadding = 48;
-  const qrTop = edgePadding + lines.length * 30 + 16;
-  const instructionTop = qrTop + qr.size + 16;
-  const logoTop = instructionTop + 24 + 16;
-  canvas.height = logoTop + logoHeight + edgePadding;
+  const padding = 32;
+  const contentWidth = P1_WIDTH - padding * 2;
+  ctx.font = '700 36px sans-serif';
+  const titleSize = ctx.measureText(title).width <= contentWidth ? 36 : 28;
+  ctx.font = `700 ${titleSize}px sans-serif`;
+  const lines = wrapReceiptTitle(title, text => ctx.measureText(text).width, contentWidth);
+  const titleTop = 112;
+  const titleLineHeight = titleSize + 10;
+  const taglineTop = titleTop + lines.length * titleLineHeight + 20;
+  const separatorTop = taglineTop + 56;
+  const qrTop = separatorTop + 24;
+  const instructionTop = qrTop + qr.size + 8;
+  const footerTop = instructionTop + 72;
+  const footerLogoWidth = 104;
+  const footerLogoHeight = Math.round(footerLogoWidth * logo.naturalHeight / logo.naturalWidth);
+  canvas.height = footerTop + footerLogoHeight + 48;
   // Resizing a canvas resets its drawing state.
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#000';
-  ctx.font = '22px sans-serif';
-  ctx.textAlign = 'center';
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  lines.forEach((line, i) => ctx.fillText(line, P1_WIDTH / 2, edgePadding + i * 30));
+  const drawLogo = (x: number, y: number, width: number) => {
+    ctx.save();
+    // Preserve the shared wordmark silhouette in solid black for thermal paper.
+    ctx.filter = 'brightness(0)';
+    ctx.drawImage(logo, x, y, width, Math.round(width * logo.naturalHeight / logo.naturalWidth));
+    ctx.restore();
+  };
+  drawLogo(padding, 32, 132);
+  ctx.fillRect(padding, 78, contentWidth, 2);
+  ctx.font = `700 ${titleSize}px sans-serif`;
+  lines.forEach((line, i) => ctx.fillText(line, padding, titleTop + i * titleLineHeight));
+  ctx.font = '18px sans-serif';
+  ctx.fillText('把这一刻，留在音乐里', padding, taglineTop);
+  for (let x = padding; x < P1_WIDTH - padding; x += 12) {
+    ctx.fillRect(x, separatorTop, Math.min(6, P1_WIDTH - padding - x), 2);
+  }
   const left = Math.floor((P1_WIDTH - qr.size) / 2);
   for (let y = 0; y < qr.size; y++) {
     for (let x = 0; x < qr.size; x++) {
@@ -74,12 +95,15 @@ export async function renderShareReceipt(url: string, title: string, instruction
     }
   }
   ctx.font = '20px sans-serif';
+  ctx.textAlign = 'center';
   ctx.fillText(instruction, P1_WIDTH / 2, instructionTop);
-  ctx.save();
-  // The shared SVG is gray; print its original silhouette in solid black.
-  ctx.filter = 'brightness(0)';
-  ctx.drawImage(logo, (P1_WIDTH - logoWidth) / 2, logoTop, logoWidth, logoHeight);
-  ctx.restore();
+  ctx.font = '12px sans-serif';
+  const footerLabel = 'CREATED WITH';
+  const footerLabelWidth = ctx.measureText(footerLabel).width;
+  const footerLeft = Math.round((P1_WIDTH - footerLabelWidth - 10 - footerLogoWidth) / 2);
+  ctx.textAlign = 'left';
+  ctx.fillText(footerLabel, footerLeft, footerTop + 3);
+  drawLogo(footerLeft + Math.round(footerLabelWidth) + 10, footerTop, footerLogoWidth);
   return {
     preview: canvas.toDataURL('image/png'),
     raster: rgbaToRaster(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height),

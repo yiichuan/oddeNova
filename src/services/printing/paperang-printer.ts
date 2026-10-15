@@ -19,6 +19,7 @@ async function withWriteTimeout<T>(operation: Promise<T>): Promise<T> {
   } finally { clearTimeout(timer); }
 }
 interface PrinterDevice {
+  name?: string;
   gatt?: {
     connected: boolean;
     connect(): Promise<{ getPrimaryService(uuid: string): Promise<{ getCharacteristic(uuid: string): Promise<WriteCharacteristic> }> }>;
@@ -58,6 +59,8 @@ export class PaperangPrinter {
 
   supported = () => typeof window !== 'undefined' && window.isSecureContext && !!this.bluetooth();
   getSnapshot = () => this.state;
+  getDeviceName = () => this.state === 'connected' || this.state === 'printing'
+    ? this.device?.name?.trim() || undefined : undefined;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };

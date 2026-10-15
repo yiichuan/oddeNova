@@ -17,18 +17,19 @@ describe('share receipt', () => {
       }
     }
   });
-  it('wraps Chinese titles into at most two lines, with a bounded ellipsis', () => {
+  it('wraps Chinese titles into at most three lines, with a bounded ellipsis', () => {
     const measure = (s: string) => Array.from(s).length * 22;
     const lines = wrapReceiptTitle('这是一首特别特别长的中文作品标题'.repeat(6), measure);
-    expect(lines).toHaveLength(2);
-    expect(lines[1].endsWith('…')).toBe(true);
-    lines.forEach(line => expect(measure(line)).toBeLessThanOrEqual(336));
+    expect(lines).toHaveLength(3);
+    expect(lines[2].endsWith('…')).toBe(true);
+    lines.forEach(line => expect(measure(line)).toBeLessThanOrEqual(320));
     expect(wrapReceiptTitle('短标题', measure)).toEqual(['短标题']);
     expect(wrapReceiptTitle('hello\nworld', measure)).toEqual(['hello world']);
   });
   it.each([
     ['短标题', undefined, 1],
-    ['中文标题'.repeat(15), '扫码听听这段音乐', 2],
+    ['中文标题'.repeat(15), '扫码听听这段音乐', 3],
+    ['写给那些下班后还不想立刻回家的夜晚', undefined, 2],
     ['My song', 'Scan to hear this music', 1],
   ] as const)('renders a decodable 384-dot receipt for %s', async (title, instruction, lineCount) => {
     let width = 0;
@@ -39,7 +40,10 @@ describe('share receipt', () => {
     const ctx = {
       fillStyle: '#fff', font: '', textAlign: '', textBaseline: '',
       filter: '', save: vi.fn(), restore: vi.fn(), drawImage,
-      measureText: (text: string) => ({ width: Array.from(text).length * 22 }),
+      measureText(text: string) {
+        const size = Number(this.font.match(/(\d+)px/)?.[1] ?? 22);
+        return { width: Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 ? 1 : 0.5), 0) };
+      },
       fillText,
       fillRect(x: number, y: number, w: number, h: number) {
         expect([x, y, w, h].every(Number.isInteger)).toBe(true);
@@ -68,14 +72,27 @@ describe('share receipt', () => {
       expect(width).toBe(384);
       expect(raster.length).toBe(48 * height);
       expect(preview).toContain('data:image/png');
-      expect(fillText).toHaveBeenCalledTimes(lineCount + 1);
-      if (lineCount === 2) expect(fillText.mock.calls[1][0]).toMatch(/…$/);
-      expect(fillText.mock.calls.at(-1)?.[0]).toBe(instruction ?? '扫码听听这段音乐');
-      expect(fillText.mock.calls[0]).toEqual([expect.any(String), 192, 48]);
-      const logoTop = 48 + lineCount * 30 + 16 + createShareQr(url).size + 16 + 24 + 16;
-      expect(drawImage).toHaveBeenCalledWith(expect.objectContaining({ src: '/logo/logo-oddenova.svg' }), 96, logoTop, 192, 32);
-      expect(ctx.filter).toBe('brightness(0)');
-      expect(height - logoTop - 32).toBe(48);
+      expect(fillText).toHaveBeenCalledTimes(lineCount + 3);
+      const titleCalls = fillText.mock.calls.slice(0, lineCount);
+      const renderedTitle = titleCalls.map(call => call[0]).join('');
+      if (title.length > 40) expect(renderedTitle).toMatch(/…$/);
+      else expect(renderedTitle).toBe(title);
+      expect(titleCalls.every(call => call[1] === 32)).toBe(true);
+      expect(titleCalls[0][2]).toBe(112);
+      const taglineCall = fillText.mock.calls[lineCount];
+      expect(taglineCall[0]).toBe('把这一刻，留在音乐里');
+      expect(taglineCall[2]).toBeGreaterThan(titleCalls.at(-1)![2]);
+      expect(fillText.mock.calls[lineCount + 1][0]).toBe(instruction ?? '扫码听听这段音乐');
+      expect(fillText.mock.calls.at(-1)?.[0]).toBe('CREATED WITH');
+      expect(drawImage).toHaveBeenCalledWith(expect.objectContaining({ src: '/logo/logo-oddenova.svg' }), 32, 32, 132, 22);
+      expect(drawImage).toHaveBeenCalledTimes(2);
+      const footerLogo = drawImage.mock.calls[1];
+      expect(footerLogo[3]).toBe(104);
+      expect(height - footerLogo[2] - footerLogo[4]).toBe(48);
+      // Each extra title line moves the QR, instruction and footer down together.
+      const titleSize = lineCount === 1 ? 36 : 28;
+      expect(height).toBe(112 + lineCount * (titleSize + 10) + 20 + 56 + 24
+        + createShareQr(url).size + 8 + 72 + 17 + 48);
       const decoded = new Uint8ClampedArray(width * height * 4);
       for (let p = 0; p < width * height; p++) {
         const value = raster[p >>> 3] & (0x80 >>> (p & 7)) ? 0 : 255;

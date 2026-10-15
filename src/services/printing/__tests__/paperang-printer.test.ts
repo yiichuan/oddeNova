@@ -28,6 +28,7 @@ function setup() {
   });
   const getPrimaryService = vi.fn(async () => ({ getCharacteristic }));
   const device = {
+    name: undefined as string | undefined,
     gatt: { connected: true, connect: vi.fn(async () => ({ getPrimaryService })), disconnect: vi.fn() },
     addEventListener: vi.fn((_type: string, listener: () => void) => { disconnected = listener; }),
     removeEventListener: vi.fn(),
@@ -53,6 +54,42 @@ describe('P1 protocol', () => {
 });
 
 describe('P1 Bluetooth transport', () => {
+  it('publishes the current device name only after connecting and keeps it while printing', async () => {
+    const { printer, device, write, disconnect } = setup();
+    device.name = '  MiaoMiaoJi-1234  ';
+    expect(printer.getDeviceName()).toBeUndefined();
+    const connection = printer.connect();
+    expect(printer.getDeviceName()).toBeUndefined();
+    await connection;
+    expect(printer.getDeviceName()).toBe('MiaoMiaoJi-1234');
+    let release = () => {};
+    write.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const job = printer.print(new Uint8Array(48));
+    expect(printer.getSnapshot()).toBe('printing');
+    expect(printer.getDeviceName()).toBe('MiaoMiaoJi-1234');
+    release();
+    await job;
+    printer.disconnect();
+    expect(printer.getDeviceName()).toBeUndefined();
+    device.name = 'Paperang-5678';
+    await printer.connect();
+    expect(printer.getDeviceName()).toBe('Paperang-5678');
+    disconnect();
+    expect(printer.getDeviceName()).toBeUndefined();
+  });
+  it.each([undefined, '', '   '])('returns no device name for an unnamed printer (%s)', async name => {
+    const { printer, device } = setup();
+    device.name = name;
+    await printer.connect();
+    expect(printer.getDeviceName()).toBeUndefined();
+  });
+  it('does not expose the selected name after a failed connection', async () => {
+    const { printer, device, getPrimaryService } = setup();
+    device.name = 'MiaoMiaoJi-1234';
+    getPrimaryService.mockRejectedValue(new Error('discovery failed'));
+    await expect(printer.connect()).rejects.toMatchObject({ stage: 'service' });
+    expect(printer.getDeviceName()).toBeUndefined();
+  });
   it('requests permission immediately, discovers P1 and publishes connection state', async () => {
     const { printer, bluetooth, getPrimaryService, getCharacteristic } = setup();
     const listener = vi.fn();

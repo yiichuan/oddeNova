@@ -14,11 +14,14 @@ const completed = vi.hoisted(() => vi.fn());
 const printFinished = vi.hoisted(() => vi.fn());
 const printer = vi.hoisted(() => {
   let state = 'disconnected';
+  let name: string | undefined;
   const listeners = new Set<() => void>();
   return {
     supported: vi.fn(() => true),
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => state,
+    getDeviceName: () => state === 'connected' || state === 'printing' ? name?.trim() || undefined : undefined,
+    setDeviceName(next?: string) { name = next; },
     setState(next: string) { state = next; listeners.forEach(l => l()); },
     connect: vi.fn(), disconnect: vi.fn(), print: vi.fn(),
   };
@@ -33,16 +36,26 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root;
 const snapshot: UploadShareInput = { title: 'Test', code: 's("bd")', messages: [], locale: 'en' };
 const raster = new Uint8Array(48);
-async function mount(strict = false, input = snapshot) {
+async function mount(strict = false, input = snapshot, onClose = vi.fn()) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  await act(async () => root.render(strict ? <StrictMode><ShareDialog snapshot={input} onClose={vi.fn()} /></StrictMode> : <ShareDialog snapshot={input} onClose={vi.fn()} />));
+  await act(async () => root.render(strict ? <StrictMode><ShareDialog snapshot={input} onClose={onClose} /></StrictMode> : <ShareDialog snapshot={input} onClose={onClose} />));
 }
 async function press(label: string, times = 1) {
   const button = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter(b => b.textContent === label).at(-1);
   expect(button, label).toBeTruthy();
   await act(async () => { for (let i = 0; i < times; i++) button?.click(); });
+}
+
+function shareTrigger() {
+  return document.querySelector<HTMLButtonElement>('[aria-label="System share"]')!;
+}
+async function pressSystemShare() {
+  await act(async () => shareTrigger().click());
+}
+function key(element: HTMLElement, value: string, shiftKey = false) {
+  act(() => element.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true })));
 }
 
 async function editTitle(value: string, commit: 'blur' | 'Enter' = 'blur') {
@@ -60,6 +73,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   printer.supported.mockReturnValue(true);
   printer.setState('disconnected');
+  printer.setDeviceName();
   printer.supported.mockReturnValue(true);
   upload.mockResolvedValue('qr123');
   rendered.mockResolvedValue({ preview: 'data:image/png;base64,AA==', raster });
@@ -70,9 +84,53 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root?.unmount());
   document.body.innerHTML = '';
+  vi.useRealTimers();
 });
 
 describe('ShareDialog', () => {
+  it('updates the printer name with connection states and reconnection', async () => {
+    await mount();
+    await press('Print card');
+    const status = () => document.querySelector('#share-printer [role="status"]')!;
+    expect(status().textContent).toBe('Printer · Disconnected');
+    printer.setDeviceName('MiaoMiaoJi-1234');
+    act(() => printer.setState('connecting'));
+    expect(status().textContent).toBe('Printer · Connecting');
+    act(() => printer.setState('connected'));
+    expect(status().textContent).toBe('MiaoMiaoJi-1234 · Connected');
+    act(() => printer.setState('printing'));
+    expect(status().textContent).toBe('MiaoMiaoJi-1234 · Sending');
+    act(() => printer.setState('disconnected'));
+    expect(status().textContent).toBe('Printer · Disconnected');
+    printer.setDeviceName('Paperang-5678');
+    act(() => printer.setState('connected'));
+    expect(status().textContent).toBe('Paperang-5678 · Connected');
+  });
+  it.each([undefined, '', '   '])('uses the generic label for an unnamed connected printer (%s)', async name => {
+    printer.setDeviceName(name);
+    printer.setState('connected');
+    await mount();
+    await press('Print card');
+    expect(document.querySelector('#share-printer [role="status"]')?.textContent).toBe('Printer · Connected');
+  });
+  it('retains a long device name and allows wrapping inside the dialog', async () => {
+    const name = 'MiaoMiaoJi'.repeat(30);
+    printer.setDeviceName(name);
+    printer.setState('connected');
+    await mount();
+    await press('Print card');
+    const status = document.querySelector('#share-printer [role="status"]')!;
+    expect(status.textContent).toBe(`${name} · Connected`);
+    expect(status.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
+  });
+  it('uses a generic printer name in ordinary connection failure advice', async () => {
+    printer.connect.mockRejectedValue(new PrinterConnectionError('connection', new Error('connection lost')));
+    await mount();
+    await press('Print card');
+    await press('Connect printer');
+    expect(document.body.textContent).toContain('Turn on the printer');
+    expect(document.body.textContent).not.toContain('Turn on P1');
+  });
   it.each([
     ['oddeNova beta 1.0 默认印象', '默认印象'],
     ['oddeNova beta 1.0 Default Impression', 'Default Impression'],
@@ -96,18 +154,40 @@ describe('ShareDialog', () => {
   });
   it('disables export while rendering and ignores a stale title result', async () => {
     await mount();
+    const preview = document.querySelector('img');
     const pending = new Map<string, (value: { preview: string; raster: Uint8Array }) => void>();
     rendered.mockImplementation((_url: string, title: string) => new Promise(resolve => pending.set(title, resolve)));
     await press('Print card');
     act(() => printer.setState('connected'));
     await editTitle('First');
+    expect(document.querySelector('img')).toBe(preview);
+    expect(preview?.getAttribute('src')).toBe('data:image/png;base64,AA==');
+    expect(document.body.textContent).not.toContain('Generating print preview…');
     expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(true);
     expect(document.querySelector<HTMLButtonElement>('#share-printer button')?.disabled).toBe(true);
     await editTitle('Second', 'Enter');
     await act(async () => pending.get('Second')?.({ preview: 'data:image/png;base64,second', raster }));
     await act(async () => pending.get('First')?.({ preview: 'data:image/png;base64,first', raster }));
     expect(document.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,second');
+    expect(document.querySelector('img')).toBe(preview);
+    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(false);
     expect(upload).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the previous preview on title render failure and allows retrying the new title', async () => {
+    await mount();
+    const preview = document.querySelector('img');
+    rendered.mockRejectedValueOnce(new Error('canvas'));
+    await editTitle('New title');
+    expect(document.querySelector('img')).toBe(preview);
+    expect(document.body.textContent).toContain('Could not generate print preview');
+    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(true);
+    rendered.mockResolvedValueOnce({ preview: 'data:image/png;base64,new', raster });
+    await press('Retry print preview');
+    expect(rendered).toHaveBeenLastCalledWith(expect.any(String), 'New title', 'Scan to hear this music');
+    expect(document.querySelector('img')).toBe(preview);
+    expect(preview?.getAttribute('src')).toBe('data:image/png;base64,new');
+    expect(document.body.textContent).not.toContain('Could not generate print preview');
+    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(false);
   });
   it('downloads the same preview with a sanitized title', async () => {
     await mount();
@@ -121,6 +201,7 @@ describe('ShareDialog', () => {
       expect(downloads).toEqual([{ href: 'data:image/png;base64,AA==', filename: 'Song_Name_.png' }]);
       expect(document.querySelector('a[download]')).toBeNull();
       expect(completed).not.toHaveBeenCalled();
+      expect(document.body.textContent).not.toContain('Image download started');
     } finally { click.mockRestore(); }
   });
   it('keeps copying and saving available when Bluetooth is unsupported', async () => {
@@ -139,7 +220,7 @@ describe('ShareDialog', () => {
     await press('Print card');
     await press('Connect printer');
     await press('Reconnect');
-    expect(document.body.textContent).toContain('Paperang P1 · Connected');
+    expect(document.body.textContent).toContain('Printer · Connected');
     expect(printer.print).not.toHaveBeenCalled();
   });
   it('includes the title input in the keyboard focus loop and restores focus on close', async () => {
@@ -175,7 +256,7 @@ describe('ShareDialog', () => {
     expect(document.body.textContent).not.toContain('Connect printer');
     await press('Print card');
     expect(printer.connect).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('Paperang P1 · Disconnected');
+    expect(document.body.textContent).toContain('Printer · Disconnected');
     await press('Copy link');
     expect(copy).toHaveBeenCalledWith(`${window.location.origin}/s/qr123`, '[oddeNova] Test', true);
     expect(native).not.toHaveBeenCalled();
@@ -185,12 +266,51 @@ describe('ShareDialog', () => {
     Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
     native.mockResolvedValueOnce('cancelled').mockResolvedValueOnce('shared');
     await mount();
-    await press('System share');
+    await pressSystemShare();
     expect(completed).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('Share failed');
-    await press('System share');
+    await pressSystemShare();
     expect(completed).toHaveBeenCalledTimes(1);
     expect(completed).toHaveBeenCalledWith({ share_method: 'native' });
+  });
+  it('keeps copy separate from the direct system share action and hides unsupported sharing', async () => {
+    await mount();
+    expect(shareTrigger()).toBeNull();
+    expect(document.body.textContent).not.toContain('System share');
+    act(() => root.unmount());
+    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
+    await mount();
+    const actions = document.querySelector('.grid-cols-3')!;
+    expect(Array.from(actions.querySelectorAll('button')).map(button => button.textContent)).toEqual(['Copy link', 'Save image', 'Print card']);
+    await press('Copy link');
+    expect(copy).toHaveBeenCalledTimes(1);
+    await pressSystemShare();
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).not.toContain('More sharing options');
+    expect(native).toHaveBeenCalledWith(`${window.location.origin}/s/qr123`, '[oddeNova] Test');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+  it('closes the dialog directly on Escape from the system share button', async () => {
+    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
+    const close = vi.fn();
+    await mount(false, snapshot, close);
+    key(shareTrigger(), 'Escape');
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(native).not.toHaveBeenCalled();
+  });
+  it('disables copy and system sharing during native sharing and preserves failure feedback', async () => {
+    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
+    let release!: (value: string) => void;
+    native.mockImplementation(() => new Promise<string>(resolve => { release = resolve; }));
+    await mount();
+    await pressSystemShare();
+    expect(shareTrigger().disabled).toBe(true);
+    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Sharing…')?.disabled).toBe(true);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    await act(async () => release('failed'));
+    expect(shareTrigger().disabled).toBe(false);
+    expect(document.body.textContent).toContain('Share failed');
+    expect(completed).not.toHaveBeenCalled();
   });
   it('prevents repeated share clicks while the target is opening', async () => {
     let release!: (value: string) => void;
@@ -200,7 +320,30 @@ describe('ShareDialog', () => {
     expect(copy).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).toContain('Sharing…');
     await act(async () => release('copied'));
-    expect(document.body.textContent).toContain('Share details copied');
+    expect(document.body.textContent).toContain('✓ Copied');
+    expect(document.body.textContent).not.toContain('Share details copied');
+  });
+  it('restores the copy label two seconds after the latest successful copy', async () => {
+    vi.useFakeTimers();
+    await mount();
+    await press('Copy link');
+    await act(async () => vi.advanceTimersByTime(1500));
+    await press('✓ Copied');
+    await act(async () => vi.advanceTimersByTime(1500));
+    expect(document.body.textContent).toContain('✓ Copied');
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(document.body.textContent).not.toContain('✓ Copied');
+    expect(document.body.textContent).toContain('Copy link');
+    await press('Copy link');
+    act(() => root.unmount());
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('does not claim copying succeeded when a manual prompt is needed', async () => {
+    copy.mockResolvedValue('shown');
+    await mount();
+    await press('Copy link');
+    expect(document.body.textContent).not.toContain('✓ Copied');
+    expect(document.body.textContent).toContain('Copy the link from the prompt');
   });
   it('can reconnect and reprint the same receipt without uploading again', async () => {
     printer.connect.mockImplementation(async () => { printer.setState('connected'); });
