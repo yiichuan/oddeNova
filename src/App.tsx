@@ -450,7 +450,11 @@ export default function App() {
     }
   });
   const [welcomeAutoOpened] = useState(() =>
-    shouldAutoOpenWelcomeModal({ isTopWindow, hasSeenWelcome: hasSeenWelcome() }));
+    shouldAutoOpenWelcomeModal({
+      isTopWindow,
+      hasSeenWelcome: hasSeenWelcome(),
+      pathname: window.location.pathname,
+    }));
   const [welcomeOpen, setWelcomeOpen] = useState(welcomeAutoOpened);
   // The first-run guide invites only a browser meeting oddeNova for the first
   // time — the same first paint that opens the welcome. Browsers already in use
