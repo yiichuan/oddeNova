@@ -237,11 +237,14 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
             {printOpen && <div id="share-printer" className="mt-4 space-y-3 border-t border-border pt-4">
               <p role="status" className="text-xs text-text-muted [overflow-wrap:anywhere]">{paperangPrinter.getDeviceName() || say('打印机', 'Printer')} · {state === 'disconnected' ? say('未连接', 'Disconnected') : state === 'connecting' ? say('正在连接', 'Connecting') : state === 'printing' ? say('正在发送', 'Sending') : say('已连接', 'Connected')}</p>
               {!supported ? <p className="w-full text-xs leading-relaxed text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p> : (
-                <div className="flex flex-wrap items-center gap-2">
-                  {state === 'disconnected' || state === 'connecting'
-                    ? <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{state === 'connecting' ? say('正在连接…', 'Connecting…') : connectFailed ? say('重新连接', 'Reconnect') : say('连接打印机', 'Connect printer')}</button>
-                    : <><button className={buttonClass} disabled={!receiptReady || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小卡', 'Print card')}</button><button className="rounded-lg px-2 py-2 text-xs text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40" disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button></>}
-                </div>
+                <>
+                  {(state === 'disconnected' || state === 'connecting') && <p className="w-full text-xs leading-relaxed text-text-secondary">{say('请先断开系统蓝牙或喵喵机 App 中的现有连接，再在浏览器设备列表中选择 P1S；网页会自行连接打印机。', 'Disconnect the printer from system Bluetooth or the Paperang app first, then select P1S in the browser device list; the page will connect to it directly.')}</p>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {state === 'disconnected' || state === 'connecting'
+                      ? <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{state === 'connecting' ? say('正在连接…', 'Connecting…') : connectFailed ? say('重新连接', 'Reconnect') : say('连接打印机', 'Connect printer')}</button>
+                      : <><button className={buttonClass} disabled={!receiptReady || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小卡', 'Print card')}</button><button className="rounded-lg px-2 py-2 text-xs text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40" disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button></>}
+                  </div>
+                </>
               )}
             </div>}
           </>

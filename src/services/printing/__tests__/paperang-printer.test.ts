@@ -96,11 +96,7 @@ describe('P1 Bluetooth transport', () => {
     const unsubscribe = printer.subscribe(listener);
     const connection = printer.connect();
     expect(bluetooth.requestDevice).toHaveBeenCalledWith({
-      filters: [
-        { services: [P1_SERVICE] },
-        { namePrefix: 'MiaoMiaoJi' },
-        { namePrefix: 'Paperang' },
-      ],
+      acceptAllDevices: true,
       optionalServices: [P1_SERVICE, P1_BLE_SERVICE],
     });
     expect(printer.getSnapshot()).toBe('connecting');

@@ -29,7 +29,7 @@ interface PrinterDevice {
   removeEventListener(type: 'gattserverdisconnected', callback: () => void): void;
 }
 export interface PrinterBluetooth {
-  requestDevice(options: { filters: { services?: string[]; namePrefix?: string }[]; optionalServices: string[] }): Promise<PrinterDevice>;
+  requestDevice(options: { acceptAllDevices: true; optionalServices: string[] }): Promise<PrinterDevice>;
 }
 export type PrinterConnectionStage = 'selection' | 'connection' | 'service' | 'characteristic';
 export class PrinterConnectionError extends Error {
@@ -122,14 +122,10 @@ export class PaperangPrinter {
     try {
       // Must happen before any await, directly from the user's click.
       const device = await bluetooth.requestDevice({
-        filters: [
-          { services: [P1_SERVICE] },
-          // Some P1/P1S firmware advertises its name but does not include the
-          // FF00 service UUID until after connecting. Requiring both fields in
-          // one filter hides devices such as Paperang_P1S from Chrome's picker.
-          { namePrefix: 'MiaoMiaoJi' },
-          { namePrefix: 'Paperang' },
-        ],
+        // P1/P1S firmware does not consistently expose either its local name or
+        // print-service UUID in advertisements. Let the user select the nearby
+        // BLE peripheral, then strictly verify the supported services below.
+        acceptAllDevices: true,
         optionalServices: [P1_SERVICE, P1_BLE_SERVICE],
       });
       if (generation !== this.generation) return;
