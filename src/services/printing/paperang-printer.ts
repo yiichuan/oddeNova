@@ -1,4 +1,4 @@
-import { P1_SERVICE, P1_WRITE, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW, rasterFrames } from './paperang-protocol';
+import { P1_SERVICE, P1_WRITE, P1S_WRITE, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW, rasterFrames } from './paperang-protocol';
 
 // Narrow Web Bluetooth interfaces keep browser-specific types inside this service.
 interface WriteCharacteristic {
@@ -146,7 +146,16 @@ export class PaperangPrinter {
         writeUuid = P1_BLE_WRITE;
       }
       stage = 'characteristic';
-      const characteristic = await service.getCharacteristic(writeUuid);
+      let characteristic;
+      try {
+        characteristic = await service.getCharacteristic(writeUuid);
+      } catch (error) {
+        // P1 and P1S share the ISSC service but expose different generations
+        // of its transparent-UART downlink characteristic.
+        if (writeUuid !== P1_WRITE || !(error instanceof Error) || error.name !== 'NotFoundError') throw error;
+        characteristic = await service.getCharacteristic(P1S_WRITE);
+        writeUuid = P1S_WRITE;
+      }
       if (generation !== this.generation) return;
       if (writeUuid === P1_BLE_WRITE) {
         if (!characteristic.writeValueWithoutResponse) throw new Error('P1 FF02 write-without-response unavailable');

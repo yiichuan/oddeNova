@@ -5,7 +5,10 @@
 export const P1_WIDTH = 384;
 export const P1_ROW_BYTES = P1_WIDTH / 8;
 export const P1_SERVICE = '49535343-fe7d-4ae5-8fa9-9fafd205e455';
+// Older P1 firmware exposes the RN4678 transparent UART write characteristic.
 export const P1_WRITE = '49535343-6daa-4d02-abf6-19569aca69fe';
+// P1S exposes the newer Microchip transparent UART downlink characteristic.
+export const P1S_WRITE = '49535343-8841-43f4-a8d4-ecbe34729bb3';
 // Observed on the local P1: FF00/FF02 accepts the same seeded P1 framing.
 export const P1_BLE_SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb';
 export const P1_BLE_WRITE = '0000ff02-0000-1000-8000-00805f9b34fb';

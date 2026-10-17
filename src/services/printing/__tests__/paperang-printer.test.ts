@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PaperangPrinter, type PrinterBluetooth } from '../paperang-printer';
-import { paperangFrame, rasterFrames, P1_SERVICE, P1_WRITE, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW } from '../paperang-protocol';
+import { paperangFrame, rasterFrames, P1_SERVICE, P1_WRITE, P1S_WRITE, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW } from '../paperang-protocol';
 
 function setup() {
   let disconnected = () => {};
@@ -137,6 +137,17 @@ describe('P1 Bluetooth transport', () => {
     const chunks = writeWithoutResponse.mock.calls.map(call => call[0]);
     expect(chunks.every(chunk => chunk.length <= 20)).toBe(true);
     expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(raster).flatMap(frame => Array.from(frame)));
+  });
+  it('falls back to the P1S transparent UART write characteristic', async () => {
+    const { printer, getCharacteristic, write, writeWithoutResponse } = setup();
+    getCharacteristic.mockImplementation(async (uuid: string) => {
+      if (uuid === P1_WRITE) throw new DOMException('missing', 'NotFoundError');
+      return { writeValueWithResponse: write, writeValueWithoutResponse: writeWithoutResponse };
+    });
+    await printer.connect();
+    expect(getCharacteristic.mock.calls.map(call => call[0])).toEqual([P1_WRITE, P1S_WRITE]);
+    await printer.print(new Uint8Array(48));
+    expect(write.mock.calls.map(call => call[0])).toEqual(rasterFrames(new Uint8Array(48)));
   });
   it('waits for FF03 credits before sending more chunks and resumes on new grants', async () => {
     const { printer, getPrimaryService, writeWithoutResponse, grant } = setup();
