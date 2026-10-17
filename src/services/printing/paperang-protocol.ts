@@ -41,6 +41,27 @@ export function rasterFrames(raster: Uint8Array): Uint8Array<ArrayBuffer>[] {
   return frames;
 }
 
+/** P1S uses the raw L11/ESC raster path rather than the CRC-framed P1 protocol. */
+export function p1sPrintData(raster: Uint8Array): Uint8Array<ArrayBuffer> {
+  if (!raster.length || raster.length % P1_ROW_BYTES) throw new Error('Invalid P1S raster rows');
+  const height = raster.length / P1_ROW_BYTES;
+  if (height > 0xffff) throw new Error('P1S raster exceeds maximum height');
+  const wake = new Uint8Array(15);
+  const enable = new Uint8Array([0x10, 0xff, 0xf1, 0x02]);
+  const bitmap = new Uint8Array(8 + raster.length);
+  bitmap.set([0x1d, 0x76, 0x30, 0, P1_ROW_BYTES, 0, height & 255, height >>> 8]);
+  bitmap.set(raster, 8);
+  const feed = new Uint8Array([0x1b, 0x4a, 100]);
+  const stop = new Uint8Array([0x10, 0xff, 0xf1, 0x45]);
+  const data = new Uint8Array(wake.length + enable.length + bitmap.length + feed.length + stop.length);
+  let offset = 0;
+  for (const command of [wake, enable, bitmap, feed, stop]) {
+    data.set(command, offset);
+    offset += command.length;
+  }
+  return data;
+}
+
 export function rgbaToRaster(data: Uint8ClampedArray, width: number, height: number): Uint8Array {
   if (width !== P1_WIDTH || height < 1 || !Number.isInteger(height) || data.length !== width * height * 4) {
     throw new Error('Invalid P1 image dimensions');

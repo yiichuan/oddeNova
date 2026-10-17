@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PaperangPrinter, type PrinterBluetooth } from '../paperang-printer';
-import { paperangFrame, rasterFrames, P1_SERVICE, P1_WRITE, P1S_WRITE, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW } from '../paperang-protocol';
+import { paperangFrame, p1sPrintData, rasterFrames, P1_SERVICE, P1_WRITE, P1S_WRITE, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW } from '../paperang-protocol';
 
 function setup() {
   let disconnected = () => {};
@@ -115,6 +115,16 @@ describe('P1 Bluetooth transport', () => {
     await printer.connect();
     expect(printer.getSnapshot()).toBe('connected');
   });
+  it('retries one transient GATT connection failure without reopening the picker', async () => {
+    const { printer, bluetooth, device, getPrimaryService } = setup();
+    device.gatt.connect
+      .mockRejectedValueOnce(new DOMException('temporary', 'NetworkError'))
+      .mockResolvedValueOnce({ getPrimaryService });
+    await printer.connect();
+    expect(bluetooth.requestDevice).toHaveBeenCalledTimes(1);
+    expect(device.gatt.connect).toHaveBeenCalledTimes(2);
+    expect(printer.getSnapshot()).toBe('connected');
+  });
   it('reports missing P1 services as discovery failures, not picker cancellation', async () => {
     const { printer, getPrimaryService } = setup();
     getPrimaryService.mockRejectedValue(Object.assign(new Error('missing'), { name: 'NotFoundError' }));
@@ -146,10 +156,12 @@ describe('P1 Bluetooth transport', () => {
     });
     await printer.connect();
     expect(getCharacteristic.mock.calls.map(call => call[0])).toEqual([P1_WRITE, P1S_WRITE]);
-    await printer.print(new Uint8Array(48));
-    const chunks = write.mock.calls.map(call => call[0]);
-    expect(chunks.every(chunk => chunk.length <= 20)).toBe(true);
-    expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(new Uint8Array(48)).flatMap(frame => Array.from(frame)));
+    const raster = new Uint8Array(48 * 2);
+    await printer.print(raster);
+    expect(write).not.toHaveBeenCalled();
+    const chunks = writeWithoutResponse.mock.calls.map(call => call[0]);
+    expect(chunks.every(chunk => chunk.length <= 95)).toBe(true);
+    expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(Array.from(p1sPrintData(raster)));
   });
   it('waits for FF03 credits before sending more chunks and resumes on new grants', async () => {
     const { printer, getPrimaryService, writeWithoutResponse, grant } = setup();
