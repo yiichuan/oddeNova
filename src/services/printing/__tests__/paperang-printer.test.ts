@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PaperangPrinter, type PrinterBluetooth } from '../paperang-printer';
-import { paperangFrame, rasterFrames, P1_SERVICE, P1_WRITE, P1S_WRITE, P1S_NOTIFY, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW } from '../paperang-protocol';
+import { paperangFrame, p1PaperTypeFrame, p1SessionKeyFrame, rasterFrames, P1_SERVICE, P1_WRITE, P1S_WRITE, P1S_NOTIFY, P1_SESSION_CRC_KEY, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW } from '../paperang-protocol';
 
 function setup() {
   let disconnected = () => {};
@@ -54,6 +54,14 @@ describe('P1 protocol', () => {
     expect(frames.slice(0, -1).flatMap(f => Array.from(f.slice(5, -5)))).toEqual(Array.from(raster));
     expect(() => rasterFrames(new Uint8Array(49))).toThrow();
     expect(() => paperangFrame(0, new Uint8Array(481))).toThrow();
+  });
+  it('builds the Paperang session handshake and sequences negotiated print packets', () => {
+    const handshake = p1SessionKeyFrame();
+    expect(handshake[1]).toBe(24);
+    expect(Array.from(handshake.slice(5, 9))).toEqual([0x78, 0x7a, 0xce, 0x33]);
+    expect(p1PaperTypeFrame()[1]).toBe(44);
+    const frames = rasterFrames(new Uint8Array(48 * 21), P1_SESSION_CRC_KEY, true);
+    expect(frames.map(frame => frame[2])).toEqual([0, 1, 2, 0]);
   });
 });
 
@@ -169,6 +177,9 @@ describe('P1 Bluetooth transport', () => {
   });
   it('falls back to the P1S transparent UART write characteristic', async () => {
     const { printer, getCharacteristic, write, writeWithoutResponse, receive, reply } = setup();
+    write.mockImplementation(async data => {
+      if ([24, 44, 26].includes(data[1])) queueMicrotask(() => reply([0x02, data[1] + 1, 0, 1, 0, 1]));
+    });
     getCharacteristic.mockImplementation(async (uuid: string) => {
       if (uuid === P1_WRITE) throw new DOMException('missing', 'NotFoundError');
       if (uuid === P1S_NOTIFY) return receive;
@@ -176,15 +187,16 @@ describe('P1 Bluetooth transport', () => {
     });
     await printer.connect();
     expect(getCharacteristic.mock.calls.map(call => call[0])).toEqual([P1_WRITE, P1S_WRITE, P1S_NOTIFY]);
-    reply([0x02, 0x10, 0xab]);
-    expect(printer.getLastDeviceReply()).toBe('02 10 ab');
+    expect(write).toHaveBeenCalledWith(p1SessionKeyFrame());
     const raster = new Uint8Array(48 * 2);
-    expect(await printer.print(raster)).toBe('unconfirmed');
-    expect(printer.getLastDeviceReply()).toBeUndefined();
-    expect(write).not.toHaveBeenCalled();
-    const chunks = writeWithoutResponse.mock.calls.map(call => call[0]);
-    expect(chunks.every(chunk => chunk.length <= 20)).toBe(true);
-    expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(raster).flatMap(frame => Array.from(frame)));
+    expect(await printer.print(raster)).toBe('sent');
+    expect(writeWithoutResponse).not.toHaveBeenCalled();
+    expect(write.mock.calls.map(call => call[0])).toEqual([
+      p1SessionKeyFrame(),
+      p1PaperTypeFrame(),
+      ...rasterFrames(raster, P1_SESSION_CRC_KEY, true),
+    ]);
+    expect(printer.getLastDeviceReply()).toBe('02 1b 00 01 00 01');
   });
   it('waits for FF03 credits before sending more chunks and resumes on new grants', async () => {
     const { printer, getPrimaryService, writeWithoutResponse, grant } = setup();
