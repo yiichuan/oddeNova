@@ -26,7 +26,7 @@ function prefersNativeShare(): boolean {
   return typeof globalThis.matchMedia === 'function' && globalThis.matchMedia('(pointer: coarse)').matches;
 }
 
-async function nativeShare(url: string, title: string): Promise<NativeShareResult> {
+export async function nativeShare(url: string, title: string): Promise<NativeShareResult> {
   const nav = globalThis.navigator;
   if (!nav?.share) return 'failed';
   try {
@@ -42,10 +42,10 @@ async function nativeShare(url: string, title: string): Promise<NativeShareResul
   }
 }
 
-export async function shareUrl(url: string, title: string): Promise<ShareTargetResult> {
+export async function shareUrl(url: string, title: string, copyOnly = false): Promise<ShareTargetResult> {
   const nav = globalThis.navigator;
   const shareText = `${url}\n${title}`;
-  const shouldPreferNativeShare = prefersNativeShare();
+  const shouldPreferNativeShare = !copyOnly && prefersNativeShare();
   let triedNativeShare = false;
 
   if (shouldPreferNativeShare) {
@@ -65,7 +65,7 @@ export async function shareUrl(url: string, title: string): Promise<ShareTargetR
 
   if (legacyCopy(shareText)) return 'copied';
 
-  if (!triedNativeShare) {
+  if (!copyOnly && !triedNativeShare) {
     const result = await nativeShare(url, title);
     if (result !== 'failed') return result;
   }

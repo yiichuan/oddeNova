@@ -7,11 +7,16 @@ import type { ChatMessage } from '../../../hooks/useChat';
 import type { Session } from '../../../hooks/useSessions';
 import { MOBILE_TOP_ACTIONS } from '../mobileTopActions';
 import TopActionBar, { ExportPopover, ShareButton } from '../TopActionBar';
+import '../../overlays/ShareDialog';
 import { getStrudelLoopCycles, getStrudelLoopDurationSeconds } from '../../../lib/strudel-timing';
 
 const uploadShareMock = vi.hoisted(() => vi.fn());
 const shareUrlMock = vi.hoisted(() => vi.fn());
 const trackShareCompletedMock = vi.hoisted(() => vi.fn());
+const nativeShareMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../services/printing/share-receipt', () => ({
+  renderShareReceipt: vi.fn(async () => ({ preview: 'data:image/png;base64,AA==', raster: new Uint8Array(48) })),
+}));
 
 vi.mock('../../../services/share', () => ({
   uploadShare: uploadShareMock,
@@ -19,10 +24,12 @@ vi.mock('../../../services/share', () => ({
 
 vi.mock('../../../services/share-target', () => ({
   shareUrl: shareUrlMock,
+  nativeShare: nativeShareMock,
 }));
 
 vi.mock('../../../lib/analytics', () => ({
   trackShareCompleted: trackShareCompletedMock,
+  trackSharePrintFinished: vi.fn(),
 }));
 
 const viewport = vi.hoisted(() => ({ mobile: false }));
@@ -111,6 +118,8 @@ describe('TopActionBar mobile menu', () => {
     uploadShareMock.mockReset();
     shareUrlMock.mockReset();
     trackShareCompletedMock.mockReset();
+    nativeShareMock.mockReset();
+    Reflect.deleteProperty(navigator, 'share');
   });
 
   it('keeps the requested mobile menu actions in order', () => {
@@ -123,208 +132,115 @@ describe('TopActionBar mobile menu', () => {
     ]);
   });
 
-  it('shares chat-only sessions with messages even when they have no code', async () => {
+  async function press(label: string) {
+    const button = Array.from((document.querySelector('[role="dialog"]') ?? document).querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === label || b.getAttribute('aria-label') === label);
+    expect(button, label).toBeTruthy();
+    await act(async () => { button?.click(); });
+  }
+
+  it('opens a QR panel for chat-only sessions without sharing automatically', async () => {
     setDesktopViewport();
-    uploadShareMock.mockResolvedValueOnce('share123');
-    shareUrlMock.mockResolvedValueOnce('copied');
+    uploadShareMock.mockResolvedValue('share123');
     const session = makeSession();
-    const { container, root } = renderShareBar(session);
+    const { root } = renderShareBar(session);
     roots.push(root);
-
-    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Share');
-    expect(shareButton).not.toBeUndefined();
-    expect(shareButton?.disabled).toBe(false);
-
-    await act(async () => {
-      shareButton?.click();
-    });
-
-    expect(uploadShareMock).toHaveBeenCalledWith({
-      title: 'Chat only',
-      code: '',
-      messages: session.messages,
-      locale: 'en',
-    });
-    expect(shareUrlMock).toHaveBeenCalledWith(
-      `${window.location.origin}/s/share123`,
-      '[oddeNova] Chat only',
-    );
-    expect(trackShareCompletedMock).toHaveBeenCalledWith({
-      share_method: 'clipboard',
-    });
-    expect(container.textContent).toContain('Share details copied');
-  });
-
-  it('uses a localized generic share title for the default session title', async () => {
-    setDesktopViewport();
-    uploadShareMock.mockResolvedValueOnce('share123');
-    shareUrlMock.mockResolvedValueOnce('copied');
-    const session = makeSession({ title: 'New session' });
-    const { container, root } = renderShareBar(session);
-    roots.push(root);
-    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Share');
-
-    await act(async () => {
-      shareButton?.click();
-    });
-
-    expect(shareUrlMock).toHaveBeenCalledWith(
-      `${window.location.origin}/s/share123`,
-      '[oddeNova] Shared a music creation',
-    );
-  });
-
-  it('shows a native-share success message after system sharing', async () => {
-    setDesktopViewport();
-    uploadShareMock.mockResolvedValueOnce('share123');
-    shareUrlMock.mockResolvedValueOnce('shared');
-    const session = makeSession();
-    const { container, root } = renderShareBar(session);
-    roots.push(root);
-    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Share');
-
-    await act(async () => {
-      shareButton?.click();
-    });
-
-    expect(container.textContent).toContain('Shared');
-    expect(container.textContent).not.toContain('Share details copied');
-  });
-
-  it('does not capture or show success when system sharing is cancelled', async () => {
-    setDesktopViewport();
-    uploadShareMock.mockResolvedValueOnce('share123');
-    shareUrlMock.mockResolvedValueOnce('cancelled');
-    const session = makeSession();
-    const { container, root } = renderShareBar(session);
-    roots.push(root);
-    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Share');
-
-    await act(async () => {
-      shareButton?.click();
-    });
-
+    await press('Share');
+    expect(uploadShareMock).toHaveBeenCalledWith({ title: 'Chat only', code: '', messages: session.messages, locale: 'en' });
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/share123');
+    expect(document.querySelector('img')?.getAttribute('alt')).toBe('Share QR receipt preview');
+    expect(shareUrlMock).not.toHaveBeenCalled();
     expect(trackShareCompletedMock).not.toHaveBeenCalled();
-    expect(container.textContent).not.toContain('Shared');
-    expect(container.textContent).not.toContain('Share details copied');
   });
 
-  it('shares the code revisions referenced by conversation messages', async () => {
-    setDesktopViewport();
-    uploadShareMock.mockResolvedValueOnce('share123');
-    shareUrlMock.mockResolvedValueOnce('copied');
-    const revision = {
-      id: 'rev-1',
-      beforeCode: '',
-      afterCode: 's("bd")',
-      playbackStatus: 'played' as const,
-      createdAt: 1,
-    };
-    const session = makeSession({
-      code: 's("bd")',
-      messages: [{
-        id: 'm-1',
-        role: 'assistant',
-        content: '完成',
-        code: 's("bd")',
-        revisionId: revision.id,
-        timestamp: 1,
-      }],
-      revisions: [revision],
-    });
-    const { container, root } = renderShareBar(session);
+  it('copies and recopies the same generated link without uploading again', async () => {
+    uploadShareMock.mockResolvedValue('share123');
+    shareUrlMock.mockResolvedValue('copied');
+    const { root } = renderShareBar(makeSession());
     roots.push(root);
-
-    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Share');
-    await act(async () => {
-      shareButton?.click();
-    });
-
-    expect(uploadShareMock).toHaveBeenCalledWith(expect.objectContaining({
-      messages: session.messages,
-      revisions: [revision],
-    }));
+    await press('Share');
+    await press('Copy link');
+    await press('✓ Copied');
+    expect(uploadShareMock).toHaveBeenCalledTimes(1);
+    expect(shareUrlMock).toHaveBeenCalledTimes(2);
+    expect(shareUrlMock).toHaveBeenCalledWith(`${window.location.origin}/s/share123`, '[oddeNova] Chat only', true);
+    expect(trackShareCompletedMock).toHaveBeenCalledWith({ share_method: 'clipboard' });
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('✓ Copied');
   });
 
-  it.each([
-    ['shared', 'native'],
-    ['shown', 'prompt'],
-  ] as const)('maps the %s share result to %s', async (shareResult, shareMethod) => {
-    setDesktopViewport();
-    uploadShareMock.mockResolvedValueOnce('share123');
-    shareUrlMock.mockResolvedValueOnce(shareResult);
+  it('uses the localized generic title for an untitled session', async () => {
+    uploadShareMock.mockResolvedValue('share123');
+    shareUrlMock.mockResolvedValue('copied');
+    const { root } = renderShareBar(makeSession({ title: 'New session' }));
+    roots.push(root);
+    await press('Share');
+    await press('Copy link');
+    expect(shareUrlMock).toHaveBeenCalledWith(`${window.location.origin}/s/share123`, '[oddeNova] Shared a music creation', true);
+  });
+
+  it('keeps one frozen snapshot through edits and retries after upload failure', async () => {
+    uploadShareMock.mockRejectedValueOnce(new Error('offline')).mockResolvedValue('retry123');
+    const session = makeSession({ code: 's("bd")', revisions: [{ id: 'r1', beforeCode: '', afterCode: 's("bd")', playbackStatus: 'played', createdAt: 1 }] });
+    const { root } = renderShareBar(session);
+    roots.push(root);
+    await press('Share');
+    session.messages[0].content = 'later edit';
+    session.code = 's("hh")';
+    await press('Retry creating link');
+    expect(uploadShareMock).toHaveBeenCalledTimes(2);
+    const snapshot = uploadShareMock.mock.calls[1][0];
+    expect(snapshot.code).toBe('s("bd")');
+    expect(snapshot.messages[0].content).toBe('hello');
+    expect(snapshot.revisions[0].id).toBe('r1');
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/retry123');
+  });
+
+  it('captures a new snapshot when the panel is closed and reopened', async () => {
+    uploadShareMock.mockResolvedValueOnce('first').mockResolvedValueOnce('second');
     const session = makeSession();
-    const { container, root } = renderShareBar(session);
+    const { root } = renderShareBar(session);
     roots.push(root);
-    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Share');
-
-    await act(async () => {
-      shareButton?.click();
-    });
-
-    expect(trackShareCompletedMock).toHaveBeenCalledWith({
-      share_method: shareMethod,
-    });
+    await press('Share');
+    await press('Close sharing');
+    session.title = 'Updated';
+    await press('Share');
+    expect(uploadShareMock).toHaveBeenCalledTimes(2);
+    expect(uploadShareMock.mock.calls[1][0].title).toBe('Updated');
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/second');
   });
 
-  it('does not capture share_completed when opening the share target fails', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    setDesktopViewport();
-    uploadShareMock.mockResolvedValueOnce('share123');
-    shareUrlMock.mockRejectedValueOnce(new Error('share target failed'));
-    const session = makeSession();
-    const { container, root } = renderShareBar(session);
+  it('keeps copy failures inside the panel without losing the link', async () => {
+    uploadShareMock.mockResolvedValue('share123');
+    shareUrlMock.mockRejectedValue(new Error('unavailable'));
+    const { root } = renderShareBar(makeSession());
     roots.push(root);
-    const shareButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Share');
-
-    await act(async () => {
-      shareButton?.click();
-    });
-
+    await press('Share');
+    await press('Copy link');
     expect(trackShareCompletedMock).not.toHaveBeenCalled();
-    consoleError.mockRestore();
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/share123');
   });
 
-  it('replaces the icon hover title with styled copy feedback after sharing', async () => {
-    setDesktopViewport();
-    let resolveUpload: ((shareId: string) => void) | undefined;
-    uploadShareMock.mockImplementationOnce(() => new Promise<string>((resolve) => {
-      resolveUpload = resolve;
-    }));
-    shareUrlMock.mockResolvedValueOnce('copied');
-    const { container, root } = renderIconShareButton(makeSession({ code: 's("bd")' }));
+  it('does not capture success when the system share is cancelled', async () => {
+    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
+    nativeShareMock.mockResolvedValueOnce('cancelled');
+    uploadShareMock.mockResolvedValue('share123');
+    const { root } = renderShareBar(makeSession());
     roots.push(root);
-    const shareButton = container.querySelector<HTMLButtonElement>('button[aria-label="Share"]');
+    await press('Share');
+    await press('System share');
+    expect(trackShareCompletedMock).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    Reflect.deleteProperty(navigator, 'share');
+  });
 
-    act(() => {
-      shareButton?.parentElement?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-    });
+  it('opens the icon panel once on repeated clicks and hides its hover label', async () => {
+    uploadShareMock.mockResolvedValue('share123');
+    const { container, root } = renderIconShareButton(makeSession());
+    roots.push(root);
+    const button = container.querySelector<HTMLButtonElement>('button');
+    act(() => { button?.parentElement?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); });
     expect(document.querySelector('[data-testid="code-panel-share-hover-label"]')?.textContent).toBe('Share');
-
-    act(() => shareButton?.click());
-    expect(document.querySelector('[data-testid="code-panel-share-hover-label"]')).toBeNull();
-    expect(document.querySelector('[data-testid="code-panel-share-feedback-label"]')).toBeNull();
-
-    await act(async () => {
-      resolveUpload?.('share123');
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const feedback = document.querySelector<HTMLElement>('[data-testid="code-panel-share-feedback-label"]');
-    expect(feedback?.textContent).toBe('Share details copied');
-    expect(feedback?.classList.contains('primary-nav-tooltip')).toBe(true);
-
-    act(() => {
-      shareButton?.parentElement?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-    });
+    await act(async () => { button?.click(); button?.click(); });
+    expect(uploadShareMock).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[data-testid="code-panel-share-hover-label"]')).toBeNull();
   });
 });
