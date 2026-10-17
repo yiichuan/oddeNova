@@ -98,8 +98,8 @@ describe('P1 Bluetooth transport', () => {
     expect(bluetooth.requestDevice).toHaveBeenCalledWith({
       filters: [
         { services: [P1_SERVICE] },
-        { services: [P1_BLE_SERVICE], namePrefix: 'MiaoMiaoJi' },
-        { services: [P1_BLE_SERVICE], namePrefix: 'Paperang' },
+        { namePrefix: 'MiaoMiaoJi' },
+        { namePrefix: 'Paperang' },
       ],
       optionalServices: [P1_SERVICE, P1_BLE_SERVICE],
     });
