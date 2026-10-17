@@ -147,7 +147,9 @@ describe('P1 Bluetooth transport', () => {
     await printer.connect();
     expect(getCharacteristic.mock.calls.map(call => call[0])).toEqual([P1_WRITE, P1S_WRITE]);
     await printer.print(new Uint8Array(48));
-    expect(write.mock.calls.map(call => call[0])).toEqual(rasterFrames(new Uint8Array(48)));
+    const chunks = write.mock.calls.map(call => call[0]);
+    expect(chunks.every(chunk => chunk.length <= 20)).toBe(true);
+    expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(new Uint8Array(48)).flatMap(frame => Array.from(frame)));
   });
   it('waits for FF03 credits before sending more chunks and resumes on new grants', async () => {
     const { printer, getPrimaryService, writeWithoutResponse, grant } = setup();

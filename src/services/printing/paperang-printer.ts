@@ -47,6 +47,7 @@ export class PaperangPrinter {
   private listeners = new Set<() => void>();
   private device?: PrinterDevice;
   private characteristic?: WriteCharacteristic;
+  private maxWriteSize?: number;
   private flowCharacteristic?: WriteCharacteristic;
   private credits = 0;
   private creditWaiter?: { resolve: () => void; reject: (error: Error) => void };
@@ -73,6 +74,7 @@ export class PaperangPrinter {
     this.generation++;
     this.clearFlowControl();
     this.characteristic = undefined;
+    this.maxWriteSize = undefined;
     this.setState('disconnected');
   };
   private onFlowControl = () => {
@@ -109,6 +111,7 @@ export class PaperangPrinter {
     this.device?.gatt?.disconnect();
     this.device = undefined;
     this.characteristic = undefined;
+    this.maxWriteSize = undefined;
     this.setState('disconnected');
   }
   async connect(): Promise<void> {
@@ -176,6 +179,9 @@ export class PaperangPrinter {
         if (generation !== this.generation) return;
       }
       this.characteristic = characteristic;
+      // The P1S transparent UART accepts an ATT-sized stream rather than the
+      // complete ~490-byte Paperang frame that older P1 firmware accepts.
+      this.maxWriteSize = writeUuid === P1S_WRITE ? 20 : undefined;
       this.setState('connected');
     } catch (error) {
       if (generation === this.generation) this.disconnect();
@@ -187,6 +193,7 @@ export class PaperangPrinter {
     if (this.state !== 'connected' || !this.characteristic) throw new Error('P1 not ready');
     const frames = rasterFrames(raster);
     const characteristic = this.characteristic;
+    const maxWriteSize = this.maxWriteSize;
     const generation = this.generation;
     const usesFlowControl = !!this.flowCharacteristic;
     let frameIndex = 0;
@@ -195,7 +202,7 @@ export class PaperangPrinter {
     try {
       for (; frameIndex < frames.length; frameIndex++) {
         const frame = frames[frameIndex];
-        const chunkSize = usesFlowControl ? 20 : frame.length;
+        const chunkSize = usesFlowControl ? 20 : maxWriteSize ?? frame.length;
         for (offset = 0; offset < frame.length; offset += chunkSize) {
           if (generation !== this.generation || !this.device?.gatt?.connected) throw new Error('P1 disconnected');
           if (usesFlowControl) {
@@ -203,7 +210,7 @@ export class PaperangPrinter {
             if (generation !== this.generation || !this.device?.gatt?.connected) throw new Error('P1 disconnected');
             await withWriteTimeout(characteristic.writeValueWithoutResponse!(frame.slice(offset, offset + chunkSize)));
           } else {
-            await withWriteTimeout(characteristic.writeValueWithResponse(frame));
+            await withWriteTimeout(characteristic.writeValueWithResponse(frame.slice(offset, offset + chunkSize)));
           }
         }
       }
