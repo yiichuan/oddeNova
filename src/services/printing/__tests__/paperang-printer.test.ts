@@ -1,15 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PaperangPrinter, type PrinterBluetooth } from '../paperang-printer';
-import { paperangFrame, p1sPrintData, rasterFrames, P1_SERVICE, P1_WRITE, P1S_WRITE, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW } from '../paperang-protocol';
+import { paperangFrame, rasterFrames, P1_SERVICE, P1_WRITE, P1S_WRITE, P1S_NOTIFY, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW } from '../paperang-protocol';
 
 function setup() {
   let disconnected = () => {};
   let notify = () => {};
+  let reply = () => {};
   let receiving = false;
   const write = vi.fn(async (_data: Uint8Array) => {});
   const receive = {
+    value: undefined as DataView | undefined,
     writeValueWithResponse: write,
     startNotifications: vi.fn(async () => { receiving = true; }),
+    addEventListener: vi.fn((_type: string, listener: () => void) => { reply = listener; }),
+    removeEventListener: vi.fn(),
   };
   const flow = {
     value: new DataView(new Uint8Array([1, 4]).buffer),
@@ -23,7 +27,7 @@ function setup() {
   const writeWithoutResponse = vi.fn(async (_data: Uint8Array) => { if (receiving) grant(1); });
   const getCharacteristic = vi.fn(async (uuid: string) => {
     if (uuid === P1_BLE_FLOW) return flow;
-    if (uuid === P1_BLE_NOTIFY) return receive;
+    if (uuid === P1_BLE_NOTIFY || uuid === P1S_NOTIFY) return receive;
     return { writeValueWithResponse: write, writeValueWithoutResponse: writeWithoutResponse };
   });
   const getPrimaryService = vi.fn(async () => ({ getCharacteristic }));
@@ -34,7 +38,7 @@ function setup() {
     removeEventListener: vi.fn(),
   };
   const bluetooth: PrinterBluetooth = { requestDevice: vi.fn(async () => device) };
-  return { printer: new PaperangPrinter(() => bluetooth), bluetooth, write, writeWithoutResponse, receive, flow, grant, getPrimaryService, getCharacteristic, device, disconnect: () => disconnected() };
+  return { printer: new PaperangPrinter(() => bluetooth), bluetooth, write, writeWithoutResponse, receive, flow, grant, getPrimaryService, getCharacteristic, device, disconnect: () => disconnected(), reply: (bytes: number[]) => { receive.value = new DataView(Uint8Array.from(bytes).buffer); reply(); } };
 }
 
 describe('P1 protocol', () => {
@@ -96,7 +100,14 @@ describe('P1 Bluetooth transport', () => {
     const unsubscribe = printer.subscribe(listener);
     const connection = printer.connect();
     expect(bluetooth.requestDevice).toHaveBeenCalledWith({
-      acceptAllDevices: true,
+      filters: [
+        { services: [P1_SERVICE] },
+        { services: [P1_BLE_SERVICE] },
+        { namePrefix: 'Paperang' },
+        { namePrefix: 'PAPERANG' },
+        { namePrefix: 'MiaoMiaoJi' },
+        { namePrefix: 'P1S' },
+      ],
       optionalServices: [P1_SERVICE, P1_BLE_SERVICE],
     });
     expect(printer.getSnapshot()).toBe('connecting');
@@ -106,6 +117,14 @@ describe('P1 Bluetooth transport', () => {
     expect(printer.getSnapshot()).toBe('connected');
     expect(listener).toHaveBeenCalled();
     unsubscribe();
+  });
+  it('can explicitly show all BLE devices as a compatibility fallback', async () => {
+    const { printer, bluetooth } = setup();
+    await printer.connect(true);
+    expect(bluetooth.requestDevice).toHaveBeenCalledWith({
+      acceptAllDevices: true,
+      optionalServices: [P1_SERVICE, P1_BLE_SERVICE],
+    });
   });
   it('ignores device picker cancellation and allows reconnection', async () => {
     const { printer, bluetooth } = setup();
@@ -149,19 +168,23 @@ describe('P1 Bluetooth transport', () => {
     expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(raster).flatMap(frame => Array.from(frame)));
   });
   it('falls back to the P1S transparent UART write characteristic', async () => {
-    const { printer, getCharacteristic, write, writeWithoutResponse } = setup();
+    const { printer, getCharacteristic, write, writeWithoutResponse, receive, reply } = setup();
     getCharacteristic.mockImplementation(async (uuid: string) => {
       if (uuid === P1_WRITE) throw new DOMException('missing', 'NotFoundError');
+      if (uuid === P1S_NOTIFY) return receive;
       return { writeValueWithResponse: write, writeValueWithoutResponse: writeWithoutResponse };
     });
     await printer.connect();
-    expect(getCharacteristic.mock.calls.map(call => call[0])).toEqual([P1_WRITE, P1S_WRITE]);
+    expect(getCharacteristic.mock.calls.map(call => call[0])).toEqual([P1_WRITE, P1S_WRITE, P1S_NOTIFY]);
+    reply([0x02, 0x10, 0xab]);
+    expect(printer.getLastDeviceReply()).toBe('02 10 ab');
     const raster = new Uint8Array(48 * 2);
-    await printer.print(raster);
+    expect(await printer.print(raster)).toBe('unconfirmed');
+    expect(printer.getLastDeviceReply()).toBeUndefined();
     expect(write).not.toHaveBeenCalled();
     const chunks = writeWithoutResponse.mock.calls.map(call => call[0]);
-    expect(chunks.every(chunk => chunk.length <= 95)).toBe(true);
-    expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(Array.from(p1sPrintData(raster)));
+    expect(chunks.every(chunk => chunk.length <= 20)).toBe(true);
+    expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(raster).flatMap(frame => Array.from(frame)));
   });
   it('waits for FF03 credits before sending more chunks and resumes on new grants', async () => {
     const { printer, getPrimaryService, writeWithoutResponse, grant } = setup();

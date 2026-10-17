@@ -147,10 +147,10 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     }
   }
 
-  async function connect() {
+  async function connect(showAllDevices = false) {
     setNotice('');
     setConnectFailed(false);
-    try { await paperangPrinter.connect(); }
+    try { await paperangPrinter.connect(showAllDevices); }
     catch (error) {
       if (alive.current) setConnectFailed(true);
       const stage = error instanceof PrinterConnectionError ? error.stage : 'connection';
@@ -175,9 +175,11 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     if (!receipt || !receiptReady || paperangPrinter.getSnapshot() !== 'connected') return;
     setNotice('');
     try {
-      await paperangPrinter.print(receipt.raster);
-      trackSharePrintFinished({ outcome: 'sent' });
-      if (alive.current) setNotice(say('已发送至打印机', 'Sent to printer'));
+      const result = await paperangPrinter.print(receipt.raster);
+      if (result === 'sent') trackSharePrintFinished({ outcome: 'sent' });
+      if (alive.current) setNotice(result === 'unconfirmed'
+        ? say('蓝牙数据已写入，但尚未确认打印机接收了任务。如未出纸，请提供设备回包信息以核对 P1S 协议。', 'Bluetooth data was written, but the printer has not confirmed the job. If no paper comes out, provide the device reply to verify the P1S protocol.') + ` ${say('设备回包', 'Device reply')}: ${paperangPrinter.getLastDeviceReply() || say('无', 'none')}`
+        : say('已发送至打印机', 'Sent to printer'));
     } catch (error) {
       trackSharePrintFinished({ outcome: 'failed' });
       const details = error instanceof Error ? ` ${say('发送详情', 'Sending details')}: ${error.message}` : '';
@@ -241,7 +243,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
                   {(state === 'disconnected' || state === 'connecting') && <p className="w-full text-xs leading-relaxed text-text-secondary">{say('请先断开系统蓝牙或喵喵机 App 中的现有连接，再在浏览器设备列表中选择 P1S；网页会自行连接打印机。', 'Disconnect the printer from system Bluetooth or the Paperang app first, then select P1S in the browser device list; the page will connect to it directly.')}</p>}
                   <div className="flex flex-wrap items-center gap-2">
                     {state === 'disconnected' || state === 'connecting'
-                      ? <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{state === 'connecting' ? say('正在连接…', 'Connecting…') : connectFailed ? say('重新连接', 'Reconnect') : say('连接打印机', 'Connect printer')}</button>
+                      ? <><button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{state === 'connecting' ? say('正在连接…', 'Connecting…') : connectFailed ? say('重新连接', 'Reconnect') : say('连接打印机', 'Connect printer')}</button><button className="rounded-lg px-2 py-2 text-xs text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40" disabled={state === 'connecting'} onClick={() => void connect(true)}>{say('显示所有蓝牙设备', 'Show all Bluetooth devices')}</button></>
                       : <><button className={buttonClass} disabled={!receiptReady || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小卡', 'Print card')}</button><button className="rounded-lg px-2 py-2 text-xs text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40" disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button></>}
                   </div>
                 </>

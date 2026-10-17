@@ -9,6 +9,7 @@ export const P1_SERVICE = '49535343-fe7d-4ae5-8fa9-9fafd205e455';
 export const P1_WRITE = '49535343-6daa-4d02-abf6-19569aca69fe';
 // P1S exposes the newer Microchip transparent UART downlink characteristic.
 export const P1S_WRITE = '49535343-8841-43f4-a8d4-ecbe34729bb3';
+export const P1S_NOTIFY = '49535343-1e4d-4bd9-ba61-23c647249616';
 // Observed on the local P1: FF00/FF02 accepts the same seeded P1 framing.
 export const P1_BLE_SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb';
 export const P1_BLE_WRITE = '0000ff02-0000-1000-8000-00805f9b34fb';
@@ -39,27 +40,6 @@ export function rasterFrames(raster: Uint8Array): Uint8Array<ArrayBuffer>[] {
   // Blank rows ensure the QR quiet zone and footer pass the tear edge.
   frames.push(paperangFrame(26, new Uint8Array([80, 0])));
   return frames;
-}
-
-/** P1S uses the raw L11/ESC raster path rather than the CRC-framed P1 protocol. */
-export function p1sPrintData(raster: Uint8Array): Uint8Array<ArrayBuffer> {
-  if (!raster.length || raster.length % P1_ROW_BYTES) throw new Error('Invalid P1S raster rows');
-  const height = raster.length / P1_ROW_BYTES;
-  if (height > 0xffff) throw new Error('P1S raster exceeds maximum height');
-  const wake = new Uint8Array(15);
-  const enable = new Uint8Array([0x10, 0xff, 0xf1, 0x02]);
-  const bitmap = new Uint8Array(8 + raster.length);
-  bitmap.set([0x1d, 0x76, 0x30, 0, P1_ROW_BYTES, 0, height & 255, height >>> 8]);
-  bitmap.set(raster, 8);
-  const feed = new Uint8Array([0x1b, 0x4a, 100]);
-  const stop = new Uint8Array([0x10, 0xff, 0xf1, 0x45]);
-  const data = new Uint8Array(wake.length + enable.length + bitmap.length + feed.length + stop.length);
-  let offset = 0;
-  for (const command of [wake, enable, bitmap, feed, stop]) {
-    data.set(command, offset);
-    offset += command.length;
-  }
-  return data;
 }
 
 export function rgbaToRaster(data: Uint8ClampedArray, width: number, height: number): Uint8Array {

@@ -1,4 +1,4 @@
-import { P1_SERVICE, P1_WRITE, P1S_WRITE, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW, p1sPrintData, rasterFrames } from './paperang-protocol';
+import { P1_SERVICE, P1_WRITE, P1S_WRITE, P1S_NOTIFY, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW, rasterFrames } from './paperang-protocol';
 
 // Narrow Web Bluetooth interfaces keep browser-specific types inside this service.
 interface WriteCharacteristic {
@@ -10,7 +10,7 @@ interface WriteCharacteristic {
   removeEventListener?(type: 'characteristicvaluechanged', callback: () => void): void;
 }
 const WRITE_TIMEOUT_MS = 10_000;
-const P1S_CHUNK_SIZE = 95;
+const P1S_CHUNK_SIZE = 20;
 const P1S_CHUNK_DELAY_MS = 30;
 const CONNECTION_RETRY_DELAY_MS = 200;
 async function withWriteTimeout<T>(operation: Promise<T>): Promise<T> {
@@ -32,7 +32,7 @@ interface PrinterDevice {
   removeEventListener(type: 'gattserverdisconnected', callback: () => void): void;
 }
 export interface PrinterBluetooth {
-  requestDevice(options: { acceptAllDevices: true; optionalServices: string[] }): Promise<PrinterDevice>;
+  requestDevice(options: ({ acceptAllDevices: true } | { filters: { services?: string[]; namePrefix?: string }[] }) & { optionalServices: string[] }): Promise<PrinterDevice>;
 }
 export type PrinterConnectionStage = 'selection' | 'connection' | 'service' | 'characteristic';
 export class PrinterConnectionError extends Error {
@@ -44,6 +44,7 @@ export class PrinterConnectionError extends Error {
 }
 
 export type PrinterState = 'disconnected' | 'connecting' | 'connected' | 'printing';
+export type PrintResult = 'sent' | 'unconfirmed';
 
 export class PaperangPrinter {
   private state: PrinterState = 'disconnected';
@@ -51,6 +52,8 @@ export class PaperangPrinter {
   private device?: PrinterDevice;
   private characteristic?: WriteCharacteristic;
   private usesP1sProtocol = false;
+  private receiveCharacteristic?: WriteCharacteristic;
+  private lastDeviceReply?: string;
   private flowCharacteristic?: WriteCharacteristic;
   private credits = 0;
   private creditWaiter?: { resolve: () => void; reject: (error: Error) => void };
@@ -78,8 +81,17 @@ export class PaperangPrinter {
     this.clearFlowControl();
     this.characteristic = undefined;
     this.usesP1sProtocol = false;
+    this.receiveCharacteristic?.removeEventListener?.('characteristicvaluechanged', this.onDeviceReply);
+    this.receiveCharacteristic = undefined;
     this.setState('disconnected');
   };
+  private onDeviceReply = () => {
+    const value = this.receiveCharacteristic?.value;
+    if (!value) return;
+    this.lastDeviceReply = Array.from(new Uint8Array(value.buffer, value.byteOffset, Math.min(value.byteLength, 32)))
+      .map(byte => byte.toString(16).padStart(2, '0')).join(' ');
+  };
+  getLastDeviceReply = () => this.lastDeviceReply;
   private onFlowControl = () => {
     const value = this.flowCharacteristic?.value;
     // FF03: 01 <count> grants additional write-without-response packets.
@@ -115,9 +127,11 @@ export class PaperangPrinter {
     this.device = undefined;
     this.characteristic = undefined;
     this.usesP1sProtocol = false;
+    this.receiveCharacteristic?.removeEventListener?.('characteristicvaluechanged', this.onDeviceReply);
+    this.receiveCharacteristic = undefined;
     this.setState('disconnected');
   }
-  async connect(): Promise<void> {
+  async connect(showAllDevices = false): Promise<void> {
     if (this.state !== 'disconnected') return;
     const bluetooth = this.bluetooth();
     if (!bluetooth) throw new Error('Bluetooth unavailable');
@@ -128,10 +142,16 @@ export class PaperangPrinter {
     try {
       // Must happen before any await, directly from the user's click.
       const device = await bluetooth.requestDevice({
-        // P1/P1S firmware does not consistently expose either its local name or
-        // print-service UUID in advertisements. Let the user select the nearby
-        // BLE peripheral, then strictly verify the supported services below.
-        acceptAllDevices: true,
+        ...(showAllDevices ? { acceptAllDevices: true as const } : { filters: [
+          // Service-only and name-only filters are alternatives. Some firmware
+          // advertises one but not the other, so never require both together.
+          { services: [P1_SERVICE] },
+          { services: [P1_BLE_SERVICE] },
+          { namePrefix: 'Paperang' },
+          { namePrefix: 'PAPERANG' },
+          { namePrefix: 'MiaoMiaoJi' },
+          { namePrefix: 'P1S' },
+        ] }),
         optionalServices: [P1_SERVICE, P1_BLE_SERVICE],
       });
       if (generation !== this.generation) return;
@@ -193,6 +213,14 @@ export class PaperangPrinter {
       this.characteristic = characteristic;
       this.usesP1sProtocol = writeUuid === P1S_WRITE;
       if (this.usesP1sProtocol && !characteristic.writeValueWithoutResponse) throw new Error('P1S write-without-response unavailable');
+      if (this.usesP1sProtocol) {
+        const receive = await service.getCharacteristic(P1S_NOTIFY);
+        if (!receive.startNotifications || !receive.addEventListener || !receive.removeEventListener) throw new Error('P1S notification channel unavailable');
+        this.receiveCharacteristic = receive;
+        receive.addEventListener('characteristicvaluechanged', this.onDeviceReply);
+        await withWriteTimeout(receive.startNotifications());
+        if (generation !== this.generation) return;
+      }
       this.setState('connected');
     } catch (error) {
       if (generation === this.generation) this.disconnect();
@@ -200,16 +228,17 @@ export class PaperangPrinter {
       throw new PrinterConnectionError(stage, error);
     }
   }
-  async print(raster: Uint8Array): Promise<void> {
+  async print(raster: Uint8Array): Promise<PrintResult> {
     if (this.state !== 'connected' || !this.characteristic) throw new Error('P1 not ready');
     const usesP1sProtocol = this.usesP1sProtocol;
-    const frames = usesP1sProtocol ? [p1sPrintData(raster)] : rasterFrames(raster);
+    const frames = rasterFrames(raster);
     const characteristic = this.characteristic;
     const generation = this.generation;
     const usesFlowControl = !!this.flowCharacteristic;
     let frameIndex = 0;
     let offset = 0;
     this.setState('printing');
+    this.lastDeviceReply = undefined;
     try {
       for (; frameIndex < frames.length; frameIndex++) {
         const frame = frames[frameIndex];
@@ -230,6 +259,8 @@ export class PaperangPrinter {
       }
       if (generation !== this.generation) throw new Error('P1 disconnected');
       this.setState('connected');
+      // BLE write completion does not mean the P1S accepted a print job.
+      return usesP1sProtocol ? 'unconfirmed' : 'sent';
     } catch (error) {
       // No automatic retries: part of the receipt may already be on paper.
       if (generation === this.generation) this.disconnect();

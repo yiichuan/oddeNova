@@ -21,6 +21,7 @@ const printer = vi.hoisted(() => {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => state,
     getDeviceName: () => state === 'connected' || state === 'printing' ? name?.trim() || undefined : undefined,
+    getLastDeviceReply: vi.fn(() => undefined),
     setDeviceName(next?: string) { name = next; },
     setState(next: string) { state = next; listeners.forEach(l => l()); },
     connect: vi.fn(), disconnect: vi.fn(), print: vi.fn(),
@@ -214,6 +215,12 @@ describe('ShareDialog', () => {
     expect(copy).toHaveBeenCalledTimes(1);
     expect(printer.connect).not.toHaveBeenCalled();
   });
+  it('offers a filtered printer picker with an explicit all-device fallback', async () => {
+    await mount();
+    await press('Print card');
+    await press('Show all Bluetooth devices');
+    expect(printer.connect).toHaveBeenCalledWith(true);
+  });
   it('offers reconnection after a connection failure', async () => {
     printer.connect.mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(async () => printer.setState('connected'));
     await mount();
@@ -347,7 +354,7 @@ describe('ShareDialog', () => {
   });
   it('can reconnect and reprint the same receipt without uploading again', async () => {
     printer.connect.mockImplementation(async () => { printer.setState('connected'); });
-    printer.print.mockResolvedValue(undefined);
+    printer.print.mockResolvedValue('sent');
     await mount();
     if (!document.querySelector('#share-printer')) await press('Print card');
     await press('Connect printer');
@@ -364,6 +371,16 @@ describe('ShareDialog', () => {
     if (!document.querySelector('#share-printer')) await press('Print card');
     await press('Connect printer');
     expect(printer.connect).toHaveBeenCalledTimes(2);
+  });
+  it('does not report printer success after an unconfirmed P1S write', async () => {
+    printer.connect.mockImplementation(async () => { printer.setState('connected'); });
+    printer.print.mockResolvedValue('unconfirmed');
+    await mount();
+    await press('Print card');
+    await press('Connect printer');
+    await press('Print card');
+    expect(document.body.textContent).toContain('printer has not confirmed the job');
+    expect(printFinished).not.toHaveBeenCalled();
   });
   it('keeps the QR and copy action when printing fails, without retrying', async () => {
     printer.connect.mockImplementation(async () => { printer.setState('connected'); });
