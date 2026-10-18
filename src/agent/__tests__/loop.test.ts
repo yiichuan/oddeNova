@@ -877,3 +877,43 @@ describe('runAgentLoop — multi-turn tool round-trip (always-thinking models, e
     });
   });
 });
+
+describe('runAgentLoop — share-card layer notes', () => {
+  const code = 'setcps(0.5)\nstack(\n  /* @layer horizon */\n  // 天空和声\n  note("c3").s("gm_pad_warm"),\n  /* @layer keys */\n  note("e4").s("gm_piano")\n)';
+
+  it('returns the commit notes for layers in the committed code only', async () => {
+    const llm: LLMCaller = {
+      async chatWithTools() {
+        return {
+          content: null,
+          toolCalls: [{
+            id: 'commit-notes',
+            name: 'commit',
+            arguments: JSON.stringify({
+              explanation: '写好了',
+              layerNotes: [
+                { layer: 'horizon', note: '  温暖pad铺出\n天空和声  ' },
+                { layer: 'keys', note: '钢'.repeat(60) },
+                { layer: 'ghost', note: '不存在的层' },
+                { layer: 'keys' },
+              ],
+            }),
+          }],
+        };
+      },
+    };
+    const result = await runAgentLoop({ initialCode: code, instruction: '写一首', locale: 'zh', systemPrompt: 'p', llm });
+    expect(result.layerNotes).toEqual({ horizon: '温暖pad铺出 天空和声', keys: '钢'.repeat(40) });
+  });
+
+  it('commits normally without notes', async () => {
+    const llm: LLMCaller = {
+      async chatWithTools() {
+        return { content: null, toolCalls: [{ id: 'c', name: 'commit', arguments: JSON.stringify({ explanation: 'ok', layerNotes: 'not a list' }) }] };
+      },
+    };
+    const result = await runAgentLoop({ initialCode: code, instruction: 'x', locale: 'zh', systemPrompt: 'p', llm });
+    expect(result.committed).toBe(true);
+    expect(result).not.toHaveProperty('layerNotes');
+  });
+});

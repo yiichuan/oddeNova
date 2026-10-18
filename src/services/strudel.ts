@@ -12,6 +12,7 @@ import { installCodeEditorReadOnly, setCodeEditorReadOnly } from '../lib/code-ed
 import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bounds';
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
+import { parseScore } from '../agent/parser';
 import { claimTransport } from './transport';
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
@@ -2132,6 +2133,74 @@ export async function validateCodeRuntime(code: string): Promise<ValidationResul
   } catch (e) {
     return { ok: false, error: getErrorMessage(e), kind: 'runtime' };
   }
+}
+
+/** One audible event of a layer, in cycles. */
+export interface LayerEvent { begin: number; end: number }
+
+/**
+ * Compiles each `stack(...)` layer on its own and queries the events it really
+ * produces over [0, cycles). Code before the stack (shared `const`s) and any chain
+ * after it (`stack(...).mask(...)`) come along, so a layer sounds exactly as it does
+ * inside the piece. Nothing plays and the live tempo is untouched: tempo calls are
+ * removed and `samples`/`.p()` are inert. Events silenced by a gain of zero are
+ * dropped; `mask` already removes its own. Keyed by layer name, or `''` for code
+ * without a stack. Needs the engine's evalScope to have run (the studio is up).
+ */
+export async function queryLayerEvents(code: string, cycles: number): Promise<Map<string, LayerEvent[]>> {
+  const clean = normalizeCode(stripUIDecorations(code)).replace(/^\s*setcp[sm]\([^)]*\)\s*;?\s*$/gm, '');
+  const score = parseScore(clean);
+  const slots = score.hasStack && score.layers.length > 0
+    ? score.layers.map(layer => ({
+      name: layer.name,
+      code: clean.slice(0, score.stackArgsStart) + layer.source + clean.slice(score.stackArgsEnd),
+    }))
+    : [{ name: '', code: clean }];
+  const inert = new Set(['samples', 'setcps', 'setcpm', 'hush']);
+  const scope = new Proxy({}, {
+    has() { return true; },
+    get(_t, key) {
+      if (typeof key === 'symbol') return (globalThis as Record<symbol, unknown>)[key as unknown as symbol];
+      if (inert.has(key)) return async () => {};
+      return (globalThis as Record<string, unknown>)[key];
+    },
+  });
+  const transpiler = cachedTranspiler ?? (await import('@strudel/transpiler')).transpiler;
+  cachedTranspiler = transpiler;
+  const { Pattern } = await import('@strudel/core');
+  const livePatternMethod = Object.getOwnPropertyDescriptor(Pattern.prototype, 'p');
+  Object.defineProperty(Pattern.prototype, 'p', { configurable: true, writable: true, value(this: unknown) { return this; } });
+  const result = new Map<string, LayerEvent[]>();
+  try {
+    for (const slot of slots) {
+      const { output } = transpiler(slot.code, { id: undefined, emitMiniLocations: false });
+      const pattern = await new Function('__s__', `with (__s__) {\nreturn (async () => {\n${output}\n})()\n}`)(scope);
+      if (!pattern || typeof pattern.queryArc !== 'function') throw new Error(`Layer ${slot.name || 'main'} is not a pattern`);
+      const events: LayerEvent[] = [];
+      for (const hap of pattern.queryArc(0, cycles) as StrudelHap[]) {
+        if (hap.hasOnset && !hap.hasOnset()) continue;
+        const value = hap.value;
+        if (value && typeof value === 'object') {
+          const { gain, velocity, postgain } = value as Record<string, unknown>;
+          if (gain === 0 || velocity === 0 || postgain === 0) continue;
+        }
+        const span = hap.whole ?? hap.part;
+        events.push({ begin: Number(span.begin.valueOf()), end: Number(span.end.valueOf()) });
+      }
+      result.set(slot.name, events);
+    }
+  } finally {
+    if (livePatternMethod) Object.defineProperty(Pattern.prototype, 'p', livePatternMethod);
+    else delete Pattern.prototype.p;
+  }
+  return result;
+}
+
+interface StrudelHap {
+  hasOnset?: () => boolean;
+  value: unknown;
+  whole?: { begin: { valueOf(): number }; end: { valueOf(): number } };
+  part: { begin: { valueOf(): number }; end: { valueOf(): number } };
 }
 
 // Runs the Strudel transpiler to catch mini-notation parse errors that the

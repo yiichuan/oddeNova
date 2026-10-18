@@ -687,10 +687,11 @@ describe('MobileFeaturedDetail', () => {
     expect(uploadShareMock).toHaveBeenCalledWith(
       expect.objectContaining({ code: PIECES[0].code, title: '360' }),
     );
+    // The card is drawn from the piece's own script (it no longer prints a title).
     expect(renderShareReceiptMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/s\/share123$/),
-      '360',
       expect.any(String),
+      expect.objectContaining({ code: PIECES[0].code }),
     );
     expect(shareUrlMock).not.toHaveBeenCalled();
   });

@@ -72,6 +72,7 @@ export interface AgentTurnDeps {
     sessionId: string,
     revision?: CodeRevisionDraft,
     inputMode?: InputMode,
+    layerNotes?: Record<string, string>,
   ) => void;
   finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
@@ -190,7 +191,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
           }
           const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
           if (revision) {
-            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode);
+            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode, result.layerNotes);
           } else {
             deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
           }
@@ -212,7 +213,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
           : undefined;
         if (revision) {
           const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
-          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode);
+          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode, result.layerNotes);
         } else {
           deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
         }
@@ -298,8 +299,8 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
     getCurrentCode: () => currentCode,
     snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
     addUserMessage: (text) => sessions.addUserMessage(text),
-    addAssistantMessage: (text, code, id, revision, inputMode) =>
-      sessions.addAssistantMessage(text, code, id, revision, inputMode),
+    addAssistantMessage: (text, code, id, revision, inputMode, layerNotes) =>
+      sessions.addAssistantMessage(text, code, id, revision, inputMode, layerNotes),
     finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
     setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
     setSessionSuggestions: (items, code, id) => sessions.setSuggestions(items, code, id),

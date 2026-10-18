@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ShareDialog from '../ShareDialog';
 import type { UploadShareInput } from '../../../services/share';
-import { PrinterConnectionError } from '../../../services/printing/paperang-printer';
+import { PrinterBridgeUnavailableError, PrinterConnectionError, PrinterProtocolError } from '../../../services/printing/paperang-printer';
 
 const upload = vi.hoisted(() => vi.fn());
 const copy = vi.hoisted(() => vi.fn());
@@ -22,6 +22,10 @@ const printer = vi.hoisted(() => {
     getSnapshot: () => state,
     getDeviceName: () => state === 'connected' || state === 'printing' ? name?.trim() || undefined : undefined,
     getLastDeviceReply: vi.fn(() => undefined),
+    getProtocol: vi.fn((): string | undefined => undefined),
+    getTransport: vi.fn((): string | undefined => undefined),
+    bridgeSupported: vi.fn(() => false),
+    connectBridge: vi.fn(),
     setDeviceName(next?: string) { name = next; },
     setState(next: string) { state = next; listeners.forEach(l => l()); },
     connect: vi.fn(), disconnect: vi.fn(), print: vi.fn(),
@@ -59,17 +63,6 @@ function key(element: HTMLElement, value: string, shiftKey = false) {
   act(() => element.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true })));
 }
 
-async function editTitle(value: string, commit: 'blur' | 'Enter' = 'blur') {
-  const input = document.querySelector<HTMLInputElement>('#share-card-title')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await act(async () => {
-    input.dispatchEvent(commit === 'blur' ? new FocusEvent('focusout', { bubbles: true }) : new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  });
-}
-
 beforeEach(() => {
   vi.resetAllMocks();
   printer.supported.mockReturnValue(true);
@@ -81,6 +74,7 @@ beforeEach(() => {
   copy.mockResolvedValue('copied');
   native.mockResolvedValue('shared');
   Reflect.deleteProperty(navigator, 'share');
+  localStorage.clear();
 });
 afterEach(() => {
   act(() => root?.unmount());
@@ -91,7 +85,7 @@ afterEach(() => {
 describe('ShareDialog', () => {
   it('updates the printer name with connection states and reconnection', async () => {
     await mount();
-    await press('Print card');
+    await press('Print receipt');
     const status = () => document.querySelector('#share-printer [role="status"]')!;
     expect(status().textContent).toBe('Printer · Disconnected');
     printer.setDeviceName('MiaoMiaoJi-1234');
@@ -111,7 +105,7 @@ describe('ShareDialog', () => {
     printer.setDeviceName(name);
     printer.setState('connected');
     await mount();
-    await press('Print card');
+    await press('Print receipt');
     expect(document.querySelector('#share-printer [role="status"]')?.textContent).toBe('Printer · Connected');
   });
   it('retains a long device name and allows wrapping inside the dialog', async () => {
@@ -119,7 +113,7 @@ describe('ShareDialog', () => {
     printer.setDeviceName(name);
     printer.setState('connected');
     await mount();
-    await press('Print card');
+    await press('Print receipt');
     const status = document.querySelector('#share-printer [role="status"]')!;
     expect(status.textContent).toBe(`${name} · Connected`);
     expect(status.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
@@ -127,79 +121,20 @@ describe('ShareDialog', () => {
   it('uses a generic printer name in ordinary connection failure advice', async () => {
     printer.connect.mockRejectedValue(new PrinterConnectionError('connection', new Error('connection lost')));
     await mount();
-    await press('Print card');
-    await press('Connect printer');
+    await press('Print receipt');
+    await press('Connect P1');
     expect(document.body.textContent).toContain('Turn on the printer');
     expect(document.body.textContent).not.toContain('Turn on P1');
   });
-  it.each([
-    ['oddeNova beta 1.0 默认印象', '默认印象'],
-    ['oddeNova beta 1.0 Default Impression', 'Default Impression'],
-    ['New session', 'My music creation'],
-    ['oddeNova beta 1.0 custom', 'oddeNova beta 1.0 custom'],
-  ])('uses the card title for %s without changing the upload', async (title, expected) => {
-    await mount(false, { ...snapshot, title });
-    expect(document.querySelector('input')?.value).toBe(expected);
-    expect(upload.mock.calls[0][0].title).toBe(title);
-  });
-  it('commits trimmed titles on blur or Enter and restores empty titles without uploading', async () => {
+  it('downloads the generated preview with the fixed card filename', async () => {
     await mount();
-    await editTitle('  New card  ');
-    expect(rendered).toHaveBeenLastCalledWith(expect.any(String), 'New card', 'Scan to hear this music');
-    expect(document.querySelector('input')?.value).toBe('New card');
-    await editTitle('   ', 'Enter');
-    expect(document.querySelector('input')?.value).toBe('Test');
-    expect(upload).toHaveBeenCalledTimes(1);
-    await press('Copy link');
-    expect(copy).toHaveBeenCalledWith(expect.any(String), '[oddeNova] Test', true);
-  });
-  it('disables export while rendering and ignores a stale title result', async () => {
-    await mount();
-    const preview = document.querySelector('img');
-    const pending = new Map<string, (value: { preview: string; raster: Uint8Array }) => void>();
-    rendered.mockImplementation((_url: string, title: string) => new Promise(resolve => pending.set(title, resolve)));
-    await press('Print card');
-    act(() => printer.setState('connected'));
-    await editTitle('First');
-    expect(document.querySelector('img')).toBe(preview);
-    expect(preview?.getAttribute('src')).toBe('data:image/png;base64,AA==');
-    expect(document.body.textContent).not.toContain('Generating print preview…');
-    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(true);
-    expect(document.querySelector<HTMLButtonElement>('#share-printer button')?.disabled).toBe(true);
-    await editTitle('Second', 'Enter');
-    await act(async () => pending.get('Second')?.({ preview: 'data:image/png;base64,second', raster }));
-    await act(async () => pending.get('First')?.({ preview: 'data:image/png;base64,first', raster }));
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,second');
-    expect(document.querySelector('img')).toBe(preview);
-    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(false);
-    expect(upload).toHaveBeenCalledTimes(1);
-  });
-  it('keeps the previous preview on title render failure and allows retrying the new title', async () => {
-    await mount();
-    const preview = document.querySelector('img');
-    rendered.mockRejectedValueOnce(new Error('canvas'));
-    await editTitle('New title');
-    expect(document.querySelector('img')).toBe(preview);
-    expect(document.body.textContent).toContain('Could not generate print preview');
-    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(true);
-    rendered.mockResolvedValueOnce({ preview: 'data:image/png;base64,new', raster });
-    await press('Retry print preview');
-    expect(rendered).toHaveBeenLastCalledWith(expect.any(String), 'New title', 'Scan to hear this music');
-    expect(document.querySelector('img')).toBe(preview);
-    expect(preview?.getAttribute('src')).toBe('data:image/png;base64,new');
-    expect(document.body.textContent).not.toContain('Could not generate print preview');
-    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(false);
-  });
-  it('downloads the same preview with a sanitized title', async () => {
-    await mount();
-    await editTitle('Song/Name?');
     const downloads: { href: string; filename: string }[] = [];
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
       downloads.push({ href: this.href, filename: this.download });
     });
     try {
       await press('Save image');
-      expect(downloads).toEqual([{ href: 'data:image/png;base64,AA==', filename: 'Song_Name_.png' }]);
+      expect(downloads).toEqual([{ href: 'data:image/png;base64,AA==', filename: 'oddeNova-card.png' }]);
       expect(document.querySelector('a[download]')).toBeNull();
       expect(completed).not.toHaveBeenCalled();
       expect(document.body.textContent).not.toContain('Image download started');
@@ -208,29 +143,14 @@ describe('ShareDialog', () => {
   it('keeps copying and saving available when Bluetooth is unsupported', async () => {
     printer.supported.mockReturnValue(false);
     await mount();
-    await press('Print card');
+    await press('Print receipt');
     expect(document.body.textContent).toContain('Bluetooth printing requires');
     expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(false);
     await press('Copy link');
     expect(copy).toHaveBeenCalledTimes(1);
     expect(printer.connect).not.toHaveBeenCalled();
   });
-  it('offers a filtered printer picker with an explicit all-device fallback', async () => {
-    await mount();
-    await press('Print card');
-    await press('Show all Bluetooth devices');
-    expect(printer.connect).toHaveBeenCalledWith(true);
-  });
-  it('offers reconnection after a connection failure', async () => {
-    printer.connect.mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(async () => printer.setState('connected'));
-    await mount();
-    await press('Print card');
-    await press('Connect printer');
-    await press('Reconnect');
-    expect(document.body.textContent).toContain('Printer · Connected');
-    expect(printer.print).not.toHaveBeenCalled();
-  });
-  it('includes the title input in the keyboard focus loop and restores focus on close', async () => {
+  it('keeps focus inside the dialog and restores it on close', async () => {
     const previous = document.createElement('button');
     document.body.appendChild(previous);
     previous.focus();
@@ -242,14 +162,19 @@ describe('ShareDialog', () => {
     expect(document.activeElement).toBe(first);
     act(() => { first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })); });
     expect(document.activeElement).toBe(last);
-    expect(dialog.querySelector('input')).toBeTruthy();
+    expect(dialog.querySelector('input')).toBeNull();
     act(() => root.unmount());
     expect(document.activeElement).toBe(previous);
   });
   it('uploads once under StrictMode and never counts preview as completed sharing', async () => {
     await mount(true);
     expect(upload).toHaveBeenCalledTimes(1);
-    expect(rendered).toHaveBeenCalledWith(`${window.location.origin}/s/qr123`, 'Test', 'Scan to hear this music');
+    expect(rendered).toHaveBeenCalledWith(
+      `${window.location.origin}/s/qr123`,
+      'SCAN QR TO VIEW THE PROCESS',
+      // The session's turns carry the agent's per-layer notes for the card.
+      { code: 's("bd")', createdAt: expect.any(Number), locale: 'en', messages: snapshot.messages, number: 1 },
+    );
     expect(completed).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('30 days');
     expect(document.body.textContent).not.toContain('/s/qr123');
@@ -259,9 +184,9 @@ describe('ShareDialog', () => {
     await mount();
     expect(document.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AA==');
     expect(document.querySelector('h2')?.textContent).toBe('Share creation');
-    expect(document.querySelector('input')?.value).toBe('Test');
-    expect(document.body.textContent).not.toContain('Connect printer');
-    await press('Print card');
+    expect(document.querySelector('input')).toBeNull();
+    expect(document.body.textContent).not.toContain('Connect P1');
+    await press('Print receipt');
     expect(printer.connect).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain('Printer · Disconnected');
     await press('Copy link');
@@ -288,7 +213,7 @@ describe('ShareDialog', () => {
     Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
     await mount();
     const actions = document.querySelector('.grid-cols-3')!;
-    expect(Array.from(actions.querySelectorAll('button')).map(button => button.textContent)).toEqual(['Copy link', 'Save image', 'Print card']);
+    expect(Array.from(actions.querySelectorAll('button')).map(button => button.textContent)).toEqual(['Copy link', 'Save image', 'Print receipt']);
     await press('Copy link');
     expect(copy).toHaveBeenCalledTimes(1);
     await pressSystemShare();
@@ -356,40 +281,106 @@ describe('ShareDialog', () => {
     printer.connect.mockImplementation(async () => { printer.setState('connected'); });
     printer.print.mockResolvedValue('sent');
     await mount();
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Connect printer');
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Print card');
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Print card');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Connect P1');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Print receipt');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Print receipt');
     expect(upload).toHaveBeenCalledTimes(1);
     expect(printer.print.mock.calls).toEqual([[raster], [raster]]);
     expect(printFinished).toHaveBeenCalledWith({ outcome: 'sent' });
     expect(completed).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain('Sent to printer');
     act(() => printer.setState('disconnected'));
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Connect printer');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Connect P1');
     expect(printer.connect).toHaveBeenCalledTimes(2);
+  });
+  it('numbers each print of the day and shows the next number in the preview', async () => {
+    printer.setState('connected');
+    printer.print.mockResolvedValue('sent');
+    await mount();
+    await press('Print receipt');
+    const numbers = () => rendered.mock.calls.map(call => call[2].number);
+    expect(numbers()).toEqual([1]);
+    await press('Print receipt');
+    expect(numbers()).toEqual([1, 2]);
+    await press('Print receipt');
+    expect(numbers()).toEqual([1, 2, 3]);
+    expect(printer.print).toHaveBeenCalledTimes(2);
+  });
+  it('re-renders with the current number when another print happened since the preview', async () => {
+    printer.setState('connected');
+    printer.print.mockResolvedValue('sent');
+    const second = { preview: 'data:image/png;base64,BB==', raster: new Uint8Array(96) };
+    await mount();
+    await press('Print receipt');
+    localStorage.setItem('oddenova_receipt_counter', JSON.stringify({ day: (d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`)(new Date()), count: 4 }));
+    rendered.mockResolvedValueOnce(second);
+    await press('Print receipt');
+    expect(rendered.mock.calls[1][2].number).toBe(5);
+    expect(printer.print).toHaveBeenCalledWith(second.raster);
   });
   it('does not report printer success after an unconfirmed P1S write', async () => {
     printer.connect.mockImplementation(async () => { printer.setState('connected'); });
     printer.print.mockResolvedValue('unconfirmed');
     await mount();
-    await press('Print card');
-    await press('Connect printer');
-    await press('Print card');
-    expect(document.body.textContent).toContain('printer has not confirmed the job');
+    await press('Print receipt');
+    await press('Connect P1');
+    await press('Print receipt');
+    expect(document.body.textContent).toContain('printer did not confirm the job');
     expect(printFinished).not.toHaveBeenCalled();
+  });
+  it('warns right after connecting when no Paperang protocol answers, and does not report a failed print', async () => {
+    printer.connect.mockImplementation(async () => { printer.setState('connected'); });
+    printer.getProtocol.mockReturnValue('unknown');
+    printer.print.mockRejectedValue(new PrinterProtocolError());
+    await mount();
+    await press('Print receipt');
+    await press('Connect P1');
+    expect(document.body.textContent).toContain('Classic Bluetooth (SPP)');
+    await press('Print receipt');
+    expect(document.body.textContent).toContain('did not answer any known Paperang protocol');
+    expect(document.body.textContent).not.toContain('Sending interrupted');
+    expect(printFinished).not.toHaveBeenCalled();
+  });
+  it('connects P1S over classic Bluetooth SPP with only print and disconnect controls', async () => {
+    printer.bridgeSupported.mockReturnValue(true);
+    printer.connectBridge.mockImplementation(async () => { printer.setState('connected'); });
+    printer.getTransport.mockReturnValue('spp');
+    await mount();
+    await press('Print receipt');
+    await press('Connect P1S');
+    expect(printer.connectBridge).toHaveBeenCalledTimes(1);
+    expect(printer.connect).not.toHaveBeenCalled();
+    expect(Array.from(document.querySelectorAll('#share-printer button')).map(button => button.textContent)).toEqual(['Print receipt', 'Disconnect']);
+  });
+  it('offers separate P1 and P1S entries, P1 first', async () => {
+    printer.bridgeSupported.mockReturnValue(true);
+    await mount();
+    await press('Print receipt');
+    expect(Array.from(document.querySelectorAll('#share-printer button')).map(button => button.textContent)).toEqual(['Connect P1', 'Connect P1S']);
+    await press('Connect P1');
+    expect(printer.connect).toHaveBeenCalledWith();
+    expect(printer.connectBridge).not.toHaveBeenCalled();
+  });
+  it('tells the user to start the local bridge when it is not running', async () => {
+    printer.bridgeSupported.mockReturnValue(true);
+    printer.connectBridge.mockRejectedValue(new PrinterConnectionError('connection', new PrinterBridgeUnavailableError()));
+    await mount();
+    await press('Print receipt');
+    await press('Connect P1S');
+    expect(document.body.textContent).toContain('npm run printer:bridge');
   });
   it('keeps the QR and copy action when printing fails, without retrying', async () => {
     printer.connect.mockImplementation(async () => { printer.setState('connected'); });
     printer.print.mockImplementation(async () => { printer.setState('disconnected'); throw new Error('lost'); });
     await mount();
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Connect printer');
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Print card');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Connect P1');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Print receipt');
     expect(printer.print).toHaveBeenCalledTimes(1);
     expect(printFinished).toHaveBeenCalledWith({ outcome: 'failed' });
     expect(document.body.textContent).toContain('some paper may have printed');
@@ -401,16 +392,16 @@ describe('ShareDialog', () => {
   it('does not show errors on connection cancellation', async () => {
     printer.connect.mockResolvedValue(undefined);
     await mount();
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Connect printer');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Connect P1');
     expect(document.body.textContent).not.toContain('Connection failed');
-    expect(document.body.textContent).toContain('Connect printer');
+    expect(document.body.textContent).toContain('Connect P1');
   });
   it('distinguishes an absent P1 service from connection and permission failures', async () => {
     printer.connect.mockRejectedValue(new PrinterConnectionError('service', new DOMException('No Services matching UUID found', 'NotFoundError')));
     await mount();
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Connect printer');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Connect P1');
     expect(document.body.textContent).toContain('does not expose the supported P1 print service');
     expect(document.body.textContent).toContain('NotFoundError: No Services matching UUID found');
     expect(document.body.textContent).not.toContain('Turn on P1');
@@ -420,8 +411,8 @@ describe('ShareDialog', () => {
   it('shows browser permission failures without calling them absent services', async () => {
     printer.connect.mockRejectedValue(new PrinterConnectionError('service', new DOMException('Access denied', 'SecurityError')));
     await mount();
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Connect printer');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Connect P1');
     expect(document.body.textContent).toContain('The browser denied Bluetooth access');
     expect(document.body.textContent).toContain('SecurityError: Access denied');
     expect(document.body.textContent).not.toContain('does not expose');
@@ -429,9 +420,9 @@ describe('ShareDialog', () => {
   it('explains unsupported GATT devices without suggesting a power or permission fix', async () => {
     printer.connect.mockRejectedValue(new PrinterConnectionError('connection', new DOMException('Unsupported device.', 'NetworkError')));
     await mount();
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Connect printer');
-    expect(document.body.textContent).toContain('Classic Bluetooth printing requires a local bridge');
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Connect P1');
+    expect(document.body.textContent).toContain('use "Connect P1S" instead');
     expect(document.body.textContent).toContain('NetworkError: Unsupported device.');
     expect(document.body.textContent).not.toContain('Turn on P1');
     expect(printer.print).not.toHaveBeenCalled();
@@ -444,8 +435,8 @@ describe('ShareDialog', () => {
       return new Promise<void>(resolve => { release = resolve; });
     });
     await mount();
-    if (!document.querySelector('#share-printer')) await press('Print card');
-    await press('Print card', 2);
+    if (!document.querySelector('#share-printer')) await press('Print receipt');
+    await press('Print receipt', 2);
     expect(printer.print).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).toContain('Sending…');
     await act(async () => { printer.setState('connected'); release(); });

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { uploadShare, type UploadShareInput } from '../../services/share';
 import { nativeShare, shareUrl } from '../../services/share-target';
-import { paperangPrinter, PrinterConnectionError } from '../../services/printing/paperang-printer';
+import { paperangPrinter, PrinterBridgeUnavailableError, PrinterConnectionError, PrinterProtocolError } from '../../services/printing/paperang-printer';
+import { nextReceiptNumber, recordReceiptPrinted } from '../../services/printing/receipt-counter';
 import { renderShareReceipt } from '../../services/printing/share-receipt';
 import { trackShareCompleted, trackSharePrintFinished } from '../../lib/analytics';
 import { t, zh } from '../../lib/i18n';
@@ -16,33 +17,39 @@ const buttonClass = 'rounded-lg border border-border px-3 py-2 text-xs transitio
 const say = (cn: string, en: string) => zh ? cn : en;
 
 export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
-  const defaultCardTitle = snapshot.title === 'oddeNova beta 1.0 默认印象' ? '默认印象'
-    : snapshot.title === 'oddeNova beta 1.0 Default Impression' ? 'Default Impression'
-    : !snapshot.title.trim() || ['新会话', 'New session'].includes(snapshot.title) ? say('我的音乐作品', 'My music creation') : snapshot.title;
-  const [cardTitle, setCardTitle] = useState(defaultCardTitle);
-  const [draftTitle, setDraftTitle] = useState(defaultCardTitle);
   const [printOpen, setPrintOpen] = useState(false);
-  const [connectFailed, setConnectFailed] = useState(false);
   const renderGeneration = useRef(0);
+  const receiptDetails = useRef({
+    code: snapshot.code,
+    createdAt: snapshot.messages.find(message => message.role === 'user')?.timestamp
+      ?? snapshot.revisions?.[0]?.createdAt
+      ?? Date.now(),
+    locale: snapshot.locale,
+    messages: snapshot.messages,
+  });
   const [url, setUrl] = useState('');
   const [uploading, setUploading] = useState(true);
   const [uploadError, setUploadError] = useState(false);
-  const [receipt, setReceipt] = useState<(Awaited<ReturnType<typeof renderShareReceipt>> & { title: string }) | null>(null);
+  // The preview carries the number the next print will use; each print moves it on.
+  const [receiptNumber, setReceiptNumber] = useState(() => nextReceiptNumber());
+  const [receipt, setReceipt] = useState<(Awaited<ReturnType<typeof renderShareReceipt>> & { number: number }) | null>(null);
   const [renderAttempt, setRenderAttempt] = useState(0);
   const [renderError, setRenderError] = useState(false);
-  const receiptReady = !!receipt && receipt.title === cardTitle && !renderError;
+  const receiptReady = !!receipt && !renderError;
   const [notice, setNotice] = useState('');
   const [sharing, setSharing] = useState(false);
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeShareSupported = typeof navigator.share === 'function';
   const shareBusy = useRef(false);
+  const printBusy = useRef(false);
   const request = useRef<Promise<string> | null>(null);
   const retryBusy = useRef(false);
   const alive = useRef(true);
   const dialog = useRef<HTMLDivElement>(null);
   const state = useSyncExternalStore(paperangPrinter.subscribe, paperangPrinter.getSnapshot);
   const supported = paperangPrinter.supported();
+  const bridgeSupported = paperangPrinter.bridgeSupported();
   const title = snapshot.title !== t('newSessionTitle') ? snapshot.title : t('sharedMusicCreation');
 
   useEffect(() => {
@@ -74,11 +81,22 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     if (!url) return;
     let active = true;
     const generation = ++renderGeneration.current;
-    void renderShareReceipt(url, cardTitle, say('扫码听听这段音乐', 'Scan to hear this music')).then(result => {
-      if (active && generation === renderGeneration.current) setReceipt({ ...result, title: cardTitle });
+    void renderReceipt(receiptNumber).then(result => {
+      if (active && generation === renderGeneration.current) setReceipt(result);
     }).catch(() => { if (active && generation === renderGeneration.current) setRenderError(true); });
     return () => { active = false; };
-  }, [url, cardTitle, renderAttempt]);
+    // renderReceipt reads only `url` and refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, renderAttempt, receiptNumber]);
+
+  async function renderReceipt(number: number) {
+    const result = await renderShareReceipt(
+      url,
+      say('扫描二维码查看创作过程', 'SCAN QR TO VIEW THE PROCESS'),
+      { ...receiptDetails.current, number },
+    );
+    return { ...result, number };
+  }
 
   async function retryUpload() {
     if (retryBusy.current) return;
@@ -95,22 +113,11 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     }
   }
 
-  function applyTitle() {
-    const next = draftTitle.trim() || defaultCardTitle;
-    setDraftTitle(next);
-    if (next === cardTitle) return;
-    renderGeneration.current++;
-    setRenderError(false);
-    setCardTitle(next);
-  }
-
   function saveImage() {
     if (!receipt || !receiptReady) return;
     const link = document.createElement('a');
     link.href = receipt.preview;
-    const filename = Array.from(cardTitle, char => char.charCodeAt(0) < 32 ? '_' : char).join('')
-      .replace(/[<>:"/\\|?*]/g, '_').replace(/[. ]+$/g, '') || 'oddeNova';
-    link.download = `${filename}.png`;
+    link.download = 'oddeNova-card.png';
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -147,19 +154,27 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     }
   }
 
-  async function connect(showAllDevices = false) {
+  const noProtocolNotice = () => say(
+    '打印机在这个 BLE 通道上没有回应任何已知的 Paperang 协议（A5、经典 P1、gen2），所以网页不会发送打印数据。P1S 等较新的固件只通过经典蓝牙（SPP）接收打印数据，请断开后改用“连接 P1S”。',
+    'The printer did not answer any known Paperang protocol (A5, classic P1, gen2) on this BLE channel, so no print data will be sent. Newer firmware such as P1S accepts print data only over Classic Bluetooth (SPP); disconnect and use "Connect P1S" instead.');
+  async function connect(classic = false) {
     setNotice('');
-    setConnectFailed(false);
-    try { await paperangPrinter.connect(showAllDevices); }
+    try {
+      await (classic ? paperangPrinter.connectBridge() : paperangPrinter.connect());
+      if (alive.current && paperangPrinter.getProtocol() === 'unknown') setNotice(noProtocolNotice());
+    }
     catch (error) {
-      if (alive.current) setConnectFailed(true);
       const stage = error instanceof PrinterConnectionError ? error.stage : 'connection';
       const stages = { selection: say('选择设备', 'device selection'), connection: say('蓝牙连接', 'Bluetooth connection'), service: say('发现 P1 服务', 'P1 service discovery'), characteristic: say('发现打印通道', 'print characteristic discovery') };
       const cause = error instanceof PrinterConnectionError ? error.cause : error;
       const browserError = cause instanceof Error ? cause : undefined;
       let hint = say('请确认打印机已开机、未被其他应用连接，并允许 Chrome 使用蓝牙。', 'Turn on the printer, disconnect other apps, and allow Chrome Bluetooth access.');
-      if (stage === 'connection' && browserError?.name === 'NetworkError' && browserError.message === 'Unsupported device.') {
-        hint = say('当前浏览器不支持所选设备的 GATT 连接。macOS 上的经典蓝牙设备会出现此错误；若打印机有独立的 BLE 入口，请重新选择该入口。经典蓝牙打印需要本地桥接程序，当前页面尚不支持。', 'The current browser cannot establish a GATT connection to this device. Classic Bluetooth devices on macOS produce this error. If the printer has a separate BLE entry, select it instead. Classic Bluetooth printing requires a local bridge, which this page does not support yet.');
+      if (classic && browserError instanceof PrinterBridgeUnavailableError) {
+        hint = say('没有找到本地打印桥。请在项目目录的终端运行 npm run printer:bridge，保持窗口开着，再重新连接。', 'The local printer bridge is not running. Run npm run printer:bridge in a terminal in the project folder, keep it open, then reconnect.');
+      } else if (classic) {
+        hint = say('请确认 P1S 已开机、已在系统蓝牙设置中配对，并且没有被网页的 BLE 连接或喵喵机 App 占用。', 'Make sure the P1S is on, paired in system Bluetooth settings, and not held by a BLE connection from this page or the Paperang app.');
+      } else if (stage === 'connection' && browserError?.name === 'NetworkError' && browserError.message === 'Unsupported device.') {
+        hint = say('浏览器无法通过网页蓝牙连接所选设备。如果是 P1S，请改用“连接 P1S”。', 'The browser cannot connect to this device over Web Bluetooth. For a P1S, use "Connect P1S" instead.');
       } else if (browserError?.name === 'NotFoundError' && stage === 'service') {
         hint = say('蓝牙已连接，但所选设备未提供当前支持的 P1 打印服务。请确认打印机型号；若确为 P1，请提供下方浏览器详情以核对协议。', 'Bluetooth connected, but the selected device does not expose the supported P1 print service. Check the printer model; if it is a P1, provide the browser details below so we can check its protocol.');
       } else if (browserError?.name === 'NotFoundError' && stage === 'characteristic') {
@@ -172,15 +187,36 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     }
   }
   async function print() {
-    if (!receipt || !receiptReady || paperangPrinter.getSnapshot() !== 'connected') return;
+    if (printBusy.current || !receipt || !receiptReady || paperangPrinter.getSnapshot() !== 'connected') return;
+    printBusy.current = true;
     setNotice('');
     try {
-      const result = await paperangPrinter.print(receipt.raster);
+      // Another tab may have printed, or the day may have turned, since the preview was drawn.
+      const number = nextReceiptNumber();
+      let job = receipt;
+      if (job.number !== number) {
+        try { job = await renderReceipt(number); } catch {
+          if (alive.current) setRenderError(true);
+          return;
+        }
+      }
+      await printReceipt(job);
+    } finally { printBusy.current = false; }
+  }
+  async function printReceipt(job: NonNullable<typeof receipt>) {
+    try {
+      const result = await paperangPrinter.print(job.raster);
+      recordReceiptPrinted(job.number);
+      if (alive.current) setReceiptNumber(nextReceiptNumber());
       if (result === 'sent') trackSharePrintFinished({ outcome: 'sent' });
       if (alive.current) setNotice(result === 'unconfirmed'
-        ? say('蓝牙数据已写入，但尚未确认打印机接收了任务。如未出纸，请提供设备回包信息以核对 P1S 协议。', 'Bluetooth data was written, but the printer has not confirmed the job. If no paper comes out, provide the device reply to verify the P1S protocol.') + ` ${say('设备回包', 'Device reply')}: ${paperangPrinter.getLastDeviceReply() || say('无', 'none')}`
+        ? say('打印数据已发送，但打印机没有确认任务完成。如未出纸，请提供设备回包信息。', 'The print data was sent, but the printer did not confirm the job. If no paper comes out, share the device reply.') + ` ${say('设备回包', 'Device reply')}: ${paperangPrinter.getLastDeviceReply() || say('无', 'none')}`
         : say('已发送至打印机', 'Sent to printer'));
     } catch (error) {
+      if (error instanceof PrinterProtocolError) {
+        if (alive.current) setNotice(noProtocolNotice());
+        return;
+      }
       trackSharePrintFinished({ outcome: 'failed' });
       const details = error instanceof Error ? ` ${say('发送详情', 'Sending details')}: ${error.message}` : '';
       if (alive.current) setNotice(say('发送中断，可能已部分出纸。请检查纸条后重连并手动补打。', 'Sending interrupted; some paper may have printed. Check the receipt, reconnect and reprint manually.') + details);
@@ -190,7 +226,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--color-overlay-backdrop)] p-4 backdrop-blur-sm" onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}>
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="share-dialog-title" tabIndex={-1}
-        className="max-h-[90dvh] w-full max-w-[400px] overflow-y-auto rounded-[20px] border border-border bg-conversation-surface p-6 text-text-primary shadow-dialog-overlay"
+        className="max-h-[90dvh] w-full max-w-[400px] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-[20px] border border-border bg-conversation-surface p-6 text-text-primary shadow-dialog-overlay"
         onKeyDown={event => {
           event.stopPropagation();
           if (event.key === 'Escape') { event.preventDefault(); onClose(); }
@@ -215,11 +251,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
         ) : (
           <>
             <div className="mt-4 border-t border-border pt-4">
-              <label htmlFor="share-card-title" className="mb-2 block text-xs text-text-secondary">{say('小卡标题', 'Card title')}</label>
-              <input id="share-card-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} onBlur={applyTitle}
-                onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); applyTitle(); } }}
-                className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-text-primary" />
-              <figure className="mt-4">
+              <figure>
                 {receipt ? <img src={receipt.preview} width={384} alt={say('作品二维码打印预览', 'Share QR receipt preview')} className="mx-auto block h-auto w-48 max-w-full bg-white" />
                   : !renderError && <div className="py-6 text-center">
                     <p role="status" className="text-sm text-text-secondary">{say('正在生成打印预览…', 'Generating print preview…')}</p>
@@ -228,26 +260,27 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
                     <p role="alert" className="text-sm text-text-secondary">{say('打印预览生成失败', 'Could not generate print preview')}</p>
                     <button className={`${buttonClass} mt-3`} onClick={() => { setRenderError(false); setRenderAttempt(value => value + 1); }}>{say('重试生成预览', 'Retry print preview')}</button>
                   </div>}
-                <figcaption className="mt-2 text-center text-xs text-text-muted">{say('分享小卡预览', 'Share card preview')}</figcaption>
+                <figcaption className="mt-2 text-center text-xs text-text-muted">{say('分享小票预览', 'Share receipt preview')}</figcaption>
               </figure>
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2">
               <button className={`${buttonClass} min-w-0 border-transparent bg-text-primary font-medium text-bg-primary hover:bg-text-primary hover:opacity-80`} disabled={sharing} onClick={() => void share()}><span aria-live="polite">{sharing ? t('sharing') : copied ? say('✓ 已复制', '✓ Copied') : say('复制链接', 'Copy link')}</span></button>
               <button className={buttonClass} disabled={!receiptReady} onClick={saveImage}>{say('保存图片', 'Save image')}</button>
-              <button className={buttonClass} aria-expanded={printOpen} aria-controls="share-printer" onClick={() => setPrintOpen(value => !value)}>{say('打印小卡', 'Print card')}</button>
+              <button className={buttonClass} aria-expanded={printOpen} aria-controls="share-printer" onClick={() => setPrintOpen(value => !value)}>{say('打印小票', 'Print receipt')}</button>
             </div>
             {printOpen && <div id="share-printer" className="mt-4 space-y-3 border-t border-border pt-4">
               <p role="status" className="text-xs text-text-muted [overflow-wrap:anywhere]">{paperangPrinter.getDeviceName() || say('打印机', 'Printer')} · {state === 'disconnected' ? say('未连接', 'Disconnected') : state === 'connecting' ? say('正在连接', 'Connecting') : state === 'printing' ? say('正在发送', 'Sending') : say('已连接', 'Connected')}</p>
-              {!supported ? <p className="w-full text-xs leading-relaxed text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p> : (
-                <>
-                  {(state === 'disconnected' || state === 'connecting') && <p className="w-full text-xs leading-relaxed text-text-secondary">{say('请先断开系统蓝牙或喵喵机 App 中的现有连接，再在浏览器设备列表中选择 P1S；网页会自行连接打印机。', 'Disconnect the printer from system Bluetooth or the Paperang app first, then select P1S in the browser device list; the page will connect to it directly.')}</p>}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {state === 'disconnected' || state === 'connecting'
-                      ? <><button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{state === 'connecting' ? say('正在连接…', 'Connecting…') : connectFailed ? say('重新连接', 'Reconnect') : say('连接打印机', 'Connect printer')}</button><button className="rounded-lg px-2 py-2 text-xs text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40" disabled={state === 'connecting'} onClick={() => void connect(true)}>{say('显示所有蓝牙设备', 'Show all Bluetooth devices')}</button></>
-                      : <><button className={buttonClass} disabled={!receiptReady || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小卡', 'Print card')}</button><button className="rounded-lg px-2 py-2 text-xs text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40" disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button></>}
+              {!supported && !bridgeSupported ? <p className="w-full text-xs leading-relaxed text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p>
+                : state === 'disconnected' || state === 'connecting' ? <>
+                  <div className="grid grid-cols-2 gap-2">
+                    {supported && <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{say('连接 P1', 'Connect P1')}</button>}
+                    {bridgeSupported && <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect(true)}>{say('连接 P1S', 'Connect P1S')}</button>}
                   </div>
-                </>
-              )}
+                  <p className="text-xs leading-relaxed text-text-secondary">{say('连接前请先断开喵喵机 App。', 'Disconnect the Paperang app first.')}{bridgeSupported && say('P1S 需先在系统蓝牙设置中配对，并保持打印桥（npm run printer:bridge）运行。', ' P1S must be paired in system Bluetooth settings, with the printer bridge (npm run printer:bridge) running.')}</p>
+                </> : <div className="grid grid-cols-2 gap-2">
+                  <button className={buttonClass} disabled={!receiptReady || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小票', 'Print receipt')}</button>
+                  <button className={buttonClass} disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button>
+                </div>}
             </div>}
           </>
         )}
