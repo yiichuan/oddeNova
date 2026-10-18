@@ -41,7 +41,7 @@ describe('share receipt', () => {
     let height = 0;
     let pixels = new Uint8ClampedArray();
     const drawnText: { text: string; font: string }[] = [];
-    const fillText = vi.fn(function (this: { font: string }, text: string) {
+    const fillText = vi.fn(function (this: { font: string }, text: string, _x: number, _y: number) {
       drawnText.push({ text, font: this.font });
     });
     const drawImage = vi.fn();
@@ -50,7 +50,7 @@ describe('share receipt', () => {
       filter: '', save: vi.fn(), restore: vi.fn(), drawImage,
       measureText(text: string) {
         const size = Number(this.font.match(/(\d+)px/)?.[1] ?? 22);
-        return { width: Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 ? 1 : 0.5), 0) };
+        return { width: Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 ? 1 : char === '1' ? 0.35 : 0.5), 0) };
       },
       fillText,
       fillRect(x: number, y: number, w: number, h: number) {
@@ -89,7 +89,19 @@ describe('share receipt', () => {
       expect(width).toBe(384);
       expect(raster.length).toBe(48 * height);
       expect(preview).toContain('data:image/png');
-      const text = fillText.mock.calls.map(call => call[0]);
+      // Time ranges are drawn character by character in fixed-width digit cells.
+      const text = fillText.mock.calls.reduce<string[]>((lines, [value, , y], index, calls) => {
+        if (value.length === 1 && index > 0 && calls[index - 1][0].length === 1 && calls[index - 1][2] === y) {
+          lines[lines.length - 1] += value;
+        } else lines.push(value);
+        return lines;
+      }, []);
+      const timeRows = fillText.mock.calls.filter(([value]) => value.length === 1 && value !== '—');
+      const firstRowY = timeRows[0][2];
+      const firstRowX = timeRows.filter(([, , y]) => y === firstRowY).map(([, x]) => x);
+      for (const y of new Set(timeRows.map(([, , y]) => y))) {
+        expect(timeRows.filter(([, , rowY]) => rowY === y).map(([, x]) => x)).toEqual(firstRowX);
+      }
       expect(text).toEqual(expect.arrayContaining([
         '[ vibe your bgm ]', '创作编号  007', 'BPM 120', 'Genreless',
         'horizon', 'wind', 'returning_theme', '钢琴铺出天空和声',

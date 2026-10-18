@@ -226,7 +226,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--color-overlay-backdrop)] p-4 backdrop-blur-sm" onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}>
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="share-dialog-title" tabIndex={-1}
-        className="max-h-[90dvh] w-full max-w-[400px] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-[20px] border border-border bg-conversation-surface p-6 text-text-primary shadow-dialog-overlay"
+        className="flex max-h-[90dvh] w-full max-w-[400px] flex-col overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-[20px] border border-border bg-conversation-surface p-6 text-text-primary shadow-dialog-overlay"
         onKeyDown={event => {
           event.stopPropagation();
           if (event.key === 'Escape') { event.preventDefault(); onClose(); }
@@ -237,7 +237,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
           if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
           else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first?.focus(); }
         }}>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex shrink-0 items-center justify-between gap-3">
           <h2 id="share-dialog-title" className="text-base font-medium">{say('分享作品', 'Share creation')}</h2>
           <div className="flex items-center gap-1">
             {nativeShareSupported && <button type="button" aria-label={say('系统分享', 'System share')}
@@ -250,7 +250,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
           <div className="my-6"><p role="alert">{t('shareFailedRetry')}</p><button className={buttonClass} onClick={() => void retryUpload()}>{say('重试生成链接', 'Retry creating link')}</button></div>
         ) : (
           <>
-            <div className="mt-4 border-t border-border pt-4">
+            <div className="mt-4 min-h-0 max-h-[50dvh] overflow-y-auto overscroll-contain border-t border-border pt-4">
               <figure>
                 {receipt ? <img src={receipt.preview} width={384} alt={say('作品二维码打印预览', 'Share QR receipt preview')} className="mx-auto block h-auto w-48 max-w-full bg-white" />
                   : !renderError && <div className="py-6 text-center">
@@ -263,12 +263,12 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
                 <figcaption className="mt-2 text-center text-xs text-text-muted">{say('分享小票预览', 'Share receipt preview')}</figcaption>
               </figure>
             </div>
-            <div className="mt-5 grid grid-cols-3 gap-2">
+            <div className="mt-5 grid shrink-0 grid-cols-3 gap-2">
               <button className={`${buttonClass} min-w-0 border-transparent bg-text-primary font-medium text-bg-primary hover:bg-text-primary hover:opacity-80`} disabled={sharing} onClick={() => void share()}><span aria-live="polite">{sharing ? t('sharing') : copied ? say('✓ 已复制', '✓ Copied') : say('复制链接', 'Copy link')}</span></button>
               <button className={buttonClass} disabled={!receiptReady} onClick={saveImage}>{say('保存图片', 'Save image')}</button>
               <button className={buttonClass} aria-expanded={printOpen} aria-controls="share-printer" onClick={() => setPrintOpen(value => !value)}>{say('打印小票', 'Print receipt')}</button>
             </div>
-            {printOpen && <div id="share-printer" className="mt-4 space-y-3 border-t border-border pt-4">
+            {printOpen && <div id="share-printer" className="mt-4 shrink-0 space-y-3 border-t border-border pt-4">
               <p role="status" className="text-xs text-text-muted [overflow-wrap:anywhere]">{paperangPrinter.getDeviceName() || say('打印机', 'Printer')} · {state === 'disconnected' ? say('未连接', 'Disconnected') : state === 'connecting' ? say('正在连接', 'Connecting') : state === 'printing' ? say('正在发送', 'Sending') : say('已连接', 'Connected')}</p>
               {!supported && !bridgeSupported ? <p className="w-full text-xs leading-relaxed text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p>
                 : state === 'disconnected' || state === 'connecting' ? <>
@@ -284,7 +284,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
             </div>}
           </>
         )}
-        <p role="status" aria-live="polite" className={notice ? 'mt-3 break-words text-xs leading-relaxed text-text-secondary' : 'sr-only'}>{notice}</p>
+        <p role="status" aria-live="polite" className={notice ? 'mt-3 shrink-0 break-words text-xs leading-relaxed text-text-secondary' : 'sr-only'}>{notice}</p>
       </div>
     </div>, document.body,
   );

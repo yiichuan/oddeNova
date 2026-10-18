@@ -165,9 +165,13 @@ export async function renderShareReceipt(
   const nameLeft = 76;
   const timeRight = right;
   ctx.font = TIME_FONT;
+  // Keep the original typeface, but give every digit the same cell width.
+  const digitWidth = Math.max(...Array.from('0123456789', digit => ctx.measureText(digit).width));
+  const timeCharWidth = (char: string) => /[0-9]/.test(char) ? digitWidth : ctx.measureText(char).width;
+  const timeWidth = (text: string) => Array.from(text).reduce((width, char) => width + timeCharWidth(char), 0);
   // Names take every dot up to the loop-range column, sized for the widest possible
   // range, so common names stay on one line.
-  const rowNameWidth = Math.floor(timeRight - ctx.measureText(`00:00 – ${duration}`).width - 10 - nameLeft);
+  const rowNameWidth = Math.floor(timeRight - timeWidth(`00:00 – ${duration}`) - 10 - nameLeft);
   const nameLineHeight = 26;
   const detailLineHeight = 19;
   const timeLineHeight = 24;
@@ -270,7 +274,15 @@ export async function renderShareReceipt(
     }
     ctx.textAlign = 'right';
     ctx.font = TIME_FONT;
-    layer.timeLines.forEach((line, lineIndex) => ctx.fillText(line, timeRight, rowTop + 10 + lineIndex * timeLineHeight));
+    ctx.textAlign = 'center';
+    layer.timeLines.forEach((line, lineIndex) => {
+      let x = timeRight - timeWidth(line);
+      for (const char of line) {
+        const width = timeCharWidth(char);
+        ctx.fillText(char, x + width / 2, rowTop + 10 + lineIndex * timeLineHeight);
+        x += width;
+      }
+    });
     rowTop += layer.height;
   });
   dashedRule(ctx, padding, right, rowTop + 2);
