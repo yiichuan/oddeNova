@@ -335,37 +335,6 @@ describe('P1 Bluetooth transport', () => {
     expect(printer.getLog().some(line => line.includes('170-byte packet rejected'))).toBe(true);
     expect(printer.getSnapshot()).toBe('connected');
   });
-  it('logs FF01 replies and probes which CRC key an FF00 P1 answers', async () => {
-    vi.useFakeTimers();
-    try {
-      const harness = setup();
-      harness.getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));
-      await harness.connected();
-      expect(harness.printer.getProfile()).toBe('ff00');
-      // Device left on the zero key by an earlier gen2 handshake: answers only zero-seeded frames.
-      const zeroBattery = paperangFrame(16, new Uint8Array([1]), P1S_CRC_SEED);
-      harness.writeWithoutResponse.mockImplementation(async () => {
-        harness.grant(1);
-        const sent = harness.writeWithoutResponse.mock.calls.flatMap(call => Array.from(call[0]));
-        if (sent.length >= zeroBattery.length && Array.from(zeroBattery).every((byte, i) => sent[sent.length - zeroBattery.length + i] === byte)) {
-          harness.reply(Array.from(paperangFrame(17, new Uint8Array([80]), P1S_CRC_SEED)));
-        }
-      });
-      const probe = harness.printer.probeCrcSeed();
-      await vi.advanceTimersByTimeAsync(2_000);
-      await expect(probe).resolves.toBe(P1S_CRC_SEED);
-      expect(harness.printer.getLog().some(line => line.includes('seed P1 0x35769521: no answer'))).toBe(true);
-      expect(harness.printer.getLog().some(line => line.includes('legacy cmd 17 (seed zero)'))).toBe(true);
-      // Later legacy prints follow the probed key.
-      harness.writeWithoutResponse.mockClear();
-      const raster = new Uint8Array(48 * 2);
-      await harness.printer.print(raster);
-      expect(harness.writeWithoutResponse.mock.calls.flatMap(call => Array.from(call[0])))
-        .toEqual(rasterFrames(raster, P1S_CRC_SEED).flatMap(frame => Array.from(frame)));
-      expect(harness.printer.getLog().some(line => line.includes('✓ print sent'))).toBe(true);
-      expect(harness.printer.getSnapshot()).toBe('connected');
-    } finally { vi.useRealTimers(); }
-  });
   it('detects A5 firmware on an FF00 P1 while connecting and prints in A5', async () => {
     const harness = setup();
     harness.getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));

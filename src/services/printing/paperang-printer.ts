@@ -41,15 +41,8 @@ export const PRINTER_BRIDGE_URL = 'ws://127.0.0.1:47615';
 // Covers the bridge's baseband connect, service query, RFCOMM retries and settle delay.
 const BRIDGE_READY_TIMEOUT_MS = 20_000;
 const LOG_LIMIT = 400;
-const QUERY_TIMEOUT_MS = 800;
 // A credit wait longer than this is logged as a stall in the diagnostic log.
 const CREDIT_STALL_MS = 500;
-// Read-only legacy queries (python-paperang BtCommandByte); each takes a one-byte payload.
-const LEGACY_QUERIES: [number, string][] = [
-  [4, 'version'], [6, 'model'], [10, 'serial'], [12, 'status'], [14, 'voltage'], [16, 'battery'],
-  [18, 'temperature'], [21, 'factory status'], [28, 'heat density'], [31, 'power-down time'],
-  [35, 'board version'], [37, 'hardware info'], [40, 'max gap length'], [42, 'paper type'],
-];
 const hexBytes = (bytes: Uint8Array, max = 64) =>
   Array.from(bytes.subarray(0, max), byte => byte.toString(16).padStart(2, '0')).join(' ') + (bytes.length > max ? ` … (${bytes.length} B)` : '');
 const printable = (bytes: Uint8Array) => {
@@ -145,10 +138,7 @@ export class PaperangPrinter {
   private openSocket: (url: string) => PrinterSocket;
   private firmwareProbeMs: number;
   private profile?: PrinterProfile;
-  // Set by the CRC probe when the device answers a non-default seed; legacy prints then use it.
-  private probedSeed?: number;
   private log: readonly string[] = [];
-  private logListeners = new Set<() => void>();
   // While an A5 job streams bitmaps, their acks are summarised instead of logged one by one.
   private summariseBitmapAcks = false;
   private sendStats = { chunks: 0, creditWaits: 0, creditWaitMs: 0, longestCreditWaitMs: 0, grants: 0 };
@@ -176,22 +166,12 @@ export class PaperangPrinter {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
   };
-  getProfile = () => this.state === 'connected' || this.state === 'printing' ? this.profile : undefined;
-  /** Timestamped diagnostic log of connection steps, sent jobs and every device notification. */
+  /** Timestamped log of connection steps, sent jobs and device replies, for debugging a printer. */
   getLog = () => this.log;
-  subscribeLog = (listener: () => void) => {
-    this.logListeners.add(listener);
-    return () => { this.logListeners.delete(listener); };
-  };
-  clearLog = () => {
-    this.log = [];
-    this.logListeners.forEach(listener => listener());
-  };
   private note(line: string) {
     const now = new Date();
     const stamp = `${now.toTimeString().slice(0, 8)}.${String(now.getMilliseconds()).padStart(3, '0')}`;
     this.log = [...this.log.slice(-(LOG_LIMIT - 1)), `${stamp} ${line}`];
-    this.logListeners.forEach(listener => listener());
   }
   private setState(state: PrinterState) {
     this.state = state;
@@ -208,7 +188,6 @@ export class PaperangPrinter {
     this.receiveCharacteristic = undefined;
     this.protocol = undefined;
     this.profile = undefined;
-    this.probedSeed = undefined;
     this.replyWaiter?.resolve();
     this.replyWaiter = undefined;
     this.note('link dropped by the device or browser');
@@ -351,7 +330,6 @@ export class PaperangPrinter {
     this.receiveCharacteristic = undefined;
     this.protocol = undefined;
     this.profile = undefined;
-    this.probedSeed = undefined;
     this.replyWaiter?.resolve();
     this.replyWaiter = undefined;
     this.setState('disconnected');
@@ -655,99 +633,6 @@ export class PaperangPrinter {
       : '';
     this.note(`${outcome} after ${Date.now() - started} ms${credits}`);
   }
-  /** Runs one diagnostic exchange with the connected printer, logging its outcome. */
-  private async runDiagnostic<T>(name: string, body: (generation: number) => Promise<T>): Promise<T> {
-    if (this.state !== 'connected' || (!this.characteristic && !this.socket)) throw new Error('P1 not ready');
-    const generation = this.generation;
-    this.setState('printing');
-    this.note(`▶ ${name}`);
-    try {
-      const result = await body(generation);
-      if (generation === this.generation) this.setState('connected');
-      return result;
-    } catch (error) {
-      this.note(`✗ ${name}: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
-      if (generation === this.generation) this.disconnect();
-      throw error;
-    }
-  }
-  private legacySeed() {
-    return this.protocol === 'gen2' ? P1S_CRC_SEED : this.probedSeed ?? P1_CRC_SEED;
-  }
-  private hasReplyChannel() {
-    if (this.receiveCharacteristic || this.socket) return true;
-    this.note('  this link has no reply channel, so device answers cannot be read');
-    return false;
-  }
-  /** Asks for the battery level under each known CRC seed; the one answered is the key the device expects. */
-  probeCrcSeed(): Promise<number | undefined> {
-    return this.runDiagnostic('CRC seed probe', async generation => {
-      if (!this.hasReplyChannel()) return undefined;
-      for (const seed of [P1_CRC_SEED, P1S_CRC_SEED]) {
-        const reply = await this.request(batteryQueryFrame(seed), candidate => candidate.kind === 'legacy', PROBE_TIMEOUT_MS, generation);
-        this.note(`  seed ${describeSeed(seed)}: ${reply ? 'answered' : 'no answer'}`);
-        if (reply) {
-          this.probedSeed = seed;
-          if (seed !== P1_CRC_SEED) this.note('  the device expects the zero key (left by a gen2 handshake); legacy prints now use it until disconnect');
-          return seed;
-        }
-      }
-      this.note('  no seed answered: the device ignores legacy queries on this link');
-      return undefined;
-    });
-  }
-  /** Asks for the firmware version in A5 framing; newer P1 firmware ignores legacy frames and speaks only A5. */
-  probeA5(): Promise<boolean> {
-    return this.runDiagnostic('A5 probe', async generation => {
-      if (!this.hasReplyChannel()) return false;
-      const reply = await this.request(a5Frame(A5_GET_VERSION), candidate => candidate.kind === 'a5' && candidate.command === A5_GET_VERSION, PROBE_TIMEOUT_MS * 2, generation);
-      if (reply?.kind !== 'a5') {
-        this.note('  no A5 answer');
-        return false;
-      }
-      this.note(`  A5 answered${printable(reply.content)}; prints on this connection now use A5`);
-      this.protocol = 'a5';
-      return true;
-    });
-  }
-  /** Sends every read-only legacy query and logs what the device answers. */
-  queryLegacyInfo(): Promise<void> {
-    return this.runDiagnostic('legacy info queries', async generation => {
-      if (!this.hasReplyChannel()) return;
-      const seed = this.legacySeed();
-      this.note(`  CRC seed ${describeSeed(seed)}`);
-      for (const [command, label] of LEGACY_QUERIES) {
-        const reply = await this.request(paperangFrame(command, new Uint8Array([1]), seed), candidate => candidate.kind === 'legacy', QUERY_TIMEOUT_MS, generation);
-        this.note(`  ${label} (cmd ${command}): ${reply?.kind === 'legacy' ? `cmd ${reply.command} ${hexBytes(reply.payload)}${printable(reply.payload)}` : 'no answer'}`);
-      }
-    });
-  }
-  /** Feeds blank paper with one legacy command; paper moving proves commands are being executed. */
-  feedPaper(lines = 60): Promise<void> {
-    return this.runDiagnostic(`feed ${lines} lines`, async generation => {
-      if (this.protocol === 'a5') {
-        await this.a5Ack(A5_FEED, new Uint8Array([lines & 255, lines >>> 8]), generation);
-        return;
-      }
-      const frame = paperangFrame(LEGACY_FEED_LINE, new Uint8Array([lines & 255, lines >>> 8]), this.legacySeed());
-      if (!this.receiveCharacteristic && !this.socket) { await this.writeFrame(frame, generation); return; }
-      const reply = await this.request(frame, candidate => candidate.kind === 'legacy', LEGACY_ACK_TIMEOUT_MS, generation);
-      this.note(`  ${reply ? 'answered' : 'no answer (paper may still move)'}`);
-    });
-  }
-  /** The firmware's own test page: prints without any image data from this page. */
-  diagnosticSelfTest(): Promise<void> {
-    return this.runDiagnostic('self-test page', async generation => {
-      if (this.protocol === 'a5') {
-        await this.a5Ack(A5_SELF_TEST, new Uint8Array(), generation);
-        return;
-      }
-      const frame = selfTestFrame(this.legacySeed());
-      if (!this.receiveCharacteristic && !this.socket) { await this.writeFrame(frame, generation); return; }
-      const reply = await this.request(frame, candidate => candidate.kind === 'legacy', LEGACY_ACK_TIMEOUT_MS, generation);
-      this.note(`  ${reply ? 'answered' : 'no answer (the page may still print)'}`);
-    });
-  }
   async print(raster: Uint8Array): Promise<PrintResult> {
     if (this.state !== 'connected' || (!this.characteristic && !this.socket)) throw new Error('P1 not ready');
     const protocol = this.usesP1sProtocol ? this.requireProtocol() : this.protocol;
@@ -785,7 +670,7 @@ export class PaperangPrinter {
         await this.a5Ack(A5_PRINT_END, new Uint8Array(), generation, A5_PRINT_END_TIMEOUT_MS);
         await this.a5Ack(A5_FEED, new Uint8Array([A5_FEED_LINES, 0]), generation);
       } else {
-        const crcSeed = protocol === 'gen2' ? P1S_CRC_SEED : this.probedSeed ?? P1_CRC_SEED;
+        const crcSeed = protocol === 'gen2' ? P1S_CRC_SEED : P1_CRC_SEED;
         const frames = rasterFrames(raster, crcSeed);
         this.note(`  ${frames.length} legacy frames, CRC seed ${describeSeed(crcSeed)}`);
         if (protocol) frames.unshift(paperangFrame(LEGACY_SET_PAPER_TYPE, new Uint8Array([0]), crcSeed));

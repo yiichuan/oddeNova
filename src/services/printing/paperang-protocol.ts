@@ -179,19 +179,3 @@ export function rgbaToRaster(data: Uint8ClampedArray, width: number, height: num
   }
   return raster;
 }
-
-/** A diagnostic raster: a border, a ruler mark every 50 rows and diagonal stripes, so any printed part is recognisable. */
-export function testPatternRaster(rows: number): Uint8Array {
-  if (rows < 8 || !Number.isInteger(rows)) throw new Error('Invalid test pattern height');
-  const raster = new Uint8Array(rows * P1_ROW_BYTES);
-  const set = (x: number, y: number) => { raster[y * P1_ROW_BYTES + (x >>> 3)] |= 0x80 >>> (x & 7); };
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < P1_WIDTH; x++) {
-      const border = x < 4 || x >= P1_WIDTH - 4 || y < 4 || y >= rows - 4;
-      const ruler = y % 50 < 3 && x < 96;
-      const stripe = (x + y) % 32 < 4 && x >= 120;
-      if (border || ruler || stripe) set(x, y);
-    }
-  }
-  return raster;
-}
