@@ -5,6 +5,7 @@ import { nativeShare, shareUrl } from '../../services/share-target';
 import { paperangPrinter, PrinterBridgeUnavailableError, PrinterConnectionError, PrinterProtocolError } from '../../services/printing/paperang-printer';
 import { nextReceiptNumber, recordReceiptPrinted } from '../../services/printing/receipt-counter';
 import { renderShareReceipt } from '../../services/printing/share-receipt';
+import { testPatternRaster } from '../../services/printing/paperang-protocol';
 import { trackShareCompleted, trackSharePrintFinished } from '../../lib/analytics';
 import { t, zh } from '../../lib/i18n';
 import { XIcon } from '../icons';
@@ -15,6 +16,9 @@ export interface ShareDialogProps {
 }
 const buttonClass = 'rounded-lg border border-border px-3 py-2 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40';
 const say = (cn: string, en: string) => zh ? cn : en;
+// Printer diagnostics stay out of production unless the page is opened with ?printer-debug.
+const printerDebug = (import.meta.env.DEV && import.meta.env.MODE !== 'test') || new URLSearchParams(window.location.search).has('printer-debug');
+const SHORT_TEST_ROWS = 120;
 
 export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   const [printOpen, setPrintOpen] = useState(false);
@@ -50,6 +54,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   const state = useSyncExternalStore(paperangPrinter.subscribe, paperangPrinter.getSnapshot);
   const supported = paperangPrinter.supported();
   const bridgeSupported = paperangPrinter.bridgeSupported();
+  const printerLog = useSyncExternalStore(paperangPrinter.subscribeLog, paperangPrinter.getLog);
   const title = snapshot.title !== t('newSessionTitle') ? snapshot.title : t('sharedMusicCreation');
 
   useEffect(() => {
@@ -223,6 +228,28 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     }
   }
 
+  async function diagnose(action: () => Promise<unknown>) {
+    if (printBusy.current || paperangPrinter.getSnapshot() !== 'connected') return;
+    printBusy.current = true;
+    setNotice('');
+    try { await action(); }
+    catch { if (alive.current) setNotice(say('诊断中断，打印机已断开。详情见诊断日志。', 'Diagnostic interrupted and the printer disconnected. See the diagnostic log.')); }
+    finally { printBusy.current = false; }
+  }
+  const diagnostics: [string, () => Promise<unknown>][] = [
+    [say('GATT 通道', 'GATT channels'), () => paperangPrinter.inspectGatt()],
+    [say('A5 探测', 'Probe A5'), () => paperangPrinter.probeA5()],
+    [say('CRC 探测', 'Probe CRC key'), () => paperangPrinter.probeCrcSeed()],
+    [say('读取设备信息', 'Read device info'), () => paperangPrinter.queryLegacyInfo()],
+    [say('走纸 60 行', 'Feed 60 lines'), () => paperangPrinter.feedPaper()],
+    [say('固件自检页', 'Firmware self-test'), () => paperangPrinter.diagnosticSelfTest()],
+    [say(`短测试图 ${SHORT_TEST_ROWS} 行`, `Short pattern ${SHORT_TEST_ROWS} rows`), () => paperangPrinter.print(testPatternRaster(SHORT_TEST_ROWS))],
+    ...receipt ? [[
+      say(`长测试图 ${receipt.raster.length / 48} 行`, `Tall pattern ${receipt.raster.length / 48} rows`),
+      () => paperangPrinter.print(testPatternRaster(receipt.raster.length / 48)),
+    ] as [string, () => Promise<unknown>]] : [],
+  ];
+
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--color-overlay-backdrop)] p-4 backdrop-blur-sm" onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}>
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="share-dialog-title" tabIndex={-1}
@@ -281,6 +308,17 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
                   <button className={buttonClass} disabled={!receiptReady || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小票', 'Print receipt')}</button>
                   <button className={buttonClass} disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button>
                 </div>}
+              {printerDebug && <details className="rounded-lg border border-border p-3" open>
+                <summary className="cursor-pointer text-xs text-text-secondary">{say('打印诊断', 'Printer diagnostics')}{paperangPrinter.getProfile() && ` · ${paperangPrinter.getProfile()}`}</summary>
+                {(state === 'connected' || state === 'printing') && <div className="mt-3 grid grid-cols-2 gap-2">
+                  {diagnostics.map(([label, action]) => <button key={label} className={buttonClass} disabled={state === 'printing'} onClick={() => void diagnose(action)}>{label}</button>)}
+                </div>}
+                <pre aria-label={say('诊断日志', 'Diagnostic log')} className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-surface-hover p-2 font-mono text-[10px] leading-snug text-text-secondary">{printerLog.length ? printerLog.join('\n') : say('暂无日志', 'No log yet')}</pre>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button className={buttonClass} disabled={!printerLog.length} onClick={() => void navigator.clipboard?.writeText(printerLog.join('\n'))}>{say('复制日志', 'Copy log')}</button>
+                  <button className={buttonClass} disabled={!printerLog.length} onClick={paperangPrinter.clearLog}>{say('清空日志', 'Clear log')}</button>
+                </div>
+              </details>}
             </div>}
           </>
         )}

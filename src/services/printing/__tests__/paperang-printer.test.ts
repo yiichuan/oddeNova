@@ -49,7 +49,17 @@ function setup() {
     removeEventListener: vi.fn(),
   };
   const bluetooth: PrinterBluetooth = { requestDevice: vi.fn(async () => device) };
-  return { printer: new PaperangPrinter(() => bluetooth), bluetooth, write, writeWithoutResponse, receive, flow, grant, getPrimaryService, getCharacteristic, getCharacteristics, device, disconnect: () => disconnected(), reply: (bytes: number[]) => { receive.value = new DataView(Uint8Array.from(bytes).buffer); reply(); } };
+  // Legacy P1 units never answer the A5 firmware probe; keep its wait short.
+  const printer = new PaperangPrinter(() => bluetooth, undefined, 5);
+  /** Connects and forgets the A5 firmware probe written while connecting. */
+  const connected = async () => {
+    const connection = printer.connect();
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(10);
+    await connection;
+    write.mockClear();
+    writeWithoutResponse.mockClear();
+  };
+  return { printer, connected, bluetooth, write, writeWithoutResponse, receive, flow, grant, getPrimaryService, getCharacteristic, getCharacteristics, device, disconnect: () => disconnected(), reply: (bytes: number[]) => { receive.value = new DataView(Uint8Array.from(bytes).buffer); reply(); } };
 }
 
 /** A P1S on the transparent UART path that answers only in one Paperang dialect. */
@@ -232,12 +242,12 @@ describe('P1 Bluetooth transport', () => {
     });
   });
   it('lists the connected service characteristics and their transport capabilities without writing', async () => {
-    const { printer, getCharacteristics, write } = setup();
+    const { printer, getCharacteristics, write, connected } = setup();
     getCharacteristics.mockResolvedValue([
       { uuid: P1S_NOTIFY, properties: { notify: true }, writeValueWithResponse: write },
       { uuid: P1S_WRITE, properties: { write: true, writeWithoutResponse: true }, writeValueWithResponse: write },
     ]);
-    await printer.connect();
+    await connected();
     await expect(printer.inspectGatt()).resolves.toEqual({ characteristics: [
       `${P1S_NOTIFY} (notify)`,
       `${P1S_WRITE} (write, write-without-response)`,
@@ -269,9 +279,9 @@ describe('P1 Bluetooth transport', () => {
     expect(printer.getSnapshot()).toBe('disconnected');
   });
   it('connects the observed FF00/FF02 P1 profile and sends P1 frames through it', async () => {
-    const { printer, getPrimaryService, getCharacteristic, write, writeWithoutResponse, receive, flow } = setup();
+    const { printer, getPrimaryService, getCharacteristic, write, writeWithoutResponse, receive, flow, connected } = setup();
     getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));
-    await printer.connect();
+    await connected();
     expect(getPrimaryService.mock.calls).toEqual([[P1_SERVICE], [P1_BLE_SERVICE]]);
     expect(getCharacteristic).toHaveBeenCalledWith(P1_BLE_WRITE);
     expect(getCharacteristic).toHaveBeenCalledWith(P1_BLE_NOTIFY);
@@ -284,6 +294,59 @@ describe('P1 Bluetooth transport', () => {
     const chunks = writeWithoutResponse.mock.calls.map(call => call[0]);
     expect(chunks.every(chunk => chunk.length <= 20)).toBe(true);
     expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(raster).flatMap(frame => Array.from(frame)));
+  });
+  it('logs FF01 replies and probes which CRC key an FF00 P1 answers', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = setup();
+      harness.getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));
+      await harness.connected();
+      expect(harness.printer.getProfile()).toBe('ff00');
+      // Device left on the zero key by an earlier gen2 handshake: answers only zero-seeded frames.
+      const zeroBattery = paperangFrame(16, new Uint8Array([1]), P1S_CRC_SEED);
+      harness.writeWithoutResponse.mockImplementation(async () => {
+        harness.grant(1);
+        const sent = harness.writeWithoutResponse.mock.calls.flatMap(call => Array.from(call[0]));
+        if (sent.length >= zeroBattery.length && Array.from(zeroBattery).every((byte, i) => sent[sent.length - zeroBattery.length + i] === byte)) {
+          harness.reply(Array.from(paperangFrame(17, new Uint8Array([80]), P1S_CRC_SEED)));
+        }
+      });
+      const probe = harness.printer.probeCrcSeed();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(probe).resolves.toBe(P1S_CRC_SEED);
+      expect(harness.printer.getLog().some(line => line.includes('seed P1 0x35769521: no answer'))).toBe(true);
+      expect(harness.printer.getLog().some(line => line.includes('legacy cmd 17 (seed zero)'))).toBe(true);
+      // Later legacy prints follow the probed key.
+      harness.writeWithoutResponse.mockClear();
+      const raster = new Uint8Array(48 * 2);
+      await harness.printer.print(raster);
+      expect(harness.writeWithoutResponse.mock.calls.flatMap(call => Array.from(call[0])))
+        .toEqual(rasterFrames(raster, P1S_CRC_SEED).flatMap(frame => Array.from(frame)));
+      expect(harness.printer.getLog().some(line => line.includes('✓ print sent'))).toBe(true);
+      expect(harness.printer.getSnapshot()).toBe('connected');
+    } finally { vi.useRealTimers(); }
+  });
+  it('detects A5 firmware on an FF00 P1 while connecting and prints in A5', async () => {
+    const harness = setup();
+    harness.getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));
+    // Reassemble 20-byte chunks into A5 frames and acknowledge each one, as A5 firmware does.
+    const parser = new PaperangReplyParser();
+    const commands: number[] = [];
+    harness.writeWithoutResponse.mockImplementation(async (chunk: Uint8Array) => {
+      harness.grant(1);
+      for (const frame of parser.feed(chunk)) {
+        if (frame.kind !== 'a5') continue;
+        commands.push(frame.command);
+        const result = frame.command === A5_GET_VERSION ? new TextEncoder().encode('01.03.18')
+          : frame.command === A5_BITMAP ? Uint8Array.from([1, 2, 0, frame.content[0], frame.content[1]]) : new Uint8Array();
+        harness.reply(Array.from(a5Frame(frame.command, Uint8Array.from([1, result.length, 0, ...result]), 2)));
+      }
+    });
+    await harness.printer.connect();
+    expect(harness.printer.getLog().some(line => line.includes('print protocol: a5'))).toBe(true);
+    await expect(harness.printer.print(new Uint8Array(48 * 12))).resolves.toBe('sent');
+    expect(commands).toEqual([A5_GET_VERSION, 0x0511, 0x0520, 0x0519, A5_BITMAP, A5_BITMAP, 0x051a, 0x0516]);
+    expect(harness.printer.getSnapshot()).toBe('connected');
   });
   it('connects through the P1S transparent UART characteristic and asks A5 first', async () => {
     const { printer, getCharacteristic, write, writeWithoutResponse } = p1s('a5');
@@ -424,10 +487,12 @@ describe('P1 Bluetooth transport', () => {
     expect(second.printer.getSnapshot()).toBe('disconnected');
   });
   it('waits for FF03 credits before sending more chunks and resumes on new grants', async () => {
-    const { printer, getPrimaryService, writeWithoutResponse, grant } = setup();
+    const { printer, getPrimaryService, writeWithoutResponse, grant, connected } = setup();
     getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));
     writeWithoutResponse.mockImplementation(async () => {});
-    await printer.connect();
+    await connected();
+    // Give back the credit the firmware probe spent while connecting.
+    grant(1);
     const job = printer.print(new Uint8Array(48));
     for (let i = 0; i < 20; i++) await Promise.resolve();
     // A raster frame uses 3 chunks and the feed uses 1; initial grant covers exactly 4.
@@ -440,15 +505,15 @@ describe('P1 Bluetooth transport', () => {
     await nextJob;
     expect(writeWithoutResponse).toHaveBeenCalledTimes(8);
   });
-  it('times out missing credits without sending or automatically retrying', async () => {
+  it('times out missing credits while connecting, without sending or automatically retrying', async () => {
     vi.useFakeTimers();
     try {
       const { printer, getPrimaryService, flow, writeWithoutResponse, device } = setup();
       getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));
       flow.startNotifications.mockImplementation(async () => {});
-      await printer.connect();
-      const job = printer.print(new Uint8Array(48));
-      const rejected = expect(job).rejects.toThrow('timed out');
+      // The firmware probe is the first write, so a printer that never grants credits fails here.
+      const connection = printer.connect();
+      const rejected = expect(connection).rejects.toMatchObject({ stage: 'characteristic', cause: expect.objectContaining({ message: expect.stringContaining('timed out') }) });
       await vi.advanceTimersByTimeAsync(10_000);
       await rejected;
       expect(writeWithoutResponse).not.toHaveBeenCalled();
@@ -459,8 +524,8 @@ describe('P1 Bluetooth transport', () => {
   it('ends an unresponsive legacy write after the timeout', async () => {
     vi.useFakeTimers();
     try {
-      const { printer, write } = setup();
-      await printer.connect();
+      const { printer, write, connected } = setup();
+      await connected();
       write.mockImplementationOnce(() => new Promise<void>(() => {}));
       const rejected = expect(printer.print(new Uint8Array(48))).rejects.toThrow('P1 gen1 frame 1/2');
       await vi.advanceTimersByTimeAsync(10_000);
@@ -477,8 +542,8 @@ describe('P1 Bluetooth transport', () => {
     expect(printer.getSnapshot()).toBe('disconnected');
   });
   it('does not tear down a new connection when an older interrupted write settles', async () => {
-    const { printer, write, disconnect, device } = setup();
-    await printer.connect();
+    const { printer, write, disconnect, device, connected } = setup();
+    await connected();
     let release = () => {};
     write.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
     const oldJob = printer.print(new Uint8Array(48 * 12));
@@ -491,8 +556,8 @@ describe('P1 Bluetooth transport', () => {
     expect(device.gatt.disconnect).not.toHaveBeenCalled();
   });
   it('serializes writes, rejects simultaneous jobs, and ends with feed', async () => {
-    const { printer, write } = setup();
-    await printer.connect();
+    const { printer, write, connected } = setup();
+    await connected();
     let release = () => {};
     write.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
     const raster = new Uint8Array(48 * 12);
@@ -505,8 +570,8 @@ describe('P1 Bluetooth transport', () => {
     expect(printer.getSnapshot()).toBe('connected');
   });
   it('stops on write failure without retrying, then permits manual reconnection', async () => {
-    const { printer, write } = setup();
-    await printer.connect();
+    const { printer, write, connected } = setup();
+    await connected();
     write.mockRejectedValueOnce(new Error('connection lost'));
     await expect(printer.print(new Uint8Array(48 * 12))).rejects.toThrow();
     expect(write).toHaveBeenCalledTimes(1);
@@ -515,8 +580,8 @@ describe('P1 Bluetooth transport', () => {
     expect(printer.getSnapshot()).toBe('connected');
   });
   it('does not continue a job after the device disconnects', async () => {
-    const { printer, write, disconnect } = setup();
-    await printer.connect();
+    const { printer, write, disconnect, connected } = setup();
+    await connected();
     write.mockImplementationOnce(async () => { disconnect(); });
     await expect(printer.print(new Uint8Array(48 * 12))).rejects.toThrow('disconnected');
     expect(write).toHaveBeenCalledTimes(1);

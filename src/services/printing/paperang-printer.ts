@@ -37,6 +37,28 @@ const CONNECTION_RETRY_DELAY_MS = 200;
 export const PRINTER_BRIDGE_URL = 'ws://127.0.0.1:47615';
 // Covers the bridge's baseband connect, service query, RFCOMM retries and settle delay.
 const BRIDGE_READY_TIMEOUT_MS = 20_000;
+const LOG_LIMIT = 400;
+const QUERY_TIMEOUT_MS = 800;
+// A credit wait longer than this is logged as a stall in the diagnostic log.
+const CREDIT_STALL_MS = 500;
+// Read-only legacy queries (python-paperang BtCommandByte); each takes a one-byte payload.
+const LEGACY_QUERIES: [number, string][] = [
+  [4, 'version'], [6, 'model'], [10, 'serial'], [12, 'status'], [14, 'voltage'], [16, 'battery'],
+  [18, 'temperature'], [21, 'factory status'], [28, 'heat density'], [31, 'power-down time'],
+  [35, 'board version'], [37, 'hardware info'], [40, 'max gap length'], [42, 'paper type'],
+];
+const hexBytes = (bytes: Uint8Array, max = 64) =>
+  Array.from(bytes.subarray(0, max), byte => byte.toString(16).padStart(2, '0')).join(' ') + (bytes.length > max ? ` … (${bytes.length} B)` : '');
+const printable = (bytes: Uint8Array) => {
+  const text = String.fromCharCode(...bytes.filter(byte => byte >= 0x20 && byte < 0x7f));
+  return text.length >= 3 ? ` "${text}"` : '';
+};
+const describeSeed = (seed: number) => seed === P1_CRC_SEED ? 'P1 0x35769521' : seed === P1S_CRC_SEED ? 'zero' : `0x${seed.toString(16)}`;
+function describeReply(reply: PaperangReply) {
+  return reply.kind === 'a5'
+    ? `A5 0x${reply.command.toString(16).padStart(4, '0')} type ${reply.messageType}: ${hexBytes(reply.content)}`
+    : `legacy cmd ${reply.command} (seed ${describeSeed(reply.crcSeed)}): ${hexBytes(reply.payload)}${printable(reply.payload)}`;
+}
 async function withWriteTimeout<T>(operation: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -90,6 +112,8 @@ export class PrinterProtocolError extends Error {
   constructor() { super('No known Paperang protocol (A5, gen1, gen2) answered on this Bluetooth channel'); }
 }
 export type PrinterGattInspection = { characteristics: string[]; unavailable?: string };
+/** Which link carries print data: the two ISSC UART characteristics, the FF00 profile, or the SPP bridge. */
+export type PrinterProfile = 'issc-6daa' | 'issc-8841' | 'ff00' | 'spp';
 
 export class PaperangPrinter {
   private state: PrinterState = 'disconnected';
@@ -111,12 +135,22 @@ export class PaperangPrinter {
   private bridgeName?: string;
   private bluetooth: () => PrinterBluetooth | undefined;
   private openSocket: (url: string) => PrinterSocket;
+  private firmwareProbeMs: number;
+  private profile?: PrinterProfile;
+  // Set by the CRC probe when the device answers a non-default seed; legacy prints then use it.
+  private probedSeed?: number;
+  private log: readonly string[] = [];
+  private logListeners = new Set<() => void>();
+  private sendStats = { chunks: 0, creditWaits: 0, creditWaitMs: 0, longestCreditWaitMs: 0, grants: 0 };
   constructor(
     bluetooth: () => PrinterBluetooth | undefined = () => (navigator as Navigator & { bluetooth?: PrinterBluetooth }).bluetooth,
     openSocket: (url: string) => PrinterSocket = url => new WebSocket(url),
+    // How long "Connect P1" waits for an A5 answer before keeping legacy frames.
+    firmwareProbeMs = PROBE_TIMEOUT_MS,
   ) {
     this.bluetooth = bluetooth;
     this.openSocket = openSocket;
+    this.firmwareProbeMs = firmwareProbeMs;
   }
 
   supported = () => typeof window !== 'undefined' && window.isSecureContext && !!this.bluetooth();
@@ -132,6 +166,23 @@ export class PaperangPrinter {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
   };
+  getProfile = () => this.state === 'connected' || this.state === 'printing' ? this.profile : undefined;
+  /** Timestamped diagnostic log of connection steps, sent jobs and every device notification. */
+  getLog = () => this.log;
+  subscribeLog = (listener: () => void) => {
+    this.logListeners.add(listener);
+    return () => { this.logListeners.delete(listener); };
+  };
+  clearLog = () => {
+    this.log = [];
+    this.logListeners.forEach(listener => listener());
+  };
+  private note(line: string) {
+    const now = new Date();
+    const stamp = `${now.toTimeString().slice(0, 8)}.${String(now.getMilliseconds()).padStart(3, '0')}`;
+    this.log = [...this.log.slice(-(LOG_LIMIT - 1)), `${stamp} ${line}`];
+    this.logListeners.forEach(listener => listener());
+  }
   private setState(state: PrinterState) {
     this.state = state;
     this.listeners.forEach(listener => listener());
@@ -146,8 +197,11 @@ export class PaperangPrinter {
     this.receiveCharacteristic?.removeEventListener?.('characteristicvaluechanged', this.onDeviceReply);
     this.receiveCharacteristic = undefined;
     this.protocol = undefined;
+    this.profile = undefined;
+    this.probedSeed = undefined;
     this.replyWaiter?.resolve();
     this.replyWaiter = undefined;
+    this.note('link dropped by the device or browser');
     this.setState('disconnected');
   };
   private onDeviceReply = () => {
@@ -156,7 +210,9 @@ export class PaperangPrinter {
   };
   private receive(bytes: Uint8Array) {
     this.lastDeviceReply = Array.from(bytes.subarray(0, 32), byte => byte.toString(16).padStart(2, '0')).join(' ');
+    this.note(`← ${hexBytes(bytes)}`);
     for (const reply of this.parser.feed(bytes)) {
+      this.note(`  parsed ${describeReply(reply)}`);
       if (this.replyWaiter?.match(reply)) this.replyWaiter.resolve(reply);
     }
   }
@@ -198,12 +254,16 @@ export class PaperangPrinter {
       if (generation !== this.generation) return;
       this.bridgeName = name;
       this.usesP1sProtocol = true;
+      this.profile = 'spp';
+      this.note(`bridge ready: ${name}`);
       stage = 'characteristic';
       this.protocol = (await this.detectProtocol(generation))?.protocol;
       if (generation !== this.generation) return;
+      this.note(`connected over SPP, protocol ${this.protocol ?? 'unknown'}`);
       this.setState('connected');
     } catch (error) {
       if (generation === this.generation) this.disconnect();
+      this.note(`bridge connection failed at ${stage}: ${error instanceof Error ? error.message : String(error)}`);
       throw new PrinterConnectionError(stage, error);
     }
   }
@@ -211,8 +271,13 @@ export class PaperangPrinter {
   private onFlowControl = () => {
     const value = this.flowCharacteristic?.value;
     // FF03: 01 <count> grants additional write-without-response packets.
-    if (!value || value.byteLength < 2 || value.getUint8(0) !== 1) return;
+    if (!value || value.byteLength < 2 || value.getUint8(0) !== 1) {
+      // Observed on a P1: `02 aa 00` right after subscribing, likely a LE16 max packet size (170).
+      if (value) this.note(`FF03 non-credit message: ${hexBytes(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))}`);
+      return;
+    }
     this.credits += value.getUint8(1);
+    this.sendStats.grants += value.getUint8(1);
     if (this.credits > 0) this.creditWaiter?.resolve();
   };
   private clearFlowControl() {
@@ -224,13 +289,21 @@ export class PaperangPrinter {
   }
   private async takeCredit(generation: number) {
     if (this.credits === 0) {
+      const started = Date.now();
       let waiter: typeof this.creditWaiter;
       const ready = new Promise<void>((resolve, reject) => {
         waiter = { resolve, reject };
         this.creditWaiter = waiter;
       });
       try { await withWriteTimeout(ready); }
-      finally { if (this.creditWaiter === waiter) this.creditWaiter = undefined; }
+      finally {
+        if (this.creditWaiter === waiter) this.creditWaiter = undefined;
+        const waited = Date.now() - started;
+        this.sendStats.creditWaits++;
+        this.sendStats.creditWaitMs += waited;
+        this.sendStats.longestCreditWaitMs = Math.max(this.sendStats.longestCreditWaitMs, waited);
+        if (waited >= CREDIT_STALL_MS) this.note(`FF03 credit stall ${waited} ms after ${this.sendStats.chunks} chunks`);
+      }
     }
     if (generation !== this.generation || this.credits === 0) throw new Error('P1 disconnected');
     this.credits--;
@@ -255,6 +328,8 @@ export class PaperangPrinter {
     this.receiveCharacteristic?.removeEventListener?.('characteristicvaluechanged', this.onDeviceReply);
     this.receiveCharacteristic = undefined;
     this.protocol = undefined;
+    this.profile = undefined;
+    this.probedSeed = undefined;
     this.replyWaiter?.resolve();
     this.replyWaiter = undefined;
     this.setState('disconnected');
@@ -328,6 +403,11 @@ export class PaperangPrinter {
         const receive = await service.getCharacteristic(P1_BLE_NOTIFY);
         if (generation !== this.generation) return;
         if (!receive.startNotifications) throw new Error('P1 FF01 receive notifications unavailable');
+        // FF01 also carries the printer's replies; the diagnostic log needs them.
+        if (receive.addEventListener && receive.removeEventListener) {
+          this.receiveCharacteristic = receive;
+          receive.addEventListener('characteristicvaluechanged', this.onDeviceReply);
+        }
         await withWriteTimeout(receive.startNotifications());
         if (generation !== this.generation) return;
         const flow = await service.getCharacteristic(P1_BLE_FLOW);
@@ -340,6 +420,23 @@ export class PaperangPrinter {
         if (generation !== this.generation) return;
       }
       this.characteristic = characteristic;
+      this.profile = writeUuid === P1_BLE_WRITE ? 'ff00' : writeUuid === P1S_WRITE ? 'issc-8841' : 'issc-6daa';
+      this.note(`connected to ${device.name || 'unnamed device'} over ${this.profile} (write ${writeUuid})`);
+      if (this.profile === 'issc-6daa') {
+        // Optional: older ISSC firmware may still answer on the UART TX characteristic.
+        try {
+          const receive = await service.getCharacteristic(P1S_NOTIFY);
+          if (generation !== this.generation) return;
+          if (receive.startNotifications && receive.addEventListener && receive.removeEventListener) {
+            this.receiveCharacteristic = receive;
+            receive.addEventListener('characteristicvaluechanged', this.onDeviceReply);
+            await withWriteTimeout(receive.startNotifications());
+          }
+        } catch (error) {
+          this.note(`no ISSC reply channel: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+        }
+        if (generation !== this.generation) return;
+      }
       // Firmware behind the Microchip UART characteristic speaks one of several
       // Paperang dialects, so the P1S path asks the device which one it understands.
       this.usesP1sProtocol = writeUuid === P1S_WRITE;
@@ -354,11 +451,21 @@ export class PaperangPrinter {
         // but print and self-test refuse to send into an unknown protocol.
         this.protocol = (await this.detectProtocol(generation))?.protocol;
         if (generation !== this.generation) return;
+      } else if (this.receiveCharacteristic) {
+        // P1 firmware differs between units: 01.03.19 on FF00 answers only A5 and silently
+        // drops legacy frames, while older units print legacy frames and may never answer.
+        // The probe frame holds no 0x02/0x03 bytes, so legacy firmware discards it whole.
+        // No answer keeps the legacy default (never the gen2 handshake, which rekeys the CRC).
+        const reply = await this.request(a5Frame(A5_GET_VERSION), candidate => candidate.kind === 'a5' && candidate.command === A5_GET_VERSION && candidate.messageType === 2, this.firmwareProbeMs, generation);
+        if (generation !== this.generation) return;
+        if (reply) this.protocol = 'a5';
       }
+      this.note(`print protocol: ${this.protocol ?? 'gen1 (default, unconfirmed)'}`);
       this.setState('connected');
     } catch (error) {
       if (generation === this.generation) this.disconnect();
       if (stage === 'selection' && error instanceof Error && error.name === 'NotFoundError') return;
+      this.note(`BLE connection failed at ${stage}: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
       throw new PrinterConnectionError(stage, error);
     }
   }
@@ -378,6 +485,7 @@ export class PaperangPrinter {
       await this.takeCredit(generation);
       if (generation !== this.generation || !this.linkUp()) throw new Error('P1 disconnected');
       await withWriteTimeout(characteristic.writeValueWithoutResponse!(frame.slice(offset, offset + FLOW_CHUNK_SIZE)));
+      this.sendStats.chunks++;
     }
   }
   /** Writes one frame and resolves with the first matching reply, or undefined on timeout. */
@@ -432,10 +540,13 @@ export class PaperangPrinter {
     this.usesP1sProtocol && (this.state === 'connected' || this.state === 'printing') ? this.protocol ?? 'unknown' : undefined;
   async inspectGatt(): Promise<PrinterGattInspection> {
     if (this.state !== 'connected' || !this.service) throw new Error('P1 not ready');
-    if (!this.service.getCharacteristics) return { characteristics: [], unavailable: 'The browser did not expose characteristic enumeration.' };
+    if (!this.service.getCharacteristics) {
+      this.note('GATT inspection unavailable: the browser did not expose characteristic enumeration');
+      return { characteristics: [], unavailable: 'The browser did not expose characteristic enumeration.' };
+    }
     try {
       const characteristics = await this.service.getCharacteristics();
-      return {
+      const inspection = {
         characteristics: characteristics.map(characteristic => {
           const properties = characteristic.properties;
           const modes = [
@@ -448,8 +559,12 @@ export class PaperangPrinter {
           return `${characteristic.uuid || 'unknown UUID'} (${modes})`;
         }).sort(),
       };
+      this.note(`GATT on ${this.profile ?? 'unknown link'}:\n  ${inspection.characteristics.join('\n  ') || '(none)'}`);
+      return inspection;
     } catch (error) {
-      return { characteristics: [], unavailable: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
+      const unavailable = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      this.note(`GATT inspection failed: ${unavailable}`);
+      return { characteristics: [], unavailable };
     }
   }
   async printSelfTest(): Promise<PrintResult> {
@@ -500,13 +615,116 @@ export class PaperangPrinter {
       throw new Error(`P1 diagnostic failed: ${detail}`, { cause: error });
     }
   }
+  private noteSendStats(started: number, outcome: string) {
+    const stats = this.sendStats;
+    const credits = this.flowCharacteristic
+      ? `, ${stats.chunks} chunks, ${stats.grants} credits granted, ${stats.creditWaits} credit waits totalling ${stats.creditWaitMs} ms (longest ${stats.longestCreditWaitMs} ms)`
+      : '';
+    this.note(`${outcome} after ${Date.now() - started} ms${credits}`);
+  }
+  /** Runs one diagnostic exchange with the connected printer, logging its outcome. */
+  private async runDiagnostic<T>(name: string, body: (generation: number) => Promise<T>): Promise<T> {
+    if (this.state !== 'connected' || (!this.characteristic && !this.socket)) throw new Error('P1 not ready');
+    const generation = this.generation;
+    this.setState('printing');
+    this.note(`▶ ${name}`);
+    try {
+      const result = await body(generation);
+      if (generation === this.generation) this.setState('connected');
+      return result;
+    } catch (error) {
+      this.note(`✗ ${name}: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+      if (generation === this.generation) this.disconnect();
+      throw error;
+    }
+  }
+  private legacySeed() {
+    return this.protocol === 'gen2' ? P1S_CRC_SEED : this.probedSeed ?? P1_CRC_SEED;
+  }
+  private hasReplyChannel() {
+    if (this.receiveCharacteristic || this.socket) return true;
+    this.note('  this link has no reply channel, so device answers cannot be read');
+    return false;
+  }
+  /** Asks for the battery level under each known CRC seed; the one answered is the key the device expects. */
+  probeCrcSeed(): Promise<number | undefined> {
+    return this.runDiagnostic('CRC seed probe', async generation => {
+      if (!this.hasReplyChannel()) return undefined;
+      for (const seed of [P1_CRC_SEED, P1S_CRC_SEED]) {
+        const reply = await this.request(batteryQueryFrame(seed), candidate => candidate.kind === 'legacy', PROBE_TIMEOUT_MS, generation);
+        this.note(`  seed ${describeSeed(seed)}: ${reply ? 'answered' : 'no answer'}`);
+        if (reply) {
+          this.probedSeed = seed;
+          if (seed !== P1_CRC_SEED) this.note('  the device expects the zero key (left by a gen2 handshake); legacy prints now use it until disconnect');
+          return seed;
+        }
+      }
+      this.note('  no seed answered: the device ignores legacy queries on this link');
+      return undefined;
+    });
+  }
+  /** Asks for the firmware version in A5 framing; newer P1 firmware ignores legacy frames and speaks only A5. */
+  probeA5(): Promise<boolean> {
+    return this.runDiagnostic('A5 probe', async generation => {
+      if (!this.hasReplyChannel()) return false;
+      const reply = await this.request(a5Frame(A5_GET_VERSION), candidate => candidate.kind === 'a5' && candidate.command === A5_GET_VERSION, PROBE_TIMEOUT_MS * 2, generation);
+      if (reply?.kind !== 'a5') {
+        this.note('  no A5 answer');
+        return false;
+      }
+      this.note(`  A5 answered${printable(reply.content)}; prints on this connection now use A5`);
+      this.protocol = 'a5';
+      return true;
+    });
+  }
+  /** Sends every read-only legacy query and logs what the device answers. */
+  queryLegacyInfo(): Promise<void> {
+    return this.runDiagnostic('legacy info queries', async generation => {
+      if (!this.hasReplyChannel()) return;
+      const seed = this.legacySeed();
+      this.note(`  CRC seed ${describeSeed(seed)}`);
+      for (const [command, label] of LEGACY_QUERIES) {
+        const reply = await this.request(paperangFrame(command, new Uint8Array([1]), seed), candidate => candidate.kind === 'legacy', QUERY_TIMEOUT_MS, generation);
+        this.note(`  ${label} (cmd ${command}): ${reply?.kind === 'legacy' ? `cmd ${reply.command} ${hexBytes(reply.payload)}${printable(reply.payload)}` : 'no answer'}`);
+      }
+    });
+  }
+  /** Feeds blank paper with one legacy command; paper moving proves commands are being executed. */
+  feedPaper(lines = 60): Promise<void> {
+    return this.runDiagnostic(`feed ${lines} lines`, async generation => {
+      if (this.protocol === 'a5') {
+        await this.a5Ack(A5_FEED, new Uint8Array([lines & 255, lines >>> 8]), generation);
+        return;
+      }
+      const frame = paperangFrame(LEGACY_FEED_LINE, new Uint8Array([lines & 255, lines >>> 8]), this.legacySeed());
+      if (!this.receiveCharacteristic && !this.socket) { await this.writeFrame(frame, generation); return; }
+      const reply = await this.request(frame, candidate => candidate.kind === 'legacy', LEGACY_ACK_TIMEOUT_MS, generation);
+      this.note(`  ${reply ? 'answered' : 'no answer (paper may still move)'}`);
+    });
+  }
+  /** The firmware's own test page: prints without any image data from this page. */
+  diagnosticSelfTest(): Promise<void> {
+    return this.runDiagnostic('self-test page', async generation => {
+      if (this.protocol === 'a5') {
+        await this.a5Ack(A5_SELF_TEST, new Uint8Array(), generation);
+        return;
+      }
+      const frame = selfTestFrame(this.legacySeed());
+      if (!this.receiveCharacteristic && !this.socket) { await this.writeFrame(frame, generation); return; }
+      const reply = await this.request(frame, candidate => candidate.kind === 'legacy', LEGACY_ACK_TIMEOUT_MS, generation);
+      this.note(`  ${reply ? 'answered' : 'no answer (the page may still print)'}`);
+    });
+  }
   async print(raster: Uint8Array): Promise<PrintResult> {
     if (this.state !== 'connected' || (!this.characteristic && !this.socket)) throw new Error('P1 not ready');
-    const protocol = this.usesP1sProtocol ? this.requireProtocol() : undefined;
+    const protocol = this.usesP1sProtocol ? this.requireProtocol() : this.protocol;
     const generation = this.generation;
     let step = 'start';
     this.setState('printing');
     this.lastDeviceReply = undefined;
+    const started = Date.now();
+    this.sendStats = { chunks: 0, creditWaits: 0, creditWaitMs: 0, longestCreditWaitMs: 0, grants: 0 };
+    this.note(`▶ print ${raster.length / P1_ROW_BYTES} rows (${raster.length} B) over ${this.profile ?? 'unknown link'}, protocol ${protocol ?? 'gen1'}`);
     try {
       let result: PrintResult = 'sent';
       if (protocol === 'a5') {
@@ -526,8 +744,9 @@ export class PaperangPrinter {
         await this.a5Ack(A5_PRINT_END, new Uint8Array(), generation, A5_PRINT_END_TIMEOUT_MS);
         await this.a5Ack(A5_FEED, new Uint8Array([A5_FEED_LINES, 0]), generation);
       } else {
-        const crcSeed = protocol === 'gen2' ? P1S_CRC_SEED : P1_CRC_SEED;
+        const crcSeed = protocol === 'gen2' ? P1S_CRC_SEED : this.probedSeed ?? P1_CRC_SEED;
         const frames = rasterFrames(raster, crcSeed);
+        this.note(`  ${frames.length} legacy frames, CRC seed ${describeSeed(crcSeed)}`);
         if (protocol) frames.unshift(paperangFrame(LEGACY_SET_PAPER_TYPE, new Uint8Array([0]), crcSeed));
         for (let index = 0; index < frames.length; index++) {
           step = `frame ${index + 1}/${frames.length}`;
@@ -542,12 +761,14 @@ export class PaperangPrinter {
         }
       }
       if (generation !== this.generation) throw new Error('P1 disconnected');
+      this.noteSendStats(started, `✓ print ${result}`);
       this.setState('connected');
       return result;
     } catch (error) {
       // No automatic retries: part of the receipt may already be on paper.
       if (generation === this.generation) this.disconnect();
       const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      this.noteSendStats(started, `✗ print failed at ${step}: ${detail}`);
       throw new Error(`P1 ${protocol ?? 'gen1'} ${step}: ${detail}`, { cause: error });
     }
   }

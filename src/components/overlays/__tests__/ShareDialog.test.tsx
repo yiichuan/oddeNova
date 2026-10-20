@@ -16,6 +16,7 @@ const printer = vi.hoisted(() => {
   let state = 'disconnected';
   let name: string | undefined;
   const listeners = new Set<() => void>();
+  const log: readonly string[] = [];
   return {
     supported: vi.fn(() => true),
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -24,6 +25,10 @@ const printer = vi.hoisted(() => {
     getLastDeviceReply: vi.fn(() => undefined),
     getProtocol: vi.fn((): string | undefined => undefined),
     getTransport: vi.fn((): string | undefined => undefined),
+    getProfile: vi.fn((): string | undefined => undefined),
+    getLog: () => log,
+    subscribeLog: () => () => {},
+    clearLog: vi.fn(),
     bridgeSupported: vi.fn(() => false),
     connectBridge: vi.fn(),
     setDeviceName(next?: string) { name = next; },
