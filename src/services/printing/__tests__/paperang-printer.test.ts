@@ -295,6 +295,46 @@ describe('P1 Bluetooth transport', () => {
     expect(chunks.every(chunk => chunk.length <= 20)).toBe(true);
     expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(raster).flatMap(frame => Array.from(frame)));
   });
+  it('sends FF00 packets at the size the printer reports on FF03, one credit each', async () => {
+    const { printer, getPrimaryService, flow, writeWithoutResponse, connected } = setup();
+    getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));
+    flow.startNotifications.mockImplementation(async () => {
+      for (const message of [[2, 0x67, 0], [1, 4]]) {
+        flow.value = new DataView(Uint8Array.from(message).buffer);
+        flow.addEventListener.mock.calls[0][1]();
+      }
+    });
+    await connected();
+    const raster = new Uint8Array(48 * 12);
+    await printer.print(raster);
+    const chunks = writeWithoutResponse.mock.calls.map(call => call[0]);
+    expect(chunks.every(chunk => chunk.length <= 103)).toBe(true);
+    expect(chunks.some(chunk => chunk.length === 103)).toBe(true);
+    expect(chunks.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(raster).flatMap(frame => Array.from(frame)));
+    expect(printer.getLog().some(line => line.includes('chunks of up to 103 B'))).toBe(true);
+  });
+  it('falls back to 20-byte packets when the browser rejects a large one, without losing bytes', async () => {
+    const { printer, getPrimaryService, flow, writeWithoutResponse, grant, connected } = setup();
+    getPrimaryService.mockRejectedValueOnce(new DOMException('missing', 'NotFoundError'));
+    flow.startNotifications.mockImplementation(async () => {
+      for (const message of [[2, 0xaa, 0], [1, 4]]) {
+        flow.value = new DataView(Uint8Array.from(message).buffer);
+        flow.addEventListener.mock.calls[0][1]();
+      }
+    });
+    await connected();
+    const accepted: Uint8Array[] = [];
+    writeWithoutResponse.mockImplementation(async (chunk: Uint8Array) => {
+      if (chunk.length > 20) throw new DOMException('Value is too long', 'InvalidModificationError');
+      accepted.push(chunk);
+      grant(1);
+    });
+    const raster = new Uint8Array(48 * 12);
+    await expect(printer.print(raster)).resolves.toBe('sent');
+    expect(accepted.flatMap(chunk => Array.from(chunk))).toEqual(rasterFrames(raster).flatMap(frame => Array.from(frame)));
+    expect(printer.getLog().some(line => line.includes('170-byte packet rejected'))).toBe(true);
+    expect(printer.getSnapshot()).toBe('connected');
+  });
   it('logs FF01 replies and probes which CRC key an FF00 P1 answers', async () => {
     vi.useFakeTimers();
     try {
@@ -345,6 +385,11 @@ describe('P1 Bluetooth transport', () => {
     await harness.printer.connect();
     expect(harness.printer.getLog().some(line => line.includes('print protocol: a5'))).toBe(true);
     await expect(harness.printer.print(new Uint8Array(48 * 12))).resolves.toBe('sent');
+    // Bitmap acks are summarised; setup and finish replies stay in the log.
+    const log = harness.printer.getLog();
+    expect(log.some(line => line.includes('A5 0x051b'))).toBe(false);
+    expect(log.some(line => line.includes('2 bitmap chunks acknowledged in'))).toBe(true);
+    expect(log.some(line => line.includes('A5 0x051a'))).toBe(true);
     expect(commands).toEqual([A5_GET_VERSION, 0x0511, 0x0520, 0x0519, A5_BITMAP, A5_BITMAP, 0x051a, 0x0516]);
     expect(harness.printer.getSnapshot()).toBe('connected');
   });

@@ -26,7 +26,10 @@ const LEGACY_ACK_TIMEOUT_MS = 3_000;
 const A5_REPLY_TIMEOUT_MS = 5_000;
 const A5_BITMAP_TIMEOUT_MS = 15_000;
 const A5_PRINT_END_TIMEOUT_MS = 30_000;
+// The BLE default (23-byte ATT MTU) payload; always safe before the printer reports more.
 const FLOW_CHUNK_SIZE = 20;
+// Largest attribute value Web Bluetooth may write in one packet.
+const MAX_FLOW_PACKET = 512;
 const LEGACY_SET_PAPER_TYPE = 44;
 const A5_DENSITY = 80;
 // The card carries its own bottom margin; this short tail only clears the tear edge.
@@ -59,11 +62,15 @@ function describeReply(reply: PaperangReply) {
     ? `A5 0x${reply.command.toString(16).padStart(4, '0')} type ${reply.messageType}: ${hexBytes(reply.content)}`
     : `legacy cmd ${reply.command} (seed ${describeSeed(reply.crcSeed)}): ${hexBytes(reply.payload)}${printable(reply.payload)}`;
 }
+/** The write may still have reached the printer, so it is never resent. */
+class WriteTimeoutError extends Error {
+  constructor() { super('P1 Bluetooth write or flow-control wait timed out after 10 seconds'); }
+}
 async function withWriteTimeout<T>(operation: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([operation, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('P1 Bluetooth write or flow-control wait timed out after 10 seconds')), WRITE_TIMEOUT_MS);
+      timer = setTimeout(() => reject(new WriteTimeoutError()), WRITE_TIMEOUT_MS);
     })]);
   } finally { clearTimeout(timer); }
 }
@@ -129,6 +136,7 @@ export class PaperangPrinter {
   private replyWaiter?: { match: (reply: PaperangReply) => boolean; resolve: (reply?: PaperangReply) => void };
   private flowCharacteristic?: WriteCharacteristic;
   private credits = 0;
+  private packetSize = FLOW_CHUNK_SIZE;
   private creditWaiter?: { resolve: () => void; reject: (error: Error) => void };
   private generation = 0;
   private socket?: PrinterSocket;
@@ -141,6 +149,8 @@ export class PaperangPrinter {
   private probedSeed?: number;
   private log: readonly string[] = [];
   private logListeners = new Set<() => void>();
+  // While an A5 job streams bitmaps, their acks are summarised instead of logged one by one.
+  private summariseBitmapAcks = false;
   private sendStats = { chunks: 0, creditWaits: 0, creditWaitMs: 0, longestCreditWaitMs: 0, grants: 0 };
   constructor(
     bluetooth: () => PrinterBluetooth | undefined = () => (navigator as Navigator & { bluetooth?: PrinterBluetooth }).bluetooth,
@@ -210,9 +220,12 @@ export class PaperangPrinter {
   };
   private receive(bytes: Uint8Array) {
     this.lastDeviceReply = Array.from(bytes.subarray(0, 32), byte => byte.toString(16).padStart(2, '0')).join(' ');
-    this.note(`← ${hexBytes(bytes)}`);
-    for (const reply of this.parser.feed(bytes)) {
-      this.note(`  parsed ${describeReply(reply)}`);
+    const replies = this.parser.feed(bytes);
+    const routine = (reply: PaperangReply) => this.summariseBitmapAcks && reply.kind === 'a5' && reply.command === A5_BITMAP;
+    // Partial frames and anything unexpected keep their raw bytes in the log.
+    if (!replies.length || !replies.every(routine)) this.note(`← ${hexBytes(bytes)}`);
+    for (const reply of replies) {
+      if (!routine(reply)) this.note(`  parsed ${describeReply(reply)}`);
       if (this.replyWaiter?.match(reply)) this.replyWaiter.resolve(reply);
     }
   }
@@ -271,9 +284,17 @@ export class PaperangPrinter {
   private onFlowControl = () => {
     const value = this.flowCharacteristic?.value;
     // FF03: 01 <count> grants additional write-without-response packets.
-    if (!value || value.byteLength < 2 || value.getUint8(0) !== 1) {
-      // Observed on a P1: `02 aa 00` right after subscribing, likely a LE16 max packet size (170).
-      if (value) this.note(`FF03 non-credit message: ${hexBytes(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))}`);
+    if (!value) return;
+    // FF03: 02 <LE16 size> right after subscribing is the largest packet the printer
+    // accepts per credit (observed 103 and 170 on two P1 units).
+    if (value.byteLength >= 3 && value.getUint8(0) === 2) {
+      const size = value.getUint16(1, true);
+      if (size >= FLOW_CHUNK_SIZE && size <= MAX_FLOW_PACKET) this.packetSize = size;
+      this.note(`FF03 packet size ${size}; sending ${this.packetSize}-byte packets`);
+      return;
+    }
+    if (value.byteLength < 2 || value.getUint8(0) !== 1) {
+      this.note(`FF03 non-credit message: ${hexBytes(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))}`);
       return;
     }
     this.credits += value.getUint8(1);
@@ -284,6 +305,7 @@ export class PaperangPrinter {
     this.flowCharacteristic?.removeEventListener?.('characteristicvaluechanged', this.onFlowControl);
     this.flowCharacteristic = undefined;
     this.credits = 0;
+    this.packetSize = FLOW_CHUNK_SIZE;
     this.creditWaiter?.reject(new Error('P1 disconnected'));
     this.creditWaiter = undefined;
   }
@@ -480,12 +502,23 @@ export class PaperangPrinter {
       await withWriteTimeout(characteristic.writeValueWithResponse(frame));
       return;
     }
-    for (let offset = 0; offset < frame.length; offset += FLOW_CHUNK_SIZE) {
+    for (let offset = 0; offset < frame.length;) {
       if (generation !== this.generation || !this.linkUp()) throw new Error('P1 disconnected');
       await this.takeCredit(generation);
       if (generation !== this.generation || !this.linkUp()) throw new Error('P1 disconnected');
-      await withWriteTimeout(characteristic.writeValueWithoutResponse!(frame.slice(offset, offset + FLOW_CHUNK_SIZE)));
+      const size = this.packetSize;
+      try {
+        await withWriteTimeout(characteristic.writeValueWithoutResponse!(frame.slice(offset, offset + size)));
+      } catch (error) {
+        // A rejected oversized packet never left the browser: keep its credit and resend smaller.
+        if (size === FLOW_CHUNK_SIZE || error instanceof WriteTimeoutError || generation !== this.generation || !this.linkUp()) throw error;
+        this.credits++;
+        this.packetSize = FLOW_CHUNK_SIZE;
+        this.note(`${size}-byte packet rejected (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}); falling back to ${FLOW_CHUNK_SIZE}-byte packets`);
+        continue;
+      }
       this.sendStats.chunks++;
+      offset += size;
     }
   }
   /** Writes one frame and resolves with the first matching reply, or undefined on timeout. */
@@ -618,7 +651,7 @@ export class PaperangPrinter {
   private noteSendStats(started: number, outcome: string) {
     const stats = this.sendStats;
     const credits = this.flowCharacteristic
-      ? `, ${stats.chunks} chunks, ${stats.grants} credits granted, ${stats.creditWaits} credit waits totalling ${stats.creditWaitMs} ms (longest ${stats.longestCreditWaitMs} ms)`
+      ? `, ${stats.chunks} chunks of up to ${this.packetSize} B, ${stats.grants} credits granted, ${stats.creditWaits} credit waits totalling ${stats.creditWaitMs} ms (longest ${stats.longestCreditWaitMs} ms)`
       : '';
     this.note(`${outcome} after ${Date.now() - started} ms${credits}`);
   }
@@ -735,11 +768,19 @@ export class PaperangPrinter {
         await this.a5Ack(A5_PRINT_START, new Uint8Array(), generation);
         // Nothing else may be sent between print start and print end.
         const total = Math.ceil(raster.length / A5_BITMAP_ROWS_BYTES);
-        for (let order = 1; order <= total; order++) {
-          step = `bitmap ${order}/${total}`;
-          const offset = (order - 1) * A5_BITMAP_ROWS_BYTES;
-          await this.a5Ack(A5_BITMAP, a5BitmapContent(raster.slice(offset, offset + A5_BITMAP_ROWS_BYTES), order), generation, A5_BITMAP_TIMEOUT_MS, order);
-        }
+        const bitmapsStarted = Date.now();
+        let slowestAck = 0;
+        this.summariseBitmapAcks = true;
+        try {
+          for (let order = 1; order <= total; order++) {
+            step = `bitmap ${order}/${total}`;
+            const offset = (order - 1) * A5_BITMAP_ROWS_BYTES;
+            const sent = Date.now();
+            await this.a5Ack(A5_BITMAP, a5BitmapContent(raster.slice(offset, offset + A5_BITMAP_ROWS_BYTES), order), generation, A5_BITMAP_TIMEOUT_MS, order);
+            slowestAck = Math.max(slowestAck, Date.now() - sent);
+          }
+        } finally { this.summariseBitmapAcks = false; }
+        this.note(`  ${total} bitmap chunks acknowledged in ${Date.now() - bitmapsStarted} ms (slowest ${slowestAck} ms)`);
         step = 'finish';
         await this.a5Ack(A5_PRINT_END, new Uint8Array(), generation, A5_PRINT_END_TIMEOUT_MS);
         await this.a5Ack(A5_FEED, new Uint8Array([A5_FEED_LINES, 0]), generation);
