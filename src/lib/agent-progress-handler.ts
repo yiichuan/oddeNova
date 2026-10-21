@@ -1,5 +1,5 @@
 import type { useSessions } from '../hooks/useSessions';
-import type { ProgressEvent } from '../services/llm';
+import type { ProgressEvent } from '../services/llm-loader';
 import { t } from './i18n';
 
 type AgentProgressSessions = Pick<

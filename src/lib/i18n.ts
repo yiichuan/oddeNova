@@ -474,6 +474,11 @@ const S: Record<string, readonly [string, string]> = {
   onboardingRestart:          ['重新开始', 'Start over'],
   onboardingCannotResume:     ['练习作品已被删除或修改，无法接着演示。可以重新建立一份练习，你现有的内容不会被覆盖。', "The practice piece was deleted or changed, so the guide can't pick up from there. You can start a fresh practice; nothing you already have will be overwritten."],
   onboardingSkip:             ['跳过', 'Skip'],
+  onboardingExitHintTitle:    ['之后想继续？', 'Want to continue later?'],
+  onboardingExitHintDesktopBody: ['在左侧导航打开「更多」，选择「新手指引」即可重新开始。', 'Open More in the left navigation, then choose Getting started to begin again.'],
+  onboardingExitHintMobileBody: ['打开左上角菜单，在「更多」里可以重新找到「新手指引」。', 'Open the menu in the top left, then find Getting started under More.'],
+  onboardingExitHintDismiss:  ['知道了', 'Got it'],
+  onboardingExitHintMenu:     ['菜单', 'Menu'],
   onboardingPrev:             ['上一步', 'Back'],
   onboardingNext:             ['下一步', 'Next'],
   onboardingRetry:            ['重试', 'Try again'],
@@ -522,6 +527,10 @@ const S: Record<string, readonly [string, string]> = {
   onboardingMobileChangeNote:    ['新增的是 horizon_intro；原背景和声 horizon 保持原样。', 'The new layer is horizon_intro. The original background harmony, horizon, is unchanged.'],
   onboardingMobileTargetLost:    ['没找到要指向的位置。', "Couldn't find what to point at."],
   onboardingMobileRelocate:      ['重新定位', 'Find it again'],
+  // FeatureLoadBoundary (src/components/async/): lazy page/modal shell states.
+  featureLoading:       ['加载中…', 'Loading…'],
+  featureLoadFailed:    ['这一内容未能加载。', "Couldn't load this."],
+  featureLoadRetry:     ['重新加载', 'Try again'],
 };
 
 export function t(key: string): string {

@@ -68,8 +68,10 @@ export function captureAsciiFrame(options: {
   theme: 'dark' | 'light';
 }): AsciiFrame {
   const html = readFileSync('public/animation/galaxy-ascii.html', 'utf8');
-  const source = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
-  if (!source) throw new Error('no <script> found in galaxy-ascii.html');
+  const source = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((match) => match[1])
+    .find((script) => script.includes('(() => {'));
+  if (!source) throw new Error('no animation script found in galaxy-ascii.html');
 
   let painted: Painted[] = [];
   let fontSize = 0;
@@ -134,6 +136,11 @@ export function captureAsciiFrame(options: {
   const sandbox = {
     window: window_,
     document: document_,
+    location: { search: '' },
+    URLSearchParams,
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    setInterval: () => 0,
     requestAnimationFrame: (callback: (timestamp: number) => void) => {
       nextFrame[0] = callback;
       return 0;

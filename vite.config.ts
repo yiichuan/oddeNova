@@ -489,6 +489,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
     build: {
+      // Manifest powers scripts/report-bundle-size.mjs (analyze:bundle) so the
+      // entry-asset closure can be measured reproducibly. No runtime cost.
+      manifest: true,
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),

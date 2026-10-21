@@ -2331,7 +2331,7 @@ html[data-theme='light'] .history-search-field {
 }
 
 .cm-editor .cm-lineNumbers .cm-gutterElement {
-  font-family: 'ABeeZee', monospace !important;
+  font-family: 'ABeeZee', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', sans-serif !important;
   font-size: 13px !important;
   line-height: 2.0 !important;
   padding-left: 24px !important;
@@ -2346,7 +2346,7 @@ html[data-theme='light'] .history-search-field {
   padding-top: var(--code-editor-bottom-gap) !important;
   padding-bottom: calc(var(--code-editor-bottom-gap) + var(--spacing-conversation-edge-fade)) !important;
   font-size: 13px !important;
-  font-family: 'ABeeZee', monospace !important;
+  font-family: 'ABeeZee', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', sans-serif !important;
   line-height: 2.0 !important;
   letter-spacing: 0.1em !important;
 }

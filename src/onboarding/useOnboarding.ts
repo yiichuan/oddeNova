@@ -89,11 +89,9 @@ const IDLE_COMPARE: CompareState = { version: null, phase: 'idle', progress: 0, 
 
 /** The preset loads briefly and honestly — no imitation of a long generation. */
 const PRESET_DELAY_MS = 1200;
-/** "Later" asks again the next day, not the next page load. */
-const POSTPONE_MS = 24 * 60 * 60 * 1000;
 const PREPARE_TIMEOUT_MS = 20_000;
 
-type Panel = 'auto' | 'dismissed' | 'invite' | 'resume' | 'cannot-resume' | 'step';
+type Panel = 'auto' | 'dismissed' | 'invite' | 'manual-invite' | 'resume' | 'cannot-resume' | 'step';
 
 export interface UseOnboardingOptions {
   ownerKey: string;
@@ -114,6 +112,8 @@ export interface UseOnboardingOptions {
   leaveCurrentSession: () => Promise<void>;
   /** Put `code` in the editor as `sessionId`'s own, without it reading as a manual edit. */
   showCodeInEditor: (sessionId: string, code: string) => void;
+  /** Remove the disposable practice and leave the reader in a fresh conversation. */
+  discardPractice: (sessionId: string) => void;
   startNewSession: () => Promise<void> | void;
   focusInput: () => void;
   /**
@@ -234,6 +234,8 @@ export function useOnboarding(options: UseOnboardingOptions) {
   const [deliveryError, setDeliveryError] = useState(false);
   const [startError, setStartError] = useState(false);
   const [starting, setStarting] = useState(false);
+  /** A one-time handoff after explicitly leaving a running guide. */
+  const [exitHintVisible, setExitHintVisible] = useState(false);
   /** null while nothing is settled: preparing, or not yet asked. */
   const [soundResult, setSoundResult] = useState<'ready' | 'failed' | null>(null);
   const [compare, setCompare] = useState<CompareState>(IDLE_COMPARE);
@@ -300,9 +302,10 @@ export function useOnboarding(options: UseOnboardingOptions) {
       case 'dismissed':
         return 'hidden';
       case 'invite':
+      case 'manual-invite':
       case 'cannot-resume':
       case 'resume':
-        return panel;
+        return panel === 'manual-invite' ? 'invite' : panel;
       case 'step':
         if (progress.status !== 'active') return 'hidden';
         return isPracticeCurrent ? 'step' : 'resume';
@@ -579,6 +582,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
   const start = useCallback(async () => {
     if (startingRef.current) return;
     startingRef.current = true;
+    setExitHintVisible(false);
     setStarting(true);
     setStartError(false);
     // Hold the invitation until the practice is ready. A newcomer's is only
@@ -619,9 +623,15 @@ export function useOnboarding(options: UseOnboardingOptions) {
   }, [dispatch, forgetListen, setPanel]);
 
   const postpone = useCallback(() => {
-    dispatch({ type: 'postpone', until: Date.now() + POSTPONE_MS });
+    // Declining the initial invitation is a settled answer: do not interrupt
+    // this reader again on a later visit. Point out the permanent menu entry
+    // once, so they still know where to start the guide on their own terms.
+    dispatch({ type: 'skip' });
     setPanel('dismissed');
-  }, [dispatch, setPanel]);
+    // The menu entry is already in front of someone who opened the guide from
+    // there. Only an automatic first invitation needs to teach that path.
+    setExitHintVisible(panel !== 'manual-invite');
+  }, [dispatch, panel, setPanel]);
 
   /** "Later" on a practice under way: out of the way for now, offered again next visit. */
   const dismiss = useCallback(() => setPanel('dismissed'), [setPanel]);
@@ -629,6 +639,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
   // ── Resume ──────────────────────────────────────────────────────────────
 
   const resume = useCallback(async () => {
+    setExitHintVisible(false);
     const p = progressRef.current;
     const session = optionsRef.current.sessions.find((s) => s.id === p.sessionId);
     const check = checkPracticeResume(session, p);
@@ -654,7 +665,8 @@ export function useOnboarding(options: UseOnboardingOptions) {
 
   /** "More → Getting started": resume a practice under way, or offer a new one. */
   const openFromMenu = useCallback(() => {
-    setPanel(progressRef.current.status === 'active' ? 'resume' : 'invite');
+    setExitHintVisible(false);
+    setPanel(progressRef.current.status === 'active' ? 'resume' : 'manual-invite');
   }, [setPanel]);
 
   // ── Moving through the tour ─────────────────────────────────────────────
@@ -667,14 +679,19 @@ export function useOnboarding(options: UseOnboardingOptions) {
     dispatch({ type: 'prev' });
   }, [dispatch]);
 
-  /** "Skip": the guide is settled and goes; the practice session stays. */
+  /** "Skip": settle the guide, discard its practice, and leave a fresh chat. */
   const skip = useCallback(() => {
+    const sessionId = progressRef.current.sessionId;
     cancelInFlight();
     optionsRef.current.studio.stop();
     setSending(false);
     dispatch({ type: 'skip' });
     setPanel('dismissed');
+    setExitHintVisible(true);
+    if (sessionId) optionsRef.current.discardPractice(sessionId);
   }, [cancelInFlight, dispatch, setPanel]);
+
+  const dismissExitHint = useCallback(() => setExitHintVisible(false), []);
 
   // ── The preset turn ─────────────────────────────────────────────────────
 
@@ -781,6 +798,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
     deliveryError,
     startError,
     starting,
+    exitHintVisible,
     /** Whether "saved in your history" is true of this device's storage. */
     persistent: isPersistent,
     presetText: presetInstruction(lang),
@@ -794,6 +812,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
     next,
     prev,
     skip,
+    dismissExitHint,
     retrySounds,
     interruptListening,
     togglePlayback,

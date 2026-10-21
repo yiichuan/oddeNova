@@ -58,6 +58,8 @@ interface PrimaryNavProps {
   accountInitials?: string | null;
   /** "More → Getting started". */
   onOpenOnboarding?: () => void;
+  /** A just-dismissed guide points through the More menu to its own entry. */
+  onboardingExitHintOpen?: boolean;
 }
 
 /**
@@ -273,6 +275,7 @@ function MoreMenu({
   hideTooltip,
   onOpenChange,
   onOpenOnboarding,
+  onboardingExitHintOpen = false,
 }: {
   expanded: boolean;
   getTooltipTriggerProps: GetTooltipTriggerProps;
@@ -280,6 +283,7 @@ function MoreMenu({
   onOpenChange?: (open: boolean) => void;
   /** Reopens the first-run guide — the way back to it once it has been dismissed. */
   onOpenOnboarding?: () => void;
+  onboardingExitHintOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -307,6 +311,21 @@ function MoreMenu({
     }
     setOpen(false);
   }, []);
+
+  const openMenu = useCallback(() => {
+    hideTooltip();
+    const menu = menuRef.current;
+    if (!menu) return;
+    positionMenu();
+    setOpen(true);
+    if (typeof menu.showPopover === 'function') {
+      try {
+        menu.showPopover();
+      } catch {
+        // State-driven rendering keeps the control usable without Popover API.
+      }
+    }
+  }, [hideTooltip, positionMenu]);
 
   useEffect(() => {
     const menu = menuRef.current;
@@ -343,24 +362,23 @@ function MoreMenu({
     };
   }, [open, positionMenu]);
 
+  // The post-exit explanation is literal: while it is on screen, show the
+  // exact menu and row the reader will use next. The parent clears this flag
+  // when "Got it" is pressed, closing both together.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      if (onboardingExitHintOpen) openMenu();
+      else closeMenu();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [closeMenu, onboardingExitHintOpen, openMenu]);
+
   const toggleMenu = () => {
-    hideTooltip();
-    const menu = menuRef.current;
-    if (!menu) return;
     if (open) {
       closeMenu();
       return;
     }
-
-    positionMenu();
-    setOpen(true);
-    if (typeof menu.showPopover === 'function') {
-      try {
-        menu.showPopover();
-      } catch {
-        // State-driven rendering keeps the control usable without Popover API.
-      }
-    }
+    openMenu();
   };
 
   const linkClass = `flex h-10 w-full items-center overflow-hidden rounded-[6px] text-icon-idle transition-colors hover:bg-surface-hover hover:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
@@ -372,6 +390,7 @@ function MoreMenu({
       <button
         ref={buttonRef}
         type="button"
+        data-onboarding-entry="more"
         aria-label={t('navMore')}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -410,6 +429,7 @@ function MoreMenu({
           <button
             type="button"
             role="menuitem"
+            data-onboarding-entry="onboarding"
             aria-label={t('navOnboarding')}
             onClick={() => {
               hideTooltip();
@@ -417,7 +437,7 @@ function MoreMenu({
               onOpenOnboarding();
             }}
             {...getTooltipTriggerProps(t('navOnboarding'))}
-            className={linkClass}
+            className={`${linkClass}${onboardingExitHintOpen ? ' bg-surface-selected text-text-primary' : ''}`}
           >
             <span className="flex size-10 shrink-0 items-center justify-center">
               <CompassIcon size={21} />
@@ -605,6 +625,7 @@ export default function PrimaryNav({
   featuredPieceOpen = false,
   accountInitials = null,
   onOpenOnboarding,
+  onboardingExitHintOpen = false,
 }: PrimaryNavProps) {
   const [navExpanded, setNavExpanded] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -1105,6 +1126,7 @@ export default function PrimaryNav({
                     hideTooltip={hideTooltip}
                     onOpenChange={setMoreMenuOpen}
                     onOpenOnboarding={onOpenOnboarding}
+                    onboardingExitHintOpen={onboardingExitHintOpen}
                   />
                 )}
               />

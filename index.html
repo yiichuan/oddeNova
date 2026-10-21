@@ -81,7 +81,16 @@
     <title>oddeNova | Vibe Your Music, Live</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Painted by main.tsx: the inline boot spinner is replaced (mountEntryRoot
+         clears #root) as soon as the entry module runs, and again by the app
+         itself when its dynamic chunk has landed. Deliberately minimal: two
+         inline rules, no app CSS. -->
+    <div id="root">
+      <div data-entry-boot style="height:100dvh;display:grid;place-items:center;background:#0D0D0D">
+        <span aria-hidden="true" style="width:36px;height:36px;border-radius:9999px;border:2px solid #262626;border-top-color:#88b4ab;animation:entry-spin 1s linear infinite"></span>
+      </div>
+    </div>
+    <style>@keyframes entry-spin{to{transform:rotate(360deg)}}</style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
