@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+// @vitest-environment-options {"url":"https://oddenova-event-preview.vercel.app"}
 import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -83,6 +84,25 @@ afterEach(() => {
 });
 
 describe('ShareDialog', () => {
+  it('uses the production share URL after a failed upload is retried from a preview', async () => {
+    expect(window.location.origin).toBe('https://oddenova-event-preview.vercel.app');
+    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
+    upload.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce('retry456');
+    await mount();
+    expect(rendered).not.toHaveBeenCalled();
+    await press('Retry creating link');
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(upload).toHaveBeenNthCalledWith(2, snapshot);
+    expect(rendered).toHaveBeenCalledWith(
+      'https://oddenova.com/s/retry456',
+      'SCAN QR TO VIEW THE PROCESS',
+      expect.objectContaining({ code: snapshot.code }),
+    );
+    await press('Copy link');
+    expect(copy).toHaveBeenCalledWith('https://oddenova.com/s/retry456', '[oddeNova] Test', true);
+    await pressSystemShare();
+    expect(native).toHaveBeenCalledWith('https://oddenova.com/s/retry456', '[oddeNova] Test');
+  });
   it('updates the printer name with connection states and reconnection', async () => {
     await mount();
     await press('Print receipt');
@@ -170,7 +190,7 @@ describe('ShareDialog', () => {
     await mount(true);
     expect(upload).toHaveBeenCalledTimes(1);
     expect(rendered).toHaveBeenCalledWith(
-      `${window.location.origin}/s/qr123`,
+      'https://oddenova.com/s/qr123',
       'SCAN QR TO VIEW THE PROCESS',
       // The session's turns carry the agent's per-layer notes for the card.
       { code: 's("bd")', createdAt: expect.any(Number), locale: 'en', messages: snapshot.messages, number: 1 },
@@ -190,7 +210,7 @@ describe('ShareDialog', () => {
     expect(printer.connect).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain('Printer · Disconnected');
     await press('Copy link');
-    expect(copy).toHaveBeenCalledWith(`${window.location.origin}/s/qr123`, '[oddeNova] Test', true);
+    expect(copy).toHaveBeenCalledWith('https://oddenova.com/s/qr123', '[oddeNova] Test', true);
     expect(native).not.toHaveBeenCalled();
     expect(completed).toHaveBeenCalledWith({ share_method: 'clipboard' });
   });
@@ -219,7 +239,7 @@ describe('ShareDialog', () => {
     await pressSystemShare();
     expect(copy).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).not.toContain('More sharing options');
-    expect(native).toHaveBeenCalledWith(`${window.location.origin}/s/qr123`, '[oddeNova] Test');
+    expect(native).toHaveBeenCalledWith('https://oddenova.com/s/qr123', '[oddeNova] Test');
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });
   it('closes the dialog directly on Escape from the system share button', async () => {
@@ -387,7 +407,7 @@ describe('ShareDialog', () => {
     expect(document.body.textContent).toContain('Sending details: lost');
     expect(document.querySelector('img')).toBeTruthy();
     await press('Copy link');
-    expect(copy).toHaveBeenCalledWith(`${window.location.origin}/s/qr123`, '[oddeNova] Test', true);
+    expect(copy).toHaveBeenCalledWith('https://oddenova.com/s/qr123', '[oddeNova] Test', true);
   });
   it('does not show errors on connection cancellation', async () => {
     printer.connect.mockResolvedValue(undefined);

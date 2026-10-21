@@ -162,7 +162,7 @@ describe('TopActionBar mobile menu', () => {
     await press('✓ Copied');
     expect(uploadShareMock).toHaveBeenCalledTimes(1);
     expect(shareUrlMock).toHaveBeenCalledTimes(2);
-    expect(shareUrlMock).toHaveBeenCalledWith(`${window.location.origin}/s/share123`, '[oddeNova] Chat only', true);
+    expect(shareUrlMock).toHaveBeenCalledWith('https://oddenova.com/s/share123', '[oddeNova] Chat only', true);
     expect(trackShareCompletedMock).toHaveBeenCalledWith({ share_method: 'clipboard' });
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('✓ Copied');
   });
@@ -174,7 +174,7 @@ describe('TopActionBar mobile menu', () => {
     roots.push(root);
     await press('Share');
     await press('Copy link');
-    expect(shareUrlMock).toHaveBeenCalledWith(`${window.location.origin}/s/share123`, '[oddeNova] Shared a music creation', true);
+    expect(shareUrlMock).toHaveBeenCalledWith('https://oddenova.com/s/share123', '[oddeNova] Shared a music creation', true);
   });
 
   it('keeps one frozen snapshot through edits and retries after upload failure', async () => {

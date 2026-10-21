@@ -15,6 +15,8 @@ export interface ShareDialogProps {
 }
 const buttonClass = 'rounded-lg border border-border px-3 py-2 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-not-allowed disabled:opacity-40';
 const say = (cn: string, en: string) => zh ? cn : en;
+// Event previews share creations through the production site.
+const SHARE_ORIGIN = 'https://oddenova.com';
 
 export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   const [printOpen, setPrintOpen] = useState(false);
@@ -71,7 +73,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     // Reuse the same upload during StrictMode effect replay.
     request.current ??= uploadShare(snapshot);
     void request.current.then(id => {
-      if (active) setUrl(`${window.location.origin}/s/${id}`);
+      if (active) setUrl(`${SHARE_ORIGIN}/s/${id}`);
     }).catch(() => { if (active) setUploadError(true); })
       .finally(() => { if (active) setUploading(false); });
     return () => { active = false; };
@@ -105,7 +107,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     setUploading(true);
     try {
       const id = await uploadShare(snapshot);
-      if (alive.current) setUrl(`${window.location.origin}/s/${id}`);
+      if (alive.current) setUrl(`${SHARE_ORIGIN}/s/${id}`);
     } catch { if (alive.current) setUploadError(true); }
     finally {
       retryBusy.current = false;
