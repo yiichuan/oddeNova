@@ -1508,7 +1508,7 @@ export default function ConversationView({
                 if (isPlaying && playingCode === draftCode) onPauseCode?.();
                 else onPlayCode?.(draftCode);
               }}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full transition-opacity duration-[1500ms] ease-out disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               <span aria-hidden="true" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-accent text-on-accent transition-colors hover:bg-brand-accent-hover">
                 {isPlaying && playingCode === draftCode
