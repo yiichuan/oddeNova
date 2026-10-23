@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { uploadShare, type UploadShareInput } from '../../services/share';
 import { nativeShare, shareUrl } from '../../services/share-target';
-import { paperangPrinter, PrinterBridgeUnavailableError, PrinterConnectionError, PrinterProtocolError } from '../../services/printing/paperang-printer';
+import { paperangPrinter, PrinterConnectionError, PrinterProtocolError } from '../../services/printing/paperang-printer';
 import { nextReceiptNumber, recordReceiptPrinted } from '../../services/printing/receipt-counter';
 import { renderShareReceipt } from '../../services/printing/share-receipt';
 import { trackShareCompleted, trackSharePrintFinished } from '../../lib/analytics';
@@ -53,7 +53,6 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   const dialog = useRef<HTMLDivElement>(null);
   const state = useSyncExternalStore(paperangPrinter.subscribe, paperangPrinter.getSnapshot);
   const supported = paperangPrinter.supported();
-  const bridgeSupported = paperangPrinter.bridgeSupported();
 
   useEffect(() => {
     alive.current = true;
@@ -158,12 +157,12 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   }
 
   const noProtocolNotice = () => say(
-    '打印机在这个 BLE 通道上没有回应任何已知的 Paperang 协议（A5、经典 P1、gen2），所以网页不会发送打印数据。P1S 等较新的固件只通过经典蓝牙（SPP）接收打印数据，请断开后改用“连接 P1S”。',
-    'The printer did not answer any known Paperang protocol (A5, classic P1, gen2) on this BLE channel, so no print data will be sent. Newer firmware such as P1S accepts print data only over Classic Bluetooth (SPP); disconnect and use "Connect P1S" instead.');
-  async function connect(classic = false) {
+    'P1 没有回应当前支持的 Paperang 打印协议，因此网页没有发送打印数据。请确认选择的是 P1，并检查蓝牙连接后重试。',
+    'The P1 did not answer a supported Paperang print protocol, so the page did not send print data. Confirm that you selected a P1, check the Bluetooth connection, and try again.');
+  async function connect() {
     setNotice('');
     try {
-      await (classic ? paperangPrinter.connectBridge() : paperangPrinter.connect());
+      await paperangPrinter.connect();
       if (alive.current && paperangPrinter.getProtocol() === 'unknown') setNotice(noProtocolNotice());
     }
     catch (error) {
@@ -172,12 +171,8 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
       const cause = error instanceof PrinterConnectionError ? error.cause : error;
       const browserError = cause instanceof Error ? cause : undefined;
       let hint = say('请确认打印机已开机、未被其他应用连接，并允许 Chrome 使用蓝牙。', 'Turn on the printer, disconnect other apps, and allow Chrome Bluetooth access.');
-      if (classic && browserError instanceof PrinterBridgeUnavailableError) {
-        hint = say('没有找到本地打印桥。请在项目目录的终端运行 npm run printer:bridge，保持窗口开着，再重新连接。', 'The local printer bridge is not running. Run npm run printer:bridge in a terminal in the project folder, keep it open, then reconnect.');
-      } else if (classic) {
-        hint = say('请确认 P1S 已开机、已在系统蓝牙设置中配对，并且没有被网页的 BLE 连接或喵喵机 App 占用。', 'Make sure the P1S is on, paired in system Bluetooth settings, and not held by a BLE connection from this page or the Paperang app.');
-      } else if (stage === 'connection' && browserError?.name === 'NetworkError' && browserError.message === 'Unsupported device.') {
-        hint = say('浏览器无法通过网页蓝牙连接所选设备。如果是 P1S，请改用“连接 P1S”。', 'The browser cannot connect to this device over Web Bluetooth. For a P1S, use "Connect P1S" instead.');
+      if (stage === 'connection' && browserError?.name === 'NetworkError' && browserError.message === 'Unsupported device.') {
+        hint = say('浏览器无法通过网页蓝牙连接所选设备。请确认选择的是 P1，并检查浏览器对该设备的蓝牙支持。', 'The browser cannot connect to this device over Web Bluetooth. Confirm that you selected a P1 and check browser Bluetooth support for the device.');
       } else if (browserError?.name === 'NotFoundError' && stage === 'service') {
         hint = say('蓝牙已连接，但所选设备未提供当前支持的 P1 打印服务。请确认打印机型号；若确为 P1，请提供下方浏览器详情以核对协议。', 'Bluetooth connected, but the selected device does not expose the supported P1 print service. Check the printer model; if it is a P1, provide the browser details below so we can check its protocol.');
       } else if (browserError?.name === 'NotFoundError' && stage === 'characteristic') {
@@ -273,13 +268,10 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
             </div>
             {printOpen && <div id="share-printer" className="mt-4 shrink-0 space-y-3 border-t border-border pt-4">
               <p role="status" className="text-xs text-text-muted [overflow-wrap:anywhere]">{paperangPrinter.getDeviceName() || say('打印机', 'Printer')} · {state === 'disconnected' ? say('未连接', 'Disconnected') : state === 'connecting' ? say('正在连接', 'Connecting') : state === 'printing' ? say('正在发送', 'Sending') : say('已连接', 'Connected')}</p>
-              {!supported && !bridgeSupported ? <p className="w-full text-xs leading-relaxed text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p>
+              {!supported ? <p className="w-full text-xs leading-relaxed text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p>
                 : state === 'disconnected' || state === 'connecting' ? <>
-                  <div className="grid grid-cols-2 gap-2">
-                    {supported && <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect()}>{say('连接 P1', 'Connect P1')}</button>}
-                    {bridgeSupported && <button className={buttonClass} disabled={state === 'connecting'} onClick={() => void connect(true)}>{say('连接 P1S', 'Connect P1S')}</button>}
-                  </div>
-                  <p className="text-xs leading-relaxed text-text-secondary">{say('连接前请先断开喵喵机 App。', 'Disconnect the Paperang app first.')}{bridgeSupported && say('P1S 需先在系统蓝牙设置中配对，并保持打印桥（npm run printer:bridge）运行。', ' P1S must be paired in system Bluetooth settings, with the printer bridge (npm run printer:bridge) running.')}</p>
+                  <button className={`${buttonClass} w-full`} disabled={state === 'connecting'} onClick={() => void connect()}>{say('连接 P1', 'Connect P1')}</button>
+                  <p className="text-xs leading-relaxed text-text-secondary">{say('连接前请先断开喵喵机 App。', 'Disconnect the Paperang app first.')}</p>
                 </> : <div className="grid grid-cols-2 gap-2">
                   <button className={buttonClass} disabled={!receiptReady || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小票', 'Print receipt')}</button>
                   <button className={buttonClass} disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button>

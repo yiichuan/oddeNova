@@ -13,7 +13,7 @@ import { drawReceiptGalaxy, receiptGalaxyHeight } from './receipt-galaxy';
 const PINGFANG = '"PingFang SC", sans-serif';
 const MOTTO_FONT = '400 20px "Inter", sans-serif';
 const IDENTITY_FONT = `400 20px ${PINGFANG}`;
-const TITLE_FONT = `600 20px ${PINGFANG}`;
+const TITLE_FONT = `600 24px ${PINGFANG}`;
 const DATE_FONT = `400 18px ${PINGFANG}`;
 const FACTS_FONT = '400 20px "Inter", sans-serif';
 const TABLE_HEADING_FONT = `600 20px ${PINGFANG}`;
@@ -206,11 +206,11 @@ export async function renderShareReceipt(
   const logoHeight = Math.round(logoWidth * logo.naturalHeight / logo.naturalWidth);
   const mottoTop = logoTop + logoHeight + 12;
   const mottoHeight = 20;
-  const titleTop = mottoTop + mottoHeight + 38;
-  const titleLineHeight = 26;
-  // Match the gap after the last title line to the number-to-date gap below it.
+  const titleTop = mottoTop + mottoHeight + 50;
+  const titleLineHeight = 30;
+  // Leave extra space between the title and the creation number.
   const identityTop = titleLines.length > 0
-    ? titleTop + (titleLines.length - 1) * titleLineHeight + 30
+    ? titleTop + (titleLines.length - 1) * titleLineHeight + 54
     : mottoTop + mottoHeight + logoTop;
   const dateTop = identityTop + 30;
   const factsTop = dateTop + 62;

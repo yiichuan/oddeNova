@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ShareDialog from '../ShareDialog';
 import type { UploadShareInput } from '../../../services/share';
-import { PrinterBridgeUnavailableError, PrinterConnectionError, PrinterProtocolError } from '../../../services/printing/paperang-printer';
+import { PrinterConnectionError, PrinterProtocolError } from '../../../services/printing/paperang-printer';
 
 const upload = vi.hoisted(() => vi.fn());
 const copy = vi.hoisted(() => vi.fn());
@@ -162,9 +162,12 @@ describe('ShareDialog', () => {
   });
   it('keeps copying and saving available when Bluetooth is unsupported', async () => {
     printer.supported.mockReturnValue(false);
+    printer.bridgeSupported.mockReturnValue(true);
     await mount();
     await press('Print receipt');
     expect(document.body.textContent).toContain('Bluetooth printing requires');
+    expect(document.body.textContent).not.toContain('P1S');
+    expect(Array.from(document.querySelectorAll('#share-printer button')).map(button => button.textContent)).not.toContain('Connect P1');
     expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save image')?.disabled).toBe(false);
     await press('Copy link');
     expect(copy).toHaveBeenCalledTimes(1);
@@ -193,7 +196,7 @@ describe('ShareDialog', () => {
       'https://oddenova.com/s/qr123',
       'SCAN QR TO VIEW THE PROCESS',
       // The session's turns carry the agent's per-layer notes for the card.
-      { code: 's("bd")', createdAt: expect.any(Number), locale: 'en', messages: snapshot.messages, number: 1 },
+      { code: 's("bd")', createdAt: expect.any(Number), locale: 'en', messages: snapshot.messages, number: 1, title: 'Test' },
     );
     expect(completed).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('30 days');
@@ -342,7 +345,7 @@ describe('ShareDialog', () => {
     expect(rendered.mock.calls[1][2].number).toBe(5);
     expect(printer.print).toHaveBeenCalledWith(second.raster);
   });
-  it('does not report printer success after an unconfirmed P1S write', async () => {
+  it('does not report printer success after an unconfirmed print write', async () => {
     printer.connect.mockImplementation(async () => { printer.setState('connected'); });
     printer.print.mockResolvedValue('unconfirmed');
     await mount();
@@ -359,39 +362,23 @@ describe('ShareDialog', () => {
     await mount();
     await press('Print receipt');
     await press('Connect P1');
-    expect(document.body.textContent).toContain('Classic Bluetooth (SPP)');
     await press('Print receipt');
-    expect(document.body.textContent).toContain('did not answer any known Paperang protocol');
+    expect(document.body.textContent).toContain('did not answer a supported Paperang print protocol');
+    expect(document.body.textContent).not.toContain('Classic Bluetooth (SPP)');
+    expect(document.body.textContent).not.toContain('P1S');
     expect(document.body.textContent).not.toContain('Sending interrupted');
     expect(printFinished).not.toHaveBeenCalled();
   });
-  it('connects P1S over classic Bluetooth SPP with only print and disconnect controls', async () => {
-    printer.bridgeSupported.mockReturnValue(true);
-    printer.connectBridge.mockImplementation(async () => { printer.setState('connected'); });
-    printer.getTransport.mockReturnValue('spp');
-    await mount();
-    await press('Print receipt');
-    await press('Connect P1S');
-    expect(printer.connectBridge).toHaveBeenCalledTimes(1);
-    expect(printer.connect).not.toHaveBeenCalled();
-    expect(Array.from(document.querySelectorAll('#share-printer button')).map(button => button.textContent)).toEqual(['Print receipt', 'Disconnect']);
-  });
-  it('offers separate P1 and P1S entries, P1 first', async () => {
+  it('offers only P1 over web Bluetooth even when the local bridge is available', async () => {
     printer.bridgeSupported.mockReturnValue(true);
     await mount();
     await press('Print receipt');
-    expect(Array.from(document.querySelectorAll('#share-printer button')).map(button => button.textContent)).toEqual(['Connect P1', 'Connect P1S']);
+    expect(Array.from(document.querySelectorAll('#share-printer button')).map(button => button.textContent)).toEqual(['Connect P1']);
+    expect(document.querySelector('#share-printer')?.textContent).not.toContain('P1S');
+    expect(document.querySelector('#share-printer')?.textContent).not.toContain('printer:bridge');
     await press('Connect P1');
     expect(printer.connect).toHaveBeenCalledWith();
     expect(printer.connectBridge).not.toHaveBeenCalled();
-  });
-  it('tells the user to start the local bridge when it is not running', async () => {
-    printer.bridgeSupported.mockReturnValue(true);
-    printer.connectBridge.mockRejectedValue(new PrinterConnectionError('connection', new PrinterBridgeUnavailableError()));
-    await mount();
-    await press('Print receipt');
-    await press('Connect P1S');
-    expect(document.body.textContent).toContain('npm run printer:bridge');
   });
   it('keeps the QR and copy action when printing fails, without retrying', async () => {
     printer.connect.mockImplementation(async () => { printer.setState('connected'); });
@@ -442,7 +429,7 @@ describe('ShareDialog', () => {
     await mount();
     if (!document.querySelector('#share-printer')) await press('Print receipt');
     await press('Connect P1');
-    expect(document.body.textContent).toContain('use "Connect P1S" instead');
+    expect(document.body.textContent).toContain('Confirm that you selected a P1');
     expect(document.body.textContent).toContain('NetworkError: Unsupported device.');
     expect(document.body.textContent).not.toContain('Turn on P1');
     expect(printer.print).not.toHaveBeenCalled();
