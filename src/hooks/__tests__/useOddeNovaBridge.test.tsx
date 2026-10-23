@@ -1628,7 +1628,7 @@ describe('useOddeNovaBridge', () => {
     void status;
 
     act(() => root.render(<Probe />));
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    await waitForCondition(() => importer.mock.calls.length === 1);
     expect(importer).toHaveBeenCalledTimes(1);
     // Nothing has been queued for the late message while the importer holds.
     expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/page-change')).toBe(false);

@@ -1308,6 +1308,14 @@ export default function App() {
     await strudel.play();
   }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
 
+  const handlePlayCodeOnly = useCallback(async (code: string) => {
+    if (sessions.currentId) {
+      await setManualCode(code, sessions.currentId);
+      await flushCloudSaves(sessions.currentId);
+    }
+    await strudel.play(code);
+  }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
+
   // Live update: the edit is persisted the same way a play is, then handed to
   // the running transport instead of restarting it.
   const handleUpdate = useCallback(async () => {
@@ -2357,6 +2365,10 @@ export default function App() {
                  (rendered from Sidebar) hands none of this down: the window is
                  already open beside it. */
               isPlaying={strudel.isPlaying}
+              engineReady={strudel.engineReady}
+              isStarting={strudel.isStarting}
+              onPlayCode={handlePlayCodeOnly}
+              onPauseCode={strudel.pause}
               /* What is sounding, not what is in the buffer. The studio's
                  window is editable while a take plays, so the two part company
                  the moment anything is typed in it — and a widget that
@@ -2780,7 +2792,10 @@ export default function App() {
               onRollback={handleRollback}
               onBranch={sessions.branchFromMessage}
               onRetry={handleRetry}
+              isStarting={strudel.isStarting}
               isPlaying={strudel.isPlaying}
+              onPlayCode={handlePlayCodeOnly}
+              onPauseCode={strudel.pause}
               playingCode={strudel.activeCode}
               onPlaySegment={handlePlaySegment}
               onStopCode={strudel.stop}
