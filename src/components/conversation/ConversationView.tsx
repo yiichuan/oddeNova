@@ -1499,7 +1499,7 @@ export default function ConversationView({
             >
               {greetingMsg.content}
             </p>
-            {draftCode.trim() && (
+            {isMobile && draftCode.trim() && (
               <button
                 type="button"
                 aria-label={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
