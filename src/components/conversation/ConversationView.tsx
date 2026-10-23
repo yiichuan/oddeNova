@@ -1481,42 +1481,44 @@ export default function ConversationView({
       {greetingMsg && !hasConversationMessages && !isLoading && (
         // The phone's guide centres its invitation on this frame, so the card
         // covers the greeting rather than leaving its ends showing.
-        <div data-onboarding-target="greeting" className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8">
-          <p
-            // Keyed by the greeting's own id (not just conditionally mounted):
-            // reusing an empty session re-rolls the greeting into a new
-            // message id without unmounting this block, so the key is what
-            // forces a fresh node — and with it, the mount animation to replay.
+        <div data-onboarding-target="greeting" className="absolute inset-0 flex flex-col items-center justify-center px-8">
+          {/* Replay the invitation's entrance together with its playback
+              control when an empty session receives a new greeting. */}
+          <div
             key={greetingMsg.id}
-            // A step larger on a phone: this is the one line on an empty
-            // screen, read at arm's length on a display the width of a hand,
-            // where the desktop's 14px reads as fine print rather than as an
-            // opening.
-            className={`animate-blur-fade-in text-center text-text-greeting leading-relaxed ${
-              zh ? 'font-jinghua-laosongti tracking-wider' : 'font-eb-garamond'
-            } ${isMobile ? 'text-base' : 'text-sm'}`}
+            className="animate-blur-fade-in flex w-full flex-col items-center gap-3"
           >
-            {greetingMsg.content}
-          </p>
-          {draftCode.trim() && (
-            <button
-              type="button"
-              aria-label={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
-              title={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
-              disabled={!engineReady || isStarting}
-              onClick={() => {
-                if (isPlaying && playingCode === draftCode) onPauseCode?.();
-                else onPlayCode?.(draftCode);
-              }}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full transition-opacity duration-[1500ms] ease-out disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+            <p
+              // A step larger on a phone: this is the one line on an empty
+              // screen, read at arm's length on a display the width of a hand,
+              // where the desktop's 14px reads as fine print rather than as an
+              // opening.
+              className={`text-center text-text-greeting leading-relaxed ${
+                zh ? 'font-jinghua-laosongti tracking-wider' : 'font-eb-garamond'
+              } ${isMobile ? 'text-base' : 'text-sm'}`}
             >
-              <span aria-hidden="true" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-accent text-on-accent transition-colors hover:bg-brand-accent-hover">
-                {isPlaying && playingCode === draftCode
-                  ? <PauseIcon size={16} />
-                  : <PlayIcon size={16} />}
-              </span>
-            </button>
-          )}
+              {greetingMsg.content}
+            </p>
+            {draftCode.trim() && (
+              <button
+                type="button"
+                aria-label={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
+                title={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
+                disabled={!engineReady || isStarting}
+                onClick={() => {
+                  if (isPlaying && playingCode === draftCode) onPauseCode?.();
+                  else onPlayCode?.(draftCode);
+                }}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full transition-opacity duration-[1500ms] ease-out disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                <span aria-hidden="true" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-accent text-on-accent transition-colors hover:bg-brand-accent-hover">
+                  {isPlaying && playingCode === draftCode
+                    ? <PauseIcon size={16} />
+                    : <PlayIcon size={16} />}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
