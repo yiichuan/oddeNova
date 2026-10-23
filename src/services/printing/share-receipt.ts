@@ -137,7 +137,7 @@ export async function renderShareReceipt(
   url: string,
   instruction = '扫描二维码查看创作过程',
   details: ShareReceiptDetails = { code: '', createdAt: Date.now(), locale: 'zh-CN', number: 1 },
-): Promise<{ preview: string; raster: Uint8Array }> {
+): Promise<{ preview: string; raster: Uint8Array; titleField: { top: number; height: number } }> {
   const qr = createShareQr(url, 184);
   const parsed = parseScore(details.code);
   const duration = formatPlaybackTime(getStrudelLoopDurationSeconds(details.code));
@@ -165,7 +165,8 @@ export async function renderShareReceipt(
   const right = P1_WIDTH - padding;
   ctx.font = TITLE_FONT;
   const titleLines = details.title?.trim()
-    ? wrapReceiptTitle(details.title, text => ctx.measureText(text).width, right - padding)
+    ? clampReceiptLines(wrapReceiptTitle(details.title, text => ctx.measureText(text).width, right - padding),
+      1, text => ctx.measureText(text).width, right - padding)
     : [];
   // Clear space between the number column and the layer names.
   const nameLeft = 76;
@@ -210,7 +211,7 @@ export async function renderShareReceipt(
   const titleLineHeight = 30;
   // Leave extra space between the title and the creation number.
   const identityTop = titleLines.length > 0
-    ? titleTop + (titleLines.length - 1) * titleLineHeight + 54
+    ? titleTop + 54
     : mottoTop + mottoHeight + logoTop;
   const dateTop = identityTop + 30;
   const factsTop = dateTop + 62;
@@ -333,6 +334,11 @@ export async function renderShareReceipt(
   instructionLines.forEach((line, index) => ctx.fillText(line, P1_WIDTH / 2, instructionTop + index * instructionLineHeight));
 
   return {
+    // Percentages keep the single-line editor aligned with the scaled preview.
+    titleField: {
+      top: (titleTop - 8) / canvas.height * 100,
+      height: (titleLineHeight + 16) / canvas.height * 100,
+    },
     preview: canvas.toDataURL('image/png'),
     raster: rgbaToRaster(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height),
   };
