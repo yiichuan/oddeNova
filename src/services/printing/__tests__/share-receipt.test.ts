@@ -9,6 +9,9 @@ vi.mock('../receipt-layers', async importOriginal => ({
   ...await importOriginal<typeof import('../receipt-layers')>(),
   resolveLayerRanges: ranges,
 }));
+// The galaxy is a bitmap drawn on its own canvas; here only its place on the card matters.
+const galaxy = vi.hoisted(() => ({ draw: vi.fn(), height: vi.fn((width: number) => Math.round(width * 0.6)) }));
+vi.mock('../receipt-galaxy', () => ({ drawReceiptGalaxy: galaxy.draw, receiptGalaxyHeight: galaxy.height }));
 import { rgbaToRaster } from '../paperang-protocol';
 
 describe('share receipt', () => {
@@ -47,7 +50,7 @@ describe('share receipt', () => {
     const drawImage = vi.fn();
     const ctx = {
       fillStyle: '#fff', font: '', textAlign: '', textBaseline: '',
-      filter: '', save: vi.fn(), restore: vi.fn(), drawImage,
+      filter: '', strokeStyle: '', lineWidth: 1, lineJoin: '', save: vi.fn(), restore: vi.fn(), drawImage, strokeText: vi.fn(),
       measureText(text: string) {
         const size = Number(this.font.match(/(\d+)px/)?.[1] ?? 22);
         return { width: Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 ? 1 : char === '1' ? 0.35 : 0.5), 0) };
@@ -115,14 +118,17 @@ describe('share receipt', () => {
       expect(fontOf('BPM 120')).toContain('"Inter"');
       expect(text).not.toEqual(expect.arrayContaining([expect.stringContaining('声部')]));
       // Everything below the BPM row is PingFang SC: headings, totals and the scan prompt
-      // in semibold, layer rows and the footer in regular.
+      // in semibold, layer rows in regular.
       const belowFacts = drawnText.slice(drawnText.findIndex(entry => entry.text === 'Genreless') + 1);
       expect(belowFacts.every(entry => entry.font.includes('"PingFang SC"'))).toBe(true);
+      // The scan prompt is the last text; the galaxy picture replaces the old footer.
+      expect(drawnText.at(-1)?.text).toBe('查看创作过程');
+      expect(text).not.toContain('ODDENOVA · VIBE YOUR BGM');
       for (const label of ['层号', '音层名称', '循环区间', '总时长', '音层总数', '扫描二维码', '查看创作过程']) {
         expect(fontOf(label)).toMatch(/^600 /);
       }
       expect(drawnText.filter(entry => ['00:02', '03'].includes(entry.text) && entry.font.startsWith('600 21px'))).toHaveLength(2);
-      for (const label of ['01', 'horizon', '钢琴铺出天空和声', 'ODDENOVA · VIBE YOUR BGM']) expect(fontOf(label)).toMatch(/^400 /);
+      for (const label of ['01', 'horizon', '钢琴铺出天空和声']) expect(fontOf(label)).toMatch(/^400 /);
       // Thermal paper loses fine strokes: nothing prints below 15px.
       expect(drawnText.every(entry => Number(entry.font.match(/(\d+)px/)?.[1]) >= 15)).toBe(true);
       expect(text.filter(value => ['horizon', 'wind', 'returning_theme'].includes(value))).toHaveLength(3);
@@ -139,10 +145,15 @@ describe('share receipt', () => {
       expect(text.filter(value => /^\d\d:\d\d – /.test(value))).toEqual(['00:00 – 00:02', '00:00 – 00:01', '00:01 – 00:02']);
       expect(drawImage).toHaveBeenCalledOnce();
       expect(drawImage).toHaveBeenCalledWith(expect.objectContaining({ src: '/logo/logo-oddenova.svg' }), 60, 76, 264, 44);
-      // The fake canvas draws rules but not text: below the footer's dashed rule come
-      // the footer text (23 blank rows + 15px line) and the same 76-dot margin as above the logo.
-      const inkRows = Array.from({ length: height }, (_, row) => raster.subarray(row * 48, row * 48 + 48).some(Boolean));
-      expect(height - 1 - inkRows.lastIndexOf(true)).toBe(23 + 15 + 76);
+      // The galaxy spans the rules' width at the bottom of the card, above the same
+      // 76-dot margin as above the logo.
+      expect(galaxy.draw).toHaveBeenCalledOnce();
+      const [, galaxyLeft, galaxyTop, galaxyWidth] = galaxy.draw.mock.calls[0];
+      expect([galaxyLeft, galaxyWidth]).toEqual([14, 356]);
+      expect(height - galaxyTop - galaxy.height(356)).toBe(76);
+      // The scan prompt sits on the galaxy, the two centred on the same line.
+      const promptY = fillText.mock.calls.filter(([value]) => ['扫描二维码', '查看创作过程'].includes(value)).map(([, , y]) => y);
+      expect(Math.abs((promptY[0] + promptY[1] + 20) / 2 - (galaxyTop + galaxy.height(356) / 2))).toBeLessThanOrEqual(0.5);
       const decoded = new Uint8ClampedArray(width * height * 4);
       for (let p = 0; p < width * height; p++) {
         const value = raster[p >>> 3] & (0x80 >>> (p & 7)) ? 0 : 255;

@@ -5,6 +5,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import { P1_WIDTH, rgbaToRaster } from './paperang-protocol';
 import { formatReceiptNumber } from './receipt-counter';
 import { resolveLayerNotes, resolveLayerRanges } from './receipt-layers';
+import { drawReceiptGalaxy, receiptGalaxyHeight } from './receipt-galaxy';
 
 // Thermal paper loses fine strokes, so no printed text goes below 15px.
 // Inter (Latin only) ships with the app in public/fonts. PingFang SC is the macOS
@@ -22,7 +23,6 @@ const LAYER_NUMBER_FONT = `400 21px ${PINGFANG}`;
 const LAYER_FONT = `400 21px ${PINGFANG}`;
 const DETAIL_FONT = `400 15px ${PINGFANG}`;
 const TIME_FONT = `400 18px ${PINGFANG}`;
-const FOOTER_FONT = `400 15px ${PINGFANG}`;
 
 export interface ShareReceiptDetails {
   code: string;
@@ -210,17 +210,22 @@ export async function renderShareReceipt(
   const totalsTop = tableTop + headerHeight + rowsHeight + 22;
   const qrRuleTop = totalsTop + 86;
   const qrTop = qrRuleTop + 26;
-  const instructionTop = qrTop + qr.size + 9;
   const instructionLines = instruction === '扫描二维码查看创作过程'
     ? ['扫描二维码', '查看创作过程']
     : [instruction];
   const instructionLineHeight = 28;
-  const footerTop = instructionTop + instructionLines.length * instructionLineHeight + 18;
-  const footerTextTop = footerTop + 24;
-  const footerTextHeight = 15;
+  // From the first line's top to the last line's glyph bottom.
+  const instructionHeight = (instructionLines.length - 1) * instructionLineHeight + 20;
+  // A screenshot of the code panel's galaxy, as wide as the rules above it, sits
+  // behind the scan prompt with both centred on one line. It clears the QR code
+  // first: dots inside the code's quiet zone would stop it scanning.
+  const galaxyWidth = right - padding;
+  const galaxyHeight = receiptGalaxyHeight(galaxyWidth);
+  const galaxyTop = qrTop + qr.size + 9;
+  const instructionTop = Math.round(galaxyTop + (galaxyHeight - instructionHeight) / 2);
   // The printer feeds only a short tail after the job, so the card's own bottom
   // margin matches the space above the logo.
-  canvas.height = footerTextTop + footerTextHeight + logoTop;
+  canvas.height = galaxyTop + galaxyHeight + logoTop;
 
   // Resizing a canvas resets all drawing state.
   ctx.fillStyle = '#fff';
@@ -303,13 +308,17 @@ export async function renderShareReceipt(
       if (qr.pixels[y * qr.size + x] === 0) ctx.fillRect(qrLeft + x, qrTop + y, 1, 1);
     }
   }
+  drawReceiptGalaxy(ctx, padding, galaxyTop, galaxyWidth);
   ctx.font = INSTRUCTION_FONT;
   ctx.textAlign = 'center';
+  // A paper-white halo keeps the prompt legible over the galaxy's dots.
+  ctx.save();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  instructionLines.forEach((line, index) => ctx.strokeText(line, P1_WIDTH / 2, instructionTop + index * instructionLineHeight));
+  ctx.restore();
   instructionLines.forEach((line, index) => ctx.fillText(line, P1_WIDTH / 2, instructionTop + index * instructionLineHeight));
-  dashedRule(ctx, padding, right, footerTop);
-  ctx.font = FOOTER_FONT;
-  ctx.textAlign = 'center';
-  ctx.fillText('ODDENOVA · VIBE YOUR BGM', P1_WIDTH / 2, footerTextTop);
 
   return {
     preview: canvas.toDataURL('image/png'),
