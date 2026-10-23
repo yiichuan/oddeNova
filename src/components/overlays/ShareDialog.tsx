@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { uploadShare, type UploadShareInput } from '../../services/share';
 import { nativeShare, shareUrl } from '../../services/share-target';
@@ -20,9 +20,11 @@ const SHARE_ORIGIN = 'https://oddenova.com';
 
 export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   const title = snapshot.title !== t('newSessionTitle') ? snapshot.title : t('sharedMusicCreation');
+  const [cardTitle, setCardTitle] = useState(title);
+  const receiptTitle = cardTitle.replace(/\s+/g, ' ').trim() || title;
   const [printOpen, setPrintOpen] = useState(false);
   const renderGeneration = useRef(0);
-  const receiptDetails = useRef({
+  const [receiptDetails] = useState(() => ({
     code: snapshot.code,
     title,
     createdAt: snapshot.messages.find(message => message.role === 'user')?.timestamp
@@ -30,16 +32,16 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
       ?? Date.now(),
     locale: snapshot.locale,
     messages: snapshot.messages,
-  });
+  }));
   const [url, setUrl] = useState('');
   const [uploading, setUploading] = useState(true);
   const [uploadError, setUploadError] = useState(false);
   // The preview carries the number the next print will use; each print moves it on.
   const [receiptNumber, setReceiptNumber] = useState(() => nextReceiptNumber());
-  const [receipt, setReceipt] = useState<(Awaited<ReturnType<typeof renderShareReceipt>> & { number: number }) | null>(null);
+  const [receipt, setReceipt] = useState<(Awaited<ReturnType<typeof renderShareReceipt>> & { number: number; title: string }) | null>(null);
   const [renderAttempt, setRenderAttempt] = useState(0);
   const [renderError, setRenderError] = useState(false);
-  const receiptReady = !!receipt && !renderError;
+  const receiptReady = !!receipt && !renderError && receipt.title === receiptTitle;
   const [notice, setNotice] = useState('');
   const [sharing, setSharing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -79,6 +81,15 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     return () => { active = false; };
   }, [snapshot]);
 
+  const renderReceipt = useCallback(async (number: number) => {
+    const result = await renderShareReceipt(
+      url,
+      say('扫描二维码查看创作过程', 'SCAN QR TO VIEW THE PROCESS'),
+      { ...receiptDetails, title: receiptTitle, number },
+    );
+    return { ...result, number, title: receiptTitle };
+  }, [url, receiptDetails, receiptTitle]);
+
   useEffect(() => {
     if (!url) return;
     let active = true;
@@ -87,18 +98,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
       if (active && generation === renderGeneration.current) setReceipt(result);
     }).catch(() => { if (active && generation === renderGeneration.current) setRenderError(true); });
     return () => { active = false; };
-    // renderReceipt reads only `url` and refs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, renderAttempt, receiptNumber]);
-
-  async function renderReceipt(number: number) {
-    const result = await renderShareReceipt(
-      url,
-      say('扫描二维码查看创作过程', 'SCAN QR TO VIEW THE PROCESS'),
-      { ...receiptDetails.current, number },
-    );
-    return { ...result, number };
-  }
+  }, [url, renderAttempt, receiptNumber, renderReceipt]);
 
   async function retryUpload() {
     if (retryBusy.current) return;
@@ -190,6 +190,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     setNotice('');
     try {
       // Another tab may have printed, or the day may have turned, since the preview was drawn.
+      const generation = renderGeneration.current;
       const number = nextReceiptNumber();
       let job = receipt;
       if (job.number !== number) {
@@ -198,6 +199,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
           return;
         }
       }
+      if (!alive.current || generation !== renderGeneration.current) return;
       await printReceipt(job);
     } finally { printBusy.current = false; }
   }
@@ -229,7 +231,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
           event.stopPropagation();
           if (event.key === 'Escape') { event.preventDefault(); onClose(); }
           if (event.key !== 'Tab') return;
-          const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]') ?? []);
+          const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href]') ?? []);
           const first = controls[0];
           const last = controls.at(-1);
           if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
@@ -250,7 +252,17 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
           <>
             <div className="mt-4 min-h-0 max-h-[50dvh] overflow-y-auto overscroll-contain border-t border-border pt-4">
               <figure>
-                {receipt ? <img src={receipt.preview} width={384} alt={say('作品二维码打印预览', 'Share QR receipt preview')} className="mx-auto block h-auto w-48 max-w-full bg-white" />
+                {receipt ? <div className="relative mx-auto w-48 max-w-full [container-type:inline-size]">
+                    <img src={receipt.preview} width={384} alt={say('作品二维码打印预览', 'Share QR receipt preview')} className="block h-auto w-full bg-white" />
+                    <input type="text" aria-label={say('小票标题', 'Receipt title')} value={cardTitle}
+                      className="absolute left-[3.645833%] w-[92.708334%] truncate rounded border border-[#d1d1d6] bg-white px-1 py-[2.083333cqw] text-center font-semibold text-black outline-none focus:border-[#777] focus:text-clip focus:ring-1 focus:ring-[#777]"
+                      style={{ top: `${receipt.titleField.top}%`, height: `${receipt.titleField.height}%`, fontFamily: '"PingFang SC", sans-serif', fontSize: '6.25cqw', lineHeight: '7.8125cqw' }}
+                      onChange={event => { setCardTitle(event.target.value); setRenderError(false); }}
+                      onBlur={event => { setCardTitle(receiptTitle); event.currentTarget.scrollLeft = 0; }}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.blur(); }
+                      }} />
+                  </div>
                   : !renderError && <div className="py-6 text-center">
                     <p role="status" className="text-sm text-text-secondary">{say('正在生成打印预览…', 'Generating print preview…')}</p>
                   </div>}
@@ -270,8 +282,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
               <p role="status" className="text-xs text-text-muted [overflow-wrap:anywhere]">{paperangPrinter.getDeviceName() || say('打印机', 'Printer')} · {state === 'disconnected' ? say('未连接', 'Disconnected') : state === 'connecting' ? say('正在连接', 'Connecting') : state === 'printing' ? say('正在发送', 'Sending') : say('已连接', 'Connected')}</p>
               {!supported ? <p className="w-full text-xs leading-relaxed text-text-secondary">{say('蓝牙打印需要在 macOS Chrome 中通过 HTTPS 打开，并允许蓝牙权限。', 'Bluetooth printing requires macOS Chrome over HTTPS with Bluetooth permission.')}</p>
                 : state === 'disconnected' || state === 'connecting' ? <>
-                  <button className={`${buttonClass} w-full`} disabled={state === 'connecting'} onClick={() => void connect()}>{say('连接 P1', 'Connect P1')}</button>
-                  <p className="text-xs leading-relaxed text-text-secondary">{say('连接前请先断开喵喵机 App。', 'Disconnect the Paperang app first.')}</p>
+                  <button className={`${buttonClass} w-full`} disabled={state === 'connecting'} onClick={() => void connect()}>{say('连接', 'Connect')}</button>
                 </> : <div className="grid grid-cols-2 gap-2">
                   <button className={buttonClass} disabled={!receiptReady || state === 'printing'} onClick={() => void print()}>{state === 'printing' ? say('正在发送…', 'Sending…') : say('打印小票', 'Print receipt')}</button>
                   <button className={buttonClass} disabled={state === 'printing'} onClick={() => paperangPrinter.disconnect()}>{say('断开连接', 'Disconnect')}</button>

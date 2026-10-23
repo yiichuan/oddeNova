@@ -15,7 +15,7 @@ const shareUrlMock = vi.hoisted(() => vi.fn());
 const trackShareCompletedMock = vi.hoisted(() => vi.fn());
 const nativeShareMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../services/printing/share-receipt', () => ({
-  renderShareReceipt: vi.fn(async () => ({ preview: 'data:image/png;base64,AA==', raster: new Uint8Array(48) })),
+  renderShareReceipt: vi.fn(async () => ({ preview: 'data:image/png;base64,AA==', raster: new Uint8Array(48), titleField: { top: 20, height: 4 } })),
 }));
 
 vi.mock('../../../services/share', () => ({

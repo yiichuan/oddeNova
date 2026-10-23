@@ -160,6 +160,23 @@ describe('share receipt', () => {
         decoded.set([value, value, value, 255], p * 4);
       }
       expect(jsQR(decoded, width, height)?.data).toBe(url);
+      // Long titles stay on one line, with an ellipsis, above the creation number.
+      fillText.mockClear();
+      const titled = await renderShareReceipt(url, undefined, {
+        code, createdAt: 0, locale: 'zh-CN', number: 7,
+        title: '特别长的中文作品标题'.repeat(4),
+      });
+      const identityIndex = fillText.mock.calls.findIndex(([value]) => value.startsWith('创作编号'));
+      const titleRows = fillText.mock.calls.slice(1, identityIndex);
+      expect(titleRows).toHaveLength(1);
+      expect(titleRows[0][0]).toMatch(/…$/);
+      ctx.font = '600 24px "PingFang SC", sans-serif';
+      expect(ctx.measureText(titleRows[0][0]).width).toBeLessThanOrEqual(356);
+      const top = titled.titleField.top / 100 * height;
+      const bottom = (titled.titleField.top + titled.titleField.height) / 100 * height;
+      expect(top).toBeLessThan(titleRows[0][2]);
+      expect(bottom).toBeGreaterThan(titleRows.at(-1)![2] + 24);
+      expect(bottom).toBeLessThan(fillText.mock.calls[identityIndex][2]);
     } finally { vi.unstubAllGlobals(); }
   });
   it('cuts notes to the line limit with an ellipsis that still fits', () => {
