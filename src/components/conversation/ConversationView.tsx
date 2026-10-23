@@ -3,7 +3,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PauseIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
@@ -558,6 +558,10 @@ interface ConversationViewProps {
    * named is where it can be heard, on either layout.
    */
   onPlaySegment?: (segmentId: string, code: string) => void;
+  onPlayCode?: (code: string) => void;
+  onPauseCode?: () => void;
+  engineReady?: boolean;
+  isStarting?: boolean;
   onStopCode?: () => void;
   /** Whether anything is sounding, and what — together these say which widget,
    *  if any, is the one currently playing. */
@@ -634,6 +638,10 @@ export default function ConversationView({
   onBranch,
   onRetry,
   onPlaySegment,
+  onPlayCode,
+  onPauseCode,
+  engineReady = false,
+  isStarting = false,
   onStopCode,
   isPlaying = false,
   playingCode = '',
@@ -1473,23 +1481,44 @@ export default function ConversationView({
       {greetingMsg && !hasConversationMessages && !isLoading && (
         // The phone's guide centres its invitation on this frame, so the card
         // covers the greeting rather than leaving its ends showing.
-        <div data-onboarding-target="greeting" className="absolute inset-0 flex items-center justify-center px-8">
-          <p
-            // Keyed by the greeting's own id (not just conditionally mounted):
-            // reusing an empty session re-rolls the greeting into a new
-            // message id without unmounting this block, so the key is what
-            // forces a fresh node — and with it, the mount animation to replay.
+        <div data-onboarding-target="greeting" className="absolute inset-0 flex flex-col items-center justify-center px-8">
+          {/* Replay the invitation's entrance together with its playback
+              control when an empty session receives a new greeting. */}
+          <div
             key={greetingMsg.id}
-            // A step larger on a phone: this is the one line on an empty
-            // screen, read at arm's length on a display the width of a hand,
-            // where the desktop's 14px reads as fine print rather than as an
-            // opening.
-            className={`animate-blur-fade-in text-center text-text-greeting leading-relaxed ${
-              zh ? 'font-jinghua-laosongti tracking-wider' : 'font-eb-garamond'
-            } ${isMobile ? 'text-base' : 'text-sm'}`}
+            className="animate-blur-fade-in flex w-full flex-col items-center gap-3"
           >
-            {greetingMsg.content}
-          </p>
+            <p
+              // A step larger on a phone: this is the one line on an empty
+              // screen, read at arm's length on a display the width of a hand,
+              // where the desktop's 14px reads as fine print rather than as an
+              // opening.
+              className={`text-center text-text-greeting leading-relaxed ${
+                zh ? 'font-jinghua-laosongti tracking-wider' : 'font-eb-garamond'
+              } ${isMobile ? 'text-base' : 'text-sm'}`}
+            >
+              {greetingMsg.content}
+            </p>
+            {isMobile && draftCode.trim() && (
+              <button
+                type="button"
+                aria-label={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
+                title={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
+                disabled={!engineReady || isStarting}
+                onClick={() => {
+                  if (isPlaying && playingCode === draftCode) onPauseCode?.();
+                  else onPlayCode?.(draftCode);
+                }}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full transition-opacity duration-[1500ms] ease-out disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                <span aria-hidden="true" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-accent text-on-accent transition-colors hover:bg-brand-accent-hover">
+                  {isPlaying && playingCode === draftCode
+                    ? <PauseIcon size={16} />
+                    : <PlayIcon size={16} />}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 

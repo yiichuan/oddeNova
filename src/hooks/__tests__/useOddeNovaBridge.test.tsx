@@ -1475,8 +1475,10 @@ describe('useOddeNovaBridge', () => {
     }
 
     act(() => root.render(<Probe busy version={initial.code} />));
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
-    expect(status).toEqual({ status: 'queued', revision: 2 });
+    await vi.waitFor(async () => {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(status).toEqual({ status: 'queued', revision: 2 });
+    });
     expect(importer).not.toHaveBeenCalled();
 
     // The page turn completes while the import stays queued.

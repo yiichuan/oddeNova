@@ -57,6 +57,9 @@ interface SidebarProps {
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
   onPlaySegment?: (segmentId: string, code: string) => void;
+  onPlayCode?: (code: string) => void;
+  onPauseCode?: () => void;
+  isStarting?: boolean;
   onStopCode?: () => void;
   isPlaying?: boolean;
   playingCode?: string;
@@ -112,6 +115,9 @@ export default function Sidebar({
   onBranch,
   onRetry,
   onPlaySegment,
+  onPlayCode,
+  onPauseCode,
+  isStarting = false,
   onStopCode,
   isPlaying = false,
   playingCode = '',
@@ -245,6 +251,10 @@ export default function Sidebar({
             onBranch={onBranch}
             onRetry={onRetry}
             onPlaySegment={onPlaySegment}
+            onPlayCode={onPlayCode}
+            onPauseCode={onPauseCode}
+            engineReady={engineReady}
+            isStarting={isStarting}
             onStopCode={onStopCode}
             isPlaying={isPlaying}
             playingCode={playingCode}
