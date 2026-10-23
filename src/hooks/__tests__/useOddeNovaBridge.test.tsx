@@ -113,6 +113,14 @@ async function hashV3Snapshot(snapshot: Omit<OddeNovaBridgeSnapshotV3, 'contentH
   return { ...snapshot, contentHash };
 }
 
+async function waitForCondition(condition: () => boolean, timeout = 1_000): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (!condition() && Date.now() < deadline) {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+  }
+  if (!condition()) throw new Error(`Condition was not met within ${timeout}ms`);
+}
+
 function renderHook(options: {
   busy?: boolean;
   ownerKey?: string;
@@ -1475,10 +1483,8 @@ describe('useOddeNovaBridge', () => {
     }
 
     act(() => root.render(<Probe busy version={initial.code} />));
-    await vi.waitFor(async () => {
-      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
-      expect(status).toEqual({ status: 'queued', revision: 2 });
-    });
+    await waitForCondition(() => status?.status === 'queued');
+    expect(status).toEqual({ status: 'queued', revision: 2 });
     expect(importer).not.toHaveBeenCalled();
 
     // The page turn completes while the import stays queued.
@@ -1622,7 +1628,7 @@ describe('useOddeNovaBridge', () => {
     void status;
 
     act(() => root.render(<Probe />));
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    await waitForCondition(() => importer.mock.calls.length === 1);
     expect(importer).toHaveBeenCalledTimes(1);
     // Nothing has been queued for the late message while the importer holds.
     expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).pathname === '/v3/page-change')).toBe(false);

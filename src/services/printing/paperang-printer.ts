@@ -1,0 +1,703 @@
+import {
+  P1_SERVICE, P1_WRITE, P1S_WRITE, P1S_NOTIFY, P1_CRC_SEED, P1S_CRC_SEED, P1_BLE_SERVICE, P1_BLE_WRITE, P1_BLE_NOTIFY, P1_BLE_FLOW, P1_ROW_BYTES,
+  GEN2_HANDSHAKE, LEGACY_FEED_LINE, LEGACY_SELF_TEST, A5_GET_VERSION, A5_SET_DENSITY, A5_PAPER_TYPE, A5_PRINT_START, A5_BITMAP, A5_PRINT_END, A5_FEED, A5_SELF_TEST, A5_BITMAP_ROWS_BYTES,
+  PaperangReplyParser, type PaperangReply, a5Frame, a5BitmapContent, a5Result, batteryQueryFrame, paperangFrame, rasterFrames, selfTestFrame,
+} from './paperang-protocol';
+
+// Narrow Web Bluetooth interfaces keep browser-specific types inside this service.
+interface WriteCharacteristic {
+  uuid?: string;
+  properties?: { read?: boolean; write?: boolean; writeWithoutResponse?: boolean; notify?: boolean; indicate?: boolean };
+  writeValueWithResponse(value: Uint8Array<ArrayBuffer>): Promise<void>;
+  writeValueWithoutResponse?(value: Uint8Array<ArrayBuffer>): Promise<void>;
+  value?: DataView;
+  startNotifications?(): Promise<unknown>;
+  addEventListener?(type: 'characteristicvaluechanged', callback: () => void): void;
+  removeEventListener?(type: 'characteristicvaluechanged', callback: () => void): void;
+}
+interface PrinterService {
+  getCharacteristic(uuid: string): Promise<WriteCharacteristic>;
+  getCharacteristics?(): Promise<WriteCharacteristic[]>;
+}
+const WRITE_TIMEOUT_MS = 10_000;
+const PROBE_TIMEOUT_MS = 1_500;
+const HANDSHAKE_SETTLE_MS = 300;
+const LEGACY_ACK_TIMEOUT_MS = 3_000;
+const A5_REPLY_TIMEOUT_MS = 5_000;
+const A5_BITMAP_TIMEOUT_MS = 15_000;
+const A5_PRINT_END_TIMEOUT_MS = 30_000;
+// The BLE default (23-byte ATT MTU) payload; always safe before the printer reports more.
+const FLOW_CHUNK_SIZE = 20;
+// Largest attribute value Web Bluetooth may write in one packet.
+const MAX_FLOW_PACKET = 512;
+const LEGACY_SET_PAPER_TYPE = 44;
+const A5_DENSITY = 80;
+// The card carries its own bottom margin; this short tail only clears the tear edge.
+const A5_FEED_LINES = 16;
+const CONNECTION_RETRY_DELAY_MS = 200;
+// P1S firmware carries print data only over Bluetooth Classic SPP. macOS Chrome cannot
+// open that RFCOMM link (Web Serial fails), so scripts/paperang-bridge relays it locally.
+export const PRINTER_BRIDGE_URL = 'ws://127.0.0.1:47615';
+// Covers the bridge's baseband connect, service query, RFCOMM retries and settle delay.
+const BRIDGE_READY_TIMEOUT_MS = 20_000;
+const LOG_LIMIT = 400;
+// A credit wait longer than this is logged as a stall in the diagnostic log.
+const CREDIT_STALL_MS = 500;
+const hexBytes = (bytes: Uint8Array, max = 64) =>
+  Array.from(bytes.subarray(0, max), byte => byte.toString(16).padStart(2, '0')).join(' ') + (bytes.length > max ? ` … (${bytes.length} B)` : '');
+const printable = (bytes: Uint8Array) => {
+  const text = String.fromCharCode(...bytes.filter(byte => byte >= 0x20 && byte < 0x7f));
+  return text.length >= 3 ? ` "${text}"` : '';
+};
+const describeSeed = (seed: number) => seed === P1_CRC_SEED ? 'P1 0x35769521' : seed === P1S_CRC_SEED ? 'zero' : `0x${seed.toString(16)}`;
+function describeReply(reply: PaperangReply) {
+  return reply.kind === 'a5'
+    ? `A5 0x${reply.command.toString(16).padStart(4, '0')} type ${reply.messageType}: ${hexBytes(reply.content)}`
+    : `legacy cmd ${reply.command} (seed ${describeSeed(reply.crcSeed)}): ${hexBytes(reply.payload)}${printable(reply.payload)}`;
+}
+/** The write may still have reached the printer, so it is never resent. */
+class WriteTimeoutError extends Error {
+  constructor() { super('P1 Bluetooth write or flow-control wait timed out after 10 seconds'); }
+}
+async function withWriteTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([operation, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new WriteTimeoutError()), WRITE_TIMEOUT_MS);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+interface PrinterDevice {
+  name?: string;
+  gatt?: {
+    connected: boolean;
+    connect(): Promise<{ getPrimaryService(uuid: string): Promise<PrinterService> }>;
+    disconnect(): void;
+  };
+  addEventListener(type: 'gattserverdisconnected', callback: () => void): void;
+  removeEventListener(type: 'gattserverdisconnected', callback: () => void): void;
+}
+// The subset of WebSocket the bridge transport uses, so tests can drive it directly.
+export interface PrinterSocket {
+  binaryType: BinaryType;
+  send(data: string | Uint8Array<ArrayBuffer>): void;
+  close(): void;
+  addEventListener(type: 'open' | 'close' | 'error', callback: () => void): void;
+  addEventListener(type: 'message', callback: (event: { data: unknown }) => void): void;
+}
+/** The local bridge is not running (or not reachable) on this computer. */
+export class PrinterBridgeUnavailableError extends Error {
+  constructor() { super(`No Paperang bridge is listening on ${PRINTER_BRIDGE_URL}`); }
+}
+export type PrinterTransport = 'ble' | 'spp';
+export interface PrinterBluetooth {
+  requestDevice(options: ({ acceptAllDevices: true } | { filters: { services?: string[]; namePrefix?: string }[] }) & { optionalServices: string[] }): Promise<PrinterDevice>;
+}
+export type PrinterConnectionStage = 'selection' | 'connection' | 'service' | 'characteristic';
+export class PrinterConnectionError extends Error {
+  readonly stage: PrinterConnectionStage;
+  constructor(stage: PrinterConnectionStage, cause: unknown) {
+    super(`P1 connection failed: ${stage}`, { cause });
+    this.stage = stage;
+  }
+}
+
+export type PrinterState = 'disconnected' | 'connecting' | 'connected' | 'printing';
+export type PrintResult = 'sent' | 'unconfirmed';
+/** a5: newer firmware frames; gen1: standard-seeded 0x02 frames; gen2: 0x02 frames after the key-0 handshake. */
+export type PrinterProtocol = 'a5' | 'gen1' | 'gen2';
+export type PrinterDiagnostic = { result: 'confirmed'; protocol: PrinterProtocol; reply: string } | { result: 'write-only' };
+/** The BLE data channel accepted writes, but no known Paperang protocol answered on it. */
+export class PrinterProtocolError extends Error {
+  constructor() { super('No known Paperang protocol (A5, gen1, gen2) answered on this Bluetooth channel'); }
+}
+export type PrinterGattInspection = { characteristics: string[]; unavailable?: string };
+/** Which link carries print data: the two ISSC UART characteristics, the FF00 profile, or the SPP bridge. */
+export type PrinterProfile = 'issc-6daa' | 'issc-8841' | 'ff00' | 'spp';
+
+export class PaperangPrinter {
+  private state: PrinterState = 'disconnected';
+  private listeners = new Set<() => void>();
+  private device?: PrinterDevice;
+  private characteristic?: WriteCharacteristic;
+  private service?: PrinterService;
+  private usesP1sProtocol = false;
+  private receiveCharacteristic?: WriteCharacteristic;
+  private lastDeviceReply?: string;
+  private protocol?: PrinterProtocol;
+  private parser = new PaperangReplyParser();
+  private replyWaiter?: { match: (reply: PaperangReply) => boolean; resolve: (reply?: PaperangReply) => void };
+  private flowCharacteristic?: WriteCharacteristic;
+  private credits = 0;
+  private packetSize = FLOW_CHUNK_SIZE;
+  private creditWaiter?: { resolve: () => void; reject: (error: Error) => void };
+  private generation = 0;
+  private socket?: PrinterSocket;
+  private bridgeName?: string;
+  private bluetooth: () => PrinterBluetooth | undefined;
+  private openSocket: (url: string) => PrinterSocket;
+  private firmwareProbeMs: number;
+  private profile?: PrinterProfile;
+  private log: readonly string[] = [];
+  // While an A5 job streams bitmaps, their acks are summarised instead of logged one by one.
+  private summariseBitmapAcks = false;
+  private sendStats = { chunks: 0, creditWaits: 0, creditWaitMs: 0, longestCreditWaitMs: 0, grants: 0 };
+  constructor(
+    bluetooth: () => PrinterBluetooth | undefined = () => (navigator as Navigator & { bluetooth?: PrinterBluetooth }).bluetooth,
+    openSocket: (url: string) => PrinterSocket = url => new WebSocket(url),
+    // How long "Connect P1" waits for an A5 answer before keeping legacy frames.
+    firmwareProbeMs = PROBE_TIMEOUT_MS,
+  ) {
+    this.bluetooth = bluetooth;
+    this.openSocket = openSocket;
+    this.firmwareProbeMs = firmwareProbeMs;
+  }
+
+  supported = () => typeof window !== 'undefined' && window.isSecureContext && !!this.bluetooth();
+  /** The bridge is a macOS IOBluetooth helper, so classic printing is offered on macOS only. */
+  bridgeSupported = () => typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent) && typeof WebSocket !== 'undefined';
+  getTransport = (): PrinterTransport | undefined => this.state === 'connected' || this.state === 'printing'
+    ? this.socket ? 'spp' : 'ble' : undefined;
+  private linkUp = () => this.socket ? true : !!this.device?.gatt?.connected;
+  getSnapshot = () => this.state;
+  getDeviceName = () => this.state === 'connected' || this.state === 'printing'
+    ? (this.socket ? this.bridgeName : this.device?.name)?.trim() || undefined : undefined;
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  };
+  /** Timestamped log of connection steps, sent jobs and device replies, for debugging a printer. */
+  getLog = () => this.log;
+  private note(line: string) {
+    const now = new Date();
+    const stamp = `${now.toTimeString().slice(0, 8)}.${String(now.getMilliseconds()).padStart(3, '0')}`;
+    this.log = [...this.log.slice(-(LOG_LIMIT - 1)), `${stamp} ${line}`];
+  }
+  private setState(state: PrinterState) {
+    this.state = state;
+    this.listeners.forEach(listener => listener());
+  }
+  private onDisconnected = () => {
+    this.generation++;
+    this.clearFlowControl();
+    this.releaseSocket();
+    this.characteristic = undefined;
+    this.service = undefined;
+    this.usesP1sProtocol = false;
+    this.receiveCharacteristic?.removeEventListener?.('characteristicvaluechanged', this.onDeviceReply);
+    this.receiveCharacteristic = undefined;
+    this.protocol = undefined;
+    this.profile = undefined;
+    this.replyWaiter?.resolve();
+    this.replyWaiter = undefined;
+    this.note('link dropped by the device or browser');
+    this.setState('disconnected');
+  };
+  private onDeviceReply = () => {
+    const value = this.receiveCharacteristic?.value;
+    if (value) this.receive(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+  };
+  private receive(bytes: Uint8Array) {
+    this.lastDeviceReply = Array.from(bytes.subarray(0, 32), byte => byte.toString(16).padStart(2, '0')).join(' ');
+    const replies = this.parser.feed(bytes);
+    const routine = (reply: PaperangReply) => this.summariseBitmapAcks && reply.kind === 'a5' && reply.command === A5_BITMAP;
+    // Partial frames and anything unexpected keep their raw bytes in the log.
+    if (!replies.length || !replies.every(routine)) this.note(`← ${hexBytes(bytes)}`);
+    for (const reply of replies) {
+      if (!routine(reply)) this.note(`  parsed ${describeReply(reply)}`);
+      if (this.replyWaiter?.match(reply)) this.replyWaiter.resolve(reply);
+    }
+  }
+  /** Connects over Bluetooth Classic SPP through the local bridge; P1S only accepts print data on this link. */
+  async connectBridge(): Promise<void> {
+    if (this.state !== 'disconnected') return;
+    this.disconnect();
+    const generation = this.generation;
+    this.setState('connecting');
+    let stage: PrinterConnectionStage = 'connection';
+    try {
+      const socket = this.openSocket(PRINTER_BRIDGE_URL);
+      socket.binaryType = 'arraybuffer';
+      this.socket = socket;
+      const name = await new Promise<string>((resolve, reject) => {
+        let opened = false;
+        const timer = setTimeout(() => reject(new Error('The Paperang bridge did not reach the printer in time')), BRIDGE_READY_TIMEOUT_MS);
+        const settle = (action: () => void) => { clearTimeout(timer); action(); };
+        socket.addEventListener('open', () => {
+          opened = true;
+          socket.send(JSON.stringify({ type: 'open' }));
+        });
+        socket.addEventListener('message', ({ data }) => {
+          if (data instanceof ArrayBuffer) {
+            if (generation === this.generation) this.receive(new Uint8Array(data));
+            return;
+          }
+          if (typeof data !== 'string') return;
+          let status: { type?: string; name?: string; message?: string };
+          try { status = JSON.parse(data); } catch { return; }
+          if (status.type === 'ready') settle(() => resolve(status.name || 'Paperang'));
+          else if (status.type === 'error') settle(() => reject(new Error(status.message || 'Paperang bridge error')));
+        });
+        socket.addEventListener('close', () => {
+          settle(() => reject(opened ? new Error('The Paperang bridge closed the connection') : new PrinterBridgeUnavailableError()));
+          if (generation === this.generation && this.socket === socket && this.state !== 'connecting') this.onDisconnected();
+        });
+      });
+      if (generation !== this.generation) return;
+      this.bridgeName = name;
+      this.usesP1sProtocol = true;
+      this.profile = 'spp';
+      this.note(`bridge ready: ${name}`);
+      stage = 'characteristic';
+      this.protocol = (await this.detectProtocol(generation))?.protocol;
+      if (generation !== this.generation) return;
+      this.note(`connected over SPP, protocol ${this.protocol ?? 'unknown'}`);
+      this.setState('connected');
+    } catch (error) {
+      if (generation === this.generation) this.disconnect();
+      this.note(`bridge connection failed at ${stage}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new PrinterConnectionError(stage, error);
+    }
+  }
+  getLastDeviceReply = () => this.lastDeviceReply;
+  private onFlowControl = () => {
+    const value = this.flowCharacteristic?.value;
+    // FF03: 01 <count> grants additional write-without-response packets.
+    if (!value) return;
+    // FF03: 02 <LE16 size> right after subscribing is the largest packet the printer
+    // accepts per credit (observed 103 and 170 on two P1 units).
+    if (value.byteLength >= 3 && value.getUint8(0) === 2) {
+      const size = value.getUint16(1, true);
+      if (size >= FLOW_CHUNK_SIZE && size <= MAX_FLOW_PACKET) this.packetSize = size;
+      this.note(`FF03 packet size ${size}; sending ${this.packetSize}-byte packets`);
+      return;
+    }
+    if (value.byteLength < 2 || value.getUint8(0) !== 1) {
+      this.note(`FF03 non-credit message: ${hexBytes(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))}`);
+      return;
+    }
+    this.credits += value.getUint8(1);
+    this.sendStats.grants += value.getUint8(1);
+    if (this.credits > 0) this.creditWaiter?.resolve();
+  };
+  private clearFlowControl() {
+    this.flowCharacteristic?.removeEventListener?.('characteristicvaluechanged', this.onFlowControl);
+    this.flowCharacteristic = undefined;
+    this.credits = 0;
+    this.packetSize = FLOW_CHUNK_SIZE;
+    this.creditWaiter?.reject(new Error('P1 disconnected'));
+    this.creditWaiter = undefined;
+  }
+  private async takeCredit(generation: number) {
+    if (this.credits === 0) {
+      const started = Date.now();
+      let waiter: typeof this.creditWaiter;
+      const ready = new Promise<void>((resolve, reject) => {
+        waiter = { resolve, reject };
+        this.creditWaiter = waiter;
+      });
+      try { await withWriteTimeout(ready); }
+      finally {
+        if (this.creditWaiter === waiter) this.creditWaiter = undefined;
+        const waited = Date.now() - started;
+        this.sendStats.creditWaits++;
+        this.sendStats.creditWaitMs += waited;
+        this.sendStats.longestCreditWaitMs = Math.max(this.sendStats.longestCreditWaitMs, waited);
+        if (waited >= CREDIT_STALL_MS) this.note(`FF03 credit stall ${waited} ms after ${this.sendStats.chunks} chunks`);
+      }
+    }
+    if (generation !== this.generation || this.credits === 0) throw new Error('P1 disconnected');
+    this.credits--;
+  }
+  private releaseSocket() {
+    const socket = this.socket;
+    this.socket = undefined;
+    this.bridgeName = undefined;
+    // close() on an already closed socket is a no-op; its close event is ignored by generation.
+    socket?.close();
+  }
+  disconnect() {
+    this.generation++;
+    this.clearFlowControl();
+    this.releaseSocket();
+    this.device?.removeEventListener('gattserverdisconnected', this.onDisconnected);
+    this.device?.gatt?.disconnect();
+    this.device = undefined;
+    this.characteristic = undefined;
+    this.service = undefined;
+    this.usesP1sProtocol = false;
+    this.receiveCharacteristic?.removeEventListener?.('characteristicvaluechanged', this.onDeviceReply);
+    this.receiveCharacteristic = undefined;
+    this.protocol = undefined;
+    this.profile = undefined;
+    this.replyWaiter?.resolve();
+    this.replyWaiter = undefined;
+    this.setState('disconnected');
+  }
+  async connect(showAllDevices = false): Promise<void> {
+    if (this.state !== 'disconnected') return;
+    const bluetooth = this.bluetooth();
+    if (!bluetooth) throw new Error('Bluetooth unavailable');
+    this.disconnect();
+    const generation = this.generation;
+    this.setState('connecting');
+    let stage: PrinterConnectionStage = 'selection';
+    try {
+      // Must happen before any await, directly from the user's click.
+      const device = await bluetooth.requestDevice({
+        ...(showAllDevices ? { acceptAllDevices: true as const } : { filters: [
+          // Service-only and name-only filters are alternatives. Some firmware
+          // advertises one but not the other, so never require both together.
+          { services: [P1_SERVICE] },
+          { services: [P1_BLE_SERVICE] },
+          { namePrefix: 'Paperang' },
+          { namePrefix: 'PAPERANG' },
+          { namePrefix: 'MiaoMiaoJi' },
+          { namePrefix: 'P1S' },
+        ] }),
+        optionalServices: [P1_SERVICE, P1_BLE_SERVICE],
+      });
+      if (generation !== this.generation) return;
+      this.device = device;
+      device.addEventListener('gattserverdisconnected', this.onDisconnected);
+      if (!device.gatt) throw new Error('P1 GATT unavailable');
+      stage = 'connection';
+      let server;
+      try {
+        server = await device.gatt.connect();
+      } catch (error) {
+        if (!(error instanceof Error) || error.name !== 'NetworkError') throw error;
+        device.gatt.disconnect();
+        await new Promise(resolve => setTimeout(resolve, CONNECTION_RETRY_DELAY_MS));
+        if (generation !== this.generation) return;
+        server = await device.gatt.connect();
+      }
+      stage = 'service';
+      let service;
+      let writeUuid = P1_WRITE;
+      try {
+        service = await server.getPrimaryService(P1_SERVICE);
+      } catch (error) {
+        // Only an absent service permits trying the other verified P1 BLE profile.
+        if (!(error instanceof Error) || error.name !== 'NotFoundError') throw error;
+        service = await server.getPrimaryService(P1_BLE_SERVICE);
+        writeUuid = P1_BLE_WRITE;
+      }
+      stage = 'characteristic';
+      let characteristic;
+      try {
+        characteristic = await service.getCharacteristic(writeUuid);
+      } catch (error) {
+        // P1 and P1S share the ISSC service but expose different generations
+        // of its transparent-UART downlink characteristic.
+        if (writeUuid !== P1_WRITE || !(error instanceof Error) || error.name !== 'NotFoundError') throw error;
+        characteristic = await service.getCharacteristic(P1S_WRITE);
+        writeUuid = P1S_WRITE;
+      }
+      if (generation !== this.generation) return;
+      this.service = service;
+      if (writeUuid === P1_BLE_WRITE) {
+        if (!characteristic.writeValueWithoutResponse) throw new Error('P1 FF02 write-without-response unavailable');
+        // This P1 grants further FF03 credits only while its FF01 receive channel
+        // is subscribed. FF03 alone stalls after the initial four packets.
+        const receive = await service.getCharacteristic(P1_BLE_NOTIFY);
+        if (generation !== this.generation) return;
+        if (!receive.startNotifications) throw new Error('P1 FF01 receive notifications unavailable');
+        // FF01 also carries the printer's replies; the diagnostic log needs them.
+        if (receive.addEventListener && receive.removeEventListener) {
+          this.receiveCharacteristic = receive;
+          receive.addEventListener('characteristicvaluechanged', this.onDeviceReply);
+        }
+        await withWriteTimeout(receive.startNotifications());
+        if (generation !== this.generation) return;
+        const flow = await service.getCharacteristic(P1_BLE_FLOW);
+        if (generation !== this.generation) return;
+        if (!flow.startNotifications || !flow.addEventListener || !flow.removeEventListener) throw new Error('P1 FF03 flow control unavailable');
+        this.flowCharacteristic = flow;
+        // Install before subscribing: the initial credit grant can arrive immediately.
+        flow.addEventListener('characteristicvaluechanged', this.onFlowControl);
+        await withWriteTimeout(flow.startNotifications());
+        if (generation !== this.generation) return;
+      }
+      this.characteristic = characteristic;
+      this.profile = writeUuid === P1_BLE_WRITE ? 'ff00' : writeUuid === P1S_WRITE ? 'issc-8841' : 'issc-6daa';
+      this.note(`connected to ${device.name || 'unnamed device'} over ${this.profile} (write ${writeUuid})`);
+      if (this.profile === 'issc-6daa') {
+        // Optional: older ISSC firmware may still answer on the UART TX characteristic.
+        try {
+          const receive = await service.getCharacteristic(P1S_NOTIFY);
+          if (generation !== this.generation) return;
+          if (receive.startNotifications && receive.addEventListener && receive.removeEventListener) {
+            this.receiveCharacteristic = receive;
+            receive.addEventListener('characteristicvaluechanged', this.onDeviceReply);
+            await withWriteTimeout(receive.startNotifications());
+          }
+        } catch (error) {
+          this.note(`no ISSC reply channel: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+        }
+        if (generation !== this.generation) return;
+      }
+      // Firmware behind the Microchip UART characteristic speaks one of several
+      // Paperang dialects, so the P1S path asks the device which one it understands.
+      this.usesP1sProtocol = writeUuid === P1S_WRITE;
+      if (this.usesP1sProtocol) {
+        const receive = await service.getCharacteristic(P1S_NOTIFY);
+        if (!receive.startNotifications || !receive.addEventListener || !receive.removeEventListener) throw new Error('P1S notification channel unavailable');
+        this.receiveCharacteristic = receive;
+        receive.addEventListener('characteristicvaluechanged', this.onDeviceReply);
+        await withWriteTimeout(receive.startNotifications());
+        if (generation !== this.generation) return;
+        // An unanswered probe leaves the connection open for GATT inspection,
+        // but print and self-test refuse to send into an unknown protocol.
+        this.protocol = (await this.detectProtocol(generation))?.protocol;
+        if (generation !== this.generation) return;
+      } else if (this.receiveCharacteristic) {
+        // P1 firmware differs between units: 01.03.19 on FF00 answers only A5 and silently
+        // drops legacy frames, while older units print legacy frames and may never answer.
+        // The probe frame holds no 0x02/0x03 bytes, so legacy firmware discards it whole.
+        // No answer keeps the legacy default (never the gen2 handshake, which rekeys the CRC).
+        const reply = await this.request(a5Frame(A5_GET_VERSION), candidate => candidate.kind === 'a5' && candidate.command === A5_GET_VERSION && candidate.messageType === 2, this.firmwareProbeMs, generation);
+        if (generation !== this.generation) return;
+        if (reply) this.protocol = 'a5';
+      }
+      this.note(`print protocol: ${this.protocol ?? 'gen1 (default, unconfirmed)'}`);
+      this.setState('connected');
+    } catch (error) {
+      if (generation === this.generation) this.disconnect();
+      if (stage === 'selection' && error instanceof Error && error.name === 'NotFoundError') return;
+      this.note(`BLE connection failed at ${stage}: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+      throw new PrinterConnectionError(stage, error);
+    }
+  }
+  private async writeFrame(frame: Uint8Array<ArrayBuffer>, generation: number) {
+    if (this.socket) {
+      this.socket.send(frame);
+      return;
+    }
+    const characteristic = this.characteristic;
+    if (!characteristic) throw new Error('P1 not ready');
+    if (!this.flowCharacteristic) {
+      await withWriteTimeout(characteristic.writeValueWithResponse(frame));
+      return;
+    }
+    for (let offset = 0; offset < frame.length;) {
+      if (generation !== this.generation || !this.linkUp()) throw new Error('P1 disconnected');
+      await this.takeCredit(generation);
+      if (generation !== this.generation || !this.linkUp()) throw new Error('P1 disconnected');
+      const size = this.packetSize;
+      try {
+        await withWriteTimeout(characteristic.writeValueWithoutResponse!(frame.slice(offset, offset + size)));
+      } catch (error) {
+        // A rejected oversized packet never left the browser: keep its credit and resend smaller.
+        if (size === FLOW_CHUNK_SIZE || error instanceof WriteTimeoutError || generation !== this.generation || !this.linkUp()) throw error;
+        this.credits++;
+        this.packetSize = FLOW_CHUNK_SIZE;
+        this.note(`${size}-byte packet rejected (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}); falling back to ${FLOW_CHUNK_SIZE}-byte packets`);
+        continue;
+      }
+      this.sendStats.chunks++;
+      offset += size;
+    }
+  }
+  /** Writes one frame and resolves with the first matching reply, or undefined on timeout. */
+  private async request(frame: Uint8Array<ArrayBuffer>, match: (reply: PaperangReply) => boolean, timeoutMs: number, generation: number) {
+    this.parser.reset();
+    let resolve!: (reply?: PaperangReply) => void;
+    const reply = new Promise<PaperangReply | undefined>(done => { resolve = done; });
+    // Installed before writing: the device can answer before the write promise settles.
+    this.replyWaiter = { match, resolve };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await this.writeFrame(frame, generation);
+      timer = setTimeout(() => resolve(undefined), timeoutMs);
+      const result = await reply;
+      if (generation !== this.generation || !this.linkUp()) throw new Error('P1 disconnected');
+      return result;
+    } finally {
+      clearTimeout(timer);
+      if (this.replyWaiter?.resolve === resolve) this.replyWaiter = undefined;
+    }
+  }
+  /** Asks read-only questions in each known dialect; the first one answered is the device's protocol. */
+  private async detectProtocol(generation: number): Promise<{ protocol: PrinterProtocol; reply: string } | undefined> {
+    const a5 = await this.request(a5Frame(A5_GET_VERSION), reply => reply.kind === 'a5' && reply.command === A5_GET_VERSION && reply.messageType === 2, PROBE_TIMEOUT_MS, generation);
+    if (a5) return { protocol: 'a5', reply: this.lastDeviceReply ?? '' };
+    const gen1 = await this.request(batteryQueryFrame(P1_CRC_SEED), reply => reply.kind === 'legacy' && reply.crcSeed === P1_CRC_SEED, PROBE_TIMEOUT_MS, generation);
+    if (gen1) return { protocol: 'gen1', reply: this.lastDeviceReply ?? '' };
+    // gen2 ignores zero-seeded frames until this handshake switches its CRC key to 0.
+    await this.request(GEN2_HANDSHAKE, reply => reply.kind === 'legacy', HANDSHAKE_SETTLE_MS, generation);
+    const gen2 = await this.request(batteryQueryFrame(P1S_CRC_SEED), reply => reply.kind === 'legacy', PROBE_TIMEOUT_MS, generation);
+    if (gen2) return { protocol: 'gen2', reply: this.lastDeviceReply ?? '' };
+    return undefined;
+  }
+  private requireProtocol(): PrinterProtocol {
+    if (!this.protocol) throw new PrinterProtocolError();
+    return this.protocol;
+  }
+  /** `order` is the bitmap chunk number, which P1S echoes back as a nested TLV {1: LE16 order}. */
+  private async a5Ack(command: number, content: Uint8Array, generation: number, timeoutMs = A5_REPLY_TIMEOUT_MS, order?: number) {
+    const reply = await this.request(a5Frame(command, content), candidate => candidate.kind === 'a5' && candidate.command === command && candidate.messageType === 2, timeoutMs, generation);
+    const name = `A5 0x${command.toString(16).padStart(4, '0')}`;
+    // A late answer would be mistaken for the next command's, so a timeout ends the session.
+    if (!reply || reply.kind !== 'a5') throw new Error(`${name} was not acknowledged`);
+    const result = a5Result(reply.content);
+    const echo = order !== undefined && result && result.length > 1 ? a5Result(result) : undefined;
+    const echoesOrder = echo?.length === 2 && (echo[0] | echo[1] << 8) === order;
+    if (!result || (!echoesOrder && (result.length > 1 || (result.length === 1 && result[0] !== 0)))) {
+      throw new Error(`${name} rejected: ${Array.from(reply.content, byte => byte.toString(16).padStart(2, '0')).join(' ')}`);
+    }
+  }
+  getProtocol = (): PrinterProtocol | 'unknown' | undefined =>
+    this.usesP1sProtocol && (this.state === 'connected' || this.state === 'printing') ? this.protocol ?? 'unknown' : undefined;
+  async inspectGatt(): Promise<PrinterGattInspection> {
+    if (this.state !== 'connected' || !this.service) throw new Error('P1 not ready');
+    if (!this.service.getCharacteristics) {
+      this.note('GATT inspection unavailable: the browser did not expose characteristic enumeration');
+      return { characteristics: [], unavailable: 'The browser did not expose characteristic enumeration.' };
+    }
+    try {
+      const characteristics = await this.service.getCharacteristics();
+      const inspection = {
+        characteristics: characteristics.map(characteristic => {
+          const properties = characteristic.properties;
+          const modes = [
+            properties?.read && 'read',
+            properties?.write && 'write',
+            properties?.writeWithoutResponse && 'write-without-response',
+            properties?.notify && 'notify',
+            properties?.indicate && 'indicate',
+          ].filter(Boolean).join(', ') || 'no properties reported';
+          return `${characteristic.uuid || 'unknown UUID'} (${modes})`;
+        }).sort(),
+      };
+      this.note(`GATT on ${this.profile ?? 'unknown link'}:\n  ${inspection.characteristics.join('\n  ') || '(none)'}`);
+      return inspection;
+    } catch (error) {
+      const unavailable = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      this.note(`GATT inspection failed: ${unavailable}`);
+      return { characteristics: [], unavailable };
+    }
+  }
+  async printSelfTest(): Promise<PrintResult> {
+    if (this.state !== 'connected' || (!this.characteristic && !this.socket)) throw new Error('P1 not ready');
+    const protocol = this.usesP1sProtocol ? this.requireProtocol() : 'gen1';
+    const generation = this.generation;
+    this.setState('printing');
+    this.lastDeviceReply = undefined;
+    try {
+      let result: PrintResult = 'sent';
+      if (protocol === 'a5') {
+        await this.a5Ack(A5_SELF_TEST, new Uint8Array(), generation);
+      } else if (this.usesP1sProtocol) {
+        const reply = await this.request(selfTestFrame(protocol === 'gen2' ? P1S_CRC_SEED : P1_CRC_SEED), candidate => candidate.kind === 'legacy' && candidate.command === LEGACY_SELF_TEST, LEGACY_ACK_TIMEOUT_MS, generation);
+        if (!reply) result = 'unconfirmed';
+      } else {
+        await this.writeFrame(selfTestFrame(), generation);
+      }
+      if (generation !== this.generation || !this.linkUp()) throw new Error('P1 disconnected');
+      this.setState('connected');
+      return result;
+    } catch (error) {
+      if (generation === this.generation) this.disconnect();
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      throw new Error(`P1 self-test failed: ${detail}`, { cause: error });
+    }
+  }
+  async diagnose(): Promise<PrinterDiagnostic> {
+    if (this.state !== 'connected' || (!this.characteristic && !this.socket)) throw new Error('P1 not ready');
+    const generation = this.generation;
+    this.setState('printing');
+    this.lastDeviceReply = undefined;
+    try {
+      let diagnostic: PrinterDiagnostic = { result: 'write-only' };
+      if (this.usesP1sProtocol) {
+        const detected = await this.detectProtocol(generation);
+        this.protocol = detected?.protocol;
+        if (detected) diagnostic = { result: 'confirmed', ...detected };
+      } else {
+        const reply = await this.request(batteryQueryFrame(), () => true, PROBE_TIMEOUT_MS, generation);
+        if (reply) diagnostic = { result: 'confirmed', protocol: 'gen1', reply: this.lastDeviceReply ?? '' };
+      }
+      this.setState('connected');
+      return diagnostic;
+    } catch (error) {
+      if (generation === this.generation) this.disconnect();
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      throw new Error(`P1 diagnostic failed: ${detail}`, { cause: error });
+    }
+  }
+  private noteSendStats(started: number, outcome: string) {
+    const stats = this.sendStats;
+    const credits = this.flowCharacteristic
+      ? `, ${stats.chunks} chunks of up to ${this.packetSize} B, ${stats.grants} credits granted, ${stats.creditWaits} credit waits totalling ${stats.creditWaitMs} ms (longest ${stats.longestCreditWaitMs} ms)`
+      : '';
+    this.note(`${outcome} after ${Date.now() - started} ms${credits}`);
+  }
+  async print(raster: Uint8Array): Promise<PrintResult> {
+    if (this.state !== 'connected' || (!this.characteristic && !this.socket)) throw new Error('P1 not ready');
+    const protocol = this.usesP1sProtocol ? this.requireProtocol() : this.protocol;
+    const generation = this.generation;
+    let step = 'start';
+    this.setState('printing');
+    this.lastDeviceReply = undefined;
+    const started = Date.now();
+    this.sendStats = { chunks: 0, creditWaits: 0, creditWaitMs: 0, longestCreditWaitMs: 0, grants: 0 };
+    this.note(`▶ print ${raster.length / P1_ROW_BYTES} rows (${raster.length} B) over ${this.profile ?? 'unknown link'}, protocol ${protocol ?? 'gen1'}`);
+    try {
+      let result: PrintResult = 'sent';
+      if (protocol === 'a5') {
+        if (!raster.length || raster.length % P1_ROW_BYTES) throw new Error('Invalid P1 raster rows');
+        step = 'setup';
+        await this.a5Ack(A5_SET_DENSITY, new Uint8Array([A5_DENSITY]), generation);
+        await this.a5Ack(A5_PAPER_TYPE, new Uint8Array([0, 0]), generation);
+        await this.a5Ack(A5_PRINT_START, new Uint8Array(), generation);
+        // Nothing else may be sent between print start and print end.
+        const total = Math.ceil(raster.length / A5_BITMAP_ROWS_BYTES);
+        const bitmapsStarted = Date.now();
+        let slowestAck = 0;
+        this.summariseBitmapAcks = true;
+        try {
+          for (let order = 1; order <= total; order++) {
+            step = `bitmap ${order}/${total}`;
+            const offset = (order - 1) * A5_BITMAP_ROWS_BYTES;
+            const sent = Date.now();
+            await this.a5Ack(A5_BITMAP, a5BitmapContent(raster.slice(offset, offset + A5_BITMAP_ROWS_BYTES), order), generation, A5_BITMAP_TIMEOUT_MS, order);
+            slowestAck = Math.max(slowestAck, Date.now() - sent);
+          }
+        } finally { this.summariseBitmapAcks = false; }
+        this.note(`  ${total} bitmap chunks acknowledged in ${Date.now() - bitmapsStarted} ms (slowest ${slowestAck} ms)`);
+        step = 'finish';
+        await this.a5Ack(A5_PRINT_END, new Uint8Array(), generation, A5_PRINT_END_TIMEOUT_MS);
+        await this.a5Ack(A5_FEED, new Uint8Array([A5_FEED_LINES, 0]), generation);
+      } else {
+        const crcSeed = protocol === 'gen2' ? P1S_CRC_SEED : P1_CRC_SEED;
+        const frames = rasterFrames(raster, crcSeed);
+        this.note(`  ${frames.length} legacy frames, CRC seed ${describeSeed(crcSeed)}`);
+        if (protocol) frames.unshift(paperangFrame(LEGACY_SET_PAPER_TYPE, new Uint8Array([0]), crcSeed));
+        for (let index = 0; index < frames.length; index++) {
+          step = `frame ${index + 1}/${frames.length}`;
+          if (generation !== this.generation || !this.linkUp()) throw new Error('P1 disconnected');
+          if (protocol && index === frames.length - 1) {
+            // The closing feed is the one legacy command whose reply confirms the job reached the device.
+            const reply = await this.request(frames[index], candidate => candidate.kind === 'legacy' && candidate.command === LEGACY_FEED_LINE, LEGACY_ACK_TIMEOUT_MS, generation);
+            if (!reply) result = 'unconfirmed';
+          } else {
+            await this.writeFrame(frames[index], generation);
+          }
+        }
+      }
+      if (generation !== this.generation) throw new Error('P1 disconnected');
+      this.noteSendStats(started, `✓ print ${result}`);
+      this.setState('connected');
+      return result;
+    } catch (error) {
+      // No automatic retries: part of the receipt may already be on paper.
+      if (generation === this.generation) this.disconnect();
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      this.noteSendStats(started, `✗ print failed at ${step}: ${detail}`);
+      throw new Error(`P1 ${protocol ?? 'gen1'} ${step}: ${detail}`, { cause: error });
+    }
+  }
+}
+
+export const paperangPrinter = new PaperangPrinter();

@@ -37,6 +37,32 @@ export interface ToolDef {
   handler: ToolHandler;
 }
 
+const LAYER_NOTES_ZH =
+  '为最终代码中的每个音层写一句简短说明（约 12 字以内），讲这一层用什么乐器实现什么功能，乐器写中文常用名而不是照抄音色名（gm_piano → 钢琴），如 "温暖pad铺出天空和声"。只印在分享小票上，不写进代码注释。';
+const LAYER_NOTES_EN =
+  'One short note (about 6 words) for every layer in the final code: which instrument does what, in plain words rather than the raw sound name (gm_piano → piano), e.g. "warm pad spreads sky harmony". Printed only on the share card, never written into code comments.';
+
+const LAYER_NOTE_MAX_CHARS = 40;
+
+/**
+ * Normalises commit `layerNotes` into { layerName: note }, keeping only layers that
+ * exist in the committed code. A malformed or missing field yields no notes, never a
+ * failed commit: notes only decorate the share card.
+ */
+export function parseLayerNotes(value: unknown, code: string): Record<string, string> {
+  if (!Array.isArray(value)) return {};
+  const layerNames = new Set(parseScore(code).layers.map(layer => layer.name));
+  const notes: Record<string, string> = {};
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { layer, note } = entry as { layer?: unknown; note?: unknown };
+    if (typeof layer !== 'string' || typeof note !== 'string' || !layerNames.has(layer)) continue;
+    const text = Array.from(note.replace(/\s+/g, ' ').trim()).slice(0, LAYER_NOTE_MAX_CHARS).join('');
+    if (text) notes[layer] = text;
+  }
+  return notes;
+}
+
 export class CommitSignal extends Error {
   code: string;
   constructor(code: string) {
@@ -189,6 +215,18 @@ export const TOOLS: ToolDef[] = [
           description:
             '【必填】一句话中文向用户解释这次改动，会作为聊天回复展示。如 "加了一层 lo-fi 鼓点" / "把 pad 调小声" / "切到 house 风格 128 BPM"。',
         },
+        layerNotes: {
+          type: 'array',
+          description: LAYER_NOTES_ZH,
+          items: {
+            type: 'object',
+            properties: {
+              layer: { type: 'string', description: '音层名，与代码中 /* @layer NAME */ 的 NAME 一致' },
+              note: { type: 'string', description: '该音层的简短说明' },
+            },
+            required: ['layer', 'note'],
+          },
+        },
       },
       required: ['explanation'],
     },
@@ -227,6 +265,7 @@ const TOOL_SCHEMAS_ZH = {
     params: {
       explanation:
         '【必填】一句话中文向用户解释这次改动，会作为聊天回复展示。如 "加了一层 lo-fi 鼓点" / "把 pad 调小声" / "切到 house 风格 128 BPM"。',
+      layerNotes: LAYER_NOTES_ZH,
     },
   },
 };
@@ -253,6 +292,7 @@ const TOOL_SCHEMAS_EN = {
     params: {
       explanation:
         '[Required] One short sentence in English explaining this change, shown as a chat reply. E.g. "Added a lo-fi drum layer" / "Turned the pad down" / "Switched to house style at 128 BPM".',
+      layerNotes: LAYER_NOTES_EN,
     },
   },
 };

@@ -93,7 +93,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    }, 'normal');
+    }, 'normal', undefined);
     expect(deps.checkpointSession).toHaveBeenCalledOnce();
     expect(deps.checkpointSession).toHaveBeenCalledWith('S1');
   });
@@ -115,6 +115,13 @@ describe('runAgentTurn', () => {
     expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
+  it('stores the commit\'s layer notes on the committed assistant message', async () => {
+    const layerNotes = { pad: '温暖pad铺出天空和声' };
+    const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ layerNotes })) });
+    await runAgentTurn(makeInput(), deps);
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', expect.anything(), 'normal', layerNotes);
+  });
+
   it('on a background (non-current) session, persists without playing', async () => {
     const deps = makeDeps({ isCurrentSession: () => false });
     await runAgentTurn(makeInput(), deps);
@@ -124,7 +131,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'not_attempted',
-    }, 'normal');
+    }, 'normal', undefined);
     expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
@@ -146,7 +153,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    }, 'normal');
+    }, 'normal', undefined);
   });
 
   it('marks a successful stepwise numbered response as choice input mode', async () => {
@@ -168,7 +175,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    }, 'choice');
+    }, 'choice', undefined);
   });
 
   it('finalizes the streamed assistant message when the result carries no code', async () => {
@@ -248,7 +255,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'OVERRIDE',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    }, 'normal');
+    }, 'normal', undefined);
   });
 
   it('forwards moodContext to runAgent', async () => {
@@ -474,7 +481,7 @@ describe('useAgentRunner production adapter', () => {
     } as unknown as UseAgentRunnerConfig;
 
     const deps = createAgentTurnDeps(config);
-    deps.addAssistantMessage('请选择', 'note("c3")', 'S1', undefined, 'choice');
+    deps.addAssistantMessage('请选择', 'note("c3")', 'S1', undefined, 'choice', { pad: '温暖pad铺出天空和声' });
 
     expect(addAssistantMessage).toHaveBeenCalledWith(
       '请选择',
@@ -482,6 +489,7 @@ describe('useAgentRunner production adapter', () => {
       'S1',
       undefined,
       'choice',
+      { pad: '温暖pad铺出天空和声' },
     );
   });
 });
