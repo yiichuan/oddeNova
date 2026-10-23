@@ -13,6 +13,7 @@ import { drawReceiptGalaxy, receiptGalaxyHeight } from './receipt-galaxy';
 const PINGFANG = '"PingFang SC", sans-serif';
 const MOTTO_FONT = '400 20px "Inter", sans-serif';
 const IDENTITY_FONT = `400 20px ${PINGFANG}`;
+const TITLE_FONT = `600 20px ${PINGFANG}`;
 const DATE_FONT = `400 18px ${PINGFANG}`;
 const FACTS_FONT = '400 20px "Inter", sans-serif';
 const TABLE_HEADING_FONT = `600 20px ${PINGFANG}`;
@@ -28,6 +29,7 @@ export interface ShareReceiptDetails {
   code: string;
   createdAt: number;
   locale: 'zh-CN' | 'en';
+  title?: string;
   /** Today's print count for this receipt; see receipt-counter. */
   number: number;
   /** The session's turns; the agent's per-layer notes are read from them. */
@@ -161,6 +163,10 @@ export async function renderShareReceipt(
 
   const padding = 14;
   const right = P1_WIDTH - padding;
+  ctx.font = TITLE_FONT;
+  const titleLines = details.title?.trim()
+    ? wrapReceiptTitle(details.title, text => ctx.measureText(text).width, right - padding)
+    : [];
   // Clear space between the number column and the layer names.
   const nameLeft = 76;
   const timeRight = right;
@@ -200,8 +206,12 @@ export async function renderShareReceipt(
   const logoHeight = Math.round(logoWidth * logo.naturalHeight / logo.naturalWidth);
   const mottoTop = logoTop + logoHeight + 12;
   const mottoHeight = 20;
-  // Same white space below the motto as above the logo.
-  const identityTop = mottoTop + mottoHeight + logoTop;
+  const titleTop = mottoTop + mottoHeight + 38;
+  const titleLineHeight = 26;
+  // Match the gap after the last title line to the number-to-date gap below it.
+  const identityTop = titleLines.length > 0
+    ? titleTop + (titleLines.length - 1) * titleLineHeight + 30
+    : mottoTop + mottoHeight + logoTop;
   const dateTop = identityTop + 30;
   const factsTop = dateTop + 62;
   const tableTop = factsTop + 44;
@@ -244,6 +254,8 @@ export async function renderShareReceipt(
   ctx.font = MOTTO_FONT;
   ctx.fillText('[ vibe your bgm ]', P1_WIDTH / 2, mottoTop);
 
+  ctx.font = TITLE_FONT;
+  titleLines.forEach((line, index) => ctx.fillText(line, P1_WIDTH / 2, titleTop + index * titleLineHeight));
   ctx.font = IDENTITY_FONT;
   ctx.fillText(`${isZh ? '创作编号' : 'CREATION NO.'}  ${formatReceiptNumber(details.number)}`, P1_WIDTH / 2, identityTop);
   ctx.font = DATE_FONT;

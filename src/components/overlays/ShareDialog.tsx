@@ -19,10 +19,12 @@ const say = (cn: string, en: string) => zh ? cn : en;
 const SHARE_ORIGIN = 'https://oddenova.com';
 
 export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
+  const title = snapshot.title !== t('newSessionTitle') ? snapshot.title : t('sharedMusicCreation');
   const [printOpen, setPrintOpen] = useState(false);
   const renderGeneration = useRef(0);
   const receiptDetails = useRef({
     code: snapshot.code,
+    title,
     createdAt: snapshot.messages.find(message => message.role === 'user')?.timestamp
       ?? snapshot.revisions?.[0]?.createdAt
       ?? Date.now(),
@@ -52,7 +54,6 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   const state = useSyncExternalStore(paperangPrinter.subscribe, paperangPrinter.getSnapshot);
   const supported = paperangPrinter.supported();
   const bridgeSupported = paperangPrinter.bridgeSupported();
-  const title = snapshot.title !== t('newSessionTitle') ? snapshot.title : t('sharedMusicCreation');
 
   useEffect(() => {
     alive.current = true;
