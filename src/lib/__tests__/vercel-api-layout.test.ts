@@ -12,7 +12,7 @@ describe('Vercel API layout', () => {
     const files = (await readdir('api', { recursive: true }))
       .filter((file) => file.endsWith('.ts'));
 
-    expect(files.sort()).toHaveLength(7);
+    expect(files.sort()).toHaveLength(8);
   });
 
   it('uses Node ESM-resolvable relative imports in TypeScript functions', async () => {

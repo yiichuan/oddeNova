@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session, SessionImportPayload } from '../hooks/useSessions';
 import { trackOnboardingProgressed, type OnboardingStage } from '../lib/analytics';
 import { zh } from '../lib/i18n';
 import { preloadSoundfontNotes } from '../lib/soundfont-loader';
+import { readCloudOnboardingSettled, writeCloudOnboardingSettled } from './onboarding-cloud';
 import {
   COMPARE_SOUND_DEPENDENCIES,
   COMPARE_WINDOW,
@@ -92,6 +93,15 @@ const PRESET_DELAY_MS = 1200;
 const PREPARE_TIMEOUT_MS = 20_000;
 
 type Panel = 'auto' | 'dismissed' | 'invite' | 'manual-invite' | 'resume' | 'cannot-resume' | 'step';
+type CloudOnboardingStatus = 'loading' | 'clear' | 'settled' | 'error';
+
+function userIdFromOwnerKey(ownerKey: string): string | null {
+  return ownerKey.startsWith('user:') ? ownerKey.slice('user:'.length) : null;
+}
+
+function isSettled(progress: OnboardingProgress): boolean {
+  return progress.status === 'completed' || progress.status === 'skipped';
+}
 
 export interface UseOnboardingOptions {
   ownerKey: string;
@@ -229,6 +239,13 @@ export function useOnboarding(options: UseOnboardingOptions) {
     setStore(current);
   }
   const { progress, panel } = current;
+  const [cloudState, setCloudState] = useState<{ ownerKey: string; status: CloudOnboardingStatus }>(() => ({
+    ownerKey,
+    status: ownerKey === 'guest' ? 'clear' : 'loading',
+  }));
+  const cloudStatus = ownerKey === 'guest'
+    ? 'clear'
+    : cloudState.ownerKey === ownerKey ? cloudState.status : 'loading';
 
   const [sending, setSending] = useState(false);
   const [deliveryError, setDeliveryError] = useState(false);
@@ -249,6 +266,11 @@ export function useOnboarding(options: UseOnboardingOptions) {
   const optionsRef = useRef(options);
   const progressRef = useRef(progress);
   const ownerRef = useRef(ownerKey);
+  const cloudOwnerRef = useRef(ownerKey);
+  const cloudOwnerGenerationRef = useRef(0);
+  const cloudReadRef = useRef<{ ownerKey: string; generation: number; promise: Promise<void> } | null>(null);
+  const cloudWriteRef = useRef<{ ownerKey: string; generation: number; promise: Promise<void> } | null>(null);
+  const cloudSettledOwnerRef = useRef<string | null>(null);
   /** Bumped by anything that invalidates work in flight: account change, exit, unmount. */
   const generationRef = useRef(0);
   /**
@@ -267,6 +289,107 @@ export function useOnboarding(options: UseOnboardingOptions) {
     ownerRef.current = ownerKey;
   });
 
+  const pushSettledToCloud = useCallback(async (targetOwnerKey: string) => {
+    const userId = userIdFromOwnerKey(targetOwnerKey);
+    const generation = cloudOwnerGenerationRef.current;
+    if (!userId || cloudOwnerRef.current !== targetOwnerKey) return;
+    if (cloudSettledOwnerRef.current === targetOwnerKey) return;
+    const pending = cloudWriteRef.current;
+    if (pending?.ownerKey === targetOwnerKey && pending.generation === generation) {
+      return pending.promise;
+    }
+    setCloudState({ ownerKey: targetOwnerKey, status: 'loading' });
+    const request = { ownerKey: targetOwnerKey, generation, promise: Promise.resolve() };
+    const promise = (async () => {
+      try {
+        await writeCloudOnboardingSettled(userId);
+        if (cloudOwnerRef.current === targetOwnerKey && cloudOwnerGenerationRef.current === generation) {
+          cloudSettledOwnerRef.current = targetOwnerKey;
+          setCloudState({ ownerKey: targetOwnerKey, status: 'settled' });
+        }
+      } catch {
+        if (cloudOwnerRef.current === targetOwnerKey && cloudOwnerGenerationRef.current === generation) {
+          setCloudState({ ownerKey: targetOwnerKey, status: 'error' });
+        }
+      } finally {
+        if (cloudWriteRef.current === request) cloudWriteRef.current = null;
+      }
+    })();
+    request.promise = promise;
+    cloudWriteRef.current = request;
+    return promise;
+  }, []);
+
+  const refreshCloudStatus = useCallback(async (targetOwnerKey: string) => {
+    const userId = userIdFromOwnerKey(targetOwnerKey);
+    const generation = cloudOwnerGenerationRef.current;
+    if (!userId || cloudOwnerRef.current !== targetOwnerKey) return;
+    const pending = cloudReadRef.current;
+    if (pending?.ownerKey === targetOwnerKey && pending.generation === generation) {
+      return pending.promise;
+    }
+    setCloudState({ ownerKey: targetOwnerKey, status: 'loading' });
+    const request = { ownerKey: targetOwnerKey, generation, promise: Promise.resolve() };
+    const promise = (async () => {
+      try {
+        const settled = await readCloudOnboardingSettled(userId);
+        if (cloudOwnerRef.current !== targetOwnerKey || cloudOwnerGenerationRef.current !== generation) return;
+        if (settled) {
+          cloudSettledOwnerRef.current = targetOwnerKey;
+          setCloudState({ ownerKey: targetOwnerKey, status: 'settled' });
+        } else if (isSettled(progressRef.current)) {
+          await pushSettledToCloud(targetOwnerKey);
+        } else {
+          setCloudState({ ownerKey: targetOwnerKey, status: 'clear' });
+        }
+      } catch {
+        if (cloudOwnerRef.current === targetOwnerKey && cloudOwnerGenerationRef.current === generation) {
+          setCloudState({ ownerKey: targetOwnerKey, status: 'error' });
+        }
+      } finally {
+        if (cloudReadRef.current === request) cloudReadRef.current = null;
+      }
+    })();
+    request.promise = promise;
+    cloudReadRef.current = request;
+    return promise;
+  }, [pushSettledToCloud]);
+
+  useLayoutEffect(() => {
+    if (cloudOwnerRef.current !== ownerKey) {
+      cloudOwnerRef.current = ownerKey;
+      cloudOwnerGenerationRef.current += 1;
+      cloudReadRef.current = null;
+      cloudWriteRef.current = null;
+      cloudSettledOwnerRef.current = null;
+    }
+
+    if (ownerKey === 'guest' || !userIdFromOwnerKey(ownerKey)) {
+      setCloudState({ ownerKey, status: 'clear' });
+    } else {
+      void refreshCloudStatus(ownerKey);
+    }
+
+    return () => {
+      if (cloudOwnerRef.current === ownerKey) {
+        cloudOwnerGenerationRef.current += 1;
+        cloudReadRef.current = null;
+        cloudWriteRef.current = null;
+      }
+    };
+  }, [ownerKey, refreshCloudStatus]);
+
+  useEffect(() => {
+    if (cloudStatus !== 'error') return;
+    const retry = () => { void refreshCloudStatus(ownerKey); };
+    window.addEventListener('focus', retry);
+    window.addEventListener('online', retry);
+    return () => {
+      window.removeEventListener('focus', retry);
+      window.removeEventListener('online', retry);
+    };
+  }, [ownerKey, cloudStatus, refreshCloudStatus]);
+
   const setPanel = useCallback((next: Panel) => {
     setStore((s) => ({ ...s, panel: next }));
   }, []);
@@ -278,10 +401,11 @@ export function useOnboarding(options: UseOnboardingOptions) {
     progressRef.current = after;
     writeProgress(ownerRef.current, after);
     setStore((s) => (s.ownerKey === ownerRef.current ? { ...s, progress: after } : s));
+    if (isSettled(after)) void pushSettledToCloud(ownerRef.current);
     const stage = STAGE_FOR_EVENT[event.type];
     if (stage) track(stage, event.type === 'skip' ? before.step : undefined);
     return after;
-  }, []);
+  }, [pushSettledToCloud]);
 
   const cancelInFlight = useCallback(() => {
     generationRef.current += 1;
@@ -311,10 +435,11 @@ export function useOnboarding(options: UseOnboardingOptions) {
         return isPracticeCurrent ? 'step' : 'resume';
       case 'auto':
         if (!canAutoInvite) return 'hidden';
+        if (isSettled(progress) || cloudStatus !== 'clear') return 'hidden';
         if (progress.status === 'active') return 'resume';
         return shouldAutoInvite(progress, { eligible, now: Date.now() }) ? 'invite' : 'hidden';
     }
-  }, [enabled, studioActive, panel, progress, isPracticeCurrent, canAutoInvite, eligible]);
+  }, [enabled, studioActive, panel, progress, isPracticeCurrent, canAutoInvite, eligible, cloudStatus]);
 
   useEffect(() => {
     if (view !== 'invite' || inviteTrackedRef.current) return;

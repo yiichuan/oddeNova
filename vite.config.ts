@@ -7,6 +7,7 @@ import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
 import sessionsHandler from './api/sessions'
+import onboardingHandler from './api/onboarding'
 import { privacyRouteMiddleware } from './server/privacy-route'
 
 interface AirJellyRuntime {
@@ -351,7 +352,7 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 }
 
 function runVercelHandler(
-  handler: typeof sessionsHandler,
+  handler: typeof sessionsHandler | typeof onboardingHandler,
   req: IncomingMessage,
   res: ServerResponse,
   query: Record<string, string> = {},
@@ -442,6 +443,17 @@ function sessionsDevMiddleware(): Plugin {
   }
 }
 
+function onboardingDevMiddleware(): Plugin {
+  return {
+    name: 'onboarding-api-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use('/api/onboarding', async (req, res) => {
+        await runVercelHandler(onboardingHandler, req, res)
+      })
+    },
+  }
+}
+
 // Mirrors src/animation/*.html → public/animation/ so the iframe can load them
 // as static assets. Runs once on startup and again on every hot-module update.
 function syncAnimationHtml(): Plugin {
@@ -487,7 +499,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
     build: {
       // Manifest powers scripts/report-bundle-size.mjs (analyze:bundle) so the
       // entry-asset closure can be measured reproducibly. No runtime cost.
