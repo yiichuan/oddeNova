@@ -73,3 +73,18 @@ describe('account session schema', () => {
     expect(sql).not.toMatch(/insert into public\.sessions/);
   });
 });
+
+describe('onboarding status schema', () => {
+  it('stores one immutable settled marker per authenticated account behind own-row RLS', () => {
+    const sql = migrationSql('20261026143010_onboarding_settled.sql');
+
+    expect(sql).toMatch(/create table if not exists public\.user_onboarding/);
+    expect(sql).toMatch(/user_id uuid primary key references auth\.users\(id\) on delete cascade/);
+    expect(sql).toMatch(/settled_at timestamptz not null default now\(\)/);
+    expect(sql).toMatch(/alter table public\.user_onboarding enable row level security/);
+    expect(sql).toMatch(/grant select, insert on public\.user_onboarding to authenticated/);
+    expect(sql).toMatch(/for select to authenticated using \(\(select auth\.uid\(\)\) = user_id\)/);
+    expect(sql).toMatch(/for insert to authenticated with check \(\(select auth\.uid\(\)\) = user_id\)/);
+    expect(sql).not.toMatch(/for update|for delete|to anon/);
+  });
+});
