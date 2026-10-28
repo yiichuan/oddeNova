@@ -41,6 +41,12 @@ interface CodePanelProps {
   error: string | null;
   isPlaying: boolean;
   isPaused: boolean;
+  /**
+   * Play was pressed and the piece's opening is still loading; the transport
+   * starts when it has. The play key turns into a spinner meanwhile, so a
+   * press that has not sounded yet reads as taken rather than ignored.
+   */
+  isStarting?: boolean;
   engineReady: boolean;
   /**
    * The hued colour the playing piece's own `.color()` set, if any — null the
@@ -108,6 +114,14 @@ interface CodePanelProps {
    */
   previewing?: boolean;
   onExitPreview?: () => void;
+  /**
+   * The phone's first-run guide is pointing at the play key. It grows to a
+   * thumb's 44px, waits for the guide's sounds (`playDisabled`), and once
+   * pressed cannot pause: the listen plays its 5 seconds through, and the
+   * guide stops it at the end. The timeline beside it holds still too: a
+   * listen is the first 5 seconds from the top, and a seek would move it.
+   */
+  guidePlay?: { playDisabled: boolean };
 }
 
 interface Metaball {
@@ -268,6 +282,7 @@ function PlaybackProgress({
   accentColor,
   getPlaybackPosition,
   seekPlayback,
+  locked = false,
 }: {
   timeline: PlaybackTimeline;
   isPlaying: boolean;
@@ -275,6 +290,8 @@ function PlaybackProgress({
   accentColor?: string | null;
   getPlaybackPosition: () => number;
   seekPlayback: (progress: number, loopCycles: number) => boolean;
+  /** Shown but not seekable. */
+  locked?: boolean;
 }) {
   const { code, loopCycles, durationSeconds: totalSeconds } = timeline;
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -324,7 +341,7 @@ function PlaybackProgress({
   const progress = totalSeconds > 0 ? Math.min(1, Math.max(0, elapsedSeconds / totalSeconds)) : 0;
   const elapsedLabel = formatPlaybackTime(elapsedSeconds);
   const totalLabel = formatPlaybackTime(totalSeconds);
-  const seekDisabled = totalSeconds <= 0 || loopCycles <= 0;
+  const seekDisabled = locked || totalSeconds <= 0 || loopCycles <= 0;
 
   const handleSeek = (nextProgress: number) => {
     if (seekDisabled) return;
@@ -408,11 +425,23 @@ function PlaybackProgress({
   );
 }
 
+/** The play key while the opening loads: a ring turning in the key's own colour. */
+function PlayStartingMark({ size }: { size: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="block animate-spin rounded-full border-[1.5px] border-current border-t-transparent motion-reduce:animate-none"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 export default function CodePanel({
   code,
   error,
   isPlaying,
   isPaused,
+  isStarting = false,
   engineReady,
   accentColor,
   session,
@@ -440,6 +469,7 @@ export default function CodePanel({
   showSyncStatus = false,
   previewing = false,
   onExitPreview,
+  guidePlay,
 }: CodePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -661,7 +691,7 @@ export default function CodePanel({
   const handlePlayClick = () => {
     if (isPlaying) {
       onPause();
-    } else if (engineReady) {
+    } else if (engineReady && !isStarting) {
       onPlay();
     }
   };
@@ -669,6 +699,11 @@ export default function CodePanel({
   // Hover labels are portalled to <body>, so they need viewport coordinates:
   // centred on the control, sitting just above it.
   const hasPlayableCode = code.trim().length > 0;
+  // Pausing is always open, except to the guide's listen (see `guidePlay`).
+  const playKeyDisabled = isPlaying
+    ? Boolean(guidePlay)
+    : !engineReady || !hasPlayableCode || isStarting || Boolean(guidePlay?.playDisabled);
+  const playKeyLabel = isPlaying ? t('pause') : isStarting ? t('playStarting') : t('play');
   const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
   // Only a playing piece with an unheard edit has anything to update into.
   const canUpdate = isPlaying && isDirty;
@@ -701,18 +736,10 @@ export default function CodePanel({
         // off it — a drawn edge on top of that reads as a second frame inside
         // the first. On desktop the panel is inlaid in the page and the line is
         // the only thing saying where it starts.
-        className={`relative isolate flex-1 min-h-0 overflow-hidden rounded-t-region bg-conversation-surface${
+        className={`relative isolate flex flex-1 min-h-0 flex-col overflow-hidden rounded-t-region bg-conversation-surface${
           isMobile ? '' : controlsOnly ? ' border-0' : ' border border-border'
         }`}
       >
-        <div
-          ref={containerRef}
-          data-testid="code-panel-editor-root"
-          className={`code-editor-fade-top h-full flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${
-            isMobile ? ' code-scroll-autohide' : ''
-          }`}
-        />
-
         {previewing && (
           <div
             data-testid="code-panel-preview-banner"
@@ -720,15 +747,18 @@ export default function CodePanel({
                script and a read-only window are separate pieces of news and
                both have to be readable at once.
 
+               In the flow above the editor rather than laid over it: the band
+               takes its height out of the editor's, so the first line starts
+               beneath it instead of hiding behind it.
+
                Opaque, and no backdrop filter. The panel's outline is drawn on
                the box that clips this one, and `backdrop-filter` paints its
                result as a rectangle that the clip's rounded corners do not cut —
                so a blurred band across the top squared off the two corners and
-               took that much of the outline with them. Nothing is lost by the
-               fill being solid: this sits over code, which a 95% ground let
-               ghost through it anyway. The rounding is its own as well, so the
-               band keeps out of the corners whatever happens to the clip. */
-            className="absolute inset-x-0 top-0 z-[255] flex items-center gap-3 rounded-t-region border-b border-border bg-conversation-surface px-3 py-1.5 text-[11px] text-text-secondary"
+               took that much of the outline with them. The rounding is its own
+               as well, so the band keeps out of the corners whatever happens to
+               the clip. */
+            className="relative z-[255] flex shrink-0 items-center gap-3 rounded-t-region border-b border-border bg-conversation-surface px-3 py-1.5 text-[11px] text-text-secondary"
           >
             <span className="min-w-0 truncate">{t('viewingVersion')}</span>
             {onExitPreview && (
@@ -743,6 +773,15 @@ export default function CodePanel({
             )}
           </div>
         )}
+
+        <div
+          ref={containerRef}
+          data-testid="code-panel-editor-root"
+          data-onboarding-target="code"
+          className={`code-editor-fade-top flex-1 min-h-0 flex flex-col justify-stretch items-stretch overflow-hidden *:h-full${
+            isMobile ? ' code-scroll-autohide' : ''
+          }`}
+        />
 
         {error && (
           <div
@@ -828,11 +867,13 @@ export default function CodePanel({
           >
             <button
               onClick={handlePlayClick}
-              disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
+              data-onboarding-target="play"
+              disabled={!isPlaying && (!engineReady || !hasPlayableCode || isStarting)}
               className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover disabled:cursor-not-allowed disabled:text-control-icon-disabled disabled:opacity-100"
-              aria-label={isPlaying ? t('pause') : t('play')}
+              aria-label={playKeyLabel}
+              aria-busy={isStarting || undefined}
             >
-              {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={18} />}
+              {isPlaying ? <PauseIcon size={16} /> : isStarting ? <PlayStartingMark size={14} /> : <PlayIcon size={18} />}
             </button>
 
             {/* Live update: re-evaluates the edited code into the pattern that
@@ -1057,17 +1098,22 @@ export default function CodePanel({
               layers are the shared `.code-panel-controls` scale and the desktop
               bar does put scenery at 0 and 1, so the controls stay where that
               scale puts them rather than drifting apart by platform. */}
-          <div className="relative z-10 flex shrink-0 items-center">
+          {/* Raised over the timeline while the guide points here, so the
+              play key's widened reach wins the few pixels it shares with the
+              seek track's start. */}
+          <div className={`relative ${guidePlay ? 'z-20' : 'z-10'} flex shrink-0 items-center`}>
             <button
               type="button"
               onClick={handlePlayClick}
-              disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
+              data-onboarding-target="play"
+              disabled={playKeyDisabled}
               className={`control-button-surface flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed ${
-                !isPlaying && (!engineReady || !hasPlayableCode) ? 'text-text-muted' : 'text-action-fill'
-              }`}
-              aria-label={isPlaying ? t('pause') : t('play')}
+                playKeyDisabled ? 'text-text-muted' : 'text-action-fill'
+              }${guidePlay ? " relative before:absolute before:-inset-2 before:content-['']" : ''}`}
+              aria-label={playKeyLabel}
+              aria-busy={isStarting || undefined}
             >
-              {isPlaying ? <PauseIcon size={12} /> : <PlayIcon size={13} />}
+              {isPlaying ? <PauseIcon size={12} /> : isStarting ? <PlayStartingMark size={11} /> : <PlayIcon size={13} />}
             </button>
 
             {/* Same condition as the desktop bar: a piece is sounding and the
@@ -1097,6 +1143,7 @@ export default function CodePanel({
             accentColor={accentColor}
             getPlaybackPosition={getPlaybackPosition}
             seekPlayback={seekPlayback}
+            locked={Boolean(guidePlay)}
           />
 
           {/* The window's own key, not the transport's: it puts the editor over

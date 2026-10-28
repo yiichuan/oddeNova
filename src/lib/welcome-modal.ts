@@ -5,6 +5,7 @@ export const WELCOME_SEEN_KEY = 'oddenova_welcome_seen';
 interface AutoOpenWelcomeModalInput {
   isTopWindow: boolean;
   hasSeenWelcome: boolean;
+  pathname: string;
 }
 
 /**
@@ -16,9 +17,10 @@ interface AutoOpenWelcomeModalInput {
 export function shouldAutoOpenWelcomeModal({
   isTopWindow,
   hasSeenWelcome,
+  pathname,
 }: AutoOpenWelcomeModalInput): boolean {
   // Embedded/share contexts should never surprise-open a sign-up prompt.
-  if (!isTopWindow) return false;
+  if (!isTopWindow || /^\/s\/[^/]+$/.test(pathname)) return false;
 
   return !hasSeenWelcome;
 }

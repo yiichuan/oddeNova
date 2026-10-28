@@ -17,6 +17,9 @@ export interface ChatMessage {
   revisionId?: string;
   /** Input behavior established by this completed assistant turn. */
   inputMode?: InputMode;
+  /** For an assistant turn that committed `code`: the agent's short note per layer
+   * name. Printed only on the share card; hand-written code never has any. */
+  layerNotes?: Record<string, string>;
   /** Present only while an LLM stream attempt is incomplete. */
   agentAttemptId?: string;
   timestamp: number;

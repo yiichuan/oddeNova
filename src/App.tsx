@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
-import { DRAFT_SEGMENT_ID } from './lib/draft-diff';
+import { DRAFT_SEGMENT_ID, codeBeforeMessage } from './lib/draft-diff';
 import CodePanel from './components/studio/CodePanel';
 import Sidebar from './components/conversation/Sidebar';
 import StudioVisualizer from './components/studio/StudioVisualizer';
@@ -22,13 +22,14 @@ import { useSuggestions } from './hooks/useSuggestions';
 import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
-import type { ConversationTurn } from './services/llm';
+import type { ConversationTurn } from './services/llm-loader';
 import { conversationHistoryBefore } from './lib/conversation-history';
 import { createAgentProgressHandler } from './lib/agent-progress-handler';
 import { isDemoMode, getActiveDemoSet, getDemoMoodInstruction } from './demo/demo-config';
-import ApiKeyModal from './components/overlays/ApiKeyModal';
 import { hasApiKeyConfigured } from './services/llm-config';
-import { resetClient } from './services/llm';
+import { resetClient } from './services/llm-loader';
+import { retryableLazy } from './components/async/retryable-lazy';
+import { FeatureLoadBoundary } from './components/async/FeatureLoadBoundary';
 import { DownloadIcon, EllipsisIcon, ListIcon, SquareTerminalIcon, XIcon } from './components/icons';
 import { parseScore } from './agent/parser';
 import { useImportShare } from './hooks/useImportShare';
@@ -40,38 +41,44 @@ import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
 import type { TrackRevealTiming } from './components/studio/StudioVisualizer';
 import { getPlaybackTimeline } from './lib/strudel-timing';
-import ConversationView from './components/conversation/ConversationView';
+import ConversationView, { type GuidedReply } from './components/conversation/ConversationView';
 import ChatInput from './components/conversation/ChatInput';
 import { ExportPopover, ShareButton } from './components/studio/TopActionBar';
 import { useExportPopoverController } from './hooks/useExportPopoverController';
-import AccountModal from './components/overlays/AccountModal';
 import WelcomeModal from './components/overlays/WelcomeModal';
 import OddeNovaImportNotice from './components/overlays/OddeNovaImportNotice';
 import OddeNovaBridgeNotice from './components/overlays/OddeNovaBridgeNotice';
-import FavoriteActionDialog, { type FavoriteActionKind } from './components/overlays/FavoriteActionDialog';
+import { type FavoriteActionKind } from './components/overlays/FavoriteActionDialog';
 import PrimaryNav, { type PrimaryNavItem } from './components/nav/PrimaryNav';
 import MobileNavDrawer from './components/nav/MobileNavDrawer';
-import FeaturedPage from './components/featured/FeaturedPage';
-import FavoritesPage from './components/favorites/FavoritesPage';
-import { requestDeviceTilt } from './components/featured/featured-device-tilt';
-import { useCoverAccent } from './components/featured/featured-accent';
-import SettingsSidebar, { type SettingsSection } from './components/settings/SettingsSidebar';
-import ModelSettingsPanel from './components/settings/ModelSettingsPanel';
-import AppearanceSettingsPanel from './components/settings/AppearanceSettingsPanel';
 import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenWelcome, markWelcomeSeen, shouldAutoOpenWelcomeModal } from './lib/welcome-modal';
 import type { AgentEntryPoint } from './lib/analytics';
-import { FEATURED_PIECES, findFeaturedPiece, type FeaturedPiece } from './lib/featured-pieces';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { sessionAsFavorite } from './lib/session-favorites';
 import { fullSessionTitle } from './lib/full-session-title';
 import { useVisualViewport } from './hooks/useVisualViewport';
 import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
-import { featuredPlayer } from './services/featured-player';
+import { featuredPlayer, onboardingPlayer } from './services/featured-player';
+import { useOnboarding } from './onboarding/useOnboarding';
+import OnboardingTour, { type TourTarget } from './onboarding/OnboardingTour';
+import MobileOnboardingTour from './onboarding/MobileOnboardingTour';
+import OnboardingExitHint from './onboarding/OnboardingExitHint';
+import { advancesOnWindowClose, mobilePhaseOf, needsMobileRecovery } from './onboarding/mobile-tour-model';
+import type { OnboardingStep } from './onboarding/onboarding-state';
+import { visibleRectOf } from './onboarding/tour-geometry';
+import { INTRO_PIANO_CHANGE } from './onboarding/intro-piano-case';
+import { isOnboardingEligible, markOnboardingEligible } from './onboarding/onboarding-state';
+import { ODDENOVA_BRIDGE_BOOTSTRAP_KEY } from './lib/oddenova-bridge';
+import { ODDENOVA_IMPORT_HASH_PREFIX } from './lib/oddenova-import';
 import { featuredSessionDraft } from './lib/featured-session';
 import { useModelSettingsDraft } from './hooks/useModelSettingsDraft';
+import { FEATURED_PIECES, findFeaturedPiece, type FeaturedPiece } from './lib/featured-pieces';
+import { requestDeviceTilt } from './components/featured/featured-device-tilt';
+import { useCoverAccent } from './components/featured/featured-accent';
+import { type SettingsSection } from './components/settings/SettingsSidebar';
 import {
   useResolvedAnimation,
   useStudioAnimationVisible,
@@ -112,6 +119,21 @@ import { type Session } from './hooks/useSessions';
  * session column or the divider beside it.
  */
 const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites']);
+
+// Stable shells keep chunks lazy and renew failed loads on a boundary retry.
+const LazyFeaturedPage = retryableLazy(() => import('./components/featured/FeaturedPage'));
+const LazyFavoritesPage = retryableLazy(() => import('./components/favorites/FavoritesPage'));
+const LazySettingsSidebar = retryableLazy(() => import('./components/settings/SettingsSidebar'));
+const LazyModelSettingsPanel = retryableLazy(() => import('./components/settings/ModelSettingsPanel'));
+const LazyAppearanceSettingsPanel = retryableLazy(() => import('./components/settings/AppearanceSettingsPanel'));
+const LazyApiKeyModal = retryableLazy(() => import('./components/overlays/ApiKeyModal'));
+const LazyAccountModal = retryableLazy(() => import('./components/overlays/AccountModal'));
+const LazyFavoriteActionDialog = retryableLazy(() => import('./components/overlays/FavoriteActionDialog'));
+
+/** Neutral block the lazy shells can suspend on; height set by the container. */
+function LazyOverlayFallback() {
+  return <div className="h-full w-full" aria-hidden="true" />;
+}
 
 /** How long the summary cache holds a change before writing it down. */
 const SUMMARY_CACHE_WRITE_MS = 1000;
@@ -204,6 +226,13 @@ export default function App() {
   const [rollbackPrefill, setRollbackPrefill] = useState('');
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
+  /* First-visit gates for the lazy full-width pages. A page is mounted on its
+     first navigation and stays mounted (hidden) from then on — the pre-existing
+     hidden-mount semantics; before that visit the JSX is absent entirely, so
+     the chunk is never pulled by hovering or by a screen that is not looking. */
+  const [featuredVisited, setFeaturedVisited] = useState(false);
+  const [favoritesVisited, setFavoritesVisited] = useState(false);
+  const [settingsVisited, setSettingsVisited] = useState(false);
   const mobileNavigationRef = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('model');
   // The Featured page opens on a piece rather than on an empty panel; there is
@@ -249,6 +278,8 @@ export default function App() {
   authUserIdRef.current = auth.user?.id ?? null;
   const skipNextManualSyncSessionRef = useRef<string | null>(null);
   const mobileCodeRestoreRef = useRef<{ id: string; code: string } | null>(null);
+  /** Set once the guide is wired up below: shutting the code window can be its next step. */
+  const onCodeSheetClosedRef = useRef<() => void>(() => {});
   const prevLoadingRef = useRef<Set<string>>(new Set());
   const importPromptUserRef = useRef<string | null>(null);
   const latestGuestSessionsRef = useRef<Session[]>([]);
@@ -409,15 +440,23 @@ export default function App() {
     }
   }, [sessions]);
 
-  /* Leaving the code window puts the transport down. It is the only place on a
-     phone with a play key on it — the bottom bar carries the input and nothing
-     else — so a piece left sounding behind a closed window is a piece you can
-     no longer stop, which is the same reason walking off the studio's page
-     stops it on desktop. See `handlePrimaryNavSelect`. */
-  const closeCodeSheet = useCallback(() => {
+  const finishClosingCodeSheet = useCallback(() => {
     setCodeSheetOpen(false);
+    onCodeSheetClosedRef.current();
+  }, [setCodeSheetOpen]);
+
+  /* The explicit close key puts the transport down with the window. Tapping
+     the surrounding page is a lighter dismissal: it returns to the reading
+     while leaving the take sounding, where its matching conversation widget
+     remains available as the transport. */
+  const closeCodeSheet = useCallback(() => {
+    finishClosingCodeSheet();
     strudel.stop();
-  }, [setCodeSheetOpen, strudel]);
+  }, [finishClosingCodeSheet, strudel]);
+
+  const dismissCodeSheet = useCallback(() => {
+    finishClosingCodeSheet();
+  }, [finishClosingCodeSheet]);
 
   /* The code window's export popover. Driven from here rather than from
      CodePanel because the two controls it belongs with — download and share —
@@ -433,15 +472,37 @@ export default function App() {
   // very first paint of a first visit, and the flag is what decides it. Waiting
   // for `auth.loading` would let the studio show through first and then have the
   // window drop on top of it.
-  const [welcomeOpen, setWelcomeOpen] = useState(() => {
-    let isTopWindow = true;
+  const [isTopWindow] = useState(() => {
     try {
-      isTopWindow = window.self === window.top;
+      return window.self === window.top;
     } catch {
       // Cross-origin frame access can throw; treat it as embedded and stay quiet.
-      isTopWindow = false;
+      return false;
     }
-    return shouldAutoOpenWelcomeModal({ isTopWindow, hasSeenWelcome: hasSeenWelcome() });
+  });
+  const [welcomeAutoOpened] = useState(() =>
+    shouldAutoOpenWelcomeModal({
+      isTopWindow,
+      hasSeenWelcome: hasSeenWelcome(),
+      pathname: window.location.pathname,
+    }));
+  const [welcomeOpen, setWelcomeOpen] = useState(welcomeAutoOpened);
+  // The first-run guide invites only a browser meeting oddeNova for the first
+  // time — the same first paint that opens the welcome. Browsers already in use
+  // before the guide shipped have seen the welcome, so they are never marked
+  // and are not interrupted; the menu still offers it.
+  const [onboardingEligible] = useState(() => welcomeAutoOpened || isOnboardingEligible());
+  // Arriving to do something else — open a shared piece, take in an import or
+  // a bridge pairing — is not the moment for a practice. Read off the URL
+  // before anything consumes it.
+  const [arrivedForTask] = useState(() => {
+    if (/^\/s\/[^/]+$/.test(window.location.pathname)) return true;
+    if (window.location.hash.startsWith(ODDENOVA_IMPORT_HASH_PREFIX)) return true;
+    try {
+      return sessionStorage.getItem(ODDENOVA_BRIDGE_BOOTSTRAP_KEY) !== null;
+    } catch {
+      return false;
+    }
   });
   const [importErrorDismissed, setImportErrorDismissed] = useState(false);
 
@@ -455,7 +516,9 @@ export default function App() {
   // to the provider and returns through a reload, so a flag written on the way
   // out is a flag that never gets written.
   useEffect(() => {
-    if (welcomeOpen) markWelcomeSeen();
+    if (!welcomeOpen) return;
+    markWelcomeSeen();
+    markOnboardingEligible();
   }, [welcomeOpen]);
 
   // Each settings entry carries the value it is currently set to, so the column
@@ -491,6 +554,12 @@ export default function App() {
     // than silence, in either direction.
     if (item !== 'featured') stopFeaturedPreview();
     if (item !== 'home') stopStudio();
+    // Mount-on-first-visit: the gates read as visited in the same commit that
+    // moves the shell, so the first navigation renders the (lazy) page rather
+    // than flashing the studio behind it for one frame.
+    if (item === 'featured') setFeaturedVisited(true);
+    if (item === 'favorites') setFavoritesVisited(true);
+    if (item === 'settings') setSettingsVisited(true);
     setPrimaryNavItem(item);
   }, [auth.user, stopFeaturedPreview, stopStudio, isMobile]);
 
@@ -751,17 +820,19 @@ export default function App() {
         <WelcomeModal configured={auth.configured} onClose={closeWelcomeModal} />
       )}
       {(accountOpen || auth.oauthErrorKey) && (
-        <AccountModal
-          user={auth.user}
-          configured={auth.configured}
-          recoveringPassword={auth.recoveringPassword}
-          oauthErrorKey={auth.oauthErrorKey}
-          beforeSignOut={sessions.flushCloudSaves}
-          onClose={() => {
-            auth.dismissOAuthError();
-            setAccountOpen(false);
-          }}
-        />
+        <FeatureLoadBoundary fallback={null}>
+          <LazyAccountModal
+            user={auth.user}
+            configured={auth.configured}
+            recoveringPassword={auth.recoveringPassword}
+            oauthErrorKey={auth.oauthErrorKey}
+            beforeSignOut={sessions.flushCloudSaves}
+            onClose={() => {
+              auth.dismissOAuthError();
+              setAccountOpen(false);
+            }}
+          />
+        </FeatureLoadBoundary>
       )}
       {guestImportSessions && (
         // The editor's bottom fade uses z-index 240/250, so this app-level
@@ -1109,8 +1180,10 @@ export default function App() {
    */
   const handlePlaySegment = useCallback(
     (segmentId: string, code: string) => {
-      if (segmentId === DRAFT_SEGMENT_ID) {
-        const draft = current?.code ?? '';
+      const draft = current?.code ?? '';
+      // A take the draft still is — the latest one, untouched since — has
+      // nothing to shield the draft from, so it plays as the draft does.
+      if (segmentId === DRAFT_SEGMENT_ID || code === draft) {
         exitPreview();
         setSoundingSegment({ id: segmentId, code: draft });
         void strudel.play(draft);
@@ -1123,9 +1196,14 @@ export default function App() {
     [current?.code, exitPreview, strudel],
   );
 
+  // Set once the guide is wired up below; a genuine instruction is what ends
+  // a practice left at its last step, and what the funnel counts after it.
+  const noteRealInstructionRef = useRef<() => void>(() => {});
   const handleChatInstruction = useCallback(
-    (text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>) =>
-      handleInstruction(text, { entryPoint }),
+    (text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>) => {
+      noteRealInstructionRef.current();
+      return handleInstruction(text, { entryPoint });
+    },
     [handleInstruction],
   );
 
@@ -1138,16 +1216,13 @@ export default function App() {
       if (currentSessionId) {
         abortControllersRef.current.get(currentSessionId)?.abort();
       }
-      // Find the last assistant message with code before this message, as the rollback target
-
-      const allMessages = sessions.currentSession?.messages ?? [];
-      const idx = allMessages.findIndex((m) => m.id === messageId);
-      if (idx < 0) return null;
-      const target = allMessages[idx];
-
-      // Find the last assistant message with code before this message, as the rollback target
-      const prevAssistant = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'assistant' && m.code != null);
-      const previousCode = prevAssistant?.code ?? '';
+      const session = sessions.currentSession;
+      const allMessages = session?.messages ?? [];
+      const target = allMessages.find((m) => m.id === messageId);
+      // What the editor held when this message was sent — including a script
+      // pasted into an empty session, which no message carries.
+      const previousCode = codeBeforeMessage(allMessages, session?.revisions, messageId, session?.code ?? '');
+      if (!target || previousCode === null) return null;
 
       // Restore the rollback target as the session truth without auto-playing:
       // stop current audio (it belongs to the rolled-away version), put the
@@ -1264,6 +1339,14 @@ export default function App() {
       await flushCloudSaves(sessions.currentId);
     }
     await strudel.play();
+  }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
+
+  const handlePlayCodeOnly = useCallback(async (code: string) => {
+    if (sessions.currentId) {
+      await setManualCode(code, sessions.currentId);
+      await flushCloudSaves(sessions.currentId);
+    }
+    await strudel.play(code);
   }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
 
   // Live update: the edit is persisted the same way a play is, then handed to
@@ -1428,6 +1511,16 @@ export default function App() {
     onError: reportSessionActionError,
     prepareForRename,
   });
+
+  /* A skipped first-run practice is disposable. Create the ordinary blank
+     conversation before removing it, so deleting the current row can never
+     fall back to one of the reader's older conversations. */
+  const discardOnboardingPractice = useCallback((id: string) => {
+    if (sessions.currentId !== id) return;
+    setCommitSuggestions(null);
+    sessions.newSession();
+    deleteSessionAction(id);
+  }, [deleteSessionAction, sessions]);
 
   const commitPendingDelete = useCallback(async (notice: FavoriteNotice | null): Promise<boolean> => {
     if (notice?.kind !== 'released' && notice?.kind !== 'deleted') return false;
@@ -1691,6 +1784,228 @@ export default function App() {
     strudel,
   ]);
 
+  /* The first-run guide: a tour over the studio's own controls, walking a
+     practice copy of the theme song. See src/onboarding/. */
+  const leaveSessionForPractice = useCallback(async () => {
+    if (sessions.currentId) {
+      // Same as a switch: a phone does not wait on the network to move on.
+      const save = persistAndFlushOutgoingSession(sessions.currentId, strudel.code);
+      if (!isMobile) await save;
+    }
+    setCommitSuggestions(null);
+  }, [isMobile, persistAndFlushOutgoingSession, sessions.currentId, strudel.code]);
+  const focusChatInput = useCallback(() => setInputFocusTrigger((n) => n + 1), []);
+  const onboarding = useOnboarding({
+    ownerKey,
+    enabled: isTopWindow && !isVideoMode && !isDemoMode(),
+    canAutoInvite: !arrivedForTask
+      && !auth.loading
+      && !auth.recoveringPassword
+      && !sessions.isLoading
+      && importStatus !== 'loading'
+      && !isReplaying,
+    // Anything else that needs the screen — a sign-in, the guest import, a
+    // settings dialog — takes it; the tour steps back and returns after.
+    studioActive: primaryNavItem === 'home'
+      && !welcomeOpen
+      && !accountOpen
+      && !apiKeyModalOpen
+      && !guestImportSessions
+      && !importingGuestHistory,
+    eligible: onboardingEligible,
+    sessions: sessions.sessions,
+    currentId: sessions.currentId,
+    isPersistent: sessions.isPersistent,
+    importSession: sessions.importSession,
+    switchToSession: handleSwitchSession,
+    leaveCurrentSession: leaveSessionForPractice,
+    showCodeInEditor: applyImportedCode,
+    discardPractice: discardOnboardingPractice,
+    startNewSession: handleNewSession,
+    focusInput: focusChatInput,
+    interruptOnHidden: isMobile,
+    studio: {
+      isPlaying: strudel.isPlaying,
+      engineReady: strudel.engineReady,
+      activeCode: strudel.activeCode,
+      getPlaybackCycle: strudel.getPlaybackCycle,
+      play: handlePlay,
+      pause: strudel.pause,
+      stop: strudel.stop,
+    },
+    comparePlayer: onboardingPlayer,
+  });
+  const noteRealInstruction = onboarding.noteRealInstruction;
+  useEffect(() => {
+    noteRealInstructionRef.current = noteRealInstruction;
+  }, [noteRealInstruction]);
+  const openOnboarding = onboarding.openFromMenu;
+  const handleOpenOnboarding = useCallback(() => {
+    setNavDrawerOpen(false);
+    handlePrimaryNavSelect('home');
+    openOnboarding();
+  }, [handlePrimaryNavSelect, openOnboarding, setNavDrawerOpen]);
+
+  const onboardingStep = onboarding.view === 'step' ? onboarding.step : null;
+
+  /* ── The guide on a phone ──
+     The four-stage reading of the same steps (see MobileOnboardingTour). The
+     first stage is walked through the code window, which the reader opens with
+     its own key and shuts with its own close; shutting it once the original
+     has been heard is that stage's "next". Nothing opens the window for them. */
+  const mobileOnboardingStep = isMobile ? onboardingStep : null;
+  const mobileOnboardingPhase = mobileOnboardingStep === null
+    ? null
+    : mobilePhaseOf(onboarding.progress, { codeWindowOpen: codeSheetOpen });
+  /* The guided reply's code widget, opened out at one step and shut again by
+     moving to the next: remembered with the step it was opened on. */
+  const [mobileChangeOpenAt, setMobileChangeOpenAt] = useState<OnboardingStep | null>(null);
+  const mobileChangeOpen = mobileOnboardingStep !== null && mobileChangeOpenAt === mobileOnboardingStep;
+  const setMobileChangeOpen = useCallback((open: boolean) => {
+    setMobileChangeOpenAt(open ? mobileOnboardingStep : null);
+  }, [mobileOnboardingStep]);
+
+  const onboardingProgress = onboarding.progress;
+  const onboardingNext = onboarding.next;
+  const onboardingPrev = onboarding.prev;
+  useEffect(() => {
+    onCodeSheetClosedRef.current = () => {
+      if (mobileOnboardingStep !== null && advancesOnWindowClose(onboardingProgress)) onboardingNext();
+    };
+  }, [mobileOnboardingStep, onboardingProgress, onboardingNext]);
+
+  // Past the first stage the conversation is where the guide points, so a
+  // window left open from it is put away once, on arriving at the step. One
+  // the reader opens later is theirs; the guide waits for it to shut.
+  useEffect(() => {
+    if (mobileOnboardingStep === null || mobileOnboardingStep === 'listen-original') return;
+    setCodeSheetOpen(false);
+  }, [mobileOnboardingStep, setCodeSheetOpen]);
+
+  // A stored record at the close without the new version heard goes back for it.
+  useEffect(() => {
+    if (mobileOnboardingStep !== null && needsMobileRecovery(onboardingProgress)) onboardingPrev();
+  }, [mobileOnboardingStep, onboardingProgress, onboardingPrev]);
+
+  // Crossing the phone breakpoint mid-guide (a rotation, a resized pane)
+  // silences a listen under way and keeps the step: the other layout picks up
+  // the same step with its own controls, and the reader plays again there.
+  const interruptOnboardingListening = onboarding.interruptListening;
+  const onboardingOnStep = onboardingStep !== null;
+  const lastOnboardingLayoutRef = useRef(isMobile);
+  useEffect(() => {
+    if (lastOnboardingLayoutRef.current === isMobile) return;
+    lastOnboardingLayoutRef.current = isMobile;
+    if (onboardingOnStep) interruptOnboardingListening();
+  }, [isMobile, onboardingOnStep, interruptOnboardingListening]);
+
+  const mobileReplyId = mobileOnboardingStep !== null ? onboarding.replyMessageId : null;
+  const mobileListenReady = onboarding.listen.status === 'ready';
+  const guidedReply = useMemo((): GuidedReply | undefined => {
+    if (!mobileReplyId || mobileOnboardingStep === null) return undefined;
+    if (mobileOnboardingStep === 'listen-original' || mobileOnboardingStep === 'send-instruction') return undefined;
+    return {
+      id: mobileReplyId,
+      expanded: mobileChangeOpen,
+      onExpandedChange: setMobileChangeOpen,
+      // A thumb's reach round the play key while the guide has the reader
+      // press it; at the close, opened out to be read, nothing of the kind.
+      enlarged: mobileOnboardingStep === 'read-reply' || mobileOnboardingStep === 'listen-adapted',
+      playDisabled: mobileOnboardingStep === 'listen-adapted' && !mobileListenReady,
+      // Only on the step that times the listen: there every play is stopped by
+      // the guide at 5 seconds. Reading the reply, nothing would stop it.
+      stopDisabled: mobileOnboardingStep === 'listen-adapted',
+    };
+  }, [mobileReplyId, mobileOnboardingStep, mobileChangeOpen, setMobileChangeOpen, mobileListenReady]);
+
+  /* The practice reply's own play key, on a phone. That reply is the latest
+     take and the draft both, so it is played as the draft is — no preview of
+     an older version, just the piece from the top — which is what the guide's
+     listen watches for. Any other widget plays the way it always does. */
+  const handleMobilePlaySegment = useCallback((segmentId: string, code: string) => {
+    if (mobileReplyId !== null && segmentId === mobileReplyId && code === (current?.code ?? '')) {
+      exitPreview();
+      setSoundingSegment({ id: segmentId, code });
+      void strudel.play(code);
+      return;
+    }
+    handlePlaySegment(segmentId, code);
+  }, [mobileReplyId, current?.code, exitPreview, strudel, handlePlaySegment]);
+
+  /* Where the added layer sits in the editor, by its marker — never a line number. */
+  const addedLayerRange = useMemo(() => {
+    if (isMobile || onboardingStep !== 'view-change') return null;
+    const layer = parseScore(strudel.code).layers.find((candidate) => candidate.name === INTRO_PIANO_CHANGE.addedLayer);
+    if (!layer) return null;
+    const slot = strudel.code.slice(layer.rawStart, layer.rawEnd);
+    return {
+      from: layer.rawStart + (slot.length - slot.trimStart().length),
+      to: layer.rawStart + slot.trimEnd().length,
+    };
+  }, [isMobile, onboardingStep, strudel.code]);
+
+  const listenReady = onboarding.listen.status === 'ready';
+  const onboardingSending = onboarding.sending;
+  const onboardingReplyId = onboarding.replyMessageId;
+  const getCodeRangeRect = strudel.getCodeRangeRect;
+  const scrollCodeRangeIntoView = strudel.scrollCodeRangeIntoView;
+  const onboardingTarget = useMemo((): TourTarget | null => {
+    switch (onboardingStep) {
+      case 'listen-original':
+      case 'listen-adapted':
+        return {
+          key: `${onboardingStep}:play`,
+          resolve: () => visibleRectOf('[data-onboarding-target="play"]'),
+          interactive: listenReady,
+          placement: onboardingStep === 'listen-original' ? 'below-start' : 'above-start',
+        };
+      case 'send-instruction':
+        return {
+          key: 'composer',
+          resolve: () => visibleRectOf('[data-onboarding-target="composer"]'),
+          interactive: !onboardingSending,
+          // The field's own edge, not a margin round it.
+          padding: 0,
+          placement: 'above-start',
+          matchWidth: true,
+        };
+      case 'read-reply': {
+        if (!onboardingReplyId) return null;
+        const selector = `[data-message-id="${onboardingReplyId}"]`;
+        return {
+          key: `reply:${onboardingReplyId}`,
+          resolve: () => visibleRectOf(selector),
+          // Keep the card continuous with the send step. Returning to the
+          // fixed desktop width here can make it choose the opposite side of
+          // the reply as well as visibly growing between the two steps.
+          resolveCardWidth: () => visibleRectOf('[data-onboarding-target="composer"]')?.width ?? null,
+          interactive: false,
+          reveal: () => document.querySelector(selector)?.scrollIntoView({ block: 'nearest' }),
+        };
+      }
+      case 'view-change': {
+        const range = addedLayerRange;
+        return {
+          key: `layer:${range?.from ?? 'none'}`,
+          resolve: () => (range ? getCodeRangeRect(range.from, range.to) : null)
+            ?? visibleRectOf('[data-onboarding-target="code"]'),
+          interactive: false,
+          reveal: () => { if (range) scrollCodeRangeIntoView(range.from, range.to); },
+        };
+      }
+      default:
+        return null;
+    }
+  }, [onboardingStep, listenReady, onboardingSending, onboardingReplyId, addedLayerRange, getCodeRangeRect, scrollCodeRangeIntoView]);
+
+  const onboardingPresetLock = onboardingStep === 'send-instruction'
+    ? {
+        text: onboarding.presetText,
+        busy: onboarding.sending,
+        onSend: () => { void onboarding.sendPreset(); },
+      }
+    : undefined;
+
   /* The phone's lists are reached through a stack this can unwind under the
      reader — a row deleted from the drawer must not leave a detail view open
      on it — so the navigation this delete belongs to is noted before the
@@ -1794,6 +2109,7 @@ export default function App() {
     setFavoriteNotice(null);
     if (kind === 'kept') {
       setFavoritesFocus({ id: favorite.id });
+      setFavoritesVisited(true);
       handlePrimaryNavSelect('favorites');
       return;
     }
@@ -1860,92 +2176,101 @@ export default function App() {
 
   /* Wired once and hung in whichever shell is up, the same as the collection
      below it: it is one page that works out for itself what a phone does with
-     a shelf. */
-  const featuredPage = (
-    <FeaturedPage
-      pieces={FEATURED_PIECES}
-      currentPiece={featuredPiece}
-      playingId={featuredPreview.playingId}
-      pausedId={featuredPreview.pausedId}
-      engineReady={strudel.engineReady}
-      opening={openingFeatured}
-      /* Hidden rather than unmounted when you leave, so the page has to be
-         told when it is the one being looked at. On a phone the shelf leans
-         with the device, and a page behind another page has no business
-         answering the device. */
-      active={onFeaturedPage}
-      onPlay={handleFeaturedPlay}
-      onSelect={handleFeaturedSelect}
-      onStop={featuredPreview.stop}
-      onPause={featuredPreview.pause}
-      onOpenInStudio={(piece) => void handleOpenFeaturedInStudio(piece)}
-      onOpenChange={setOpenFeaturedPiece}
-      /* Mobile only: on a phone this page draws its own top bar, and the key
-         in it that reaches the rest of the app opens the shell's drawer. */
-      onOpenNav={() => setNavDrawerOpen(true)}
-    />
-  );
+     a shelf.
 
-  const favoritesPage = (
-    <FavoritesPage
-      // Hidden rather than unmounted when you leave, so the page has
-      // to be told when it is the one being looked at.
-      active={primaryNavItem === 'favorites'}
-      conversations={undefined}
-      summaries={auth.user ? cloudFavoriteConversations : undefined}
-      searchQuery={auth.user ? favoritesSearch.query : undefined}
-      onSearchQueryChange={auth.user ? favoritesSearch.setQuery : undefined}
-      selectedId={auth.user ? selectedFavoriteId : undefined}
-      detail={auth.user ? selectedAccountFavorite : undefined}
-      focus={favoritesFocus}
-      /* Both are the empty page's business only, the way the history
-         panel's are. Rows on screen — last visit's or this one's — are
-         the page; a request still out behind them is not a spinner,
-         and one that failed behind them is not an apology in place of
-         what the device already has. Saying otherwise would also hold
-         the first entry shut, since a page that is loading or broken
-         has nothing to open. */
-      isLoading={Boolean(
-        auth.user
-        && cloudFavoriteConversations.length === 0
-        && (!cloudLibraryEnabled || displayedFavoriteCollection.initialStatus === 'loading'),
-      )}
-      error={auth.user && cloudFavoriteConversations.length === 0
-        ? displayedFavoriteCollection.initialError
-        : null}
-      onRetry={auth.user ? displayedFavoriteCollection.retryInitial : undefined}
-      detailLoading={Boolean(auth.user && selectedAccountFavoriteSummary && !selectedAccountFavorite && !selectedAccountFavoriteError)}
-      detailError={auth.user ? selectedAccountFavoriteError : null}
-      onRetryDetail={auth.user ? retrySelectedFavorite : undefined}
-      hasMore={auth.user ? displayedFavoriteCollection.nextCursor !== null : false}
-      isLoadingMore={Boolean(auth.user && displayedFavoriteCollection.moreStatus === 'loading')}
-      loadMoreError={auth.user ? displayedFavoriteCollection.moreError : null}
-      onLoadMore={auth.user
-        ? (favoritesSearch.active ? favoritesSearch.loadMore : loadMoreCloudFavorites)
-        : undefined}
-      onRetryLoadMore={auth.user ? displayedFavoriteCollection.retryMore : undefined}
-      /* Withheld until the library can actually answer: the page opens
-         its first entry the moment one is on screen, and an open that
-         throws because the library is still coming up is an open the
-         page counts as done. Handing it down when the library is ready
-         is what asks for that first entry again. */
-      onSelect={auth.user && cloudLibraryEnabled ? handleSelectFavorite : undefined}
-      isPlaying={strudel.isPlaying}
-      playingCode={strudel.code}
-      onPlayCode={auth.user ? (code) => { void strudel.play(code); } : undefined}
-      onStopCode={auth.user ? strudel.stop : undefined}
-      /* The phone asks before it acts and so has nothing left to report;
-         the desktop reports and holds the undo open. Two handlers, one
-         act — see handleReleaseFavorite. */
-      onUnfavorite={auth.user ? (isMobile ? handleReleaseFavorite : handleUnfavorite) : undefined}
-      onDelete={auth.user ? handleDeleteFavorite : undefined}
-      onOpenInStudio={auth.user ? handleOpenFavoriteInStudio : undefined}
-      /* Mobile only: on a phone this page draws its own top bar, and the key
-         in it that reaches the rest of the app opens the shell's drawer. */
-      onOpenNav={() => setNavDrawerOpen(true)}
-      onCodeWindowChange={setFavoritesCodeOpen}
-    />
-  );
+     First-visit gating: the page's chunk and mount both wait for its first
+     navigation (or the business action that opens it). Afterwards the original
+     hidden-mount behaviour returns — the shell below keeps rendering it, with
+     `active` pausing tilt/animation/background work. */
+  const featuredPage = featuredVisited ? (
+    <FeatureLoadBoundary fallback={<LazyOverlayFallback />}>
+      <LazyFeaturedPage
+        pieces={FEATURED_PIECES}
+        currentPiece={featuredPiece}
+        playingId={featuredPreview.playingId}
+        pausedId={featuredPreview.pausedId}
+        engineReady={strudel.engineReady}
+        opening={openingFeatured}
+        /* Hidden rather than unmounted when you leave, so the page has to be
+           told when it is the one being looked at. On a phone the shelf leans
+           with the device, and a page behind another page has no business
+           answering the device. */
+        active={onFeaturedPage}
+        onPlay={handleFeaturedPlay}
+        onSelect={handleFeaturedSelect}
+        onStop={featuredPreview.stop}
+        onPause={featuredPreview.pause}
+        onOpenInStudio={(piece) => void handleOpenFeaturedInStudio(piece)}
+        onOpenChange={setOpenFeaturedPiece}
+        /* Mobile only: on a phone this page draws its own top bar, and the key
+           in it that reaches the rest of the app opens the shell's drawer. */
+        onOpenNav={() => setNavDrawerOpen(true)}
+      />
+    </FeatureLoadBoundary>
+  ) : null;
+
+  const favoritesPage = favoritesVisited ? (
+    <FeatureLoadBoundary fallback={<LazyOverlayFallback />}>
+      <LazyFavoritesPage
+        // Hidden rather than unmounted when you leave, so the page has
+        // to be told when it is the one being looked at.
+        active={primaryNavItem === 'favorites'}
+        conversations={undefined}
+        summaries={auth.user ? cloudFavoriteConversations : undefined}
+        searchQuery={auth.user ? favoritesSearch.query : undefined}
+        onSearchQueryChange={auth.user ? favoritesSearch.setQuery : undefined}
+        selectedId={auth.user ? selectedFavoriteId : undefined}
+        detail={auth.user ? selectedAccountFavorite : undefined}
+        focus={favoritesFocus}
+        /* Both are the empty page's business only, the way the history
+           panel's are. Rows on screen — last visit's or this one's — are
+           the page; a request still out behind them is not a spinner,
+           and one that failed behind them is not an apology in place of
+           what the device already has. Saying otherwise would also hold
+           the first entry shut, since a page that is loading or broken
+           has nothing to open. */
+        isLoading={Boolean(
+          auth.user
+          && cloudFavoriteConversations.length === 0
+          && (!cloudLibraryEnabled || displayedFavoriteCollection.initialStatus === 'loading'),
+        )}
+        error={auth.user && cloudFavoriteConversations.length === 0
+          ? displayedFavoriteCollection.initialError
+          : null}
+        onRetry={auth.user ? displayedFavoriteCollection.retryInitial : undefined}
+        detailLoading={Boolean(auth.user && selectedAccountFavoriteSummary && !selectedAccountFavorite && !selectedAccountFavoriteError)}
+        detailError={auth.user ? selectedAccountFavoriteError : null}
+        onRetryDetail={auth.user ? retrySelectedFavorite : undefined}
+        hasMore={auth.user ? displayedFavoriteCollection.nextCursor !== null : false}
+        isLoadingMore={Boolean(auth.user && displayedFavoriteCollection.moreStatus === 'loading')}
+        loadMoreError={auth.user ? displayedFavoriteCollection.moreError : null}
+        onLoadMore={auth.user
+          ? (favoritesSearch.active ? favoritesSearch.loadMore : loadMoreCloudFavorites)
+          : undefined}
+        onRetryLoadMore={auth.user ? displayedFavoriteCollection.retryMore : undefined}
+        /* Withheld until the library can actually answer: the page opens
+           its first entry the moment one is on screen, and an open that
+           throws because the library is still coming up is an open the
+           page counts as done. Handing it down when the library is ready
+           is what asks for that first entry again. */
+        onSelect={auth.user && cloudLibraryEnabled ? handleSelectFavorite : undefined}
+        isPlaying={strudel.isPlaying}
+        playingCode={strudel.code}
+        onPlayCode={auth.user ? (code) => { void strudel.play(code); } : undefined}
+        onStopCode={auth.user ? strudel.stop : undefined}
+        /* The phone asks before it acts and so has nothing left to report;
+           the desktop reports and holds the undo open. Two handlers, one
+           act — see handleReleaseFavorite. */
+        onUnfavorite={auth.user ? (isMobile ? handleReleaseFavorite : handleUnfavorite) : undefined}
+        onDelete={auth.user ? handleDeleteFavorite : undefined}
+        onOpenInStudio={auth.user ? handleOpenFavoriteInStudio : undefined}
+        /* Mobile only: on a phone this page draws its own top bar, and the key
+           in it that reaches the rest of the app opens the shell's drawer. */
+        onOpenNav={() => setNavDrawerOpen(true)}
+        onCodeWindowChange={setFavoritesCodeOpen}
+      />
+    </FeatureLoadBoundary>
+  ) : null;
 
   /* Whether there is anything in the editor to play.
    *
@@ -1975,11 +2300,13 @@ export default function App() {
          reading. */
       <div className="flex flex-col bg-conversation-surface overflow-hidden" style={{ height: '100%', width: '100%' }}>
         {apiKeyModalOpen && (
-          <ApiKeyModal
-            onClose={closeApiKeyModal}
-            onSaved={resetClient}
-            required={!hasApiKeyConfigured()}
-          />
+          <FeatureLoadBoundary fallback={null}>
+            <LazyApiKeyModal
+              onClose={closeApiKeyModal}
+              onSaved={resetClient}
+              required={!hasApiKeyConfigured()}
+            />
+          </FeatureLoadBoundary>
         )}
 
         {/* ── Studio ── */}
@@ -2002,6 +2329,7 @@ export default function App() {
           >
             <button
               onClick={() => setNavDrawerOpen(true)}
+              data-onboarding-entry="more"
               className="w-9 h-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
               aria-label={t('navMore')}
               aria-expanded={navDrawerOpen}
@@ -2024,11 +2352,14 @@ export default function App() {
               <span style={{ fontFamily: "'Baskervville', serif", fontStyle: 'italic' }}>odde</span>
               <span style={{ fontFamily: "'42dot Sans', sans-serif", fontWeight: 800 }}>Nova</span>
             </h1>
+            {/* 44px to a thumb, 36px to the row: the negative margin gives
+                back what the reach adds, so the bar lays out as it did. */}
             <button
               onClick={() => setCodeSheetOpen(true)}
               data-testid="mobile-code-key"
+              data-onboarding-target="code-key"
               data-has-code={hasPlayableCode || undefined}
-              className={`w-9 h-9 flex items-center justify-center transition-colors ${
+              className={`-m-1 w-11 h-11 flex items-center justify-center transition-colors ${
                 hasPlayableCode
                   ? 'text-brand-accent'
                   : 'text-text-secondary hover:text-text-primary'
@@ -2067,17 +2398,22 @@ export default function App() {
                  (rendered from Sidebar) hands none of this down: the window is
                  already open beside it. */
               isPlaying={strudel.isPlaying}
+              engineReady={strudel.engineReady}
+              isStarting={strudel.isStarting}
+              onPlayCode={handlePlayCodeOnly}
+              onPauseCode={strudel.pause}
               /* What is sounding, not what is in the buffer. The studio's
                  window is editable while a take plays, so the two part company
                  the moment anything is typed in it — and a widget that
                  answered to the buffer would offer to stop a take the reader
                  has already edited away from. */
               playingCode={strudel.activeCode}
-              onPlaySegment={handlePlaySegment}
+              onPlaySegment={handleMobilePlaySegment}
               onStopCode={strudel.stop}
               draftCode={current?.code ?? ''}
               pressedSegmentId={soundingSegment?.id ?? null}
               pressedSegmentCode={soundingSegment?.code ?? null}
+              guidedReply={guidedReply}
             />
           </div>
 
@@ -2086,6 +2422,7 @@ export default function App() {
               belong to the code window now, and a transport left down here would
               be a second place to press play with no code in sight. */}
           <div
+            data-mobile-bottom-bar
             className="relative shrink-0 px-3 pt-3"
             style={{
               paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
@@ -2101,6 +2438,7 @@ export default function App() {
                 same as desktop — mobile adopts one by focusing the field rather
                 than with Tab, so no separate chip row. */}
             <ChatInput
+              presetLock={onboardingPresetLock}
               isLoading={isLoading}
               engineReady={strudel.engineReady}
               engineStatus={strudel.engineStatus}
@@ -2160,9 +2498,10 @@ export default function App() {
           inert={!codeSheetOpen}
         >
           <div
+            data-testid="mobile-code-sheet-scrim"
             className="code-window-scrim absolute inset-0 backdrop-blur-[6px] transition-opacity duration-[240ms] ease-out motion-reduce:transition-none"
             style={{ opacity: codeSheetOpen ? 1 : 0 }}
-            onClick={closeCodeSheet}
+            onClick={dismissCodeSheet}
           />
           <div
             role="dialog"
@@ -2195,8 +2534,12 @@ export default function App() {
                 two are different kinds of act — one works on the piece, the
                 other leaves — and putting them at opposite ends means a thumb
                 reaching for one is nowhere near the other. */}
-            <div className="absolute -top-11 left-0 right-0 flex items-center justify-between">
-              <div className="flex items-center gap-1">
+            <div
+              data-testid="mobile-code-sheet-top-gap"
+              className="absolute -top-11 left-0 right-0 flex items-center justify-between"
+              onClick={dismissCodeSheet}
+            >
+              <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
                 <button
                   type="button"
                   onClick={() => setMobileStudioView((view) => view === 'code' ? 'tracks' : 'code')}
@@ -2228,13 +2571,16 @@ export default function App() {
                   buttonClassName="code-window-action flex h-9 w-9 items-center justify-center"
                 />
               </div>
-              {/* The backdrop still closes the window; this is the same act
-                  given a target, for a reach that does not want to find the
-                  one strip of page the window is not covering. */}
+              {/* Unlike the backdrop's light dismissal, this explicit close
+                  key also stops the take that belongs to the window. */}
               <button
                 type="button"
-                onClick={closeCodeSheet}
-                className="code-window-action flex h-9 w-9 items-center justify-center"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeCodeSheet();
+                }}
+                data-onboarding-target="code-close"
+                className="code-window-action -m-1 flex h-11 w-11 items-center justify-center"
                 aria-label={t('close')}
                 title={t('close')}
               >
@@ -2269,6 +2615,7 @@ export default function App() {
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 isPaused={strudel.isPaused}
+                isStarting={strudel.isStarting}
                 engineReady={strudel.engineReady}
                 accentColor={strudel.accentColor}
                 session={sessions.currentSession}
@@ -2293,6 +2640,9 @@ export default function App() {
                 onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
                 showSyncStatus={showSessionSyncStatus}
+                guidePlay={mobileOnboardingPhase === 'play-in-window'
+                  ? { playDisabled: !mobileListenReady }
+                  : undefined}
               />
             </div>
             <div data-testid="mobile-track-pane" hidden={mobileStudioView !== 'tracks'} className="flex-1 min-h-0">
@@ -2368,6 +2718,7 @@ export default function App() {
           onOpenAccount={() => setAccountOpen(true)}
           current={onFavoritesPage ? 'favorites' : onFeaturedPage ? 'featured' : 'home'}
           onOpenFavorites={() => handlePrimaryNavSelect('favorites')}
+          onOpenOnboarding={handleOpenOnboarding}
           /* The shelf's sleeves lean with the device, and on iOS the readings
              have to be asked for from inside a real gesture. This press is that
              gesture — the row that opens the page — and the ask is started
@@ -2437,11 +2788,13 @@ export default function App() {
       style={{ cursor: isDragging === 'h' ? 'col-resize' : isDragging === 'v' ? 'row-resize' : undefined, userSelect: isDragging ? 'none' : undefined }}
     >
       {apiKeyModalOpen && (
-        <ApiKeyModal
-          onClose={closeApiKeyModal}
-          onSaved={resetClient}
-          required={!hasApiKeyConfigured()}
-        />
+        <FeatureLoadBoundary fallback={null}>
+          <LazyApiKeyModal
+            onClose={closeApiKeyModal}
+            onSaved={resetClient}
+            required={!hasApiKeyConfigured()}
+          />
+        </FeatureLoadBoundary>
       )}
       {accountOverlays}
       <PrimaryNav
@@ -2449,6 +2802,8 @@ export default function App() {
         onSelect={handlePrimaryNavSelect}
         featuredPieceOpen={featuredPieceOpen}
         accountInitials={accountInitials(auth.user)}
+        onOpenOnboarding={handleOpenOnboarding}
+        onboardingExitHintOpen={onboarding.exitHintVisible && !isMobile}
       />
 
       <>
@@ -2502,21 +2857,29 @@ export default function App() {
               onRollback={handleRollback}
               onBranch={sessions.branchFromMessage}
               onRetry={handleRetry}
+              isStarting={strudel.isStarting}
               isPlaying={strudel.isPlaying}
+              onPlayCode={handlePlayCodeOnly}
+              onPauseCode={strudel.pause}
               playingCode={strudel.activeCode}
               onPlaySegment={handlePlaySegment}
               onStopCode={strudel.stop}
               draftCode={current?.code ?? ''}
               pressedSegmentId={soundingSegment?.id ?? null}
               pressedSegmentCode={soundingSegment?.code ?? null}
+              presetLock={onboardingPresetLock}
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>
-            <SettingsSidebar
-              selectedSection={settingsSection}
-              onSelect={setSettingsSection}
-              hints={settingsHints}
-            />
+            {settingsVisited && (
+              <FeatureLoadBoundary fallback={<LazyOverlayFallback />}>
+                <LazySettingsSidebar
+                  selectedSection={settingsSection}
+                  onSelect={setSettingsSection}
+                  hints={settingsHints}
+                />
+              </FeatureLoadBoundary>
+            )}
           </div>
         </div>
 
@@ -2566,6 +2929,7 @@ export default function App() {
                 error={strudel.error}
                 isPlaying={strudel.isPlaying}
                 isPaused={strudel.isPaused}
+                isStarting={strudel.isStarting}
                 engineReady={strudel.engineReady}
                 accentColor={strudel.accentColor}
                 session={sessions.currentSession}
@@ -2644,19 +3008,23 @@ export default function App() {
             {favoritesPage}
           </div>
           <div className={primaryNavItem === 'settings' ? 'flex h-full min-h-0' : 'hidden'}>
-            {settingsSection === 'model' ? (
-              <ModelSettingsPanel
-                activeProvider={modelSettings.activeProvider}
-                draft={modelSettings.draft}
-                isDirty={modelSettings.selectedIsDirty}
-                onSave={modelSettings.saveSelectedProvider}
-                onSelectProvider={modelSettings.selectProvider}
-                onUpdate={(patch) => modelSettings.updateDraft(modelSettings.selectedProvider, patch)}
-                provider={modelSettings.selectedProvider}
-                saveStatus={modelSettings.saveStatus}
-              />
-            ) : (
-              <AppearanceSettingsPanel />
+            {settingsVisited && (
+              <FeatureLoadBoundary fallback={<LazyOverlayFallback />}>
+                {settingsSection === 'model' ? (
+                  <LazyModelSettingsPanel
+                    activeProvider={modelSettings.activeProvider}
+                    draft={modelSettings.draft}
+                    isDirty={modelSettings.selectedIsDirty}
+                    onSave={modelSettings.saveSelectedProvider}
+                    onSelectProvider={modelSettings.selectProvider}
+                    onUpdate={(patch) => modelSettings.updateDraft(modelSettings.selectedProvider, patch)}
+                    provider={modelSettings.selectedProvider}
+                    saveStatus={modelSettings.saveStatus}
+                  />
+                ) : (
+                  <LazyAppearanceSettingsPanel />
+                )}
+              </FeatureLoadBoundary>
             )}
           </div>
         </main>
@@ -2698,16 +3066,37 @@ export default function App() {
       {/* Outside both layouts: it is about a conversation rather than about a
           page, and it blurs whichever one you were on when you moved it. */}
       {favoriteNotice && (
-        <FavoriteActionDialog
-          key={favoriteNotice.id}
-          kind={favoriteNotice.kind}
-          title={conversationTitle(favoriteNotice.favorite)}
-          /* The phone gets the line and nothing else: it asked before it acted,
-             so the bar has nothing left to offer. See `reportOnly`. */
-          reportOnly={isMobile}
-          onView={isMobile || favoriteNotice.kind === 'deleted' ? undefined : viewFavoriteNotice}
-          onUndo={undoFavoriteNotice}
-          onClose={dismissFavoriteNotice}
+        <FeatureLoadBoundary fallback={null}>
+          <LazyFavoriteActionDialog
+            key={favoriteNotice.id}
+            kind={favoriteNotice.kind}
+            title={conversationTitle(favoriteNotice.favorite)}
+            /* The phone gets the line and nothing else: it asked before it acted,
+               so the bar has nothing left to offer. See `reportOnly`. */
+            reportOnly={isMobile}
+            onView={isMobile || favoriteNotice.kind === 'deleted' ? undefined : viewFavoriteNotice}
+            onUndo={undoFavoriteNotice}
+            onClose={dismissFavoriteNotice}
+          />
+        </FeatureLoadBoundary>
+      )}
+      {/* Over both layouts: it points at whichever one is showing. */}
+      {isMobile ? (
+        <MobileOnboardingTour
+          onboarding={onboarding}
+          codeWindowOpen={codeSheetOpen}
+          suspended={navDrawerOpen}
+          changeOpen={mobileChangeOpen}
+          onChangeOpenChange={setMobileChangeOpen}
+        />
+      ) : (
+        <OnboardingTour onboarding={onboarding} target={onboardingTarget} />
+      )}
+      {onboarding.exitHintVisible && (
+        <OnboardingExitHint
+          open
+          mobile={isMobile}
+          onClose={onboarding.dismissExitHint}
         />
       )}
     </>

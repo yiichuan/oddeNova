@@ -8,6 +8,7 @@ import { PRIVACY_URL } from '../legal/PrivacyPolicyLink';
 import { isWideInitials } from '../../lib/account-identity';
 import {
   BookOpenIcon,
+  CompassIcon,
   MessageCirclePlusIcon,
   MoonIcon,
   SearchIcon,
@@ -220,6 +221,8 @@ interface MobileNavDrawerProps {
   onOpenFavorites?: () => void;
   /** Go to the shelf. Absent while there is no page to go to. */
   onOpenFeatured?: () => void;
+  /** "More → Getting started": reopens the first-run guide. */
+  onOpenOnboarding?: () => void;
   history: MobileNavDrawerHistory;
 }
 
@@ -271,11 +274,13 @@ export default function MobileNavDrawer({
   current = 'home',
   onOpenFavorites,
   onOpenFeatured,
+  onOpenOnboarding,
   history,
 }: MobileNavDrawerProps) {
   const theme = useResolvedTheme();
   const swipeDismiss = useSwipeDismiss('left', onClose);
   const panelRef = useRef<HTMLDivElement>(null);
+  const historyScrollRef = useRef<HTMLDivElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   /* Search is a mode the whole panel goes into rather than a field added to
      it. The conversation list is the only thing in the drawer there is any
@@ -556,8 +561,21 @@ export default function MobileNavDrawer({
               section
               expanded={moreOpen}
             />
-            <DrawerSection open={moreOpen} maxHeight={176}>
+            <DrawerSection open={moreOpen} maxHeight={onOpenOnboarding ? 220 : 176}>
               <div className="px-2">
+                {onOpenOnboarding && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenOnboarding();
+                    }}
+                    className={`${SUB_ROW_CLASS} ${ROW_TEXT}`}
+                  >
+                    <CompassIcon size={16} className="shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{t('navOnboarding')}</span>
+                  </button>
+                )}
                 <a
                   href={GITHUB_URL}
                   target="_blank"
@@ -615,8 +633,10 @@ export default function MobileNavDrawer({
               conversation comes to rest inside the softened band and can never
               be scrolled clear of it. */}
           <DrawerFillSection open={searchOpen || historyOpen}>
-            <div className="h-full overflow-y-auto px-2 pb-12 no-scrollbar">
+            <div ref={historyScrollRef} className="h-full overflow-y-auto px-2 pb-12 no-scrollbar">
               <HistoryPanel
+                scrollContainerRef={historyScrollRef}
+                isOpen={open && (searchOpen || historyOpen)}
                 sessions={history.sessions}
                 currentId={history.currentId}
                 isLoading={history.isLoading}

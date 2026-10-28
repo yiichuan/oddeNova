@@ -807,6 +807,36 @@ describe('App session sync boundaries', () => {
     });
   }
 
+  /* The favorites workspace is a lazy chunk: once its gate opens, the page
+     arrives on a later task. Waiting for its own root keeps the real loading
+     boundary — no synchronous mock of the page. Each round hands React one
+     scheduler turn (a macrotask under real timers, one tick under fake) so
+     the resolved module's retry actually renders. */
+  async function awaitFavoritesShell(): Promise<void> {
+    // Coverage instruments this dynamic import while other test files run too;
+    // 100 scheduler turns can expire before the page module settles in CI.
+    for (let i = 0; i < 1_000; i++) {
+      if (container.querySelector('[data-testid="favorites-page"]')) return;
+      await act(async () => {
+        if (vi.isFakeTimers()) {
+          vi.advanceTimersByTime(0);
+          await Promise.resolve();
+        } else {
+          await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+        }
+      });
+    }
+    throw new Error('The lazy favorites page never mounted');
+  }
+
+  /* Desktop entry (the nav rail). */
+  async function goToFavorites(): Promise<void> {
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFavorites')}"]`)?.click();
+    });
+    await awaitFavoritesShell();
+  }
+
   it('opens the account modal from desktop navigation without changing the selected workspace', async () => {
     mocks.isMobile = false;
     await renderApp();
@@ -915,11 +945,7 @@ describe('App session sync boundaries', () => {
     mocks.isMobile = false;
     await renderApp();
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFavorites')}"]`)?.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await goToFavorites();
     const remove = container.querySelector<HTMLButtonElement>('[data-favorites-delete]');
     expect(remove).not.toBeNull();
 
@@ -975,11 +1001,7 @@ describe('App session sync boundaries', () => {
     mocks.isMobile = false;
     await renderApp();
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFavorites')}"]`)?.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await goToFavorites();
     expect(mocks.cloudLibrary.openFavorite).toHaveBeenCalledWith(kept[0]);
 
     act(() => {
@@ -1127,6 +1149,62 @@ describe('App session sync boundaries', () => {
     expect(mocks.cloudLibrary.refreshSearches).toHaveBeenCalledOnce();
   });
 
+  /* The gallery pages are lazy and gated on their first visit: unseen, they
+     mount nothing at all (a hidden container is not enough — it would still
+     pull the chunk); visited, they load for real and stay mounted. */
+  describe('lazy page first-visit mounting', () => {
+    const settle = async (rounds = 12) => {
+      for (let i = 0; i < rounds; i++) {
+        await act(async () => {
+          await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+        });
+      }
+    };
+
+    it('mounts nothing for unseen gallery pages on desktop', async () => {
+      mocks.isMobile = false;
+      await renderApp();
+      await settle();
+      expect(container.querySelector('[data-testid="favorites-page"]')).toBeNull();
+      expect(container.querySelector('[data-testid="featured-page"]')).toBeNull();
+      // Nothing about the studio changed: the code panel is still up.
+      expect(mocks.codePanelProps).not.toBeNull();
+    });
+
+    it('mounts the favorites page only after its first navigation, then keeps it', async () => {
+      mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+      mocks.cloudLibrary.favorites.items = [{ id: 'fav-1', title: 'Kept', updatedAt: 10, favoritedAt: 5 }];
+      mocks.cloudLibrary.favorites.initialStatus = 'ready';
+      mocks.isMobile = false;
+      await renderApp();
+
+      // Still unseen: even after the scheduler turns, nothing arrives.
+      await settle();
+      expect(container.querySelector('[data-testid="favorites-page"]')).toBeNull();
+
+      await goToFavorites();
+      expect(container.querySelector('[data-testid="favorites-page"]')).not.toBeNull();
+
+      // Leaving for the studio hides the page rather than unmounting it.
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navHome')}"]`)?.click();
+      });
+      await act(async () => { await Promise.resolve(); });
+      expect(container.innerHTML).toContain('data-testid="favorites-page"');
+      // Hidden by the shell, not gone — closest() climbs past the boundary's wrapper spans.
+      expect(container.querySelector('[data-testid="favorites-page"]')?.closest('.hidden')).not.toBeNull();
+    });
+
+    it('mounts nothing on mobile for unseen gallery pages too', async () => {
+      mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
+      mocks.cloudLibrary.favorites.items = [{ id: 'fav-m1', title: 'Kept mobile', updatedAt: 10, favoritedAt: 5 }];
+      mocks.cloudLibrary.favorites.initialStatus = 'ready';
+      await renderApp();
+      await settle();
+      expect(container.querySelector('[data-testid="favorites-page"]')).toBeNull();
+    });
+  });
+
   it('shows the undo and view notice after favoriting an account history session', async () => {
     vi.useFakeTimers();
     mocks.auth.user = { id: 'user-1', email: 'listener@example.com' };
@@ -1190,11 +1268,7 @@ describe('App session sync boundaries', () => {
     mocks.isMobile = false;
     await renderApp();
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>(`button[aria-label="${t('navFavorites')}"]`)?.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await goToFavorites();
     const unfavorite = container.querySelector<HTMLButtonElement>('[data-favorites-unfavorite]');
     expect(unfavorite).not.toBeNull();
 
@@ -1276,6 +1350,8 @@ describe('App session sync boundaries', () => {
         await Promise.resolve();
         await Promise.resolve();
       });
+      // Only the collections arrive lazily; the studio is eager.
+      if (label === t('navFavorites')) await awaitFavoritesShell();
     };
 
     /** Signed in, one favorite already kept, one history session to keep. */
@@ -1827,6 +1903,7 @@ describe('App session sync boundaries', () => {
       mocks.strudel.code = edit;
       await renderApp();
       mocks.sessions.currentSession = { ...mocks.session, code: edit };
+      await renderApp();
       mocks.sessions.setManualCode.mockClear();
       mocks.strudel.setCode.mockClear();
       mocks.strudel.setReadOnly.mockClear();
@@ -1888,6 +1965,17 @@ describe('App session sync boundaries', () => {
 
       expect(mocks.strudel.setCode).toHaveBeenCalledWith(edit);
       expect(mocks.codePanelProps?.previewing).toBe(false);
+    });
+
+    it('plays the latest take as the draft when nothing has been edited since', async () => {
+      await withUnsavedEdit();
+
+      await act(async () => { playSegment()('assistant-1', edit); });
+      await renderApp();
+
+      expect(mocks.strudel.play).toHaveBeenLastCalledWith(edit);
+      expect(mocks.codePanelProps?.previewing).toBe(false);
+      expect(mocks.strudel.setReadOnly).not.toHaveBeenCalledWith(true);
     });
 
     it('takes the reading back to the draft before a turn works on it', async () => {
@@ -2026,6 +2114,28 @@ describe('App session sync boundaries', () => {
     expect(key()?.getAttribute('data-has-code')).toBe('true');
     // Still the same key, doing the same thing.
     expect(key()?.getAttribute('aria-label')).toBe(t('expandCode'));
+  });
+
+  it('stops playback from the mobile code window close key but not from its backdrop', async () => {
+    mocks.isMobile = true;
+    mocks.strudel.isPlaying = true;
+    await renderApp();
+
+    const sheet = container.querySelector<HTMLElement>('[data-testid="mobile-code-sheet"]')!;
+    const backdrop = sheet.querySelector<HTMLElement>('[data-testid="mobile-code-sheet-scrim"]')!;
+    const topGap = sheet.querySelector<HTMLElement>('[data-testid="mobile-code-sheet-top-gap"]')!;
+    const close = sheet.querySelector<HTMLButtonElement>(`button[aria-label="${t('close')}"]`)!;
+
+    mocks.strudel.stop.mockClear();
+    act(() => backdrop.click());
+    expect(mocks.strudel.stop).not.toHaveBeenCalled();
+
+    act(() => topGap.click());
+    expect(mocks.strudel.stop).not.toHaveBeenCalled();
+
+    act(() => close.click());
+    expect(mocks.strudel.stop).toHaveBeenCalledTimes(1);
+    mocks.strudel.isPlaying = false;
   });
 
   it('persists and flushes the outgoing code when creating a new session', async () => {

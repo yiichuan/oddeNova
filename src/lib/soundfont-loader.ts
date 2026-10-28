@@ -156,6 +156,23 @@ async function getFontBufferSource(
   return src;
 }
 
+/**
+ * Fetch and decode some notes of one GM instrument before they are needed.
+ *
+ * Loading is otherwise lazy — the first time a note sounds is when its font is
+ * fetched — so a piece's opening can arrive late or thin on a first play. A
+ * caller timing a listen (the first-run guide's A/B audition) waits on this
+ * first, so the seconds it counts are seconds of music rather than of network.
+ * Uses the same caches as playback, so nothing is fetched twice.
+ */
+export async function preloadSoundfontNotes(sound: string, notes: readonly string[]): Promise<void> {
+  const canonical = GM_NAME_ALIASES[sound] ?? sound;
+  const fonts = (gm as Record<string, string[]>)[canonical];
+  if (!fonts?.length) return;
+  const ctx = getAudioContext() as AudioContext;
+  await Promise.all(notes.map((note) => getFontPitch(fonts[0], noteToMidi(note), ctx)));
+}
+
 // --------------------------------------------------------------------------
 // Register all GM instruments
 // --------------------------------------------------------------------------

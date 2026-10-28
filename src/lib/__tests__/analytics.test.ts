@@ -306,6 +306,50 @@ describe('PostHog business analytics', () => {
     ]);
   });
 
+  it('records print sending separately without transmitting receipt or device contents', async () => {
+    const client = makeClient();
+    const analytics = createAnalytics({ key: 'phc_public', loadClient: async () => client, storage: { getItem: () => null } });
+    analytics.initialize({ surface: 'main', locale: 'en' });
+    analytics.trackSharePrintFinished({ outcome: 'sent' });
+    await vi.waitFor(() => expect(client.capture).toHaveBeenCalledTimes(2));
+    expect(client.capture.mock.calls[1]).toEqual(['share_print_finished', {
+      schema_version: 1, outcome: 'sent', $geoip_disable: true, $process_person_profile: false,
+    }]);
+    const sanitized = sanitizePostHogEvent({ event: 'share_print_finished', properties: {
+      schema_version: 1, outcome: 'failed', title: 'secret', url: 'secret', device: 'secret',
+    } });
+    expect(sanitized?.properties).toEqual({ schema_version: 1, outcome: 'failed' });
+  });
+
+  it('captures the onboarding funnel with only its own schema, which survives sanitizing', async () => {
+    const client = makeClient();
+    const analytics = createAnalytics({
+      key: 'phc_public',
+      loadClient: async () => client,
+      storage: { getItem: () => null },
+    });
+
+    analytics.initialize({ surface: 'main', locale: 'en' });
+    analytics.trackOnboardingProgressed({ stage: 'skipped', step: 'compare', guide_version: 1, case_id: 'intro-piano-v1' });
+    analytics.trackOnboardingProgressed({ stage: 'started', guide_version: 1, case_id: 'intro-piano-v1' });
+
+    await vi.waitFor(() => expect(client.capture).toHaveBeenCalledTimes(3));
+    const [, skipped, started] = client.capture.mock.calls;
+    expect(skipped).toEqual(['onboarding_progressed', {
+      schema_version: 1,
+      surface: 'main',
+      stage: 'skipped',
+      step: 'compare',
+      guide_version: 1,
+      case_id: 'intro-piano-v1',
+      $geoip_disable: true,
+      $process_person_profile: false,
+    }]);
+    expect(started[1]).not.toHaveProperty('step');
+    expect(sanitizePostHogEvent({ event: skipped[0], properties: { ...skipped[1], text: 'free input' } }))
+      .toEqual({ event: 'onboarding_progressed', properties: skipped[1] });
+  });
+
   it('never throws or creates an unhandled retry path when SDK loading or capture fails', async () => {
     const analyticsWithLoadFailure = createAnalytics({
       key: 'phc_public',

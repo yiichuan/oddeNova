@@ -11,7 +11,9 @@ const Lottie = ((LottieImport as unknown as { default?: unknown }).default ??
 // The Lottie JSON lives in public/ (loaded by URL, not imported) so it stays
 // out of the JS bundle and doesn't need `resolveJsonModule`. Cache the parsed
 // data at module scope so we fetch it only once per session, not on every
-// isLoading toggle.
+// isLoading toggle. The module itself is now lazy (see ConversationView), so
+// nothing fetches at startup — the first mount of the thinking indicator, and
+// only that, starts the request.
 const SRC = '/animation/flash02.json';
 let cached: object | null = null;
 let inflight: Promise<object> | null = null;
@@ -32,12 +34,6 @@ function loadAnimation(): Promise<object> {
   }
   return inflight;
 }
-
-// Prefetch at module load (app startup) so the animation data is already
-// cached by the time the first "thinking…" indicator mounts.
-loadAnimation().catch(() => {
-  /* placeholder stays empty; retry happens on next mount */
-});
 
 interface ThinkingLottieProps {
   className?: string;

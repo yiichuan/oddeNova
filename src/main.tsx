@@ -1,15 +1,12 @@
-import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
-import LearnPage, { LEARN_PATH_PREFIX } from './learn/LearnPage.tsx'
-import { loadEditorPreferences } from './lib/editor-preferences'
-import { loadAppearancePreferences } from './lib/appearance-preferences'
-import { initPersonaCache } from './lib/persona-storage'
-import { initializeAnalytics } from './lib/analytics'
-import { zh } from './lib/i18n'
-import { consumeOddeNovaBridgeBootstrapHash } from './lib/oddenova-bridge'
-
-const root = createRoot(document.getElementById('root')!)
+import { isLearnPath } from './lib/routes';
+import { loadEditorPreferences } from './lib/editor-preferences';
+import { loadAppearancePreferences } from './lib/appearance-preferences';
+import { initPersonaCache } from './lib/persona-storage';
+import { initializeAnalytics } from './lib/analytics';
+import { zh } from './lib/i18n';
+import { consumeOddeNovaBridgeBootstrapHash } from './lib/oddenova-bridge';
+import { mountEntryRoot, entryLoadingView, entryErrorView } from './lib/entry-view';
 
 // Restore user preferences before rendering to avoid layout shift. Appearance
 // goes first: it paints the app theme the editor falls back to when the user
@@ -19,11 +16,36 @@ loadEditorPreferences()
 consumeOddeNovaBridgeBootstrapHash()
 initializeAnalytics(zh ? 'zh-CN' : 'en')
 
-if (window.location.pathname.startsWith(LEARN_PATH_PREFIX)) {
+if (isLearnPath()) {
   // Standalone docs page — skip audio/session bootstrap entirely.
-  root.render(<LearnPage />)
+  const root = mountEntryRoot();
+  void import('./learn/LearnPage')
+    .then((module) => {
+      root.render(<module.default />)
+    })
+    .catch((error) => {
+      console.error('[entry] failed to load the tutorial.', error);
+      root.render(entryErrorView(error));
+    })
 } else {
-  void initPersonaCache().finally(() => {
-    root.render(<App />)
-  })
+  const root = mountEntryRoot();
+  root.render(entryLoadingView());
+  // The App chunk download and persona (IndexedDB) initialisation run side by
+  // side — neither waits on the slowest — while the render itself still waits
+  // for both, keeping the persona-ready-before-first-render contract.
+  // initPersonaCache is settled into a status instead of awaited raw: the old
+  // .finally contract renders the app even when persona init fails.
+  const appReady = import('./App');
+  const personaReady = initPersonaCache().catch((error) => {
+    console.error('[entry] persona initialisation failed; continuing with defaults.', error);
+    return undefined as unknown as void;
+  });
+  void Promise.all([personaReady, appReady])
+    .then(([, appModule]) => {
+      root.render(<appModule.default />)
+    })
+    .catch((error) => {
+      console.error('[entry] failed to mount the app.', error);
+      root.render(entryErrorView(error));
+    });
 }

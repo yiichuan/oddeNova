@@ -27,6 +27,7 @@ import { buildTrackRename, validateTrackName } from '../lib/track-rename';
 import { buildTrackReorder } from '../lib/track-reorder';
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
+import { parseScore } from '../agent/parser';
 import { claimTransport } from './transport';
 import { TrackPreview, type PreviewHap, type PreviewPattern, type PreviewTrack, type TrackFullSceneRequest, type TrackSceneQueryResult } from './track-preview';
 import type { TrackSceneBatch, TrackSceneRequest } from '../lib/track-preview-scene';
@@ -182,6 +183,11 @@ export type StrudelState = {
    * the studio's own accent. See `codepanel-accent.ts`.
    */
   accentColor: string | null;
+  /**
+   * A press of play is loading what the piece opens with, and the transport
+   * has not started yet. See `StrudelService.loadOpening`.
+   */
+  isStarting: boolean;
 };
 
 type StateCallback = (state: StrudelState) => void;
@@ -238,6 +244,30 @@ function isTouchDevice(): boolean {
 // that floor sits far below the noise of any real mix, which squeezes
 // everything audible into the top of the 0..255 range. -80..-20 spreads a
 // musical range across the whole byte instead.
+/*
+ * How much of a piece is loaded before its transport starts, in seconds of
+ * music from where it will start playing.
+ *
+ * A sound is fetched the first time it is triggered, and the scheduler
+ * triggers only 0.1 s ahead of the clock — so a sound that is not in memory
+ * yet misses its onset, and superdough drops the note ("still loading")
+ * rather than play it late. A piece whose first chord is held for seconds
+ * then opens on seconds of silence. Loading the opening first means the first
+ * play sounds like every play after it; past this stretch, sounds still load
+ * on demand as they always have.
+ */
+const OPENING_SECONDS = 6;
+/** The longest a press waits on that loading before it plays anyway. */
+const OPENING_TIMEOUT_MS = 10_000;
+/* Distinct sounds loaded per press, at most. Loading is keyed by sound and
+   pitch, so a dense opening repeats far fewer than it has notes. */
+const OPENING_SOUND_LIMIT = 256;
+/* How long to wait for a just-resumed audio clock to start moving. A context
+   that reports `running` can hold `currentTime` still for a moment while the
+   output device comes up, and notes scheduled against a clock that then jumps
+   land in the past. */
+const CLOCK_START_TIMEOUT_MS = 500;
+
 const ANALYSER_FFT_SIZE = 512;
 const ANALYSER_SMOOTHING = 0.6;
 const ANALYSER_MIN_DB = -80;
@@ -250,6 +280,30 @@ function safeDisconnect(node: AudioNode, dest?: AudioNode): void {
     if (dest) node.disconnect(dest);
     else node.disconnect();
   } catch { /* not connected */ }
+}
+
+/**
+ * Play as a music app does. iOS gives a page's Web Audio the "ambient"
+ * session by default, which the ring/silent switch mutes — and no page can
+ * tell that the switch is on, so a reader in silent mode just hears nothing.
+ * The "playback" session sounds through it (Safari 16.4+; elsewhere a no-op).
+ */
+function preferPlaybackAudioSession(): void {
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (!session) return;
+  try {
+    session.type = 'playback';
+  } catch { /* not settable here */ }
+}
+
+/** Resolve once `ctx.currentTime` has advanced, or after CLOCK_START_TIMEOUT_MS. */
+async function waitForClockToMove(ctx: AudioContext): Promise<void> {
+  if (isOfflineAudioContext(ctx) || ctx.state !== 'running') return;
+  const start = ctx.currentTime;
+  const deadline = Date.now() + CLOCK_START_TIMEOUT_MS;
+  while (ctx.currentTime <= start && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 export async function ensureAudioContextResumed(): Promise<SafariAudioContextState> {
@@ -667,6 +721,7 @@ export class StrudelService {
     engineStatus: 'initializing',
     accentColor: null,
     isDirty: false,
+    isStarting: false,
   };
 
   private stateCallbacks: StateCallback[] = [];
@@ -750,6 +805,7 @@ export class StrudelService {
       const { evalScope, Pattern, reify, noteToMidi, valueToMidi } = await import('@strudel/core');
       const { initAudioOnFirstClick, registerSynthSounds, samples, aliasBank, getAudioContext, getSuperdoughAudioController } = await import('superdough');
 
+      preferPlaybackAudioSession();
       initAudioOnFirstClick();
 
       const loadModules = evalScope(
@@ -1501,6 +1557,7 @@ export class StrudelService {
 
   private invalidatePlaybackOperation(): void {
     this.playbackGeneration += 1;
+    if (this._state.isStarting) this.notify({ isStarting: false });
     this.queuedPlayRequest = false;
     if (this.activePlayGeneration !== null) {
       this.stalePlayEditor = this.editorInstance;
@@ -1534,6 +1591,18 @@ export class StrudelService {
     }
     this.playbackRecovery = null;
   }
+
+  /**
+   * The sounding playhead in cycles from the top of the piece, or null while
+   * nothing plays. The scheduler's own clock — the same reading `pause()`
+   * keeps — so it counts music heard, not time since a press.
+   */
+  getPlaybackCycle = (): number | null => {
+    const scheduler = this.editorInstance?.repl.scheduler;
+    if (!scheduler || !this._state.isPlaying) return null;
+    const cycle = scheduler.now?.();
+    return Number.isFinite(cycle) ? Math.max(0, cycle as number) : null;
+  };
 
   pause = (): boolean => {
     const scheduler = this.editorInstance?.repl.scheduler;
@@ -1647,6 +1716,11 @@ export class StrudelService {
         this.stopStalePlay(editor);
         return;
       }
+      await this.loadOpening(generation);
+      if (!this.isCurrentPlay(generation, editor)) {
+        this.stopStalePlay(editor);
+        return;
+      }
       // A paused Cyclist retains Zyklus's phase. Rebase it before evaluate()
       // starts the scheduler so a long pause cannot be replayed as overdue
       // ticks. A successfully applied target is consumed here; a seek received
@@ -1714,6 +1788,79 @@ export class StrudelService {
   }
 
   /**
+   * Load the sounds a piece opens with before its transport starts.
+   *
+   * Compiles the editor's code without starting it, asks the pattern for the
+   * first OPENING_SECONDS from where playback will begin, and triggers each
+   * distinct sound in it once, silently, through superdough itself — the same
+   * path a real note takes, so whatever it loads (sample, soundfont, reverb)
+   * lands in the caches the real notes will read. Then waits for the audio
+   * clock to be moving, so the first notes are not scheduled against a clock
+   * that is about to jump.
+   *
+   * Never throws and never waits past OPENING_TIMEOUT_MS: a piece that plays
+   * late is still better than a press that does nothing. Skipped while a piece
+   * is already sounding — compiling would swap the new pattern in under it.
+   */
+  private loadOpening = async (token: number): Promise<void> => {
+    if (this._isVideoMode) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const repl = this.editorInstance?.repl as any;
+    if (typeof repl?.evaluate !== 'function' || repl.scheduler?.started) return;
+
+    this.notify({ isStarting: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.triggerOpeningSilently(repl),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, OPENING_TIMEOUT_MS); }),
+      ]);
+    } catch {
+      // A piece that fails to compile fails again, out loud, in evaluate().
+    } finally {
+      clearTimeout(timer);
+      if (token === this.playbackGeneration) this.notify({ isStarting: false });
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private triggerOpeningSilently = async (repl: any): Promise<void> => {
+    // What evaluate() will compile: StrudelMirror's own buffer.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const code: string | undefined = (this.editorInstance as any)?.code ?? this._state.code;
+    if (!code) return;
+    await repl.evaluate(code, false);
+    const pattern = repl.scheduler?.pattern;
+    const cps: number = repl.scheduler?.cps ?? 0.5;
+    if (!pattern) return;
+
+    const begin = this.pendingSeekCycle ?? 0;
+    const haps = pattern.queryArc(begin, begin + OPENING_SECONDS * cps, { _cps: cps });
+    const sounds = new Map<string, Record<string, unknown>>();
+    for (const hap of haps) {
+      if (sounds.size >= OPENING_SOUND_LIMIT) break;
+      if (!hap.hasOnset?.()) continue;
+      hap.ensureObjectValue?.();
+      const value = hap.value as Record<string, unknown>;
+      if (!value || typeof value !== 'object') continue;
+      const key = [value.bank, value.s, value.n, value.note ?? value.freq].join('|');
+      if (!sounds.has(key)) sounds.set(key, value);
+    }
+
+    const { superdough, getAudioContext } = await import('superdough');
+    const ctx = getAudioContext() as AudioContext;
+    await Promise.all([...sounds.values()].map(async (value) => {
+      try {
+        // Silent by its gain; a note that only finishes loading after its
+        // onset is dropped by superdough, which is just as silent.
+        await superdough({ ...value, gain: 0, postgain: 0 }, ctx.currentTime + 0.05, 0.05, cps);
+      } catch { /* an unknown sound fails again, and is reported, at play */ }
+    }));
+
+    await waitForClockToMove(ctx);
+  };
+
+  /**
    * Strudel's own live update — what Ctrl+Enter does in its REPL.
    *
    * `StrudelMirror.evaluate()` on a running scheduler hands the newly compiled
@@ -1755,6 +1902,7 @@ export class StrudelService {
   stop = (): void => {
     this.invalidatePlaybackOperation();
     this.trackPreview.clearSolo();
+    if (this._state.isStarting) this.notify({ isStarting: false });
     this.pageAudioRecovery?.clearResumeIntent();
     this.pendingSeekCycle = null;
     this.lastPlaybackCycle = 0;
@@ -1778,6 +1926,59 @@ export class StrudelService {
     if (scrollDOM) {
       scrollDOM.scrollTop = scrollDOM.scrollHeight - scrollDOM.clientHeight;
     }
+  };
+
+  /**
+   * Scroll `from..to` into view, near the top of the editor, without touching
+   * the selection — pointing at a layer by its place in the text, which moves
+   * with every edit, rather than by a line number that does not.
+   */
+  scrollCodeRangeIntoView = (from: number, to: number): void => {
+    const view = this.editorInstance?.editor as {
+      lineBlockAt?: (pos: number) => { top: number; bottom: number };
+      scrollDOM?: HTMLElement;
+    } | undefined;
+    if (!view?.lineBlockAt || !view.scrollDOM) return;
+    const top = view.lineBlockAt(from).top;
+    const bottom = view.lineBlockAt(to).bottom;
+    const scroller = view.scrollDOM;
+    // Already wholly on screen: leave the reader's view where it is.
+    if (top >= scroller.scrollTop && bottom <= scroller.scrollTop + scroller.clientHeight) return;
+    scroller.scrollTop = Math.max(0, top - 24);
+  };
+
+  /**
+   * Where `from..to` sits on screen — the lines' own box, clipped to the
+   * editor's visible area — or null when none of it is showing. Lets a
+   * spotlight hug a layer rather than the whole panel.
+   */
+  getCodeRangeRect = (from: number, to: number): { left: number; top: number; width: number; height: number } | null => {
+    const view = this.editorInstance?.editor as {
+      coordsAtPos?: (pos: number, side?: -1 | 1) => { top: number; bottom: number; right: number } | null;
+      state?: { doc: { lineAt: (pos: number) => { number: number; to: number }; line: (n: number) => { to: number } } };
+      contentDOM?: HTMLElement;
+      scrollDOM?: HTMLElement;
+    } | undefined;
+    if (!view?.coordsAtPos || !view.state || !view.contentDOM || !view.scrollDOM) return null;
+    const start = view.coordsAtPos(from);
+    const end = view.coordsAtPos(to);
+    if (!start || !end) return null;
+    const content = view.contentDOM.getBoundingClientRect();
+    const visible = view.scrollDOM.getBoundingClientRect();
+    const top = Math.max(start.top, visible.top);
+    const bottom = Math.min(end.bottom, visible.bottom);
+    if (bottom <= top) return null;
+    // As wide as the longest line in the range, not the whole editor: the
+    // right edge follows the text. A line scrolled out of the rendered
+    // viewport has no coordinates and is skipped.
+    const { doc } = view.state;
+    let textRight = content.left;
+    for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) {
+      const lineEnd = view.coordsAtPos(doc.line(n).to, -1);
+      if (lineEnd) textRight = Math.max(textRight, lineEnd.right);
+    }
+    const right = Math.min(textRight > content.left ? textRight + 8 : content.right, content.right, visible.right);
+    return { left: content.left, top, width: right - content.left, height: bottom - top };
   };
 
   scrollCodeToPosition = (scrollTop: number): void => {
@@ -2579,6 +2780,74 @@ export async function validateCodeRuntime(code: string): Promise<ValidationResul
   } catch (e) {
     return { ok: false, error: getErrorMessage(e), kind: 'runtime' };
   }
+}
+
+/** One audible event of a layer, in cycles. */
+export interface LayerEvent { begin: number; end: number }
+
+/**
+ * Compiles each `stack(...)` layer on its own and queries the events it really
+ * produces over [0, cycles). Code before the stack (shared `const`s) and any chain
+ * after it (`stack(...).mask(...)`) come along, so a layer sounds exactly as it does
+ * inside the piece. Nothing plays and the live tempo is untouched: tempo calls are
+ * removed and `samples`/`.p()` are inert. Events silenced by a gain of zero are
+ * dropped; `mask` already removes its own. Keyed by layer name, or `''` for code
+ * without a stack. Needs the engine's evalScope to have run (the studio is up).
+ */
+export async function queryLayerEvents(code: string, cycles: number): Promise<Map<string, LayerEvent[]>> {
+  const clean = normalizeCode(stripUIDecorations(code)).replace(/^\s*setcp[sm]\([^)]*\)\s*;?\s*$/gm, '');
+  const score = parseScore(clean);
+  const slots = score.hasStack && score.layers.length > 0
+    ? score.layers.map(layer => ({
+      name: layer.name,
+      code: clean.slice(0, score.stackArgsStart) + layer.source + clean.slice(score.stackArgsEnd),
+    }))
+    : [{ name: '', code: clean }];
+  const inert = new Set(['samples', 'setcps', 'setcpm', 'hush']);
+  const scope = new Proxy({}, {
+    has() { return true; },
+    get(_t, key) {
+      if (typeof key === 'symbol') return (globalThis as Record<symbol, unknown>)[key as unknown as symbol];
+      if (inert.has(key)) return async () => {};
+      return (globalThis as Record<string, unknown>)[key];
+    },
+  });
+  const transpiler = cachedTranspiler ?? (await import('@strudel/transpiler')).transpiler;
+  cachedTranspiler = transpiler;
+  const { Pattern } = await import('@strudel/core');
+  const livePatternMethod = Object.getOwnPropertyDescriptor(Pattern.prototype, 'p');
+  Object.defineProperty(Pattern.prototype, 'p', { configurable: true, writable: true, value(this: unknown) { return this; } });
+  const result = new Map<string, LayerEvent[]>();
+  try {
+    for (const slot of slots) {
+      const { output } = transpiler(slot.code, { id: undefined, emitMiniLocations: false });
+      const pattern = await new Function('__s__', `with (__s__) {\nreturn (async () => {\n${output}\n})()\n}`)(scope);
+      if (!pattern || typeof pattern.queryArc !== 'function') throw new Error(`Layer ${slot.name || 'main'} is not a pattern`);
+      const events: LayerEvent[] = [];
+      for (const hap of pattern.queryArc(0, cycles) as StrudelHap[]) {
+        if (hap.hasOnset && !hap.hasOnset()) continue;
+        const value = hap.value;
+        if (value && typeof value === 'object') {
+          const { gain, velocity, postgain } = value as Record<string, unknown>;
+          if (gain === 0 || velocity === 0 || postgain === 0) continue;
+        }
+        const span = hap.whole ?? hap.part;
+        events.push({ begin: Number(span.begin.valueOf()), end: Number(span.end.valueOf()) });
+      }
+      result.set(slot.name, events);
+    }
+  } finally {
+    if (livePatternMethod) Object.defineProperty(Pattern.prototype, 'p', livePatternMethod);
+    else delete Pattern.prototype.p;
+  }
+  return result;
+}
+
+interface StrudelHap {
+  hasOnset?: () => boolean;
+  value: unknown;
+  whole?: { begin: { valueOf(): number }; end: { valueOf(): number } };
+  part: { begin: { valueOf(): number }; end: { valueOf(): number } };
 }
 
 // Runs the Strudel transpiler to catch mini-notation parse errors that the

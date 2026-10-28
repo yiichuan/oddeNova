@@ -1,7 +1,7 @@
 import { getErrorMessage } from '../lib/errors';
 import { applySeekCycle, seekTargetCycle, type SeekableScheduler } from './scheduler-seek';
 import { strudelService } from './strudel';
-import { claimTransport } from './transport';
+import { claimTransport, type TransportId } from './transport';
 
 /**
  * The Featured page's own transport.
@@ -41,7 +41,14 @@ interface ReplInstance {
   stop: () => void;
 }
 
-class FeaturedPlayer {
+/**
+ * A transport with its own clock and nothing else of its own — see above. The
+ * Featured page has one; the first-run guide's old-vs-new comparison has
+ * another, so a practice listen never writes into the studio's editor or
+ * session either.
+ */
+export class IsolatedPlayer {
+  private readonly transportId: TransportId;
   private replInstance: ReplInstance | null = null;
   private building: Promise<ReplInstance | null> | null = null;
   private stateCallbacks: StateCallback[] = [];
@@ -50,6 +57,10 @@ class FeaturedPlayer {
   private pendingSeekCycle: number | null = null;
   /** What was last evaluated — a different piece drops a held playhead. */
   private currentCode = '';
+
+  constructor(transportId: TransportId) {
+    this.transportId = transportId;
+  }
 
   get state(): FeaturedPlayerState {
     return this._state;
@@ -123,7 +134,7 @@ class FeaturedPlayer {
   play = async (code: string): Promise<boolean> => {
     if (!strudelService.isReady) return false;
 
-    claimTransport('featured', this.stop);
+    claimTransport(this.transportId, this.stop);
 
     const instance = await this.ensureRepl();
     if (!instance) return false;
@@ -193,6 +204,14 @@ class FeaturedPlayer {
     return applySeekCycle(this.replInstance?.scheduler, targetCycle);
   };
 
+  /** Where the playhead is, in cycles from the top — null while nothing sounds. */
+  currentCycle = (): number | null => {
+    const scheduler = this.replInstance?.scheduler;
+    if (!scheduler || !this._state.isPlaying) return null;
+    const cycle = scheduler.now?.();
+    return Number.isFinite(cycle) ? (cycle as number) : null;
+  };
+
   private applyPendingSeek(): void {
     if (this.pendingSeekCycle === null) return;
     if (applySeekCycle(this.replInstance?.scheduler, this.pendingSeekCycle)) {
@@ -201,4 +220,5 @@ class FeaturedPlayer {
   }
 }
 
-export const featuredPlayer = new FeaturedPlayer();
+export const featuredPlayer = new IsolatedPlayer('featured');
+export const onboardingPlayer = new IsolatedPlayer('onboarding');

@@ -16,8 +16,10 @@ vi.mock('../../../services/strudel', () => ({
    the device. Both ends of that are the app's, not this page's. */
 const uploadShareMock = vi.hoisted(() => vi.fn());
 const shareUrlMock = vi.hoisted(() => vi.fn());
+const renderShareReceiptMock = vi.hoisted(() => vi.fn(async () => ({ preview: 'data:image/png;base64,AA==', raster: new Uint8Array(48), titleField: { top: 20, height: 4 } })));
 vi.mock('../../../services/share', () => ({ uploadShare: uploadShareMock }));
-vi.mock('../../../services/share-target', () => ({ shareUrl: shareUrlMock }));
+vi.mock('../../../services/share-target', () => ({ shareUrl: shareUrlMock, nativeShare: vi.fn() }));
+vi.mock('../../../services/printing/share-receipt', () => ({ renderShareReceipt: renderShareReceiptMock }));
 vi.mock('../../../lib/analytics', () => ({ trackShareCompleted: vi.fn() }));
 // The phone layout is what this file is about, and the page asks a media query
 // for it — happy-dom's window is a desktop one.
@@ -39,6 +41,7 @@ window.matchMedia = ((query: string) => ({
   dispatchEvent: () => false,
 })) as typeof window.matchMedia;
 
+import '../../overlays/ShareDialog';
 import { t } from '../../../lib/i18n';
 import { getStrudelLoopDurationSeconds } from '../../../lib/strudel-timing';
 import { featuredPlayer } from '../../../services/featured-player';
@@ -667,6 +670,7 @@ describe('MobileFeaturedDetail', () => {
   });
 
   it('shares the record as the session it would open as', async () => {
+    renderShareReceiptMock.mockClear();
     uploadShareMock.mockResolvedValueOnce('share123');
     shareUrlMock.mockResolvedValueOnce('shared');
     const { container } = render(page());
@@ -683,10 +687,13 @@ describe('MobileFeaturedDetail', () => {
     expect(uploadShareMock).toHaveBeenCalledWith(
       expect.objectContaining({ code: PIECES[0].code, title: '360' }),
     );
-    expect(shareUrlMock).toHaveBeenCalledWith(
-      `${window.location.origin}/s/share123`,
-      expect.stringContaining('360'),
+    // The card is drawn from the piece's own script (it no longer prints a title).
+    expect(renderShareReceiptMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/s\/share123$/),
+      expect.any(String),
+      expect.objectContaining({ code: PIECES[0].code }),
     );
+    expect(shareUrlMock).not.toHaveBeenCalled();
   });
 });
 

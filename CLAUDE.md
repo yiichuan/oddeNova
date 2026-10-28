@@ -30,6 +30,7 @@ npx vitest run <path>    # run a single test file
 npx vitest <pattern>     # watch mode / filter by name
 npx tsc --noEmit -p tsconfig.app.json   # strict type-check only
 npm run previews:animation              # rebuild the appearance-settings animation stills
+npm run printer:bridge                  # macOS: local Bluetooth Classic bridge for Paperang P1S printing
 ```
 
 Pre-commit (husky + lint-staged) automatically runs `tsc --noEmit`, ESLint on
@@ -144,6 +145,17 @@ Key modules:
   success. Renaming awaits `useSessions.renameSession()` (local mutation and
   checkpoint registration), then flushes before refreshing search. Account
   changes and unmount invalidate old action results, including error display.
+
+- **`src/onboarding/`** — the first-run guide (plan:
+  `docs/new-user-onboarding-plan.md`). One preset practice (`intro-piano-v1`)
+  whose reply and adapted script are made ahead of time in
+  `onboarding/intro-piano-v1/` — it never calls a model or the agent loop.
+  It runs as a six-step spotlight tour (`OnboardingTour.tsx`) over the real
+  controls, found by `data-onboarding-target` / `data-message-id` markers;
+  the reader presses the studio's own play and send keys, and
+  `listening.ts` pauses the studio transport at 5 s off its playhead.
+  Progress is per owner in `localStorage`, separate from the welcome and
+  theme-song flags.
 
 - **`src/demo/`** — `?demo=true` runs a scripted `demo-llm.ts` in place of a
   real LLM call, replaying canned tool-call sequences from `demo-config.ts`,

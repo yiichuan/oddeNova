@@ -70,6 +70,20 @@ interface ChatInputProps {
    * onSendText.
    */
   onMoodGenerate?: () => Promise<void> | void;
+  /**
+   * The first-run guide's practice turn. The field holds the one preset
+   * sentence and cannot be typed into — the reply it gets is prepared, so any
+   * other text would be answered as if it were this one. The footer says so;
+   * the guide's own "skip" is the way out to the real model.
+   */
+  presetLock?: PresetLock;
+}
+
+export interface PresetLock {
+  text: string;
+  /** The preset is loading; sending again does nothing. */
+  busy: boolean;
+  onSend: () => void;
 }
 
 export default function ChatInput({
@@ -87,6 +101,7 @@ export default function ChatInput({
   inputMode = 'normal',
   suggestions,
   onMoodGenerate,
+  presetLock,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -129,7 +144,7 @@ export default function ChatInput({
   const [typing, setTyping] = useState<{ sug: string | null; count: number }>({ sug: null, count: 0 });
   // Fade-out phase between dwell and the next suggestion (blur + opacity).
   const [suggestionFading, setSuggestionFading] = useState(false);
-  const suggestionList = inputMode === 'choice'
+  const suggestionList = inputMode === 'choice' || presetLock
     ? []
     : moodSuggestionActive
       ? [...(suggestions ?? []), moodSuggestion]
@@ -192,11 +207,12 @@ export default function ChatInput({
     prevReplayRef.current = replayValue;
   }, [replayValue]);
 
+  const presetValue = presetLock?.text;
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     resizeTextarea(el);
-  }, [text]);
+  }, [text, presetValue]);
 
   // How tall the field has to be is a question about how wide it is, and in the
   // studio almost nothing that changes its width is a window resize: the
@@ -230,6 +246,10 @@ export default function ChatInput({
 
   const doSubmit = () => {
     if (replayValue !== undefined) return;
+    if (presetLock) {
+      if (!presetLock.busy) presetLock.onSend();
+      return;
+    }
     const value = text.trim();
     if (!value || isLoading || moodPending) return;
     const entryPoint: ChatEntryPoint =
@@ -294,8 +314,11 @@ export default function ChatInput({
   // adjusting or closing it never re-focuses the textarea — and never yanks
   // the soft keyboard back up. defaultPrevented presses (the control's own
   // focus protection) are skipped for the same reason.
+  //
+  // Not while the field holds the guide's preset: it cannot be typed into, and
+  // focusing it would only raise a phone's keyboard over the send key.
   const handleCardClick = (e: React.MouseEvent<HTMLFormElement>) => {
-    if (e.defaultPrevented) return;
+    if (e.defaultPrevented || presetLock) return;
     const target = e.target;
     if (!(target instanceof Element)) return;
     if (target.closest('[data-chat-input-focus-ignore]')) return;
@@ -309,7 +332,7 @@ export default function ChatInput({
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
 
   return (
-    <form onSubmit={handleSubmit} onClick={handleCardClick} className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <form onSubmit={handleSubmit} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* Card: textarea on top, footer (hint + send button) below it in normal
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
@@ -351,12 +374,16 @@ export default function ChatInput({
             <textarea
               ref={textareaRef}
               data-chat-input-textarea
-              value={replayValue !== undefined ? replayValue : text}
-              onChange={replayValue !== undefined ? undefined : (e) => {
+              value={replayValue !== undefined ? replayValue : presetValue ?? text}
+              onChange={replayValue !== undefined || presetLock ? undefined : (e) => {
                 adoptedSuggestionRef.current = null;
                 setText(e.target.value);
               }}
-              readOnly={replayValue !== undefined}
+              readOnly={replayValue !== undefined || presetLock !== undefined}
+              // A read-only field can still take focus from a tap; with no
+              // keyboard asked for, a phone does not raise one over the preset.
+              inputMode={presetLock ? 'none' : undefined}
+              aria-busy={presetLock?.busy || undefined}
               onFocus={() => {
                 setFocused(true);
                 onFocusChange?.(true);
@@ -449,7 +476,9 @@ export default function ChatInput({
               Real layout, always visible regardless of textarea scroll state. */}
           <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
             <div className={`min-w-0 ${waitingDim}`}>
-              {engineStatus !== 'ready' ? (
+              {presetLock ? (
+                <div className="truncate text-[12px] text-text-muted">{t('onboardingPresetBadge')}</div>
+              ) : engineStatus !== 'ready' ? (
                 <div className="flex items-center gap-2 text-[12px] text-text-muted">
                   <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
                   <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
@@ -472,7 +501,7 @@ export default function ChatInput({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {replayValue === undefined && (
+              {replayValue === undefined && !presetLock && (
                 <ThinkingLevelControl
                   disabled={inputDisabled}
                   // Read at press time from the DOM, not from React's `focused`
@@ -507,9 +536,18 @@ export default function ChatInput({
               ) : (
                 <button
                   type="submit"
-                  disabled={!text.trim()}
-                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  data-onboarding-target="send"
+                  disabled={presetLock ? presetLock.busy : !text.trim()}
+                  /* The guide's send on a phone is pressed with a thumb, so
+                     its reach grows to 44px round the 30px disc. Only then:
+                     the thinking-level control that sits beside the key
+                     otherwise is not drawn while the preset holds the field,
+                     so the wider reach covers nothing else. */
+                  className={`inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-50${
+                    presetLock && isMobile ? " relative before:absolute before:-inset-[7px] before:content-['']" : ''
+                  }`}
                   title={t('send')}
+                  aria-label={t('send')}
                 >
                   <ArrowUpIcon size={18} />
                 </button>

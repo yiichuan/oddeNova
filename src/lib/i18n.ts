@@ -40,6 +40,15 @@ export const THEME_SONG_INTRO_ZH = '听听看 《奥德诺娃的梦呓》，接�
 export const FEATURED_OPENED_INTRO_ZH =
   '{coder} 用 Strudel 写的《{title}》（原作 {originalArtist}），已在工作室中。';
 
+/**
+ * The opening line of the first-run guide's practice session, 中文, named for
+ * the same reason as the three above: the practice session's first message is
+ * flagged `isGreeting` (see `onboarding/practice-session.ts`), so it lands in
+ * the greeting slot, in 京華老宋体, and the subset build has to read it as text.
+ * "oddeNova" is Latin and drawn by EB Garamond ahead of this face.
+ */
+export const ONBOARDING_PRACTICE_INTRO_ZH = '这是 oddeNova 的默认印象曲，也是你的练习作品。跟着指引，先听一听，再试着改变它。';
+
 const S: Record<string, readonly [string, string]> = {
   // Common
   cancel:       ['取消', 'Cancel'],
@@ -58,6 +67,7 @@ const S: Record<string, readonly [string, string]> = {
   sessionDetailNetworkError: ['会话详情加载失败，请重试', 'Could not load the session. Please try again'],
   loadMoreFailed: ['加载更多失败，请重试', 'Could not load more. Please try again'],
   play:         ['播放', 'Play'],
+  playStarting: ['正在加载声音…', 'Loading sounds…'],
   updatePattern: ['更新', 'Update'],
   playbackProgress: ['播放进度', 'Playback progress'],
   volume:       ['音量', 'Volume'],
@@ -488,6 +498,77 @@ const S: Record<string, readonly [string, string]> = {
   thinkingLevelLow:     ['轻', 'Low'],
   thinkingLevelMedium:  ['中', 'Medium'],
   thinkingLevelHigh:    ['高', 'High'],
+  // First-run guide (src/onboarding/)
+  navOnboarding:              ['新手指引', 'Getting started'],
+  onboardingPracticeTitle:    ['我的第一次创作', 'My first creation'],
+  onboardingPracticeIntro:    [ONBOARDING_PRACTICE_INTRO_ZH, "This is oddeNova's Default Impression, and it's your practice piece. Follow the guide: listen first, then try changing it."],
+  onboardingInviteTitle:      ['oddeNova：欢迎！', 'oddeNova: Welcome!'],
+  onboardingInviteBody:       ['用 6 个步骤，体验如何通过和 oddeNova 对话来创作乐曲。', 'In six steps, see how you can make music by talking with oddeNova.'],
+  onboardingStart:            ['开始', 'Start'],
+  onboardingLater:            ['稍后再说', 'Later'],
+  onboardingResumeTitle:      ['继续上次练习', 'Pick up your practice'],
+  onboardingResumeBody:       ['你的指引练习还没完成，可以从刚才的步骤接着来。', "Your guided practice isn't finished yet. You can pick up from the step you were on."],
+  onboardingResume:           ['继续', 'Continue'],
+  onboardingRestart:          ['重新开始', 'Start over'],
+  onboardingCannotResume:     ['练习作品已被删除或修改，无法接着演示。可以重新建立一份练习，你现有的内容不会被覆盖。', "The practice piece was deleted or changed, so the guide can't pick up from there. You can start a fresh practice; nothing you already have will be overwritten."],
+  onboardingSkip:             ['跳过', 'Skip'],
+  onboardingExitHintTitle:    ['之后想继续？', 'Want to continue later?'],
+  onboardingExitHintDesktopBody: ['在左侧导航打开「更多」，选择「新手指引」即可重新开始。', 'Open More in the left navigation, then choose Getting started to begin again.'],
+  onboardingExitHintMobileBody: ['打开左上角菜单，在「更多」里可以重新找到「新手指引」。', 'Open the menu in the top left, then find Getting started under More.'],
+  onboardingExitHintDismiss:  ['知道了', 'Got it'],
+  onboardingExitHintMenu:     ['菜单', 'Menu'],
+  onboardingPrev:             ['上一步', 'Back'],
+  onboardingNext:             ['下一步', 'Next'],
+  onboardingRetry:            ['重试', 'Try again'],
+  onboardingListenOriginalTitle: ['先听一听原曲', 'Listen to the original'],
+  onboardingListenOriginalBody:  ['点击 {play}，听开头 5 秒，留意铺开的背景和弦。5 秒后会自动暂停，你也可以随时自己暂停。', 'Press {play} and listen to the first 5 seconds, noticing the wide background chords. It pauses by itself at 5 seconds, and you can pause any time.'],
+  onboardingPreparingSounds:  ['正在准备音色…', 'Loading sounds…'],
+  onboardingListenHeard:      ['听完了，点击「下一步」继续。', 'Heard it — press Next to continue.'],
+  onboardingSoundsFailed:     ['音色没能加载，请检查网络后重试。', "Couldn't load the sounds. Check your connection and try again."],
+  onboardingSendTitle:        ['告诉 oddeNova 你想要的变化', 'Tell oddeNova what to change'],
+  onboardingSendBody:         ['示例要求已经填进输入框，点击 {send} 发送。', 'An example request is already in the message box. Press {send} to send.'],
+  onboardingPresetBadge:      ['指引练习 · 预设示例', 'Guided practice · preset example'],
+  onboardingLoadingPreset:    ['正在载入示例改编…', 'Loading the example edit…'],
+  onboardingDeliveryFailed:   ['示例没能保存，请再点一次发送。', "The example couldn't be saved. Press send again."],
+  onboardingReplyTitle:       ['看看 oddeNova 改了什么', 'See what oddeNova changed'],
+  onboardingReplyBody:        ['它保留了原来的背景和弦，只在开头 10 秒新增了一段「开场电钢琴」。回复下方的代码对比，就是这次新增的部分。', 'It kept the background chords and added an "opening electric piano" to just the first 10 seconds. The code comparison under the reply is the part it added.'],
+  onboardingListenAdaptedTitle: ['再听改编后的版本', 'Now listen to the new version'],
+  onboardingListenAdaptedBody:  ['再次点击 {play}，听开头 5 秒。背景和弦还在，留意新版多出来的一颗颗琴音。', 'Press {play} again and listen to the first 5 seconds. The background chords are still there. Listen for the single piano notes the new version adds.'],
+  onboardingChangeTitle:      ['新增的音层在这里', "Here's the added layer"],
+  onboardingChangeBody:       ['高亮的这段就是新增的「开场电钢琴」（horizon_intro），只在开头 10 秒弹奏；原来的背景和声 horizon 保持原样。不需要读懂代码，下次用一句话描述想要的变化就行。', 'The highlighted part is the added "opening electric piano" (horizon_intro). It plays only in the first 10 seconds, and the original background harmony, horizon, is unchanged. You don\'t need to read the code; next time just describe the change you want in a sentence.'],
+  onboardingDoneTitle:        ['你已经完成第一次改编', "You've made your first change"],
+  onboardingDoneBody:         ['先说出想法，再听听变化，就能一步步做出自己的乐曲。', 'Say what you want, listen to what changed, and build your own piece one step at a time.'],
+  onboardingDoneSaved:        ['练习作品已保留在历史中。', 'Your practice piece is saved in your history.'],
+  onboardingDoneUnsaved:      ['你可以继续改这首。', 'You can keep working on this piece.'],
+  onboardingDoneRealAi:       ['刚才使用的是演示示例，实际使用时 oddeNova 通常需要更长的思考时间。', 'That was a demo example. In real use, oddeNova usually takes longer to think.'],
+  onboardingCompareOriginal:  ['原版', 'Original'],
+  onboardingCompareAdapted:   ['改编', 'New'],
+  onboardingKeepEditing:      ['继续改这首', 'Keep working on this'],
+  onboardingCreateNew:        ['创作一首新的', 'Start a new piece'],
+  // The phone's four-stage reading of the same guide (MobileOnboardingTour)
+  onboardingMobileInviteBody:    ['用 7 个步骤，体验如何通过和 oddeNova 对话来创作乐曲。', 'In seven steps, see how you can make music by talking with oddeNova.'],
+  onboardingMobileOpenWindow:    ['点击打开代码窗口，代码和播放都在这里。', 'Tap to open the code window. The code and playback are both here.'],
+  onboardingMobilePlayOriginal:  ['点击播放，听开头 5 秒，留意铺开的背景和弦。', 'Tap play and listen to the first 5 seconds. Notice the wide background chords.'],
+  onboardingMobileSoundHint:     ['播放前，请确认手机没有静音、音量已调高。', "Before you play, make sure your phone isn't muted and the volume is up."],
+  onboardingMobileCloseWindow:  ['听过原版了，点击关闭代码窗口，试着改一改。', "You've heard the original. Tap to close the code window and try changing it."],
+  onboardingMobileOriginalHeard: ['原版已经听过了，接着试试改一改。', "You've heard the original. Next, try changing it."],
+  onboardingMobileContinueSend:  ['继续发送想法', 'Continue'],
+  onboardingMobileSend:          ['要求已经填好，点击发送试试看。', 'The request is filled in. Tap send to try it.'],
+  onboardingMobileExit:          ['退出指引', 'Exit guide'],
+  onboardingMobileReadReply:     ['背景和弦保留了，开头多了一串琴音。', 'The background chords stayed, and a run of piano notes now opens the piece.'],
+  onboardingMobileHearChange:    ['听听改编', 'Hear the change'],
+  onboardingMobileListenAdapted: ['点回复下方的播放，听 0～5 秒里多出来的琴音。', 'Tap play under the reply and listen for the new piano notes in the first 5 seconds.'],
+  onboardingMobileHeardContinue: ['听到了，继续', 'Heard it, continue'],
+  onboardingMobileFinishBody:    ['原来的背景还在，多了一串开场琴音。下次也可以这样描述你想要的变化。', 'The original background is still there, with a new opening run of piano. Next time, describe the change you want the same way.'],
+  onboardingMobileViewChange:    ['查看修改部分', 'View what changed'],
+  onboardingMobileHideChange:    ['收起修改', 'Hide the change'],
+  onboardingMobileChangeNote:    ['新增的是 horizon_intro；原背景和声 horizon 保持原样。', 'The new layer is horizon_intro. The original background harmony, horizon, is unchanged.'],
+  onboardingMobileTargetLost:    ['没找到要指向的位置。', "Couldn't find what to point at."],
+  onboardingMobileRelocate:      ['重新定位', 'Find it again'],
+  // FeatureLoadBoundary (src/components/async/): lazy page/modal shell states.
+  featureLoading:       ['加载中…', 'Loading…'],
+  featureLoadFailed:    ['这一内容未能加载。', "Couldn't load this."],
+  featureLoadRetry:     ['重新加载', 'Try again'],
 };
 
 export function t(key: string): string {

@@ -1154,6 +1154,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       sessionId?: string,
       revisionDraft?: CodeRevisionDraft,
       inputMode?: InputMode,
+      layerNotes?: Record<string, string>,
     ): void => {
       const apply = getApply(sessionId);
       apply((s) => {
@@ -1174,6 +1175,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
               code,
               revisionId: revision?.id,
               inputMode,
+              ...(layerNotes ? { layerNotes } : {}),
               timestamp: now,
             },
           ],

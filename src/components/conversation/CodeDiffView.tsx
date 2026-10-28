@@ -29,6 +29,15 @@ interface CodeDiffViewProps {
    * it, so it names itself differently and has no playback result to report.
    */
   variant?: 'turn' | 'draft';
+  /**
+   * The first-run guide is pointing at this widget on a phone: its play key
+   * reaches a thumb's 44px — round the key, without the widget changing size,
+   * so the reading does not move when the guide arrives or leaves — and play
+   * waits for the guide's sounds (`playDisabled`).
+   * While the guide is timing a listen, stop is held too (`stopDisabled`): the
+   * take plays its 5 seconds through and the guide stops it at the end.
+   */
+  guided?: { playDisabled: boolean; stopDisabled: boolean };
 }
 
 function counterpartFor(rows: DiffRow[], index: number): string | undefined {
@@ -78,6 +87,7 @@ export function CodeDiffView({
   onPlay,
   onStop,
   variant = 'turn',
+  guided,
 }: CodeDiffViewProps) {
   const [copied, setCopied] = useState(false);
   const diff = useMemo(
@@ -95,13 +105,19 @@ export function CodeDiffView({
      there two keys are given a shared radius, here one shape is split. */
   return (
     <div
+      data-code-diff={messageId}
       data-code-diff-variant={variant}
       data-code-diff-sounding={playing || undefined}
       /* `mt-4` sets the widget off the paragraph it hangs under inside a reply.
          The draft variant hangs under nothing — it is a block of the reading in
          its own right — so it drops the margin and takes its distance from the
-         reply above it the way every other block does. */
-      className={`conversation-code-bar -ml-1 overflow-hidden rounded-md animate-fade-in${
+         reply above it the way every other block does.
+
+         Guided, the box does not clip: the play key's reach runs past the bar,
+         and a clip would cut the reach off with it. Each key rounds its own
+         outer corners already (`.conversation-code-bar-part`), and the opened
+         changes below round theirs, so nothing square shows. */
+      className={`conversation-code-bar -ml-1 ${guided ? '' : 'overflow-hidden '}rounded-md animate-fade-in${
         variant === 'draft' ? '' : ' mt-4'
       }${playing ? ' conversation-code-bar--sounding' : ''}`}
     >
@@ -135,6 +151,7 @@ export function CodeDiffView({
             }}
             className="px-2 py-1.5 transition-colors hover:bg-surface-hover hover:text-text-primary"
             title={t('copyCode')}
+            aria-label={t('copyCode')}
           >
             {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
           </button>
@@ -145,11 +162,16 @@ export function CodeDiffView({
             data-code-diff-play={messageId}
             aria-label={playing ? t('stop') : t('play')}
             onClick={playing ? onStop : onPlay}
+            disabled={playing ? guided?.stopDisabled : guided?.playDisabled}
             /* A width of its own and no height of its own: it takes the line
                beside it, so the two keys stop at the same edge however the
                reading is set, and it stays the height of that line when the
                changes are opened out underneath. */
-            className="conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-settings-surface transition-colors hover:bg-surface-hover hover:text-text-primary"
+            /* The guide's reach runs 8px past the key above, below and to the
+               right, and 4px into the gap on the left — short of the copy key. */
+            className={`conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-settings-surface transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted${
+              guided ? " relative before:absolute before:-inset-y-2 before:-right-2 before:-left-1 before:content-['']" : ''
+            }`}
           >
             {playing ? <StopIcon size={12} /> : <PlayOutlineIcon size={13} />}
           </button>
@@ -157,7 +179,7 @@ export function CodeDiffView({
       </div>
 
       {expanded && (
-        <div className="border-t border-border bg-auth-field py-1 animate-fade-in">
+        <div className={`border-t border-border bg-auth-field py-1 animate-fade-in${guided ? ' overflow-hidden rounded-b-md' : ''}`}>
           {diff.groups.length === 0 && (
             <div className="px-3 py-3 text-[11px] text-text-muted">{t('noCodeChanges')}</div>
           )}

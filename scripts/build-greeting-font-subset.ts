@@ -25,7 +25,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { GREETINGS_ZH } from '../src/lib/greetings';
-import { FAVORITES_EMPTY_ZH, FEATURED_OPENED_INTRO_ZH, THEME_SONG_INTRO_ZH } from '../src/lib/i18n';
+import {
+  FAVORITES_EMPTY_ZH,
+  FEATURED_OPENED_INTRO_ZH,
+  ONBOARDING_PRACTICE_INTRO_ZH,
+  THEME_SONG_INTRO_ZH,
+} from '../src/lib/i18n';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -44,11 +49,12 @@ export interface SubsetManifest {
 /**
  * The exact text the subset must cover: every distinct character across the
  * Chinese greeting pool, the Favorites page's empty line, the theme song's
- * opening line, and the line a session opened from a featured piece starts
- * with — the four places the face is used — sorted so the manifest stays
- * diff-stable regardless of the order any of it is declared in.
+ * opening line, the line a session opened from a featured piece starts with,
+ * and the first-run practice's opening line — the five places the face is
+ * used — sorted so the manifest stays diff-stable regardless of the order any
+ * of it is declared in.
  *
- * The last two reach the same slot the greetings do: both are the opening
+ * The last three reach the same slot the greetings do: each is the opening
  * message of a seeded session, flagged `isGreeting`, so ConversationView paints
  * them in this face. Left out of here, the theme song's line would have
  * rendered 35 of its characters in `serif`, and the featured line all but four
@@ -60,6 +66,7 @@ export function greetingSubsetText(): string {
     FAVORITES_EMPTY_ZH,
     THEME_SONG_INTRO_ZH,
     FEATURED_OPENED_INTRO_ZH,
+    ONBOARDING_PRACTICE_INTRO_ZH,
   ];
   return [...new Set(sources.join(''))].sort().join('');
 }

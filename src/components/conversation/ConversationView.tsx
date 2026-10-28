@@ -1,13 +1,32 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
-import { ThinkingLottie } from './ThinkingLottie';
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PauseIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
+
+// The lottie player and its JSON stay out of first paint: declared at module
+// scope (never inside render) and mounted only where the thinking indicator
+// already was. Declaring here keeps a single lazy component per module load.
+const LazyThinkingLottie = lazy(() =>
+  import('./ThinkingLottie').then((m) => ({ default: m.ThinkingLottie })),
+);
+
+/** Same footprint as an empty ThinkingLottie placeholder (h-5 beside the label). */
+function ThinkingLottieFallback({ className }: { className?: string }) {
+  return <span className={className ? `thinking-lottie ${className}` : 'thinking-lottie'} />;
+}
+
+function ThinkingLottieSuspense({ className }: { className?: string }) {
+  return (
+    <Suspense fallback={<ThinkingLottieFallback className={className} />}>
+      <LazyThinkingLottie className={className} />
+    </Suspense>
+  );
+}
 
 type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
@@ -32,9 +51,8 @@ const REASONING_FALLBACK_LINE = 23;          // px
    move at all. Without a gesture behind it — a layout shift, the browser's own
    scroll anchoring — it still takes a real distance to count (IDLE), so nothing
    the page does to itself silently stops the stream from following.
-   Following resumes only once the reading is back where the anchor holds it, or
-   at the very bottom of the scrollback (RESUME); anywhere in between, the
-   takeover stands. */
+   Following resumes only once the reading is back where the anchor holds it
+   (RESUME). Without a turn anchor, that position is the scrollback's bottom. */
 const TAKEOVER_GESTURE_EPS = 2;
 const TAKEOVER_IDLE_EPS = 80;
 const FOLLOW_RESUME_EPS = 4;
@@ -539,6 +557,10 @@ interface ConversationViewProps {
    * named is where it can be heard, on either layout.
    */
   onPlaySegment?: (segmentId: string, code: string) => void;
+  onPlayCode?: (code: string) => void;
+  onPauseCode?: () => void;
+  engineReady?: boolean;
+  isStarting?: boolean;
   onStopCode?: () => void;
   /** Whether anything is sounding, and what — together these say which widget,
    *  if any, is the one currently playing. */
@@ -564,6 +586,24 @@ interface ConversationViewProps {
    */
   pressedSegmentId?: string | null;
   pressedSegmentCode?: string | null;
+  /**
+   * The reply the phone's first-run guide is walking through. Its code widget
+   * opens and shuts from here rather than from this view's own state, so the
+   * guide's "view the change" and the widget's own toggle are one switch; and
+   * its keys take the guide's thumb-sized form.
+   */
+  guidedReply?: GuidedReply;
+}
+
+export interface GuidedReply {
+  id: string;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  /** The play key reaches a thumb's 44px, without the widget changing size; off, it is as any other. */
+  enlarged: boolean;
+  playDisabled: boolean;
+  /** A listen the guide is timing plays through: its stop cannot be pressed. */
+  stopDisabled: boolean;
 }
 
 /**
@@ -597,12 +637,17 @@ export default function ConversationView({
   onBranch,
   onRetry,
   onPlaySegment,
+  onPlayCode,
+  onPauseCode,
+  engineReady = false,
+  isStarting = false,
   onStopCode,
   isPlaying = false,
   playingCode = '',
   draftCode = '',
   pressedSegmentId = null,
   pressedSegmentCode = null,
+  guidedReply,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -666,9 +711,9 @@ export default function ConversationView({
   /**
    * Take the reasoning window to the live end of the stream — which is further
    * than the last line. Landing that line flush against the bottom edge would
-   * put the next token below the fold again, so the jump goes a window-height
-   * past it: the newest line comes to rest at the top with the whole window
-   * open underneath it, and what streams in next is read where it lands.
+   * put the next token below the fold again, so the jump brings the newest
+   * line to the top and leaves the rest of the window open for what streams
+   * in next.
    *
    * Instant rather than animated: the press is a request to be at the live end
    * now, and the text keeps arriving while any glide would still be travelling.
@@ -793,8 +838,8 @@ export default function ConversationView({
     return null;
   }, [isPlaying, pressedSegmentId, pressedSegmentCode, playingCode, messages, revisionsById, draftRevision]);
 
-  // Detect manual user scroll: stop auto-following when more than 80px from
-  // the bottom, resume when scrolled back. Scroll events produced by our own
+  // Detect manual user scroll relative to the current automatic target and
+  // resume when scrolled back to it. Scroll events produced by our own
   // smooth turn-start animation must not count as manual — its intermediate
   // frames are >80px from the bottom and would cut the animation short — so
   // while a programmatic scroll is in flight, only a real user gesture
@@ -823,10 +868,10 @@ export default function ConversationView({
       const dist = anchorTarget != null
         ? Math.abs(el.scrollTop - anchorTarget)
         : distFromBottom;
-      // Back at the anchor, or at the very end of the scrollback: following
-      // again. (The anchor rests a little above the bottom pin while the
-      // reasoning window is up, so the bottom is its own way back.)
-      if (dist <= FOLLOW_RESUME_EPS || distFromBottom <= FOLLOW_RESUME_EPS) {
+      // Resume only at the automatic target. The outer scrollback's bottom
+      // can sit below the turn anchor in filler space: resuming there would
+      // pull the view back to the anchor on the next streamed delta.
+      if (dist <= FOLLOW_RESUME_EPS) {
         userScrolledRef.current = false;
         return;
       }
@@ -1433,23 +1478,46 @@ export default function ConversationView({
         style={{ scrollbarGutter: 'stable' }}
       >
       {greetingMsg && !hasConversationMessages && !isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center px-8">
-          <p
-            // Keyed by the greeting's own id (not just conditionally mounted):
-            // reusing an empty session re-rolls the greeting into a new
-            // message id without unmounting this block, so the key is what
-            // forces a fresh node — and with it, the mount animation to replay.
+        // The phone's guide centres its invitation on this frame, so the card
+        // covers the greeting rather than leaving its ends showing.
+        <div data-onboarding-target="greeting" className="absolute inset-0 flex flex-col items-center justify-center px-8">
+          {/* Replay the invitation's entrance together with its playback
+              control when an empty session receives a new greeting. */}
+          <div
             key={greetingMsg.id}
-            // A step larger on a phone: this is the one line on an empty
-            // screen, read at arm's length on a display the width of a hand,
-            // where the desktop's 14px reads as fine print rather than as an
-            // opening.
-            className={`animate-blur-fade-in text-center text-text-greeting leading-relaxed ${
-              zh ? 'font-jinghua-laosongti tracking-wider' : 'font-eb-garamond'
-            } ${isMobile ? 'text-base' : 'text-sm'}`}
+            className="animate-blur-fade-in flex w-full flex-col items-center gap-3"
           >
-            {greetingMsg.content}
-          </p>
+            <p
+              // A step larger on a phone: this is the one line on an empty
+              // screen, read at arm's length on a display the width of a hand,
+              // where the desktop's 14px reads as fine print rather than as an
+              // opening.
+              className={`text-center text-text-greeting leading-relaxed ${
+                zh ? 'font-jinghua-laosongti tracking-wider' : 'font-eb-garamond'
+              } ${isMobile ? 'text-base' : 'text-sm'}`}
+            >
+              {greetingMsg.content}
+            </p>
+            {isMobile && draftCode.trim() && (
+              <button
+                type="button"
+                aria-label={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
+                title={isPlaying && playingCode === draftCode ? t('pause') : t('play')}
+                disabled={!engineReady || isStarting}
+                onClick={() => {
+                  if (isPlaying && playingCode === draftCode) onPauseCode?.();
+                  else onPlayCode?.(draftCode);
+                }}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full transition-opacity duration-[1500ms] ease-out disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                <span aria-hidden="true" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-accent text-on-accent transition-colors hover:bg-brand-accent-hover">
+                  {isPlaying && playingCode === draftCode
+                    ? <PauseIcon size={16} />
+                    : <PlayIcon size={16} />}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1567,7 +1635,7 @@ export default function ConversationView({
             className={`flex justify-start items-start animate-fade-in group${showsTurnActions ? ' mb-16' : ''}`}
             style={assistantStyle}
           >
-            <div className={`relative w-full rounded-xl px-2 pb-2 ${bodyText} bg-transparent text-text-primary ${
+            <div data-message-id={msg.id} className={`relative w-full rounded-xl px-2 pb-2 ${bodyText} bg-transparent text-text-primary ${
               followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
             }`}>
               <MarkdownText content={msg.content} />
@@ -1575,8 +1643,13 @@ export default function ConversationView({
                 <CodeDiffView
                   messageId={msg.id}
                   revision={revisionsById.get(msg.revisionId)!}
-                  expanded={expandedCode.has(msg.id)}
-                  onToggle={() => toggleCode(msg.id)}
+                  expanded={guidedReply?.id === msg.id ? guidedReply.expanded : expandedCode.has(msg.id)}
+                  onToggle={guidedReply?.id === msg.id
+                    ? () => guidedReply.onExpandedChange(!guidedReply.expanded)
+                    : () => toggleCode(msg.id)}
+                  guided={guidedReply?.id === msg.id && guidedReply.enlarged
+                    ? { playDisabled: guidedReply.playDisabled, stopDisabled: guidedReply.stopDisabled }
+                    : undefined}
                   playing={soundingSegmentId === msg.id}
                   onPlay={onPlaySegment
                     ? () => onPlaySegment(msg.id, revisionsById.get(msg.revisionId!)!.afterCode)
@@ -1723,7 +1796,7 @@ export default function ConversationView({
           style={!isVideoMode ? { height: turnFillerHeight } : undefined}
         >
           <div className="flex items-start gap-1.5 px-1.5 shrink-0">
-            <ThinkingLottie className="w-5 h-5 flex-shrink-0" />
+            <ThinkingLottieSuspense className="w-5 h-5 flex-shrink-0" />
             {reasoningWindowAvailable ? (
               <button
                 data-live-reasoning-toggle
@@ -1770,16 +1843,22 @@ export default function ConversationView({
                     reasoningTailBelowFold(e.currentTarget) > REASONING_BOTTOM_EPS,
                   );
                 }}
-                className="h-full min-h-[160px] text-sm text-text-reasoning font-mono break-words overflow-y-auto overflow-x-hidden leading-relaxed"
+                // Stop boundary gestures from moving the outer conversation,
+                // whose next streamed update would otherwise snap it back.
+                className="h-full min-h-[160px] text-sm text-text-reasoning font-mono break-words overflow-y-auto overflow-x-hidden overscroll-y-none leading-relaxed"
+                // This nested scrollport needs its own opt-out: anchoring the
+                // trailing spacer would follow new text after a manual jump.
+                style={{ overflowAnchor: 'none' }}
               >
                 <MarkdownText content={streamingReasoningMsg.content} tone="muted" />
-                {/* The room the jump lands in: a window's worth of empty space
-                    after the text, so the newest line can come to rest at the
-                    top with everything below it still to be written. Nothing
-                    measures the box's scrollHeight for the button — that reads
-                    the content element — so this adds travel without ever
-                    claiming there is more to read. */}
-                <div aria-hidden className="h-full" />
+                {/* Leave enough room after the text for the latest line to rest
+                    at the top, but no more. Using one computed line-height
+                    keeps the maximum scroll position aligned with the jump
+                    target, so the reader cannot scroll into a blank window.
+                    Nothing measures the box's scrollHeight for the button —
+                    that reads the content element — so this spacer never
+                    claims there is more to read. */}
+                <div aria-hidden style={{ height: 'calc(100% - 1lh)' }} />
               </div>
               {/* Offered whenever streamed text sits below the fold — which,
                   with nothing following the stream, is most of a long answer.

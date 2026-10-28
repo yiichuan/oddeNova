@@ -534,3 +534,69 @@ describe('ChatInput thinking level focus decoupling', () => {
     expect(document.activeElement).toBe(textarea);
   });
 });
+
+describe('ChatInput guide preset on a phone', () => {
+  const roots: Root[] = [];
+
+  beforeEach(() => {
+    mobileState.value = true;
+  });
+
+  afterEach(() => {
+    mobileState.value = false;
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('does not pull focus into the read-only preset when the card is tapped', () => {
+    const onSend = vi.fn();
+    const onFocusChange = vi.fn();
+    const { container, root } = renderChatInput({
+      onFocusChange,
+      presetLock: { text: 'Keep the chords, add a piano run.', busy: false, onSend },
+    });
+    roots.push(root);
+    const card = container.querySelector<HTMLElement>('.chat-input-surface');
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!card || !textarea) throw new Error('chat input not found');
+
+    act(() => card.click());
+
+    expect(document.activeElement).not.toBe(textarea);
+    expect(onFocusChange).not.toHaveBeenCalledWith(true);
+    // Even a direct tap asks for no keyboard.
+    expect(textarea.readOnly).toBe(true);
+    expect(textarea.getAttribute('inputmode')).toBe('none');
+    expect(container.textContent).toContain('Guided practice · preset example');
+  });
+
+  it('sends the preset once through the real send key and not while it loads', () => {
+    const onSend = vi.fn();
+    const { container, root } = renderChatInput({
+      presetLock: { text: 'Keep the chords, add a piano run.', busy: false, onSend },
+    });
+    roots.push(root);
+    const send = getSubmitButton(container);
+
+    expect(send.dataset.onboardingTarget).toBe('send');
+    act(() => send.click());
+    expect(onSend).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.render(
+        <ChatInput
+          isLoading={false}
+          engineReady
+          onSendText={vi.fn()}
+          onReinitEngine={vi.fn()}
+          presetLock={{ text: 'Keep the chords, add a piano run.', busy: true, onSend }}
+        />,
+      );
+    });
+    expect(getSubmitButton(container).disabled).toBe(true);
+    act(() => getSubmitButton(container).click());
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+});

@@ -4,6 +4,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { SessionSummary } from '../../../shared/session-api';
@@ -77,6 +78,9 @@ const HELD_ROW_RELEASE_MS = 160;
 interface HistoryPanelProps {
   sessions: readonly (Session | SessionSummary)[];
   currentId: string | null;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  /** Hidden mobile sections stay mounted, so mounting alone is not an opening. */
+  isOpen?: boolean;
   isLoading?: boolean;
   initialError?: Error | null;
   onRetryInitial?: () => void;
@@ -146,6 +150,8 @@ function compareByUpdatedAt(a: HistoryItem, b: HistoryItem): number {
 export default function HistoryPanel({
   sessions,
   currentId,
+  scrollContainerRef,
+  isOpen = true,
   isLoading = false,
   initialError = null,
   onRetryInitial,
@@ -219,6 +225,8 @@ export default function HistoryPanel({
      conversation — the click lands after the finger lifts, by which time the
      plate is already up. */
   const pressHandledRef = useRef(false);
+  const activeRowRef = useRef<HTMLDivElement>(null);
+  const positionedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!editingId) return;
@@ -362,6 +370,52 @@ export default function HistoryPanel({
   const ordered = remoteSearch || !needle
     ? listed
     : listed.filter((s) => (s.title || t('newSessionTitle')).toLowerCase().includes(needle));
+  const hasCurrentRow = !isLoading && !initialError
+    && ordered.some((session) => session.id === currentId);
+
+  useEffect(() => {
+    if (!isOpen) {
+      positionedIdRef.current = null;
+      return;
+    }
+    const container = scrollContainerRef?.current;
+    const row = activeRowRef.current;
+    if (!container || !row || !hasCurrentRow || !currentId
+      || positionedIdRef.current === currentId) return;
+
+    let frame = 0;
+    let observer: ResizeObserver | undefined;
+    const position = () => {
+      if (container.clientHeight === 0) return;
+      const containerBox = container.getBoundingClientRect();
+      const rowBox = row.getBoundingClientRect();
+      const nextTop = container.scrollTop + rowBox.top - containerBox.top
+        - container.clientTop - (container.clientHeight - rowBox.height) / 2;
+      // Assign only this scrollport; scrollIntoView can also move the chat/page.
+      container.scrollTop = Math.max(0, Math.min(
+        nextTop, container.scrollHeight - container.clientHeight,
+      ));
+      positionedIdRef.current = currentId;
+      observer?.disconnect();
+    };
+    // Wait for two frames without a resize, including the mobile section's
+    // flex-grow transition. Zero-height sections wait for ResizeObserver.
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(position);
+      });
+    };
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(schedule);
+      observer.observe(container);
+    }
+    schedule();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [isOpen, currentId, hasCurrentRow, scrollContainerRef]);
   const searchable = listed.length > 0 || needle !== '';
   /* Resolved against the list rather than taken on trust — see the id above. */
   const askingDelete = askingDeleteId
@@ -502,6 +556,7 @@ export default function HistoryPanel({
                       in the host's ground, see --history-search-bg), so they
                       have no reason to be opaque at all. */}
                   <div
+                    ref={active ? activeRowRef : undefined}
                     data-session-row={s.id}
                     /* Which row is drawn as open, stated where a test can read
                        it: the fill itself is a colour, and a colour is not a

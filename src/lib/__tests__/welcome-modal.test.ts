@@ -23,6 +23,7 @@ describe('first-entry welcome modal state', () => {
     expect(shouldAutoOpenWelcomeModal({
       isTopWindow: true,
       hasSeenWelcome: false,
+      pathname: '/',
     })).toBe(true);
   });
 
@@ -30,6 +31,7 @@ describe('first-entry welcome modal state', () => {
     expect(shouldAutoOpenWelcomeModal({
       isTopWindow: true,
       hasSeenWelcome: true,
+      pathname: '/',
     })).toBe(false);
   });
 
@@ -37,8 +39,32 @@ describe('first-entry welcome modal state', () => {
     expect(shouldAutoOpenWelcomeModal({
       isTopWindow: false,
       hasSeenWelcome: false,
+      pathname: '/',
     })).toBe(false);
   });
+
+  it.each([
+    'https://oddenova.com/s/share123',
+    'https://oddenova.com/s/share123?source=qr',
+    'https://oddenova.com/s/share123#music',
+  ])('stays closed on a first share visit: %s', (url) => {
+    expect(shouldAutoOpenWelcomeModal({
+      isTopWindow: true,
+      hasSeenWelcome: false,
+      pathname: new URL(url).pathname,
+    })).toBe(false);
+  });
+
+  it.each(['/s/', '/s/share123/extra', '/settings'])(
+    'preserves the first-visit welcome outside share routes: %s',
+    (pathname) => {
+      expect(shouldAutoOpenWelcomeModal({
+        isTopWindow: true,
+        hasSeenWelcome: false,
+        pathname,
+      })).toBe(true);
+    },
+  );
 
   it('records the welcome as seen in local storage', () => {
     const storage = makeStorage();
