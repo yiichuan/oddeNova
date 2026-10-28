@@ -51,9 +51,8 @@ const REASONING_FALLBACK_LINE = 23;          // px
    move at all. Without a gesture behind it — a layout shift, the browser's own
    scroll anchoring — it still takes a real distance to count (IDLE), so nothing
    the page does to itself silently stops the stream from following.
-   Following resumes only once the reading is back where the anchor holds it, or
-   at the very bottom of the scrollback (RESUME); anywhere in between, the
-   takeover stands. */
+   Following resumes only once the reading is back where the anchor holds it
+   (RESUME). Without a turn anchor, that position is the scrollback's bottom. */
 const TAKEOVER_GESTURE_EPS = 2;
 const TAKEOVER_IDLE_EPS = 80;
 const FOLLOW_RESUME_EPS = 4;
@@ -712,9 +711,9 @@ export default function ConversationView({
   /**
    * Take the reasoning window to the live end of the stream — which is further
    * than the last line. Landing that line flush against the bottom edge would
-   * put the next token below the fold again, so the jump goes a window-height
-   * past it: the newest line comes to rest at the top with the whole window
-   * open underneath it, and what streams in next is read where it lands.
+   * put the next token below the fold again, so the jump brings the newest
+   * line to the top and leaves the rest of the window open for what streams
+   * in next.
    *
    * Instant rather than animated: the press is a request to be at the live end
    * now, and the text keeps arriving while any glide would still be travelling.
@@ -839,8 +838,8 @@ export default function ConversationView({
     return null;
   }, [isPlaying, pressedSegmentId, pressedSegmentCode, playingCode, messages, revisionsById, draftRevision]);
 
-  // Detect manual user scroll: stop auto-following when more than 80px from
-  // the bottom, resume when scrolled back. Scroll events produced by our own
+  // Detect manual user scroll relative to the current automatic target and
+  // resume when scrolled back to it. Scroll events produced by our own
   // smooth turn-start animation must not count as manual — its intermediate
   // frames are >80px from the bottom and would cut the animation short — so
   // while a programmatic scroll is in flight, only a real user gesture
@@ -869,10 +868,10 @@ export default function ConversationView({
       const dist = anchorTarget != null
         ? Math.abs(el.scrollTop - anchorTarget)
         : distFromBottom;
-      // Back at the anchor, or at the very end of the scrollback: following
-      // again. (The anchor rests a little above the bottom pin while the
-      // reasoning window is up, so the bottom is its own way back.)
-      if (dist <= FOLLOW_RESUME_EPS || distFromBottom <= FOLLOW_RESUME_EPS) {
+      // Resume only at the automatic target. The outer scrollback's bottom
+      // can sit below the turn anchor in filler space: resuming there would
+      // pull the view back to the anchor on the next streamed delta.
+      if (dist <= FOLLOW_RESUME_EPS) {
         userScrolledRef.current = false;
         return;
       }
@@ -1844,16 +1843,22 @@ export default function ConversationView({
                     reasoningTailBelowFold(e.currentTarget) > REASONING_BOTTOM_EPS,
                   );
                 }}
-                className="h-full min-h-[160px] text-sm text-text-reasoning font-mono break-words overflow-y-auto overflow-x-hidden leading-relaxed"
+                // Stop boundary gestures from moving the outer conversation,
+                // whose next streamed update would otherwise snap it back.
+                className="h-full min-h-[160px] text-sm text-text-reasoning font-mono break-words overflow-y-auto overflow-x-hidden overscroll-y-none leading-relaxed"
+                // This nested scrollport needs its own opt-out: anchoring the
+                // trailing spacer would follow new text after a manual jump.
+                style={{ overflowAnchor: 'none' }}
               >
                 <MarkdownText content={streamingReasoningMsg.content} tone="muted" />
-                {/* The room the jump lands in: a window's worth of empty space
-                    after the text, so the newest line can come to rest at the
-                    top with everything below it still to be written. Nothing
-                    measures the box's scrollHeight for the button — that reads
-                    the content element — so this adds travel without ever
-                    claiming there is more to read. */}
-                <div aria-hidden className="h-full" />
+                {/* Leave enough room after the text for the latest line to rest
+                    at the top, but no more. Using one computed line-height
+                    keeps the maximum scroll position aligned with the jump
+                    target, so the reader cannot scroll into a blank window.
+                    Nothing measures the box's scrollHeight for the button —
+                    that reads the content element — so this spacer never
+                    claims there is more to read. */}
+                <div aria-hidden style={{ height: 'calc(100% - 1lh)' }} />
               </div>
               {/* Offered whenever streamed text sits below the fold — which,
                   with nothing following the stream, is most of a long answer.
