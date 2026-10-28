@@ -898,6 +898,49 @@ describe('ConversationView chat streaming', () => {
     expect(box.scrollTop).toBe(800);
   });
 
+  it.each([998, 1000])('preserves manual outer scrolling at %ipx near the bottom while a turn is anchored above it', (scrollTop) => {
+    setMobileViewport(false);
+    const user: ChatMessage = { id: 'u1', role: 'user', content: '来点鼓', timestamp: 1 };
+    const reasoning: ChatMessage = {
+      id: 'r1', role: 'progress', content: '检查鼓点', progressKind: 'reasoning', timestamp: 2,
+    };
+    const { container, root, render } = renderConversationView([user]);
+    roots.push(root);
+    const box = container.querySelector<HTMLElement>('.conversation-scroll')!;
+    const bubble = box.querySelector<HTMLElement>('[data-rollback-bubble="u1"]')!;
+    Object.defineProperties(box, {
+      clientHeight: { configurable: true, value: 500 },
+      scrollHeight: { configurable: true, value: 1500 },
+    });
+    Object.defineProperties(bubble, {
+      offsetParent: { configurable: true, value: box },
+      offsetTop: { configurable: true, writable: true, value: 200 },
+    });
+    box.scrollTo = ((options: ScrollToOptions) => { box.scrollTop = options.top ?? 0; }) as typeof box.scrollTo;
+    render({ isLoading: true }, [user, reasoning]);
+    expect(box.scrollTop).toBe(200);
+    act(() => box.dispatchEvent(new Event('scroll')));
+
+    act(() => {
+      box.dispatchEvent(new Event('wheel'));
+      box.scrollTop = scrollTop;
+      box.dispatchEvent(new Event('scroll'));
+    });
+    render(undefined, [user, { ...reasoning, content: '继续检查鼓点' }]);
+    expect(box.scrollTop).toBe(scrollTop);
+    render(undefined, [user, { ...reasoning, content: '继续检查鼓点和贝斯' }]);
+    expect(box.scrollTop).toBe(scrollTop);
+
+    // Returning to the actual turn anchor still resumes automatic positioning.
+    act(() => {
+      box.scrollTop = 200;
+      box.dispatchEvent(new Event('scroll'));
+    });
+    Object.defineProperty(bubble, 'offsetTop', { configurable: true, value: 250 });
+    render(undefined, [user, { ...reasoning, content: '检查完成' }]);
+    expect(box.scrollTop).toBe(250);
+  });
+
   it.each([350, 430, 900])('fits reasoning below progress at %ipx before considering a scroll', (reasoningTop) => {
     const resize = stubResizeObserver();
     try {
