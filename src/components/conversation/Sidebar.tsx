@@ -127,6 +127,7 @@ export default function Sidebar({
   presetLock,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
+  const historyScrollRef = useRef<HTMLDivElement>(null);
   const [focusTrigger, setFocusTrigger] = useState(1);
   const prevIsLoadingRef = useRef(false);
   const prevPrefillTriggerRef = useRef(prefillTrigger);
@@ -213,8 +214,9 @@ export default function Sidebar({
           {showHistory && (
             <>
               <div className="fixed inset-0 z-[9]" onClick={() => setShowHistory(false)} />
-              <div className="history-panel-surface absolute top-0 left-3 right-3 max-h-[33.333%] z-10 overflow-y-auto rounded-region border border-border bg-conversation-surface">
+              <div ref={historyScrollRef} className="history-panel-surface absolute top-0 left-3 right-3 max-h-[33.333%] z-10 overflow-y-auto rounded-region border border-border bg-conversation-surface">
                 <HistoryPanel
+                  scrollContainerRef={historyScrollRef}
                   sessions={sessions}
                   currentId={currentId}
                   isLoading={isHistoryLoading}
