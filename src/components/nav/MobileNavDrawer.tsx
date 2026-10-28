@@ -280,6 +280,7 @@ export default function MobileNavDrawer({
   const theme = useResolvedTheme();
   const swipeDismiss = useSwipeDismiss('left', onClose);
   const panelRef = useRef<HTMLDivElement>(null);
+  const historyScrollRef = useRef<HTMLDivElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   /* Search is a mode the whole panel goes into rather than a field added to
      it. The conversation list is the only thing in the drawer there is any
@@ -632,8 +633,10 @@ export default function MobileNavDrawer({
               conversation comes to rest inside the softened band and can never
               be scrolled clear of it. */}
           <DrawerFillSection open={searchOpen || historyOpen}>
-            <div className="h-full overflow-y-auto px-2 pb-12 no-scrollbar">
+            <div ref={historyScrollRef} className="h-full overflow-y-auto px-2 pb-12 no-scrollbar">
               <HistoryPanel
+                scrollContainerRef={historyScrollRef}
+                isOpen={open && (searchOpen || historyOpen)}
                 sessions={history.sessions}
                 currentId={history.currentId}
                 isLoading={history.isLoading}
