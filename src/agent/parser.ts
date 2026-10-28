@@ -3,12 +3,22 @@
 // individually addressable layers. Layers may be tagged with an inline
 // `/* @layer NAME */` marker; otherwise they get auto-names like `layer_0`.
 
+/** A half-open UTF-16 code-unit range, relative to the text parseScore ran on. */
+export interface ParsedRange {
+  from: number;
+  to: number;
+}
+
 export interface ParsedLayer {
   name: string;
   source: string;       // layer expression text without the @layer marker, trimmed
   rawStart: number;     // absolute index in code where this layer's slot begins
   rawEnd: number;       // absolute index (exclusive) where this layer's slot ends
   envelope?: string;    // arrangement-scale envelope summary (e.g. "mask/16 gain/16"); undefined if none
+  /** The whole `/* @layer NAME *&#47;` comment at the slot's start; undefined for auto-named layers. */
+  markerRange?: ParsedRange;
+  /** Just the name characters inside the marker comment; undefined for auto-named layers. */
+  nameRange?: ParsedRange;
 }
 
 export interface ParsedScore {
@@ -113,9 +123,22 @@ export function parseScore(code: string): ParsedScore {
           const marker = argText.match(LAYER_MARKER_RE);
           let name: string;
           let sourceText: string;
+          let markerRange: ParsedRange | undefined;
+          let nameRange: ParsedRange | undefined;
           if (marker) {
             name = marker[1];
             sourceText = argText.slice(marker[0].length);
+            // Pinpoint the comment and the name inside the matched prefix so a
+            // rename can splice exactly the name characters and nothing else.
+            const base = result.stackArgsStart + span.start;
+            const open = marker[0].indexOf('/*');
+            const keyword = marker[0].indexOf('@layer', open + 2);
+            let nameStart = keyword + '@layer'.length;
+            while (/\s/.test(marker[0][nameStart] ?? '')) nameStart++;
+            const nameEnd = nameStart + name.length;
+            const close = marker[0].indexOf('*/', nameEnd);
+            markerRange = { from: base + open, to: base + close + '*/'.length };
+            nameRange = { from: base + nameStart, to: base + nameEnd };
           } else {
             name = `layer_${autoIdx++}`;
             sourceText = argText;
@@ -128,6 +151,8 @@ export function parseScore(code: string): ParsedScore {
             rawStart: result.stackArgsStart + span.start,
             rawEnd: result.stackArgsStart + span.end,
             envelope: extractEnvelope(dedented),
+            markerRange,
+            nameRange,
           });
         }
       }
