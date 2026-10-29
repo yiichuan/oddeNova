@@ -5,6 +5,7 @@ import {
   runAgentLoop,
   type ChatMsg,
   type ConversationTurn,
+  type AgentTraceEvent,
   type LLMCaller,
   type ProgressEvent,
   type RunAgentResult,
@@ -14,7 +15,7 @@ import {
 import {
   getOpenAIToolSchemas,
 } from '../agent/tools';
-import { getActiveModelConfig, getSelectedThinkingLevel } from './llm-config';
+import { getActiveModelConfig, getSelectedThinkingLevel, type ModelConfig } from './llm-config';
 import {
   isAnthropicAdaptiveModel,
   resolveAnthropicThinkingParam,
@@ -66,34 +67,36 @@ function anthropicMaxOutputTokens(model: string): number {
 
 function getAnthropicClient(): Anthropic {
   if (!anthropicClient) {
-    const cfg = getActiveModelConfig();
-    anthropicClient = new Anthropic({
-      apiKey: cfg.apiKey,
-      baseURL: cfg.baseURL,
-      dangerouslyAllowBrowser: true,
-      // Some OpenAI-compat proxies only read `Authorization: Bearer`. Adding
-      // it as a default header is a no-op for a real Anthropic endpoint
-      // (which ignores the Authorization header in favour of `x-api-key`),
-      // but it lets the same proxy URL work for both protocols.
-      defaultHeaders: {
-        Authorization: `Bearer ${cfg.apiKey}`,
-        'anthropic-beta': 'interleaved-thinking-2025-05-14',
-      },
-    });
+    anthropicClient = createAnthropicClient(getActiveModelConfig());
   }
   return anthropicClient;
 }
 
 function getOpenAIClient(): OpenAI {
   if (!openaiClient) {
-    const cfg = getActiveModelConfig();
-    openaiClient = new OpenAI({
-      apiKey: cfg.apiKey,
-      baseURL: cfg.baseURL || undefined,
-      dangerouslyAllowBrowser: true,
-    });
+    openaiClient = createOpenAIClient(getActiveModelConfig());
   }
   return openaiClient;
+}
+
+function createAnthropicClient(cfg: ModelConfig): Anthropic {
+  return new Anthropic({
+    apiKey: cfg.apiKey,
+    baseURL: cfg.baseURL,
+    dangerouslyAllowBrowser: true,
+    defaultHeaders: {
+      Authorization: `Bearer ${cfg.apiKey}`,
+      'anthropic-beta': 'interleaved-thinking-2025-05-14',
+    },
+  });
+}
+
+function createOpenAIClient(cfg: ModelConfig): OpenAI {
+  return new OpenAI({
+    apiKey: cfg.apiKey,
+    baseURL: cfg.baseURL || undefined,
+    dangerouslyAllowBrowser: true,
+  });
 }
 
 /** Clear the client singletons; they will be rebuilt with the latest config on the next call. */
@@ -265,17 +268,27 @@ function convertTools(
 }
 
 function getActiveLLMCaller(): LLMCaller {
-  return isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
+  const cfg = getActiveModelConfig();
+  return cfg.protocol === 'openai'
+    ? createOpenAILLMCaller(cfg, getOpenAIClient())
+    : createAnthropicLLMCaller(cfg, getAnthropicClient());
+}
+
+/** Create an LLM caller bound to an explicit config, without touching app settings. */
+export function createLLMCaller(cfg: ModelConfig): LLMCaller {
+  return cfg.protocol === 'openai'
+    ? createOpenAILLMCaller(cfg, createOpenAIClient(cfg))
+    : createAnthropicLLMCaller(cfg, createAnthropicClient(cfg));
 }
 
 // ===========================================================================
 // LLMCaller implementation — Anthropic path (original logic)
 // ===========================================================================
 
-const anthropicLLMCaller: LLMCaller = {
+function createAnthropicLLMCaller(cfg: ModelConfig, anthropic: Anthropic): LLMCaller {
+  return {
   async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
-    const anthropic = getAnthropicClient();
-    const model = getModel();
+    const model = cfg.model;
     const { system, messages: amsgs } = convertChatHistory(messages);
 
     const stream = anthropic.messages.stream({
@@ -333,17 +346,16 @@ const anthropicLLMCaller: LLMCaller = {
       },
     };
   },
-};
+  };
+}
 
 // ===========================================================================
 // LLMCaller implementation — OpenAI / OpenAI-compat path
 // ===========================================================================
 
-function createOpenAILLMCaller(): LLMCaller {
+function createOpenAILLMCaller(cfg: ModelConfig, oai: OpenAI): LLMCaller {
   return {
     async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
-      const oai = getOpenAIClient();
-      const cfg = getActiveModelConfig();
       // OpenAI's GPT-5 reasoning models and Kimi's thinking models fix
       // temperature server-side; sending one gets the request rejected.
       const fixedTemperature = cfg.provider === 'openai' || cfg.provider === 'kimi';
@@ -355,7 +367,7 @@ function createOpenAILLMCaller(): LLMCaller {
         : resolveOpenAIClassificationParams(cfg.provider, cfg.model);
 
       const stream = await oai.chat.completions.create({
-        model: getModel(),
+        model: cfg.model,
         // ChatMsg is already in OpenAI format, can be passed directly
         messages: messages as OpenAI.ChatCompletionMessageParam[],
         ...(tools.length > 0
@@ -452,9 +464,10 @@ export async function classifyIntent(
     currentCode: string;
     conversationHistory?: ConversationTurn[];
     signal?: AbortSignal;
+    onTrace?: (event: AgentTraceEvent) => void;
   },
 ): Promise<Intent> {
-  const { instruction, currentCode, conversationHistory, signal } = opts;
+  const { instruction, currentCode, conversationHistory, signal, onTrace } = opts;
   const hasCode = currentCode.trim().length > 0;
   const codeNote = hasCode
     ? '(a track is currently playing / 当前已有一首曲子在播放)'
@@ -465,13 +478,69 @@ export async function classifyIntent(
     { role: 'user', content: `${codeNote}\nuser latest message / 用户最新消息: ${instruction}` },
   ];
   try {
+    const requestStartedAt = Date.now();
+    onTrace?.({
+      kind: 'request',
+      stage: 'intent-classification',
+      messages: messages.slice(1).map((message) => ({ ...message })),
+      tools: [],
+    });
     const resp = await llm.chatWithTools(messages, [], undefined, undefined, signal, false);
+    onTrace?.({
+      kind: 'response',
+      stage: 'intent-classification',
+      content: resp.content,
+      toolCalls: resp.toolCalls,
+      usage: resp.usage,
+      durationMs: Date.now() - requestStartedAt,
+    });
     const out = (resp.content ?? '').toLowerCase();
     if (out.includes('chat') && !out.includes('compose')) return 'chat';
     return 'compose';
   } catch {
     return 'compose';
   }
+}
+
+export interface RunAgentWithConfigOptions {
+  instruction: string;
+  initialCode: string;
+  locale: 'zh' | 'en';
+  systemPrompt: string;
+  llm: LLMCaller;
+  onProgress?: (event: ProgressEvent) => void;
+  onTrace?: (event: AgentTraceEvent) => void;
+  signal?: AbortSignal;
+  conversationHistory?: ConversationTurn[];
+  thinkingLevel?: ThinkingLevel;
+  classify?: boolean;
+}
+
+/** Run one product Agent turn with caller-supplied prompt and model config. */
+export async function runAgentWithConfig(opts: RunAgentWithConfigOptions): Promise<RunAgentResult> {
+  const intent = opts.classify === false
+    ? 'compose'
+    : await classifyIntent(opts.llm, {
+        instruction: opts.instruction,
+        currentCode: opts.initialCode,
+        conversationHistory: opts.conversationHistory,
+        signal: opts.signal,
+        onTrace: opts.onTrace,
+      });
+
+  return runAgentLoop({
+    instruction: opts.instruction,
+    initialCode: opts.initialCode,
+    locale: opts.locale,
+    systemPrompt: opts.systemPrompt,
+    llm: opts.llm,
+    onProgress: opts.onProgress,
+    onTrace: opts.onTrace,
+    signal: opts.signal,
+    conversationHistory: opts.conversationHistory,
+    enableThinking: intent === 'compose',
+    thinkingLevel: opts.thinkingLevel ?? 'medium',
+  });
 }
 
 export async function runAgent(
@@ -505,16 +574,11 @@ export async function runAgent(
         : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
     : activeLLMCaller;
 
-  // Classify intent up front (thinking-disabled) so we only stream a reasoning
-  // chain for composition turns. Demo/mood-generation flows are always
-  // compositions — skip the extra call for them.
+  // Demo/mood-generation flows are always compositions and skip classification.
   const isMoodGeneration = instruction === moodInstruction;
   const skipClassification = isDemoMode() || isMoodGeneration;
-  const intent: Intent = skipClassification
-    ? 'compose'
-    : await classifyIntent(llm, { instruction, currentCode, conversationHistory, signal });
 
-  return runAgentLoop({
+  return runAgentWithConfig({
     instruction,
     initialCode: currentCode,
     locale,
@@ -523,8 +587,8 @@ export async function runAgent(
     onProgress,
     signal,
     conversationHistory,
-    enableThinking: intent === 'compose',
     thinkingLevel: getSelectedThinkingLevel(),
+    classify: !skipClassification,
   });
 }
 

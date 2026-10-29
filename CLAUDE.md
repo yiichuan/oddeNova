@@ -23,6 +23,7 @@ architecture trade-offs require user input.
 
 ```bash
 npm run dev              # Vite dev server (localhost:5173)
+npm run dev:lab          # local prompt engineering workbench (127.0.0.1)
 npm run build            # tsc -b + vite build (type-check happens here)
 npm run lint             # ESLint over the whole repo
 npm test                 # Vitest, run once (--passWithNoTests)
@@ -131,6 +132,14 @@ Key modules:
   follow `docs/ai/edit-system-prompt.md` (create or reuse the
   requirement's working `v{N+1}`, update its header comment, point `active.ts`
   at it).
+
+- **`src/prompt-lab/`** — local prompt engineering workbench at
+  `/lab/prompts`, enabled only by `npm run dev:lab`. It edits immutable
+  experiment snapshots and calls the shared Agent loop; local templates,
+  suites, and run records live in the ignored `.local/prompt-lab/` directory.
+  The Vite-only file middleware in `server/prompt-lab-files.ts` must remain
+  bound to loopback development mode and must never be added to a production
+  API route.
 
 - **`src/hooks/useSessions.ts`** + **`src/lib/session-storage.ts`** — multi-
   session state, persisted to IndexedDB (falls back to in-memory if

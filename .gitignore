@@ -65,3 +65,4 @@ videos/
 .env*
 
 .worktrees
+.local/prompt-lab/

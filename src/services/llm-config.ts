@@ -102,6 +102,28 @@ export interface ModelConfig {
   protocol: Protocol;
 }
 
+/** Build an isolated provider configuration without reading or changing app preferences. */
+export function createModelConfig(options: {
+  provider: ProviderType;
+  model?: string;
+  apiKey?: string;
+}): ModelConfig {
+  const { provider } = options;
+  const preset = PROVIDER_PRESETS[provider];
+  const isOfficial = provider === 'official';
+  const baseURL = isOfficial
+    ? resolveOfficialBaseURL()
+    : (import.meta.env.VITE_BASE_URL || (provider === 'kimi' ? resolveKimiBaseURL() : preset.baseURL));
+
+  return {
+    provider,
+    protocol: preset.protocol,
+    apiKey: isOfficial ? 'official-proxy' : options.apiKey ?? '',
+    baseURL,
+    model: options.model?.trim() || preset.model,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Anthropic path
 // ---------------------------------------------------------------------------

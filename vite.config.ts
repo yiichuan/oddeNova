@@ -9,6 +9,7 @@ import type { Plugin } from 'vite'
 import sessionsHandler from './api/sessions'
 import onboardingHandler from './api/onboarding'
 import { privacyRouteMiddleware } from './server/privacy-route'
+import { promptLabFilesPlugin } from './server/prompt-lab-files'
 
 interface AirJellyRuntime {
   port: number
@@ -499,7 +500,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware(), promptLabFilesPlugin(process.cwd())],
     build: {
       // Manifest powers scripts/report-bundle-size.mjs (analyze:bundle) so the
       // entry-asset closure can be measured reproducibly. No runtime cost.

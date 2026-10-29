@@ -87,6 +87,24 @@ export type ProgressEvent =
   | { kind: 'request_attempt_succeeded'; attemptId: string }
   | { kind: 'warn'; message: string };
 
+export type AgentTraceEvent =
+  | {
+      kind: 'request';
+      stage: 'intent-classification' | 'agent';
+      iteration?: number;
+      messages: ChatMsg[];
+      tools: ReturnType<typeof getOpenAIToolSchemas>;
+    }
+  | {
+      kind: 'response';
+      stage: 'intent-classification' | 'agent';
+      iteration?: number;
+      content: string | null;
+      toolCalls: ToolCallRequest[];
+      usage?: LLMUsage;
+      durationMs: number;
+    };
+
 export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
 
 export interface RunAgentOptions {
@@ -104,6 +122,7 @@ export interface RunAgentOptions {
   enableThinking?: boolean;
   /** How deep to think when enabled; ignored when enableThinking is false (default 'medium'). */
   thinkingLevel?: ThinkingLevel;
+  onTrace?: (event: AgentTraceEvent) => void;
 }
 
 export interface TokenUsage {
@@ -268,6 +287,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     conversationHistory,
     enableThinking = true,
     thinkingLevel = 'medium',
+    onTrace,
   } = opts;
 
   const state: AgentState = {
@@ -325,6 +345,22 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
+    const requestStartedAt = Date.now();
+    onTrace?.({
+      kind: 'request',
+      stage: 'agent',
+      iteration: iterations,
+      messages: messages.slice(1).map((message) => {
+        const safeMessage = { ...message };
+        delete safeMessage.reasoning_content;
+        delete safeMessage.thinking_blocks;
+        return {
+          ...safeMessage,
+          ...(message.tool_calls ? { tool_calls: message.tool_calls.map((call) => ({ ...call, function: { ...call.function } })) } : {}),
+        };
+      }),
+      tools: JSON.parse(JSON.stringify(tools)) as typeof tools,
+    });
     const resp = await chatWithToolsWithRetry({
       llm,
       messages,
@@ -334,6 +370,15 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       signal,
       enableThinking,
       thinkingLevel,
+    });
+    onTrace?.({
+      kind: 'response',
+      stage: 'agent',
+      iteration: iterations,
+      content: resp.content,
+      toolCalls: resp.toolCalls,
+      usage: resp.usage,
+      durationMs: Date.now() - requestStartedAt,
     });
     if (resp.usage) lastUsage = resp.usage;
 
