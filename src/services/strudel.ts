@@ -349,7 +349,7 @@ export class StrudelService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getSuperdoughAudioController: () => any;
   } | null = null;
-  // Current UI master values, mirrored here so exportWav can re-apply them on the
+  // Current UI master values, mirrored here so exportAudio can re-apply them on the
   // OfflineAudioContext (the live masterLpfNode lives on the closed ctx after export).
   private currentMasterVolume = 1;
   private currentMasterLpfHz = 20000;
@@ -1401,14 +1401,15 @@ export class StrudelService {
     scrollDOM.addEventListener('animationend', onEnd);
   };
 
-  exportWav = async (params: {
+  exportAudio = async (params: {
     filename: string;
     beginCycle: number;
     endCycle: number;
     sampleRate: number;
+    format?: 'wav' | 'mp3' | 'm4a';
     onProgress?: (progress: number) => void;
   }): Promise<void> => {
-    const { filename, beginCycle, endCycle, sampleRate, onProgress } = params;
+    const { filename, beginCycle, endCycle, sampleRate, format = 'wav', onProgress } = params;
     if (!this.editorInstance) throw new Error('Engine not initialized');
     if (endCycle <= beginCycle) throw new Error(t('cycleError'));
 
@@ -1461,7 +1462,7 @@ export class StrudelService {
           if (ctx instanceof OfflineAudioContext) {
             const total = ctx.length / ctx.sampleRate;
             const p = total > 0 ? ctx.currentTime / total : 0;
-            try { onProgress(Math.max(0, Math.min(1, p))); } catch { /* user callback must not crash polling */ }
+            try { onProgress(Math.max(0, Math.min(1, p)) * (format === 'wav' ? 1 : 0.85)); } catch { /* user callback must not crash polling */ }
           }
         } catch { /* ignore polling errors */ }
       }, 100);
@@ -1469,7 +1470,19 @@ export class StrudelService {
 
     try {
       const liveCtx = getAudioContext();
-      await liveCtx.close();
+      // A previous export or device interruption may have already closed it.
+      // Offline contexts also have no close(); both can be replaced directly.
+      if (!isOfflineAudioContext(liveCtx) && liveCtx.state !== 'closed') {
+        try {
+          await liveCtx.close();
+        } catch (error) {
+          // close() can already be pending while the public state still reads
+          // running/suspended. Only tolerate the explicit already-closed error;
+          // other failures (e.g. an inactive document) must still surface.
+          if (!(error instanceof DOMException && error.name === 'InvalidStateError'
+            && /closed/i.test(error.message))) throw error;
+        }
+      }
       // Drop every cached audio node before switching to the offline ctx.
       // `getNodeFromPool` would otherwise hand back nodes bound to the now-
       // closed live ctx (compressor / filter / etc. cached during a prior
@@ -1548,7 +1561,7 @@ export class StrudelService {
       // (see strudel/packages/superdough/superdoughoutput.mjs: SuperdoughAudioController).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const controllerForWait = getSuperdoughAudioController() as any;
-      console.log('[exportWav] scheduled', haps.length, 'haps; orbits:', Object.keys(controllerForWait?.nodes ?? {}));
+      console.log('[exportAudio] scheduled', haps.length, 'haps; orbits:', Object.keys(controllerForWait?.nodes ?? {}));
       const waitForReverbReady = async (): Promise<void> => {
         const deadline = Date.now() + 5000; // hard cap so we never hang
         while (true) {
@@ -1558,7 +1571,7 @@ export class StrudelService {
             .map((o) => o?.reverbNode)
             .filter(Boolean);
           if (reverbs.length === 0) {
-            console.log('[exportWav] no reverb nodes attached to any orbit; skipping wait');
+            console.log('[exportAudio] no reverb nodes attached to any orbit; skipping wait');
             return; // no reverb in this pattern
           }
           const status = reverbs.map((n) => ({
@@ -1569,11 +1582,11 @@ export class StrudelService {
           }));
           const ready = reverbs.every((n) => n.buffer && n.buffer.length > 0);
           if (ready) {
-            console.log('[exportWav] reverb IRs ready:', status);
+            console.log('[exportAudio] reverb IRs ready:', status);
             return;
           }
           if (Date.now() > deadline) {
-            console.warn('[exportWav] reverb wait timed out, rendering anyway:', status);
+            console.warn('[exportAudio] reverb wait timed out, rendering anyway:', status);
             return;
           }
           await new Promise((r) => setTimeout(r, 20));
@@ -1582,17 +1595,32 @@ export class StrudelService {
       await waitForReverbReady();
 
       const renderedBuffer = await offlineCtx.startRendering();
-      const wav = audioBufferToWav16(renderedBuffer);
-      downloadWav(wav, filename);
-      trackWavExportCompleted();
-
-      setAudioContext(null);
-      setSuperdoughAudioController(null);
-      resetGlobalEffects();
+      if (progressTimer !== null) {
+        clearInterval(progressTimer);
+        progressTimer = null;
+      }
+      if (format === 'm4a') {
+        const { audioBufferToM4a } = await import('../lib/m4a-export');
+        const m4a = await audioBufferToM4a(renderedBuffer, (p) => onProgress?.(0.85 + p * 0.15));
+        downloadAudio(m4a, filename, 'm4a');
+      } else if (format === 'mp3') {
+        const { audioBufferToMp3 } = await import('../lib/mp3-export');
+        const mp3 = await audioBufferToMp3(renderedBuffer, (p) => onProgress?.(0.85 + p * 0.15));
+        downloadAudio(mp3, filename, 'mp3');
+      } else {
+        downloadWav(audioBufferToWav16(renderedBuffer), filename);
+        trackWavExportCompleted();
+      }
     } finally {
       if (progressTimer !== null) clearInterval(progressTimer);
       try { onProgress?.(1); } catch { /* user callback must not crash recovery */ }
       try {
+        // Always detach the export context, including after rendering/encoding
+        // errors. Rebuilding against a closed/offline singleton cannot restore
+        // playback and leaves the next export trying to close it again.
+        setAudioContext(null);
+        setSuperdoughAudioController(null);
+        resetGlobalEffects();
         // Drop any nodes cached against the offline ctx before rebuilding the
         // live chain, so the next Play doesn't reuse offline-bound nodes.
         clearNodePools();
@@ -1610,7 +1638,7 @@ export class StrudelService {
    * Record the currently-playing live audio for `durationSec` seconds and download
    * it as a WAV. Tap point is identical to what reaches `ctx.destination` (after
    * master Gain + master LPF), so the recording captures exactly what the user
-   * hears — making it directly comparable with the offline `exportWav` output.
+   * hears — making it directly comparable with the offline `exportAudio` output.
    *
    * Usage from devtools console:
    *   await window.recordLive(8, 'live')   // record 8 seconds → live.wav
@@ -1750,11 +1778,14 @@ function audioBufferToWav16(buffer: AudioBuffer): ArrayBuffer {
 }
 
 function downloadWav(ab: ArrayBuffer, filename: string): void {
-  const blob = new Blob([ab], { type: 'audio/wav' });
+  downloadAudio(new Blob([ab], { type: 'audio/wav' }), filename, 'wav');
+}
+
+function downloadAudio(blob: Blob, filename: string, format: 'wav' | 'mp3' | 'm4a'): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename.endsWith('.wav') ? filename : `${filename}.wav`;
+  a.download = `${filename.replace(/\.(wav|mp3|m4a)$/i, '')}.${format}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

@@ -460,7 +460,7 @@ export default function App() {
      volume afterwards is the audio service's own job (it mirrors the current
      value and re-applies it when the live context comes back), so nothing is
      lost by not going through CodePanel's volume-aware wrapper. */
-  const mobileExport = useExportPopoverController(strudel.exportWav, strudel.resetExportState);
+  const mobileExport = useExportPopoverController(strudel.exportAudio, strudel.resetExportState);
 
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   // Read once, before the auth session has had a chance to resolve: this is the
@@ -2574,7 +2574,7 @@ export default function App() {
                 session={sessions.currentSession}
                 messages={messages}
                 exportState={strudel.exportState}
-                onExport={strudel.exportWav}
+                onExport={strudel.exportAudio}
                 onGenerateTitle={generateSongTitle}
                 onResetExportState={strudel.resetExportState}
                 bpm={currentBpm}
@@ -2870,7 +2870,7 @@ export default function App() {
                 session={sessions.currentSession}
                 messages={messages}
                 exportState={strudel.exportState}
-                onExport={strudel.exportWav}
+                onExport={strudel.exportAudio}
                 onGenerateTitle={generateSongTitle}
                 onResetExportState={strudel.resetExportState}
                 bpm={currentBpm}
