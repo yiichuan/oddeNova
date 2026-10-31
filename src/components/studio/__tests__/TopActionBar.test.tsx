@@ -408,8 +408,25 @@ describe('TopActionBar export title generation', () => {
       beginCycle: 0,
       endCycle: 1,
       sampleRate: 48000,
+      format: 'wav',
     });
     consoleError.mockRestore();
+  });
+
+  it.each(['mp3', 'm4a'])('exports %s with the chosen sample rate and range', async (format) => {
+    const onExport = vi.fn().mockResolvedValue(true);
+    const { container, root } = renderTopActionBar({ onExport });
+    roots.push(root);
+    expect(getButton(container, 'WAV').getAttribute('aria-pressed')).toBe('true');
+    act(() => { getButton(container, format.toUpperCase()).click(); });
+    expect(getButton(container, format.toUpperCase()).getAttribute('aria-pressed')).toBe('true');
+    act(() => { getButton(container, '48000 Hz').click(); });
+    act(() => { getButton(container, '44100 Hz').click(); });
+    changeInput(getFilenameInput(container), 'mp3-song');
+    await act(async () => { getLastButton(container, 'Download').click(); });
+    expect(onExport).toHaveBeenCalledWith({
+      filename: 'mp3-song', beginCycle: 0, endCycle: 1, sampleRate: 44100, format,
+    });
   });
 
   it('button is disabled while generation is in progress', async () => {

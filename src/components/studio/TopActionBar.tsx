@@ -249,6 +249,7 @@ export function ExportPopover({
   const [beginCycleStr, setBeginCycleStr] = useState('0');
   const [endCycleStr, setEndCycleStr] = useState(String(FALLBACK_END_CYCLE));
   const [sampleRate, setSampleRate] = useState(48000);
+  const [format, setFormat] = useState<'wav' | 'mp3' | 'm4a'>('wav');
   const [sampleRateOpen, setSampleRateOpen] = useState(false);
   const [prevOpen, setPrevOpen] = useState(false);
   const { filename, filenamePlaceholder, generateTitleState } = titleForm;
@@ -279,7 +280,7 @@ export function ExportPopover({
          likely changed, and last time's numbers would be a window on a piece
          that no longer exists. */
       // Export bounds are integer cycles. Keep the playback/display estimate
-      // precise, but include its full final partial cycle in the default WAV.
+      // precise, but include its full final partial cycle in the default export.
       const end = displayCycles > 0 ? Math.ceil(displayCycles) : FALLBACK_END_CYCLE;
       setBeginCycle(0);
       setBeginCycleStr('0');
@@ -314,7 +315,7 @@ export function ExportPopover({
 
   const handleExport = async () => {
     if (!canExport) return;
-    await onExport({ filename: filename.trim() || filenamePlaceholder, beginCycle, endCycle, sampleRate });
+    await onExport({ filename: filename.trim() || filenamePlaceholder, beginCycle, endCycle, sampleRate, format });
   };
   const handleGenerateTitle = async () => {
     const requestId = Symbol('generateTitleRequest');
@@ -417,6 +418,21 @@ export function ExportPopover({
             </div>
           )}
           {!canExport && <div className="text-[12px] text-error">{t('cycleError')}</div>}
+          <Field label={t('audioFormat')}>
+            <div className="flex gap-2" role="group" aria-label={t('audioFormat')}>
+              {(['wav', 'mp3', 'm4a'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={format === value}
+                  onClick={() => setFormat(value)}
+                  className={`flex-1 rounded-[6px] border px-2 py-1.5 text-[12px] transition-colors ${format === value ? 'border-accent bg-selected-item-bg text-on-accent' : 'border-border bg-auth-field text-text-secondary hover:text-text-primary'}`}
+                >
+                  {value.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </Field>
           <Field label={t('sampleRate')}>
             <div
               className="relative"
@@ -494,7 +510,7 @@ export function ExportPopover({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={t('exportWav')}
+          aria-label={t('exportAudio')}
           /* In the middle rather than along the bottom edge. It used to be a
              sheet, which is the right shape for a list you flick through and
              the wrong one for a short form with a keyboard about to come up
@@ -503,7 +519,7 @@ export function ExportPopover({
           className="relative w-full max-w-[360px] rounded-[12px] border border-border bg-popover-surface px-5 py-5 shadow-dialog-overlay"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="text-[14px] text-text-primary font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
+          <div className="text-[14px] text-text-primary font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportAudio')}</div>
           {body}
         </div>
       </div>
@@ -530,7 +546,7 @@ export function ExportPopover({
         style={anchorPosition}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-[12px] text-text-primary font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
+        <div className="text-[12px] text-text-primary font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportAudio')}</div>
         {body}
       </div>
     </>
