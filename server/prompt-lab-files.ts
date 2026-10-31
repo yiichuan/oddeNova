@@ -1,11 +1,12 @@
-import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rename, rm, writeFile, realpath } from 'node:fs/promises';
 import { sep, resolve, join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 
-const COLLECTIONS = new Set(['templates', 'suites', 'runs']);
-const SAFE_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
+const COLLECTIONS = new Set(['templates', 'suites', 'runs', 'reviews', 'traces', 'comparisons']);
+const SAFE_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,239}$/;
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 
 function sendJson(res: ServerResponse, status: number, value: unknown): void {
@@ -85,6 +86,7 @@ async function readCollection(root: string, collection: string): Promise<unknown
 
 export function promptLabFilesPlugin(workspaceRoot: string): Plugin {
   const dataRoot = resolve(workspaceRoot, '.local/prompt-lab');
+  const locks = new Map<string, Promise<void>>();
 
   return {
     name: 'prompt-lab-local-files',
@@ -100,11 +102,31 @@ export function promptLabFilesPlugin(workspaceRoot: string): Plugin {
 
         const url = new URL(req.url ?? '/', 'http://127.0.0.1');
         const [collection, id] = url.pathname.split('/').filter(Boolean);
+        if (url.pathname === '/meta' && method === 'GET') {
+          try {
+            const active = await readFile(join(workspaceRoot, 'src/prompts/active.ts'), 'utf8');
+            const version = active.match(/versions\/(v\d+)/)?.[1] ?? 'unknown';
+            let commit: string | null = null;
+            let dirty = true;
+            try {
+              commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
+              dirty = !!execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: workspaceRoot, encoding: 'utf8' }).trim();
+            } catch { /* Git metadata is optional. */ }
+            sendJson(res, 200, { version, commit, dirty });
+          } catch { sendJson(res, 500, { error: 'Cannot read prompt metadata' }); }
+          return;
+        }
+
         if (!collection || !COLLECTIONS.has(collection) || (id && !SAFE_ID.test(id))) {
           sendJson(res, 404, { error: 'Unknown local resource' });
           return;
         }
 
+        const lockKey = `${collection}/${id ?? ''}`;
+        const previous = locks.get(lockKey) ?? Promise.resolve();
+        let release!: () => void;
+        const pending = new Promise<void>(resolveLock => { release = resolveLock; });
+        if (method !== 'GET') { locks.set(lockKey, pending); await previous; }
         try {
           const dir = await ensureCollection(dataRoot, collection);
           if (method === 'GET' && !id) {
@@ -144,6 +166,20 @@ export function promptLabFilesPlugin(workspaceRoot: string): Plugin {
               sendJson(res, 409, { error: 'Revision conflict', currentRevision: actualRevision });
               return;
             }
+            // Large transcripts are separate resources; listing runs stays small.
+            if (collection === 'runs') {
+              const run = body as { results?: Array<{ left: Array<{ trace?: unknown[]; traceId?: string }>; right: Array<{ trace?: unknown[]; traceId?: string }> }> };
+              const traceDir = await ensureCollection(dataRoot, 'traces');
+              for (const item of run.results ?? []) for (const side of [item.left, item.right]) for (const result of side) {
+                if (!result.trace?.length) continue;
+                const traceId = `trace-${createHash('sha256').update(JSON.stringify(result.trace)).digest('hex')}`;
+                const temporaryTrace = join(traceDir, `.write-${randomUUID()}.tmp`);
+                await writeFile(temporaryTrace, JSON.stringify({ id: traceId, events: result.trace }), { mode: 0o600, flag: 'wx' });
+                await rename(temporaryTrace, join(traceDir, `${traceId}.json`));
+                result.traceId = traceId;
+                result.trace = [];
+              }
+            }
             const saved = {
               ...(body as Record<string, unknown>),
               revision: actualRevision + 1,
@@ -178,6 +214,8 @@ export function promptLabFilesPlugin(workspaceRoot: string): Plugin {
           }
           sendJson(res, 500, { error: 'Local prompt-lab storage failed' });
           server.config.logger.error(`[prompt-lab] ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          if (method !== 'GET') { release(); if (locks.get(lockKey) === pending) locks.delete(lockKey); }
         }
       });
     },

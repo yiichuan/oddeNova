@@ -10,6 +10,10 @@ export interface PromptLabCase {
   locale?: PromptLocale;
   initialCode?: string;
   turns: string[];
+  initialHistory?: ConversationTurn[];
+  turnCriteria?: string[][];
+  turnChecks?: { mustContain?: string[]; mustNotContain?: string[]; expectedDelivery?: "commit" | "reply" | "either" }[];
+  source?: { experimentId: string; caseId: string; trialIndex: number; turnIndex: number };
   mustContain?: string[];
   mustNotContain?: string[];
   reviewCriteria?: string[];
@@ -25,9 +29,14 @@ export interface PromptLabSuite {
 }
 
 export type PromptLabResult = RunAgentResult & {
+  trialIndex?: number;
+  turnIndex?: number;
+  inputSnapshot?: { code: string; history: ConversationTurn[] };
+  usage?: { inputTokens: number; outputTokens: number; requestCount: number; measured: number; completeness: "complete" | "partial" | "unknown" };
   instruction: string;
   durationMs: number;
   trace: AgentTraceEvent[];
+  traceId?: string;
   checks: { label: string; passed: boolean }[];
   rating?: number;
   ratingNote?: string;
@@ -44,7 +53,13 @@ export interface PromptLabCaseResult {
 export interface PromptLabExperiment {
   id: string;
   revision: number;
-  kind: 'debug' | 'compare';
+  schemaVersion?: 2;
+  purpose?: string;
+  changeNote?: string;
+  provenance?: { commit: string | null; dirty: boolean; leftHash: string; rightHash?: string };
+  kind: 'debug' | 'compare' | 'batch';
+  historySources?: { left: PromptLabHistorySource; right: PromptLabHistorySource };
+  unmatched?: string[];
   name: string;
   status: 'running' | 'completed' | 'cancelled' | 'interrupted' | 'failed';
   createdAt: string;
@@ -78,4 +93,26 @@ export interface PromptLabConfig {
 export interface PromptLabTurnState {
   code: string;
   history: ConversationTurn[];
+}
+
+export interface LabReview {
+  id: string;
+  revision: number;
+  experimentId: string;
+  caseId: string;
+  trialIndex: number;
+  preference?: 'left' | 'right' | 'tie' | 'unknown';
+  note: string;
+  swapped: boolean;
+  revealed: boolean;
+  mode: 'standard' | 'blind';
+  dimensions?: Partial<Record<'left' | 'right', Record<string, number | undefined>>>;
+  conclusion?: 'adopt' | 'reject' | 'undecided';
+}
+
+export interface PromptLabHistorySource {
+  runId: string;
+  revision: number;
+  side: 'left' | 'right';
+  snapshot: PromptLabExperiment;
 }

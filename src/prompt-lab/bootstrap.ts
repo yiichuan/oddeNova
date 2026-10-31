@@ -2,7 +2,7 @@ import { buildPersonaBlock } from '../persona/oddenova';
 import { BUILTIN_PERSONA_ID } from '../lib/persona-storage';
 import { buildSystemPrompt } from '../prompts/build-system-prompt';
 import { createPromptTemplate, renderPromptTemplate } from '../prompts/lab/template';
-import { DEFAULT_PROMPT_LAB_SUITES } from './default-data';
+import { DEFAULT_PROMPT_LAB_SUITES, orderPromptLabSuites } from './default-data';
 import { promptLabStorage } from './storage';
 import type { PromptLabExperiment, PromptLabSuite } from './types';
 
@@ -14,12 +14,14 @@ export interface PromptLabBootstrap {
 
 export async function initializePromptLab(): Promise<PromptLabBootstrap> {
   let templates = await promptLabStorage.listTemplates();
-  if (templates.length === 0) {
-    templates = await Promise.all((['zh', 'en'] as const).map(async (locale) => {
+  const meta = await promptLabStorage.meta();
+  {
+    const baselines = await Promise.all((['zh', 'en'] as const).map(async (locale) => {
       const template = createPromptTemplate(locale, {
-        id: `baseline-v25-${locale}`,
-        name: locale === 'zh' ? 'v25 中文基线' : 'v25 English baseline',
+        id: `baseline-${meta.version}-${locale}`,
+        name: locale === 'zh' ? `${meta.version} 中文基线` : `${meta.version} English baseline`,
       });
+      template.basedOn = meta.version;
       const rendered = renderPromptTemplate(template, {
         personaName: 'oddeNova',
         personaPrompt: buildPersonaBlock(locale),
@@ -31,29 +33,28 @@ export async function initializePromptLab(): Promise<PromptLabBootstrap> {
       if (rendered !== productPrompt) {
         throw new Error(`Prompt modules do not match the ${locale} active prompt.`);
       }
-      return promptLabStorage.saveTemplate(template);
+      // Older installations may have a digest suffix; retain their IDs so
+      // saved experiments continue to reference the original snapshot.
+      const existing = [...templates].reverse().find(item =>
+        item.id === template.id || item.id.startsWith(`${template.id}-`),
+      );
+      if (existing && renderPromptTemplate(existing, {
+        personaName: 'oddeNova',
+        personaPrompt: buildPersonaBlock(locale),
+      }) !== rendered) {
+        throw new Error(`提示词版本 ${meta.version}（${locale}）的内容已变化，请使用新的版本号。`);
+      }
+      return existing ?? promptLabStorage.saveTemplate(template);
     }));
+    templates = [...templates.filter(t => !baselines.some(b => b.id === t.id)), ...baselines];
   }
 
   let suites = await promptLabStorage.listSuites();
-  if (suites.length === 0) {
-    suites = await Promise.all(DEFAULT_PROMPT_LAB_SUITES.map((suite) => promptLabStorage.saveSuite(structuredClone(suite))));
-  }
+  // Add newly shipped suites without replacing locally edited cases.
+  const missingSuites = DEFAULT_PROMPT_LAB_SUITES.filter(suite => !suites.some(saved => saved.id === suite.id));
+  suites = [...suites, ...await Promise.all(missingSuites.map(suite => promptLabStorage.saveSuite(structuredClone(suite))))];
 
-  let runs = await promptLabStorage.listRuns();
-  const recovered: PromptLabExperiment[] = [];
-  for (const run of runs) {
-    if (run.status === 'running') {
-      const saved = await promptLabStorage.saveRun({
-        ...run,
-        status: 'interrupted',
-        error: '页面在任务完成前关闭或刷新。',
-      });
-      recovered.push(saved);
-    } else {
-      recovered.push(run);
-    }
-  }
-  runs = recovered;
-  return { templates, suites, runs };
+  const runs = await promptLabStorage.listRuns();
+  // A second tab must never mark another tab's active experiment interrupted.
+  return { templates, suites: orderPromptLabSuites(suites), runs };
 }

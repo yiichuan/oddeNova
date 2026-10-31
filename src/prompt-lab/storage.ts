@@ -1,7 +1,7 @@
 import type { PromptTemplate } from '../prompts/lab/template';
-import type { PromptLabExperiment, PromptLabSuite } from './types';
+import type { LabReview, PromptLabExperiment, PromptLabSuite } from './types';
 
-type Collection = 'templates' | 'suites' | 'runs';
+type Collection = 'templates' | 'suites' | 'runs' | 'reviews' | 'traces' | 'comparisons';
 
 async function request<T>(collection: Collection, id?: string, init: RequestInit = {}): Promise<T> {
   const path = `/__lab/api/${collection}${id ? `/${encodeURIComponent(id)}` : ''}`;
@@ -26,11 +26,25 @@ function saveResource<T extends { id: string }>(collection: Collection, value: T
 }
 
 export const promptLabStorage = {
+  getTrace: async (id: string) => (await request<{ events: import('../agent/loop').AgentTraceEvent[] }>('traces', id)).events,
+  getReview: async (id: string): Promise<LabReview | undefined> => {
+    const response = await fetch(`/__lab/api/reviews/${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new Error('无法读取评审');
+    return response.json() as Promise<LabReview>;
+  },
+  listReviews: () => request<LabReview[]>('reviews'),
+  saveReview: (value: LabReview) => saveResource('reviews', value),
+  meta: async (): Promise<{ version: string; commit: string | null; dirty: boolean }> => {
+    const response = await fetch('/__lab/api/meta', { cache: 'no-store' });
+    if (!response.ok) throw new Error('无法读取实验环境信息');
+    return response.json();
+  },
   listTemplates: () => request<PromptTemplate[]>('templates'),
   saveTemplate: (value: PromptTemplate) => saveResource('templates', value),
   deleteTemplate: (id: string) => request<{ ok: true }>('templates', id, { method: 'DELETE' }),
   listSuites: () => request<PromptLabSuite[]>('suites'),
   saveSuite: (value: PromptLabSuite) => saveResource('suites', value),
-  listRuns: () => request<PromptLabExperiment[]>('runs'),
-  saveRun: (value: PromptLabExperiment) => saveResource('runs', value),
+  listRuns: async () => (await Promise.all([request<PromptLabExperiment[]>('runs'), request<PromptLabExperiment[]>('comparisons')])).flat(),
+  saveRun: (value: PromptLabExperiment) => saveResource(value.historySources ? 'comparisons' : 'runs', value),
 };

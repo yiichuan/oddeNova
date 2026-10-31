@@ -42,7 +42,7 @@ export const SINGLE_TURN_CASES: SingleTurnCase[] = [
     name: '场景-游戏 Boss 配乐',
     category: '参考场景类',
     prompt: '做一段适合打 boss 的游戏配乐，紧张、层次丰富',
-    expectedDimensions: ['紧张感', '层次丰富(≥3层)', '强节奏'],
+    expectedDimensions: ['紧张感', '首轮为有明确方向的最小草稿(通常1–2层)，含编号检查点', '强节奏'],
   },
   {
     id: 'TC-007',
@@ -70,7 +70,7 @@ export const SINGLE_TURN_CASES: SingleTurnCase[] = [
     name: '极简-开放式请求',
     category: '极简挑战类',
     prompt: '来一段好听的',
-    expectedDimensions: ['有合理默认风格', '基本结构完整'],
+    expectedDimensions: ['有合理默认风格', '先交最小草稿(通常1–2层)，不直接完整成曲', '自然提问、连续编号选项和回复引导'],
   },
   {
     id: 'TC-011',
