@@ -5,6 +5,7 @@ export interface ExportParams {
   beginCycle: number;
   endCycle: number;
   sampleRate: number;
+  format?: 'wav' | 'mp3' | 'm4a';
 }
 
 export function useExportPopoverController(

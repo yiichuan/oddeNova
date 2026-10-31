@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
     engineStatus: 'ready',
     error: '',
     exportState: { status: 'idle', progress: 0 },
-    exportWav: vi.fn(),
+    exportAudio: vi.fn(),
     resetExportState: vi.fn(),
     setError: vi.fn(),
   },

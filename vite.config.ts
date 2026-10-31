@@ -1,7 +1,8 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { copyFileSync, mkdirSync, readFileSync, existsSync } from 'fs'
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, existsSync } from 'fs'
+import { createHash } from 'node:crypto'
 import { resolve, join } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
@@ -490,6 +491,14 @@ function privacyDevMiddleware(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
+  // Vite hashes the patches directory mtime, not the contents of existing
+  // patch files. Key the cache by their contents so patched package exports
+  // cannot be served from an older prebundle. Keep lab/dev caches separate.
+  const patchDir = resolve(__dirname, 'patches')
+  const patchHash = createHash('sha256')
+  for (const name of readdirSync(patchDir).filter(name => name.endsWith('.patch')).sort()) {
+    patchHash.update(name).update(readFileSync(join(patchDir, name)))
+  }
   // Vite only exposes VITE_-prefixed vars to import.meta.env and does not
   // populate process.env from .env files. The dev API middlewares
   // (officialApiDevMiddleware) read server-side keys from process.env, so
@@ -500,6 +509,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    cacheDir: `node_modules/.vite/${mode}-${patchHash.digest('hex').slice(0, 12)}`,
     plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware(), promptLabFilesPlugin(process.cwd())],
     build: {
       // Manifest powers scripts/report-bundle-size.mjs (analyze:bundle) so the
