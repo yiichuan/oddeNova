@@ -925,6 +925,9 @@
                     if (typeof getAudioContext !== 'function' || typeof getController !== 'function') return;
 
                     const audioContext = getAudioContext();
+                    // Offline rendering is an export, not sound reaching the speakers.
+                    // Use a capability check across the parent/iframe realm boundary.
+                    if (!audioContext || typeof audioContext.startRendering === 'function') return;
                     const tapNode = getController()?.output?.destinationGain;
                     if (!audioContext || !tapNode) return;
 
@@ -1050,7 +1053,7 @@
             function updateAudio(delta) {
                 let hasSpectrum = false;
                 if (!simAudio && analyser) {
-                    if (analyser.context.state === 'closed') {
+                    if (analyser.context.state === 'closed' || typeof analyser.context.startRendering === 'function') {
                         dropAudioConnection();
                     } else {
                         analyser.getByteFrequencyData(dataArray);

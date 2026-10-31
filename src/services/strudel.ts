@@ -888,6 +888,7 @@ export class StrudelService {
 
     try {
       const ctx = access.getAudioContext();
+      if (this._isVideoMode || isOfflineAudioContext(ctx)) return null;
       if (this.analyserNode && this.analyserNode.context !== ctx) {
         this.analyserNode = null;
         this.analyserBins = null;

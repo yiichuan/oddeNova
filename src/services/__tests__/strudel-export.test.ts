@@ -87,6 +87,20 @@ describe('audio export context recovery', () => {
 
   const params = { filename: 'song', beginCycle: 0, endCycle: 1, sampleRate: 48000 };
 
+  it('does not attach the spectrum sampler to the offline export graph', async () => {
+    const instance = await service();
+    const offline = new OfflineContext();
+    const createAnalyser = vi.fn();
+    Object.assign(offline, { createAnalyser });
+    const getController = vi.fn();
+    Object.assign(instance, {
+      audioAccess: { getAudioContext: () => offline, getSuperdoughAudioController: getController },
+    });
+    expect(instance.sampleAudioSpectrum()).toBeNull();
+    expect(createAnalyser).not.toHaveBeenCalled();
+    expect(getController).not.toHaveBeenCalled();
+  });
+
   it('exports WAV then MP3 even when the initial live context is already closed', async () => {
     const closed = liveContext('closed');
     current = closed;
