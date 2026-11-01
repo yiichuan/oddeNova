@@ -13,7 +13,7 @@ export interface SharePayload {
   locale?: ShareLocale;
 }
 
-interface UploadShareInput {
+export interface UploadShareInput {
   title: string;
   code: string;
   messages: ChatMessage[];

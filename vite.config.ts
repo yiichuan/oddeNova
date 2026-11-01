@@ -1,12 +1,14 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { copyFileSync, mkdirSync, readFileSync, existsSync } from 'fs'
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, existsSync } from 'fs'
+import { createHash } from 'node:crypto'
 import { resolve, join } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
 import sessionsHandler from './api/sessions'
+import onboardingHandler from './api/onboarding'
 import { privacyRouteMiddleware } from './server/privacy-route'
 import { vcslProxyHandler } from './server/vcsl-proxy'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
@@ -381,7 +383,7 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 }
 
 function runVercelHandler(
-  handler: typeof sessionsHandler,
+  handler: typeof sessionsHandler | typeof onboardingHandler,
   req: IncomingMessage,
   res: ServerResponse,
   query: Record<string, string> = {},
@@ -472,6 +474,17 @@ function sessionsDevMiddleware(): Plugin {
   }
 }
 
+function onboardingDevMiddleware(): Plugin {
+  return {
+    name: 'onboarding-api-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use('/api/onboarding', async (req, res) => {
+        await runVercelHandler(onboardingHandler, req, res)
+      })
+    },
+  }
+}
+
 // Mirrors src/animation/*.html → public/animation/ so the iframe can load them
 // as static assets. Runs once on startup and again on every hot-module update.
 function syncAnimationHtml(): Plugin {
@@ -507,6 +520,14 @@ function privacyDevMiddleware(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
+  // Vite hashes the patches directory mtime, not the contents of existing
+  // patch files. Key the cache by their contents so patched package exports
+  // cannot be served from an older prebundle. Keep build-mode caches separate.
+  const patchDir = resolve(__dirname, 'patches')
+  const patchHash = createHash('sha256')
+  for (const name of readdirSync(patchDir).filter(name => name.endsWith('.patch')).sort()) {
+    patchHash.update(name).update(readFileSync(join(patchDir, name)))
+  }
   // Vite only exposes VITE_-prefixed vars to import.meta.env and does not
   // populate process.env from .env files. The dev API middlewares
   // (officialApiDevMiddleware) read server-side keys from process.env, so
@@ -517,8 +538,12 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
+    cacheDir: `node_modules/.vite/${mode}-${patchHash.digest('hex').slice(0, 12)}`,
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
     build: {
+      // Manifest powers scripts/report-bundle-size.mjs (analyze:bundle) so the
+      // entry-asset closure can be measured reproducibly. No runtime cost.
+      manifest: true,
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),

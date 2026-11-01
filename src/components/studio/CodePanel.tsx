@@ -39,6 +39,12 @@ interface CodePanelProps {
   error: string | null;
   isPlaying: boolean;
   isPaused: boolean;
+  /**
+   * Play was pressed and the piece's opening is still loading; the transport
+   * starts when it has. The play key turns into a spinner meanwhile, so a
+   * press that has not sounded yet reads as taken rather than ignored.
+   */
+  isStarting?: boolean;
   engineReady: boolean;
   /**
    * The hued colour the playing piece's own `.color()` set, if any — null the
@@ -410,11 +416,23 @@ function PlaybackProgress({
   );
 }
 
+/** The play key while the opening loads: a ring turning in the key's own colour. */
+function PlayStartingMark({ size }: { size: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="block animate-spin rounded-full border-[1.5px] border-current border-t-transparent motion-reduce:animate-none"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 export default function CodePanel({
   code,
   error,
   isPlaying,
   isPaused,
+  isStarting = false,
   engineReady,
   accentColor,
   session,
@@ -637,7 +655,7 @@ export default function CodePanel({
   const handlePlayClick = () => {
     if (isPlaying) {
       onPause();
-    } else if (engineReady) {
+    } else if (engineReady && !isStarting) {
       onPlay();
     }
   };
@@ -648,7 +666,8 @@ export default function CodePanel({
   // Pausing is always open, except to the guide's listen (see `guidePlay`).
   const playKeyDisabled = isPlaying
     ? Boolean(guidePlay)
-    : !engineReady || !hasPlayableCode || Boolean(guidePlay?.playDisabled);
+    : !engineReady || !hasPlayableCode || isStarting || Boolean(guidePlay?.playDisabled);
+  const playKeyLabel = isPlaying ? t('pause') : isStarting ? t('playStarting') : t('play');
   const actionDisabled = !engineReady || !hasPlayableCode || exportState.status === 'exporting';
   // Only a playing piece with an unheard edit has anything to update into.
   const canUpdate = isPlaying && isDirty;
@@ -811,11 +830,12 @@ export default function CodePanel({
             <button
               onClick={handlePlayClick}
               data-onboarding-target="play"
-              disabled={!isPlaying && (!engineReady || !hasPlayableCode)}
+              disabled={!isPlaying && (!engineReady || !hasPlayableCode || isStarting)}
               className="control-button-surface flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-control-icon transition-colors hover:text-control-icon-hover disabled:cursor-not-allowed disabled:text-control-icon-disabled disabled:opacity-100"
-              aria-label={isPlaying ? t('pause') : t('play')}
+              aria-label={playKeyLabel}
+              aria-busy={isStarting || undefined}
             >
-              {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={18} />}
+              {isPlaying ? <PauseIcon size={16} /> : isStarting ? <PlayStartingMark size={14} /> : <PlayIcon size={18} />}
             </button>
 
             {/* Live update: re-evaluates the edited code into the pattern that
@@ -1050,9 +1070,10 @@ export default function CodePanel({
               className={`control-button-surface flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed ${
                 playKeyDisabled ? 'text-text-muted' : 'text-action-fill'
               }${guidePlay ? " relative before:absolute before:-inset-2 before:content-['']" : ''}`}
-              aria-label={isPlaying ? t('pause') : t('play')}
+              aria-label={playKeyLabel}
+              aria-busy={isStarting || undefined}
             >
-              {isPlaying ? <PauseIcon size={12} /> : <PlayIcon size={13} />}
+              {isPlaying ? <PauseIcon size={12} /> : isStarting ? <PlayStartingMark size={11} /> : <PlayIcon size={13} />}
             </button>
 
             {/* Same condition as the desktop bar: a piece is sounding and the

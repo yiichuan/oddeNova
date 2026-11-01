@@ -2,11 +2,10 @@ import { Suspense, useEffect, useState } from 'react';
 import { SECTIONS, findChapter, firstChapter, flatChapters } from './content';
 import ChapterLayout from './ChapterLayout';
 import { t, zh } from '../lib/i18n';
+import { LEARN_PATH_PREFIX } from '../lib/routes';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { MenuIcon, XIcon } from '../components/icons';
 import './learn.css';
-
-export const LEARN_PATH_PREFIX = '/learn';
 
 function parsePath(pathname: string) {
   const parts = pathname.replace(LEARN_PATH_PREFIX, '').split('/').filter(Boolean);

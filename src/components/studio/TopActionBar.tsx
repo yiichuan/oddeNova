@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { uploadShare } from '../../services/share';
-import { shareUrl } from '../../services/share-target';
-import { trackShareCompleted, type ShareMethod } from '../../lib/analytics';
+import type { UploadShareInput } from '../../services/share';
+import type { ComponentType } from 'react';
+import type { ShareDialogProps } from '../overlays/ShareDialog';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { BookOpenIcon, DownloadIcon, GitBranchIcon, MenuIcon, SettingsIcon, ShareIcon, SparkleIcon, UserIcon } from '../icons';
 import type { Session } from '../../hooks/useSessions';
@@ -18,8 +18,6 @@ export type { ExportParams } from '../../hooks/useExportPopoverController';
 
 // ─── Share ───────────────────────────────────────────────────────────────────
 
-type ShareState = 'idle' | 'loading' | 'copied' | 'shared' | 'error';
-
 export interface ShareButtonProps {
   session: Session | null;
   code?: string;
@@ -33,7 +31,7 @@ export interface ShareButtonProps {
   wrapperClassName?: string;
   disabled?: boolean;
   variant?: 'inline' | 'menu' | 'icon';
-  onShared?: () => void;
+  onClose?: () => void;
 }
 
 export function ShareButton({
@@ -45,156 +43,71 @@ export function ShareButton({
   wrapperClassName,
   disabled,
   variant = 'inline',
-  onShared,
+  onClose,
 }: ShareButtonProps) {
-  const [state, setState] = useState<ShareState>('idle');
-  const [feedbackAnchor, setFeedbackAnchor] = useState<ControlHoverLabelAnchor | null>(null);
+  const [panel, setPanel] = useState<{ Component: ComponentType<ShareDialogProps>; snapshot: UploadShareInput } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const opening = useRef(false);
   const [hoverAnchor, setHoverAnchor] = useState<ControlHoverLabelAnchor | null>(null);
 
   async function handleShare() {
+    if (opening.current || panel) return;
     const shareCode = session?.code || code || '';
     const shareMessages = session?.messages ?? messages ?? [];
     if (!shareCode && shareMessages.length === 0) return;
-    setState('loading');
+    // Capture before loading the panel: subsequent edits cannot change this share.
+    const snapshot: UploadShareInput = structuredClone({
+      title: session?.title?.trim() || title?.trim() || t('newSessionTitle'),
+      code: shareCode,
+      messages: shareMessages,
+      revisions: session?.revisions,
+      locale: zh ? 'zh-CN' : 'en',
+    });
+    opening.current = true;
+    setLoading(true);
+    setError(false);
+    setHoverAnchor(null);
     try {
-      const shareTitle = session?.title?.trim() || title?.trim() || t('newSessionTitle');
-      const shareId = await uploadShare({
-        title: shareTitle,
-        code: shareCode,
-        messages: shareMessages,
-        revisions: session?.revisions,
-        locale: zh ? 'zh-CN' : 'en',
-      });
-      const url = `${window.location.origin}/s/${shareId}`;
-      const sharedTitle = shareTitle !== t('newSessionTitle')
-        ? shareTitle
-        : t('sharedMusicCreation');
-      const brandedTitle = zh
-        ? `【oddeNova】${sharedTitle}`
-        : `[oddeNova] ${sharedTitle}`;
-      const shareResult = await shareUrl(url, brandedTitle);
-      if (shareResult === 'cancelled') {
-        setState('idle');
-        return;
-      }
-      const shareMethod: ShareMethod = shareResult === 'shared'
-        ? 'native'
-        : shareResult === 'shown'
-          ? 'prompt'
-          : 'clipboard';
-      trackShareCompleted({ share_method: shareMethod });
-      setState(shareResult === 'shared' ? 'shared' : 'copied');
-      onShared?.();
-      setTimeout(() => setState('idle'), 2000);
-    } catch (error) {
-      console.error('[share] Failed to create or open share target', error);
-      setState('error');
-      setTimeout(() => setState('idle'), 3000);
+      const { default: Component } = await import('../overlays/ShareDialog');
+      setPanel({ Component, snapshot });
+    } catch {
+      setError(true);
+    } finally {
+      opening.current = false;
+      setLoading(false);
     }
   }
 
-  if (variant === 'menu') {
-    const label = state === 'loading'
-      ? t('sharing')
-      : state === 'error'
-        ? t('shareFailed')
-        : t('share');
-
-    return (
-      <button
-        type="button"
-        onClick={handleShare}
-        disabled={disabled || state === 'loading'}
-        className="mobile-menu-item disabled:opacity-35 disabled:cursor-not-allowed"
-      >
-        <span>{label}</span>
-        <ShareIcon size={19} />
-      </button>
-    );
-  }
-
-  if (variant === 'icon') {
-    const feedback = state === 'copied' || state === 'shared'
-      ? {
-          label: state === 'shared' ? t('shared') : t('shareDetailsCopied'),
-          className: 'text-text-secondary',
-        }
-      : state === 'error'
-        ? { label: t('shareFailedRetry'), className: 'text-red-400' }
-        : null;
-    return (
-      <div
-        className={wrapperClassName ?? 'relative flex h-8 w-8 items-center justify-center'}
-        onMouseEnter={(event) => {
-          if (state !== 'idle') return;
+  return (
+    <>
+      <div className={variant === 'icon' ? wrapperClassName ?? 'relative flex h-8 w-8 items-center justify-center' : 'relative'}
+        onMouseEnter={event => {
+          if (panel || loading) return;
           const rect = event.currentTarget.getBoundingClientRect();
-          setHoverAnchor({
-            left: rect.left + rect.width / 2,
-            bottom: window.innerHeight - rect.top + 8,
-          });
+          setHoverAnchor({ left: rect.left + rect.width / 2, bottom: window.innerHeight - rect.top + 8 });
         }}
         onMouseLeave={() => setHoverAnchor(null)}
-        onFocusCapture={(event) => {
-          if (state !== 'idle') return;
+        onFocusCapture={event => {
+          if (panel || loading) return;
           const rect = event.currentTarget.getBoundingClientRect();
-          setHoverAnchor({
-            left: rect.left + rect.width / 2,
-            bottom: window.innerHeight - rect.top + 8,
-          });
+          setHoverAnchor({ left: rect.left + rect.width / 2, bottom: window.innerHeight - rect.top + 8 });
         }}
-        onBlurCapture={() => setHoverAnchor(null)}
-      >
-        <button
-          type="button"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            setHoverAnchor(null);
-            setFeedbackAnchor({
-              left: rect.left + rect.width / 2,
-              bottom: window.innerHeight - rect.top + 8,
-            });
-            void handleShare();
-          }}
-          disabled={disabled || state === 'loading'}
-          className={buttonClassName ?? 'flex h-8 w-8 cursor-pointer items-center justify-center text-icon-idle transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted disabled:opacity-100'}
+        onBlurCapture={() => setHoverAnchor(null)}>
+        <button type="button" onClick={() => void handleShare()} disabled={disabled || loading}
           aria-label={t('share')}
-        >
-          <ShareIcon size={18} />
+          className={variant === 'icon'
+            ? buttonClassName ?? 'flex h-8 w-8 cursor-pointer items-center justify-center text-icon-idle transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted disabled:opacity-100'
+            : variant === 'menu' ? 'mobile-menu-item disabled:opacity-35 disabled:cursor-not-allowed'
+              : 'h-7 flex items-center text-[14px] text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5'}>
+          {variant !== 'icon' && <span>{loading ? t('sharing') : t('share')}</span>}
+          {variant !== 'inline' && <ShareIcon size={variant === 'icon' ? 18 : 19} />}
         </button>
-        <ControlHoverLabel
-          anchor={feedback ? feedbackAnchor : state === 'idle' ? hoverAnchor : null}
-          label={feedback?.label ?? t('share')}
-          testId={feedback ? 'code-panel-share-feedback-label' : 'code-panel-share-hover-label'}
-          className={feedback?.className}
-        />
+        {variant === 'icon' && <ControlHoverLabel anchor={panel || loading ? null : hoverAnchor} label={t('share')} testId="code-panel-share-hover-label" />}
+        {error && <p role="alert" className="text-error text-xs">{t('shareFailedRetry')}</p>}
       </div>
-    );
-  }
-
-  return (
-    <div className="relative">
-      <button
-        onClick={handleShare}
-        disabled={disabled || state === 'loading'}
-        className="h-7 flex items-center text-[14px] text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed px-1.5"
-      >
-        {t('share')}
-      </button>
-      {(state === 'copied' || state === 'shared') && (
-        <div className="absolute right-0 top-7 z-50">
-          <span className="text-text-secondary text-xs whitespace-nowrap">
-            {state === 'shared' ? t('shared') : t('shareDetailsCopied')}
-          </span>
-        </div>
-      )}
-      {state === 'error' && (
-        <div className="absolute right-0 top-7 z-50">
-          <span className="text-error text-xs whitespace-nowrap">
-            {t('shareFailedRetry')}
-          </span>
-        </div>
-      )}
-    </div>
+      {panel && <panel.Component snapshot={panel.snapshot} onClose={() => { setPanel(null); onClose?.(); }} />}
+    </>
   );
 }
 
@@ -336,6 +249,7 @@ export function ExportPopover({
   const [beginCycleStr, setBeginCycleStr] = useState('0');
   const [endCycleStr, setEndCycleStr] = useState(String(FALLBACK_END_CYCLE));
   const [sampleRate, setSampleRate] = useState(48000);
+  const [format, setFormat] = useState<'wav' | 'mp3' | 'm4a'>('wav');
   const [sampleRateOpen, setSampleRateOpen] = useState(false);
   const [prevOpen, setPrevOpen] = useState(false);
   const { filename, filenamePlaceholder, generateTitleState } = titleForm;
@@ -366,7 +280,7 @@ export function ExportPopover({
          likely changed, and last time's numbers would be a window on a piece
          that no longer exists. */
       // Export bounds are integer cycles. Keep the playback/display estimate
-      // precise, but include its full final partial cycle in the default WAV.
+      // precise, but include its full final partial cycle in the default export.
       const end = displayCycles > 0 ? Math.ceil(displayCycles) : FALLBACK_END_CYCLE;
       setBeginCycle(0);
       setBeginCycleStr('0');
@@ -401,7 +315,7 @@ export function ExportPopover({
 
   const handleExport = async () => {
     if (!canExport) return;
-    await onExport({ filename: filename.trim() || filenamePlaceholder, beginCycle, endCycle, sampleRate });
+    await onExport({ filename: filename.trim() || filenamePlaceholder, beginCycle, endCycle, sampleRate, format });
   };
   const handleGenerateTitle = async () => {
     const requestId = Symbol('generateTitleRequest');
@@ -504,6 +418,21 @@ export function ExportPopover({
             </div>
           )}
           {!canExport && <div className="text-[12px] text-error">{t('cycleError')}</div>}
+          <Field label={t('audioFormat')}>
+            <div className="flex gap-2" role="group" aria-label={t('audioFormat')}>
+              {(['wav', 'mp3', 'm4a'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={format === value}
+                  onClick={() => setFormat(value)}
+                  className={`flex-1 rounded-[6px] border px-2 py-1.5 text-[12px] transition-colors ${format === value ? 'border-accent bg-selected-item-bg text-on-accent' : 'border-border bg-auth-field text-text-secondary hover:text-text-primary'}`}
+                >
+                  {value.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </Field>
           <Field label={t('sampleRate')}>
             <div
               className="relative"
@@ -581,7 +510,7 @@ export function ExportPopover({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={t('exportWav')}
+          aria-label={t('exportAudio')}
           /* In the middle rather than along the bottom edge. It used to be a
              sheet, which is the right shape for a list you flick through and
              the wrong one for a short form with a keyboard about to come up
@@ -590,7 +519,7 @@ export function ExportPopover({
           className="relative w-full max-w-[360px] rounded-[12px] border border-border bg-popover-surface px-5 py-5 shadow-dialog-overlay"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="text-[14px] text-text-primary font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
+          <div className="text-[14px] text-text-primary font-bold mb-4" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportAudio')}</div>
           {body}
         </div>
       </div>
@@ -617,7 +546,7 @@ export function ExportPopover({
         style={anchorPosition}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-[12px] text-text-primary font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportWav')}</div>
+        <div className="text-[12px] text-text-primary font-bold mb-6" style={{ fontFamily: "'ABeeZee', monospace" }}>{t('exportAudio')}</div>
         {body}
       </div>
     </>
@@ -721,7 +650,7 @@ export default function TopActionBar({
                 messages={messages}
                 disabled={shareDisabled}
                 variant="menu"
-                onShared={() => setMenuOpen(false)}
+                onClose={() => setMenuOpen(false)}
               />
               <button
                 type="button"

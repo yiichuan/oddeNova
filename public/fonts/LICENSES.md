@@ -15,6 +15,7 @@ licence travels with them and that they are never sold on their own.
 | `ABeeZee-Regular.ttf` | ABeeZee | Anja Meiners | OFL-1.1 |
 | `Baskervville-Italic.ttf` | Baskervville | ANRT | OFL-1.1 |
 | `EBGaramond-Regular.ttf` | EB Garamond | Georg Duffner, Octavio Pardo | OFL-1.1 |
+| `Inter-Latin-Regular.woff2` | Inter (Latin subset, 400) | Rasmus Andersson | OFL-1.1 |
 | `42dotSans-ExtraBold-wordmark.woff2` | 42dot Sans (subset: N, o, v, a) | The 42dot Sans Project Authors | OFL-1.1 |
 | `jinghua-laosongti-greetings.woff2` | 京華老宋體 / KingHwaOldSong | TerryWang（特里王） | free for commercial use, not open source — see below |
 
@@ -28,6 +29,9 @@ Copyright lines as they appear in the files:
   (https://github.com/anrt-type/ANRT-Baskervville).
 - **EB Garamond** — Copyright 2017 The EB Garamond Project Authors
   (https://github.com/octaviopardo/EBGaramond12).
+- **Inter** — Copyright 2016 The Inter Project Authors
+  (https://github.com/rsms/inter). The file is Fontsource's unmodified Latin
+  subset (`@fontsource/inter` 5.1.0).
 - **42dot Sans** — Copyright 2024 The 42dot Sans Project Authors
   (https://github.com/42dot/42dot-Sans).
 

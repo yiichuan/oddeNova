@@ -5,6 +5,7 @@ import {
   applyAppEditorTheme,
   getEditorTheme,
   loadEditorPreferences,
+  setEditorFontFamily,
   setEditorTheme,
 } from '../editor-preferences';
 
@@ -73,5 +74,14 @@ describe('editor preferences', () => {
     const css = document.getElementById('vibe-editor-theme')?.innerHTML ?? '';
     expect(css).toContain('var(--oddenova-editor-light-background)');
     expect(css).toContain('!important');
+  });
+
+  it('uses an explicit sans CJK fallback instead of Windows generic monospace', () => {
+    setEditorFontFamily('monospace', false);
+
+    const css = document.getElementById('vibe-editor-font-family')?.innerHTML ?? '';
+    expect(css).toContain("'Microsoft YaHei UI'");
+    expect(css).toContain("'Microsoft YaHei'");
+    expect(css.indexOf("'Microsoft YaHei UI'")).toBeLessThan(css.lastIndexOf('monospace'));
   });
 });

@@ -11,6 +11,7 @@ import { dispatchToolCall, type ToolCallRequest, type ToolCallOutcome } from './
 import {
   CommitSignal,
   getOpenAIToolSchemas,
+  parseLayerNotes,
   validateCommittedCode,
   type AgentState,
   type ToolContext,
@@ -237,6 +238,8 @@ function countCJK(s: string): number {
 export interface RunAgentResult {
   code: string;
   explanation: string;
+  /** Short per-layer notes from `commit`, printed only on the share card. */
+  layerNotes?: Record<string, string>;
   iterations: number;
   committed: boolean;
   tokenUsage?: TokenUsage;
@@ -301,6 +304,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   const start = Date.now();
   let iterations = 0;
   let explanation = '';
+  let layerNotes: Record<string, string> | undefined;
   let committed = false;
   let finalCode = state.code;
   let isChatReply = false;
@@ -442,6 +446,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
               if (typeof commitArgs.explanation === 'string') {
                 explanation = commitArgs.explanation;
               }
+              const notes = parseLayerNotes(commitArgs.layerNotes, e.code);
+              if (Object.keys(notes).length > 0) layerNotes = notes;
             } catch {
               /* ignore */
             }
@@ -548,6 +554,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   return {
     code: resultCode,
     explanation,
+    ...(committed && layerNotes ? { layerNotes } : {}),
     iterations,
     committed,
     tokenUsage,

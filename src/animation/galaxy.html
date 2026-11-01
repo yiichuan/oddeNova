@@ -116,6 +116,9 @@
                 if (typeof getCtx !== 'function' || typeof getCtrl !== 'function') return;
 
                 const ctx        = getCtx();
+                // The engine temporarily exposes its offline render context during export.
+                // Check by capability: the iframe has a different constructor realm.
+                if (!ctx || typeof ctx.startRendering === 'function') return;
                 const controller = getCtrl();
                 const tapNode    = controller?.output?.destinationGain;
                 if (!ctx || !tapNode) return;
@@ -345,10 +348,11 @@
             } else {
                 if (!analyser) return;
                 // After WAV export, the live AudioContext is replaced; reset and re-tap.
-                if (analyser.context.state === 'closed') {
+                if (analyser.context.state === 'closed' || typeof analyser.context.startRendering === 'function') {
                     audioConnected = false;
                     analyser = null;
                     dataArray = null;
+                    audioParams.low = audioParams.mid = audioParams.high = 0;
                     return;
                 }
                 analyser.getByteFrequencyData(dataArray);

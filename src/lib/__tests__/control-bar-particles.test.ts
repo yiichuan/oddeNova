@@ -44,6 +44,19 @@ describe('PARTICLE_GLYPHS', () => {
     expect(PARTICLE_GLYPHS).toHaveLength(24);
     expect([...PARTICLE_GLYPHS]).toEqual(ramp.filter((glyph) => glyph !== ' '));
   });
+
+  it('keeps desktop ASCII glyphs fixed-size while compact panes scale by columns', () => {
+    const source = readFileSync(
+      resolve(__dirname, '../../../public/animation/galaxy-ascii.html'),
+      'utf8',
+    );
+
+    expect(source).toContain('const DESKTOP_FONT_SIZE = 8;');
+    expect(source).toContain(': DESKTOP_FONT_SIZE;');
+    expect(source).toContain('glyphWidth / (COMPACT_TARGET_COLUMNS * 0.62)');
+    expect(source).toContain('const projectionHeight = referenceHeight > 0 ? referenceHeight : height;');
+    expect(source).not.toContain('referenceHeight * (width / referenceWidth)');
+  });
 });
 
 describe('resolveParticleColors', () => {

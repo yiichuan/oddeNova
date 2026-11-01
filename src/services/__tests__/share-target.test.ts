@@ -20,6 +20,16 @@ describe('shareUrl', () => {
     })));
   }
 
+  it('honors explicit copy even when a mobile device prefers native share', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const nativeShare = vi.fn();
+    stubCoarsePointer(true);
+    vi.stubGlobal('navigator', { clipboard: { writeText }, share: nativeShare });
+    await expect(shareUrl('https://www.oddenova.com/s/abc', 'Title', true)).resolves.toBe('copied');
+    expect(nativeShare).not.toHaveBeenCalled();
+    expect(writeText).toHaveBeenCalled();
+  });
+
   it('copies with Clipboard API before opening native share on desktop', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const nativeShare = vi.fn().mockResolvedValue(undefined);

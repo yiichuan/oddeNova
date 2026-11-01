@@ -69,8 +69,6 @@ interface MobileTarget {
 
 const SECONDARY =
   'inline-flex min-h-11 items-center justify-center rounded-region border border-border px-4 text-sm text-text-primary transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none';
-const EXIT =
-  '-mr-2 inline-flex min-h-11 items-center rounded-region px-2 text-sm text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none';
 /** The dialogs' full-width keys, at the region's 6px corners: the way on in the accent, the others on a quiet grey with full-strength text. */
 const BLOCK_PRIMARY =
   'inline-flex h-11 items-center justify-center rounded-region bg-brand-accent px-4 text-sm text-on-accent transition-colors hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none';
@@ -81,8 +79,8 @@ const TEXT_KEY =
   'inline-flex min-h-11 items-center rounded-region px-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none';
 const ACCENT_WORD = 'text-brand-accent hover:text-brand-accent-hover';
 const PLAIN_WORD = 'text-text-secondary hover:text-text-primary';
-/** A way on set as a word rather than a plate: accent text, no fill, on the card's left edge. */
-const TEXT_ACTION = `-ml-2 ${TEXT_KEY} ${ACCENT_WORD}`;
+/** A way on set as a word rather than a plate: accent text, no fill, at the card's right edge. */
+const TEXT_ACTION = `-mr-2 ${TEXT_KEY} ${ACCENT_WORD}`;
 
 /**
  * Frames a target must hold still before the hole is cut round it: long
@@ -501,8 +499,7 @@ export default function MobileOnboardingTour({
 }
 
 /**
- * "n/7" on its own line at the head of every guide card, 12px above the copy,
- * with the card's "exit guide" (`ExitGuide`) level with it at the top right.
+ * "n/7" on its own line at the head of every guide card, 12px above the copy.
  * A bottom row, where a card has one, stands 8px further off (`mt-2`): its
  * keys are 44px tall around a 20px line, so their labels already sit 12px
  * below whatever ends above them, and 20px sets the action apart.
@@ -552,29 +549,11 @@ function PhaseActionRow({ onboarding, phase }: { onboarding: Onboarding; phase: 
   const label = phaseActionLabel(onboarding, phase);
   if (!label) return null;
   return (
-    <div className="mt-2 -mb-3 flex items-center">
+    <div className="mt-2 -mb-3 flex items-center justify-end">
       <button type="button" className={TEXT_ACTION} disabled={!onboarding.canNext} onClick={onboarding.next}>
         {t(label)}
       </button>
     </div>
-  );
-}
-
-/**
- * Leaving the guide: "exit guide" in every guide card's top-right corner, on
- * the stage number's line. The cards stand their first line 20px from the top
- * (`pt-5`); the key is 44px tall, so 6px down centres its label on that
- * line's 16px box. The label keeps to the card's 20px inset from the right.
- */
-function ExitGuide({ onboarding }: { onboarding: Onboarding }) {
-  return (
-    <button
-      type="button"
-      className="absolute right-0 top-1.5 flex h-11 items-center rounded-region px-5 text-xs text-text-muted transition-colors hover:text-text-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none"
-      onClick={onboarding.skip}
-    >
-      {t('onboardingMobileExit')}
-    </button>
   );
 }
 
@@ -586,7 +565,6 @@ function ExitGuide({ onboarding }: { onboarding: Onboarding }) {
 function OriginalHeard({ onboarding, labelId }: { onboarding: Onboarding; labelId: string }) {
   return (
     <>
-      <ExitGuide onboarding={onboarding} />
       <StageCounter stage={mobileStageOf('original-heard')} />
       <p id={labelId} className="leading-relaxed text-text-primary">{t(PHASE_COPY['original-heard'])}</p>
       <button type="button" className={`${BLOCK_PRIMARY} mt-5 w-full`} disabled={!onboarding.canNext} onClick={onboarding.next}>
@@ -666,7 +644,6 @@ function Anchored({
   const listening = phase === 'play-in-window' || phase === 'listen-adapted';
   return (
     <>
-      <ExitGuide onboarding={onboarding} />
       <StageCounter stage={stage} />
       <p className="leading-relaxed text-text-primary">{t(PHASE_COPY[phase])}</p>
       {/* The first sound of the practice, and over in 5 seconds: said before
@@ -683,7 +660,6 @@ function Anchored({
 function SendCard({ onboarding, lost, onRelocate }: { onboarding: Onboarding; lost: boolean; onRelocate: () => void }) {
   return (
     <>
-      <ExitGuide onboarding={onboarding} />
       <StageCounter stage={mobileStageOf('send')} />
       <p className="leading-relaxed text-text-primary">{t('onboardingMobileSend')}</p>
       <div role="status" aria-live="polite">
@@ -703,13 +679,14 @@ function Invite({ onboarding, labelId }: { onboarding: Onboarding; labelId: stri
       <h2 id={labelId} className="mb-1.5 text-[15px] font-semibold text-text-primary">{t('onboardingInviteTitle')}</h2>
       <p className="leading-relaxed text-text-primary">{t('onboardingMobileInviteBody')}</p>
       {onboarding.startError && <p className="mt-3 text-xs text-error">{t('requestFailed')}</p>}
-      {/* As on the steps that follow: the way on at the left, the way out at the right. */}
-      <div className="mt-2 -mb-3 flex items-center gap-3">
+      {/* The quiet way out stays left; the accent action advances on the right,
+          matching the later stages and the post-exit acknowledgement. */}
+      <div className="mt-2 -mb-3 flex items-center justify-between gap-3">
+        <button type="button" className={`-ml-2 ${TEXT_KEY} text-text-muted hover:text-text-primary`} disabled={onboarding.starting} onClick={onboarding.postpone}>
+          {t('onboardingLater')}
+        </button>
         <button type="button" className={TEXT_ACTION} disabled={onboarding.starting} onClick={() => void onboarding.start()}>
           {onboarding.starting ? t('loading') : t('onboardingStart')}
-        </button>
-        <button type="button" className={`${EXIT} ml-auto`} disabled={onboarding.starting} onClick={onboarding.postpone}>
-          {t('onboardingLater')}
         </button>
       </div>
     </>

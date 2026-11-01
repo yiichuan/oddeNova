@@ -17,6 +17,7 @@ export function useStrudel() {
     engineStatus: 'initializing',
     accentColor: null,
     isDirty: false,
+    isStarting: false,
   }));
 
   const historyRef = useRef<string[]>([]);
@@ -112,21 +113,22 @@ export function useStrudel() {
 
   const canUndo = historyLen > 0 || state.code !== '';
 
-  // Export current pattern to WAV.
+  // Export the current pattern to WAV, MP3, or M4A.
   // NOTE: After this returns (success OR error), the underlying audio graph is rebuilt and
   // master volume / LPF are at their defaults. The caller (CodePanel) must re-apply the
   // current UI values via strudelService.setMasterVolume / setMasterLPF.
-  const exportWav = useCallback(
-    async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number }): Promise<boolean> => {
+  const exportAudio = useCallback(
+    async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number; format?: 'wav' | 'mp3' | 'm4a' }): Promise<boolean> => {
       setExportState({ status: 'exporting', progress: 0 });
       try {
-        await strudelService.exportWav({
+        await strudelService.exportAudio({
           ...params,
           onProgress: (p) => setExportState((s) => ({ ...s, progress: p })),
         });
         setExportState((s) => ({ ...s, progress: 1 }));
         return true;
       } catch (e) {
+        console.error('[audio export] failed', e);
         const message = getErrorMessage(e);
         setExportState({ status: 'error', progress: 0, error: message });
         return false;
@@ -155,6 +157,7 @@ export function useStrudel() {
     activeCode: state.activeCode,
     isPlaying: state.isPlaying,
     isPaused: state.isPaused,
+    isStarting: state.isStarting,
     engineReady: state.engineReady,
     engineStatus: state.engineStatus,
     accentColor: state.accentColor,
@@ -174,7 +177,7 @@ export function useStrudel() {
     init: stop, // no-op; engine initializes on first attach
     reinit,
     exportState,
-    exportWav,
+    exportAudio,
     resetExportState,
     previewSound,
     describeSounds,

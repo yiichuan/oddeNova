@@ -96,15 +96,8 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
-/**
- * A guide card's lines, top to bottom. The first child is always "exit guide",
- * in the card's top-right corner; the lines follow it.
- */
 function cardLines(card: HTMLElement | null): (string | null)[] {
-  const [exit, ...rest] = [...(card?.children ?? [])];
-  expect(exit?.textContent).toBe(t('onboardingMobileExit'));
-  expect(exit?.className).toContain('absolute right-0 top-1.5');
-  return rest.map((child) => child.textContent);
+  return [...(card?.children ?? [])].map((child) => child.textContent);
 }
 
 /** A laid-out element at a fixed spot — happy-dom lays nothing out itself. */
@@ -163,7 +156,10 @@ describe('MobileOnboardingTour stages', () => {
     const reading = fakeOnboarding({ step: 'read-reply', canNext: true, progress: { delivered: true, originalHeard: true } });
     tour.render(reading);
     expect(tour.container.textContent).toContain('5/7');
-    act(() => button(tour.container, t('onboardingMobileHearChange')).click());
+    const hearChange = button(tour.container, t('onboardingMobileHearChange'));
+    expect(hearChange.parentElement?.className).toContain('justify-end');
+    expect(hearChange.className).toContain('-mr-2');
+    act(() => hearChange.click());
     expect(reading.next).toHaveBeenCalledTimes(1);
 
     tour.render(fakeOnboarding({ step: 'listen-adapted', progress: { delivered: true } }));
@@ -177,6 +173,9 @@ describe('MobileOnboardingTour stages', () => {
       progress: { delivered: true, adaptedHeard: true },
     }));
     expect(tour.container.textContent).toContain(t('onboardingMobileHeardContinue'));
+    const heardContinue = button(tour.container, t('onboardingMobileHeardContinue'));
+    expect(heardContinue.parentElement?.className).toContain('justify-end');
+    expect(heardContinue.className).toContain('-mr-2');
   });
 
   it('offers retry when sounds fail', () => {
@@ -282,6 +281,9 @@ describe('MobileOnboardingTour closing panel', () => {
     const card = tour.container.querySelector<HTMLElement>('[role="dialog"]');
     expect(card?.className).toContain('max-w-[320px]');
     expect(card?.parentElement?.className).toContain('justify-center');
+    const actions = [...card!.querySelectorAll('button')].map((item) => item.textContent);
+    expect(actions).toEqual([t('onboardingLater'), t('onboardingStart')]);
+    expect(button(tour.container, t('onboardingStart')).className).toContain('-mr-2');
     act(() => button(tour.container, t('onboardingStart')).click());
     expect(onboarding.start).toHaveBeenCalledTimes(1);
   });
@@ -359,7 +361,7 @@ describe('MobileOnboardingTour layout', () => {
     expect(card?.style.top).toBe('644px');
     const lines = cardLines(card);
     expect(lines).toEqual(['2/7', t('onboardingMobilePlayOriginal'), t('onboardingMobileSoundHint'), '']);
-    expect(card?.children[4].getAttribute('role')).toBe('status');
+    expect(card?.children[3].getAttribute('role')).toBe('status');
   });
 
   it('hangs the first stage\'s card under the code window key, right edges together, with no accent ring', async () => {
@@ -495,6 +497,6 @@ describe('MobileOnboardingTour layout', () => {
     expect(tour.container.textContent).not.toContain(t('onboardingMobileRelocate'));
     await act(async () => { await vi.advanceTimersByTimeAsync(1_700); });
     expect(tour.container.textContent).toContain(t('onboardingMobileTargetLost'));
-    expect(button(tour.container, t('onboardingMobileExit'))).toBeTruthy();
+    expect(tour.container.textContent).not.toContain(t('onboardingMobileExit'));
   });
 });

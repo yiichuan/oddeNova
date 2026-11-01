@@ -832,7 +832,7 @@ describe('CodePanel editor focus reporting', () => {
     const exportButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('download')}"]`);
     act(() => exportButton?.click());
 
-    expect(document.body.textContent).toContain(t('exportWav'));
+    expect(document.body.textContent).toContain(t('exportAudio'));
   });
 
   it('disables autocompletion on mobile', () => {

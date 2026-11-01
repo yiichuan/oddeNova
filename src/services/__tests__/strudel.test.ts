@@ -655,6 +655,103 @@ describe('StrudelService transport truth', () => {
   });
 });
 
+describe('StrudelService opening load', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('../../lib/soundfont-loader');
+    vi.doUnmock('../../lib/analytics');
+    vi.doUnmock('superdough');
+  });
+
+  /* A running context whose clock moves on every read, a compiled pattern
+     opening with `hapValues`, and a superdough whose triggers resolve when the
+     test says so — the shape of a first play whose sounds are still loading. */
+  async function setUp(hapValues: Record<string, unknown>[]) {
+    vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    let clock = 0;
+    const ctx = {
+      state: 'running',
+      get currentTime() { clock += 0.01; return clock; },
+      resume: vi.fn(async () => {}),
+      createBiquadFilter: vi.fn(() => ({ type: 'lowpass', frequency: { value: 0, setTargetAtTime: vi.fn() }, connect: vi.fn() })),
+      destination: {},
+    };
+    const releases: (() => void)[] = [];
+    const superdough = vi.fn(() => new Promise<void>((resolve) => { releases.push(resolve); }));
+    vi.doMock('superdough', () => ({
+      superdough,
+      getAudioContext: vi.fn(() => ctx),
+      getSuperdoughAudioController: vi.fn(() => ({
+        output: { destinationGain: { gain: { setTargetAtTime: vi.fn() }, disconnect: vi.fn(), connect: vi.fn() } },
+      })),
+    }));
+
+    const queryArc = vi.fn(() => hapValues.map((value) => ({
+      value,
+      hasOnset: () => true,
+      ensureObjectValue: () => {},
+    })));
+    const scheduler = { started: false, cps: 0.4, pattern: { queryArc } };
+    const replEvaluate = vi.fn(async () => {});
+    const evaluate = vi.fn(async () => { scheduler.started = true; });
+
+    const { StrudelService } = await import('../strudel');
+    const service = new StrudelService();
+    (service as unknown as { editorInstance: unknown }).editorInstance = {
+      code: 'note("d3").s("gm_pad_warm")',
+      evaluate,
+      repl: { evaluate: replEvaluate, scheduler, stop: vi.fn() },
+      setCode: vi.fn(),
+    };
+    const state = { isStarting: false };
+    service.onStateChange((next) => { state.isStarting = next.isStarting; });
+    return { service, state, superdough, releases, queryArc, replEvaluate, evaluate };
+  }
+
+  it('starts the transport only once every sound in the opening has loaded', async () => {
+    const { service, state, superdough, releases, queryArc, replEvaluate, evaluate } = await setUp([
+      { s: 'gm_pad_warm', note: 'd3' },
+      { s: 'gm_pad_warm', note: 'd3' },
+      { s: 'gm_pad_warm', note: 'a3' },
+      { s: 'pink' },
+    ]);
+
+    const playing = service.play();
+
+    // Compiled without starting, then six seconds of music asked for.
+    await vi.waitFor(() => expect(replEvaluate).toHaveBeenCalledWith('note("d3").s("gm_pad_warm")', false));
+    expect(queryArc).toHaveBeenCalledWith(0, 6 * 0.4, { _cps: 0.4 });
+    // One silent trigger per distinct sound, and nothing started yet.
+    await vi.waitFor(() => expect(superdough).toHaveBeenCalledTimes(3));
+    for (const [value] of superdough.mock.calls as unknown as [Record<string, unknown>][]) {
+      expect(value).toMatchObject({ gain: 0, postgain: 0 });
+    }
+    expect(evaluate).not.toHaveBeenCalled();
+    expect(state.isStarting).toBe(true);
+
+    releases.forEach((release) => release());
+    await playing;
+
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(state.isStarting).toBe(false);
+  });
+
+  it('does not start a press that was stopped while its opening loaded', async () => {
+    const { service, state, superdough, releases, evaluate } = await setUp([{ s: 'bd' }]);
+
+    const playing = service.play();
+    await vi.waitFor(() => expect(superdough).toHaveBeenCalledTimes(1));
+    service.stop();
+    expect(state.isStarting).toBe(false);
+
+    releases.forEach((release) => release());
+    await playing;
+
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+});
+
 describe('StrudelService displayed editor probe', () => {
   afterEach(() => {
     vi.resetModules();

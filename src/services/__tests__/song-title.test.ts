@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../llm', () => ({
+vi.mock('../llm-loader', () => ({
   chatOnce: vi.fn(),
 }));
 
-import { chatOnce } from '../llm';
+import { chatOnce } from '../llm-loader';
 import { generateSongTitle, sanitizeSongTitle } from '../song-title';
 
 const mockedChatOnce = vi.mocked(chatOnce);

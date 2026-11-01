@@ -57,6 +57,9 @@ interface SidebarProps {
   onBranch: (messageId: string) => void;
   onRetry: (messageId: string) => void;
   onPlaySegment?: (segmentId: string, code: string) => void;
+  onPlayCode?: (code: string) => void;
+  onPauseCode?: () => void;
+  isStarting?: boolean;
   onStopCode?: () => void;
   isPlaying?: boolean;
   playingCode?: string;
@@ -112,6 +115,9 @@ export default function Sidebar({
   onBranch,
   onRetry,
   onPlaySegment,
+  onPlayCode,
+  onPauseCode,
+  isStarting = false,
   onStopCode,
   isPlaying = false,
   playingCode = '',
@@ -121,6 +127,7 @@ export default function Sidebar({
   presetLock,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
+  const historyScrollRef = useRef<HTMLDivElement>(null);
   const [focusTrigger, setFocusTrigger] = useState(1);
   const prevIsLoadingRef = useRef(false);
   const prevPrefillTriggerRef = useRef(prefillTrigger);
@@ -207,8 +214,9 @@ export default function Sidebar({
           {showHistory && (
             <>
               <div className="fixed inset-0 z-[9]" onClick={() => setShowHistory(false)} />
-              <div className="history-panel-surface absolute top-0 left-3 right-3 max-h-[33.333%] z-10 overflow-y-auto rounded-region border border-border bg-conversation-surface">
+              <div ref={historyScrollRef} className="history-panel-surface absolute top-0 left-3 right-3 max-h-[33.333%] z-10 overflow-y-auto rounded-region border border-border bg-conversation-surface">
                 <HistoryPanel
+                  scrollContainerRef={historyScrollRef}
                   sessions={sessions}
                   currentId={currentId}
                   isLoading={isHistoryLoading}
@@ -245,6 +253,10 @@ export default function Sidebar({
             onBranch={onBranch}
             onRetry={onRetry}
             onPlaySegment={onPlaySegment}
+            onPlayCode={onPlayCode}
+            onPauseCode={onPauseCode}
+            engineReady={engineReady}
+            isStarting={isStarting}
             onStopCode={onStopCode}
             isPlaying={isPlaying}
             playingCode={playingCode}

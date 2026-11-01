@@ -9,6 +9,14 @@ import { useOnboarding, type Onboarding } from '../useOnboarding';
 
 vi.mock('../../lib/soundfont-loader', () => ({ preloadSoundfontNotes: vi.fn(async () => {}) }));
 vi.mock('../../lib/analytics', () => ({ trackOnboardingProgressed: vi.fn() }));
+const cloudMocks = vi.hoisted(() => ({
+  read: vi.fn<() => Promise<boolean>>(),
+  write: vi.fn<() => Promise<void>>(),
+}));
+vi.mock('../onboarding-cloud', () => ({
+  readCloudOnboardingSettled: cloudMocks.read,
+  writeCloudOnboardingSettled: cloudMocks.write,
+}));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -110,12 +118,13 @@ interface Harness {
   ownerKey: string;
   importSession: ReturnType<typeof vi.fn>;
   showCodeInEditor: ReturnType<typeof vi.fn>;
+  discardPractice: ReturnType<typeof vi.fn>;
   studio: ReturnType<typeof fakeStudio>;
   compare: ReturnType<typeof fakeComparePlayer>;
   rerender: () => void;
 }
 
-function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: string | null; interruptOnHidden?: boolean } = {}): Harness {
+function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: string | null; interruptOnHidden?: boolean; ownerKey?: string } = {}): Harness {
   const container = document.createElement('div');
   const root = createRoot(container);
   let latest: Onboarding | undefined;
@@ -125,7 +134,7 @@ function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: 
     get: () => latest!,
     sessions: options.sessions ?? [],
     currentId: options.currentId ?? null,
-    ownerKey: 'guest',
+    ownerKey: options.ownerKey ?? 'guest',
     importSession: vi.fn(async (payload: SessionImportPayload, opts?: { activate?: boolean }) => {
       const session = { ...payload, id: payload.id!, createdAt: payload.createdAt ?? 0, updatedAt: payload.updatedAt ?? 0 } as Session;
       harness.sessions = [session, ...harness.sessions.filter((s) => s.id !== session.id)];
@@ -133,6 +142,7 @@ function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: 
       harness.rerender();
     }),
     showCodeInEditor: vi.fn(),
+    discardPractice: vi.fn(),
     compare: fakeComparePlayer(),
     rerender: () => root.render(<Probe />),
   } as Harness;
@@ -155,6 +165,7 @@ function mount(options: { eligible?: boolean; sessions?: Session[]; currentId?: 
       switchToSession: (id) => { harness.currentId = id; harness.rerender(); },
       leaveCurrentSession: async () => {},
       showCodeInEditor: harness.showCodeInEditor,
+      discardPractice: harness.discardPractice,
       startNewSession: () => {},
       focusInput: () => {},
       interruptOnHidden: options.interruptOnHidden,
@@ -194,6 +205,8 @@ describe('useOnboarding', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.useFakeTimers();
+    cloudMocks.read.mockReset().mockResolvedValue(false);
+    cloudMocks.write.mockReset().mockResolvedValue(undefined);
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -202,6 +215,67 @@ describe('useOnboarding', () => {
   it('invites an eligible newcomer and nobody else', () => {
     expect(mount({ eligible: true }).get().view).toBe('invite');
     expect(mount({ eligible: false }).get().view).toBe('hidden');
+  });
+
+  it('waits for the account status and lets the reader reopen a settled guide manually', async () => {
+    cloudMocks.read.mockResolvedValue(true);
+    const h = mount({ ownerKey: 'user:user-1' });
+    await flush();
+
+    expect(h.get().view).toBe('hidden');
+    await act(async () => { h.get().openFromMenu(); });
+    expect(h.get().view).toBe('invite');
+    await act(async () => { h.root.unmount(); });
+  });
+
+  it.each(['focus', 'online'])('defers automatic invitations after a cloud read fails and retries on %s', async (event) => {
+    cloudMocks.read.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(false);
+    const h = mount({ ownerKey: 'user:user-1' });
+    await flush();
+    expect(h.get().view).toBe('hidden');
+
+    await act(async () => { window.dispatchEvent(new Event(event)); });
+    await flush();
+    expect(cloudMocks.read).toHaveBeenCalledTimes(2);
+    expect(h.get().view).toBe('invite');
+    await act(async () => { h.root.unmount(); });
+  });
+
+  it('uploads the local settled state when the account has no cloud record yet', async () => {
+    const h = mount({ ownerKey: 'user:user-1' });
+    await flush();
+    expect(h.get().view).toBe('invite');
+
+    await act(async () => { h.get().postpone(); });
+    await flush();
+    expect(cloudMocks.write).toHaveBeenCalledWith('user-1');
+    await act(async () => { h.root.unmount(); });
+  });
+
+  it('settles "later" at the invitation, points out the menu entry, and never auto-invites again', async () => {
+    const h = mount();
+
+    await act(async () => { h.get().postpone(); });
+
+    expect(h.get().view).toBe('hidden');
+    expect(h.get().exitHintVisible).toBe(true);
+    expect(h.discardPractice).not.toHaveBeenCalled();
+    const stored = JSON.parse(localStorage.getItem(progressKey('guest'))!);
+    expect(stored.status).toBe('skipped');
+    expect(mount().get().view).toBe('hidden');
+  });
+
+  it('does not point out the menu entry when "later" is chosen from a manually opened invitation', async () => {
+    const h = mount({ eligible: false });
+    await act(async () => { h.get().openFromMenu(); });
+    expect(h.get().view).toBe('invite');
+
+    await act(async () => { h.get().postpone(); });
+
+    expect(h.get().view).toBe('hidden');
+    expect(h.get().exitHintVisible).toBe(false);
+    const stored = JSON.parse(localStorage.getItem(progressKey('guest'))!);
+    expect(stored.status).toBe('skipped');
   });
 
   it('makes exactly one practice session however often start is pressed', async () => {
@@ -485,14 +559,28 @@ describe('useOnboarding', () => {
     expect(h.get().view).toBe('hidden');
   });
 
-  it('skipping keeps the practice session and never invites again by itself', async () => {
+  it('skipping discards the practice and never invites again by itself', async () => {
     const h = await started();
+    const practiceId = h.get().progress.sessionId;
     await act(async () => { h.get().skip(); });
     expect(h.get().view).toBe('hidden');
-    expect(h.sessions).toHaveLength(1);
+    expect(h.get().exitHintVisible).toBe(true);
+    expect(h.discardPractice).toHaveBeenCalledWith(practiceId);
     const stored = JSON.parse(localStorage.getItem(progressKey('guest'))!);
     expect(stored.status).toBe('skipped');
     expect(mount({ sessions: h.sessions }).get().view).toBe('hidden');
+  });
+
+  it('keeps the exit hint transient and clears it when the guide is reopened', async () => {
+    const h = await started();
+    await act(async () => { h.get().skip(); });
+    expect(h.get().exitHintVisible).toBe(true);
+
+    await act(async () => { h.get().dismissExitHint(); });
+    expect(h.get().exitHintVisible).toBe(false);
+
+    await act(async () => { h.get().openFromMenu(); });
+    expect(h.get().exitHintVisible).toBe(false);
   });
 });
 

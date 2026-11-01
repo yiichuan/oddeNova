@@ -1,4 +1,4 @@
-import { chatOnce } from './llm';
+import { chatOnce } from './llm-loader';
 import type { ChatMessage } from '../hooks/useChat';
 
 export interface GenerateSongTitleParams {

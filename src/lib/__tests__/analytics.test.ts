@@ -306,6 +306,21 @@ describe('PostHog business analytics', () => {
     ]);
   });
 
+  it('records print sending separately without transmitting receipt or device contents', async () => {
+    const client = makeClient();
+    const analytics = createAnalytics({ key: 'phc_public', loadClient: async () => client, storage: { getItem: () => null } });
+    analytics.initialize({ surface: 'main', locale: 'en' });
+    analytics.trackSharePrintFinished({ outcome: 'sent' });
+    await vi.waitFor(() => expect(client.capture).toHaveBeenCalledTimes(2));
+    expect(client.capture.mock.calls[1]).toEqual(['share_print_finished', {
+      schema_version: 1, outcome: 'sent', $geoip_disable: true, $process_person_profile: false,
+    }]);
+    const sanitized = sanitizePostHogEvent({ event: 'share_print_finished', properties: {
+      schema_version: 1, outcome: 'failed', title: 'secret', url: 'secret', device: 'secret',
+    } });
+    expect(sanitized?.properties).toEqual({ schema_version: 1, outcome: 'failed' });
+  });
+
   it('captures the onboarding funnel with only its own schema, which survives sanitizing', async () => {
     const client = makeClient();
     const analytics = createAnalytics({

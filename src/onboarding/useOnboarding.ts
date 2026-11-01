@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session, SessionImportPayload } from '../hooks/useSessions';
 import { trackOnboardingProgressed, type OnboardingStage } from '../lib/analytics';
 import { zh } from '../lib/i18n';
 import { preloadSoundfontNotes } from '../lib/soundfont-loader';
+import { readCloudOnboardingSettled, writeCloudOnboardingSettled } from './onboarding-cloud';
 import {
   COMPARE_SOUND_DEPENDENCIES,
   COMPARE_WINDOW,
@@ -89,11 +90,18 @@ const IDLE_COMPARE: CompareState = { version: null, phase: 'idle', progress: 0, 
 
 /** The preset loads briefly and honestly — no imitation of a long generation. */
 const PRESET_DELAY_MS = 1200;
-/** "Later" asks again the next day, not the next page load. */
-const POSTPONE_MS = 24 * 60 * 60 * 1000;
 const PREPARE_TIMEOUT_MS = 20_000;
 
-type Panel = 'auto' | 'dismissed' | 'invite' | 'resume' | 'cannot-resume' | 'step';
+type Panel = 'auto' | 'dismissed' | 'invite' | 'manual-invite' | 'resume' | 'cannot-resume' | 'step';
+type CloudOnboardingStatus = 'loading' | 'clear' | 'settled' | 'error';
+
+function userIdFromOwnerKey(ownerKey: string): string | null {
+  return ownerKey.startsWith('user:') ? ownerKey.slice('user:'.length) : null;
+}
+
+function isSettled(progress: OnboardingProgress): boolean {
+  return progress.status === 'completed' || progress.status === 'skipped';
+}
 
 export interface UseOnboardingOptions {
   ownerKey: string;
@@ -114,6 +122,8 @@ export interface UseOnboardingOptions {
   leaveCurrentSession: () => Promise<void>;
   /** Put `code` in the editor as `sessionId`'s own, without it reading as a manual edit. */
   showCodeInEditor: (sessionId: string, code: string) => void;
+  /** Remove the disposable practice and leave the reader in a fresh conversation. */
+  discardPractice: (sessionId: string) => void;
   startNewSession: () => Promise<void> | void;
   focusInput: () => void;
   /**
@@ -229,11 +239,20 @@ export function useOnboarding(options: UseOnboardingOptions) {
     setStore(current);
   }
   const { progress, panel } = current;
+  const [cloudState, setCloudState] = useState<{ ownerKey: string; status: CloudOnboardingStatus }>(() => ({
+    ownerKey,
+    status: ownerKey === 'guest' ? 'clear' : 'loading',
+  }));
+  const cloudStatus = ownerKey === 'guest'
+    ? 'clear'
+    : cloudState.ownerKey === ownerKey ? cloudState.status : 'loading';
 
   const [sending, setSending] = useState(false);
   const [deliveryError, setDeliveryError] = useState(false);
   const [startError, setStartError] = useState(false);
   const [starting, setStarting] = useState(false);
+  /** A one-time handoff after explicitly leaving a running guide. */
+  const [exitHintVisible, setExitHintVisible] = useState(false);
   /** null while nothing is settled: preparing, or not yet asked. */
   const [soundResult, setSoundResult] = useState<'ready' | 'failed' | null>(null);
   const [compare, setCompare] = useState<CompareState>(IDLE_COMPARE);
@@ -247,6 +266,11 @@ export function useOnboarding(options: UseOnboardingOptions) {
   const optionsRef = useRef(options);
   const progressRef = useRef(progress);
   const ownerRef = useRef(ownerKey);
+  const cloudOwnerRef = useRef(ownerKey);
+  const cloudOwnerGenerationRef = useRef(0);
+  const cloudReadRef = useRef<{ ownerKey: string; generation: number; promise: Promise<void> } | null>(null);
+  const cloudWriteRef = useRef<{ ownerKey: string; generation: number; promise: Promise<void> } | null>(null);
+  const cloudSettledOwnerRef = useRef<string | null>(null);
   /** Bumped by anything that invalidates work in flight: account change, exit, unmount. */
   const generationRef = useRef(0);
   /**
@@ -265,6 +289,107 @@ export function useOnboarding(options: UseOnboardingOptions) {
     ownerRef.current = ownerKey;
   });
 
+  const pushSettledToCloud = useCallback(async (targetOwnerKey: string) => {
+    const userId = userIdFromOwnerKey(targetOwnerKey);
+    const generation = cloudOwnerGenerationRef.current;
+    if (!userId || cloudOwnerRef.current !== targetOwnerKey) return;
+    if (cloudSettledOwnerRef.current === targetOwnerKey) return;
+    const pending = cloudWriteRef.current;
+    if (pending?.ownerKey === targetOwnerKey && pending.generation === generation) {
+      return pending.promise;
+    }
+    setCloudState({ ownerKey: targetOwnerKey, status: 'loading' });
+    const request = { ownerKey: targetOwnerKey, generation, promise: Promise.resolve() };
+    const promise = (async () => {
+      try {
+        await writeCloudOnboardingSettled(userId);
+        if (cloudOwnerRef.current === targetOwnerKey && cloudOwnerGenerationRef.current === generation) {
+          cloudSettledOwnerRef.current = targetOwnerKey;
+          setCloudState({ ownerKey: targetOwnerKey, status: 'settled' });
+        }
+      } catch {
+        if (cloudOwnerRef.current === targetOwnerKey && cloudOwnerGenerationRef.current === generation) {
+          setCloudState({ ownerKey: targetOwnerKey, status: 'error' });
+        }
+      } finally {
+        if (cloudWriteRef.current === request) cloudWriteRef.current = null;
+      }
+    })();
+    request.promise = promise;
+    cloudWriteRef.current = request;
+    return promise;
+  }, []);
+
+  const refreshCloudStatus = useCallback(async (targetOwnerKey: string) => {
+    const userId = userIdFromOwnerKey(targetOwnerKey);
+    const generation = cloudOwnerGenerationRef.current;
+    if (!userId || cloudOwnerRef.current !== targetOwnerKey) return;
+    const pending = cloudReadRef.current;
+    if (pending?.ownerKey === targetOwnerKey && pending.generation === generation) {
+      return pending.promise;
+    }
+    setCloudState({ ownerKey: targetOwnerKey, status: 'loading' });
+    const request = { ownerKey: targetOwnerKey, generation, promise: Promise.resolve() };
+    const promise = (async () => {
+      try {
+        const settled = await readCloudOnboardingSettled(userId);
+        if (cloudOwnerRef.current !== targetOwnerKey || cloudOwnerGenerationRef.current !== generation) return;
+        if (settled) {
+          cloudSettledOwnerRef.current = targetOwnerKey;
+          setCloudState({ ownerKey: targetOwnerKey, status: 'settled' });
+        } else if (isSettled(progressRef.current)) {
+          await pushSettledToCloud(targetOwnerKey);
+        } else {
+          setCloudState({ ownerKey: targetOwnerKey, status: 'clear' });
+        }
+      } catch {
+        if (cloudOwnerRef.current === targetOwnerKey && cloudOwnerGenerationRef.current === generation) {
+          setCloudState({ ownerKey: targetOwnerKey, status: 'error' });
+        }
+      } finally {
+        if (cloudReadRef.current === request) cloudReadRef.current = null;
+      }
+    })();
+    request.promise = promise;
+    cloudReadRef.current = request;
+    return promise;
+  }, [pushSettledToCloud]);
+
+  useLayoutEffect(() => {
+    if (cloudOwnerRef.current !== ownerKey) {
+      cloudOwnerRef.current = ownerKey;
+      cloudOwnerGenerationRef.current += 1;
+      cloudReadRef.current = null;
+      cloudWriteRef.current = null;
+      cloudSettledOwnerRef.current = null;
+    }
+
+    if (ownerKey === 'guest' || !userIdFromOwnerKey(ownerKey)) {
+      setCloudState({ ownerKey, status: 'clear' });
+    } else {
+      void refreshCloudStatus(ownerKey);
+    }
+
+    return () => {
+      if (cloudOwnerRef.current === ownerKey) {
+        cloudOwnerGenerationRef.current += 1;
+        cloudReadRef.current = null;
+        cloudWriteRef.current = null;
+      }
+    };
+  }, [ownerKey, refreshCloudStatus]);
+
+  useEffect(() => {
+    if (cloudStatus !== 'error') return;
+    const retry = () => { void refreshCloudStatus(ownerKey); };
+    window.addEventListener('focus', retry);
+    window.addEventListener('online', retry);
+    return () => {
+      window.removeEventListener('focus', retry);
+      window.removeEventListener('online', retry);
+    };
+  }, [ownerKey, cloudStatus, refreshCloudStatus]);
+
   const setPanel = useCallback((next: Panel) => {
     setStore((s) => ({ ...s, panel: next }));
   }, []);
@@ -276,10 +401,11 @@ export function useOnboarding(options: UseOnboardingOptions) {
     progressRef.current = after;
     writeProgress(ownerRef.current, after);
     setStore((s) => (s.ownerKey === ownerRef.current ? { ...s, progress: after } : s));
+    if (isSettled(after)) void pushSettledToCloud(ownerRef.current);
     const stage = STAGE_FOR_EVENT[event.type];
     if (stage) track(stage, event.type === 'skip' ? before.step : undefined);
     return after;
-  }, []);
+  }, [pushSettledToCloud]);
 
   const cancelInFlight = useCallback(() => {
     generationRef.current += 1;
@@ -300,18 +426,20 @@ export function useOnboarding(options: UseOnboardingOptions) {
       case 'dismissed':
         return 'hidden';
       case 'invite':
+      case 'manual-invite':
       case 'cannot-resume':
       case 'resume':
-        return panel;
+        return panel === 'manual-invite' ? 'invite' : panel;
       case 'step':
         if (progress.status !== 'active') return 'hidden';
         return isPracticeCurrent ? 'step' : 'resume';
       case 'auto':
         if (!canAutoInvite) return 'hidden';
+        if (isSettled(progress) || cloudStatus !== 'clear') return 'hidden';
         if (progress.status === 'active') return 'resume';
         return shouldAutoInvite(progress, { eligible, now: Date.now() }) ? 'invite' : 'hidden';
     }
-  }, [enabled, studioActive, panel, progress, isPracticeCurrent, canAutoInvite, eligible]);
+  }, [enabled, studioActive, panel, progress, isPracticeCurrent, canAutoInvite, eligible, cloudStatus]);
 
   useEffect(() => {
     if (view !== 'invite' || inviteTrackedRef.current) return;
@@ -579,6 +707,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
   const start = useCallback(async () => {
     if (startingRef.current) return;
     startingRef.current = true;
+    setExitHintVisible(false);
     setStarting(true);
     setStartError(false);
     // Hold the invitation until the practice is ready. A newcomer's is only
@@ -619,9 +748,15 @@ export function useOnboarding(options: UseOnboardingOptions) {
   }, [dispatch, forgetListen, setPanel]);
 
   const postpone = useCallback(() => {
-    dispatch({ type: 'postpone', until: Date.now() + POSTPONE_MS });
+    // Declining the initial invitation is a settled answer: do not interrupt
+    // this reader again on a later visit. Point out the permanent menu entry
+    // once, so they still know where to start the guide on their own terms.
+    dispatch({ type: 'skip' });
     setPanel('dismissed');
-  }, [dispatch, setPanel]);
+    // The menu entry is already in front of someone who opened the guide from
+    // there. Only an automatic first invitation needs to teach that path.
+    setExitHintVisible(panel !== 'manual-invite');
+  }, [dispatch, panel, setPanel]);
 
   /** "Later" on a practice under way: out of the way for now, offered again next visit. */
   const dismiss = useCallback(() => setPanel('dismissed'), [setPanel]);
@@ -629,6 +764,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
   // ── Resume ──────────────────────────────────────────────────────────────
 
   const resume = useCallback(async () => {
+    setExitHintVisible(false);
     const p = progressRef.current;
     const session = optionsRef.current.sessions.find((s) => s.id === p.sessionId);
     const check = checkPracticeResume(session, p);
@@ -654,7 +790,8 @@ export function useOnboarding(options: UseOnboardingOptions) {
 
   /** "More → Getting started": resume a practice under way, or offer a new one. */
   const openFromMenu = useCallback(() => {
-    setPanel(progressRef.current.status === 'active' ? 'resume' : 'invite');
+    setExitHintVisible(false);
+    setPanel(progressRef.current.status === 'active' ? 'resume' : 'manual-invite');
   }, [setPanel]);
 
   // ── Moving through the tour ─────────────────────────────────────────────
@@ -667,14 +804,19 @@ export function useOnboarding(options: UseOnboardingOptions) {
     dispatch({ type: 'prev' });
   }, [dispatch]);
 
-  /** "Skip": the guide is settled and goes; the practice session stays. */
+  /** "Skip": settle the guide, discard its practice, and leave a fresh chat. */
   const skip = useCallback(() => {
+    const sessionId = progressRef.current.sessionId;
     cancelInFlight();
     optionsRef.current.studio.stop();
     setSending(false);
     dispatch({ type: 'skip' });
     setPanel('dismissed');
+    setExitHintVisible(true);
+    if (sessionId) optionsRef.current.discardPractice(sessionId);
   }, [cancelInFlight, dispatch, setPanel]);
+
+  const dismissExitHint = useCallback(() => setExitHintVisible(false), []);
 
   // ── The preset turn ─────────────────────────────────────────────────────
 
@@ -781,6 +923,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
     deliveryError,
     startError,
     starting,
+    exitHintVisible,
     /** Whether "saved in your history" is true of this device's storage. */
     persistent: isPersistent,
     presetText: presetInstruction(lang),
@@ -794,6 +937,7 @@ export function useOnboarding(options: UseOnboardingOptions) {
     next,
     prev,
     skip,
+    dismissExitHint,
     retrySounds,
     interruptListening,
     togglePlayback,
