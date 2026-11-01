@@ -82,7 +82,9 @@ describe('PrimaryNav', () => {
     const labelsIn = (testId: string) => [...container.querySelectorAll(`[data-testid="${testId}"] button`)]
       .map((button) => button.getAttribute('aria-label'));
 
-    expect(labelsIn('primary-nav-top')).toEqual([t('navHome'), t('navFavorites'), t('navFeatured')]);
+    expect(labelsIn('primary-nav-top')).toEqual([
+      t('navHome'), t('navFavorites'), t('navFeatured'), t('navAudition'),
+    ]);
     expect(labelsIn('primary-nav-bottom')).toEqual([
       t('navMore'), t('navSettings'), t('navAccount'),
     ]);

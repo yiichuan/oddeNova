@@ -81,6 +81,7 @@ const S: Record<string, readonly [string, string]> = {
   navHome:       ['工作室', 'Studio'],
   navFeatured:   ['精选', 'Featured'],
   navFavorites:  ['收藏', 'Favorites'],
+  navAudition:   ['试听', 'Sounds'],
   navMore:       ['更多', 'More'],
   navLearnStrudel: ['学习 Strudel', 'Learn Strudel'],
   navSettings:   ['设置', 'Settings'],
@@ -90,8 +91,20 @@ const S: Record<string, readonly [string, string]> = {
   expandNavPages:     ['展开页面菜单', 'Show pages'],
   collapseNavPages:   ['收起页面菜单', 'Hide pages'],
 
+  // Audition (试听)
+  auditionSearchResults: ['搜索结果', 'Results'],
+  auditionSearch:      ['搜索采样名称', 'Search sounds'],
+  auditionClearSearch: ['清除搜索', 'Clear search'],
+  auditionCategories:  ['采样分类', 'Sound categories'],
+  auditionNoResults:   ['没有匹配的采样', 'No sounds match'],
+  auditionLastHeard:   ['刚刚试听', 'Last heard'],
+  auditionCopyCode:    ['复制代码', 'Copy code'],
+  auditionCopied:      ['已复制', 'Copied'],
+  auditionUnavailable: ['这个采样没有加载', "This sound isn't loaded"],
+  auditionPlayFailed:  ['播放失败，再点一次试试', "Couldn't play it. Press again to retry"],
+
   // Featured
-  featuredList:        ['精选作品', 'Featured pieces'],
+  featuredList:       ['精选作品', 'Featured pieces'],
   featuredIntroLabel:  ['内容来源说明', 'About these albums'],
   featuredIntro:       ['精选内容收集于互联网，仅作演示与学习之用，版权归原作者所有。',
                         'The featured pieces are collected from the internet, shown here for demonstration and study only; all rights belong to their original creators.'],

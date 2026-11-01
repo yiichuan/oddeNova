@@ -3921,3 +3921,76 @@ html[data-theme='light'] .viz-frame {
   background: #F7F7FA;
   color-scheme: light;
 }
+
+/* ── Audition · a key being heard ──
+   A diagonal band of light swept across the key from left to right, at one
+   pace from the press until the key is done. The band's colour comes in as
+   --audition-shimmer (white on a lit key, the accent on one at rest).
+
+   Done, it does not vanish: the sweep is frozen where it is and the band
+   widens out to both sides as it fades (`ending`, FADE_MS in
+   AuditionPage.tsx). The sweep stays in the animation list while it is
+   paused, so it is not restarted by the change. */
+@property --audition-shimmer-spread {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 10%;
+}
+
+.audition-shimmer {
+  background-image: linear-gradient(
+    110deg,
+    transparent calc(50% - var(--audition-shimmer-spread)),
+    var(--audition-shimmer) 50%,
+    transparent calc(50% + var(--audition-shimmer-spread))
+  );
+  background-size: 250% 100%;
+  background-repeat: no-repeat;
+  animation: audition-shimmer 1400ms linear infinite;
+}
+
+.audition-shimmer[data-phase='ending'] {
+  animation:
+    audition-shimmer 1400ms linear infinite,
+    audition-shimmer-out 600ms ease-out forwards;
+  animation-play-state: paused, running;
+}
+
+/* On a key at rest there is no fill for the band to sit in, so the key's
+   rectangle would show as the band's hard edge. Feathered off on all four
+   sides instead, it reads as light passing over the name rather than as a
+   box. A lit or failed key keeps the full rectangle: there the fill is the
+   edge. */
+.audition-shimmer[data-surface='rest'] {
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 18%, #000 82%, transparent),
+    linear-gradient(to bottom, transparent, #000 35%, #000 65%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, #000 18%, #000 82%, transparent),
+    linear-gradient(to bottom, transparent, #000 35%, #000 65%, transparent);
+  mask-composite: intersect;
+}
+
+@keyframes audition-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+
+@keyframes audition-shimmer-out {
+  to {
+    --audition-shimmer-spread: 50%;
+    opacity: 0;
+  }
+}
+
+/* No sweep: a still wash of the band's colour, which still fades out when
+   the key is done. */
+@media (prefers-reduced-motion: reduce) {
+  .audition-shimmer {
+    animation: none;
+    background-image: none;
+    background-color: var(--audition-shimmer);
+    opacity: 0.5;
+  }
+}

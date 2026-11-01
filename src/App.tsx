@@ -115,11 +115,12 @@ import { type Session } from './hooks/useSessions';
  * Destinations that take the whole content area, leaving no room for the
  * session column or the divider beside it.
  */
-const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites']);
+const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites', 'audition']);
 
 // Stable shells keep chunks lazy and renew failed loads on a boundary retry.
 const LazyFeaturedPage = retryableLazy(() => import('./components/featured/FeaturedPage'));
 const LazyFavoritesPage = retryableLazy(() => import('./components/favorites/FavoritesPage'));
+const LazyAuditionPage = retryableLazy(() => import('./components/audition/AuditionPage'));
 const LazySettingsSidebar = retryableLazy(() => import('./components/settings/SettingsSidebar'));
 const LazyModelSettingsPanel = retryableLazy(() => import('./components/settings/ModelSettingsPanel'));
 const LazyAppearanceSettingsPanel = retryableLazy(() => import('./components/settings/AppearanceSettingsPanel'));
@@ -228,6 +229,7 @@ export default function App() {
      the chunk is never pulled by hovering or by a screen that is not looking. */
   const [featuredVisited, setFeaturedVisited] = useState(false);
   const [favoritesVisited, setFavoritesVisited] = useState(false);
+  const [auditionVisited, setAuditionVisited] = useState(false);
   const [settingsVisited, setSettingsVisited] = useState(false);
   const mobileNavigationRef = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('model');
@@ -554,9 +556,16 @@ export default function App() {
     // than flashing the studio behind it for one frame.
     if (item === 'featured') setFeaturedVisited(true);
     if (item === 'favorites') setFavoritesVisited(true);
+    if (item === 'audition') setAuditionVisited(true);
     if (item === 'settings') setSettingsVisited(true);
     setPrimaryNavItem(item);
   }, [auth.user, stopFeaturedPreview, stopStudio, isMobile]);
+
+  useEffect(() => {
+    // The phone layout has no sound library; a window narrowed into it while
+    // the page is up goes back to the studio.
+    if (isMobile && primaryNavItem === 'audition') setPrimaryNavItem('home');
+  }, [isMobile, primaryNavItem]);
 
   useEffect(() => {
     // A sign-out or expired auth session must not leave the account-only page
@@ -2110,9 +2119,13 @@ export default function App() {
      asks it of every part of itself. */
   const onFavoritesPage = primaryNavItem === 'favorites';
   const onFeaturedPage = primaryNavItem === 'featured';
-  /* The studio stands behind both gallery pages rather than in place of
-     either: it holds the editor the audio engine is bound to. */
-  const onStudioPage = !onFavoritesPage && !onFeaturedPage;
+  /* Desktop only: a window narrowed to the phone layout while it is up is
+     back in the studio (see the effect that resets it). */
+  const onAuditionPage = !isMobile && primaryNavItem === 'audition';
+  /* The studio stands behind the gallery pages and the sound library rather
+     than in place of any of them: it holds the editor the audio engine is
+     bound to. */
+  const onStudioPage = !onFavoritesPage && !onFeaturedPage && !onAuditionPage;
   /* Which conversation the history list draws as open — a question about the
      page in front of the reader, not about which session is loaded.
      `sessions.currentId` is the second of those and stays set while a gallery is
@@ -2235,6 +2248,20 @@ export default function App() {
            in it that reaches the rest of the app opens the shell's drawer. */
         onOpenNav={() => setNavDrawerOpen(true)}
         onCodeWindowChange={setFavoritesCodeOpen}
+      />
+    </FeatureLoadBoundary>
+  ) : null;
+
+  /* The sound library — desktop only. It plays through the studio's engine,
+     which has to be up for it to sound. Gated on its first visit like the
+     pages above. */
+  const auditionPage = auditionVisited ? (
+    <FeatureLoadBoundary fallback={<LazyOverlayFallback />}>
+      <LazyAuditionPage
+        active={onAuditionPage}
+        engineReady={strudel.engineReady}
+        previewSound={strudel.previewSound}
+        describeSounds={strudel.describeSounds}
       />
     </FeatureLoadBoundary>
   ) : null;
@@ -2927,6 +2954,9 @@ export default function App() {
           </div>
           <div className={onFeaturedPage ? 'flex h-full min-h-0' : 'hidden'}>
             {featuredPage}
+          </div>
+          <div className={onAuditionPage ? 'flex h-full min-h-0' : 'hidden'}>
+            {auditionPage}
           </div>
           <div className={primaryNavItem === 'favorites' ? 'flex h-full min-h-0' : 'hidden'}>
             {favoritesPage}
