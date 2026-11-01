@@ -180,47 +180,91 @@ interface GroupSpec {
   names: readonly (string | SampleEntry)[];
 }
 
+/*
+ * Every gloss below was written from what the files under that name actually
+ * are (their names in public/sample-index/), not from the name itself — `hh`
+ * looks like a hi-hat and is a whole kit, `cr` looks like a crash and is a
+ * ride. Where the files are only numbered (`perc`, `stomp`, `dr`, `dr_few`,
+ * `drum`, `techno`, `psr`, `hand`), the gloss comes from a rough analysis of
+ * the audio — length, brightness, how much of it sits in the lows — and so
+ * says what kind of hits they are rather than naming an instrument. `misc` is
+ * from uzu-drumkit's own README.
+ */
 const KIT_GROUPS: GroupSpec[] = [
   {
     id: 'kick',
     title: ['底鼓', 'Kicks'],
-    names: ['bd', '808bd', 'clubkick', 'hardkick', 'kicklinn', 'popkick', 'reverbkick',
-      'gabba', 'gabbaloud', 'gabbalouder', 'bassdrum1', 'bassdrum2'],
+    names: [
+      { name: 'bd', label: ['909 底鼓', '909 kick'] },
+      { name: '909', label: ['909 底鼓', '909 kick'] },
+      { name: '808bd', label: ['808 底鼓', '808 kick'] },
+      { name: 'clubkick', label: ['俱乐部底鼓', 'Club kick'] },
+      { name: 'hardkick', label: ['失真底鼓', 'Distorted kick'] },
+      { name: 'kicklinn', label: ['LinnDrum 底鼓', 'LinnDrum kick'] },
+      { name: 'popkick', label: ['流行底鼓', 'Pop kick'] },
+      { name: 'reverbkick', label: ['带混响底鼓', 'Reverb kick'] },
+      { name: 'gabba', label: ['Gabber 失真底鼓', 'Gabber kick'] },
+      { name: 'gabbaloud', label: ['Gabber 底鼓 · 更响', 'Gabber kick, louder'] },
+      { name: 'gabbalouder', label: ['Gabber 底鼓 · 最响', 'Gabber kick, loudest'] },
+      { name: 'bassdrum1', label: ['音乐会大鼓', 'Concert bass drum'] },
+      { name: 'bassdrum2', label: ['音乐会大鼓 · 含滚奏', 'Concert bass drum, with rolls'] },
+    ],
   },
   {
     id: 'snare',
     title: ['军鼓', 'Snares'],
-    names: ['sd', 'sn', '808sd', 'snare_hi', 'snare_low', 'snare_modern', 'snare_rim'],
+    names: [
+      { name: 'sd', label: ['Analog Rytm 军鼓', 'Analog Rytm snare'] },
+      { name: 'sn', label: ['909 军鼓', '909 snare'] },
+      { name: '808sd', label: ['808 军鼓', '808 snare'] },
+      { name: 'snare_hi', label: ['绳调军鼓 · 高', 'Rope snare, high'] },
+      { name: 'snare_low', label: ['绳调军鼓 · 低', 'Rope snare, low'] },
+      { name: 'snare_modern', label: ['现代军鼓', 'Modern snare'] },
+      { name: 'snare_rim', label: ['绳调军鼓 · 敲边', 'Rope snare, rim & stick'] },
+    ],
   },
   {
     id: 'clap',
     title: ['拍手', 'Claps'],
-    names: ['cp', 'realclaps', 'clap', 'hand'],
+    names: [
+      { name: 'cp', label: ['909 拍手', '909 clap'] },
+      { name: 'realclaps', label: ['真人拍手', 'Real claps'] },
+      { name: 'clap', label: ['真人拍手 · 含单人', 'Real claps, incl. solo'] },
+    ],
   },
   {
     id: 'hats',
     title: ['踩镲与镲片', 'Hats & cymbals'],
     names: [
-      { name: 'hh', label: ['闭镲', 'Closed hat'] },
-      'hh27',
-      { name: 'hc', label: ['闭镲', 'Closed hat'] },
+      { name: 'hc', label: ['909 闭镲', '909 closed hat'] },
+      { name: 'ho', label: ['909 开镲', '909 open hat'] },
       { name: 'oh', label: ['开镲', 'Open hat'] },
-      { name: 'ho', label: ['开镲', 'Open hat'] },
-      '808oh', 'linnhats', 'hihat',
-      { name: 'cr', label: ['吊镲', 'Crash'] },
+      { name: '808oh', label: ['808 开镲', '808 open hat'] },
+      { name: 'linnhats', label: ['LinnDrum 踩镲', 'LinnDrum hats'] },
+      { name: 'hihat', label: ['原声踩镲 · 闭/开', 'Acoustic hi-hat, closed & open'] },
+      { name: 'cr', label: ['909 叮叮镲', '909 ride'] },
       { name: 'rd', label: ['叮叮镲', 'Ride'] },
-      '808cy', 'sus_cymbal', 'sus_cymbal2',
+      { name: '808cy', label: ['808 镲片', '808 cymbal'] },
+      { name: 'sus_cymbal', label: ['悬挂镲 · 击/擦/渐强', 'Suspended cymbal'] },
+      { name: 'sus_cymbal2', label: ['悬挂镲 2 · 击/擦/渐强', 'Suspended cymbal 2'] },
     ],
   },
   {
     id: 'toms',
     title: ['嗵鼓', 'Toms'],
     names: [
-      { name: 'lt', label: ['低嗵鼓', 'Low tom'] },
-      { name: 'mt', label: ['中嗵鼓', 'Mid tom'] },
-      { name: 'ht', label: ['高嗵鼓', 'High tom'] },
-      '808lt', '808mt', '808ht',
-      'tom_mallet', 'tom_stick', 'tom_rim', 'tom2_mallet', 'tom2_stick', 'tom2_rim',
+      { name: 'lt', label: ['909 低嗵鼓', '909 low tom'] },
+      { name: 'mt', label: ['909 中嗵鼓', '909 mid tom'] },
+      { name: 'ht', label: ['909 高嗵鼓', '909 high tom'] },
+      { name: '808lt', label: ['808 低嗵鼓', '808 low tom'] },
+      { name: '808mt', label: ['808 中嗵鼓', '808 mid tom'] },
+      { name: '808ht', label: ['808 高嗵鼓', '808 high tom'] },
+      { name: 'tom_mallet', label: ['高嗵鼓 · 软槌', 'High tom, mallet'] },
+      { name: 'tom_stick', label: ['高嗵鼓 · 鼓棒', 'High tom, stick'] },
+      { name: 'tom_rim', label: ['高嗵鼓 · 敲边', 'High tom, rim'] },
+      { name: 'tom2_mallet', label: ['低嗵鼓 · 软槌', 'Low tom, mallet'] },
+      { name: 'tom2_stick', label: ['低嗵鼓 · 鼓棒', 'Low tom, stick'] },
+      { name: 'tom2_rim', label: ['低嗵鼓 · 敲边', 'Low tom, rim'] },
     ],
   },
   {
@@ -231,15 +275,41 @@ const KIT_GROUPS: GroupSpec[] = [
       { name: 'cb', label: ['牛铃', 'Cowbell'] },
       { name: 'tb', label: ['铃鼓', 'Tambourine'] },
       { name: 'sh', label: ['沙锤', 'Shaker'] },
-      'perc', 'misc', 'stomp',
+      { name: 'perc', label: ['低频打击小件', 'Low percussive hits'] },
+      { name: 'misc', label: ['模块合成器音效', 'Modular synth sounds'] },
+      { name: 'stomp', label: ['跺脚 · 低沉闷击', 'Stomps, low thuds'] },
     ],
   },
   {
     id: 'kits',
     title: ['整套鼓组', 'Whole kits'],
-    names: ['808', '909', 'drum', 'dr', 'dr2', 'dr55', 'dr_few', 'drumtraks', 'ifdrums', 'gretsch',
-      'electro1', 'house', 'techno', 'tech', 'hardcore', 'jazz', 'odx', 'psr', 'sequential',
-      'casio', 'future', 'feel'],
+    /* `hh` and `hh27` belong here despite their names: each is a whole kit
+       of thirteen hits (kicks, snares, hats, crash, ride), not a hi-hat. */
+    names: [
+      { name: '808', label: ['808 小件 · 牛铃/响棒/沙锤等', '808 extras: cowbell, clave, maracas…'] },
+      { name: 'hh', label: ['13 件套', '13-piece kit'] },
+      { name: 'hh27', label: ['13 件套', '13-piece kit'] },
+      { name: 'tech', label: ['13 件套', '13-piece kit'] },
+      { name: 'electro1', label: ['电子 · 13 件套', 'Electro, 13-piece kit'] },
+      { name: 'hardcore', label: ['硬核 · 12 件套', 'Hardcore, 12-piece kit'] },
+      { name: 'house', label: ['House · 8 件套', 'House, 8-piece kit'] },
+      { name: 'jazz', label: ['8 件套', '8-piece kit'] },
+      { name: 'gretsch', label: ['Gretsch 原声爵士鼓 · 含鼓刷', 'Gretsch acoustic kit, with brushes'] },
+      { name: 'drumtraks', label: ['Sequential DrumTraks 鼓机', 'Sequential DrumTraks'] },
+      { name: 'sequential', label: ['Sequential Tom 鼓机', 'Sequential Tom'] },
+      { name: 'odx', label: ['Oberheim DX 鼓机', 'Oberheim DX'] },
+      { name: 'dr2', label: ['Boss DR-110 鼓机', 'Boss DR-110'] },
+      { name: 'dr55', label: ['Boss DR-55 鼓机', 'Boss DR-55'] },
+      { name: 'casio', label: ['Casio · 高/低/噪声', 'Casio: high, low, noise'] },
+      { name: 'ifdrums', label: ['底鼓/踩镲/军鼓', 'Kick, hat, snare'] },
+      { name: 'feel', label: ['底鼓/踩镲/军鼓/Sub', 'Kick, hats, snares, sub'] },
+      { name: 'future', label: ['以底鼓为主', 'Mostly kicks'] },
+      { name: 'drum', label: ['6 件 · 底鼓/军鼓/踩镲', '6 hits: kick, snare, hats'] },
+      { name: 'techno', label: ['Techno · 底鼓/军鼓/踩镲等', 'Techno: kick, snare, hats…'] },
+      { name: 'dr', label: ['42 种鼓件', '42 kit hits'] },
+      { name: 'dr_few', label: ['以底鼓为主', 'Mostly kicks'] },
+      { name: 'psr', label: ['30 种鼓件 · 含镲片', '30 kit hits, incl. cymbals'] },
+    ],
   },
 ];
 
@@ -251,12 +321,15 @@ const PERCUSSION_GROUPS: GroupSpec[] = [
       { name: '808lc', label: ['低康加', 'Low conga'] },
       { name: '808mc', label: ['中康加', 'Mid conga'] },
       { name: '808hc', label: ['高康加', 'High conga'] },
-      'darbuka', 'framedrum', 'cajon', 'slitdrum'],
+      'darbuka', 'framedrum', 'cajon', 'slitdrum',
+      /* Shelved with the claps once, by its name. Its takes are mostly low,
+         pitched hits, two of them ringing on for seconds: hands on a drum
+         head, not hands together. */
+      { name: 'hand', label: ['手击鼓面 · 多为低沉', 'Hand hits, mostly low'] }],
   },
   {
     id: 'mridangam',
     title: ['木丹加鼓', 'Mridangam'],
-    subtitle: 'South Indian',
     names: MRIDANGAM_SAMPLES,
   },
   {

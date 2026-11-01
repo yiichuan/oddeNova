@@ -8,6 +8,8 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
 import sessionsHandler from './api/sessions'
 import { privacyRouteMiddleware } from './server/privacy-route'
+import { vcslProxyHandler } from './server/vcsl-proxy'
+import { fetch as undiciFetch, ProxyAgent } from 'undici'
 
 interface AirJellyRuntime {
   port: number
@@ -262,6 +264,34 @@ function kimiApiDevMiddleware(): Plugin {
   }
 }
 
+// The VCSL sample passthrough, served by the same handler as the Vercel
+// function at api/vcsl.ts — see server/vcsl-proxy.ts for why it exists.
+// Node's fetch ignores HTTPS_PROXY, and on a machine that only reaches GitHub
+// through one the passthrough would answer every sound with a 502; so in dev
+// it goes through the same proxy the browser does, when one is set.
+function vcslDevMiddleware(): Plugin {
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
+    || process.env.HTTP_PROXY || process.env.http_proxy
+  const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined
+  const fetchUpstream = (dispatcher
+    ? (url: string, init?: RequestInit) => undiciFetch(url, { method: init?.method, dispatcher })
+    : fetch) as typeof fetch
+
+  return {
+    name: 'vcsl-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use('/api/vcsl', (req: IncomingMessage & { originalUrl?: string }, res: ServerResponse) => {
+        // Connect strips the mount path; the handler reads the query off the full URL.
+        req.url = req.originalUrl ?? req.url
+        vcslProxyHandler(req, res, fetchUpstream).catch(() => {
+          if (!res.headersSent) res.statusCode = 502
+          res.end()
+        })
+      })
+    },
+  }
+}
+
 // Local dev mock for /api/share — uses an in-memory Map instead of Vercel Blob.
 // In production, Vercel routes /api/* to real serverless functions.
 function shareDevMiddleware(): Plugin {
@@ -487,7 +517,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
     build: {
       rollupOptions: {
         input: {

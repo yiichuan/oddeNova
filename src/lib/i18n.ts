@@ -91,9 +91,7 @@ const S: Record<string, readonly [string, string]> = {
   collapseNavPages:   ['收起页面菜单', 'Hide pages'],
 
   // Audition (试听)
-  auditionHint:        ['点击即可试听；带编号的采样有多个版本，再点一次换下一个', 'Press a sound to hear it. Numbered ones have several takes: press again for the next'],
-  auditionTotal:       ['共 {n} 种声音', '{n} sounds'],
-  auditionMatches:     ['找到 {n} 个', '{n} found'],
+  auditionSearchResults: ['搜索结果', 'Results'],
   auditionSearch:      ['搜索采样名称', 'Search sounds'],
   auditionClearSearch: ['清除搜索', 'Clear search'],
   auditionCategories:  ['采样分类', 'Sound categories'],

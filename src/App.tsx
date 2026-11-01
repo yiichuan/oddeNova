@@ -524,6 +524,12 @@ export default function App() {
   }, [auth.user, stopFeaturedPreview, stopStudio, isMobile]);
 
   useEffect(() => {
+    // The phone layout has no sound library; a window narrowed into it while
+    // the page is up goes back to the studio.
+    if (isMobile && primaryNavItem === 'audition') setPrimaryNavItem('home');
+  }, [isMobile, primaryNavItem]);
+
+  useEffect(() => {
     // A sign-out or expired auth session must not leave the account-only page
     // visible while the auth state settles.
     if (!auth.user && primaryNavItem === 'favorites') {
@@ -2049,7 +2055,9 @@ export default function App() {
      asks it of every part of itself. */
   const onFavoritesPage = primaryNavItem === 'favorites';
   const onFeaturedPage = primaryNavItem === 'featured';
-  const onAuditionPage = primaryNavItem === 'audition';
+  /* Desktop only: a window narrowed to the phone layout while it is up is
+     back in the studio (see the effect that resets it). */
+  const onAuditionPage = !isMobile && primaryNavItem === 'audition';
   /* The studio stands behind the gallery pages and the sound library rather
      than in place of any of them: it holds the editor the audio engine is
      bound to. */
@@ -2110,15 +2118,14 @@ export default function App() {
     />
   );
 
-  /* The sound library, hung in whichever shell is up like the two above. It
-     plays through the studio's engine, which has to be up for it to sound. */
+  /* The sound library — desktop only. It plays through the studio's engine,
+     which has to be up for it to sound. */
   const auditionPage = (
     <AuditionPage
       active={onAuditionPage}
       engineReady={strudel.engineReady}
       previewSound={strudel.previewSound}
       describeSounds={strudel.describeSounds}
-      onOpenNav={() => setNavDrawerOpen(true)}
     />
   );
 
@@ -2376,11 +2383,6 @@ export default function App() {
           {featuredPage}
         </div>
 
-        {/* ── Audition ── */}
-        <div className={onAuditionPage ? 'flex min-h-0 flex-1' : 'hidden'}>
-          {auditionPage}
-        </div>
-
         {/* ── Code Window ── */}
         {/* Never unmounted, only hidden. The audio engine is bound to the
             editor this panel mounts, so tearing it down with the window would
@@ -2585,9 +2587,8 @@ export default function App() {
              otherwise have to find your own way to. */
           onNewSession={() => { handlePrimaryNavSelect('home'); handleNewSession(); }}
           onOpenAccount={() => setAccountOpen(true)}
-          current={onFavoritesPage ? 'favorites' : onFeaturedPage ? 'featured' : onAuditionPage ? 'audition' : 'home'}
+          current={onFavoritesPage ? 'favorites' : onFeaturedPage ? 'featured' : 'home'}
           onOpenFavorites={() => handlePrimaryNavSelect('favorites')}
-          onOpenAudition={() => handlePrimaryNavSelect('audition')}
           onOpenOnboarding={handleOpenOnboarding}
           /* The shelf's sleeves lean with the device, and on iOS the readings
              have to be asked for from inside a real gesture. This press is that

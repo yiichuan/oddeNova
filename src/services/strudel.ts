@@ -2,6 +2,7 @@ import { getErrorMessage } from '../lib/errors';
 import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
+import { loadSampleIndex } from '../lib/sample-index-hosts';
 import {
   buildPreviewEvent,
   describeRegisteredSound,
@@ -437,13 +438,13 @@ export class StrudelService {
         await Promise.all([
           loadModules,
           registerSynthSounds(),
-          samples('/sample-index/dirt-samples.json'),
-          samples('/sample-index/tidal-drum-machines.json'),
-          samples('/sample-index/piano.json'),
-          samples('/sample-index/vcsl.json'),
-          samples('/sample-index/mridangam.json'),
+          loadSampleIndex(samples, '/sample-index/dirt-samples.json'),
+          loadSampleIndex(samples, '/sample-index/tidal-drum-machines.json'),
+          loadSampleIndex(samples, '/sample-index/piano.json'),
+          loadSampleIndex(samples, '/sample-index/vcsl.json'),
+          loadSampleIndex(samples, '/sample-index/mridangam.json'),
         ]);
-        await samples('/sample-index/uzu-drumkit.json');
+        await loadSampleIndex(samples, '/sample-index/uzu-drumkit.json');
         await aliasBank('/sample-index/tidal-drum-machines-alias.json');
         registerSoundfonts();
         (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;

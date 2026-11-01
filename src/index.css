@@ -3922,53 +3922,75 @@ html[data-theme='light'] .viz-frame {
   color-scheme: light;
 }
 
-/* ── Audition: the three-bar meter on a sample key ──
-   Grey stubs at rest, the playback accent bouncing while the pressed sound is
-   lit, and a slow shared pulse while its audio is still downloading — the
-   first press of a GM instrument can take a moment, and a key that does
-   nothing visible in that moment reads as a key that did not take. */
-.audition-meter {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 1.5px;
-  width: 9px;
-  height: 10px;
-  flex-shrink: 0;
+/* ── Audition · a key being heard ──
+   A diagonal band of light swept across the key from left to right, at one
+   pace from the press until the key is done. The band's colour comes in as
+   --audition-shimmer (white on a lit key, the accent on one at rest).
+
+   Done, it does not vanish: the sweep is frozen where it is and the band
+   widens out to both sides as it fades (`ending`, FADE_MS in
+   AuditionPage.tsx). The sweep stays in the animation list while it is
+   paused, so it is not restarted by the change. */
+@property --audition-shimmer-spread {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 10%;
 }
 
-.audition-meter > span {
-  width: 2px;
-  height: 3px;
-  border-radius: 1px;
-  background: var(--color-text-muted);
-  opacity: 0.55;
-  transition: background-color 150ms, opacity 150ms;
+.audition-shimmer {
+  background-image: linear-gradient(
+    110deg,
+    transparent calc(50% - var(--audition-shimmer-spread)),
+    var(--audition-shimmer) 50%,
+    transparent calc(50% + var(--audition-shimmer-spread))
+  );
+  background-size: 250% 100%;
+  background-repeat: no-repeat;
+  animation: audition-shimmer 1400ms linear infinite;
 }
 
-.audition-meter.is-loading > span {
-  animation: audition-meter-wait 900ms ease-in-out infinite;
+.audition-shimmer[data-phase='ending'] {
+  animation:
+    audition-shimmer 1400ms linear infinite,
+    audition-shimmer-out 600ms ease-out forwards;
+  animation-play-state: paused, running;
 }
 
-.audition-meter.is-lit > span {
-  background: var(--color-playback-accent);
-  opacity: 1;
-  animation: audition-meter-bounce 450ms ease-in-out infinite alternate;
+/* On a key at rest there is no fill for the band to sit in, so the key's
+   rectangle would show as the band's hard edge. Feathered off on all four
+   sides instead, it reads as light passing over the name rather than as a
+   box. A lit or failed key keeps the full rectangle: there the fill is the
+   edge. */
+.audition-shimmer[data-surface='rest'] {
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 18%, #000 82%, transparent),
+    linear-gradient(to bottom, transparent, #000 35%, #000 65%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, #000 18%, #000 82%, transparent),
+    linear-gradient(to bottom, transparent, #000 35%, #000 65%, transparent);
+  mask-composite: intersect;
 }
 
-.audition-meter.is-lit > span:nth-child(2) { animation-delay: -150ms; }
-.audition-meter.is-lit > span:nth-child(3) { animation-delay: -300ms; }
-
-@keyframes audition-meter-bounce {
-  from { height: 3px; }
-  to { height: 10px; }
+@keyframes audition-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
 }
 
-@keyframes audition-meter-wait {
-  0%, 100% { opacity: 0.25; }
-  50% { opacity: 0.9; }
+@keyframes audition-shimmer-out {
+  to {
+    --audition-shimmer-spread: 50%;
+    opacity: 0;
+  }
 }
 
+/* No sweep: a still wash of the band's colour, which still fades out when
+   the key is done. */
 @media (prefers-reduced-motion: reduce) {
-  .audition-meter > span { animation: none !important; }
-  .audition-meter.is-lit > span { height: 10px; }
+  .audition-shimmer {
+    animation: none;
+    background-image: none;
+    background-color: var(--audition-shimmer);
+    opacity: 0.5;
+  }
 }

@@ -1,4 +1,5 @@
 import { registerSoundfonts } from '../lib/soundfont-loader';
+import { loadSampleIndex } from '../lib/sample-index-hosts';
 import { installInlinePunchcardWidget } from './inline-punchcard';
 
 /**
@@ -48,13 +49,13 @@ async function prebake(): Promise<void> {
   await Promise.all([
     loadModules,
     registerSynthSounds(),
-    samples('/sample-index/dirt-samples.json'),
-    samples('/sample-index/tidal-drum-machines.json'),
-    samples('/sample-index/piano.json'),
-    samples('/sample-index/vcsl.json'),
-    samples('/sample-index/mridangam.json'),
+    loadSampleIndex(samples, '/sample-index/dirt-samples.json'),
+    loadSampleIndex(samples, '/sample-index/tidal-drum-machines.json'),
+    loadSampleIndex(samples, '/sample-index/piano.json'),
+    loadSampleIndex(samples, '/sample-index/vcsl.json'),
+    loadSampleIndex(samples, '/sample-index/mridangam.json'),
   ]);
-  await samples('/sample-index/uzu-drumkit.json');
+  await loadSampleIndex(samples, '/sample-index/uzu-drumkit.json');
   await aliasBank('/sample-index/tidal-drum-machines-alias.json');
   installInlinePunchcardWidget(Pattern, setWidget);
   registerSoundfonts();

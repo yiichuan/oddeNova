@@ -62,8 +62,8 @@ interface PrimaryNavProps {
 }
 
 /**
- * The gallery views where the column breaks apart: the Featured collection and
- * Favorites. Both are full-width pages a collection is looked across rather
+ * The views where the column breaks apart: the Featured collection, Favorites
+ * and the 试听 sound library. All three are full-width pages a collection is looked across rather
  * than two-pane workspaces, and folding the column into a pair of lobes is what
  * gives either of them its own top corners back.
  *
@@ -72,7 +72,9 @@ interface PrimaryNavProps {
  * starts mid-transition.
  */
 const wantsPodsFor = (selectedItem: PrimaryNavItem, featuredPieceOpen: boolean) => (
-  selectedItem === 'favorites' || (selectedItem === 'featured' && !featuredPieceOpen)
+  selectedItem === 'favorites'
+    || selectedItem === 'audition'
+    || (selectedItem === 'featured' && !featuredPieceOpen)
 );
 
 /* The one page where a whole column is still standing on something. A Featured
@@ -96,6 +98,9 @@ const SECTION_MARK_CLASS = 'absolute [backface-visibility:hidden] [transform:rot
  * nav icon, so a column folded down to two lobes still says where you are.
  */
 function SectionMark({ item }: { item: PrimaryNavItem }) {
+  if (item === 'audition') {
+    return <Headphones size={21} strokeWidth={1.6} aria-hidden="true" className={SECTION_MARK_CLASS} />;
+  }
   return item === 'favorites'
     ? <Star size={21} strokeWidth={1.6} aria-hidden="true" className={SECTION_MARK_CLASS} />
     : <Disc3 size={21} strokeWidth={1.6} aria-hidden="true" className={SECTION_MARK_CLASS} />;
