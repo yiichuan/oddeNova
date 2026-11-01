@@ -17,6 +17,10 @@ interface RpcResponse<T> {
 }
 
 async function fetchRuntime(): Promise<boolean> {
+  // The proxy reads this machine's desktop runtime and only exists in Vite dev.
+  // Production hosting cannot access the user's local AirJelly installation.
+  if (!import.meta.env.DEV) return false
+
   try {
     const res = await fetch('/api/airjelly-runtime')
     if (!res.ok) return false
