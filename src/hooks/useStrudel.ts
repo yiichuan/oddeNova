@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getEngineUnavailableMessage } from '../lib/engine-status';
-import { getErrorMessage } from '../lib/errors';
+import { getErrorMessage, isAbortError } from '../lib/errors';
 import { t } from '../lib/i18n';
 import { strudelService, type StrudelState } from '../services/strudel';
 
@@ -23,6 +23,7 @@ export function useStrudel() {
   const historyRef = useRef<string[]>([]);
   const [historyLen, setHistoryLen] = useState(0);
 
+  const exportActive = useRef(false);
   const [exportState, setExportState] = useState<{
     status: 'idle' | 'exporting' | 'error';
     progress: number;
@@ -118,20 +119,31 @@ export function useStrudel() {
   // master volume / LPF are at their defaults. The caller (CodePanel) must re-apply the
   // current UI values via strudelService.setMasterVolume / setMasterLPF.
   const exportAudio = useCallback(
-    async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number; format?: 'wav' | 'mp3' | 'm4a' }): Promise<boolean> => {
+    async (params: { filename: string; beginCycle: number; endCycle: number; sampleRate: number; format?: 'wav' | 'mp3' | 'm4a'; signal?: AbortSignal }): Promise<boolean> => {
+      if (exportActive.current) return false;
+      exportActive.current = true;
       setExportState({ status: 'exporting', progress: 0 });
       try {
         await strudelService.exportAudio({
           ...params,
-          onProgress: (p) => setExportState((s) => ({ ...s, progress: p })),
+          onProgress: (p) => {
+            if (!params.signal?.aborted) setExportState((s) => ({ ...s, progress: p }));
+          },
         });
+        params.signal?.throwIfAborted();
         setExportState((s) => ({ ...s, progress: 1 }));
         return true;
       } catch (e) {
+        if (isAbortError(e, params.signal)) {
+          setExportState({ status: 'idle', progress: 0 });
+          return false;
+        }
         console.error('[audio export] failed', e);
         const message = getErrorMessage(e);
         setExportState({ status: 'error', progress: 0, error: message });
         return false;
+      } finally {
+        exportActive.current = false;
       }
     },
     [],

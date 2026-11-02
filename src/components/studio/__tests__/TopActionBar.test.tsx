@@ -404,6 +404,7 @@ describe('TopActionBar export title generation', () => {
     // One whole time through the piece: this fixture's pattern comes round
     // after a single cycle.
     expect(onExport).toHaveBeenCalledWith({
+      signal: expect.any(AbortSignal),
       filename: 'manual-title',
       beginCycle: 0,
       endCycle: 1,
@@ -425,6 +426,7 @@ describe('TopActionBar export title generation', () => {
     changeInput(getFilenameInput(container), 'mp3-song');
     await act(async () => { getLastButton(container, 'Download').click(); });
     expect(onExport).toHaveBeenCalledWith({
+      signal: expect.any(AbortSignal),
       filename: 'mp3-song', beginCycle: 0, endCycle: 1, sampleRate: 44100, format,
     });
   });

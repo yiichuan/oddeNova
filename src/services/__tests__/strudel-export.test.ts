@@ -141,6 +141,46 @@ describe('audio export context recovery', () => {
     expect(current?.state).toBe('running');
   });
 
+  it.each(['wav', 'mp3', 'm4a'] as const)('cancels a pending %s render, restores audio and discards a late result', async (format) => {
+    const instance = await service();
+    let finish!: (buffer: Awaited<ReturnType<OfflineContext['startRendering']>>) => void;
+    const rendering = vi.spyOn(OfflineContext.prototype, 'startRendering').mockImplementationOnce(
+      () => new Promise((resolve) => { finish = resolve; }),
+    );
+    const suspend = vi.fn(async () => {});
+    Object.assign(OfflineContext.prototype, { suspend, currentTime: 0 });
+    const controller = new AbortController();
+    const progress = vi.fn();
+    const job = instance.exportAudio({ ...params, format, signal: controller.signal, onProgress: progress });
+    const assertion = expect(job).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(rendering).toHaveBeenCalled());
+    controller.abort();
+    await assertion;
+    expect(suspend).toHaveBeenCalledOnce();
+    expect(current?.state).toBe('running');
+    expect(progress).not.toHaveBeenCalledWith(1);
+    finish({ numberOfChannels: 2, sampleRate: 48000, getChannelData: () => new Float32Array(8) });
+    await Promise.resolve();
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    expect(mp3).not.toHaveBeenCalled();
+    expect(m4a).not.toHaveBeenCalled();
+    await instance.exportAudio({ ...params, format });
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledOnce();
+  });
+
+  it('does not download if cancellation arrives while the encoder is completing', async () => {
+    const instance = await service();
+    const controller = new AbortController();
+    mp3.mockImplementationOnce(async () => {
+      controller.abort();
+      return new Blob(['late']);
+    });
+    await expect(instance.exportAudio({ ...params, format: 'mp3', signal: controller.signal }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    expect(current?.state).toBe('running');
+  });
+
   it('replaces a leftover offline context without trying to close it', async () => {
     current = new OfflineContext();
     current.state = 'closed';

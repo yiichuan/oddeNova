@@ -15,11 +15,11 @@ class EncoderWorker {
 describe.each([['MP3', audioBufferToMp3], ['M4A', audioBufferToM4a]] as const)('%s worker lifecycle', (_format, encode) => {
   afterEach(() => vi.unstubAllGlobals());
 
-  function start() {
+  function start(signal?: AbortSignal) {
     vi.stubGlobal('Worker', EncoderWorker);
     const pcm = new Float32Array([0, 0.5, -0.5]);
     const progress = vi.fn();
-    const promise = encode({ numberOfChannels: 1, sampleRate: 48000, getChannelData: () => pcm } as unknown as AudioBuffer, progress);
+    const promise = encode({ numberOfChannels: 1, sampleRate: 48000, getChannelData: () => pcm } as unknown as AudioBuffer, progress, signal);
     return { pcm, progress, promise, worker: EncoderWorker.instance };
   }
 
@@ -35,6 +35,16 @@ describe.each([['MP3', audioBufferToMp3], ['M4A', audioBufferToM4a]] as const)('
     worker.onmessage?.({ data: { type: 'done', blob } });
     expect(await promise).toBe(blob);
     expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
+  it('terminates immediately on cancellation and ignores late results', async () => {
+    const controller = new AbortController();
+    const { promise, worker } = start(controller.signal);
+    const assertion = expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await assertion;
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    expect(worker.onmessage).toBeNull();
   });
 
   it.each(['encoder', 'load', 'message'] as const)('rejects and terminates on %s errors', async (failure) => {
