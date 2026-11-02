@@ -1,4 +1,5 @@
-import { getErrorMessage } from '../lib/errors';
+import { renderOfflineAudio } from '../lib/offline-render';
+import { getErrorMessage, waitForRetryDelay } from '../lib/errors';
 import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
@@ -1471,8 +1472,10 @@ export class StrudelService {
     sampleRate: number;
     format?: 'wav' | 'mp3' | 'm4a';
     onProgress?: (progress: number) => void;
+    signal?: AbortSignal;
   }): Promise<void> => {
-    const { filename, beginCycle, endCycle, sampleRate, format = 'wav', onProgress } = params;
+    const { filename, beginCycle, endCycle, sampleRate, format = 'wav', onProgress, signal } = params;
+    signal?.throwIfAborted();
     if (!this.editorInstance) throw new Error('Engine not initialized');
     if (endCycle <= beginCycle) throw new Error(t('cycleError'));
 
@@ -1482,6 +1485,7 @@ export class StrudelService {
     // need the pattern compiled, not played — pass false.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (this.editorInstance as any).evaluate(false);
+    signal?.throwIfAborted();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const replAny = this.editorInstance.repl as any;
@@ -1516,6 +1520,7 @@ export class StrudelService {
       errorLogger,
       clearNodePools,
     } = await import('superdough');
+    signal?.throwIfAborted();
 
     let progressTimer: ReturnType<typeof setInterval> | null = null;
     if (onProgress) {
@@ -1554,6 +1559,7 @@ export class StrudelService {
       // belt-and-suspenders fallback; clearing here is the primary defense
       // and also covers future offline→live transitions where the prior ctx
       // never enters the 'closed' state.
+      signal?.throwIfAborted();
       clearNodePools();
 
       const offlineCtx = new OfflineAudioContext(
@@ -1568,6 +1574,7 @@ export class StrudelService {
       // audioContext module state — see the comment on the import above).
       setSuperdoughAudioController(null);
       await initAudio({ maxPolyphony: 1024, multiChannelOrbits: false });
+      signal?.throwIfAborted();
 
       // Splice master Gain + LPF between destinationGain and ctx.destination,
       // mirroring setupMasterChain() on the live ctx so UI master controls
@@ -1593,7 +1600,12 @@ export class StrudelService {
         .queryArc(beginCycle, endCycle, { _cps: cps })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .sort((a: any, b: any) => a.whole.begin.valueOf() - b.whole.begin.valueOf());
+      let scheduled = 0;
       for (const hap of haps) {
+        // Cached instruments may resolve entirely in microtasks. Yield to the
+        // browser periodically so a Cancel click can interrupt long schedules.
+        if (++scheduled % 64 === 0) await waitForRetryDelay(0, signal);
+        signal?.throwIfAborted();
         if (hap.hasOnset()) {
           try {
             hap.ensureObjectValue();
@@ -1628,6 +1640,7 @@ export class StrudelService {
       const waitForReverbReady = async (): Promise<void> => {
         const deadline = Date.now() + 5000; // hard cap so we never hang
         while (true) {
+          signal?.throwIfAborted();
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const orbits: Record<string, any> = controllerForWait?.nodes ?? {};
           const reverbs = Object.values(orbits)
@@ -1652,23 +1665,28 @@ export class StrudelService {
             console.warn('[exportAudio] reverb wait timed out, rendering anyway:', status);
             return;
           }
-          await new Promise((r) => setTimeout(r, 20));
+          await waitForRetryDelay(20, signal);
         }
       };
       await waitForReverbReady();
 
-      const renderedBuffer = await offlineCtx.startRendering();
+      const renderedBuffer = await renderOfflineAudio(offlineCtx, signal);
+      signal?.throwIfAborted();
       if (progressTimer !== null) {
         clearInterval(progressTimer);
         progressTimer = null;
       }
       if (format === 'm4a') {
         const { audioBufferToM4a } = await import('../lib/m4a-export');
-        const m4a = await audioBufferToM4a(renderedBuffer, (p) => onProgress?.(0.85 + p * 0.15));
+        signal?.throwIfAborted();
+        const m4a = await audioBufferToM4a(renderedBuffer, (p) => onProgress?.(0.85 + p * 0.15), signal);
+        signal?.throwIfAborted();
         downloadAudio(m4a, filename, 'm4a');
       } else if (format === 'mp3') {
         const { audioBufferToMp3 } = await import('../lib/mp3-export');
-        const mp3 = await audioBufferToMp3(renderedBuffer, (p) => onProgress?.(0.85 + p * 0.15));
+        signal?.throwIfAborted();
+        const mp3 = await audioBufferToMp3(renderedBuffer, (p) => onProgress?.(0.85 + p * 0.15), signal);
+        signal?.throwIfAborted();
         downloadAudio(mp3, filename, 'mp3');
       } else {
         downloadWav(audioBufferToWav16(renderedBuffer), filename);
@@ -1676,7 +1694,7 @@ export class StrudelService {
       }
     } finally {
       if (progressTimer !== null) clearInterval(progressTimer);
-      try { onProgress?.(1); } catch { /* user callback must not crash recovery */ }
+      try { if (!signal?.aborted) onProgress?.(1); } catch { /* user callback must not crash recovery */ }
       try {
         // Always detach the export context, including after rendering/encoding
         // errors. Rebuilding against a closed/offline singleton cannot restore
