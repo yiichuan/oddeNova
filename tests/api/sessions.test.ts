@@ -1,3 +1,4 @@
+import { hummingAttachment } from '../../src/lib/__tests__/fixtures/humming';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const supabaseMocks = vi.hoisted(() => ({
@@ -606,6 +607,26 @@ describe('sessions API auth and collection reads', () => {
     }), { onConflict: 'id' });
     expect(upsertRow).not.toHaveProperty('favorited_at');
     expect(res.statusCode).toBe(200);
+  });
+
+  it.each([false, true])('validates derived melody metadata and rejects raw audio (unsafe=%s)', async (unsafe) => {
+    supabaseMocks.getUser.mockResolvedValue({ data: { user: { id: 'u-1' } }, error: null });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    supabaseMocks.from.mockReturnValue({ upsert });
+    const humming = { ...hummingAttachment(), ...(unsafe ? { blob: 'raw audio' } : {}) };
+    const { default: handler } = await import('../../api/sessions.js');
+    const res = makeResponse();
+    await handler({
+      method: 'PUT', query: { id: rowId(1) }, headers: { authorization: 'Bearer token-123' },
+      body: { id: rowId(1), title: 'Humming', code: '', createdAt: 1, updatedAt: 2,
+        messages: [{ id: 'user-1', role: 'user', content: '', timestamp: 1, humming }],
+      },
+    } as never, res as never);
+    expect(res.statusCode).toBe(unsafe ? 400 : 200);
+    if (unsafe) expect(upsert).not.toHaveBeenCalled();
+    else expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [expect.objectContaining({ humming })],
+    }), { onConflict: 'id' });
   });
 
   it('deletes sessions by UUID id and authenticated user id', async () => {

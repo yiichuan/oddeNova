@@ -10,8 +10,11 @@ import { isDemoMode, isPresentationMode } from '../../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
 import type { AgentEntryPoint } from '../../lib/analytics';
+import type { HummingInputController } from '../../hooks/useHummingInput';
+import type { HummingAttachment } from '../../types/humming';
 
 interface SidebarProps {
+  ownerKey?: string;
   title: string;
   messages: ChatMessage[];
   revisions?: CodeRevision[];
@@ -25,7 +28,9 @@ interface SidebarProps {
   onSendText: (
     text: string,
     entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>,
-  ) => void;
+    humming?: HummingAttachment,
+  ) => boolean | void | Promise<boolean | void>;
+  humming?: HummingInputController;
   onStop?: () => void;
   onNewSession: () => void;
   onMoodGenerate?: () => Promise<void> | void;
@@ -70,6 +75,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
+  ownerKey,
   title,
   messages,
   revisions,
@@ -81,6 +87,7 @@ export default function Sidebar({
   inputMode = 'normal',
   suggestions,
   onSendText,
+  humming,
   onStop,
   onNewSession,
   onMoodGenerate,
@@ -236,6 +243,7 @@ export default function Sidebar({
           )}
           <ConversationView
             key={currentId ?? 'default'}
+            ownerKey={ownerKey}
             messages={messages}
             revisions={revisions}
             isLoading={isLoading && !isReplaying}
@@ -256,7 +264,7 @@ export default function Sidebar({
       </div>
 
       <div className="-mt-px w-full shrink-0">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} />
+        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} />
       </div>
     </aside>
   );

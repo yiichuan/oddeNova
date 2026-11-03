@@ -14,7 +14,7 @@ import {
 } from './oddenova-bridge';
 
 export const DB_NAME = 'oddenova-db';
-export const DB_VERSION = 7;
+export const DB_VERSION = 9;
 const LEGACY_SESSION_STORE_NAME = 'sessions';
 const LEGACY_FAVORITE_STORE_NAME = 'favorites_by_owner';
 export const SESSION_STORE_NAME = 'sessions_by_owner';
@@ -22,6 +22,8 @@ export const PERSONA_STORE_NAME = 'personas';
 export const SETTINGS_STORE_NAME = 'settings';
 export const BRIDGE_OUTBOX_STORE_NAME = 'oddenova_bridge_outbox';
 export const BRIDGE_CHECKPOINT_STORE_NAME = 'oddenova_bridge_checkpoints';
+export const HUMMING_ASSET_STORE_NAME = 'humming_assets';
+export const HUMMING_DRAFT_STORE_NAME = 'humming_drafts';
 export const GUEST_OWNER_KEY = 'guest';
 
 // localStorage keys for one-time migration
@@ -230,6 +232,19 @@ export async function openDB(): Promise<void> {
           }
           if (!database.objectStoreNames.contains(BRIDGE_CHECKPOINT_STORE_NAME)) {
             database.createObjectStore(BRIDGE_CHECKPOINT_STORE_NAME, { keyPath: ['ownerKey', 'projectKey', 'bindingId'] });
+          }
+          if (!database.objectStoreNames.contains(HUMMING_ASSET_STORE_NAME)) {
+            database.createObjectStore(
+              HUMMING_ASSET_STORE_NAME,
+              { keyPath: ['ownerKey', 'id'] },
+            );
+          }
+          const hummingAssets = transaction.objectStore(HUMMING_ASSET_STORE_NAME);
+          if (!hummingAssets.indexNames.contains('by-owner-session')) {
+            hummingAssets.createIndex('by-owner-session', ['ownerKey', 'sessionId']);
+          }
+          if (!database.objectStoreNames.contains(HUMMING_DRAFT_STORE_NAME)) {
+            database.createObjectStore(HUMMING_DRAFT_STORE_NAME, { keyPath: ['ownerKey', 'sessionId'] });
           }
           // Favorites used to be stored as duplicated snapshots. They now live
           // on the session row, so discard the obsolete store when upgrading a

@@ -46,6 +46,7 @@ export type MobileFavoritesState =
   | 'ready';
 
 export interface MobileFavoritesPageProps {
+  ownerKey?: string;
   state: MobileFavoritesState;
   onRetry?: () => void;
   onRetryDetail?: () => void;
@@ -146,6 +147,7 @@ function PageNote({ testId, children }: { testId: string; children: ReactNode })
  * the same key again.
  */
 export default function MobileFavoritesPage({
+  ownerKey,
   state,
   onRetry,
   onRetryDetail,
@@ -368,6 +370,7 @@ export default function MobileFavoritesPage({
           className="favorites-reading-mobile min-h-0 flex-1 px-3 pb-4 pt-3"
         >
           <ArchivedConversationView
+            ownerKey={ownerKey}
             active={active}
             messages={messages}
             numberTakes={scripts.length > 1}

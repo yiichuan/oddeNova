@@ -19,6 +19,8 @@ import {
 import { t, zh } from '../lib/i18n';
 import type { StrudelState } from '../services/strudel';
 import { isAbortError } from '../lib/errors';
+import { formatHummingContext } from '../lib/humming-context';
+import type { HummingAttachment } from '../types/humming';
 
 // ── Pure agent-turn logic (testable in isolation) ────────────────────────────
 //
@@ -42,6 +44,8 @@ export interface AgentTurnInput {
   initialCode?: string;
   /** Explicit history (resend); overrides the snapshot when includeHistory is true. */
   suppliedHistory?: ConversationTurn[];
+  /** Local transcription metadata attached to this user message. */
+  humming?: HummingAttachment;
 }
 
 /**
@@ -65,7 +69,7 @@ export interface AgentTurnDeps {
   isCurrentSession: (sessionId: string) => boolean;
   getCurrentCode: () => string;
   snapshotHistory: () => ConversationTurn[];
-  addUserMessage: (text: string) => void;
+  addUserMessage: (text: string, humming?: HummingAttachment) => void;
   addAssistantMessage: (
     text: string,
     code: string | undefined,
@@ -126,7 +130,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     : undefined;
 
   if (!input.skipAddMessage) {
-    deps.addUserMessage(input.text);
+    deps.addUserMessage(input.text, input.humming);
   }
 
   const sessionId = deps.getCurrentId();
@@ -151,7 +155,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
   try {
     const onProgress = deps.makeProgressHandler(sessionId);
     const result = await deps.runAgent(
-      input.text,
+      formatHummingContext(input.text, input.humming),
       beforeCode,
       onProgress,
       input.moodContext,
@@ -297,7 +301,7 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
     isCurrentSession: (id) => id === currentIdRef.current,
     getCurrentCode: () => currentCode,
     snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
-    addUserMessage: (text) => sessions.addUserMessage(text),
+    addUserMessage: (text, humming) => sessions.addUserMessage(text, undefined, humming),
     addAssistantMessage: (text, code, id, revision, inputMode) =>
       sessions.addAssistantMessage(text, code, id, revision, inputMode),
     finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),

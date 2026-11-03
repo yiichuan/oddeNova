@@ -75,7 +75,7 @@ describe('runAgentTurn', () => {
   it('adds the user message by default', async () => {
     const deps = makeDeps();
     await runAgentTurn(makeInput({ text: 'hello' }), deps);
-    expect(deps.addUserMessage).toHaveBeenCalledWith('hello');
+    expect(deps.addUserMessage).toHaveBeenCalledWith('hello', undefined);
   });
 
   it('suppresses the user message when skipAddMessage is set', async () => {

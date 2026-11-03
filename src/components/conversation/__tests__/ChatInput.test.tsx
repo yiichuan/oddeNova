@@ -4,6 +4,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatInput from '../ChatInput';
+import type { HummingInputController } from '../../../hooks/useHummingInput';
+import { hummingDraft } from '../../../lib/__tests__/fixtures/humming';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -598,5 +600,93 @@ describe('ChatInput guide preset on a phone', () => {
     expect(getSubmitButton(container).disabled).toBe(true);
     act(() => getSubmitButton(container).click());
     expect(onSend).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ChatInput humming recording controls', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.innerHTML = '';
+    mobileState.value = false;
+  });
+
+  function controller(patch: Partial<HummingInputController> = {}): HummingInputController {
+    return {
+      draft: null,
+      audioUrl: null,
+      isPersistent: true,
+      isStarting: false,
+      isRecording: false,
+      recordingElapsedSeconds: 0,
+      isFinalizingRecording: false,
+      isRerecording: false,
+      isTranscribing: false,
+      isSavingDraft: false,
+      isSavingReplacement: false,
+      progress: 0,
+      progressStage: null,
+      error: null,
+      replacementCandidate: null,
+      replacementAudioUrl: null,
+      canRecord: true,
+      startRecording: vi.fn(),
+      cancelRecording: vi.fn(),
+      stopRecording: vi.fn(),
+      reRecord: vi.fn(),
+      cancelRerecord: vi.fn(),
+      retrySaveReplacement: vi.fn(async () => false),
+      useOriginalRecording: vi.fn(),
+      retrySave: vi.fn(async () => false),
+      discard: vi.fn(),
+      cancelTranscription: vi.fn(),
+      restoreAttachment: vi.fn(async () => false),
+      submit: vi.fn(async () => false),
+      ...patch,
+    };
+  }
+
+  it('shows recording time and an explicit stop action while blocking send', () => {
+    const humming = controller({ isRecording: true, recordingElapsedSeconds: 8, canRecord: false });
+    const { container, root } = renderChatInput({ humming, prefill: '写入这段旋律' });
+    roots.push(root);
+
+    expect(container.textContent).toContain('0:08 / 0:30');
+    expect(container.textContent).toContain('Recording');
+    const stop = container.querySelector<HTMLButtonElement>('button[aria-label="Stop recording"]');
+    expect(stop).not.toBeNull();
+    expect(getSubmitButton(container).disabled).toBe(true);
+    act(() => stop?.click());
+    expect(humming.stopRecording).toHaveBeenCalledOnce();
+  });
+
+  it('distinguishes model loading from transcription and leaves cancel available', () => {
+    const humming = controller({
+      draft: hummingDraft(), audioUrl: 'blob:draft', isTranscribing: true, progressStage: 'loading', canRecord: false,
+    });
+    const { container, root } = renderChatInput({ humming });
+    roots.push(root);
+
+    expect(container.textContent).toContain('Preparing on-device melody recognition');
+    expect(container.querySelector('button[aria-label="Cancel recognition"]')).not.toBeNull();
+    expect(container.querySelector('audio[controls]')).toBeNull();
+  });
+
+  it('requires choosing the original before sending when a replacement is not saved', () => {
+    const humming = controller({
+      draft: hummingDraft(), audioUrl: 'blob:original', isPersistent: true, canRecord: false,
+      replacementCandidate: { ...hummingDraft(), id: '22222222-2222-4222-8222-222222222222' },
+      replacementAudioUrl: 'blob:candidate', error: 'replacement_storage_unavailable',
+    });
+    const { container, root } = renderChatInput({ humming, prefill: '继续使用新录音' });
+    roots.push(root);
+
+    expect(container.textContent).toContain('New recording (not saved yet)');
+    expect(getSubmitButton(container).disabled).toBe(true);
+    const useOriginal = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('Use original recording'));
+    act(() => useOriginal?.click());
+    expect(humming.useOriginalRecording).toHaveBeenCalledOnce();
   });
 });

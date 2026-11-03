@@ -13,6 +13,8 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 // lottie-web crashes at import time in happy-dom (no canvas 2D context)
 vi.mock('lottie-react', () => ({ default: () => null }));
+const hummingMocks = vi.hoisted(() => ({ getHummingAsset: vi.fn() }));
+vi.mock('../../../lib/humming-storage', () => hummingMocks);
 
 function setMobileViewport(matches: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -93,6 +95,7 @@ function renderConversationView(
   isLoading = false,
   revisions?: CodeRevision[],
   playback: PlaybackProps = {},
+  ownerKey?: string,
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -103,6 +106,7 @@ function renderConversationView(
       root.render(
         <ConversationView
           messages={nextMessages}
+          ownerKey={ownerKey}
           revisions={revisions}
           isLoading={isLoading}
           onRollback={onRollback}
@@ -1723,5 +1727,78 @@ describe('ConversationView manual draft segment', () => {
     const lit = [...container.querySelectorAll<HTMLElement>('[data-code-diff-sounding]')];
     expect(lit).toHaveLength(1);
     expect(lit[0].getAttribute('data-code-diff-variant')).toBe('draft');
+  });
+});
+
+describe('ConversationView humming attachments', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('renders an audio-only message without a duplicate text placeholder and keeps its attachment visible', async () => {
+    setMobileViewport(false);
+    hummingMocks.getHummingAsset.mockResolvedValue(null);
+    const messages: ChatMessage[] = [{
+      id: 'user-humming',
+      role: 'user',
+      content: '',
+      timestamp: 1,
+      humming: {
+        kind: 'humming', schemaVersion: 1,
+        id: '11111111-1111-4111-8111-111111111111',
+        recordingDurationSeconds: 12, trimStartSeconds: 0, melodyDurationSeconds: 11,
+        transcription: {
+          engine: 'basic-pitch', modelVersion: 'spotify-basic-pitch-ts@1.0.1',
+          preprocessingVersion: 'mono-sinc-22050-v1', notes: [], warnings: [],
+        },
+      },
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), false, undefined, {}, 'guest');
+    roots.push(root);
+    await act(async () => { await Promise.resolve(); });
+
+    const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="user-humming"]')!;
+    expect(bubble.className).toContain('w-[280px]');
+    expect(bubble.textContent).not.toContain('Humming recording');
+    expect(bubble.textContent).toContain('Original humming');
+    expect(bubble.textContent).toContain('0:12');
+    expect(bubble.textContent).toContain('The original recording is no longer on this device');
+    expect(bubble.querySelector('audio')).not.toBeNull();
+    expect(bubble.querySelector<HTMLInputElement>('input[type="range"]')?.disabled).toBe(true);
+  });
+
+  it('keeps the recording player outside the five-line text clamp', async () => {
+    setMobileViewport(false);
+    hummingMocks.getHummingAsset.mockResolvedValue({
+      blob: new Blob(['recording'], { type: 'audio/webm' }),
+    });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:message-audio');
+    const messages: ChatMessage[] = [{
+      id: 'long-humming-user',
+      role: 'user',
+      content: Array.from({ length: 8 }, (_, index) => `Line ${index + 1}`).join('\n'),
+      timestamp: 1,
+      humming: {
+        kind: 'humming', schemaVersion: 1,
+        id: '11111111-1111-4111-8111-111111111111',
+        recordingDurationSeconds: 12, trimStartSeconds: 0, melodyDurationSeconds: 11,
+        transcription: {
+          engine: 'basic-pitch', modelVersion: 'spotify-basic-pitch-ts@1.0.1',
+          preprocessingVersion: 'mono-sinc-22050-v1', notes: [], warnings: [],
+        },
+      },
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), false, undefined, {}, 'guest');
+    roots.push(root);
+    await act(async () => { await Promise.resolve(); });
+
+    const bubble = container.querySelector<HTMLElement>('[data-rollback-bubble="long-humming-user"]')!;
+    expect(bubble.querySelector('p')?.className).toContain('line-clamp-5');
+    expect(bubble.querySelector('[data-humming-audio-player]')).not.toBeNull();
+    expect(bubble.querySelector('input[type="range"]')).not.toBeNull();
   });
 });

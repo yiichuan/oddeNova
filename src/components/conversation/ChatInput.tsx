@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import { LoaderCircle, Mic, Square, Trash2, X } from 'lucide-react';
 import { ArrowUpIcon, StopIcon } from '../icons';
 import ThinkingLevelControl from './ThinkingLevelControl';
+import HummingAudioPlayer from './HummingAudioPlayer';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
 import type { AgentEntryPoint } from '../../lib/analytics';
 import type { InputMode } from '../../hooks/useChat';
+import type { HummingInputController } from '../../hooks/useHummingInput';
+import type { HummingAttachment } from '../../types/humming';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
 type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
@@ -14,6 +18,11 @@ type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 // non-space characters plus its trailing whitespace is one unit).
 function tokenizeForTyping(s: string): string[] {
   return s.match(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]|[^\u3000-\u303f\u4e00-\u9fff\uff00-\uffef\s]+\s*|\s+/g) ?? [];
+}
+
+function formatRecordingTime(seconds: number): string {
+  const safeSeconds = Math.max(0, Math.min(30, Math.floor(seconds)));
+  return `0:${safeSeconds.toString().padStart(2, '0')}`;
 }
 
 // Cap on the auto-grow height (px) of the textarea itself (excludes the
@@ -50,7 +59,11 @@ interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
-  onSendText: (text: string, entryPoint: ChatEntryPoint) => void;
+  onSendText: (
+    text: string,
+    entryPoint: ChatEntryPoint,
+    humming?: HummingAttachment,
+  ) => boolean | void | Promise<boolean | void>;
   onReinitEngine: () => void;
   onStop?: () => void;
   prefill?: string;
@@ -77,6 +90,7 @@ interface ChatInputProps {
    * the guide's own "skip" is the way out to the real model.
    */
   presetLock?: PresetLock;
+  humming?: HummingInputController;
 }
 
 export interface PresetLock {
@@ -102,6 +116,7 @@ export default function ChatInput({
   suggestions,
   onMoodGenerate,
   presetLock,
+  humming,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -251,17 +266,36 @@ export default function ChatInput({
       return;
     }
     const value = text.trim();
-    if (!value || isLoading || moodPending) return;
+    if (
+      isLoading
+      || moodPending
+      || humming?.isRecording
+      || humming?.isStarting
+      || humming?.isFinalizingRecording
+      || humming?.isRerecording
+      || humming?.isTranscribing
+      || humming?.isSavingDraft
+      || humming?.isSavingReplacement
+      || humming?.replacementCandidate
+    ) return;
+    if (!value && !humming?.draft) return;
     const entryPoint: ChatEntryPoint =
       adoptedSuggestionRef.current === value ? 'suggestion' : 'text';
     adoptedSuggestionRef.current = null;
-    setText('');
+    if (humming?.draft) {
+      void humming.submit(value, entryPoint).then((accepted) => {
+        if (accepted) setText('');
+      });
+      return;
+    }
     if (moodSuggestionActive && value === moodSuggestion) {
+      setText('');
       setMoodPending(true);
       Promise.resolve(onMoodGenerate!()).finally(() => setMoodPending(false));
       return;
     }
-    onSendText(value, entryPoint);
+    setText('');
+    void onSendText(value, entryPoint);
   };
 
   const handleSubmit = (e: { preventDefault(): void }) => {
@@ -326,7 +360,36 @@ export default function ChatInput({
     textareaRef.current?.focus();
   };
 
-  const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
+  const inputDisabled = (isLoading || moodPending || Boolean(humming?.isTranscribing))
+    && replayValue === undefined;
+  const hummingEnabled = Boolean(humming)
+    && !isVideoMode
+    && !presetLock
+    && replayValue === undefined
+    && inputMode !== 'choice';
+  const hummingErrorKey: Record<string, Parameters<typeof t>[0]> = {
+    microphone_unavailable: 'hummingMicUnavailable',
+    microphone_denied: 'hummingMicDenied',
+    microphone_failed: 'hummingMicFailed',
+    recorder_unavailable: 'hummingMicUnavailable',
+    recorder_failed: 'hummingMicFailed',
+    empty_recording: 'hummingMicFailed',
+    recording_interrupted: 'hummingMicFailed',
+    recording_unavailable: 'hummingAudioUnavailable',
+    rerecord_failed: 'hummingRerecordFailed',
+    replacement_storage_unavailable: 'hummingReplacementStorageUnavailable',
+    storage_unavailable: 'hummingStorageUnavailable',
+    draft_load_failed: 'hummingStorageUnavailable',
+    no_melody_detected: 'hummingNoMelody',
+    too_many_notes: 'hummingNoMelody',
+    too_many_candidates: 'hummingNoMelody',
+    timeout: 'hummingTimeout',
+    worker_unavailable: 'hummingFailed',
+    worker_failed: 'hummingFailed',
+    worker_message_failed: 'hummingFailed',
+    attachment_too_large: 'hummingFailed',
+    transcription_failed: 'hummingFailed',
+  };
   // The waiting fade, applied per part (see the card below): everything that
   // is genuinely out of reach while the agent answers, and nothing else.
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
@@ -472,6 +535,185 @@ export default function ChatInput({
             )}
           </div>
 
+          {hummingEnabled && humming?.draft && (
+            <div
+              data-chat-input-focus-ignore
+              className="mx-4 mb-2 flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-conversation-surface/60 p-2.5"
+            >
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="truncate text-xs text-text-secondary">{t('hummingRecording')}</span>
+                <button
+                  type="button"
+                  onClick={humming.discard}
+                  disabled={humming.isTranscribing || humming.isRerecording || humming.isFinalizingRecording || humming.isSavingDraft || humming.isSavingReplacement}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
+                  aria-label={t('hummingDelete')}
+                  title={t('hummingDelete')}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+              <HummingAudioPlayer
+                src={humming.audioUrl}
+                durationSeconds={humming.draft.durationSeconds}
+                disabled={humming.isTranscribing || humming.isRerecording || humming.isFinalizingRecording}
+              />
+              {!humming.isPersistent && (
+                <div className="flex items-center justify-between gap-2 text-[11px] text-error">
+                  <span>{t('hummingStorageUnavailable')}</span>
+                  <button
+                    type="button"
+                    onClick={() => { void humming.retrySave(); }}
+                    disabled={humming.isTranscribing || humming.isSavingDraft || humming.isRerecording || humming.isFinalizingRecording}
+                    className="shrink-0 underline underline-offset-2 hover:text-text-primary disabled:opacity-50"
+                  >
+                    {t('hummingRetrySave')}
+                  </button>
+                </div>
+              )}
+
+              {humming.replacementCandidate && (
+                <div className="flex min-w-0 flex-col gap-2 border-t border-border pt-2">
+                  <div className="text-[11px] text-text-secondary">{t('hummingReplacementCandidate')}</div>
+                  <HummingAudioPlayer
+                    src={humming.replacementAudioUrl}
+                    durationSeconds={humming.replacementCandidate.durationSeconds}
+                  />
+                  {humming.isSavingReplacement && (
+                    <span className="flex items-center gap-2 text-[11px] text-text-secondary" role="status" aria-live="polite">
+                      <LoaderCircle className="animate-spin motion-reduce:animate-none text-brand-accent" size={13} />
+                      {t('hummingSavingReplacement')}
+                    </span>
+                  )}
+                  <p className="text-[11px] text-error">{t('hummingReplacementStorageUnavailable')}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { void humming.retrySaveReplacement(); }}
+                      disabled={humming.isSavingReplacement}
+                      className="min-h-11 rounded px-2 text-[11px] text-text-secondary underline underline-offset-2 hover:text-text-primary disabled:opacity-50"
+                    >
+                      {t('hummingRetrySaveReplacement')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={humming.useOriginalRecording}
+                      disabled={humming.isSavingReplacement}
+                      className="min-h-11 rounded px-2 text-[11px] text-text-secondary underline underline-offset-2 hover:text-text-primary disabled:opacity-50"
+                    >
+                      {t('hummingUseOriginalRecording')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {humming.isTranscribing && (
+                <div className="flex min-w-0 items-center gap-2" role="status" aria-live="polite">
+                  <LoaderCircle className="animate-spin motion-reduce:animate-none text-brand-accent" size={14} />
+                  <span className="min-w-0 flex-1 text-[11px] text-text-secondary">
+                    {t(humming.progressStage === 'fallback'
+                      ? 'hummingFallback'
+                      : humming.progressStage === 'loading'
+                        ? 'hummingRecognitionLoading'
+                        : 'hummingTranscribing')}
+                  </span>
+                  {humming.progress > 0 && (
+                    <div
+                      className="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-bg-primary"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(humming.progress * 100)}
+                      aria-label={t('hummingStageProgress')}
+                    >
+                      <div
+                        className="h-full rounded-full bg-brand-accent transition-[width]"
+                        style={{ width: `${Math.round(humming.progress * 100)}%` }}
+                      />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={humming.cancelTranscription}
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text-primary"
+                    aria-label={t('hummingCancelRecognition')}
+                    title={t('hummingCancelRecognition')}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {hummingEnabled && humming && (humming.isStarting || humming.isRecording || humming.isFinalizingRecording) && (
+            <div className="mx-4 mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-secondary">
+              {humming.isStarting && (
+                <span className="flex min-w-0 flex-1 items-center gap-2" role="status" aria-live="polite">
+                  <LoaderCircle className="shrink-0 animate-spin motion-reduce:animate-none text-brand-accent" size={14} />
+                  <span>{t(humming.isRerecording ? 'hummingRerecordStarting' : 'hummingStarting')}</span>
+                </span>
+              )}
+              {humming.isRecording && (
+                <>
+                  <span className="flex min-w-0 flex-1 items-center gap-2" role="status" aria-live="polite">
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-error" aria-hidden="true" />
+                    <span>{t(humming.isRerecording ? 'hummingRerecordingNow' : 'hummingRecordingNow')}</span>
+                  </span>
+                  <time className="shrink-0 tabular-nums text-text-muted" aria-live="off">
+                    {formatRecordingTime(humming.recordingElapsedSeconds)} / 0:30
+                  </time>
+                  <button
+                    type="button"
+                    onClick={humming.stopRecording}
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-error px-3 text-white"
+                    aria-label={t('hummingStop')}
+                    data-chat-input-focus-ignore
+                  >
+                    <Square size={12} fill="currentColor" />
+                    {t('hummingStop')}
+                  </button>
+                </>
+              )}
+              {humming.isFinalizingRecording && (
+                <span className="flex min-w-0 flex-1 items-center gap-2" role="status" aria-live="polite">
+                  <LoaderCircle className="shrink-0 animate-spin motion-reduce:animate-none text-brand-accent" size={14} />
+                  <span>{t(humming.isRerecording ? 'hummingRerecordFinalizing' : 'hummingFinalizing')}</span>
+                </span>
+              )}
+              {(humming.isStarting || humming.isRecording) && (
+                <button
+                  type="button"
+                  onClick={humming.isRerecording ? humming.cancelRerecord : humming.cancelRecording}
+                  className="inline-flex min-h-11 shrink-0 items-center rounded-md px-2 text-text-muted hover:text-text-primary"
+                  aria-label={t(humming.isRerecording ? 'hummingCancelRerecord' : 'hummingCancelRecording')}
+                  data-chat-input-focus-ignore
+                >
+                  {t(humming.isRerecording ? 'hummingCancelRerecord' : 'hummingCancelRecording')}
+                </button>
+              )}
+            </div>
+          )}
+
+          {hummingEnabled && humming?.draft && !humming.replacementCandidate && !humming.isRerecording && (
+            <button
+              type="button"
+              onClick={humming.reRecord}
+              disabled={isLoading || moodPending || humming.isTranscribing || humming.isFinalizingRecording || humming.isSavingDraft || humming.isSavingReplacement}
+              className="mx-4 mb-2 inline-flex min-h-11 self-start items-center rounded-md px-2 text-[11px] text-text-secondary underline underline-offset-2 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              data-chat-input-focus-ignore
+            >
+              {t('hummingRerecord')}
+            </button>
+          )}
+
+          {hummingEnabled && humming?.error && !humming.replacementCandidate
+            && (humming.isPersistent || humming.error !== 'storage_unavailable') && (
+            <p role="status" className="mx-4 mb-2 text-[11px] text-error">
+              {t(hummingErrorKey[humming.error] ?? 'hummingFailed')}
+            </p>
+          )}
+
           {/* Footer row — hint/status on the left, send button on the right.
               Real layout, always visible regardless of textarea scroll state. */}
           <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
@@ -501,6 +743,30 @@ export default function ChatInput({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              {hummingEnabled && humming && !humming.draft
+                && !humming.isStarting && !humming.isRecording && !humming.isFinalizingRecording && (
+                <button
+                  type="button"
+                  onClick={humming.startRecording}
+                  disabled={
+                    isLoading
+                    || moodPending
+                    || humming.isStarting
+                    || humming.isRecording
+                    || humming.isFinalizingRecording
+                    || humming.isTranscribing
+                    || !humming.canRecord
+                  }
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  title={t(humming.isStarting ? 'hummingStarting' : 'hummingStart')}
+                  aria-label={t(humming.isStarting ? 'hummingStarting' : 'hummingStart')}
+                  data-chat-input-focus-ignore
+                >
+                  {humming.isStarting
+                    ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={16} />
+                    : <Mic size={17} />}
+                </button>
+              )}
               {replayValue === undefined && !presetLock && (
                 <ThinkingLevelControl
                   disabled={inputDisabled}
@@ -537,7 +803,17 @@ export default function ChatInput({
                 <button
                   type="submit"
                   data-onboarding-target="send"
-                  disabled={presetLock ? presetLock.busy : !text.trim()}
+                  disabled={presetLock ? presetLock.busy : (
+                    (!text.trim() && !humming?.draft)
+                    || Boolean(humming?.isStarting)
+                    || Boolean(humming?.isRecording)
+                    || Boolean(humming?.isFinalizingRecording)
+                    || Boolean(humming?.isRerecording)
+                    || Boolean(humming?.isTranscribing)
+                    || Boolean(humming?.isSavingDraft)
+                    || Boolean(humming?.isSavingReplacement)
+                    || Boolean(humming?.replacementCandidate)
+                  )}
                   /* The guide's send on a phone is pressed with a thumb, so
                      its reach grows to 44px round the 30px disc. Only then:
                      the thinking-level control that sits beside the key

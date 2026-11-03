@@ -3921,3 +3921,58 @@ html[data-theme='light'] .viz-frame {
   background: #F7F7FA;
   color-scheme: light;
 }
+.humming-audio-player-range {
+  appearance: none;
+  background: transparent;
+  outline: none;
+}
+
+.humming-audio-player-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--color-brand-accent) var(--humming-progress, 0%),
+    var(--color-border) var(--humming-progress, 0%)
+  );
+}
+
+.humming-audio-player-range::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: -3.5px;
+  appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-brand-accent);
+}
+
+.humming-audio-player-range::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.humming-audio-player-range::-moz-range-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-brand-accent);
+}
+
+.humming-audio-player-range::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-brand-accent);
+}
+
+.humming-audio-player-range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-text-primary);
+  outline-offset: 2px;
+}
+
+.humming-audio-player-range:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-text-primary);
+  outline-offset: 2px;
+}

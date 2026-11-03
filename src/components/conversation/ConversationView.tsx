@@ -8,6 +8,9 @@ import { ThinkingLottie } from './ThinkingLottie';
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
+import HummingAudioPlayer from './HummingAudioPlayer';
+import { getHummingAsset } from '../../lib/humming-storage';
+import type { HummingAttachment } from '../../types/humming';
 
 type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
@@ -451,10 +454,52 @@ export const MarkdownText = memo(function MarkdownText({ content, tone = 'defaul
 // clamped to five lines with the fifth faded into the bubble background; the
 // "show more" control reveals on hover (and stays visible on touch, which has
 // no hover), and once expanded a "show less" control collapses it again.
-export function UserMessageBubble({ content }: { content: string }) {
+export function UserMessageBubble({
+  content,
+  humming,
+  ownerKey,
+}: {
+  content: string;
+  humming?: HummingAttachment;
+  ownerKey?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
+  const [audioAsset, setAudioAsset] = useState<{
+    key: string;
+    url: string | null;
+    unavailable: boolean;
+    loading: boolean;
+  } | null>(null);
   const textRef = useRef<HTMLParagraphElement>(null);
+  const hummingId = humming?.id;
+  const audioAssetKey = hummingId && ownerKey ? `${ownerKey}:${hummingId}` : null;
+
+  useEffect(() => {
+    let active = true;
+    let createdUrl: string | null = null;
+    if (!hummingId || !ownerKey) return () => { active = false; };
+
+    void getHummingAsset(ownerKey, hummingId).then((asset) => {
+      if (!active) return;
+      if (!asset) {
+        setAudioAsset({ key: `${ownerKey}:${hummingId}`, url: null, unavailable: true, loading: false });
+        return;
+      }
+      createdUrl = URL.createObjectURL(asset.blob);
+      setAudioAsset({ key: `${ownerKey}:${hummingId}`, url: createdUrl, unavailable: false, loading: false });
+    }).catch(() => {
+      if (active) {
+        setAudioAsset({ key: `${ownerKey}:${hummingId}`, url: null, unavailable: true, loading: false });
+      }
+    });
+
+    return () => {
+      active = false;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [hummingId, ownerKey]);
+  const currentAudioAsset = audioAsset?.key === audioAssetKey ? audioAsset : null;
 
   // Measure overflow while the <p> is clamped (line-clamp-5 is applied for the
   // whole collapsed state, a no-op for short text), so scrollHeight exceeding
@@ -465,6 +510,7 @@ export function UserMessageBubble({ content }: { content: string }) {
   // check can't run); the last collapsed measurement stays valid.
   useLayoutEffect(() => {
     if (expanded) return;
+    if (!content.trim()) return;
     const el = textRef.current;
     if (!el) return;
     const measure = () => setOverflowing(el.scrollHeight - el.clientHeight > 1);
@@ -474,22 +520,23 @@ export function UserMessageBubble({ content }: { content: string }) {
     return () => ro.disconnect();
   }, [content, expanded]);
 
-  const clamped = !expanded && overflowing;
+  const clamped = Boolean(content.trim()) && !expanded && overflowing;
 
   return (
     <>
       {/* When clamped, extend the bubble's bottom (pb-5) so the fade region has
           extra room below the fifth line and the "show more" control can sit
           lower, clear of the text. Adjust this pb-* to grow/shrink that gap. */}
-      <div className={`relative${clamped ? ' pb-6' : ''}`}>
-        <p
-          ref={textRef}
-          className={`whitespace-pre-wrap break-words${expanded ? '' : ' line-clamp-5'}`}
-        >
-          {content}
-        </p>
-        {clamped && (
-          <>
+      {content.trim() && (
+        <div className={`relative${clamped ? ' pb-6' : ''}${humming ? ' mb-3' : ''}`}>
+          <p
+            ref={textRef}
+            className={`whitespace-pre-wrap break-words${expanded ? '' : ' line-clamp-5'}`}
+          >
+            {content}
+          </p>
+          {clamped && (
+            <>
             {/* Taller fade of the fifth line + the added space into the bubble
                 background. Keyed to `--color-message-user`, the bubble's own
                 fill, rather than to any page surface: the fade only ever runs
@@ -504,10 +551,11 @@ export function UserMessageBubble({ content }: { content: string }) {
             >
               {t('showMore')}
             </button>
-          </>
-        )}
-      </div>
-      {expanded && overflowing && (
+            </>
+          )}
+        </div>
+      )}
+      {content.trim() && expanded && overflowing && (
         <button
           onClick={() => setExpanded(false)}
           className="mt-1 flex w-full justify-start text-[11px] font-medium text-text-muted transition-colors hover:text-text-secondary"
@@ -515,12 +563,27 @@ export function UserMessageBubble({ content }: { content: string }) {
           {t('showLess')}
         </button>
       )}
+      {humming && (
+        <div className="min-w-0">
+          <HummingAudioPlayer
+            src={currentAudioAsset?.url}
+            durationSeconds={humming.recordingDurationSeconds}
+            label={t('hummingOriginal')}
+            loading={Boolean(ownerKey && (!currentAudioAsset || currentAudioAsset.loading))}
+            disabled={!ownerKey || Boolean(currentAudioAsset?.unavailable)}
+          />
+          {(!ownerKey || currentAudioAsset?.unavailable) && (
+            <p className="mt-1 text-[11px] text-text-muted">{t('hummingAudioUnavailable')}</p>
+          )}
+        </div>
+      )}
     </>
   );
 }
 
 interface ConversationViewProps {
   messages: ChatMessage[];
+  ownerKey?: string;
   revisions?: CodeRevision[];
   isLoading: boolean;
   isVideoMode?: boolean;
@@ -607,6 +670,7 @@ const DRAFT_DIFF_SETTLE_MS = 180;
 
 export default function ConversationView({
   messages,
+  ownerKey,
   revisions,
   isLoading,
   isVideoMode = false,
@@ -1528,14 +1592,14 @@ export default function ConversationView({
               className="flex justify-end items-end gap-1.5 animate-fade-in group"
             >
               <div
-                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary${
+                className={`relative min-w-0 ${msg.humming ? 'w-[280px] max-w-[85%]' : 'max-w-[85%]'} rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary${
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}
                 onCopy={handleUserBubbleCopy}
                 {...getMobileRollbackBubbleProps(msg.id)}
               >
-                <UserMessageBubble content={msg.content} />
+                <UserMessageBubble content={msg.content} humming={msg.humming} ownerKey={ownerKey} />
                 {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
                 <div className={`absolute -top-2.5 -right-2.5 transition-opacity ${
                   isMobile

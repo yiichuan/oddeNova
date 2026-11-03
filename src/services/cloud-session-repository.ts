@@ -1,6 +1,7 @@
 import { DEFAULT_PAGE_LIMIT, type CursorPage, type SessionSummary } from '../../shared/session-api';
 import type { Session } from '../hooks/useSessions';
 import { getAccessToken } from './auth-service';
+import { projectChatMessageForTransfer } from '../lib/humming-transfer';
 
 const CLOUD_REQUEST_TIMEOUT_MS = 15_000;
 
@@ -126,11 +127,24 @@ export async function getCloudSession(
 }
 
 export async function saveCloudSession(session: Session, expectedUserId?: string): Promise<void> {
+  const transferSession = {
+    id: session.id,
+    title: session.title,
+    messages: session.messages.map(projectChatMessageForTransfer),
+    code: session.code,
+    ...(session.inputMode !== undefined ? { inputMode: session.inputMode } : {}),
+    ...(session.externalSource !== undefined ? { externalSource: session.externalSource } : {}),
+    ...(session.revisions !== undefined ? { revisions: session.revisions } : {}),
+    ...(session.suggestions !== undefined ? { suggestions: session.suggestions } : {}),
+    ...(session.favoritedAt !== undefined ? { favoritedAt: session.favoritedAt } : {}),
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+  };
   await requestNoContent(
     `/api/sessions/${encodeURIComponent(session.id)}`,
     {
       method: 'PUT',
-      body: JSON.stringify(session),
+      body: JSON.stringify(transferSession),
     },
     expectedUserId,
   );

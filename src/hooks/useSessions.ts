@@ -8,7 +8,6 @@ import {
   putCurrentSessionId as dbPutCurrentSessionId,
   putImportedSession as dbPutImportedSession,
   putImportedSessionBranch as dbPutImportedSessionBranch,
-  deleteSession as dbDeleteSession,
   deleteSessionStrict as dbDeleteSessionStrict,
   isSessionStoragePersistent,
   commitBridgeSessionState as dbCommitBridgeSessionState,
@@ -44,6 +43,17 @@ import {
   type PendingSessionOperations,
 } from '../lib/session-sync-storage';
 import { createSessionWriteThrottle } from '../lib/session-write-throttle';
+import type { HummingAttachment } from '../types/humming';
+import { deleteHummingDataForSession } from '../lib/humming-storage';
+
+async function deleteLocalSessionAndHummingData(
+  id: string,
+  ownerKey: string,
+  survivingSessions: readonly Session[] = [],
+): Promise<void> {
+  await dbDeleteSessionStrict(id, ownerKey);
+  await deleteHummingDataForSession(ownerKey, id, survivingSessions);
+}
 
 export interface ExternalSessionSource {
   type: 'oddenova-strudel-skill';
@@ -359,10 +369,29 @@ function inputModeReferencedBy(messages: ChatMessage[]): InputMode {
   )?.inputMode ?? 'normal';
 }
 
+function preserveLocalHummingAttachments(cloudSession: Session, localSession?: Session): Session {
+  if (!localSession) return cloudSession;
+  const localById = new Map(localSession.messages.map((message) => [message.id, message]));
+  let changed = false;
+  const messages = cloudSession.messages.map((message) => {
+    const local = localById.get(message.id);
+    if (
+      !local?.humming
+      || local.role !== message.role
+      || local.content !== message.content
+      || message.humming
+    ) return message;
+    changed = true;
+    return { ...message, humming: local.humming };
+  });
+  return changed ? { ...cloudSession, messages } : cloudSession;
+}
+
 function deriveTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser) return t('newSessionTitle');
   const text = firstUser.content.trim();
+  if (!text && firstUser.humming) return t('hummingRecording');
   return deriveSessionTitle(text, t('newSessionTitle'));
 }
 
@@ -742,7 +771,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           const purgeResults = await Promise.allSettled(
             [...tombstonedIds].map((id) => sessionCloudSync.deleteSession(
               id,
-              () => dbDeleteSessionStrict(id, ownerKey),
+              () => deleteLocalSessionAndHummingData(id, ownerKey),
             )),
           );
           pending = {
@@ -833,9 +862,9 @@ export function useSessions(options: UseSessionsOptions = {}) {
           ...leftovers.map((session) => sessionCloudSync
             ? sessionCloudSync.deleteSession(
               session.id,
-              () => dbDeleteSessionStrict(session.id, ownerKey),
+              () => deleteLocalSessionAndHummingData(session.id, ownerKey),
             )
-            : dbDeleteSession(session.id, ownerKey)),
+            : deleteLocalSessionAndHummingData(session.id, ownerKey)),
         ]);
         if (cancelled) return;
         persistedSessionIdsRef.current.add(fresh.id);
@@ -1036,16 +1065,17 @@ export function useSessions(options: UseSessionsOptions = {}) {
   const acceptCloudDetail = useCallback(async (session: Session, options: { activate?: boolean } = {}): Promise<Session | undefined> => {
     if (!ownerLoaded) return;
     const workingCopy = sessionsRef.current.find((existing) => existing.id === session.id);
+    const adoptedSession = preserveLocalHummingAttachments(session, workingCopy);
     const workingCopyIsAhead = workingCopy !== undefined
       && workingCopy.updatedAt > session.updatedAt;
     const adopted = !workingCopyIsAhead
       && (sessionCloudSync?.acceptCloudSession(session) ?? true);
     if (adopted) {
-      await localWrites.writeNow(session);
-      persistedSessionIdsRef.current.add(session.id);
+      await localWrites.writeNow(adoptedSession);
+      persistedSessionIdsRef.current.add(adoptedSession.id);
       setSessions((previous) => [
-        session,
-        ...previous.filter((existing) => existing.id !== session.id),
+        adoptedSession,
+        ...previous.filter((existing) => existing.id !== adoptedSession.id),
       ]);
     } else if (!workingCopy) {
       // Refused with nothing local to fall back on cannot happen — the sync
@@ -1057,7 +1087,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       setCurrentId(session.id);
       await dbPutCurrentSessionId(session.id, ownerKey);
     }
-    return adopted ? session : workingCopy;
+    return adopted ? adoptedSession : workingCopy;
   }, [localWrites, ownerKey, ownerLoaded, sessionCloudSync]);
 
   const updateCurrent = useCallback(
@@ -1112,7 +1142,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const addUserMessage = useCallback(
-    (content: string, sessionId?: string): void => {
+    (content: string, sessionId?: string, humming?: HummingAttachment): void => {
       const apply = getApply(sessionId);
       apply((s) => {
         const messages = [
@@ -1122,6 +1152,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
             role: 'user' as const,
             content,
             timestamp: Date.now(),
+            ...(humming ? { humming } : {}),
           },
         ];
         // Auto-rename on first user message.
@@ -1416,13 +1447,15 @@ export function useSessions(options: UseSessionsOptions = {}) {
         if (sessionCloudSync && (wasPersisted || !isAccountOwner)) {
           void sessionCloudSync.deleteSession(
             id,
-            () => dbDeleteSessionStrict(id, ownerKey),
+            () => deleteLocalSessionAndHummingData(id, ownerKey, next),
             onCloudDeleted,
           ).catch((err) => {
             console.warn('[sessions] cloud session delete failed.', err);
           });
         } else if (wasPersisted || !isAccountOwner) {
-          void dbDeleteSession(id, ownerKey);
+          void deleteLocalSessionAndHummingData(id, ownerKey, next).catch((err) => {
+            console.warn('[sessions] local session delete failed.', err);
+          });
         }
         /* Where the studio goes when the conversation it is in is deleted.
            Not simply the next session on the list: a favorite is a session

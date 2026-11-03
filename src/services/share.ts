@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../hooks/useChat';
 import type { CodeRevision } from '../hooks/useSessions';
+import { projectChatMessageForTransfer } from '../lib/humming-transfer';
 
 export type ShareLocale = 'zh-CN' | 'en';
 
@@ -26,7 +27,7 @@ export async function uploadShare(input: UploadShareInput): Promise<string> {
     version: 1,
     title: input.title,
     code: input.code,
-    messages: input.messages,
+    messages: input.messages.map(projectChatMessageForTransfer),
     revisions: input.revisions,
     sharedAt: Date.now(),
     locale: input.locale,

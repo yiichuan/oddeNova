@@ -13,6 +13,7 @@ import { useScrollActivity } from '../../hooks/useScrollActivity';
 
 interface ArchivedConversationViewProps {
   messages: readonly ChatMessage[];
+  ownerKey?: string;
   onSelectCode: (messageId: string) => void;
   onPlayCode: (messageId: string, code: string) => void;
   onStopCode: () => void;
@@ -167,6 +168,7 @@ export function ArchiveCodeChip({
 
 export default function ArchivedConversationView({
   messages,
+  ownerKey,
   onSelectCode,
   onPlayCode,
   onStopCode,
@@ -507,8 +509,8 @@ export default function ArchivedConversationView({
                 data-favorites-turn={message.id}
                 className="flex justify-end items-end gap-1.5 animate-fade-in"
               >
-                <div className={`relative max-w-[85%] rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary`}>
-                  <UserMessageBubble content={message.content} />
+                <div className={`relative min-w-0 ${message.humming ? 'w-[280px] max-w-[85%]' : 'max-w-[85%]'} rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary`}>
+                  <UserMessageBubble content={message.content} humming={message.humming} ownerKey={ownerKey} />
                 </div>
               </div>
             );

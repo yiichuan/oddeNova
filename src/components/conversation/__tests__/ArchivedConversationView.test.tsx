@@ -111,4 +111,33 @@ describe('ArchivedConversationView', () => {
     expect(scroller.className).not.toContain('scrollbar-hidden');
     expect(scroller.style.scrollbarGutter).toBe('stable');
   });
+
+  it('gives a humming message the same stable width as the live conversation', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    const hummingMessages: ChatMessage[] = [{
+      id: 'humming-user',
+      role: 'user',
+      content: '短指令',
+      timestamp: 1,
+      humming: {
+        kind: 'humming', schemaVersion: 1,
+        id: '11111111-1111-4111-8111-111111111111',
+        recordingDurationSeconds: 8, trimStartSeconds: 0, melodyDurationSeconds: 7,
+        transcription: {
+          engine: 'basic-pitch', modelVersion: 'spotify-basic-pitch-ts@1.0.1',
+          preprocessingVersion: 'mono-sinc-22050-v1', notes: [], warnings: [],
+        },
+      },
+    }];
+
+    render(hummingMessages, container, root);
+
+    const bubble = container.querySelector<HTMLElement>('[data-favorites-turn="humming-user"] > div')!;
+    expect(bubble.className).toContain('w-[280px]');
+    expect(bubble.className).toContain('max-w-[85%]');
+    expect(bubble.querySelector('input[type="range"]')).not.toBeNull();
+  });
 });

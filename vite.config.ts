@@ -1,8 +1,8 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { copyFileSync, mkdirSync, readFileSync, existsSync } from 'fs'
-import { resolve, join } from 'path'
+import { copyFileSync, mkdirSync, readFileSync, existsSync, readdirSync, statSync } from 'fs'
+import { resolve, join, sep } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
@@ -460,6 +460,64 @@ function syncAnimationHtml(): Plugin {
   }
 }
 
+// The model is fetched only by the transcription worker and is always served
+// from this application. Keep the package model as ordinary same-origin
+// assets so production never depends on a third-party model CDN.
+function basicPitchModelAssets(): Plugin {
+  const packageRoot = resolve(__dirname, 'node_modules/@spotify/basic-pitch')
+  const modelRoot = resolve(packageRoot, 'model')
+
+  const filesUnder = (directory: string): string[] =>
+    readdirSync(directory).flatMap((name) => {
+      const path = join(directory, name)
+      return statSync(path).isDirectory() ? filesUnder(path) : [path]
+    })
+
+  return {
+    name: 'basic-pitch-local-model-assets',
+    configureServer(server) {
+      server.middlewares.use('/models/basic-pitch', (req, res, next) => {
+        let requestedPath: string
+        try {
+          requestedPath = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname)
+        } catch {
+          next()
+          return
+        }
+        const path = resolve(modelRoot, requestedPath.replace(/^\/+/, ''))
+        if (path !== modelRoot && !path.startsWith(modelRoot + sep)) {
+          next()
+          return
+        }
+        if (!existsSync(path) || !statSync(path).isFile()) {
+          next()
+          return
+        }
+        res.setHeader(
+          'Content-Type',
+          path.endsWith('.json') ? 'application/json' : 'application/octet-stream',
+        )
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        res.end(readFileSync(path))
+      })
+    },
+    generateBundle() {
+      for (const path of filesUnder(modelRoot)) {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'models/basic-pitch/' + path.slice(modelRoot.length + 1).split(sep).join('/'),
+          source: readFileSync(path),
+        })
+      }
+      this.emitFile({
+        type: 'asset',
+        fileName: 'models/basic-pitch/LICENSE',
+        source: readFileSync(resolve(packageRoot, 'LICENSE')),
+      })
+    },
+  }
+}
+
 // Exact /privacy paths only — the Vercel rewrite for the same paths is not
 // visible to Vite, so dev and preview servers get this small alias instead of
 // a copy of the routing table. The rewrite itself lives in
@@ -487,7 +545,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
+    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), syncAnimationHtml(), basicPitchModelAssets(), privacyDevMiddleware()],
     build: {
       rollupOptions: {
         input: {
