@@ -65,6 +65,59 @@ export function createAgentProgressHandler(
   };
 }
 
+type StreamDeltaEvent = Extract<
+  ProgressEvent,
+  { kind: 'assistant_text_delta' | 'reasoning_delta' | 'assistant_reply_delta' }
+>;
+
+const STREAM_RENDER_INTERVAL_MS = 100;
+
+/**
+ * Coalesce token deltas before they reach React state. React's development
+ * component track snapshots changed props on every render, so streaming a
+ * growing reasoning string token-by-token can retain a large amount of cloned
+ * text in the Performance timeline. Non-delta events flush first to preserve
+ * their ordering relative to the stream.
+ */
+export function createBatchedAgentProgressHandler(
+  sessions: AgentProgressSessions,
+  sessionId: string,
+): (event: ProgressEvent) => void {
+  const handle = createAgentProgressHandler(sessions, sessionId);
+  let pending: StreamDeltaEvent | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const flush = (): void => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    const event = pending;
+    pending = null;
+    if (event) handle(event);
+  };
+
+  return (event) => {
+    if (
+      event.kind !== 'assistant_text_delta'
+      && event.kind !== 'reasoning_delta'
+      && event.kind !== 'assistant_reply_delta'
+    ) {
+      flush();
+      handle(event);
+      return;
+    }
+
+    if (
+      pending
+      && (pending.kind !== event.kind || pending.attemptId !== event.attemptId)
+    ) {
+      flush();
+    }
+    if (pending) pending = { ...pending, delta: pending.delta + event.delta };
+    else pending = event;
+    if (timer === null) timer = setTimeout(flush, STREAM_RENDER_INTERVAL_MS);
+  };
+}
+
 function formatToolCall(name: string, args: Record<string, unknown>): string {
   switch (name) {
     case 'setCode':

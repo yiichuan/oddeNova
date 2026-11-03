@@ -10,8 +10,11 @@ import ChatInput, { type PresetLock } from './ChatInput';
 import { isDemoMode, isPresentationMode } from '../../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
+import type { HummingInputController } from '../../hooks/useHummingInput';
+import type { HummingAttachment } from '../../types/humming';
 
 interface SidebarProps {
+  ownerKey?: string;
   title: string;
   messages: ChatMessage[];
   revisions?: CodeRevision[];
@@ -27,7 +30,9 @@ interface SidebarProps {
     text: string,
     entryPoint: ChatEntryPoint,
     images?: ImageAttachment[],
-  ) => void | Promise<void>;
+    humming?: HummingAttachment,
+  ) => boolean | void | Promise<boolean | void>;
+  humming?: HummingInputController;
   onStop?: () => void;
   onNewSession: () => void;
   onMoodGenerate?: () => Promise<void> | void;
@@ -80,6 +85,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
+  ownerKey,
   title,
   messages,
   revisions,
@@ -92,6 +98,7 @@ export default function Sidebar({
   choiceOptions,
   suggestions,
   onSendText,
+  humming,
   onStop,
   onNewSession,
   onMoodGenerate,
@@ -256,6 +263,7 @@ export default function Sidebar({
           )}
           <ConversationView
             key={currentId ?? 'default'}
+            ownerKey={ownerKey}
             messages={messages}
             revisions={revisions}
             isLoading={isLoading && !isReplaying}
@@ -280,7 +288,7 @@ export default function Sidebar({
       </div>
 
       <div data-sidebar-composer className="-mt-px w-full shrink-0">
-        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} choiceOptions={choiceOptions} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
+        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} choiceOptions={choiceOptions} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
       </div>
     </aside>
   );

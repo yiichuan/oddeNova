@@ -14,6 +14,7 @@ import { useScrollActivity } from '../../hooks/useScrollActivity';
 
 interface ArchivedConversationViewProps {
   messages: readonly ChatMessage[];
+  ownerKey?: string;
   onSelectCode: (messageId: string) => void;
   onPlayCode: (messageId: string, code: string) => void;
   onStopCode: () => void;
@@ -168,6 +169,7 @@ export function ArchiveCodeChip({
 
 export default function ArchivedConversationView({
   messages,
+  ownerKey,
   onSelectCode,
   onPlayCode,
   onStopCode,
@@ -508,9 +510,9 @@ export default function ArchivedConversationView({
                 data-favorites-turn={message.id}
                 className="flex justify-end items-end gap-1.5 animate-fade-in"
               >
-                <div className={`relative flex max-w-[85%] flex-col items-end gap-2 ${bodyText} text-text-primary`}>
+                <div className={`relative flex min-w-0 ${message.humming ? 'w-[280px] max-w-[85%]' : 'max-w-[85%]'} flex-col items-end gap-2 ${bodyText} text-text-primary`}>
                   {Boolean(message.images?.length) && <div className="max-w-full [&>div]:justify-end [&>div]:py-0"><MessageImages images={message.images} /></div>}
-                  {message.content.trim() && <div className="max-w-full rounded-[6px] bg-message-user px-3 py-2"><UserMessageBubble content={message.content} /></div>}
+                  {(message.content.trim() || message.humming) && <div className="max-w-full rounded-[6px] bg-message-user px-3 py-2"><UserMessageBubble content={message.content} humming={message.humming} ownerKey={ownerKey} /></div>}
                 </div>
               </div>
             );

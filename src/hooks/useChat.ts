@@ -3,6 +3,7 @@ import type { ImageAttachment } from '../lib/image-attachments';
 // conversation/sidebar components. The legacy useChat() hook was removed in
 // favour of useSessions(), which owns the persisted, multi-session message
 // store.
+import type { HummingAttachment } from '../types/humming';
 
 export type ChatRole = 'user' | 'assistant' | 'progress';
 export type InputMode = 'normal' | 'choice';
@@ -36,4 +37,6 @@ export interface ChatMessage {
   // session is created. Excluded from LLM history (see conversation-history.ts)
   // and from the retry/branch actions in ConversationView.
   isGreeting?: boolean;
+  /** Derived local transcription; never contains the original recording. */
+  humming?: HummingAttachment;
 }

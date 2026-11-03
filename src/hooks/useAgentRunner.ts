@@ -21,6 +21,8 @@ import { t, zh } from '../lib/i18n';
 import type { StrudelState } from '../services/strudel';
 import { analyticsContext, analyticsError, analyticsId, rememberAnalyticsTurn, type AnalyticsContext } from '../lib/analytics-context';
 import { isAbortError } from '../lib/errors';
+import { formatHummingContext } from '../lib/humming-context';
+import type { HummingAttachment } from '../types/humming';
 
 // ── Pure agent-turn logic (testable in isolation) ────────────────────────────
 //
@@ -48,6 +50,8 @@ export interface AgentTurnInput {
   suppliedHistory?: ConversationTurn[];
   /** Called for a newly added first user message when it can name the session. */
   onFirstUserMessage?: (messageId: string) => void;
+  /** Local transcription metadata attached to this user message. */
+  humming?: HummingAttachment;
 }
 
 /**
@@ -71,7 +75,7 @@ export interface AgentTurnDeps {
   isCurrentSession: (sessionId: string) => boolean;
   getCurrentCode: () => string;
   snapshotHistory: () => ConversationTurn[];
-  addUserMessage: (text: string, images?: ImageAttachment[], selectedChoice?: true) => {
+  addUserMessage: (text: string, images?: ImageAttachment[], selectedChoice?: true, humming?: HummingAttachment) => {
     id: string;
     isFirstUserMessage: boolean;
   } | undefined;
@@ -142,7 +146,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       ? deps.addUserMessage(input.text, undefined, true)
       : input.images?.length
         ? deps.addUserMessage(input.text, input.images)
-        : deps.addUserMessage(input.text);
+        : deps.addUserMessage(input.text, undefined, undefined, input.humming);
     if (insertion?.isFirstUserMessage) input.onFirstUserMessage?.(insertion.id);
   }
 
@@ -178,7 +182,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
   try {
     const onProgress = deps.makeProgressHandler(sessionId);
     const result = await deps.runAgent(
-      input.text,
+      formatHummingContext(input.text, input.humming),
       beforeCode,
       (event) => {
         if (!ownsTurn()) return;
@@ -364,7 +368,7 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
     isCurrentSession: (id) => id === currentIdRef.current,
     getCurrentCode: () => currentCode,
     snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
-    addUserMessage: (text, images, selectedChoice) => sessions.addUserMessage(text, undefined, images, selectedChoice),
+    addUserMessage: (text, images, selectedChoice, humming) => sessions.addUserMessage(text, undefined, images, selectedChoice, humming),
     addAssistantMessage: (text, code, id, revision, inputMode, layerNotes, turnId) =>
       sessions.addAssistantMessage(text, code, id, revision, inputMode, layerNotes, turnId),
     finalizeLastAssistantMessage: (text, id, turnId) => sessions.finalizeLastAssistantMessage(text, id, turnId),

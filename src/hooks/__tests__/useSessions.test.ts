@@ -66,6 +66,10 @@ vi.mock('../../lib/session-storage', () => ({
 
 vi.mock('../../lib/session-sync-storage', () => syncStorageMocks);
 
+vi.mock('../../lib/humming-storage', () => ({
+  deleteHummingDataForSession: vi.fn(async () => undefined),
+}));
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 function makeSession(overrides: Partial<Session> = {}): Session {

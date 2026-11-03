@@ -202,6 +202,8 @@ const GALLERY_BAND_BOTTOM = `calc(100% / 6 - ${GALLERY_DROP})`;
 const openedKey = (summary: FavoriteSummary): string => `${summary.id}:${summary.updatedAt}`;
 
 interface FavoritesPageProps {
+  /** Used only to resolve device-local humming recordings attached to messages. */
+  ownerKey?: string;
   /** Legacy guest read model. Account pages pass summaries and one detail. */
   conversations?: readonly FavoriteConversation[];
   /** Ordered cloud rows; the page never sorts or reads their full content. */
@@ -624,6 +626,7 @@ function CodePanel({
  * reading.
  */
 export default function FavoritesPage({
+  ownerKey,
   conversations = [],
   summaries,
   detail = null,
@@ -879,6 +882,7 @@ export default function FavoritesPage({
 
     return (
       <MobileFavoritesPage
+        ownerKey={ownerKey}
         state={mobileState}
         onRetry={onRetry}
         onRetryDetail={onRetryDetail}
@@ -1167,6 +1171,7 @@ export default function FavoritesPage({
                     script's does — see index.css. */}
                 <div className="favorites-reading min-h-0 flex-1">
                   <ArchivedConversationView
+                    ownerKey={ownerKey}
                     active={active}
                     messages={archiveMessages}
                     numberTakes={scripts.length > 1}

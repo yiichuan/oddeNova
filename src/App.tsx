@@ -28,7 +28,7 @@ import { generateConversationTitle } from './services/conversation-title';
 import { parseStepwiseChoice } from './services/suggestions';
 import type { ConversationTurn } from './services/llm-loader';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
-import { createAgentProgressHandler } from './lib/agent-progress-handler';
+import { createBatchedAgentProgressHandler } from './lib/agent-progress-handler';
 import { isDemoMode, getActiveDemoSet, getDemoMoodInstruction } from './demo/demo-config';
 import { hasApiKeyConfigured } from './services/llm-config';
 import { resetClient } from './services/llm-loader';
@@ -41,6 +41,7 @@ import { useOddeNovaImport } from './hooks/useOddeNovaImport';
 import { useOddeNovaBridge, type OddeNovaBridgePresentationReason } from './hooks/useOddeNovaBridge';
 import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
+import { useHummingInput } from './hooks/useHummingInput';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
 import ConversationView from './components/conversation/ConversationView';
@@ -59,6 +60,7 @@ import { hasSeenWelcome, markWelcomeSeen, shouldAutoOpenWelcomeModal } from './l
 import type { AgentEntryPoint } from './lib/analytics';
 import type { ChatEntryPoint } from './hooks/useChat';
 import { useAccountActivity } from './hooks/useAccountActivity';
+import type { HummingAttachment } from './types/humming';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { sessionAsFavorite } from './lib/session-favorites';
 import { fullSessionTitle } from './lib/full-session-title';
@@ -1112,7 +1114,7 @@ export default function App() {
   // Build the agent progress→UI handler for a given session. Shared verbatim by
   // handleInstruction and handleMoodInstruction.
   const makeAgentProgressHandler = useCallback(
-    (sessionId: string) => createAgentProgressHandler(sessions, sessionId),
+    (sessionId: string) => createBatchedAgentProgressHandler(sessions, sessionId),
     [sessions]
   );
 
@@ -1193,6 +1195,7 @@ export default function App() {
       initialCode?: string;
       history?: ConversationTurn[];
       images?: ImageAttachment[];
+      humming?: HummingAttachment;
     }) => {
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
@@ -1252,6 +1255,7 @@ export default function App() {
               );
             }
           : undefined,
+        humming: options?.humming,
       });
     },
     [
@@ -1302,7 +1306,7 @@ export default function App() {
   // Both composer layouts can submit to the same session while image preparation is pending.
   const pendingComposerSendsRef = useRef(new Set<string>());
   const handleChatInstruction = useCallback(
-    async (text: string, entryPoint: ChatEntryPoint, images?: ImageAttachment[]) => {
+    async (text: string, entryPoint: ChatEntryPoint, images?: ImageAttachment[], humming?: HummingAttachment) => {
       const scope = imageScopeRef.current;
       const pending = pendingComposerSendsRef.current;
       if (pending.has(scope)) throw new Error(t('chatSendInProgress'));
@@ -1311,13 +1315,39 @@ export default function App() {
         noteRealInstructionRef.current();
         await handleInstruction(text, entryPoint === 'choice'
           ? { entryPoint: 'suggestion', selectedChoice: true }
-          : { entryPoint, images });
+          : { entryPoint, images, humming });
       } finally {
         pending.delete(scope);
       }
     },
     [handleInstruction],
   );
+  const hummingInput = useHummingInput({
+    ownerKey,
+    sessionId: sessions.currentId,
+    busy: isLoading || isReplaying || isVideoMode || isDemoMode(),
+    pauseTransport: strudel.pause,
+    onSend: handleChatInstruction,
+  });
+  useEffect(() => {
+    if (
+      primaryNavItem !== 'home'
+      || sidebarCollapsed
+      || isVideoMode
+      || isReplaying
+      || isDemoMode()
+    ) {
+      hummingInput.stopRecording();
+      hummingInput.cancelTranscription();
+    }
+  }, [
+    hummingInput.cancelTranscription,
+    hummingInput.stopRecording,
+    isReplaying,
+    isVideoMode,
+    primaryNavItem,
+    sidebarCollapsed,
+  ]);
 
   // Abort any in-progress run and rewind strudel/session code state to before messageId was sent.
   // Shared by handleResend (edit + resend) and handleRollback (rewind only);
@@ -1382,6 +1412,7 @@ export default function App() {
         skipAddMessage: true,
         initialCode: rewound.previousCode,
         history,
+        humming: rewound.target.humming,
       });
     },
     [sessions, handleInstruction, rewindBeforeMessage]
@@ -1400,6 +1431,9 @@ export default function App() {
       if (!rewound) return;
 
       sessions.truncate(messageId);
+      if (rewound.target.humming) {
+        void hummingInput.restoreAttachment(rewound.target.humming);
+      }
 
       // Hand the instruction back to the input in the same commit as the
       // truncation. This used to sit behind the checkpoint below, which is a
@@ -1417,7 +1451,7 @@ export default function App() {
         void sessions.checkpointSession(currentSessionId);
       }
     },
-    [sessions, rewindBeforeMessage]
+    [hummingInput.restoreAttachment, sessions, rewindBeforeMessage]
   );
 
   const handleRetry = useCallback(
@@ -2149,8 +2183,9 @@ export default function App() {
      action runs. See mobileNavigationRef. */
   const handleDeleteSession = useCallback((id: string) => {
     if (isMobile) ++mobileNavigationRef.current;
+    if (sessions.currentId === id) hummingInput.discard();
     deleteSessionAction(id);
-  }, [deleteSessionAction, isMobile]);
+  }, [deleteSessionAction, hummingInput.discard, isMobile, sessions.currentId]);
 
 
   const handleOpenFavoriteInStudio = useCallback((code: string) => {
@@ -2353,6 +2388,7 @@ export default function App() {
   const favoritesPage = favoritesVisited ? (
     <FeatureLoadBoundary fallback={<LazyOverlayFallback />}>
       <LazyFavoritesPage
+        ownerKey={ownerKey}
         // Hidden rather than unmounted when you leave, so the page has
         // to be told when it is the one being looked at.
         active={primaryNavItem === 'favorites'}
@@ -2540,6 +2576,7 @@ export default function App() {
           <div className="flex-1 min-h-0 overflow-hidden mb-5">
             <ConversationView
               key={sessions.currentId ?? 'default'}
+              ownerKey={ownerKey}
               messages={messages}
               revisions={sessions.currentSession?.revisions}
               isLoading={isLoading}
@@ -2600,6 +2637,7 @@ export default function App() {
               engineReady={strudel.engineReady}
               engineStatus={strudel.engineStatus}
               onSendText={handleChatInstruction}
+              humming={!isDemoMode() && !isVideoMode && !isReplaying ? hummingInput : undefined}
               onStop={handleStop}
               onReinitEngine={strudel.reinit}
               prefill={rollbackImageDraft && rollbackImageDraft.scope !== imageScopeRef.current ? '' : rollbackPrefill}
@@ -2941,6 +2979,7 @@ export default function App() {
           <div className={primaryNavItem === 'home' ? 'h-full' : 'hidden'}>
             <Sidebar
               key={auth.user?.id ?? "guest"}
+              ownerKey={ownerKey}
               title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
               messages={videoDemoMsgs ?? messages}
               revisions={current?.revisions}
@@ -2955,6 +2994,7 @@ export default function App() {
               isVideoMode={isVideoMode}
               scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal
               onSendText={handleChatInstruction}
+              humming={!isDemoMode() && !isVideoMode && !isReplaying ? hummingInput : undefined}
               onStop={handleStop}
               onNewSession={handleNewSession}
               onMoodGenerate={handleMoodInstruction}
