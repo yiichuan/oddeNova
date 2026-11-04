@@ -465,7 +465,7 @@ export async function classifyIntent(
     : '(no track yet / 当前还没有曲子)';
   const latest = opts.preparedUserContent;
   const preparedLatest = Array.isArray(latest)
-    ? latest.map(block => block.type === 'text' ? { ...block, text: `${codeNote}\nuser latest message / 用户最新消息: ${block.text}` } : block)
+    ? latest.map((block, index) => index === 0 && block.type === 'text' ? { ...block, text: `${codeNote}\nuser latest message / 用户最新消息: ${block.text}` } : block)
     : typeof latest === 'string' ? `${codeNote}\nuser latest message / 用户最新消息: ${latest}` : undefined;
   const messages: ChatMsg[] = [
     { role: 'system', content: INTENT_CLASSIFIER_PROMPT },

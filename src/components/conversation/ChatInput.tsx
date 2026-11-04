@@ -13,6 +13,20 @@ import type { AgentEntryPoint } from '../../lib/analytics';
 import type { InputMode } from '../../hooks/useChat';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
+const IMAGE_UPLOAD_CONCURRENCY = 3;
+type ImageUploadQueue = { jobs: Array<() => Promise<void>>; active: number; disposed: boolean };
+
+function drainImageUploads(queue: ImageUploadQueue): void {
+  while (!queue.disposed && queue.active < IMAGE_UPLOAD_CONCURRENCY && queue.jobs.length) {
+    const job = queue.jobs.shift()!;
+    queue.active += 1;
+    void job().finally(() => {
+      queue.active -= 1;
+      drainImageUploads(queue);
+    });
+  }
+}
+
 type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 
 // Split text into typewriter units: CJK (and fullwidth punctuation) reveal
@@ -120,9 +134,20 @@ export default function ChatInput({
   const [pendingImages, setPendingImages] = useState<{ id: string; url: string }[]>([]);
   const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
   const previewUrls = useRef(new Set<string>());
+  const uploadQueue = useRef<ImageUploadQueue>({ jobs: [], active: 0, disposed: false });
+  const nextImageOrder = useRef(0);
+  const imageOrder = useRef(new WeakMap<ImageAttachment, number>());
   useEffect(() => {
     const urls = previewUrls.current;
-    return () => { urls.forEach(url => URL.revokeObjectURL(url)); urls.clear(); };
+    // Effects can be replayed in StrictMode; each lifetime owns its queue.
+    const queue: ImageUploadQueue = { jobs: [], active: 0, disposed: false };
+    uploadQueue.current = queue;
+    return () => {
+      queue.disposed = true;
+      queue.jobs.length = 0;
+      urls.forEach(url => URL.revokeObjectURL(url));
+      urls.clear();
+    };
   }, []);
   useEffect(() => {
     const retained = new Set([...images.map(image => localPreviews[image.id]), ...pendingImages.map(image => image.url)]);
@@ -144,26 +169,33 @@ export default function ChatInput({
     const pending = files.map(file => {
       const url = URL.createObjectURL(file);
       previewUrls.current.add(url);
-      return { id: crypto.randomUUID(), url, file };
+      return { id: crypto.randomUUID(), url, file, order: nextImageOrder.current++ };
     });
     imageCountRef.current += pending.length;
     setPendingImages(previous => [...previous, ...pending]);
-    let completed = 0;
-    try {
-      for (const item of pending) {
-        const image = await uploadImage(item.file);
-        await rememberUploadedImagePreview(image, item.file);
-        setLocalPreviews(previous => ({ ...previous, [image.id]: item.url }));
-        setImages(previous => [...previous, image]);
-        completed += 1;
-        setPendingImages(previous => previous.filter(image => image.id !== item.id));
-      }
-    } catch (error) { setImageError(error instanceof Error ? error.message : '图片上传失败'); }
-    finally {
-      imageCountRef.current -= pending.length - completed;
-      const batchIds = new Set<string>(pending.map(image => image.id));
-      setPendingImages(previous => previous.filter(image => !batchIds.has(image.id)));
+    const queue = uploadQueue.current;
+    for (const item of pending) {
+      queue.jobs.push(async () => {
+        try {
+          const image = await uploadImage(item.file);
+          if (queue.disposed) return;
+          await rememberUploadedImagePreview(image, item.file);
+          if (queue.disposed) return;
+          imageOrder.current.set(image, item.order);
+          setLocalPreviews(previous => ({ ...previous, [image.id]: item.url }));
+          setImages(previous => [...previous, image].sort((a, b) =>
+            (imageOrder.current.get(a) ?? -1) - (imageOrder.current.get(b) ?? -1)));
+        } catch (error) {
+          if (queue.disposed) return;
+          imageCountRef.current -= 1;
+          const reason = error instanceof Error ? error.message : '图片上传失败';
+          setImageError(previous => [previous, `${item.file.name}: ${reason}`].filter(Boolean).join('；'));
+        } finally {
+          if (!queue.disposed) setPendingImages(previous => previous.filter(image => image.id !== item.id));
+        }
+      });
     }
+    drainImageUploads(queue);
   };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const adoptedSuggestionRef = useRef<string | null>(null);

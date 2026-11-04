@@ -300,7 +300,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt },
     ...(opts.preparedHistory ?? conversationHistory ?? []),
-    { role: 'user', content: Array.isArray(opts.preparedUserContent) ? opts.preparedUserContent.map(block => block.type === 'text' ? { ...block, text: userTurn } : block) : userTurn },
+    { role: 'user', content: Array.isArray(opts.preparedUserContent) ? opts.preparedUserContent.map((block, index) => index === 0 && block.type === 'text' ? { ...block, text: userTurn } : block) : userTurn },
   ];
 
   const tools = getOpenAIToolSchemas(isZh);

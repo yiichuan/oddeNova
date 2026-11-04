@@ -31,7 +31,7 @@ export async function userContent(text: string, images?: ImageAttachment[]): Pro
         ('message' in error && typeof error.message === 'string' && /^object not found\.?$/i.test(error.message))
       );
       if (!missing) throw error;
-      return { type: 'text' as const, text: '[图片已过期或被删除，无法读取；如需分析该图片，请用户重新上传。]' };
+      return { type: 'text' as const, text: '图片已过期' };
     }
   }))];
 }

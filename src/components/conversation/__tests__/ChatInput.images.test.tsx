@@ -4,11 +4,16 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ChatInput from '../ChatInput';
 import { uploadImage } from '../../../lib/image-attachments';
+import { rememberUploadedImagePreview } from '../../../lib/image-preview-memory';
 import { isImageAttachments } from '../../../lib/image-types';
 
 vi.mock('../../../lib/image-attachments', async importOriginal => ({
   ...await importOriginal<typeof import('../../../lib/image-attachments')>(),
   uploadImage: vi.fn(),
+}));
+vi.mock('../../../lib/image-preview-memory', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../lib/image-preview-memory')>(),
+  rememberUploadedImagePreview: vi.fn(),
 }));
 vi.mock('../../../lib/image-cache', () => ({ previewImageUrl: vi.fn(() => new Promise(() => {})) }));
 vi.mock('../../../services/airjelly', () => ({ checkAirJellyAvailable: async () => false }));
@@ -21,6 +26,7 @@ let urlId = 0;
 const attachment = (id: string) => ({ id, name: `${id}.jpg`, path: `user/${id}`, mimeType: 'image/jpeg', width: 100, height: 100, size: 100 });
 beforeEach(() => {
   localStorage.clear();
+  vi.mocked(rememberUploadedImagePreview).mockReset().mockResolvedValue(undefined);
   mobileState.value = false;
   container = document.createElement('div');
   document.body.append(container);
@@ -101,7 +107,7 @@ it('clears pending thumbnails and releases previews when upload fails', async ()
   vi.mocked(uploadImage).mockRejectedValue(new Error('Upload failed'));
   await add(1);
   expect(container.querySelectorAll('img')).toHaveLength(0);
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe('Upload failed');
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('0.png: Upload failed');
   expect(URL.revokeObjectURL).toHaveBeenCalled();
 });
 it('accepts ten persisted attachments and rejects eleven', () => {
@@ -147,21 +153,58 @@ it('accepts another batch during upload and keeps sending blocked until both fin
   expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
 });
 
-it('counts pending batches toward the limit and releases only the failed batch slots', async () => {
-  let failFirst!: (error: Error) => void;
-  vi.mocked(uploadImage)
-    .mockImplementationOnce(() => new Promise((_, reject) => { failFirst = reject; }))
-    .mockImplementation(() => new Promise(() => {}));
-  await add(1);
-  await add(8);
-  await add(2);
-  expect(uploadImage).toHaveBeenCalledTimes(2);
-  expect(container.querySelectorAll('img')).toHaveLength(9);
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain('10');
-  await act(async () => failFirst(new Error('Failed first batch')));
-  expect(container.querySelectorAll('img')).toHaveLength(8);
-  await add(2);
+it('limits all batches to three uploads, preserves selection order, and continues after failure', async () => {
+  const uploads: { resolve: (image: ReturnType<typeof attachment>) => void; reject: (error: Error) => void }[] = [];
+  vi.mocked(uploadImage).mockImplementation(() => new Promise((resolve, reject) => uploads.push({ resolve, reject })));
+  await add(5);
+  await add(5);
   expect(uploadImage).toHaveBeenCalledTimes(3);
   expect(container.querySelectorAll('img')).toHaveLength(10);
-  expect(container.querySelector<HTMLButtonElement>('button[aria-label="Add image"]')!.disabled).toBe(true);
+  await add(1);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('10');
+  await act(async () => uploads[1].resolve(attachment('second')));
+  expect(uploadImage).toHaveBeenCalledTimes(4);
+  await act(async () => uploads[0].resolve(attachment('first')));
+  expect(uploadImage).toHaveBeenCalledTimes(5);
+  expect(Array.from(container.querySelectorAll('[data-image-thumbnail]')).map(node => node.getAttribute('data-image-thumbnail'))).toEqual(['first', 'second']);
+  await act(async () => uploads[2].reject(new Error('Failed third image')));
+  expect(uploadImage).toHaveBeenCalledTimes(6);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('2.png: Failed third image');
+  await add(1); // Only the failed slot is available again; the queue remains capped.
+  expect(uploadImage).toHaveBeenCalledTimes(6);
+  expect(container.querySelectorAll('img')).toHaveLength(10);
+  for (let index = 3; index < 11; index++) {
+    await act(async () => uploads[index].resolve(attachment(`image-${index}`)));
+  }
+  expect(uploadImage).toHaveBeenCalledTimes(11);
+  expect(container.querySelectorAll('[data-image-thumbnail]')).toHaveLength(10);
+  expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+});
+
+it('drops queued uploads and ignores late results after the composer unmounts', async () => {
+  const uploads: Array<(image: ReturnType<typeof attachment>) => void> = [];
+  vi.mocked(uploadImage).mockImplementation(() => new Promise(resolve => uploads.push(resolve)));
+  await add(5);
+  expect(uploadImage).toHaveBeenCalledTimes(3);
+  act(() => root.render(null));
+  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(5);
+  await act(async () => uploads.forEach((resolve, index) => resolve(attachment(String(index)))));
+  expect(uploadImage).toHaveBeenCalledTimes(3);
+  expect(container.childElementCount).toBe(0);
+  expect(rememberUploadedImagePreview).not.toHaveBeenCalled();
+});
+
+it('holds concurrency slots until preview preparation finishes', async () => {
+  const finishPreviews: Array<() => void> = [];
+  vi.mocked(uploadImage).mockImplementation(async file => attachment(file.name));
+  vi.mocked(rememberUploadedImagePreview).mockImplementation(() => new Promise(resolve => finishPreviews.push(resolve)));
+  await add(5);
+  expect(uploadImage).toHaveBeenCalledTimes(3);
+  expect(container.querySelectorAll('[data-image-thumbnail]')).toHaveLength(0);
+  await act(async () => finishPreviews[0]());
+  expect(uploadImage).toHaveBeenCalledTimes(4);
+  act(() => root.render(null));
+  await act(async () => finishPreviews.slice(1).forEach(resolve => resolve()));
+  expect(uploadImage).toHaveBeenCalledTimes(4);
+  expect(container.childElementCount).toBe(0);
 });

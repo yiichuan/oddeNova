@@ -8,14 +8,19 @@ export async function cleanupPrivateImages(now: Date): Promise<number> {
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const referenced = new Set<string>();
   const kept = new Set<string>();
+  let invalidItems = 0;
   for (let offset = 0; ; offset += 500) {
     const { data, error } = await client.from('sessions').select('messages,favorited_at,user_id').range(offset, offset + 499);
     if (error) throw error;
     for (const session of data) {
-      if (!Array.isArray(session.messages)) continue;
+      if (!Array.isArray(session.messages)) { invalidItems += 1; continue; }
       for (const message of session.messages) {
-        for (const image of message.images ?? []) {
-          if (typeof image.path !== 'string') continue;
+        if (!message || typeof message !== 'object' || Array.isArray(message)) { invalidItems += 1; continue; }
+        if (message.images === undefined) continue;
+        if (!Array.isArray(message.images)) { invalidItems += 1; continue; }
+        for (const image of message.images) {
+          if (!image || typeof image !== 'object' || Array.isArray(image) ||
+              typeof image.path !== 'string' || !image.path.trim()) { invalidItems += 1; continue; }
           referenced.add(image.path);
           // A session can only protect attachments belonging to its owner.
           if (session.favorited_at != null && image.path.startsWith(`${session.user_id}/`)) kept.add(image.path);
@@ -24,6 +29,7 @@ export async function cleanupPrivateImages(now: Date): Promise<number> {
     }
     if (data.length < 500) break;
   }
+  if (invalidItems) console.warn('Image cleanup skipped invalid data', { invalidItems });
   const storage = client.storage.from('chat-images');
   const list = async (prefix: string) => {
     const objects = [];

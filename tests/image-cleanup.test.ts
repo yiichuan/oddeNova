@@ -82,6 +82,33 @@ describe('private image retention', () => {
     expect(await cleanupPrivateImages(now)).toBe(1);
   });
 
+  it('skips malformed data without losing valid legacy references or favorite protection', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mocks.range.mockResolvedValue({ data: [
+        { messages: {} },
+        { user_id: 'owner', favorited_at: '2026-11-01', messages: [
+          null, [], 'bad message', { images: null }, { images: {} }, {},
+          { images: [null, [], 'bad image', {}, { path: 1 }, { path: '' }, { path: '  ' }, { path: 'owner/kept.jpg' }] },
+        ] },
+        { messages: [{ images: [{ path: 'owner/young.jpg' }] }] },
+      ], error: null });
+      mocks.list.mockImplementation(async (prefix: string) => ({ data: prefix === ''
+        ? [{ name: 'owner', id: null }]
+        : [object('kept.jpg', 365), object('young.jpg', 8), object('expired.jpg', 30), object('orphan.jpg', 8)], error: null }));
+      expect(await cleanupPrivateImages(now)).toBe(2);
+      expect(mocks.remove).toHaveBeenCalledWith(['owner/expired.jpg', 'owner/orphan.jpg']);
+      expect(warning).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalledWith('Image cleanup skipped invalid data', { invalidItems: 13 });
+    } finally { warning.mockRestore(); }
+  });
+
+  it('does not delete anything if storage listing fails', async () => {
+    mocks.list.mockResolvedValue({ data: null, error: new Error('listing unavailable') });
+    await expect(cleanupPrivateImages(now)).rejects.toThrow('listing unavailable');
+    expect(mocks.remove).not.toHaveBeenCalled();
+  });
+
   it('does not delete anything if reference lookup fails', async () => {
     mocks.range.mockResolvedValue({ data: null, error: new Error('database unavailable') });
     await expect(cleanupPrivateImages(now)).rejects.toThrow('database unavailable');

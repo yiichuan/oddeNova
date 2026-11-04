@@ -26,7 +26,7 @@ describe('image attachments', () => {
     const content = await userContent('continue', [image, { ...image, id: 'two', path: 'owner/two.jpg' }]);
     expect(content).toEqual([
       { type: 'text', text: 'continue' },
-      { type: 'text', text: expect.stringContaining('图片已过期或被删除') },
+      { type: 'text', text: '图片已过期' },
       { type: 'image_url', image_url: { url: 'https://storage.test/signed' } },
     ]);
   });

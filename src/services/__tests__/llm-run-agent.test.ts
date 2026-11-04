@@ -222,6 +222,20 @@ describe('classifyIntent parsing', () => {
     expect(intent).toBe('compose');
   });
 
+  it('adds classifier context only to the instruction and preserves expired notices and images', async () => {
+    const image = { type: 'image_url' as const, image_url: { url: 'https://prepared.test/image.jpg' } };
+    const expired = { type: 'text' as const, text: '图片已过期' };
+    const llm: LLMCaller = { async chatWithTools(messages) {
+      expect(messages.at(-1)?.content).toEqual([
+        { type: 'text', text: expect.stringContaining('user latest message / 用户最新消息: analyze') }, expired, image,
+      ]);
+      return { content: 'compose', toolCalls: [] };
+    } };
+    await classifyIntent(llm, { instruction: 'analyze', currentCode: '',
+      preparedUserContent: [{ type: 'text', text: 'analyze' }, expired, image],
+    });
+  });
+
   it('disables thinking for the classification call itself', async () => {
     const seen: Array<boolean | undefined> = [];
     const llm: LLMCaller = {
