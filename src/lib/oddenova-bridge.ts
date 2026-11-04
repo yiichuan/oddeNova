@@ -1,3 +1,5 @@
+import { isImageAttachments } from './image-types';
+import type { ImageAttachment } from './image-types';
 export const ODDENOVA_BRIDGE_HASH_PREFIX = '#oddenova-connect=';
 export const ODDENOVA_BRIDGE_BOOTSTRAP_KEY = 'oddenova_bridge_bootstrap_v2';
 export const ODDENOVA_BRIDGE_CONNECTION_KEY = 'oddenova_bridge_connection_v2';
@@ -37,6 +39,7 @@ export interface OddeNovaBridgeMessage {
 }
 
 export interface OddeNovaBridgeMessageV3 {
+  images?: ImageAttachment[];
   id: string;
   role: 'user' | 'assistant';
   content: string;
@@ -240,6 +243,7 @@ export function isOddeNovaBridgeSnapshot(value: unknown): value is AnyOddeNovaBr
       return typeof item.id === 'string'
         && (item.role === 'user' || item.role === 'assistant')
         && typeof item.content === 'string'
+        && (item.images === undefined || (version === 3 && isImageAttachments(item.images)))
         && (version === 2
           ? typeof item.receivedAt === 'number'
           : typeof item.createdAt === 'number'

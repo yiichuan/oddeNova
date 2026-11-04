@@ -1,3 +1,4 @@
+import MessageImages from './MessageImages';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
@@ -1575,28 +1576,31 @@ export default function ConversationView({
               className="flex justify-end items-end gap-1.5 animate-fade-in group"
             >
               <div
-                className={`relative max-w-[85%] rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary${
+                className={`relative flex max-w-[85%] flex-col items-end gap-2 ${bodyText} text-text-primary${
                   isMobile ? ' mobile-rollback-bubble-no-select' : ''
                 }`}
                 data-rollback-bubble={msg.id}
                 onCopy={handleUserBubbleCopy}
                 {...getMobileRollbackBubbleProps(msg.id)}
               >
-                <UserMessageBubble content={msg.content} />
-                {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
-                <div className={`absolute -top-2.5 -right-2.5 transition-opacity ${
-                  isMobile
-                    ? (rollbackButtonEnabled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none')
-                    : 'opacity-0 group-hover:opacity-100'
-                }`}>
-                  <button
-                    onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
-                    disabled={!rollbackButtonEnabled}
-                    className="conversation-rollback-button w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
-                    title={t('rollbackHere')}
-                  >
-                    <Undo2 size={12} />
-                  </button>
+                {Boolean(msg.images?.length) && <div className="max-w-full [&>div]:justify-end [&>div]:py-0"><MessageImages images={msg.images} /></div>}
+                <div className={`relative max-w-full ${msg.content.trim() ? 'rounded-[6px] bg-message-user px-3 py-2' : 'h-6 w-6'}`}>
+                  {msg.content.trim() && <UserMessageBubble content={msg.content} />}
+                  {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
+                  <div className={`${msg.content.trim() ? 'absolute -top-2.5 -right-2.5' : ''} transition-opacity ${
+                    isMobile
+                      ? (rollbackButtonEnabled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none')
+                      : 'opacity-0 group-hover:opacity-100'
+                  }`}>
+                    <button
+                      onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
+                      disabled={!rollbackButtonEnabled}
+                      className="conversation-rollback-button w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
+                      title={t('rollbackHere')}
+                    >
+                      <Undo2 size={12} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

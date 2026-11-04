@@ -1,5 +1,11 @@
+import { uploadImage, supportsImages, type ImageAttachment } from '../../lib/image-attachments';
+import { getActiveModelConfig } from '../../services/llm-config';
+import MessageImages from './MessageImages';
+import { rememberUploadedImagePreview } from '../../lib/image-preview-memory';
+import { MAX_MESSAGE_IMAGES } from '../../lib/image-types';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from '../icons';
+import { Plus, LoaderCircle, X } from 'lucide-react';
 import ThinkingLevelControl from './ThinkingLevelControl';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
@@ -50,10 +56,11 @@ interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
-  onSendText: (text: string, entryPoint: ChatEntryPoint) => void;
+  onSendText: (text: string, entryPoint: ChatEntryPoint, images?: ImageAttachment[]) => void | Promise<void>;
   onReinitEngine: () => void;
   onStop?: () => void;
   prefill?: string;
+  prefillImages?: ImageAttachment[];
   focusTrigger?: number;
   replayValue?: string;
   isVideoMode?: boolean;
@@ -94,6 +101,7 @@ export default function ChatInput({
   onReinitEngine,
   onStop,
   prefill,
+  prefillImages,
   focusTrigger,
   replayValue,
   isVideoMode = false,
@@ -103,7 +111,60 @@ export default function ChatInput({
   onMoodGenerate,
   presetLock,
 }: ChatInputProps) {
+  // Settings saves re-render the composer; read both values each time so the
+  // image entry point follows provider and model changes immediately.
+  const modelConfig = getActiveModelConfig();
+  const canAddImages = supportsImages(modelConfig.provider, modelConfig.model);
   const [text, setText] = useState('');
+  const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [pendingImages, setPendingImages] = useState<{ id: string; url: string }[]>([]);
+  const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
+  const previewUrls = useRef(new Set<string>());
+  useEffect(() => {
+    const urls = previewUrls.current;
+    return () => { urls.forEach(url => URL.revokeObjectURL(url)); urls.clear(); };
+  }, []);
+  useEffect(() => {
+    const retained = new Set([...images.map(image => localPreviews[image.id]), ...pendingImages.map(image => image.url)]);
+    for (const url of previewUrls.current) {
+      if (!retained.has(url)) { URL.revokeObjectURL(url); previewUrls.current.delete(url); }
+    }
+  }, [images, localPreviews, pendingImages]);
+  const [sendingImages, setSendingImages] = useState(false);
+  const imageBusy = sendingImages || pendingImages.length > 0;
+  const [imageError, setImageError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const imageCountRef = useRef(0);
+  const addImages = async (files: File[]) => {
+    if (sendingImages || isLoading || presetLock || isVideoMode || !files.length) return;
+    const config = getActiveModelConfig();
+    if (!supportsImages(config.provider, config.model)) { setImageError('当前模型不支持图片，请切换视觉模型'); return; }
+    if (files.length + imageCountRef.current > MAX_MESSAGE_IMAGES) { setImageError(`每条消息最多 ${MAX_MESSAGE_IMAGES} 张图片`); return; }
+    setImageError('');
+    const pending = files.map(file => {
+      const url = URL.createObjectURL(file);
+      previewUrls.current.add(url);
+      return { id: crypto.randomUUID(), url, file };
+    });
+    imageCountRef.current += pending.length;
+    setPendingImages(previous => [...previous, ...pending]);
+    let completed = 0;
+    try {
+      for (const item of pending) {
+        const image = await uploadImage(item.file);
+        await rememberUploadedImagePreview(image, item.file);
+        setLocalPreviews(previous => ({ ...previous, [image.id]: item.url }));
+        setImages(previous => [...previous, image]);
+        completed += 1;
+        setPendingImages(previous => previous.filter(image => image.id !== item.id));
+      }
+    } catch (error) { setImageError(error instanceof Error ? error.message : '图片上传失败'); }
+    finally {
+      imageCountRef.current -= pending.length - completed;
+      const batchIds = new Set<string>(pending.map(image => image.id));
+      setPendingImages(previous => previous.filter(image => !batchIds.has(image.id)));
+    }
+  };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const adoptedSuggestionRef = useRef<string | null>(null);
   // Mobile has no Tab key, so the return key adopts the suggestion instead
@@ -189,11 +250,14 @@ export default function ChatInput({
       : '';
 
   useEffect(() => {
-    if (prefill) {
+    if (prefill || prefillImages) {
       adoptedSuggestionRef.current = null;
-      setText(prefill);
+      setText(prefill ?? "");
+      setImages(prefillImages ?? []);
+      imageCountRef.current = (prefillImages ?? []).length;
+      setLocalPreviews({});
     }
-  }, [prefill, focusTrigger]);
+  }, [prefill, prefillImages, focusTrigger]);
 
   useEffect(() => {
     if (focusTrigger) textareaRef.current?.focus();
@@ -251,7 +315,7 @@ export default function ChatInput({
       return;
     }
     const value = text.trim();
-    if (!value || isLoading || moodPending) return;
+    if ((!value && !images.length) || isLoading || moodPending || imageBusy) return;
     const entryPoint: ChatEntryPoint =
       adoptedSuggestionRef.current === value ? 'suggestion' : 'text';
     adoptedSuggestionRef.current = null;
@@ -261,7 +325,23 @@ export default function ChatInput({
       Promise.resolve(onMoodGenerate!()).finally(() => setMoodPending(false));
       return;
     }
-    onSendText(value, entryPoint);
+    const sentImages = images;
+    imageCountRef.current = 0;
+    setImages([]);
+    setLocalPreviews({});
+    setSendingImages(true);
+    void (async () => {
+      try {
+        await (sentImages.length ? onSendText(value, entryPoint, sentImages) : onSendText(value, entryPoint));
+      } catch (error) {
+        setText(value);
+        setImages(sentImages);
+        imageCountRef.current = sentImages.length;
+        setImageError(String(error));
+      } finally {
+        setSendingImages(false);
+      }
+    })();
   };
 
   const handleSubmit = (e: { preventDefault(): void }) => {
@@ -332,7 +412,9 @@ export default function ChatInput({
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
 
   return (
-    <form onSubmit={handleSubmit} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <form onSubmit={handleSubmit} onPaste={e => { const files = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { e.preventDefault(); void addImages(files); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)); } }} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+
+
       {/* Card: textarea on top, footer (hint + send button) below it in normal
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
@@ -345,6 +427,42 @@ export default function ChatInput({
       <div
         className={`chat-input-surface chat-input-outline ${isMobile ? 'rounded-region' : 'rounded-t-none rounded-b-region'} pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed' : ''}`}
       >
+        {!presetLock && !isVideoMode && (
+          <>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+            {(images.length > 0 || pendingImages.length > 0) && (
+              <div data-chat-input-focus-ignore className="flex flex-wrap gap-2 px-4 pb-3 pt-1">
+                {images.map(image => (
+                  <div key={image.id} className="group/attachment relative h-16 w-16 rounded-lg border border-border bg-surface-hover overflow-visible">
+                    <div className="h-full overflow-hidden rounded-[inherit] text-[10px] text-text-muted [&>div]:h-full [&>div]:p-0 [&_button]:flex [&_button]:h-full [&_button]:w-full [&_button>div]:w-full [&_button>div]:min-w-0 [&_img]:h-full [&_img]:w-full [&_img]:rounded-none [&_img]:object-cover [&_img]:object-center [&_span]:block [&_span]:p-2">
+                      <MessageImages images={[image]} previewUrls={localPreviews} />
+                    </div>
+                    <button
+                      type="button"
+                      title={`${t('removeImage')} ${image.name}`}
+                      disabled={imageBusy || isLoading}
+                      onClick={() => { imageCountRef.current -= 1; setImages(previous => previous.filter(item => item.id !== image.id)); }}
+                      className="opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:pointer-events-none group-hover/attachment:opacity-100 group-hover/attachment:pointer-events-auto group-focus-within/attachment:opacity-100 group-focus-within/attachment:pointer-events-auto absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-hover text-text-secondary shadow-sm transition-[opacity,color,background-color] hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 after:absolute after:-inset-1"
+                    >
+                      <X size={12} aria-hidden="true" />
+                      <span className="sr-only">{t('removeImage')} {image.name}</span>
+                    </button>
+                  </div>
+                ))}
+                {pendingImages.map(image => (
+                  <div key={image.id} role="status" aria-label={t('processingImages')}
+                    className="relative h-16 w-16 overflow-hidden rounded-lg bg-surface-hover">
+                    <img src={image.url} alt="" className="h-full w-full scale-110 object-cover blur-sm brightness-75" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/15">
+                      <LoaderCircle size={22} strokeWidth={2} className="animate-spin text-white motion-reduce:animate-none" aria-hidden="true" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {imageError && <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">{imageError}</p>}
+          </>
+        )}
         {/* The fade of the waiting state is taken on the card's contents, not
             on the card. Held on the card it also took the hairline with it,
             and on paper that ring is only a few levels off the fill it is
@@ -475,7 +593,20 @@ export default function ChatInput({
           {/* Footer row — hint/status on the left, send button on the right.
               Real layout, always visible regardless of textarea scroll state. */}
           <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
-            <div className={`min-w-0 ${waitingDim}`}>
+            <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ${waitingDim}`}>
+              {canAddImages && !presetLock && !isVideoMode && replayValue === undefined && (
+                <button
+                  type="button"
+                  title={t('addImage')}
+                  aria-label={t('addImage')}
+                  disabled={sendingImages || inputDisabled || images.length + pendingImages.length >= MAX_MESSAGE_IMAGES}
+                  onClick={() => fileRef.current?.click()}
+                  className="-ml-2 inline-flex size-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus size={20} strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              )}
+              {imageBusy && <span role="status" className="sr-only">{t('processingImages')}</span>}
               {presetLock ? (
                 <div className="truncate text-[12px] text-text-muted">{t('onboardingPresetBadge')}</div>
               ) : engineStatus !== 'ready' ? (
@@ -537,7 +668,7 @@ export default function ChatInput({
                 <button
                   type="submit"
                   data-onboarding-target="send"
-                  disabled={presetLock ? presetLock.busy : !text.trim()}
+                  disabled={presetLock ? presetLock.busy : imageBusy || (!text.trim() && !images.length)}
                   /* The guide's send on a phone is pressed with a thumb, so
                      its reach grows to 44px round the 30px disc. Only then:
                      the thinking-level control that sits beside the key

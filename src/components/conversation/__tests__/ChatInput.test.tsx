@@ -600,3 +600,17 @@ describe('ChatInput guide preset on a phone', () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('rollback image draft', () => {
+  it('restores an image-only draft and lets the user remove it', async () => {
+    const image = { id: 'img', name: 'score.jpg', path: 'owner/img.jpg', mimeType: 'image/jpeg', width: 100, height: 100, size: 100 };
+    const onSendText = vi.fn();
+    const { container, root } = renderChatInput({ prefill: '', prefillImages: [image], focusTrigger: 1, onSendText });
+    await act(async () => { await Promise.resolve(); });
+    expect(getSubmitButton(container).disabled).toBe(false);
+    const remove = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Remove score.jpg'))!;
+    act(() => remove.click());
+    expect(getSubmitButton(container).disabled).toBe(true);
+    act(() => root.unmount()); container.remove();
+  });
+});

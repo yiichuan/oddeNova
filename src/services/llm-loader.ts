@@ -1,3 +1,4 @@
+import type { ImageAttachment } from '../lib/image-attachments';
 // ===========================================================================
 // Lazy entry point for the heavy LLM runtime (services/llm.ts).
 //
@@ -64,6 +65,7 @@ export async function runAgent(
   moodContext?: string,
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
+  images?: ImageAttachment[],
 ): Promise<RunAgentResult> {
   const module = await loadRuntime();
   // The import itself cannot be aborted; make sure a request cancelled while
@@ -71,7 +73,9 @@ export async function runAgent(
   if (signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
   }
-  return module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory);
+  return images?.length
+    ? module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory, images)
+    : module.runAgent(instruction, currentCode, onProgress, moodContext, signal, conversationHistory);
 }
 
 export async function chatOnce(

@@ -317,6 +317,11 @@ const S: Record<string, readonly [string, string]> = {
   opensInNewTab:       ['（在新标签页中打开）', '(opens in a new tab)'],
 
   // ChatInput
+  addImage:            ['添加图片', 'Add image'],
+  imageAttachment:     ['图片', 'Image'],
+  addImageHint:        ['添加图片', 'Add image'],
+  removeImage:         ['移除', 'Remove'],
+  processingImages:    ['正在处理图片…', 'Processing images…'],
   inputPlaceholder:    ['输入文字描述音乐...', 'Describe your music...'],
   choiceInputPlaceholder: ['回复序号，或直接说出你的想法...', 'Reply with a number or describe your idea...'],
   tabToFill:           ['按 Tab 填入', 'Tab to use'],

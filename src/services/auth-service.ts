@@ -36,7 +36,7 @@ function toAuthUser(user: User | null | undefined): AuthUser | null {
   };
 }
 
-function requireSupabase() {
+export function requireSupabase() {
   if (!supabase) throw new Error('Supabase is not configured');
   return supabase;
 }

@@ -1,3 +1,4 @@
+import { ownImage, type ImageAttachment } from './lib/image-attachments';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
@@ -22,7 +23,7 @@ import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
 import type { ConversationTurn } from './services/llm-loader';
-import { conversationHistoryBefore } from './lib/conversation-history';
+import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
 import { createAgentProgressHandler } from './lib/agent-progress-handler';
 import { isDemoMode, getActiveDemoSet, getDemoMoodInstruction } from './demo/demo-config';
 import { hasApiKeyConfigured } from './services/llm-config';
@@ -221,6 +222,7 @@ export default function App() {
   const [demoStep, setDemoStep] = useState(0);
   const [unreadSessions, setUnreadSessions] = useState<Set<string>>(new Set());
   const [rollbackPrefill, setRollbackPrefill] = useState('');
+  const [rollbackImageDraft, setRollbackImageDraft] = useState<{ scope: string; images: ImageAttachment[] }>();
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
   /* First-visit gates for the lazy full-width pages. A page is mounted on its
@@ -1113,9 +1115,12 @@ export default function App() {
     currentIdRef,
     setLoadingSessions,
     setCommitSuggestions,
-    setRollbackPrefill,
+    setRollbackPrefill: (value) => { setRollbackPrefill(value); if (!value) setRollbackImageDraft(undefined); },
     makeProgressHandler: makeAgentProgressHandler,
   });
+
+  const imageScopeRef = useRef('');
+  imageScopeRef.current = `${auth.user?.id ?? 'guest'}:${sessions.currentId ?? ''}`;
 
   const handleInstruction = useCallback(
     async (text: string, options?: {
@@ -1123,6 +1128,7 @@ export default function App() {
       skipAddMessage?: boolean;
       initialCode?: string;
       history?: ConversationTurn[];
+      images?: ImageAttachment[];
     }) => {
       if (isDemoMode() && activeSet[demoStep]?.prompt === text) {
         setDemoStep((s) => s + 1);
@@ -1134,16 +1140,33 @@ export default function App() {
       // rewritten underneath it.
       exitPreview();
 
+      const scope = imageScopeRef.current;
+      const source = sessions.currentSession?.externalSource;
+      if (source && (options?.images?.length || sessions.currentSession?.messages.some(message => message.images?.length))) {
+        if (!source.baseUrl) throw new Error('请升级桥接 helper 后使用图片输入');
+        const response = await fetch(`${source.baseUrl.replace(/\/$/, '')}/v2/health`);
+        const health = response.ok ? await response.json() as { capabilities?: string[] } : undefined;
+        if (!health?.capabilities?.includes('image-attachments')) throw new Error('请升级桥接 helper 后使用图片输入');
+      }
+      if (scope !== imageScopeRef.current) throw new Error('会话已切换，请重新发送');
+      const sessionId = sessions.currentId;
+      const sharedImages = (sessions.currentSession?.messages ?? []).flatMap(message => message.images ?? []).filter(image => image.publicUrl);
+      const replacements = new Map<string, ImageAttachment>();
+      for (const image of sharedImages) replacements.set(image.id, await ownImage(image));
+      if (scope !== imageScopeRef.current) throw new Error('会话已切换，请重新发送');
+      if (sessionId && replacements.size) sessions.replaceSessionImages(sessionId, replacements);
+      const history = (options?.history ?? (replacements.size ? conversationHistoryFromMessages(sessions.currentSession?.messages ?? []) : undefined));
       return runTurn({
         text,
+        images: options?.images,
         entryPoint: options?.entryPoint ?? 'text',
         includeHistory: true,
         skipAddMessage: options?.skipAddMessage,
         initialCode: options?.initialCode,
-        suppliedHistory: options?.history,
+        suppliedHistory: history?.map(turn => ({ ...turn, images: turn.images?.map(image => replacements.get(image.id) ?? image) })),
       });
     },
-    [runTurn, demoStep, activeSet, exitPreview]
+    [runTurn, demoStep, activeSet, exitPreview, sessions]
   );
 
   /**
@@ -1176,9 +1199,9 @@ export default function App() {
   // a practice left at its last step, and what the funnel counts after it.
   const noteRealInstructionRef = useRef<() => void>(() => {});
   const handleChatInstruction = useCallback(
-    (text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>) => {
+    (text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>, images?: ImageAttachment[]) => {
       noteRealInstructionRef.current();
-      return handleInstruction(text, { entryPoint });
+      return handleInstruction(text, { entryPoint, images });
     },
     [handleInstruction],
   );
@@ -1226,6 +1249,7 @@ export default function App() {
 
       sessions.truncateAndEdit(messageId, newContent);
       await handleInstruction(newContent, {
+        images: allMsgs.find(message => message.id === messageId)?.images,
         entryPoint: 'retry',
         skipAddMessage: true,
         initialCode: rewound.previousCode,
@@ -1248,6 +1272,7 @@ export default function App() {
       // cloud round trip: a signed-in user pressed rollback and watched the
       // messages go before their own text arrived to type over.
       setRollbackPrefill(rewound.target.content);
+      setRollbackImageDraft({ scope: imageScopeRef.current, images: rewound.target.images ?? [] });
       setInputFocusTrigger((n) => n + 1);
 
       // The checkpoint still goes out, just not in front of the user. Its
@@ -2432,6 +2457,7 @@ export default function App() {
                 same as desktop — mobile adopts one by focusing the field rather
                 than with Tab, so no separate chip row. */}
             <ChatInput
+              key={`${auth.user?.id ?? "guest"}:${current?.id ?? "new"}`}
               presetLock={onboardingPresetLock}
               isLoading={isLoading}
               engineReady={strudel.engineReady}
@@ -2439,7 +2465,8 @@ export default function App() {
               onSendText={handleChatInstruction}
               onStop={handleStop}
               onReinitEngine={strudel.reinit}
-              prefill={rollbackPrefill}
+              prefill={rollbackImageDraft && rollbackImageDraft.scope !== imageScopeRef.current ? '' : rollbackPrefill}
+              prefillImages={rollbackImageDraft?.scope === imageScopeRef.current ? rollbackImageDraft.images : undefined}
               focusTrigger={inputFocusTrigger}
               onFocusChange={handleChatFocusChange}
               inputMode={current?.inputMode ?? 'normal'}
@@ -2778,6 +2805,7 @@ export default function App() {
         >
           <div className={primaryNavItem === 'home' ? 'h-full' : 'hidden'}>
             <Sidebar
+              key={auth.user?.id ?? "guest"}
               title={isVideoMode && videoTitle ? videoTitle : (isReplaying && !replayMessages.some((m) => m.role === 'user') ? t('newSessionTitle') : (current?.title ?? t('newSessionTitle')))}
               messages={videoDemoMsgs ?? messages}
               revisions={current?.revisions}
@@ -2814,7 +2842,8 @@ export default function App() {
               onReplay={current ? () => { setPreview(null); strudel.stop(); strudel.setCode(''); startReplay(current); } : undefined}
               isReplaying={isReplaying}
               replayInputText={replayInputText}
-              prefill={rollbackPrefill}
+              prefill={rollbackImageDraft && rollbackImageDraft.scope !== imageScopeRef.current ? '' : rollbackPrefill}
+              prefillImages={rollbackImageDraft?.scope === imageScopeRef.current ? rollbackImageDraft.images : undefined}
               prefillTrigger={inputFocusTrigger}
               onRollback={handleRollback}
               onBranch={sessions.branchFromMessage}

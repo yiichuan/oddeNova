@@ -1,3 +1,4 @@
+import type { ImageAttachment, UserContent } from '../lib/image-types';
 // Agent loop. Repeatedly calls the model with the tool schemas, dispatches
 // each returned tool_call, feeds results back, and terminates when:
 //   - the model invokes `commit` (CommitSignal)
@@ -34,7 +35,7 @@ export type ThinkingLevel = 'low' | 'medium' | 'high';
 // OpenAI ChatCompletion message shape (only the bits we use).
 export interface ChatMsg {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | null;
+  content?: UserContent | null;
   /** DeepSeek thinking mode: must be echoed back on every subsequent turn. */
   reasoning_content?: string | null;
   /** Anthropic extended thinking: thinking blocks must be echoed back verbatim. */
@@ -87,11 +88,13 @@ export type ProgressEvent =
   | { kind: 'request_attempt_succeeded'; attemptId: string }
   | { kind: 'warn'; message: string };
 
-export type ConversationTurn = { role: 'user' | 'assistant'; content: string };
+export type ConversationTurn = { role: 'user' | 'assistant'; content: string; images?: ImageAttachment[] };
 
 export interface RunAgentOptions {
   initialCode: string;
   instruction: string;
+  preparedUserContent?: UserContent;
+  preparedHistory?: ChatMsg[];
   locale: 'zh' | 'en';
   systemPrompt: string;
   llm: LLMCaller;
@@ -296,8 +299,8 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
   const messages: ChatMsg[] = [
     { role: 'system', content: systemPrompt },
-    ...(conversationHistory ?? []),
-    { role: 'user', content: userTurn },
+    ...(opts.preparedHistory ?? conversationHistory ?? []),
+    { role: 'user', content: Array.isArray(opts.preparedUserContent) ? opts.preparedUserContent.map(block => block.type === 'text' ? { ...block, text: userTurn } : block) : userTurn },
   ];
 
   const tools = getOpenAIToolSchemas(isZh);

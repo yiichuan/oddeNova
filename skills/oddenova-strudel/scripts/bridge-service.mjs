@@ -158,7 +158,7 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === '/v2/health' && request.method === 'GET') {
       if (!admin(request)) return send(response, 401, { error: 'Unauthorized' });
-      return send(response, 200, { service: 'oddenova-strudel-bridge', pid: process.pid, protocols: [2, 3], capabilities: ['bidirectional-sync', 'read-barrier'] });
+      return send(response, 200, { service: 'oddenova-strudel-bridge', pid: process.pid, protocols: [2, 3], capabilities: ['bidirectional-sync', 'read-barrier', 'image-attachments'] });
     }
 
     if (url.pathname === '/v3/submit' && request.method === 'POST') {
