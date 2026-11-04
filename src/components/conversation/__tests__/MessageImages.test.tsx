@@ -150,6 +150,41 @@ it('expands from the clicked thumbnail bounds and respects reduced motion', asyn
   expect(reducedAnimate).not.toHaveBeenCalled();
 });
 
+it.each(['buttons', 'keyboard'])('does not replay the opening animation when navigating with %s', async method => {
+  vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: false } as MediaQueryList);
+  await act(async () => { root.render(<MessageImages images={images} />); });
+  const thumbnail = container.querySelector('button')!;
+  vi.spyOn(thumbnail, 'getBoundingClientRect').mockReturnValue(new DOMRect(200, 100, 64, 64));
+  await click(thumbnail);
+  const dialog = document.querySelector('dialog')!;
+  const exit = { onfinish: null as (() => void) | null, oncancel: null as (() => void) | null, cancel: vi.fn() };
+  const loadImage = async () => {
+    const image = document.querySelector('dialog img')!;
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue(new DOMRect(500, 50, 320, 640));
+    const animate = vi.fn().mockReturnValue(exit);
+    Object.defineProperty(image, 'animate', { value: animate });
+    await act(async () => { image.dispatchEvent(new Event('load')); });
+    return animate;
+  };
+  expect(await loadImage()).toHaveBeenCalledTimes(1);
+  for (const direction of ['next', 'previous', 'previous', 'next']) {
+    if (method === 'buttons') {
+      await click(dialog.querySelector(`[aria-label="${direction === 'next' ? '下一张图片' : '上一张图片'}"]`));
+    } else {
+      await act(async () => {
+        dialog.dispatchEvent(new KeyboardEvent('keydown', { key: direction === 'next' ? 'ArrowRight' : 'ArrowLeft', bubbles: true }));
+      });
+    }
+    expect(await loadImage()).not.toHaveBeenCalled();
+  }
+  expect(dialog.querySelector('img')?.alt).toBe('first.jpg');
+  await act(async () => { dialog.dispatchEvent(new Event('cancel', { cancelable: true })); });
+  await act(async () => { exit.onfinish?.(); });
+  expect(document.querySelector('dialog')).toBeNull();
+  await click(thumbnail);
+  expect(await loadImage()).toHaveBeenCalledTimes(1);
+});
+
 it.each(['cancel', 'blank'])('animates closing via %s and ignores repeated close requests', async method => {
   vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: false } as MediaQueryList);
   const dialog = await open();

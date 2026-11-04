@@ -86,6 +86,7 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
   const closing = useRef(false);
   const exitAnimation = useRef<Animation | null>(null);
   const [index, setIndex] = useState(initialIndex);
+  const [hasNavigated, setHasNavigated] = useState(false);
   const image = images[index];
   useEffect(() => {
     const element = dialog.current;
@@ -130,7 +131,10 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
     dialog.current?.querySelectorAll('button').forEach(button => button.animate?.([{ opacity: 1 }, { opacity: 0 }], { duration: 150, fill: 'forwards' }));
   };
   const move = (direction: number) => {
-    if (!closing.current) setIndex(current => (current + direction + images.length) % images.length);
+    if (!closing.current) {
+      setHasNavigated(true);
+      setIndex(current => (current + direction + images.length) % images.length);
+    }
   };
   const controlClass = 'flex size-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white/85 text-neutral-800 shadow-sm transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-700';
   return createPortal(
@@ -153,7 +157,7 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
           onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>
           {images.length > 1 && <button type="button" onClick={() => move(-1)} aria-label={zh ? '上一张图片' : 'Previous image'} className={controlClass}><ChevronLeft size={22} /></button>}
           <div className="flex h-full min-w-0 flex-1 items-center justify-center" onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>
-            <Picture key={image.id} image={image} origin={index === initialIndex ? origin : undefined} previewUrl={index === initialIndex ? initialUrl : undefined} />
+            <Picture key={image.id} image={image} origin={!hasNavigated ? origin : undefined} previewUrl={index === initialIndex ? initialUrl : undefined} />
           </div>
           {images.length > 1 && <button type="button" onClick={() => move(1)} aria-label={zh ? '下一张图片' : 'Next image'} className={controlClass}><ChevronRight size={22} /></button>}
         </div>
