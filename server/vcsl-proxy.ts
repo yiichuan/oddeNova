@@ -55,9 +55,9 @@ export function vcslUpstreamUrl(requestUrl: string): string | null {
 }
 
 /**
- * `fetchUpstream` is the global fetch on Vercel; the Vite dev server hands in
- * one that goes through the developer's HTTP proxy, which Node's own fetch
- * does not read from the environment.
+ * `fetchUpstream` is the global fetch, in production and in dev alike (the
+ * Vite dev server routes that through the developer's HTTP proxy); tests
+ * hand in their own.
  */
 export async function vcslProxyHandler(
   req: IncomingMessage,
