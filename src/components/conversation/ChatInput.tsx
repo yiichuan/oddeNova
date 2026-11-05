@@ -540,8 +540,8 @@ export default function ChatInput({
             {imageNeedsSignIn && (
               <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">
                 请{' '}{onRequestSignIn ? (
-                  <button type="button" onClick={onRequestSignIn} className="cursor-pointer font-bold underline underline-offset-2 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">登录</button>
-                ) : <span className="font-bold underline underline-offset-2">登录</span>}{' '}后添加图片
+                  <button type="button" onClick={onRequestSignIn} className="cursor-pointer text-[14px] font-bold underline underline-offset-2 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">登录</button>
+                ) : <span className="text-[14px] font-bold underline underline-offset-2">登录</span>}{' '}后添加图片
               </p>
             )}
             {imageError && <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">{imageError}</p>}
