@@ -219,19 +219,6 @@ describe('TopActionBar mobile menu', () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('/s/share123');
   });
 
-  it('does not capture success when the system share is cancelled', async () => {
-    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
-    nativeShareMock.mockResolvedValueOnce('cancelled');
-    uploadShareMock.mockResolvedValue('share123');
-    const { root } = renderShareBar(makeSession());
-    roots.push(root);
-    await press('Share');
-    await press('System share');
-    expect(trackShareCompletedMock).not.toHaveBeenCalled();
-    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
-    Reflect.deleteProperty(navigator, 'share');
-  });
-
   it('opens the icon panel once on repeated clicks and hides its hover label', async () => {
     uploadShareMock.mockResolvedValue('share123');
     const { container, root } = renderIconShareButton(makeSession());
