@@ -1,3 +1,4 @@
+import type { ImageAttachment } from '../lib/image-attachments';
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { useStrudel } from './useStrudel';
@@ -30,6 +31,7 @@ import { isAbortError } from '../lib/errors';
 export interface AgentTurnInput {
   /** Final instruction text handed to the agent. */
   text: string;
+  images?: ImageAttachment[];
   /** Product surface that initiated this turn. */
   entryPoint: AgentEntryPoint;
   /** Optional mood context appended to the system prompt. */
@@ -65,7 +67,7 @@ export interface AgentTurnDeps {
   isCurrentSession: (sessionId: string) => boolean;
   getCurrentCode: () => string;
   snapshotHistory: () => ConversationTurn[];
-  addUserMessage: (text: string) => void;
+  addUserMessage: (text: string, images?: ImageAttachment[]) => void;
   addAssistantMessage: (
     text: string,
     code: string | undefined,
@@ -127,7 +129,8 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     : undefined;
 
   if (!input.skipAddMessage) {
-    deps.addUserMessage(input.text);
+    if (input.images?.length) deps.addUserMessage(input.text, input.images);
+    else deps.addUserMessage(input.text);
   }
 
   const sessionId = deps.getCurrentId();
@@ -158,6 +161,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       input.moodContext,
       signal,
       history,
+      input.images,
     );
     iterations = result.iterations;
 
@@ -298,7 +302,7 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
     isCurrentSession: (id) => id === currentIdRef.current,
     getCurrentCode: () => currentCode,
     snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
-    addUserMessage: (text) => sessions.addUserMessage(text),
+    addUserMessage: (text, images) => sessions.addUserMessage(text, undefined, images),
     addAssistantMessage: (text, code, id, revision, inputMode, layerNotes) =>
       sessions.addAssistantMessage(text, code, id, revision, inputMode, layerNotes),
     finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),

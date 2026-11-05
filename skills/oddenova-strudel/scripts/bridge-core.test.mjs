@@ -114,3 +114,25 @@ test('changing the page binding does not change the content hash at the same rev
   assert.equal(first.contentHash, second.contentHash);
   assert.notEqual(first.bindingId, second.bindingId);
 });
+
+test('page images survive snapshots and text edits, and explicit empty images clears', () => {
+  const initial = applySkillSubmission(undefined, v3Turn(1), 1000).project;
+  initial.bindingId = 'b';
+  const image = { id: 'img', name: 'x.jpg', path: 'owner/img.jpg', mimeType: 'image/jpeg', width: 100, height: 100, size: 10 };
+  const change = (project, sequence, message) => applyPageChange(project, {
+    projectId: 'p-1', baseUrl: 'https://www.oddenova.com', bindingId: 'b', clientId: 'c',
+    changeId: `img-${sequence}`, localSequence: sequence, baseRevision: project.revision, baseSkillRevision: project.skillRevision,
+    upsertMessages: [message], deleteMessageIds: [],
+  }, 2000 + sequence).project;
+  const added = change(initial, 1, { id: 'image-user', role: 'user', content: '', images: [image] });
+  assert.deepEqual(makeSnapshotV3(added).messages.find(m => m.id === 'image-user').images, [image]);
+  const edited = change(added, 2, { id: 'image-user', role: 'user', content: 'changed' });
+  assert.deepEqual(edited.messages.find(m => m.id === 'image-user').images, [image]);
+  const cleared = change(edited, 3, { id: 'image-user', role: 'user', content: 'changed', images: [] });
+  assert.deepEqual(cleared.messages.find(m => m.id === 'image-user').images, []);
+  const tenImages = Array.from({ length: 10 }, (_, i) => ({ ...image, id: `img-${i}` }));
+  const ten = change(cleared, 4, { id: 'ten', role: 'user', content: '', images: tenImages });
+  assert.equal(ten.messages.find(m => m.id === 'ten').images.length, 10);
+  assert.throws(() => change(ten, 5, { id: 'eleven', role: 'user', content: '', images: [...tenImages, image] }), /Invalid message images/);
+  assert.throws(() => change(cleared, 4, { id: 'bad', role: 'user', content: '', images: [{ ...image, url: 'signed' }] }), /Invalid message images/);
+});

@@ -1,11 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { uploadImage, supportsImages, SIGN_IN_REQUIRED_MESSAGE, type ImageAttachment } from '../../lib/image-attachments';
+import { getActiveModelConfig } from '../../services/llm-config';
+import MessageImages from './MessageImages';
+import { rememberUploadedImagePreview } from '../../lib/image-preview-memory';
+import { MAX_MESSAGE_IMAGES } from '../../lib/image-types';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from '../icons';
+import { ImagePlus, LoaderCircle, X } from 'lucide-react';
 import ThinkingLevelControl from './ThinkingLevelControl';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
 import type { AgentEntryPoint } from '../../lib/analytics';
 import type { InputMode } from '../../hooks/useChat';
 import { useIsMobile } from '../../hooks/useIsMobile';
+
+const IMAGE_UPLOAD_CONCURRENCY = 3;
+type ImageUploadQueue = { jobs: Array<() => Promise<void>>; active: number; disposed: boolean };
+
+function drainImageUploads(queue: ImageUploadQueue): void {
+  while (!queue.disposed && queue.active < IMAGE_UPLOAD_CONCURRENCY && queue.jobs.length) {
+    const job = queue.jobs.shift()!;
+    queue.active += 1;
+    void job().finally(() => {
+      queue.active -= 1;
+      drainImageUploads(queue);
+    });
+  }
+}
 
 type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 
@@ -50,10 +70,11 @@ interface ChatInputProps {
   isLoading: boolean;
   engineReady: boolean;
   engineStatus?: 'initializing' | 'ready' | 'failed';
-  onSendText: (text: string, entryPoint: ChatEntryPoint) => void;
+  onSendText: (text: string, entryPoint: ChatEntryPoint, images?: ImageAttachment[]) => void | Promise<void>;
   onReinitEngine: () => void;
   onStop?: () => void;
   prefill?: string;
+  prefillImages?: ImageAttachment[];
   focusTrigger?: number;
   replayValue?: string;
   isVideoMode?: boolean;
@@ -77,6 +98,10 @@ interface ChatInputProps {
    * the guide's own "skip" is the way out to the real model.
    */
   presetLock?: PresetLock;
+  /** Images upload to the account's storage, so a guest is asked to sign in first. */
+  signedIn?: boolean;
+  /** Opens the sign-in window from the "sign in to add images" notice. */
+  onRequestSignIn?: () => void;
 }
 
 export interface PresetLock {
@@ -94,6 +119,7 @@ export default function ChatInput({
   onReinitEngine,
   onStop,
   prefill,
+  prefillImages,
   focusTrigger,
   replayValue,
   isVideoMode = false,
@@ -102,8 +128,112 @@ export default function ChatInput({
   suggestions,
   onMoodGenerate,
   presetLock,
+  signedIn = true,
+  onRequestSignIn,
 }: ChatInputProps) {
+  // Settings saves re-render the composer; read both values each time so the
+  // image entry point follows provider and model changes immediately.
+  const modelConfig = getActiveModelConfig();
+  const canAddImages = supportsImages(modelConfig.provider, modelConfig.model);
   const [text, setText] = useState('');
+  const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [pendingImages, setPendingImages] = useState<{ id: string; url: string }[]>([]);
+  const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
+  const previewUrls = useRef(new Set<string>());
+  const uploadQueue = useRef<ImageUploadQueue>({ jobs: [], active: 0, disposed: false });
+  const nextImageOrder = useRef(0);
+  const imageOrder = useRef(new WeakMap<ImageAttachment, number>());
+  useEffect(() => {
+    const urls = previewUrls.current;
+    // Effects can be replayed in StrictMode; each lifetime owns its queue.
+    const queue: ImageUploadQueue = { jobs: [], active: 0, disposed: false };
+    uploadQueue.current = queue;
+    return () => {
+      queue.disposed = true;
+      queue.jobs.length = 0;
+      urls.forEach(url => URL.revokeObjectURL(url));
+      urls.clear();
+    };
+  }, []);
+  useEffect(() => {
+    const retained = new Set([...images.map(image => localPreviews[image.id]), ...pendingImages.map(image => image.url)]);
+    for (const url of previewUrls.current) {
+      if (!retained.has(url)) { URL.revokeObjectURL(url); previewUrls.current.delete(url); }
+    }
+  }, [images, localPreviews, pendingImages]);
+  const [sendingImages, setSendingImages] = useState(false);
+  const imageBusy = sendingImages || pendingImages.length > 0;
+  const [imageError, setImageError] = useState('');
+  // Sign-in is one notice for the whole batch, not one per file.
+  const [imageNeedsSignIn, setImageNeedsSignIn] = useState(false);
+  // Files dragged over the composer light the add-image key. Enter/leave fire
+  // for every child crossed, so a depth count tells when the drag truly left.
+  const [fileDragActive, setFileDragActive] = useState(false);
+  const fileDragDepth = useRef(0);
+  const endFileDrag = () => { fileDragDepth.current = 0; setFileDragActive(false); };
+  const fileRef = useRef<HTMLInputElement>(null);
+  // The thumbnail strip eases to its new height instead of snapping the
+  // composer taller or shorter. It clips only while moving: at rest the
+  // remove keys stick out past its top edge.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [stripHeight, setStripHeight] = useState<number>();
+  const [stripMoving, setStripMoving] = useState(false);
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip || typeof ResizeObserver === 'undefined') return;
+    let previous = strip.offsetHeight;
+    setStripHeight(previous);
+    const observer = new ResizeObserver(() => {
+      const next = strip.offsetHeight;
+      if (next === previous) return;
+      previous = next;
+      setStripMoving(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      setStripHeight(next);
+    });
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, []);
+  const imageCountRef = useRef(0);
+  const addImages = async (files: File[]) => {
+    if (sendingImages || isLoading || presetLock || isVideoMode || !files.length) return;
+    if (!signedIn) { setImageError(''); setImageNeedsSignIn(true); return; }
+    const config = getActiveModelConfig();
+    if (!supportsImages(config.provider, config.model)) { setImageError('当前模型不支持图片，请切换视觉模型'); return; }
+    if (files.length + imageCountRef.current > MAX_MESSAGE_IMAGES) { setImageError(`每条消息最多 ${MAX_MESSAGE_IMAGES} 张图片`); return; }
+    setImageError('');
+    setImageNeedsSignIn(false);
+    const pending = files.map(file => {
+      const url = URL.createObjectURL(file);
+      previewUrls.current.add(url);
+      return { id: crypto.randomUUID(), url, file, order: nextImageOrder.current++ };
+    });
+    imageCountRef.current += pending.length;
+    setPendingImages(previous => [...previous, ...pending]);
+    const queue = uploadQueue.current;
+    for (const item of pending) {
+      queue.jobs.push(async () => {
+        try {
+          const image = await uploadImage(item.file);
+          if (queue.disposed) return;
+          await rememberUploadedImagePreview(image, item.file);
+          if (queue.disposed) return;
+          imageOrder.current.set(image, item.order);
+          setLocalPreviews(previous => ({ ...previous, [image.id]: item.url }));
+          setImages(previous => [...previous, image].sort((a, b) =>
+            (imageOrder.current.get(a) ?? -1) - (imageOrder.current.get(b) ?? -1)));
+        } catch (error) {
+          if (queue.disposed) return;
+          imageCountRef.current -= 1;
+          if (error instanceof Error && error.message === SIGN_IN_REQUIRED_MESSAGE) { setImageNeedsSignIn(true); return; }
+          const reason = error instanceof Error ? error.message : '图片上传失败';
+          setImageError(previous => [previous, `${item.file.name}: ${reason}`].filter(Boolean).join('；'));
+        } finally {
+          if (!queue.disposed) setPendingImages(previous => previous.filter(image => image.id !== item.id));
+        }
+      });
+    }
+    drainImageUploads(queue);
+  };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const adoptedSuggestionRef = useRef<string | null>(null);
   // Mobile has no Tab key, so the return key adopts the suggestion instead
@@ -189,11 +319,14 @@ export default function ChatInput({
       : '';
 
   useEffect(() => {
-    if (prefill) {
+    if (prefill || prefillImages) {
       adoptedSuggestionRef.current = null;
-      setText(prefill);
+      setText(prefill ?? "");
+      setImages(prefillImages ?? []);
+      imageCountRef.current = (prefillImages ?? []).length;
+      setLocalPreviews({});
     }
-  }, [prefill, focusTrigger]);
+  }, [prefill, prefillImages, focusTrigger]);
 
   useEffect(() => {
     if (focusTrigger) textareaRef.current?.focus();
@@ -251,7 +384,7 @@ export default function ChatInput({
       return;
     }
     const value = text.trim();
-    if (!value || isLoading || moodPending) return;
+    if ((!value && !images.length) || isLoading || moodPending || imageBusy) return;
     const entryPoint: ChatEntryPoint =
       adoptedSuggestionRef.current === value ? 'suggestion' : 'text';
     adoptedSuggestionRef.current = null;
@@ -261,7 +394,23 @@ export default function ChatInput({
       Promise.resolve(onMoodGenerate!()).finally(() => setMoodPending(false));
       return;
     }
-    onSendText(value, entryPoint);
+    const sentImages = images;
+    imageCountRef.current = 0;
+    setImages([]);
+    setLocalPreviews({});
+    setSendingImages(true);
+    void (async () => {
+      try {
+        await (sentImages.length ? onSendText(value, entryPoint, sentImages) : onSendText(value, entryPoint));
+      } catch (error) {
+        setText(value);
+        setImages(sentImages);
+        imageCountRef.current = sentImages.length;
+        setImageError(String(error));
+      } finally {
+        setSendingImages(false);
+      }
+    })();
   };
 
   const handleSubmit = (e: { preventDefault(): void }) => {
@@ -332,7 +481,9 @@ export default function ChatInput({
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
 
   return (
-    <form onSubmit={handleSubmit} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <form onSubmit={handleSubmit} onPaste={e => { const files = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { e.preventDefault(); void addImages(files); } }} onDragEnter={e => { if (!e.dataTransfer.types.includes('Files')) return; fileDragDepth.current += 1; setFileDragActive(true); }} onDragLeave={e => { if (!e.dataTransfer.types.includes('Files')) return; fileDragDepth.current = Math.max(0, fileDragDepth.current - 1); if (!fileDragDepth.current) setFileDragActive(false); }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDrop={e => { endFileDrag(); if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)); } }} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+
+
       {/* Card: textarea on top, footer (hint + send button) below it in normal
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
@@ -345,6 +496,57 @@ export default function ChatInput({
       <div
         className={`chat-input-surface chat-input-outline ${isMobile ? 'rounded-region' : 'rounded-t-none rounded-b-region'} pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed' : ''}`}
       >
+        {!presetLock && !isVideoMode && (
+          <>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+            <div
+              style={{ height: stripHeight }}
+              onTransitionEnd={event => { if (event.target === event.currentTarget) setStripMoving(false); }}
+              className={`transition-[height] duration-200 ease-out motion-reduce:transition-none ${stripMoving ? 'overflow-hidden' : ''}`}
+            >
+              <div ref={stripRef}>
+                {(images.length > 0 || pendingImages.length > 0) && (
+                  <div data-chat-input-focus-ignore className="flex flex-wrap gap-2 px-3 pb-3 pt-0">
+                    {images.map(image => (
+                      <div key={image.id} className="group/attachment relative h-16 w-16 rounded-[6px] border border-border bg-surface-hover overflow-visible">
+                        <div className="h-full overflow-hidden rounded-[5px] text-[10px] text-text-muted [&>div]:h-full [&>div]:p-0 [&_button]:flex [&_button]:rounded-none [&_button]:h-full [&_button]:w-full [&_button>div]:w-full [&_button>div]:min-w-0 [&_img]:h-full [&_img]:w-full [&_img]:rounded-none [&_img]:object-cover [&_img]:object-center [&_span]:block [&_span]:p-2">
+                          <MessageImages images={[image]} previewUrls={localPreviews} />
+                        </div>
+                        <button
+                          type="button"
+                          title={`${t('removeImage')} ${image.name}`}
+                          disabled={imageBusy || isLoading}
+                          onClick={() => { imageCountRef.current -= 1; setImages(previous => previous.filter(item => item.id !== image.id)); }}
+                          className="opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:pointer-events-none group-hover/attachment:opacity-100 group-hover/attachment:pointer-events-auto group-focus-within/attachment:opacity-100 group-focus-within/attachment:pointer-events-auto absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-hover text-text-secondary shadow-sm transition-[opacity,color,background-color] hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 after:absolute after:-inset-1"
+                        >
+                          <X size={12} aria-hidden="true" />
+                          <span className="sr-only">{t('removeImage')} {image.name}</span>
+                        </button>
+                      </div>
+                    ))}
+                    {pendingImages.map(image => (
+                      <div key={image.id} role="status" aria-label={t('processingImages')}
+                        className="relative h-16 w-16 overflow-hidden rounded-[6px] bg-surface-hover">
+                        <img src={image.url} alt="" className="h-full w-full scale-110 object-cover blur-sm brightness-75" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/15">
+                          <LoaderCircle size={22} strokeWidth={2} className="animate-spin text-white motion-reduce:animate-none" aria-hidden="true" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {imageNeedsSignIn && (
+              <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">
+                请{' '}{onRequestSignIn ? (
+                  <button type="button" onClick={onRequestSignIn} className="cursor-pointer font-bold underline underline-offset-2 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">登录</button>
+                ) : <span className="font-bold underline underline-offset-2">登录</span>}{' '}后添加图片
+              </p>
+            )}
+            {imageError && <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">{imageError}</p>}
+          </>
+        )}
         {/* The fade of the waiting state is taken on the card's contents, not
             on the card. Held on the card it also took the hairline with it,
             and on paper that ring is only a few levels off the fill it is
@@ -475,7 +677,8 @@ export default function ChatInput({
           {/* Footer row — hint/status on the left, send button on the right.
               Real layout, always visible regardless of textarea scroll state. */}
           <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
-            <div className={`min-w-0 ${waitingDim}`}>
+            <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ${waitingDim}`}>
+              {imageBusy && <span role="status" className="sr-only">{t('processingImages')}</span>}
               {presetLock ? (
                 <div className="truncate text-[12px] text-text-muted">{t('onboardingPresetBadge')}</div>
               ) : engineStatus !== 'ready' ? (
@@ -511,6 +714,25 @@ export default function ChatInput({
                   shouldPreserveInputFocus={() => document.activeElement === textareaRef.current}
                 />
               )}
+              {canAddImages && !presetLock && !isVideoMode && replayValue === undefined && (
+                <button
+                  type="button"
+                  title={t('addImage')}
+                  aria-label={t('addImage')}
+                  disabled={sendingImages || inputDisabled || images.length + pendingImages.length >= MAX_MESSAGE_IMAGES}
+                  onClick={() => {
+                    if (!signedIn) { setImageError(''); setImageNeedsSignIn(true); return; }
+                    fileRef.current?.click();
+                  }}
+                  className={`mr-1.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+                    fileDragActive
+                      ? 'bg-brand-accent text-on-accent'
+                      : 'text-text-muted hover:bg-text-primary/10 hover:text-text-primary disabled:hover:bg-transparent disabled:hover:text-text-muted'
+                  }`}
+                >
+                  <ImagePlus size={20} strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              )}
               {replayValue !== undefined ? (
                 <button
                   type="button"
@@ -537,7 +759,7 @@ export default function ChatInput({
                 <button
                   type="submit"
                   data-onboarding-target="send"
-                  disabled={presetLock ? presetLock.busy : !text.trim()}
+                  disabled={presetLock ? presetLock.busy : imageBusy || (!text.trim() && !images.length)}
                   /* The guide's send on a phone is pressed with a thumb, so
                      its reach grows to 44px round the 30px disc. Only then:
                      the thinking-level control that sits beside the key

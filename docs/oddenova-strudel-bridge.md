@@ -538,3 +538,9 @@ page-change.baseSkillRevision < helper.skillRevision
 - CodeMirror 挂载、绘制和焦点体验；
 - IndexedDB 在刷新、崩溃和浏览器回收后的恢复；
 - WebAudio 是否确实停止旧播放且没有自动播放新版本。
+
+### 图片附件能力
+
+helper health 的 `capabilities` 新增 `image-attachments`。页面在向桥接会话发送图片上下文前核验能力，旧 helper 仍可处理纯文本。
+
+v3 消息及 page-change 的可选 `images` 保存稳定的 id、name、path、mimeType、width、height、size；不携带签名 URL、公开 URL 或二进制。helper 校验附件类型、大小和数量，快照哈希包含附件。省略字段表示不修改已有附件，空数组表示显式清空；图片变更参与 page-change 差异检测。旧快照修改文字时，页面保留同 ID、同角色本地消息的附件；canonical 删除仍然优先。

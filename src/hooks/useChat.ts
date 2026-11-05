@@ -1,3 +1,4 @@
+import type { ImageAttachment } from '../lib/image-attachments';
 // Type definitions for chat messages — shared by useSessions and the
 // conversation/sidebar components. The legacy useChat() hook was removed in
 // favour of useSessions(), which owns the persisted, multi-session message
@@ -12,6 +13,7 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  images?: ImageAttachment[];
   code?: string;
   /** Immutable code boundary produced by this assistant turn. */
   revisionId?: string;

@@ -1,3 +1,5 @@
+import { ownImage } from '../lib/image-attachments';
+import { authHeaders } from './cloud-session-repository';
 import type { ChatMessage } from '../hooks/useChat';
 import type { CodeRevision } from '../hooks/useSessions';
 
@@ -22,11 +24,13 @@ export interface UploadShareInput {
 }
 
 export async function uploadShare(input: UploadShareInput): Promise<string> {
+  const hasImages = input.messages.some(message => message.images?.length);
+  if (hasImages && !window.confirm('分享后，输入图片将随对话公开。是否继续？')) throw new Error('已取消分享');
   const payload: SharePayload = {
     version: 1,
     title: input.title,
     code: input.code,
-    messages: input.messages,
+    messages: await Promise.all(input.messages.map(async message => ({ ...message, ...(message.images?.length ? { images: await Promise.all(message.images.map(ownImage)) } : {}) }))),
     revisions: input.revisions,
     sharedAt: Date.now(),
     locale: input.locale,
@@ -34,7 +38,7 @@ export async function uploadShare(input: UploadShareInput): Promise<string> {
 
   const res = await fetch('/api/share', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: hasImages ? await authHeaders(true) : { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 

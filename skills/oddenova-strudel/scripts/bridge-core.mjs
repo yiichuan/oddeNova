@@ -126,6 +126,7 @@ function canonicalMessage(message, revision) {
     id: message.id,
     role: message.role,
     content: message.content,
+    ...(message.images !== undefined ? { images: message.images } : {}),
     createdAt: message.createdAt,
     order: message.order,
     updatedRevision: revision,
@@ -137,6 +138,14 @@ function assertCreativeMessage(message, { requireId = true } = {}) {
   if (requireId && (typeof message.id !== 'string' || !message.id)) throw new Error('Message id must be a non-empty string');
   if (message.role !== 'user' && message.role !== 'assistant') throw new Error('Message role must be user or assistant');
   if (typeof message.content !== 'string') throw new Error('Message content must be a string');
+  if (message.images !== undefined && (!Array.isArray(message.images) || message.images.length > 10 || message.images.some(image =>
+    !image || typeof image.id !== 'string' || typeof image.path !== 'string' || image.path.includes('..') ||
+    typeof image.name !== 'string' || image.mimeType !== 'image/jpeg' ||
+    !Number.isInteger(image.width) || image.width < 1 || image.width > 2048 ||
+    !Number.isInteger(image.height) || image.height < 1 || image.height > 2048 ||
+    !Number.isInteger(image.size) || image.size < 1 || image.size > 2097152 ||
+    Object.keys(image).some(key => !['id', 'path', 'name', 'mimeType', 'width', 'height', 'size'].includes(key))
+  ))) throw new Error('Invalid message images');
   if (message.createdAt !== undefined && !Number.isFinite(message.createdAt)) throw new Error('Message createdAt must be a number');
 }
 
@@ -149,6 +158,7 @@ export function migrateProjectToV3(existing, now = Date.now()) {
     id: message.id || randomUUID(),
     role: message.role,
     content: message.content,
+    ...(message.images !== undefined ? { images: message.images } : {}),
     createdAt: message.createdAt ?? message.receivedAt ?? now,
     order: ++order,
   }, revision));
@@ -308,8 +318,8 @@ export function applyPageChange(existingValue, change, now = Date.now()) {
     if (!current) {
       messagesById.set(incoming.id, canonicalMessage({ ...incoming, createdAt: incoming.createdAt ?? now, order: nextOrder++ }, existing.revision + 1));
       messageChanged = true;
-    } else if (current.role !== incoming.role || current.content !== incoming.content) {
-      messagesById.set(incoming.id, canonicalMessage({ ...incoming, createdAt: current.createdAt, order: current.order }, existing.revision + 1));
+    } else if (current.role !== incoming.role || current.content !== incoming.content || (incoming.images !== undefined && JSON.stringify(current.images ?? []) !== JSON.stringify(incoming.images))) {
+      messagesById.set(incoming.id, canonicalMessage({ ...current, ...incoming, createdAt: current.createdAt, order: current.order }, existing.revision + 1));
       messageChanged = true;
     }
   }

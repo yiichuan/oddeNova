@@ -1,3 +1,4 @@
+import { cleanupPrivateImages } from '../server/image-cleanup.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { BlobPreconditionFailedError, list, del } from '@vercel/blob';
 import { beijingDate, expiredDailySuggestionCleanup } from '../server/daily-suggestions-core.js';
@@ -55,6 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const jobs = [
     { name: 'shares', run: cleanupShares },
     { name: 'dailySuggestions', run: cleanupDailySuggestions },
+    ...(process.env.SUPABASE_SERVICE_ROLE_KEY ? [{ name: 'images', run: cleanupPrivateImages }] : []),
   ] as const;
   const now = new Date();
   const results = await Promise.allSettled(jobs.map((job) => job.run(now)));

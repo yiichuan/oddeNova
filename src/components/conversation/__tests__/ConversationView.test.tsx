@@ -241,7 +241,8 @@ describe('ConversationView code revisions', () => {
     // round itself, while the key and the widget keep their own size — the
     // reading does not move when the guide arrives or leaves.
     expect(play('reply').disabled).toBe(true);
-    expect(play('reply').className).toContain('w-7');
+    expect(play('reply').className).toContain('w-9');
+    expect(play('other').className).toContain('w-9');
     expect(play('reply').className).toContain('before:-inset-y-2');
     expect(play('other').disabled).toBe(false);
     expect(play('other').className).not.toContain('before:');
@@ -270,7 +271,7 @@ describe('ConversationView code revisions', () => {
     render({ onPlaySegment, guidedReply: guided({ expanded: true, enlarged: false, playDisabled: false }) });
     expect(toggle('reply').getAttribute('aria-expanded')).toBe('true');
     expect(play('reply').className).not.toContain('before:');
-    expect(container.querySelector('[data-code-diff="reply"]')?.className).toContain('overflow-hidden');
+    expect(container.querySelector('[data-code-diff="reply"]')?.className).toContain('overflow-clip');
   });
 
   /* The desktop hands none of this down: the code window is already open

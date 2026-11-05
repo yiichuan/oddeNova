@@ -1,3 +1,4 @@
+import type { ImageAttachment } from '../lib/image-attachments';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage, InputMode, ProgressKind } from './useChat';
 import {
@@ -1111,8 +1112,15 @@ export function useSessions(options: UseSessionsOptions = {}) {
     [updateCurrent, updateSession]
   );
 
+  const replaceSessionImages = useCallback((sessionId: string, replacements: Map<string, ImageAttachment>) => {
+    const apply = getApply(sessionId);
+    apply(session => ({ ...session, messages: session.messages.map(message => ({ ...message,
+      ...(message.images ? { images: message.images.map(image => replacements.get(image.id) ?? image) } : {}),
+    })) }));
+  }, [getApply]);
+
   const addUserMessage = useCallback(
-    (content: string, sessionId?: string): void => {
+    (content: string, sessionId?: string, images?: ImageAttachment[]): void => {
       const apply = getApply(sessionId);
       apply((s) => {
         const messages = [
@@ -1120,6 +1128,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           {
             id: newMessageId(),
             role: 'user' as const,
+            images,
             content,
             timestamp: Date.now(),
           },
@@ -2037,6 +2046,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     isLoading,
     isPersistent,
     addUserMessage,
+    replaceSessionImages,
     truncateAndEdit,
     truncate,
     addAssistantMessage,

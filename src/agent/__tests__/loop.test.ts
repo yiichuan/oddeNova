@@ -59,7 +59,7 @@ describe('runAgentLoop — conversationHistory message ordering', () => {
     let commitDescription = '';
     const llm: LLMCaller = {
       async chatWithTools(messages, tools) {
-        userTurn = messages.at(-1)?.content ?? '';
+        userTurn = String(messages.at(-1)?.content ?? '');
         commitDescription = tools.find((tool) => tool.function.name === 'commit')?.function.description ?? '';
         return {
           content: null,
@@ -916,4 +916,40 @@ describe('runAgentLoop — share-card layer notes', () => {
     expect(result.committed).toBe(true);
     expect(result).not.toHaveProperty('layerNotes');
   });
+});
+
+it('keeps prepared image blocks on the current turn and through tool iterations', async () => {
+  const image = { type: 'image_url' as const, image_url: { url: 'https://prepared.test/image.jpg' } };
+  let count = 0;
+  const llm: LLMCaller = { async chatWithTools(messages) {
+    const user = messages.findLast(message => message.role === 'user');
+    expect(user?.content).toEqual(expect.arrayContaining([image]));
+    count++;
+    return count === 1
+      ? { content: null, toolCalls: [{ id: 'validate', name: 'validate', arguments: JSON.stringify({ code: 's("bd")' }) }] }
+      : { content: 'done', toolCalls: [] };
+  } };
+  await runWithTimers(() => runAgentLoop({ initialCode: '', instruction: 'use picture', locale: 'en', systemPrompt: 'system', llm,
+    preparedUserContent: [{ type: 'text', text: 'use picture' }, image],
+  }));
+  expect(count).toBe(2);
+});
+
+it.each([false, true])('preserves expired-image notices through tool iterations (with valid image: %s)', async withImage => {
+  const image = { type: 'image_url' as const, image_url: { url: 'https://prepared.test/image.jpg' } };
+  const expired = { type: 'text' as const, text: '图片已过期' };
+  let count = 0;
+  const llm: LLMCaller = { async chatWithTools(messages) {
+    expect(messages.findLast(message => message.role === 'user')?.content).toEqual([
+      { type: 'text', text: 'User instruction: analyze picture' }, expired, ...(withImage ? [image] : []),
+    ]);
+    count++;
+    return count === 1
+      ? { content: null, toolCalls: [{ id: 'validate', name: 'validate', arguments: '{}' }] }
+      : { content: 'done', toolCalls: [] };
+  } };
+  await runWithTimers(() => runAgentLoop({ initialCode: '', instruction: 'analyze picture', locale: 'en', systemPrompt: 'system', llm,
+    preparedUserContent: [{ type: 'text', text: 'analyze picture' }, expired, ...(withImage ? [image] : [])],
+  }));
+  expect(count).toBe(2);
 });

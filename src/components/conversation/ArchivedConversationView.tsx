@@ -1,3 +1,4 @@
+import MessageImages from './MessageImages';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { useClippedEnds } from '../../hooks/useClippedEnds';
@@ -507,8 +508,9 @@ export default function ArchivedConversationView({
                 data-favorites-turn={message.id}
                 className="flex justify-end items-end gap-1.5 animate-fade-in"
               >
-                <div className={`relative max-w-[85%] rounded-[6px] px-3 py-2 ${bodyText} bg-message-user text-text-primary`}>
-                  <UserMessageBubble content={message.content} />
+                <div className={`relative flex max-w-[85%] flex-col items-end gap-2 ${bodyText} text-text-primary`}>
+                  {Boolean(message.images?.length) && <div className="max-w-full [&>div]:justify-end [&>div]:py-0"><MessageImages images={message.images} /></div>}
+                  {message.content.trim() && <div className="max-w-full rounded-[6px] bg-message-user px-3 py-2"><UserMessageBubble content={message.content} /></div>}
                 </div>
               </div>
             );

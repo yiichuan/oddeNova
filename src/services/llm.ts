@@ -1,3 +1,4 @@
+import { userContent, type ImageAttachment } from '../lib/image-attachments';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { buildSystemPrompt } from '../prompts/build-system-prompt';
@@ -189,7 +190,7 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
     }
 
     if (msg.role === 'user') {
-      out.push({ role: 'user', content });
+      out.push({ role: 'user', content: Array.isArray(msg.content) ? msg.content.map(block => block.type === 'text' ? block : { type: 'image' as const, source: { type: 'url' as const, url: block.image_url.url } }) : content });
       continue;
     }
 
@@ -449,9 +450,12 @@ export async function classifyIntent(
   llm: LLMCaller,
   opts: {
     instruction: string;
+    images?: ImageAttachment[];
     currentCode: string;
     conversationHistory?: ConversationTurn[];
     signal?: AbortSignal;
+    preparedHistory?: ChatMsg[];
+    preparedUserContent?: ChatMsg["content"];
   },
 ): Promise<Intent> {
   const { instruction, currentCode, conversationHistory, signal } = opts;
@@ -459,10 +463,14 @@ export async function classifyIntent(
   const codeNote = hasCode
     ? '(a track is currently playing / 当前已有一首曲子在播放)'
     : '(no track yet / 当前还没有曲子)';
+  const latest = opts.preparedUserContent;
+  const preparedLatest = Array.isArray(latest)
+    ? latest.map((block, index) => index === 0 && block.type === 'text' ? { ...block, text: `${codeNote}\nuser latest message / 用户最新消息: ${block.text}` } : block)
+    : typeof latest === 'string' ? `${codeNote}\nuser latest message / 用户最新消息: ${latest}` : undefined;
   const messages: ChatMsg[] = [
     { role: 'system', content: INTENT_CLASSIFIER_PROMPT },
-    ...(conversationHistory ?? []),
-    { role: 'user', content: `${codeNote}\nuser latest message / 用户最新消息: ${instruction}` },
+    ...(opts.preparedHistory ?? await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await userContent(turn.content, turn.images) : turn.content })))),
+    { role: 'user', content: preparedLatest ?? await userContent(`${codeNote}\nuser latest message / 用户最新消息: ${instruction}`, opts.images) },
   ];
   try {
     const resp = await llm.chatWithTools(messages, [], undefined, undefined, signal, false);
@@ -481,7 +489,11 @@ export async function runAgent(
   moodContext?: string,
   signal?: AbortSignal,
   conversationHistory?: ConversationTurn[],
+  images?: ImageAttachment[],
 ): Promise<RunAgentResult> {
+  const preparedUserContent = await userContent(instruction, images);
+  const preparedHistory: ChatMsg[] = await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await userContent(turn.content, turn.images) : turn.content })));
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   const locale = isZh() ? 'zh' : 'en';
   const systemPrompt = buildSystemPrompt({
     moodContext,
@@ -512,9 +524,11 @@ export async function runAgent(
   const skipClassification = isDemoMode() || isMoodGeneration;
   const intent: Intent = skipClassification
     ? 'compose'
-    : await classifyIntent(llm, { instruction, currentCode, conversationHistory, signal });
+    : await classifyIntent(llm, { instruction, currentCode, conversationHistory, signal, images, preparedUserContent, preparedHistory });
 
   return runAgentLoop({
+    preparedUserContent,
+    preparedHistory,
     instruction,
     initialCode: currentCode,
     locale,

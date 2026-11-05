@@ -1,3 +1,4 @@
+import type { ImageAttachment } from '../../lib/image-attachments';
 import { useEffect, useRef, useState } from 'react';
 import type { SessionSummary } from '../../../shared/session-api';
 import type { ChatMessage, InputMode } from '../../hooks/useChat';
@@ -25,6 +26,7 @@ interface SidebarProps {
   onSendText: (
     text: string,
     entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>,
+    images?: ImageAttachment[],
   ) => void;
   onStop?: () => void;
   onNewSession: () => void;
@@ -52,6 +54,7 @@ interface SidebarProps {
   isVideoMode?: boolean;
   scrollBottom?: boolean;
   prefill?: string;
+  prefillImages?: ImageAttachment[];
   prefillTrigger?: number;
   onRollback: (messageId: string) => void;
   onBranch: (messageId: string) => void;
@@ -70,6 +73,8 @@ interface SidebarProps {
   pressedSegmentCode?: string | null;
   /** The first-run guide's practice turn — see ChatInput. */
   presetLock?: PresetLock;
+  signedIn?: boolean;
+  onRequestSignIn?: () => void;
 }
 
 export default function Sidebar({
@@ -110,6 +115,7 @@ export default function Sidebar({
   isVideoMode = false,
   scrollBottom = false,
   prefill,
+  prefillImages,
   prefillTrigger,
   onRollback,
   onBranch,
@@ -125,6 +131,8 @@ export default function Sidebar({
   pressedSegmentId = null,
   pressedSegmentCode = null,
   presetLock,
+  signedIn,
+  onRequestSignIn,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
   const historyScrollRef = useRef<HTMLDivElement>(null);
@@ -268,7 +276,7 @@ export default function Sidebar({
       </div>
 
       <div className="-mt-px w-full shrink-0">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} />
+        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
       </div>
     </aside>
   );

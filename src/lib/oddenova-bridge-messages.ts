@@ -1,3 +1,4 @@
+import type { ImageAttachment } from './image-types';
 import type { ChatMessage } from '../hooks/useChat';
 import type { OddeNovaBridgeMessageV3 } from './oddenova-bridge';
 
@@ -6,6 +7,7 @@ export interface PageCreativeMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: number;
+  images?: ImageAttachment[];
 }
 
 /**
@@ -28,12 +30,12 @@ export interface MergeBridgeMessagesResult {
 export function projectCreativeMessages(messages: ChatMessage[]): PageCreativeMessage[] {
   return messages.flatMap((message) => {
     if (!isProjectableCreative(message)) return [];
-    return [{ id: message.id, role: message.role, content: message.content, createdAt: message.timestamp }];
+    return [{ id: message.id, role: message.role, content: message.content, ...(message.images ? { images: message.images.map(({ id, name, path, mimeType, width, height, size }) => ({ id, name, path, mimeType, width, height, size })) } : {}), createdAt: message.timestamp }];
   });
 }
 
 export function diffCreativeMessages(
-  baseline: readonly Pick<OddeNovaBridgeMessageV3, 'id' | 'role' | 'content'>[],
+  baseline: readonly Pick<OddeNovaBridgeMessageV3, 'id' | 'role' | 'content' | 'images'>[],
   current: readonly PageCreativeMessage[],
 ): { upsertMessages: PageCreativeMessage[]; deleteMessageIds: string[] } {
   const baselineById = new Map(baseline.map((message) => [message.id, message]));
@@ -41,7 +43,7 @@ export function diffCreativeMessages(
   return {
     upsertMessages: current.filter((message) => {
       const previous = baselineById.get(message.id);
-      return !previous || previous.role !== message.role || previous.content !== message.content;
+      return !previous || previous.role !== message.role || previous.content !== message.content || (message.images !== undefined && JSON.stringify(previous.images ?? []) !== JSON.stringify(message.images));
     }),
     deleteMessageIds: baseline.filter((message) => !currentById.has(message.id)).map((message) => message.id),
   };
@@ -68,7 +70,7 @@ export function mergeBridgeMessages(
     pendingDelta.deleteMessageIds.some((id) => canonicalById.has(id))
     || pendingDelta.upsertMessages.some((message) => {
       const canonical = canonicalById.get(message.id);
-      return !canonical || canonical.role !== message.role || canonical.content !== message.content;
+      return !canonical || canonical.role !== message.role || canonical.content !== message.content || (message.images !== undefined && JSON.stringify(canonical.images ?? []) !== JSON.stringify(message.images));
     })
   ));
 
@@ -146,11 +148,11 @@ export function mergeBridgeMessages(
       // the four-field page-change projection only when it does not.
       messages.push(local && local.role === upsert.role
         ? local
-        : { id: upsert.id, role: upsert.role, content: upsert.content, timestamp: upsert.createdAt });
+        : { id: upsert.id, role: upsert.role, content: upsert.content, ...(upsert.images ? { images: upsert.images } : {}), timestamp: upsert.createdAt });
     } else if (local && canonical && local.role === canonical.role && local.content === canonical.content) {
-      messages.push({ ...local, timestamp: canonical.createdAt });
+      messages.push({ ...local, ...(canonical.images !== undefined ? { images: canonical.images } : {}), timestamp: canonical.createdAt });
     } else if (canonical) {
-      messages.push({ id: canonical.id, role: canonical.role, content: canonical.content, timestamp: canonical.createdAt });
+      messages.push({ id: canonical.id, role: canonical.role, content: canonical.content, ...(canonical.images !== undefined ? { images: canonical.images } : local?.role === canonical.role && local.images ? { images: local.images } : {}), timestamp: canonical.createdAt });
     }
     messages.push(...(progressAfter.get(id) ?? []));
   }

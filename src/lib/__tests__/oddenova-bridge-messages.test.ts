@@ -234,3 +234,21 @@ describe('oddenova bridge message synchronization', () => {
     expect(merged.hasPendingLocalMessages).toBe(false);
   });
 });
+
+describe('bridge image references', () => {
+  const image = { id: 'image', name: 'score.jpg', path: 'owner/image.jpg', mimeType: 'image/jpeg', width: 100, height: 100, size: 100 };
+  const local: ChatMessage = { id: 'u', role: 'user', content: '', images: [image], timestamp: 1 };
+  const canonical = { id: 'u', role: 'user' as const, content: 'edited remotely', createdAt: 1, order: 1, updatedRevision: 2 };
+  it('projects image-only messages and detects attachment-only edits', () => {
+    const projected = projectCreativeMessages([local]);
+    expect(projected[0].images).toEqual([image]);
+    expect(diffCreativeMessages([{ ...canonical, content: '' }], projected).upsertMessages).toHaveLength(1);
+    expect(diffCreativeMessages([{ ...canonical, images: [image] }], [{ ...projected[0], content: canonical.content, images: [] }]).upsertMessages).toHaveLength(1);
+  });
+  it('preserves local pictures on legacy text updates but honors explicit clearing', () => {
+    expect(mergeBridgeMessages([local], [canonical]).messages[0].images).toEqual([image]);
+    expect(mergeBridgeMessages([local], [{ ...canonical, images: [] }]).messages[0].images).toEqual([]);
+    expect(mergeBridgeMessages([], [{ ...canonical, images: [image] }]).messages[0].images).toEqual([image]);
+    expect(mergeBridgeMessages([local], []).messages).toEqual([]);
+  });
+});

@@ -10,7 +10,7 @@ function isConversationMessage(message: ChatMessage): message is ConversationMes
 export function conversationHistoryFromMessages(messages: ChatMessage[]): ConversationTurn[] {
   return messages
     .filter(isConversationMessage)
-    .map((message) => ({ role: message.role, content: message.content }));
+    .map((message) => ({ role: message.role, content: message.content, ...(message.images?.length ? { images: message.images } : {}) }));
 }
 
 export function conversationHistoryBefore(messages: ChatMessage[], messageId: string): ConversationTurn[] {
