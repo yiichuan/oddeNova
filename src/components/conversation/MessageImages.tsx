@@ -101,6 +101,10 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
     const element = dialog.current;
     const previousOverflow = document.body.style.overflow;
     element?.showModal();
+    // showModal() hands focus to the first key, which then wears its focus
+    // ring on a tap — on a phone that is the close key under the picture.
+    // Opening on the dialog itself leaves the ring for whoever tabs to it.
+    element?.focus();
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       element?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 280, pseudoElement: '::backdrop' });
     }
@@ -148,7 +152,7 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
   const controlClass = 'flex size-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white/85 text-neutral-800 shadow-sm transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-700';
   const closeKey = <button type="button" onClick={closePreview} aria-label={zh ? '关闭预览' : 'Close preview'} className={controlClass}><X size={20} /></button>;
   return createPortal(
-    <dialog ref={dialog} aria-label={zh ? '图片预览' : 'Image preview'}
+    <dialog ref={dialog} tabIndex={-1} aria-label={zh ? '图片预览' : 'Image preview'}
       className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-transparent p-0 text-neutral-800 outline-none backdrop:bg-white/25 backdrop:backdrop-blur-[3px]"
       onCancel={event => { event.preventDefault(); closePreview(); }}
       onKeyDown={event => {
