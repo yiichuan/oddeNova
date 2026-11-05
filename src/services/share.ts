@@ -23,9 +23,9 @@ export interface UploadShareInput {
   locale: ShareLocale;
 }
 
+/** Images in a share become public; ShareDialog asks before calling this. */
 export async function uploadShare(input: UploadShareInput): Promise<string> {
   const hasImages = input.messages.some(message => message.images?.length);
-  if (hasImages && !window.confirm('分享后，输入图片将随对话公开。是否继续？')) throw new Error('已取消分享');
   const payload: SharePayload = {
     version: 1,
     title: input.title,

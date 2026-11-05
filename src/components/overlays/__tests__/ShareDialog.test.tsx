@@ -58,9 +58,6 @@ async function press(label: string, times = 1) {
 function shareTrigger() {
   return document.querySelector<HTMLButtonElement>('[aria-label="System share"]')!;
 }
-async function pressSystemShare() {
-  await act(async () => shareTrigger().click());
-}
 function key(element: HTMLElement, value: string, shiftKey = false) {
   act(() => element.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true })));
 }
@@ -94,6 +91,33 @@ afterEach(() => {
 });
 
 describe('ShareDialog', () => {
+  const withImages: UploadShareInput = {
+    ...snapshot,
+    messages: [{ id: 'u1', role: 'user', content: 'hi', timestamp: 1, images: [{ id: 'i1', path: 'u/i1.jpg', name: 'a.jpg', mimeType: 'image/jpeg', size: 1, width: 1, height: 1 }] }],
+  };
+
+  it('asks inside the dialog before sharing images, and uploads only once continued', async () => {
+    await mount(false, withImages);
+    expect(document.body.textContent).toContain('images you added become public');
+    expect(upload).not.toHaveBeenCalled();
+    await press('Continue');
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).not.toContain('images you added become public');
+  });
+
+  it('closes without uploading when sharing images is cancelled', async () => {
+    const onClose = vi.fn();
+    await mount(false, withImages, onClose);
+    await press('Cancel');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('uploads straight away when there are no images to ask about', async () => {
+    await mount();
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the full title editable in a single-line field and resets its scroll after editing', async () => {
     await mount();
     const title = '特别长的中文作品标题'.repeat(8);
@@ -148,7 +172,6 @@ describe('ShareDialog', () => {
   });
   it('uses the production share URL after a failed upload is retried from a preview', async () => {
     expect(window.location.origin).toBe('https://oddenova-event-preview.vercel.app');
-    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
     upload.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce('retry456');
     await mount();
     expect(rendered).not.toHaveBeenCalled();
@@ -162,8 +185,6 @@ describe('ShareDialog', () => {
     );
     await press('Copy link');
     expect(copy).toHaveBeenCalledWith('https://oddenova.com/s/retry456', '[oddeNova] Test', true);
-    await pressSystemShare();
-    expect(native).toHaveBeenCalledWith('https://oddenova.com/s/retry456', '[oddeNova] Test');
   });
   it('updates the printer name with connection states and reconnection', async () => {
     await mount();
@@ -279,55 +300,15 @@ describe('ShareDialog', () => {
     expect(native).not.toHaveBeenCalled();
     expect(completed).toHaveBeenCalledWith({ share_method: 'clipboard' });
   });
-  it('handles native sharing and cancellation through the same share action', async () => {
+  it('offers no system share key beside close, even where the browser has one', async () => {
     Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
-    native.mockResolvedValueOnce('cancelled').mockResolvedValueOnce('shared');
-    await mount();
-    await pressSystemShare();
-    expect(completed).not.toHaveBeenCalled();
-    expect(document.body.textContent).not.toContain('Share failed');
-    await pressSystemShare();
-    expect(completed).toHaveBeenCalledTimes(1);
-    expect(completed).toHaveBeenCalledWith({ share_method: 'native' });
-  });
-  it('keeps copy separate from the direct system share action and hides unsupported sharing', async () => {
     await mount();
     expect(shareTrigger()).toBeNull();
-    expect(document.body.textContent).not.toContain('System share');
-    act(() => root.unmount());
-    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
-    await mount();
     const actions = document.querySelector('.grid-cols-3')!;
     expect(Array.from(actions.querySelectorAll('button')).map(button => button.textContent)).toEqual(['Copy link', 'Save image', 'Print receipt']);
     await press('Copy link');
     expect(copy).toHaveBeenCalledTimes(1);
-    await pressSystemShare();
-    expect(copy).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).not.toContain('More sharing options');
-    expect(native).toHaveBeenCalledWith('https://oddenova.com/s/qr123', '[oddeNova] Test');
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-  });
-  it('closes the dialog directly on Escape from the system share button', async () => {
-    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
-    const close = vi.fn();
-    await mount(false, snapshot, close);
-    key(shareTrigger(), 'Escape');
-    expect(close).toHaveBeenCalledTimes(1);
     expect(native).not.toHaveBeenCalled();
-  });
-  it('disables copy and system sharing during native sharing and preserves failure feedback', async () => {
-    Object.defineProperty(navigator, 'share', { configurable: true, value: vi.fn() });
-    let release!: (value: string) => void;
-    native.mockImplementation(() => new Promise<string>(resolve => { release = resolve; }));
-    await mount();
-    await pressSystemShare();
-    expect(shareTrigger().disabled).toBe(true);
-    expect(Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Sharing…')?.disabled).toBe(true);
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-    await act(async () => release('failed'));
-    expect(shareTrigger().disabled).toBe(false);
-    expect(document.body.textContent).toContain('Share failed');
-    expect(completed).not.toHaveBeenCalled();
   });
   it('prevents repeated share clicks while the target is opening', async () => {
     let release!: (value: string) => void;
