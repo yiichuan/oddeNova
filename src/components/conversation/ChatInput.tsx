@@ -3,7 +3,7 @@ import { getActiveModelConfig } from '../../services/llm-config';
 import MessageImages from './MessageImages';
 import { rememberUploadedImagePreview } from '../../lib/image-preview-memory';
 import { MAX_MESSAGE_IMAGES } from '../../lib/image-types';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from '../icons';
 import { ImagePlus, LoaderCircle, X } from 'lucide-react';
 import ThinkingLevelControl from './ThinkingLevelControl';
@@ -172,6 +172,27 @@ export default function ChatInput({
   const fileDragDepth = useRef(0);
   const endFileDrag = () => { fileDragDepth.current = 0; setFileDragActive(false); };
   const fileRef = useRef<HTMLInputElement>(null);
+  // The thumbnail strip eases to its new height instead of snapping the
+  // composer taller or shorter. It clips only while moving: at rest the
+  // remove keys stick out past its top edge.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [stripHeight, setStripHeight] = useState<number>();
+  const [stripMoving, setStripMoving] = useState(false);
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip || typeof ResizeObserver === 'undefined') return;
+    let previous = strip.offsetHeight;
+    setStripHeight(previous);
+    const observer = new ResizeObserver(() => {
+      const next = strip.offsetHeight;
+      if (next === previous) return;
+      previous = next;
+      setStripMoving(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      setStripHeight(next);
+    });
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, []);
   const imageCountRef = useRef(0);
   const addImages = async (files: File[]) => {
     if (sendingImages || isLoading || presetLock || isVideoMode || !files.length) return;
@@ -478,36 +499,44 @@ export default function ChatInput({
         {!presetLock && !isVideoMode && (
           <>
             <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
-            {(images.length > 0 || pendingImages.length > 0) && (
-              <div data-chat-input-focus-ignore className="flex flex-wrap gap-2 px-3 pb-3 pt-0">
-                {images.map(image => (
-                  <div key={image.id} className="group/attachment relative h-16 w-16 rounded-[6px] border border-border bg-surface-hover overflow-visible">
-                    <div className="h-full overflow-hidden rounded-[5px] text-[10px] text-text-muted [&>div]:h-full [&>div]:p-0 [&_button]:flex [&_button]:rounded-none [&_button]:h-full [&_button]:w-full [&_button>div]:w-full [&_button>div]:min-w-0 [&_img]:h-full [&_img]:w-full [&_img]:rounded-none [&_img]:object-cover [&_img]:object-center [&_span]:block [&_span]:p-2">
-                      <MessageImages images={[image]} previewUrls={localPreviews} />
-                    </div>
-                    <button
-                      type="button"
-                      title={`${t('removeImage')} ${image.name}`}
-                      disabled={imageBusy || isLoading}
-                      onClick={() => { imageCountRef.current -= 1; setImages(previous => previous.filter(item => item.id !== image.id)); }}
-                      className="opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:pointer-events-none group-hover/attachment:opacity-100 group-hover/attachment:pointer-events-auto group-focus-within/attachment:opacity-100 group-focus-within/attachment:pointer-events-auto absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-hover text-text-secondary shadow-sm transition-[opacity,color,background-color] hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 after:absolute after:-inset-1"
-                    >
-                      <X size={12} aria-hidden="true" />
-                      <span className="sr-only">{t('removeImage')} {image.name}</span>
-                    </button>
+            <div
+              style={{ height: stripHeight }}
+              onTransitionEnd={event => { if (event.target === event.currentTarget) setStripMoving(false); }}
+              className={`transition-[height] duration-200 ease-out motion-reduce:transition-none ${stripMoving ? 'overflow-hidden' : ''}`}
+            >
+              <div ref={stripRef}>
+                {(images.length > 0 || pendingImages.length > 0) && (
+                  <div data-chat-input-focus-ignore className="flex flex-wrap gap-2 px-3 pb-3 pt-0">
+                    {images.map(image => (
+                      <div key={image.id} className="group/attachment relative h-16 w-16 rounded-[6px] border border-border bg-surface-hover overflow-visible">
+                        <div className="h-full overflow-hidden rounded-[5px] text-[10px] text-text-muted [&>div]:h-full [&>div]:p-0 [&_button]:flex [&_button]:rounded-none [&_button]:h-full [&_button]:w-full [&_button>div]:w-full [&_button>div]:min-w-0 [&_img]:h-full [&_img]:w-full [&_img]:rounded-none [&_img]:object-cover [&_img]:object-center [&_span]:block [&_span]:p-2">
+                          <MessageImages images={[image]} previewUrls={localPreviews} />
+                        </div>
+                        <button
+                          type="button"
+                          title={`${t('removeImage')} ${image.name}`}
+                          disabled={imageBusy || isLoading}
+                          onClick={() => { imageCountRef.current -= 1; setImages(previous => previous.filter(item => item.id !== image.id)); }}
+                          className="opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:pointer-events-none group-hover/attachment:opacity-100 group-hover/attachment:pointer-events-auto group-focus-within/attachment:opacity-100 group-focus-within/attachment:pointer-events-auto absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-hover text-text-secondary shadow-sm transition-[opacity,color,background-color] hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 after:absolute after:-inset-1"
+                        >
+                          <X size={12} aria-hidden="true" />
+                          <span className="sr-only">{t('removeImage')} {image.name}</span>
+                        </button>
+                      </div>
+                    ))}
+                    {pendingImages.map(image => (
+                      <div key={image.id} role="status" aria-label={t('processingImages')}
+                        className="relative h-16 w-16 overflow-hidden rounded-[6px] bg-surface-hover">
+                        <img src={image.url} alt="" className="h-full w-full scale-110 object-cover blur-sm brightness-75" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/15">
+                          <LoaderCircle size={22} strokeWidth={2} className="animate-spin text-white motion-reduce:animate-none" aria-hidden="true" />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-                {pendingImages.map(image => (
-                  <div key={image.id} role="status" aria-label={t('processingImages')}
-                    className="relative h-16 w-16 overflow-hidden rounded-[6px] bg-surface-hover">
-                    <img src={image.url} alt="" className="h-full w-full scale-110 object-cover blur-sm brightness-75" />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/15">
-                      <LoaderCircle size={22} strokeWidth={2} className="animate-spin text-white motion-reduce:animate-none" aria-hidden="true" />
-                    </div>
-                  </div>
-                ))}
+                )}
               </div>
-            )}
+            </div>
             {imageNeedsSignIn && (
               <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">
                 请{' '}{onRequestSignIn ? (

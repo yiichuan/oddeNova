@@ -1671,19 +1671,30 @@ export default function ConversationView({
                 return (
                   <div
                     data-code-bar-sounding={sounding || undefined}
-                    className={`conversation-code-bar mt-4 -ml-1 rounded-md overflow-hidden animate-fade-in${
+                    className={`conversation-code-bar mt-4 -ml-1 rounded-md overflow-clip animate-fade-in${
                       sounding ? ' conversation-code-bar--sounding' : ''
                     }`}
                   >
                     {/* The same split as the widget beside it (see
                         CodeDiffView): the fill sits on the keys, and the seam
                         between the reading half and the play key is the one
-                        place the box shows through. */}
-                    <div className="w-full flex items-stretch gap-0.5 text-[11px] text-diff-accent/70">
+                        place the box shows through. Opened out it sticks to
+                        the top of the stream as CodeDiffView's bar does. */}
+                    <div
+                      data-code-bar={msg.id}
+                      className={`sticky top-0 z-10 w-full flex scroll-mt-[var(--spacing-conversation-top-inset)] items-stretch gap-0.5 bg-conversation-surface ${isMobile ? 'text-[12px]' : 'text-[11px]'} text-diff-accent/70 before:absolute before:inset-x-0 before:bottom-full before:h-[var(--spacing-conversation-top-inset)] before:bg-conversation-surface`}
+                    >
                       <div className="conversation-code-bar-part flex min-w-0 flex-1 items-stretch bg-bg-primary/60">
                         <button
-                          onClick={() => toggleCode(msg.id)}
-                          className="flex-1 flex items-center gap-1.5 px-2 py-1.5 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left"
+                          onClick={() => {
+                            toggleCode(msg.id);
+                            if (isExpanded) requestAnimationFrame(() => {
+                              scrollRef.current
+                                ?.querySelector(`[data-code-bar="${CSS.escape(msg.id)}"]`)
+                                ?.scrollIntoView({ block: 'nearest' });
+                            });
+                          }}
+                          className={`flex-1 flex items-center ${isMobile ? 'gap-1.5 px-2.5 py-2' : 'gap-1.5 px-2 py-1.5'} hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors text-left`}
                         >
                           <span>{t('strudelCode')}</span>
                           <span>· {lineCount} {t('lines')}</span>
@@ -1695,10 +1706,10 @@ export default function ConversationView({
                               setTimeout(() => setCopiedId(null), 2000);
                             });
                           }}
-                          className="px-2 py-1.5 text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+                          className={`${isMobile ? 'px-2.5 py-2' : 'px-2 py-1.5'} text-diff-accent/70 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors`}
                           title={t('copyCode')}
                         >
-                          {copiedId === msg.id ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                          {copiedId === msg.id ? <CheckIcon size={isMobile ? 14 : 13} /> : <CopyIcon size={isMobile ? 14 : 13} />}
                         </button>
                       </div>
                       {onPlaySegment && (() => (
@@ -1707,9 +1718,9 @@ export default function ConversationView({
                             data-code-bar-play={msg.id}
                             aria-label={sounding ? t('stop') : t('play')}
                             onClick={() => (sounding ? onStopCode?.() : onPlaySegment(msg.id, code))}
-                            className="conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors"
+                            className={`conversation-code-bar-part grid ${isMobile ? 'w-9' : 'w-7'} shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors`}
                           >
-                            {sounding ? <StopIcon size={12} /> : (isMobile ? <PlayIcon size={13} /> : <PlayOutlineIcon size={13} />)}
+                            {sounding ? <StopIcon size={isMobile ? 13 : 12} /> : (isMobile ? <PlayIcon size={14} /> : <PlayOutlineIcon size={13} />)}
                           </button>
                       ))()}
                     </div>

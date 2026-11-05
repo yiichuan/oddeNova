@@ -80,7 +80,7 @@ function mockCapture(slider: HTMLInputElement) {
 function dotX(index: number, stops: number): number {
   const segmentCount = stops + 1;
   const percent = ((index + 1) * 100) / segmentCount;
-  const offset = ((index + 0.5 - stops / 2) * 16) / segmentCount;
+  const offset = ((index + 0.5 - stops / 2) * 22) / segmentCount;
   return RECT.left + (RECT.width * percent) / 100 + offset;
 }
 
@@ -136,13 +136,13 @@ describe('ThinkingLevelControl', () => {
     expect(segments).toHaveLength(4); // 3 stops
     expect(Array.from(segments).map((seg) => seg.style.left)).toEqual([
       'calc(0% + 0px)',
-      'calc(25% + 4px)',
-      'calc(50% + 8px)',
-      'calc(75% + 12px)',
+      'calc(25% + 5.5px)',
+      'calc(50% + 11px)',
+      'calc(75% + 16.5px)',
     ]);
     // Every capsule is the same length; the 16px gaps come out of the total.
     expect(new Set(Array.from(segments).map((seg) => seg.style.width))).toEqual(
-      new Set(['calc(25% - 12px)']),
+      new Set(['calc(25% - 16.5px)']),
     );
     expect(segments[0].classList).toContain('rounded-full');
   });
@@ -157,9 +157,9 @@ describe('ThinkingLevelControl', () => {
     // Capsule 0 ends at 25% - 12px and capsule 1 starts at 25% + 4px, so the
     // midpoint of that 16px gap is 25% - 4px.
     expect(Array.from(dots).map((dot) => dot.style.left)).toEqual([
-      'calc(25% - 4px)',
+      'calc(25% - 5.5px)',
       'calc(50% + 0px)',
-      'calc(75% + 4px)',
+      'calc(75% + 5.5px)',
     ]);
   });
 
@@ -183,7 +183,7 @@ describe('ThinkingLevelControl', () => {
     expect(thumbSize).toBeGreaterThan(dotSize);
     // The gap the thumb lands in has to clear it, or the knob would overlap
     // the capsule ends it sits between.
-    expect(16).toBeGreaterThan(thumbSize);
+    expect(22).toBeGreaterThan(thumbSize);
   });
 
   it('parks the thumb on the dot for the current level', () => {
@@ -198,7 +198,7 @@ describe('ThinkingLevelControl', () => {
 
     drag(getSlider(container), 2);
     expect(container.querySelector<HTMLElement>('[data-testid="thinking-level-thumb"]')?.style.left)
-      .toBe('calc(75% + 4px)');
+      .toBe('calc(75% + 5.5px)');
   });
 
   it('names the current level in the heading, in parentheses', () => {
@@ -296,8 +296,8 @@ describe('ThinkingLevelControl', () => {
     expect(dots).toHaveLength(2);
     expect(container.querySelectorAll('[data-testid="thinking-level-segment"]')).toHaveLength(3);
     expect(Array.from(dots).map((dot) => dot.style.left)).toEqual([
-      'calc(33.33% - 2.67px)',
-      'calc(66.67% + 2.67px)',
+      'calc(33.33% - 3.67px)',
+      'calc(66.67% + 3.67px)',
     ]);
     expect(container.querySelector('[data-testid="thinking-level-heading"]')?.textContent)
       .toBe('Thinking level (Medium)');
@@ -537,7 +537,7 @@ describe('ThinkingLevelControl protected slider gesture', () => {
     const slider = openAndPrepare(container);
     const setItemSpy = vi.spyOn(localStorage, 'setItem');
 
-    // 3 stops: dot centres at x = 148 / 204 / 260.
+    // 3 stops: dot centres at x = 146.5 / 204 / 261.5.
     firePointer(slider, 'pointerdown', { pointerId: 1, isPrimary: true, pointerType: 'touch', clientX: 148 });
     expect(slider.setPointerCapture).toHaveBeenCalledWith(1);
     expect(localStorage.getItem('vibe_thinking_level')).toBe('low');
@@ -619,6 +619,39 @@ describe('ThinkingLevelControl protected slider gesture', () => {
 
     firePointer(document, 'pointermove', { pointerId: 1, clientX: dotX(2, 3) });
     expect(localStorage.getItem('vibe_thinking_level')).toBe('high');
+  });
+
+  it('drives a touch tap itself even when input focus is not protected', () => {
+    // iOS moves a native range only by dragging its (here invisible) thumb,
+    // so a tap on the rail has to be answered by the component.
+    const { container, root } = renderControl({ shouldPreserveInputFocus: () => false });
+    roots.push(root);
+    const slider = openAndPrepare(container);
+
+    const down = firePointer(slider, 'pointerdown', { pointerId: 1, isPrimary: true, pointerType: 'touch', clientX: dotX(2, 3) });
+    expect(down.defaultPrevented).toBe(true);
+    expect(localStorage.getItem('vibe_thinking_level')).toBe('high');
+    firePointer(document, 'pointerup', { pointerId: 1, clientX: dotX(2, 3) });
+    expect(localStorage.getItem('vibe_thinking_level')).toBe('high');
+  });
+
+  it('answers a tap on the end capsules, outside the inset range', () => {
+    const { container, root } = renderControl({ shouldPreserveInputFocus: () => false });
+    roots.push(root);
+    const slider = openAndPrepare(container);
+
+    firePointer(slider.parentElement!, 'pointerdown', { pointerId: 1, isPrimary: true, pointerType: 'touch', clientX: RECT.left + 2 });
+    expect(localStorage.getItem('vibe_thinking_level')).toBe('low');
+  });
+
+  it('leaves an unprotected mouse press to the native range', () => {
+    const { container, root } = renderControl({ shouldPreserveInputFocus: () => false });
+    roots.push(root);
+    const slider = openAndPrepare(container);
+
+    const down = firePointer(slider, 'pointerdown', { pointerId: 1, isPrimary: true, pointerType: 'mouse', button: 0, clientX: dotX(2, 3) });
+    expect(down.defaultPrevented).toBe(false);
+    expect(localStorage.getItem('vibe_thinking_level')).toBeNull();
   });
 
   it('ignores the gesture when the row has zero width', () => {

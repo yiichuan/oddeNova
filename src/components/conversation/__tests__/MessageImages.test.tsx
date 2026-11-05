@@ -132,14 +132,14 @@ it('expands from the clicked thumbnail bounds and respects reduced motion', asyn
   await act(async () => { image.dispatchEvent(new Event('load')); });
   expect(image.classList.contains('opacity-0')).toBe(false);
   expect(animate).toHaveBeenCalledWith([
-    { transform: 'translate(-428px, -238px) scale(0.2)', clipPath: 'inset(25% 0% round 8px)' },
+    { transform: 'translate(-428px, -238px) scale(0.2)', clipPath: 'inset(25% 0% round 6px)' },
     { transform: 'translate(0, 0) scale(1)', clipPath: 'inset(0% 0% round 2px)' },
   ], { duration: 280, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
   await click(document.querySelector('[aria-label="关闭预览"]'));
   expect(document.querySelector('dialog')).not.toBeNull();
   expect(animate).toHaveBeenLastCalledWith([
     expect.objectContaining({ clipPath: 'inset(0% 0% round 2px)' }),
-    { transform: 'translate(-428px, -238px) scale(0.2)', clipPath: 'inset(25% 0% round 8px)' },
+    { transform: 'translate(-428px, -238px) scale(0.2)', clipPath: 'inset(25% 0% round 6px)' },
   ], { duration: 220, easing: 'cubic-bezier(0.4, 0, 0.8, 0.2)', fill: 'forwards' });
   await act(async () => { exit.onfinish?.(); });
   expect(document.querySelector('dialog')).toBeNull();

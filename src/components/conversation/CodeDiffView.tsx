@@ -1,7 +1,8 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { buildCodeDiff, type DiffRow } from '../../lib/code-diff';
 import { t } from '../../lib/i18n';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { CheckIcon, ChevronRightIcon, CopyIcon, PlayOutlineIcon, StopIcon } from '../icons';
 
 interface CodeDiffViewProps {
@@ -90,10 +91,19 @@ export function CodeDiffView({
   guided,
 }: CodeDiffViewProps) {
   const [copied, setCopied] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
   const diff = useMemo(
     () => buildCodeDiff(revision.beforeCode, revision.afterCode),
     [revision.beforeCode, revision.afterCode],
   );
+
+  const isMobile = useIsMobile();
+  // On a phone the bar's text is set four sizes under the reading (text-base),
+  // its marks two under, and its keys grow to match; on a desktop it stays the
+  // small caption it has always been.
+  const bar = isMobile
+    ? { text: 'text-[12px]', pad: 'px-2.5 py-2', gap: 'gap-1.5', play: 'w-9', mark: 14, stop: 13, chevron: 14 }
+    : { text: 'text-[11px]', pad: 'px-2 py-1.5', gap: 'gap-1.5', play: 'w-7', mark: 13, stop: 12, chevron: 14 };
 
   /* The fill has moved off the outer box and onto the keys inside it, so that
      the hairline between them shows the reading through rather than more of
@@ -116,22 +126,43 @@ export function CodeDiffView({
          Guided, the box does not clip: the play key's reach runs past the bar,
          and a clip would cut the reach off with it. Each key rounds its own
          outer corners already (`.conversation-code-bar-part`), and the opened
-         changes below round theirs, so nothing square shows. */
-      className={`conversation-code-bar -ml-1 ${guided ? '' : 'overflow-hidden '}rounded-md animate-fade-in${
+         changes below round theirs, so nothing square shows.
+
+         `overflow-clip`, not `overflow-hidden`: a hidden box is a scroll
+         container of its own, and the bar below could only stick inside it —
+         which is to say never. A clip trims the same corners without one. */
+      className={`conversation-code-bar -ml-1 ${guided ? '' : 'overflow-clip '}rounded-md animate-fade-in${
         variant === 'draft' ? '' : ' mt-4'
       }${playing ? ' conversation-code-bar--sounding' : ''}`}
     >
-      <div className="flex w-full items-stretch gap-0.5 text-[11px] text-text-primary">
+      {/* Opened out, the bar sticks to the top of the stream the way the
+          reasoning header does, so a long set of changes can be closed from
+          wherever it has been read to. It is filled with the stream's own
+          surface — at rest that is what the seam between the keys showed
+          anyway — and its cap covers the scrollport's top inset above it.
+          Guided, the box is not clipped and the cap would lie over the reply
+          above, so the guide's widget goes without one. */}
+      <div
+        ref={barRef}
+        className={`sticky top-0 z-10 flex w-full scroll-mt-[var(--spacing-conversation-top-inset)] items-stretch gap-0.5 bg-conversation-surface ${bar.text} text-text-primary${
+          guided ? '' : ' before:absolute before:inset-x-0 before:bottom-full before:h-[var(--spacing-conversation-top-inset)] before:bg-conversation-surface'
+        }`}
+      >
         <div className="conversation-code-bar-part flex min-w-0 flex-1 items-stretch bg-settings-surface">
           <button
             type="button"
             data-code-diff-toggle={messageId}
             aria-expanded={expanded}
-            onClick={onToggle}
-            className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left transition-colors hover:bg-surface-hover hover:text-text-primary"
+            onClick={() => {
+              onToggle();
+              // Closed from where it was stuck, the bar would be left far above
+              // the view; bring it back to the inset it stuck at.
+              if (expanded) requestAnimationFrame(() => barRef.current?.scrollIntoView({ block: 'nearest' }));
+            }}
+            className={`flex min-w-0 flex-1 items-center ${bar.gap} ${bar.pad} text-left transition-colors hover:bg-surface-hover hover:text-text-primary`}
           >
             <ChevronRightIcon
-              size={14}
+              size={bar.chevron}
               className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
             />
             <span>{variant === 'draft' ? t('yourEdits') : t('viewChanges')}</span>
@@ -149,11 +180,11 @@ export function CodeDiffView({
                 setTimeout(() => setCopied(false), 2000);
               });
             }}
-            className="px-2 py-1.5 transition-colors hover:bg-surface-hover hover:text-text-primary"
+            className={`${bar.pad} transition-colors hover:bg-surface-hover hover:text-text-primary`}
             title={t('copyCode')}
             aria-label={t('copyCode')}
           >
-            {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+            {copied ? <CheckIcon size={bar.mark} /> : <CopyIcon size={bar.mark} />}
           </button>
         </div>
         {onPlay && (
@@ -169,11 +200,11 @@ export function CodeDiffView({
                changes are opened out underneath. */
             /* The guide's reach runs 8px past the key above, below and to the
                right, and 4px into the gap on the left — short of the copy key. */
-            className={`conversation-code-bar-part grid w-7 shrink-0 place-items-center bg-settings-surface transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted${
+            className={`conversation-code-bar-part grid ${bar.play} shrink-0 place-items-center bg-settings-surface transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted${
               guided ? " relative before:absolute before:-inset-y-2 before:-right-2 before:-left-1 before:content-['']" : ''
             }`}
           >
-            {playing ? <StopIcon size={12} /> : <PlayOutlineIcon size={13} />}
+            {playing ? <StopIcon size={bar.stop} /> : <PlayOutlineIcon size={bar.mark} />}
           </button>
         )}
       </div>

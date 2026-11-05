@@ -17,7 +17,7 @@ function previewFrames(element: HTMLImageElement, origin: PreviewOrigin): Keyfra
   const cropX = Math.max(0, (1 - origin.width / (target.width * scale)) * 50);
   const cropY = Math.max(0, (1 - origin.height / (target.height * scale)) * 50);
   return [
-    { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, clipPath: `inset(${cropY}% ${cropX}% round 8px)` },
+    { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, clipPath: `inset(${cropY}% ${cropX}% round 6px)` },
     { transform: 'translate(0, 0) scale(1)', clipPath: 'inset(0% 0% round 2px)' },
   ];
 }
@@ -51,12 +51,12 @@ function Picture({ image, onPreview, previewUrl, origin }: { image: ImageAttachm
   if (failed) {
     const label = zh ? '图片已过期' : 'Image expired';
     return <div role="img" aria-label={label} title={label}
-      className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-border bg-surface-hover text-text-muted">
+      className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[6px] border border-dashed border-border bg-surface-hover text-text-muted">
       <ImageOff size={23} strokeWidth={1.4} aria-hidden="true" />
     </div>;
   }
   if (!url) return <div role="status" aria-label={zh ? '图片加载中' : 'Loading image'}
-    className="flex h-16 w-16 items-center justify-center rounded-lg bg-surface-hover">
+    className="flex h-16 w-16 items-center justify-center rounded-[6px] bg-surface-hover">
     <LoaderCircle size={22} className="animate-spin text-text-muted motion-reduce:animate-none" aria-hidden="true" />
   </div>;
 
@@ -77,7 +77,7 @@ function Picture({ image, onPreview, previewUrl, origin }: { image: ImageAttachm
     }} loading={onPreview ? 'lazy' : 'eager'} onError={() => setFailed(true)} />;
   return onPreview ? (
     <button type="button" onClick={event => onPreview(uploadedFullImagePreview(image) ?? url, event.currentTarget.getBoundingClientRect())} aria-label={`${zh ? '预览图片' : 'Preview image'} ${image.name}`}
-      data-image-thumbnail={image.id} aria-haspopup="dialog" className="relative h-16 w-16 shrink-0 overflow-hidden cursor-zoom-in rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-current">
+      data-image-thumbnail={image.id} aria-haspopup="dialog" className="relative h-16 w-16 shrink-0 overflow-hidden cursor-zoom-in rounded-[6px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-current">
       <div className={`flex h-full w-full items-center justify-center ${!loaded ? 'blur-sm brightness-75' : ''}`}>{picture}</div>
       {!loaded && <span role="status" aria-label={zh ? '图片加载中' : 'Loading image'} className="absolute inset-0 flex items-center justify-center bg-black/15">
         <LoaderCircle size={22} className="animate-spin text-white motion-reduce:animate-none" aria-hidden="true" />
@@ -155,12 +155,16 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
           move(event.key === 'ArrowLeft' ? -1 : 1);
         }
       }}>
+      {/* On a phone (the 460px breakpoint of useIsMobile) there is no close
+          key: any tap off the picture closes it, so the header stops taking a
+          row and the picture centres in the whole screen. The key stays for
+          screen readers, visually hidden. */}
       <div className="flex h-full flex-col" onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>
-        <header className="flex shrink-0 items-center justify-end gap-3 px-4 py-3 sm:px-6">
+        <header className="flex shrink-0 items-center justify-end gap-3 px-4 py-3 sm:px-6 max-[461px]:pointer-events-none max-[461px]:absolute max-[461px]:inset-x-0 max-[461px]:top-0">
           {images.length > 1 && <span className="text-xs tabular-nums text-neutral-500" aria-live="polite">{index + 1} / {images.length}</span>}
-          <button type="button" onClick={closePreview} aria-label={zh ? '关闭预览' : 'Close preview'} className={controlClass}><X size={20} /></button>
+          <button type="button" onClick={closePreview} aria-label={zh ? '关闭预览' : 'Close preview'} className={`${controlClass} max-[461px]:sr-only`}><X size={20} /></button>
         </header>
-        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 px-3 pb-6 sm:gap-5 sm:px-6"
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 px-3 pb-6 sm:gap-5 sm:px-6 max-[461px]:pt-6"
           onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>
           {images.length > 1 && <button type="button" onClick={() => move(-1)} aria-label={zh ? '上一张图片' : 'Previous image'} className={controlClass}><ChevronLeft size={22} /></button>}
           <div className="flex h-full min-w-0 flex-1 items-center justify-center" onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>

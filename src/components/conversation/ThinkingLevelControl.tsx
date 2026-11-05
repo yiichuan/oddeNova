@@ -19,10 +19,10 @@ const LABEL_KEYS: Record<ThinkingLevel, string> = {
 /** Dot diameter — and the segment height, so the two read as one stroke. */
 const DOT_SIZE = 3;
 /** The draggable knob. Bigger than a dot so it reads as sitting *on* the rail. */
-const THUMB_SIZE = 12;
+const THUMB_SIZE = 18;
 /** Space between two capsules. Wider than the thumb, so the knob always sits in
  *  clear air at a stop rather than overlapping the ends of its neighbours. */
-const SEGMENT_GAP = 16;
+const SEGMENT_GAP = 22;
 /** Hit height of the slider row. The visible rail stays centred; the extra
  *  vertical air is what makes the touch target at least 44px tall. */
 const TRACK_HIT_HEIGHT = 44;
@@ -242,10 +242,14 @@ export default function ThinkingLevelControl({
   // With focus protected the cancelled pointerdown also cancels the native
   // range drag, so this component drives the gesture itself: select the
   // nearest stop on down, track moves by pointerId, finish on up, and keep
-  // the last selection on cancel. The native range stays for semantics and
-  // keyboard use; without protection it behaves exactly as before.
-  const onSliderPointerDown = (e: React.PointerEvent<HTMLInputElement>) => {
-    if (!protectFocus()) return;
+  // the last selection on cancel. Touch and pen always take this path: a
+  // native range on iOS only moves when its own (here invisible) thumb is
+  // dragged, so a tap on the rail did nothing. Bound on the whole row, not
+  // just the inset range, so the end capsules answer a tap too — the X maps
+  // onto the dot span and clamps. The native range stays for semantics,
+  // keyboard and an unprotected mouse, which behave exactly as before.
+  const onSliderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!protectFocus() && e.pointerType === 'mouse') return;
     if (!e.isPrimary) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (disabled || gestureRef.current) return;
@@ -338,7 +342,8 @@ export default function ThinkingLevelControl({
           <div
             ref={rowRef}
             className="relative mt-3 rounded-full has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-accent"
-            style={{ height: TRACK_HIT_HEIGHT }}
+            style={{ height: TRACK_HIT_HEIGHT, touchAction: 'none' }}
+            onPointerDown={onSliderPointerDown}
           >
             {Array.from({ length: segmentCount }, (_, index) => (
               <span
@@ -372,8 +377,9 @@ export default function ThinkingLevelControl({
                 map the full row onto the shorter run the dots occupy, and the
                 thumb would outrun the pointer. The row is symmetric, so the
                 first dot's offset serves both edges. touch-action: none lives
-                only here — the slider's own hit area — never on the card or
-                page, so scrolling elsewhere is untouched. */}
+                only on the slider's own hit area (this input and its row) —
+                never on the card or page, so scrolling elsewhere is
+                untouched. */}
             <input
               ref={sliderRef}
               data-testid="thinking-level-slider"
@@ -389,7 +395,6 @@ export default function ThinkingLevelControl({
                 if (gestureRef.current) return;
                 slide(Number(event.target.value));
               }}
-              onPointerDown={onSliderPointerDown}
               className="absolute inset-y-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
               style={{
                 left: track(dotPercent(0), dotOffset(0) - THUMB_SIZE / 2),
