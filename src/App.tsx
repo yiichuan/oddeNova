@@ -439,23 +439,10 @@ export default function App() {
     }
   }, [sessions]);
 
-  const finishClosingCodeSheet = useCallback(() => {
+  const dismissCodeSheet = useCallback(() => {
     setCodeSheetOpen(false);
     onCodeSheetClosedRef.current();
   }, [setCodeSheetOpen]);
-
-  /* The explicit close key puts the transport down with the window. Tapping
-     the surrounding page is a lighter dismissal: it returns to the reading
-     while leaving the take sounding, where its matching conversation widget
-     remains available as the transport. */
-  const closeCodeSheet = useCallback(() => {
-    finishClosingCodeSheet();
-    strudel.stop();
-  }, [finishClosingCodeSheet, strudel]);
-
-  const dismissCodeSheet = useCallback(() => {
-    finishClosingCodeSheet();
-  }, [finishClosingCodeSheet]);
 
   /* The code window's export popover. Driven from here rather than from
      CodePanel because the two controls it belongs with — download and share —
@@ -2592,13 +2579,11 @@ export default function App() {
                   buttonClassName="code-window-action flex h-9 w-9 items-center justify-center"
                 />
               </div>
-              {/* Unlike the backdrop's light dismissal, this explicit close
-                  key also stops the take that belongs to the window. */}
               <button
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation();
-                  closeCodeSheet();
+                  dismissCodeSheet();
                 }}
                 data-onboarding-target="code-close"
                 className="code-window-action -m-1 flex h-11 w-11 items-center justify-center"
