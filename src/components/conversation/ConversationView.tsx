@@ -4,7 +4,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Undo2 } from 'lucide-react';
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PauseIcon, PlayIcon, PlayOutlineIcon, RetryIcon, StopIcon } from '../icons';
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PauseIcon, PlayIcon, PlayOutlineIcon, PlayStartingMark, RetryIcon, StopIcon } from '../icons';
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
@@ -588,6 +588,11 @@ interface ConversationViewProps {
   pressedSegmentId?: string | null;
   pressedSegmentCode?: string | null;
   /**
+   * The widget whose play key was pressed while its take's opening is still
+   * loading — see App. Its key turns into the code window's spinner meanwhile.
+   */
+  startingSegmentId?: string | null;
+  /**
    * The reply the phone's first-run guide is walking through. Its code widget
    * opens and shuts from here rather than from this view's own state, so the
    * guide's "view the change" and the widget's own toggle are one switch; and
@@ -649,6 +654,7 @@ export default function ConversationView({
   pressedSegmentId = null,
   pressedSegmentCode = null,
   guidedReply,
+  startingSegmentId = null,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -1655,6 +1661,7 @@ export default function ConversationView({
                     ? { playDisabled: guidedReply.playDisabled, stopDisabled: guidedReply.stopDisabled }
                     : undefined}
                   playing={soundingSegmentId === msg.id}
+                  starting={startingSegmentId === msg.id}
                   onPlay={onPlaySegment
                     ? () => onPlaySegment(msg.id, revisionsById.get(msg.revisionId!)!.afterCode)
                     : undefined}
@@ -1668,6 +1675,7 @@ export default function ConversationView({
                 // Hoisted out of the play key below: the firmer edge is worn by
                 // the whole widget, not just the key that started it.
                 const sounding = soundingSegmentId === msg.id;
+                const starting = startingSegmentId === msg.id;
                 return (
                   <div
                     data-code-bar-sounding={sounding || undefined}
@@ -1716,11 +1724,17 @@ export default function ConversationView({
                           <button
                             type="button"
                             data-code-bar-play={msg.id}
-                            aria-label={sounding ? t('stop') : t('play')}
+                            aria-label={sounding ? t('stop') : starting ? t('playStarting') : t('play')}
+                            aria-busy={starting || undefined}
+                            disabled={starting}
                             onClick={() => (sounding ? onStopCode?.() : onPlaySegment(msg.id, code))}
-                            className={`conversation-code-bar-part grid ${isMobile ? 'w-9' : 'w-7'} shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors`}
+                            className={`conversation-code-bar-part grid ${isMobile ? 'w-9' : 'w-7'} shrink-0 place-items-center bg-bg-primary/60 hover:text-diff-accent/90 hover:bg-bg-primary/80 transition-colors disabled:cursor-not-allowed`}
                           >
-                            {sounding ? <StopIcon size={isMobile ? 13 : 12} /> : (isMobile ? <PlayIcon size={14} /> : <PlayOutlineIcon size={13} />)}
+                            {sounding
+                              ? <StopIcon size={isMobile ? 13 : 12} />
+                              : starting
+                                ? <PlayStartingMark size={12} />
+                                : (isMobile ? <PlayIcon size={14} /> : <PlayOutlineIcon size={13} />)}
                           </button>
                       ))()}
                     </div>
@@ -1793,6 +1807,7 @@ export default function ConversationView({
               expanded={expandedCode.has(DRAFT_SEGMENT_ID)}
               onToggle={() => toggleCode(DRAFT_SEGMENT_ID)}
               playing={soundingSegmentId === DRAFT_SEGMENT_ID}
+              starting={startingSegmentId === DRAFT_SEGMENT_ID}
               onPlay={onPlaySegment
                 ? () => onPlaySegment(DRAFT_SEGMENT_ID, draftRevision.afterCode)
                 : undefined}

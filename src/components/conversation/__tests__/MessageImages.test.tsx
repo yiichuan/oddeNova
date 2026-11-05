@@ -13,6 +13,8 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const images: ImageAttachment[] = ['first', 'second'].map(id => ({
   id, name: `${id}.jpg`, path: `user/${id}`, mimeType: 'image/jpeg', width: 100, height: 100, size: 100,
 }));
+/* Every query answers `matches`; the listener pair is what useIsMobile subscribes with. */
+const mediaQuery = (matches: boolean) => ({ matches, addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList;
 let root: Root;
 let container: HTMLDivElement;
 async function click(element: Element | null) {
@@ -118,7 +120,7 @@ it('reuses the uploaded thumbnail after the composer unmounts, without loading o
 });
 
 it('expands from the clicked thumbnail bounds and respects reduced motion', async () => {
-  vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: false } as MediaQueryList);
+  vi.spyOn(window, 'matchMedia').mockReturnValue(mediaQuery(false));
   await act(async () => { root.render(<MessageImages images={[images[0]]} />); });
   const button = container.querySelector('button')!;
   vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(200, 100, 64, 64));
@@ -143,7 +145,7 @@ it('expands from the clicked thumbnail bounds and respects reduced motion', asyn
   ], { duration: 220, easing: 'cubic-bezier(0.4, 0, 0.8, 0.2)', fill: 'forwards' });
   await act(async () => { exit.onfinish?.(); });
   expect(document.querySelector('dialog')).toBeNull();
-  vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList);
+  vi.mocked(window.matchMedia).mockReturnValue(mediaQuery(true));
   await click(button);
   const reducedImage = document.querySelector<HTMLImageElement>('dialog img')!;
   const reducedAnimate = vi.fn();
@@ -153,7 +155,7 @@ it('expands from the clicked thumbnail bounds and respects reduced motion', asyn
 });
 
 it.each(['buttons', 'keyboard'])('does not replay the opening animation when navigating with %s', async method => {
-  vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: false } as MediaQueryList);
+  vi.spyOn(window, 'matchMedia').mockReturnValue(mediaQuery(false));
   await act(async () => { root.render(<MessageImages images={images} />); });
   const thumbnail = container.querySelector('button')!;
   vi.spyOn(thumbnail, 'getBoundingClientRect').mockReturnValue(new DOMRect(200, 100, 64, 64));
@@ -188,7 +190,7 @@ it.each(['buttons', 'keyboard'])('does not replay the opening animation when nav
 });
 
 it.each(['cancel', 'blank'])('animates closing via %s and ignores repeated close requests', async method => {
-  vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: false } as MediaQueryList);
+  vi.spyOn(window, 'matchMedia').mockReturnValue(mediaQuery(false));
   const dialog = await open();
   const button = container.querySelector('button')!;
   vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(200, 100, 64, 64));

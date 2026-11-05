@@ -7,6 +7,7 @@ import {
   MutedVolumeIcon,
   PauseIcon,
   PlayIcon,
+  PlayStartingMark,
   UpdateIcon,
   VolumeIcon,
 } from '../icons';
@@ -413,17 +414,6 @@ function PlaybackProgress({
         {elapsedLabel}/{totalLabel}
       </span>
     </div>
-  );
-}
-
-/** The play key while the opening loads: a ring turning in the key's own colour. */
-function PlayStartingMark({ size }: { size: number }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="block animate-spin rounded-full border-[1.5px] border-current border-t-transparent motion-reduce:animate-none"
-      style={{ width: size, height: size }}
-    />
   );
 }
 
