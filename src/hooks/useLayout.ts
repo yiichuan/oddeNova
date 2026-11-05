@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Dispatch, PointerEventHandler, RefObject, SetStateAction } from 'react';
 import { useIsMobile } from './useIsMobile';
 import { useKeyboardHeight } from './useKeyboardHeight';
@@ -118,21 +118,39 @@ export function useLayout(): UseLayoutReturn {
   const vDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (mainRef.current) {
-      setVizHeight(mainRef.current.offsetHeight * VIZ_RATIO_DEFAULT);
+  // The split belongs to the desktop tree, which is not mounted on a phone.
+  // Clamped there, it was clamped against the phone — `main` is gone, so the
+  // fallback measured the phone's own window — and coming back (DevTools'
+  // device mode, a window dragged across the breakpoint) reopened the studio
+  // at a phone's proportions, with the galaxy generated for that wrong pane.
+  // So a phone leaves the split alone, and the desktop tree re-measures it
+  // the moment it is laid out again: from the default the first time `main`
+  // is seen, clamped to it after that.
+  const vizMeasured = useRef(false);
+  const clampSplit = useCallback(() => {
+    const main = mainRef.current;
+    if (!main || main.offsetHeight === 0) return;
+    const h = main.offsetHeight;
+    setSidebarWidth(w => Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, w)));
+    if (!vizMeasured.current) {
+      vizMeasured.current = true;
+      setVizHeight(h * VIZ_RATIO_DEFAULT);
+      return;
     }
+    setVizHeight(v => Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, v)));
   }, []);
 
+  useLayoutEffect(() => {
+    // Measured layout drives the split; reading it needs the committed DOM.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!isMobile) clampSplit();
+  }, [isMobile, clampSplit]);
+
   useEffect(() => {
-    const handleResize = () => {
-      const h = mainRef.current?.offsetHeight ?? window.innerHeight;
-      setSidebarWidth(w => Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, w)));
-      setVizHeight(v => Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, v)));
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    if (isMobile) return;
+    window.addEventListener('resize', clampSplit);
+    return () => window.removeEventListener('resize', clampSplit);
+  }, [isMobile, clampSplit]);
 
   const startHDrag = useCallback<PointerEventHandler<HTMLDivElement>>((e) => {
     e.currentTarget.setPointerCapture(e.pointerId);

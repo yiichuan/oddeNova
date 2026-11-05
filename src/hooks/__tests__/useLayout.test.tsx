@@ -202,3 +202,67 @@ describe('useLayout horizontal drag', () => {
     expect(get().sidebarWidth).toBeCloseTo(min);
   });
 });
+
+describe('useLayout across the phone breakpoint', () => {
+  const roots: Root[] = [];
+  const MAIN_HEIGHT = 900;
+  let mobile = false;
+  const listeners = new Set<(event: MediaQueryListEvent) => void>();
+  const originalMatchMedia = window.matchMedia;
+  const originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.innerHTML = '';
+    window.matchMedia = originalMatchMedia;
+    if (originalOffsetHeight) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', originalOffsetHeight);
+    listeners.clear();
+  });
+
+  function Shell({ onValue }: { onValue: (value: UseLayoutReturn) => void }) {
+    const layout = useLayout();
+    onValue(layout);
+    const { isMobile, mainRef } = layout;
+    // Like App: the desktop tree, and its `main`, exist only off a phone.
+    return isMobile ? null : <main ref={mainRef} />;
+  }
+
+  function setMobile(next: boolean) {
+    mobile = next;
+    act(() => listeners.forEach(listener => listener({ matches: next } as MediaQueryListEvent)));
+  }
+
+  it('keeps the desktop split through a trip to the phone layout and back', () => {
+    mobile = false;
+    window.matchMedia = ((query: string) => ({
+      get matches() { return mobile; },
+      media: query,
+      addEventListener: (_: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+      removeEventListener: (_: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+    })) as unknown as typeof window.matchMedia;
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get() { return this.tagName === 'MAIN' ? MAIN_HEIGHT : 0; },
+    });
+
+    let latest!: UseLayoutReturn;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    act(() => root.render(<Shell onValue={(value) => { latest = value; }} />));
+    const desktopHeight = MAIN_HEIGHT * VIZ_RATIO_DEFAULT;
+    expect(latest.vizHeight).toBeCloseTo(desktopHeight);
+    const desktopWidth = latest.sidebarWidth;
+
+    // On the phone the window shrinks to the device's; the split is not its to clamp.
+    setMobile(true);
+    act(() => window.dispatchEvent(new Event('resize')));
+    expect(latest.vizHeight).toBeCloseTo(desktopHeight);
+    expect(latest.sidebarWidth).toBe(desktopWidth);
+
+    setMobile(false);
+    expect(latest.vizHeight).toBeCloseTo(desktopHeight);
+    expect(latest.sidebarWidth).toBe(desktopWidth);
+  });
+});
