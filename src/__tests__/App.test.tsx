@@ -172,6 +172,7 @@ const mocks = vi.hoisted(() => ({
   agentRunnerConfig: null as Record<string, unknown> | null,
   bridgeOptions: null as Record<string, unknown> | null,
   isMobile: true,
+  setCodeSheetOpen: vi.fn(),
   auth: {
     user: { id: 'user-1', email: 'listener@example.com' } as
       | { id: string; email: string }
@@ -258,7 +259,7 @@ vi.mock('../hooks/useLayout', () => ({
     isMobile: mocks.isMobile, keyboardHeight: 0, sidebarWidth: 0, sidebarCollapsed: false, vizHeight: 0, isDragging: false,
     vizCollapsed: false, toggleVizCollapsed: vi.fn(),
     mainRef: { current: null }, topActionsRef: { current: null }, hDragHandlers: {}, vDragHandlers: {},
-    codeSheetOpen: false, setCodeSheetOpen: vi.fn(), navDrawerOpen: false, setNavDrawerOpen: vi.fn(),
+    codeSheetOpen: false, setCodeSheetOpen: mocks.setCodeSheetOpen, navDrawerOpen: false, setNavDrawerOpen: vi.fn(),
     mobileFocusedArea: null, shouldLiftBottomBar: false,
     handleChatFocusChange: vi.fn(), handleCodeFocusChange: vi.fn(),
   }),
@@ -2103,7 +2104,7 @@ describe('App session sync boundaries', () => {
     expect(key()?.getAttribute('aria-label')).toBe(t('expandCode'));
   });
 
-  it('stops playback from the mobile code window close key but not from its backdrop', async () => {
+  it('dismisses the mobile code window without stopping playback', async () => {
     mocks.isMobile = true;
     mocks.strudel.isPlaying = true;
     await renderApp();
@@ -2114,14 +2115,13 @@ describe('App session sync boundaries', () => {
     const close = sheet.querySelector<HTMLButtonElement>(`button[aria-label="${t('close')}"]`)!;
 
     mocks.strudel.stop.mockClear();
-    act(() => backdrop.click());
-    expect(mocks.strudel.stop).not.toHaveBeenCalled();
-
-    act(() => topGap.click());
-    expect(mocks.strudel.stop).not.toHaveBeenCalled();
-
-    act(() => close.click());
-    expect(mocks.strudel.stop).toHaveBeenCalledTimes(1);
+    for (const target of [backdrop, topGap, close]) {
+      mocks.setCodeSheetOpen.mockClear();
+      act(() => target.click());
+      expect(mocks.setCodeSheetOpen).toHaveBeenCalledWith(false);
+      expect(mocks.setCodeSheetOpen).toHaveBeenCalledTimes(1);
+      expect(mocks.strudel.stop).not.toHaveBeenCalled();
+    }
     mocks.strudel.isPlaying = false;
   });
 
