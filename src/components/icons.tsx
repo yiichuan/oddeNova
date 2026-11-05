@@ -124,6 +124,14 @@ export const PlayIcon = ({ size = 18, className }: IconProps) => <Play size={siz
 export const PlayOutlineIcon = ({ size = 18, className }: IconProps) => <Play size={size} className={className} />;
 export const PauseIcon = ({ size = 16, className }: IconProps) => <Pause size={size} className={className} fill="currentColor" />;
 export const StopIcon = ({ size = 16, className }: IconProps) => <Square size={size} className={className} fill="currentColor" />;
+/** A play key while the opening loads: a ring turning in the key's own colour. */
+export const PlayStartingMark = ({ size }: { size: number }) => (
+  <span
+    aria-hidden="true"
+    className="block animate-spin rounded-full border-[1.5px] border-current border-t-transparent motion-reduce:animate-none"
+    style={{ width: size, height: size }}
+  />
+);
 export const HistoryIcon = ({ size = 16, className }: IconProps) => <Clock size={size} className={className} />;
 export const PlusIcon = ({ size = 16, className }: IconProps) => <Plus size={size} className={className} />;
 export const MessageCirclePlusIcon = ({ size = 16, className }: IconProps) => <MessageCirclePlus size={size} className={className} />;

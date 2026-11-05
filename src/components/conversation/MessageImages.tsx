@@ -5,6 +5,7 @@ import { uploadedFullImagePreview, uploadedImagePreview } from '../../lib/image-
 import { previewImageUrl } from '../../lib/image-cache';
 import type { ImageAttachment } from '../../lib/image-attachments';
 import { zh } from '../../lib/i18n';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 type PreviewOrigin = Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>;
 
@@ -61,7 +62,7 @@ function Picture({ image, onPreview, previewUrl, origin }: { image: ImageAttachm
   </div>;
 
   const picture = <img src={url} alt={image.name}
-    className={onPreview ? 'h-full w-full object-cover object-center' : `max-h-full max-w-full rounded-sm object-contain shadow-[0_12px_48px_rgba(0,0,0,0.18)]${revealed ? '' : ' opacity-0'}`}
+    className={onPreview ? 'h-full w-full object-cover object-center' : `max-h-full max-w-full max-[461px]:max-h-[calc(100%-4rem)] rounded-sm object-contain shadow-[0_12px_48px_rgba(0,0,0,0.18)]${revealed ? '' : ' opacity-0'}`}
     onLoad={event => {
       setLoaded(true);
       if (!origin || animated.current) return;
@@ -94,6 +95,7 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
   const exitAnimation = useRef<Animation | null>(null);
   const [index, setIndex] = useState(initialIndex);
   const [hasNavigated, setHasNavigated] = useState(false);
+  const isMobile = useIsMobile();
   const image = images[index];
   useEffect(() => {
     const element = dialog.current;
@@ -144,6 +146,7 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
     }
   };
   const controlClass = 'flex size-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white/85 text-neutral-800 shadow-sm transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-700';
+  const closeKey = <button type="button" onClick={closePreview} aria-label={zh ? '关闭预览' : 'Close preview'} className={controlClass}><X size={20} /></button>;
   return createPortal(
     <dialog ref={dialog} aria-label={zh ? '图片预览' : 'Image preview'}
       className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-transparent p-0 text-neutral-800 outline-none backdrop:bg-white/25 backdrop:backdrop-blur-[3px]"
@@ -155,20 +158,22 @@ function ImageViewer({ images, initialIndex, initialUrl, origin, getOrigin, onCl
           move(event.key === 'ArrowLeft' ? -1 : 1);
         }
       }}>
-      {/* On a phone (the 460px breakpoint of useIsMobile) there is no close
-          key: any tap off the picture closes it, so the header stops taking a
-          row and the picture centres in the whole screen. The key stays for
-          screen readers, visually hidden. */}
+      {/* On a phone (the 460px breakpoint of useIsMobile) the header stops
+          taking a row, so the picture centres in the whole screen, and the
+          close key moves to just under the picture's bottom centre — beside the
+          image however small it is, within a thumb's reach. Any tap off the
+          picture still closes it too. */}
       <div className="flex h-full flex-col" onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>
         <header className="flex shrink-0 items-center justify-end gap-3 px-4 py-3 sm:px-6 max-[461px]:pointer-events-none max-[461px]:absolute max-[461px]:inset-x-0 max-[461px]:top-0">
           {images.length > 1 && <span className="text-xs tabular-nums text-neutral-500" aria-live="polite">{index + 1} / {images.length}</span>}
-          <button type="button" onClick={closePreview} aria-label={zh ? '关闭预览' : 'Close preview'} className={`${controlClass} max-[461px]:sr-only`}><X size={20} /></button>
+          {!isMobile && closeKey}
         </header>
-        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 px-3 pb-6 sm:gap-5 sm:px-6 max-[461px]:pt-6"
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 px-3 pb-6 sm:gap-5 sm:px-6 max-[461px]:pt-6 max-[461px]:pb-[max(1.5rem,env(safe-area-inset-bottom))]"
           onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>
           {images.length > 1 && <button type="button" onClick={() => move(-1)} aria-label={zh ? '上一张图片' : 'Previous image'} className={controlClass}><ChevronLeft size={22} /></button>}
-          <div className="flex h-full min-w-0 flex-1 items-center justify-center" onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>
+          <div className="flex h-full min-w-0 flex-1 items-center justify-center max-[461px]:flex-col max-[461px]:gap-6" onClick={event => { if (event.target === event.currentTarget) closePreview(); }}>
             <Picture key={image.id} image={image} origin={!hasNavigated ? origin : undefined} previewUrl={index === initialIndex ? initialUrl : undefined} />
+            {isMobile && closeKey}
           </div>
           {images.length > 1 && <button type="button" onClick={() => move(1)} aria-label={zh ? '下一张图片' : 'Next image'} className={controlClass}><ChevronRight size={22} /></button>}
         </div>

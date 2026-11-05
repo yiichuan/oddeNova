@@ -889,6 +889,12 @@ export default function App() {
    * elsewhere puts the light out instead of stranding it.
    */
   const [soundingSegment, setSoundingSegment] = useState<{ id: string; code: string } | null>(null);
+  /* The widget whose play key put on what is still loading. Matched on the
+     editor's code too, so a key pressed long ago does not light up when
+     something else (a commit, the code window) starts the transport. */
+  const startingSegmentId = strudel.isStarting && soundingSegment && soundingSegment.code === strudel.code
+    ? soundingSegment.id
+    : null;
 
   const applyImportedCode = useCallback((sessionId: string, code: string) => {
     skipNextManualSyncSessionRef.current = sessionId;
@@ -2434,6 +2440,7 @@ export default function App() {
               pressedSegmentId={soundingSegment?.id ?? null}
               pressedSegmentCode={soundingSegment?.code ?? null}
               guidedReply={guidedReply}
+              startingSegmentId={startingSegmentId}
             />
           </div>
 

@@ -3,7 +3,7 @@ import type { CodeRevision } from '../../hooks/useSessions';
 import { buildCodeDiff, type DiffRow } from '../../lib/code-diff';
 import { t } from '../../lib/i18n';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import { CheckIcon, ChevronRightIcon, CopyIcon, PlayOutlineIcon, StopIcon } from '../icons';
+import { CheckIcon, ChevronRightIcon, CopyIcon, PlayOutlineIcon, PlayStartingMark, StopIcon } from '../icons';
 
 interface CodeDiffViewProps {
   messageId: string;
@@ -24,6 +24,11 @@ interface CodeDiffViewProps {
    */
   onPlay?: () => void;
   onStop?: () => void;
+  /**
+   * Play was pressed here and the take's opening is still loading: the key
+   * turns into the code window's spinner until the transport starts.
+   */
+  starting?: boolean;
   /**
    * `draft` is the segment at the tail of the reading that reports the typist's
    * own edit rather than a turn's. It is still moving, and nothing generated
@@ -87,6 +92,7 @@ export function CodeDiffView({
   playing = false,
   onPlay,
   onStop,
+  starting = false,
   variant = 'turn',
   guided,
 }: CodeDiffViewProps) {
@@ -191,9 +197,10 @@ export function CodeDiffView({
           <button
             type="button"
             data-code-diff-play={messageId}
-            aria-label={playing ? t('stop') : t('play')}
+            aria-label={playing ? t('stop') : starting ? t('playStarting') : t('play')}
+            aria-busy={starting || undefined}
             onClick={playing ? onStop : onPlay}
-            disabled={playing ? guided?.stopDisabled : guided?.playDisabled}
+            disabled={playing ? guided?.stopDisabled : starting || guided?.playDisabled}
             /* A width of its own and no height of its own: it takes the line
                beside it, so the two keys stop at the same edge however the
                reading is set, and it stays the height of that line when the
@@ -204,7 +211,9 @@ export function CodeDiffView({
               guided ? " relative before:absolute before:-inset-y-2 before:-right-2 before:-left-1 before:content-['']" : ''
             }`}
           >
-            {playing ? <StopIcon size={bar.stop} /> : <PlayOutlineIcon size={bar.mark} />}
+            {playing
+              ? <StopIcon size={bar.stop} />
+              : starting ? <PlayStartingMark size={bar.mark - 2} /> : <PlayOutlineIcon size={bar.mark} />}
           </button>
         )}
       </div>
