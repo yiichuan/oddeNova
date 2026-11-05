@@ -128,7 +128,9 @@ it('expands from the clicked thumbnail bounds and respects reduced motion', asyn
   const exit = { onfinish: null as (() => void) | null, oncancel: null as (() => void) | null, cancel: vi.fn() };
   const animate = vi.fn().mockReturnValue(exit);
   Object.defineProperty(image, 'animate', { value: animate });
+  expect(image.classList.contains('opacity-0')).toBe(true);
   await act(async () => { image.dispatchEvent(new Event('load')); });
+  expect(image.classList.contains('opacity-0')).toBe(false);
   expect(animate).toHaveBeenCalledWith([
     { transform: 'translate(-428px, -238px) scale(0.2)', clipPath: 'inset(25% 0% round 8px)' },
     { transform: 'translate(0, 0) scale(1)', clipPath: 'inset(0% 0% round 2px)' },

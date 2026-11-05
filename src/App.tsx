@@ -786,6 +786,7 @@ export default function App() {
     : suggestions;
   const visibleSuggestions = demoSuggestions;
 
+  const openAccount = useCallback(() => setAccountOpen(true), []);
   const accountLabel = auth.user?.email || (auth.user ? t('account') : t('signIn'));
   const syncViewport = useVisualViewport(isMobile && Boolean(guestImportSessions));
 
@@ -2472,6 +2473,8 @@ export default function App() {
               inputMode={current?.inputMode ?? 'normal'}
               suggestions={isVideoMode ? [] : visibleSuggestions}
               isVideoMode={isVideoMode}
+              signedIn={Boolean(auth.user)}
+              onRequestSignIn={openAccount}
             />
           </div>
         </div>
@@ -2822,6 +2825,8 @@ export default function App() {
               onStop={handleStop}
               onNewSession={handleNewSession}
               onMoodGenerate={handleMoodInstruction}
+              signedIn={Boolean(auth.user)}
+              onRequestSignIn={openAccount}
               onReinitEngine={strudel.reinit}
               loadingSessions={loadingSessions}
               unreadSessions={unreadSessions}

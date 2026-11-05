@@ -1,11 +1,11 @@
-import { uploadImage, supportsImages, type ImageAttachment } from '../../lib/image-attachments';
+import { uploadImage, supportsImages, SIGN_IN_REQUIRED_MESSAGE, type ImageAttachment } from '../../lib/image-attachments';
 import { getActiveModelConfig } from '../../services/llm-config';
 import MessageImages from './MessageImages';
 import { rememberUploadedImagePreview } from '../../lib/image-preview-memory';
 import { MAX_MESSAGE_IMAGES } from '../../lib/image-types';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from '../icons';
-import { Plus, LoaderCircle, X } from 'lucide-react';
+import { ImagePlus, LoaderCircle, X } from 'lucide-react';
 import ThinkingLevelControl from './ThinkingLevelControl';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
@@ -98,6 +98,10 @@ interface ChatInputProps {
    * the guide's own "skip" is the way out to the real model.
    */
   presetLock?: PresetLock;
+  /** Images upload to the account's storage, so a guest is asked to sign in first. */
+  signedIn?: boolean;
+  /** Opens the sign-in window from the "sign in to add images" notice. */
+  onRequestSignIn?: () => void;
 }
 
 export interface PresetLock {
@@ -124,6 +128,8 @@ export default function ChatInput({
   suggestions,
   onMoodGenerate,
   presetLock,
+  signedIn = true,
+  onRequestSignIn,
 }: ChatInputProps) {
   // Settings saves re-render the composer; read both values each time so the
   // image entry point follows provider and model changes immediately.
@@ -158,14 +164,23 @@ export default function ChatInput({
   const [sendingImages, setSendingImages] = useState(false);
   const imageBusy = sendingImages || pendingImages.length > 0;
   const [imageError, setImageError] = useState('');
+  // Sign-in is one notice for the whole batch, not one per file.
+  const [imageNeedsSignIn, setImageNeedsSignIn] = useState(false);
+  // Files dragged over the composer light the add-image key. Enter/leave fire
+  // for every child crossed, so a depth count tells when the drag truly left.
+  const [fileDragActive, setFileDragActive] = useState(false);
+  const fileDragDepth = useRef(0);
+  const endFileDrag = () => { fileDragDepth.current = 0; setFileDragActive(false); };
   const fileRef = useRef<HTMLInputElement>(null);
   const imageCountRef = useRef(0);
   const addImages = async (files: File[]) => {
     if (sendingImages || isLoading || presetLock || isVideoMode || !files.length) return;
+    if (!signedIn) { setImageError(''); setImageNeedsSignIn(true); return; }
     const config = getActiveModelConfig();
     if (!supportsImages(config.provider, config.model)) { setImageError('当前模型不支持图片，请切换视觉模型'); return; }
     if (files.length + imageCountRef.current > MAX_MESSAGE_IMAGES) { setImageError(`每条消息最多 ${MAX_MESSAGE_IMAGES} 张图片`); return; }
     setImageError('');
+    setImageNeedsSignIn(false);
     const pending = files.map(file => {
       const url = URL.createObjectURL(file);
       previewUrls.current.add(url);
@@ -188,6 +203,7 @@ export default function ChatInput({
         } catch (error) {
           if (queue.disposed) return;
           imageCountRef.current -= 1;
+          if (error instanceof Error && error.message === SIGN_IN_REQUIRED_MESSAGE) { setImageNeedsSignIn(true); return; }
           const reason = error instanceof Error ? error.message : '图片上传失败';
           setImageError(previous => [previous, `${item.file.name}: ${reason}`].filter(Boolean).join('；'));
         } finally {
@@ -444,7 +460,7 @@ export default function ChatInput({
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
 
   return (
-    <form onSubmit={handleSubmit} onPaste={e => { const files = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { e.preventDefault(); void addImages(files); } }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)); } }} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <form onSubmit={handleSubmit} onPaste={e => { const files = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { e.preventDefault(); void addImages(files); } }} onDragEnter={e => { if (!e.dataTransfer.types.includes('Files')) return; fileDragDepth.current += 1; setFileDragActive(true); }} onDragLeave={e => { if (!e.dataTransfer.types.includes('Files')) return; fileDragDepth.current = Math.max(0, fileDragDepth.current - 1); if (!fileDragDepth.current) setFileDragActive(false); }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDrop={e => { endFileDrag(); if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)); } }} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
 
 
       {/* Card: textarea on top, footer (hint + send button) below it in normal
@@ -463,10 +479,10 @@ export default function ChatInput({
           <>
             <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
             {(images.length > 0 || pendingImages.length > 0) && (
-              <div data-chat-input-focus-ignore className="flex flex-wrap gap-2 px-4 pb-3 pt-1">
+              <div data-chat-input-focus-ignore className="flex flex-wrap gap-2 px-3 pb-3 pt-0">
                 {images.map(image => (
-                  <div key={image.id} className="group/attachment relative h-16 w-16 rounded-lg border border-border bg-surface-hover overflow-visible">
-                    <div className="h-full overflow-hidden rounded-[inherit] text-[10px] text-text-muted [&>div]:h-full [&>div]:p-0 [&_button]:flex [&_button]:h-full [&_button]:w-full [&_button>div]:w-full [&_button>div]:min-w-0 [&_img]:h-full [&_img]:w-full [&_img]:rounded-none [&_img]:object-cover [&_img]:object-center [&_span]:block [&_span]:p-2">
+                  <div key={image.id} className="group/attachment relative h-16 w-16 rounded-[6px] border border-border bg-surface-hover overflow-visible">
+                    <div className="h-full overflow-hidden rounded-[5px] text-[10px] text-text-muted [&>div]:h-full [&>div]:p-0 [&_button]:flex [&_button]:rounded-none [&_button]:h-full [&_button]:w-full [&_button>div]:w-full [&_button>div]:min-w-0 [&_img]:h-full [&_img]:w-full [&_img]:rounded-none [&_img]:object-cover [&_img]:object-center [&_span]:block [&_span]:p-2">
                       <MessageImages images={[image]} previewUrls={localPreviews} />
                     </div>
                     <button
@@ -483,7 +499,7 @@ export default function ChatInput({
                 ))}
                 {pendingImages.map(image => (
                   <div key={image.id} role="status" aria-label={t('processingImages')}
-                    className="relative h-16 w-16 overflow-hidden rounded-lg bg-surface-hover">
+                    className="relative h-16 w-16 overflow-hidden rounded-[6px] bg-surface-hover">
                     <img src={image.url} alt="" className="h-full w-full scale-110 object-cover blur-sm brightness-75" />
                     <div className="absolute inset-0 flex items-center justify-center bg-black/15">
                       <LoaderCircle size={22} strokeWidth={2} className="animate-spin text-white motion-reduce:animate-none" aria-hidden="true" />
@@ -491,6 +507,13 @@ export default function ChatInput({
                   </div>
                 ))}
               </div>
+            )}
+            {imageNeedsSignIn && (
+              <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">
+                请{' '}{onRequestSignIn ? (
+                  <button type="button" onClick={onRequestSignIn} className="cursor-pointer font-bold underline underline-offset-2 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">登录</button>
+                ) : <span className="font-bold underline underline-offset-2">登录</span>}{' '}后添加图片
+              </p>
             )}
             {imageError && <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">{imageError}</p>}
           </>
@@ -626,18 +649,6 @@ export default function ChatInput({
               Real layout, always visible regardless of textarea scroll state. */}
           <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
             <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ${waitingDim}`}>
-              {canAddImages && !presetLock && !isVideoMode && replayValue === undefined && (
-                <button
-                  type="button"
-                  title={t('addImage')}
-                  aria-label={t('addImage')}
-                  disabled={sendingImages || inputDisabled || images.length + pendingImages.length >= MAX_MESSAGE_IMAGES}
-                  onClick={() => fileRef.current?.click()}
-                  className="-ml-2 inline-flex size-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Plus size={20} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              )}
               {imageBusy && <span role="status" className="sr-only">{t('processingImages')}</span>}
               {presetLock ? (
                 <div className="truncate text-[12px] text-text-muted">{t('onboardingPresetBadge')}</div>
@@ -673,6 +684,25 @@ export default function ChatInput({
                   // ThinkingLevelControl's pointerdown protection).
                   shouldPreserveInputFocus={() => document.activeElement === textareaRef.current}
                 />
+              )}
+              {canAddImages && !presetLock && !isVideoMode && replayValue === undefined && (
+                <button
+                  type="button"
+                  title={t('addImage')}
+                  aria-label={t('addImage')}
+                  disabled={sendingImages || inputDisabled || images.length + pendingImages.length >= MAX_MESSAGE_IMAGES}
+                  onClick={() => {
+                    if (!signedIn) { setImageError(''); setImageNeedsSignIn(true); return; }
+                    fileRef.current?.click();
+                  }}
+                  className={`mr-1.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+                    fileDragActive
+                      ? 'bg-brand-accent text-on-accent'
+                      : 'text-text-muted hover:bg-text-primary/10 hover:text-text-primary disabled:hover:bg-transparent disabled:hover:text-text-muted'
+                  }`}
+                >
+                  <ImagePlus size={20} strokeWidth={1.8} aria-hidden="true" />
+                </button>
               )}
               {replayValue !== undefined ? (
                 <button

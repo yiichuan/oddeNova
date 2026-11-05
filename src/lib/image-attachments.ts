@@ -35,10 +35,11 @@ export async function userContent(text: string, images?: ImageAttachment[]): Pro
     }
   }))];
 }
+export const SIGN_IN_REQUIRED_MESSAGE = '请登录后添加图片';
 export async function uploadImage(file: File): Promise<ImageAttachment> {
   const client = requireSupabase();
   const { data: { user } } = await client.auth.getUser();
-  if (!user) throw new Error('请登录后添加图片');
+  if (!user) throw new Error(SIGN_IN_REQUIRED_MESSAGE);
   if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) throw new Error('支持 JPEG、PNG、WebP 和 GIF');
   if (file.size > 20 * 1024 * 1024) throw new Error('单张原图不能超过 20 MiB');
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });

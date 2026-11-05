@@ -29,6 +29,10 @@ function Picture({ image, onPreview, previewUrl, origin }: { image: ImageAttachm
   const [url, setUrl] = useState(localPreview ?? '');
   const [loaded, setLoaded] = useState(Boolean(cachedPreview));
   const [failed, setFailed] = useState(false);
+  // A viewer image that grows from its thumbnail stays hidden until the growth
+  // starts: a cached image paints at full size before onLoad runs, which would
+  // flash the whole picture and then snap back to the thumbnail to animate.
+  const [revealed, setRevealed] = useState(!origin);
   useEffect(() => {
     if (localPreview) return;
     let active = true;
@@ -57,16 +61,19 @@ function Picture({ image, onPreview, previewUrl, origin }: { image: ImageAttachm
   </div>;
 
   const picture = <img src={url} alt={image.name}
-    className={onPreview ? 'h-full w-full object-cover object-center' : 'max-h-full max-w-full rounded-sm object-contain shadow-[0_12px_48px_rgba(0,0,0,0.18)]'}
+    className={onPreview ? 'h-full w-full object-cover object-center' : `max-h-full max-w-full rounded-sm object-contain shadow-[0_12px_48px_rgba(0,0,0,0.18)]${revealed ? '' : ' opacity-0'}`}
     onLoad={event => {
       setLoaded(true);
       if (!origin || animated.current) return;
       animated.current = true;
       const element = event.currentTarget;
-      if (!element.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const frames = previewFrames(element, origin);
-      if (!frames) return;
-      element.animate(frames, { duration: 280, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+      const frames = typeof element.animate === 'function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? previewFrames(element, origin) : undefined;
+      if (frames) element.animate(frames, { duration: 280, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+      // Unhide on the element itself, in the same task as animate(), so the
+      // first painted frame is already the animation's start.
+      element.classList.remove('opacity-0');
+      setRevealed(true);
     }} loading={onPreview ? 'lazy' : 'eager'} onError={() => setFailed(true)} />;
   return onPreview ? (
     <button type="button" onClick={event => onPreview(uploadedFullImagePreview(image) ?? url, event.currentTarget.getBoundingClientRect())} aria-label={`${zh ? '预览图片' : 'Preview image'} ${image.name}`}

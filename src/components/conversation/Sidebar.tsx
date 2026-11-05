@@ -73,6 +73,8 @@ interface SidebarProps {
   pressedSegmentCode?: string | null;
   /** The first-run guide's practice turn — see ChatInput. */
   presetLock?: PresetLock;
+  signedIn?: boolean;
+  onRequestSignIn?: () => void;
 }
 
 export default function Sidebar({
@@ -129,6 +131,8 @@ export default function Sidebar({
   pressedSegmentId = null,
   pressedSegmentCode = null,
   presetLock,
+  signedIn,
+  onRequestSignIn,
 }: SidebarProps) {
   const [showHistory, setShowHistory] = useState(false);
   const historyScrollRef = useRef<HTMLDivElement>(null);
@@ -272,7 +276,7 @@ export default function Sidebar({
       </div>
 
       <div className="-mt-px w-full shrink-0">
-        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} />
+        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
       </div>
     </aside>
   );
