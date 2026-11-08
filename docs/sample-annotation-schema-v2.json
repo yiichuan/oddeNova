@@ -1,0 +1,485 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "采样听感标注 v2.0",
+  "type": "object",
+  "description": "Qwen 音频初标结构。人工确认状态、输入信息、测量和调用信息由程序记录。",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "summary_zh",
+    "source",
+    "structure",
+    "timbre",
+    "envelope",
+    "space",
+    "performance",
+    "rhythm",
+    "usage_suggestions",
+    "review"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "summary_zh": {
+      "type": "string",
+      "description": "用一句中文描述最有区分度的可听特征，避免无依据的来源和用途断言。",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "source": {
+      "type": "object",
+      "description": "仅记录听辨候选。系统另外保存原始目录信息，不能用猜测覆盖。",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "candidates_zh"
+      ],
+      "properties": {
+        "family": {
+          "type": "string",
+          "description": "主导声音类别。混合鼓组仍是 drums_percussion；mixed 用于不同家族共存且无主导。",
+          "enum": [
+            "drums_percussion",
+            "plucked_strings",
+            "bowed_strings",
+            "winds",
+            "brass",
+            "keys",
+            "synth",
+            "voice",
+            "environment",
+            "foley",
+            "mixed",
+            "other",
+            "unknown"
+          ]
+        },
+        "candidates_zh": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "可能的具体声源，按可能性排列，例如军鼓、拍手。",
+            "minLength": 1,
+            "maxLength": 30
+          },
+          "maxItems": 3,
+          "uniqueItems": true,
+          "description": "无法辨认时空数组，不猜品牌型号。"
+        }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "description": "声音组织形式与音高性独立于声源类别。",
+      "additionalProperties": false,
+      "required": [
+        "event_form",
+        "pitchedness"
+      ],
+      "properties": {
+        "event_form": {
+          "type": "string",
+          "description": "single_event 是一次发声（包括持续单音）；repeated_events 是多个重复事件；phrase 是有组织的乐句；continuous 是连续背景/纹理。",
+          "enum": [
+            "single_event",
+            "repeated_events",
+            "phrase",
+            "continuous",
+            "mixed",
+            "unknown"
+          ]
+        },
+        "pitchedness": {
+          "type": "string",
+          "description": "tonal 有可辨音高；noise_like 以噪声为主；mixed 两者共存。不是绝对音名或可调音保证。",
+          "enum": [
+            "tonal",
+            "noise_like",
+            "mixed",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "timbre": {
+      "type": "object",
+      "description": "相对于可辨类别的听感档位，用于软排序。未经过人评校准，不能作为硬筛选阈值。",
+      "additionalProperties": false,
+      "required": [
+        "brightness",
+        "body",
+        "texture_tags",
+        "distortion"
+      ],
+      "properties": {
+        "brightness": {
+          "type": "string",
+          "description": "暗/均衡/亮，听的是频谱明亮感，不能从音高或响度直接推断。",
+          "enum": [
+            "dark",
+            "balanced",
+            "bright",
+            "varied",
+            "unknown"
+          ]
+        },
+        "body": {
+          "type": "string",
+          "description": "轻薄/均衡/厚实，听的是声音的厚度，不能从音量直接推断。",
+          "enum": [
+            "light",
+            "balanced",
+            "full",
+            "varied",
+            "unknown"
+          ]
+        },
+        "texture_tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "有独立辨识价值的质感词；无明显质感时空数组。",
+            "enum": [
+              "airy",
+              "breathy",
+              "buzzy",
+              "grainy",
+              "metallic",
+              "woody",
+              "hollow",
+              "smooth",
+              "rough",
+              "nasal",
+              "raspy",
+              "ringing"
+            ]
+          },
+          "maxItems": 4,
+          "uniqueItems": true,
+          "description": "最多4项，不重复填写明暗、长短等已有维度。"
+        },
+        "distortion": {
+          "type": "string",
+          "description": "是否听到明显失真。not_obvious 仅指未听到，不能推断录音设备或处理链。",
+          "enum": [
+            "not_obvious",
+            "audible",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "envelope": {
+      "type": "object",
+      "description": "起音与后续变化。对序列或混合素材可用 varied；区分持续单音与一次短击。",
+      "additionalProperties": false,
+      "required": [
+        "attack",
+        "shape",
+        "tail"
+      ],
+      "properties": {
+        "attack": {
+          "type": "string",
+          "description": "起音听感。",
+          "enum": [
+            "sharp",
+            "rounded",
+            "gradual",
+            "varied",
+            "unknown"
+          ]
+        },
+        "shape": {
+          "type": "string",
+          "description": "后续包络主要形态。held 为明显保持；abrupt_cutoff 为突然截断。",
+          "enum": [
+            "decaying",
+            "held",
+            "swelling",
+            "abrupt_cutoff",
+            "varied",
+            "unknown"
+          ]
+        },
+        "tail": {
+          "type": "string",
+          "description": "单个事件结束后的听感尾部。无法分离事件尾部时 not_applicable。不要把文件总时长当成尾音。",
+          "enum": [
+            "short",
+            "medium",
+            "long",
+            "varied",
+            "not_applicable",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "space": {
+      "type": "object",
+      "description": "只判断可听残响，不把乐器自身共鸣等同于混响。",
+      "additionalProperties": false,
+      "required": [
+        "reverb"
+      ],
+      "properties": {
+        "reverb": {
+          "type": "string",
+          "description": "干/少量/明显混响，无法区分共鸣或混响时 unknown。",
+          "enum": [
+            "dry",
+            "slight",
+            "pronounced",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "performance": {
+      "description": "有可辨乐音或演奏行为时填写，否则 null。",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "description": "有可辨乐音或演奏行为时填写，否则 null。",
+          "additionalProperties": false,
+          "required": [
+            "techniques_zh",
+            "pitch_motion"
+          ],
+          "properties": {
+            "techniques_zh": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "可听的奏法或发声动作，例如拨弦、短奏；无法确认时空数组。",
+                "minLength": 1,
+                "maxLength": 30
+              },
+              "maxItems": 3,
+              "uniqueItems": true,
+              "description": "只写能听辨的行为，不猜踏板、麦克风、设备。"
+            },
+            "pitch_motion": {
+              "type": "string",
+              "description": "单个音内的滑音/颤音与不同音符组成的旋律变化分开。",
+              "enum": [
+                "steady",
+                "gliding",
+                "vibrato",
+                "changing_notes",
+                "mixed",
+                "not_applicable",
+                "unknown"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "rhythm": {
+      "description": "存在多个事件可判断节奏组织时填写；单次发声 null。不根据文件名猜速度，不据一段节奏断言能无缝循环。",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "description": "存在多个事件可判断节奏组织时填写；单次发声 null。不根据文件名猜速度，不据一段节奏断言能无缝循环。",
+          "additionalProperties": false,
+          "required": [
+            "pulse",
+            "feel_tags"
+          ],
+          "properties": {
+            "pulse": {
+              "type": "string",
+              "description": "是否有可辨稳定脉搏。",
+              "enum": [
+                "regular",
+                "irregular",
+                "unclear"
+              ]
+            },
+            "feel_tags": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "节奏特征，可以为空。",
+                "enum": [
+                  "straight",
+                  "swung",
+                  "syncopated",
+                  "sparse",
+                  "dense"
+                ]
+              },
+              "maxItems": 3,
+              "uniqueItems": true,
+              "description": "只写听到的特征。straight 和 swung 互斥；sparse 和 dense 互斥。"
+            }
+          }
+        }
+      ]
+    },
+    "usage_suggestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "编曲角色建议，不作为声音事实或风格标签。",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "reason_zh"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "建议的编曲角色。",
+            "enum": [
+              "low_end",
+              "backbeat",
+              "pulse",
+              "melody",
+              "harmony",
+              "pad",
+              "accent",
+              "fill",
+              "transition",
+              "texture"
+            ]
+          },
+          "reason_zh": {
+            "type": "string",
+            "description": "用可听特征说明建议的原因，最多一句话。",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        }
+      },
+      "maxItems": 3,
+      "uniqueItems": true,
+      "description": "可为空；相同 role 不重复。不强制给风格、情绪或UI等非音乐用途。"
+    },
+    "review": {
+      "type": "object",
+      "description": "模型自报的不确定性和可听依据，均需人工复核；不是校准置信度。",
+      "additionalProperties": false,
+      "required": [
+        "uncertainties",
+        "evidence"
+      ],
+      "properties": {
+        "uncertainties": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "不确定字段及具体原因。unknown 或无法确定声源时应记录。",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "reason_zh"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "description": "被评价的字段路径。",
+                "enum": [
+                  "summary_zh",
+                  "source.family",
+                  "source.candidates_zh",
+                  "structure.event_form",
+                  "structure.pitchedness",
+                  "timbre.brightness",
+                  "timbre.body",
+                  "timbre.texture_tags",
+                  "timbre.distortion",
+                  "envelope.attack",
+                  "envelope.shape",
+                  "envelope.tail",
+                  "space.reverb",
+                  "performance",
+                  "performance.techniques_zh",
+                  "performance.pitch_motion",
+                  "rhythm",
+                  "rhythm.pulse",
+                  "rhythm.feel_tags",
+                  "usage_suggestions"
+                ]
+              },
+              "reason_zh": {
+                "type": "string",
+                "description": "为何无法可靠判断。",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            }
+          },
+          "maxItems": 12,
+          "uniqueItems": true,
+          "description": "不得用空数组表示已由专家确认。"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "可听观察，不得编造波形、频谱、毫秒、Hz、BPM等测量。",
+            "additionalProperties": false,
+            "required": [
+              "fields",
+              "observation_zh"
+            ],
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "description": "被评价的字段路径。",
+                  "enum": [
+                    "summary_zh",
+                    "source.family",
+                    "source.candidates_zh",
+                    "structure.event_form",
+                    "structure.pitchedness",
+                    "timbre.brightness",
+                    "timbre.body",
+                    "timbre.texture_tags",
+                    "timbre.distortion",
+                    "envelope.attack",
+                    "envelope.shape",
+                    "envelope.tail",
+                    "space.reverb",
+                    "performance",
+                    "performance.techniques_zh",
+                    "performance.pitch_motion",
+                    "rhythm",
+                    "rhythm.pulse",
+                    "rhythm.feel_tags",
+                    "usage_suggestions"
+                  ]
+                },
+                "maxItems": 5,
+                "uniqueItems": true,
+                "description": "该观察支持哪些字段，至少一个。",
+                "minItems": 1
+              },
+              "observation_zh": {
+                "type": "string",
+                "description": "直接听到的现象，不复述标签作为证据。",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            }
+          },
+          "maxItems": 5,
+          "uniqueItems": true,
+          "description": "只列与重要判断相关的观察。"
+        }
+      }
+    }
+  }
+}

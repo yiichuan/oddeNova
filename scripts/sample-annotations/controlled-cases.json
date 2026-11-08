@@ -1,0 +1,86 @@
+[
+  {
+    "id": "funk-drums",
+    "prompt": "创作一段 16 小节的 Funk 风格纯鼓组，包含 Kick、Snare 和 Hi-hat。请选择你认为最合适的鼓机采样，并输出可运行的 Strudel 代码。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "kick",
+      "snare",
+      "hat"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer KICK */\n  s(\"{{kick}}*4\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9),\n  /* @layer SNARE */\n  s(\"{{snare}} [~ {{snare}}] {{snare}} [{{snare}} ~]\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9),\n  /* @layer HAT */\n  s(\"{{hat}}*8\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "dry-snare",
+    "prompt": "创作 8 小节 100 BPM 鼓点，军鼓要起音清晰、短尾、干声，给切分留空间。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "snare"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer SNARE */\n  s(\"{{snare}} [~ {{snare}}] {{snare}} [{{snare}} ~]\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "soft-piano",
+    "prompt": "创作 8 小节舒缓钢琴旋律，音色柔和，避免尖锐的高频敲击感。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "piano"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer PIANO */\n  note(\"c4 ~ c4 [c4 ~]\").s(\"{{piano}}\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "recorder",
+    "prompt": "创作 8 小节中音竖笛旋律，持续长音与短音交替，配少量低音。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "recorder"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer RECORDER */\n  note(\"c4 ~ c4 [c4 ~]\").s(\"{{recorder}}\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "sax",
+    "prompt": "创作 8 小节次中音萨克斯短奏动机，音色有气息与鼓身，配简单节奏。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "sax"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer SAX */\n  note(\"c4 ~ c4 [c4 ~]\").s(\"{{sax}}\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "harp",
+    "prompt": "创作 8 小节竖琴琶音，自然衰减，保留音与音之间的空隙。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "harp"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer HARP */\n  note(\"c4 ~ c4 [c4 ~]\").s(\"{{harp}}\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "hand-drums",
+    "prompt": "创作 8 小节手打击乐对话，使用邦戈与康加，区分高低声部。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "bongo",
+      "conga"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer BONGO */\n  s(\"{{bongo}} ~ {{bongo}} [~ {{bongo}}]\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9),\n  /* @layer CONGA */\n  s(\"~ {{conga}} ~ {{conga}}\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "organ",
+    "prompt": "创作 8 小节管风琴和声片段，声音厚实并有清楚的呼吸。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "organ"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer ORGAN */\n  note(\"c4 ~ c4 [c4 ~]\").s(\"{{organ}}\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "bells",
+    "prompt": "创作 8 小节清亮金属打击乐旋律，音头清晰，尾音有鸣响，节奏稀疏。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "bell"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer BELL */\n  note(\"c4 ~ c4 [c4 ~]\").s(\"{{bell}}\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  },
+  {
+    "id": "texture",
+    "prompt": "创作 8 小节自然环境与轻打击的氛围片段，用鸟鸣作稀疏点缀，避免连续铺满。 本轮只比较音色：使用固定的节奏/同音 C4 试听片段，保持所有参数一致。",
+    "roles": [
+      "birds",
+      "shaker"
+    ],
+    "template": "// CONTROLLED SAMPLE SELECTION | BPM: 100\nsetcps(100/240)\nstack(\n  /* @layer BIRDS */\n  s(\"{{birds}} ~ ~ ~\").slow(2).gain(0.45).pan(0.5).room(0).delay(0).clip(0.9),\n  /* @layer SHAKER */\n  s(\"{{shaker}} ~ {{shaker}} ~\").gain(0.45).pan(0.5).room(0).delay(0).clip(0.9)\n)"
+  }
+]
