@@ -1373,6 +1373,32 @@ export class StrudelService {
   };
 
   /**
+   * Ease the editor up (or down) just far enough that the line holding `from`
+   * is on screen with a little room above it; nothing when it already is.
+   * Gentle at both ends — a scroll the reader is meant to follow.
+   */
+  scrollCodePositionIntoViewEased = (from: number, durationMs: number): void => {
+    const view = this.editorInstance?.editor as {
+      lineBlockAt?: (pos: number) => { top: number; bottom: number };
+      scrollDOM?: HTMLElement;
+    } | undefined;
+    if (!view?.lineBlockAt || !view.scrollDOM) return;
+    const scroller = view.scrollDOM;
+    const top = view.lineBlockAt(from).top;
+    if (top >= scroller.scrollTop && top < scroller.scrollTop + scroller.clientHeight) return;
+    const startPos = scroller.scrollTop;
+    const endPos = Math.max(0, top - 24);
+    const startTime = performance.now();
+    const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - startTime) / durationMs);
+      scroller.scrollTop = startPos + (endPos - startPos) * ease(t);
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+
+  /**
    * Where `from..to` sits on screen — the lines' own box, clipped to the
    * editor's visible area — or null when none of it is showing. Lets a
    * spotlight hug a layer rather than the whole panel.
@@ -1414,7 +1440,8 @@ export class StrudelService {
     }
   };
 
-  scrollCodeToBottomEased = (durationMs: number): void => {
+  /** `inOut` starts and lands gently — for a scroll the reader is meant to follow. */
+  scrollCodeToBottomEased = (durationMs: number, easing: 'out' | 'inOut' = 'out'): void => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const scrollDOM = ((this.editorInstance as any)?.editor as any)?.scrollDOM as HTMLElement | undefined;
     if (!scrollDOM) return;
@@ -1422,10 +1449,12 @@ export class StrudelService {
     const endPos = scrollDOM.scrollHeight - scrollDOM.clientHeight;
     if (endPos <= startPos) return;
     const startTime = performance.now();
-    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+    const ease = easing === 'inOut'
+      ? (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+      : (t: number) => 1 - Math.pow(1 - t, 3);
     const tick = (now: number) => {
       const t = Math.min(1, (now - startTime) / durationMs);
-      scrollDOM.scrollTop = startPos + (endPos - startPos) * easeOutCubic(t);
+      scrollDOM.scrollTop = startPos + (endPos - startPos) * ease(t);
       if (t < 1) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);

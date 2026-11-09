@@ -26,6 +26,8 @@ export type OnboardingStage =
   | 'original_heard'
   | 'preset_sent'
   | 'adapted_heard'
+  /** Desktop first-creation guide: one preset turn written; `step` is `turn-n`. */
+  | 'turn_delivered'
   | 'completed'
   | 'skipped'
   | 'postponed'

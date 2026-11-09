@@ -1875,7 +1875,7 @@ export default function ConversationView({
                 }}
                 // Stop boundary gestures from moving the outer conversation,
                 // whose next streamed update would otherwise snap it back.
-                className="h-full min-h-[160px] text-sm text-text-reasoning font-mono break-words overflow-y-auto overflow-x-hidden overscroll-y-none leading-relaxed"
+                className="reasoning-scroll h-full min-h-[160px] text-sm text-text-reasoning font-mono break-words overflow-y-auto overflow-x-hidden overscroll-y-none leading-relaxed"
                 // This nested scrollport needs its own opt-out: anchoring the
                 // trailing spacer would follow new text after a manual jump.
                 style={{ overflowAnchor: 'none' }}

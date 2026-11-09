@@ -10,7 +10,7 @@
  * cycle, and anything else that starts making sound joins by claiming the floor
  * the same way.
  */
-export type TransportId = 'studio' | 'featured' | 'onboarding';
+export type TransportId = 'studio' | 'featured';
 
 let holder: { id: TransportId; stop: () => void } | null = null;
 

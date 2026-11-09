@@ -39,7 +39,7 @@ import { useReplay } from './hooks/useReplay';
 import { useAgentRunner } from './hooks/useAgentRunner';
 import { useVideoDemo } from './hooks/useVideoDemo';
 import { useLayout, VIZ_DIVIDER_HEIGHT } from './hooks/useLayout';
-import ConversationView, { type GuidedReply } from './components/conversation/ConversationView';
+import ConversationView from './components/conversation/ConversationView';
 import ChatInput from './components/conversation/ChatInput';
 import { ExportPopover, ShareButton } from './components/studio/TopActionBar';
 import { useExportPopoverController } from './hooks/useExportPopoverController';
@@ -59,16 +59,13 @@ import { fullSessionTitle } from './lib/full-session-title';
 import { useVisualViewport } from './hooks/useVisualViewport';
 import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
-import { featuredPlayer, onboardingPlayer } from './services/featured-player';
-import { useOnboarding } from './onboarding/useOnboarding';
-import OnboardingTour, { type TourTarget } from './onboarding/OnboardingTour';
-import MobileOnboardingTour from './onboarding/MobileOnboardingTour';
+import { featuredPlayer } from './services/featured-player';
+import { useFirstCreation, type CreationTurnWriter } from './onboarding/useFirstCreation';
+import FirstCreationTour, { type TourTarget } from './onboarding/FirstCreationTour';
+import MobileFirstCreationTour from './onboarding/MobileFirstCreationTour';
 import OnboardingExitHint from './onboarding/OnboardingExitHint';
-import { advancesOnWindowClose, mobilePhaseOf, needsMobileRecovery } from './onboarding/mobile-tour-model';
-import type { OnboardingStep } from './onboarding/onboarding-state';
 import { visibleRectOf } from './onboarding/tour-geometry';
-import { INTRO_PIANO_CHANGE } from './onboarding/intro-piano-case';
-import { isOnboardingEligible, markOnboardingEligible } from './onboarding/onboarding-state';
+import { isOnboardingEligible, markOnboardingEligible } from './onboarding/first-creation-state';
 import { ODDENOVA_BRIDGE_BOOTSTRAP_KEY } from './lib/oddenova-bridge';
 import { ODDENOVA_IMPORT_HASH_PREFIX } from './lib/oddenova-import';
 import { featuredSessionDraft } from './lib/featured-session';
@@ -279,7 +276,6 @@ export default function App() {
   const skipNextManualSyncSessionRef = useRef<string | null>(null);
   const mobileCodeRestoreRef = useRef<{ id: string; code: string } | null>(null);
   /** Set once the guide is wired up below: shutting the code window can be its next step. */
-  const onCodeSheetClosedRef = useRef<() => void>(() => {});
   const prevLoadingRef = useRef<Set<string>>(new Set());
   const importPromptUserRef = useRef<string | null>(null);
   const latestGuestSessionsRef = useRef<Session[]>([]);
@@ -441,7 +437,6 @@ export default function App() {
 
   const dismissCodeSheet = useCallback(() => {
     setCodeSheetOpen(false);
-    onCodeSheetClosedRef.current();
   }, [setCodeSheetOpen]);
 
   /* The code window's export popover. Driven from here rather than from
@@ -1507,16 +1502,6 @@ export default function App() {
     prepareForRename,
   });
 
-  /* A skipped first-run practice is disposable. Create the ordinary blank
-     conversation before removing it, so deleting the current row can never
-     fall back to one of the reader's older conversations. */
-  const discardOnboardingPractice = useCallback((id: string) => {
-    if (sessions.currentId !== id) return;
-    setCommitSuggestions(null);
-    sessions.newSession();
-    deleteSessionAction(id);
-  }, [deleteSessionAction, sessions]);
-
   const commitPendingDelete = useCallback(async (notice: FavoriteNotice | null): Promise<boolean> => {
     if (notice?.kind !== 'released' && notice?.kind !== 'deleted') return false;
     // Already written where it was asked for. See `settled`.
@@ -1779,8 +1764,9 @@ export default function App() {
     strudel,
   ]);
 
-  /* The first-run guide: a tour over the studio's own controls, walking a
-     practice copy of the theme song. See src/onboarding/. */
+  /* The first-run guide: four preset turns of a first creation, on either
+     layout (useFirstCreation; the phone ends in the code window). See
+     src/onboarding/. */
   const leaveSessionForPractice = useCallback(async () => {
     if (sessions.currentId) {
       // Same as a switch: a phone does not wait on the network to move on.
@@ -1790,23 +1776,59 @@ export default function App() {
     setCommitSuggestions(null);
   }, [isMobile, persistAndFlushOutgoingSession, sessions.currentId, strudel.code]);
   const focusChatInput = useCallback(() => setInputFocusTrigger((n) => n + 1), []);
-  const onboarding = useOnboarding({
+  const guideEnabled = isTopWindow && !isVideoMode && !isDemoMode();
+  const guideCanAutoInvite = !arrivedForTask
+    && !auth.loading
+    && !auth.recoveringPassword
+    && !sessions.isLoading
+    && importStatus !== 'loading'
+    && !isReplaying;
+  // Anything else that needs the screen — a sign-in, the guest import, a
+  // settings dialog — takes it; the tour steps back and returns after.
+  const guideStudioActive = primaryNavItem === 'home'
+    && !welcomeOpen
+    && !accountOpen
+    && !apiKeyModalOpen
+    && !guestImportSessions
+    && !importingGuestHistory;
+
+  /* A preset turn of the desktop guide plays out through the same session
+     writers and the same thinking indicator as a real agent turn; its stop
+     key aborts the controller registered here. */
+  const creationWriter = useMemo((): CreationTurnWriter => ({
+    addUserMessage: (text, sessionId) => sessions.addUserMessage(text, sessionId),
+    appendReasoning: (delta, sessionId) => sessions.appendToLastReasoning(delta, sessionId),
+    addProgress: (kind, content, opts) => sessions.addProgress(kind, content, opts),
+    addAssistantMessage: (text, code, sessionId, revision) =>
+      sessions.addAssistantMessage(text, code, sessionId, revision, 'normal'),
+    setCurrentCode: (code, sessionId) => sessions.setCurrentCode(code, sessionId),
+    checkpoint: (sessionId) => sessions.checkpointSession(sessionId),
+    beginGenerating: (sessionId) => {
+      setLoadingSessions((prev) => new Set(prev).add(sessionId));
+      const controller = new AbortController();
+      abortControllersRef.current.set(sessionId, controller);
+      return controller;
+    },
+    endGenerating: (sessionId, controller) => {
+      if (abortControllersRef.current.get(sessionId) !== controller) return;
+      abortControllersRef.current.delete(sessionId);
+      setLoadingSessions((prev) => {
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
+    },
+  }), [sessions]);
+  const creationStudio = useMemo(() => ({
+    play: (code: string) => strudel.play(code),
+    stop: () => strudel.stop(),
+  }), [strudel]);
+  const firstCreation = useFirstCreation({
     ownerKey,
-    enabled: isTopWindow && !isVideoMode && !isDemoMode(),
-    canAutoInvite: !arrivedForTask
-      && !auth.loading
-      && !auth.recoveringPassword
-      && !sessions.isLoading
-      && importStatus !== 'loading'
-      && !isReplaying,
-    // Anything else that needs the screen — a sign-in, the guest import, a
-    // settings dialog — takes it; the tour steps back and returns after.
-    studioActive: primaryNavItem === 'home'
-      && !welcomeOpen
-      && !accountOpen
-      && !apiKeyModalOpen
-      && !guestImportSessions
-      && !importingGuestHistory,
+    layout: isMobile ? 'mobile' : 'desktop',
+    enabled: guideEnabled,
+    canAutoInvite: guideCanAutoInvite,
+    studioActive: guideStudioActive,
     eligible: onboardingEligible,
     sessions: sessions.sessions,
     currentId: sessions.currentId,
@@ -1814,190 +1836,141 @@ export default function App() {
     importSession: sessions.importSession,
     switchToSession: handleSwitchSession,
     leaveCurrentSession: leaveSessionForPractice,
-    showCodeInEditor: applyImportedCode,
-    discardPractice: discardOnboardingPractice,
     startNewSession: handleNewSession,
     focusInput: focusChatInput,
-    interruptOnHidden: isMobile,
-    studio: {
-      isPlaying: strudel.isPlaying,
-      engineReady: strudel.engineReady,
-      activeCode: strudel.activeCode,
-      getPlaybackCycle: strudel.getPlaybackCycle,
-      play: handlePlay,
-      pause: strudel.pause,
-      stop: strudel.stop,
-    },
-    comparePlayer: onboardingPlayer,
+    writer: creationWriter,
+    studio: creationStudio,
   });
-  const noteRealInstruction = onboarding.noteRealInstruction;
+
+  const noteRealCreationInstruction = firstCreation.noteRealInstruction;
   useEffect(() => {
-    noteRealInstructionRef.current = noteRealInstruction;
-  }, [noteRealInstruction]);
-  const openOnboarding = onboarding.openFromMenu;
+    noteRealInstructionRef.current = noteRealCreationInstruction;
+  }, [noteRealCreationInstruction]);
+  const openOnboarding = firstCreation.openFromMenu;
   const handleOpenOnboarding = useCallback(() => {
     setNavDrawerOpen(false);
     handlePrimaryNavSelect('home');
     openOnboarding();
   }, [handlePrimaryNavSelect, openOnboarding, setNavDrawerOpen]);
 
-  const onboardingStep = onboarding.view === 'step' ? onboarding.step : null;
-
   /* ── The guide on a phone ──
-     The four-stage reading of the same steps (see MobileOnboardingTour). The
-     first stage is walked through the code window, which the reader opens with
-     its own key and shuts with its own close; shutting it once the original
-     has been heard is that stage's "next". Nothing opens the window for them. */
-  const mobileOnboardingStep = isMobile ? onboardingStep : null;
-  const mobileOnboardingPhase = mobileOnboardingStep === null
-    ? null
-    : mobilePhaseOf(onboarding.progress, { codeWindowOpen: codeSheetOpen });
-  /* The guided reply's code widget, opened out at one step and shut again by
-     moving to the next: remembered with the step it was opened on. */
-  const [mobileChangeOpenAt, setMobileChangeOpenAt] = useState<OnboardingStep | null>(null);
-  const mobileChangeOpen = mobileOnboardingStep !== null && mobileChangeOpenAt === mobileOnboardingStep;
-  const setMobileChangeOpen = useCallback((open: boolean) => {
-    setMobileChangeOpenAt(open ? mobileOnboardingStep : null);
-  }, [mobileOnboardingStep]);
-
-  const onboardingProgress = onboarding.progress;
-  const onboardingNext = onboarding.next;
-  const onboardingPrev = onboarding.prev;
+     Each turn plays from its reply's widget on its own (a committed take is
+     the one the widget lights for). After the fourth, the reader opens the
+     code window with its own key; "Got it" on the code shuts it again, and
+     the close comes up over the conversation. */
+  // The conversation's scrollbars stay out of sight while the guide is on a step (see index.css).
+  const guideOnStep = firstCreation.view === 'step';
   useEffect(() => {
-    onCodeSheetClosedRef.current = () => {
-      if (mobileOnboardingStep !== null && advancesOnWindowClose(onboardingProgress)) onboardingNext();
-    };
-  }, [mobileOnboardingStep, onboardingProgress, onboardingNext]);
+    if (!guideOnStep) return;
+    document.documentElement.setAttribute('data-guide-active', '');
+    return () => document.documentElement.removeAttribute('data-guide-active');
+  }, [guideOnStep]);
 
-  // Past the first stage the conversation is where the guide points, so a
-  // window left open from it is put away once, on arriving at the step. One
-  // the reader opens later is theirs; the guide waits for it to shut.
+  const creationPhoneStep = isMobile && firstCreation.view === 'step' ? firstCreation.step : null;
+  const creationCodeOpened = firstCreation.codeOpened;
   useEffect(() => {
-    if (mobileOnboardingStep === null || mobileOnboardingStep === 'listen-original') return;
-    setCodeSheetOpen(false);
-  }, [mobileOnboardingStep, setCodeSheetOpen]);
-
-  // A stored record at the close without the new version heard goes back for it.
+    if (creationPhoneStep === 'open-code' && codeSheetOpen) creationCodeOpened();
+  }, [creationPhoneStep, codeSheetOpen, creationCodeOpened]);
+  const lastPhoneStepRef = useRef(creationPhoneStep);
   useEffect(() => {
-    if (mobileOnboardingStep !== null && needsMobileRecovery(onboardingProgress)) onboardingPrev();
-  }, [mobileOnboardingStep, onboardingProgress, onboardingPrev]);
+    const was = lastPhoneStepRef.current;
+    lastPhoneStepRef.current = creationPhoneStep;
+    if (was === 'read-code' && creationPhoneStep === 'done') setCodeSheetOpen(false);
+  }, [creationPhoneStep, setCodeSheetOpen]);
+  /** Slow enough to watch the whole piece go by. */
+  const PHONE_CODE_SCROLL_MS = 3200;
+  const revealPhoneCode = useCallback(() => {
+    strudel.scrollCodeToBottomEased(PHONE_CODE_SCROLL_MS, 'inOut');
+  }, [strudel]);
 
-  // Crossing the phone breakpoint mid-guide (a rotation, a resized pane)
-  // silences a listen under way and keeps the step: the other layout picks up
-  // the same step with its own controls, and the reader plays again there.
-  const interruptOnboardingListening = onboarding.interruptListening;
-  const onboardingOnStep = onboardingStep !== null;
-  const lastOnboardingLayoutRef = useRef(isMobile);
-  useEffect(() => {
-    if (lastOnboardingLayoutRef.current === isMobile) return;
-    lastOnboardingLayoutRef.current = isMobile;
-    if (onboardingOnStep) interruptOnboardingListening();
-  }, [isMobile, onboardingOnStep, interruptOnboardingListening]);
-
-  const mobileReplyId = mobileOnboardingStep !== null ? onboarding.replyMessageId : null;
-  const mobileListenReady = onboarding.listen.status === 'ready';
-  const guidedReply = useMemo((): GuidedReply | undefined => {
-    if (!mobileReplyId || mobileOnboardingStep === null) return undefined;
-    if (mobileOnboardingStep === 'listen-original' || mobileOnboardingStep === 'send-instruction') return undefined;
+  /* ── The guide on a desktop ──
+     Where the layers the explained turn added sit in the editor, by their
+     markers — never a line number: from the first one's start to the last
+     one's end. */
+  const creationStep = !isMobile && firstCreation.view === 'step' ? firstCreation.step : null;
+  const creationExplainTurn = creationStep !== null ? firstCreation.explainTurn : null;
+  const creationAddedLayers = firstCreation.addedLayers;
+  const creationAddedRange = useMemo(() => {
+    if (creationExplainTurn === null || creationExplainTurn < 2) return null;
+    const layers = parseScore(strudel.code).layers.filter((layer) => creationAddedLayers.includes(layer.name));
+    if (!layers.length) return null;
+    const first = layers[0];
+    const last = layers[layers.length - 1];
+    const firstSlot = strudel.code.slice(first.rawStart, first.rawEnd);
+    const lastSlot = strudel.code.slice(last.rawStart, last.rawEnd);
     return {
-      id: mobileReplyId,
-      expanded: mobileChangeOpen,
-      onExpandedChange: setMobileChangeOpen,
-      // A thumb's reach round the play key while the guide has the reader
-      // press it; at the close, opened out to be read, nothing of the kind.
-      enlarged: mobileOnboardingStep === 'read-reply' || mobileOnboardingStep === 'listen-adapted',
-      playDisabled: mobileOnboardingStep === 'listen-adapted' && !mobileListenReady,
-      // Only on the step that times the listen: there every play is stopped by
-      // the guide at 5 seconds. Reading the reply, nothing would stop it.
-      stopDisabled: mobileOnboardingStep === 'listen-adapted',
+      from: first.rawStart + (firstSlot.length - firstSlot.trimStart().length),
+      to: last.rawStart + lastSlot.trimEnd().length,
     };
-  }, [mobileReplyId, mobileOnboardingStep, mobileChangeOpen, setMobileChangeOpen, mobileListenReady]);
+  }, [creationExplainTurn, creationAddedLayers, strudel.code]);
 
-  /* The practice reply's own play key, on a phone. That reply is the latest
-     take and the draft both, so it is played as the draft is — no preview of
-     an older version, just the piece from the top — which is what the guide's
-     listen watches for. Any other widget plays the way it always does. */
-  const handleMobilePlaySegment = useCallback((segmentId: string, code: string) => {
-    if (mobileReplyId !== null && segmentId === mobileReplyId && code === (current?.code ?? '')) {
-      exitPreview();
-      setSoundingSegment({ id: segmentId, code });
-      void strudel.play(code);
-      return;
-    }
-    handlePlaySegment(segmentId, code);
-  }, [mobileReplyId, current?.code, exitPreview, strudel, handlePlaySegment]);
-
-  /* Where the added layer sits in the editor, by its marker — never a line number. */
-  const addedLayerRange = useMemo(() => {
-    if (isMobile || onboardingStep !== 'view-change') return null;
-    const layer = parseScore(strudel.code).layers.find((candidate) => candidate.name === INTRO_PIANO_CHANGE.addedLayer);
-    if (!layer) return null;
-    const slot = strudel.code.slice(layer.rawStart, layer.rawEnd);
-    return {
-      from: layer.rawStart + (slot.length - slot.trimStart().length),
-      to: layer.rawStart + slot.trimEnd().length,
-    };
-  }, [isMobile, onboardingStep, strudel.code]);
-
-  const listenReady = onboarding.listen.status === 'ready';
-  const onboardingSending = onboarding.sending;
-  const onboardingReplyId = onboarding.replyMessageId;
+  const creationSending = firstCreation.sending;
+  const creationComposeTurn = creationStep !== null ? firstCreation.composeTurn : null;
   const getCodeRangeRect = strudel.getCodeRangeRect;
-  const scrollCodeRangeIntoView = strudel.scrollCodeRangeIntoView;
-  const onboardingTarget = useMemo((): TourTarget | null => {
-    switch (onboardingStep) {
-      case 'listen-original':
-      case 'listen-adapted':
-        return {
-          key: `${onboardingStep}:play`,
-          resolve: () => visibleRectOf('[data-onboarding-target="play"]'),
-          interactive: listenReady,
-          placement: onboardingStep === 'listen-original' ? 'below-start' : 'above-start',
-        };
-      case 'send-instruction':
-        return {
-          key: 'composer',
-          resolve: () => visibleRectOf('[data-onboarding-target="composer"]'),
-          interactive: !onboardingSending,
-          // The field's own edge, not a margin round it.
-          padding: 0,
-          placement: 'above-start',
-          matchWidth: true,
-        };
-      case 'read-reply': {
-        if (!onboardingReplyId) return null;
-        const selector = `[data-message-id="${onboardingReplyId}"]`;
-        return {
-          key: `reply:${onboardingReplyId}`,
-          resolve: () => visibleRectOf(selector),
-          // Keep the card continuous with the send step. Returning to the
-          // fixed desktop width here can make it choose the opposite side of
-          // the reply as well as visibly growing between the two steps.
-          resolveCardWidth: () => visibleRectOf('[data-onboarding-target="composer"]')?.width ?? null,
-          interactive: false,
-          reveal: () => document.querySelector(selector)?.scrollIntoView({ block: 'nearest' }),
-        };
-      }
-      case 'view-change': {
-        const range = addedLayerRange;
-        return {
-          key: `layer:${range?.from ?? 'none'}`,
-          resolve: () => (range ? getCodeRangeRect(range.from, range.to) : null)
-            ?? visibleRectOf('[data-onboarding-target="code"]'),
-          interactive: false,
-          reveal: () => { if (range) scrollCodeRangeIntoView(range.from, range.to); },
-        };
-      }
-      default:
-        return null;
+  const scrollCodeToBottomEased = strudel.scrollCodeToBottomEased;
+  const scrollCodePositionIntoViewEased = strudel.scrollCodePositionIntoViewEased;
+  const CREATION_SCROLL_MS = 1400;
+  /** Room round the framed lines, and the frame's least distance from the code window's top and bottom. */
+  const CREATION_FRAME_PAD = 6;
+  const CREATION_FRAME_INSET = 8;
+  const creationTarget = useMemo((): TourTarget | null => {
+    if (creationComposeTurn !== null) {
+      return {
+        key: `compose-${creationComposeTurn}`,
+        resolve: () => visibleRectOf('[data-onboarding-target="composer"]'),
+        interactive: !creationSending,
+        // The field's own edge, not a margin round it.
+        padding: 0,
+        placement: 'above-start',
+        matchWidth: true,
+      };
     }
-  }, [onboardingStep, listenReady, onboardingSending, onboardingReplyId, addedLayerRange, getCodeRangeRect, scrollCodeRangeIntoView]);
+    if (creationExplainTurn === 1) {
+      return {
+        key: 'explain-1',
+        resolve: () => visibleRectOf('[data-onboarding-target="code"]'),
+        interactive: false,
+      };
+    }
+    if (creationExplainTurn !== null) {
+      const range = creationAddedRange;
+      return {
+        key: `explain-${creationExplainTurn}:${range?.from ?? 'none'}`,
+        resolve: () => {
+          const code = visibleRectOf('[data-onboarding-target="code"]');
+          const lines = range ? getCodeRangeRect(range.from, range.to) : null;
+          if (!code || !lines) return code;
+          // The frame keeps its top and bottom edges inside the code window,
+          // a little in from them, however tall the added layers are.
+          const top = Math.max(lines.top - CREATION_FRAME_PAD, code.top + CREATION_FRAME_INSET);
+          const bottom = Math.min(lines.top + lines.height + CREATION_FRAME_PAD, code.top + code.height - CREATION_FRAME_INSET);
+          const left = lines.left - CREATION_FRAME_PAD;
+          return { left, top, width: lines.width + CREATION_FRAME_PAD * 2, height: Math.max(0, bottom - top) };
+        },
+        padding: 0,
+        interactive: false,
+        // Once the spotlight is up it stays put; only the code scrolls under it.
+        freezeHole: true,
+        // The added layers are at the end of the piece: a scroll slow enough
+        // to follow, and the spotlight only once it has come to rest.
+        reveal: () => scrollCodeToBottomEased(CREATION_SCROLL_MS, 'inOut'),
+        settleMs: CREATION_SCROLL_MS,
+        // When the added layers are taller than the editor (turn 3), the
+        // bottom leaves the first one's marker and comment above the fold:
+        // once the spotlight is up, ease back to where they begin.
+        afterShown: () => { if (range) scrollCodePositionIntoViewEased(range.from, CREATION_SCROLL_MS); },
+      };
+    }
+    return null;
+  }, [creationComposeTurn, creationExplainTurn, creationSending, creationAddedRange, getCodeRangeRect, scrollCodeToBottomEased, scrollCodePositionIntoViewEased]);
 
-  const onboardingPresetLock = onboardingStep === 'send-instruction'
+  // Every compose step, on either layout, holds the field to its preset.
+  const creationPresetTurn = firstCreation.view === 'step' ? firstCreation.composeTurn : null;
+  const onboardingPresetLock = creationPresetTurn !== null && firstCreation.presetText !== null
     ? {
-        text: onboarding.presetText,
-        busy: onboarding.sending,
-        onSend: () => { void onboarding.sendPreset(); },
+        text: firstCreation.presetText,
+        busy: firstCreation.sending,
+        onSend: () => { void firstCreation.sendTurn(); },
       }
     : undefined;
 
@@ -2421,12 +2394,11 @@ export default function App() {
                  answered to the buffer would offer to stop a take the reader
                  has already edited away from. */
               playingCode={strudel.activeCode}
-              onPlaySegment={handleMobilePlaySegment}
+              onPlaySegment={handlePlaySegment}
               onStopCode={strudel.stop}
               draftCode={current?.code ?? ''}
               pressedSegmentId={soundingSegment?.id ?? null}
               pressedSegmentCode={soundingSegment?.code ?? null}
-              guidedReply={guidedReply}
               startingSegmentId={startingSegmentId}
             />
           </div>
@@ -2639,9 +2611,6 @@ export default function App() {
                 onToggleViz={toggleVizCollapsed}
                 syncStatus={visibleSyncStatus}
                 showSyncStatus={showSessionSyncStatus}
-                guidePlay={mobileOnboardingPhase === 'play-in-window'
-                  ? { playDisabled: !mobileListenReady }
-                  : undefined}
               />
             </div>
 
@@ -2787,7 +2756,7 @@ export default function App() {
         featuredPieceOpen={featuredPieceOpen}
         accountInitials={accountInitials(auth.user)}
         onOpenOnboarding={handleOpenOnboarding}
-        onboardingExitHintOpen={onboarding.exitHintVisible && !isMobile}
+        onboardingExitHintOpen={firstCreation.exitHintVisible && !isMobile}
       />
 
       <>
@@ -3062,21 +3031,20 @@ export default function App() {
       )}
       {/* Over both layouts: it points at whichever one is showing. */}
       {isMobile ? (
-        <MobileOnboardingTour
-          onboarding={onboarding}
+        <MobileFirstCreationTour
+          guide={firstCreation}
           codeWindowOpen={codeSheetOpen}
           suspended={navDrawerOpen}
-          changeOpen={mobileChangeOpen}
-          onChangeOpenChange={setMobileChangeOpen}
+          onRevealCode={revealPhoneCode}
         />
       ) : (
-        <OnboardingTour onboarding={onboarding} target={onboardingTarget} />
+        <FirstCreationTour guide={firstCreation} target={creationTarget} />
       )}
-      {onboarding.exitHintVisible && (
+      {firstCreation.exitHintVisible && (
         <OnboardingExitHint
           open
           mobile={isMobile}
-          onClose={onboarding.dismissExitHint}
+          onClose={firstCreation.dismissExitHint}
         />
       )}
     </>
