@@ -221,4 +221,3 @@ export class IsolatedPlayer {
 }
 
 export const featuredPlayer = new IsolatedPlayer('featured');
-export const onboardingPlayer = new IsolatedPlayer('onboarding');

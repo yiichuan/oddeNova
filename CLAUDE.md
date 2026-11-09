@@ -147,15 +147,16 @@ Key modules:
   changes and unmount invalidate old action results, including error display.
 
 - **`src/onboarding/`** — the first-run guide (plan:
-  `docs/new-user-onboarding-plan.md`). One preset practice (`intro-piano-v1`)
-  whose reply and adapted script are made ahead of time in
-  `onboarding/intro-piano-v1/` — it never calls a model or the agent loop.
-  It runs as a six-step spotlight tour (`OnboardingTour.tsx`) over the real
-  controls, found by `data-onboarding-target` / `data-message-id` markers;
-  the reader presses the studio's own play and send keys, and
-  `listening.ts` pauses the studio transport at 5 s off its playhead.
+  `docs/first-creation-onboarding-plan.md`); it never calls a model or the
+  agent loop. `useFirstCreation.ts` walks four preset turns
+  (`first-creation-v1`, scripts in `onboarding/first-creation-v1/`) from an
+  empty session, on both layouts: each turn is written through the same
+  session writers and loading indicator a real agent turn uses, then played.
+  Desktop (`FirstCreationTour.tsx`) explains turns 1–3 over the code panel;
+  the phone (`MobileFirstCreationTour.tsx`) goes turn to turn and ends in the
+  code window. Targets are found by `data-onboarding-target` markers.
   Progress is per owner in `localStorage`, separate from the welcome and
-  theme-song flags.
+  theme-song flags; a settled guide is also flagged in the cloud.
 
 - **`src/demo/`** — `?demo=true` runs a scripted `demo-llm.ts` in place of a
   real LLM call, replaying canned tool-call sequences from `demo-config.ts`,

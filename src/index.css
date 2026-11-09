@@ -2577,6 +2577,19 @@ html[data-theme='light'] .history-search-field {
 
 .conversation-scroll { container-type: size; overflow-anchor: none; }
 
+/* While the first-run guide is walking a turn through the conversation
+   (html[data-guide-active], set by App), its scrollbars are hidden: the
+   stream and the thinking window still scroll, but nothing is drawn beside
+   them that the guide did not put there. */
+html[data-guide-active] .conversation-scroll,
+html[data-guide-active] .reasoning-scroll {
+  scrollbar-width: none;
+}
+html[data-guide-active] .conversation-scroll::-webkit-scrollbar,
+html[data-guide-active] .reasoning-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 .conversation-edge-fade {
   position: absolute;
   z-index: 30;
