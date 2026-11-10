@@ -7,7 +7,6 @@ const DEFAULT_CPS = 0.5;
 // A layer that exits and re-enters prints one range per stretch; beyond this the
 // card shows its first-to-last span instead of a column of fragments.
 const MAX_SEGMENTS = 2;
-// Querying is bounded so an unusually long arrangement cannot stall the share dialog.
 const MAX_QUERY_CYCLES = 4096;
 
 /** Layer code with comments and layout removed; string literals (mini-notation) are kept whole. */
@@ -83,19 +82,34 @@ export function audibleSegments(events: LayerEvent[], totalCycles: number): [num
  * rather than a guess.
  */
 export async function resolveLayerRanges(code: string): Promise<Record<string, string[]>> {
-  const totalCycles = getStrudelLoopCycles(code);
-  const parsedCps = parseScore(code).cps;
-  const cps = parsedCps != null && parsedCps > 0 ? parsedCps : DEFAULT_CPS;
+  const timing = receiptTiming(code);
   try {
     const { queryLayerEvents } = await import('../strudel');
-    const events = await queryLayerEvents(code, Math.min(totalCycles, MAX_QUERY_CYCLES));
+    const events = await queryLayerEvents(code, timing.queryCycles);
     const ranges: Record<string, string[]> = {};
-    for (const [name, layerEvents] of events) {
-      ranges[name] = audibleSegments(layerEvents, totalCycles)
-        .map(([begin, end]) => `${formatPlaybackTime(begin / cps)} – ${formatPlaybackTime(end / cps)}`);
-    }
+    for (const [name, layerEvents] of events) ranges[name] = formatRanges(layerEvents, timing);
     return ranges;
   } catch {
     return {};
   }
+}
+
+export interface ReceiptTiming { totalCycles: number; queryCycles: number; cps: number }
+
+/** The loop length and tempo the card's ranges are measured against. */
+export function receiptTiming(code: string): ReceiptTiming {
+  const totalCycles = getStrudelLoopCycles(code);
+  const parsedCps = parseScore(code).cps;
+  return {
+    totalCycles,
+    // Querying is bounded so an unusually long arrangement cannot stall the share dialog.
+    queryCycles: Math.min(totalCycles, MAX_QUERY_CYCLES),
+    cps: parsedCps != null && parsedCps > 0 ? parsedCps : DEFAULT_CPS,
+  };
+}
+
+/** Printed ranges ("00:08 – 00:56") of the stretches in which `events` sound. */
+export function formatRanges(events: LayerEvent[], { totalCycles, cps }: ReceiptTiming): string[] {
+  return audibleSegments(events, totalCycles)
+    .map(([begin, end]) => `${formatPlaybackTime(begin / cps)} – ${formatPlaybackTime(end / cps)}`);
 }

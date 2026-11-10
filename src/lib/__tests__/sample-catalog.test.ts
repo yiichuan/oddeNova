@@ -28,6 +28,12 @@ describe('SAMPLE_CATALOG', () => {
     expect(expected.filter((name) => !shown.has(name))).toEqual([]);
   });
 
+  it('每个音色都有中文名（试听页和分享小票都靠它认出音色）', () => {
+    const unnamed = SAMPLE_CATALOG.flatMap((category) => category.groups.flatMap((group) =>
+      group.samples.filter((sample) => !sample.label?.[0]).map((sample) => sample.name)));
+    expect(unnamed).toEqual([]);
+  });
+
   it('同一个名字只出现一次', () => {
     const seen = new Set<string>();
     const duplicates = catalogNames.filter((name) => {

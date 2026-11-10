@@ -27,6 +27,7 @@ import {
   MRIDANGAM_SAMPLES,
   VCSL_SAMPLES,
 } from './sample-allowlist';
+import { SAMPLE_LABELS } from './sample-labels';
 
 /** A string in both of the app's languages: [中文, English]. */
 export type Bilingual = readonly [string, string];
@@ -57,6 +58,12 @@ export interface SampleCategory {
   /** One line on what is in it and how to call it from code. */
   blurb: Bilingual;
   groups: SampleGroup[];
+}
+
+/** A bare name with its gloss from sample-labels.ts, when it has one. */
+function labelled(name: string): SampleEntry {
+  const label = SAMPLE_LABELS[name];
+  return label ? { name, label } : { name };
 }
 
 /* ── Drum parts ────────────────────────────────────────────────────────── */
@@ -117,7 +124,7 @@ function drumMachineGroups(): SampleGroup[] {
     const machine = name.slice(0, cut);
     const part = name.slice(cut + 1);
     const entries = byMachine.get(machine) ?? [];
-    entries.push({ name, label: DRUM_PART_LABEL.get(part) });
+    entries.push({ name, label: DRUM_PART_LABEL.get(part) ?? SAMPLE_LABELS[name] });
     byMachine.set(machine, entries);
   }
   const partRank = (name: string) =>
@@ -157,7 +164,7 @@ const GM_FAMILIES: ReadonlyArray<{ id: string; title: Bilingual; size: number; n
 function gmGroups(): SampleGroup[] {
   let start = 0;
   const groups = GM_FAMILIES.map(({ id, title, size, note }) => {
-    const samples = GM_INSTRUMENTS.slice(start, start + size).map((name) => ({ name }));
+    const samples = GM_INSTRUMENTS.slice(start, start + size).map(labelled);
     start += size;
     return { id: `gm-${id}`, title, note, samples };
   });
@@ -165,7 +172,7 @@ function gmGroups(): SampleGroup[] {
      gets a shelf rather than vanishing. */
   const rest = GM_INSTRUMENTS.slice(start);
   if (rest.length > 0) {
-    groups.push({ id: 'gm-more', title: ['更多 GM 音色', 'More GM'], note: undefined, samples: rest.map((name) => ({ name })) });
+    groups.push({ id: 'gm-more', title: ['更多 GM 音色', 'More GM'], note: undefined, samples: rest.map(labelled) });
   }
   return groups;
 }
@@ -482,7 +489,7 @@ const SYNTH_GROUPS: GroupSpec[] = [
 /* ── Assembly ──────────────────────────────────────────────────────────── */
 
 const toEntry = (item: string | SampleEntry): SampleEntry =>
-  typeof item === 'string' ? { name: item } : item;
+  typeof item === 'string' ? labelled(item) : item;
 
 /* Every name a hand-sorted shelf may draw from — the sampled libraries, minus
    the drum machines and GM, which shelve themselves above. */
@@ -523,7 +530,7 @@ function buildCatalog(): SampleCategory[] {
     fx.push({
       id: 'fx-more',
       title: ['更多采样', 'More samples'],
-      samples: unsorted.map((name) => ({ name })),
+      samples: unsorted.map(labelled),
     });
   }
 
@@ -583,6 +590,41 @@ function buildCatalog(): SampleCategory[] {
 }
 
 export const SAMPLE_CATALOG: readonly SampleCategory[] = buildCatalog();
+
+const LABEL_BY_NAME: ReadonlyMap<string, Bilingual> = new Map(
+  SAMPLE_CATALOG.flatMap((category) => category.groups.flatMap((group) =>
+    group.samples.flatMap((sample) => (sample.label ? [[sample.name, sample.label] as const] : [])))),
+);
+
+/** The gloss the 试听 page shows for a sound name (`bd`, `RolandTR808_hh`), if it has one. */
+export function sampleLabel(name: string): Bilingual | undefined {
+  return LABEL_BY_NAME.get(name);
+}
+
+/** The drum-kit part a short name stands for (`bd` → 底鼓), as the suffix of a drum machine's sounds. */
+export function drumPartLabel(part: string): Bilingual | undefined {
+  return DRUM_PART_LABEL.get(part);
+}
+
+const KIT_SOUNDS: ReadonlySet<string> = new Set(
+  SAMPLE_CATALOG.filter(({ id }) => id === 'kit' || id === 'machines')
+    .flatMap((category) => category.groups.flatMap((group) => group.samples.map(({ name }) => name))),
+);
+
+/** True for a part of a drum kit: a kit piece (`bd`, `808oh`) or a drum machine's voice (`RolandTR808_hh`). */
+export function isDrumKitSound(name: string): boolean {
+  return KIT_SOUNDS.has(name);
+}
+
+const DRUM_MACHINES: ReadonlyMap<string, string> = new Map(
+  (SAMPLE_CATALOG.find(({ id }) => id === 'machines')?.groups ?? []).flatMap(({ title: [machine], subtitle }) =>
+    [[machine.toLowerCase(), machine], ...(subtitle ? [[subtitle.toLowerCase(), machine] as const] : [])] as const),
+);
+
+/** The drum machine a `.bank()` names, by its full or short name in any case (`tr808` → RolandTR808). */
+export function resolveDrumMachine(bank: string): string | undefined {
+  return DRUM_MACHINES.get(bank.toLowerCase());
+}
 
 /** How many sounds a category holds, across all of its groups. */
 export function countSamples(category: SampleCategory): number {

@@ -5,6 +5,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import { P1_WIDTH, rgbaToRaster } from './paperang-protocol';
 import { formatReceiptNumber } from './receipt-counter';
 import { resolveLayerNotes, resolveLayerRanges } from './receipt-layers';
+import { resolveVoiceLayers, isAgentShaped, type ReceiptRow } from './receipt-voices';
 import { drawReceiptGalaxy, receiptGalaxyHeight } from './receipt-galaxy';
 
 // Thermal paper loses fine strokes, so no printed text goes below 15px.
@@ -133,6 +134,28 @@ function loadBundledFonts(): Promise<void> {
   return bundledFonts;
 }
 
+/**
+ * One row per instrument. Agent-shaped code (an output `stack` of `@layer`-marked
+ * layers) prints its layers with the agent's notes; anything else is split into the
+ * instruments its variables define, or its sounds. A piece neither path can read
+ * prints one row.
+ */
+async function resolveReceiptRows(details: ShareReceiptDetails): Promise<ReceiptRow[]> {
+  const { code, locale } = details;
+  const parsed = parseScore(code);
+  if (isAgentShaped(code)) {
+    const notes = resolveLayerNotes(code, details.messages ?? []);
+    const ranges = await resolveLayerRanges(code);
+    return parsed.layers.map(layer => ({ name: layer.name, note: notes[layer.name] ?? '', ranges: ranges[layer.name] ?? [] }));
+  }
+  const voices = await resolveVoiceLayers(code, locale);
+  if (voices) return voices;
+  // Without a stack the whole piece is one layer, keyed ''; a stack that is not the
+  // output would split the wrong thing, so it prints no range.
+  const ranges = parsed.hasStack ? [] : (await resolveLayerRanges(code))[''] ?? [];
+  return [{ name: locale === 'zh-CN' ? '主音层' : 'main', note: '', ranges }];
+}
+
 export async function renderShareReceipt(
   url: string,
   instruction = '扫描二维码查看创作过程',
@@ -143,12 +166,7 @@ export async function renderShareReceipt(
   const duration = formatPlaybackTime(getStrudelLoopDurationSeconds(details.code));
   const bpm = parsed.bpm ?? 60;
   const genre = inferGenre(details.code);
-  const notes = resolveLayerNotes(details.code, details.messages ?? []);
-  const ranges = await resolveLayerRanges(details.code);
-  // `key` matches the range lookup: layer names, or '' for code without a stack.
-  const layers = parsed.layers.length > 0
-    ? parsed.layers.map(layer => ({ name: layer.name, key: layer.name, note: notes[layer.name] ?? '' }))
-    : [{ name: details.locale === 'zh-CN' ? '主音层' : 'main', key: '', note: '' }];
+  const layers = await resolveReceiptRows(details);
   const isZh = details.locale === 'zh-CN';
 
   await loadBundledFonts();
@@ -191,7 +209,7 @@ export async function renderShareReceipt(
       ? clampReceiptLines(wrapReceiptTitle(layer.note, measure, rowNameWidth), MAX_NOTE_LINES, measure, rowNameWidth)
       : [];
     // A silent layer, or one the engine could not analyse, prints a dash rather than a guess.
-    const timeLines = ranges[layer.key]?.length ? ranges[layer.key] : ['—'];
+    const timeLines = layer.ranges.length ? layer.ranges : ['—'];
     // Extra space after every entry so neighbouring layers read as separate items.
     const rowGap = 14;
     const height = rowGap + Math.max(

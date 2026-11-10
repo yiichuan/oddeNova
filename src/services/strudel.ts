@@ -2289,7 +2289,7 @@ export interface LayerEvent { begin: number; end: number }
  * without a stack. Needs the engine's evalScope to have run (the studio is up).
  */
 export async function queryLayerEvents(code: string, cycles: number): Promise<Map<string, LayerEvent[]>> {
-  const clean = normalizeCode(stripUIDecorations(code)).replace(/^\s*setcp[sm]\([^)]*\)\s*;?\s*$/gm, '');
+  const clean = cleanForQuery(code);
   const score = parseScore(clean);
   const slots = score.hasStack && score.layers.length > 0
     ? score.layers.map(layer => ({
@@ -2297,44 +2297,82 @@ export async function queryLayerEvents(code: string, cycles: number): Promise<Ma
       code: clean.slice(0, score.stackArgsStart) + layer.source + clean.slice(score.stackArgsEnd),
     }))
     : [{ name: '', code: clean }];
-  const inert = new Set(['samples', 'setcps', 'setcpm', 'hush']);
-  const scope = new Proxy({}, {
-    has() { return true; },
-    get(_t, key) {
-      if (typeof key === 'symbol') return (globalThis as Record<symbol, unknown>)[key as unknown as symbol];
-      if (inert.has(key)) return async () => {};
-      return (globalThis as Record<string, unknown>)[key];
-    },
+  return withQuerySandbox(async query => {
+    const result = new Map<string, LayerEvent[]>();
+    for (const slot of slots) {
+      const events = await query(slot.code, cycles, {});
+      result.set(slot.name, events.map(({ begin, end }) => ({ begin, end })));
+    }
+    return result;
   });
+}
+
+/** One sounding event of a whole piece, in cycles, with the value the engine gave it. */
+export interface PatternEvent extends LayerEvent { value: unknown }
+
+/**
+ * Queries the events the piece's output really produces over [0, cycles), under the
+ * same off-the-audio-path rules as `queryLayerEvents`. `scope` adds names the code
+ * may call; the receipt uses it to tag each instrument's events with its variable.
+ */
+export async function queryPatternEvents(code: string, cycles: number, scope: Record<string, unknown> = {}): Promise<PatternEvent[]> {
+  return withQuerySandbox(query => query(cleanForQuery(code), cycles, scope));
+}
+
+const cleanForQuery = (code: string) =>
+  normalizeCode(stripUIDecorations(code)).replace(/^\s*setcp[sm]\([^)]*\)\s*;?\s*$/gm, '');
+
+// Visual chains (`.punchcard()`, `.theme()`) do nothing to the sound; the query stubs
+// whichever of them the loaded packages do not define so pasted REPL code still evaluates.
+const VISUAL_METHODS = ['punchcard', 'pianoroll', 'spiral', 'scope', 'tscope', 'fscope', 'spectrum', 'wordfall', 'theme', 'color', 'markcss']
+  .flatMap(name => [name, `_${name}`]);
+
+type SandboxQuery = (code: string, cycles: number, scope: Record<string, unknown>) => Promise<PatternEvent[]>;
+
+async function withQuerySandbox<T>(run: (query: SandboxQuery) => Promise<T>): Promise<T> {
+  const inert = new Set(['samples', 'setcps', 'setcpm', 'hush']);
   const transpiler = cachedTranspiler ?? (await import('@strudel/transpiler')).transpiler;
   cachedTranspiler = transpiler;
   const { Pattern } = await import('@strudel/core');
-  const livePatternMethod = Object.getOwnPropertyDescriptor(Pattern.prototype, 'p');
-  Object.defineProperty(Pattern.prototype, 'p', { configurable: true, writable: true, value(this: unknown) { return this; } });
-  const result = new Map<string, LayerEvent[]>();
-  try {
-    for (const slot of slots) {
-      const { output } = transpiler(slot.code, { id: undefined, emitMiniLocations: false });
-      const pattern = await new Function('__s__', `with (__s__) {\nreturn (async () => {\n${output}\n})()\n}`)(scope);
-      if (!pattern || typeof pattern.queryArc !== 'function') throw new Error(`Layer ${slot.name || 'main'} is not a pattern`);
-      const events: LayerEvent[] = [];
-      for (const hap of pattern.queryArc(0, cycles) as StrudelHap[]) {
-        if (hap.hasOnset && !hap.hasOnset()) continue;
-        const value = hap.value;
-        if (value && typeof value === 'object') {
-          const { gain, velocity, postgain } = value as Record<string, unknown>;
-          if (gain === 0 || velocity === 0 || postgain === 0) continue;
-        }
-        const span = hap.whole ?? hap.part;
-        events.push({ begin: Number(span.begin.valueOf()), end: Number(span.end.valueOf()) });
+  const proto = Pattern.prototype as Record<string, unknown>;
+  const identity = { configurable: true, writable: true, value(this: unknown) { return this; } };
+  const livePatternMethod = Object.getOwnPropertyDescriptor(proto, 'p');
+  Object.defineProperty(proto, 'p', identity);
+  const stubbed = VISUAL_METHODS.filter(name => !(name in proto));
+  for (const name of stubbed) Object.defineProperty(proto, name, identity);
+  const query: SandboxQuery = async (source, cycles, extra) => {
+    const scope = new Proxy({}, {
+      has() { return true; },
+      get(_t, key) {
+        if (typeof key === 'symbol') return (globalThis as Record<symbol, unknown>)[key as unknown as symbol];
+        if (key in extra) return extra[key];
+        if (inert.has(key)) return async () => {};
+        return (globalThis as Record<string, unknown>)[key];
+      },
+    });
+    const { output } = transpiler(source, { id: undefined, emitMiniLocations: false });
+    const pattern = await new Function('__s__', `with (__s__) {\nreturn (async () => {\n${output}\n})()\n}`)(scope);
+    if (!pattern || typeof pattern.queryArc !== 'function') throw new Error('Code is not a pattern');
+    const events: PatternEvent[] = [];
+    for (const hap of pattern.queryArc(0, cycles) as StrudelHap[]) {
+      if (hap.hasOnset && !hap.hasOnset()) continue;
+      const value = hap.value;
+      if (value && typeof value === 'object') {
+        const { gain, velocity, postgain } = value as Record<string, unknown>;
+        if (gain === 0 || velocity === 0 || postgain === 0) continue;
       }
-      result.set(slot.name, events);
+      const span = hap.whole ?? hap.part;
+      events.push({ begin: Number(span.begin.valueOf()), end: Number(span.end.valueOf()), value });
     }
+    return events;
+  };
+  try {
+    return await run(query);
   } finally {
-    if (livePatternMethod) Object.defineProperty(Pattern.prototype, 'p', livePatternMethod);
-    else delete Pattern.prototype.p;
+    if (livePatternMethod) Object.defineProperty(proto, 'p', livePatternMethod);
+    else delete proto.p;
+    for (const name of stubbed) delete proto[name];
   }
-  return result;
 }
 
 interface StrudelHap {
