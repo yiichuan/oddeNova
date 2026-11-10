@@ -616,7 +616,14 @@ function SampleKey({
   /* The menu opens to the right and hangs from the key's top edge, unless
      that would run it past the shelf — then it opens to the left, or stands
      on the key's bottom edge. Placed before paint, so it never flashes on
-     the wrong side first. */
+     the wrong side first.
+
+     It is first laid out up and to the left of the key (see its style below),
+     the one way that never adds to the shelf's scrollable area. Measured
+     hanging down instead, a long menu low on the last page would lengthen
+     the shelf for that one layout, the snapping scroll would jump to the page
+     top it can now reach, and then jump back once the menu is turned around
+     — taking the key out from under the pointer, over and over. */
   useLayoutEffect(() => {
     const menu = menuRef.current;
     const item = itemRef.current?.getBoundingClientRect();
@@ -624,8 +631,10 @@ function SampleKey({
     if (!open || !menu || !item || !bounds) return;
     const toLeft = item.right + menu.offsetWidth > bounds.right - MENU_EDGE
       && item.left - menu.offsetWidth >= bounds.left;
-    const fromBottom = item.top + menu.offsetHeight > bounds.bottom - MENU_EDGE
-      && item.bottom - menu.offsetHeight >= bounds.top;
+    /* Where neither way fits, it stands on the key rather than hanging below
+       it, for the same reason: running past the top is cut off, running past
+       the bottom would set the shelf jumping again. */
+    const fromBottom = item.top + menu.offsetHeight > bounds.bottom - MENU_EDGE;
     menu.style.left = toLeft ? '' : '100%';
     menu.style.right = toLeft ? '100%' : '';
     menu.style.top = fromBottom ? '' : '0';
@@ -736,8 +745,8 @@ function SampleKey({
              context), so it only answers where no take is. */
           className="absolute z-10 grid grid-flow-col bg-brand-accent before:absolute before:-inset-2 before:-z-10 before:content-['']"
           style={{
-            left: '100%',
-            top: 0,
+            right: '100%',
+            bottom: 0,
             gridTemplateRows: `repeat(${Math.min(takes, MENU_ROWS)}, auto)`,
           }}
         >
