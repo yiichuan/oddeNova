@@ -1,3 +1,5 @@
+import { openAIUsage, anthropicUsage, withoutCacheHints } from './llm-usage';
+import { createSampleRetriever } from '../agent/sample-retriever';
 import { userContent, type ImageAttachment } from '../lib/image-attachments';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
@@ -190,7 +192,7 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
     }
 
     if (msg.role === 'user') {
-      out.push({ role: 'user', content: Array.isArray(msg.content) ? msg.content.map(block => block.type === 'text' ? block : { type: 'image' as const, source: { type: 'url' as const, url: block.image_url.url } }) : content });
+      out.push({ role: 'user', content: Array.isArray(msg.content) ? msg.content.map(block => block.type === 'text' ? block : { type: 'image' as const, source: { type: 'url' as const, url: block.image_url.url } }) : msg.cachePrefix ? [{type:'text',text:content,cache_control:{type:'ephemeral'}}] : content });
       continue;
     }
 
@@ -329,8 +331,7 @@ const anthropicLLMCaller: LLMCaller = {
       ...(thinkingBlocks.length > 0 ? { thinking_blocks: thinkingBlocks } : {}),
       toolCalls,
       usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
+        ...anthropicUsage(response.usage),
       },
     };
   },
@@ -358,7 +359,7 @@ function createOpenAILLMCaller(): LLMCaller {
       const stream = await oai.chat.completions.create({
         model: getModel(),
         // ChatMsg is already in OpenAI format, can be passed directly
-        messages: messages as OpenAI.ChatCompletionMessageParam[],
+        messages: withoutCacheHints(messages) as OpenAI.ChatCompletionMessageParam[],
         ...(tools.length > 0
           ? {
               tools: tools as OpenAI.ChatCompletionTool[],
@@ -382,7 +383,7 @@ function createOpenAILLMCaller(): LLMCaller {
       let text = '';
       let reasoningContent = '';
       const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
-      let streamUsage: { prompt_tokens: number; completion_tokens: number } | undefined;
+      let streamUsage: ReturnType<typeof openAIUsage> | undefined;
 
       for await (const chunk of stream) {
         // DeepSeek extends the OpenAI delta with `reasoning_content`.
@@ -418,7 +419,7 @@ function createOpenAILLMCaller(): LLMCaller {
         }
 
         if (chunk.usage) {
-          streamUsage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
+          streamUsage = openAIUsage(chunk.usage);
         }
       }
 
@@ -432,9 +433,7 @@ function createOpenAILLMCaller(): LLMCaller {
         content: text.trim() || null,
         reasoning_content: reasoningContent || null,
         toolCalls,
-        usage: streamUsage
-          ? { inputTokens: streamUsage.prompt_tokens, outputTokens: streamUsage.completion_tokens }
-          : undefined,
+        usage: streamUsage,
       };
     },
   };
@@ -526,7 +525,18 @@ export async function runAgent(
     ? 'compose'
     : await classifyIntent(llm, { instruction, currentCode, conversationHistory, signal, images, preparedUserContent, preparedHistory });
 
-  return runAgentLoop({
+  const retrievalUsage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheCreationInputTokens: 0, calls: 0 };
+  const sampleSearch = isDemoMode() ? undefined : createSampleRetriever(activeLLMCaller, {
+    signal, onUsage: usage => {
+      retrievalUsage.inputTokens += usage.inputTokens;
+      retrievalUsage.outputTokens += usage.outputTokens;
+      retrievalUsage.cachedInputTokens += usage.cachedInputTokens ?? 0;
+      retrievalUsage.cacheCreationInputTokens += usage.cacheCreationInputTokens ?? 0;
+      retrievalUsage.calls++;
+    },
+  });
+  const result = await runAgentLoop({
+    sampleSearch,
     preparedUserContent,
     preparedHistory,
     instruction,
@@ -540,6 +550,7 @@ export async function runAgent(
     enableThinking: intent === 'compose',
     thinkingLevel: getSelectedThinkingLevel(),
   });
+  return { ...result, retrievalUsage };
 }
 
 // Re-exported so callers don't need to reach into ../agent/loop directly.

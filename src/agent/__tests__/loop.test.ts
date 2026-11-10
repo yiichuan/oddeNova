@@ -15,6 +15,42 @@ import {
 } from '../loop';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
 
+describe('sample search diagnostics', () => {
+  it('reports zero calls when the model does not search', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      const { llm } = makeCapturingLLM();
+      await runAgentLoop({ initialCode: '', instruction: 'test', locale: 'zh', systemPrompt: '', llm });
+      expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ finished/),
+        expect.objectContaining({ searchCalls: 0 }));
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('reports rejected queries and distinguishes duplicate reuse from execution', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const llm: LLMCaller = { async chatWithTools() {
+      return { content: null, toolCalls: [
+        { id: 'search-1', name: 'searchSamples', arguments: '{"query":123}' },
+        { id: 'search-2', name: 'searchSamples', arguments: '{"query":123}' },
+        { id: 'done', name: 'commit', arguments: '{}' },
+      ] };
+    } };
+    try {
+      await runAgentLoop({ initialCode: '', instruction: 'test', locale: 'zh', systemPrompt: '', llm });
+      expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ result/),
+        expect.objectContaining({ callId: 'search-1', result: { ok: false, error: '无效的采样查询参数。' } }));
+      expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ deduplicated/),
+        expect.objectContaining({ callId: 'search-2' }));
+      expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ finished/),
+        expect.objectContaining({ searchCalls: 1 }));
+    } finally {
+      info.mockRestore();
+    }
+  });
+});
+
 // Minimal LLMCaller that returns a commit tool call on the first invocation,
 // capturing the messages array it receives for assertion.
 function makeCapturingLLM(commitCode = 's("bd")') {

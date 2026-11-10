@@ -3,7 +3,7 @@
 // and a handler that operates on a mutable AgentState. The `commit` tool is
 // terminal — it throws CommitSignal which the loop catches.
 
-import { searchSamples, FEATURE_OPTIONS } from '../lib/sample-search';
+import { searchSamples, FEATURE_OPTIONS, type SampleQuery } from '../lib/sample-search';
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
 import { normalizeGmSampleNames } from '../lib/sample-allowlist';
@@ -16,6 +16,7 @@ export interface AgentState {
 export interface ToolContext {
   state: AgentState;
   isZh?: boolean;
+  sampleSearch?: (input: SampleQuery) => Promise<unknown[]>;
 }
 
 export interface ToolResult {
@@ -134,7 +135,7 @@ export async function validateCommittedCode(code: string, isZh = true): Promise<
 export const TOOLS: ToolDef[] = [
   {
     name: 'searchSamples',
-    description: '按乐器类别和听感查找内置采样，返回少量可调用候选、变体差异和模型初标/专家确认状态。目录类别优先；听感是软参考。需要比较音色时使用。',
+    description: '按乐器类别和听感查找内置采样，返回少量可调用候选、变体差异和模型初标/专家确认状态。目录类别优先；听感是软参考。新增或替换已标注库音色前使用；同需求的查询结果可复用。',
     parameters: {
       type: 'object',
       properties: {
@@ -167,12 +168,12 @@ export const TOOLS: ToolDef[] = [
         return { ok: false, error: zh ? '无效的听感条件。' : 'Invalid listening features.' };
       }
       try {
-        const candidates = await searchSamples({ query: args.query, category: args.category as string | undefined,
+        const candidates = await (ctx.sampleSearch ?? searchSamples)({ query: args.query, category: args.category as string | undefined,
           features: features as Record<string,string|string[]> | undefined, limit: args.limit as number | undefined });
         return { ok: true, data: { candidates, notice: candidates.length ? undefined :
           zh ? '没有匹配候选，可调整条件或使用现有采样目录。' : 'No matches; adjust the query or use the existing sample reference.' } };
       } catch {
-        return { ok: false, error: zh ? '音色目录暂不可用，可使用现有采样目录继续创作。' : 'Sample catalog unavailable; continue with the existing sample reference.' };
+        return { ok: false, error: zh ? '音色检索暂不可用，可调整需求或使用现有采样目录继续创作。' : 'Sample search unavailable; adjust the request or continue with the existing sample reference.' };
       }
     },
   },
@@ -290,7 +291,7 @@ export const TOOLS: ToolDef[] = [
 // Bilingual schema descriptions — kept separate from handler logic so the
 // schema sent to the LLM is always in the user's language.
 const TOOL_SCHEMAS_ZH = {
-  searchSamples: {"description": "按类别和听感检索内置采样。目录类别优先，模型初标用于软排序；返回合法播放方式和变体差异。", "params": {"query": "声部和听感需求", "category": "可选乐器类别", "features": "可选结构化听感条件", "limit": "默认5，上限10"}},
+  searchSamples: {"description": "新增或替换已标注库音色前，按声部类别和听感检索采样。目录类别优先，模型初标用于软排序；返回合法播放方式和变体差异。同需求的查询结果可复用。", "params": {"query": "声部和听感需求", "category": "可选乐器类别", "features": "可选结构化听感条件", "limit": "默认5，上限10"}},
   validate: {
     description:
       '对一段 strudel 代码做校验（不会播放）：先做 JS 语法检查，再在沙箱里 dry-run 一次以捕捉未定义函数（如 by/sometimesBy 等幻觉 API）和类型错误。在 commit 前应该至少 validate 一次最终代码；若失败请按错误信息修代码后再 validate 一次。',
@@ -318,7 +319,7 @@ const TOOL_SCHEMAS_ZH = {
 };
 
 const TOOL_SCHEMAS_EN = {
-  searchSamples: {"description": "Find built-in samples by category and audible preferences. Catalog identity takes precedence; initial model observations are soft guidance. Returns playable mappings and variant differences.", "params": {"query": "Instrument role and audible preferences", "category": "Optional instrument category", "features": "Optional structured listening preferences", "limit": "Default 5, maximum 10"}},
+  searchSamples: {"description": "Before adding or replacing a timbre from an annotated library, find samples by role/category and audible preferences. Reuse results for unchanged requirements. Catalog identity takes precedence; initial model observations are soft guidance. Returns playable mappings and variant differences.", "params": {"query": "Instrument role and audible preferences", "category": "Optional instrument category", "features": "Optional structured listening preferences", "limit": "Default 5, maximum 10"}},
   validate: {
     description:
       'Validate a snippet of Strudel code (no playback): runs a JS syntax check then dry-runs in a sandbox to catch undefined functions (e.g. hallucinated APIs like by/sometimesBy) and type errors. Call validate at least once before commit; if it fails, fix the code per the error message and validate again.',

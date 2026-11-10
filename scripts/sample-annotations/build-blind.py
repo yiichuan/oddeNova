@@ -15,10 +15,11 @@ def loudness(file):
  i,p=float(data['input_i']),float(data['input_tp'])
  if not math.isfinite(i) or not math.isfinite(p):raise ValueError('Silent audio')
  return i,p
+repeats=int(os.environ.get("EVAL_REPEATS","3"))
 pairs=[];answers=[];unavailable=[]
 for n,item in enumerate(cases):
- for repeat in range(3):
-  number=n*3+repeat+1
+ for repeat in range(repeats):
+  number=n*repeats+repeat+1
   pairid=str(number).zfill(2)
   rows=[]
   for condition in ['baseline','search']:
@@ -108,6 +109,17 @@ if(data.pairs.length)show(0);else panel.append(el('p','暂无完整音频配对�
 </script></html>'''.replace('/*DATA*/',payload)
 if os.environ.get('CONTROLLED_EVAL'):
  page=page.replace('代码保持原样，试听前 8 小节；Funk 鼓组试听前 16 小节，各保留 2 秒尾音。作品整体也会因生成随机性而不同。','两边使用完全相同的固定试听片段，仅采样名称或变体不同。旋律乐器使用同音 C4，便于比较音色。试听 8 小节（Funk 16 小节），保留 2 秒尾音。').replace('作品盲听','选样盲听').replace('oddenova-blind-ratings.json','oddenova-controlled-ratings.json')
+if os.environ.get('SCENE_EVAL'):
+ page=page.replace('代码保持原样，试听前 8 小节；Funk 鼓组试听前 16 小节，各保留 2 秒尾音。作品整体也会因生成随机性而不同。','每段试听从开头截取 30 秒，两组均自由创作。请分别判断场景贴合度、乐器音色和个人偏好。')
+ page=page.replace("choices('timbre','哪段音色更符合请求？');", "choices('scene','哪段更符合场景、更容易进入画面？');choices('timbre','哪段乐器和音色更贴切？');")
+ page=page.replace("['neither','两者都不贴合']", "['unknown','无法判断']")
+ page=page.replace('r.timbre||r.overall','r.scene&&r.timbre&&r.overall').replace('oddenova-blind-ratings.json','oddenova-scene-ratings.json')
+page=page.replace(' / 30 组', ' / '+str(len(cases)*repeats)+' 组')
+if os.environ.get('FULL_CATALOG_EVAL'):
+ page=page.replace('同一请求、同一轮次配对。每组 A/B 顺序独立打乱，已做成对响度匹配。','同一场景的新旧作品配对，A/B 随机排列并做响度匹配。对照作品来自上一轮、你已听过，本轮是探索性复听，不能视为独立盲测。')
+ page=page.replace('oddenova-scene-ratings.json','oddenova-full-catalog-ratings.json')
+if os.environ.get('MODEL_SEARCH_EVAL'):
+ page=page.replace('oddenova-full-catalog-ratings.json','oddenova-model-search-ratings.json')
 (review/'index.html').write_text(page)
 (folder/'answer-key.json').write_text(json.dumps(answers,ensure_ascii=False,indent=2))
 (folder/'unavailable.json').write_text(json.dumps(unavailable,ensure_ascii=False,indent=2))

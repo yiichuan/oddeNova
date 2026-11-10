@@ -129,12 +129,41 @@ export function rankSamples(catalog: SearchCatalog, input: SampleQuery) {
   return results.slice(0, Math.min(10,Math.max(1,Math.floor(input.limit ?? 5))));
 }
 let pending: Promise<SearchCatalog> | undefined;
-export async function searchSamples(input: SampleQuery) {
+export function loadSampleCatalog(): Promise<SearchCatalog> {
   pending ??= fetch('/sample-annotations/catalog.json').then(async response => {
-    if (!response.ok) throw Error('Sample catalog unavailable');
+    if (!response.ok) throw Error(`Sample catalog unavailable (HTTP ${response.status})`);
     const data = await response.json() as SearchCatalog;
     if (data.schemaVersion !== 1 || !Array.isArray(data.samples)) throw Error('Invalid sample catalog');
     return data;
   }).catch(error => { pending = undefined; throw error; });
-  return rankSamples(await pending, input);
+  return pending;
+}
+export async function searchSamples(input: SampleQuery) {
+  const started = performance.now();
+  const cache = pending ? 'reuse' : 'load';
+  if (import.meta.env.DEV) console.info('[searchSamples] catalog', { cache, input });
+
+  try {
+    const catalog = await loadSampleCatalog();
+    const candidates = rankSamples(catalog, input);
+    if (import.meta.env.DEV) {
+      console.info('[searchSamples] ranked', {
+        input, cache, catalogSize: catalog.samples.length,
+        desiredFeatures: queryFeatures(input.query ?? '', input.features),
+        durationMs: Math.round(performance.now() - started),
+        candidateCount: candidates.length, candidates,
+      });
+      console.table(candidates.map(candidate => ({
+        name: candidate.name, index: candidate.index, score: candidate.score,
+        status: candidate.annotationStatus, playback: candidate.playback,
+        variants: candidate.variantCount,
+      })));
+    }
+    return candidates;
+  } catch (error) {
+    if (import.meta.env.DEV) console.error('[searchSamples] catalog/search failed', {
+      input, durationMs: Math.round(performance.now() - started), error,
+    });
+    throw error;
+  }
 }

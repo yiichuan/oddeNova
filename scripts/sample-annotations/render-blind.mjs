@@ -119,7 +119,7 @@ try {
     if(i===119)throw Error('Renderer initialization failed');
     await new Promise(resolve=>setTimeout(resolve,500));
   }
-  for(const item of cases.filter(item=>!process.env.RENDER_CASE||item.id===process.env.RENDER_CASE))for(let repeat=0;repeat<3;repeat++) {
+  for(const item of cases.filter(item=>!process.env.RENDER_CASE||item.id===process.env.RENDER_CASE))for(let repeat=0;repeat<Number(process.env.EVAL_REPEATS||3);repeat++) {
     const pair=[];
     for(const condition of ['baseline','search']) {
       const id=item.id+'-'+repeat+'-'+condition;
@@ -135,11 +135,11 @@ try {
         let metadata;
         try {
           metadata=JSON.parse(await readFile(file,'utf8'));
-          if(metadata.codeHash!==codeHash||metadata.error)metadata=null;
+          if(metadata.codeHash!==codeHash||metadata.fixedSeconds!==(Number(process.env.RENDER_SECONDS)||null)||metadata.error)metadata=null;
         }catch{}
         if(!metadata) {
-          const rendered=await evaluate('window.renderClip('+JSON.stringify(id)+','+JSON.stringify(data.result.code)+','+(item.id==='funk-drums'?16:8)+')');
-          metadata={id,codeHash,...rendered};
+          const rendered=await evaluate('window.renderClip('+JSON.stringify(id)+','+JSON.stringify(data.result.code)+','+(item.id==='funk-drums'?16:8)+','+(Number(process.env.RENDER_SECONDS)||'undefined')+')');
+          metadata={id,codeHash,fixedSeconds:Number(process.env.RENDER_SECONDS)||null,...rendered};
           await writeFile(file,JSON.stringify(metadata,null,2));
         }
         results.push(metadata);

@@ -38,7 +38,7 @@ function wav(buffer: AudioBuffer) {
   return data;
 }
 
-Object.assign(window, {renderClip: async (id: string, code: string, cycles: number) => {
+Object.assign(window, {renderClip: async (id: string, code: string, cycles: number, fixedSeconds?: number) => {
   let cps = 0.5;
   Object.assign(globalThis, {
     setcps: (value: number) => {cps = Number(value);},
@@ -56,6 +56,7 @@ Object.assign(window, {renderClip: async (id: string, code: string, cycles: numb
   registerSoundfonts();
   const evaluated = await core.evaluate(code,transpiler,{id:undefined,emitMiniLocations:false});
   if(!Number.isFinite(cps)||cps<=0)throw Error('Invalid tempo');
+  if(fixedSeconds !== undefined) cycles=fixedSeconds*cps;
   const seconds=cycles/cps;
   if(seconds>117)throw Error('Excerpt exceeds 117s');
   const haps=evaluated.pattern.queryArc(0,cycles,{_cps:cps}).sort((a,b)=>Number(a.whole.begin)-Number(b.whole.begin));
@@ -71,7 +72,7 @@ Object.assign(window, {renderClip: async (id: string, code: string, cycles: numb
     await new Promise(resolve=>setTimeout(resolve,50));
   }
   const rendered=await context.startRendering();
-  const length=Math.min(rendered.length,Math.ceil((seconds+2)*48000));
+  const length=Math.min(rendered.length,Math.ceil((fixedSeconds ?? (seconds+2))*48000));
   const excerpt=new AudioBuffer({numberOfChannels:2,length,sampleRate:48000});
   let peak=0,energy=0;
   for(let channel=0;channel<2;channel++) {
@@ -82,5 +83,5 @@ Object.assign(window, {renderClip: async (id: string, code: string, cycles: numb
   if(!Number.isFinite(peak)||peak<1e-5)throw Error('Silent or invalid render');
   const response=await fetch('/save/'+id,{method:'POST',body:wav(excerpt)});
   if(!response.ok)throw Error('Unable to save audio');
-  return {cps,cycles,seconds:excerpt.duration,haps:haps.length,peak,rms:Math.sqrt(energy/(length*2))};
+  return {cps,cycles,seconds:excerpt.duration,haps:haps.length,sounds:[...new Map(haps.filter(h=>h.hasOnset()).map(h=>[JSON.stringify([h.value.s,h.value.bank,h.value.n,h.value.note]),{s:h.value.s,bank:h.value.bank,n:h.value.n,note:h.value.note}])).values()],peak,rms:Math.sqrt(energy/(length*2))};
 }});
