@@ -13,7 +13,7 @@ export default function CommunityInviteCard() {
     // Centred as a pair rather than pinned left: the line is far shorter than
     // the window is wide, and left-aligning it leaves all the slack stacked up
     // on one side.
-    <div className="flex items-center justify-center gap-4 rounded-2xl border border-border bg-conversation-surface px-6 py-4 shadow-dialog-overlay">
+    <div className="flex items-center justify-center gap-4 rounded-dialog border border-border bg-conversation-surface px-6 py-4 shadow-dialog-overlay">
       {/* The source is black on white and the white is baked into the pixels,
           so the way to grey it is to scale the whole tile down: `brightness`
           leaves black where it is and takes white to #B8B8B8. The code keeps

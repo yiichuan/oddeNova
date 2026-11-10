@@ -96,7 +96,7 @@ export default function WelcomeModal({ configured, onClose }: WelcomeModalProps)
         {/* When the privacy footer shows, the card keeps the link snug instead
             of deep foot padding; without it, the last row still needs the room
             the padding gives it. */}
-        <div className={`bg-conversation-surface border border-border rounded-2xl px-6 pt-6 shadow-dialog-overlay ${configured ? 'pb-4' : 'pb-10'}`}>
+        <div className={`bg-conversation-surface border border-border rounded-dialog px-6 pt-6 shadow-dialog-overlay ${configured ? 'pb-4' : 'pb-10'}`}>
           {/* The cross keeps the corner to itself and the title takes the width
               below it, so the title's centre is the window's centre rather than
               the centre of whatever is left over beside the button. */}

@@ -1326,7 +1326,7 @@ export default function FavoritesPage({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="favorites-delete-question"
-            className="w-full max-w-[360px] rounded-2xl border border-border bg-conversation-surface p-5 shadow-dialog-overlay"
+            className="w-full max-w-[360px] rounded-dialog border border-border bg-conversation-surface p-5 shadow-dialog-overlay"
           >
             <p
               id="favorites-delete-question"

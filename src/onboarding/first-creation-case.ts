@@ -25,12 +25,18 @@ export type CreationLang = 'zh' | 'en';
 export const CREATION_LANGS: readonly CreationLang[] = ['zh', 'en'];
 export const readerCreationLang = (): CreationLang => (zh ? 'zh' : 'en');
 
+/**
+ * Line endings normalised to LF: a Windows checkout (core.autocrlf) hands the
+ * raw imports CRLF, which would change the code shown and the content hash.
+ */
+const lf = (code: string) => code.replace(/\r\n?/g, '\n');
+
 const SCRIPTS: readonly Pair[] = [
   [step1Zh, step1En],
   [step2Zh, step2En],
   [step3Zh, step3En],
   [step4Zh, step4En],
-];
+].map(([zhCode, enCode]) => [lf(zhCode), lf(enCode)] as const);
 
 /**
  * The layers each turn introduces, by `@layer` name. The guide frames these in

@@ -114,7 +114,7 @@ export default function OnboardingExitHint({ open, mobile, onClose }: Onboarding
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`absolute w-[min(21rem,calc(100vw-2rem))] rounded-2xl border border-border bg-conversation-surface px-5 py-5 text-text-secondary shadow-dialog-overlay ${anchored ? '' : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'}`}
+        className={`absolute w-[min(21rem,calc(100vw-2rem))] rounded-dialog border border-border bg-conversation-surface px-5 py-5 text-text-secondary shadow-dialog-overlay ${anchored ? '' : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'}`}
         style={anchored ? { left: position.left, top: position.top } : undefined}
       >
         <h2 id={titleId} className="text-[15px] font-semibold text-text-primary">{t('onboardingExitHintTitle')}</h2>

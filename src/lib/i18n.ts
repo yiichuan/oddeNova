@@ -189,11 +189,7 @@ const S: Record<string, readonly [string, string]> = {
   hidePassword: ['隐藏密码', 'Hide password'],
 
   // First-entry welcome
-  // The gap before the wand is two non-breaking spaces, written as escapes
-  // because both are invisible in source. Ordinary spaces would not do: a
-  // run of them collapses to one in HTML, so the wider gap simply would not
-  // render — and a breakable one lets the emoji wrap onto a line of its own.
-  welcomeTitle:             ['即刻开始，vibe 一首你自己的单曲\u00A0\u00A0🪄', 'Start now — vibe your own music\u00A0\u00A0🪄'],
+  welcomeTitle:             ['即刻开始，Vibe 一支属于你自己的 BGM', 'Start now — vibe a BGM all your own'],
   welcomeOr:                ['或者', 'or'],
   welcomeContinueWithEmail: ['使用邮箱继续', 'Continue with email'],
   welcomeCreateAccount:     ['创建账户', 'Create account'],
@@ -508,7 +504,6 @@ const S: Record<string, readonly [string, string]> = {
   onboardingSoundsFailed:     ['音色没能加载，请检查网络后重试。', "Couldn't load the sounds. Check your connection and try again."],
   onboardingSendTitle:        ['告诉 oddeNova 你想要的变化', 'Tell oddeNova what to change'],
   onboardingSendBody:         ['示例要求已经填进输入框，点击 {send} 发送。', 'An example request is already in the message box. Press {send} to send.'],
-  onboardingPresetBadge:      ['指引练习 · 预设示例', 'Guided practice · preset example'],
   onboardingLoadingPreset:    ['正在载入示例改编…', 'Loading the example edit…'],
   onboardingDeliveryFailed:   ['示例没能保存，请再点一次发送。', "The example couldn't be saved. Press send again."],
   onboardingReplyTitle:       ['看看 oddeNova 改了什么', 'See what oddeNova changed'],
@@ -521,7 +516,6 @@ const S: Record<string, readonly [string, string]> = {
   onboardingDoneBody:         ['先说出想法，再听听变化，就能一步步做出自己的乐曲。', 'Say what you want, listen to what changed, and build your own piece one step at a time.'],
   onboardingDoneSaved:        ['练习作品已保留在历史中。', 'Your practice piece is saved in your history.'],
   onboardingDoneUnsaved:      ['你可以继续改这首。', 'You can keep working on this piece.'],
-  onboardingDoneRealAi:       ['刚才使用的是演示示例，实际使用时 oddeNova 通常需要更长的思考时间。', 'That was a demo example. In real use, oddeNova usually takes longer to think.'],
   onboardingCompareOriginal:  ['原版', 'Original'],
   onboardingCompareAdapted:   ['改编', 'New'],
   onboardingKeepEditing:      ['继续改这首', 'Keep working on this'],
@@ -541,16 +535,16 @@ const S: Record<string, readonly [string, string]> = {
   // The desktop guide: four turns of a first creation (FirstCreationTour)
   firstCreationInviteBody:       ['用 4 个步骤，体验如何通过和 oddeNova 对话，从零写出一首曲子。', 'In four steps, see how talking with oddeNova takes you from nothing to a finished piece.'],
   firstCreationCompose1Title:    ['说出你想要的音乐', 'Say what you want to hear'],
-  firstCreationCompose1Body:     ['示例要求已经填进输入框。点击 {send} 发送，看 oddeNova 写出第一段音乐。', 'An example request is already in the message box. Press {send} and watch oddeNova write your first music.'],
+  firstCreationCompose1Body:     ['点击 {send} 发送，oddeNova 会写出第一段音乐。', 'Press {send} and oddeNova will write your first music.'],
   firstCreationCompose2Title:    ['接着往上加', 'Add to it'],
-  firstCreationCompose2Body:     ['再说一句，让钢琴写一段旋律加上去。点击 {send} 发送。', 'One more sentence: a piano melody on top. Press {send} to send it.'],
+  firstCreationCompose2Body:     ['再说一句，加上钢琴。点击 {send} 发送。', 'One more sentence: add piano. Press {send} to send it.'],
   firstCreationCompose3Title:    ['再添一点氛围', 'Add some atmosphere'],
-  firstCreationCompose3Body:     ['这次加一些背景渲染。点击 {send} 发送。', 'This time, some background atmosphere. Press {send} to send it.'],
+  firstCreationCompose3Body:     ['点击 {send} 发送。', 'Press {send} to send it.'],
   firstCreationCompose4Title:    ['写成一整首', 'Make it a whole piece'],
-  firstCreationCompose4Body:     ['最后一句，把它扩展成一段 30 秒的曲子。点击 {send} 发送。', 'Last one: stretch it into a 30-second piece. Press {send} to send it.'],
+  firstCreationCompose4Body:     ['最后，来完成扩写。点击 {send} 发送。', 'Finally, extend it into a full piece. Press {send} to send it.'],
   firstCreationDeliveryFailed:   ['这一步没能完成，请再点一次发送。', "This step didn't finish. Press send again."],
   firstCreationExplain1Title:    ['这是它写出的代码', 'This is the code it wrote'],
-  firstCreationExplain1Body:     ['你的一句话变成了这段正在播放的代码。每个 @layer 是一个声部：底鼓、军鼓、踩镲叠在一起。不需要读懂代码，接着用一句话说想法就行。', 'Your one sentence became this code, playing now. Each @layer is one part: kick, snare and hats stacked together. You don\'t need to read it; just say what you want next.'],
+  firstCreationExplain1Body:     ['你的一句话变成了这段正在播放的代码。每个 @layer 是一个音层：底鼓、军鼓、踩镲叠在一起。不需要读懂代码，接着用一句话说想法就行。', 'Your one sentence became this code, playing now. Each @layer is one layer: kick, snare and hats stacked together. You don\'t need to read it; just say what you want next.'],
   firstCreationExplain2Title:    ['新增了钢琴旋律', 'A piano melody was added'],
   firstCreationExplain2Body:     ['框出来的这段就是新加的钢琴声部，原来的三层鼓组一行没动。', 'The framed part is the new piano layer. The three drum layers above it are untouched.'],
   firstCreationExplain3Title:    ['又多了两层背景', 'Two background layers joined'],
@@ -561,10 +555,10 @@ const S: Record<string, readonly [string, string]> = {
   firstCreationDoneBody:         ['，只要说出想法、听听变化，就能一步步做出自己的乐曲。', ': say what you want, listen to what changed, and build your piece one step at a time.'],
   // …and on a phone (MobileFirstCreationTour)
   firstCreationMobileInviteBody: ['用 5 个步骤，体验如何通过和 oddeNova 对话，从零写出一首曲子。', 'In five steps, see how talking with oddeNova takes you from nothing to a finished piece.'],
-  firstCreationMobileCompose1:   ['示例要求已经填好：一段简单的节奏。点击发送，看 oddeNova 写出第一段音乐。', 'An example request is filled in: a simple beat. Tap send and watch oddeNova write your first music.'],
-  firstCreationMobileCompose2:   ['接着往上加：让钢琴写一段旋律。点击发送。', 'Add to it: a piano melody on top. Tap send.'],
-  firstCreationMobileCompose3:   ['再添一点氛围：加一些背景渲染。点击发送。', 'Some atmosphere next: background layers. Tap send.'],
-  firstCreationMobileCompose4:   ['最后一句：把它扩展成一段 30 秒的曲子。点击发送。', 'Last one: stretch it into a 30-second piece. Tap send.'],
+  firstCreationMobileCompose1:   ['点击发送，oddeNova 会写出第一段音乐。', 'Tap send and oddeNova will write your first music.'],
+  firstCreationMobileCompose2:   ['接着往上加钢琴，点击发送。', 'Now add piano on top. Tap send.'],
+  firstCreationMobileCompose3:   ['再添加一点氛围。', 'Add a little more atmosphere.'],
+  firstCreationMobileCompose4:   ['最后，来完成扩写。', 'Finally, extend it into a full piece.'],
   firstCreationMobileOpenCode:   ['音乐背后是什么？点击右上角的代码按钮看看。', "What's behind the music? Tap the code key at the top right."],
   firstCreationMobileReadCode:   ['你说的每一句话都变成了这段代码，正是这些代码在驱动音乐的播放。不需要读懂它，想改哪里，回到对话里说一句就行。', "Everything you said became this code, and it's this code that drives the music you hear. You don't need to read it; to change anything, just say so in the conversation."],
   firstCreationGotIt:            ['知道了', 'Got it'],

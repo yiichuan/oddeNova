@@ -60,7 +60,7 @@ import { useVisualViewport } from './hooks/useVisualViewport';
 import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
 import { featuredPlayer } from './services/featured-player';
-import { useFirstCreation, type CreationTurnWriter } from './onboarding/useFirstCreation';
+import { useFirstCreation, type CreationTurnWriter, type FirstCreation } from './onboarding/useFirstCreation';
 import FirstCreationTour, { type TourTarget } from './onboarding/FirstCreationTour';
 import MobileFirstCreationTour from './onboarding/MobileFirstCreationTour';
 import OnboardingExitHint from './onboarding/OnboardingExitHint';
@@ -801,7 +801,7 @@ export default function App() {
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[var(--color-overlay-backdrop)] px-4 backdrop-blur-[2px]"
           style={isMobile ? { top: syncViewport?.top ?? 0, height: syncViewport?.height ?? '100dvh', bottom: 'auto' } : undefined}
         >
-          <div className={`bg-bg-secondary border border-border rounded-2xl w-[420px] max-w-[90vw] shadow-dialog-overlay ${isMobile ? 'p-4' : 'p-6'}`}>
+          <div className={`bg-bg-secondary border border-border rounded-dialog w-[420px] max-w-[90vw] shadow-dialog-overlay ${isMobile ? 'p-4' : 'p-6'}`}>
             <h2 className="text-lg font-semibold text-text-primary mb-2">
               {guestImportError ? t('syncLocalHistoryFailed') : t('syncingLocalHistory')}
             </h2>
@@ -1964,13 +1964,18 @@ export default function App() {
     return null;
   }, [creationComposeTurn, creationExplainTurn, creationSending, creationAddedRange, getCodeRangeRect, scrollCodeToBottomEased, scrollCodePositionIntoViewEased]);
 
-  // Every compose step, on either layout, holds the field to its preset.
+  // Every compose step, on either layout, holds the field to its preset,
+  // which types itself in once that step's card has appeared.
+  // While the guide runs, the field shows no placeholder or suggestions of its own.
+  const creationGuiding = firstCreation.view !== 'hidden';
+  const [creationCardShown, setCreationCardShown] = useState<FirstCreation['step'] | null>(null);
   const creationPresetTurn = firstCreation.view === 'step' ? firstCreation.composeTurn : null;
   const onboardingPresetLock = creationPresetTurn !== null && firstCreation.presetText !== null
     ? {
         text: firstCreation.presetText,
         busy: firstCreation.sending,
         onSend: () => { void firstCreation.sendTurn(); },
+        startTyping: creationCardShown === firstCreation.step,
       }
     : undefined;
 
@@ -2426,6 +2431,7 @@ export default function App() {
             <ChatInput
               key={`${auth.user?.id ?? "guest"}:${current?.id ?? "new"}`}
               presetLock={onboardingPresetLock}
+              guided={creationGuiding}
               isLoading={isLoading}
               engineReady={strudel.engineReady}
               engineStatus={strudel.engineStatus}
@@ -2825,6 +2831,7 @@ export default function App() {
               pressedSegmentId={soundingSegment?.id ?? null}
               pressedSegmentCode={soundingSegment?.code ?? null}
               presetLock={onboardingPresetLock}
+              guided={creationGuiding}
             />
           </div>
           <div className={primaryNavItem === 'settings' ? 'h-full' : 'hidden'}>
@@ -3036,9 +3043,10 @@ export default function App() {
           codeWindowOpen={codeSheetOpen}
           suspended={navDrawerOpen}
           onRevealCode={revealPhoneCode}
+          onCardShown={setCreationCardShown}
         />
       ) : (
-        <FirstCreationTour guide={firstCreation} target={creationTarget} />
+        <FirstCreationTour guide={firstCreation} target={creationTarget} onCardShown={setCreationCardShown} />
       )}
       {firstCreation.exitHintVisible && (
         <OnboardingExitHint

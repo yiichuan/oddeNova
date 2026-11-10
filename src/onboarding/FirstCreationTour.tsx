@@ -49,7 +49,14 @@ function viewportSize(): Size {
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
-export default function FirstCreationTour({ guide, target }: { guide: FirstCreation; target: TourTarget | null }) {
+interface FirstCreationTourProps {
+  guide: FirstCreation;
+  target: TourTarget | null;
+  /** The step whose card has finished fading in, or null while none is shown. */
+  onCardShown?: (step: FirstCreation['step'] | null) => void;
+}
+
+export default function FirstCreationTour({ guide, target, onCardShown }: FirstCreationTourProps) {
   const { view } = guide;
   /** The hole, tagged with the target it was measured for. */
   const [hole, setHole] = useState<{ key: string; rect: Rect } | null>(null);
@@ -128,6 +135,24 @@ export default function FirstCreationTour({ guide, target }: { guide: FirstCreat
     };
   }, [overlayKey]);
 
+  // Reported once the card has faded all the way in, so what it introduces
+  // (the preset typing itself into the field) starts after it is seen.
+  const cardShown = visible && shownKey === overlayKey
+    && !(view === 'step' && guide.step !== 'done' && target !== null && !(hole && hole.key === target.key));
+  const shownStep = cardShown ? guide.step : null;
+  const onCardShownRef = useRef(onCardShown);
+  useEffect(() => {
+    onCardShownRef.current = onCardShown;
+  });
+  useEffect(() => {
+    if (shownStep === null) {
+      onCardShownRef.current?.(null);
+      return;
+    }
+    const id = setTimeout(() => onCardShownRef.current?.(shownStep), OVERLAY_FADE_MS);
+    return () => clearTimeout(id);
+  }, [shownStep]);
+
   useLayoutEffect(() => {
     const card = cardRef.current;
     if (!card) return;
@@ -196,7 +221,7 @@ export default function FirstCreationTour({ guide, target }: { guide: FirstCreat
         role="dialog"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`pointer-events-auto absolute flex flex-col rounded-region border border-border bg-conversation-surface px-5 pb-4 pt-4 text-sm text-text-secondary outline-none${
+        className={`pointer-events-auto absolute flex flex-col rounded-dialog border border-border bg-conversation-surface px-5 pb-6 pt-6 text-sm text-text-secondary outline-none${
           floating ? ' shadow-dialog-overlay' : ''
         }`}
         style={{ left: position.left, top: position.top, width: cardWidth, visibility: waiting ? 'hidden' : undefined }}
@@ -372,7 +397,7 @@ function Step({ guide, titleId }: { guide: FirstCreation; titleId: string }) {
 function Done({ guide, titleId }: { guide: FirstCreation; titleId: string }) {
   return (
     <>
-      <Title id={titleId}>{t('firstCreationDoneTitle')}</Title>
+      <h2 id={titleId} className="mb-3 text-[17px] font-semibold text-text-primary">{t('firstCreationDoneTitle')}</h2>
       <p className="leading-relaxed">
         <strong className="font-semibold text-text-primary">{t('firstCreationDoneNoCode')}</strong>
         {t('firstCreationDoneBody')} {guide.persistent ? t('onboardingDoneSaved') : t('onboardingDoneUnsaved')}
@@ -385,7 +410,6 @@ function Done({ guide, titleId }: { guide: FirstCreation; titleId: string }) {
           {t('onboardingCreateNew')}
         </button>
       </div>
-      <p className="mt-4 text-xs leading-relaxed text-text-muted">{t('onboardingDoneRealAi')}</p>
     </>
   );
 }

@@ -185,6 +185,9 @@
   --hap-highlight: var(--oddenova-syntax-dark-hap-highlight);
 
   --radius-region: 6px;
+  /* One corner for every notice-style dialog — sign-in, welcome, confirms,
+     the first-run guide's cards — so they read as one family. */
+  --radius-dialog: 16px;
   --spacing-region: 10px;
   /* The shortest window the app will lay itself out in. Below it the window
      scrolls rather than the layout compressing — every one of these pages is a
