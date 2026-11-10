@@ -32,6 +32,81 @@ stack(
   note("c2 e2")
 )`;
 
+describe('searchSamples', () => {
+  const search = getHandler('searchSamples');
+
+  it('passes every role to one batch retriever and preserves partial failures', async () => {
+    const sampleSearch = vi.fn().mockResolvedValue([
+      { id: 'keys', ok: true, candidates: [{ name: 'piano' }] },
+      { id: 'drums', ok: false, error: 'Missing query result; retry this id.' },
+      { id: 'bass', ok: true, candidates: [] },
+    ]);
+    const result = await search({ queries: [
+      { id: 'keys', query: 'soft piano', features: { brightness: 'dark' } },
+      { id: 'drums', query: 'dry drums', limit: 2 },
+      { id: 'bass', query: 'bass' },
+    ] }, { ...makeCtx(''), sampleSearch });
+    expect(sampleSearch).toHaveBeenCalledTimes(1);
+    expect(sampleSearch).toHaveBeenCalledWith({ queries: [
+      expect.objectContaining({ id: 'keys', limit: 3, features: { brightness: 'dark' } }),
+      expect.objectContaining({ id: 'drums', limit: 2 }),
+      expect.objectContaining({ id: 'bass', limit: 3 }),
+    ] });
+    expect(result).toMatchObject({ ok: true, data: { results: [
+      { id: 'keys', ok: true, candidates: [{ name: 'piano' }] },
+      { id: 'drums', ok: false },
+      { id: 'bass', ok: true, candidates: [], notice: expect.stringContaining('没有匹配') },
+    ] } });
+  });
+
+  it('rejects invalid batches before invoking the retriever', async () => {
+    const sampleSearch = vi.fn();
+    expect((await search({ queries: [{ id: 'x', query: 'piano' }, { id: 'x', query: 'drums' }] },
+      { ...makeCtx(''), sampleSearch })).ok).toBe(false);
+    expect(sampleSearch).not.toHaveBeenCalled();
+  });
+
+  it('returns a tool failure when the entire model request fails', async () => {
+    const result = await search({ queries: [{ id: 'x', query: 'piano' }] }, {
+      ...makeCtx(''), sampleSearch: vi.fn().mockRejectedValue(Error('network')),
+    });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('检索暂不可用') });
+  });
+
+  it('keeps each offline query and its failure separate', async () => {
+    const localSearch = vi.spyOn(await import('../../lib/sample-search'), 'searchSamples');
+    localSearch.mockResolvedValueOnce([]).mockRejectedValueOnce(Error('catalog unavailable'));
+    try {
+      const result = await search({ queries: [{ id: 'keys', query: 'piano' }, { id: 'drums', query: 'snare' }] }, makeCtx(''));
+      expect(localSearch).toHaveBeenCalledTimes(2);
+      expect(localSearch.mock.calls.map(([q]) => q.query)).toEqual(['piano', 'snare']);
+      expect(result).toMatchObject({ ok: true, data: { results: [{ id: 'keys', ok: true }, { id: 'drums', ok: false }] } });
+    } finally {
+      localSearch.mockRestore();
+    }
+  });
+
+  it('retains the result shape of historical single-query calls', async () => {
+    const result = await search({ query: 'piano' }, { ...makeCtx(''), sampleSearch: vi.fn().mockResolvedValue([
+      { id: 'query', ok: true, candidates: [{ name: 'piano' }] },
+    ]) });
+    expect(result).toEqual({ ok: true, data: { candidates: [{ name: 'piano' }], notice: undefined } });
+  });
+
+  it('exposes required batch inputs and localized nested descriptions in both languages', () => {
+    for (const isZh of [true, false]) {
+      const schema = getOpenAIToolSchemas(isZh).find(t => t.function.name === 'searchSamples')!.function.parameters;
+      expect(schema.required).toEqual(['queries']);
+      const properties = schema.properties as { queries: { items: { required: string[]; properties: { id: { description: string }; limit: Record<string, unknown> } } } };
+      expect(properties.queries).not.toHaveProperty('maxItems');
+      expect(properties.queries.items.properties).toHaveProperty('limit');
+      expect(properties.queries.items.properties.limit).not.toHaveProperty('maximum');
+      expect(properties.queries.items.required).toEqual(['id', 'query']);
+      expect(properties.queries.items.properties.id.description).toContain(isZh ? '唯一' : 'Unique');
+    }
+  });
+});
+
 describe('validate', () => {
   const validate = getHandler('validate');
 

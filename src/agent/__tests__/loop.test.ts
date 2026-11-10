@@ -40,7 +40,7 @@ describe('sample search diagnostics', () => {
     try {
       await runAgentLoop({ initialCode: '', instruction: 'test', locale: 'zh', systemPrompt: '', llm });
       expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ result/),
-        expect.objectContaining({ callId: 'search-1', result: { ok: false, error: '无效的采样查询参数。' } }));
+        expect.objectContaining({ callId: 'search-1', result: { ok: false, error: expect.stringContaining('无效的采样查询') } }));
       expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ deduplicated/),
         expect.objectContaining({ callId: 'search-2' }));
       expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ finished/),

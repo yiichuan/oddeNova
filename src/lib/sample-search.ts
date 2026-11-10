@@ -126,7 +126,7 @@ export function rankSamples(catalog: SearchCatalog, input: SampleQuery) {
   results.sort((a,b) => b.score-a.score ||
     Number(b.annotationStatus === 'expert_confirmed')-Number(a.annotationStatus === 'expert_confirmed') ||
     a.name.localeCompare(b.name));
-  return results.slice(0, Math.min(10,Math.max(1,Math.floor(input.limit ?? 5))));
+  return results.slice(0, Math.max(1,Math.floor(input.limit ?? 5)));
 }
 let pending: Promise<SearchCatalog> | undefined;
 export function loadSampleCatalog(): Promise<SearchCatalog> {

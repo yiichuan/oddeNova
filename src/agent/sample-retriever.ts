@@ -1,7 +1,8 @@
 import type { ChatMsg, LLMCaller, LLMUsage } from './loop';
-import { loadSampleCatalog, type SampleQuery } from '../lib/sample-search';
+import { loadSampleCatalog } from '../lib/sample-search';
 import { serializeFullCatalog } from '../lib/sample-catalog-context';
-import { MODEL_SEARCH_PROMPT, MODEL_SEARCH_TOOL, resolveModelCandidates } from '../lib/sample-model-candidates';
+import { MODEL_BATCH_SEARCH_PROMPT, MODEL_BATCH_SEARCH_TOOL, resolveModelSearchResults } from '../lib/sample-model-candidates';
+import { parseSampleSearchInput, type SampleBatchQuery } from '../lib/sample-search-batch';
 
 /** A fresh, tool-scoped conversation per lookup; never shares the composition history. */
 export function createSampleRetriever(llm: LLMCaller, options: {
@@ -10,7 +11,8 @@ export function createSampleRetriever(llm: LLMCaller, options: {
   timeoutMs?: number;
 } = {}) {
   let context: ReturnType<typeof serializeFullCatalog> | undefined;
-  return async (input: SampleQuery) => {
+  return async (input: SampleBatchQuery) => {
+    const { queries } = parseSampleSearchInput(input);
     const signal = AbortSignal.any([options.signal ?? new AbortController().signal,
       AbortSignal.timeout(options.timeoutMs ?? 180_000)]);
     signal.throwIfAborted();
@@ -19,18 +21,18 @@ export function createSampleRetriever(llm: LLMCaller, options: {
     signal.throwIfAborted();
     context ??= serializeFullCatalog(catalog);
     const messages: ChatMsg[] = [
-      {role:'system',content:MODEL_SEARCH_PROMPT},
+      {role:'system',content:MODEL_BATCH_SEARCH_PROMPT},
       {role:'user',content:`完整标注目录：\n${context.text}`,cachePrefix:true},
-      {role:'user',content:JSON.stringify({...input,limit:input.limit ?? 5})},
+      {role:'user',content:JSON.stringify({ queries })},
     ];
-    const response = await abortable(llm.chatWithTools(messages, [MODEL_SEARCH_TOOL], undefined, undefined, signal, false), signal);
+    const response = await abortable(llm.chatWithTools(messages, [MODEL_BATCH_SEARCH_TOOL], undefined, undefined, signal, false), signal);
     if (response.usage) options.onUsage?.(response.usage);
     signal.throwIfAborted();
     const call = response.toolCalls[0];
     if(response.toolCalls.length !== 1 || call.name !== 'returnCandidates') throw Error('Expected one returnCandidates call');
     const args: unknown = JSON.parse(call.arguments);
-    if(!args || typeof args !== 'object' || !('candidates' in args)) throw Error('Missing candidates');
-    return resolveModelCandidates(args.candidates, context.rows, input);
+    if(!args || typeof args !== 'object' || !('results' in args)) throw Error('Missing results');
+    return resolveModelSearchResults(args.results, context.rows, queries);
   };
 }
 

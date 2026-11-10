@@ -3,7 +3,8 @@
 // and a handler that operates on a mutable AgentState. The `commit` tool is
 // terminal — it throws CommitSignal which the loop catches.
 
-import { searchSamples, FEATURE_OPTIONS, type SampleQuery } from '../lib/sample-search';
+import { searchSamples, FEATURE_OPTIONS } from '../lib/sample-search';
+import { parseSampleSearchInput, DEFAULT_SAMPLE_LIMIT, type SampleBatchQuery, type SampleSearchResult } from '../lib/sample-search-batch';
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
 import { normalizeGmSampleNames } from '../lib/sample-allowlist';
@@ -16,7 +17,7 @@ export interface AgentState {
 export interface ToolContext {
   state: AgentState;
   isZh?: boolean;
-  sampleSearch?: (input: SampleQuery) => Promise<unknown[]>;
+  sampleSearch?: (input: SampleBatchQuery) => Promise<SampleSearchResult[]>;
 }
 
 export interface ToolResult {
@@ -130,48 +131,76 @@ export async function validateCommittedCode(code: string, isZh = true): Promise<
   return validateCurrentCode(code, isZh);
 }
 
+function sampleSearchParameters(isZh: boolean) {
+  return {
+    type: 'object', additionalProperties: false, required: ['queries'],
+    properties: {
+      queries: {
+        type: 'array', minItems: 1,
+        description: isZh
+          ? `已确定的声部需求可合并搜索；每组默认期望${DEFAULT_SAMPLE_LIMIT}个候选，不设组数、候选数或整批预算的硬上限。支持单组及后续补查。`
+          : `Batch known role requirements, targeting ${DEFAULT_SAMPLE_LIMIT} candidates per query by default. No hard caps on queries, candidates or total budget. A single query and follow-up searches are supported.`,
+        items: {
+          type: 'object', additionalProperties: false, required: ['id', 'query'],
+          properties: {
+            id: { type: 'string', minLength: 1, maxLength: 100, description: isZh ? '本批唯一的需求标识，结果按此 id 分组。' : 'Unique query id within this batch; results use this id.' },
+            query: { type: 'string', minLength: 1, maxLength: 500, description: isZh ? '该声部的听感需求，例如短尾干声军鼓。' : 'Audible needs for this role, e.g. a dry snare with a short tail.' },
+            category: { type: 'string', maxLength: 100, description: isZh ? '可选乐器类别，例如军鼓 snare、钢琴 piano。' : 'Optional instrument category, e.g. snare or piano.' },
+            features: {
+              type: 'object', additionalProperties: false,
+              description: isZh ? '该需求的可选结构化听感条件。' : 'Optional structured listening preferences for this query.',
+              properties: Object.fromEntries(Object.entries(FEATURE_OPTIONS).map(([key, values]) => [
+                key, key === 'texture_tags' ? { type: 'array', items: { type: 'string', enum: values } } : { type: 'string', enum: values },
+              ])),
+            },
+            limit: { type: 'integer', minimum: 1, description: isZh ? '期望候选数量，默认3；实际按相关性返回，不设硬上限。' : 'Target candidate count, default 3; actual count follows relevance without a hard cap.' },
+          },
+        },
+      },
+    },
+  };
+}
+
 // ----- tool definitions ------------------------------------------------------
 
 export const TOOLS: ToolDef[] = [
   {
     name: 'searchSamples',
-    description: '按乐器类别和听感查找内置采样，返回少量可调用候选、变体差异和模型初标/专家确认状态。目录类别优先；听感是软参考。新增或替换已标注库音色前使用；同需求的查询结果可复用。',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: '声部需求，中英文均可；例如短尾干声军鼓。' },
-        category: { type: 'string', description: '可选乐器类别，例如军鼓 snare、钢琴 piano。' },
-        features: {
-          type: 'object',
-          additionalProperties: false,
-          properties: Object.fromEntries(Object.entries(FEATURE_OPTIONS).map(([key, values]) => [
-            key, key === 'texture_tags' ? { type: 'array', items: { type: 'string', enum: values } } :
-              { type: 'string', enum: values },
-          ])),
-        },
-        limit: { type: 'integer', minimum: 1, maximum: 10, description: '默认5个候选，最多10个。' },
-      },
-      required: ['query'],
-    },
+    description: '按声部类别和听感批量查找内置采样，一次检索多组已确定需求，结果按 id 分组。新增或替换已标注库音色前使用；同需求结果可复用，需后续判断的需求可补查。目录类别优先；听感是软参考。',
+    parameters: sampleSearchParameters(true),
     handler: async (args, ctx) => {
       const zh = ctx.isZh ?? true;
-      if (typeof args.query !== 'string' || args.query.length > 500 ||
-          (args.category !== undefined && (typeof args.category !== 'string' || args.category.length > 100)) ||
-          (args.limit !== undefined && (typeof args.limit !== 'number' || !Number.isInteger(args.limit) || args.limit < 1 || args.limit > 10))) {
-        return { ok: false, error: zh ? '无效的采样查询参数。' : 'Invalid sample query.' };
-      }
-      const features = args.features;
-      if (features !== undefined && (!features || typeof features !== 'object' || Array.isArray(features) ||
-          Object.entries(features).some(([key,value]) => !FEATURE_OPTIONS[key] ||
-            (key === 'texture_tags' ? !Array.isArray(value) || value.some(v => !FEATURE_OPTIONS[key].includes(v)) :
-              typeof value !== 'string' || !FEATURE_OPTIONS[key].includes(value))))) {
-        return { ok: false, error: zh ? '无效的听感条件。' : 'Invalid listening features.' };
+      let input: ReturnType<typeof parseSampleSearchInput>;
+      try {
+        input = parseSampleSearchInput(args);
+      } catch {
+        return { ok: false, error: zh
+          ? '无效的采样查询：queries 需为非空数组且 id 唯一，limit 需为正整数；请检查听感条件。'
+          : 'Invalid sample queries: provide a nonempty queries array with unique ids, positive integer target limits, and valid listening features.' };
       }
       try {
-        const candidates = await (ctx.sampleSearch ?? searchSamples)({ query: args.query, category: args.category as string | undefined,
-          features: features as Record<string,string|string[]> | undefined, limit: args.limit as number | undefined });
-        return { ok: true, data: { candidates, notice: candidates.length ? undefined :
-          zh ? '没有匹配候选，可调整条件或使用现有采样目录。' : 'No matches; adjust the query or use the existing sample reference.' } };
+        const results = ctx.sampleSearch
+          ? await ctx.sampleSearch({ queries: input.queries })
+          : await Promise.all(input.queries.map(async ({ id, ...query }): Promise<SampleSearchResult> => {
+            try {
+              return { id, ok: true, candidates: await searchSamples(query) };
+            } catch {
+              return { id, ok: false, error: zh ? '音色检索暂不可用，可重试此需求。' : 'Sample search unavailable; retry this query.' };
+            }
+          }));
+        const withNotices = results.map(result => result.ok ? {
+          ...result, notice: result.candidates.length ? undefined : zh
+            ? '没有匹配候选，可调整此组条件或使用现有采样目录。'
+            : 'No matches; adjust this query or use the existing sample reference.',
+        } : result);
+        // Historical calls/replays keep their single-query result shape.
+        if (input.legacy) {
+          const result = withNotices[0];
+          return result.ok
+            ? { ok: true, data: { candidates: result.candidates, notice: result.notice } }
+            : { ok: false, error: result.error };
+        }
+        return { ok: true, data: { results: withNotices } };
       } catch {
         return { ok: false, error: zh ? '音色检索暂不可用，可调整需求或使用现有采样目录继续创作。' : 'Sample search unavailable; adjust the request or continue with the existing sample reference.' };
       }
@@ -291,7 +320,7 @@ export const TOOLS: ToolDef[] = [
 // Bilingual schema descriptions — kept separate from handler logic so the
 // schema sent to the LLM is always in the user's language.
 const TOOL_SCHEMAS_ZH = {
-  searchSamples: {"description": "新增或替换已标注库音色前，按声部类别和听感检索采样。目录类别优先，模型初标用于软排序；返回合法播放方式和变体差异。同需求的查询结果可复用。", "params": {"query": "声部和听感需求", "category": "可选乐器类别", "features": "可选结构化听感条件", "limit": "默认5，上限10"}},
+  searchSamples: { description: "新增或替换已标注库音色前，批量检索已确定的声部和听感需求，按 id 返回每组候选、合法播放方式及标注。目录类别优先，模型初标是软参考。同需求结果可复用，支持单组与补查。", params: {} },
   validate: {
     description:
       '对一段 strudel 代码做校验（不会播放）：先做 JS 语法检查，再在沙箱里 dry-run 一次以捕捉未定义函数（如 by/sometimesBy 等幻觉 API）和类型错误。在 commit 前应该至少 validate 一次最终代码；若失败请按错误信息修代码后再 validate 一次。',
@@ -319,7 +348,7 @@ const TOOL_SCHEMAS_ZH = {
 };
 
 const TOOL_SCHEMAS_EN = {
-  searchSamples: {"description": "Before adding or replacing a timbre from an annotated library, find samples by role/category and audible preferences. Reuse results for unchanged requirements. Catalog identity takes precedence; initial model observations are soft guidance. Returns playable mappings and variant differences.", "params": {"query": "Instrument role and audible preferences", "category": "Optional instrument category", "features": "Optional structured listening preferences", "limit": "Default 5, maximum 10"}},
+  searchSamples: { description: "Before adding or replacing annotated timbres, batch known role and listening requirements. Returns candidates, legal playback and annotations grouped by id. Catalog identity takes precedence; model observations are soft guidance. Reuse unchanged results; single-query and follow-up searches are supported.", params: {} },
   validate: {
     description:
       'Validate a snippet of Strudel code (no playback): runs a JS syntax check then dry-runs in a sandbox to catch undefined functions (e.g. hallucinated APIs like by/sometimesBy) and type errors. Call validate at least once before commit; if it fails, fix the code per the error message and validate again.',
@@ -354,11 +383,12 @@ export function getOpenAIToolSchemas(isZh = true): Array<{
   const schemas = isZh ? TOOL_SCHEMAS_ZH : TOOL_SCHEMAS_EN;
   return TOOLS.map((t) => {
     const s = schemas[t.name as keyof typeof schemas];
+    const baseParameters = t.name === 'searchSamples' ? sampleSearchParameters(isZh) : t.parameters;
     // Merge bilingual param descriptions into a copy of the original parameters schema.
     const parameters = {
-      ...t.parameters,
+      ...baseParameters,
       properties: Object.fromEntries(
-        Object.entries((t.parameters as { properties: Record<string, { type: string; description?: string }> }).properties).map(
+        Object.entries((baseParameters as { properties: Record<string, { type: string; description?: string }> }).properties).map(
           ([key, val]) => [key, { ...val, description: s.params[key as keyof typeof s.params] ?? val.description }]
         )
       ),

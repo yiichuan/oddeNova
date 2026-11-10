@@ -22,9 +22,9 @@ describe('sample search',()=>{
     expect(rankSamples(catalog,{query:'钢琴'})[0].playback).toBe('note("C4").s("piano:0")');
     expect(rankSamples(catalog,{query:'unlisted-zz'})).toEqual([]);
   });
-  it('caps candidate count and ignores unavailable listening features',()=>{
+  it('honors the requested count without a hard cap and ignores unavailable listening features',()=>{
     const many={...catalog,samples:Array.from({length:20},(_,i)=>({...catalog.samples[0],key:'snare_'+i}))};
-    expect(rankSamples(many,{query:'snare',limit:99})).toHaveLength(10);
+    expect(rankSamples(many,{query:'snare',limit:99})).toHaveLength(20);
     const unknown={...catalog,samples:[{...catalog.samples[0],variants:[{...variant('x','unknown'),features:null}]}]};
     expect(rankSamples(unknown,{query:'snare',features:{brightness:'bright'}})[0].score).toBeGreaterThanOrEqual(0);
   });
