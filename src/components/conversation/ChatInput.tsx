@@ -12,6 +12,7 @@ import { checkAirJellyAvailable } from '../../services/airjelly';
 import type { AgentEntryPoint } from '../../lib/analytics';
 import type { InputMode } from '../../hooks/useChat';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useTypewriter } from '../../hooks/useTypewriter';
 
 const IMAGE_UPLOAD_CONCURRENCY = 3;
 type ImageUploadQueue = { jobs: Array<() => Promise<void>>; active: number; disposed: boolean };
@@ -98,6 +99,8 @@ interface ChatInputProps {
    * the guide's own "skip" is the way out to the real model.
    */
   presetLock?: PresetLock;
+  /** The first-run guide is running: no placeholder and no rotating suggestions. */
+  guided?: boolean;
   /** Images upload to the account's storage, so a guest is asked to sign in first. */
   signedIn?: boolean;
   /** Opens the sign-in window from the "sign in to add images" notice. */
@@ -109,6 +112,11 @@ export interface PresetLock {
   /** The preset is loading; sending again does nothing. */
   busy: boolean;
   onSend: () => void;
+  /**
+   * When the text may begin typing itself into the field (default: at once).
+   * Until then the field stays empty; once begun it finishes and stays.
+   */
+  startTyping?: boolean;
 }
 
 export default function ChatInput({
@@ -128,6 +136,7 @@ export default function ChatInput({
   suggestions,
   onMoodGenerate,
   presetLock,
+  guided = false,
   signedIn = true,
   onRequestSignIn,
 }: ChatInputProps) {
@@ -274,7 +283,7 @@ export default function ChatInput({
   const [typing, setTyping] = useState<{ sug: string | null; count: number }>({ sug: null, count: 0 });
   // Fade-out phase between dwell and the next suggestion (blur + opacity).
   const [suggestionFading, setSuggestionFading] = useState(false);
-  const suggestionList = inputMode === 'choice' || presetLock
+  const suggestionList = inputMode === 'choice' || presetLock || guided
     ? []
     : moodSuggestionActive
       ? [...(suggestions ?? []), moodSuggestion]
@@ -340,7 +349,8 @@ export default function ChatInput({
     prevReplayRef.current = replayValue;
   }, [replayValue]);
 
-  const presetValue = presetLock?.text;
+  // The guide's preset request types itself into the field as it appears.
+  const presetValue = useTypewriter(presetLock?.text, presetLock?.startTyping ?? true);
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -624,7 +634,7 @@ export default function ChatInput({
                   handleSubmit(e);
                 }
               }}
-              placeholder={suggestionActive
+              placeholder={suggestionActive || guided
                 ? ''
                 : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
               rows={1}
@@ -679,9 +689,7 @@ export default function ChatInput({
           <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
             <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ${waitingDim}`}>
               {imageBusy && <span role="status" className="sr-only">{t('processingImages')}</span>}
-              {presetLock ? (
-                <div className="truncate text-[12px] text-text-muted">{t('onboardingPresetBadge')}</div>
-              ) : engineStatus !== 'ready' ? (
+              {presetLock ? null : engineStatus !== 'ready' ? (
                 <div className="flex items-center gap-2 text-[12px] text-text-muted">
                   <span className={`inline-flex h-2 w-2 rounded-full ${engineStatus === 'failed' ? 'bg-error' : 'bg-text-muted'}`} />
                   <span>{engineStatus === 'failed' ? t('engineFailed') : t('engineInitializing')}</span>
@@ -746,7 +754,9 @@ export default function ChatInput({
                 <button
                   type="button"
                   onClick={onStop}
-                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover"
+                  // A guided turn is preset and plays out on its own; it has no stopping.
+                  disabled={guided}
+                  className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-brand-accent"
                   title={t('stop')}
                 >
                   {/* Well under the arrow it stands in for: a solid square

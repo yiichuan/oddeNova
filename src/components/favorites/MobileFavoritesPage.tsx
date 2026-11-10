@@ -528,7 +528,7 @@ export default function MobileFavoritesPage({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="favorites-confirm-question"
-            className="w-full max-w-[320px] rounded-2xl border border-border bg-conversation-surface p-5 shadow-dialog-overlay"
+            className="w-full max-w-[320px] rounded-dialog border border-border bg-conversation-surface p-5 shadow-dialog-overlay"
           >
             {/* The question, first thing and in words. No mark above it: the
                 two acts are already told apart by what the question says and by

@@ -141,7 +141,7 @@ export default function AccountModal({
         {/* When the privacy footer shows, the card keeps the link snug instead
             of deep foot padding; without it, the last row still needs the room
             the padding gives it. */}
-        <div className={`bg-conversation-surface border border-border rounded-2xl px-6 pt-6 shadow-dialog-overlay ${showPrivacyLink ? 'pb-4' : 'pb-10'}`}>
+        <div className={`bg-conversation-surface border border-border rounded-dialog px-6 pt-6 shadow-dialog-overlay ${showPrivacyLink ? 'pb-4' : 'pb-10'}`}>
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <h2 className="text-lg font-semibold text-text-primary">{t('account')}</h2>

@@ -569,7 +569,29 @@ describe('ChatInput guide preset on a phone', () => {
     // Even a direct tap asks for no keyboard.
     expect(textarea.readOnly).toBe(true);
     expect(textarea.getAttribute('inputmode')).toBe('none');
-    expect(container.textContent).toContain('Guided practice · preset example');
+    expect(container.textContent).not.toContain('Guided practice · preset example');
+  });
+
+  it('shows no placeholder or suggestion while the guide runs', () => {
+    const { container, root } = renderChatInput({ guided: true, suggestions: ['Try a sparse jazz groove'] });
+    roots.push(root);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!textarea) throw new Error('chat input not found');
+
+    expect(textarea.placeholder).toBe('');
+    expect(container.textContent).not.toContain('Try a sparse jazz groove');
+  });
+
+  it('leaves the stop key unpressable while the guide runs', () => {
+    const onStop = vi.fn();
+    const { container, root } = renderChatInput({ guided: true, isLoading: true, onStop });
+    roots.push(root);
+    const stop = container.querySelector<HTMLButtonElement>('button[title="Stop"]');
+    if (!stop) throw new Error('stop key not found');
+
+    expect(stop.disabled).toBe(true);
+    act(() => stop.click());
+    expect(onStop).not.toHaveBeenCalled();
   });
 
   it('sends the preset once through the real send key and not while it loads', () => {

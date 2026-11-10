@@ -28,6 +28,8 @@ interface MobileFirstCreationTourProps {
   suspended: boolean;
   /** Scroll the window's code once it is framed. */
   onRevealCode: () => void;
+  /** The step whose card has finished fading in, or null while none is shown. */
+  onCardShown?: (step: FirstCreation['step'] | null) => void;
 }
 
 interface MobileTarget {
@@ -46,7 +48,9 @@ const BLOCK_QUIET =
 const TEXT_KEY =
   'inline-flex min-h-11 items-center rounded-region px-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none';
 const TEXT_ACTION = `-mr-2 ${TEXT_KEY} text-brand-accent hover:text-brand-accent-hover`;
-const CARD = 'rounded-2xl border border-border px-5 pb-5 pt-5 shadow-dialog-overlay';
+/** The card's fade-in (the layer's `duration-300`). */
+const CARD_FADE_MS = 300;
+const CARD = 'rounded-dialog border border-border px-5 pb-5 pt-5 shadow-dialog-overlay';
 
 /** Frames a target must hold still before the hole is cut: waits out the window scaling in. */
 const SETTLE_FRAMES = 3;
@@ -89,7 +93,7 @@ function targetFor(guide: FirstCreation): MobileTarget | null {
   return null;
 }
 
-export default function MobileFirstCreationTour({ guide, codeWindowOpen, suspended, onRevealCode }: MobileFirstCreationTourProps) {
+export default function MobileFirstCreationTour({ guide, codeWindowOpen, suspended, onRevealCode, onCardShown }: MobileFirstCreationTourProps) {
   const { view, step } = guide;
   // The code window belongs to the last steps; anywhere else a window the
   // reader opened is theirs, and the guide waits for it to shut. A turn being
@@ -196,6 +200,22 @@ export default function MobileFirstCreationTour({ guide, codeWindowOpen, suspend
     return () => cancelAnimationFrame(frame);
   }, [fadeKey]);
   const shown = fadeKey !== null && shownKey === fadeKey;
+
+  // Reported once the card has faded all the way in, so what it introduces
+  // (the preset typing itself into the field) starts after it is seen.
+  const shownStep = shown ? step : null;
+  const onCardShownRef = useRef(onCardShown);
+  useEffect(() => {
+    onCardShownRef.current = onCardShown;
+  });
+  useEffect(() => {
+    if (shownStep === null) {
+      onCardShownRef.current?.(null);
+      return;
+    }
+    const id = setTimeout(() => onCardShownRef.current?.(shownStep), CARD_FADE_MS);
+    return () => clearTimeout(id);
+  }, [shownStep]);
 
   const focusKey = visible ? `${view}:${step}` : null;
   useEffect(() => {
@@ -421,7 +441,6 @@ function Done({ guide, labelId }: { guide: FirstCreation; labelId: string }) {
           {t('onboardingKeepEditing')}
         </button>
       </div>
-      <p className="mt-4 text-xs leading-relaxed text-text-muted">{t('onboardingDoneRealAi')}</p>
     </>
   );
 }
