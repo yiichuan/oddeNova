@@ -189,7 +189,7 @@ const S: Record<string, readonly [string, string]> = {
   hidePassword: ['隐藏密码', 'Hide password'],
 
   // First-entry welcome
-  welcomeTitle:             ['即刻开始，Vibe 一支属于你自己的BGM', 'Start now — vibe a BGM all your own'],
+  welcomeTitle:             ['即刻开始，Vibe 一支属于你自己的 BGM', 'Start now — vibe a BGM all your own'],
   welcomeOr:                ['或者', 'or'],
   welcomeContinueWithEmail: ['使用邮箱继续', 'Continue with email'],
   welcomeCreateAccount:     ['创建账户', 'Create account'],
