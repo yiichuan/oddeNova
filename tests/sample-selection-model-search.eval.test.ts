@@ -14,7 +14,7 @@ vi.mock('../src/lib/sample-search',async importOriginal=>{
 import { getOpenAIToolSchemas } from '../src/agent/tools';
 import { runAgentLoop, type LLMCaller } from '../src/agent/loop';
 import { AGENT_SYSTEM_PROMPT_OPENAI as oldPrompt } from '../src/prompts/versions/v25';
-import { AGENT_SYSTEM_PROMPT_OPENAI as newPrompt } from '../src/prompts/versions/v27';
+import { AGENT_SYSTEM_PROMPT_OPENAI as newPrompt } from '../src/prompts/versions/v26';
 vi.mock('../src/lib/soundfont-loader',()=>({registerSoundfonts:vi.fn()}));
 vi.mock('../src/lib/analytics',()=>({trackWavExportCompleted:vi.fn()}));
 const ready=Boolean(process.env.MODEL_SEARCH_EVAL && process.env.DEEPSEEK_API_KEY);
@@ -38,9 +38,9 @@ it.skipIf(!ready)('compares 10 requests x 2 conditions x 3 repeats with real age
   writeFileSync(dir+'/inputs/full-catalog.txt',text);
   mkdirSync(dir,{recursive:true});
   const sha=(text:string)=>createHash('sha256').update(text).digest('hex');
-  const sources=Object.fromEntries(['scripts/sample-annotations/model-search.ts','scripts/sample-annotations/full-catalog.ts','tests/sample-selection-model-search.eval.test.ts','src/lib/sample-search.ts','src/agent/tools.ts','src/agent/loop.ts','src/prompts/versions/v25.ts','src/prompts/versions/v27.ts'].map(file=>[file,readFileSync(file,'utf8')]));
+  const sources=Object.fromEntries(['scripts/sample-annotations/model-search.ts','scripts/sample-annotations/full-catalog.ts','tests/sample-selection-model-search.eval.test.ts','src/lib/sample-search.ts','src/agent/tools.ts','src/agent/loop.ts','src/prompts/versions/v25.ts','src/prompts/versions/v26.ts'].map(file=>[file,readFileSync(file,'utf8')]));
   const toolSchemas=getOpenAIToolSchemas(true);
-  const config={version:1,repeats:1,selectionPrompt:MODEL_SEARCH_PROMPT,selectionTool:MODEL_SEARCH_TOOL,tableHash:sha(text),conditions:{baseline:'historical v27 keyword search repeat 0',search:'v27 agent with isolated full-catalog model search'},baselineHashes:Object.fromEntries(cases.map(c=>[c.id,sha(readFileSync(oldDir+'/'+c.id+'-0-search.json','utf8'))])),seconds:30,sources:Object.fromEntries(Object.entries(sources).map(([file,text])=>[file,sha(text)])),toolSchemas,model:'deepseek-flash',cases,thinking:false,temperature:0.7,maxIter:30,
+  const config={version:1,repeats:1,selectionPrompt:MODEL_SEARCH_PROMPT,selectionTool:MODEL_SEARCH_TOOL,tableHash:sha(text),conditions:{baseline:'historical v27 keyword search repeat 0',search:'v26 agent with isolated full-catalog model search'},baselineHashes:Object.fromEntries(cases.map(c=>[c.id,sha(readFileSync(oldDir+'/'+c.id+'-0-search.json','utf8'))])),seconds:30,sources:Object.fromEntries(Object.entries(sources).map(([file,text])=>[file,sha(text)])),toolSchemas,model:'deepseek-flash',cases,thinking:false,temperature:0.7,maxIter:30,
     catalogSha256:sha(JSON.stringify(catalog)),
     baselinePromptSha256:sha(oldPrompt('你是一位音乐创作助手。','NOVA')),
     searchPromptSha256:sha(newPrompt('你是一位音乐创作助手。','NOVA'))};

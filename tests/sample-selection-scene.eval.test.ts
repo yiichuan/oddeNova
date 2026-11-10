@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { getOpenAIToolSchemas } from '../src/agent/tools';
 import { runAgentLoop, type LLMCaller } from '../src/agent/loop';
 import { AGENT_SYSTEM_PROMPT_OPENAI as oldPrompt } from '../src/prompts/versions/v25';
-import { AGENT_SYSTEM_PROMPT_OPENAI as newPrompt } from '../src/prompts/versions/v27';
+import { AGENT_SYSTEM_PROMPT_OPENAI as newPrompt } from '../src/prompts/versions/v26';
 vi.mock('../src/lib/soundfont-loader',()=>({registerSoundfonts:vi.fn()}));
 vi.mock('../src/lib/analytics',()=>({trackWavExportCompleted:vi.fn()}));
 const ready=Boolean(process.env.SCENE_EVAL && process.env.DEEPSEEK_API_KEY);
@@ -27,7 +27,7 @@ it.skipIf(!ready)('compares 10 requests x 2 conditions x 3 repeats with real age
   const dir=path.resolve('.local/sample-annotations/scene-eval');
   mkdirSync(dir,{recursive:true});
   const sha=(text:string)=>createHash('sha256').update(text).digest('hex');
-  const sources=Object.fromEntries(['src/lib/sample-search.ts','src/agent/tools.ts','src/agent/loop.ts','src/prompts/versions/v25.ts','src/prompts/versions/v27.ts'].map(file=>[file,readFileSync(file,'utf8')]));
+  const sources=Object.fromEntries(['src/lib/sample-search.ts','src/agent/tools.ts','src/agent/loop.ts','src/prompts/versions/v25.ts','src/prompts/versions/v26.ts'].map(file=>[file,readFileSync(file,'utf8')]));
   const toolSchemas=getOpenAIToolSchemas(true);
   const config={version:1,repeats:3,seconds:30,sources:Object.fromEntries(Object.entries(sources).map(([file,text])=>[file,sha(text)])),toolSchemas,model:'deepseek-flash',cases,thinking:false,temperature:0.7,maxIter:30,
     catalogSha256:sha(JSON.stringify(catalog)),

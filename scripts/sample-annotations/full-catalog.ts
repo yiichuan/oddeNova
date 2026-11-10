@@ -50,9 +50,9 @@ export const FULL_SELECT_TOOL = { type: 'function', function: {
 } };
 
 export function fullCompositionPrompt(base: string, selections: unknown) {
-  if (!base.startsWith('## 依据声音特征选择采样\n')) throw Error('Unexpected v27 selection section');
+  if (!base.startsWith('## 依据声音特征选择采样\n')) throw Error('Unexpected sample selection section');
   const boundary = base.indexOf('\n\n');
-  if (boundary < 0) throw Error('Missing v27 section boundary');
+  if (boundary < 0) throw Error('Missing sample selection section boundary');
   return `## 使用全量标注选样方案创作
 目标：让音乐贴合用户场景，使用已完成的全库选样方案构建作品。
 原则：自主决定旋律、节奏、和声、效果与发展；选样方案不是固定编曲模板。

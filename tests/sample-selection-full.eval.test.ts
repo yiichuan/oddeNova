@@ -3,7 +3,7 @@ import { it, expect, vi } from 'vitest';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { runAgentLoop, type LLMCaller } from '../src/agent/loop';
-import { AGENT_SYSTEM_PROMPT_OPENAI } from '../src/prompts/versions/v27';
+import { AGENT_SYSTEM_PROMPT_OPENAI } from '../src/prompts/versions/v26';
 import { GM_INSTRUMENTS, BUILTIN_SYNTHS } from '../src/lib/sample-allowlist';
 import { getOpenAIToolSchemas } from '../src/agent/tools';
 import type { SearchCatalog } from '../src/lib/sample-search';
@@ -26,11 +26,11 @@ it.skipIf(!ready)('selects from full annotations then composes ten scene pieces'
   const base=AGENT_SYSTEM_PROMPT_OPENAI('你是一位音乐创作助手。','NOVA');
   const oldConfig=json(`${oldDir}/config.json`);
   expect(hash(base)).toBe(oldConfig.searchPromptSha256);
-  const sources=Object.fromEntries(['scripts/sample-annotations/full-catalog.ts','tests/sample-selection-full.eval.test.ts','src/agent/loop.ts','src/agent/tools.ts','src/lib/sample-allowlist.ts','src/prompts/versions/v27.ts'].map(f=>[f,readFileSync(f,'utf8')]));
+  const sources=Object.fromEntries(['scripts/sample-annotations/full-catalog.ts','tests/sample-selection-full.eval.test.ts','src/agent/loop.ts','src/agent/tools.ts','src/lib/sample-allowlist.ts','src/prompts/versions/v26.ts'].map(f=>[f,readFileSync(f,'utf8')]));
   const baselines=Object.fromEntries(cases.map(c=>[c.id,hash(readFileSync(`${oldDir}/${c.id}-0-search.json`,'utf8'))]));
   const config={version:1,model:'deepseek-flash',temperature:0.7,thinking:false,repeats:1,seconds:30,cases,
     baseline:'historical scene-eval v27 repeat 0; previously heard, exploratory comparison',baselines,
-    conditions:{baseline:'historical_v27_search',search:'full_catalog_selection_then_v27_composition'},
+    conditions:{baseline:'historical_v27_search',search:'full_catalog_selection_then_v26_composition'},
     catalogHash:hash(JSON.stringify(catalog)),tableHash:hash(text),variantRows:Object.keys(rows).length,
     selectionPrompt:FULL_SELECTION_PROMPT,selectionTool:FULL_SELECT_TOOL,compositionTools:getOpenAIToolSchemas(true).filter(t=>t.function.name!=='searchSamples'),
     fallbackNames:[...fallbackNames],sources:Object.fromEntries(Object.entries(sources).map(([f,t])=>[f,hash(t)]))};

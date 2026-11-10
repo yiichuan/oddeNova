@@ -1,116 +1,16 @@
 /**
  * @version v26
- * @date 2026-11-07
- * @description 新增 searchSamples 按需检索内置音色，返回目录类别、听感初标和合法播放方式。
- * 以下沿用 v25 的说明：分享小票需要每个音层一句面向听众的简短说明（用什么乐器实现什么功能，如"温暖pad铺出天空和声"），
- * 但不能改变现有的代码注释写法。新增 `commit.layerNotes`：最终代码里每个音层一条说明，乐器用中文常用名
- * 而不照抄音色名（gm_piano → 钢琴），只印在小票上、不写进注释。说明属于 commit 而不是代码，所以手写或
- * 粘贴来的代码天然没有说明，小票上该行留空。中英双语同步；其余内容沿用 v24。
- * 以下为 v24 原始说明（保留）：同步 Task 1 的 Strudel validator 与 agent validation 文案：内置采样参考只约束内置名称，当前代码可通过内联字面量 `samples({...})` 注册自定义名称；隐式收尾统一报告校验失败。中英双语同步。
- * 以下为 v23 原始说明（保留）：修正《Strudel 时间结构参考》里一条错误的时长公式，并据此补一条硬约束。v22 及之前写的
- * "`<v1 … vk>/N` 总长度 N cycle、平均分配"与 Strudel 实际语义相反：`<>` 每格 1 cycle，`/N` 是把**每格**
- * 拉长到 N cycle，整段共 k×N cycle（经 @strudel/mini 实跑验证：`<a b>/16` = 32 cycle、
- * `<200 8000 200 10000>/16` = 64 cycle）。这条错误让 agent 把 `/N` 当成"整段铺满 N cycle"，于是把 `@` 权重
- * 与 `/N` 叠用——`<0@6 0.22@2 0@6 0.32@2>` 的权重和已经决定它是 16 cycle，再 `/16` 就成了 256 cycle：
- * 174 BPM 下单是这一层就把全曲循环拖到 5:53（gain 为 0 的首段静音 96 cycle ≈ 2 分 12 秒），还与同层
- * `.lpf("<...>/16")` 的 64 cycle 完全错位。本次只改这一处：给出正确公式，并明确 `@` 权重与 `/N` 不叠用。
- * 中英双语同步。音乐与交互内容沿用 v22。
- * v23 追加（原地，用户反馈）：收尾格式的五条建议从纯祈使句改为"祈使句。说明"——句号后用一句
- * 大白话讲清这一步的创作意图和听感变化，让不懂音乐术语的用户也能判断要不要点。同时删掉旧禁令里
- * 与之冲突的"不要写说明句"，并在《Commit 规则》里紧贴该条补一个完整的收尾文案示例块（按 v22 五追加
- * 的教训标注"仅演示写法、不要照抄"）。中英双语同步。
- *
- * 以下为 v22 原始说明（保留）：
- * NOVA-161 多步互动作作（分步创作）：从零创作的抽象/情绪化/含糊请求改为分步进行——
- * 第一步只写承载方向身份的最小音乐单元草稿（默认旋律+极简支撑，非旋律类方向用等价物）并 commit
- * （检查点文案：自然成句的问题 + 编号选项 + "回复序号即可继续"引导），
- * 用户确认方向后再每轮补 1-2 层并以同样检查点结束，全曲最多 2-3 次提问；用户回复序号即按选项执行，
- * 自然语言回复直接执行，序号越界/误回则澄清。明确具体请求、局部修改与情绪一键成曲
- * （"根据我的心情生成音乐"）保持单步完整交付。commit.explanation 分两种格式：
- * 检查点格式（问题+选项，不带"接下来可以："）与收尾格式（默认五条建议）。中英双语同步。
- * 音乐内容沿用 v21。
- * v22 追加（原地，按 docs/ai/agent-instruction-design.md 审查）：《分步创作》「后续节奏」去掉固定
- * 层数与提问次数硬约束，改为原则导向——每轮只前进一小步、补当前最缺失的角色、检查点要稀疏；
- * Commit 规则「检查点格式」精简为引用《分步创作》示例，删除逐条重复描述。中英双语同步。
- * v22 再追加（原地，用户实测反馈）：检查点文案去掉"问题：/选项："标签前缀，问题改为自然成句、
- * 选项保留强制编号（模型曾漏写序号，编号是"回序号"契约的锚点，Commit 规则中强调以 `1. ` 开头）；
- * 引导句改为"回复序号即可继续。"；intent-classifier 的检查点识别标记同步改为"数字编号行"。中英双语同步。
- * v22 三追加（原地，讨论确认）：保留收尾项但改措辞——"就这样，收尾"（易误读为保持草稿现状）
- * 改为"按这个方向直接写完"（语义：授权 agent 自主补完全部剩余层）；EN 同步为
- * "Finish the piece in this direction"。
- * v22 四追加（原地，讨论确认）：第一步草稿从"单层旋律"改为"承载方向身份的最小音乐单元"——
- * 默认旋律 + 极简支撑（低音根音或最简节奏暗示，共 1-2 层），避免裸旋律缺上下文导致的误判；
- * 非旋律类方向（ambient/鼓主导）用等价物（pad+织体、律动骨架）；选项 2 改为"换个方向重新来"
- * （对非旋律单元更普适）。中英双语同步。
- * v22 五追加（原地，实测反馈）：示例被模型当模板照抄（选项固定返回示例三条）——把《检查点文案
- * 格式》硬性契约从《Commit 规则》上移到《分步创作》示例正上方（格式说明紧贴示例、Commit 规则改
- * 为指针），并在示例旁显式声明"仅演示格式，选项内容按当前作品实际拟定，不要照抄示例文字"。
- * 中英双语同步。
- * v22 六追加（原地，实测反馈）：DeepSeek 思考链（reasoning_content）仍输出英文——语言段落从
- * "思考与推理"升级为显式点名的硬性要求：思考链必须使用简体中文/English，禁止用另一语言书写
- * 推理过程。中英双语同步。
- * v22 七追加（原地，实测反馈）：检查点收尾引导句补充"或直接说出你的想法"——选项只是快捷路径，
- * 用户不选选项、直接写自己的想法同样有效（回复契约原本已支持自然语言指令，这里让用户也知道）。
- * 中英双语同步。
- * v22 八追加（原地，实测反馈）：收尾引导句"回复序号即可继续"过于正式，改为更自然且保留序号
- * 契约的"回复序号，或者直接说出你的想法。"。中英双语同步。
- * v22 九追加（原地，讨论确认）：收尾引导句进一步口语化为"你想怎么继续？可以回复 1、2、3，或直接说
- * 你的想法。"，明确三个编号选项和自然语言回复都可以。中英双语同步。
- * v22 十追加（原地，用户反馈）：固定收尾句每次重复显得死板——保留简短回复引导、连续数字序号和
- * 自然语言回复，但选项通常改为 2–4 个，收尾措辞结合当前上下文自由变化，避免连续检查点重复同一句
- * 或相同句式。中英双语同步。
- *
- * 以下为 v21 原始说明（NOVA-90 talk-mode 基底，保留）：
- * @version v21
- * @date 2026-06-30
- * @description 在 v20 音乐质量基底上叠加 NOVA-90 talk-mode：把 OPENAI/EN 两个系统提示词由 const 数组改为
- * 接收 `(personaBlock, personaName)` 的函数，注入运行时人格；新增「每条消息自行判断聊天/作曲意图」段落
- * （想聊天就自然回复不调用工具，模糊心情/场景仅提出一个具体方向并询问，明确确认才作曲）；commit.explanation
- * 以 personaName 口吻撰写、建议必须为可直接执行的祈使句选项。其余音乐内容沿用 v20。
- * v21 追加（原地）：setCode 新增必填 `explanation`（人格口吻、一句话现在进行时说明本步改动），
- * 由客户端渲染为 setCode 齿轮行上方的 assistant 叙述消息；相应把"用户可见文字"从只放 commit.explanation
- * 扩展为「逐步说明放 setCode.explanation、最终总结放 commit.explanation」，并禁止在工具调用间另写自由正文以免重复。中英双语同步。
- * v21 再追加（原地）：commit.explanation 的"接下来可以："建议由两条改为五条（前端 useSuggestions 的
- * MAX_SUGGESTIONS=5，建议 chips 全部来自这里，多给选项让轮换更丰富）。中英双语同步。
- * v21 三追加（原地，自 main 移植 v20 四追加）：`chords.n("[0 0 7 0]*2")` 即便 1 chord/cycle 也照样坍缩成长音，
- * 旧措辞"chords 较慢时才坍缩"是误导（真实机制与快慢无关，只看 `.n()` 模式是否比 chords 换弦更密）；且《呼吸》节
- * 自己的"正例"仍用 `chords.n(...)`，自我矛盾。本次：删去"较慢"限定语并补充该案例；把 `chords.n(密集节奏)` 由软措辞
- * 升级为**禁止**（比照 `.add(s())`）；文档内所有残留的 `chords.n(...)` 示例统一改写为 `n(...).set(chords)`。中英双语同步。
- * v21 四追加（原地，自 main 移植）：把《演奏微观维度》里会触发 validate 问题的
- * `late("[0 .01]*4")` 改为讲解能力本身：用 `late()` 给事件一个不恒为 0 的小偏移；偏移可以固定，
- * 也可以随时间变化。以 `late(0.02)` 与 `late(sine.range(0,.02).slow(4))` 为并列示例，明确它们不是唯一写法。中英双语同步。
- *
- * 以下为 v20 原始说明（音乐质量基底，保留）：
- * v19 残留问题：长拖音仍高频出现，但来源换了一处——不再是旋律线 `/N` 减速，而是**承载和声的层
- * （pad/和弦/铺底）直接把 `chord("<...>/N")` 的每个和弦按满它的整个 `/N` 跨度**（如 8 个和弦 `/16` = 每和弦 2 cycle
- * = 数秒连绵无脉动的拖音）。根因：①速查表把 `/N`-on-`chord()` 树为"和声节奏"的合法归属，却没讲清"和声多久换一次"
- * ≠"一个音响多久"；②《呼吸》节"时间被事件填满"主要绑在被演奏的 `.n()` 旋律线上，没点名"按住和弦"这一形态；
- * ③边界条款"包括哪些层可以保留较长的持续音"给了 pad/和声层一张空白通行证。v20 按 Agent Prompt 方法论只补一条原则
- * "和声节奏≠发音时长，承载和声的层也要再触发出脉动"，措辞从简、不加秒数阈值/不加自检新条目/不加具体代码样例：
- * ①速查表 `/N` 合法化处补一句把和声节奏与发音时长分开；②《呼吸》"时间被事件填满"块点名"按住和弦整跨度"这一最常见载体；
- * ③把边界条款的"较长持续音"收紧为抒情/drone 的刻意代价、不是 pad/和声层的默认；④自检 ⑨ 内联点名同一陷阱。
- * v20 追加（原地）：软原则仍被无视（agent 产出 `chords.n("[0,2,4]").s("gm_pad_warm").mask("<1@60 0@4>")` 这类按住的
- * 长铺底——三和弦按满每个 cycle、连放 60 cycle，只靠 mask/滤波假装有变化），故按用户要求升级为硬约束，且不限和声方式——
- * 任何把一个音/和弦/质感按住占满大段时间的"超长铺底"（含 drone、噪声层、长 sub、持续 texture）都只会累积听觉疲劳：
- * ⑤《让线条随时间呼吸》边界条款改为通用硬禁令——除非用户明确要求、或风格本身以持续质感为美（ambient/drone 等），
- * 任何层都禁止做成超长铺底，默认须被再触发成可感知脉动；⑥自检 ⑨ 的 pad 子句相应从"和声/pad"泛化到"任何层"的硬
- * "必须/禁止"。（注：本条硬禁令不限和声，故不放在《和声》速查节，而置于通用的呼吸原则处。）中英双语同步。
- * v20 再追加（原地）：另有一类"贝斯/旋律超长拖音"并非铺底、而是 Strudel 结构陷阱——`chords.n("密集节奏")` 的结构
- * 取自左边的 `chords`，当 `chords` 和声节奏慢（如 `<Em C G D>/2`，每和弦跨 2 cycle）时，写在 `.n()` 里的密集节奏被整个
- * 坍缩成"每和弦一个被拉满数 cycle 的长音"（agent 以为写了 ostinato、实为拖音；这是正确性错误，任何听感自检都抓不到）。
- * 经 @strudel/core 实跑验证（`coarse.n(dense)` 只剩 2 个长 onset，`dense.set(coarse)` 才有 24 个短 onset）后，在《和声》
- * 速查节把 `chords.n(...)`（结构取自 chords）与 `n(...).set(chords)`（结构取自节奏模式）的来源差异讲清——线条要按自己
- * 节奏发声须用后者。中英双语同步。
- * v20 三追加（原地）：agent 总倾向给出一个"贯穿全曲、一字不变"的层（甚至在注释里把"全程在"当优点）。现有自检 ④ 只在
- * 集合层面说"避免所有层不变"，漏了单层层面。按方法论补一条倾向（非硬禁令、带风格例外）：编排原则新增"几乎没有东西真的
- * 贯穿全曲一字不变——连锚点也至少给一次进出/breakdown/变形；恒定只在风格要求时才是刻意选择"，并把自检 ④ 从"所有层"
- * 收紧到"任何单层"。中英双语同步。
+ * @date 2026-11-11
+ * @description 新增按声部与听感选择采样，searchSamples 支持按需求 id 批量检索、复用结果及按需补查。
+ * 补全 VCSL、Mridangam 和空后缀鼓机名称，使名称参考覆盖检索目录。中英文同步。
  */
 import {
   DIRT_SAMPLES,
   MELODIC_SAMPLES,
   GM_INSTRUMENTS,
   DRUM_MACHINE_SAMPLES,
+  VCSL_SAMPLES,
+  MRIDANGAM_SAMPLES,
 } from '../../lib/sample-allowlist';
 
 // Extract unique drum-machine bank names (e.g. "RolandTR808" from "RolandTR808_bd").
@@ -128,8 +28,8 @@ const DRUM_MACHINE_BANKS: string = [
 // Full sample reference section — dynamically derived so it stays in sync with
 // sample-allowlist.ts without any manual maintenance.
 const SAMPLE_REFERENCE_SECTION = [
-  '## 全量采样名称参考（单一权威来源）',
-  '以下列表由代码自动生成，是内置采样名称的唯一权威参考，并与运行时校验器（validate 工具）中的内置采样一致。当前代码中通过内联字面量 `samples({...})` 注册声明的自定义采样名称也可以使用；除此之外，禁止使用虚构、猜测、未声明或动态生成的采样名称。',
+  '## 全量采样名称参考（合法名称与调用）',
+  '以下列表由代码自动生成，是内置采样名称的唯一权威参考，并与运行时校验器（validate 工具）中的内置采样一致。名称表说明可调用的音源，不提供具体文件的亮度、厚度、质感、奏法或空间感依据；具体听感应结合相应标注判断。当前代码中通过内联字面量 `samples({...})` 注册声明的自定义采样名称也可以使用；除此之外，禁止使用虚构、猜测、未声明或动态生成的采样名称。',
   '',
   '**合成器振荡器**（直接用于 `s("...")`，不是采样文件）：',
   'sawtooth  sine  square  triangle  supersaw',
@@ -140,12 +40,20 @@ const SAMPLE_REFERENCE_SECTION = [
   `**Dirt 采样**（通用音效 / 鼓 / 氛围，共 ${DIRT_SAMPLES.length} 个）：`,
   DIRT_SAMPLES.join('  '),
   '',
-  `**GM 音色库**（${GM_INSTRUMENTS.length} 个 MIDI 标准乐器，配合 \`note()\` / \`n().scale()\` + \`.s("gm_...")\` 使用；需要真实乐器时优先选用）：`,
+  `**VCSL 采样**（管乐 / 弦乐 / 打击乐 / 电子音色，共 ${VCSL_SAMPLES.length} 个）：`,
+  VCSL_SAMPLES.join('  '),
+  '',
+  `**Mridangam 采样**（手鼓，共 ${MRIDANGAM_SAMPLES.length} 个）：`,
+  MRIDANGAM_SAMPLES.join('  '),
+  '',
+  `**GM 音色库**（${GM_INSTRUMENTS.length} 个 MIDI 标准乐器，配合 \`note()\` / \`n().scale()\` + \`.s("gm_...")\` 使用；本轮听感标注未覆盖 GM，按声部需求选择，不将乐器类别当作具体音色的听感证据）：`,
   GM_INSTRUMENTS.join('  '),
   '',
   `**鼓机音色库 Bank**（${[...new Set(DRUM_MACHINE_SAMPLES.map((n) => { const i = n.indexOf('_'); return i > 0 ? n.slice(0, i) : n; }))].length} 个，用法：\`s("bd sd hh").bank("BankName")\` 或直接 \`s("BankName_suffix")\`）：`,
   DRUM_MACHINE_BANKS,
   'Bank 后缀（suffix）参考：bd  sd  hh  oh  cp  cb  cr  lt  mt  ht  rd  rim  sh  tb  perc  misc  fx',
+  '空后缀鼓机采样（直接用于 `s("...")`）：',
+  DRUM_MACHINE_SAMPLES.filter(name => name.endsWith('_')).join('  '),
 ].join('\n');
 
 // ============================================================================
@@ -213,7 +121,7 @@ const STRUDEL_CHEATSHEET_CONCISE = [
 
 export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: string): string {
   return [
-  '## 按需选择采样\n需要根据音色比较内置采样时，使用 searchSamples 按声部类别和听感需求查询少量候选，再结合当前音乐选择。目录类别和播放映射用于准确调用，模型初标作为软参考，专家确认结果优先。用户指定采样时采用其选择。数组变体与带音高映射的采样遵循返回的 playback 示例；单个音区的标注只代表该文件。未知字段表示缺少依据。查询失败或没有匹配时，可使用下方现有采样参考继续创作。',
+    "## 依据声音特征选择采样\n目标：让具体音色服务于声部功能和用户想要的听感。先确定声部承担什么作用、需要怎样的声音，再决定采样名称和变体。\n原则：创作模型自主决定配器。场景或图片中的环境、材质、空间和情绪可帮助推导亮度、厚度、质感、起音、尾音和混响等偏好；不要机械套用固定配器，也不必为每个维度设条件。\n知识：searchSamples 覆盖 Dirt、鼓机、piano、VCSL、mridangam、uzu 六份音频索引；GM SoundFont、合成器和用户导入尚未纳入本轮标注。目录类别用于确认声源，模型初标是软参考，专家确认结果优先。未知字段表示缺少依据，单个音区的标注只代表该文件。\n引导：新增或替换已标注库中的音色时，先调用 searchSamples，通过 queries 数组按声部类别和真正相关的听感偏好检索，每组用唯一 id 对应返回的候选；已确定的多组需求可合并为一次调用，单组或依赖前次结果的需求可单独补查，再结合类别、奏法、标注和变体差异选择。相同需求已有可用查询结果时可以复用；某组无匹配或失败时，保留其他有效结果，按需调整该组查询。遵循返回的 playback 示例，区分数组变体与音高映射，结合实际演奏音区判断。\n边界：用户指定具体采样时尊重其选择；无需更换的已有音色可以保留。检索失败、候选不适合或使用尚未标注的音源时，可以采用合法名称表中的其他音源，但不能把名称联想或推测当作已经验证的声音特征。全量名称表用于核对名称与调用方式，不能替代听感依据。\n自检：这个声音是否支持当前声部和场景？具体音色判断有哪些目录或标注依据，哪些仍是推测？避免仅因名称熟悉就跳过已标注库的选样检索。",
 
   personaBlock,
   '',
@@ -511,8 +419,8 @@ const STRUDEL_CHEATSHEET_EN = [
 ].join('\n');
 
 const SAMPLE_REFERENCE_EN = [
-  '## Sample Name Reference (single authoritative source)',
-  'The list below is auto-generated, is the single authoritative reference for built-in sample names, and matches the built-in samples checked by the runtime validator (validate tool). Custom sample names are allowed only when declared in the current code by an inline literal `samples({...})` registration; do not invent, guess, or use undeclared or dynamically generated sample names.',
+  '## Sample Name Reference (legal names and playback)',
+  'The list below is auto-generated, is the single authoritative reference for built-in sample names, and matches the built-in samples checked by the runtime validator (validate tool). It identifies callable sources, but provides no evidence for the brightness, body, texture, articulation, or space of a particular file; use the corresponding annotations to assess specific timbres. Custom sample names are allowed only when declared in the current code by an inline literal `samples({...})` registration; do not invent, guess, or use undeclared or dynamically generated sample names.',
   '',
   '**Synth oscillators** (used directly in `s("...")`, not sample files):',
   'sawtooth  sine  square  triangle  supersaw',
@@ -523,12 +431,20 @@ const SAMPLE_REFERENCE_EN = [
   `**Dirt samples** (general FX / drums / ambience, ${DIRT_SAMPLES.length} total):`,
   DIRT_SAMPLES.join('  '),
   '',
-  `**GM instrument library** (${GM_INSTRUMENTS.length} MIDI-standard instruments, use with \`note()\` / \`n().scale()\` + \`.s("gm_...")\`; prefer these when realistic instruments are needed):`,
+  `**VCSL samples** (winds / strings / percussion / electronic instruments, ${VCSL_SAMPLES.length} total):`,
+  VCSL_SAMPLES.join('  '),
+  '',
+  `**Mridangam samples** (hand drum, ${MRIDANGAM_SAMPLES.length} total):`,
+  MRIDANGAM_SAMPLES.join('  '),
+  '',
+  `**GM instrument library** (${GM_INSTRUMENTS.length} MIDI-standard instruments, use with \`note()\` / \`n().scale()\` + \`.s("gm_...")\`; GM is not covered by the current listening annotations; choose by musical role and do not treat instrument identity as evidence of a particular timbre):`,
   GM_INSTRUMENTS.join('  '),
   '',
   `**Drum machine library banks** (${[...new Set(DRUM_MACHINE_SAMPLES.map((n) => { const i = n.indexOf('_'); return i > 0 ? n.slice(0, i) : n; }))].length} banks, usage: \`s("bd sd hh").bank("BankName")\` or directly \`s("BankName_suffix")\`):`,
   DRUM_MACHINE_BANKS,
   'Bank suffix reference: bd  sd  hh  oh  cp  cb  cr  lt  mt  ht  rd  rim  sh  tb  perc  misc  fx',
+  'Drum machine samples with an empty suffix (used directly in `s("...")`):',
+  DRUM_MACHINE_SAMPLES.filter(name => name.endsWith('_')).join('  '),
 ].join('\n');
 
 // ============================================================================
@@ -537,7 +453,7 @@ const SAMPLE_REFERENCE_EN = [
 
 export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string): string {
   return [
-  '## Choose samples on demand\nWhen comparing built-in timbres, use searchSamples with the instrument role and audible preferences, then select candidates in the musical context. Use catalog categories and playback mappings for correct calls. Treat model_initial observations as soft guidance and prefer expert_confirmed observations. Honor explicitly requested samples. Follow playback examples for indexed variants and pitch-mapped instruments. A single register annotation describes that file only. Unknown fields provide no evidence. If lookup fails or finds no matches, continue with the existing sample reference below.',
+    "## Choose samples by audible characteristics\nGoal: make each timbre serve its musical role and the requested listening experience. Determine the role and desired sound before choosing a sample name and variant.\nPrinciples: decide instrumentation creatively. The environment, materials, space, and mood of a scene or image can inform brightness, body, texture, attack, tail, and reverb preferences; avoid fixed instrumentation formulas and do not require a preference for every dimension.\nKnowledge: searchSamples covers six audio indexes: Dirt, drum machines, piano, VCSL, mridangam, and uzu. GM SoundFont, synthesizers, and user imports are not covered by the current annotations. Catalog categories establish source identity; model_initial observations are soft guidance and expert_confirmed observations take priority. Unknown fields provide no evidence, and a register-specific annotation describes that file only.\nGuidance: before adding or replacing a timbre from an annotated library, call searchSamples with a queries array of role/category and relevant audible preferences, using a unique id per query to match its returned candidates. Batch requirements already known together; a single requirement or one depending on earlier results can be searched separately. Choose using category, articulation, annotations, and variant differences. Reuse available results when requirements are unchanged; if one group has no matches or fails, retain other valid results and refine that query as needed. Follow playback examples, distinguish indexed variants from pitch maps, and consider the actual playing register.\nBoundaries: honor explicitly requested samples and retain existing sounds that do not need replacement. If lookup fails, candidates are unsuitable, or the source is outside annotation coverage, other legal sources may be used; do not present associations inferred from names as verified sound characteristics. The full name list checks legal names and playback, and does not replace audible evidence.\nReview: does the sound support this role and scene? Which specific timbre judgments have catalog or annotation evidence, and which remain assumptions? Familiar names alone do not justify skipping retrieval for annotated libraries.",
 
   personaBlock,
   '',
