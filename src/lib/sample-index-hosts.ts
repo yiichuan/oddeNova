@@ -26,6 +26,9 @@
 
 export type SampleIndex = Record<string, unknown>;
 
+/** Annotation inventory order. Later libraries own any duplicate name. */
+export const SAMPLE_LIBRARIES = ['dirt-samples', 'tidal-drum-machines', 'piano', 'vcsl', 'mridangam', 'uzu-drumkit'] as const;
+
 /*
  * Paths the upstream indexes have wrong, mended before anything is fetched:
  * for each base, a path prefix and what it should have been. VCSL's
@@ -99,13 +102,18 @@ export function splitByHost(index: SampleIndex): SampleIndex[] {
   return Object.keys(rerouted).length > 1 ? [direct, rerouted] : [index];
 }
 
+export async function fetchSampleIndexParts(url: string, signal?: AbortSignal): Promise<SampleIndex[]> {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`error loading "${url}": ${response.status}`);
+  const index = repairPaths(await response.json() as SampleIndex);
+  return splitByHost(index);
+}
+
 /** Fetches one bundled index and registers it through superdough's `samples`. */
 export async function loadSampleIndex(
   samples: (index: SampleIndex) => Promise<unknown>,
   url: string,
 ): Promise<void> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`error loading "${url}": ${response.status}`);
-  const index = repairPaths(await response.json() as SampleIndex);
-  await Promise.all(splitByHost(index).map((part) => samples(part)));
+  const parts = await fetchSampleIndexParts(url);
+  await Promise.all(parts.map((part) => samples(part)));
 }

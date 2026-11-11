@@ -4,6 +4,7 @@ import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { getOpenAIToolSchemas } from '../src/agent/tools';
+import { rankSampleQueries } from '../scripts/sample-annotations/keyword-search';
 import { runAgentLoop, type LLMCaller } from '../src/agent/loop';
 import { AGENT_SYSTEM_PROMPT_OPENAI as oldPrompt } from '../src/prompts/versions/v25';
 import { AGENT_SYSTEM_PROMPT_OPENAI as newPrompt } from '../src/prompts/versions/v26';
@@ -19,15 +20,11 @@ it.skipIf(!ready)('compares 10 requests x 2 conditions x 3 repeats with real age
   mkdirSync(path.dirname(snapshot),{recursive:true});
   if(!existsSync(snapshot)) writeFileSync(snapshot,readFileSync('public/sample-annotations/catalog.json'));
   const catalog=JSON.parse(readFileSync(existsSync(snapshot)?snapshot:'public/sample-annotations/catalog.json','utf8'));
-  vi.stubGlobal('fetch',((url:RequestInfo|URL, init?:RequestInit)=>{
-    if(url==='/sample-annotations/catalog.json') return Promise.resolve(new Response(JSON.stringify(catalog)));
-    return actualFetch(url,init);
-  }) as typeof fetch);
   const cases=JSON.parse(readFileSync('scripts/sample-annotations/scene-cases.json','utf8')) as {id:string;prompt:string}[];
   const dir=path.resolve('.local/sample-annotations/scene-eval');
   mkdirSync(dir,{recursive:true});
   const sha=(text:string)=>createHash('sha256').update(text).digest('hex');
-  const sources=Object.fromEntries(['src/lib/sample-search.ts','src/agent/tools.ts','src/agent/loop.ts','src/prompts/versions/v25.ts','src/prompts/versions/v26.ts'].map(file=>[file,readFileSync(file,'utf8')]));
+  const sources=Object.fromEntries(['scripts/sample-annotations/keyword-search.ts','src/lib/sample-search.ts','src/lib/sample-search-batch.ts','src/agent/tools.ts','src/agent/loop.ts','src/prompts/versions/v25.ts','src/prompts/versions/v26.ts'].map(file=>[file,readFileSync(file,'utf8')]));
   const toolSchemas=getOpenAIToolSchemas(true);
   const config={version:1,repeats:3,seconds:30,sources:Object.fromEntries(Object.entries(sources).map(([file,text])=>[file,sha(text)])),toolSchemas,model:'deepseek-flash',cases,thinking:false,temperature:0.7,maxIter:30,
     catalogSha256:sha(JSON.stringify(catalog)),
@@ -73,6 +70,7 @@ it.skipIf(!ready)('compares 10 requests x 2 conditions x 3 repeats with real age
       const result=await runAgentLoop({
         initialCode:'',instruction:item.prompt,locale:'zh',
         systemPrompt:(condition==='baseline'?oldPrompt:newPrompt)('你是一位音乐创作助手。','NOVA'),
+        sampleSearch: condition === 'search' ? async input => rankSampleQueries(catalog, input) : undefined,
         llm,maxIter:30,timeoutMs:600000,enableThinking:false,onProgress:event=>progress.push(event),
       });
       const {validateCodeRuntime}=await import('../src/services/strudel');

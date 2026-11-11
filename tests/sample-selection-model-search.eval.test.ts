@@ -6,11 +6,6 @@ import { createHash } from 'node:crypto';
 import { serializeFullCatalog } from '../scripts/sample-annotations/full-catalog';
 import { MODEL_SEARCH_PROMPT, MODEL_SEARCH_TOOL, resolveModelCandidates } from '../scripts/sample-annotations/model-search';
 import type { SampleQuery } from '../src/lib/sample-search';
-const retrieval = vi.hoisted(()=>({ run: undefined as undefined | ((input: SampleQuery)=>Promise<unknown>) }));
-vi.mock('../src/lib/sample-search',async importOriginal=>{
- const actual=await importOriginal<typeof import('../src/lib/sample-search')>();
- return {...actual,searchSamples:(input:SampleQuery)=>{if(!retrieval.run)throw Error('No experiment retriever');return retrieval.run(input);}};
-});
 import { getOpenAIToolSchemas } from '../src/agent/tools';
 import { runAgentLoop, type LLMCaller } from '../src/agent/loop';
 import { AGENT_SYSTEM_PROMPT_OPENAI as oldPrompt } from '../src/prompts/versions/v25';
@@ -29,10 +24,6 @@ it.skipIf(!ready)('compares 10 requests x 2 conditions x 3 repeats with real age
   mkdirSync(path.dirname(snapshot),{recursive:true});
   if(!existsSync(snapshot)) writeFileSync(snapshot,readFileSync(oldDir+'/inputs/catalog.json'));
   const catalog=JSON.parse(readFileSync(existsSync(snapshot)?snapshot:'public/sample-annotations/catalog.json','utf8'));
-  vi.stubGlobal('fetch',((url:RequestInfo|URL, init?:RequestInit)=>{
-    if(url==='/sample-annotations/catalog.json') return Promise.resolve(new Response(JSON.stringify(catalog)));
-    return actualFetch(url,init);
-  }) as typeof fetch);
   const cases=JSON.parse(readFileSync('scripts/sample-annotations/scene-cases.json','utf8')) as {id:string;prompt:string}[];
   const {text,rows}=serializeFullCatalog(catalog);
   writeFileSync(dir+'/inputs/full-catalog.txt',text);
@@ -56,7 +47,7 @@ it.skipIf(!ready)('compares 10 requests x 2 conditions x 3 repeats with real age
       if(!existsSync(baseline))writeFileSync(baseline,readFileSync(oldDir+'/'+item.id+'-0-search.json'));
       let childSequence=0;
       const retrievals:unknown[]=[];
-      retrieval.run=async(input)=>{
+      const retrieve=async(input:SampleQuery)=>{
         const seq=++childSequence;
         const prefix=path.join(dir,item.id+'-retrieval-'+seq);
         const request={model:'deepseek-flash',temperature:0.7,thinking:{type:'disabled'},stream:false,max_tokens:4096,messages:[{role:'system',content:MODEL_SEARCH_PROMPT},{role:'user',content:'完整标注目录：\n'+text},{role:'user',content:JSON.stringify(input)}],tools:[MODEL_SEARCH_TOOL],tool_choice:{type:'function',function:{name:'returnCandidates'}}};
@@ -108,6 +99,13 @@ it.skipIf(!ready)('compares 10 requests x 2 conditions x 3 repeats with real age
       const result=await runAgentLoop({
         initialCode:'',instruction:item.prompt,locale:'zh',
         systemPrompt:newPrompt('你是一位音乐创作助手。','NOVA'),
+        sampleSearch: async ({ queries }) => Promise.all(queries.map(async ({ id, ...input }) => {
+          try {
+            return { id, ok: true, candidates: await retrieve(input) };
+          } catch (error) {
+            return { id, ok: false, error: error instanceof Error ? error.message : 'Model retrieval failed.' };
+          }
+        })),
         llm,maxIter:30,timeoutMs:1200000,enableThinking:false,onProgress:event=>progress.push(event),
       });
       const {validateCodeRuntime}=await import('../src/services/strudel');

@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { repairPaths } from '../../src/lib/sample-index-hosts';
+import { repairPaths, SAMPLE_LIBRARIES } from '../../src/lib/sample-index-hosts';
 import { SAMPLE_ALLOWLIST } from '../../src/lib/sample-allowlist';
 
-export const LIBRARIES = ['dirt-samples', 'tidal-drum-machines', 'piano', 'vcsl', 'mridangam', 'uzu-drumkit'];
 export const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const roles: Record<string, string> = {
   bd: '底鼓 kick bass drum', sd: '军鼓 snare', hh: '闭镲 closed hi-hat', oh: '开镲 open hi-hat',
@@ -40,7 +39,7 @@ export function categoryFor(library: string, key: string, file: string) {
 export function buildInventory(root: string): FileReference[] {
   const records: FileReference[] = [];
   const owners = new Map<string, string>();
-  for (const library of LIBRARIES) {
+  for (const library of SAMPLE_LIBRARIES) {
     const index = repairPaths(JSON.parse(readFileSync(root + '/public/sample-index/' + library + '.json', 'utf8')));
     const base = String(index._base);
     for (const [key, value] of Object.entries(index)) {

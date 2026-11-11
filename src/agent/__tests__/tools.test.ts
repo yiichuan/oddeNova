@@ -73,16 +73,14 @@ describe('searchSamples', () => {
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining('检索暂不可用') });
   });
 
-  it('keeps each offline query and its failure separate', async () => {
-    const localSearch = vi.spyOn(await import('../../lib/sample-search'), 'searchSamples');
-    localSearch.mockResolvedValueOnce([]).mockRejectedValueOnce(Error('catalog unavailable'));
+  it('returns an unavailable error without loading the catalog when there is no retriever', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch');
     try {
-      const result = await search({ queries: [{ id: 'keys', query: 'piano' }, { id: 'drums', query: 'snare' }] }, makeCtx(''));
-      expect(localSearch).toHaveBeenCalledTimes(2);
-      expect(localSearch.mock.calls.map(([q]) => q.query)).toEqual(['piano', 'snare']);
-      expect(result).toMatchObject({ ok: true, data: { results: [{ id: 'keys', ok: true }, { id: 'drums', ok: false }] } });
+      const result = await search({ queries: [{ id: 'keys', query: 'piano' }] }, makeCtx(''));
+      expect(result).toEqual({ ok: false, error: '当前会话未启用音色检索。' });
+      expect(fetch).not.toHaveBeenCalled();
     } finally {
-      localSearch.mockRestore();
+      fetch.mockRestore();
     }
   });
 

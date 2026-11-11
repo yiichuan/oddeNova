@@ -2,7 +2,7 @@
 
 `searchSamples` 通过非空 `queries` 数组接受多组声部需求，每组包含本批唯一的 `id`、`query`，以及可选的 `category`、`features`、`limit`。不设查询组数、每组候选数或整批候选预算的硬上限。`limit` 为期望数量，默认3，模型按相关性决定实际返回数量。支持中文或英文类别，以及亮度、厚度、质感、起音、包络、尾音、混响等偏好。
 
-真实创作入口一次模型请求处理整批需求，按 id 返回 `results`；演示模式及离线调用从 `/sample-annotations/catalog.json` 加载静态目录，逐组执行本地排序。本地排序同等匹配优先专家确认结果，未知字段不参与听感评分，每个名称返回最匹配的变体与最多三个替代变体。模型检索返回独立文件候选及选择理由，`alternatives` 为空。
+主 Agent 按需调用工具，工具一次模型请求处理整批需求，按 id 返回 `results`。检索器从 `/sample-annotations/catalog.json` 读取目录，返回独立文件候选及选择理由，`alternatives` 为空。演示模式不提供 `searchSamples`。旧评测通过显式注入使用关键词排序，历史批次的复跑使用记录的源码版本。
 
 ## 标注任务
 

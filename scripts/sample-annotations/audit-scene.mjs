@@ -1,13 +1,18 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { rankSamples } from '../../src/lib/sample-search.ts';
+import { rankSamples } from './keyword-search.ts';
+import { parseSampleSearchInput } from '../../src/lib/sample-search-batch.ts';
 
 const dir = '.local/sample-annotations/scene-eval';
 const read = async file => JSON.parse(await readFile(`${dir}/${file}`, 'utf8'));
 const config = await read('config.json');
 const catalog = await read('inputs/catalog.json');
 const sha = text => createHash('sha256').update(text).digest('hex');
-if (sha(await readFile('src/lib/sample-search.ts', 'utf8')) !== config.sources['src/lib/sample-search.ts']) throw Error('Search implementation changed; cannot replay');
+for (const file of ['scripts/sample-annotations/keyword-search.ts', 'src/lib/sample-search.ts', 'src/lib/sample-search-batch.ts']) {
+  if (sha(await readFile(file, 'utf8')) !== config.sources[file]) {
+    throw Error('Search implementation changed; replay with the source version recorded by the evaluation.');
+  }
+}
 const records = [], missing = [], queries = [];
 const midi = note => {
   if (typeof note === 'number') return note;
@@ -26,8 +31,7 @@ for (const item of config.cases) for (let repeat = 0; repeat < config.repeats; r
   const searches = data.progress.filter(e => e.kind === 'tool_call' && e.name === 'searchSamples');
   const retrieved = new Set();
   const retrievedRoots = new Map();
-  for (const event of searches) {
-    const input = event.args;
+  for (const input of searches.flatMap(event => parseSampleSearchInput(event.args).queries)) {
     const candidates = rankSamples(catalog, input);
     for (const c of candidates) {
       retrieved.add(`${c.name}:${c.index}`);

@@ -15,27 +15,100 @@ export const labels: Record<string, string> = {
   short: '短', medium: '中等', long: '长', dry: '干声', slight: '少量混响', pronounced: '明显混响',
 };
 export type StatusFilter = 'all' | SampleVariant['annotationStatus'];
-export function featureText(variant: SampleVariant): string {
-  if (!variant.features) return '';
-  return Object.values(variant.features).flatMap(section => Object.values(section)).flat()
-    .map(value => `${String(value)} ${labels[String(value)] ?? ''}`).join(' ');
+export interface CatalogFilters {
+  status: StatusFilter;
+  category: string | null | undefined;
+  brightness: string;
+  textures: readonly string[];
 }
+
+export const emptyFilters: CatalogFilters = { status: 'all', category: undefined, brightness: '', textures: [] };
+
+function featureValues(variant: SampleVariant): string[] {
+  if (!variant.features) return [];
+  return [...new Set(Object.values(variant.features).flatMap(section => Object.values<string | string[]>(section)).flat())];
+}
+
+function searchableLabel(value: string) {
+  return `${value} ${labels[value] ?? ''}`.toLowerCase();
+}
+
+export function listeningSummary(variant: SampleVariant): string[] {
+  const { features } = variant;
+  if (!features) return [];
+  const { brightness, body, texture_tags } = features.timbre;
+  const { attack } = features.envelope;
+  const meaningful = (value: string) => Boolean(value && value !== 'unknown' && value !== 'not_applicable');
+  const values = [brightness, body, ...texture_tags].filter(meaningful).map(value => labels[value] ?? value);
+  if (meaningful(attack)) values.push(`${labels[attack] ?? attack}起音`);
+  return [...new Set(values)];
+}
+
 export function indexCatalog(samples: SearchSample[]) {
   return samples.map(sample => ({
     sample,
-    identity: [sample.key, ...sample.aliases, sample.category ?? ''].join(' ').toLowerCase(),
-    variants: sample.variants.map(variant => ({ variant, text: [variant.articulation, variant.rootNote, featureText(variant)].join(' ').toLowerCase() })),
+    key: sample.key.toLowerCase(),
+    aliases: sample.aliases.map(alias => alias.toLowerCase()),
+    category: sample.category?.toLowerCase() ?? '',
+    variants: sample.variants.map(variant => {
+      const features = featureValues(variant).map(value => ({
+        value,
+        text: searchableLabel(value),
+        label: labels[value] ?? value,
+      }));
+      return {
+        variant,
+        features,
+        text: [variant.articulation, variant.rootNote, ...features.map(feature => feature.text)].join(' ').toLowerCase(),
+      };
+    }),
   }));
 }
-/** Keep all matching variants; keyword combinations must describe the same variant. */
-export function filterCatalog(index: ReturnType<typeof indexCatalog>, query: string, status: StatusFilter) {
-  const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  return index.flatMap(({ sample, identity, variants }) => {
-    const matches = variants.filter(({ variant, text }) =>
-      (status === 'all' || variant.annotationStatus === status) &&
-      tokens.every(token => `${identity} ${text}`.includes(token)));
-    return matches.length ? [{ sample, variants: matches.map(item => item.variant) }] : [];
-  }).sort((a, b) => Number(b.sample.key.toLowerCase() === query.trim().toLowerCase()) - Number(a.sample.key.toLowerCase() === query.trim().toLowerCase()));
+
+export function filterCatalog(index: ReturnType<typeof indexCatalog>, query: string, filters: CatalogFilters) {
+  const normalized = query.toLowerCase().trim();
+  const tokens = [...new Set(normalized.split(/\s+/).filter(Boolean))];
+  const showMatchLabels = tokens.length > 0 || Boolean(filters.brightness) || filters.textures.length > 0;
+  const results = index.flatMap(({ sample, key, aliases, category, variants }) => {
+    if (filters.category !== undefined && (sample.category ?? null) !== filters.category) return [];
+
+    const identityRanks = tokens.map(token => {
+      if (key === token) return 0;
+      if (key.startsWith(token)) return 1;
+      if (aliases.some(alias => alias.includes(token))) return 2;
+      if (category.includes(token)) return 3;
+      return key.includes(token) ? 4 : -1;
+    });
+    const matches: SampleVariant[] = [];
+    const matchedLabels = new Set<string>();
+    const rank = identityRanks.reduce<number>((sum, value) => sum + (value < 0 ? 4 : value), 0);
+    for (const { variant, text, features } of variants) {
+      if (filters.status !== 'all' && variant.annotationStatus !== filters.status) continue;
+      const timbre = variant.features?.timbre;
+      if (filters.brightness && timbre?.brightness !== filters.brightness) continue;
+      if (!filters.textures.every(texture => timbre?.texture_tags.includes(texture))) continue;
+      if (!tokens.every((token, i) => identityRanks[i] >= 0 || text.includes(token))) continue;
+
+      matches.push(variant);
+      if (showMatchLabels && matchedLabels.size < 3) {
+        for (const feature of features) {
+          if (matchedLabels.size === 3) break;
+          if (feature.value === filters.brightness || filters.textures.includes(feature.value)
+            || tokens.some(token => feature.text.includes(token))) {
+            matchedLabels.add(feature.label);
+          }
+        }
+      }
+    }
+    return matches.length ? [{
+      sample,
+      variants: matches,
+      matchedLabels: [...matchedLabels],
+      exact: key === normalized,
+      rank,
+    }] : [];
+  });
+  return normalized ? results.sort((a, b) => Number(b.exact) - Number(a.exact) || a.rank - b.rank) : results;
 }
 export async function loadCatalog(signal: AbortSignal): Promise<SearchCatalog> {
   const response = await fetch('/sample-annotations/catalog.json', { signal });

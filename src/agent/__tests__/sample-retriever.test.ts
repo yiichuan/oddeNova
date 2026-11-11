@@ -84,14 +84,18 @@ it('cancels an in-flight child call even if the caller ignores its signal',async
 it('returns candidates to the same main agent, which resumes without receiving the catalog',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>catalog}));
  const {createSampleRetriever}=await import('../sample-retriever');const {runAgentLoop}=await import('../loop');
- const mains:ChatMsg[][]=[];let count=0;
+ const mains:ChatMsg[][]=[];let count=0;let retrievals=0;
  const llm:LLMCaller={async chatWithTools(messages,tools){
-  if(tools.some(t=>t.function.name==='returnCandidates'))return reply();
+  if(tools.some(t=>t.function.name==='returnCandidates')){
+   retrievals++;
+   expect(JSON.parse(String(messages.at(-1)?.content)).queries.map((query:{id:string})=>query.id)).toEqual(['keys','drums']);
+   return reply();
+  }
   mains.push(JSON.parse(JSON.stringify(messages)));count++;
   return {content:null,toolCalls:count===1?[{id:'lookup',name:'searchSamples',arguments:'{"queries":[{"id":"keys","query":"soft piano"},{"id":"drums","query":"dry snare"}]}'}]:[{id:'done',name:'commit',arguments:'{"explanation":"done"}'}]};
  }};
  const result=await runAgentLoop({initialCode:'s("bd")',instruction:'scene',locale:'zh',systemPrompt:'main system',llm,sampleSearch:createSampleRetriever(llm)});
- expect(result.committed).toBe(true);expect(mains).toHaveLength(2);
+ expect(result.committed).toBe(true);expect(mains).toHaveLength(2);expect(retrievals).toBe(1);
  expect(JSON.stringify(mains)).not.toContain('每个 @ 行');expect(JSON.stringify(mains[1])).toContain('piano:2');
  expect(mains[1].filter(m=>m.role==='tool')).toHaveLength(1);
  const toolReply=mains[1].find(m=>m.role==='tool')!;

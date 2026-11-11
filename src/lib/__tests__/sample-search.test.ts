@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { rankSamples, type SearchCatalog, type SampleVariant } from '../sample-search';
+import { rankSamples } from '../../../scripts/sample-annotations/keyword-search';
+import type { SearchCatalog, SampleVariant } from '../sample-search';
 const variant = (id: string, brightness: string, status: SampleVariant['annotationStatus']='model_initial'): SampleVariant => ({
   id,sha256:id,index:0,rootNote:null,articulation:null,annotationStatus:status,playback:'s("kit:0")',
   features:{structure:{event_form:'single_event',pitchedness:'noise_like'},
@@ -33,9 +34,9 @@ describe('sample search',()=>{
       ok:true,json:async()=>catalog,
     });
     vi.stubGlobal('fetch',fetch);
-    const {searchSamples}=await import('../sample-search');
-    await expect(searchSamples({query:'snare'})).rejects.toThrow();
-    await Promise.all([searchSamples({query:'snare'}),searchSamples({query:'piano'})]);
+    const {loadSampleCatalog}=await import('../sample-search');
+    await expect(loadSampleCatalog()).rejects.toThrow();
+    await expect(Promise.all([loadSampleCatalog(), loadSampleCatalog()])).resolves.toEqual([catalog, catalog]);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

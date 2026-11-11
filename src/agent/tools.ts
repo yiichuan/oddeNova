@@ -3,7 +3,7 @@
 // and a handler that operates on a mutable AgentState. The `commit` tool is
 // terminal — it throws CommitSignal which the loop catches.
 
-import { searchSamples, FEATURE_OPTIONS } from '../lib/sample-search';
+import { FEATURE_OPTIONS } from '../lib/sample-search';
 import { parseSampleSearchInput, DEFAULT_SAMPLE_LIMIT, type SampleBatchQuery, type SampleSearchResult } from '../lib/sample-search-batch';
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
@@ -178,16 +178,11 @@ export const TOOLS: ToolDef[] = [
           ? '无效的采样查询：queries 需为非空数组且 id 唯一，limit 需为正整数；请检查听感条件。'
           : 'Invalid sample queries: provide a nonempty queries array with unique ids, positive integer target limits, and valid listening features.' };
       }
+      if (!ctx.sampleSearch) {
+        return { ok: false, error: zh ? '当前会话未启用音色检索。' : 'Sample search is unavailable in this session.' };
+      }
       try {
-        const results = ctx.sampleSearch
-          ? await ctx.sampleSearch({ queries: input.queries })
-          : await Promise.all(input.queries.map(async ({ id, ...query }): Promise<SampleSearchResult> => {
-            try {
-              return { id, ok: true, candidates: await searchSamples(query) };
-            } catch {
-              return { id, ok: false, error: zh ? '音色检索暂不可用，可重试此需求。' : 'Sample search unavailable; retry this query.' };
-            }
-          }));
+        const results = await ctx.sampleSearch({ queries: input.queries });
         const withNotices = results.map(result => result.ok ? {
           ...result, notice: result.candidates.length ? undefined : zh
             ? '没有匹配候选，可调整此组条件或使用现有采样目录。'

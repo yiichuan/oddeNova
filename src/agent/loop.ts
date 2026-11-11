@@ -317,7 +317,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     { role: 'user', content: Array.isArray(opts.preparedUserContent) ? opts.preparedUserContent.map((block, index) => index === 0 && block.type === 'text' ? { ...block, text: userTurn } : block) : userTurn },
   ];
 
-  const tools = getOpenAIToolSchemas(isZh);
+  const tools = getOpenAIToolSchemas(isZh).filter(tool => ctx.sampleSearch || tool.function.name !== 'searchSamples');
   const start = Date.now();
   let iterations = 0;
   let explanation = '';

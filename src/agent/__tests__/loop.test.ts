@@ -28,6 +28,23 @@ describe('sample search diagnostics', () => {
     }
   });
 
+  it.each([false, true])('offers sample search only when a retriever is injected (%s)', async enabled => {
+    const sampleSearch = vi.fn();
+    const { llm: commitLLM } = makeCapturingLLM();
+    const llm: LLMCaller = {
+      async chatWithTools(...args) {
+        expect(args[1].some(tool => tool.function.name === 'searchSamples')).toBe(enabled);
+        return commitLLM.chatWithTools(...args);
+      },
+    };
+    const result = await runAgentLoop({
+      initialCode: '', instruction: 'test', locale: 'zh', systemPrompt: '', llm,
+      sampleSearch: enabled ? sampleSearch : undefined,
+    });
+    expect(result.committed).toBe(true);
+    expect(sampleSearch).not.toHaveBeenCalled();
+  });
+
   it('reports rejected queries and distinguishes duplicate reuse from execution', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     const llm: LLMCaller = { async chatWithTools() {
