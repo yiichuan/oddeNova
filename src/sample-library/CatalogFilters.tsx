@@ -13,9 +13,9 @@ function CategoryPicker({ categories, value, onChange }: {
   return <details className="sl-picker" name="sample-filters" onToggle={event => {
     if (!event.currentTarget.open) setQuery('');
   }}>
-    <summary>类别{value !== undefined ? ' · 已选' : ''}</summary>
+    <summary>原始类别{value !== undefined ? ' · 已选' : ''}</summary>
     <div className="sl-picker-content">
-      <input type="search" aria-label="查找类别" placeholder="查找类别" value={query}
+      <input type="search" aria-label="查找原始类别" placeholder="查找原始类别" value={query}
         onChange={event => setQuery(event.target.value)} />
       <div className="sl-category-options">
         {[undefined, ...visible].map(category => (
@@ -28,10 +28,10 @@ function CategoryPicker({ categories, value, onChange }: {
                 picker.querySelector('summary')?.focus();
               }
             }}>
-            {category === undefined ? '全部类别' : category ?? '类别待确认'}
+            {category === undefined ? '全部原始类别' : category ?? '类别待确认'}
           </button>
         ))}
-        {visible.length === 0 && <p>没有匹配的类别</p>}
+        {visible.length === 0 && <p>没有匹配的原始类别</p>}
       </div>
     </div>
   </details>;

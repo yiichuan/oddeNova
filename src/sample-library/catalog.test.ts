@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { emptyFilters, filterCatalog, indexCatalog } from './catalog';
+import { groupDirectory } from './directory';
 import { isSampleLibraryPath } from '../lib/routes';
 import type { SearchSample, SampleVariant } from '../lib/sample-search';
 
@@ -10,6 +12,15 @@ const variant = (id: string, brightness: string, tail: string): SampleVariant =>
 const samples: SearchSample[] = [{ key: 'bd', aliases: ['kick'], category: '底鼓', summary: '', variants: [variant('0', 'bright', 'short'), variant('1', 'dark', 'long'), { ...variant('2', 'bright', 'long'), features: null, annotationStatus: 'unavailable' }] }];
 describe('annotation catalog browser', () => {
   const index = indexCatalog(samples);
+  it('shelves the public catalog once per sound, including Steinway with piano and keys', () => {
+    const catalog = JSON.parse(readFileSync('public/sample-annotations/catalog.json', 'utf8')) as { samples: SearchSample[] };
+    const entries = catalog.samples.map(sample => ({ sample }));
+    const directory = groupDirectory(entries, false);
+    const keys = directory.flatMap(category => category.groups.flatMap(group => group.results.map(({ sample }) => sample.key)));
+    expect(keys.sort()).toEqual(catalog.samples.map(sample => sample.key).sort());
+    const keysGroup = directory.find(category => category.id === 'instruments')?.groups.find(group => group.id === 'inst-keys');
+    expect(keysGroup?.results.some(({ sample }) => sample.key === 'steinway')).toBe(true);
+  });
   it('searches aliases and Chinese features, keeping only matching variants', () => {
     expect(filterCatalog(index, 'KICK 明亮', emptyFilters)[0].variants.map(v => v.id)).toEqual(['0']);
     expect(filterCatalog(index, '底鼓 偏暗', emptyFilters)[0].variants.map(v => v.id)).toEqual(['1']);

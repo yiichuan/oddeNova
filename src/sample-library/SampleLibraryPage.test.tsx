@@ -73,6 +73,40 @@ function previewButton(row: HTMLElement) {
   return row.querySelector<HTMLButtonElement>('.sl-preview-button')!;
 }
 
+function directoryHeading(host: HTMLElement, title: string) {
+  return [...host.querySelectorAll<HTMLButtonElement>('.sl-directory-heading')]
+    .find(button => button.children[1]?.textContent === title)!;
+}
+
+it('opens matching directory branches during search and restores browsing when cleared', async () => {
+  mockFetch();
+  const host = await render();
+  expect(directoryHeading(host, '旋律采样').getAttribute('aria-expanded')).toBe('false');
+  await click(directoryHeading(host, '军鼓'));
+  await search(host, 'piano & keys');
+  expect(directoryHeading(host, '鼓组')).toBeUndefined();
+  expect(directoryHeading(host, '钢琴与键盘').getAttribute('aria-expanded')).toBe('true');
+  expect(host.querySelector('.sl-directory-sample[aria-pressed=true]')?.textContent).toContain('piano');
+
+  await click(directoryHeading(host, '旋律采样'));
+  expect(host.querySelector('.sl-directory-sample')).toBeNull();
+  expect(host.querySelector('.sl-code code')?.textContent).toContain('piano');
+  await search(host, '');
+  expect(directoryHeading(host, '军鼓').getAttribute('aria-expanded')).toBe('true');
+  expect(directoryHeading(host, '钢琴与键盘').getAttribute('aria-expanded')).toBe('true');
+});
+
+it('pages within a group while counting all matching sounds', async () => {
+  const samples = Array.from({ length: 61 }, (_, i) => ({ ...fixture.samples[0], key: `unknown-${i}` }));
+  mockFetch().mockImplementationOnce(async () => ({ ok: true, json: async () => ({ ...fixture, samples }) }));
+  const host = await render();
+  expect(directoryHeading(host, '其他音色').textContent).toContain('61');
+  expect(host.querySelectorAll('.sl-directory-sample')).toHaveLength(60);
+  await click(host.querySelector<HTMLButtonElement>('.sl-more')!);
+  expect(host.querySelectorAll('.sl-directory-sample')).toHaveLength(61);
+  expect(host.querySelector('.sl-more')).toBeNull();
+});
+
 it.each([
   ['808sd', 'SD'],
   ['808cy', 'CY'],
@@ -166,6 +200,7 @@ it('resets the preview when a recording ends or the selected sound changes', asy
   await act(async () => elements[0].dispatchEvent(new Event('ended')));
   expect(previewButton(first).textContent).toBe('试听');
   await click(previewButton(first));
+  await click(directoryHeading(host, '军鼓'));
   const snare = [...host.querySelectorAll<HTMLButtonElement>('.sl-results button')]
     .find(button => button.textContent?.includes('808sd'))!;
   await click(snare);

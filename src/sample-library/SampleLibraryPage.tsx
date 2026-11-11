@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import type { SearchCatalog, SampleVariant } from '../lib/sample-search';
 import { emptyFilters, filterCatalog, indexCatalog, labels, listeningSummary, loadCatalog, statusLabels } from './catalog';
 import { CatalogFilters } from './CatalogFilters';
+import { SampleDirectory } from './SampleDirectory';
 import { loadPreviewSources, resolvePreviewUrl, type PreviewSources } from './preview-sources';
 import { useSamplePreview } from './useSamplePreview';
 import './sample-library.css';
@@ -66,7 +67,6 @@ export default function SampleLibraryPage() {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState(emptyFilters);
   const [selection, setSelection] = useState<{ key?: string; id?: string }>({});
-  const [limit, setLimit] = useState(60);
   const [sources, setSources] = useState<SourcesState>({ status: 'loading' });
   const [sourceAttempt, setSourceAttempt] = useState(0);
   const deferredQuery = useDeferredValue(query);
@@ -99,8 +99,7 @@ export default function SampleLibraryPage() {
     return sorted;
   }, [index]);
   const results = useMemo(() => filterCatalog(index, deferredQuery, filters), [index, deferredQuery, filters]);
-  const selectedIndex = results.findIndex(item => item.sample.key === selection.key);
-  const current = results[selectedIndex] ?? results[0];
+  const current = results.find(item => item.sample.key === selection.key) ?? results[0];
   const key = current?.sample.key;
   const variant = (key === selection.key ? current?.variants.find(item => item.id === selection.id) : undefined)
     ?? current?.variants[0];
@@ -112,9 +111,6 @@ export default function SampleLibraryPage() {
   const filtered = Boolean(deferredQuery.trim()) || filters.status !== 'all' || filters.category !== undefined
     || Boolean(filters.brightness) || filters.textures.length > 0;
   const totalVariants = useMemo(() => catalog?.samples.reduce((sum, sample) => sum + sample.variants.length, 0) ?? 0, [catalog]);
-  const visibleResults = results.slice(0, limit);
-  // Keep an active selection reachable when a new search puts it beyond the first batch.
-  if (selectedIndex >= limit) visibleResults.unshift(results[selectedIndex]);
   const sharedStatus = variant && current?.variants.every(item => item.annotationStatus === variant.annotationStatus)
     ? variant.annotationStatus : undefined;
 
@@ -151,34 +147,25 @@ export default function SampleLibraryPage() {
       {catalog && <p>{catalog.samples.length.toLocaleString()} 个音色 · {totalVariants.toLocaleString()} 个变体</p>}
     </div>
     <CatalogFilters query={query} categories={categories} filters={filters}
-      onQuery={value => { setQuery(value); setLimit(60); }}
-      onChange={value => { setFilters(value); setLimit(60); }}
-      onClear={() => { setQuery(''); setFilters(emptyFilters); setLimit(60); }} />
+      onQuery={setQuery}
+      onChange={setFilters}
+      onClear={() => { setQuery(''); setFilters(emptyFilters); }} />
     {error ? <div className="sl-empty" role="alert">
       {error}<button type="button" onClick={() => { setError(''); setAttempt(value => value + 1); }}>重新加载</button>
     </div> : !catalog ? <div className="sl-empty" role="status">正在加载音色标注…</div> : <div className="sl-workspace">
-      <aside className="sl-pane sl-sidebar" aria-label="音色搜索结果">
+      <aside className="sl-pane sl-sidebar" aria-labelledby="sl-directory-heading">
         <div className="sl-pane-heading">
-          <h2>音色目录</h2>
+          <h2 id="sl-directory-heading">音色目录</h2>
           <p role="status">{results.length.toLocaleString()} 个匹配音色{query !== deferredQuery ? ' · 搜索中…' : ''}</p>
         </div>
-        <div className="sl-results sl-scroll" key={JSON.stringify([deferredQuery, filters])}>
-          {visibleResults.map(({ sample, variants, matchedLabels }) => (
-            <button key={sample.key} type="button" aria-pressed={key === sample.key} onClick={() => {
-              if (key !== sample.key) {
-                stop();
-                setSelection({ key: sample.key });
-              }
-            }}>
-              <span className="sl-result-name">{sample.key}<small>{variantCount(variants.length, sample.variants.length, filtered)}</small></span>
-              {sample.category && <span className="sl-result-category">{sample.category}</span>}
-              {matchedLabels.length > 0 && <span className="sl-match-labels">{matchedLabels.join(' · ')}</span>}
-            </button>
-          ))}
-          {results.length > visibleResults.length && <button type="button" className="sl-more"
-            onClick={() => setLimit(value => value + 60)}>加载更多（剩余 {results.length - visibleResults.length}）</button>}
-          {results.length === 0 && <p className="sl-empty">没有匹配的音色。试试更短的名称，或清空筛选。</p>}
-        </div>
+        <SampleDirectory scope={filtered ? JSON.stringify([deferredQuery, filters]) : null}
+          results={results} selectedKey={key} ranked={Boolean(deferredQuery.trim())}
+          onSelect={sampleKey => {
+            if (key !== sampleKey) {
+              stop();
+              setSelection({ key: sampleKey });
+            }
+          }} />
       </aside>
       <section className="sl-pane sl-variants" aria-labelledby="sl-variant-heading">
         <div className="sl-pane-heading">

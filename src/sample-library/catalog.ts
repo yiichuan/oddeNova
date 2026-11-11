@@ -1,4 +1,5 @@
 import type { SearchCatalog, SearchSample, SampleVariant } from '../lib/sample-search';
+import { directoryPath } from './directory';
 
 export const statusLabels = { model_initial: '模型初标', expert_confirmed: '专家确认', unavailable: '暂无标注' };
 export const labels: Record<string, string> = {
@@ -49,7 +50,7 @@ export function indexCatalog(samples: SearchSample[]) {
     sample,
     key: sample.key.toLowerCase(),
     aliases: sample.aliases.map(alias => alias.toLowerCase()),
-    category: sample.category?.toLowerCase() ?? '',
+    category: [sample.category?.toLowerCase(), directoryPath(sample.key).searchText].filter(Boolean).join(' '),
     variants: sample.variants.map(variant => {
       const features = featureValues(variant).map(value => ({
         value,
