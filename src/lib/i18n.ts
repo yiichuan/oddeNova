@@ -236,6 +236,8 @@ const S: Record<string, readonly [string, string]> = {
   readScore:      ['读取当前曲谱', 'Read current score'],
   validateCode:   ['校验代码', 'Validate code'],
   commitAndPlay:  ['提交并播放', 'Commit and play'],
+  searchingSamples: ['正在搜索采样…', 'Searching samples…'],
+  runningTool: ['正在处理…', 'Working…'],
 
   // TopActionBar
   settings:        ['设置', 'Settings'],

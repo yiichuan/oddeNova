@@ -1,6 +1,7 @@
 import type { useSessions } from '../hooks/useSessions';
 import type { ProgressEvent } from '../services/llm-loader';
 import { t } from './i18n';
+import { summarizeSampleSearch } from './sample-search-summary';
 
 type AgentProgressSessions = Pick<
   ReturnType<typeof useSessions>,
@@ -28,9 +29,11 @@ export function createAgentProgressHandler(
     if (event.kind === 'iteration') return;
     if (event.kind === 'tool_call') {
       if (event.name !== 'validate' && event.name !== 'commit') {
-        sessions.addProgress('tool_call', formatToolCall(event.name, event.args), {
+        const summary = event.name === 'searchSamples' ? summarizeSampleSearch(event.args) : [];
+        sessions.addProgress('tool_call', formatToolCall(event.name), {
           toolName: event.name,
           sessionId,
+          ...(summary.length > 0 && { sampleSearchSummary: summary }),
         });
       }
       return;
@@ -65,8 +68,10 @@ export function createAgentProgressHandler(
   };
 }
 
-function formatToolCall(name: string, args: Record<string, unknown>): string {
+function formatToolCall(name: string): string {
   switch (name) {
+    case 'searchSamples':
+      return t('searchingSamples');
     case 'setCode':
       return t('arrangeMusic');
     case 'getScore':
@@ -76,6 +81,6 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
     case 'commit':
       return t('commitAndPlay');
     default:
-      return `${name}(${JSON.stringify(args).slice(0, 60)})`;
+      return t('runningTool');
   }
 }
