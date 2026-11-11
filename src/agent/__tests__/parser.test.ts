@@ -24,6 +24,21 @@ describe('parseScore — 基础结构', () => {
     expect(r.bpm).toBe(100);
   });
 
+  it('setcpm(N) 按每分钟循环数识别，换算为 N/60 cps', () => {
+    const code = '// 140 BPM in 4/4\nsetcpm(140/4)\nstack(s("bd*4"))';
+    const r = parseScore(code);
+    expect(r.cps).toBeCloseTo(140 / 4 / 60);
+    expect(r.bpm).toBe(140);
+    expect(r.setcpsMatch).not.toBeNull();
+    expect(code.slice(r.setcpsMatch!.start, r.setcpsMatch!.end)).toBe('setcpm(140/4)');
+  });
+
+  it('注释和字符串里的 setcpm 不算速度声明', () => {
+    const r = parseScore('// setcpm(30)\ns("setcpm(30)")');
+    expect(r.cps).toBeNull();
+    expect(r.setcpsMatch).toBeNull();
+  });
+
   it('标准结构：setcps + stack + 2 层', () => {
     const code = `setcps(0.5)
 stack(

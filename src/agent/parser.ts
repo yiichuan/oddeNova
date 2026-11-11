@@ -1,5 +1,6 @@
 // Strudel code structural parser.
-// Recognises `setcps(N)` and `stack(...)` calls, splitting the stack args into
+// Recognises the tempo call (`setcps(N)`, or `setcpm(N)` read as N/60 cps) and
+// `stack(...)` calls, splitting the stack args into
 // individually addressable layers. Layers may be tagged with an inline
 // `/* @layer NAME */` marker; otherwise they get auto-names like `layer_0`.
 
@@ -15,6 +16,7 @@ export interface ParsedScore {
   raw: string;
   cps: number | null;
   bpm: number | null;
+  /** Span of the tempo call — `setcps(...)` or `setcpm(...)`, whichever the code uses. */
   setcpsMatch: { start: number; end: number } | null;
   hasStack: boolean;
   stackStart: number;       // index of 'stack' word
@@ -256,6 +258,11 @@ function splitTopLevelCommas(text: string): { start: number; end: number }[] {
   return spans;
 }
 
+// The first top-level tempo call. `setcpm(N)` is Strudel's per-minute form of
+// `setcps(N / 60)` (its own docs: `setcpm(140/4)` is 140 BPM in 4/4), so it is
+// read back as cps and every BPM shown or computed from it agrees.
+const TEMPO_CALLS: Record<string, number> = { setcps: 1, setcpm: 1 / 60 };
+
 function findSetcps(code: string): { cps: number; start: number; end: number } | null {
   const st = newScanState();
   for (let i = 0; i < code.length; i++) {
@@ -265,7 +272,9 @@ function findSetcps(code: string): { cps: number; start: number; end: number } |
       continue;
     }
     if (skip === 0) continue;
-    if (code.slice(i, i + 6) === 'setcps') {
+    const name = code.slice(i, i + 6);
+    const scale = Object.hasOwn(TEMPO_CALLS, name) ? TEMPO_CALLS[name] : undefined;
+    if (scale !== undefined) {
       const before = i > 0 ? code[i - 1] : '';
       const after = code[i + 6];
       if (/[A-Za-z0-9_$]/.test(before)) continue;
@@ -277,7 +286,7 @@ function findSetcps(code: string): { cps: number; start: number; end: number } |
       const inner = code.slice(open + 1, close).trim();
       const num = evalArithmetic(inner);
       if (num === null || isNaN(num)) continue;
-      return { cps: num, start: i, end: close + 1 };
+      return { cps: num * scale, start: i, end: close + 1 };
     }
   }
   return null;

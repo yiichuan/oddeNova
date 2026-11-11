@@ -1006,9 +1006,12 @@ export class StrudelService {
     const cps = parseFloat(Math.max(0.05, Math.min(8, bpm / 240)).toFixed(6));
     const replacement = `setcps(${cps})`;
 
-    // Surgical CodeMirror dispatch: replace only the setcps(...) token so that
+    // Surgical CodeMirror dispatch: replace only the tempo call so that
     // miniLocation decorations (the white position boxes) survive unchanged.
     // Full setCode() replaces the whole document and clears all decorations.
+    // The parser finds the call in whichever form the code says it —
+    // setcps(0.5), setcps(104/60/4), setcpm(120/4) — so a hand-written setcpm
+    // is replaced, not left below a new setcps line where it would override it.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cmView = (this.editorInstance as any)?.editor as {
       state: { doc: { toString(): string } };
@@ -1017,9 +1020,9 @@ export class StrudelService {
 
     if (cmView) {
       const code = cmView.state.doc.toString();
-      const match = /\bsetcps\s*\(\s*[\d.]+\s*\)/.exec(code);
+      const match = parseScore(code).setcpsMatch;
       if (match) {
-        cmView.dispatch({ changes: { from: match.index, to: match.index + match[0].length, insert: replacement } });
+        cmView.dispatch({ changes: { from: match.start, to: match.end, insert: replacement } });
       } else {
         cmView.dispatch({ changes: { from: 0, to: 0, insert: replacement + '\n' } });
       }
@@ -1030,9 +1033,9 @@ export class StrudelService {
     } else {
       // Engine not yet mounted — patch internal state only (no editor to update)
       const code = this._state.code;
-      const match = /\bsetcps\s*\(\s*[\d.]+\s*\)/.exec(code);
+      const match = parseScore(code).setcpsMatch;
       const patched = match
-        ? code.slice(0, match.index) + replacement + code.slice(match.index + match[0].length)
+        ? code.slice(0, match.start) + replacement + code.slice(match.end)
         : replacement + '\n' + code;
       if (patched !== code) this.notify({ code: patched });
     }
@@ -2197,7 +2200,9 @@ export async function validateCodeRuntime(code: string): Promise<ValidationResul
   if (!clean.trim()) return { ok: false, error: t('emptyCode'), kind: 'syntax' };
 
   // Proxy dry-run (caller guarantees the engine is ready — see App.tsx handleInstruction guard)
-  const stripped = clean.replace(/^\s*setcps\([^)]*\)\s*;?\s*$/gm, '');
+  // Both tempo forms: setcpm retunes the live scheduler just as setcps does,
+  // and a dry run must not.
+  const stripped = clean.replace(/^\s*setcp[sm]\([^)]*\)\s*;?\s*$/gm, '');
 
   const proxy = new Proxy({}, {
     has() { return true; },
