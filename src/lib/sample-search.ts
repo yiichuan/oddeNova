@@ -11,6 +11,7 @@ export interface SampleVariant {
   rootNote: string | null;
   articulation: string | null;
   features: ListeningFeatures | null;
+  modelFeatures?: ListeningFeatures | null;
   annotationStatus: 'model_initial' | 'expert_confirmed' | 'unavailable';
   playback: string;
 }
@@ -23,6 +24,7 @@ export interface SearchSample {
 }
 export interface SearchCatalog {
   schemaVersion: 1;
+  fingerprint?: string;
   samples: SearchSample[];
 }
 export interface SampleQuery {
@@ -44,7 +46,7 @@ export const FEATURE_OPTIONS: Record<string, readonly string[]> = {
 
 let pending: Promise<SearchCatalog> | undefined;
 export function loadSampleCatalog(): Promise<SearchCatalog> {
-  pending ??= fetch('/sample-annotations/catalog.json').then(async response => {
+  pending ??= fetch('/sample-annotations/catalog.json', { cache: 'no-cache' }).then(async response => {
     if (!response.ok) throw Error(`Sample catalog unavailable (HTTP ${response.status})`);
     const data = await response.json() as SearchCatalog;
     if (data.schemaVersion !== 1 || !Array.isArray(data.samples)) throw Error('Invalid sample catalog');

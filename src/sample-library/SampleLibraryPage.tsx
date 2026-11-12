@@ -1,13 +1,26 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import type { SearchCatalog, SampleVariant } from '../lib/sample-search';
+import type { ListeningFeatures, SearchCatalog, SampleVariant } from '../lib/sample-search';
 import { emptyFilters, filterCatalog, indexCatalog, labels, listeningSummary, loadCatalog, statusLabels } from './catalog';
 import { CatalogFilters } from './CatalogFilters';
 import { SampleDirectory } from './SampleDirectory';
 import { loadPreviewSources, resolvePreviewUrl, type PreviewSources } from './preview-sources';
 import { useSamplePreview } from './useSamplePreview';
+import { AnnotationEditor } from './AnnotationEditor';
 import './sample-library.css';
 
 type SourcesState = { status: 'loading' | 'failed' } | { status: 'ready'; sources: PreviewSources };
+
+function FeatureDetails({ features }: { features: ListeningFeatures }) {
+  return <div className="sl-features">
+    {Object.entries(features).map(([section, fields]) => <section key={section}>
+      <h3>{labels[section] ?? section}</h3>
+      <dl>{Object.entries(fields).map(([field, value]) => <div key={field}>
+        <dt>{labels[field] ?? field}</dt>
+        <dd>{(Array.isArray(value) ? value : [value]).map(item => labels[item] ?? item).join(' · ') || '未标注标签'}</dd>
+      </div>)}</dl>
+    </section>)}
+  </div>;
+}
 
 function VariantDetails({ variant }: { variant: SampleVariant }) {
   return <>
@@ -16,23 +29,16 @@ function VariantDetails({ variant }: { variant: SampleVariant }) {
       {variant.rootNote && <span>根音 {variant.rootNote}</span>}
       {variant.articulation && <span>奏法 {variant.articulation}</span>}
     </div>
-    {variant.annotationStatus === 'model_initial' && <p className="sl-note">模型听感初标，尚未经专家确认。</p>}
-    {variant.features ? <div className="sl-features">
-      {Object.entries(variant.features).map(([section, fields]) => <section key={section}>
-        <h3>{labels[section] ?? section}</h3>
-        <dl>{Object.entries(fields).map(([field, value]) => <div key={field}>
-          <dt>{labels[field] ?? field}</dt>
-          <dd>{(Array.isArray(value) ? value : [value]).map(item => labels[item] ?? item).join(' · ') || '未标注标签'}</dd>
-        </div>)}</dl>
-      </section>)}
-    </div> : <p className="sl-note">这个变体还没有可用的听感标注。</p>}
+    {variant.annotationStatus === 'model_initial' && <p className="sl-note">模型听感初标，尚未经人工确认。</p>}
+    {variant.annotationStatus === 'expert_confirmed' && <p className="sl-note">当前生效标注</p>}
+    {variant.features ? <FeatureDetails features={variant.features} /> : <p className="sl-note">这个变体还没有可用的听感标注。</p>}
+    {variant.annotationStatus === 'expert_confirmed' && <details className="sl-raw">
+      <summary>查看 AI 原始标注</summary>
+      {variant.modelFeatures ? <FeatureDetails features={variant.modelFeatures} /> : <p>没有可用的 AI 原始标注。</p>}
+    </details>}
     <details className="sl-raw">
       <summary>查看结构化原始数据</summary>
       <pre>{JSON.stringify(variant, null, 2)}</pre>
-    </details>
-    <details className="sl-raw">
-      <summary>关于标注</summary>
-      <p>这里展示结构化听感。原始模型摘要、用途建议和复核证据保存在本地标注资料中。</p>
     </details>
   </>;
 }
@@ -68,6 +74,9 @@ export default function SampleLibraryPage() {
   const [filters, setFilters] = useState(emptyFilters);
   const [selection, setSelection] = useState<{ key?: string; id?: string }>({});
   const [sources, setSources] = useState<SourcesState>({ status: 'loading' });
+  const [editingId, setEditingId] = useState<string>();
+  const [guard, setGuard] = useState<'dirty' | 'busy' | null>(null);
+  const [notice, setNotice] = useState('');
   const [sourceAttempt, setSourceAttempt] = useState(0);
   const deferredQuery = useDeferredValue(query);
   useEffect(() => {
@@ -91,6 +100,15 @@ export default function SampleLibraryPage() {
     });
     return () => controller.abort();
   }, [sourceAttempt]);
+  useEffect(() => {
+    if (!guard) return;
+    function preventLeave(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    window.addEventListener('beforeunload', preventLeave);
+    return () => window.removeEventListener('beforeunload', preventLeave);
+  }, [guard]);
   const index = useMemo(() => indexCatalog(catalog?.samples ?? []), [catalog]);
   const categories = useMemo(() => {
     const values = new Set(index.map(({ sample }) => sample.category ?? null));
@@ -114,8 +132,32 @@ export default function SampleLibraryPage() {
   const sharedStatus = variant && current?.variants.every(item => item.annotationStatus === variant.annotationStatus)
     ? variant.annotationStatus : undefined;
 
+  const editing = Boolean(variant && editingId === variant.id);
+  const references = useMemo(() => {
+    const hash = variant?.sha256;
+    if (!editing || !hash) return [];
+    return (catalog?.samples ?? []).flatMap(sample => sample.variants
+      .filter(item => item.sha256 === hash)
+      .map(({ id, index, rootNote }) => ({ id, index, rootNote, key: sample.key })));
+  }, [catalog, editing, variant?.sha256]);
+
+  function closeEditor() {
+    if (guard === 'busy') return false;
+    if (guard === 'dirty' && !window.confirm('离开会丢弃未保存的修改，已保存的草稿会保留。继续吗？')) return false;
+    setEditingId(undefined);
+    setGuard(null);
+    return true;
+  }
+
+  function published() {
+    setEditingId(undefined);
+    setGuard(null);
+    setNotice('标注已发布。刷新已打开的工作室后，AI 检索将使用新标注。');
+    setAttempt(value => value + 1);
+  }
+
   function selectVariant(id: string) {
-    if (variant?.id === id) return;
+    if (variant?.id === id || !closeEditor()) return;
     stop();
     setSelection({ key, id });
   }
@@ -130,6 +172,7 @@ export default function SampleLibraryPage() {
     return <button type="button" className="sl-preview-button" data-phase={phase ?? undefined}
       aria-label={`${action} ${name}${location === 'detail' ? '（当前变体）' : ''}`}
       onClick={() => {
+        if (variant?.id !== item.id && !closeEditor()) return;
         setSelection({ key: sampleKey, id: item.id });
         play(item.id, url);
       }}>
@@ -139,17 +182,21 @@ export default function SampleLibraryPage() {
 
   return <main className="sample-library">
     <header className="sl-header">
-      <a href="/" className="sl-brand">oddeNova <span>/ 音色档案</span></a>
-      <a href="/">返回工作室 ↗</a>
+      <div className="sl-header-group">
+        <a href="/" className="sl-brand">oddeNova</a>
+        <h1>音色档案</h1>
+        <p>听感，有据可查。</p>
+      </div>
+      <div className="sl-header-group">
+        {catalog && <p>{catalog.samples.length.toLocaleString()} 个音色 · {totalVariants.toLocaleString()} 个变体</p>}
+        <a href="/">返回工作室 ↗</a>
+      </div>
     </header>
-    <div className="sl-intro">
-      <h1>听感，有据可查。</h1>
-      {catalog && <p>{catalog.samples.length.toLocaleString()} 个音色 · {totalVariants.toLocaleString()} 个变体</p>}
-    </div>
+    {notice && <p className="sl-publication-notice" role="status">{notice}</p>}
     <CatalogFilters query={query} categories={categories} filters={filters}
-      onQuery={setQuery}
-      onChange={setFilters}
-      onClear={() => { setQuery(''); setFilters(emptyFilters); }} />
+      onQuery={value => { if (closeEditor()) setQuery(value); }}
+      onChange={value => { if (closeEditor()) setFilters(value); }}
+      onClear={() => { if (closeEditor()) { setQuery(''); setFilters(emptyFilters); } }} />
     {error ? <div className="sl-empty" role="alert">
       {error}<button type="button" onClick={() => { setError(''); setAttempt(value => value + 1); }}>重新加载</button>
     </div> : !catalog ? <div className="sl-empty" role="status">正在加载音色标注…</div> : <div className="sl-workspace">
@@ -161,7 +208,7 @@ export default function SampleLibraryPage() {
         <SampleDirectory scope={filtered ? JSON.stringify([deferredQuery, filters]) : null}
           results={results} selectedKey={key} ranked={Boolean(deferredQuery.trim())}
           onSelect={sampleKey => {
-            if (key !== sampleKey) {
+            if (key !== sampleKey && closeEditor()) {
               stop();
               setSelection({ key: sampleKey });
             }
@@ -204,14 +251,27 @@ export default function SampleLibraryPage() {
         {current && variant ? <>
           <div className="sl-pane-heading sl-detail-heading">
             <div className="sl-detail-title">
-              <h2>{current.sample.key}:{variant.index}{variant.rootNote && <small> · {variant.rootNote}</small>}</h2>
-              {previewControl(current.sample.key, variant, 'detail')}
+              <div className="sl-detail-title-group">
+                <h2>{current.sample.key}:{variant.index}{variant.rootNote && <small> · {variant.rootNote}</small>}</h2>
+                {editing && <span className={`sl-status sl-${variant.annotationStatus}`}>{statusLabels[variant.annotationStatus]}</span>}
+              </div>
+              <div className="sl-detail-title-group">
+                {import.meta.env.DEV && variant.sha256 && <button type="button" className="sl-edit-toggle"
+                  aria-expanded={editing} disabled={guard === 'busy' || query !== deferredQuery}
+                  onClick={() => { if (editing) closeEditor(); else setEditingId(variant.id); }}>
+                  {editing ? '关闭编辑' : '编辑标注'}
+                </button>}
+                {previewControl(current.sample.key, variant, 'detail')}
+              </div>
             </div>
             <PlaybackCode key={variant.id} code={variant.playback} />
           </div>
-          <div className="sl-detail-content sl-scroll" key={variant.id}>
-            <div className="sl-summary">{listeningSummary(variant).map(label => <span key={label}>{label}</span>)}</div>
-            <VariantDetails variant={variant} />
+          <div className={editing ? 'sl-detail-editing' : 'sl-detail-content sl-scroll'} key={variant.id}>
+            {!editing && <div className="sl-summary">{listeningSummary(variant).map(label => <span key={label}>{label}</span>)}</div>}
+            {import.meta.env.DEV && !variant.sha256 && <p className="sl-note">缺少音频哈希，暂不可编辑。</p>}
+            {editing && variant.sha256 ? <AnnotationEditor hash={variant.sha256} annotationStatus={variant.annotationStatus}
+              references={references} onGuardChange={setGuard} onPublished={published} />
+              : <VariantDetails variant={variant} />}
           </div>
         </> : <p className="sl-empty">选中一个音色后，在这里查看标注详情。</p>}
       </article>

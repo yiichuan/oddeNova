@@ -24,7 +24,7 @@ node --import=tsx/esm scripts/sample-annotations/build.mjs FINGERPRINT
 
 ## 专家更新
 
-可提供本地 `expert-releases.json`，以音频 SHA-256 为键，条目包含 `status: "expert_confirmed"`、非空 `reviewer`、正整数 `version` 和经 Schema 校验的 `features`（structure、timbre、envelope、space）。构建器采用合法专家版本覆盖模型听感，保留模型原始记录。目录类别保持独立。
+可提供本地 `expert-releases.json`，以音频 SHA-256 为键，条目包含 `status: "expert_confirmed"`、正整数 `version` 和经 Schema 校验的 `features`（structure、timbre、envelope、space）。构建器采用合法专家版本覆盖模型听感，保留模型原始记录。目录类别保持独立。
 
 ## 提示词及评测
 
@@ -36,7 +36,11 @@ v26 中英文提示词指导创作模型在需要比较音色时查询候选，�
 
 直接访问 `/sample-library` 进行临时调试，网站内不提供导航入口。页面按需加载现有 `public/sample-annotations/catalog.json`，支持名称、别名、类别和中英文听感关键词搜索，空格分隔的关键词需要同时匹配同一个变体。可按标注状态筛选，并查看每个匹配变体的结构、音色、包络、空间感、根音、奏法及 Strudel 调用代码。
 
-页面展示构建后的目录字段及对应 JSON；原始模型摘要、用途建议和复核证据仍保留在 `.local/sample-annotations/`，未通过此页面发布。模型初标不等于专家确认。重新构建目录后，刷新页面即可查看最新结果。
+在本机 Vite 开发页面，选中带音频哈希的变体，点「编辑标注」。表单可对照 AI 原始值，列出共享该音频的全部目录引用。草稿和确认记录按音频 SHA-256 保存，类别和播放映射仍由各自目录决定。
+
+「保存草稿」将修改写到 `.local/sample-annotations/expert-drafts/`，目录及检索继续使用当前生效值。「确认发布」需要已保存的草稿，确认记录写入 `expert-releases.json`，随后更新公共目录中的全部关联变体与摘要。请刷新已打开的工作室以加载新目录。若目录写入中断，在编辑区重新载入标注并重试发布。完整构建时会继续采用已确认的人工值。要让线上检索使用修改，需将更新的目录随代码发布。
+
+确认后可在详情展开「查看 AI 原始标注」。公共目录对人工确认的变体额外保留结构化 AI 听感，检索只使用当前生效字段。原始模型记录、摘要、用途建议和草稿均保留在本地。线上页面仅供浏览。
 
 ## 产品中的模型检索
 

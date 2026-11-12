@@ -1,7 +1,7 @@
 import type { SearchCatalog, SearchSample, SampleVariant } from '../lib/sample-search';
 import { directoryPath } from './directory';
 
-export const statusLabels = { model_initial: '模型初标', expert_confirmed: '专家确认', unavailable: '暂无标注' };
+export const statusLabels = { model_initial: '模型初标', expert_confirmed: '人工确认', unavailable: '暂无标注' };
 export const labels: Record<string, string> = {
   structure: '声音结构', timbre: '音色', envelope: '包络', space: '空间感',
   event_form: '发声形态', pitchedness: '音高性', brightness: '亮度', body: '厚度',
@@ -112,7 +112,7 @@ export function filterCatalog(index: ReturnType<typeof indexCatalog>, query: str
   return normalized ? results.sort((a, b) => Number(b.exact) - Number(a.exact) || a.rank - b.rank) : results;
 }
 export async function loadCatalog(signal: AbortSignal): Promise<SearchCatalog> {
-  const response = await fetch('/sample-annotations/catalog.json', { signal });
+  const response = await fetch('/sample-annotations/catalog.json', { signal, cache: 'no-cache' });
   if (!response.ok) throw new Error(`目录加载失败（HTTP ${response.status}）`);
   const data = await response.json() as SearchCatalog;
   if (data.schemaVersion !== 1 || !Array.isArray(data.samples)) throw new Error('目录格式不受支持');
