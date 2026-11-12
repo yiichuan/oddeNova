@@ -82,7 +82,7 @@ describe('share receipt', () => {
       const code = `setcps(120/240)\nstack(\n  /* @layer horizon */ s("piano"),\n  /* @layer wind */ s("wind noise"),\n  /* @layer returning_theme */ note("c3 e3").s("sawtooth")\n)`;
       ranges.mockResolvedValueOnce({ horizon: ['00:00 – 00:02'], wind: ['00:00 – 00:01', '00:01 – 00:02'] });
       const longNote = '风声噪音在背景里缓慢起伏，像远处吹来的风，偶尔变强又慢慢消失';
-      const { raster, preview } = await renderShareReceipt(url, '扫描二维码查看创作过程', {
+      const { raster, preview } = await renderShareReceipt(url, '扫描二维码收听', {
         code,
         createdAt: Date.UTC(2026, 9, 17, 8, 30),
         locale: 'zh-CN',
@@ -108,7 +108,7 @@ describe('share receipt', () => {
       expect(text).toEqual(expect.arrayContaining([
         '[ vibe your bgm ]', '创作编号  007', 'BPM 120', 'Genreless',
         'horizon', 'wind', 'returning_theme', '钢琴铺出天空和声',
-        '总时长', '音层总数', '扫描二维码', '查看创作过程',
+        '总时长', '音层总数', '扫描二维码', '收听',
       ]));
       expect(text).not.toContain('夜晚的漫游');
       const fontOf = (text: string) => drawnText.find(entry => entry.text === text || entry.text.startsWith(text))?.font;
@@ -122,9 +122,9 @@ describe('share receipt', () => {
       const belowFacts = drawnText.slice(drawnText.findIndex(entry => entry.text === 'Genreless') + 1);
       expect(belowFacts.every(entry => entry.font.includes('"PingFang SC"'))).toBe(true);
       // The scan prompt is the last text; the galaxy picture replaces the old footer.
-      expect(drawnText.at(-1)?.text).toBe('查看创作过程');
+      expect(drawnText.at(-1)?.text).toBe('收听');
       expect(text).not.toContain('ODDENOVA · VIBE YOUR BGM');
-      for (const label of ['层号', '音层名称', '循环区间', '总时长', '音层总数', '扫描二维码', '查看创作过程']) {
+      for (const label of ['层号', '音层名称', '循环区间', '总时长', '音层总数', '扫描二维码', '收听']) {
         expect(fontOf(label)).toMatch(/^600 /);
       }
       expect(drawnText.filter(entry => ['00:02', '03'].includes(entry.text) && entry.font.startsWith('600 21px'))).toHaveLength(2);
@@ -152,7 +152,7 @@ describe('share receipt', () => {
       expect([galaxyLeft, galaxyWidth]).toEqual([14, 356]);
       expect(height - galaxyTop - galaxy.height(356)).toBe(76);
       // The scan prompt sits on the galaxy, the two centred on the same line.
-      const promptY = fillText.mock.calls.filter(([value]) => ['扫描二维码', '查看创作过程'].includes(value)).map(([, , y]) => y);
+      const promptY = fillText.mock.calls.filter(([value]) => ['扫描二维码', '收听'].includes(value)).map(([, , y]) => y);
       expect(Math.abs((promptY[0] + promptY[1] + 20) / 2 - (galaxyTop + galaxy.height(356) / 2))).toBeLessThanOrEqual(0.5);
       const decoded = new Uint8ClampedArray(width * height * 4);
       for (let p = 0; p < width * height; p++) {

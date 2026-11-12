@@ -136,7 +136,7 @@ function loadBundledFonts(): Promise<void> {
 
 export async function renderShareReceipt(
   url: string,
-  instruction = '扫描二维码查看创作过程',
+  instruction = '扫描二维码收听',
   details: ShareReceiptDetails = { code: '', createdAt: Date.now(), locale: 'zh-CN', number: 1 },
 ): Promise<{ preview: string; raster: Uint8Array; titleField: { top: number; height: number } }> {
   const qr = createShareQr(url, 184);
@@ -224,8 +224,8 @@ export async function renderShareReceipt(
   const totalsTop = tableTop + headerHeight + rowsHeight + 22;
   const qrRuleTop = totalsTop + 86;
   const qrTop = qrRuleTop + 26;
-  const instructionLines = instruction === '扫描二维码查看创作过程'
-    ? ['扫描二维码', '查看创作过程']
+  const instructionLines = instruction === '扫描二维码收听'
+    ? ['扫描二维码', '收听']
     : [instruction];
   const instructionLineHeight = 28;
   // From the first line's top to the last line's glyph bottom.

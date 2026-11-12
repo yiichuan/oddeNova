@@ -89,7 +89,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   const renderReceipt = useCallback(async (number: number) => {
     const result = await renderShareReceipt(
       url,
-      say('扫描二维码查看创作过程', 'SCAN QR TO VIEW THE PROCESS'),
+      say('扫描二维码收听', 'SCAN QR TO LISTEN'),
       { ...receiptDetails, title: receiptTitle, number },
     );
     return { ...result, number, title: receiptTitle };
