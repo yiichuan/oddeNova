@@ -2,6 +2,7 @@ import { parseScore } from '../../agent/parser';
 import type { ChatMessage } from '../../hooks/useChat';
 import { formatPlaybackTime, getStrudelLoopCycles } from '../../lib/strudel-timing';
 import type { LayerEvent } from '../strudel';
+import { resolveReceiptTracks } from './receipt-tracks';
 
 const DEFAULT_CPS = 0.5;
 // A layer that exits and re-enters prints one range per stretch; beyond this the
@@ -77,7 +78,8 @@ export function audibleSegments(events: LayerEvent[], totalCycles: number): [num
 }
 
 /**
- * Printed loop ranges ("00:08 – 00:56") per layer name, `''` for code without a stack.
+ * Printed loop ranges ("00:08 – 00:56") per layer name — or per track, for a score
+ * built from sections (see receipt-tracks) — and `''` for code without a stack.
  * Ranges come from the events the engine actually produces, so masks and gain
  * envelopes are reflected. Any failure yields no ranges, and the card prints "—"
  * rather than a guess.
@@ -87,8 +89,12 @@ export async function resolveLayerRanges(code: string): Promise<Record<string, s
   const parsedCps = parseScore(code).cps;
   const cps = parsedCps != null && parsedCps > 0 ? parsedCps : DEFAULT_CPS;
   try {
-    const { queryLayerEvents } = await import('../strudel');
-    const events = await queryLayerEvents(code, Math.min(totalCycles, MAX_QUERY_CYCLES));
+    const { queryLayerEvents, queryTrackEvents } = await import('../strudel');
+    const cycles = Math.min(totalCycles, MAX_QUERY_CYCLES);
+    const tracks = resolveReceiptTracks(code);
+    const events = tracks
+      ? await queryTrackEvents(tracks.instrumented, cycles)
+      : await queryLayerEvents(code, cycles);
     const ranges: Record<string, string[]> = {};
     for (const [name, layerEvents] of events) {
       ranges[name] = audibleSegments(layerEvents, totalCycles)
