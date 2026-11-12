@@ -21,6 +21,7 @@ import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bound
 import type { AudioSpectrum } from '../lib/audio-intensity';
 import { applySeekCycle, seekTargetCycle } from './scheduler-seek';
 import { parseScore } from '../agent/parser';
+import { TRACK_MARK } from './printing/receipt-tracks';
 import { claimTransport } from './transport';
 
 type SafariAudioContextState = AudioContextState | 'interrupted';
@@ -2294,7 +2295,7 @@ export interface LayerEvent { begin: number; end: number }
  * without a stack. Needs the engine's evalScope to have run (the studio is up).
  */
 export async function queryLayerEvents(code: string, cycles: number): Promise<Map<string, LayerEvent[]>> {
-  const clean = normalizeCode(stripUIDecorations(code)).replace(/^\s*setcp[sm]\([^)]*\)\s*;?\s*$/gm, '');
+  const clean = cleanForQuery(code);
   const score = parseScore(clean);
   const slots = score.hasStack && score.layers.length > 0
     ? score.layers.map(layer => ({
@@ -2302,12 +2303,53 @@ export async function queryLayerEvents(code: string, cycles: number): Promise<Ma
       code: clean.slice(0, score.stackArgsStart) + layer.source + clean.slice(score.stackArgsEnd),
     }))
     : [{ name: '', code: clean }];
+  return queryEvents(slots, cycles, noKey);
+}
+
+const noKey = () => undefined;
+
+/**
+ * Like `queryLayerEvents`, for code whose tracks are marked with
+ * `__track('name', pattern)` (see receipt-tracks): one evaluation, each event
+ * filed under the innermost mark around it. Unmarked events are left out.
+ */
+export async function queryTrackEvents(instrumented: string, cycles: number): Promise<Map<string, LayerEvent[]>> {
+  const events = await queryEvents([{ name: '', code: cleanForQuery(instrumented) }], cycles, value => {
+    const track = value && typeof value === 'object' ? (value as Record<string, unknown>)[TRACK_MARK] : undefined;
+    return typeof track === 'string' ? track : null;
+  });
+  events.delete('');
+  return events;
+}
+
+const cleanForQuery = (code: string) =>
+  normalizeCode(stripUIDecorations(code)).replace(/^\s*setcp[sm]\([^)]*\)\s*;?\s*$/gm, '');
+
+/** Marks every event of `pattern` with `name`, unless an inner mark already did. */
+function markTrack(name: string, pattern: { withValue?: (f: (value: unknown) => unknown) => unknown }) {
+  if (!pattern || typeof pattern.withValue !== 'function') return pattern;
+  return pattern.withValue(value => (value && typeof value === 'object' && !(TRACK_MARK in value)
+    ? { ...value, [TRACK_MARK]: name }
+    : value));
+}
+
+/**
+ * Evaluates each slot and collects its onsets over [0, cycles). `keyOf` files an
+ * event under another name than its slot's (`null` drops it; `undefined` keeps the
+ * slot's name).
+ */
+async function queryEvents(
+  slots: { name: string; code: string }[],
+  cycles: number,
+  keyOf: (value: unknown) => string | null | undefined,
+): Promise<Map<string, LayerEvent[]>> {
   const inert = new Set(['samples', 'setcps', 'setcpm', 'hush']);
   const scope = new Proxy({}, {
     has() { return true; },
     get(_t, key) {
       if (typeof key === 'symbol') return (globalThis as Record<symbol, unknown>)[key as unknown as symbol];
       if (inert.has(key)) return async () => {};
+      if (key === TRACK_MARK) return markTrack;
       return (globalThis as Record<string, unknown>)[key];
     },
   });
@@ -2322,7 +2364,6 @@ export async function queryLayerEvents(code: string, cycles: number): Promise<Ma
       const { output } = transpiler(slot.code, { id: undefined, emitMiniLocations: false });
       const pattern = await new Function('__s__', `with (__s__) {\nreturn (async () => {\n${output}\n})()\n}`)(scope);
       if (!pattern || typeof pattern.queryArc !== 'function') throw new Error(`Layer ${slot.name || 'main'} is not a pattern`);
-      const events: LayerEvent[] = [];
       for (const hap of pattern.queryArc(0, cycles) as StrudelHap[]) {
         if (hap.hasOnset && !hap.hasOnset()) continue;
         const value = hap.value;
@@ -2330,10 +2371,14 @@ export async function queryLayerEvents(code: string, cycles: number): Promise<Ma
           const { gain, velocity, postgain } = value as Record<string, unknown>;
           if (gain === 0 || velocity === 0 || postgain === 0) continue;
         }
+        const key = keyOf(value);
+        if (key === null) continue;
+        const name = key ?? slot.name;
         const span = hap.whole ?? hap.part;
-        events.push({ begin: Number(span.begin.valueOf()), end: Number(span.end.valueOf()) });
+        if (!result.has(name)) result.set(name, []);
+        result.get(name)!.push({ begin: Number(span.begin.valueOf()), end: Number(span.end.valueOf()) });
       }
-      result.set(slot.name, events);
+      if (!result.has(slot.name) && keyOf === noKey) result.set(slot.name, []);
     }
   } finally {
     if (livePatternMethod) Object.defineProperty(Pattern.prototype, 'p', livePatternMethod);

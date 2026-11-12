@@ -5,6 +5,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import { P1_WIDTH, rgbaToRaster } from './paperang-protocol';
 import { formatReceiptNumber } from './receipt-counter';
 import { resolveLayerNotes, resolveLayerRanges } from './receipt-layers';
+import { resolveReceiptTracks } from './receipt-tracks';
 import { drawReceiptGalaxy, receiptGalaxyHeight } from './receipt-galaxy';
 
 // Thermal paper loses fine strokes, so no printed text goes below 15px.
@@ -145,9 +146,11 @@ export async function renderShareReceipt(
   const genre = inferGenre(details.code);
   const notes = resolveLayerNotes(details.code, details.messages ?? []);
   const ranges = await resolveLayerRanges(details.code);
-  // `key` matches the range lookup: layer names, or '' for code without a stack.
-  const layers = parsed.layers.length > 0
-    ? parsed.layers.map(layer => ({ name: layer.name, key: layer.name, note: notes[layer.name] ?? '' }))
+  // `key` matches the range lookup: track or layer names, or '' for code without a stack.
+  // A score built from sections lists its tracks; the parser would see one section.
+  const names = resolveReceiptTracks(details.code)?.names ?? parsed.layers.map(layer => layer.name);
+  const layers = names.length > 0
+    ? names.map(name => ({ name, key: name, note: notes[name] ?? '' }))
     : [{ name: details.locale === 'zh-CN' ? '主音层' : 'main', key: '', note: '' }];
   const isZh = details.locale === 'zh-CN';
 
