@@ -65,6 +65,7 @@
 }
 
 @theme {
+  --audition-page-ground: #070707;
   --color-bg-primary: #070707;
   --color-bg-secondary: #000000;
   --color-bg-tertiary: #000000;
@@ -311,6 +312,7 @@
    hair under where they sat on paper because the turn cost that surface two
    levels of lightness. */
 html[data-theme='light'] {
+  --audition-page-ground: #F7F7FA;
   --primary-nav-fill: #EBEBF0;
   --primary-nav-edge-fill: var(--color-border);
   --color-bg-primary: #E3E3E5;
