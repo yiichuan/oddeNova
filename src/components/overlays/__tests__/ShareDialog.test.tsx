@@ -180,7 +180,7 @@ describe('ShareDialog', () => {
     expect(upload).toHaveBeenNthCalledWith(2, snapshot);
     expect(rendered).toHaveBeenCalledWith(
       'https://oddenova.com/s/retry456',
-      'SCAN QR TO VIEW THE PROCESS',
+      'SCAN QR TO LISTEN',
       expect.objectContaining({ code: snapshot.code }),
     );
     await press('Copy link');
@@ -277,7 +277,7 @@ describe('ShareDialog', () => {
     expect(upload).toHaveBeenCalledTimes(1);
     expect(rendered).toHaveBeenCalledWith(
       'https://oddenova.com/s/qr123',
-      'SCAN QR TO VIEW THE PROCESS',
+      'SCAN QR TO LISTEN',
       // The session's turns carry the agent's per-layer notes for the card.
       { code: 's("bd")', createdAt: expect.any(Number), locale: 'en', messages: snapshot.messages, number: 1, title: 'Test' },
     );
