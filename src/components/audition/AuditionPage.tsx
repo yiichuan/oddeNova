@@ -14,10 +14,9 @@ import { CheckIcon, CopyIcon, SearchIcon, XIcon } from '../icons';
 
 const pick = ([zhText, enText]: Bilingual) => (zh ? zhText : enText);
 
-/* The page's one ground, flat — no light field behind it the way the
-   galleries have one: what is looked at here is a field of names, and a
-   ground that moves would be a second thing to look at. */
-const PAGE_GROUND = '#F7F7FA';
+/* The page's one ground, flat — no field behind it the way the galleries
+   have one: what is looked at here is a field of names. */
+const PAGE_GROUND = 'var(--audition-page-ground)';
 
 /* The left edge every heading and shelf starts on — the same inset the
    Favorites heading uses, so the title lands in the same place on both. */
