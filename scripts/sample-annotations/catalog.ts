@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { repairPaths, SAMPLE_LIBRARIES } from '../../src/lib/sample-index-hosts';
 import { SAMPLE_ALLOWLIST } from '../../src/lib/sample-allowlist';
+import { SAMPLE_CATALOG } from '../../src/lib/sample-catalog';
 
 export const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const roles: Record<string, string> = {
@@ -10,6 +11,34 @@ const roles: Record<string, string> = {
   rim: '击边 rim', cb: '牛铃 cowbell', sh: '沙锤 shaker', cr: '碎音镲 crash', rd: '叮叮镲 ride',
   tb: '铃鼓 tambourine',
 };
+
+const browseGroupCategories = new Map([
+  ['kit-kick', roles.bd],
+  ['kit-snare', roles.sd],
+  ['kit-clap', roles.cp],
+  ['kit-kits', '鼓组采样 drum kit samples'],
+]);
+const browseCategories = new Map<string, { category: string; categoryEvidence: string }>();
+for (const section of SAMPLE_CATALOG) {
+  for (const group of section.groups) {
+    // The extra kit pieces also include effects, so the shelf is too broad.
+    if (group.id === 'fx-more' || group.id === 'kit-kit-parts') continue;
+    for (const { name, label } of group.samples) {
+      // A machine's name identifies the bank. Only its labeled roles describe the sound.
+      if (section.id === 'machines' && !name.endsWith('_perc') && !name.endsWith('_fx')) continue;
+      const category = section.id === 'machines' ? label?.join(' ') :
+        browseGroupCategories.get(group.id) ?? group.title.join(' ');
+      if (category && !browseCategories.has(name)) {
+        browseCategories.set(name, { category, categoryEvidence: `browse directory: ${group.id}` });
+      }
+    }
+  }
+}
+
+export function categoryFromBrowseDirectory(key: string) {
+  return browseCategories.get(key);
+}
+
 export interface FileReference {
   id: string; library: string; key: string; path: string; url: string;
   index: number; rootNote: string | null; active: boolean; aliases: string[];

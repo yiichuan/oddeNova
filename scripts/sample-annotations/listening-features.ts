@@ -1,6 +1,6 @@
 import Ajv from 'ajv';
 import schema from '../../docs/sample-annotation-schema-v2.json';
-import type { ListeningFeatures, SearchSample, SampleVariant } from '../../src/lib/sample-search';
+import type { ListeningFeatures, SoundDescription, SearchSample, SampleVariant } from '../../src/lib/sample-search';
 
 export const featureSections = ['structure', 'timbre', 'envelope', 'space'] as const;
 export const featureSchema = {
@@ -21,7 +21,22 @@ export function validFeatures(value: unknown): value is ListeningFeatures {
   return validate(value) === true;
 }
 
+export function validSoundDescription(value: unknown): value is SoundDescription {
+  if (!value || typeof value !== 'object') return false;
+  const d = value as SoundDescription;
+  return typeof d.text === 'string' && d.text.length <= 1000
+    && Array.isArray(d.associations) && d.associations.length <= 10
+    && d.associations.every(item => typeof item === 'string' && item.length <= 100);
+}
+
+export function extractSoundDescription(annotation: Record<string, unknown>): SoundDescription | undefined {
+  const source = annotation.source as { candidates_zh?: unknown } | undefined;
+  const description = { text: annotation.summary_zh ?? '', associations: source?.candidates_zh ?? [] };
+  return validSoundDescription(description) ? description : undefined;
+}
+
 export interface ExpertRelease {
+  soundDescription?: SoundDescription;
   status: 'expert_confirmed';
   version: number;
   features: ListeningFeatures;
@@ -32,12 +47,19 @@ export interface ExpertRelease {
 export function validRelease(release: ExpertRelease | undefined): release is ExpertRelease {
   return release?.status === 'expert_confirmed'
     && Number.isInteger(release.version)
-    && release.version > 0 && validFeatures(release.features);
+    && release.version > 0 && validFeatures(release.features)
+    && (release.soundDescription === undefined || validSoundDescription(release.soundDescription));
 }
 
 export function applyExpertRelease(variant: SampleVariant, release: ExpertRelease): SampleVariant {
   return {
     ...variant,
+    ...(release.soundDescription !== undefined && {
+      soundDescription: release.soundDescription,
+      modelSoundDescription: variant.modelSoundDescription
+        ?? (variant.descriptionStatus === 'model_initial' ? variant.soundDescription : undefined),
+      descriptionStatus: 'expert_confirmed' as const,
+    }),
     modelFeatures: variant.annotationStatus === 'model_initial' ? variant.features : variant.modelFeatures ?? null,
     features: release.features,
     annotationStatus: 'expert_confirmed',

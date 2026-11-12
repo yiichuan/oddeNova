@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { SearchCatalog } from '../lib/sample-search';
 import SampleLibraryPage from './SampleLibraryPage';
+import { serializeFullCatalog } from '../lib/sample-catalog-context';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | null;
@@ -25,10 +26,10 @@ const fixture = {
   samples: catalog.samples.filter(sample => ['808cy', '808sd', 'piano'].includes(sample.key)),
 };
 
-function mockFetch() {
+function mockFetch(sampleCatalog = fixture) {
   const fetchMock = vi.fn(async (path: string) => ({
     ok: true,
-    json: async () => path === catalogPath ? fixture : readPublicJson(path),
+    json: async () => path === catalogPath ? sampleCatalog : readPublicJson(path),
   }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -78,6 +79,85 @@ function directoryHeading(host: HTMLElement, title: string) {
   return [...host.querySelectorAll<HTMLButtonElement>('.sl-directory-heading')]
     .find(button => button.children[1]?.textContent === title)!;
 }
+
+it('shows the selected variant exactly as serialized in the full catalog after filtering', async () => {
+  mockFetch();
+  const host = await render();
+  await search(host, 'piano');
+  const sample = fixture.samples.find(item => item.key === 'piano')!;
+  const serialized = serializeFullCatalog(fixture);
+  const snippet = serialized.variantTexts.get(sample.variants[0])!;
+  const preview = host.querySelector('[aria-label="当前变体的模型输入"]')!;
+  const text = preview.textContent;
+  expect(text).toBe(snippet);
+  expect(text).not.toContain('annotationStatus');
+  expect(text).not.toContain('model_initial');
+  expect(serialized.text).toContain(snippet);
+  expect(snippet).not.toContain('\nv1|');
+  const columns = serialized.legend.split('\n')[1].slice('列顺序：'.length).split('|')
+    .map(column => column.replace('(逗号分隔)', ''));
+  const values = snippet.split('\n')[1].split('|');
+  const fields = [...preview.querySelectorAll<HTMLElement>('[title]')];
+  expect(fields.slice(2).map(field => field.title.match(/\((\w+)\)/)?.[1])).toEqual(columns);
+  expect(fields.slice(2).map(field => field.textContent)).toEqual(values);
+
+  const fieldsButton = host.querySelector<HTMLButtonElement>('.sl-model-fields button')!;
+  const fieldsPanel = document.getElementById(fieldsButton.getAttribute('aria-controls')!)!;
+  expect(fieldsPanel.hidden).toBe(true);
+  await click(fieldsButton);
+  expect(fieldsPanel.hidden).toBe(false);
+  expect(fieldsPanel.querySelector('.sl-model-field-legend')?.textContent).toBe(serialized.legend);
+});
+
+it('labels an empty model input cell on its closing separator', async () => {
+  mockFetch();
+  const host = await render();
+  await search(host, '808sd');
+  const preview = host.querySelector('[aria-label="当前变体的模型输入"]')!;
+  expect(preview.querySelector('[title="质感 (texture_tags) · 空值"]')?.textContent).toBe('|');
+  expect(preview.querySelector('[title="失真 (distortion)"]')?.textContent).toBe('not_obvious');
+});
+
+it('edits the selected sample category and refreshes the displayed model input', async () => {
+  const fetchMock = vi.fn(async (path: string, options?: RequestInit) => {
+    if (path === '/api/local/sample-annotations/category') {
+      expect(JSON.parse(String(options?.body))).toEqual({ key: 'piano', expectedCategory: '钢琴 piano', category: '键盘 keyboard' });
+      return {
+        ok: true, headers: new Headers({ 'Content-Type': 'application/json' }),
+        json: async () => ({ category: '键盘 keyboard', originalCategory: '钢琴 piano' }),
+      };
+    }
+    if (path.startsWith('/api/local/sample-annotations/')) {
+      const features = fixture.samples.find(item => item.key === 'piano')!.variants[0].features;
+      return {
+        ok: true, headers: new Headers({ 'Content-Type': 'application/json' }),
+        json: async () => ({ revision: 'initial', draft: null, effectiveFeatures: features, modelFeatures: features, pendingPublication: false }),
+      };
+    }
+    return { ok: true, json: async () => path === catalogPath ? fixture : readPublicJson(path) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const host = await render();
+  await search(host, 'piano');
+  const button = (label: string) => [...host.querySelectorAll('button')].find(item => item.textContent === label)!;
+  expect(host.querySelector('.sl-category-heading')?.textContent).toBe('目录类别：钢琴 piano');
+  expect(button('编辑目录类别')).toBeUndefined();
+  await click(button('钢琴 piano'));
+  await click(button('编辑标注'));
+  expect(host.querySelector('.sl-editor-fields')).not.toBeNull();
+  expect(host.querySelector('.sl-category-editor')?.textContent).not.toContain('piano index');
+  const input = host.querySelector<HTMLInputElement>('.sl-category-editor input')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '键盘 keyboard');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await click(button('保存类别'));
+  expect(host.querySelector('.sl-category-editor')).not.toBeNull();
+  expect(host.querySelector('.sl-category-heading')?.textContent).toBe('目录类别：键盘 keyboard');
+  await click(button('关闭编辑'));
+  await click(button('键盘 keyboard'));
+  expect(host.querySelector('[aria-label="当前变体的模型输入"]')?.textContent).toContain('@ piano | 键盘 keyboard');
+});
 
 it('opens matching directory branches during search and restores browsing when cleared', async () => {
   mockFetch();
@@ -133,7 +213,8 @@ it.each([
   expect(elements.slice(0, 2).every(audio => !audio.hasAttribute('src'))).toBe(true);
   await click(previewButton(rows(host)[24]));
   expect(pause).toHaveBeenCalledTimes(3);
-  expect(previewButton(rows(host)[24]).textContent).toBe('试听');
+  expect(previewButton(rows(host)[24]).getAttribute('aria-label')).toMatch(/^试听 /);
+  expect(previewButton(rows(host)[24]).querySelector('.lucide-volume-2')).not.toBeNull();
 });
 
 it('switches piano details without playing and stops audio hidden by a filter', async () => {
@@ -169,12 +250,12 @@ it('can retry a failed preview and releases it when leaving the page', async () 
   expect(host.querySelector('.sl-code')).not.toBeNull();
   await click(previewButton(row));
   expect(row.querySelector('[role="alert"]')).toBeNull();
-  expect(previewButton(row).textContent).toBe('停止试听');
+  expect(previewButton(row).getAttribute('aria-label')).toContain('停止试听');
 
   await act(async () => window.dispatchEvent(new Event('pagehide')));
   expect(pause).toHaveBeenCalledTimes(2);
   expect(elements.at(-1)?.hasAttribute('src')).toBe(false);
-  expect(previewButton(row).textContent).toBe('试听');
+  expect(previewButton(row).getAttribute('aria-label')).toMatch(/^试听 /);
 });
 
 it('ignores a late playback error after switching to a different recording', async () => {
@@ -185,11 +266,12 @@ it('ignores a late playback error after switching to a different recording', asy
   const host = await render();
   const [first, second] = rows(host);
   await click(previewButton(first));
-  expect(previewButton(first).textContent).toContain('加载中');
+  expect(previewButton(first).title).toContain('加载中');
+  expect(previewButton(first).querySelector('.lucide-loader-circle')).not.toBeNull();
   await click(previewButton(second));
   await act(async () => rejectFirst(new Error('interrupted')));
   expect(first.querySelector('[role="alert"]')).toBeNull();
-  expect(previewButton(second).textContent).toBe('停止试听');
+  expect(previewButton(second).getAttribute('aria-label')).toContain('停止试听');
 });
 
 it('resets the preview when a recording ends or the selected sound changes', async () => {
@@ -199,7 +281,7 @@ it('resets the preview when a recording ends or the selected sound changes', asy
   const [first] = rows(host);
   await click(previewButton(first));
   await act(async () => elements[0].dispatchEvent(new Event('ended')));
-  expect(previewButton(first).textContent).toBe('试听');
+  expect(previewButton(first).getAttribute('aria-label')).toMatch(/^试听 /);
   await click(previewButton(first));
   await click(directoryHeading(host, '军鼓'));
   const snare = [...host.querySelectorAll<HTMLButtonElement>('.sl-results button')]
@@ -207,7 +289,7 @@ it('resets the preview when a recording ends or the selected sound changes', asy
   await click(snare);
   expect(pause).toHaveBeenCalledTimes(2);
   expect(host.querySelector('.sl-code code')?.textContent).toBe('s("808sd:0")');
-  expect(previewButton(rows(host)[0]).textContent).toBe('试听');
+  expect(previewButton(rows(host)[0]).getAttribute('aria-label')).toMatch(/^试听 /);
 });
 
 it('offers a working retry after a failed catalog request', async () => {
@@ -240,14 +322,14 @@ it('keeps preview controls in sync and stops playback when selecting another var
   const [first, second] = rows(host);
   const detailPreview = host.querySelector<HTMLButtonElement>('.sl-detail .sl-preview-button')!;
   await click(detailPreview);
-  expect(previewButton(first).textContent).toBe('停止试听');
+  expect(previewButton(first).getAttribute('aria-label')).toContain('停止试听');
   await click(second.querySelector<HTMLButtonElement>('.sl-variant-select')!);
   expect(pause).toHaveBeenCalledTimes(1);
   expect(play).toHaveBeenCalledTimes(1);
-  expect(previewButton(first).textContent).toBe('试听');
+  expect(previewButton(first).getAttribute('aria-label')).toMatch(/^试听 /);
   expect(host.querySelector('.sl-detail h2')?.textContent).toBe('808cy:1');
   await click(previewButton(second));
-  expect(detailPreview.textContent).toBe('停止试听');
+  expect(detailPreview.getAttribute('aria-label')).toContain('停止试听');
 });
 
 it('replaces an excluded variant and clears the search and filters', async () => {
@@ -447,4 +529,43 @@ it('keeps published AI values visible without offering editing in production', a
   expect(host.querySelector('.sl-edit-toggle')).toBeNull();
   expect(host.textContent).toContain('查看 AI 原始标注');
   expect(fetchMock.mock.calls.every(([path]) => !path.startsWith('/api/local/'))).toBe(true);
+});
+
+it('displays and edits descriptions without including them in model input', async () => {
+  const { AnnotationEditor } = await import('./AnnotationEditor');
+  const sample = structuredClone(fixture.samples[0]);
+  const variant = sample.variants[0];
+  const description = { text: '低沉的轰鸣，突然截断。', associations: ['机械引擎'] };
+  Object.assign(variant, { soundDescription: description, descriptionStatus: 'model_initial' });
+  const review = { revision: 'r1', draft: null, effectiveFeatures: variant.features,
+    modelFeatures: variant.features, effectiveSoundDescription: description,
+    modelSoundDescription: description, pendingPublication: false };
+  const commands: Record<string, unknown>[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (path: string, options?: RequestInit) => {
+    if (path.startsWith('/api/local/sample-annotations/')) {
+      const command = options?.body ? JSON.parse(String(options.body)) : null;
+      if (command) commands.push(command);
+      return { ok: true, headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => command ? { ...review, revision: 'r2', draft: { ...command, revision: 'd1' } } : review };
+    }
+    return { ok: true, json: async () => path === catalogPath ? { ...fixture, samples: [sample] } : readPublicJson(path) };
+  }));
+  const host = await render();
+  expect(host.querySelector('[aria-label="声音描述"]')?.textContent).toContain(description.text);
+  expect(host.querySelector('[aria-label="声音描述"]')?.textContent).toContain('机械引擎');
+  expect(host.querySelector('[aria-label="当前变体的模型输入"]')?.textContent).not.toContain('机械引擎');
+  const guard = vi.fn();
+  await act(async () => root?.render(<AnnotationEditor hash={variant.sha256!} annotationStatus="model_initial"
+    references={[]} onGuardChange={guard} onPublished={() => {}} />));
+  const input = host.querySelector('textarea')!;
+  expect(input.value).toBe(description.text);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '修订后的轰鸣声');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(guard).toHaveBeenLastCalledWith('dirty');
+  const save = [...host.querySelectorAll('button')].find(b => b.textContent === '保存草稿')!;
+  await click(save);
+  expect(commands[0].soundDescription).toEqual({ text: '修订后的轰鸣声', associations: ['机械引擎'] });
+  expect(guard).toHaveBeenLastCalledWith(null);
 });

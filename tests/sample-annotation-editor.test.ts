@@ -100,3 +100,60 @@ it('resumes an interrupted publication without allocating a second confirmation 
   expect(JSON.parse(await readFile(releasesPath, 'utf8'))[sha]).toEqual(release);
   expect((await readCatalog()).samples[0].variants[0].features).toEqual(edited);
 });
+
+it('publishes descriptions for shared references, preserves originals, supports clearing, and leaves model input unchanged', async () => {
+  const { catalog, edit, catalogPath, readCatalog } = await fixture();
+  const description = { text: '低沉的轰鸣声。', associations: ['机械引擎'] };
+  for (const sample of catalog.samples) Object.assign(sample.variants[0], {
+    soundDescription: description, descriptionStatus: 'model_initial',
+  });
+  await writeFile(catalogPath, JSON.stringify(catalog));
+  const before = serializeFullCatalog(catalog).text;
+  const initial = await edit(sha);
+  expect(initial.modelSoundDescription).toEqual(description);
+  const revised = { text: '短促轰鸣并突然截断。', associations: ['发动机怠速'] };
+  const saved = await edit(sha, { action: 'save', revision: initial.revision, features: model, soundDescription: revised });
+  expect((await readCatalog()).samples[0].variants[0].soundDescription).toEqual(description);
+  expect((await createAnnotationEditor(root)(sha)).draft?.soundDescription).toEqual(revised);
+  const published = await edit(sha, { action: 'publish', revision: saved.revision });
+  for (const sample of (await readCatalog()).samples) expect(sample.variants[0]).toMatchObject({
+    soundDescription: revised, modelSoundDescription: description, descriptionStatus: 'expert_confirmed',
+  });
+  expect(serializeFullCatalog(await readCatalog()).text).toBe(before);
+  const cleared = { text: '', associations: [] };
+  const next = await edit(sha, { action: 'save', revision: published.revision, features: model, soundDescription: cleared });
+  await edit(sha, { action: 'publish', revision: next.revision });
+  expect((await readCatalog()).samples[0].variants[0]).toMatchObject({ soundDescription: cleared, modelSoundDescription: description });
+});
+
+it('loads raw model descriptions for old catalogs and validates descriptions before writing', async () => {
+  const { edit } = await fixture();
+  const rawFile = join(root, '.local/sample-annotations/annotations', 'f'.repeat(64), sha + '.json');
+  await mkdir(dirname(rawFile), { recursive: true });
+  await writeFile(rawFile, JSON.stringify({ status: 'valid', annotation: {
+    ...model, summary_zh: '轰鸣', source: { candidates_zh: ['引擎'] },
+  } }));
+  const initial = await edit(sha);
+  expect(initial.effectiveSoundDescription).toEqual({ text: '轰鸣', associations: ['引擎'] });
+  await expect(edit(sha, { action: 'save', revision: initial.revision, features: model,
+    soundDescription: { text: 'x'.repeat(1001), associations: [] },
+  })).rejects.toMatchObject({ status: 400 });
+});
+
+it('updates categories by sample key and preserves the source across edits and restoration', async () => {
+  const { catalog, edit, readCatalog } = await fixture();
+  const key = catalog.samples[0].key;
+  const command = { key, expectedCategory: 'percussion', category: ' 牛铃 cowbell ' };
+  expect(await edit.updateCategory(command)).toEqual({ category: '牛铃 cowbell', originalCategory: 'percussion' });
+  expect(await edit.updateCategory(command)).toEqual({ category: '牛铃 cowbell', originalCategory: 'percussion' });
+  const updated = await readCatalog();
+  expect(updated.samples[0].variants).toEqual(catalog.samples[0].variants);
+  expect(updated.samples[1]).toEqual(catalog.samples[1]);
+  expect(serializeFullCatalog(updated).text).toContain(`@ ${key} | 牛铃 cowbell`);
+  await expect(edit.updateCategory({ ...command, category: null })).rejects.toMatchObject({ status: 409 });
+  await expect(edit.updateCategory({ ...command, category: 'invalid\ncategory' })).rejects.toMatchObject({ status: 400 });
+  await edit.updateCategory({ key, expectedCategory: '牛铃 cowbell', category: null });
+  expect((await readCatalog()).samples[0]).toMatchObject({ category: null, originalCategory: 'percussion' });
+  await createAnnotationEditor(root).updateCategory({ key, expectedCategory: null, category: 'percussion' });
+  expect(await readCatalog()).toEqual(catalog);
+});

@@ -3,9 +3,9 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dirname, join } from 'node:path';
 import type { Plugin } from 'vite';
-import { applyExpertRelease, summarizeSample, validFeatures, validRelease, type ExpertRelease } from '../scripts/sample-annotations/listening-features';
+import { applyExpertRelease, extractSoundDescription, validSoundDescription, summarizeSample, validFeatures, validRelease, type ExpertRelease } from '../scripts/sample-annotations/listening-features';
 import type { SearchCatalog } from '../src/lib/sample-search';
-import type { AnnotationCommand, AnnotationDraft, AnnotationReview } from '../src/sample-library/annotation-editor-types';
+import type { AnnotationCommand, AnnotationDraft, AnnotationReview, SampleCategory, SampleCategoryUpdate } from '../src/sample-library/annotation-editor-types';
 
 class EditorError extends Error {
   readonly status: number;
@@ -61,11 +61,14 @@ export function createAnnotationEditor(root: string) {
     const modelVariant = variants.find(variant => variant.annotationStatus === 'model_initial');
     const original = modelVariant?.features ?? variants.find(variant => variant.modelFeatures)?.modelFeatures;
     let modelFeatures = original ?? null;
-    if (!modelFeatures && catalog.fingerprint && shaPattern.test(catalog.fingerprint)) {
+    let modelSoundDescription = variants.find(v => v.modelSoundDescription)?.modelSoundDescription
+      ?? variants.find(v => v.descriptionStatus === 'model_initial')?.soundDescription;
+    if ((!modelFeatures || !modelSoundDescription) && catalog.fingerprint && shaPattern.test(catalog.fingerprint)) {
       const raw = await optionalJson<{ status: string; annotation: Record<string, unknown> }>(
         join(data, 'annotations', catalog.fingerprint, hash + '.json'),
       );
       if (raw?.status === 'valid') {
+        modelSoundDescription ??= extractSoundDescription(raw.annotation);
         const { structure, timbre, envelope, space } = raw.annotation;
         const features = { structure, timbre, envelope, space };
         if (validFeatures(features)) modelFeatures = features;
@@ -79,6 +82,7 @@ export function createAnnotationEditor(root: string) {
         catalog.fingerprint, variants, currentRelease, currentDraft,
       ])).digest('hex');
       return {
+        effectiveSoundDescription: variants[0].soundDescription ?? modelSoundDescription, modelSoundDescription,
         revision, draft: currentDraft, modelFeatures, effectiveFeatures: variants[0].features,
         pendingPublication: currentDraft !== null && validRelease(currentRelease) && currentRelease.draftRevision === currentDraft.revision,
       };
@@ -92,7 +96,11 @@ export function createAnnotationEditor(root: string) {
     }
     if (command.action === 'save') {
       if (!validFeatures(command.features)) throw new EditorError(400, '听感字段不符合标注格式。');
-      const next = { revision: randomUUID(), features: command.features };
+      if (command.soundDescription !== undefined && !validSoundDescription(command.soundDescription)) {
+        throw new EditorError(400, '声音描述格式无效。');
+      }
+      const next = { revision: randomUUID(), features: command.features,
+        ...(command.soundDescription !== undefined && { soundDescription: command.soundDescription }) };
       await replaceJson(draftFile, next);
       return state(next);
     }
@@ -101,12 +109,15 @@ export function createAnnotationEditor(root: string) {
       return state(null);
     }
     if (command.action !== 'publish') throw new EditorError(400, '不支持的操作。');
-    if (!draft || !validFeatures(draft.features)) {
+    if (!draft || !validFeatures(draft.features)
+      || (draft.soundDescription !== undefined && !validSoundDescription(draft.soundDescription))) {
       throw new EditorError(400, '请先保存有效草稿。');
     }
 
     const confirmed: ExpertRelease = current.pendingPublication ? release : {
       status: 'expert_confirmed', features: draft.features,
+      ...(draft.soundDescription !== undefined ? { soundDescription: draft.soundDescription }
+        : release?.soundDescription !== undefined ? { soundDescription: release.soundDescription } : {}),
       version: validRelease(release) ? release.version + 1 : 1,
       confirmedAt: new Date().toISOString(), draftRevision: draft.revision,
     };
@@ -115,7 +126,7 @@ export function createAnnotationEditor(root: string) {
       for (const sample of catalog.samples) {
         if (!sample.variants.some(variant => variant.sha256 === hash)) continue;
         sample.variants = sample.variants.map(variant => variant.sha256 === hash
-          ? applyExpertRelease({ ...variant, modelFeatures }, confirmed) : variant);
+          ? applyExpertRelease({ ...variant, modelFeatures, ...(modelSoundDescription && { modelSoundDescription }) }, confirmed) : variant);
         sample.summary = summarizeSample(sample.variants);
       }
       await replaceJson(catalogFile, catalog);
@@ -130,11 +141,40 @@ export function createAnnotationEditor(root: string) {
     return run(hash);
   }
 
-  return (hash: string, command?: AnnotationCommand) => {
-    const result = queue.then(() => run(hash, command));
+  function enqueue<T>(operation: () => Promise<T>) {
+    const result = queue.then(operation);
     queue = result.catch(() => undefined);
     return result;
-  };
+  }
+
+  async function updateCategory(command: SampleCategoryUpdate): Promise<SampleCategory> {
+    if (typeof command?.key !== 'string'
+      || (command.expectedCategory !== null && typeof command.expectedCategory !== 'string')
+      || (command.category !== null && (typeof command.category !== 'string'
+        || command.category.length > 120 || /[\r\n]/.test(command.category)))) {
+      throw new EditorError(400, '目录类别格式无效。');
+    }
+    const catalog = await readJson<SearchCatalog>(catalogFile);
+    const sample = catalog.samples.find(item => item.key === command.key);
+    if (!sample) throw new EditorError(404, '该音色已不在目录中，请刷新页面。');
+    const category = command.category?.trim() || null;
+    if (sample.category !== category) {
+      if (sample.category !== command.expectedCategory) {
+        throw new EditorError(409, '目录类别已更新，请刷新页面后再修改。');
+      }
+      const original = sample.originalCategory === undefined ? sample.category : sample.originalCategory;
+      sample.category = category;
+      if (category === original) delete sample.originalCategory;
+      else sample.originalCategory = original;
+      await replaceJson(catalogFile, catalog);
+    }
+    return { category: sample.category, originalCategory: sample.originalCategory };
+  }
+
+  return Object.assign(
+    (hash: string, command?: AnnotationCommand) => enqueue(() => run(hash, command)),
+    { updateCategory: (command: SampleCategoryUpdate) => enqueue(() => updateCategory(command)) },
+  );
 }
 
 function isLocal(req: IncomingMessage) {
@@ -148,7 +188,7 @@ function isLocal(req: IncomingMessage) {
     : origin === 'http://' + req.headers.host;
 }
 
-async function readCommand(req: IncomingMessage): Promise<AnnotationCommand> {
+async function readBody(req: IncomingMessage) {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json') {
     throw new EditorError(415, '请求必须使用 JSON。');
   }
@@ -164,9 +204,7 @@ async function readCommand(req: IncomingMessage): Promise<AnnotationCommand> {
     chunks.push(chunk);
   }
   try {
-    const command = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (!command || typeof command.revision !== 'string') throw new Error();
-    return command;
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     throw new EditorError(400, '请求格式无效。');
   }
@@ -188,7 +226,14 @@ export function sampleAnnotationEditor(): Plugin {
           if (!isLocal(req)) throw new EditorError(403, '仅本机开发页面可编辑标注。');
           if (req.method !== 'GET' && req.method !== 'POST') throw new EditorError(405, '不支持的请求方式。');
           const hash = (req.url ?? '').slice(1);
-          const command = req.method === 'POST' ? await readCommand(req) : undefined;
+          if (hash === 'category' && req.method === 'POST') {
+            respond(res, 200, await edit.updateCategory(await readBody(req)));
+            return;
+          }
+          const command = req.method === 'POST' ? await readBody(req) : undefined;
+          if (req.method === 'POST' && typeof command?.revision !== 'string') {
+            throw new EditorError(400, '请求格式无效。');
+          }
           respond(res, 200, await edit(hash, command));
         } catch (error) {
           if (error instanceof EditorError) respond(res, error.status, { error: error.message });

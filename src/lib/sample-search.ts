@@ -4,7 +4,14 @@ export interface ListeningFeatures {
   envelope: { attack: string; shape: string; tail: string };
   space: { reverb: string };
 }
+export interface SoundDescription {
+  text: string;
+  associations: string[];
+}
 export interface SampleVariant {
+  soundDescription?: SoundDescription;
+  modelSoundDescription?: SoundDescription;
+  descriptionStatus?: 'model_initial' | 'expert_confirmed';
   id: string;
   sha256: string | null;
   index: number;
@@ -19,6 +26,8 @@ export interface SearchSample {
   key: string;
   aliases: string[];
   category: string | null;
+  originalCategory?: string | null;
+  categoryEvidence?: string | null;
   summary: string;
   variants: SampleVariant[];
 }

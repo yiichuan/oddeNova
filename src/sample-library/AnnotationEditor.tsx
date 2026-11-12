@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import schema from '../../docs/sample-annotation-schema-v2.json';
 import type { ListeningFeatures, SampleVariant } from '../lib/sample-search';
 import type { AnnotationCommand, AnnotationReview } from './annotation-editor-types';
@@ -60,26 +60,36 @@ async function requestReview(hash: string, command?: AnnotationCommand, signal?:
 }
 
 interface Props {
-  hash: string;
+  hash: string | null;
+  children?: ReactNode;
+  categoryGuard?: 'dirty' | 'busy' | null;
   annotationStatus: SampleVariant['annotationStatus'];
   references: { id: string; key: string; index: number; rootNote: string | null }[];
   onGuardChange: (guard: 'dirty' | 'busy' | null) => void;
   onPublished: () => void;
 }
 
-export function AnnotationEditor({ hash, annotationStatus, references, onGuardChange, onPublished }: Props) {
+export function AnnotationEditor({ hash, children, categoryGuard, annotationStatus, references, onGuardChange, onPublished }: Props) {
   const [review, setReview] = useState<AnnotationReview | null>(null);
   const [form, setForm] = useState<ListeningFeatures | null>(null);
+  const [descriptionForm, setDescriptionForm] = useState<{ text: string; associations: string } | null>(null);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const baseline = review?.draft?.features ?? review?.effectiveFeatures ?? emptyFeatures;
   const draft = form ?? baseline;
-  const changedCount = changedFieldCount(draft, baseline);
+  const descriptionBaseline = review?.draft?.soundDescription ?? review?.effectiveSoundDescription;
+  const description = descriptionForm ?? {
+    text: descriptionBaseline?.text ?? '', associations: descriptionBaseline?.associations.join('\n') ?? '',
+  };
+  const descriptionChanges = Number(description.text !== (descriptionBaseline?.text ?? ''))
+    + Number(description.associations !== (descriptionBaseline?.associations.join('\n') ?? ''));
+  const changedCount = changedFieldCount(draft, baseline) + descriptionChanges;
   const dirty = changedCount > 0;
 
   useEffect(() => {
+    if (!hash) return;
     const controller = new AbortController();
     void requestReview(hash, undefined, controller.signal).then(result => {
       if (!controller.signal.aborted) setReview(result);
@@ -93,13 +103,23 @@ export function AnnotationEditor({ hash, annotationStatus, references, onGuardCh
     const next = { ...draft, [section]: { ...draft[section], [field]: value } };
     setForm(next);
     setFeedback('');
-    onGuardChange(changedFieldCount(next, baseline) > 0 ? 'dirty' : null);
+    onGuardChange(changedFieldCount(next, baseline) + descriptionChanges > 0 ? 'dirty' : null);
+  }
+
+  function editDescription(field: 'text' | 'associations', value: string) {
+    const next = { ...description, [field]: value };
+    setDescriptionForm(next);
+    setFeedback('');
+    onGuardChange(changedFieldCount(draft, baseline) > 0
+      || next.text !== (descriptionBaseline?.text ?? '')
+      || next.associations !== (descriptionBaseline?.associations.join('\n') ?? '') ? 'dirty' : null);
   }
 
   function reload() {
     if (dirty && !window.confirm('重新载入会丢弃未保存的修改。继续吗？')) return;
     setReview(null);
     setForm(null);
+    setDescriptionForm(null);
     setError('');
     setFeedback('');
     onGuardChange(null);
@@ -107,6 +127,7 @@ export function AnnotationEditor({ hash, annotationStatus, references, onGuardCh
   }
 
   async function submit(command: AnnotationCommand) {
+    if (!hash || categoryGuard === 'busy') return;
     setBusy(true);
     onGuardChange('busy');
     setError('');
@@ -116,6 +137,7 @@ export function AnnotationEditor({ hash, annotationStatus, references, onGuardCh
       const result = await requestReview(hash, command);
       setReview(result);
       setForm(null);
+      setDescriptionForm(null);
       guard = null;
       if (command.action === 'publish') {
         onPublished();
@@ -130,6 +152,7 @@ export function AnnotationEditor({ hash, annotationStatus, references, onGuardCh
         if (latest?.pendingPublication && latest.draft?.revision === review?.draft?.revision) {
           setReview(latest);
           setForm(null);
+          setDescriptionForm(null);
         }
       }
     } finally {
@@ -139,17 +162,19 @@ export function AnnotationEditor({ hash, annotationStatus, references, onGuardCh
   }
 
   const model = review?.modelFeatures;
-  const locked = busy || review?.pendingPublication;
+  const locked = busy || categoryGuard === 'busy' || review?.pendingPublication;
   const status = review?.pendingPublication ? '上次发布未完成，请重试发布。'
     : dirty ? `有 ${changedCount} 项未保存修改，请先保存草稿。`
     : feedback || (review?.draft ? '草稿已保存，尚未用于检索。' : effectiveStatusLabels[annotationStatus]);
   const errorMessage = error && <p className="sl-editor-error" role="alert">
-    {error} <button type="button" disabled={busy} onClick={reload}>重新载入标注</button>
+    {error} <button type="button" disabled={busy || categoryGuard === 'busy'} onClick={reload}>重新载入标注</button>
   </p>;
 
   return <section className="sl-editor" aria-label="人工标注编辑">
     <div className="sl-editor-content sl-scroll">
-      {!review ? errorMessage || <p role="status">正在加载标注…</p> : <>
+      {children}
+      {!hash ? <p className="sl-note">缺少音频哈希，暂不可编辑听感标注。</p>
+        : !review ? errorMessage || <p role="status">正在加载标注…</p> : <>
         {references.length > 1 ? <details className="sl-editor-scope">
           <summary>此音频对应 {references.length} 个音色引用，发布后将同步更新</summary>
           <ul className="sl-edit-references">
@@ -159,6 +184,30 @@ export function AnnotationEditor({ hash, annotationStatus, references, onGuardCh
           </ul>
         </details> : <p className="sl-editor-scope">仅影响当前音色引用</p>}
         {!model && <p className="sl-note">没有可对照的 AI 原始标注。</p>}
+        <fieldset className="sl-description-editor" disabled={locked}>
+          <legend>声音描述</legend>
+          <p className="sl-note">描述与听感联想供人工复核，暂不发送给选择模型。联想不代表真实声源。</p>
+          {(['text', 'associations'] as const).map(field => {
+            const title = field === 'text' ? '声音描述' : '听感联想（每行一项）';
+            const original = field === 'text' ? review.modelSoundDescription?.text
+              : review.modelSoundDescription?.associations.join('\n');
+            const baselineValue = field === 'text' ? descriptionBaseline?.text
+              : descriptionBaseline?.associations.join('\n');
+            return <div key={field} className="sl-editor-field" data-unsaved={description[field] !== (baselineValue ?? '')}>
+              <label>
+                <span className="sl-editor-field-heading">{title}
+                  {description[field] !== (baselineValue ?? '') && <small className="sl-editor-unsaved">未保存</small>}
+                </span>
+                <textarea rows={field === 'text' ? 3 : 2} maxLength={field === 'text' ? 1000 : 1009}
+                  value={description[field]} onChange={event => editDescription(field, event.target.value)} />
+              </label>
+              {original !== undefined && original !== description[field] && <div className="sl-editor-original">
+                <small>AI 原值：{original || '无'}</small>
+                <button type="button" onClick={() => editDescription(field, original)}>恢复 AI 原值（{title}）</button>
+              </div>}
+            </div>;
+          })}
+        </fieldset>
         <div className="sl-editor-fields">
           {sectionColumns.map(column => <div key={column[0]} className="sl-editor-column">
             {column.map(section => <fieldset key={section} disabled={locked}>
@@ -226,8 +275,9 @@ export function AnnotationEditor({ hash, annotationStatus, references, onGuardCh
             }
           }}>丢弃草稿</button>
         <button type="button" disabled={locked || (!dirty && Boolean(review.draft))}
-          onClick={() => void submit({ action: 'save', revision: review.revision, features: draft })}>保存草稿</button>
-        <button type="button" className="sl-publish" disabled={busy || dirty || !review.draft}
+          onClick={() => void submit({ action: 'save', revision: review.revision, features: draft,
+            soundDescription: { text: description.text, associations: description.associations.split('\n').map(s => s.trim()).filter(Boolean) } })}>保存草稿</button>
+        <button type="button" className="sl-publish" disabled={busy || dirty || Boolean(categoryGuard) || !review.draft}
           onClick={() => void submit({ action: 'publish', revision: review.revision })}>
           {review.pendingPublication ? '重试发布' : '确认发布'}
         </button>

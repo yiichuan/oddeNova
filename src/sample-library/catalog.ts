@@ -23,7 +23,9 @@ export interface CatalogFilters {
   textures: readonly string[];
 }
 
-export const emptyFilters: CatalogFilters = { status: 'all', category: undefined, brightness: '', textures: [] };
+export const emptyFilters: CatalogFilters = {
+  status: 'all', category: undefined, brightness: '', textures: [],
+};
 
 function featureValues(variant: SampleVariant): string[] {
   if (!variant.features) return [];
@@ -32,17 +34,6 @@ function featureValues(variant: SampleVariant): string[] {
 
 function searchableLabel(value: string) {
   return `${value} ${labels[value] ?? ''}`.toLowerCase();
-}
-
-export function listeningSummary(variant: SampleVariant): string[] {
-  const { features } = variant;
-  if (!features) return [];
-  const { brightness, body, texture_tags } = features.timbre;
-  const { attack } = features.envelope;
-  const meaningful = (value: string) => Boolean(value && value !== 'unknown' && value !== 'not_applicable');
-  const values = [brightness, body, ...texture_tags].filter(meaningful).map(value => labels[value] ?? value);
-  if (meaningful(attack)) values.push(`${labels[attack] ?? attack}起音`);
-  return [...new Set(values)];
 }
 
 export function indexCatalog(samples: SearchSample[]) {
