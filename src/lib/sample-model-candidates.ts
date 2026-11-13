@@ -90,3 +90,21 @@ function resolveCandidateFiles(value: unknown, rows: ReturnType<typeof serialize
       playback:variant.playback,variantCount:sample.variants.length,alternatives:[],selectionReason:c.reason};
   });
 }
+
+export const READ_SAMPLE_DETAILS_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: 'readSampleDetails',
+    description: '批量展开导览中尚未读取的准确音色名称，返回文件级标注、variantId 和全部已读音色名称。已读详情保留在对话中，可直接比较。',
+    parameters: {
+      type: 'object', additionalProperties: false, required: ['names'],
+      properties: { names: { type: 'array', minItems: 1, items: { type: 'string' } } },
+    },
+  },
+};
+export const SAMPLE_GUIDE_SEARCH_PROMPT = `目标：为本批音色需求选择可用的采样文件。
+原则：尊重明确乐器和奏法，听感作为偏好，联想不代表实际声源。按需求独立选样。
+知识：导览按类别列出音色名称和听感概览。每个音色展开后可看到独立文件的证据和 variantId。工具反馈列出全部已读音色，其详情仍在对话中，可直接使用。
+引导：首次展开时，可合并读取几个相关且有代表性的音色，覆盖已确定的需求。已有候选满足需求且文件级证据足以说明取舍时，直接返回结果。继续搜索应针对具体缺口，例如现有候选尾音过长、缺少要求的奏法或可演奏音高；优先读取有望补足缺口的未读音色。避免为了寻找可能存在的更优声音而反复探索。理由引用文件级信息并说明局限。
+约束：只使用已读取的 variantId。最后只调用一次 returnCandidates，按查询 id 返回各组；不合适时返回空组。limit 是期望数量。
+自检：是否覆盖全部查询？是否尊重声源、奏法和听感需求？已有证据是否足够返回？继续展开能够解决什么尚未满足的需求？`;

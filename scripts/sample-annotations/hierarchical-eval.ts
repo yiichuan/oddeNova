@@ -28,14 +28,14 @@ const cases = [
   ['hollow-drop', [['accent', '像水滴一样空心、圆润、短促的点缀声，类别不限']]],
   ['machine-breath', [['texture', '像老旧机器喘息的粗糙起伏声，有颗粒感，类别不限']]],
 ] as const;
-const modes = ['structured', 'described', 'hierarchical'] as const;
+const modes = ['structured', 'hierarchical'] as const;
 type Mode = typeof modes[number];
 
 const detailsTool = {
   type: 'function',
   function: {
     name: 'readSampleDetails',
-    description: '展开导览中的一个或多个准确音色名称，读取文件级标注和 variantId。',
+    description: '批量展开导览中尚未读取的准确音色名称，返回文件级标注、variantId 和全部已读音色名称。已读详情保留在对话中，可直接比较。',
     parameters: {
       type: 'object', additionalProperties: false, required: ['names'],
       properties: { names: { type: 'array', minItems: 1, items: { type: 'string' } } },
@@ -45,15 +45,15 @@ const detailsTool = {
 const overviewPrompt = `目标：根据每个音色的已有文件标注写简短的检索导览。
 原则：依据标注写主要听感和有辨识度的内部差异，尽量保留少量但独特的声音。
 知识：同名音色可有多个根音、奏法或截然不同的变体。联想表示听感相似，不代表声源类别。
-引导：每项通常两句以内。只有一个文件时概括它的听感即可。异质音色可以写得稍长。
-约束：不根据名称猜测，不把不同文件各自的特征合并为一个虚构文件。输出 JSON 对象，键为输入名称，值为中文概览。
-自检：名称是否完整且准确？概览是否能帮助按听感查找？`;
+引导：每项通常两句以内，先写主要听感，再用“部分偏……，另一些偏……”说明有辨识度的内部差异。只有一个文件时概括它的听感即可。异质音色可以写得稍长。
+约束：不根据名称猜测，不把不同文件各自的特征合并为一个虚构文件。不引用文件编号、variantId 或播放代码，不逐文件列举。输出 JSON 对象，键为输入名称，值为中文概览。
+自检：名称是否完整且准确？主要听感和少数独特声音是否有标注依据？是否避免相互矛盾的概括？概览是否能帮助判断该音色组值得展开？`;
 const browsePrompt = `目标：为本批音色需求选择可用的采样文件。
 原则：尊重明确乐器和奏法，听感作为偏好，联想不代表实际声源。按需求独立选样。
-知识：导览按类别列出音色名称、变体数和听感概览。每个音色展开后可看到独立文件的证据和 variantId。
-引导：根据导览调用 readSampleDetails，一次可读多个相关音色。已有证据不足时，可以查看其他音色。理由引用文件级信息并说明局限。
+知识：导览按类别列出音色名称和听感概览。每个音色展开后可看到独立文件的证据和 variantId。工具反馈列出全部已读音色，其详情仍在对话中，可直接使用。
+引导：首次展开时，可合并读取几个相关且有代表性的音色，覆盖已确定的需求。已有候选满足需求且文件级证据足以说明取舍时，直接返回结果。继续搜索应针对具体缺口，例如现有候选尾音过长、缺少要求的奏法或可演奏音高；优先读取有望补足缺口的未读音色。避免为了寻找可能存在的更优声音而反复探索。理由引用文件级信息并说明局限。
 约束：只使用已读取的 variantId。最后只调用一次 returnCandidates，按查询 id 返回各组；不合适时返回空组。limit 是期望数量。
-自检：是否覆盖全部查询？是否尊重声源、奏法和听感需求？`;
+自检：是否覆盖全部查询？是否尊重声源、奏法和听感需求？已有证据是否足够返回？继续展开能够解决什么尚未满足的需求？`;
 
 const { model, baseURL } = PROVIDER_PRESETS.deepseek;
 const settings = { model, thinking: { type: 'disabled' }, temperature: 0, max_tokens: 4096 };
@@ -81,7 +81,6 @@ async function main() {
       cell(variant.playback),
     ].join('|'));
   }
-  const described = [detailLegend, ...Array.from(details.values(), d => d.lines.join('\n'))].join('\n');
   if (process.argv.includes('--dry-run')) {
     const variants = Object.keys(baseline.rows).length;
     const categories = new Set(catalog.samples.map(sample => sample.category));
@@ -92,12 +91,14 @@ async function main() {
     }
     console.log(JSON.stringify({
       names: details.size, variants, categories: categories.size, trials: cases.length * modes.length,
-      structuredBytes: Buffer.byteLength(baseline.text), describedBytes: Buffer.byteLength(described),
+      structuredBytes: Buffer.byteLength(baseline.text),
     }, null, 2));
     return;
   }
   if (!key) throw Error('需要 DEEPSEEK_API_KEY');
-  const hash = createHash('sha256').update(source).update(overviewPrompt).update(model).digest('hex');
+  const hash = createHash('sha256').update(source)
+    .update(await readFile(new URL(import.meta.url)))
+    .update(JSON.stringify(settings)).digest('hex');
   const directory = join('.local/sample-annotations/hierarchical-eval', hash.slice(0, 12));
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, 'config.json'), JSON.stringify({ hash, settings, cases, modes, names: details.size, variants: Object.keys(baseline.rows).length }, null, 2));
@@ -139,18 +140,35 @@ async function main() {
     const previousAttempt = existing ? null : await readFile(join(directory, requestFile), 'utf8')
       .then(s => JSON.parse(s) as Trace, () => null);
     if (previousAttempt?.usage) trace.push({ file: requestFile, ms: previousAttempt.ms, usage: previousAttempt.usage });
-    const output = existing?.output ?? JSON.parse((await call(previousAttempt ? `overview-${i}-retry-request.json` : requestFile, {
+    const retryFile = `overview-${i}-retry-request.json`;
+    const previousRetry = existing ? null : await readFile(join(directory, retryFile), 'utf8')
+      .then(s => JSON.parse(s) as Trace, () => null);
+    if (previousRetry?.usage) trace.push({ file: retryFile, ms: previousRetry.ms, usage: previousRetry.usage });
+    const responseFile = previousRetry ? `overview-${i}-numbered-request.json` : previousAttempt ? retryFile : requestFile;
+    const keys = chunk.map((sample, index) => previousAttempt ? String(index + 1) : sample.key);
+    const rawOutput = existing?.output ?? JSON.parse((await call(responseFile, {
       response_format: { type: 'json_object' },
       ...(previousAttempt && { max_tokens: 8192 }),
       messages: [{ role: 'system', content: overviewPrompt }, {
-        role: 'user', content: chunk.map(s => details.get(s.key)!.lines.join('\n')).join('\n') +
+        role: 'user', content: JSON.stringify(chunk.map((sample, index) => ({
+          name: keys[index],
+          category: sample.category,
+          variants: sample.variants.map(variant => ({
+            rootNote: variant.rootNote,
+            articulation: variant.articulation,
+            features: variant.features,
+            soundDescription: variant.soundDescription,
+          })),
+        }))) +
           '\n输出 JSON。每个音色名称只对应一段简短字符串，格式如 {"音色名":"主要听感及内部差异。"}。值不能是对象或数组，不要逐文件列举。',
       }],
     }, AbortSignal.timeout(180_000), trace)).content ?? '');
-    if (!output || Object.keys(output).length !== chunk.length ||
-      chunk.some(s => !Object.hasOwn(output, s.key) || typeof output[s.key] !== 'string' || !output[s.key].trim())) {
+    const outputKeys = existing ? chunk.map(sample => sample.key) : keys;
+    if (!rawOutput || Object.keys(rawOutput).length !== chunk.length ||
+      outputKeys.some(key => !Object.hasOwn(rawOutput, key) || typeof rawOutput[key] !== 'string' || !rawOutput[key].trim())) {
       throw Error(`导览批次 ${i} 未覆盖准确的音色名称`);
     }
+    const output = Object.fromEntries(chunk.map((sample, index) => [sample.key, rawOutput[outputKeys[index]]]));
     for (const sample of chunk) overviews.set(sample.key, output[sample.key].trim());
     const savedTrace: Trace[] = existing?.trace ?? trace;
     overviewTrace.push(...savedTrace);
@@ -171,9 +189,8 @@ async function main() {
     const loaded = new Set<string>();
     const allowed = Object.create(null) as typeof baseline.rows;
     const tools = mode === 'hierarchical' ? [detailsTool, MODEL_BATCH_SEARCH_TOOL] : [MODEL_BATCH_SEARCH_TOOL];
-    const content = { structured: baseline.text, described, hierarchical: guide }[mode];
-    const prompt = mode === 'hierarchical' ? browsePrompt : MODEL_BATCH_SEARCH_PROMPT +
-      (mode === 'described' ? '\n描述和听感联想是辅助证据。播放示例只用于验证文件映射。' : '');
+    const content = mode === 'hierarchical' ? guide : baseline.text;
+    const prompt = mode === 'hierarchical' ? browsePrompt : MODEL_BATCH_SEARCH_PROMPT;
     const messages: Message[] = [
       { role: 'system', content: prompt }, { role: 'user', content },
       { role: 'user', content: JSON.stringify({ queries }) },
@@ -204,7 +221,7 @@ async function main() {
           for (const name of new Set<string>(names)) {
             const detail = details.get(name);
             if (!detail) lines.push(`未知音色名称：${cell(name)}`);
-            else if (loaded.has(name)) lines.push(`已展开：${cell(name)}`);
+            else if (loaded.has(name)) lines.push(`已展开：${cell(name)}。完整详情在此前工具消息中，请直接使用。`);
             else {
               if (!Object.keys(allowed).length) lines.push(detailLegend);
               lines.push(...detail.lines);
@@ -212,6 +229,8 @@ async function main() {
               for (const variantId of detail.ids) allowed[variantId] = baseline.rows[variantId];
             }
           }
+          lines.push(`全部已读音色：${JSON.stringify([...loaded])}`);
+          lines.push('已读详情保留在对话中。候选和证据充分时可直接返回；仍有具体需求缺口时可展开相关未读音色。');
           messages.push({ role: 'tool', tool_call_id: toolCall.id, content: lines.join('\n') });
         }
       }
@@ -234,7 +253,6 @@ async function main() {
 
   const jobs = await Promise.allSettled([
     runMode('structured'),
-    runMode('described'),
     (async () => {
       let next = 1;
       const workers = await Promise.allSettled(Array.from({ length: 6 }, async () => {
@@ -250,10 +268,12 @@ async function main() {
       const categories = Map.groupBy(catalog.samples, sample => sample.category ?? '未分类');
       const guide = [...categories].flatMap(([category, samples]) => [
         `@ ${cell(category)}（${samples.length} 个音色）`,
-        ...samples.map(s => [s.key, s.variants.length, overviews.get(s.key)].map(cell).join('|')),
+        ...samples.map(s => [s.key, overviews.get(s.key)].map(cell).join('|')),
       ]).join('\n');
       await writeFile(join(directory, 'guide.txt'), guide);
-      await runMode('hierarchical', '目录列顺序：音色名称|文件变体数|听感概览\n' + guide);
+      const summaries = Object.fromEntries(catalog.samples.map(sample => [sample.key, overviews.get(sample.key)]));
+      await writeFile(join(directory, 'guide.json'), JSON.stringify(summaries, null, 2) + '\n');
+      await runMode('hierarchical', '目录列顺序：音色名称|听感概览\n' + guide);
     })(),
   ]);
 
@@ -273,7 +293,8 @@ async function main() {
     if (!t) continue;
     lines.push(`| ${mode} | ${id} | ${success(t) ? '有效' : '失败'} | ${t.trace.length} | ${input(t) ?? '—'} | ${total(t.trace, 'completion_tokens') ?? '—'} | ${total(t.trace, 'prompt_cache_hit_tokens') ?? '—'} | ${(t.ms / 1000).toFixed(1)} | ${mode === 'hierarchical' ? t.names.length + ' / ' + t.variants : '—'} |`);
   }
-  for (const mode of ['structured', 'described']) {
+  {
+    const mode = 'structured';
     lines.push('', `相对 ${mode} 的输入 token 降幅，比较两边均有完整 usage 的查询。`);
     const pairs = cases.flatMap(([id]) => {
       const a = trials.find(t => t.mode === mode && t.id === id);
