@@ -1,3 +1,5 @@
+import { PUNCHCARD_BLUR_LAYER_ATTRIBUTE } from './punchcard-blur';
+
 /**
  * The canvas the studio's non-underscored painters share — `.punchcard()`,
  * `.pianoroll()`, `.spiral()`, and so on — scoped to the code panel instead of
@@ -90,7 +92,13 @@ export function createCodePanelDrawContext({
 
   return {
     context,
-    clear: () => context.clearRect(0, 0, canvas.width, canvas.height),
-    dispose: () => observer.disconnect(),
+    clear: () => {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      panel.querySelectorAll(`[${PUNCHCARD_BLUR_LAYER_ATTRIBUTE}]`).forEach((layer) => layer.remove());
+    },
+    dispose: () => {
+      observer.disconnect();
+      panel.querySelectorAll(`[${PUNCHCARD_BLUR_LAYER_ATTRIBUTE}]`).forEach((layer) => layer.remove());
+    },
   };
 }

@@ -252,7 +252,10 @@ export default function App() {
   const modelSettings = useModelSettingsDraft(resetClient);
   const themePreference = useThemePreference();
   const animationPreference = useResolvedAnimation();
-  const studioAnimationVisible = useStudioAnimationVisible();
+  // Embedded Remotion captures need the visualization even when the viewer's
+  // saved studio preference has it turned off. The query flag is video-only.
+  const videoCapture = new URLSearchParams(window.location.search).get('video') === 'true';
+  const studioAnimationVisible = useStudioAnimationVisible() || videoCapture;
   const [accountOpen, setAccountOpen] = useState(false);
   const [guestImportSessions, setGuestImportSessions] = useState<Session[] | null>(null);
   /* `null` while nothing has gone wrong; otherwise which of the two things
@@ -379,6 +382,13 @@ export default function App() {
     handleChatFocusChange,
     handleCodeFocusChange,
   } = useLayout();
+  // [video] Wait for session restoration before Remotion injects code. The
+  // editor is mounted throughout startup and attach() retains this code even
+  // if its CodeMirror import finishes a moment later.
+  useEffect(() => {
+    if (!isVideoMode || sessions.isLoading || !strudel.engineReady) return;
+    window.parent.postMessage({ type: 'VIDEO_APP_READY' }, '*');
+  }, [isVideoMode, sessions.isLoading, strudel.engineReady]);
   useEffect(() => {
     currentIdRef.current = sessions.currentId;
   }, [sessions.currentId]);
@@ -1027,7 +1037,9 @@ export default function App() {
 
   // When the session switches, restore its code into the editor and stop audio
   useEffect(() => {
-    if (!current) return;
+    // Remotion owns the editor buffer in video mode and provides the exact
+    // playback code over postMessage after the app/editor handshake completes.
+    if (!current || isVideoMode) return;
     if (isMobile) mobileCodeRestoreRef.current = { id: current.id, code: current.code };
     skipNextManualSyncSessionRef.current = current.id;
     // Both belong to the reading they were opened from; the outgoing session
@@ -1037,7 +1049,7 @@ export default function App() {
     strudel.setCode(current.code);
     strudel.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run when session ID changes
-  }, [current?.id]);
+  }, [current?.id, isVideoMode]);
 
   const setManualCode = sessions.setManualCode;
   const flushCloudSaves = sessions.flushCloudSaves;

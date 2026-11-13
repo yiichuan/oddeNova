@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCodePanelAccent, isHuedColor } from '../codepanel-accent';
+import { activeHuedColor, createCodePanelAccent, isHuedColor } from '../codepanel-accent';
 
 describe('isHuedColor', () => {
   it('accepts the 360 piece\'s own accent', () => {
@@ -96,5 +96,17 @@ describe('createCodePanelAccent', () => {
     accent.reset();
 
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('activeHuedColor', () => {
+  it('follows the currently active .color() hap instead of latching the first colour', () => {
+    const haps = [
+      { isActive: (time: number) => time < 0.5, value: { color: '#C92D18' } },
+      { isActive: (time: number) => time >= 0.5, value: { color: '#F5D397' } },
+    ];
+
+    expect(activeHuedColor(haps, 0.25)).toBe('#C92D18');
+    expect(activeHuedColor(haps, 0.75)).toBe('#F5D397');
   });
 });

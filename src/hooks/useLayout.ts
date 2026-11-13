@@ -65,6 +65,7 @@ export interface UseLayoutReturn {
 export function useLayout(): UseLayoutReturn {
   const isMobile = useIsMobile();
   const keyboardHeight = useKeyboardHeight();
+  const videoCapture = new URLSearchParams(window.location.search).get('video') === 'true';
 
   // ── Mobile chrome ──────────────────────────────────────────────────────────
   const [codeSheetOpen, setCodeSheetOpen] = useState(false);
@@ -106,7 +107,9 @@ export function useLayout(): UseLayoutReturn {
   // Dragging the divider past the sidebar's minimum width closes the
   // conversation column outright, handing its floor space to the studio.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [vizHeight, setVizHeight] = useState(() => window.innerHeight * VIZ_RATIO_DEFAULT);
+  const [vizHeight, setVizHeight] = useState(() => videoCapture
+    ? (window.innerHeight - VIZ_DIVIDER_HEIGHT) / 3
+    : window.innerHeight * VIZ_RATIO_DEFAULT);
   // Collapsing hides the viz pane; reopening it always returns to the default
   // split rather than whatever height it happened to close at. The pane itself
   // stays mounted throughout — it's an iframe whose galaxy is generated once
@@ -132,13 +135,20 @@ export function useLayout(): UseLayoutReturn {
     if (!main || main.offsetHeight === 0) return;
     const h = main.offsetHeight;
     setSidebarWidth(w => Math.max(window.innerWidth * SIDEBAR_RATIO_MIN, Math.min(window.innerWidth * SIDEBAR_RATIO_MAX, w)));
+    if (videoCapture) {
+      // CodePanel height is the rest of main after the visualizer and divider:
+      // h - viz - 6 = 2 * viz, giving the requested 2:1 visible-area ratio.
+      setVizHeight((h - VIZ_DIVIDER_HEIGHT) / 3);
+      vizMeasured.current = true;
+      return;
+    }
     if (!vizMeasured.current) {
       vizMeasured.current = true;
       setVizHeight(h * VIZ_RATIO_DEFAULT);
       return;
     }
     setVizHeight(v => Math.max(h * VIZ_RATIO_MIN, Math.min(h * VIZ_RATIO_MAX, v)));
-  }, []);
+  }, [videoCapture]);
 
   useLayoutEffect(() => {
     // Measured layout drives the split; reading it needs the committed DOM.

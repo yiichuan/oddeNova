@@ -219,8 +219,29 @@ function usePrefersReducedMotion() {
  * rather than a constant.
  */
 function ControlsLightField({ idPrefix }: { idPrefix: string }) {
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const videoMode = new URLSearchParams(window.location.search).get('video') === 'true';
+
+  useEffect(() => {
+    if (!videoMode) return;
+    const handleVideoTime = (event: MessageEvent) => {
+      if (event.data?.type !== 'VIDEO_TIME' || !Number.isFinite(event.data.time)) return;
+      const currentTime = event.data.time * 1000;
+      fieldRef.current
+        ?.querySelectorAll<HTMLElement | SVGElement>('.code-panel-light-blob, .code-panel-light-ball')
+        .forEach((element) => {
+          element.getAnimations().forEach((animation) => {
+            animation.currentTime = currentTime;
+          });
+        });
+    };
+    window.addEventListener('message', handleVideoTime);
+    return () => window.removeEventListener('message', handleVideoTime);
+  }, [videoMode]);
+
   return (
     <div
+      ref={fieldRef}
       data-testid="code-panel-light-field"
       className="code-panel-light-field"
       aria-hidden="true"
@@ -228,7 +249,11 @@ function ControlsLightField({ idPrefix }: { idPrefix: string }) {
       {COMPOSITE_LIGHT_GROUP_ORDER.map((groupIndex, index) => {
         const group = ORGANIC_LIGHT_GROUPS[groupIndex];
         return (
-          <span className="code-panel-light-blob" key={groupIndex}>
+          <span
+            className="code-panel-light-blob"
+            key={groupIndex}
+            style={{ animationPlayState: videoMode ? 'paused' : undefined }}
+          >
             <svg viewBox="0 0 200 160" preserveAspectRatio="none" focusable="false">
               <defs>
                 <filter id={`${idPrefix}-${index}`} x="-35%" y="-35%" width="170%" height="170%">
@@ -251,7 +276,10 @@ function ControlsLightField({ idPrefix }: { idPrefix: string }) {
                     cy={ball.cy}
                     r={ball.r}
                     className="code-panel-light-ball"
-                    style={ballDriftVars(ball, group.motionScale)}
+                    style={{
+                      ...ballDriftVars(ball, group.motionScale),
+                      animationPlayState: videoMode ? 'paused' : undefined,
+                    }}
                   />
                 ))}
               </g>
@@ -279,6 +307,10 @@ function PlaybackProgress({
 }) {
   const totalSeconds = useMemo(() => getStrudelLoopDurationSeconds(code), [code]);
   const displayCycles = useMemo(() => code.trim() ? getStrudelLoopCycles(code) : 0, [code]);
+  const isVideoMode = (() => {
+    if (new URLSearchParams(window.location.search).get('video') === 'true') return true;
+    try { return window.self !== window.top; } catch { return true; }
+  })();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const elapsedRef = useRef(0);
@@ -292,10 +324,21 @@ function PlaybackProgress({
     setElapsedSeconds(seconds);
   }, []);
 
+  useEffect(() => {
+    if (!isVideoMode) return;
+    const handleVideoTime = (event: MessageEvent) => {
+      if (event.data?.type === 'VIDEO_TIME' && typeof event.data.time === 'number') {
+        updateElapsedSeconds(Math.max(0, event.data.time));
+      }
+    };
+    window.addEventListener('message', handleVideoTime);
+    return () => window.removeEventListener('message', handleVideoTime);
+  }, [isVideoMode, updateElapsedSeconds]);
+
   // Stopping (unlike pausing) rewinds the playhead, and so does losing a
   // playable duration. Adjusted on the transition during render rather than in
   // an effect, which would cost a cascading render.
-  const isRewound = (!isPlaying || totalSeconds <= 0) && !isPaused;
+  const isRewound = !isVideoMode && (!isPlaying || totalSeconds <= 0) && !isPaused;
   const [wasRewound, setWasRewound] = useState(isRewound);
   if (isRewound !== wasRewound) {
     setWasRewound(isRewound);
@@ -303,6 +346,7 @@ function PlaybackProgress({
   }
 
   useEffect(() => {
+    if (isVideoMode) return;
     if (!isPlaying || totalSeconds <= 0) {
       // Rewinding the resume origin belongs here: refs cannot be written during render.
       if (!isPaused) elapsedRef.current = 0;
@@ -323,7 +367,7 @@ function PlaybackProgress({
     };
     frame = window.requestAnimationFrame(update);
     return () => window.cancelAnimationFrame(frame);
-  }, [code, isPaused, isPlaying, totalSeconds, updateElapsedSeconds]);
+  }, [code, isPaused, isPlaying, isVideoMode, totalSeconds, updateElapsedSeconds]);
 
   // Clamped because a code swap can shorten the loop under a playhead that is
   // already past the new end: the next frame's modulo brings it back, this
@@ -749,10 +793,11 @@ export default function CodePanel({
           </div>
         )}
 
-        {/* Sync status floats over the code without resizing it. The error
-            banner lives at the top-right, so the capsule's position can never
-            depend on whether the code is broken. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end">
+        {/* Sync status floats over the code without resizing it. Its layer is
+            above CodeMirror's bottom fade (z-240), so a retry warning stays
+            fully readable. The error banner lives at the top-right, so the
+            capsule's position can never depend on whether the code is broken. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[260] flex items-end">
           <SessionSyncStatus
             status={syncStatus}
             visible={!!showSyncStatus}

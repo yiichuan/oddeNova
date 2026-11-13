@@ -195,6 +195,13 @@ export function useStrudel() {
     describeSounds,
     scrollCodeToBottom: () => strudelService.scrollCodeToBottom(),
     scrollCodeToPosition: (pos: number) => strudelService.scrollCodeToPosition(pos),
+    scrollCodeLinesToCenter: (
+      start: number,
+      end: number,
+      fromStart?: number,
+      fromEnd?: number,
+      progress?: number,
+    ) => strudelService.scrollCodeLinesToCenter(start, end, fromStart, fromEnd, progress),
     scrollCodeRangeIntoView: (from: number, to: number) => strudelService.scrollCodeRangeIntoView(from, to),
     scrollCodePositionIntoViewEased: (from: number, ms: number) => strudelService.scrollCodePositionIntoViewEased(from, ms),
     getCodeRangeRect: (from: number, to: number) => strudelService.getCodeRangeRect(from, to),

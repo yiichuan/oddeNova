@@ -62,6 +62,7 @@ export default function VizPlaceholder({
       <iframe
         src={src}
         title={t('animationVisual')}
+        data-oddenova-animation
         className="viz-frame"
         // Held back until the document inside is there to be seen.
         //

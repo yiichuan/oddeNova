@@ -2329,6 +2329,14 @@ html[data-theme='light'] .history-search-field {
   --code-editor-horizontal-scrollbar-height: 6px;
 }
 
+/* The panel canvas sits above CodeMirror's native horizontal scrollbar in the
+   stacking order. Keep its drawings out of the 6px scrollbar strip and overlap
+   the fade by one pixel, so visualizers cannot cover the thumb, track, or seam. */
+.code-editor-fade-top:has(.cm-editor[data-has-horizontal-scrollbar='true']) #codepanel-strudel-canvas,
+.code-editor-fade-top:has(.cm-editor[data-has-horizontal-scrollbar='true']) [data-punchcard-blur-layer] {
+  clip-path: inset(0 0 7px 0);
+}
+
 /* Fixed-width gutter — prevents expansion when line numbers gain digits */
 .cm-editor .cm-lineNumbers {
   width: var(--code-editor-gutter-width) !important;
@@ -2380,6 +2388,13 @@ html[data-theme='light'] .history-search-field {
   );
   content: '';
   pointer-events: none;
+}
+
+/* Close the editor/control-bar seam without painting over CodeMirror's native
+   horizontal scrollbar; its strip is handled by clipping the panel canvas. */
+.cm-editor:not([data-has-horizontal-scrollbar='true'])::before {
+  bottom: -1px;
+  height: calc(var(--code-editor-bottom-gap) + var(--spacing-conversation-edge-fade) + 1px);
 }
 
 /* The bottom mask's mirror, so code leaving the viewport does the same thing at

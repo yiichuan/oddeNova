@@ -94,6 +94,7 @@ describe('CodePanel editor focus reporting', () => {
     }
     document.body.innerHTML = '';
     localStorage.clear();
+    window.history.replaceState({}, '', '/');
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -236,6 +237,34 @@ describe('CodePanel editor focus reporting', () => {
       expect(blob.querySelectorAll('circle').length).toBeGreaterThanOrEqual(2);
       expect(blob.querySelectorAll('circle').length).toBeLessThanOrEqual(3);
     });
+  });
+
+  it('drives the control-bar light animations from video time while rendering', () => {
+    installMatchMedia(false);
+    window.history.replaceState({}, '', '/?video=true');
+    const { container, root } = renderCodePanel();
+    roots.push(root);
+
+    const field = container.querySelector<HTMLElement>('[data-testid="code-panel-light-field"]');
+    const animatedElements = field?.querySelectorAll<HTMLElement | SVGElement>(
+      '.code-panel-light-blob, .code-panel-light-ball',
+    );
+    const animations: Array<{ currentTime: number | null }> = [];
+    animatedElements?.forEach((element) => {
+      expect(element.style.animationPlayState).toBe('paused');
+      const animation = { currentTime: 0 };
+      animations.push(animation);
+      Object.defineProperty(element, 'getAnimations', { configurable: true, value: () => [animation] });
+    });
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { type: 'VIDEO_TIME', time: 123 },
+      }));
+    });
+
+    expect(animations.length).toBeGreaterThan(0);
+    expect(animations.every((animation) => animation.currentTime === 123_000)).toBe(true);
   });
 
   it('keeps the playback button and timeline in the desktop controls layer', () => {

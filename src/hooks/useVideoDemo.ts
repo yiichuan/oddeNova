@@ -27,6 +27,7 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
   const [videoTitle, setVideoTitle] = useState<string | null>(null);
   // [video] Detects whether running inside a Remotion iframe; always false in normal browser access, has no effect on any logic
   const [isVideoMode, setIsVideoMode] = useState(() => {
+    if (new URLSearchParams(window.location.search).get('video') === 'true') return true;
     try { return window.self !== window.top; } catch { return true; }
   });
 
@@ -48,6 +49,17 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
       if (e.data?.type === 'VIDEO_SET_SCROLL_POSITION' && typeof e.data.position === 'number') {
         strudelRef.current.scrollCodeToPosition(e.data.position);
       }
+      if (e.data?.type === 'VIDEO_CENTER_CODE_LINES'
+        && typeof e.data.lineStart === 'number'
+        && typeof e.data.lineEnd === 'number') {
+        strudelRef.current.scrollCodeLinesToCenter(
+          e.data.lineStart,
+          e.data.lineEnd,
+          typeof e.data.fromLineStart === 'number' ? e.data.fromLineStart : undefined,
+          typeof e.data.fromLineEnd === 'number' ? e.data.fromLineEnd : undefined,
+          typeof e.data.progress === 'number' ? e.data.progress : 1,
+        );
+      }
       if (e.data?.type === 'VIDEO_SCROLL_EASED' && typeof e.data.durationMs === 'number') {
         strudelRef.current.scrollCodeToBottomEased(e.data.durationMs);
       }
@@ -64,11 +76,11 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
         strudelRef.current.setVideoTime(e.data.time);
       }
       if (e.data?.type === 'VIDEO_AUDIO_SIM') {
-        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[title="galaxy visualizer"]');
+        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[data-oddenova-animation]');
         galaxy?.contentWindow?.postMessage({ type: 'AUDIO_SIM', low: e.data.low, mid: e.data.mid, high: e.data.high, chaos: e.data.chaos }, '*');
       }
       if (e.data?.type === 'VIDEO_GALAXY_TIME' && typeof e.data.time === 'number') {
-        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[title="galaxy visualizer"]');
+        const galaxy = document.querySelector<HTMLIFrameElement>('iframe[data-oddenova-animation]');
         galaxy?.contentWindow?.postMessage({ type: 'GALAXY_TIME', time: e.data.time }, '*');
       }
       if (e.data?.type === 'VIDEO_SET_TITLE' && typeof e.data.title === 'string') {

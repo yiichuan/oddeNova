@@ -59,20 +59,26 @@ export interface CodePanelAccent {
   reset: () => void;
 }
 
+/** The hued colour carried by a currently sounding hap, preserving pattern
+ * alternation for audio-reactive visuals that need the colour at this time. */
+export function activeHuedColor(haps: readonly HapLike[], time: number): string | null {
+  for (const hap of haps) {
+    const color = hap.value?.color;
+    if (hap.isActive(time) && isHuedColor(color)) return color;
+  }
+  return null;
+}
+
 export function createCodePanelAccent(onChange: (color: string | null) => void): CodePanelAccent {
   let latched: string | null = null;
 
   return {
     sample: (haps, time) => {
       if (latched !== null) return;
-      for (const hap of haps) {
-        const color = hap.value?.color;
-        if (hap.isActive(time) && isHuedColor(color)) {
-          latched = color;
-          onChange(color);
-          return;
-        }
-      }
+      const color = activeHuedColor(haps, time);
+      if (color === null) return;
+      latched = color;
+      onChange(color);
     },
     reset: () => {
       if (latched === null) return;

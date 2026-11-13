@@ -93,6 +93,9 @@ function isAnimationPreference(value: unknown): value is AnimationPreference {
 // ── Theme ────────────────────────────────────────────────────────────────────
 
 export function getThemePreference(): ThemePreference {
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('video') === 'true') {
+    return 'dark';
+  }
   const stored = readStored(STORAGE_KEYS.theme);
   return isThemePreference(stored) ? stored : DEFAULT_THEME_PREFERENCE;
 }

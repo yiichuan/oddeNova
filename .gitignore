@@ -60,7 +60,10 @@ docs/draft/
 *.wav
 
 # Video recordings
-videos/
+videos/*
+videos/songs-cover/
+videos/songs-cover/node_modules/
+videos/songs-cover/out/
 .vercel
 .env*
 

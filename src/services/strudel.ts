@@ -12,9 +12,12 @@ import {
 } from '../lib/sample-preview';
 import { trackWavExportCompleted } from '../lib/analytics';
 import { installOddenovaSyntaxHighlight } from '../lib/oddenova-syntax-highlight';
+import { amberTextTheme } from '../lib/amber-text-theme';
+import { emberTextTheme } from '../lib/ember-text-theme';
 import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '../lib/codepanel-theme';
 import { createCodePanelDrawContext, type CodePanelDrawContext } from '../lib/codepanel-canvas';
-import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
+import { activeHuedColor, createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
+import { clearPunchcardBlurLayers, registerPunchcardBlur } from '../lib/punchcard-blur';
 import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
 import { installCodeEditorReadOnly, setCodeEditorReadOnly } from '../lib/code-editor-read-only';
 import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bounds';
@@ -319,6 +322,7 @@ export class StrudelService {
   private panelTheme: CodePanelTheme | null = null;
   private panelCanvas: CodePanelDrawContext | null = null;
   private panelAccent: CodePanelAccent | null = null;
+  private videoAccentColor: string | null = null;
   private autocompletionEnabled = false;
   private lineWrappingEnabled = false;
   private isAudioInitialized = false;
@@ -338,6 +342,8 @@ export class StrudelService {
   // instead of AudioContext.currentTime, so mini-notation highlights work in
   // Remotion headless render without any WebAudio / sample loading.
   private readonly _isVideoMode: boolean = (() => {
+    if (typeof window === 'undefined') return false;
+    if (new URLSearchParams(window.location.search).get('video') === 'true') return true;
     try { return window.self !== window.top; } catch { return true; }
   })();
   private _videoTime = 0;
@@ -497,15 +503,18 @@ export class StrudelService {
         this.audioAccess = { getAudioContext, getSuperdoughAudioController };
         (window as unknown as Record<string, unknown>).recordLive = (sec: number, name?: string) =>
           this.recordLive(sec, name);
-        // `public/animation/galaxy-ascii.html` runs same-origin in the viz
-        // pane's iframe and already reaches across `window.parent` for
-        // `getAudioContext`/`getSuperdoughAudioController` above — this is the
-        // same channel, for the same reason: no postMessage round trip needed
-        // when the two windows can call straight into each other. Read live
-        // (not captured once) since the accent latches and resets over a
-        // single piece's playback, long after this assignment runs.
-        (window as unknown as Record<string, unknown>).getStrudelAccentColor = () => this._state.accentColor;
       }
+
+      // Both animation iframes read the accent from their same-origin host.
+      // Keep this available in video mode too: `.color()` is still sampled by
+      // the silent Strudel scheduler even though WebAudio is not initialized.
+      // Read live because the accent latches and resets during playback.
+      (window as unknown as Record<string, unknown>).getStrudelAccentColor = () => (
+        this._isVideoMode ? this.videoAccentColor : this._state.accentColor
+      );
+
+      const { getPunchcardPainter } = await import('@strudel/draw');
+      registerPunchcardBlur(Pattern.prototype, getPunchcardPainter);
 
       // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
       const maxPan = noteToMidi('C8');
@@ -595,6 +604,11 @@ export class StrudelService {
     this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     try {
       const { StrudelMirror, compartments, themes } = await import('@strudel/codemirror');
+      const availableThemes = {
+        ...themes,
+        amberText: amberTextTheme,
+        emberText: emberTextTheme,
+      };
       const { transpiler } = await import('@strudel/transpiler');
       cachedTranspiler = transpiler;
       const { getDrawContext } = await import('@strudel/draw');
@@ -661,6 +675,7 @@ export class StrudelService {
       // state; anything still holding an older number is talking about an
       // engine that no longer exists.
       const generation = ++this.editorGeneration;
+      let hadIsolatedPunchcard = false;
 
       const editor = new StrudelMirror({
         root: this.containerElement,
@@ -678,7 +693,25 @@ export class StrudelService {
         // of a second, redundant animation loop — see codepanel-accent.ts.
         onDraw: (haps: unknown[], time: number, painters?: ((...args: unknown[]) => void)[]) => {
           if (generation !== this.editorGeneration) return;
+          const hasIsolatedPunchcard = Boolean(painters?.some((paint) =>
+            (paint as ((...args: unknown[]) => void) & { __oddenovaIsolatedPunchcard?: boolean })
+              .__oddenovaIsolatedPunchcard,
+          ));
+          if (hasIsolatedPunchcard && !hadIsolatedPunchcard) {
+            // A previously unblurred punchcard drew directly onto this canvas.
+            // Clear that one-time legacy frame before the isolated layer takes over.
+            const canvas = this.panelCanvas?.context.canvas;
+            if (canvas) this.panelCanvas?.context.clearRect(0, 0, canvas.width, canvas.height);
+          }
+          hadIsolatedPunchcard = hasIsolatedPunchcard;
+          if (this.containerElement) clearPunchcardBlurLayers(this.containerElement);
           painters?.forEach((paint) => paint(this.panelCanvas?.context, time, haps, drawTime));
+          if (this._isVideoMode) {
+            this.videoAccentColor = activeHuedColor(
+              haps as Parameters<CodePanelAccent['sample']>[0],
+              time,
+            );
+          }
           this.panelAccent?.sample(haps as Parameters<CodePanelAccent['sample']>[0], time);
         },
         onUpdateState: (state: StrudelReplState) => {
@@ -719,7 +752,7 @@ export class StrudelService {
         this.panelTheme = createCodePanelTheme({
           editor: editor.editor,
           themeCompartment: compartments.theme,
-          themes,
+          themes: availableThemes,
         });
         installCodeEditorScrollMargins(editor.editor);
         installCodeEditorReadOnly(editor.editor);
@@ -1063,6 +1096,7 @@ export class StrudelService {
       this.panelTheme?.reset();
       this.panelCanvas?.clear();
       this.panelAccent?.reset();
+      this.videoAccentColor = null;
     }
     this._state = { ...this._state, code, ...(didChange ? { isPaused: false } : {}) };
     if (this.editorInstance) {
@@ -1147,6 +1181,7 @@ export class StrudelService {
     // The accent is a playback-only read: paused is not playing, so it steps
     // back to the studio's own orange until `play()` resumes and re-latches.
     this.panelAccent?.reset();
+    this.videoAccentColor = null;
 
     this.notify({ isPlaying: false, isPaused: true });
     return true;
@@ -1195,6 +1230,7 @@ export class StrudelService {
     // frame this evaluate() produces, rather than carrying over a colour a
     // piece that changed since the last play() may no longer set.
     this.panelAccent?.reset();
+    this.videoAccentColor = null;
     this.notify({ error: null });
     try {
       await this.ensurePlayableAudioGraph();
@@ -1328,6 +1364,7 @@ export class StrudelService {
     // nothing would repaint after it, an update does not.
     this.panelTheme?.reset();
     this.panelAccent?.reset();
+    this.videoAccentColor = null;
     this.notify({ error: null });
     // Eval failures surface through onUpdateState's `evalError`, which is why
     // this doesn't try to catch them: the pattern that is already playing
@@ -1345,6 +1382,7 @@ export class StrudelService {
     this.panelTheme?.reset();
     this.panelCanvas?.clear();
     this.panelAccent?.reset();
+    this.videoAccentColor = null;
     this.editorInstance?.repl.stop();
     this.notify({ isPlaying: false, isPaused: false });
   };
@@ -1442,6 +1480,41 @@ export class StrudelService {
     if (scrollDOM) {
       scrollDOM.scrollTop = scrollTop;
     }
+  };
+
+  /** Center an inclusive editor line range; during video transitions, blend
+   * the centered positions of the outgoing and incoming sections. */
+  scrollCodeLinesToCenter = (
+    lineStart: number,
+    lineEnd: number,
+    fromLineStart?: number,
+    fromLineEnd?: number,
+    progress = 1,
+  ): void => {
+    const view = this.editorInstance?.editor as {
+      lineBlockAt?: (pos: number) => { top: number; bottom: number };
+      state?: { doc: { lines: number; line: (number: number) => { from: number; to: number } } };
+      scrollDOM?: HTMLElement;
+    } | undefined;
+    if (!view?.lineBlockAt || !view.state?.doc || !view.scrollDOM) return;
+
+    const doc = view.state.doc;
+    const centerOf = (start: number, end: number): number => {
+      const first = Math.max(1, Math.min(doc.lines, start));
+      const last = Math.max(first, Math.min(doc.lines, end));
+      const top = view.lineBlockAt!(doc.line(first).from).top;
+      const bottom = view.lineBlockAt!(doc.line(last).to).bottom;
+      return Math.max(0, (top + bottom) / 2 - view.scrollDOM!.clientHeight / 2);
+    };
+
+    const target = centerOf(lineStart, lineEnd);
+    if (fromLineStart === undefined || fromLineEnd === undefined) {
+      view.scrollDOM.scrollTop = target;
+      return;
+    }
+    const from = centerOf(fromLineStart, fromLineEnd);
+    const amount = Math.max(0, Math.min(1, progress));
+    view.scrollDOM.scrollTop = from + (target - from) * amount;
   };
 
   /** `inOut` starts and lands gently — for a scroll the reader is meant to follow. */

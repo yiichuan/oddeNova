@@ -207,11 +207,23 @@ describe('appearance preferences', () => {
 describe('appearance boot', () => {
   beforeEach(() => {
     localStorage.clear();
+    window.history.replaceState({}, '', '/');
     delete document.documentElement.dataset.theme;
     delete document.documentElement.dataset.editorTheme;
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it('forces the dark palette in video mode without changing the saved preference', () => {
+    localStorage.setItem('vibe_theme', 'light');
+    window.history.replaceState({}, '', '/?video=true');
+
+    expect(getThemePreference()).toBe('dark');
+    loadAppearancePreferences();
+
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(localStorage.getItem('vibe_theme')).toBe('light');
+  });
 
   it('paints a stored dark preference before React mounts', () => {
     localStorage.setItem('vibe_theme', 'dark');
