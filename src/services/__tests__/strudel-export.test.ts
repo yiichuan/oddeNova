@@ -73,19 +73,103 @@ describe('audio export context recovery', () => {
     vi.doUnmock('../../lib/m4a-export');
   });
 
-  async function service() {
+  async function service(queryArc: (begin: number, end: number) => unknown[] = () => []) {
     const { StrudelService } = await import('../strudel');
     const instance = new StrudelService();
     Object.assign(instance, {
       editorInstance: {
         evaluate: vi.fn(),
-        repl: { stop: vi.fn(), scheduler: { cps: 0.5, pattern: { queryArc: () => [] } } },
+        repl: { stop: vi.fn(), scheduler: { cps: 0.5, pattern: { queryArc } } },
       },
     });
     return instance;
   }
 
   const params = { filename: 'song', beginCycle: 0, endCycle: 1, sampleRate: 48000 };
+
+  it('schedules one cycle ahead in the same offline context', async () => {
+    const steps: string[] = [];
+    const contexts = new Set();
+    const buffer = { numberOfChannels: 2, sampleRate: 48000, getChannelData: () => new Float32Array(8) };
+    let complete!: (value: typeof buffer) => void;
+    const render = new Promise<typeof buffer>((resolve) => { complete = resolve; });
+    vi.stubGlobal('OfflineAudioContext', class extends OfflineContext {
+      suspend(time: number) {
+        steps.push(`pause at ${time}`);
+        return Promise.resolve();
+      }
+      resume() {
+        steps.push('resume');
+        if (steps.includes('query 4–4.5')) complete(buffer);
+        return Promise.resolve();
+      }
+      startRendering() {
+        steps.push('start');
+        return render;
+      }
+    });
+    const { superdough } = await import('superdough');
+    const note = (begin: number, duration: number, onset = true) => ({
+      whole: { begin }, duration, hasOnset: () => onset, ensureObjectValue: () => {},
+      value: { note: begin },
+    });
+    const instance = await service((begin, end) => {
+      contexts.add(current);
+      steps.push(`query ${begin}–${end}`);
+      return begin === 2 ? [note(2.75, 1.5), note(2.25, 0.25)]
+        : begin === 3 ? [note(2.75, 1.5, false), note(3, 0.5)] : [note(4, 0.5)];
+    });
+    await instance.exportAudio({ ...params, beginCycle: 2, endCycle: 4.5 });
+    expect(steps).toEqual([
+      'query 2–3', 'pause at 0', 'start',
+      'query 3–4', 'pause at 2', 'resume',
+      'query 4–4.5', 'resume',
+    ]);
+    expect(contexts.size).toBe(1);
+    expect(vi.mocked(superdough).mock.calls).toEqual([
+      [{ note: 2.25 }, 0.5, 0.5, 0.5, 0.5],
+      [{ note: 2.75 }, 1.5, 3, 0.5, 1.5],
+      [{ note: 3 }, 2, 1, 0.5, 2],
+      [{ note: 4 }, 4, 1, 0.5, 4],
+    ]);
+  });
+
+  it('uses one whole-range query when the browser cannot pause offline rendering', async () => {
+    const queryArc = vi.fn(() => []);
+    const instance = await service(queryArc);
+    await instance.exportAudio({ ...params, endCycle: 8 });
+    expect(queryArc).toHaveBeenCalledOnce();
+    expect(queryArc).toHaveBeenCalledWith(0, 8, { _cps: 0.5 });
+  });
+
+  it('cancels while waiting for a cycle boundary without resuming the offline graph', async () => {
+    let reachBoundary!: () => void;
+    const boundary = new Promise<void>((resolve) => { reachBoundary = resolve; });
+    const resume = vi.fn();
+    const suspend = vi.fn(() => boundary);
+    const start = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('OfflineAudioContext', class extends OfflineContext {
+      suspend = suspend;
+      resume = resume;
+      startRendering = start as OfflineContext['startRendering'];
+    });
+    const controller = new AbortController();
+    const queryArc = vi.fn(() => []);
+    const instance = await service(queryArc);
+    const job = instance.exportAudio({ ...params, endCycle: 8, signal: controller.signal });
+    const assertion = expect(job).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    controller.abort();
+    await assertion;
+    reachBoundary();
+    await Promise.resolve();
+    expect(suspend).toHaveBeenCalledOnce();
+    expect(suspend).toHaveBeenCalledWith(0);
+    expect(queryArc).toHaveBeenCalledOnce();
+    expect(resume).not.toHaveBeenCalled();
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    expect(current?.state).toBe('running');
+  });
 
   it('does not attach the spectrum sampler to the offline export graph', async () => {
     const instance = await service();
@@ -148,7 +232,10 @@ describe('audio export context recovery', () => {
       () => new Promise((resolve) => { finish = resolve; }),
     );
     const suspend = vi.fn(async () => {});
-    Object.assign(OfflineContext.prototype, { suspend, currentTime: 0 });
+    vi.stubGlobal('OfflineAudioContext', class extends OfflineContext {
+      suspend = suspend;
+      currentTime = 0;
+    });
     const controller = new AbortController();
     const progress = vi.fn();
     const job = instance.exportAudio({ ...params, format, signal: controller.signal, onProgress: progress });
