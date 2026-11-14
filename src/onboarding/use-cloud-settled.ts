@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { readCloudOnboardingSettled, writeCloudOnboardingSettled } from './onboarding-cloud';
 
+const READ_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+
 /**
  * The account-level "guide settled" flag, for the desktop guide. A signed-in
  * reader who finished or declined the guide on one device is not invited on
  * another. Guests have no cloud record: their status is always `clear`.
  *
- * - `loading`: not yet known — the invitation waits.
+ * - `loading`: not yet known, including during automatic read retries.
  * - `clear`: nothing settled in the cloud.
  * - `settled`: finished or declined somewhere.
  * - `error`: unreadable for now; retried when the window regains focus or the
@@ -43,21 +45,30 @@ export function useCloudSettled(ownerKey: string, enabled: boolean, isLocallySet
   useEffect(() => {
     if (!userId) return;
     const generation = ++generationRef.current;
-    let cancelled = false;
-    readCloudOnboardingSettled(userId).then(
-      (settled) => {
-        if (cancelled || generation !== generationRef.current) return;
+    let retryTimer: number | undefined;
+
+    const read = async (attempt: number) => {
+      try {
+        const settled = await readCloudOnboardingSettled(userId);
+        if (generation !== generationRef.current) return;
         if (settled) setState({ ownerKey, status: 'settled' });
         // Settled here before the cloud heard of it (offline at the time).
         else if (localRef.current()) void pushSettled();
         else setState({ ownerKey, status: 'clear' });
-      },
-      () => {
-        if (!cancelled && generation === generationRef.current) setState({ ownerKey, status: 'error' });
-      },
-    );
+      } catch {
+        if (generation !== generationRef.current) return;
+        const delay = READ_RETRY_DELAYS_MS[attempt];
+        if (delay === undefined) {
+          setState({ ownerKey, status: 'error' });
+          return;
+        }
+        retryTimer = window.setTimeout(() => { void read(attempt + 1); }, delay);
+      }
+    };
+
+    void read(0);
     return () => {
-      cancelled = true;
+      window.clearTimeout(retryTimer);
       generationRef.current += 1;
     };
   }, [ownerKey, userId, retryTick, pushSettled]);
@@ -68,14 +79,17 @@ export function useCloudSettled(ownerKey: string, enabled: boolean, isLocallySet
 
   useEffect(() => {
     if (status !== 'error') return;
-    const retry = () => setRetryTick((n) => n + 1);
+    const retry = () => {
+      setState({ ownerKey, status: 'loading' });
+      setRetryTick((n) => n + 1);
+    };
     window.addEventListener('focus', retry);
     window.addEventListener('online', retry);
     return () => {
       window.removeEventListener('focus', retry);
       window.removeEventListener('online', retry);
     };
-  }, [status]);
+  }, [ownerKey, status]);
 
   return { status, pushSettled };
 }

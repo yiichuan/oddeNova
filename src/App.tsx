@@ -468,11 +468,9 @@ export default function App() {
       pathname: window.location.pathname,
     }));
   const [welcomeOpen, setWelcomeOpen] = useState(welcomeAutoOpened);
-  // The first-run guide invites only a browser meeting oddeNova for the first
-  // time — the same first paint that opens the welcome. Browsers already in use
-  // before the guide shipped have seen the welcome, so they are never marked
-  // and are not interrupted; the menu still offers it.
-  const [onboardingEligible] = useState(() => welcomeAutoOpened || isOnboardingEligible());
+  const welcomeVisible = welcomeOpen && !auth.oauthErrorKey && !auth.user;
+  // Only guests use browser eligibility. Signed-in users have account progress.
+  const [guestOnboardingEligible] = useState(() => welcomeAutoOpened || isOnboardingEligible());
   // Arriving to do something else — open a shared piece, take in an import or
   // a bridge pairing — is not the moment for a practice. Read off the URL
   // before anything consumes it.
@@ -777,7 +775,7 @@ export default function App() {
       {/* The first-entry window stands down for anyone the session already
           knows, and for a failed Google return — that one has its own window to
           report itself in. */}
-      {welcomeOpen && !auth.oauthErrorKey && !auth.user && (
+      {welcomeVisible && (
         <WelcomeModal configured={auth.configured} onClose={closeWelcomeModal} />
       )}
       {(accountOpen || auth.oauthErrorKey) && (
@@ -1786,7 +1784,8 @@ export default function App() {
   // Anything else that needs the screen — a sign-in, the guest import, a
   // settings dialog — takes it; the tour steps back and returns after.
   const guideStudioActive = primaryNavItem === 'home'
-    && !welcomeOpen
+    && !welcomeVisible
+    && !auth.oauthErrorKey
     && !accountOpen
     && !apiKeyModalOpen
     && !guestImportSessions
@@ -1829,7 +1828,7 @@ export default function App() {
     enabled: guideEnabled,
     canAutoInvite: guideCanAutoInvite,
     studioActive: guideStudioActive,
-    eligible: onboardingEligible,
+    guestEligible: guestOnboardingEligible,
     sessions: sessions.sessions,
     currentId: sessions.currentId,
     isPersistent: sessions.isPersistent,
@@ -2141,7 +2140,7 @@ export default function App() {
      scrim — which as a `fixed inset-0` backdrop can only ever reach the
      document — is mixed in by hand so the phone's own notch and toolbar strips
      go dark with the rest of the page instead of staying lit. */
-  const browserChromeOverlay = guestImportSessions || (welcomeOpen && !auth.oauthErrorKey && !auth.user) || accountOpen || auth.oauthErrorKey
+  const browserChromeOverlay = guestImportSessions || welcomeVisible || accountOpen || auth.oauthErrorKey
     ? 'auth'
     : codeSheetOpen || favoritesCodeOpen
       ? 'code'

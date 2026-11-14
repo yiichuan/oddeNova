@@ -143,18 +143,21 @@ describe('first-creation state', () => {
     expect(shouldAutoInviteCreation(started(), { eligible: true, now: 10 })).toBe(false);
   });
 
-  it('keeps progress per owner, and lets an account inherit only a settled guest answer', () => {
+  it('keeps guest progress separate from each account', () => {
     const storage = memoryStorage();
     const fallback = initialCreationProgress('case', 'hash', 0);
     writeCreationProgress('guest', started(), storage);
     expect(readCreationProgress('user:a', fallback, storage)).toBe(fallback);
 
     writeCreationProgress('guest', reduceCreation(started(), { type: 'skip' }), storage);
-    const inherited = readCreationProgress('user:a', fallback, storage);
-    expect(inherited.status).toBe('skipped');
-    expect(inherited.sessionId).toBeNull();
+    expect(readCreationProgress('guest', fallback, storage).status).toBe('skipped');
+    expect(readCreationProgress('user:a', fallback, storage)).toBe(fallback);
 
-    storage.removeItem(creationProgressKey('guest'));
+    const accountProgress = reduceCreation(started(), { type: 'skip' });
+    writeCreationProgress('user:a', accountProgress, storage);
+    expect(readCreationProgress('user:a', fallback, storage)).toEqual(accountProgress);
+    expect(readCreationProgress('user:b', fallback, storage)).toBe(fallback);
+
     storage.setItem(creationProgressKey('user:b'), JSON.stringify({ ...started(), guideVersion: 2 }));
     expect(readCreationProgress('user:b', fallback, storage)).toBe(fallback);
   });
