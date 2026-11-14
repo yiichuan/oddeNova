@@ -18,7 +18,6 @@ import {
   type ToolContext,
 } from './tools';
 import { parseScore, summariseScore } from './parser';
-import { elapsedMs, timingErrorStatus, type SampleTiming } from '../lib/sample-timing';
 import {
   getErrorMessage,
   getErrorStatus,
@@ -69,9 +68,7 @@ export interface LLMCaller {
     /** When false, suppress the reasoning/thinking chain for this call (default true). */
     enableThinking?: boolean,
     /** How deep to think when enabled; ignored when enableThinking is false (default 'medium'). */
-    thinkingLevel?: ThinkingLevel,
-    /** Optional observer for the first nonempty text, reasoning, or tool output. */
-    onFirstOutput?: () => void,
+    thinkingLevel?: ThinkingLevel
   ): Promise<{
     content: string | null;
     /** DeepSeek thinking mode: pass through so the loop can echo it back. */
@@ -106,7 +103,6 @@ export interface RunAgentOptions {
   systemPrompt: string;
   llm: LLMCaller;
   sampleSearch?: ToolContext['sampleSearch'];
-  sampleTiming?: SampleTiming;
   maxIter?: number;
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
@@ -346,7 +342,6 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations = i + 1;
     onProgress?.({ kind: 'iteration', index: iterations });
 
-    const requestStarted = performance.now();
     const resp = await chatWithToolsWithRetry({
       llm,
       messages,
@@ -356,16 +351,6 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       signal,
       enableThinking,
       thinkingLevel,
-    }).then(response => {
-      opts.sampleTiming?.('main_request', {
-        iteration: iterations, durationMs: elapsedMs(requestStarted), status: 'ok',
-      });
-      return response;
-    }, error => {
-      opts.sampleTiming?.('main_request', {
-        iteration: iterations, durationMs: elapsedMs(requestStarted), status: timingErrorStatus(error, signal),
-      });
-      throw error;
     });
     if (resp.usage) lastUsage = resp.usage;
 
@@ -430,7 +415,6 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       if (cachedResult !== undefined) {
         if (call.name === 'searchSamples') {
           sampleDebug('deduplicated', { iteration: i + 1, callId: call.id, args: parsedArgs, result: cachedResult });
-          opts.sampleTiming?.('search_deduplicated', { iteration: iterations, callId: call.id });
         }
         // Intentionally skip onProgress — duplicate calls should be invisible to the UI.
         console.debug(`[loop] iter ${i + 1} dedup: skipping duplicate tool_call "${call.name}"`);
@@ -446,33 +430,16 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
       const toolStarted = performance.now();
-      let sampleTiming: SampleTiming | undefined;
-      let retrievalStatus: string | undefined;
       if (call.name === 'searchSamples') {
         sampleSearchCalls++;
         sampleDebug('call', { iteration: i + 1, callId: call.id, args: parsedArgs });
-        const runTiming = opts.sampleTiming;
-        if (runTiming) {
-          sampleTiming = (stage, fields) => {
-            if (stage === 'retrieval_finished' && typeof fields?.status === 'string') {
-              retrievalStatus = fields.status;
-            }
-            runTiming(stage, { iteration: iterations, callId: call.id, ...fields });
-          };
-          sampleTiming('search_started');
-        }
       }
 
       try {
-        const outcome = await dispatchToolCall(call, sampleTiming ? { ...ctx, sampleTiming } : ctx);
-        sampleTiming?.('search_finished', {
-          durationMs: elapsedMs(toolStarted),
-          status: outcome.result.ok ? 'ok' : signal?.aborted ? timingErrorStatus(signal.reason, signal)
-            : retrievalStatus === 'timeout' || retrievalStatus === 'aborted' ? retrievalStatus : 'error',
-        });
+        const outcome = await dispatchToolCall(call, ctx);
         if (call.name === 'searchSamples') {
           sampleDebug('result', { iteration: i + 1, callId: call.id,
-            durationMs: elapsedMs(toolStarted), result: outcome.result });
+            durationMs: Math.round(performance.now() - toolStarted), result: outcome.result });
         }
         if (call.name === 'setCode' && sampleSearchCalls > 0 && outcome.result.ok) {
           sampleDebug('setCode after search', { iteration: i + 1, code: state.code });
@@ -529,9 +496,6 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           break outer;
         }
         const msg = getErrorMessage(e);
-        sampleTiming?.('search_finished', {
-          durationMs: elapsedMs(toolStarted), status: timingErrorStatus(e, signal),
-        });
         if (call.name === 'searchSamples') sampleDebug('error', { callId: call.id, error: msg });
         outcomes.push({
           id: call.id,

@@ -191,54 +191,21 @@ describe('runAgent conversationHistory pass-through', () => {
     );
   });
 
-  it('measures the first OpenAI tool delta and reads usage from an empty-choices tail chunk', async () => {
+  it('reads usage from an OpenAI stream tail chunk with no choices', async () => {
     openAIChatCreateMock.mockResolvedValueOnce((async function* () {
       yield { choices: [{ delta: { content: 'compose' } }] };
     })());
     await runAgent('go', '');
 
-    const firstOutput = vi.fn();
     openAIChatCreateMock.mockResolvedValueOnce((async function* () {
-      yield { choices: [{ delta: { role: 'assistant', content: '' } }] };
-      yield { choices: [{ delta: { tool_calls: [{ index: 0, function: {} }] } }] };
-      expect(firstOutput).not.toHaveBeenCalled();
-      yield { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call', function: { name: 'readSampleDetails' } }] } }] };
-      expect(firstOutput).toHaveBeenCalledTimes(1);
-      yield { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{}' } }] } }] };
+      yield { choices: [{ delta: { content: 'done' } }] };
       yield { choices: [], usage: { prompt_tokens: 100, completion_tokens: 10, prompt_cache_hit_tokens: 80 } };
     })());
     const { llm } = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
-    const response = await llm.chatWithTools([], [], undefined, undefined, undefined, false, undefined, firstOutput);
-    expect(firstOutput).toHaveBeenCalledTimes(1);
+    const response = await llm.chatWithTools([], []);
     expect(response.usage).toEqual({ inputTokens: 100, outputTokens: 10, cachedInputTokens: 80 });
   });
 
-  it('measures the first Anthropic tool block even when it has no input yet', async () => {
-    getActiveModelConfigMock.mockReturnValue({ ...officialModelConfig, provider: 'anthropic', protocol: 'anthropic' });
-    await runAgent('go', '');
-
-    const firstOutput = vi.fn();
-    let emitEvent: ((event: unknown) => void) | undefined;
-    anthropicStreamMock.mockReturnValueOnce({
-      on: vi.fn((event: string, listener: (event: unknown) => void) => {
-        if (event === 'streamEvent') emitEvent = listener;
-      }),
-      finalMessage: vi.fn(async () => {
-        emitEvent?.({ type: 'message_start' });
-        emitEvent?.({ type: 'content_block_start', content_block: { type: 'text', text: '' } });
-        expect(firstOutput).not.toHaveBeenCalled();
-        const tool = { type: 'tool_use', id: 'call', name: 'returnCandidates', input: {} };
-        emitEvent?.({ type: 'content_block_start', content_block: tool });
-        expect(firstOutput).toHaveBeenCalledTimes(1);
-        emitEvent?.({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{}' } });
-        return { content: [tool], usage: { input_tokens: 10, output_tokens: 5 } };
-      }),
-    });
-    const { llm } = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
-    const response = await llm.chatWithTools([], [], undefined, undefined, undefined, false, undefined, firstOutput);
-    expect(firstOutput).toHaveBeenCalledTimes(1);
-    expect(response.toolCalls).toEqual([{ id: 'call', name: 'returnCandidates', arguments: '{}' }]);
-  });
 });
 
 describe('classifyIntent parsing', () => {

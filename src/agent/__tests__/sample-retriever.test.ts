@@ -107,19 +107,13 @@ it('cancels an in-flight child call even if the caller ignores its signal',async
  const {createSampleRetriever}=await import('../sample-retriever');
  const controller=new AbortController();let started!:()=>void;const ready=new Promise<void>(r=>{started=r;});
  const chat:LLMCaller['chatWithTools']=async()=>{started();return new Promise(()=>{});};
- const timing = vi.fn();
- const result=createSampleRetriever({chatWithTools:chat},{signal:controller.signal})({queries:[{id:'keys',query:'piano'}]}, timing);
+ const result=createSampleRetriever({chatWithTools:chat},{signal:controller.signal})({queries:[{id:'keys',query:'piano'}]});
  await ready;controller.abort();await expect(result).rejects.toMatchObject({name:'AbortError'});
- expect(timing).toHaveBeenCalledWith('retrieval_request', expect.objectContaining({
-  round: 1, status: 'aborted', durationMs: expect.any(Number),
- }));
- expect(timing).toHaveBeenLastCalledWith('retrieval_finished', expect.objectContaining({ status: 'aborted', rounds: 1 }));
 });
 
-it('tracks timeout even when a model request never settles', async () => {
+it('times out even when a model request never settles', async () => {
   mockCatalog();
   const { createSampleRetriever } = await import('../sample-retriever');
-  const timing = vi.fn();
   const deadline = new AbortController();
   vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal);
   try {
@@ -129,48 +123,12 @@ it('tracks timeout even when a model request never settles', async () => {
         return new Promise(() => {});
       },
     });
-    await expect(search({ queries: [{ id: 'keys', query: 'piano' }] }, timing)).rejects.toMatchObject({ name: 'TimeoutError' });
-    expect(timing).toHaveBeenCalledWith('retrieval_request', expect.objectContaining({ round: 1, status: 'timeout' }));
-    expect(timing).toHaveBeenLastCalledWith('retrieval_finished', expect.objectContaining({ status: 'timeout' }));
+    await expect(search({ queries: [{ id: 'keys', query: 'piano' }] })).rejects.toMatchObject({ name: 'TimeoutError' });
   } finally {
     vi.mocked(AbortSignal.timeout).mockRestore();
   }
 });
 
-it('reports asset waits, detail expansion, index reuse and per-round usage', async () => {
-  mockCatalog();
-  const { createSampleRetriever } = await import('../sample-retriever');
-  const call = vi.fn<LLMCaller['chatWithTools']>().mockImplementation(async (messages, _tools, _text, _reasoning, _signal, _thinking, _level, onFirstOutput) => {
-    onFirstOutput?.();
-    if (messages.length === 3) return expand();
-    return { ...reply(), usage: undefined, reasoning_content: 'checking results', content: 'done' };
-  });
-  const timing = vi.fn();
-  const search = createSampleRetriever({ chatWithTools: call });
-  const input = { queries: [{ id: 'keys', query: 'private query' }] };
-  await search(input, timing);
-  for (const stage of ['catalog', 'guide', 'assets']) {
-    expect(timing).toHaveBeenCalledWith(stage, { status: 'ok', durationMs: expect.any(Number) });
-  }
-  expect(timing).toHaveBeenCalledWith('index', expect.objectContaining({ reused: false, guideChars: expect.any(Number) }));
-  expect(timing).toHaveBeenCalledWith('details', expect.objectContaining({
-    round: 1, expandedNames: 1, addedVariants: 1, detailChars: expect.any(Number),
-  }));
-  const rounds = timing.mock.calls.filter(([stage]) => stage === 'retrieval_request');
-  expect(rounds).toEqual([
-    ['retrieval_request', expect.objectContaining({ round: 1, firstOutputMs: expect.any(Number), result: 'details', inputTokens: 50 })],
-    ['retrieval_request', expect.objectContaining({
-      round: 2, firstOutputMs: expect.any(Number), result: 'candidates',
-      reasoningChars: 'checking results'.length, textChars: 'done'.length,
-      toolArgumentChars: reply().toolCalls[0].arguments.length,
-    })],
-  ]);
-  expect(JSON.stringify(rounds[1])).not.toContain('inputTokens');
-  expect(JSON.stringify(timing.mock.calls)).not.toContain('private query');
-  expect(timing).toHaveBeenLastCalledWith('retrieval_finished', expect.objectContaining({ queryCount: 1, rounds: 2, status: 'ok' }));
-  await search(input, timing);
-  expect(timing).toHaveBeenCalledWith('index', expect.objectContaining({ reused: true }));
-});
 it('returns candidates to the same main agent, which resumes without receiving the catalog',async()=>{
  mockCatalog();
  const {createSampleRetriever}=await import('../sample-retriever');const {runAgentLoop}=await import('../loop');
@@ -185,16 +143,8 @@ it('returns candidates to the same main agent, which resumes without receiving t
   mains.push(JSON.parse(JSON.stringify(messages)));count++;
   return {content:null,toolCalls:count===1?[{id:'lookup',name:'searchSamples',arguments:'{"queries":[{"id":"keys","query":"soft piano"},{"id":"drums","query":"dry snare"}]}'}]:[{id:'done',name:'commit',arguments:'{"explanation":"done"}'}]};
  }};
- const sampleTiming = vi.fn();
- const result=await runAgentLoop({initialCode:'s("bd")',instruction:'scene',locale:'zh',systemPrompt:'main system',llm,sampleSearch:createSampleRetriever(llm),sampleTiming});
+ const result=await runAgentLoop({initialCode:'s("bd")',instruction:'scene',locale:'zh',systemPrompt:'main system',llm,sampleSearch:createSampleRetriever(llm)});
  expect(result.committed).toBe(true);expect(mains).toHaveLength(2);expect(retrievals).toBe(2);
- expect(sampleTiming.mock.calls.map(([stage]) => stage)).toEqual([
-  'main_request', 'search_started', 'catalog', 'guide', 'assets', 'index', 'retrieval_request',
-  'details', 'retrieval_request', 'candidates', 'retrieval_finished', 'search_finished', 'main_request',
- ]);
- for (const [, event] of sampleTiming.mock.calls.slice(1, -1)) {
-  expect(event).toMatchObject({ iteration: 1, callId: 'lookup' });
- }
  expect(JSON.stringify(mains)).not.toContain('rounded attack');expect(JSON.stringify(mains)).not.toContain('soft original recording');expect(JSON.stringify(mains[1])).toContain('piano:2');
  expect(mains[1].filter(m=>m.role==='tool')).toHaveLength(1);
  const toolReply=mains[1].find(m=>m.role==='tool')!;

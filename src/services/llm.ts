@@ -37,7 +37,6 @@ import { createDemoLLMCaller, createDemoMoodLLMCaller } from '../demo/demo-llm';
 import { getActivePersonaSync } from '../lib/persona-storage';
 import { isZh } from '../lib/i18n';
 import { INTENT_CLASSIFIER_PROMPT } from '../prompts/intent-classifier';
-import { createSampleTiming, elapsedMs, timingErrorStatus, type SampleTiming } from '../lib/sample-timing';
 
 // ===========================================================================
 // Dual-provider client management.
@@ -277,7 +276,7 @@ function getActiveLLMCaller(options?: { disableDeepSeekThinking?: boolean }): LL
 // ===========================================================================
 
 const anthropicLLMCaller: LLMCaller = {
-  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium', onFirstOutput) {
+  async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
     const anthropic = getAnthropicClient();
     const model = getModel();
     const { system, messages: amsgs } = convertChatHistory(messages);
@@ -303,26 +302,6 @@ const anthropicLLMCaller: LLMCaller = {
     }
 
     stream.on('thinking', (delta) => onReasoningDelta?.(delta));
-
-    if (onFirstOutput) {
-      let reported = false;
-      stream.on('streamEvent', event => {
-        if (reported) return;
-        const block = event.type === 'content_block_start' ? event.content_block : undefined;
-        const delta = event.type === 'content_block_delta' ? event.delta : undefined;
-        if (
-          (block?.type === 'text' && block.text) ||
-          (block?.type === 'thinking' && block.thinking) ||
-          (block?.type === 'tool_use' && block.name) ||
-          (delta?.type === 'text_delta' && delta.text) ||
-          (delta?.type === 'thinking_delta' && delta.thinking) ||
-          (delta?.type === 'input_json_delta' && delta.partial_json)
-        ) {
-          reported = true;
-          onFirstOutput();
-        }
-      });
-    }
 
     const response = await stream.finalMessage();
 
@@ -364,7 +343,7 @@ const anthropicLLMCaller: LLMCaller = {
 
 function createOpenAILLMCaller({ disableDeepSeekThinking = false } = {}): LLMCaller {
   return {
-    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium', onFirstOutput) {
+    async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
       const oai = getOpenAIClient();
       const cfg = getActiveModelConfig();
       // OpenAI's GPT-5 reasoning models and Kimi's thinking models fix
@@ -405,7 +384,6 @@ function createOpenAILLMCaller({ disableDeepSeekThinking = false } = {}): LLMCal
       let reasoningContent = '';
       const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
       let streamUsage: ReturnType<typeof openAIUsage> | undefined;
-      let reported = false;
 
       for await (const chunk of stream) {
         if (chunk.usage) {
@@ -417,12 +395,6 @@ function createOpenAILLMCaller({ disableDeepSeekThinking = false } = {}): LLMCal
           reasoning_content?: string;
         };
         if (!delta) continue;
-
-        if (onFirstOutput && !reported && (delta.content || delta.reasoning_content ||
-          delta.tool_calls?.some(tc => tc.id || tc.function?.name || tc.function?.arguments))) {
-          reported = true;
-          onFirstOutput();
-        }
 
         if (delta.reasoning_content) {
           reasoningContent += delta.reasoning_content;
@@ -448,7 +420,6 @@ function createOpenAILLMCaller({ disableDeepSeekThinking = false } = {}): LLMCal
             if (tc.function?.arguments) buf.args += tc.function.arguments;
           }
         }
-
       }
 
       const toolCalls = Array.from(toolCallBuffers.values()).map((buf) => ({
@@ -483,7 +454,6 @@ export async function classifyIntent(
     signal?: AbortSignal;
     preparedHistory?: ChatMsg[];
     preparedUserContent?: ChatMsg["content"];
-    sampleTiming?: SampleTiming;
   },
 ): Promise<Intent> {
   const { instruction, currentCode, conversationHistory, signal } = opts;
@@ -500,15 +470,12 @@ export async function classifyIntent(
     ...(opts.preparedHistory ?? await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await userContent(turn.content, turn.images) : turn.content })))),
     { role: 'user', content: preparedLatest ?? await userContent(`${codeNote}\nuser latest message / 用户最新消息: ${instruction}`, opts.images) },
   ];
-  const started = performance.now();
   try {
     const resp = await llm.chatWithTools(messages, [], undefined, undefined, signal, false);
-    opts.sampleTiming?.('intent_classification', { durationMs: elapsedMs(started), status: 'ok' });
     const out = (resp.content ?? '').toLowerCase();
     if (out.includes('chat') && !out.includes('compose')) return 'chat';
     return 'compose';
-  } catch (error) {
-    opts.sampleTiming?.('intent_classification', { durationMs: elapsedMs(started), status: timingErrorStatus(error, signal) });
+  } catch {
     return 'compose';
   }
 }
@@ -522,86 +489,69 @@ export async function runAgent(
   conversationHistory?: ConversationTurn[],
   images?: ImageAttachment[],
 ): Promise<RunAgentResult> {
-  const modelConfig = import.meta.env.DEV && !isDemoMode() ? getActiveModelConfig() : undefined;
-  const sampleTiming = modelConfig && createSampleTiming(modelConfig.provider, modelConfig.model);
-  sampleTiming?.('run_started');
-  let status = 'ok';
-  let committed: boolean | undefined;
-  try {
-    const preparedUserContent = await userContent(instruction, images);
-    const preparedHistory: ChatMsg[] = await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await userContent(turn.content, turn.images) : turn.content })));
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    const locale = isZh() ? 'zh' : 'en';
-    const systemPrompt = buildSystemPrompt({
-      moodContext,
-      persona: getActivePersonaSync(),
-      locale,
+  const preparedUserContent = await userContent(instruction, images);
+  const preparedHistory: ChatMsg[] = await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await userContent(turn.content, turn.images) : turn.content })));
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  const locale = isZh() ? 'zh' : 'en';
+  const systemPrompt = buildSystemPrompt({
+    moodContext,
+    persona: getActivePersonaSync(),
+    locale,
+  });
+
+  const moodInstruction = getDemoMoodInstruction();
+  const prefillInstruction = getDemoPrefill();
+  const isMoodDemo = isDemoMode() && instruction === moodInstruction;
+  const isPrefillDemo = isDemoMode() && instruction === prefillInstruction;
+
+  // Select the LLMCaller implementation corresponding to the current provider
+  const activeLLMCaller = getActiveLLMCaller();
+
+  const llm = isDemoMode()
+    ? isMoodDemo
+      ? createDemoMoodLLMCaller(getDemoMoodScenario())
+      : isPrefillDemo
+        ? createDemoMoodLLMCaller(getDemoPrefillScenario())
+        : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
+    : activeLLMCaller;
+
+  // Classify intent up front (thinking-disabled) so we only stream a reasoning
+  // chain for composition turns. Demo/mood-generation flows are always
+  // compositions — skip the extra call for them.
+  const isMoodGeneration = instruction === moodInstruction;
+  const skipClassification = isDemoMode() || isMoodGeneration;
+  const intent: Intent = skipClassification
+    ? 'compose'
+    : await classifyIntent(getActiveLLMCaller({ disableDeepSeekThinking: true }), {
+      instruction, currentCode, conversationHistory, signal, images, preparedUserContent, preparedHistory,
     });
 
-    const moodInstruction = getDemoMoodInstruction();
-    const prefillInstruction = getDemoPrefill();
-    const isMoodDemo = isDemoMode() && instruction === moodInstruction;
-    const isPrefillDemo = isDemoMode() && instruction === prefillInstruction;
-
-    // Select the LLMCaller implementation corresponding to the current provider
-    const activeLLMCaller = getActiveLLMCaller();
-
-    const llm = isDemoMode()
-      ? isMoodDemo
-        ? createDemoMoodLLMCaller(getDemoMoodScenario())
-        : isPrefillDemo
-          ? createDemoMoodLLMCaller(getDemoPrefillScenario())
-          : createDemoLLMCaller(resolveDemoScenario(instruction) ?? getActiveDemoSet()[0])
-      : activeLLMCaller;
-
-    // Classify intent up front (thinking-disabled) so we only stream a reasoning
-    // chain for composition turns. Demo/mood-generation flows are always
-    // compositions — skip the extra call for them.
-    const isMoodGeneration = instruction === moodInstruction;
-    const skipClassification = isDemoMode() || isMoodGeneration;
-    const intent: Intent = skipClassification
-      ? 'compose'
-      : await classifyIntent(getActiveLLMCaller({ disableDeepSeekThinking: true }), {
-        instruction, currentCode, conversationHistory, signal, images, preparedUserContent, preparedHistory, sampleTiming,
-      });
-    if (skipClassification) sampleTiming?.('intent_classification', { durationMs: 0, status: 'skipped' });
-
-    const retrievalUsage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheCreationInputTokens: 0, calls: 0 };
-    const sampleSearch = isDemoMode() ? undefined : createSampleRetriever(getActiveLLMCaller({ disableDeepSeekThinking: true }), {
-      signal, onUsage: usage => {
-        retrievalUsage.inputTokens += usage.inputTokens;
-        retrievalUsage.outputTokens += usage.outputTokens;
-        retrievalUsage.cachedInputTokens += usage.cachedInputTokens ?? 0;
-        retrievalUsage.cacheCreationInputTokens += usage.cacheCreationInputTokens ?? 0;
-        retrievalUsage.calls++;
-      },
-    });
-    const result = await runAgentLoop({
-      sampleSearch,
-      sampleTiming,
-      preparedUserContent,
-      preparedHistory,
-      instruction,
-      initialCode: currentCode,
-      locale,
-      systemPrompt,
-      llm,
-      onProgress,
-      signal,
-      conversationHistory,
-      enableThinking: intent === 'compose',
-      thinkingLevel: getSelectedThinkingLevel(),
-    });
-    committed = result.committed;
-    return { ...result, retrievalUsage };
-  } catch (error) {
-    status = timingErrorStatus(error, signal);
-    throw error;
-  } finally {
-    sampleTiming?.('run_finished', {
-      committed, status: signal?.aborted ? timingErrorStatus(signal.reason, signal) : status,
-    });
-  }
+  const retrievalUsage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheCreationInputTokens: 0, calls: 0 };
+  const sampleSearch = isDemoMode() ? undefined : createSampleRetriever(getActiveLLMCaller({ disableDeepSeekThinking: true }), {
+    signal, onUsage: usage => {
+      retrievalUsage.inputTokens += usage.inputTokens;
+      retrievalUsage.outputTokens += usage.outputTokens;
+      retrievalUsage.cachedInputTokens += usage.cachedInputTokens ?? 0;
+      retrievalUsage.cacheCreationInputTokens += usage.cacheCreationInputTokens ?? 0;
+      retrievalUsage.calls++;
+    },
+  });
+  const result = await runAgentLoop({
+    sampleSearch,
+    preparedUserContent,
+    preparedHistory,
+    instruction,
+    initialCode: currentCode,
+    locale,
+    systemPrompt,
+    llm,
+    onProgress,
+    signal,
+    conversationHistory,
+    enableThinking: intent === 'compose',
+    thinkingLevel: getSelectedThinkingLevel(),
+  });
+  return { ...result, retrievalUsage };
 }
 
 // Re-exported so callers don't need to reach into ../agent/loop directly.
