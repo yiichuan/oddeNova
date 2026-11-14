@@ -17,6 +17,7 @@ import { emberTextTheme } from '../lib/ember-text-theme';
 import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '../lib/codepanel-theme';
 import { createCodePanelDrawContext, type CodePanelDrawContext } from '../lib/codepanel-canvas';
 import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
+import { clearPunchcardBlurLayers, registerPunchcardBlur } from '../lib/punchcard-blur';
 import { installCodeEditorScrollMargins } from '../lib/code-editor-scroll-margins';
 import { installCodeEditorReadOnly, setCodeEditorReadOnly } from '../lib/code-editor-read-only';
 import { installCodeEditorTooltipBounds } from '../lib/code-editor-tooltip-bounds';
@@ -509,6 +510,9 @@ export class StrudelService {
         (window as unknown as Record<string, unknown>).getStrudelAccentColor = () => this._state.accentColor;
       }
 
+      const { getPunchcardPainter } = await import('@strudel/draw');
+      registerPunchcardBlur(Pattern.prototype, getPunchcardPainter);
+
       // Register .piano() pattern method (from strudel packages/repl/prebake.mjs)
       const maxPan = noteToMidi('C8');
       const panwidth = (pan: number, width: number) => pan * width + (1 - width) / 2;
@@ -668,6 +672,7 @@ export class StrudelService {
       // state; anything still holding an older number is talking about an
       // engine that no longer exists.
       const generation = ++this.editorGeneration;
+      let hadIsolatedPunchcard = false;
 
       const editor = new StrudelMirror({
         root: this.containerElement,
@@ -685,6 +690,18 @@ export class StrudelService {
         // of a second, redundant animation loop — see codepanel-accent.ts.
         onDraw: (haps: unknown[], time: number, painters?: ((...args: unknown[]) => void)[]) => {
           if (generation !== this.editorGeneration) return;
+          const hasIsolatedPunchcard = Boolean(painters?.some((paint) =>
+            (paint as ((...args: unknown[]) => void) & { __oddenovaIsolatedPunchcard?: boolean })
+              .__oddenovaIsolatedPunchcard,
+          ));
+          if (hasIsolatedPunchcard && !hadIsolatedPunchcard) {
+            // A previously unblurred punchcard drew directly onto this canvas.
+            // Clear that one-time legacy frame before the isolated layer takes over.
+            const canvas = this.panelCanvas?.context.canvas;
+            if (canvas) this.panelCanvas?.context.clearRect(0, 0, canvas.width, canvas.height);
+          }
+          hadIsolatedPunchcard = hasIsolatedPunchcard;
+          if (this.containerElement) clearPunchcardBlurLayers(this.containerElement);
           painters?.forEach((paint) => paint(this.panelCanvas?.context, time, haps, drawTime));
           this.panelAccent?.sample(haps as Parameters<CodePanelAccent['sample']>[0], time);
         },

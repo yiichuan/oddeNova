@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CODE_PANEL_CANVAS_ID, createCodePanelDrawContext } from '../codepanel-canvas';
+import { PUNCHCARD_BLUR_LAYER_ATTRIBUTE } from '../punchcard-blur';
 
 describe('createCodePanelDrawContext', () => {
   afterEach(() => {
@@ -104,6 +105,30 @@ describe('createCodePanelDrawContext', () => {
     clear();
 
     expect(clearRect).toHaveBeenCalledWith(0, 0, 400, 200);
+  });
+
+  it('removes punchcard blur layers when cleared and disposed', () => {
+    const panel = document.createElement('div');
+    document.body.appendChild(panel);
+    const { clear, dispose } = createCodePanelDrawContext({
+      panel,
+      getDrawContext: () => ({ clearRect: vi.fn() }),
+    });
+    const clearedLayer = document.createElement('canvas');
+    clearedLayer.setAttribute(PUNCHCARD_BLUR_LAYER_ATTRIBUTE, '');
+    panel.appendChild(clearedLayer);
+
+    clear();
+
+    expect(panel.querySelector(`[${PUNCHCARD_BLUR_LAYER_ATTRIBUTE}]`)).toBeNull();
+
+    const disposedLayer = document.createElement('canvas');
+    disposedLayer.setAttribute(PUNCHCARD_BLUR_LAYER_ATTRIBUTE, '');
+    panel.appendChild(disposedLayer);
+
+    dispose();
+
+    expect(panel.querySelector(`[${PUNCHCARD_BLUR_LAYER_ATTRIBUTE}]`)).toBeNull();
   });
 
   it('stops tracking the panel once disposed', () => {
