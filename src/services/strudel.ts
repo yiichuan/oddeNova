@@ -12,6 +12,8 @@ import {
 } from '../lib/sample-preview';
 import { trackWavExportCompleted } from '../lib/analytics';
 import { installOddenovaSyntaxHighlight } from '../lib/oddenova-syntax-highlight';
+import { amberTextTheme } from '../lib/amber-text-theme';
+import { emberTextTheme } from '../lib/ember-text-theme';
 import { createCodePanelTheme, createThemePainter, type CodePanelTheme } from '../lib/codepanel-theme';
 import { createCodePanelDrawContext, type CodePanelDrawContext } from '../lib/codepanel-canvas';
 import { createCodePanelAccent, type CodePanelAccent } from '../lib/codepanel-accent';
@@ -595,6 +597,11 @@ export class StrudelService {
     this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
     try {
       const { StrudelMirror, compartments, themes } = await import('@strudel/codemirror');
+      const availableThemes = {
+        ...themes,
+        amberText: amberTextTheme,
+        emberText: emberTextTheme,
+      };
       const { transpiler } = await import('@strudel/transpiler');
       cachedTranspiler = transpiler;
       const { getDrawContext } = await import('@strudel/draw');
@@ -719,7 +726,7 @@ export class StrudelService {
         this.panelTheme = createCodePanelTheme({
           editor: editor.editor,
           themeCompartment: compartments.theme,
-          themes,
+          themes: availableThemes,
         });
         installCodeEditorScrollMargins(editor.editor);
         installCodeEditorReadOnly(editor.editor);
