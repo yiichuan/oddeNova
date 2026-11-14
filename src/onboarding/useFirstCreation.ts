@@ -68,7 +68,7 @@ export interface UseFirstCreationOptions {
   enabled: boolean;
   canAutoInvite: boolean;
   studioActive: boolean;
-  eligible: boolean;
+  guestEligible: boolean;
   sessions: readonly Session[];
   currentId: string | null;
   isPersistent: boolean;
@@ -158,7 +158,8 @@ function streamChunks(text: string): string[] {
 }
 
 export function useFirstCreation(options: UseFirstCreationOptions) {
-  const { ownerKey, layout, enabled, canAutoInvite, studioActive, eligible, currentId, isPersistent } = options;
+  const { ownerKey, layout, enabled, canAutoInvite, studioActive, guestEligible, currentId, isPersistent } = options;
+  const eligible = ownerKey !== 'guest' || guestEligible;
 
   // Progress is per account, held with the owner it belongs to, so a change of
   // account is seen during render and never shows one account another's.

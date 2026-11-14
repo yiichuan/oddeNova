@@ -77,15 +77,17 @@ let container: HTMLDivElement;
 let guide: FirstCreation;
 let studio: ReturnType<typeof makeStudio>;
 let layout: 'desktop' | 'mobile' = 'desktop';
+let ownerKey = 'guest';
+let guestEligible = true;
 
 function Harness() {
   const g = useFirstCreation({
-    ownerKey: 'guest',
+    ownerKey,
     layout,
     enabled: true,
     canAutoInvite: true,
     studioActive: true,
-    eligible: true,
+    guestEligible,
     sessions: studio.state.sessions,
     currentId: studio.state.currentId,
     isPersistent: true,
@@ -116,6 +118,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
   layout = 'desktop';
+  ownerKey = 'guest';
+  guestEligible = true;
   studio = makeStudio();
   container = document.createElement('div');
   root = createRoot(container);
@@ -129,6 +133,18 @@ afterEach(() => {
 });
 
 describe('useFirstCreation', () => {
+  it('invites an unfinished account even when the browser is ineligible as a guest', async () => {
+    guestEligible = false;
+    mount();
+    expect(guide.view).toBe('hidden');
+
+    ownerKey = 'user:new';
+    mount();
+    expect(guide.view).toBe('hidden');
+    await act(async () => {});
+    expect(guide.view).toBe('invite');
+  });
+
   it('invites a newcomer and starts the practice from an empty piece', async () => {
     expect(guide.view).toBe('invite');
     await act(async () => { await guide.start(); });

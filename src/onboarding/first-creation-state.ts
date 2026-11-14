@@ -240,33 +240,20 @@ function isCreationProgress(value: unknown): value is CreationProgress {
     && typeof v.delivered === 'number';
 }
 
-/**
- * The progress stored for `ownerKey`, or `fallback`. An account seen for the
- * first time inherits a settled guest answer — the same person should not be
- * asked twice — but not an unfinished guest practice.
- */
+/** Read only the progress for this account or guest. */
 export function readCreationProgress(
   ownerKey: string,
   fallback: CreationProgress,
   storage: Storage = localStorage,
 ): CreationProgress {
-  const read = (key: string): CreationProgress | null => {
-    try {
-      const raw = storage.getItem(creationProgressKey(key));
-      if (!raw) return null;
-      const parsed: unknown = JSON.parse(raw);
-      return isCreationProgress(parsed) ? parsed : null;
-    } catch {
-      return null;
-    }
-  };
-  const own = read(ownerKey);
-  if (own) return own;
-  if (ownerKey !== 'guest') {
-    const guest = read('guest');
-    if (guest && isCreationSettled(guest)) return { ...guest, sessionId: null };
+  try {
+    const raw = storage.getItem(creationProgressKey(ownerKey));
+    if (!raw) return fallback;
+    const parsed: unknown = JSON.parse(raw);
+    return isCreationProgress(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
   }
-  return fallback;
 }
 
 export function writeCreationProgress(ownerKey: string, progress: CreationProgress, storage: Storage = localStorage): void {
@@ -280,8 +267,8 @@ export function writeCreationProgress(ownerKey: string, progress: CreationProgre
 /**
  * Set on the very first visit a browser makes after the guide shipped — the
  * same first paint that opens the welcome window. Browsers that were already
- * using the app before that never get it, so existing accounts are not
- * interrupted by a practice they do not need; they reach it from the menu.
+ * using the app before that never get it, so returning guests reach the guide
+ * from the menu. Signed-in users use account progress instead.
  */
 export const ONBOARDING_ELIGIBLE_KEY = 'oddenova_onboarding_eligible';
 
