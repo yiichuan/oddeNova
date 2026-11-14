@@ -1651,34 +1651,6 @@ export class StrudelService {
         lpf.connect(offlineCtx.destination);
       }
 
-      // Schedule all haps onto the offline ctx (sorted by onset for `cut` correctness).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const haps = (pattern as any)
-        .queryArc(beginCycle, endCycle, { _cps: cps })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .sort((a: any, b: any) => a.whole.begin.valueOf() - b.whole.begin.valueOf());
-      let scheduled = 0;
-      for (const hap of haps) {
-        // Cached instruments may resolve entirely in microtasks. Yield to the
-        // browser periodically so a Cancel click can interrupt long schedules.
-        if (++scheduled % 64 === 0) await waitForRetryDelay(0, signal);
-        signal?.throwIfAborted();
-        if (hap.hasOnset()) {
-          try {
-            hap.ensureObjectValue();
-            await superdough(
-              hap.value,
-              (hap.whole.begin.valueOf() - beginCycle) / cps,
-              hap.duration / cps,
-              cps,
-              (hap.whole.begin.valueOf() - beginCycle) / cps,
-            );
-          } catch (err) {
-            errorLogger(err, 'webaudio');
-          }
-        }
-      }
-
       // Wait for any pending reverb IR generation to finish. Superdough builds
       // its reverb convolver IR via a *nested* OfflineAudioContext whose
       // `oncomplete` callback installs `convolver.buffer` (see
@@ -1693,7 +1665,6 @@ export class StrudelService {
       // (see strudel/packages/superdough/superdoughoutput.mjs: SuperdoughAudioController).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const controllerForWait = getSuperdoughAudioController() as any;
-      console.log('[exportAudio] scheduled', haps.length, 'haps; orbits:', Object.keys(controllerForWait?.nodes ?? {}));
       const waitForReverbReady = async (): Promise<void> => {
         const deadline = Date.now() + 5000; // hard cap so we never hang
         while (true) {
@@ -1704,7 +1675,6 @@ export class StrudelService {
             .map((o) => o?.reverbNode)
             .filter(Boolean);
           if (reverbs.length === 0) {
-            console.log('[exportAudio] no reverb nodes attached to any orbit; skipping wait');
             return; // no reverb in this pattern
           }
           const status = reverbs.map((n) => ({
@@ -1715,7 +1685,6 @@ export class StrudelService {
           }));
           const ready = reverbs.every((n) => n.buffer && n.buffer.length > 0);
           if (ready) {
-            console.log('[exportAudio] reverb IRs ready:', status);
             return;
           }
           if (Date.now() > deadline) {
@@ -1725,9 +1694,38 @@ export class StrudelService {
           await waitForRetryDelay(20, signal);
         }
       };
-      await waitForReverbReady();
+      let scheduled = 0;
+      const schedule = async (from: number, to: number) => {
+        // Sort by onset so controls like `cut` see events in playback order.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const haps = (pattern as any)
+          .queryArc(from, to, { _cps: cps })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .sort((a: any, b: any) => a.whole.begin.valueOf() - b.whole.begin.valueOf());
+        for (const hap of haps) {
+          // Cached instruments may resolve entirely in microtasks. Yield to the
+          // browser periodically so a Cancel click can interrupt long schedules.
+          if (++scheduled % 64 === 0) await waitForRetryDelay(0, signal);
+          signal?.throwIfAborted();
+          if (hap.hasOnset()) {
+            try {
+              hap.ensureObjectValue();
+              await superdough(
+                hap.value,
+                (hap.whole.begin.valueOf() - beginCycle) / cps,
+                hap.duration / cps,
+                cps,
+                (hap.whole.begin.valueOf() - beginCycle) / cps,
+              );
+            } catch (err) {
+              errorLogger(err, 'webaudio');
+            }
+          }
+        }
+        await waitForReverbReady();
+      };
 
-      const renderedBuffer = await renderOfflineAudio(offlineCtx, signal);
+      const renderedBuffer = await renderOfflineAudio(offlineCtx, { beginCycle, endCycle, cps, schedule }, signal);
       signal?.throwIfAborted();
       if (progressTimer !== null) {
         clearInterval(progressTimer);
