@@ -42,9 +42,33 @@ export const MODEL_BATCH_SEARCH_TOOL = {
   },
 };
 
+export const SAMPLE_GUIDE_RESULT_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: 'returnCandidates',
+    description: '按查询 id 返回已读取的候选 variantId，无匹配时返回空数组。',
+    parameters: {
+      type: 'object', additionalProperties: false, required: ['results'],
+      properties: {
+        results: {
+          type: 'array', minItems: 1,
+          items: {
+            type: 'object', additionalProperties: false, required: ['id', 'variantIds'],
+            properties: {
+              id: { type: 'string' },
+              variantIds: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 /** Preserve valid groups; missing, duplicate or invalid groups can be searched again. */
 export function resolveModelSearchResults(
   value: unknown, rows: ReturnType<typeof serializeFullCatalog>['rows'], queries: SampleRoleQuery[],
+  format: 'candidates' | 'variantIds' = 'candidates',
 ): SampleSearchResult[] {
   if (!Array.isArray(value)) throw Error('Missing results');
   const ids = new Set(queries.map(query => query.id));
@@ -63,7 +87,7 @@ export function resolveModelSearchResults(
       id: query.id, ok: false, error: entries.length ? 'Duplicate query result; retry this id.' : 'Missing query result; retry this id.',
     };
     try {
-      return { id: query.id, ok: true, candidates: resolveCandidateFiles(entries[0].candidates, rows) };
+      return { id: query.id, ok: true, candidates: resolveCandidateFiles(entries[0][format], rows, format) };
     } catch (error) {
       return { id: query.id, ok: false, error: error instanceof Error ? error.message : 'Invalid candidates; retry this id.' };
     }
@@ -76,18 +100,28 @@ export function resolveModelCandidates(value: unknown, rows: ReturnType<typeof s
   return resolveCandidateFiles(value, rows);
 }
 
-function resolveCandidateFiles(value: unknown, rows: ReturnType<typeof serializeFullCatalog>['rows']) {
+function resolveCandidateFiles(
+  value: unknown,
+  rows: ReturnType<typeof serializeFullCatalog>['rows'],
+  format: 'candidates' | 'variantIds' = 'candidates',
+) {
   if (!Array.isArray(value)) throw Error('Invalid candidates');
   const seen=new Set<string>();
-  return value.map(c=>{
-    if(!c||typeof c.variantId!=='string'||typeof c.reason!=='string'||!c.reason.trim()||seen.has(c.variantId))throw Error('Invalid or duplicate candidate');
-    seen.add(c.variantId);
-    const row=rows[c.variantId];
-    if(!row)throw Error(`Unknown variantId: ${c.variantId}`);
+  return value.map(candidate => {
+    const variantId = format === 'variantIds' ? candidate : candidate?.variantId;
+    const reason = format === 'candidates' ? candidate?.reason : undefined;
+    if (typeof variantId !== 'string' || seen.has(variantId) ||
+        (format === 'candidates' && (typeof reason !== 'string' || !reason.trim()))) {
+      throw Error('Invalid or duplicate candidate');
+    }
+    seen.add(variantId);
+    const row = rows[variantId];
+    if (!row) throw Error(`Unknown variantId: ${variantId}`);
     const {sample,variant}=row;
     return {name:sample.key,category:sample.category,summary:sample.summary,index:variant.index,rootNote:variant.rootNote,
       articulation:variant.articulation,features:variant.features,annotationStatus:variant.annotationStatus,
-      playback:variant.playback,variantCount:sample.variants.length,alternatives:[],selectionReason:c.reason};
+      playback:variant.playback,variantCount:sample.variants.length,alternatives:[],
+      ...(reason === undefined ? {} : { selectionReason: reason })};
   });
 }
 
@@ -102,9 +136,9 @@ export const READ_SAMPLE_DETAILS_TOOL = {
     },
   },
 };
-export const SAMPLE_GUIDE_SEARCH_PROMPT = `目标：为本批音色需求选择可用的采样文件。
+export const SAMPLE_GUIDE_SEARCH_PROMPT = `目标：为本批音色需求筛出可用的采样文件，供主 Agent 结合整首曲子选择。
 原则：尊重明确乐器和奏法，听感作为偏好，联想不代表实际声源。按需求独立选样。
 知识：导览按类别列出音色名称和听感概览。每个音色展开后可看到独立文件的证据和 variantId。工具反馈列出全部已读音色，其详情仍在对话中，可直接使用。
-引导：首次展开时，可合并读取几个相关且有代表性的音色，覆盖已确定的需求。已有候选满足需求且文件级证据足以说明取舍时，直接返回结果。继续搜索应针对具体缺口，例如现有候选尾音过长、缺少要求的奏法或可演奏音高；优先读取有望补足缺口的未读音色。避免为了寻找可能存在的更优声音而反复探索。理由引用文件级信息并说明局限。
-约束：只使用已读取的 variantId。最后只调用一次 returnCandidates，按查询 id 返回各组；不合适时返回空组。limit 是期望数量。
+引导：首次展开时，可合并读取几个相关且有代表性的音色，覆盖已确定的需求。已有候选满足需求时，直接返回结果。继续搜索应针对具体缺口，例如现有候选尾音过长、缺少要求的奏法或可演奏音高；优先读取有望补足缺口的未读音色。避免为了寻找可能存在的更优声音而反复探索。
+约束：只输出工具调用。最后调用一次 returnCandidates，按查询 id 返回各组 variantIds，每组只列已读取且不重复的 variantId；无合适候选时返回空数组。limit 是期望数量。
 自检：是否覆盖全部查询？是否尊重声源、奏法和听感需求？已有证据是否足够返回？继续展开能够解决什么尚未满足的需求？`;

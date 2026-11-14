@@ -32,9 +32,15 @@ for(const file of inventory) {
   if(download?.sha256) hashes.add(download.sha256);
   const good=annotation?.status==='valid';
   if(good) annotated++;
-  else failures.push({id:file.id,key:file.key,path:file.path,active:file.active,
-    reason:download?.error ?? annotation?.errors ?? 'pending'});
-  if(!file.active) continue;
+  else {
+    const failure=await optional(path.join(run,file.id+'-failure.json'));
+    failures.push({id:file.id,key:file.key,path:file.path,active:file.active,
+      reason:download?.error ?? annotation?.errors ?? failure?.error ?? 'pending'});
+  }
+  if(!file.active && !file.catalogKey) continue;
+  if(!good && (file.library === 'featured' || file.render)) continue;
+  const key=file.catalogKey ?? file.key;
+  const sound=file.render && file.render.variant===undefined ? key : key+':'+file.index;
   const a=good ? annotation.annotation : null;
   // Descriptions are for human review only; retrieval serializes structured features explicitly.
   const features=a ? {structure:a.structure,timbre:a.timbre,envelope:a.envelope,space:a.space} : null;
@@ -46,12 +52,13 @@ for(const file of inventory) {
     features,
     ...(a && extractSoundDescription(a) && { soundDescription: extractSoundDescription(a), descriptionStatus: 'model_initial' }),
     annotationStatus:good ? 'model_initial' : 'unavailable',
-    playback:file.rootNote ? 'note('+JSON.stringify(file.rootNote)+').s('+JSON.stringify(file.key+':'+file.index)+')' :
-      's('+JSON.stringify(file.key+':'+file.index)+')',
+    ...(file.render && { rendered: true }),
+    playback:file.rootNote ? 'note('+JSON.stringify(file.rootNote)+').s('+JSON.stringify(sound)+')' :
+      's('+JSON.stringify(sound)+')',
   };
-  if(!groups.has(file.key)) groups.set(file.key,{key:file.key,aliases:file.aliases,category:file.category,
+  if(!groups.has(key)) groups.set(key,{key,aliases:file.aliases,category:file.category,
     categoryEvidence:file.categoryEvidence,summary:'',variants:[]});
-  groups.get(file.key).variants.push(validRelease(expert) ? applyExpertRelease(variant, expert) : variant);
+  groups.get(key).variants.push(validRelease(expert) ? applyExpertRelease(variant, expert) : variant);
 }
 for(const group of groups.values()) {
   group.summary=summarizeSample(group.variants);

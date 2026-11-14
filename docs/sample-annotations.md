@@ -2,7 +2,7 @@
 
 `searchSamples` 通过非空 `queries` 数组接受多组声部需求，每组包含本批唯一的 `id`、`query`，以及可选的 `category`、`features`、`limit`。不设查询组数、每组候选数或整批候选预算的硬上限。`limit` 为期望数量，默认3，模型按相关性决定实际返回数量。支持中文或英文类别，以及亮度、厚度、质感、起音、包络、尾音、混响等偏好。
 
-主 Agent 按需调用工具，工具在同一次检索对话中处理整批需求，按 id 返回 `results`。检索器从 `/sample-annotations/catalog.json` 读取目录，返回独立文件候选及选择理由，`alternatives` 为空。演示模式不提供 `searchSamples`。旧评测通过显式注入使用关键词排序，历史批次的复跑使用记录的源码版本。
+主 Agent 按需调用工具，工具在同一次检索对话中处理整批需求，按 id 返回 `results`。检索器从 `/sample-annotations/catalog.json` 读取目录，返回独立文件候选及标注，`alternatives` 为空。演示模式不提供 `searchSamples`。旧评测通过显式注入使用关键词排序，历史批次的复跑使用记录的源码版本。
 
 ## 标注任务
 
@@ -10,11 +10,16 @@
 
 ```sh
 node --import=tsx/esm scripts/sample-annotations/run.mjs inventory
+node --import=tsx/esm scripts/sample-annotations/render-blind.mjs --timbres
 node --env-file=.env.local --import=tsx/esm scripts/sample-annotations/run.mjs annotate
 node --import=tsx/esm scripts/sample-annotations/build.mjs FINGERPRINT
 ```
 
-清单包含六份音频索引中的所有引用。路径使用运行时的修复逻辑，记录数组位置、音高映射、别名和加载顺序造成的重名覆盖。目录只输出白名单中实际可调用的名称。被覆盖文件仍保留文件级记录。
+清单包含六份采样索引、示例曲目《360》的两个外部采样、GM SoundFont 和内置合成器及噪声源。索引路径沿用播放端的修复逻辑。Dirt Samples 被同名音色覆盖的文件可通过 `dirt_` 名称检索和播放。示例音频以 `cover360_` 名称注册，曲目代码中的原有名称照常可用。
+
+渲染命令使用本机 Chrome 和播放引擎，为每个 GM 预设、内置音色的默认设置和 Bytebeat 内置预设生成独立的干声试听片段。GM 的试听音高沿用浏览目录；这份标注描述所听音区，检索返回相同预设索引和示例音高。波形的短名称作为别名记录。自定义合成参数和用户曲目动态加载的任意外部音频需提供具体的试听素材后再标注。
+
+音频渲染和模型标注都可续跑。用 `RENDER_LIBRARY=synths` 或 `RENDER_LIBRARY=gm` 单独渲染，用 `ANNOTATION_LIBRARIES=gm,synths,featured` 处理新增音色。缺少渲染文件的项目留在待处理清单。若两步并行，可加 `ANNOTATION_WATCH_RENDERS=1` 持续处理新生成的音频。用 `ANNOTATION_RETRY_INVALID=1` 重试已有的不合格标注。超过 30 秒的源文件提交前 30 秒供模型分析，完整原音仍可试听。
 
 任务在 `.local/sample-annotations/` 保存清单、音频缓存、下载状态、按内容哈希去重的模型结果、逐次原始响应和费用账本。再次执行同一配置复用已有结果。网络请求失败最多补试三次，连续下载失败五次则停止，格式错误最多补跑一次。每次调用保守预留费用；用量未知的调用保留预留金额。默认总费用上限为 40 元，可通过 `ANNOTATION_BUDGET_CNY` 设置。预算按本次核实的北京价格估算，输入每百万 Token 0.8 元，输出 2.7 元；实际账单以平台为准，其他区域需要先调整价格。
 
@@ -46,13 +51,13 @@ v26 中英文提示词指导创作模型在需要比较音色时查询候选，�
 
 ## 产品中的模型检索
 
-真实创作入口为 `searchSamples` 注入独立模型检索器。主 Agent 自主决定配器，v26 中英文提示词引导它合并已确定的需求，单组或依赖前次结果的需求可后续补查。工具内部使用当前模型配置/凭据，开启全新的消息列表，先读取按类别分组的全库导览及整批 queries。导览每行包含音色名称和听感概览。模型通过 readSampleDetails 批量展开音色，读取文件级标注、声音描述、联想和播放示例。已读文件不会重复附加，候选必须来自本次已展开的文件。候选包含根音、变体、文件级标注、合法 playback 与 selectionReason；不把全库表格或子模型对话放入主上下文。不提前决定整首配器，不强制采用全部候选。
+真实创作入口为 `searchSamples` 注入独立模型检索器。主 Agent 自主决定配器，v26 中英文提示词引导它合并已确定的需求，单组或依赖前次结果的需求可后续补查。工具内部使用当前模型配置/凭据，开启全新的消息列表，先读取按类别分组的全库导览及整批 queries。导览每行包含音色名称和听感概览。模型通过 readSampleDetails 批量展开音色，读取文件级标注、声音描述、联想和播放示例。已读文件不会重复附加，候选必须来自本次已展开的文件。检索模型按查询 id 返回候选 variantId，工具解析出根音、变体、文件级标注和合法 playback；不把全库表格或子模型对话放入主上下文。不提前决定整首配器，不强制采用全部候选。
 
 ```json
 {"queries":[{"id":"melody","query":"柔和圆润的钢琴","category":"piano","limit":3},{"id":"snare","query":"干声短尾军鼓","category":"snare","limit":3}]}
 ```
 
-返回形状为 `{ok:true,results:[{id,ok:true,candidates:[...]},{id,ok:false,error:"..."}]}`，顺序按输入需求排列。每组独立校验真实文件、格式、理由和组内去重；不同组可以选同一文件。漏组、重复组或该组候选无效时，只将对应组标记失败，保留其他有效结果；没有匹配时返回成功的空候选组及 notice。无法关联的未知 id、响应结构错误或整个模型请求失败作为工具失败返回，不暗中改用关键词排序。历史单查询参数 `query/category/features/limit` 仍兼容，保留默认5个及原 `candidates` 返回形状；新工具 schema 只展示 queries 接口。
+返回形状为 `{ok:true,results:[{id,ok:true,candidates:[...]},{id,ok:false,error:"..."}]}`，顺序按输入需求排列。每组独立校验已展开的真实文件、格式和组内去重；不同组可以选同一文件。漏组、重复组或该组候选无效时，只将对应组标记失败，保留其他有效结果；没有匹配时返回成功的空候选组及 notice。无法关联的未知 id、响应结构错误或整个模型请求失败作为工具失败返回，不暗中改用关键词排序。历史单查询参数 `query/category/features/limit` 仍兼容，保留默认5个及原 `candidates` 返回形状；新工具 schema 只展示 queries 接口。
 
 固定顺序为「检索系统提示词 → 全库导览 → 本批查询」。指令、工具 schema、目录顺序和行号确定；查询 id、听感条件及 limit 只放在最后一个消息，不添加时间戳或随机前缀。DeepSeek/OpenAI 路径使用供应商的自动前缀缓存；Anthropic 在全库导览文本块末尾设置 ephemeral 缓存断点。缓存不减少上下文长度，也不保证必然命中。目录或提示词变化会改变前缀。
 

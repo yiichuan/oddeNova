@@ -1,19 +1,24 @@
 import { build } from 'vite';
 import { createServer } from 'node:http';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, access, readdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { buildInventory } from './catalog.ts';
+const execute = promisify(execFile);
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+const timbres=process.argv.includes('--timbres');
 const dir=path.resolve(root,process.env.EVAL_DIR||'.local/sample-annotations/deepseek-eval');
-const output=path.join(dir,'blind');
+const output=timbres?path.join(root,'.local/sample-annotations/timbre-render'):path.join(dir,'blind');
 const raw=path.join(output,'raw');
-const bundle=path.join(output,'bundle');
+const renderLibrary=timbres?process.env.RENDER_LIBRARY:undefined;
+const bundle=path.join(output,renderLibrary?'bundle-'+renderLibrary:'bundle');
 await mkdir(raw,{recursive:true});
 await mkdir(path.join(output,'fonts'),{recursive:true});
 const hash=value=>createHash('sha256').update(value).digest('hex');
-const inventory=JSON.parse(await readFile(path.join(root,'.local/sample-annotations/inventory.json'),'utf8'));
+const inventory=timbres?buildInventory(root):JSON.parse(await readFile(path.join(root,'.local/sample-annotations/inventory.json'),'utf8'));
 const lookup=new Map(inventory.map(f=>[[f.library,f.key,f.rootNote,f.index].join('|'),f]));
 const cases=JSON.parse(await readFile(path.join(root,process.env.EVAL_CASES||'scripts/sample-annotations/eval-cases.json'),'utf8'));
 await build({configFile:false,root,logLevel:'error',base:'/bundle/',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{
@@ -22,6 +27,31 @@ await build({configFile:false,root,logLevel:'error',base:'/bundle/',define:{'pro
   rollupOptions:{output:{inlineDynamicImports:true}},
 }});
 const permitted=new Set();
+const runs=['scene-eval','deepseek-eval','full-catalog-eval','model-search-eval'];
+const cachedFonts=await Promise.all(runs.map(
+  name=>readdir(path.join(root,'.local/sample-annotations',name,'blind/fonts')).catch(()=>[])));
+async function fetchFont(name) {
+  const file=path.join(output,'fonts',name);
+  try {await access(file);return file;} catch {}
+  const cached=cachedFonts.findIndex(names=>names.includes(name));
+  if(cached>=0) return path.join(root,'.local/sample-annotations',runs[cached],'blind/fonts',name);
+  const sources=[
+    'https://felixroos.github.io/webaudiofontdata/sound/',
+    'https://raw.githubusercontent.com/felixroos/webaudiofontdata/master/sound/',
+  ];
+  for(const base of sources) {
+    try {
+      await execute('curl',['--fail','--silent','--show-error','--location','--connect-timeout','10','--max-time','90','-o',file+'.tmp',base+name]);
+      await rename(file+'.tmp',file);
+      return file;
+    } catch(error) {if(base===sources.at(-1)) throw error;}
+  }
+}
+const fontDownloads=new Map();
+function ensureFont(name) {
+  if(!fontDownloads.has(name)) fontDownloads.set(name,fetchFont(name).finally(()=>fontDownloads.delete(name)));
+  return fontDownloads.get(name);
+}
 const server=createServer(async(req,res)=>{
   try {
     const url=new URL(req.url,'http://localhost');
@@ -51,16 +81,16 @@ const server=createServer(async(req,res)=>{
     if(/^\/audio\/[a-f0-9]{64}\.(wav|mp3)$/.test(url.pathname))
       return send('application/octet-stream',await readFile(path.join(root,'.local/sample-annotations',url.pathname.slice(1))));
     if(/^\/font\/[a-zA-Z0-9_.-]+\.js$/.test(url.pathname)) {
-      const name=url.pathname.slice(6),file=path.join(output,'fonts',name);
-      try{await access(file);}catch{execFileSync('curl',['--fail','--silent','--show-error','--location','--retry','2','--max-time','90','-o',file,
-        'https://felixroos.github.io/webaudiofontdata/sound/'+name]);}
+      const name=url.pathname.slice(6),file=await ensureFont(name);
       return send('application/javascript',await readFile(file));
     }
     if(req.method==='POST'&&url.pathname.startsWith('/save/')) {
       const id=url.pathname.slice(6);
       if(!permitted.has(id))throw Error('Invalid output');
       const buffers=[];for await(const chunk of req)buffers.push(chunk);
-      await writeFile(path.join(raw,id+'.wav'),Buffer.concat(buffers));
+      const file=path.join(raw,id+'.wav');
+      await writeFile(file+'.tmp',Buffer.concat(buffers));
+      await rename(file+'.tmp',file);
       return send('text/plain','saved');
     }
     console.error('Missing resource',url.pathname);res.writeHead(404);res.end();
@@ -113,13 +143,44 @@ async function evaluate(expression) {
 const results=[];
 try {
   await command('Runtime.enable',{},sessionId);
-  await command('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/'},sessionId);
+  await command('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/' +(timbres?'?timbres':'')},sessionId);
   for(let i=0;i<120;i++) {
     if(await evaluate('typeof window.renderClip === "function"'))break;
     if(i===119)throw Error('Renderer initialization failed');
     await new Promise(resolve=>setTimeout(resolve,500));
   }
-  for(const item of cases.filter(item=>!process.env.RENDER_CASE||item.id===process.env.RENDER_CASE))for(let repeat=0;repeat<Number(process.env.EVAL_REPEATS||3);repeat++) {
+  if(timbres) {
+    const pending=[];
+    for(const item of inventory.filter(item=>item.render && (!renderLibrary || item.library===renderLibrary))) {
+      try {await access(path.join(raw,item.id+'.wav'));} catch {pending.push(item);}
+    }
+    let next=0;
+    const prefetched=new Map();
+    function prefetch(item) {
+      const ready=item.render.font?ensureFont(item.render.font+'.js'):Promise.resolve();
+      prefetched.set(item.id,ready.then(()=>null,error=>error));
+    }
+    const ordered=[...pending.filter(item=>!item.render.font),...pending.filter(item=>item.render.font)];
+    for(const item of ordered.slice(0,24)) {prefetch(item);next++;}
+    for(const item of ordered) {
+      try {
+        const error=await prefetched.get(item.id);
+        prefetched.delete(item.id);
+        if(next<ordered.length) prefetch(ordered[next++]);
+        if(error) throw error;
+        permitted.add(item.id);
+        const key=item.render.variant===undefined?item.key:item.key+':'+item.index;
+        const sound='s('+JSON.stringify(key)+')';
+        const code='setcps(1); '+(item.rootNote?'note('+JSON.stringify(item.rootNote)+').'+sound:sound)+'.struct("x ~")';
+        const rendered=await evaluate('window.renderClip('+JSON.stringify(item.id)+','+JSON.stringify(code)+',2,2)');
+        results.push({id:item.id,key:item.key,index:item.index,...rendered});
+        console.log('Rendered',item.key,item.index);
+      } catch(error) {
+        results.push({id:item.id,key:item.key,index:item.index,error:error.message});
+        console.log('Render failed',item.key,item.index,error.message.slice(0,150));
+      }
+    }
+  } else for(const item of cases.filter(item=>!process.env.RENDER_CASE||item.id===process.env.RENDER_CASE))for(let repeat=0;repeat<Number(process.env.EVAL_REPEATS||3);repeat++) {
     const pair=[];
     for(const condition of ['baseline','search']) {
       const id=item.id+'-'+repeat+'-'+condition;
@@ -151,5 +212,5 @@ try {
       }
     }
   }
-  await writeFile(path.join(output,'render-results.json'),JSON.stringify(results,null,2));
+  await writeFile(path.join(output,renderLibrary?'render-results-'+renderLibrary+'.json':'render-results.json'),JSON.stringify(results,null,2));
 } finally {socket.close();chrome.kill();server.close();}

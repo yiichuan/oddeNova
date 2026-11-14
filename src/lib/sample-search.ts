@@ -21,6 +21,7 @@ export interface SampleVariant {
   modelFeatures?: ListeningFeatures | null;
   annotationStatus: 'model_initial' | 'expert_confirmed' | 'unavailable';
   playback: string;
+  rendered?: true;
 }
 export interface SearchSample {
   key: string;

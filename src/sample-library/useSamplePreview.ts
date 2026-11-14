@@ -3,18 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 type PreviewState = { id: string; phase: 'loading' | 'playing' | 'failed' } | null;
 
 export function useSamplePreview(selectedId: string | undefined) {
-  const active = useRef<{ id: string; audio: HTMLAudioElement } | null>(null);
+  const active = useRef<{ id: string; release: () => void } | null>(null);
   const [preview, setPreview] = useState<PreviewState>(null);
 
   const release = useCallback(() => {
     const current = active.current;
     if (!current) return;
     active.current = null;
-    current.audio.onended = null;
-    current.audio.onerror = null;
-    current.audio.pause();
-    current.audio.removeAttribute('src');
-    current.audio.load();
+    current.release();
   }, []);
 
   const stop = useCallback(() => {
@@ -38,29 +34,46 @@ export function useSamplePreview(selectedId: string | undefined) {
     queueMicrotask(() => setPreview(previous => previous?.id === current.id && !active.current ? null : previous));
   }, [selectedId, release]);
 
-  const play = (id: string, url: string) => {
+  const play = (id: string, source: string | ((signal: AbortSignal, onEnded: () => void) => Promise<void>)) => {
     if (active.current?.id === id) {
       stop();
       return;
     }
     release();
 
-    const audio = new Audio();
-    active.current = { id, audio };
+    const request = { id, release: () => {} };
+    active.current = request;
     const fail = () => {
-      if (active.current?.audio !== audio) return;
+      if (active.current !== request) return;
       release();
       setPreview({ id, phase: 'failed' });
     };
-    audio.onended = () => {
-      if (active.current?.audio === audio) stop();
+    const ended = () => {
+      if (active.current === request) stop();
     };
-    audio.onerror = fail;
     setPreview({ id, phase: 'loading' });
-    audio.src = url;
-    // Call play in the click handler so mobile browsers see the user gesture.
-    void audio.play().then(() => {
-      if (active.current?.audio === audio) setPreview({ id, phase: 'playing' });
+    const start = () => {
+      if (typeof source !== 'string') {
+        const controller = new AbortController();
+        request.release = () => controller.abort();
+        return source(controller.signal, ended);
+      }
+      const audio = new Audio();
+      request.release = () => {
+        audio.onended = null;
+        audio.onerror = null;
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      };
+      audio.onended = ended;
+      audio.onerror = fail;
+      audio.src = source;
+      // Call play in the click handler so mobile browsers see the user gesture.
+      return audio.play();
+    };
+    void start().then(() => {
+      if (active.current === request) setPreview({ id, phase: 'playing' });
     }).catch(fail);
   };
 

@@ -7,6 +7,8 @@
 //   todepond/samples tidal-drum-machines-alias.json — drum machine short aliases
 // Plus melodic samples listed in the agent system prompt.
 
+import { DIRT_SAMPLE_ALIASES, FEATURED_SAMPLE_FILES } from './additional-sample-sources';
+
 export const DIRT_SAMPLES: readonly string[] = [
   '808', '909',
   '808bd', '808cy', '808hc', '808ht', '808lc', '808lt', '808mc', '808mt', '808oh', '808sd',
@@ -436,6 +438,8 @@ const _dmAliasVariants: string[] = DRUM_MACHINE_SAMPLES.flatMap((entry) => {
 
 export const SAMPLE_ALLOWLIST: Set<string> = new Set([
   ...DIRT_SAMPLES,
+  ...DIRT_SAMPLE_ALIASES.map(([, alias]) => alias),
+  ...Object.keys(FEATURED_SAMPLE_FILES),
   ...MELODIC_SAMPLES,
   ...DRUM_MACHINE_SAMPLES,
   ...GM_INSTRUMENTS,

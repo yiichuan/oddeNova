@@ -1,4 +1,4 @@
-import { fetchSampleIndexParts, SAMPLE_LIBRARIES, type SampleIndex } from '../lib/sample-index-hosts';
+import { FEATURED_SAMPLE_INDEX, fetchSampleIndexParts, SAMPLE_LIBRARIES, type SampleIndex } from '../lib/sample-index-hosts';
 import type { SampleVariant } from '../lib/sample-search';
 
 export function indexPreviewSources(parts: readonly SampleIndex[]) {
@@ -18,7 +18,7 @@ export type PreviewSources = ReturnType<typeof indexPreviewSources>;
 export async function loadPreviewSources(signal: AbortSignal): Promise<PreviewSources> {
   const indexes = await Promise.all(SAMPLE_LIBRARIES.map(library =>
     fetchSampleIndexParts(`/sample-index/${library}.json`, signal)));
-  return indexPreviewSources(indexes.flat());
+  return indexPreviewSources([...indexes.flat(), FEATURED_SAMPLE_INDEX]);
 }
 
 export function resolvePreviewUrl(

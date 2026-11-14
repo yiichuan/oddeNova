@@ -14,7 +14,7 @@ export function openAIUsage(usage: {
   prompt_cache_hit_tokens?: number;
 }): LLMUsage {
   return {inputTokens:usage.prompt_tokens,outputTokens:usage.completion_tokens,
-    cachedInputTokens:usage.prompt_cache_hit_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0};
+    cachedInputTokens:usage.prompt_cache_hit_tokens ?? usage.prompt_tokens_details?.cached_tokens};
 }
 
 export function anthropicUsage(usage: {
@@ -22,7 +22,7 @@ export function anthropicUsage(usage: {
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
 }): LLMUsage {
-  const cached=usage.cache_read_input_tokens??0, created=usage.cache_creation_input_tokens??0;
-  return {inputTokens:usage.input_tokens+cached+created,outputTokens:usage.output_tokens,
+  const cached=usage.cache_read_input_tokens??undefined, created=usage.cache_creation_input_tokens??undefined;
+  return {inputTokens:usage.input_tokens+(cached??0)+(created??0),outputTokens:usage.output_tokens,
     cachedInputTokens:cached,cacheCreationInputTokens:created};
 }

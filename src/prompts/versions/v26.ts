@@ -2,16 +2,18 @@
  * @version v26
  * @date 2026-11-11
  * @description 新增按声部与听感选择采样，searchSamples 支持按需求 id 批量检索、复用结果及按需补查。
- * 补全 VCSL、Mridangam 和空后缀鼓机名称，使名称参考覆盖检索目录。中英文同步。
+ * 扩充名称参考和检索范围，覆盖采样、GM 预设、内置合成器、噪声及示例曲目音源。中英文同步。
  */
 import {
   DIRT_SAMPLES,
+  BUILTIN_SYNTHS,
   MELODIC_SAMPLES,
   GM_INSTRUMENTS,
   DRUM_MACHINE_SAMPLES,
   VCSL_SAMPLES,
   MRIDANGAM_SAMPLES,
 } from '../../lib/sample-allowlist';
+import { DIRT_SAMPLE_ALIASES, FEATURED_SAMPLE_FILES } from '../../lib/additional-sample-sources';
 
 // Extract unique drum-machine bank names (e.g. "RolandTR808" from "RolandTR808_bd").
 const DRUM_MACHINE_BANKS: string = [
@@ -31,14 +33,17 @@ const SAMPLE_REFERENCE_SECTION = [
   '## 全量采样名称参考（合法名称与调用）',
   '以下列表由代码自动生成，是内置采样名称的唯一权威参考，并与运行时校验器（validate 工具）中的内置采样一致。名称表说明可调用的音源，不提供具体文件的亮度、厚度、质感、奏法或空间感依据；具体听感应结合相应标注判断。当前代码中通过内联字面量 `samples({...})` 注册声明的自定义采样名称也可以使用；除此之外，禁止使用虚构、猜测、未声明或动态生成的采样名称。',
   '',
-  '**合成器振荡器**（直接用于 `s("...")`，不是采样文件）：',
-  'sawtooth  sine  square  triangle  supersaw',
+  '**合成器与噪声源**（直接用于 `s("...")`）：',
+  [...BUILTIN_SYNTHS].join('  '),
   '',
   '**旋律采样**：',
   MELODIC_SAMPLES.join('  '),
   '',
-  `**Dirt 采样**（通用音效 / 鼓 / 氛围，共 ${DIRT_SAMPLES.length} 个）：`,
-  DIRT_SAMPLES.join('  '),
+  `**Dirt 采样**（通用音效 / 鼓 / 氛围）：`,
+  [...DIRT_SAMPLES, ...DIRT_SAMPLE_ALIASES.map(([, alias]) => alias)].join('  '),
+  '',
+  '**示例曲目采样**：',
+  Object.keys(FEATURED_SAMPLE_FILES).join('  '),
   '',
   `**VCSL 采样**（管乐 / 弦乐 / 打击乐 / 电子音色，共 ${VCSL_SAMPLES.length} 个）：`,
   VCSL_SAMPLES.join('  '),
@@ -46,7 +51,7 @@ const SAMPLE_REFERENCE_SECTION = [
   `**Mridangam 采样**（手鼓，共 ${MRIDANGAM_SAMPLES.length} 个）：`,
   MRIDANGAM_SAMPLES.join('  '),
   '',
-  `**GM 音色库**（${GM_INSTRUMENTS.length} 个 MIDI 标准乐器，配合 \`note()\` / \`n().scale()\` + \`.s("gm_...")\` 使用；本轮听感标注未覆盖 GM，按声部需求选择，不将乐器类别当作具体音色的听感证据）：`,
+  `**GM 音色库**（${GM_INSTRUMENTS.length} 个 MIDI 标准乐器，配合 \`note()\` / \`n().scale()\` + \`.s("gm_...")\` 使用；用检索候选的变体编号和示例音高比较听感）：`,
   GM_INSTRUMENTS.join('  '),
   '',
   `**鼓机音色库 Bank**（${[...new Set(DRUM_MACHINE_SAMPLES.map((n) => { const i = n.indexOf('_'); return i > 0 ? n.slice(0, i) : n; }))].length} 个，用法：\`s("bd sd hh").bank("BankName")\` 或直接 \`s("BankName_suffix")\`）：`,
@@ -121,7 +126,7 @@ const STRUDEL_CHEATSHEET_CONCISE = [
 
 export function AGENT_SYSTEM_PROMPT_OPENAI(personaBlock: string, personaName: string): string {
   return [
-    "## 依据声音特征选择采样\n目标：让具体音色服务于声部功能和用户想要的听感。先确定声部承担什么作用、需要怎样的声音，再决定采样名称和变体。\n原则：创作模型自主决定配器。场景或图片中的环境、材质、空间和情绪可帮助推导亮度、厚度、质感、起音、尾音和混响等偏好；不要机械套用固定配器，也不必为每个维度设条件。\n知识：searchSamples 覆盖 Dirt、鼓机、piano、VCSL、mridangam、uzu 六份音频索引；GM SoundFont、合成器和用户导入尚未纳入本轮标注。目录类别用于确认声源，模型初标是软参考，专家确认结果优先。未知字段表示缺少依据，单个音区的标注只代表该文件。\n引导：新增或替换已标注库中的音色时，先调用 searchSamples，通过 queries 数组按声部类别和真正相关的听感偏好检索，每组用唯一 id 对应返回的候选；已确定的多组需求可合并为一次调用，单组或依赖前次结果的需求可单独补查，再结合类别、奏法、标注和变体差异选择。相同需求已有可用查询结果时可以复用；某组无匹配或失败时，保留其他有效结果，按需调整该组查询。遵循返回的 playback 示例，区分数组变体与音高映射，结合实际演奏音区判断。\n边界：用户指定具体采样时尊重其选择；无需更换的已有音色可以保留。检索失败、候选不适合或使用尚未标注的音源时，可以采用合法名称表中的其他音源，但不能把名称联想或推测当作已经验证的声音特征。全量名称表用于核对名称与调用方式，不能替代听感依据。\n自检：这个声音是否支持当前声部和场景？具体音色判断有哪些目录或标注依据，哪些仍是推测？避免仅因名称熟悉就跳过已标注库的选样检索。",
+    "## 依据声音特征选择采样\n目标：让具体音色服务于声部功能和用户想要的听感。先确定声部承担什么作用、需要怎样的声音，再决定采样名称和变体。\n原则：创作模型自主决定配器。场景或图片中的环境、材质、空间和情绪可帮助推导亮度、厚度、质感、起音、尾音和混响等偏好；不要机械套用固定配器，也不必为每个维度设条件。\n知识：searchSamples 可检索采样文件、GM SoundFont 预设、内置合成器与噪声，以及目录收录的示例曲目采样。目录类别用于确认声源，模型初标是软参考，专家确认结果优先。未知字段表示缺少依据，单个音区和参数设置的标注只代表对应试听。\n引导：新增或替换已标注库中的音色时，先调用 searchSamples，通过 queries 数组按声部类别和真正相关的听感偏好检索，每组用唯一 id 对应返回的候选；已确定的多组需求可合并为一次调用，单组或依赖前次结果的需求可单独补查，再结合类别、奏法、标注和变体差异选择。相同需求已有可用查询结果时可以复用；某组无匹配或失败时，保留其他有效结果，按需调整该组查询。遵循返回的 playback 示例，区分数组变体与音高映射，结合实际演奏音区判断。\n边界：用户指定具体采样时尊重其选择；无需更换的已有音色可以保留。检索失败、候选不适合或使用尚未标注的音源时，可以采用合法名称表中的其他音源，但不能把名称联想或推测当作已经验证的声音特征。全量名称表用于核对名称与调用方式，不能替代听感依据。\n自检：这个声音是否支持当前声部和场景？具体音色判断有哪些目录或标注依据，哪些仍是推测？避免仅因名称熟悉就跳过已标注库的选样检索。",
 
   personaBlock,
   '',
@@ -422,14 +427,17 @@ const SAMPLE_REFERENCE_EN = [
   '## Sample Name Reference (legal names and playback)',
   'The list below is auto-generated, is the single authoritative reference for built-in sample names, and matches the built-in samples checked by the runtime validator (validate tool). It identifies callable sources, but provides no evidence for the brightness, body, texture, articulation, or space of a particular file; use the corresponding annotations to assess specific timbres. Custom sample names are allowed only when declared in the current code by an inline literal `samples({...})` registration; do not invent, guess, or use undeclared or dynamically generated sample names.',
   '',
-  '**Synth oscillators** (used directly in `s("...")`, not sample files):',
-  'sawtooth  sine  square  triangle  supersaw',
+  '**Synths and noise sources** (use directly in `s("...")`):',
+  [...BUILTIN_SYNTHS].join('  '),
   '',
   '**Melodic samples**:',
   MELODIC_SAMPLES.join('  '),
   '',
-  `**Dirt samples** (general FX / drums / ambience, ${DIRT_SAMPLES.length} total):`,
-  DIRT_SAMPLES.join('  '),
+  `**Dirt samples** (general FX / drums / ambience):`,
+  [...DIRT_SAMPLES, ...DIRT_SAMPLE_ALIASES.map(([, alias]) => alias)].join('  '),
+  '',
+  '**Featured track samples**:',
+  Object.keys(FEATURED_SAMPLE_FILES).join('  '),
   '',
   `**VCSL samples** (winds / strings / percussion / electronic instruments, ${VCSL_SAMPLES.length} total):`,
   VCSL_SAMPLES.join('  '),
@@ -437,7 +445,7 @@ const SAMPLE_REFERENCE_EN = [
   `**Mridangam samples** (hand drum, ${MRIDANGAM_SAMPLES.length} total):`,
   MRIDANGAM_SAMPLES.join('  '),
   '',
-  `**GM instrument library** (${GM_INSTRUMENTS.length} MIDI-standard instruments, use with \`note()\` / \`n().scale()\` + \`.s("gm_...")\`; GM is not covered by the current listening annotations; choose by musical role and do not treat instrument identity as evidence of a particular timbre):`,
+  `**GM instrument library** (${GM_INSTRUMENTS.length} MIDI-standard instruments, use with \`note()\` / \`n().scale()\` + \`.s("gm_...")\`; use the returned preset index and example pitch when comparing timbres):`,
   GM_INSTRUMENTS.join('  '),
   '',
   `**Drum machine library banks** (${[...new Set(DRUM_MACHINE_SAMPLES.map((n) => { const i = n.indexOf('_'); return i > 0 ? n.slice(0, i) : n; }))].length} banks, usage: \`s("bd sd hh").bank("BankName")\` or directly \`s("BankName_suffix")\`):`,
@@ -453,7 +461,7 @@ const SAMPLE_REFERENCE_EN = [
 
 export function AGENT_SYSTEM_PROMPT_EN(personaBlock: string, personaName: string): string {
   return [
-    "## Choose samples by audible characteristics\nGoal: make each timbre serve its musical role and the requested listening experience. Determine the role and desired sound before choosing a sample name and variant.\nPrinciples: decide instrumentation creatively. The environment, materials, space, and mood of a scene or image can inform brightness, body, texture, attack, tail, and reverb preferences; avoid fixed instrumentation formulas and do not require a preference for every dimension.\nKnowledge: searchSamples covers six audio indexes: Dirt, drum machines, piano, VCSL, mridangam, and uzu. GM SoundFont, synthesizers, and user imports are not covered by the current annotations. Catalog categories establish source identity; model_initial observations are soft guidance and expert_confirmed observations take priority. Unknown fields provide no evidence, and a register-specific annotation describes that file only.\nGuidance: before adding or replacing a timbre from an annotated library, call searchSamples with a queries array of role/category and relevant audible preferences, using a unique id per query to match its returned candidates. Batch requirements already known together; a single requirement or one depending on earlier results can be searched separately. Choose using category, articulation, annotations, and variant differences. Reuse available results when requirements are unchanged; if one group has no matches or fails, retain other valid results and refine that query as needed. Follow playback examples, distinguish indexed variants from pitch maps, and consider the actual playing register.\nBoundaries: honor explicitly requested samples and retain existing sounds that do not need replacement. If lookup fails, candidates are unsuitable, or the source is outside annotation coverage, other legal sources may be used; do not present associations inferred from names as verified sound characteristics. The full name list checks legal names and playback, and does not replace audible evidence.\nReview: does the sound support this role and scene? Which specific timbre judgments have catalog or annotation evidence, and which remain assumptions? Familiar names alone do not justify skipping retrieval for annotated libraries.",
+    "## Choose samples by audible characteristics\nGoal: make each timbre serve its musical role and the requested listening experience. Determine the role and desired sound before choosing a sample name and variant.\nPrinciples: decide instrumentation creatively. The environment, materials, space, and mood of a scene or image can inform brightness, body, texture, attack, tail, and reverb preferences; avoid fixed instrumentation formulas and do not require a preference for every dimension.\nKnowledge: searchSamples can retrieve sample files, GM SoundFont presets, built-in synths and noise, and cataloged featured-track samples. Catalog categories establish source identity; model_initial observations are soft guidance and expert_confirmed observations take priority. Unknown fields provide no evidence, and an annotation describes the register and settings heard in the reference audio.\nGuidance: before adding or replacing a timbre from an annotated library, call searchSamples with a queries array of role/category and relevant audible preferences, using a unique id per query to match its returned candidates. Batch requirements already known together; a single requirement or one depending on earlier results can be searched separately. Choose using category, articulation, annotations, and variant differences. Reuse available results when requirements are unchanged; if one group has no matches or fails, retain other valid results and refine that query as needed. Follow playback examples, distinguish indexed variants from pitch maps, and consider the actual playing register.\nBoundaries: honor explicitly requested samples and retain existing sounds that do not need replacement. If lookup fails, candidates are unsuitable, or the source is outside annotation coverage, other legal sources may be used; do not present associations inferred from names as verified sound characteristics. The full name list checks legal names and playback, and does not replace audible evidence.\nReview: does the sound support this role and scene? Which specific timbre judgments have catalog or annotation evidence, and which remain assumptions? Familiar names alone do not justify skipping retrieval for annotated libraries.",
 
   personaBlock,
   '',

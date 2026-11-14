@@ -12,7 +12,7 @@ const expand = (names = ['piano']) => ({
  usage:{inputTokens:50,outputTokens:5},
 });
 afterEach(()=>{vi.unstubAllGlobals();vi.resetModules();});
-const reply=(variantId='v1')=>({content:null,toolCalls:[{id:'child',name:'returnCandidates',arguments:JSON.stringify({results:[{id:'keys',candidates:[{variantId,reason:'fits'}]}]})}],usage:{inputTokens:100,outputTokens:10}});
+const reply=(variantId='v1')=>({content:null,toolCalls:[{id:'child',name:'returnCandidates',arguments:JSON.stringify({results:[{id:'keys',variantIds:[variantId]}]})}],usage:{inputTokens:100,outputTokens:10}});
 it('uses a new isolated conversation for each request, maps files, and counts child usage',async()=>{
  mockCatalog();
  const {createSampleRetriever}=await import('../sample-retriever');
@@ -20,8 +20,9 @@ it('uses a new isolated conversation for each request, maps files, and counts ch
  const search=createSampleRetriever({chatWithTools:chat},{onUsage});
  const first=await search({queries:[{id:'keys',query:'soft piano'}]});await search({queries:[{id:'keys',query:'dark piano',limit:2}]});
  expect(first[0]).toMatchObject({id:'keys',ok:true});
- expect(first[0].ok && first[0].candidates[0]).toMatchObject({name:'piano',index:2,rootNote:'C4',playback:'note("C4").s("piano:2")',selectionReason:'fits'});
+ expect(first[0].ok && first[0].candidates[0]).toMatchObject({name:'piano',index:2,rootNote:'C4',playback:'note("C4").s("piano:2")'});
  expect(messages[0].slice(0,2)).toEqual(messages[2].slice(0,2));
+ expect(first[0].ok && first[0].candidates[0]).not.toHaveProperty('selectionReason');
  expect(messages[0][1].cachePrefix).toBe(true);
  expect(JSON.parse(String(messages[0][2].content)).queries[0].limit).toBe(3);
  expect(JSON.parse(String(messages[2][2].content)).queries[0].limit).toBe(2);
@@ -60,7 +61,7 @@ it('shares expanded details across roles and records usage for each model reques
  const {createSampleRetriever}=await import('../sample-retriever');
  const chat=vi.fn<LLMCaller['chatWithTools']>().mockResolvedValueOnce(expand()).mockResolvedValue({
   ...reply(),toolCalls:[{id:'child',name:'returnCandidates',arguments:JSON.stringify({results:[
-   {id:'drums',candidates:[]},{id:'keys',candidates:[{variantId:'v1',reason:'fits'}]},
+   {id:'drums',variantIds:[]},{id:'keys',variantIds:['v1']},
   ]})}],
  });
  const onUsage=vi.fn();
@@ -89,25 +90,86 @@ it('preserves large batches and candidate lists',async()=>{
  mockCatalog({...catalog,samples:[{...catalog.samples[0],variants}]});
  const {createSampleRetriever}=await import('../sample-retriever');
  const queries=Array.from({length:7},(_,i)=>({id:String(i),query:'piano',limit:20}));
- const candidates=variants.map((_,i)=>({variantId:`v${i+1}`,reason:'fits'}));
+ const variantIds=variants.map((_,i)=>`v${i+1}`);
  const chat=vi.fn<LLMCaller['chatWithTools']>().mockResolvedValueOnce(expand()).mockResolvedValue({...reply(),toolCalls:[{
-  id:'child',name:'returnCandidates',arguments:JSON.stringify({results:queries.map(q=>({id:q.id,candidates}))}),
+  id:'child',name:'returnCandidates',arguments:JSON.stringify({results:queries.map(q=>({id:q.id,variantIds}))}),
  }]});
  const results=await createSampleRetriever({chatWithTools:chat})({queries});
  expect(chat).toHaveBeenCalledTimes(2);
  expect(results).toHaveLength(7);
  for(const result of results)expect(result.ok && result.candidates).toHaveLength(12);
- const schema=chat.mock.calls[0][1][1].function.parameters as {properties:{results:{items:{properties:{candidates:unknown}}}}};
+ const schema=chat.mock.calls[0][1][1].function.parameters as {properties:{results:{items:{properties:{variantIds:unknown}}}}};
  expect(schema.properties.results).not.toHaveProperty('maxItems');
- expect(schema.properties.results.items.properties.candidates).not.toHaveProperty('maxItems');
+ expect(schema.properties.results.items.properties.variantIds).not.toHaveProperty('maxItems');
 });
 it('cancels an in-flight child call even if the caller ignores its signal',async()=>{
  mockCatalog();
  const {createSampleRetriever}=await import('../sample-retriever');
  const controller=new AbortController();let started!:()=>void;const ready=new Promise<void>(r=>{started=r;});
  const chat:LLMCaller['chatWithTools']=async()=>{started();return new Promise(()=>{});};
- const result=createSampleRetriever({chatWithTools:chat},{signal:controller.signal})({queries:[{id:'keys',query:'piano'}]});
+ const timing = vi.fn();
+ const result=createSampleRetriever({chatWithTools:chat},{signal:controller.signal})({queries:[{id:'keys',query:'piano'}]}, timing);
  await ready;controller.abort();await expect(result).rejects.toMatchObject({name:'AbortError'});
+ expect(timing).toHaveBeenCalledWith('retrieval_request', expect.objectContaining({
+  round: 1, status: 'aborted', durationMs: expect.any(Number),
+ }));
+ expect(timing).toHaveBeenLastCalledWith('retrieval_finished', expect.objectContaining({ status: 'aborted', rounds: 1 }));
+});
+
+it('tracks timeout even when a model request never settles', async () => {
+  mockCatalog();
+  const { createSampleRetriever } = await import('../sample-retriever');
+  const timing = vi.fn();
+  const deadline = new AbortController();
+  vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal);
+  try {
+    const search = createSampleRetriever({
+      chatWithTools: async () => {
+        deadline.abort(new DOMException('Deadline exceeded', 'TimeoutError'));
+        return new Promise(() => {});
+      },
+    });
+    await expect(search({ queries: [{ id: 'keys', query: 'piano' }] }, timing)).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(timing).toHaveBeenCalledWith('retrieval_request', expect.objectContaining({ round: 1, status: 'timeout' }));
+    expect(timing).toHaveBeenLastCalledWith('retrieval_finished', expect.objectContaining({ status: 'timeout' }));
+  } finally {
+    vi.mocked(AbortSignal.timeout).mockRestore();
+  }
+});
+
+it('reports asset waits, detail expansion, index reuse and per-round usage', async () => {
+  mockCatalog();
+  const { createSampleRetriever } = await import('../sample-retriever');
+  const call = vi.fn<LLMCaller['chatWithTools']>().mockImplementation(async (messages, _tools, _text, _reasoning, _signal, _thinking, _level, onFirstOutput) => {
+    onFirstOutput?.();
+    if (messages.length === 3) return expand();
+    return { ...reply(), usage: undefined, reasoning_content: 'checking results', content: 'done' };
+  });
+  const timing = vi.fn();
+  const search = createSampleRetriever({ chatWithTools: call });
+  const input = { queries: [{ id: 'keys', query: 'private query' }] };
+  await search(input, timing);
+  for (const stage of ['catalog', 'guide', 'assets']) {
+    expect(timing).toHaveBeenCalledWith(stage, { status: 'ok', durationMs: expect.any(Number) });
+  }
+  expect(timing).toHaveBeenCalledWith('index', expect.objectContaining({ reused: false, guideChars: expect.any(Number) }));
+  expect(timing).toHaveBeenCalledWith('details', expect.objectContaining({
+    round: 1, expandedNames: 1, addedVariants: 1, detailChars: expect.any(Number),
+  }));
+  const rounds = timing.mock.calls.filter(([stage]) => stage === 'retrieval_request');
+  expect(rounds).toEqual([
+    ['retrieval_request', expect.objectContaining({ round: 1, firstOutputMs: expect.any(Number), result: 'details', inputTokens: 50 })],
+    ['retrieval_request', expect.objectContaining({
+      round: 2, firstOutputMs: expect.any(Number), result: 'candidates',
+      reasoningChars: 'checking results'.length, textChars: 'done'.length,
+      toolArgumentChars: reply().toolCalls[0].arguments.length,
+    })],
+  ]);
+  expect(JSON.stringify(rounds[1])).not.toContain('inputTokens');
+  expect(JSON.stringify(timing.mock.calls)).not.toContain('private query');
+  expect(timing).toHaveBeenLastCalledWith('retrieval_finished', expect.objectContaining({ queryCount: 1, rounds: 2, status: 'ok' }));
+  await search(input, timing);
+  expect(timing).toHaveBeenCalledWith('index', expect.objectContaining({ reused: true }));
 });
 it('returns candidates to the same main agent, which resumes without receiving the catalog',async()=>{
  mockCatalog();
@@ -123,8 +185,16 @@ it('returns candidates to the same main agent, which resumes without receiving t
   mains.push(JSON.parse(JSON.stringify(messages)));count++;
   return {content:null,toolCalls:count===1?[{id:'lookup',name:'searchSamples',arguments:'{"queries":[{"id":"keys","query":"soft piano"},{"id":"drums","query":"dry snare"}]}'}]:[{id:'done',name:'commit',arguments:'{"explanation":"done"}'}]};
  }};
- const result=await runAgentLoop({initialCode:'s("bd")',instruction:'scene',locale:'zh',systemPrompt:'main system',llm,sampleSearch:createSampleRetriever(llm)});
+ const sampleTiming = vi.fn();
+ const result=await runAgentLoop({initialCode:'s("bd")',instruction:'scene',locale:'zh',systemPrompt:'main system',llm,sampleSearch:createSampleRetriever(llm),sampleTiming});
  expect(result.committed).toBe(true);expect(mains).toHaveLength(2);expect(retrievals).toBe(2);
+ expect(sampleTiming.mock.calls.map(([stage]) => stage)).toEqual([
+  'main_request', 'search_started', 'catalog', 'guide', 'assets', 'index', 'retrieval_request',
+  'details', 'retrieval_request', 'candidates', 'retrieval_finished', 'search_finished', 'main_request',
+ ]);
+ for (const [, event] of sampleTiming.mock.calls.slice(1, -1)) {
+  expect(event).toMatchObject({ iteration: 1, callId: 'lookup' });
+ }
  expect(JSON.stringify(mains)).not.toContain('rounded attack');expect(JSON.stringify(mains)).not.toContain('soft original recording');expect(JSON.stringify(mains[1])).toContain('piano:2');
  expect(mains[1].filter(m=>m.role==='tool')).toHaveLength(1);
  const toolReply=mains[1].find(m=>m.role==='tool')!;

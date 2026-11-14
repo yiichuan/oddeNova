@@ -65,9 +65,11 @@ export function createSampleGuide(catalog: SearchCatalog, overviews: ReadonlyMap
         read(args: unknown) {
           const names = (args as { names?: unknown } | null)?.names;
           if (!Array.isArray(names) || !names.length || names.some(name => typeof name !== 'string')) {
-            return 'names 必须是非空的准确音色名称数组。';
+            return { content: 'names 必须是非空的准确音色名称数组。', expandedNames: 0, addedVariants: 0 };
           }
           const lines: string[] = [];
+          let expandedNames = 0;
+          let addedVariants = 0;
           for (const name of new Set<string>(names)) {
             const group = details.get(name);
             if (!group?.length) lines.push(`未知音色名称或没有文件：${cell(name)}`);
@@ -80,11 +82,13 @@ export function createSampleGuide(catalog: SearchCatalog, overviews: ReadonlyMap
                 lines.push(text);
               }
               loaded.add(name);
+              expandedNames++;
+              addedVariants += group.length;
             }
           }
           lines.push(`全部已读音色：${JSON.stringify([...loaded])}`);
           lines.push('已读详情保留在对话中。候选和证据充分时可直接返回；仍有具体需求缺口时可展开相关未读音色。');
-          return lines.join('\n');
+          return { content: lines.join('\n'), expandedNames, addedVariants };
         },
       };
     },

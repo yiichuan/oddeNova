@@ -24,10 +24,20 @@
  * rather than in them.
  */
 
+import { DIRT_SAMPLE_ALIASES, FEATURED_SAMPLE_BASE, FEATURED_SAMPLE_FILES } from './additional-sample-sources';
+
 export type SampleIndex = Record<string, unknown>;
 
 /** Annotation inventory order. Later libraries own any duplicate name. */
 export const SAMPLE_LIBRARIES = ['dirt-samples', 'tidal-drum-machines', 'piano', 'vcsl', 'mridangam', 'uzu-drumkit'] as const;
+
+export const FEATURED_SAMPLE_INDEX = { _base: FEATURED_SAMPLE_BASE, ...FEATURED_SAMPLE_FILES };
+
+export function withDirtSampleAliases(index: SampleIndex): SampleIndex {
+  return { ...index, ...Object.fromEntries(DIRT_SAMPLE_ALIASES
+    .filter(([source]) => Object.hasOwn(index, source))
+    .map(([source, alias]) => [alias, index[source]])) };
+}
 
 /*
  * Paths the upstream indexes have wrong, mended before anything is fetched:
@@ -106,7 +116,7 @@ export async function fetchSampleIndexParts(url: string, signal?: AbortSignal): 
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`error loading "${url}": ${response.status}`);
   const index = repairPaths(await response.json() as SampleIndex);
-  return splitByHost(index);
+  return splitByHost(url === '/sample-index/dirt-samples.json' ? withDirtSampleAliases(index) : index);
 }
 
 /** Fetches one bundled index and registers it through superdough's `samples`. */

@@ -8,6 +8,7 @@ import { parseSampleSearchInput, DEFAULT_SAMPLE_LIMIT, type SampleBatchQuery, ty
 import { parseScore } from './parser';
 import { validateCodeRuntime, validateCodeTranspiler, normalizeCode } from '../services/strudel';
 import { normalizeGmSampleNames } from '../lib/sample-allowlist';
+import type { SampleTiming } from '../lib/sample-timing';
 
 export interface AgentState {
   code: string;
@@ -17,7 +18,8 @@ export interface AgentState {
 export interface ToolContext {
   state: AgentState;
   isZh?: boolean;
-  sampleSearch?: (input: SampleBatchQuery) => Promise<SampleSearchResult[]>;
+  sampleSearch?: (input: SampleBatchQuery, timing?: SampleTiming) => Promise<SampleSearchResult[]>;
+  sampleTiming?: SampleTiming;
 }
 
 export interface ToolResult {
@@ -182,7 +184,8 @@ export const TOOLS: ToolDef[] = [
         return { ok: false, error: zh ? '当前会话未启用音色检索。' : 'Sample search is unavailable in this session.' };
       }
       try {
-        const results = await ctx.sampleSearch({ queries: input.queries });
+        const batch = { queries: input.queries };
+        const results = ctx.sampleTiming ? await ctx.sampleSearch(batch, ctx.sampleTiming) : await ctx.sampleSearch(batch);
         const withNotices = results.map(result => result.ok ? {
           ...result, notice: result.candidates.length ? undefined : zh
             ? '没有匹配候选，可调整此组条件或使用现有采样目录。'

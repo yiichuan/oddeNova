@@ -19,8 +19,11 @@ window.fetch = (input, options) => {
 };
 await core.evalScope(core, mini, tonal, webaudio, draw);
 const indexes = ['dirt-samples','tidal-drum-machines','piano','vcsl','mridangam','uzu-drumkit'];
-for (const library of indexes) await samples(await fetch('/index/' + library).then(r => r.json()));
-await aliasBank('/alias.json');
+const renderTimbres = location.search === '?timbres';
+if (!renderTimbres) {
+  for (const library of indexes) await samples(await fetch('/index/' + library).then(r => r.json()));
+  await aliasBank('/alias.json');
+}
 
 function wav(buffer: AudioBuffer) {
   const frames = buffer.length;
@@ -48,7 +51,7 @@ Object.assign(window, {renderClip: async (id: string, code: string, cycles: numb
   });
   Object.defineProperty(core.Pattern.prototype,'p',{configurable:true,value(){return this;}});
   clearNodePools();
-  const context = new OfflineAudioContext(2,48000 * 120,48000);
+  const context = new OfflineAudioContext(2,48000 * (renderTimbres ? 2 : 120),48000);
   setAudioContext(context);
   setSuperdoughAudioController(null);
   await initAudio({maxPolyphony:1024,multiChannelOrbits:false});

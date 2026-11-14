@@ -7,12 +7,17 @@ const schema=JSON.parse(readFileSync('docs/sample-annotation-schema-v2.json','ut
 describe('sample inventory and category policy',()=>{
  it('covers all six indexes, preserves ownership, aliases, repairs and note maps',()=>{
   const files=buildInventory(process.cwd());
-  expect(files).toHaveLength(6495);
+  expect(files.filter(f=>!f.render&&f.library!=='featured')).toHaveLength(6495);
   expect(new Set(files.map(f=>f.id)).size).toBe(files.length);
   expect(files.filter(f=>f.key==='hh'&&f.active).every(f=>f.library==='uzu-drumkit')).toBe(true);
   expect(files.find(f=>f.key==='RolandTR808_bd').aliases).toContain('TR808_bd');
   expect(files.find(f=>f.library==='vcsl'&&f.key==='tom_mallet').path).toMatch(/^Membranophones\//);
   expect(files.find(f=>f.key==='piano').rootNote).not.toBeNull();
+  expect(files.filter(f=>f.catalogKey?.startsWith('dirt_'))).toHaveLength(118);
+  expect(files.filter(f=>f.library==='gm')).toHaveLength(869);
+  expect(files.filter(f=>f.key==='bytebeat')).toHaveLength(16);
+  expect(files.filter(f=>f.library==='featured').map(f=>f.key))
+    .toEqual(['cover360_camera_flash','cover360_vocals']);
  });
  it('omits guessed source fields for known categories and isolates unknown candidates',()=>{
   const before=structuredClone(schema);

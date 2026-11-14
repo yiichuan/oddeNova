@@ -7,6 +7,7 @@ import { CatalogFilters } from './CatalogFilters';
 import { SampleDirectory } from './SampleDirectory';
 import { loadPreviewSources, resolvePreviewUrl, type PreviewSources } from './preview-sources';
 import { useSamplePreview } from './useSamplePreview';
+import { playRenderedPreview } from './play-rendered-preview';
 import { AnnotationEditor } from './AnnotationEditor';
 import { CategoryEditor } from './CategoryEditor';
 import { ModelInputFields, ModelInputPreview } from './ModelInputFields';
@@ -204,9 +205,11 @@ export default function SampleLibraryPage() {
   }
 
   function previewControl(sampleKey: string, item: SampleVariant, location: 'row' | 'detail') {
-    if (sources.status !== 'ready') return null;
-    const url = resolvePreviewUrl(sources.sources, sampleKey, item);
-    if (!url) return <span className="sl-preview-unavailable">无法试听</span>;
+    if (!item.rendered && sources.status !== 'ready') return null;
+    const source = item.rendered
+      ? (signal: AbortSignal, ended: () => void) => playRenderedPreview(sampleKey, item, signal, ended)
+      : sources.status === 'ready' && resolvePreviewUrl(sources.sources, sampleKey, item);
+    if (!source) return <span className="sl-preview-unavailable">无法试听</span>;
     const phase = preview?.id === item.id ? preview.phase : null;
     const action = phase === 'loading' || phase === 'playing' ? '停止试听' : phase === 'failed' ? '重试试听' : '试听';
     const Icon = phase === 'loading' ? LoaderCircle : phase === 'playing' ? VolumeX : Volume2;
@@ -217,7 +220,7 @@ export default function SampleLibraryPage() {
       onClick={() => {
         if (variant?.id !== item.id && !closeEditor()) return;
         setSelection({ key: sampleKey, id: item.id });
-        play(item.id, url);
+        play(item.id, source);
       }}>
       <Icon size={16} aria-hidden="true" />
     </button>;

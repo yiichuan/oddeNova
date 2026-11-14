@@ -14,6 +14,7 @@ import {
   type ProgressEvent,
 } from '../loop';
 import { validateCodeRuntime, validateCodeTranspiler } from '../../services/strudel';
+import { createSampleTiming } from '../../lib/sample-timing';
 
 describe('sample search diagnostics', () => {
   it('reports zero calls when the model does not search', async () => {
@@ -55,7 +56,21 @@ describe('sample search diagnostics', () => {
       ] };
     } };
     try {
-      await runAgentLoop({ initialCode: '', instruction: 'test', locale: 'zh', systemPrompt: '', llm });
+      const sampleTiming = createSampleTiming('test-provider', 'test-model');
+      await runAgentLoop({ initialCode: '', instruction: 'private instruction', locale: 'zh', systemPrompt: '', llm, sampleTiming });
+      sampleTiming?.('run_finished');
+      const prefix = '[sample-timing] ';
+      const lines = info.mock.calls.map(([line]) => String(line)).filter(line => line.startsWith(prefix));
+      const events = lines.map(line => JSON.parse(line.slice(prefix.length)));
+      expect(events.map(event => event.stage)).toEqual([
+        'main_request', 'search_started', 'search_finished', 'search_deduplicated', 'run_finished',
+      ]);
+      expect(new Set(events.map(event => event.runId)).size).toBe(1);
+      expect(events[2]).toMatchObject({ iteration: 1, callId: 'search-1', status: 'error', durationMs: expect.any(Number) });
+      expect(events[3]).toMatchObject({ iteration: 1, callId: 'search-2' });
+      expect(events[4]).toMatchObject({ searchCalls: 1, deduplicatedCalls: 1, afterLastSearchMs: expect.any(Number) });
+      expect(lines.join('\n')).not.toContain('private instruction');
+      expect(lines.join('\n')).not.toContain('args');
       expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ result/),
         expect.objectContaining({ callId: 'search-1', result: { ok: false, error: expect.stringContaining('无效的采样查询') } }));
       expect(info).toHaveBeenCalledWith(expect.stringMatching(/\[searchSamples\] run \d+ deduplicated/),
