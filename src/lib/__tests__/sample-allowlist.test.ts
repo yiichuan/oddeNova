@@ -14,6 +14,7 @@ import {
 // @ts-ignore — gm-fonts.js is a plain JS ESM file with no type declarations
 import gmFonts from '../gm-fonts.js';
 import { VERIDIS_QUO } from '../featured-scripts';
+import { FEATURED_SAMPLE_INDEX, withDirtSampleAliases } from '../sample-index-hosts';
 
 describe('findUnknownSamples', () => {
   it('合法 sample 不报错', () => {
@@ -415,6 +416,12 @@ function registeredSoundNames(): Set<string> {
   const names = new Set<string>();
   for (const file of SAMPLE_INDEX_FILES) {
     for (const key of indexKeys(file)) names.add(soundKey(key));
+  }
+  for (const key of Object.keys(withDirtSampleAliases(readIndex('dirt-samples.json')))) {
+    if (!key.startsWith('_')) names.add(soundKey(key));
+  }
+  for (const key of Object.keys(FEATURED_SAMPLE_INDEX)) {
+    if (!key.startsWith('_')) names.add(soundKey(key));
   }
 
   // aliasBank() re-registers every existing `bank_suffix` sound under each alias

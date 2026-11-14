@@ -8,6 +8,7 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, 
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
+import { SampleSearchSummary } from './SampleSearchSummary';
 
 // The lottie player and its JSON stay out of first paint: declared at module
 // scope (never inside render) and mounted only where the thinking indicator
@@ -1362,14 +1363,14 @@ export default function ConversationView({
   // with the indicator when the turn ends. Only the current in-flight turn's
   // progress counts — completed turns keep their progress messages (for the
   // "思考过程" group) and always end with a stale commit ("准备播放").
-  const liveStatusLabel = useMemo(() => {
-    const lastAssistantIdx = messages.findLastIndex((m) => m.role === 'assistant');
-    const last = messages.slice(lastAssistantIdx + 1).findLast((m) => m.role === 'progress');
-    if (last && (last.progressKind === 'tool_call' || last.progressKind === 'commit')) {
-      return last.content;
-    }
-    return t('thinking');
-  }, [messages]);
+  const lastMessage = messages.at(-1);
+  const liveStatus = lastMessage?.role === 'progress' &&
+    (lastMessage.progressKind === 'tool_call' || lastMessage.progressKind === 'commit')
+    ? lastMessage
+    : undefined;
+  const isSearchingSamples = liveStatus?.toolName === 'searchSamples';
+  const liveStatusLabel = isSearchingSamples ? t('searchingSamples') : liveStatus?.content ?? t('thinking');
+  const sampleSearchSummary = isSearchingSamples ? liveStatus?.sampleSearchSummary : undefined;
 
   // Renders a single progress message's content (thinking narration, the
   // collapsed "思考" reasoning window, or a warning). Reused both inline while
@@ -1827,23 +1828,28 @@ export default function ConversationView({
         >
           <div className="flex items-start gap-1.5 px-1.5 shrink-0">
             <ThinkingLottieSuspense className="w-5 h-5 flex-shrink-0" />
-            {reasoningWindowAvailable ? (
-              <button
-                data-live-reasoning-toggle
-                onClick={() => setReasoningCollapsed((v) => !v)}
-                aria-expanded={reasoningWindowExpanded}
-                className={`flex min-w-0 items-center gap-1.5 text-left ${bodyText} text-text-primary transition-colors hover:text-text-secondary`}
-                title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
-              >
-                <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
-                <ChevronRightIcon
-                  size={18}
-                  className={`flex-shrink-0 transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
-                />
-              </button>
-            ) : (
-              <div className={`min-w-0 ${bodyText} text-text-primary`}>{liveStatusLabel}</div>
-            )}
+            <div className="min-w-0">
+              {reasoningWindowAvailable ? (
+                <button
+                  data-live-reasoning-toggle
+                  onClick={() => setReasoningCollapsed((v) => !v)}
+                  aria-expanded={reasoningWindowExpanded}
+                  className={`flex min-w-0 items-center gap-1.5 text-left ${bodyText} text-text-primary transition-colors hover:text-text-secondary`}
+                  title={reasoningWindowExpanded ? t('collapseReasoning') : t('expandReasoning')}
+                >
+                  <span data-live-reasoning-label className="min-w-0">{liveStatusLabel}</span>
+                  <ChevronRightIcon
+                    size={18}
+                    className={`flex-shrink-0 transition-transform ${reasoningWindowExpanded ? 'rotate-90' : ''}`}
+                  />
+                </button>
+              ) : (
+                <div className={`min-w-0 ${bodyText} text-text-primary`}>{liveStatusLabel}</div>
+              )}
+              {sampleSearchSummary && sampleSearchSummary.length > 0 && (
+                <SampleSearchSummary key={liveStatus?.id} items={sampleSearchSummary} />
+              )}
+            </div>
           </div>
           {reasoningWindowExpanded && streamingReasoningMsg && (
             // flex-1 (rather than a calc'd height) fills exactly whatever

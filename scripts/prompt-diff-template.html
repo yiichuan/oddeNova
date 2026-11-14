@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>提示词版本比较</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f5f3ec;
+      --surface: #fbfaf5;
+      --ink: #252c27;
+      --muted: #697469;
+      --line: #d9ded5;
+      --green: #e3efdf;
+      --green-strong: #c9e1c2;
+      --green-ink: #235533;
+      --red: #f8e5e1;
+      --red-strong: #edc9c1;
+      --red-ink: #9d4139;
+      font-family: "DM Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); }
+    button, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: .42; }
+    button:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible {
+      outline: 2px solid #426a46;
+      outline-offset: 2px;
+    }
+    [hidden] { display: none !important; }
+
+    .view-tabs {
+      position: sticky;
+      z-index: 10;
+      top: 0;
+      display: flex;
+      min-height: 51px;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 26px;
+      border-bottom: 1px solid var(--line);
+      background: rgb(250 249 244 / 97%);
+      backdrop-filter: blur(10px);
+    }
+    .tabs { display: flex; align-items: stretch; gap: 24px; }
+    .tab {
+      position: relative;
+      padding: 0 3px;
+      border: 0;
+      color: #697268;
+      background: transparent;
+      font-size: 14px;
+    }
+    .tab[aria-selected="true"] { color: #1d4d34; font-weight: 650; }
+    .tab[aria-selected="true"]::after {
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      height: 3px;
+      background: #28613d;
+      content: "";
+    }
+    .view-options { display: flex; align-items: center; gap: 17px; }
+    .language-control { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+    select, .outline-button {
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid #bdc6ba;
+      border-radius: 4px;
+      background: #fffefa;
+      font-size: 12px;
+    }
+    .help { position: relative; }
+    .help summary { color: #647064; cursor: pointer; font-size: 12px; list-style: none; white-space: nowrap; }
+    .help summary::-webkit-details-marker { display: none; }
+    .help summary::before { margin-right: 6px; content: "ⓘ"; }
+    .help-content {
+      position: absolute;
+      z-index: 20;
+      top: calc(100% + 10px);
+      right: 0;
+      width: min(380px, calc(100vw - 32px));
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: white;
+      box-shadow: 0 12px 34px rgb(25 40 30 / 14%);
+      color: #59645a;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .reader { display: grid; grid-template-columns: 228px minmax(0, 1fr); align-items: start; }
+    .change-nav {
+      position: sticky;
+      top: 51px;
+      display: flex;
+      height: calc(100dvh - 51px);
+      min-height: 360px;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+      background: #f8f7f1;
+    }
+    .nav-heading { padding: 19px 16px 12px; }
+    .nav-heading h2 { margin: 0 0 12px; font-size: 14px; font-weight: 650; }
+    .total-counts { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+    .count { padding: 2px 7px; border-radius: 999px; font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .count.added { color: var(--green-ink); background: var(--green); }
+    .count.removed { color: var(--red-ink); background: var(--red); }
+    .section-list { display: grid; gap: 3px; overflow: auto; padding: 0 9px; }
+    .section-link {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      padding: 10px 8px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      text-align: left;
+    }
+    .section-link:hover { background: #ecefe7; }
+    .section-link[aria-current="location"] { background: #e1ebdd; }
+    .section-index { color: #7e877b; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .section-title { overflow: hidden; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+    .section-counts { display: flex; gap: 3px; }
+    .section-counts .count { padding: 2px 5px; font-size: 10px; }
+    .keyboard-help { margin-top: auto; padding: 13px 15px; border-top: 1px solid var(--line); color: #7a8379; font-size: 11px; }
+    kbd { display: inline-grid; min-width: 21px; min-height: 21px; place-items: center; border: 1px solid #c8cec5; border-radius: 3px; background: #fffefa; color: #4d5b4d; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .reader-main { min-width: 0; }
+    .reader-toolbar {
+      position: sticky;
+      z-index: 8;
+      top: 51px;
+      display: flex;
+      min-height: 56px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 9px 20px;
+      border-bottom: 1px solid var(--line);
+      background: rgb(245 243 236 / 96%);
+      backdrop-filter: blur(10px);
+    }
+    .toolbar-left, .toolbar-right, .segmented, .jump-controls, .only-changes { display: flex; align-items: center; }
+    .toolbar-left { gap: 15px; }
+    .toolbar-right { gap: 12px; }
+    .segmented { overflow: hidden; border: 1px solid #bdc6ba; border-radius: 4px; }
+    .segmented button { min-height: 30px; padding: 0 12px; border: 0; background: #fffefa; color: #526054; font-size: 12px; }
+    .segmented button + button { border-left: 1px solid #bdc6ba; }
+    .segmented button[aria-pressed="true"] { color: white; background: #24533a; }
+    .only-changes { gap: 7px; color: #4d584e; font-size: 12px; white-space: nowrap; }
+    .only-changes input { width: 15px; height: 15px; accent-color: #28613d; }
+    .jump-controls { gap: 7px; }
+    .jump-controls button, .download-button {
+      min-height: 31px;
+      padding: 0 9px;
+      border: 1px solid #c6cdc3;
+      border-radius: 4px;
+      background: #fffefa;
+      color: #435044;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .jump-controls button:hover, .download-button:hover { background: #edf0e8; }
+    .position { min-width: 40px; color: #556157; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
+    .stats { color: #4b554c; font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+
+    .diff-content { padding: 18px 20px 42px; }
+    .section-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 3px 0 12px;
+      scroll-margin-top: 126px;
+    }
+    .section-heading h2 { margin: 0; font-size: 18px; font-weight: 650; }
+    .section-heading .order { margin-right: 8px; color: #6e7c6c; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .section-version { color: #7b857b; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+    .change-block { margin-bottom: 22px; scroll-margin-top: 126px; }
+    .diff-row {
+      display: grid;
+      grid-template-columns: 76px 22px minmax(0, 1fr);
+      align-items: start;
+      min-width: 0;
+      border-bottom: 1px solid rgb(255 255 255 / 75%);
+    }
+    .diff-row.context { background: #fbfaf5; }
+    .diff-row.add { background: var(--green); }
+    .diff-row.remove { background: var(--red); }
+    .split-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      border-bottom: 1px solid rgb(255 255 255 / 75%);
+    }
+    .split-cell {
+      display: grid;
+      grid-template-columns: 42px 17px minmax(0, 1fr);
+      align-items: start;
+      min-width: 0;
+    }
+    .split-cell + .split-cell { border-left: 1px solid #e2e4dc; }
+    .split-cell.context, .split-cell.blank { background: #fbfaf5; }
+    .split-cell.add { background: var(--green); }
+    .split-cell.remove { background: var(--red); }
+    .split-cell .line-number { padding-right: 6px; }
+    .split-cell .sign { padding-top: 7px; }
+    .line-number { padding: 7px 8px 7px 3px; color: #899187; font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; user-select: none; white-space: nowrap; }
+    .sign { padding-top: 7px; color: #84907f; font: 600 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
+    .add .sign { color: var(--green-ink); }
+    .remove .sign { color: var(--red-ink); }
+    .line-text { min-width: 0; padding: 6px 12px 7px 4px; font: 13px/1.72 "SFMono-Regular", Consolas, "PingFang SC", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .inline-change { padding: 0 1px; border-radius: 2px; background: var(--green-strong); color: inherit; }
+    .remove .inline-change { background: var(--red-strong); }
+    .fold { margin: 7px 0; border: 1px solid #d9ded5; border-radius: 4px; background: #eeefe8; color: #697469; }
+    .fold summary { padding: 7px 11px; cursor: pointer; font-size: 11px; list-style: none; }
+    .fold summary::-webkit-details-marker { display: none; }
+    .fold summary::before { margin-right: 8px; content: "···"; color: #859080; font-weight: 700; letter-spacing: .12em; }
+    .fold[open] summary { border-bottom: 1px solid #d9ded5; }
+    .empty { padding: 68px 24px; color: var(--muted); text-align: center; }
+
+    .source-heading { display: flex; justify-content: space-between; padding: 17px 22px 10px; color: var(--muted); font-size: 12px; }
+    .source-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; padding: 0 20px 24px; background: var(--line); }
+    .source-panel { min-width: 0; overflow: auto; background: var(--surface); }
+    .source-panel h2 { position: sticky; z-index: 1; top: 0; margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface); font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .source-panel pre { margin: 0; padding: 14px; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+    @media (max-width: 900px) {
+      .reader-toolbar { align-items: flex-start; flex-direction: column; gap: 9px; }
+      .toolbar-right { width: 100%; justify-content: space-between; }
+      .stats { margin-left: auto; }
+    }
+    @media (max-width: 700px) {
+      .view-tabs { min-height: 48px; gap: 8px; padding-inline: 13px; }
+      .tabs { gap: 15px; }
+      .tab { font-size: 12px; }
+      .view-options { gap: 9px; }
+      .language-control { gap: 5px; font-size: 11px; }
+      .language-control select { min-height: 30px; padding-inline: 7px; }
+      .help summary { width: 22px; overflow: hidden; font-size: 0; }
+      .help summary::before { font-size: 14px; }
+      .reader { grid-template-columns: minmax(0, 1fr); }
+      .change-nav { position: sticky; z-index: 7; top: 48px; height: auto; min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+      .nav-heading { display: flex; align-items: center; gap: 11px; padding: 8px 12px 4px; }
+      .nav-heading h2 { margin: 0; font-size: 12px; }
+      .total-counts { gap: 4px; font-size: 10px; }
+      .section-list { display: flex; gap: 5px; overflow-x: auto; padding: 3px 10px 8px; scrollbar-width: thin; }
+      .section-link { display: flex; width: auto; min-width: max-content; gap: 6px; padding: 7px 8px; }
+      .section-title { max-width: 170px; }
+      .section-index { display: none; }
+      .keyboard-help { display: none; }
+      .reader-toolbar { top: 104px; min-height: 0; padding: 8px 10px; }
+      .toolbar-left, .toolbar-right { gap: 7px; }
+      .segmented button { padding-inline: 9px; }
+      .only-changes { font-size: 11px; }
+      .jump-controls { gap: 4px; }
+      .jump-controls button, .download-button { min-height: 29px; padding-inline: 6px; font-size: 10px; }
+      .diff-content { padding: 12px 10px 28px; }
+      .section-heading { padding-bottom: 8px; }
+      .section-heading h2 { font-size: 15px; }
+      .section-version { font-size: 10px; }
+      .diff-row { grid-template-columns: 56px 18px minmax(0, 1fr); }
+      .line-number { padding-right: 4px; font-size: 9px; }
+      .line-text { padding-right: 7px; font-size: 12px; }
+      .split-row { grid-template-columns: minmax(0, 1fr); }
+      .split-cell + .split-cell { border-top: 1px solid #e2e4dc; border-left: 0; }
+      .split-cell { grid-template-columns: 38px 16px minmax(0, 1fr); }
+      .source-grid { grid-template-columns: 1fr; padding-inline: 10px; }
+      .source-panel { max-height: 45dvh; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="view-tabs">
+    <div class="tabs" role="tablist" aria-label="比较内容">
+      <button class="tab" id="prompt-tab" type="button" role="tab" aria-selected="true" aria-controls="prompt-panel">实际提示词</button>
+      <button class="tab" id="source-tab" type="button" role="tab" aria-selected="false" aria-controls="source-panel" tabindex="-1">TypeScript 源码</button>
+    </div>
+    <div class="view-options">
+      <label class="language-control" id="language-control">语言
+        <select id="language" aria-label="提示词语言">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <details class="help">
+        <summary>比较范围说明</summary>
+        <div class="help-content">比较的是实际展开后的系统提示词，使用固定内置 oddeNova 人设，不添加心情或会话上下文。采样清单按当前代码展开，历史版本不代表历史提交中的全部依赖。工具定义独立于提示词，不在本页对比范围。</div>
+      </details>
+    </div>
+  </header>
+
+  <div class="reader" id="prompt-panel" role="tabpanel" aria-labelledby="prompt-tab">
+    <aside class="change-nav" aria-label="改动导航">
+      <div class="nav-heading">
+        <h2>改动导航</h2>
+        <div class="total-counts" id="total-counts"></div>
+      </div>
+      <nav class="section-list" id="section-list" aria-label="改动章节"></nav>
+      <div class="keyboard-help"><kbd>J</kbd> / <kbd>K</kbd> 跳转改动</div>
+    </aside>
+
+    <section class="reader-main">
+      <div class="reader-toolbar">
+        <div class="toolbar-left">
+          <div class="segmented" role="group" aria-label="差异布局">
+            <button id="single-layout" type="button" aria-pressed="true">单栏</button>
+            <button id="split-layout" type="button" aria-pressed="false">并排</button>
+          </div>
+          <label class="only-changes"><input id="only-changes" type="checkbox" checked> 仅看改动</label>
+        </div>
+        <div class="toolbar-right">
+          <div class="jump-controls" aria-label="章节导航">
+            <button id="previous" type="button" aria-label="上一处改动">↑ 上一处</button>
+            <span class="position" id="position" aria-live="polite">0 / 0</span>
+            <button id="next" type="button" aria-label="下一处改动">↓ 下一处</button>
+          </div>
+          <button class="download-button" id="download" type="button">下载 diff</button>
+        </div>
+        <span class="stats" id="stats" role="status" aria-live="polite"></span>
+      </div>
+      <div class="diff-content" id="diff-content"></div>
+    </section>
+  </div>
+
+  <section id="source-panel" role="tabpanel" aria-labelledby="source-tab" hidden>
+    <div class="source-heading"><span>TypeScript 源码并排查看</span><span id="source-version-pair"></span></div>
+    <div class="source-grid" id="source-grid"></div>
+  </section>
+
+  <script>
+    const data = /*PAYLOAD*/;
+    const language = document.getElementById('language');
+    const promptPanel = document.getElementById('prompt-panel');
+    const sourcePanel = document.getElementById('source-panel');
+    const promptTab = document.getElementById('prompt-tab');
+    const sourceTab = document.getElementById('source-tab');
+    const languageControl = document.getElementById('language-control');
+    const contentNode = document.getElementById('diff-content');
+    const sectionList = document.getElementById('section-list');
+    const onlyChanges = document.getElementById('only-changes');
+    const singleButton = document.getElementById('single-layout');
+    const splitButton = document.getElementById('split-layout');
+    const positionNode = document.getElementById('position');
+    const previousButton = document.getElementById('previous');
+    const nextButton = document.getElementById('next');
+    const statsNode = document.getElementById('stats');
+    let layout = 'single';
+    let activeSection = 0;
+    let sectionModels = [];
+    let observer;
+
+    function makeNode(tag, className, text) {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text !== undefined) element.textContent = text;
+      return element;
+    }
+
+    function splitLines(text) {
+      if (!text) return [];
+      const lines = text.split(/\r?\n/);
+      if (lines[lines.length - 1] === '') lines.pop();
+      return lines;
+    }
+
+    function parseDiff(diffText, beforeLines, afterLines) {
+      const hunks = [];
+      let current = null;
+      for (const line of diffText.split('\n')) {
+        const header = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+        if (header) {
+          current = {
+            oldStart: Number(header[1]),
+            oldCount: header[2] === undefined ? 1 : Number(header[2]),
+            newStart: Number(header[3]),
+            newCount: header[4] === undefined ? 1 : Number(header[4]),
+            rows: [],
+          };
+          hunks.push(current);
+          continue;
+        }
+        if (!current || line.startsWith('\\')) continue;
+        const prefix = line[0];
+        if (prefix === ' ') current.rows.push({ type: 'context', text: line.slice(1) });
+        else if (prefix === '+') current.rows.push({ type: 'add', text: line.slice(1) });
+        else if (prefix === '-') current.rows.push({ type: 'remove', text: line.slice(1) });
+      }
+
+      let oldCursor = 1;
+      let newCursor = 1;
+      const blocks = [];
+      for (const hunk of hunks) {
+        const oldGap = Math.max(0, hunk.oldStart - oldCursor + (hunk.oldCount === 0 ? 1 : 0));
+        const newGap = Math.max(0, hunk.newStart - newCursor + (hunk.newCount === 0 ? 1 : 0));
+        const gapCount = Math.max(oldGap, newGap);
+        if (gapCount) {
+          blocks.push({
+            type: 'context',
+            rows: Array.from({ length: gapCount }, (_, index) => ({
+              type: 'context',
+              oldLine: oldCursor + index,
+              newLine: newCursor + index,
+              text: beforeLines[oldCursor + index - 1] ?? afterLines[newCursor + index - 1] ?? '',
+            })),
+          });
+          oldCursor += oldGap;
+          newCursor += newGap;
+        }
+
+        const hunkRows = [];
+        for (const row of hunk.rows) {
+          if (row.type === 'context') {
+            hunkRows.push({ ...row, oldLine: oldCursor++, newLine: newCursor++ });
+          } else if (row.type === 'remove') {
+            hunkRows.push({ ...row, oldLine: oldCursor++ });
+          } else {
+            hunkRows.push({ ...row, newLine: newCursor++ });
+          }
+        }
+        let contextRows = [];
+        let changeRows = [];
+        const flushContext = () => {
+          if (contextRows.length) blocks.push({ type: 'context', rows: contextRows });
+          contextRows = [];
+        };
+        const flushChanges = () => {
+          if (changeRows.length) blocks.push({ type: 'change', rows: changeRows });
+          changeRows = [];
+        };
+        for (const row of hunkRows) {
+          if (row.type === 'context') {
+            flushChanges();
+            contextRows.push(row);
+          } else {
+            flushContext();
+            changeRows.push(row);
+          }
+        }
+        flushContext();
+        flushChanges();
+      }
+      if (hunks.length) {
+        const oldTail = Math.max(0, beforeLines.length - oldCursor + 1);
+        const newTail = Math.max(0, afterLines.length - newCursor + 1);
+        const tailCount = Math.max(oldTail, newTail);
+        if (tailCount) {
+          blocks.push({
+            type: 'context',
+            rows: Array.from({ length: tailCount }, (_, index) => ({
+              type: 'context',
+              oldLine: oldCursor + index,
+              newLine: newCursor + index,
+              text: beforeLines[oldCursor + index - 1] ?? afterLines[newCursor + index - 1] ?? '',
+            })),
+          });
+        }
+      }
+      return blocks;
+    }
+
+    function nearestHeading(lines, lineNumber) {
+      const start = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
+      let parent = '';
+      let child = '';
+      for (let index = 0; index <= start; index += 1) {
+        const match = lines[index].match(/^\s{0,3}(#{1,3})\s+(.+?)\s*#*\s*$/);
+        if (!match) continue;
+        const title = match[2].replace(/[`*_]/g, '').trim();
+        if (match[1].length < 3) {
+          parent = title;
+          child = '';
+        } else {
+          child = title;
+        }
+      }
+      return child && parent ? `${parent} / ${child}` : child || parent;
+    }
+
+    function tokensFor(text, lang) {
+      if (typeof Intl.Segmenter === 'function') {
+        const segmenter = new Intl.Segmenter(lang === 'zh' ? 'zh-CN' : 'en', { granularity: 'word' });
+        return Array.from(segmenter.segment(text), item => item.segment);
+      }
+      return Array.from(text);
+    }
+
+    function inlineDifference(beforeText, afterText, lang) {
+      const before = tokensFor(beforeText, lang);
+      const after = tokensFor(afterText, lang);
+      const width = after.length + 1;
+      if (before.length * after.length > 250000) return null;
+      const table = new Uint32Array((before.length + 1) * width);
+      for (let i = before.length - 1; i >= 0; i -= 1) {
+        for (let j = after.length - 1; j >= 0; j -= 1) {
+          table[i * width + j] = before[i] === after[j]
+            ? table[(i + 1) * width + j + 1] + 1
+            : Math.max(table[(i + 1) * width + j], table[i * width + j + 1]);
+        }
+      }
+      const beforeChanged = Array(before.length).fill(true);
+      const afterChanged = Array(after.length).fill(true);
+      let i = 0;
+      let j = 0;
+      while (i < before.length && j < after.length) {
+        if (before[i] === after[j]) {
+          beforeChanged[i] = false;
+          afterChanged[j] = false;
+          i += 1;
+          j += 1;
+        } else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) {
+          i += 1;
+        } else {
+          j += 1;
+        }
+      }
+      return {
+        before: before.map((text, index) => ({ text, changed: beforeChanged[index] })),
+        after: after.map((text, index) => ({ text, changed: afterChanged[index] })),
+      };
+    }
+
+    function buildModels(entry, lang) {
+      const beforeLines = splitLines(entry.before);
+      const afterLines = splitLines(entry.after);
+      const blocks = parseDiff(entry.diff, beforeLines, afterLines);
+      let additions = 0;
+      let removals = 0;
+      const sections = [];
+      const sectionByTitle = new Map();
+      let changeIndex = 0;
+
+      for (const block of blocks) {
+        if (block.type !== 'change') continue;
+        const removed = block.rows.filter(row => row.type === 'remove');
+        const added = block.rows.filter(row => row.type === 'add');
+        const firstOld = removed[0]?.oldLine ?? added[0]?.newLine ?? 1;
+        const firstNew = added[0]?.newLine ?? removed[0]?.oldLine ?? 1;
+        const title = (added.length ? nearestHeading(afterLines, firstNew) : nearestHeading(beforeLines, firstOld))
+          || '其他改动';
+        let section = sectionByTitle.get(title);
+        if (!section) {
+          section = { title, blocks: [], additions: 0, removals: 0, index: sections.length };
+          sectionByTitle.set(title, section);
+          sections.push(section);
+        }
+        changeIndex += 1;
+        section.additions += added.length;
+        section.removals += removed.length;
+        additions += added.length;
+        removals += removed.length;
+        const model = {
+          ...block,
+          index: changeIndex,
+          section,
+          inline: removed.length === 1 && added.length === 1
+            ? inlineDifference(removed[0].text, added[0].text, lang)
+            : null,
+        };
+        section.blocks.push(model);
+        block.model = model;
+      }
+
+      for (const section of sections) section.id = `section-${section.index}`;
+      blocks.forEach(block => {
+        if (block.type === 'context') {
+          const firstRow = block.rows[0];
+          const title = nearestHeading(afterLines, firstRow?.newLine ?? 1)
+            || nearestHeading(beforeLines, firstRow?.oldLine ?? 1);
+          const beforeModel = blocks.slice(0, blocks.indexOf(block)).reverse().find(item => item.type === 'change')?.model;
+          const afterModel = blocks.slice(blocks.indexOf(block) + 1).find(item => item.type === 'change')?.model;
+          block.section = sectionByTitle.get(title) ?? beforeModel?.section ?? afterModel?.section ?? null;
+        }
+      });
+      return { blocks, sections, additions, removals, beforeLines, afterLines };
+    }
+
+    function appendTokens(parent, tokens) {
+      for (const token of tokens) {
+        if (token.changed) {
+          const mark = makeNode('mark', 'inline-change', token.text);
+          parent.append(mark);
+        } else {
+          parent.append(document.createTextNode(token.text));
+        }
+      }
+    }
+
+    function lineNumber(row) {
+      if (row.type === 'add') return `· / ${row.newLine ?? ''}`;
+      if (row.type === 'remove') return `${row.oldLine ?? ''} / ·`;
+      if (row.oldLine === row.newLine) return String(row.oldLine ?? '');
+      return `${row.oldLine ?? '·'} / ${row.newLine ?? '·'}`;
+    }
+
+    function createSingleRow(row, inlineTokens) {
+      const element = makeNode('div', `diff-row ${row.type}`);
+      element.append(makeNode('span', 'line-number', lineNumber(row)));
+      const sign = row.type === 'add' ? '+' : row.type === 'remove' ? '−' : '';
+      element.append(makeNode('span', 'sign', sign));
+      const text = makeNode('span', 'line-text');
+      if (inlineTokens) appendTokens(text, inlineTokens);
+      else text.textContent = row.text ?? '';
+      element.append(text);
+      return element;
+    }
+
+    function createSplitRow(beforeRow, afterRow, inlineTokens) {
+      const row = makeNode('div', 'split-row');
+      for (const [side, item, tokens] of [
+        ['before', beforeRow, inlineTokens?.before],
+        ['after', afterRow, inlineTokens?.after],
+      ]) {
+        const cell = makeNode('div', `split-cell ${side} ${item ? item.type : 'blank'}`);
+        cell.append(makeNode('span', 'line-number', item ? String(side === 'before' ? item.oldLine : item.newLine) : ''));
+        cell.append(makeNode('span', 'sign', item ? (item.type === 'add' ? '+' : item.type === 'remove' ? '−' : '') : ''));
+        const text = makeNode('span', 'line-text');
+        if (tokens) appendTokens(text, tokens);
+        else text.textContent = item?.text ?? '';
+        cell.append(text);
+        row.append(cell);
+      }
+      return row;
+    }
+
+    function renderContextRows(rows, container) {
+      if (layout === 'single') {
+        rows.forEach(row => container.append(createSingleRow(row)));
+        return;
+      }
+      rows.forEach(row => container.append(createSplitRow(row, row)));
+    }
+
+    function renderFold(rows, container) {
+      if (!rows.length) return;
+      if (!onlyChanges.checked) {
+        renderContextRows(rows, container);
+        return;
+      }
+      const details = makeNode('details', 'fold');
+      const summary = makeNode('summary', '', `展开 ${rows.length} 行未改动内容`);
+      details.append(summary);
+      const contents = makeNode('div', 'fold-content');
+      renderContextRows(rows, contents);
+      details.append(contents);
+      container.append(details);
+    }
+
+    function renderChange(change, container) {
+      const block = makeNode('div', 'change-block');
+      block.id = `change-${change.index}`;
+      block.dataset.section = change.section.id;
+      const removed = change.rows.filter(row => row.type === 'remove');
+      const added = change.rows.filter(row => row.type === 'add');
+
+      if (layout === 'single') {
+        for (const row of change.rows) {
+          const tokens = !change.inline ? null : row.type === 'remove' ? change.inline.before : change.inline.after;
+          block.append(createSingleRow(row, tokens));
+        }
+      } else if (removed.length === 1 && added.length === 1) {
+        block.append(createSplitRow(removed[0], added[0], change.inline));
+      } else {
+        const count = Math.max(removed.length, added.length);
+        for (let index = 0; index < count; index += 1) {
+          block.append(createSplitRow(removed[index], added[index]));
+        }
+      }
+      container.append(block);
+    }
+
+    function renderDiff(model) {
+      observer?.disconnect();
+      contentNode.replaceChildren();
+      sectionList.replaceChildren();
+      sectionModels = model.sections;
+      activeSection = Math.min(activeSection, Math.max(0, sectionModels.length - 1));
+
+      const total = makeNode('span', '', `${sectionModels.length} 处改动`);
+      const counts = makeNode('span', 'count added', `+${model.additions}`);
+      const removed = makeNode('span', 'count removed', `−${model.removals}`);
+      document.getElementById('total-counts').replaceChildren(total, counts, removed);
+      statsNode.textContent = `+${model.additions} / −${model.removals} 行`;
+
+      if (!model.sections.length) {
+        contentNode.append(makeNode('p', 'empty', model.blocks.length ? '没有可显示的行级改动。' : '两份展开后的提示词完全一致。'));
+        updatePosition();
+        return;
+      }
+
+      model.sections.forEach((section, index) => {
+        const button = makeNode('button', 'section-link');
+        button.type = 'button';
+        button.dataset.sectionIndex = String(index);
+        button.setAttribute('aria-current', index === activeSection ? 'location' : 'false');
+        button.append(makeNode('span', 'section-index', String(index + 1).padStart(2, '0')));
+        button.append(makeNode('span', 'section-title', section.title));
+        const sectionCounts = makeNode('span', 'section-counts');
+        sectionCounts.append(makeNode('span', 'count added', `+${section.additions}`));
+        sectionCounts.append(makeNode('span', 'count removed', `−${section.removals}`));
+        button.append(sectionCounts);
+        button.addEventListener('click', () => goToSection(index));
+        sectionList.append(button);
+      });
+
+      const sectionBodies = new Map();
+      function ensureSection(section) {
+        if (sectionBodies.has(section.id)) return sectionBodies.get(section.id);
+        const heading = makeNode('header', 'section-heading');
+        heading.id = section.id;
+        const title = makeNode('h2');
+        title.append(makeNode('span', 'order', String(section.index + 1).padStart(2, '0')));
+        title.append(document.createTextNode(section.title));
+        heading.append(title, makeNode('span', 'section-version', `${data.from} → ${data.to}`));
+        contentNode.append(heading);
+        const body = makeNode('div', 'section-body');
+        body.dataset.sectionContent = section.id;
+        contentNode.append(body);
+        sectionBodies.set(section.id, body);
+        return body;
+      }
+
+      for (const block of model.blocks) {
+        if (block.type === 'context') {
+          const section = block.section ?? model.sections[0];
+          if (!section) continue;
+          renderFold(block.rows, ensureSection(section));
+          continue;
+        }
+        const change = block.model;
+        renderChange(change, ensureSection(change.section));
+      }
+
+      updateActiveSection(activeSection);
+      setupObserver();
+      updatePosition();
+    }
+
+    function updateActiveSection(index) {
+      if (!sectionModels.length) return;
+      activeSection = Math.max(0, Math.min(index, sectionModels.length - 1));
+      sectionList.querySelectorAll('.section-link').forEach(button => {
+        const isActive = Number(button.dataset.sectionIndex) === activeSection;
+        button.setAttribute('aria-current', isActive ? 'location' : 'false');
+        if (isActive && matchMedia('(max-width: 700px)').matches) {
+          button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      });
+      updatePosition();
+    }
+
+    function updatePosition() {
+      const total = sectionModels.length;
+      positionNode.textContent = total ? `${activeSection + 1} / ${total}` : '0 / 0';
+      previousButton.disabled = !total || activeSection === 0;
+      nextButton.disabled = !total || activeSection >= total - 1;
+    }
+
+    function goToSection(index) {
+      if (!sectionModels[index]) return;
+      updateActiveSection(index);
+      document.getElementById(sectionModels[index].id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function setupObserver() {
+      observer?.disconnect();
+      if (!('IntersectionObserver' in window)) return;
+      observer = new IntersectionObserver(entries => {
+        const visible = entries
+          .filter(entry => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (!visible) return;
+        const index = sectionModels.findIndex(section => section.id === visible.target.id);
+        if (index >= 0 && index !== activeSection) updateActiveSection(index);
+      }, { rootMargin: '-145px 0px -65% 0px', threshold: 0 });
+      sectionModels.forEach(section => {
+        const heading = document.getElementById(section.id);
+        if (heading) observer.observe(heading);
+      });
+    }
+
+    function renderSource() {
+      const sourceGrid = document.getElementById('source-grid');
+      sourceGrid.replaceChildren();
+      document.getElementById('source-version-pair').textContent = `${data.from} → ${data.to}`;
+      data.source.forEach((text, index) => {
+        const panel = makeNode('section', 'source-panel');
+        panel.append(makeNode('h2', '', index ? data.to : data.from));
+        panel.append(makeNode('pre', '', text));
+        sourceGrid.append(panel);
+      });
+    }
+
+    function showPrompt() {
+      promptTab.setAttribute('aria-selected', 'true');
+      promptTab.tabIndex = 0;
+      sourceTab.setAttribute('aria-selected', 'false');
+      sourceTab.tabIndex = -1;
+      promptPanel.hidden = false;
+      sourcePanel.hidden = true;
+      languageControl.hidden = false;
+    }
+
+    function showSource() {
+      promptTab.setAttribute('aria-selected', 'false');
+      promptTab.tabIndex = -1;
+      sourceTab.setAttribute('aria-selected', 'true');
+      sourceTab.tabIndex = 0;
+      promptPanel.hidden = true;
+      sourcePanel.hidden = false;
+      languageControl.hidden = true;
+    }
+
+    function renderPrompt() {
+      const entry = data.content[language.value];
+      if (!entry) {
+        observer?.disconnect();
+        sectionList.replaceChildren();
+        contentNode.replaceChildren(makeNode('p', 'empty', '这两个版本没有共同的该语言提示词导出。'));
+        document.getElementById('total-counts').replaceChildren();
+        statsNode.textContent = '';
+        sectionModels = [];
+        updatePosition();
+        return;
+      }
+      renderDiff(buildModels(entry, language.value));
+    }
+
+    function updateLayout() {
+      singleButton.setAttribute('aria-pressed', String(layout === 'single'));
+      splitButton.setAttribute('aria-pressed', String(layout === 'split'));
+      renderPrompt();
+    }
+
+    document.getElementById('download').addEventListener('click', () => {
+      const entry = data.content[language.value];
+      if (!entry) return;
+      const url = URL.createObjectURL(new Blob([entry.diff], { type: 'text/plain;charset=utf-8' }));
+      const link = makeNode('a');
+      link.href = url;
+      link.download = `${data.from}-${data.to}.${language.value}.diff`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    document.getElementById('previous').addEventListener('click', () => goToSection(activeSection - 1));
+    document.getElementById('next').addEventListener('click', () => goToSection(activeSection + 1));
+    singleButton.addEventListener('click', () => { layout = 'single'; updateLayout(); });
+    splitButton.addEventListener('click', () => { layout = 'split'; updateLayout(); });
+    onlyChanges.addEventListener('change', renderPrompt);
+    language.addEventListener('change', renderPrompt);
+    promptTab.addEventListener('click', showPrompt);
+    sourceTab.addEventListener('click', showSource);
+    for (const tab of [promptTab, sourceTab]) {
+      tab.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+        event.preventDefault();
+        const nextTab = tab === promptTab ? sourceTab : promptTab;
+        if (nextTab === sourceTab) showSource();
+        else showPrompt();
+        nextTab.focus();
+      });
+    }
+    window.addEventListener('keydown', event => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName))) return;
+      const key = event.key.toLowerCase();
+      if (key === 'j' && activeSection < sectionModels.length - 1) goToSection(activeSection + 1);
+      if (key === 'k' && activeSection > 0) goToSection(activeSection - 1);
+    });
+
+    renderSource();
+    renderPrompt();
+  </script>
+</body>
+</html>

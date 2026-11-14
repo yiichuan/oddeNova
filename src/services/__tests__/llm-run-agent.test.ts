@@ -190,6 +190,22 @@ describe('runAgent conversationHistory pass-through', () => {
       expect.any(Object),
     );
   });
+
+  it('reads usage from an OpenAI stream tail chunk with no choices', async () => {
+    openAIChatCreateMock.mockResolvedValueOnce((async function* () {
+      yield { choices: [{ delta: { content: 'compose' } }] };
+    })());
+    await runAgent('go', '');
+
+    openAIChatCreateMock.mockResolvedValueOnce((async function* () {
+      yield { choices: [{ delta: { content: 'done' } }] };
+      yield { choices: [], usage: { prompt_tokens: 100, completion_tokens: 10, prompt_cache_hit_tokens: 80 } };
+    })());
+    const { llm } = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+    const response = await llm.chatWithTools([], []);
+    expect(response.usage).toEqual({ inputTokens: 100, outputTokens: 10, cachedInputTokens: 80 });
+  });
+
 });
 
 describe('classifyIntent parsing', () => {
@@ -279,11 +295,11 @@ describe('createOpenAILLMCaller thinking params', () => {
     );
   });
 
-  it('omits thinking params entirely when thinking is disabled (chat intent, unchanged from today)', async () => {
+  it('omits thinking params for the main agent when the intent is chat', async () => {
     const llm = await captureLLM();
     await llm.chatWithTools([{ role: 'user', content: 'go' }], [], undefined, undefined, undefined, false);
 
-    const body = openAIChatCreateMock.mock.calls[0][0];
+    const body = openAIChatCreateMock.mock.lastCall?.[0];
     expect(body).not.toHaveProperty('reasoning_effort');
     expect(body).not.toHaveProperty('thinking');
   });
@@ -296,6 +312,44 @@ describe('createOpenAILLMCaller thinking params', () => {
       expect.objectContaining({ reasoning_effort: 'high' }),
       expect.any(Object),
     );
+  });
+});
+
+describe('DeepSeek thinking params by request type', () => {
+  it.each(['deepseek', 'official'] as const)('disables %s thinking for classification and sample retrieval while retaining it for composition', async provider => {
+    runAgentLoopMock.mockReset().mockResolvedValue({ code: '', explanation: 'done', iterations: 1, committed: true });
+    getActiveModelConfigMock.mockReset().mockReturnValue({ ...officialModelConfig, provider, model: 'deepseek-flash' });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+      ok: true,
+      json: async () => url.endsWith('/guide.json') ? { piano: 'soft' } : { schemaVersion: 1, samples: [] },
+    })));
+    function stream(delta: object) {
+      return (async function* () { yield { choices: [{ delta }] }; })();
+    }
+    openAIChatCreateMock.mockReset()
+      .mockResolvedValueOnce(stream({ content: 'compose' }))
+      .mockResolvedValueOnce(stream({ tool_calls: [{
+        index: 0, id: 'return', function: {
+          name: 'returnCandidates',
+          arguments: '{"results":[{"id":"keys","variantIds":[]}]}',
+        },
+      }] }))
+      .mockResolvedValueOnce(stream({ content: 'done' }));
+    try {
+      await runAgent('go', '');
+      const { sampleSearch, llm } = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+      await expect(sampleSearch?.({ queries: [{ id: 'keys', query: 'piano' }] }))
+        .resolves.toEqual([{ id: 'keys', ok: true, candidates: [] }]);
+      await llm.chatWithTools([], []);
+      const [classification, retrieval, composition] = openAIChatCreateMock.mock.calls.map(([body]) => body);
+      expect(classification.thinking).toEqual({ type: 'disabled' });
+      expect(classification).not.toHaveProperty('reasoning_effort');
+      expect(retrieval.thinking).toEqual({ type: 'disabled' });
+      expect(retrieval).not.toHaveProperty('reasoning_effort');
+      expect(composition.thinking).toEqual({ type: 'enabled' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

@@ -1,3 +1,5 @@
+import { openAIUsage, anthropicUsage, withoutCacheHints } from './llm-usage';
+import { createSampleRetriever } from '../agent/sample-retriever';
 import { userContent, type ImageAttachment } from '../lib/image-attachments';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
@@ -190,7 +192,7 @@ function convertChatHistory(msgs: ChatMsg[]): ConvertedHistory {
     }
 
     if (msg.role === 'user') {
-      out.push({ role: 'user', content: Array.isArray(msg.content) ? msg.content.map(block => block.type === 'text' ? block : { type: 'image' as const, source: { type: 'url' as const, url: block.image_url.url } }) : content });
+      out.push({ role: 'user', content: Array.isArray(msg.content) ? msg.content.map(block => block.type === 'text' ? block : { type: 'image' as const, source: { type: 'url' as const, url: block.image_url.url } }) : msg.cachePrefix ? [{type:'text',text:content,cache_control:{type:'ephemeral'}}] : content });
       continue;
     }
 
@@ -265,8 +267,8 @@ function convertTools(
   }));
 }
 
-function getActiveLLMCaller(): LLMCaller {
-  return isOpenAIProvider() ? createOpenAILLMCaller() : anthropicLLMCaller;
+function getActiveLLMCaller(options?: { disableDeepSeekThinking?: boolean }): LLMCaller {
+  return isOpenAIProvider() ? createOpenAILLMCaller(options) : anthropicLLMCaller;
 }
 
 // ===========================================================================
@@ -329,8 +331,7 @@ const anthropicLLMCaller: LLMCaller = {
       ...(thinkingBlocks.length > 0 ? { thinking_blocks: thinkingBlocks } : {}),
       toolCalls,
       usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
+        ...anthropicUsage(response.usage),
       },
     };
   },
@@ -340,7 +341,7 @@ const anthropicLLMCaller: LLMCaller = {
 // LLMCaller implementation — OpenAI / OpenAI-compat path
 // ===========================================================================
 
-function createOpenAILLMCaller(): LLMCaller {
+function createOpenAILLMCaller({ disableDeepSeekThinking = false } = {}): LLMCaller {
   return {
     async chatWithTools(messages: ChatMsg[], tools, onTextDelta, onReasoningDelta, signal, enableThinking = true, thinkingLevel: ThinkingLevel = 'medium') {
       const oai = getOpenAIClient();
@@ -348,17 +349,17 @@ function createOpenAILLMCaller(): LLMCaller {
       // OpenAI's GPT-5 reasoning models and Kimi's thinking models fix
       // temperature server-side; sending one gets the request rejected.
       const fixedTemperature = cfg.provider === 'openai' || cfg.provider === 'kimi';
-      const thinkingParams = enableThinking
-        ? resolveOpenAIThinkingParams(cfg.provider, cfg.model, thinkingLevel)
-        // Classification call: always-thinking models (kimi-k3, kimi-k2.7-code,
-        // glm-5.3) must still get valid thinking params at their lowest
-        // strength instead of a "disable" request that would fail.
-        : resolveOpenAIClassificationParams(cfg.provider, cfg.model);
+      // DeepSeek defaults to thinking when the request omits this field.
+      const thinkingParams = disableDeepSeekThinking && (cfg.provider === 'deepseek' || cfg.provider === 'official')
+        ? { thinking: { type: 'disabled' } }
+        : enableThinking
+          ? resolveOpenAIThinkingParams(cfg.provider, cfg.model, thinkingLevel)
+          : resolveOpenAIClassificationParams(cfg.provider, cfg.model);
 
       const stream = await oai.chat.completions.create({
         model: getModel(),
         // ChatMsg is already in OpenAI format, can be passed directly
-        messages: messages as OpenAI.ChatCompletionMessageParam[],
+        messages: withoutCacheHints(messages) as OpenAI.ChatCompletionMessageParam[],
         ...(tools.length > 0
           ? {
               tools: tools as OpenAI.ChatCompletionTool[],
@@ -382,9 +383,12 @@ function createOpenAILLMCaller(): LLMCaller {
       let text = '';
       let reasoningContent = '';
       const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
-      let streamUsage: { prompt_tokens: number; completion_tokens: number } | undefined;
+      let streamUsage: ReturnType<typeof openAIUsage> | undefined;
 
       for await (const chunk of stream) {
+        if (chunk.usage) {
+          streamUsage = openAIUsage(chunk.usage);
+        }
         // DeepSeek extends the OpenAI delta with `reasoning_content`.
         // Cast to access this non-standard field without breaking the TS types.
         const delta = chunk.choices[0]?.delta as (typeof chunk.choices[0]['delta']) & {
@@ -416,10 +420,6 @@ function createOpenAILLMCaller(): LLMCaller {
             if (tc.function?.arguments) buf.args += tc.function.arguments;
           }
         }
-
-        if (chunk.usage) {
-          streamUsage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
-        }
       }
 
       const toolCalls = Array.from(toolCallBuffers.values()).map((buf) => ({
@@ -432,9 +432,7 @@ function createOpenAILLMCaller(): LLMCaller {
         content: text.trim() || null,
         reasoning_content: reasoningContent || null,
         toolCalls,
-        usage: streamUsage
-          ? { inputTokens: streamUsage.prompt_tokens, outputTokens: streamUsage.completion_tokens }
-          : undefined,
+        usage: streamUsage,
       };
     },
   };
@@ -524,9 +522,22 @@ export async function runAgent(
   const skipClassification = isDemoMode() || isMoodGeneration;
   const intent: Intent = skipClassification
     ? 'compose'
-    : await classifyIntent(llm, { instruction, currentCode, conversationHistory, signal, images, preparedUserContent, preparedHistory });
+    : await classifyIntent(getActiveLLMCaller({ disableDeepSeekThinking: true }), {
+      instruction, currentCode, conversationHistory, signal, images, preparedUserContent, preparedHistory,
+    });
 
-  return runAgentLoop({
+  const retrievalUsage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheCreationInputTokens: 0, calls: 0 };
+  const sampleSearch = isDemoMode() ? undefined : createSampleRetriever(getActiveLLMCaller({ disableDeepSeekThinking: true }), {
+    signal, onUsage: usage => {
+      retrievalUsage.inputTokens += usage.inputTokens;
+      retrievalUsage.outputTokens += usage.outputTokens;
+      retrievalUsage.cachedInputTokens += usage.cachedInputTokens ?? 0;
+      retrievalUsage.cacheCreationInputTokens += usage.cacheCreationInputTokens ?? 0;
+      retrievalUsage.calls++;
+    },
+  });
+  const result = await runAgentLoop({
+    sampleSearch,
     preparedUserContent,
     preparedHistory,
     instruction,
@@ -540,6 +551,7 @@ export async function runAgent(
     enableThinking: intent === 'compose',
     thinkingLevel: getSelectedThinkingLevel(),
   });
+  return { ...result, retrievalUsage };
 }
 
 // Re-exported so callers don't need to reach into ../agent/loop directly.

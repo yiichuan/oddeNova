@@ -1195,7 +1195,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const addProgress = useCallback(
-    (kind: ProgressKind, content: string, opts?: { toolName?: string; ok?: boolean; sessionId?: string }): void => {
+    (kind: ProgressKind, content: string, opts?: Pick<ChatMessage, 'toolName' | 'ok' | 'sampleSearchSummary'> & { sessionId?: string }): void => {
       const apply = getApply(opts?.sessionId);
       apply((s) => ({
         ...s,
@@ -1209,6 +1209,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
             progressKind: kind,
             toolName: opts?.toolName,
             ok: opts?.ok,
+            ...(opts?.sampleSearchSummary && { sampleSearchSummary: opts.sampleSearchSummary }),
           },
         ],
       }));

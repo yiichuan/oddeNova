@@ -1042,6 +1042,46 @@ describe('ConversationView chat streaming', () => {
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
+  it('shows and expands only the current sample search summary while loading', () => {
+    setMobileViewport(false);
+    const user: ChatMessage = { id: 'u1', role: 'user', content: '做一段碎拍', timestamp: 1 };
+    const search: ChatMessage = {
+      id: 'search', role: 'progress', progressKind: 'tool_call', toolName: 'searchSamples',
+      content: 'searchSamples({"queries":', timestamp: 2,
+      sampleSearchSummary: [
+        { query: 'Short kick', labels: ['Sharp attack'] },
+        { query: 'Dry snare', labels: [] },
+        { query: 'Fine hi-hats', labels: [] },
+      ],
+    };
+    const { container, root, render } = renderConversationView([user, search], vi.fn(), true);
+    roots.push(root);
+
+    const summary = container.querySelector('[data-sample-search-summary]')!;
+    expect(summary.textContent).toContain('Short kick');
+    expect(summary.textContent).toContain('Sharp attack');
+    expect(summary.textContent).not.toContain('Fine hi-hats');
+    expect(container.textContent).not.toContain(search.content);
+    expect(container.querySelector('.thinking-lottie')).not.toBeNull();
+    act(() => summary.querySelector('button')!.click());
+    expect(summary.textContent).toContain('Fine hi-hats');
+
+    const nextSearch = { ...search, id: 'search-2' };
+    render({}, [user, search, nextSearch]);
+    expect(container.textContent).not.toContain('Fine hi-hats');
+
+    const arrange = { ...search, id: 'arrange', toolName: 'setCode', content: 'Arranging…' };
+    render({}, [user, search, arrange]);
+    expect(container.textContent).toContain('Arranging…');
+    expect(container.querySelector('[data-sample-search-summary]')).toBeNull();
+
+    render({}, [user, { ...search, sampleSearchSummary: undefined }]);
+    expect(container.textContent).toContain('Searching samples…');
+    expect(container.textContent).not.toContain(search.content);
+    render({ isLoading: false }, [user, search]);
+    expect(container.querySelector('[data-sample-search-summary]')).toBeNull();
+  });
+
   it('renders always-visible top and bottom fades around the conversation viewport', () => {
     setMobileViewport(false);
     const { container, root } = renderConversationView([

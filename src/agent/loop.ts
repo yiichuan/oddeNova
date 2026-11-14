@@ -36,6 +36,8 @@ export type ThinkingLevel = 'low' | 'medium' | 'high';
 export interface ChatMsg {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content?: UserContent | null;
+  /** Internal hint: cache through this static prefix; stripped from OpenAI payloads. */
+  cachePrefix?: boolean;
   /** DeepSeek thinking mode: must be echoed back on every subsequent turn. */
   reasoning_content?: string | null;
   /** Anthropic extended thinking: thinking blocks must be echoed back verbatim. */
@@ -52,6 +54,8 @@ export interface ChatMsg {
 export interface LLMUsage {
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
 }
 
 export interface LLMCaller {
@@ -98,6 +102,7 @@ export interface RunAgentOptions {
   locale: 'zh' | 'en';
   systemPrompt: string;
   llm: LLMCaller;
+  sampleSearch?: ToolContext['sampleSearch'];
   maxIter?: number;
   timeoutMs?: number;
   onProgress?: (e: ProgressEvent) => void;
@@ -239,6 +244,8 @@ function countCJK(s: string): number {
 }
 
 export interface RunAgentResult {
+  /** Separate from the main context occupancy shown by tokenUsage. */
+  retrievalUsage?: LLMUsage & { calls: number };
   code: string;
   explanation: string;
   /** Short per-layer notes from `commit`, printed only on the share card. */
@@ -250,6 +257,7 @@ export interface RunAgentResult {
 
 const DEFAULT_MAX_ITER = 30;
 const DEFAULT_TIMEOUT = 10 * 60_000;
+let sampleDebugRunSequence = 0;
 
 function formatTimeoutMinutes(timeoutMs: number, isZh: boolean): string {
   const minutes = Math.ceil(timeoutMs / 60_000);
@@ -258,6 +266,12 @@ function formatTimeoutMinutes(timeoutMs: number, isZh: boolean): string {
 }
 
 export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResult> {
+  const sampleDebugRunId = ++sampleDebugRunSequence;
+  let sampleSearchCalls = 0;
+  const sampleDebug = (stage: string, details: unknown) => {
+    if (import.meta.env.DEV) console.info(`[searchSamples] run ${sampleDebugRunId} ${stage}`, details);
+  };
+  sampleDebug('start', { instruction: opts.instruction });
   const {
     initialCode,
     instruction,
@@ -278,7 +292,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     finalCode: null,
   };
   const isZh = locale === 'zh';
-  const ctx: ToolContext = { state, isZh };
+  const ctx: ToolContext = { state, isZh, sampleSearch: opts.sampleSearch };
   let userTurn: string;
   if (initialCode) {
     const score = parseScore(initialCode);
@@ -303,7 +317,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     { role: 'user', content: Array.isArray(opts.preparedUserContent) ? opts.preparedUserContent.map((block, index) => index === 0 && block.type === 'text' ? { ...block, text: userTurn } : block) : userTurn },
   ];
 
-  const tools = getOpenAIToolSchemas(isZh);
+  const tools = getOpenAIToolSchemas(isZh).filter(tool => ctx.sampleSearch || tool.function.name !== 'searchSamples');
   const start = Date.now();
   let iterations = 0;
   let explanation = '';
@@ -399,6 +413,9 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       const dedupKey = `${call.name}\0${call.arguments}`;
       const cachedResult = iterResultCache.get(dedupKey);
       if (cachedResult !== undefined) {
+        if (call.name === 'searchSamples') {
+          sampleDebug('deduplicated', { iteration: i + 1, callId: call.id, args: parsedArgs, result: cachedResult });
+        }
         // Intentionally skip onProgress — duplicate calls should be invisible to the UI.
         console.debug(`[loop] iter ${i + 1} dedup: skipping duplicate tool_call "${call.name}"`);
         messages.push({
@@ -412,9 +429,21 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
 
       console.debug(`[loop] iter ${i + 1} tool_call: ${call.name}`, parsedArgs);
       onProgress?.({ kind: 'tool_call', name: call.name, args: parsedArgs });
+      const toolStarted = performance.now();
+      if (call.name === 'searchSamples') {
+        sampleSearchCalls++;
+        sampleDebug('call', { iteration: i + 1, callId: call.id, args: parsedArgs });
+      }
 
       try {
         const outcome = await dispatchToolCall(call, ctx);
+        if (call.name === 'searchSamples') {
+          sampleDebug('result', { iteration: i + 1, callId: call.id,
+            durationMs: Math.round(performance.now() - toolStarted), result: outcome.result });
+        }
+        if (call.name === 'setCode' && sampleSearchCalls > 0 && outcome.result.ok) {
+          sampleDebug('setCode after search', { iteration: i + 1, code: state.code });
+        }
         outcomes.push(outcome);
         if (!outcome.result.ok) {
           console.error(`[loop] iter ${i + 1} tool "${outcome.name}" returned failure:`, outcome.result.error);
@@ -467,6 +496,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           break outer;
         }
         const msg = getErrorMessage(e);
+        if (call.name === 'searchSamples') sampleDebug('error', { callId: call.id, error: msg });
         outcomes.push({
           id: call.id,
           name: call.name,
@@ -553,6 +583,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     : undefined;
 
   const resultCode = committed || finalCode !== initialCode ? finalCode : '';
+  sampleDebug('finished', {
+    searchCalls: sampleSearchCalls, committed, aborted: signal?.aborted ?? false,
+    code: resultCode,
+  });
 
   return {
     code: resultCode,

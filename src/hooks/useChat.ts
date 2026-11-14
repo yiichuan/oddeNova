@@ -9,6 +9,11 @@ export type InputMode = 'normal' | 'choice';
 
 export type ProgressKind = 'tool_call' | 'tool_result' | 'commit' | 'warn' | 'iteration' | 'thinking' | 'reasoning';
 
+export interface SampleSearchSummaryItem {
+  query: string;
+  labels: string[];
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -28,6 +33,7 @@ export interface ChatMessage {
   // For role === 'progress':
   progressKind?: ProgressKind;
   toolName?: string;
+  sampleSearchSummary?: SampleSearchSummaryItem[];
   ok?: boolean;
   // For role === 'assistant': a decorative opening line seeded when an empty
   // session is created. Excluded from LLM history (see conversation-history.ts)

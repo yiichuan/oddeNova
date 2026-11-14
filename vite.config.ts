@@ -10,6 +10,8 @@ import type { Plugin } from 'vite'
 import sessionsHandler from './api/sessions'
 import onboardingHandler from './api/onboarding'
 import { privacyRouteMiddleware } from './server/privacy-route'
+import { sampleAnnotationEditor } from './server/sample-annotation-editor'
+import { localDevTools } from './server/local-dev-tools'
 import { vcslProxyHandler } from './server/vcsl-proxy'
 import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici'
 
@@ -544,7 +546,7 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     cacheDir: `node_modules/.vite/${mode}-${patchHash.digest('hex').slice(0, 12)}`,
-    plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
+    plugins: [localDevTools(), sampleAnnotationEditor(), react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
     build: {
       // Manifest powers scripts/report-bundle-size.mjs (analyze:bundle) so the
       // entry-asset closure can be measured reproducibly. No runtime cost.

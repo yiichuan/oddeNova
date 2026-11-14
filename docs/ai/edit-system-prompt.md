@@ -135,3 +135,11 @@ npx tsc --noEmit -p tsconfig.app.json && npm test -- --run
 git add src/prompts/active.ts
 git commit -m "prompts: revert to v{N}"  # v{N} 为回滚后的目标版本号
 ```
+
+## 查看版本差异
+
+运行 `npm run dev` 后访问 `/local-tools`，可进入提示词版本比较或采样库。提示词比较也可直接访问 `/local-tools/prompt-compare`。这些入口只在 Vite 本地开发服务中启用，并校验本机请求。
+
+运行 `npm run prompt:diff -- --from v25 --to v26`，生成 `.local/prompt-diffs/v25-v26.html`。直接打开 HTML 可切换中文、英文，查看差异上下文、完整文本并排和源码并排，也可下载 diff。用其他版本号替换参数即可复用。
+
+默认比较实际展开的系统提示词，固定内置 oddeNova 人设，不添加心情或会话上下文；采样清单按当前检出的代码展开。它比较版本函数之间的差异，不复原历史提交中的依赖。工具定义独立于提示词，需要另外检查 `src/agent/tools.ts`。输出保存在本地，不提交 Git。
