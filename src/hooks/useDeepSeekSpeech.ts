@@ -69,10 +69,6 @@ export function useDeepSeekSpeech(onResult: (text: string) => void) {
 
   const start = useCallback(async (apiKey: string) => {
     if (!supported || startingRef.current || mode !== 'idle') return;
-    if (!apiKey.trim()) {
-      setError('DEEPSEEK_API_KEY_REQUIRED');
-      return;
-    }
 
     startingRef.current = true;
     setIsStarting(true);

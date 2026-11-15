@@ -456,7 +456,6 @@ const S: Record<string, readonly [string, string]> = {
   voiceListening:    ['正在聆听', 'Listening'],
   voiceTranscribing: ['正在转写…', 'Transcribing…'],
   voiceStopRecording: ['停止录音', 'Stop recording'],
-  voiceDeepSeekKeyRequired: ['请先在模型设置中配置 DeepSeek API Key', 'Configure a DeepSeek API key in model settings first'],
   voiceMicPermissionDenied: ['无法访问麦克风，请允许此网站使用麦克风', 'Microphone access was denied. Allow microphone access for this site.'],
   voiceMicNotFound: ['未找到可用的麦克风', 'No microphone was found'],
   voiceRecordingFailed: ['录音失败，请重试', 'Recording failed. Please try again.'],

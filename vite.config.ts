@@ -7,6 +7,8 @@ import { resolve, join } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
+import officialAsrHandler from './api/official/v1/tools/asr'
+import { resolveOfficialApiKey } from './server/official-api-key'
 import sessionsHandler from './api/sessions'
 import onboardingHandler from './api/onboarding'
 import { privacyRouteMiddleware } from './server/privacy-route'
@@ -122,6 +124,7 @@ function officialApiDevMiddleware(): Plugin {
   return {
     name: 'official-api-dev-middleware',
     configureServer(server) {
+      server.middlewares.use('/api/official/v1/tools/asr', officialAsrHandler)
       server.middlewares.use(
         '/api/official/v1/chat/completions',
         async (req: IncomingMessage, res: ServerResponse) => {
@@ -131,7 +134,7 @@ function officialApiDevMiddleware(): Plugin {
             return
           }
 
-          const apiKey = process.env.OFFICIAL_API_KEY || process.env.VITE_API_KEY || ''
+          const apiKey = resolveOfficialApiKey()
           if (!apiKey) {
             res.statusCode = 500
             res.setHeader('Content-Type', 'application/json')

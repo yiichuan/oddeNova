@@ -610,17 +610,15 @@ export default function ChatInput({
               {imageError && <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">{imageError}</p>}
               {voiceSpeech.error && (
                 <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">
-                  {voiceSpeech.error === 'DEEPSEEK_API_KEY_REQUIRED'
-                    ? t('voiceDeepSeekKeyRequired')
-                    : voiceSpeech.error === 'MIC_PERMISSION_DENIED'
-                      ? t('voiceMicPermissionDenied')
-                      : voiceSpeech.error === 'MIC_NOT_FOUND'
-                        ? t('voiceMicNotFound')
-                        : voiceSpeech.error === 'RECORDING_FAILED'
-                          ? t('voiceRecordingFailed')
-                          : voiceSpeech.error === 'EMPTY_RECORDING'
-                            ? t('voiceEmptyRecording')
-                            : `${t('voiceTranscriptionFailed')} (${voiceSpeech.error})`}
+                  {voiceSpeech.error === 'MIC_PERMISSION_DENIED'
+                    ? t('voiceMicPermissionDenied')
+                    : voiceSpeech.error === 'MIC_NOT_FOUND'
+                      ? t('voiceMicNotFound')
+                      : voiceSpeech.error === 'RECORDING_FAILED'
+                        ? t('voiceRecordingFailed')
+                        : voiceSpeech.error === 'EMPTY_RECORDING'
+                          ? t('voiceEmptyRecording')
+                          : `${t('voiceTranscriptionFailed')} (${voiceSpeech.error})`}
                 </p>
               )}
           </>

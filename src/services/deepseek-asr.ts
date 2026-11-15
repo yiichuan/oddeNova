@@ -87,9 +87,10 @@ export async function transcribeWithDeepSeek(
   const form = new FormData();
   form.append('file', audio.blob, audio.filename);
 
-  const response = await fetch(DEEPSEEK_ASR_URL, {
+  const key = apiKey.trim();
+  const response = await fetch(key ? DEEPSEEK_ASR_URL : '/api/official/v1/tools/asr', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: key ? { Authorization: `Bearer ${key}` } : undefined,
     body: form,
     signal,
   });
