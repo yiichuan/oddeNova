@@ -19,6 +19,7 @@ import {
 } from '../lib/analytics';
 import { t, zh } from '../lib/i18n';
 import type { StrudelState } from '../services/strudel';
+import { analyticsContext, analyticsError, analyticsId, rememberAnalyticsTurn, type AnalyticsContext } from '../lib/analytics-context';
 import { isAbortError } from '../lib/errors';
 
 // ── Pure agent-turn logic (testable in isolation) ────────────────────────────
@@ -57,7 +58,7 @@ export interface AgentTurnDeps {
   makeProgressHandler: (sessionId: string) => (e: ProgressEvent) => void;
 
   // strudel (live audio)
-  play: (code: string) => Promise<boolean>;
+  play: (code: string, context?: AnalyticsContext) => Promise<boolean>;
   getStrudelError: () => string | null;
   setStrudelError: (msg: string) => void;
   engineStatus: () => StrudelState['engineStatus'];
@@ -75,8 +76,9 @@ export interface AgentTurnDeps {
     revision?: CodeRevisionDraft,
     inputMode?: InputMode,
     layerNotes?: Record<string, string>,
+    analyticsTurnId?: string,
   ) => void;
-  finalizeLastAssistantMessage: (text: string, sessionId: string) => void;
+  finalizeLastAssistantMessage: (text: string, sessionId: string, turnId?: string) => void;
   setCurrentCode: (code: string, sessionId: string) => void;
   setSessionSuggestions: (
     items: string[],
@@ -96,6 +98,7 @@ export interface AgentTurnDeps {
   clearRollbackPrefill: () => void;
 
   // analytics
+  analyticsOwnerKey?: string;
   getModelConfig: () => { provider: string; model: string };
   trackAgentTurnStarted: typeof trackAgentTurnStarted;
   trackAgentTurnFinished: typeof trackAgentTurnFinished;
@@ -140,7 +143,11 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
   const signal = controller.signal;
   const startedAt = Date.now();
   const { provider, model } = deps.getModelConfig();
+  const context = { ...analyticsContext(sessionId, deps.analyticsOwnerKey), turn_id: analyticsId() };
   const analyticsBase = {
+    context,
+    input_mode: beforeCode.trim() ? 'revise' : 'create',
+    image_count: input.images?.length ?? 0,
     entry_point: input.entryPoint,
     provider,
     model,
@@ -149,6 +156,11 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
   } as const;
   let outcome: AgentTurnOutcome = 'agent_failed';
   let iterations = 0;
+  let requestRetryCount = 0;
+  let toolFailureCount = 0;
+  let terminationReason = 'exception';
+  let stage = 'request';
+  let failure: Pick<AgentTurnFinishedProperties, 'error_code' | 'failure_stage' | 'http_status'> = {};
 
   safelyTrackAnalytics(() => deps.trackAgentTurnStarted(analyticsBase));
 
@@ -157,26 +169,45 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     const result = await deps.runAgent(
       input.text,
       beforeCode,
-      onProgress,
+      (event) => {
+        if (event.kind === 'iteration') iterations = event.index;
+        if (event.kind === 'request_retry') requestRetryCount++;
+        if (event.kind === 'tool_result' && !event.ok) toolFailureCount++;
+        onProgress(event);
+      },
       input.moodContext,
       signal,
       history,
       input.images,
     );
     iterations = result.iterations;
+    terminationReason = result.terminationReason ?? (result.committed ? 'committed' : 'no_commit');
+    if (terminationReason === 'validation_failed') failure = { failure_stage: 'validation', error_code: 'validation_failed' };
+    if (terminationReason === 'timeout') failure = { failure_stage: 'agent_loop', error_code: 'timeout' };
 
     if (signal.aborted) {
       outcome = 'aborted';
+      terminationReason = 'aborted';
       if (deps.isCurrentController(sessionId, controller)) {
         deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
       return;
     }
 
+    stage = 'result';
     if (result.code) {
+      if (result.committed) rememberAnalyticsTurn(sessionId, result.code, context.turn_id, deps.analyticsOwnerKey);
       if (deps.isCurrentSession(sessionId)) {
         // Always persist the newest code as the session truth, run or not.
-        const success = await commitPlayback(result.code, sessionId, deps);
+        stage = 'playback';
+        const success = await commitPlayback(result.code, sessionId, {
+          ...deps, play: code => deps.play(code, context),
+        });
+        if (!success && !failure.error_code) failure = {
+          failure_stage: 'playback',
+          error_code: deps.engineStatus() === 'ready' ? 'playback_failed' : 'engine_unavailable',
+        };
+        stage = 'result';
         outcome = result.committed
           ? (success ? 'played' : 'playback_failed')
           : 'not_committed';
@@ -195,7 +226,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
           }
           const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
           if (revision) {
-            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode, result.layerNotes);
+            deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode, result.layerNotes, context.turn_id);
           } else {
             deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
           }
@@ -204,7 +235,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
             ? `agent 生成完了但代码无法运行: ${deps.getStrudelError() || '未知错误'}`
             : `Agent generated code but it failed to run: ${deps.getStrudelError() || 'unknown error'}`;
           if (revision) {
-            deps.addAssistantMessage(content, result.code, sessionId, revision);
+            deps.addAssistantMessage(content, result.code, sessionId, revision, undefined, undefined, context.turn_id);
           } else {
             deps.addAssistantMessage(content, result.code, sessionId);
           }
@@ -217,7 +248,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
           : undefined;
         if (revision) {
           const inputMode: InputMode = isStepwiseChoice(result.explanation) ? 'choice' : 'normal';
-          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode, result.layerNotes);
+          deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId, revision, inputMode, result.layerNotes, context.turn_id);
         } else {
           deps.addAssistantMessage(stripNextSteps(result.explanation), result.code, sessionId);
         }
@@ -230,11 +261,14 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
   } catch (e: unknown) {
     if (isUserAbort(e, signal)) {
       outcome = 'aborted';
+      terminationReason = 'aborted';
       if (deps.isCurrentController(sessionId, controller)) {
         deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
     } else {
       outcome = 'agent_failed';
+      terminationReason = 'exception';
+      failure = { failure_stage: stage, ...analyticsError(e) };
       const errMsg = e instanceof Error ? e.message : t('requestFailed');
       console.error('[agent] Request failed', {
         provider,
@@ -242,7 +276,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
         errorName: e instanceof Error ? e.name : typeof e,
         errorMessage: errMsg,
       });
-      deps.finalizeLastAssistantMessage(t('agentResponseFailed'), sessionId);
+      deps.finalizeLastAssistantMessage(t('agentResponseFailed'), sessionId, context.turn_id);
       deps.setStrudelError(errMsg);
     }
   } finally {
@@ -251,6 +285,10 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       outcome,
       duration_ms: Date.now() - startedAt,
       iterations,
+      request_retry_count: requestRetryCount,
+      tool_failure_count: toolFailureCount,
+      termination_reason: terminationReason,
+      ...failure,
     };
     safelyTrackAnalytics(() => deps.trackAgentTurnFinished(finishedProperties));
     // The indicator goes down before the turn is saved, not after. The
@@ -267,6 +305,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
 // ── React hook wrapper ───────────────────────────────────────────────────────
 
 export interface UseAgentRunnerConfig {
+  analyticsOwnerKey?: string;
   strudel: ReturnType<typeof useStrudel>;
   sessions: ReturnType<typeof useSessions>;
   currentCode: string;
@@ -292,9 +331,10 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
   } = cfg;
 
   return {
+    analyticsOwnerKey: cfg.analyticsOwnerKey,
     runAgent,
     makeProgressHandler,
-    play: (code) => strudel.play(code),
+    play: (code, context) => strudel.play(code, 'agent', context),
     getStrudelError: () => strudel.error,
     setStrudelError: (msg) => strudel.setError(msg),
     engineStatus: () => strudel.engineStatus,
@@ -303,9 +343,9 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
     getCurrentCode: () => currentCode,
     snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
     addUserMessage: (text, images) => sessions.addUserMessage(text, undefined, images),
-    addAssistantMessage: (text, code, id, revision, inputMode, layerNotes) =>
-      sessions.addAssistantMessage(text, code, id, revision, inputMode, layerNotes),
-    finalizeLastAssistantMessage: (text, id) => sessions.finalizeLastAssistantMessage(text, id),
+    addAssistantMessage: (text, code, id, revision, inputMode, layerNotes, turnId) =>
+      sessions.addAssistantMessage(text, code, id, revision, inputMode, layerNotes, turnId),
+    finalizeLastAssistantMessage: (text, id, turnId) => sessions.finalizeLastAssistantMessage(text, id, turnId),
     setCurrentCode: (code, id) => sessions.setCurrentCode(code, id),
     setSessionSuggestions: (items, code, id) => sessions.setSuggestions(items, code, id),
     checkpointSession: (id) => sessions.checkpointSession(id),

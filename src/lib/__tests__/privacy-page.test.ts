@@ -64,7 +64,7 @@ describe('privacy policy page', () => {
     // The date fields must appear as readable text, not only inside comments.
     expect(source).toContain('oddenova@gmail.com');
     expect(source).toContain('href="mailto:oddenova@gmail.com"');
-    expect(source).toContain('生效日期：2026年9月15日 · 最后更新：2026年9月15日');
+    expect(source).toContain('生效日期：2026年9月15日 · 最后更新：2026年11月15日');
     expect(source).not.toContain('【正式生效日期】');
     expect(source).not.toContain('【最后更新日期】');
     expect(source).not.toMatch(/airjelly/i);

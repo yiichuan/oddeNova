@@ -1,5 +1,8 @@
+import { PlaybackTelemetry, type PlaybackSource } from '../lib/playback-telemetry';
+import { analyticsContext, analyticsError, analyticsId } from '../lib/analytics-context';
+import { emitTelemetry, markTelemetryError } from '../lib/telemetry';
 import { renderOfflineAudio } from '../lib/offline-render';
-import { getErrorMessage, waitForRetryDelay } from '../lib/errors';
+import { isAbortError, getErrorMessage, waitForRetryDelay } from '../lib/errors';
 import { t } from '../lib/i18n';
 import { findUnknownSamples } from '../lib/sample-allowlist';
 import { registerSoundfonts } from '../lib/soundfont-loader';
@@ -103,6 +106,13 @@ interface StrudelMirrorType {
   setLineWrappingEnabled: (enabled: boolean) => void;
   changeSetting: (key: 'isTabIndentationEnabled', value: boolean) => void;
   evaluate: (autostart?: boolean) => Promise<void>;
+}
+
+interface ExportMeasurements {
+  stage: 'prepare' | 'render' | 'encode' | 'download';
+  render_ms?: number;
+  encode_ms?: number;
+  recovery_outcome: 'not_required' | 'success' | 'failed';
 }
 
 export type StrudelState = {
@@ -421,8 +431,22 @@ export class StrudelService {
     };
   }
 
+  private readonly playbackTelemetry = new PlaybackTelemetry();
+  private engineAttempt = { started: 0, context: analyticsContext(null), source: 'initial' };
+  private engineFailureCode?: string;
+
   private notify(partial: Partial<StrudelState>): void {
+    const previous = this._state;
     this._state = { ...this._state, ...partial };
+    this.playbackTelemetry.observe(previous, this._state);
+    if (partial.engineStatus && partial.engineStatus !== previous.engineStatus && partial.engineStatus !== 'initializing') {
+      emitTelemetry('engine_initialization_finished', {
+        source: this.engineAttempt.source,
+        outcome: partial.engineStatus === 'ready' ? 'success' : 'failed',
+        error_code: partial.engineStatus === 'failed' ? this.engineFailureCode : undefined,
+        duration_ms: Math.round(performance.now() - this.engineAttempt.started),
+      }, this.engineAttempt.context);
+    }
     this.stateCallbacks.forEach(cb => cb(this._state));
   }
 
@@ -549,6 +573,7 @@ export class StrudelService {
     } catch (error) {
       const message = getErrorMessage(error);
       this.isAudioInitialized = false;
+      this.engineFailureCode = analyticsError(error).error_code;
       this.notify({ engineReady: false, engineStatus: 'failed', error: message });
       throw error;
     }
@@ -596,6 +621,9 @@ export class StrudelService {
     if (this.containerElement === container && this.editorInstance) return;
     if (this.isInitializing) return;
 
+    if (this._state.engineStatus !== 'initializing' || this.engineAttempt.started === 0) {
+      this.engineAttempt = { started: performance.now(), context: analyticsContext(null), source: 'initial' };
+    }
     this.containerElement = container;
     this.isInitializing = true;
     this.notify({ engineReady: false, engineStatus: 'initializing', error: null });
@@ -728,6 +756,7 @@ export class StrudelService {
         },
         onError: (error: Error) => {
           if (generation !== this.editorGeneration) return;
+          markTelemetryError(error);
           this.notify({ error: error.message });
         },
         prebake: this.prebake,
@@ -757,6 +786,7 @@ export class StrudelService {
     } catch (error) {
       const message = getErrorMessage(error);
       this.isAudioInitialized = false;
+      this.engineFailureCode = analyticsError(error).error_code;
       this.notify({ engineReady: false, engineStatus: 'failed', error: message });
       throw error;
     } finally {
@@ -1152,6 +1182,7 @@ export class StrudelService {
   pause = (): boolean => {
     const scheduler = this.editorInstance?.repl.scheduler;
     if (!scheduler || !this._state.isPlaying) return false;
+    this.playbackTelemetry.finish('paused');
 
     const currentCycle = scheduler.now?.();
     if (Number.isFinite(currentCycle)) this.pendingSeekCycle = currentCycle as number;
@@ -1201,8 +1232,12 @@ export class StrudelService {
     this.notify({ isPlaying: playing, isPaused: playing ? false : this._state.isPaused });
   }
 
-  play = async (): Promise<void> => {
-    if (!this.editorInstance) throw new Error('Engine not initialized');
+  play = async (source: PlaybackSource = 'manual', context = analyticsContext(undefined, undefined, this.code)): Promise<void> => {
+    const playback = this.playbackTelemetry.request(source, context);
+    if (!this.editorInstance) {
+      this.playbackTelemetry.finish('startup_failed', playback, undefined, 'engine_unavailable');
+      throw new Error('Engine not initialized');
+    }
     const token = ++this.playToken;
     // One transport at a time: a featured audition stops here.
     claimTransport('studio', this.stop);
@@ -1228,6 +1263,8 @@ export class StrudelService {
       await this.editorInstance.evaluate();
       this.applyPendingSeek();
       this.syncTransportState();
+      if (this._state.isPlaying) this.playbackTelemetry.start(playback);
+      else this.playbackTelemetry.finish('startup_failed', playback);
       this.pageAudioRecovery?.clearResumeIntent();
       void this.setupMasterChain();
     } catch (error) {
@@ -1237,17 +1274,21 @@ export class StrudelService {
           await this.editorInstance.evaluate();
           this.applyPendingSeek();
           this.syncTransportState();
+          if (this._state.isPlaying) this.playbackTelemetry.start(playback);
+          else this.playbackTelemetry.finish('startup_failed', playback);
           this.pageAudioRecovery?.clearResumeIntent();
           void this.setupMasterChain();
           return;
         } catch (retryError) {
           const message = getErrorMessage(retryError);
           this.notify({ error: message });
+          this.playbackTelemetry.finish('startup_failed', playback, retryError);
           throw retryError;
         }
       }
       const message = getErrorMessage(error);
       this.notify({ error: message });
+      this.playbackTelemetry.finish('startup_failed', playback, error);
       throw error;
     }
   };
@@ -1360,6 +1401,7 @@ export class StrudelService {
   };
 
   stop = (): void => {
+    this.playbackTelemetry.finish('stopped');
     this.playToken += 1;
     if (this._state.isStarting) this.notify({ isStarting: false });
     this.pageAudioRecovery?.clearResumeIntent();
@@ -1522,7 +1564,38 @@ export class StrudelService {
     scrollDOM.addEventListener('animationend', onEnd);
   };
 
-  exportAudio = async (params: {
+  exportAudio = async (params: Parameters<StrudelService['renderExport']>[0]): Promise<void> => {
+    const context = analyticsContext(undefined, undefined, this.code);
+    const base = {
+      operation_id: analyticsId(),
+      format: params.format ?? 'wav',
+      sample_rate: params.sampleRate,
+      cycle_length: params.endCycle - params.beginCycle,
+    };
+    const started = performance.now();
+    const measurements: ExportMeasurements = { stage: 'prepare', recovery_outcome: 'not_required' };
+    emitTelemetry('audio_export_started', base, context);
+    try {
+      await this.renderExport(params, measurements);
+      emitTelemetry('audio_export_finished', {
+        ...base, outcome: 'success', duration_ms: Math.round(performance.now() - started),
+        render_ms: measurements.render_ms, encode_ms: measurements.encode_ms,
+        recovery_outcome: measurements.recovery_outcome,
+      }, context);
+    } catch (error) {
+      markTelemetryError(error);
+      const cancelled = isAbortError(error, params.signal);
+      emitTelemetry('audio_export_finished', {
+        ...base, outcome: cancelled ? 'cancelled' : 'failed', duration_ms: Math.round(performance.now() - started),
+        render_ms: measurements.render_ms, encode_ms: measurements.encode_ms,
+        recovery_outcome: measurements.recovery_outcome,
+        ...(cancelled ? {} : { failure_stage: measurements.stage, error_code: analyticsError(error).error_code }),
+      }, context);
+      throw error;
+    }
+  };
+
+  private renderExport = async (params: {
     filename: string;
     beginCycle: number;
     endCycle: number;
@@ -1530,7 +1603,7 @@ export class StrudelService {
     format?: 'wav' | 'mp3' | 'm4a';
     onProgress?: (progress: number) => void;
     signal?: AbortSignal;
-  }): Promise<void> => {
+  }, measurements: ExportMeasurements): Promise<void> => {
     const { filename, beginCycle, endCycle, sampleRate, format = 'wav', onProgress, signal } = params;
     signal?.throwIfAborted();
     if (!this.editorInstance) throw new Error('Engine not initialized');
@@ -1725,26 +1798,36 @@ export class StrudelService {
         await waitForReverbReady();
       };
 
+      measurements.stage = 'render';
+      const renderStarted = performance.now();
       const renderedBuffer = await renderOfflineAudio(offlineCtx, { beginCycle, endCycle, cps, schedule }, signal);
       signal?.throwIfAborted();
       if (progressTimer !== null) {
         clearInterval(progressTimer);
         progressTimer = null;
       }
+      measurements.render_ms = Math.round(performance.now() - renderStarted);
+      measurements.stage = 'encode';
+      const encodeStarted = performance.now();
+      const download = (blob: Blob) => {
+        measurements.encode_ms = Math.round(performance.now() - encodeStarted);
+        measurements.stage = 'download';
+        downloadAudio(blob, filename, format);
+      };
       if (format === 'm4a') {
         const { audioBufferToM4a } = await import('../lib/m4a-export');
         signal?.throwIfAborted();
         const m4a = await audioBufferToM4a(renderedBuffer, (p) => onProgress?.(0.85 + p * 0.15), signal);
         signal?.throwIfAborted();
-        downloadAudio(m4a, filename, 'm4a');
+        download(m4a);
       } else if (format === 'mp3') {
         const { audioBufferToMp3 } = await import('../lib/mp3-export');
         signal?.throwIfAborted();
         const mp3 = await audioBufferToMp3(renderedBuffer, (p) => onProgress?.(0.85 + p * 0.15), signal);
         signal?.throwIfAborted();
-        downloadAudio(mp3, filename, 'mp3');
+        download(mp3);
       } else {
-        downloadWav(audioBufferToWav16(renderedBuffer), filename);
+        download(new Blob([audioBufferToWav16(renderedBuffer)], { type: 'audio/wav' }));
         trackWavExportCompleted();
       }
     } finally {
@@ -1765,7 +1848,8 @@ export class StrudelService {
         registerSoundfonts();
         (window as unknown as Record<string, unknown>).getAudioContext = getAudioContext;
         (window as unknown as Record<string, unknown>).getSuperdoughAudioController = getSuperdoughAudioController;
-      } catch { /* best-effort restoration */ }
+        measurements.recovery_outcome = 'success';
+      } catch { measurements.recovery_outcome = 'failed'; }
     }
     // Note: master volume / LPF are reset to defaults after rebuildMasterChain; the calling hook is responsible for re-applying current UI values.
   };
@@ -1839,6 +1923,7 @@ export class StrudelService {
   };
 
   reinit = async (): Promise<void> => {
+    this.engineAttempt = { started: performance.now(), context: analyticsContext(null), source: 'reinitialize' };
     if (!this.containerElement) return;
     this.isAudioInitialized = false;
     this.isInitializing = false;

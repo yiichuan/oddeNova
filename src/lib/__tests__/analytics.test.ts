@@ -127,7 +127,7 @@ describe('sanitizePostHogEvent', () => {
     });
   });
 
-  it('drops every event outside the five-event business contract', () => {
+  it('drops every event outside the business event allowlist', () => {
     expect(sanitizePostHogEvent({
       event: '$pageview',
       properties: { $current_url: 'https://www.oddenova.com/private' },
@@ -136,6 +136,52 @@ describe('sanitizePostHogEvent', () => {
 });
 
 describe('PostHog business analytics', () => {
+  it('counts accounts independently of browser identity and resets daily deduplication at UTC+8 midnight', async () => {
+    let now = new Date('2026-11-15T15:59:59Z');
+    const setupBrowser = () => {
+      const client = makeClient();
+      const analytics = createAnalytics({
+        key: 'phc_public',
+        loadClient: async () => client,
+        storage: { getItem: () => null },
+        now: () => now,
+      });
+      analytics.initialize({ surface: 'main', locale: 'en' });
+      return {
+        analytics,
+        activity: () => client.capture.mock.calls
+          .filter(([event]) => event === 'account_active')
+          .map(([, properties]) => properties),
+      };
+    };
+    const a = setupBrowser();
+    const b = setupBrowser();
+    await Promise.all([
+      a.analytics.trackAccountActive('account-a'),
+      a.analytics.trackAccountActive('account-a'),
+      b.analytics.trackAccountActive('account-a'),
+    ]);
+    expect(a.activity()).toHaveLength(1);
+    expect(a.activity()).toEqual(b.activity());
+    const [first] = a.activity();
+    expect(first).toMatchObject({
+      activity_date: '2026-11-15',
+      account_analytics_id: expect.stringMatching(/^account_v1_[a-f0-9]{64}$/),
+    });
+    expect(first).not.toHaveProperty('distinct_id');
+    await a.analytics.trackAccountActive('account-b');
+    expect(a.activity()[1].account_analytics_id).not.toBe(first.account_analytics_id);
+    now = new Date('2026-11-15T16:00:00Z');
+    await a.analytics.trackAccountActive('account-a');
+    expect(a.activity()[2]).toEqual({ ...first, activity_date: '2026-11-16' });
+    expect(sanitizePostHogEvent({
+      event: 'account_active', properties: { ...first, email: 'private', account_id: 'account-a' },
+    })?.properties).toEqual(first);
+    expect(sanitizePostHogEvent({
+      event: 'app_opened', properties: { account_analytics_id: first.account_analytics_id },
+    })?.properties).toEqual({});
+  });
+
   it('is a complete no-op when the project key is missing', async () => {
     const client = makeClient();
     const loadClient = vi.fn(async () => client);
@@ -220,16 +266,17 @@ describe('PostHog business analytics', () => {
       person_profiles: 'never',
     }));
     await vi.waitFor(() => expect(client.capture).toHaveBeenCalledOnce());
-    expect(client.capture).toHaveBeenCalledWith('app_opened', {
-      schema_version: 1,
+    expect(client.capture).toHaveBeenCalledWith('app_opened', expect.objectContaining({
+      schema_version: 2,
       surface: 'skill_import',
       locale: 'zh-CN',
       $geoip_disable: true,
       $process_person_profile: false,
-    });
+      page: 'home', entry_surface: 'skill_import',
+    }));
   });
 
-  it('captures exactly the five approved events with schema version 1', async () => {
+  it('preserves existing business event fields with schema version 2', async () => {
     const client = makeClient();
     const analytics = createAnalytics({
       key: 'phc_public',
@@ -260,15 +307,15 @@ describe('PostHog business analytics', () => {
 
     await vi.waitFor(() => expect(client.capture).toHaveBeenCalledTimes(5));
     expect(client.capture.mock.calls).toEqual([
-      ['app_opened', {
-        schema_version: 1,
+      ['app_opened', expect.objectContaining({
+        schema_version: 2,
         surface: 'main',
         locale: 'en',
         $geoip_disable: true,
         $process_person_profile: false,
-      }],
-      ['agent_turn_started', {
-        schema_version: 1,
+      })],
+      ['agent_turn_started', expect.objectContaining({
+        schema_version: 2,
         surface: 'main',
         entry_point: 'suggestion',
         provider: 'deepseek',
@@ -277,9 +324,9 @@ describe('PostHog business analytics', () => {
         has_history: false,
         $geoip_disable: true,
         $process_person_profile: false,
-      }],
-      ['agent_turn_finished', {
-        schema_version: 1,
+      })],
+      ['agent_turn_finished', expect.objectContaining({
+        schema_version: 2,
         surface: 'main',
         entry_point: 'suggestion',
         provider: 'deepseek',
@@ -291,18 +338,18 @@ describe('PostHog business analytics', () => {
         iterations: 3,
         $geoip_disable: true,
         $process_person_profile: false,
-      }],
-      ['share_completed', {
-        schema_version: 1,
+      })],
+      ['share_completed', expect.objectContaining({
+        schema_version: 2,
         share_method: 'native',
         $geoip_disable: true,
         $process_person_profile: false,
-      }],
-      ['wav_export_completed', {
-        schema_version: 1,
+      })],
+      ['wav_export_completed', expect.objectContaining({
+        schema_version: 2,
         $geoip_disable: true,
         $process_person_profile: false,
-      }],
+      })],
     ]);
   });
 
@@ -312,13 +359,13 @@ describe('PostHog business analytics', () => {
     analytics.initialize({ surface: 'main', locale: 'en' });
     analytics.trackSharePrintFinished({ outcome: 'sent' });
     await vi.waitFor(() => expect(client.capture).toHaveBeenCalledTimes(2));
-    expect(client.capture.mock.calls[1]).toEqual(['share_print_finished', {
-      schema_version: 1, outcome: 'sent', $geoip_disable: true, $process_person_profile: false,
-    }]);
+    expect(client.capture.mock.calls[1]).toEqual(['share_print_finished', expect.objectContaining({
+      schema_version: 2, outcome: 'sent', $geoip_disable: true, $process_person_profile: false,
+    })]);
     const sanitized = sanitizePostHogEvent({ event: 'share_print_finished', properties: {
-      schema_version: 1, outcome: 'failed', title: 'secret', url: 'secret', device: 'secret',
+      schema_version: 2, outcome: 'failed', title: 'secret', url: 'secret', device: 'secret',
     } });
-    expect(sanitized?.properties).toEqual({ schema_version: 1, outcome: 'failed' });
+    expect(sanitized?.properties).toEqual({ schema_version: 2, outcome: 'failed' });
   });
 
   it('captures the onboarding funnel with only its own schema, which survives sanitizing', async () => {
@@ -335,8 +382,8 @@ describe('PostHog business analytics', () => {
 
     await vi.waitFor(() => expect(client.capture).toHaveBeenCalledTimes(3));
     const [, skipped, started] = client.capture.mock.calls;
-    expect(skipped).toEqual(['onboarding_progressed', {
-      schema_version: 1,
+    expect(skipped).toEqual(['onboarding_progressed', expect.objectContaining({
+      schema_version: 2,
       surface: 'main',
       stage: 'skipped',
       step: 'compare',
@@ -344,7 +391,7 @@ describe('PostHog business analytics', () => {
       case_id: 'intro-piano-v1',
       $geoip_disable: true,
       $process_person_profile: false,
-    }]);
+    })]);
     expect(started[1]).not.toHaveProperty('step');
     expect(sanitizePostHogEvent({ event: skipped[0], properties: { ...skipped[1], text: 'free input' } }))
       .toEqual({ event: 'onboarding_progressed', properties: skipped[1] });

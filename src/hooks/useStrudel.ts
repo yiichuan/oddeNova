@@ -1,3 +1,5 @@
+import { PlaybackTelemetry, type PlaybackSource } from '../lib/playback-telemetry';
+import type { AnalyticsContext } from '../lib/analytics-context';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getEngineUnavailableMessage } from '../lib/engine-status';
 import { getErrorMessage, isAbortError } from '../lib/errors';
@@ -5,6 +7,7 @@ import { t } from '../lib/i18n';
 import { strudelService, type StrudelState } from '../services/strudel';
 
 const MAX_HISTORY = 50;
+const unavailablePlayback = new PlaybackTelemetry();
 
 export function useStrudel() {
   const [state, setState] = useState<StrudelState>(() => ({
@@ -40,8 +43,10 @@ export function useStrudel() {
   }, []);
 
   // play(code?) — if code provided, set it first then evaluate
-  const play = useCallback(async (code?: string) => {
+  const play = useCallback(async (code?: string, source: PlaybackSource = 'manual', context?: AnalyticsContext) => {
     if (!strudelService.isReady) {
+      const attempt = unavailablePlayback.request(source, context);
+      unavailablePlayback.finish('startup_failed', attempt, undefined, 'engine_unavailable');
       setState(s => ({
         ...s,
         error: getEngineUnavailableMessage(s.engineStatus) ?? t('engineStarting'),
@@ -58,7 +63,7 @@ export function useStrudel() {
         if (historyRef.current.length > MAX_HISTORY) historyRef.current.shift();
         setHistoryLen(historyRef.current.length);
       }
-      await strudelService.play();
+      await strudelService.play(source, context);
       return true;
     } catch {
       return false;

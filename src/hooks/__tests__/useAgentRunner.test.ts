@@ -87,13 +87,13 @@ describe('runAgentTurn', () => {
   it('on the current session, plays then persists the generated code', async () => {
     const deps = makeDeps();
     await runAgentTurn(makeInput(), deps);
-    expect(deps.play).toHaveBeenCalledWith('note("c3")');
+    expect(deps.play).toHaveBeenCalledWith('note("c3")', expect.objectContaining({ turn_id: expect.any(String) }));
     expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
     expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    }, 'normal', undefined);
+    }, 'normal', undefined, expect.any(String));
     expect(deps.checkpointSession).toHaveBeenCalledOnce();
     expect(deps.checkpointSession).toHaveBeenCalledWith('S1');
   });
@@ -119,7 +119,7 @@ describe('runAgentTurn', () => {
     const layerNotes = { pad: '温暖pad铺出天空和声' };
     const deps = makeDeps({ runAgent: vi.fn(async () => makeResult({ layerNotes })) });
     await runAgentTurn(makeInput(), deps);
-    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', expect.anything(), 'normal', layerNotes);
+    expect(deps.addAssistantMessage).toHaveBeenCalledWith('done', 'note("c3")', 'S1', expect.anything(), 'normal', layerNotes, expect.any(String));
   });
 
   it('on a background (non-current) session, persists without playing', async () => {
@@ -131,7 +131,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'not_attempted',
-    }, 'normal', undefined);
+    }, 'normal', undefined, expect.any(String));
     expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
@@ -153,7 +153,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    }, 'normal', undefined);
+    }, 'normal', undefined, expect.any(String));
   });
 
   it('marks a successful stepwise numbered response as choice input mode', async () => {
@@ -175,7 +175,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'CURRENT',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    }, 'choice', undefined);
+    }, 'choice', undefined, expect.any(String));
   });
 
   it('finalizes the streamed assistant message when the result carries no code', async () => {
@@ -255,7 +255,7 @@ describe('runAgentTurn', () => {
       beforeCode: 'OVERRIDE',
       afterCode: 'note("c3")',
       playbackStatus: 'played',
-    }, 'normal', undefined);
+    }, 'normal', undefined, expect.any(String));
   });
 
   it('forwards moodContext to runAgent', async () => {
@@ -272,7 +272,7 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
 
     expect(deps.setStrudelError).toHaveBeenCalledWith('boom');
-    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('agentResponseFailed'), 'S1');
+    expect(deps.finalizeLastAssistantMessage).toHaveBeenCalledWith(t('agentResponseFailed'), 'S1', expect.any(String));
     expect(consoleError).toHaveBeenCalledWith('[agent] Request failed', {
       provider: 'p',
       model: 'm',
@@ -361,13 +361,14 @@ describe('runAgentTurn', () => {
 
     await runAgentTurn(makeInput({ entryPoint: 'suggestion' }), deps);
 
-    expect(trackAgentTurnStarted).toHaveBeenCalledWith({
+    expect(trackAgentTurnStarted).toHaveBeenCalledWith(expect.objectContaining({
       entry_point: 'suggestion',
       provider: 'p',
       model: 'm',
       has_existing_code: true,
       has_history: true,
-    });
+      input_mode: 'revise',
+    }));
   });
 
   it('captures played exactly once after a committed current-session playback succeeds', async () => {
@@ -379,7 +380,7 @@ describe('runAgentTurn', () => {
     await runAgentTurn(makeInput(), deps);
 
     expect(deps.trackAgentTurnFinished).toHaveBeenCalledOnce();
-    expect(deps.trackAgentTurnFinished).toHaveBeenCalledWith({
+    expect(deps.trackAgentTurnFinished).toHaveBeenCalledWith(expect.objectContaining({
       entry_point: 'text',
       provider: 'p',
       model: 'm',
@@ -388,7 +389,8 @@ describe('runAgentTurn', () => {
       outcome: 'played',
       duration_ms: 450,
       iterations: 1,
-    });
+      termination_reason: 'committed',
+    }));
     dateNow.mockRestore();
   });
 
@@ -452,6 +454,26 @@ describe('runAgentTurn', () => {
     }));
   });
 
+  it('preserves progress and pairs a failed turn after a provider retry', async () => {
+    const deps = makeDeps({
+      runAgent: async (_text, _code, progress) => {
+        progress?.({ kind: 'iteration', index: 2 });
+        progress?.({ kind: 'request_retry' });
+        progress?.({ kind: 'tool_result', name: 'validate', ok: false });
+        throw Object.assign(new Error('private request details'), { status: 429 });
+      },
+    });
+    await runAgentTurn(makeInput(), deps);
+    const [started] = vi.mocked(deps.trackAgentTurnStarted).mock.calls[0];
+    const [finished] = vi.mocked(deps.trackAgentTurnFinished).mock.calls[0];
+    expect(finished.context?.turn_id).toBe(started.context?.turn_id);
+    expect(finished).toMatchObject({
+      iterations: 2, request_retry_count: 1, tool_failure_count: 1,
+      error_code: 'rate_limited', http_status: 429, failure_stage: 'request',
+    });
+    expect(JSON.stringify(finished)).not.toContain('private request details');
+  });
+
   it('keeps Agent playback and persistence successful when analytics throws', async () => {
     const deps = makeDeps({
       trackAgentTurnStarted: vi.fn(() => { throw new Error('analytics start failed'); }),
@@ -460,7 +482,7 @@ describe('runAgentTurn', () => {
 
     await expect(runAgentTurn(makeInput(), deps)).resolves.toBeUndefined();
 
-    expect(deps.play).toHaveBeenCalledWith('note("c3")');
+    expect(deps.play).toHaveBeenCalledWith('note("c3")', expect.objectContaining({ turn_id: expect.any(String) }));
     expect(deps.setCurrentCode).toHaveBeenCalledWith('note("c3")', 'S1');
   });
 });
@@ -490,6 +512,7 @@ describe('useAgentRunner production adapter', () => {
       undefined,
       'choice',
       { pad: '温暖pad铺出天空和声' },
+      undefined,
     );
   });
 });

@@ -1,3 +1,6 @@
+import { analyticsContext, analyticsError, type AnalyticsContext } from './analytics-context';
+import { emitTelemetry } from './telemetry';
+import { recordSave } from './save-telemetry';
 import { openDB as idbOpenDB, type IDBPDatabase } from 'idb';
 import type { Session } from '../hooks/useSessions';
 import { isStepwiseChoice } from '../services/suggestions';
@@ -260,6 +263,7 @@ export async function openDB(): Promise<void> {
       console.warn('[session-storage] IndexedDB unavailable, falling back to memory mode.', err);
       db = null;
       memoryFallback = true;
+      emitTelemetry('storage_degraded', analyticsError(err), analyticsContext(null));
     } finally {
       openPromise = null;
     }
@@ -1134,12 +1138,22 @@ async function migrateLegacyAccountSessionIds(ownerKey: string): Promise<void> {
 export async function putSession(
   session: Session,
   ownerKey = GUEST_OWNER_KEY,
+  telemetry?: { context: AnalyticsContext; streaming?: boolean },
 ): Promise<void> {
+  const context = telemetry?.context ?? analyticsContext(session.id, ownerKey, session.code);
+  const started = performance.now();
   await openDB();
-  if (memoryFallback || !db) return;
+  if (memoryFallback || !db) {
+    recordSave('local', context, started, 'memory_only');
+    return;
+  }
   try {
     await db.put(SESSION_STORE_NAME, withOwner(session, ownerKey));
+    recordSave('local', context, started, 'success', {
+      streamingKey: telemetry?.streaming ? JSON.stringify([ownerKey, session.id]) : undefined,
+    });
   } catch (err) {
+    recordSave('local', context, started, 'failed', { error: err });
     console.warn('[session-storage] putSession failed', err);
   }
 }

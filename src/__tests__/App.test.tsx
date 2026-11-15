@@ -1902,7 +1902,7 @@ describe('App session sync boundaries', () => {
 
       await act(async () => { playSegment()('assistant-1', older); });
       // The editor went to look at the older take...
-      expect(mocks.strudel.play).toHaveBeenCalledWith(older);
+      expect(mocks.strudel.play).toHaveBeenCalledWith(older, 'history', expect.any(Object));
       mocks.strudel.code = older;
       await renderApp();
 
@@ -1935,7 +1935,7 @@ describe('App session sync boundaries', () => {
       await renderApp();
 
       expect(mocks.strudel.setCode).toHaveBeenCalledWith(edit);
-      expect(mocks.strudel.play).toHaveBeenLastCalledWith(edit);
+      expect(mocks.strudel.play).toHaveBeenLastCalledWith(edit, 'history', expect.any(Object));
     });
 
     it('says the window is read-only, and offers the way back', async () => {
@@ -1961,7 +1961,7 @@ describe('App session sync boundaries', () => {
       await act(async () => { playSegment()('assistant-1', edit); });
       await renderApp();
 
-      expect(mocks.strudel.play).toHaveBeenLastCalledWith(edit);
+      expect(mocks.strudel.play).toHaveBeenLastCalledWith(edit, 'history', expect.any(Object));
       expect(mocks.codePanelProps?.previewing).toBe(false);
       expect(mocks.strudel.setReadOnly).not.toHaveBeenCalledWith(true);
     });

@@ -10,6 +10,8 @@ const markerMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../session-sync-storage', () => markerMocks);
+const { capture } = vi.hoisted(() => ({ capture: vi.fn() }));
+vi.mock('../analytics', () => ({ trackTelemetry: capture }));
 
 function session(code: string, updatedAt = 1): Session {
   return {
@@ -172,6 +174,12 @@ describe('createSessionCloudSync', () => {
 
     expect(repository.saveSession).toHaveBeenCalledTimes(1);
     expect(statuses.get('s-1')).toBe('synced');
+    expect(capture.mock.calls.filter(([event]) => event === 'session_sync_changed').map(([, fields]) => fields.state))
+      .toEqual(['offline', 'synced']);
+    expect(capture).toHaveBeenCalledWith('session_sync_changed', expect.objectContaining({
+      state: 'synced', outcome: 'recovered',
+    }), expect.any(Object));
+    expect(capture.mock.calls.filter(([event]) => event === 'session_save_finished')).toHaveLength(1);
   });
 
   it('schedules retry without rejecting a creative checkpoint but lets flush surface failure', async () => {
@@ -183,6 +191,9 @@ describe('createSessionCloudSync', () => {
     await expect(sync.checkpoint(session('latest'))).resolves.toBeUndefined();
 
     expect(statuses.get('s-1')).toBe('retrying');
+    expect(capture).toHaveBeenCalledWith('session_save_finished', expect.objectContaining({
+      target: 'cloud', outcome: 'failed', error_code: 'unknown',
+    }), expect.any(Object));
     await expect(sync.flush('s-1')).rejects.toBe(error);
   });
 

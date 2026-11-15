@@ -1,3 +1,6 @@
+import { analyticsContext, type AnalyticsContext } from './analytics-context';
+import { emitTelemetry } from './telemetry';
+import { recordSave } from './save-telemetry';
 import type { CloudSessionRepository, Session } from '../hooks/useSessions';
 import { createLatestSaveQueue } from './latest-save-queue';
 import { isOnline as detectOnline } from './network-status';
@@ -38,6 +41,9 @@ export interface SessionCloudSync {
 }
 
 interface SyncRecord {
+  telemetryContext?: AnalyticsContext;
+  statusSince?: number;
+  troubleSince?: number;
   version: number;
   latest: Session;
   status: SessionSyncStatus;
@@ -52,6 +58,7 @@ interface SyncRecord {
 }
 
 interface SaveEnvelope {
+  telemetryContext?: AnalyticsContext;
   id: string;
   version: number;
   session: Session;
@@ -107,7 +114,19 @@ export function createSessionCloudSync(options: {
 
   const emitStatus = (id: string, record: SyncRecord, status: SessionSyncStatus): void => {
     if (record.status === status) return;
+    const previous = record.status;
     record.status = status;
+    const now = performance.now();
+    if (status === 'offline' || status === 'retrying') record.troubleSince ??= now;
+    if (status === 'offline' || status === 'retrying' || status === 'synced') {
+      emitTelemetry('session_sync_changed', {
+        state: status, previous_state: previous,
+        duration_ms: Math.round(now - ((status === 'synced' ? record.troubleSince : undefined) ?? record.statusSince ?? now)),
+        outcome: status === 'synced' && record.troubleSince !== undefined ? 'recovered' : undefined,
+      }, record.telemetryContext ?? analyticsContext(id, ownerKey));
+    }
+    if (status === 'synced') record.troubleSince = undefined;
+    record.statusSince = now;
     onStatus(id, status);
   };
 
@@ -136,7 +155,8 @@ export function createSessionCloudSync(options: {
     const record: SyncRecord = existing ?? {
       version: 0,
       latest: session,
-      status: isOnline() ? 'dirty' : 'offline',
+      status: 'dirty',
+      statusSince: performance.now(),
       retryIndex: 0,
       markerRetryIndex: 0,
       hasCloudCopy: false,
@@ -144,6 +164,7 @@ export function createSessionCloudSync(options: {
     };
     record.version += 1;
     record.latest = session;
+    record.telemetryContext = analyticsContext(session.id, ownerKey, session.code);
     record.saveRequested = false;
     clearRecordTimer(record, 'retryTimer');
     records.set(session.id, record);
@@ -158,7 +179,7 @@ export function createSessionCloudSync(options: {
         scheduleMarkerRetry(session.id);
       });
     const status = isOnline() ? 'dirty' : 'offline';
-    if (existing) emitStatus(session.id, record, status);
+    if (existing || status !== record.status) emitStatus(session.id, record, status);
     else onStatus(session.id, status);
     return record;
   };
@@ -213,7 +234,16 @@ export function createSessionCloudSync(options: {
       emitStatus(envelope.id, beforeSave, 'saving');
     }
 
-    await repository.saveSession(envelope.session, expectedUserId);
+    const context = envelope.telemetryContext ?? analyticsContext(envelope.id, ownerKey, envelope.session.code);
+    const started = performance.now();
+    const retries = beforeSave?.retryIndex ?? 0;
+    try {
+      await repository.saveSession(envelope.session, expectedUserId);
+      recordSave('cloud', context, started, 'success', { retries });
+    } catch (error) {
+      recordSave('cloud', context, started, 'failed', { error, retries });
+      throw error;
+    }
 
     const record = records.get(envelope.id);
     if (!record) return;
@@ -276,6 +306,7 @@ export function createSessionCloudSync(options: {
           id: session.id,
           version,
           session: record.latest,
+          telemetryContext: record.telemetryContext,
         });
       } catch {
         // Marker failures happen before the queue callback. Treat them like
@@ -458,7 +489,9 @@ export function createSessionCloudSync(options: {
       const record: SyncRecord = {
         version: pending ? 1 : 0,
         latest: session,
-        status: pending ? (isOnline() ? 'dirty' : 'offline') : 'synced',
+        status: pending ? 'dirty' : 'synced',
+        statusSince: performance.now(),
+        telemetryContext: analyticsContext(session.id, ownerKey, session.code),
         markerWrite: pending ? Promise.resolve() : undefined,
         retryIndex: 0,
         markerRetryIndex: 0,
@@ -466,8 +499,9 @@ export function createSessionCloudSync(options: {
         saveRequested: pending,
       };
       records.set(session.id, record);
-      onStatus(session.id, record.status);
-      if (pending && isOnline()) scheduleSaveRetry(session.id, true);
+      if (pending && !isOnline()) emitStatus(session.id, record, 'offline');
+      else onStatus(session.id, record.status);
+      if (pending && record.status !== 'offline') scheduleSaveRetry(session.id, true);
     }
     for (const id of pendingDeleteIds) {
       if (!deletes.has(id)) {

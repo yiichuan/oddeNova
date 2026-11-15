@@ -1,7 +1,8 @@
+import { analyticsContext, type AnalyticsContext } from './analytics-context';
 import { ODDENOVA_IMPORT_HASH_PREFIX } from './oddenova-import';
 
 export const ANALYTICS_DISABLED_STORAGE_KEY = 'oddenova_analytics_disabled';
-export const ANALYTICS_SCHEMA_VERSION = 1 as const;
+export const ANALYTICS_SCHEMA_VERSION = 2 as const;
 
 export type AppSurface = 'main' | 'shared_session' | 'demo' | 'skill_import';
 export type AnalyticsLocale = 'zh-CN' | 'en';
@@ -48,12 +49,21 @@ export interface AgentTurnBaseProperties {
   model: string;
   has_existing_code: boolean;
   has_history: boolean;
+  context?: AnalyticsContext;
+  input_mode?: 'create' | 'revise';
+  image_count?: number;
 }
 
 export interface AgentTurnFinishedProperties extends AgentTurnBaseProperties {
   outcome: AgentTurnOutcome;
   duration_ms: number;
   iterations: number;
+  request_retry_count?: number;
+  tool_failure_count?: number;
+  termination_reason?: string;
+  failure_stage?: string;
+  error_code?: string;
+  http_status?: number;
 }
 
 interface AnalyticsLocation {
@@ -64,7 +74,7 @@ interface AnalyticsLocation {
 
 interface PostHogClient {
   init: (key: string, config: Record<string, unknown>) => unknown;
-  capture: (event: string, properties?: Record<string, unknown>) => unknown;
+  capture: (event: string, properties?: Record<string, unknown>, options?: { transport: 'sendBeacon'; send_instantly: boolean }) => unknown;
 }
 
 interface AnalyticsStorage {
@@ -75,14 +85,40 @@ interface AnalyticsDependencies {
   key: string;
   loadClient: () => Promise<PostHogClient>;
   storage: AnalyticsStorage;
+  now?: () => Date;
 }
 
 interface AnalyticsInitialization {
+  page?: AnalyticsContext['page'];
   surface: AppSurface;
   locale: AnalyticsLocale;
 }
 
+const TELEMETRY_FIELDS = {
+  playback_requested: ['source', 'operation_id'],
+  playback_started: ['source', 'operation_id', 'duration_ms'],
+  playback_finished: ['source', 'operation_id', 'outcome', 'duration_ms', 'foreground_ms', 'end_reason', 'error_code', 'failure_stage'],
+  audio_export_started: ['operation_id', 'format', 'sample_rate', 'cycle_length'],
+  audio_export_finished: ['operation_id', 'format', 'sample_rate', 'cycle_length', 'duration_ms', 'render_ms', 'encode_ms', 'outcome', 'failure_stage', 'error_code', 'recovery_outcome'],
+  creation_action: ['action', 'outcome'],
+  session_save_finished: ['operation_id', 'target', 'outcome', 'duration_ms', 'retry_count', 'write_count', 'error_code', 'http_status'],
+  session_sync_changed: ['state', 'previous_state', 'duration_ms', 'outcome'],
+  storage_degraded: ['error_code'],
+  engine_initialization_finished: ['source', 'outcome', 'duration_ms', 'error_code'],
+  feature_load_finished: ['feature', 'source', 'outcome', 'duration_ms', 'error_code'],
+  app_error: ['source', 'error_code'],
+} as const;
+
+export type TelemetryEvent = keyof typeof TELEMETRY_FIELDS;
+export type TelemetryProperties<E extends TelemetryEvent> = Partial<Record<
+  typeof TELEMETRY_FIELDS[E][number], string | number | boolean
+>>;
+const COMMON_FIELDS = new Set([
+  'schema_version', 'app_version', 'environment', 'entry_surface', 'page', 'workspace_session_id', 'turn_id',
+]);
+
 export interface BusinessAnalytics {
+  trackTelemetry: <E extends TelemetryEvent>(event: E, properties: TelemetryProperties<E>, context?: AnalyticsContext) => void;
   initialize: (input: AnalyticsInitialization) => void;
   trackAgentTurnStarted: (properties: AgentTurnBaseProperties) => void;
   trackAgentTurnFinished: (properties: AgentTurnFinishedProperties) => void;
@@ -90,6 +126,7 @@ export interface BusinessAnalytics {
   trackSharePrintFinished: (properties: { outcome: 'sent' | 'failed' }) => void;
   trackWavExportCompleted: () => void;
   trackOnboardingProgressed: (properties: OnboardingProgressedProperties) => void;
+  trackAccountActive: (accountId: string) => Promise<void>;
 }
 
 interface SanitizableEvent {
@@ -118,6 +155,8 @@ const SYSTEM_PROPERTY_ALLOWLIST = new Set([
 ]);
 
 const EVENT_PROPERTY_ALLOWLIST: Record<string, ReadonlySet<string>> = {
+  ...Object.fromEntries(Object.entries(TELEMETRY_FIELDS).map(([event, keys]) => [event, new Set(keys)])),
+  account_active: new Set(['schema_version', 'account_analytics_id', 'activity_date', 'activity_timezone']),
   app_opened: new Set(['schema_version', 'surface', 'locale']),
   agent_turn_started: new Set([
     'schema_version',
@@ -127,6 +166,7 @@ const EVENT_PROPERTY_ALLOWLIST: Record<string, ReadonlySet<string>> = {
     'model',
     'has_existing_code',
     'has_history',
+    'input_mode', 'image_count',
   ]),
   agent_turn_finished: new Set([
     'schema_version',
@@ -136,9 +176,11 @@ const EVENT_PROPERTY_ALLOWLIST: Record<string, ReadonlySet<string>> = {
     'model',
     'has_existing_code',
     'has_history',
+    'input_mode', 'image_count',
     'outcome',
     'duration_ms',
     'iterations',
+    'request_retry_count', 'tool_failure_count', 'termination_reason', 'failure_stage', 'error_code', 'http_status',
   ]),
   share_completed: new Set(['schema_version', 'share_method']),
   share_print_finished: new Set(['schema_version', 'outcome']),
@@ -168,13 +210,17 @@ export function resolveAppSurface(location: AnalyticsLocation): AppSurface {
  */
 export function sanitizePostHogEvent(event: SanitizableEvent | null): SanitizableEvent | null {
   if (!event) return null;
-  const eventAllowlist = EVENT_PROPERTY_ALLOWLIST[event.event];
+  const eventAllowlist = Object.hasOwn(EVENT_PROPERTY_ALLOWLIST, event.event)
+    ? EVENT_PROPERTY_ALLOWLIST[event.event] : undefined;
   if (!eventAllowlist) return null;
 
   const properties: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(event.properties ?? {})) {
-    if (SYSTEM_PROPERTY_ALLOWLIST.has(key) || eventAllowlist.has(key)) {
-      properties[key] = value;
+    if (SYSTEM_PROPERTY_ALLOWLIST.has(key) || eventAllowlist.has(key)
+      || (COMMON_FIELDS.has(key) && (event.event !== 'account_active' || (key !== 'workspace_session_id' && key !== 'turn_id')))) {
+      if (value !== undefined && (
+        typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
+      )) properties[key] = value;
     }
   }
 
@@ -216,6 +262,8 @@ function agentTurnBaseProperties(
     model: properties.model,
     has_existing_code: properties.has_existing_code,
     has_history: properties.has_history,
+    ...(properties.input_mode ? { input_mode: properties.input_mode } : {}),
+    ...(properties.image_count !== undefined ? { image_count: properties.image_count } : {}),
     ...PRIVACY_CONTROL_PROPERTIES,
   };
 }
@@ -224,15 +272,34 @@ export function createAnalytics(dependencies: AnalyticsDependencies): BusinessAn
   let initialized = false;
   let surface: AppSurface = 'main';
   let clientPromise: Promise<PostHogClient | null> | null = null;
+  let activityDate = '';
+  const activeAccounts = new Set<string>();
 
-  const capture = (event: string, properties: Record<string, unknown>): void => {
+  const common = (context?: AnalyticsContext) => ({
+    schema_version: ANALYTICS_SCHEMA_VERSION,
+    entry_surface: surface,
+    page: context?.page ?? analyticsContext(null).page,
+    app_version: import.meta.env.VITE_APP_BUILD_VERSION || 'unknown',
+    environment: import.meta.env.VITE_APP_ENVIRONMENT || 'development',
+    ...(context?.turn_id ? { turn_id: context.turn_id } : {}),
+    ...PRIVACY_CONTROL_PROPERTIES,
+  });
+  const capture = (event: string, properties: Record<string, unknown>, context?: AnalyticsContext): void => {
     const pendingClient = clientPromise;
-    if (!pendingClient) return;
+    if (!pendingClient || safeAnalyticsDisabled(dependencies.storage)) return;
+    const metadata = common(context);
     void pendingClient
-      .then((client) => {
+      .then(async (client) => {
         if (!client) return;
+        const workspace = context?.workspace ? await context.workspace : undefined;
+        if (safeAnalyticsDisabled(dependencies.storage)) return;
         try {
-          client.capture(event, properties);
+          const payload = { ...properties, ...metadata, ...(workspace ? { workspace_session_id: workspace } : {}) };
+          if (event === 'playback_finished' && properties.end_reason === 'page_left') {
+            client.capture(event, payload, { transport: 'sendBeacon', send_instantly: true });
+          } else {
+            client.capture(event, payload);
+          }
         } catch {
           // Analytics must never affect product behavior.
         }
@@ -243,6 +310,49 @@ export function createAnalytics(dependencies: AnalyticsDependencies): BusinessAn
   };
 
   return {
+    trackTelemetry(event, properties, context) {
+      capture(event, properties, context);
+    },
+    async trackAccountActive(accountId) {
+      const pendingClient = clientPromise;
+      if (!accountId || !pendingClient || safeAnalyticsDisabled(dependencies.storage)) return;
+      try {
+        // A fixed UTC+8 reporting day, independent of the device's timezone.
+        const date = new Date((dependencies.now?.() ?? new Date()).getTime() + 8 * 60 * 60 * 1000)
+          .toISOString().slice(0, 10);
+        if (date !== activityDate) {
+          activityDate = date;
+          activeAccounts.clear();
+        }
+        // No device salt: the same account must have the same key across devices.
+        // This is pseudonymization, not anonymization. Never identify()/alias()
+        // the SDK: its distinct_id must continue to represent a browser.
+        const bytes = await globalThis.crypto.subtle.digest(
+          'SHA-256', new TextEncoder().encode(`oddenova:account-analytics:v1:${accountId}`),
+        );
+        const id = `account_v1_${Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('')}`;
+        const client = await pendingClient;
+        if (!client || safeAnalyticsDisabled(dependencies.storage)) return;
+        const key = `${date}:${id}`;
+        if (activeAccounts.has(key)) return;
+        // Reserve before capture so concurrent visibility/auth callbacks deduplicate.
+        activeAccounts.add(key);
+        try {
+          client.capture('account_active', {
+            ...common(),
+            account_analytics_id: id,
+            activity_date: date,
+            activity_timezone: 'Asia/Singapore',
+            ...PRIVACY_CONTROL_PROPERTIES,
+          });
+        } catch {
+          activeAccounts.delete(key);
+        }
+      } catch {
+        // Crypto, clock, SDK and storage failures must not affect authentication.
+      }
+    },
+
     initialize(input) {
       if (initialized) return;
       initialized = true;
@@ -278,7 +388,7 @@ export function createAnalytics(dependencies: AnalyticsDependencies): BusinessAn
             before_send: sanitizePostHogEvent,
           });
           try {
-            client.capture('app_opened', appOpenedProperties(input));
+            client.capture('app_opened', { ...appOpenedProperties(input), ...common({ page: input.page }) });
           } catch {
             // Analytics must never affect product behavior.
           }
@@ -288,7 +398,7 @@ export function createAnalytics(dependencies: AnalyticsDependencies): BusinessAn
     },
 
     trackAgentTurnStarted(properties) {
-      capture('agent_turn_started', agentTurnBaseProperties(properties, surface));
+      capture('agent_turn_started', agentTurnBaseProperties(properties, surface), properties.context);
     },
 
     trackAgentTurnFinished(properties) {
@@ -297,7 +407,15 @@ export function createAnalytics(dependencies: AnalyticsDependencies): BusinessAn
         outcome: properties.outcome,
         duration_ms: properties.duration_ms,
         iterations: properties.iterations,
-      });
+        ...Object.fromEntries(Object.entries({
+          request_retry_count: properties.request_retry_count,
+          tool_failure_count: properties.tool_failure_count,
+          termination_reason: properties.termination_reason,
+          failure_stage: properties.failure_stage,
+          error_code: properties.error_code,
+          http_status: properties.http_status,
+        }).filter(([, value]) => value !== undefined)),
+      }, properties.context);
     },
 
     trackShareCompleted(properties) {
@@ -356,6 +474,7 @@ export function initializeAnalytics(locale: AnalyticsLocale): void {
   defaultAnalytics.initialize({
     surface: resolveAppSurface(window.location),
     locale,
+    page: /^\/learn(?:\/|$)/.test(window.location.pathname) ? 'learn' : 'home',
   });
 }
 
@@ -365,3 +484,6 @@ export const trackShareCompleted = defaultAnalytics.trackShareCompleted;
 export const trackSharePrintFinished = defaultAnalytics.trackSharePrintFinished;
 export const trackWavExportCompleted = defaultAnalytics.trackWavExportCompleted;
 export const trackOnboardingProgressed = defaultAnalytics.trackOnboardingProgressed;
+export const trackAccountActive = defaultAnalytics.trackAccountActive;
+
+export const trackTelemetry = defaultAnalytics.trackTelemetry;
