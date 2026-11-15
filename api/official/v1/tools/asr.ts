@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { resolveOfficialApiKey } from '../../../../server/official-api-key';
+import { resolveOfficialApiKey } from '../../../../server/official-api-key.js';
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
