@@ -5,13 +5,15 @@ import { rememberUploadedImagePreview } from '../../lib/image-preview-memory';
 import { MAX_MESSAGE_IMAGES } from '../../lib/image-types';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUpIcon, StopIcon } from '../icons';
-import { ImagePlus, LoaderCircle, X } from 'lucide-react';
+import { ImagePlus, LoaderCircle, Mic, Square, X } from 'lucide-react';
 import ThinkingLevelControl from './ThinkingLevelControl';
+import VoiceButton from './VoiceButton';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
 import type { AgentEntryPoint } from '../../lib/analytics';
 import type { InputMode } from '../../hooks/useChat';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useDeepSeekSpeech } from '../../hooks/useDeepSeekSpeech';
 import { useTypewriter } from '../../hooks/useTypewriter';
 
 const IMAGE_UPLOAD_CONCURRENCY = 3;
@@ -35,6 +37,12 @@ type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 // non-space characters plus its trailing whitespace is one unit).
 function tokenizeForTyping(s: string): string[] {
   return s.match(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]|[^\u3000-\u303f\u4e00-\u9fff\uff00-\uffef\s]+\s*|\s+/g) ?? [];
+}
+
+function formatVoiceDuration(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${seconds}`;
 }
 
 // Cap on the auto-grow height (px) of the textarea itself (excludes the
@@ -144,6 +152,8 @@ export default function ChatInput({
   // image entry point follows provider and model changes immediately.
   const modelConfig = getActiveModelConfig();
   const canAddImages = supportsImages(modelConfig.provider, modelConfig.model);
+  const deepSeekApiKey = localStorage.getItem('vibe_api_key_deepseek')?.trim()
+    || (modelConfig.provider === 'deepseek' ? modelConfig.apiKey.trim() : '');
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [pendingImages, setPendingImages] = useState<{ id: string; url: string }[]>([]);
@@ -251,6 +261,35 @@ export default function ChatInput({
   // Drives the mobile "return to fill" hint, which is only actionable once the
   // on-screen keyboard is up.
   const [focused, setFocused] = useState(false);
+  const voiceOriginalTextRef = useRef('');
+  const voiceButtonRef = useRef<HTMLButtonElement>(null);
+  const voiceStopButtonRef = useRef<HTMLButtonElement>(null);
+  const voiceCancelButtonRef = useRef<HTMLButtonElement>(null);
+  const previousVoiceModeRef = useRef<'idle' | 'recording' | 'transcribing'>('idle');
+  const voiceSpeech = useDeepSeekSpeech(
+    (spokenText) => {
+      const spoken = spokenText.trim();
+      if (!spoken) return;
+      adoptedSuggestionRef.current = null;
+      const prefix = voiceOriginalTextRef.current.trimEnd();
+      setText(prefix ? `${prefix} ${spoken}` : spoken);
+    },
+  );
+  const voiceMode = voiceSpeech.mode;
+  const voiceElapsedSeconds = voiceSpeech.elapsedSeconds;
+  const voiceOverlayVisible = voiceMode !== 'idle';
+
+  useEffect(() => {
+    if (voiceMode === 'recording') {
+      voiceStopButtonRef.current?.focus({ preventScroll: true });
+    } else if (voiceMode === 'transcribing') {
+      voiceCancelButtonRef.current?.focus({ preventScroll: true });
+    } else if (previousVoiceModeRef.current !== 'idle') {
+      if (isMobile) voiceButtonRef.current?.focus({ preventScroll: true });
+      else textareaRef.current?.focus({ preventScroll: true });
+    }
+    previousVoiceModeRef.current = voiceMode;
+  }, [voiceMode, isMobile]);
 
   // AirJelly reachability, checked once on mount — Windows is excluded
   // (AirJelly Desktop doesn't support it). Runs once regardless of
@@ -486,6 +525,19 @@ export default function ChatInput({
   };
 
   const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
+  const startVoiceInput = () => {
+    if (!voiceSpeech.supported || inputDisabled || imageBusy || voiceSpeech.isStarting) return;
+    voiceOriginalTextRef.current = text;
+    adoptedSuggestionRef.current = null;
+    void voiceSpeech.start(deepSeekApiKey);
+  };
+  const stopVoiceInput = () => {
+    voiceSpeech.stop();
+  };
+  const cancelVoiceInput = () => {
+    voiceSpeech.cancel();
+    setText(voiceOriginalTextRef.current);
+  };
   // The waiting fade, applied per part (see the card below): everything that
   // is genuinely out of reach while the agent answers, and nothing else.
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
@@ -504,7 +556,8 @@ export default function ChatInput({
           the rule the transport rides, and takes the radius on all four
           corners. The hairline ring inherits it (.chat-input-outline::before). */}
       <div
-        className={`chat-input-surface chat-input-outline ${isMobile ? 'rounded-region' : 'rounded-t-none rounded-b-region'} pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed' : ''}`}
+        data-voice-input-state={voiceMode}
+        className={`chat-input-surface chat-input-outline relative ${isMobile ? 'rounded-region' : 'rounded-t-none rounded-b-region'} pt-3 transition duration-200 ${inputDisabled ? 'cursor-not-allowed' : ''}`}
       >
         {!presetLock && !isVideoMode && (
           <>
@@ -554,7 +607,22 @@ export default function ChatInput({
                 ) : <span className="text-[14px] font-bold underline underline-offset-2">登录</span>}{' '}后添加图片
               </p>
             )}
-            {imageError && <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">{imageError}</p>}
+              {imageError && <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">{imageError}</p>}
+              {voiceSpeech.error && (
+                <p role="alert" className="px-4 pb-2 text-xs leading-relaxed text-error">
+                  {voiceSpeech.error === 'DEEPSEEK_API_KEY_REQUIRED'
+                    ? t('voiceDeepSeekKeyRequired')
+                    : voiceSpeech.error === 'MIC_PERMISSION_DENIED'
+                      ? t('voiceMicPermissionDenied')
+                      : voiceSpeech.error === 'MIC_NOT_FOUND'
+                        ? t('voiceMicNotFound')
+                        : voiceSpeech.error === 'RECORDING_FAILED'
+                          ? t('voiceRecordingFailed')
+                          : voiceSpeech.error === 'EMPTY_RECORDING'
+                            ? t('voiceEmptyRecording')
+                            : `${t('voiceTranscriptionFailed')} (${voiceSpeech.error})`}
+                </p>
+              )}
           </>
         )}
         {/* The fade of the waiting state is taken on the card's contents, not
@@ -591,7 +659,7 @@ export default function ChatInput({
                 adoptedSuggestionRef.current = null;
                 setText(e.target.value);
               }}
-              readOnly={replayValue !== undefined || presetLock !== undefined}
+              readOnly={replayValue !== undefined || presetLock !== undefined || voiceOverlayVisible}
               // A read-only field can still take focus from a tap; with no
               // keyboard asked for, a phone does not raise one over the preset.
               inputMode={presetLock ? 'none' : undefined}
@@ -686,7 +754,11 @@ export default function ChatInput({
 
           {/* Footer row — hint/status on the left, send button on the right.
               Real layout, always visible regardless of textarea scroll state. */}
-          <div className="flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2">
+          <div
+            aria-hidden={voiceOverlayVisible}
+            inert={voiceOverlayVisible}
+            className={`flex items-center justify-between gap-2 pl-4 pr-2 pt-1 pb-2 transition-opacity duration-100 ${voiceOverlayVisible ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
+          >
             <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ${waitingDim}`}>
               {imageBusy && <span role="status" className="sr-only">{t('processingImages')}</span>}
               {presetLock ? null : engineStatus !== 'ready' ? (
@@ -741,6 +813,15 @@ export default function ChatInput({
                   <ImagePlus size={20} strokeWidth={1.8} aria-hidden="true" />
                 </button>
               )}
+              {!presetLock && !isVideoMode && replayValue === undefined && (
+                <VoiceButton
+                  isListening={voiceMode === 'recording'}
+                  supported={voiceSpeech.supported}
+                  disabled={inputDisabled || imageBusy || voiceSpeech.isStarting}
+                  buttonRef={voiceButtonRef}
+                  onToggle={startVoiceInput}
+                />
+              )}
               {replayValue !== undefined ? (
                 <button
                   type="button"
@@ -787,6 +868,62 @@ export default function ChatInput({
             </div>
           </div>
         </div>
+        {voiceOverlayVisible && (
+          <div
+            data-chat-input-focus-ignore
+            className="voice-input-overlay absolute inset-x-2 bottom-2 z-10 flex h-[52px] items-center gap-2 rounded-full border border-border bg-surface-hover px-2.5 shadow-lg sm:inset-x-3 sm:gap-2.5 sm:px-3"
+          >
+            <div role="status" aria-live="polite" className="flex shrink-0 items-center gap-2">
+              <span className="flex size-7 shrink-0 items-center justify-center text-brand-accent" aria-hidden="true">
+                {voiceMode === 'recording'
+                  ? <Mic size={21} strokeWidth={1.9} />
+                  : <LoaderCircle size={21} strokeWidth={2} className="animate-spin motion-reduce:animate-none" />}
+              </span>
+              <span className="h-6 w-px shrink-0 bg-border" aria-hidden="true" />
+              {voiceMode === 'recording' ? (
+                <>
+                  <span className="sr-only">{t('voiceListening')}</span>
+                  <span aria-hidden="true" className="whitespace-nowrap text-[13px] tabular-nums text-text-muted sm:text-sm">
+                    {formatVoiceDuration(voiceElapsedSeconds)}
+                  </span>
+                </>
+              ) : (
+                <span className="whitespace-nowrap text-[13px] font-semibold text-text-primary sm:text-sm">
+                  {t('voiceTranscribing')}
+                </span>
+              )}
+            </div>
+
+            {voiceMode === 'recording' && (
+              <div className="voice-waveform mx-1 flex min-w-0 max-w-36 flex-1 items-center justify-between max-[480px]:hidden" aria-hidden="true">
+                {Array.from({ length: 17 }, (_, index) => <span key={index} />)}
+              </div>
+            )}
+
+            <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+              <button
+                type="button"
+                ref={voiceCancelButtonRef}
+                onClick={cancelVoiceInput}
+                aria-label={t('cancel')}
+                className="inline-flex size-9 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-text-primary/10 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+              {voiceMode === 'recording' && (
+                <button
+                  type="button"
+                  ref={voiceStopButtonRef}
+                  onClick={stopVoiceInput}
+                  aria-label={t('voiceStopRecording')}
+                  className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-accent text-on-accent transition-colors hover:bg-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+                >
+                  <Square size={14} strokeWidth={2.4} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </form>
   );

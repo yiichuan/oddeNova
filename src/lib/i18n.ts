@@ -448,9 +448,20 @@ const S: Record<string, readonly [string, string]> = {
   moodGenerate:  ['根据心情生成音乐', 'Mood-based music'],
 
   // VoiceButton
-  voiceNotSupported: ['浏览器不支持语音识别，请使用 Chrome', 'Speech recognition not supported, please use Chrome'],
+  voiceNotSupported: ['浏览器不支持音频录制', 'Audio recording is not supported in this browser'],
   releaseToStop:     ['松开停止', 'Release to stop'],
   holdToSpeak:       ['按住说话', 'Hold to speak'],
+  startVoiceInput:   ['开始语音输入', 'Start voice input'],
+  voiceButtonRecording: ['录音中', 'Recording'],
+  voiceListening:    ['正在聆听', 'Listening'],
+  voiceTranscribing: ['正在转写…', 'Transcribing…'],
+  voiceStopRecording: ['停止录音', 'Stop recording'],
+  voiceDeepSeekKeyRequired: ['请先在模型设置中配置 DeepSeek API Key', 'Configure a DeepSeek API key in model settings first'],
+  voiceMicPermissionDenied: ['无法访问麦克风，请允许此网站使用麦克风', 'Microphone access was denied. Allow microphone access for this site.'],
+  voiceMicNotFound: ['未找到可用的麦克风', 'No microphone was found'],
+  voiceRecordingFailed: ['录音失败，请重试', 'Recording failed. Please try again.'],
+  voiceEmptyRecording: ['没有录到音频，请重试', 'No audio was captured. Please try again.'],
+  voiceTranscriptionFailed: ['DeepSeek 转写失败', 'DeepSeek transcription failed'],
 
   // strudel / engine
   clickToResume:   ['点击播放继续', 'Click to resume'],
