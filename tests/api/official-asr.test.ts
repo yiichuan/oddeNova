@@ -50,7 +50,7 @@ it('keeps a configured personal key on the direct path even if DeepSeek rejects 
   vi.stubGlobal('fetch', fetchMock);
 
   await expect(transcribeWithDeepSeek(makeRecording(), 'personal-key', new AbortController().signal))
-    .rejects.toThrow('DEEPSEEK_ASR_401');
+    .rejects.toThrow('ASR_401: Invalid key');
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock).toHaveBeenCalledWith(
     'https://api.deepseek.com/v1/tools/asr',

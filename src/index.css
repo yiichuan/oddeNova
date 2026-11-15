@@ -2186,43 +2186,9 @@ html[data-theme='light'] .history-search-field {
   animation: voice-input-expand 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-.voice-waveform span {
-  width: 2px;
-  min-width: 2px;
-  border-radius: 999px;
-  background: var(--color-brand-accent);
-  animation: voice-waveform-pulse 640ms ease-in-out infinite alternate;
-}
-
-.voice-waveform span:nth-child(1),
-.voice-waveform span:nth-child(17) { height: 5px; animation-delay: -260ms; }
-.voice-waveform span:nth-child(2),
-.voice-waveform span:nth-child(16) { height: 9px; animation-delay: -80ms; }
-.voice-waveform span:nth-child(3),
-.voice-waveform span:nth-child(15) { height: 14px; animation-delay: -420ms; }
-.voice-waveform span:nth-child(4),
-.voice-waveform span:nth-child(14) { height: 8px; animation-delay: -180ms; }
-.voice-waveform span:nth-child(5),
-.voice-waveform span:nth-child(13) { height: 20px; animation-delay: -520ms; }
-.voice-waveform span:nth-child(6),
-.voice-waveform span:nth-child(12) { height: 11px; animation-delay: -320ms; }
-.voice-waveform span:nth-child(7),
-.voice-waveform span:nth-child(11) { height: 24px; animation-delay: -100ms; }
-.voice-waveform span:nth-child(8),
-.voice-waveform span:nth-child(10) { height: 15px; animation-delay: -380ms; }
-.voice-waveform span:nth-child(9) { height: 28px; animation-delay: -240ms; }
-
-@keyframes voice-waveform-pulse {
-  from { transform: scaleY(0.38); opacity: 0.64; }
-  to { transform: scaleY(1); opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .voice-input-overlay {
     animation-duration: 0.01ms;
-  }
-  .voice-waveform span {
-    animation: none;
   }
 }
 

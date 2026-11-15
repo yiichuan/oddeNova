@@ -106,6 +106,13 @@ export function useDeepSeekSpeech(onResult: (text: string) => void) {
         if (recorderRef.current === recorder) recorderRef.current = null;
         if (sessionId !== sessionRef.current) return;
 
+        if (chunks.length === 0) {
+          setMode('idle');
+          setStartedAt(null);
+          setElapsedSeconds(0);
+          return;
+        }
+
         const audio = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -189,5 +196,5 @@ export function useDeepSeekSpeech(onResult: (text: string) => void) {
     stopTracks(streamRef.current);
   }, []);
 
-  return { mode, isStarting, elapsedSeconds, error, supported, start, stop, cancel, clearError: () => setError(null) };
+  return { mode, isStarting, elapsedSeconds, error, supported, streamRef, start, stop, cancel, clearError: () => setError(null) };
 }

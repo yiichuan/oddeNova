@@ -24,7 +24,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const apiKey = resolveOfficialApiKey();
   if (!apiKey) {
-    sendError(503, 'Official DeepSeek API key is not configured');
+    sendError(503, 'Transcription service API key is not configured');
     return;
   }
 
@@ -59,6 +59,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.setHeader('Content-Type', 'application/json');
     res.end(body);
   } catch {
-    sendError(502, 'Official DeepSeek transcription request failed');
+    sendError(502, 'Transcription service request failed');
   }
 }

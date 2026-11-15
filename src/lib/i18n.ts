@@ -451,7 +451,7 @@ const S: Record<string, readonly [string, string]> = {
   voiceNotSupported: ['浏览器不支持音频录制', 'Audio recording is not supported in this browser'],
   releaseToStop:     ['松开停止', 'Release to stop'],
   holdToSpeak:       ['按住说话', 'Hold to speak'],
-  startVoiceInput:   ['开始语音输入', 'Start voice input'],
+  startVoiceInput:   ['语音输入', 'Voice input'],
   voiceButtonRecording: ['录音中', 'Recording'],
   voiceListening:    ['正在聆听', 'Listening'],
   voiceTranscribing: ['正在转写…', 'Transcribing…'],
@@ -460,7 +460,7 @@ const S: Record<string, readonly [string, string]> = {
   voiceMicNotFound: ['未找到可用的麦克风', 'No microphone was found'],
   voiceRecordingFailed: ['录音失败，请重试', 'Recording failed. Please try again.'],
   voiceEmptyRecording: ['没有录到音频，请重试', 'No audio was captured. Please try again.'],
-  voiceTranscriptionFailed: ['DeepSeek 转写失败', 'DeepSeek transcription failed'],
+  voiceTranscriptionFailed: ['转写失败', 'Transcription failed'],
 
   // strudel / engine
   clickToResume:   ['点击播放继续', 'Click to resume'],

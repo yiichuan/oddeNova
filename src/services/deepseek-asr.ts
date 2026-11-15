@@ -106,10 +106,7 @@ export async function transcribeWithDeepSeek(
       : typeof result?.message === 'string'
         ? result.message
         : response.statusText;
-    throw new Error(`DEEPSEEK_ASR_${response.status}: ${detail}`);
+    throw new Error(`ASR_${response.status}: ${detail}`);
   }
-  if (typeof result?.text !== 'string' || !result.text.trim()) {
-    throw new Error('EMPTY_TRANSCRIPTION');
-  }
-  return result.text.trim();
+  return typeof result?.text === 'string' ? result.text.trim() : '';
 }

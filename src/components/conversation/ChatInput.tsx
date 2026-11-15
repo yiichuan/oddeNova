@@ -8,6 +8,7 @@ import { ArrowUpIcon, StopIcon } from '../icons';
 import { ImagePlus, LoaderCircle, Mic, Square, X } from 'lucide-react';
 import ThinkingLevelControl from './ThinkingLevelControl';
 import VoiceButton from './VoiceButton';
+import VoiceWaveform from './VoiceWaveform';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
 import type { AgentEntryPoint } from '../../lib/analytics';
@@ -893,9 +894,7 @@ export default function ChatInput({
             </div>
 
             {voiceMode === 'recording' && (
-              <div className="voice-waveform mx-1 flex min-w-0 max-w-36 flex-1 items-center justify-between max-[480px]:hidden" aria-hidden="true">
-                {Array.from({ length: 17 }, (_, index) => <span key={index} />)}
-              </div>
+              <VoiceWaveform streamRef={voiceSpeech.streamRef} />
             )}
 
             <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
