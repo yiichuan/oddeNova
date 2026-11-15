@@ -76,6 +76,7 @@ export interface LLMCaller {
 }
 
 export type ProgressEvent =
+  | { kind: 'request_retry' }
   | { kind: 'iteration'; index: number }
   | { kind: 'tool_call'; name: string; args: Record<string, unknown> }
   | { kind: 'tool_result'; name: string; ok: boolean; error?: string }
@@ -222,6 +223,7 @@ async function chatWithToolsWithRetry(
         receivedPartial,
       });
       await waitForRetryDelay(delayMs, signal);
+      onProgress?.({ kind: 'request_retry' });
     }
   }
 
@@ -246,6 +248,7 @@ export interface RunAgentResult {
   iterations: number;
   committed: boolean;
   tokenUsage?: TokenUsage;
+  terminationReason?: 'committed' | 'text_reply' | 'no_commit' | 'iteration_limit' | 'timeout' | 'aborted' | 'validation_failed';
 }
 
 const DEFAULT_MAX_ITER = 30;
@@ -311,17 +314,20 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   let committed = false;
   let finalCode = state.code;
   let isChatReply = false;
+  let terminationReason: RunAgentResult['terminationReason'] = 'iteration_limit';
   // Only keep usage from the last iteration: each call accumulates the full message history,
   // so the final inputTokens reflects the true size of the current complete context.
   let lastUsage: LLMUsage | undefined;
 
   outer: for (let i = 0; i < maxIter; i++) {
     if (Date.now() - start > timeoutMs) {
+      terminationReason = 'timeout';
       const timeoutLabel = formatTimeoutMinutes(timeoutMs, isZh);
       onProgress?.({ kind: 'warn', message: isZh ? `超时 ${timeoutLabel}，强制结束` : `Timed out after ${timeoutLabel}, force-stopping` });
       break;
     }
     if (signal?.aborted) {
+      terminationReason = 'aborted';
       onProgress?.({ kind: 'warn', message: isZh ? '已中断' : 'Interrupted' });
       break;
     }
@@ -374,6 +380,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           isChatReply = true;
         }
       }
+      terminationReason = isChatReply ? 'text_reply' : 'no_commit';
       break;
     }
 
@@ -464,6 +471,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
             content: commitResultJson,
           });
           onProgress?.({ kind: 'commit', code: e.code });
+          terminationReason = 'committed';
           break outer;
         }
         const msg = getErrorMessage(e);
@@ -516,6 +524,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
           kind: 'warn',
           message: isZh ? `agent 未调用 commit 且最后代码校验失败: ${v.error || '未知'}` : `Agent did not call commit and final code failed validation: ${v.error || 'unknown'}`,
         });
+        if (terminationReason === 'no_commit') terminationReason = 'validation_failed';
         finalCode = state.code;
       }
     } else if (isChatReply) {
@@ -561,5 +570,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
     iterations,
     committed,
     tokenUsage,
+    terminationReason: signal?.aborted ? 'aborted' : committed && terminationReason !== 'timeout' && terminationReason !== 'iteration_limit'
+      ? 'committed' : terminationReason,
   };
 }

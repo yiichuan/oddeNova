@@ -278,7 +278,7 @@ describe('useSessions', () => {
 
     expect(getHook().sessions.filter((session) => session.id === imported.id)).toHaveLength(1);
     expect(getHook().sessions.find((session) => session.id === imported.id)).toEqual(imported);
-    expect(storageMocks.putSession).toHaveBeenLastCalledWith(imported, 'user:u-1');
+    expect(storageMocks.putSession).toHaveBeenLastCalledWith(imported, 'user:u-1', expect.any(Object));
     expect(cloud.saveSession).toHaveBeenLastCalledWith(imported, 'u-1');
   });
 
@@ -324,7 +324,7 @@ describe('useSessions', () => {
     expect(storageMocks.putSession).toHaveBeenLastCalledWith(expect.objectContaining({
       id: 'account-session',
       title: 'Cloud Title',
-    }), 'user:u-1');
+    }), 'user:u-1', expect.any(Object));
   });
 
   it('does not expose guest sessions while an account owner is loading', async () => {
@@ -444,6 +444,7 @@ describe('useSessions', () => {
         ]),
       }),
       'user:u-1',
+      expect.any(Object),
     );
   });
 
@@ -477,7 +478,7 @@ describe('useSessions', () => {
 
     expect(getHook().currentId).toBe(detail.id);
     expect(getHook().currentSession).toEqual(detail);
-    expect(storageMocks.putSession).toHaveBeenCalledWith(detail, 'user:u-1');
+    expect(storageMocks.putSession).toHaveBeenCalledWith(detail, 'user:u-1', expect.any(Object));
     expect(storageMocks.putCurrentSessionId).toHaveBeenCalledWith(detail.id, 'user:u-1');
     expect(cloud.saveSession).not.toHaveBeenCalled();
     await expect(getHook().flushCloudSaves(detail.id)).resolves.toBeUndefined();
@@ -2356,6 +2357,7 @@ describe('useSessions', () => {
     expect(storageMocks.putSession).toHaveBeenLastCalledWith(
       expect.objectContaining({ revisions: [referencedRevision] }),
       'guest',
+      expect.any(Object),
     );
   });
 

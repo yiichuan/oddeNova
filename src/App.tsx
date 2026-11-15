@@ -1,3 +1,5 @@
+import { analyticsContext, analyticsMessageTurn, setAnalyticsWorkspace } from './lib/analytics-context';
+import { emitTelemetry } from './lib/telemetry';
 import { ownImage, type ImageAttachment } from './lib/image-attachments';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
@@ -53,6 +55,7 @@ import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenWelcome, markWelcomeSeen, shouldAutoOpenWelcomeModal } from './lib/welcome-modal';
 import type { AgentEntryPoint } from './lib/analytics';
+import { useAccountActivity } from './hooks/useAccountActivity';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { sessionAsFavorite } from './lib/session-favorites';
 import { fullSessionTitle } from './lib/full-session-title';
@@ -116,15 +119,15 @@ import { type Session } from './hooks/useSessions';
 const FULL_WIDTH_PAGES = new Set<PrimaryNavItem>(['featured', 'favorites', 'audition']);
 
 // Stable shells keep chunks lazy and renew failed loads on a boundary retry.
-const LazyFeaturedPage = retryableLazy(() => import('./components/featured/FeaturedPage'));
-const LazyFavoritesPage = retryableLazy(() => import('./components/favorites/FavoritesPage'));
-const LazyAuditionPage = retryableLazy(() => import('./components/audition/AuditionPage'));
-const LazySettingsSidebar = retryableLazy(() => import('./components/settings/SettingsSidebar'));
-const LazyModelSettingsPanel = retryableLazy(() => import('./components/settings/ModelSettingsPanel'));
-const LazyAppearanceSettingsPanel = retryableLazy(() => import('./components/settings/AppearanceSettingsPanel'));
-const LazyApiKeyModal = retryableLazy(() => import('./components/overlays/ApiKeyModal'));
-const LazyAccountModal = retryableLazy(() => import('./components/overlays/AccountModal'));
-const LazyFavoriteActionDialog = retryableLazy(() => import('./components/overlays/FavoriteActionDialog'));
+const LazyFeaturedPage = retryableLazy(() => import('./components/featured/FeaturedPage'), 'FeaturedPage');
+const LazyFavoritesPage = retryableLazy(() => import('./components/favorites/FavoritesPage'), 'FavoritesPage');
+const LazyAuditionPage = retryableLazy(() => import('./components/audition/AuditionPage'), 'AuditionPage');
+const LazySettingsSidebar = retryableLazy(() => import('./components/settings/SettingsSidebar'), 'SettingsSidebar');
+const LazyModelSettingsPanel = retryableLazy(() => import('./components/settings/ModelSettingsPanel'), 'ModelSettingsPanel');
+const LazyAppearanceSettingsPanel = retryableLazy(() => import('./components/settings/AppearanceSettingsPanel'), 'AppearanceSettingsPanel');
+const LazyApiKeyModal = retryableLazy(() => import('./components/overlays/ApiKeyModal'), 'ApiKeyModal');
+const LazyAccountModal = retryableLazy(() => import('./components/overlays/AccountModal'), 'AccountModal');
+const LazyFavoriteActionDialog = retryableLazy(() => import('./components/overlays/FavoriteActionDialog'), 'FavoriteActionDialog');
 
 /** Neutral block the lazy shells can suspend on; height set by the container. */
 function LazyOverlayFallback() {
@@ -196,6 +199,7 @@ interface FavoriteNotice {
 export default function App() {
   const strudel = useStrudel();
   const auth = useAuth();
+  useAccountActivity(auth.user?.id ?? null, auth.loading);
   const cloudRepository = useMemo(() => ({
     saveSession: saveCloudSession,
     deleteSession: deleteCloudSession,
@@ -204,7 +208,7 @@ export default function App() {
   const [accountStartToken, setAccountStartToken] = useState(0);
   const lastAuthUserIdRef = useRef<string | null>(null);
   const { isReplaying, replayMessages, replayInputText, startReplay } = useReplay(
-    (code) => { strudel.play(code); }
+    (code) => { strudel.play(code, 'history'); }
   );
   const sessions = useSessions({
     ownerKey,
@@ -222,6 +226,9 @@ export default function App() {
   const [rollbackImageDraft, setRollbackImageDraft] = useState<{ scope: string; images: ImageAttachment[] }>();
   const [inputFocusTrigger, setInputFocusTrigger] = useState(1);
   const [primaryNavItem, setPrimaryNavItem] = useState<PrimaryNavItem>('home');
+  useEffect(() => {
+    setAnalyticsWorkspace(primaryNavItem, ownerKey, sessions.currentId);
+  }, [primaryNavItem, ownerKey, sessions.currentId]);
   /* First-visit gates for the lazy full-width pages. A page is mounted on its
      first navigation and stays mounted (hidden) from then on — the pre-existing
      hidden-mount semantics; before that visit the JSX is absent entirely, so
@@ -1095,6 +1102,7 @@ export default function App() {
   // One Agent turn (instruction → generation → playback + persistence), shared by
   // the text and mood entry points below. See src/hooks/useAgentRunner.ts.
   const runTurn = useAgentRunner({
+    analyticsOwnerKey: ownerKey,
     strudel,
     sessions,
     currentCode,
@@ -1166,18 +1174,23 @@ export default function App() {
    */
   const handlePlaySegment = useCallback(
     (segmentId: string, code: string) => {
+      const context = analyticsContext(undefined, undefined, code);
       const draft = current?.code ?? '';
       // A take the draft still is — the latest one, untouched since — has
       // nothing to shield the draft from, so it plays as the draft does.
       if (segmentId === DRAFT_SEGMENT_ID || code === draft) {
         exitPreview();
         setSoundingSegment({ id: segmentId, code: draft });
-        void strudel.play(draft);
+        void strudel.play(draft, 'history', context).then(ok => {
+          emitTelemetry('creation_action', { action: 'version_preview', outcome: ok ? 'success' : 'failed' }, context);
+        });
         return;
       }
       setPreview({ segmentId, code });
       setSoundingSegment({ id: segmentId, code });
-      void strudel.play(code); // play() puts it in the editor on its way through
+      void strudel.play(code, 'history', context).then(ok => {
+        emitTelemetry('creation_action', { action: 'version_preview', outcome: ok ? 'success' : 'failed' }, context);
+      });
     },
     [current?.code, exitPreview, strudel],
   );
@@ -1227,11 +1240,17 @@ export default function App() {
   );
 
   const handleResend = useCallback(
-    async (messageId: string, newContent: string) => {
+    async (messageId: string, newContent: string, action: 'retry' | 'edit_resend' = 'edit_resend', sourceTurn?: string) => {
+      const context = analyticsContext();
+      const allMessages = sessions.currentSession?.messages ?? [];
+      const targetIndex = allMessages.findIndex(message => message.id === messageId);
+      const followingReply = targetIndex < 0 ? undefined : allMessages[targetIndex + 1];
+      context.turn_id = sourceTurn ?? (followingReply ? analyticsMessageTurn(sessions.currentId, followingReply.id) : undefined);
       const allMsgs = sessions.currentSession?.messages ?? [];
       const history = conversationHistoryBefore(allMsgs, messageId);
 
       const rewound = await rewindBeforeMessage(messageId);
+      emitTelemetry('creation_action', { action, outcome: rewound ? 'success' : 'invalid_target' }, context);
       if (!rewound) return;
 
       sessions.truncateAndEdit(messageId, newContent);
@@ -1249,7 +1268,13 @@ export default function App() {
   const handleRollback = useCallback(
     async (messageId: string) => {
       const currentSessionId = sessions.currentId;
+      const context = analyticsContext();
+      const messages = sessions.currentSession?.messages ?? [];
+      const index = messages.findIndex(message => message.id === messageId);
+      const followingReply = index < 0 ? undefined : messages[index + 1];
+      context.turn_id = analyticsMessageTurn(currentSessionId, followingReply?.id ?? messageId);
       const rewound = await rewindBeforeMessage(messageId);
+      emitTelemetry('creation_action', { action: 'rollback', outcome: rewound ? 'success' : 'invalid_target' }, context);
       if (!rewound) return;
 
       sessions.truncate(messageId);
@@ -1277,10 +1302,12 @@ export default function App() {
     async (assistantMessageId: string) => {
       const allMessages = sessions.currentSession?.messages ?? [];
       const idx = allMessages.findIndex((m) => m.id === assistantMessageId);
-      if (idx < 0) return;
-      const userMsg = [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'user');
-      if (!userMsg) return;
-      await handleResend(userMsg.id, userMsg.content);
+      const userMsg = idx < 0 ? undefined : [...allMessages.slice(0, idx)].reverse().find((m) => m.role === 'user');
+      if (!userMsg) {
+        emitTelemetry('creation_action', { action: 'retry', outcome: 'invalid_target' });
+        return;
+      }
+      await handleResend(userMsg.id, userMsg.content, 'retry', analyticsMessageTurn(sessions.currentId, assistantMessageId));
     },
     [sessions, handleResend]
   );
@@ -1322,30 +1349,35 @@ export default function App() {
   }, [flushCloudSaves, setManualCode, isMobile]);
 
   const handlePlay = useCallback(async () => {
+    const context = analyticsContext(sessions.currentId, ownerKey, strudel.code);
     if (sessions.currentId) {
       await setManualCode(strudel.code, sessions.currentId);
       await flushCloudSaves(sessions.currentId);
     }
-    await strudel.play();
-  }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
+    const ok = await strudel.play(undefined, 'manual', context);
+    if (strudel.isDirty) emitTelemetry('creation_action', { action: 'manual_run', outcome: ok ? 'success' : 'failed' }, context);
+  }, [flushCloudSaves, ownerKey, sessions.currentId, setManualCode, strudel]);
 
   const handlePlayCodeOnly = useCallback(async (code: string) => {
+    const context = analyticsContext(sessions.currentId, ownerKey, code);
     if (sessions.currentId) {
       await setManualCode(code, sessions.currentId);
       await flushCloudSaves(sessions.currentId);
     }
-    await strudel.play(code);
-  }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
+    await strudel.play(code, 'manual', context);
+  }, [flushCloudSaves, ownerKey, sessions.currentId, setManualCode, strudel]);
 
   // Live update: the edit is persisted the same way a play is, then handed to
   // the running transport instead of restarting it.
   const handleUpdate = useCallback(async () => {
+    const context = analyticsContext(sessions.currentId, ownerKey, strudel.code);
     if (sessions.currentId) {
       await setManualCode(strudel.code, sessions.currentId);
       await flushCloudSaves(sessions.currentId);
     }
-    await strudel.update();
-  }, [flushCloudSaves, sessions.currentId, setManualCode, strudel]);
+    const ok = await strudel.update();
+    emitTelemetry('creation_action', { action: 'manual_run', outcome: ok ? 'success' : 'failed' }, context);
+  }, [flushCloudSaves, ownerKey, sessions.currentId, setManualCode, strudel]);
 
   const importSession = sessions.importSession;
   const playFeatured = featuredPreview.play;
@@ -1819,7 +1851,7 @@ export default function App() {
     },
   }), [sessions]);
   const creationStudio = useMemo(() => ({
-    play: (code: string) => strudel.play(code),
+    play: (code: string) => strudel.play(code, 'onboarding'),
     stop: () => strudel.stop(),
   }), [strudel]);
   const firstCreation = useFirstCreation({
@@ -2232,7 +2264,7 @@ export default function App() {
         onSelect={auth.user && cloudLibraryEnabled ? handleSelectFavorite : undefined}
         isPlaying={strudel.isPlaying}
         playingCode={strudel.code}
-        onPlayCode={auth.user ? (code) => { void strudel.play(code); } : undefined}
+        onPlayCode={auth.user ? (code) => { void strudel.play(code, 'favorite'); } : undefined}
         onStopCode={auth.user ? strudel.stop : undefined}
         /* The phone asks before it acts and so has nothing left to report;
            the desktop reports and holds the undo open. Two handlers, one

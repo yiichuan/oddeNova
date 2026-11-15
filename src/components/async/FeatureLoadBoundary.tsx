@@ -1,3 +1,5 @@
+import { analyticsError } from '../../lib/analytics-context';
+import { emitTelemetry, hasTelemetryError, markTelemetryError } from '../../lib/telemetry';
 import { Component, Suspense, type ReactNode } from 'react';
 import { t } from '../../lib/i18n';
 import { FeatureLoadAttemptContext } from './feature-load-attempt';
@@ -22,6 +24,12 @@ export class FeatureLoadBoundary extends Component<FeatureLoadBoundaryProps, Fea
 
   static getDerivedStateFromError(): Partial<FeatureLoadBoundaryState> {
     return { hasError: true };
+  }
+
+  componentDidCatch(error: Error): void {
+    if (hasTelemetryError(error)) return;
+    markTelemetryError(error);
+    emitTelemetry('app_error', { source: 'feature_boundary', error_code: analyticsError(error).error_code });
   }
 
   render() {

@@ -3,6 +3,9 @@ import { isLearnPath } from './lib/routes';
 import { loadEditorPreferences } from './lib/editor-preferences';
 import { loadAppearancePreferences } from './lib/appearance-preferences';
 import { initPersonaCache } from './lib/persona-storage';
+import { analyticsError } from './lib/analytics-context';
+import { emitTelemetry } from './lib/telemetry';
+import { installAppErrorTelemetry } from './lib/app-error-telemetry';
 import { initializeAnalytics } from './lib/analytics';
 import { zh } from './lib/i18n';
 import { consumeOddeNovaBridgeBootstrapHash } from './lib/oddenova-bridge';
@@ -15,6 +18,7 @@ loadAppearancePreferences()
 loadEditorPreferences()
 consumeOddeNovaBridgeBootstrapHash()
 initializeAnalytics(zh ? 'zh-CN' : 'en')
+installAppErrorTelemetry()
 
 if (isLearnPath()) {
   // Standalone docs page — skip audio/session bootstrap entirely.
@@ -24,6 +28,7 @@ if (isLearnPath()) {
       root.render(<module.default />)
     })
     .catch((error) => {
+      emitTelemetry('feature_load_finished', { feature: 'learn', source: 'initial', outcome: 'failed', ...analyticsError(error) }, { page: 'learn' });
       console.error('[entry] failed to load the tutorial.', error);
       root.render(entryErrorView(error));
     })
@@ -45,6 +50,7 @@ if (isLearnPath()) {
       root.render(<appModule.default />)
     })
     .catch((error) => {
+      emitTelemetry('feature_load_finished', { feature: 'studio', source: 'initial', outcome: 'failed', ...analyticsError(error) });
       console.error('[entry] failed to mount the app.', error);
       root.render(entryErrorView(error));
     });

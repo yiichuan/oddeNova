@@ -32,9 +32,11 @@ describe('audio export context recovery', () => {
   let current: ReturnType<typeof liveContext> | OfflineContext | null;
   let mp3: ReturnType<typeof vi.fn>;
   let m4a: ReturnType<typeof vi.fn>;
+  let capture: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     current = liveContext();
+    capture = vi.fn();
     OfflineContext.failNextRender = false;
     mp3 = vi.fn(async () => new Blob(['mp3'], { type: 'audio/mpeg' }));
     m4a = vi.fn(async () => new Blob(['m4a'], { type: 'audio/mp4' }));
@@ -57,7 +59,7 @@ describe('audio export context recovery', () => {
       resetGlobalEffects: vi.fn(),
     }));
     vi.doMock('../../lib/soundfont-loader', () => ({ registerSoundfonts: vi.fn() }));
-    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn() }));
+    vi.doMock('../../lib/analytics', () => ({ trackWavExportCompleted: vi.fn(), trackTelemetry: capture }));
     vi.doMock('../../lib/mp3-export', () => ({ audioBufferToMp3: mp3 }));
     vi.doMock('../../lib/m4a-export', () => ({ audioBufferToM4a: m4a }));
   });
@@ -164,6 +166,9 @@ describe('audio export context recovery', () => {
     reachBoundary();
     await Promise.resolve();
     expect(suspend).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledWith('audio_export_finished', expect.objectContaining({
+      format: 'wav', outcome: 'cancelled', recovery_outcome: 'success',
+    }), expect.any(Object));
     expect(suspend).toHaveBeenCalledWith(0);
     expect(queryArc).toHaveBeenCalledOnce();
     expect(resume).not.toHaveBeenCalled();
@@ -197,6 +202,8 @@ describe('audio export context recovery', () => {
     expect(restored.close).toHaveBeenCalledOnce();
     expect(mp3).toHaveBeenCalledOnce();
     expect(current?.state).toBe('running');
+    const results = capture.mock.calls.filter(([event]) => event === 'audio_export_finished');
+    expect(results.map(([, fields]) => [fields.format, fields.outcome])).toEqual([['wav', 'success'], ['mp3', 'success']]);
   });
 
   it.each(['render', 'encode'])('restores live audio after a %s failure and permits retry', async (failure) => {
@@ -222,6 +229,9 @@ describe('audio export context recovery', () => {
     const blob = vi.mocked(URL.createObjectURL).mock.calls.at(-1)?.[0];
     expect(blob).toBeInstanceOf(Blob);
     expect((blob as Blob).type).toBe('audio/mp4');
+    const m4aResults = capture.mock.calls.filter(([event]) => event === 'audio_export_finished');
+    expect(m4aResults.map(([, fields]) => [fields.format, fields.outcome, fields.failure_stage]))
+      .toEqual([['m4a', 'failed', 'encode'], ['m4a', 'success', undefined]]);
     expect(current?.state).toBe('running');
   });
 
@@ -244,6 +254,9 @@ describe('audio export context recovery', () => {
     controller.abort();
     await assertion;
     expect(suspend).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledWith('audio_export_finished', expect.objectContaining({
+      format, outcome: 'cancelled', recovery_outcome: 'success',
+    }), expect.any(Object));
     expect(current?.state).toBe('running');
     expect(progress).not.toHaveBeenCalledWith(1);
     finish({ numberOfChannels: 2, sampleRate: 48000, getChannelData: () => new Float32Array(8) });
@@ -266,6 +279,18 @@ describe('audio export context recovery', () => {
       .rejects.toMatchObject({ name: 'AbortError' });
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
     expect(current?.state).toBe('running');
+  });
+
+  it('counts the file as downloaded when the live audio graph cannot be restored', async () => {
+    const instance = await service();
+    Object.assign(instance, {
+      rebuildMasterChain: vi.fn(async () => { throw new Error('private restoration details'); }),
+    });
+    await expect(instance.exportAudio(params)).resolves.toBeUndefined();
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledWith('audio_export_finished', expect.objectContaining({
+      format: 'wav', outcome: 'success', recovery_outcome: 'failed',
+    }), expect.any(Object));
   });
 
   it('replaces a leftover offline context without trying to close it', async () => {

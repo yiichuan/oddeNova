@@ -1,3 +1,5 @@
+import { PlaybackTelemetry } from '../lib/playback-telemetry';
+import { analyticsContext } from '../lib/analytics-context';
 import { getErrorMessage } from '../lib/errors';
 import { applySeekCycle, seekTargetCycle, type SeekableScheduler } from './scheduler-seek';
 import { strudelService } from './strudel';
@@ -74,8 +76,12 @@ export class IsolatedPlayer {
     };
   }
 
+  private readonly playbackTelemetry = new PlaybackTelemetry();
+
   private notify(partial: Partial<FeaturedPlayerState>): void {
+    const previous = this._state;
     this._state = { ...this._state, ...partial };
+    this.playbackTelemetry.observe(previous, this._state);
     for (const callback of this.stateCallbacks) callback(this._state);
   }
 
@@ -132,12 +138,19 @@ export class IsolatedPlayer {
    * keeps the page from claiming a piece is sounding in silence.
    */
   play = async (code: string): Promise<boolean> => {
-    if (!strudelService.isReady) return false;
+    const playback = this.playbackTelemetry.request('featured', analyticsContext(null));
+    if (!strudelService.isReady) {
+      this.playbackTelemetry.finish('startup_failed', playback, undefined, 'engine_unavailable');
+      return false;
+    }
 
     claimTransport(this.transportId, this.stop);
 
     const instance = await this.ensureRepl();
-    if (!instance) return false;
+    if (!instance) {
+      this.playbackTelemetry.finish('startup_failed', playback, undefined, 'engine_unavailable');
+      return false;
+    }
 
     if (code !== this.currentCode) {
       // Another piece, so it starts at its top — and the scheduler will not do
@@ -158,15 +171,18 @@ export class IsolatedPlayer {
       await instance.evaluate(code);
       this.applyPendingSeek();
       this.notify({ isPlaying: true, isPaused: false });
+      this.playbackTelemetry.start(playback);
       return true;
     } catch (error) {
       this.notify({ error: getErrorMessage(error), isPlaying: false });
+      this.playbackTelemetry.finish('startup_failed', playback, error);
       return false;
     }
   };
 
   /** Silence, holding the playhead where it is. */
   pause = (): void => {
+    this.playbackTelemetry.finish('paused');
     const scheduler = this.replInstance?.scheduler;
     if (!scheduler) return;
 
@@ -182,6 +198,7 @@ export class IsolatedPlayer {
 
   /** Silence, and rewind. */
   stop = (): void => {
+    this.playbackTelemetry.finish('stopped');
     this.pendingSeekCycle = null;
     this.replInstance?.stop();
     this.notify({ isPlaying: false, isPaused: false });

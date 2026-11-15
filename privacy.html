@@ -37,8 +37,8 @@
     <main class="privacy-shell">
       <h1 class="privacy-title">隐私政策 / Privacy Policy</h1>
       <p class="privacy-meta">
-        <span lang="zh-CN">生效日期：2026年9月15日 · 最后更新：2026年9月15日</span><br />
-        <span lang="en">Effective date: September 15, 2026 · Last updated: September 15, 2026</span>
+        <span lang="zh-CN">生效日期：2026年9月15日 · 最后更新：2026年11月15日</span><br />
+        <span lang="en">Effective date: September 15, 2026 · Last updated: November 15, 2026</span>
       </p>
 
       <p class="privacy-intro" lang="zh-CN">
@@ -96,6 +96,7 @@
 
         <h2 id="zh-analytics">6. 分析与服务运行信息</h2>
         <p>在分析功能已配置并启用时，我们使用 PostHog 了解应用打开、音乐生成结果、分享和音频导出等功能的使用情况。事件可包含模型或通道、执行耗时、结果类别、语言、浏览器和设备类别，以及随机生成的访问标识。</p>
+        <p>登录后访问应用时，我们会向 PostHog 发送由账号标识计算出的散列标识和活跃日期，用于统计每日活跃登录用户数。同一账号在不同设备上的访问可据此去重。该事件不含原始账号标识、邮箱或姓名。</p>
         <p>当前产品分析采用允许字段列表，业务事件不包含你的提示词正文、完整对话、代码或 API Key，并关闭自动捕获与会话录制。随机标识仍可能用于关联同一浏览器的访问，因此这些信息不能一概视为匿名数据。</p>
         <p>应用托管和性能服务由 Vercel 等服务商提供。它们可能处理访问日志、网络请求信息和性能数据。产品分析的过滤规则不自动适用于托管日志或其他服务商。</p>
 
@@ -176,6 +177,7 @@
 
         <h2 id="en-analytics">6. Analytics and service operations</h2>
         <p>When analytics are configured and enabled, we use PostHog to understand how features such as app opens, music generation results, sharing and audio export are used. Events may include the model or channel, execution duration, result category, language, browser and device categories, and a randomly generated visitor identifier.</p>
+        <p>When you access the app while signed in, we send PostHog a hashed account identifier and the activity date to count daily active signed-in users. The hash lets us count the same account once across devices. This event excludes the original account identifier, email address and name.</p>
         <p>Current product analytics use an allowlist of fields; business events do not include your prompt text, full conversations, code or API keys, and automatic capture and session recording are turned off. The random identifier may still be used to correlate visits from the same browser, so this data cannot be treated as anonymous across the board.</p>
         <p>Application hosting and performance services are provided by providers such as Vercel. They may process access logs, network request information and performance data. The filtering rules of product analytics do not automatically apply to hosting logs or other providers.</p>
 

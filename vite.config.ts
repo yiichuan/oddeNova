@@ -543,6 +543,10 @@ export default defineConfig(({ command, mode }) => {
   }
 
   return {
+    define: {
+      'import.meta.env.VITE_APP_BUILD_VERSION': JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA || env.VITE_APP_BUILD_VERSION || 'unknown'),
+      'import.meta.env.VITE_APP_ENVIRONMENT': JSON.stringify(process.env.VERCEL_ENV || (command === 'serve' ? 'development' : 'production')),
+    },
     cacheDir: `node_modules/.vite/${mode}-${patchHash.digest('hex').slice(0, 12)}`,
     plugins: [react(), tailwindcss(), airjellyProxy(), officialApiDevMiddleware(), kimiApiDevMiddleware(), shareDevMiddleware(), sessionsDevMiddleware(), onboardingDevMiddleware(), vcslDevMiddleware(), syncAnimationHtml(), privacyDevMiddleware()],
     build: {

@@ -1,3 +1,4 @@
+import { analyticsContext, rememberAnalyticsMessage } from '../lib/analytics-context';
 import type { ImageAttachment } from '../lib/image-attachments';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage, InputMode, ProgressKind } from './useChat';
@@ -896,8 +897,12 @@ export function useSessions(options: UseSessionsOptions = {}) {
   // One rate limiter per owner: the store is keyed by owner, so a sign-in must
   // not let a write scheduled for the previous account land under the new one.
   const localWrites = useMemo(
-    () => createSessionWriteThrottle<Session>(
-      (session) => dbPutSession(session, ownerKey),
+    () => createSessionWriteThrottle<{
+      id: string;
+      session: Session;
+      telemetry: NonNullable<Parameters<typeof dbPutSession>[2]>;
+    }>(
+      ({ session, telemetry }) => dbPutSession(session, ownerKey, telemetry),
       LOCAL_WRITE_THROTTLE_MS,
     ),
     [ownerKey],
@@ -983,10 +988,14 @@ export function useSessions(options: UseSessionsOptions = {}) {
         return;
       }
       persistedSessionIdsRef.current.add(session.id);
-      if (options.streaming) localWrites.schedule(session);
-      else void localWrites.writeNow(session);
+      const write = {
+        id: session.id, session,
+        telemetry: { context: analyticsContext(session.id, ownerKey, session.code), streaming: options.streaming },
+      };
+      if (options.streaming) localWrites.schedule(write);
+      else void localWrites.writeNow(write);
     },
-    [isAccountOwner, ownerLoaded, localWrites],
+    [isAccountOwner, ownerLoaded, localWrites, ownerKey],
   );
 
   const persistSession = useCallback(
@@ -1042,7 +1051,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     const adopted = !workingCopyIsAhead
       && (sessionCloudSync?.acceptCloudSession(session) ?? true);
     if (adopted) {
-      await localWrites.writeNow(session);
+      await localWrites.writeNow({ id: session.id, session, telemetry: { context: analyticsContext(session.id, ownerKey, session.code) } });
       persistedSessionIdsRef.current.add(session.id);
       setSessions((previous) => [
         session,
@@ -1164,6 +1173,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
       revisionDraft?: CodeRevisionDraft,
       inputMode?: InputMode,
       layerNotes?: Record<string, string>,
+      analyticsTurnId?: string,
     ): void => {
       const apply = getApply(sessionId);
       apply((s) => {
@@ -1171,6 +1181,8 @@ export function useSessions(options: UseSessionsOptions = {}) {
         const revision: CodeRevision | undefined = revisionDraft
           ? { ...revisionDraft, id: newRevisionId(), createdAt: now }
           : undefined;
+        const messageId = newMessageId();
+        rememberAnalyticsMessage(s.id, messageId, analyticsTurnId);
         return {
           ...s,
           inputMode: inputMode ?? s.inputMode,
@@ -1178,7 +1190,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
           messages: [
             ...s.messages,
             {
-              id: newMessageId(),
+              id: messageId,
               role: 'assistant' as const,
               content,
               code,
@@ -1267,9 +1279,14 @@ export function useSessions(options: UseSessionsOptions = {}) {
   );
 
   const finalizeLastAssistantMessage = useCallback(
-    (content: string, sessionId?: string): void => {
+    (content: string, sessionId?: string, turnId?: string): void => {
       const apply = getApply(sessionId);
-      apply((s) => applyFinalizeLastAssistantMessage(s, content));
+      apply((s) => {
+        const updated = applyFinalizeLastAssistantMessage(s, content);
+        const message = updated.messages.at(-1);
+        if (message) rememberAnalyticsMessage(s.id, message.id, turnId);
+        return updated;
+      });
     },
     [getApply]
   );
@@ -1501,7 +1518,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         createdAt: payload.createdAt ?? now,
         updatedAt: payload.updatedAt ?? now,
       };
-      await localWrites.writeNow(session);
+      await localWrites.writeNow({ id: session.id, session, telemetry: { context: analyticsContext(session.id, ownerKey, session.code) } });
       persistedSessionIdsRef.current.add(id);
       noteCreatedSession(id);
       setSessions((prev) => [session, ...prev.filter((existing) => existing.id !== id)]);
