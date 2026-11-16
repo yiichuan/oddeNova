@@ -13,10 +13,11 @@ vi.mock('../../../services/strudel', () => ({
   },
 }));
 
-import { t } from '../../../lib/i18n';
+import { t, zh } from '../../../lib/i18n';
 import {
   FEATURED_COLLECTION_URL,
   FEATURED_PIECES,
+  featuredAlbums,
   type FeaturedPiece,
 } from '../../../lib/featured-pieces';
 import {
@@ -306,11 +307,11 @@ describe('featured page', () => {
         currentPiece: FEATURED_PIECES[0],
       })} />);
       roots.push(root);
+      const albums = featuredAlbums();
       const carousel = container.querySelector<HTMLElement>('[data-testid="featured-carousel"]')!;
 
-      // The production collection has six albums and UNDERTALE is index 3.
-      // Moving backwards to a fractional position near -3 used to settle at
-      // -2.9999999999999996, whose positive modulo was not a valid array index.
+      // Move backwards to a fractional position near -3, which used to settle
+      // at -2.9999999999999996 and miss its album after positive modulo.
       act(() => {
         carousel.dispatchEvent(new WheelEvent('wheel', {
           deltaY: -136,
@@ -322,7 +323,7 @@ describe('featured page', () => {
 
       const centred = container.querySelector<HTMLElement>('[data-carousel-centered="true"]')!;
       expect(centred.dataset.carouselLogicalIndex).toBe('-3');
-      expect(centred.textContent).toContain('UNDERTALE');
+      expect(centred.textContent).toContain(albums[(albums.length - 3) % albums.length].title);
     } finally {
       vi.useRealTimers();
     }
@@ -1213,6 +1214,26 @@ describe('featured page', () => {
     expect(notes.textContent).toContain('120 BPM');
     expect(notes.querySelectorAll('li')).toHaveLength(PIECES[0].layers.length);
     expect(notes.textContent).toContain('lead_synth');
+  });
+
+  it('uses the browser language for the script comments and studio copy', () => {
+    const piece = FEATURED_PIECES.find((entry) => entry.id === 'yiichuan-after-hours')!;
+    const props = pageProps({ pieces: [piece], currentPiece: piece });
+    const { container, root } = render(<FeaturedPage {...props} />);
+    roots.push(root);
+
+    act(() => openButton(container, piece.id).click());
+
+    const code = zh ? piece.code : piece.codeEn ?? piece.code;
+    expect(detail(container)!.querySelector('[data-testid="featured-code"]')?.textContent)
+      .toBe(code);
+
+    act(() => detail(container)!.querySelector<HTMLButtonElement>(
+      '[data-testid="featured-detail-open-in-studio"]',
+    )!.click());
+    expect(props.onOpenInStudio).toHaveBeenCalledWith(
+      code === piece.code ? piece : { ...piece, code },
+    );
   });
 
   it('names only the repo for a piece published in one, and adds the collection for a post', () => {

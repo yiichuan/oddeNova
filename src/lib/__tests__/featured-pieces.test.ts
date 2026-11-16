@@ -134,6 +134,18 @@ describe('featuredAlbums', () => {
     expect(undertale?.originalArtists).toEqual(['Toby Fox']);
     expect(undertale?.coders).toEqual(['Claffystic', 'tzwaan / Swan', 'MariaAreadne']);
   });
+
+  it('orders the neighboring records to the left of 360', () => {
+    const titles = featuredAlbums().map((album) => album.title);
+    const leftOf = (title: string) => {
+      const index = titles.indexOf(title);
+      return titles[(index - 1 + titles.length) % titles.length];
+    };
+
+    expect(leftOf('360 (cover / remix)')).toBe('Super Mario Bros. Theme (cover)');
+    expect(leftOf('Super Mario Bros. Theme (cover)')).toBe('After Hours');
+    expect(leftOf('After Hours')).toBe('Veridis Quo');
+  });
 });
 
 describe('findFeaturedPiece', () => {

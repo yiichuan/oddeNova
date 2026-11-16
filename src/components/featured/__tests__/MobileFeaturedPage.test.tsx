@@ -42,10 +42,10 @@ window.matchMedia = ((query: string) => ({
 })) as typeof window.matchMedia;
 
 import '../../overlays/ShareDialog';
-import { t } from '../../../lib/i18n';
+import { t, zh } from '../../../lib/i18n';
 import { getStrudelLoopDurationSeconds } from '../../../lib/strudel-timing';
 import { featuredPlayer } from '../../../services/featured-player';
-import type { FeaturedPiece } from '../../../lib/featured-pieces';
+import { FEATURED_PIECES, type FeaturedPiece } from '../../../lib/featured-pieces';
 import { readPlayheadProgress, resetPlayhead, seekPlayhead } from '../featured-playhead';
 import FeaturedPage from '../FeaturedPage';
 import { resetDeviceTiltStateForTests } from '../featured-device-tilt';
@@ -480,6 +480,26 @@ describe('MobileFeaturedDetail', () => {
     // And the transport is the page's, not the record's: the same pill, still
     // at the foot of the window.
     expect(container.querySelectorAll('[data-testid="featured-bar-mobile"]')).toHaveLength(1);
+  });
+
+  it('uses the browser language for the script comments and studio copy', () => {
+    const piece = FEATURED_PIECES.find((entry) => entry.id === 'yiichuan-after-hours')!;
+    const onOpenInStudio = vi.fn();
+    const { container } = render(page({
+      pieces: [piece],
+      currentPiece: piece,
+      onOpenInStudio,
+    }));
+    enter(container);
+
+    const code = zh ? piece.code : piece.codeEn ?? piece.code;
+    expect(container.querySelector('[data-testid="featured-code-mobile"]')?.textContent)
+      .toBe(code);
+
+    press(container.querySelector('[data-testid="featured-detail-mobile-open-in-studio"]'));
+    expect(onOpenInStudio).toHaveBeenCalledWith(
+      code === piece.code ? piece : { ...piece, code },
+    );
   });
 
   it('scrolls the column, and the script inside it one way only', () => {

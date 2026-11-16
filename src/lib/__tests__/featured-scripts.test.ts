@@ -6,6 +6,7 @@ import { transpiler } from '@strudel/transpiler';
 // `strudelService.prebake()`, before any featured piece is evaluated.
 import '@strudel/codemirror';
 import { FEATURED_PIECES } from '../featured-pieces';
+import { AFTER_HOURS_CODE_EN, AFTER_HOURS_CODE_ZH } from '../featured-after-hours-code';
 
 /**
  * The transpiler is the first thing a piece meets, and the last thing that can
@@ -18,6 +19,14 @@ import { FEATURED_PIECES } from '../featured-pieces';
  * test agree with something the app never does.
  */
 const replTranspilerOptions = { id: undefined };
+
+describe('After Hours localized comments', () => {
+  it('uses English comments without changing the runnable code', () => {
+    expect(AFTER_HOURS_CODE_EN).not.toMatch(/\/\/[^\n]*[\u3400-\u9fff]/);
+    expect(AFTER_HOURS_CODE_EN.replace(/\/\/.*$/gm, ''))
+      .toBe(AFTER_HOURS_CODE_ZH.replace(/\/\/.*$/gm, ''));
+  });
+});
 
 describe('every featured piece survives the transpiler', () => {
   for (const piece of FEATURED_PIECES) {

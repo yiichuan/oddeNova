@@ -9,12 +9,14 @@
  * A piece is someone's work. `artist`, `sourceUrl` and `patternUrl` are not
  * decoration: the page shows them, and nothing goes in here without them.
  *
- * The scripts themselves live in `featured-scripts.ts` — they run to hundreds
- * of lines each, and this file is meant to be readable as a list of what the
+ * The scripts live in `featured-scripts.ts` (with After Hours kept in its own
+ * raw-imported file), so this file stays readable as a list of what the
  * collection holds.
  */
 
 import {
+  AFTER_HOURS,
+  AFTER_HOURS_EN,
   CHARLI_XCX_360,
   DETERMINATION,
   DETERMINATION_PERMALINK,
@@ -74,6 +76,8 @@ export interface FeaturedPiece {
   patternUrl: string;
   /** The full, runnable script. */
   code: string;
+  /** The same script with comments localized for non-Chinese browsers. */
+  codeEn?: string;
   /** The voices the script builds, in the order it declares them. */
   layers: readonly FeaturedLayer[];
 }
@@ -232,6 +236,68 @@ export const FEATURED_PIECES: readonly FeaturedPiece[] = [
     ],
   },
   {
+    id: 'mariaareadne-veridis-quo',
+    album: 'Discovery',
+    title: 'Veridis Quo',
+    originalArtist: 'Daft Punk',
+    coder: 'MariaAreadne',
+    coverUrl: '/featured/Discovery.jpg',
+    style: 'French house',
+    bpm: 116,
+    sourceUrl: 'https://github.com/Mariaareadne1/maria-live-codes/blob/master/songs/vardis-quo.js',
+    patternUrl: VERIDIS_QUO_PERMALINK,
+    code: VERIDIS_QUO,
+    layers: [
+      { name: 'flute', detail: ['GM 长笛主旋律，八句一轮，带附点延迟', 'GM flute on the tune, eight phrases to a round, with a dotted delay'] },
+      { name: 'chords', detail: ['supersaw 和弦垫，滤波跟着一条 32 cycle 的正弦开合', 'A supersaw pad, its filter following a sine 32 cycles long'] },
+      { name: 'bass', detail: ['爵士电吉他音色的低音，一小节一个根音', 'Bass on a jazz electric guitar, one root note to a bar'] },
+      { name: 'drums', detail: ['Boss DR-550 的底鼓与嗵鼓，配 Yamaha RM50 的踩镲', 'Kick and toms from a Boss DR-550, hats from a Yamaha RM50'] },
+    ],
+  },
+  {
+    id: 'yiichuan-after-hours',
+    album: 'After Hours',
+    title: 'After Hours',
+    originalArtist: 'The Weeknd',
+    coder: 'yiichuan',
+    coverUrl: '/featured/After%20Hours.jpg',
+    style: 'Alternative R&B',
+    bpm: 109,
+    sourceUrl: 'https://github.com/yiichuan/strudel-samples',
+    patternUrl: 'https://github.com/yiichuan/strudel-samples/blob/main/after-hours/after-hours.strudel.js',
+    code: AFTER_HOURS,
+    codeEn: AFTER_HOURS_EN,
+    layers: [
+      { name: 'vox', detail: ['人声按小节切片并对齐原曲位置，贯穿整首编排', 'The vocal is sliced by bar and aligned to the original recording throughout'] },
+      { name: 'koto', detail: ['古筝以低通、相位和附点回声铺开疏远的开场与间奏', 'Low-pass filtering, phasing and dotted echoes give the koto its distant intro and interlude'] },
+      { name: 'riser', detail: ['粉噪在段落转换前逐渐变亮、变强，推向下一段', 'A rising pink-noise sweep grows brighter and louder into section changes'] },
+      { name: 'pad', detail: ['升八度的电钢琴和弦在前奏、间奏和桥段托住和声', 'An octave-up electric-piano pad supports the harmony in the intro, breakdown and bridge'] },
+      { name: 'drums', detail: ['TR-707 底鼓在主歌段落落下稀疏而克制的脉冲', 'Sparse TR-707 kicks set a restrained pulse in the verses'] },
+      { name: 'perc', detail: ['TR-808 的拍手、rim 与踩镲逐步填入节奏空隙', 'TR-808 claps, rims and hats gradually fill the rhythmic gaps'] },
+      { name: 'cleangtr', detail: ['清音电吉他以短句和回声勾勒主歌与律动段落', 'Clean electric-guitar phrases and echoes trace the verses and grooves'] },
+      { name: 'acgtr', detail: ['钢弦木吉他以轻柔的重复拨弦增加温暖质感', 'Soft, repeating steel-string guitar plucks add warmth'] },
+      { name: 'subbass', detail: ['纯正弦低音在主歌与副歌压住低频根音', 'A pure sine sub holds the low roots in the verses and hooks'] },
+      { name: 'pluck', detail: ['五层微失谐的 supersaw 琶音在第一段主歌后浮现', 'A five-voice, slightly detuned supersaw arpeggio enters after the first verse'] },
+      { name: 'strings', detail: ['长混响弦乐在间奏、律动段和桥段拉出宽阔背景', 'Long-reverb strings widen the interlude, groove and bridge'] },
+      { name: 'grooveInDrums', detail: ['混合 707、909 与 808 音色的鼓组带入律动段和副歌', 'A 707/909/808 hybrid kit carries the groove sections and hooks'] },
+      { name: 'bassgtr', detail: ['三角波合成贝斯以连贯长音推动律动段和第二段主歌', 'A sustained triangle-wave synth bass drives the grooves and second verse'] },
+      { name: 'crash', detail: ['放慢并加混响的 TR-606 吊镲标记段落转折', 'Slowed, reverberant TR-606 crashes mark section changes'] },
+      { name: 'popsynth', detail: ['低通 supersaw 合成贝斯在副歌补上更有冲击力的低频', 'A low-passed supersaw synth bass adds weight to the hooks'] },
+      { name: 'openhat', detail: ['TR-909 开镲在副歌和第二段主歌打开节奏顶部', 'TR-909 open hats lift the top of the hooks and second verse'] },
+      { name: 'bitsine', detail: ['带 FM、颤音和回声的正弦音色为主歌与桥段添入颗粒感', 'An FM sine with vibrato and echo adds a grainy counterline in the verse and bridge'] },
+      { name: 'revriser', detail: ['粉噪铺垫从第二段副歌起势，给低音进入留出空间', 'A pink-noise lead-in opens the second hook before the bass arrives'] },
+      { name: 'pulse', detail: ['电钢琴和弦以长混响和附点回声铺陈桥段和声', 'Electric-piano chords with long reverb and dotted echoes shape the bridge'] },
+      { name: 'sitar', detail: ['西塔琴在桥段奏出明亮、带回声的高音旋律', 'An echoing, bright-register sitar line appears in the bridge'] },
+      { name: 'distgtr', detail: ['失真电吉他与西塔琴错开回声，给桥段加上粗粝边缘', 'Distorted guitar offsets the sitar echoes and roughens the bridge'] },
+      { name: 'outropad', detail: ['正弦合成铺底在尾奏缓慢浮起，再逐渐淡出', 'A sine-synth pad slowly rises and fades through the outro'] },
+      { name: 'brown', detail: ['褐噪声经慢速调制轻轻起伏，作为贯穿全曲的底噪', 'Slowly modulated brown noise swells softly beneath the full arrangement'] },
+      { name: 'pink', detail: ['轻量粉噪叠在底噪上，补充持续的高频空气感', 'A faint pink-noise layer adds a steady trace of high-frequency air'] },
+      { name: 'glass', detail: ['短促的玻璃质感正弦敲击在指定小节点亮节拍', 'Brief glass-like sine chimes punctuate selected bars'] },
+      { name: 'crackle', detail: ['稀疏的 crackle 采样像电流火花，在节拍前略微抢入', 'Sparse crackle samples spark like electricity, entering just ahead of the beat'] },
+      { name: 'fire', detail: ['放慢的 fire 采样带出柔和燃烧感，与 crackle 分层交错', 'A slowed fire sample adds a softer burning texture, layered apart from the crackle'] },
+    ],
+  },
+  {
     id: 'flowhacker-super-mario-bros',
     album: 'Super Mario Bros.',
     title: 'Super Mario Bros. Theme (cover)',
@@ -249,25 +315,6 @@ export const FEATURED_PIECES: readonly FeaturedPiece[] = [
       { name: 'triangleSound', detail: ['三角波：低音声部，NES 上就是它顶着低频', 'Triangle: the bass line, the voice that holds the bottom on an NES'] },
       { name: 'whitenoise', detail: ['噪声打击乐，粉噪加三层白噪拼出鼓组', 'Noise percussion — pink plus three layers of white, assembled into a kit'] },
       { name: 'whitenoise_bridge', detail: ['过门段落换的另一套噪声花样', 'The other noise pattern, used through the bridges'] },
-    ],
-  },
-  {
-    id: 'mariaareadne-veridis-quo',
-    album: 'Discovery',
-    title: 'Veridis Quo',
-    originalArtist: 'Daft Punk',
-    coder: 'MariaAreadne',
-    coverUrl: '/featured/Discovery.jpg',
-    style: 'French house',
-    bpm: 116,
-    sourceUrl: 'https://github.com/Mariaareadne1/maria-live-codes/blob/master/songs/vardis-quo.js',
-    patternUrl: VERIDIS_QUO_PERMALINK,
-    code: VERIDIS_QUO,
-    layers: [
-      { name: 'flute', detail: ['GM 长笛主旋律，八句一轮，带附点延迟', 'GM flute on the tune, eight phrases to a round, with a dotted delay'] },
-      { name: 'chords', detail: ['supersaw 和弦垫，滤波跟着一条 32 cycle 的正弦开合', 'A supersaw pad, its filter following a sine 32 cycles long'] },
-      { name: 'bass', detail: ['爵士电吉他音色的低音，一小节一个根音', 'Bass on a jazz electric guitar, one root note to a bar'] },
-      { name: 'drums', detail: ['Boss DR-550 的底鼓与嗵鼓，配 Yamaha RM50 的踩镲', 'Kick and toms from a Boss DR-550, hats from a Yamaha RM50'] },
     ],
   },
 ];

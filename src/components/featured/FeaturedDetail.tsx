@@ -226,6 +226,8 @@ export default function FeaturedDetail({
     },
   );
   const track = album.tracks[index] ?? album.tracks[0];
+  const code = zh ? track.code : track.codeEn ?? track.code;
+  const studioTrack = code === track.code ? track : { ...track, code };
 
   /* The bar moving and the column moving are one act seen from either end, so
      a skip that lands on this record walks the column round to it.
@@ -365,7 +367,7 @@ export default function FeaturedDetail({
           action={
             <button
               type="button"
-              onClick={() => onOpenInStudio(track)}
+              onClick={() => onOpenInStudio(studioTrack)}
               disabled={opening}
               data-testid="featured-detail-open-in-studio"
               className={`${PILL_FILLED} disabled:cursor-not-allowed disabled:opacity-50`}
@@ -383,7 +385,7 @@ export default function FeaturedDetail({
             className="text-sm text-text-secondary"
             style={{ fontFamily: "'ABeeZee', monospace", lineHeight: 1.8, letterSpacing: '0.06em' }}
           >
-            <code>{track.code}</code>
+            <code>{code}</code>
           </pre>
         </Panel>
 
