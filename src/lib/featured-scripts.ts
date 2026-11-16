@@ -42,6 +42,14 @@
  * code window as it does here.
  */
 
+import {
+  AFTER_HOURS_CODE_EN,
+  AFTER_HOURS_CODE_ZH,
+} from './featured-after-hours-code';
+
+export const AFTER_HOURS = AFTER_HOURS_CODE_ZH;
+export const AFTER_HOURS_EN = AFTER_HOURS_CODE_EN;
+
 /**
  * KAIXI's 360 cover, verbatim from the Strudel permalink apart from
  * `.fontFamily(…)`, dropped from the original's closing display chain —

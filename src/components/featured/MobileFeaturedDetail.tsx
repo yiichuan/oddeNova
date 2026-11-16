@@ -268,6 +268,8 @@ export default function MobileFeaturedDetail({
   const source = sourceCredit(track.sourceUrl);
   const isPlaying = playingId === track.id;
   const transportDisabled = !engineReady && !isPlaying;
+  const code = zh ? track.code : track.codeEn ?? track.code;
+  const studioTrack = code === track.code ? track : { ...track, code };
 
   /* Carried by each block of content rather than by the view's root: the root
      holds the cover, and fading that would leave the flying copy handing over
@@ -448,7 +450,7 @@ export default function MobileFeaturedDetail({
             action={
               <button
                 type="button"
-                onClick={() => onOpenInStudio(track)}
+                onClick={() => onOpenInStudio(studioTrack)}
                 disabled={opening}
                 data-testid="featured-detail-mobile-open-in-studio"
                 className={`${PILL_FILLED} disabled:cursor-not-allowed disabled:opacity-50`}
@@ -470,7 +472,7 @@ export default function MobileFeaturedDetail({
               className="whitespace-pre-wrap break-words text-[12px] text-text-secondary"
               style={{ fontFamily: "'ABeeZee', monospace", lineHeight: 1.7, letterSpacing: '0.04em' }}
             >
-              <code>{track.code}</code>
+              <code>{code}</code>
             </pre>
           </Panel>
 
