@@ -12,7 +12,8 @@ describe('Vercel API layout', () => {
     const files = (await readdir('api', { recursive: true }))
       .filter((file) => file.endsWith('.ts'));
 
-    expect(files.sort()).toHaveLength(9);
+    // The ASR endpoint brings the total to 10 of the 12 Hobby slots.
+    expect(files).toHaveLength(10);
   });
 
   it('uses Node ESM-resolvable relative imports in TypeScript functions', async () => {
