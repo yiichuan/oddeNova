@@ -6,6 +6,7 @@ import { checkAirJellyAvailable } from '../../services/airjelly';
 import type { AgentEntryPoint } from '../../lib/analytics';
 import type { InputMode } from '../../hooks/useChat';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { HighlightedSeconds } from './HighlightedSeconds';
 
 type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 
@@ -307,6 +308,7 @@ export default function ChatInput({
   };
 
   const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
+  const showVideoPromptOverlay = isVideoMode && replayValue !== undefined && replayValue.length > 0;
   // The waiting fade, applied per part (see the card below): everything that
   // is genuinely out of reach while the agent answers, and nothing else.
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
@@ -410,8 +412,20 @@ export default function ChatInput({
               // taken out of the reading. The auto-grow cap above is untouched,
               // so typing still opens it exactly as far as it ever did.
               className={`w-full ${isMobile ? 'min-h-[53px]' : 'min-h-[73px]'} resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed`}
-              style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
+              style={isVideoMode ? {
+                caretColor: 'transparent',
+                ...(showVideoPromptOverlay ? { color: 'transparent', WebkitTextFillColor: 'transparent' } : {}),
+              } : undefined}  // [video] Hide cursor blink during video rendering
             />
+
+            {showVideoPromptOverlay && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words pl-4 pr-3 pb-1 text-base md:text-sm text-text-primary"
+              >
+                <HighlightedSeconds text={replayValue} />
+              </div>
+            )}
 
             {/* Rotating suggestion shown in place of the native placeholder
                 (which can't animate or carry a styled hint). The text types

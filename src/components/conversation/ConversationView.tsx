@@ -8,6 +8,7 @@ import { ThinkingLottie } from './ThinkingLottie';
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
+import { HighlightedSeconds } from './HighlightedSeconds';
 
 type MobileNoSelectStyle = CSSProperties & {
   WebkitTouchCallout?: 'none';
@@ -451,7 +452,7 @@ export const MarkdownText = memo(function MarkdownText({ content, tone = 'defaul
 // clamped to five lines with the fifth faded into the bubble background; the
 // "show more" control reveals on hover (and stays visible on touch, which has
 // no hover), and once expanded a "show less" control collapses it again.
-export function UserMessageBubble({ content }: { content: string }) {
+export function UserMessageBubble({ content, highlightSeconds = false }: { content: string; highlightSeconds?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);
@@ -486,7 +487,7 @@ export function UserMessageBubble({ content }: { content: string }) {
           ref={textRef}
           className={`whitespace-pre-wrap break-words${expanded ? '' : ' line-clamp-5'}`}
         >
-          {content}
+          {highlightSeconds ? <HighlightedSeconds text={content} /> : content}
         </p>
         {clamped && (
           <>
@@ -1533,7 +1534,7 @@ export default function ConversationView({
                 onCopy={handleUserBubbleCopy}
                 {...getMobileRollbackBubbleProps(msg.id)}
               >
-                <UserMessageBubble content={msg.content} />
+                <UserMessageBubble content={msg.content} highlightSeconds={isVideoMode} />
                 {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
                 <div className={`absolute -top-2.5 -right-2.5 transition-opacity ${
                   isMobile

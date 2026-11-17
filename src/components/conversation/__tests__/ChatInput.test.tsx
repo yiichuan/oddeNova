@@ -337,6 +337,39 @@ describe('ChatInput engine initialization status', () => {
   });
 });
 
+describe('ChatInput video prompt highlights', () => {
+  const roots: Root[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      act(() => root.unmount());
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('highlights Chinese second markers in video replay text', () => {
+    const { container, root } = renderChatInput({
+      isVideoMode: true,
+      replayValue: '32 秒变奏，45秒结束，最后留 2s 静音。',
+    });
+    roots.push(root);
+
+    expect([...container.querySelectorAll('strong.text-accent')].map((node) => node.textContent))
+      .toEqual(['32 秒', '45秒', '2s']);
+    expect(container.querySelector('textarea')?.style.color).toBe('transparent');
+  });
+
+  it('does not replace normal input text with a styled overlay', () => {
+    const { container, root } = renderChatInput({
+      replayValue: '32 秒变奏',
+    });
+    roots.push(root);
+
+    expect(container.querySelector('strong.text-accent')).toBeNull();
+    expect(container.querySelector('textarea')?.style.color).toBe('');
+  });
+});
+
 describe('ChatInput Thinking level control', () => {
   const roots: Root[] = [];
 

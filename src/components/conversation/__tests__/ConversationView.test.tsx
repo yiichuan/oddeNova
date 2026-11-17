@@ -39,6 +39,7 @@ function setMobileViewport(matches: boolean) {
 /* What the phone's layout hands down and the desktop's does not: the take's
    own transport, drawn in the widget under the reply. */
 type PlaybackProps = {
+  isVideoMode?: boolean;
   isPlaying?: boolean;
   playingCode?: string;
   onPlaySegment?: (segmentId: string, code: string) => void;
@@ -126,6 +127,21 @@ describe('ConversationView code revisions', () => {
     }
     document.body.innerHTML = '';
     vi.restoreAllMocks();
+  });
+
+  it('highlights seconds in video-mode user prompts', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'user-1',
+      role: 'user',
+      content: '到 32 秒时开始变化，45 秒左右结束。',
+      timestamp: 1,
+    }];
+    const { container, root } = renderConversationView(messages, vi.fn(), false, undefined, { isVideoMode: true });
+    roots.push(root);
+
+    expect([...container.querySelectorAll('strong.text-accent')].map((node) => node.textContent))
+      .toEqual(['32 秒', '45 秒']);
   });
 
   it('shows compact stats and expands a Layer-grouped unified diff', () => {

@@ -167,6 +167,13 @@ export function useVideoDemo(strudelRef: MutableRefObject<StrudelApi>): VideoDem
           }));
         }
       }
+      if (e.data?.type === 'VIDEO_FRAME_SYNC' && typeof e.data.frame === 'number') {
+        const source = e.source as Window | null;
+        const frame = e.data.frame;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          source?.postMessage({ type: 'VIDEO_FRAME_READY', frame }, e.origin);
+        }));
+      }
       if (e.data?.type === 'VIDEO_STOP') {
         strudelRef.current.stop();
       }
