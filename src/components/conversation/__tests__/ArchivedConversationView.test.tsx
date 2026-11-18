@@ -111,4 +111,22 @@ describe('ArchivedConversationView', () => {
     expect(scroller.className).not.toContain('scrollbar-hidden');
     expect(scroller.style.scrollbarGutter).toBe('stable');
   });
+
+  it('renders Markdown tables in archived assistant replies', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    render([{
+      id: 'archived-table',
+      role: 'assistant',
+      content: '| 项目 | 内容 |\n| --- | --- |\n| 拍号 | 6/8 |',
+      timestamp: 1,
+    }], container, root);
+
+    const table = container.querySelector('[data-markdown-text] table');
+    expect(table).not.toBeNull();
+    expect(table?.textContent).toContain('拍号');
+    expect(table?.textContent).toContain('6/8');
+  });
 });
