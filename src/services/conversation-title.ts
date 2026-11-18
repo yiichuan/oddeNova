@@ -57,6 +57,7 @@ export async function generateConversationTitle(
   const raw = await chatOnce(system, firstMessage.trim(), {
     temperature: 0.4,
     maxTokens: 2000,
+    thinking: 'disabled',
   });
 
   return sanitizeConversationTitle(raw);

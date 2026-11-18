@@ -119,7 +119,7 @@ function isOpenAIProvider(): boolean {
 export async function chatOnce(
   system: string,
   userContent: string,
-  opts: { temperature?: number; maxTokens?: number } = {}
+  opts: { temperature?: number; maxTokens?: number; thinking?: 'disabled' } = {}
 ): Promise<string> {
   const { temperature = 0.8, maxTokens = 200 } = opts;
 
@@ -140,7 +140,12 @@ export async function chatOnce(
       ...(cfg.provider === 'openai'
         ? { max_completion_tokens: maxTokens }
         : { max_tokens: maxTokens }),
-    });
+      // DeepSeek V4 defaults to thinking enabled. For title generation, make
+      // the disabled state explicit; `reasoning_effort` is intentionally omitted.
+      ...(opts.thinking === 'disabled' && (cfg.provider === 'deepseek' || cfg.provider === 'official')
+        ? { thinking: { type: 'disabled' } }
+        : {}),
+    } as OpenAI.ChatCompletionCreateParamsNonStreaming);
     return resp.choices[0]?.message?.content ?? '';
   } else {
     const anthropic = getAnthropicClient();
