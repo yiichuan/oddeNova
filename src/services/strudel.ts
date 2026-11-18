@@ -859,7 +859,7 @@ export class StrudelService {
     const registered = soundMap.get() as Record<string, { data?: RegisteredSoundData } | undefined>;
     const described: Record<string, SoundInfo> = {};
     for (const name of names) {
-      const info = describeRegisteredSound(registered[name.toLowerCase()]?.data);
+      const info = describeRegisteredSound(registered[name.toLowerCase()]?.data, name);
       if (info) described[name] = info;
     }
     return described;
@@ -886,7 +886,7 @@ export class StrudelService {
     if (!this.isAudioInitialized) throw new Error(t('engineStarting'));
     await this.prepareAudioForPlayback();
     const { superdough, getAudioContext, getSound } = await import('superdough');
-    const info = describeRegisteredSound(getSound(name)?.data);
+    const info = describeRegisteredSound(getSound(name)?.data, name);
     const play = buildPreviewEvent(name, info, options);
 
     const key = `${name}:${play.value.n ?? ''}:${play.value.note ?? ''}`;

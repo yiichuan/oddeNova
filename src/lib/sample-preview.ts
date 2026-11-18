@@ -18,7 +18,7 @@ export type SoundKind = 'sample' | 'pitched';
 
 export interface SoundInfo {
   kind: SoundKind;
-  /** How many recordings or soundfont presets `n` can choose between. */
+  /** How many recordings or presets `n` can choose between. */
   variants: number;
 }
 
@@ -29,10 +29,18 @@ export interface RegisteredSoundData {
   fonts?: readonly string[];
 }
 
-export function describeRegisteredSound(data: RegisteredSoundData | undefined): SoundInfo | null {
+const BYTEBEAT_PRESET_COUNT = 15;
+
+export function describeRegisteredSound(
+  data: RegisteredSoundData | undefined,
+  name?: string,
+): SoundInfo | null {
   if (!data) return null;
   if (data.type === 'soundfont') {
     return { kind: 'pitched', variants: Math.max(data.fonts?.length ?? 0, 1) };
+  }
+  if (data.type === 'synth' && name?.toLowerCase() === 'bytebeat') {
+    return { kind: 'pitched', variants: BYTEBEAT_PRESET_COUNT };
   }
   if (data.type === 'sample') {
     /* A plain list is a folder of hits; a map keyed by note name is one
