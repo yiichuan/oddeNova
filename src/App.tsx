@@ -1151,6 +1151,12 @@ export default function App() {
     pauseTransport: strudel.pause,
     onSend: handleChatInstruction,
   });
+  const {
+    stopRecording: stopHummingRecording,
+    cancelTranscription: cancelHummingTranscription,
+    restoreAttachment: restoreHummingAttachment,
+    discard: discardHummingDraft,
+  } = hummingInput;
   useEffect(() => {
     if (
       primaryNavItem !== 'home'
@@ -1159,12 +1165,12 @@ export default function App() {
       || isReplaying
       || isDemoMode()
     ) {
-      hummingInput.stopRecording();
-      hummingInput.cancelTranscription();
+      stopHummingRecording();
+      cancelHummingTranscription();
     }
   }, [
-    hummingInput.cancelTranscription,
-    hummingInput.stopRecording,
+    cancelHummingTranscription,
+    stopHummingRecording,
     isReplaying,
     isVideoMode,
     primaryNavItem,
@@ -1232,7 +1238,7 @@ export default function App() {
 
       sessions.truncate(messageId);
       if (rewound.target.humming) {
-        void hummingInput.restoreAttachment(rewound.target.humming);
+        void restoreHummingAttachment(rewound.target.humming);
       }
 
       // Hand the instruction back to the input in the same commit as the
@@ -1250,7 +1256,7 @@ export default function App() {
         void sessions.checkpointSession(currentSessionId);
       }
     },
-    [hummingInput.restoreAttachment, sessions, rewindBeforeMessage]
+    [restoreHummingAttachment, sessions, rewindBeforeMessage]
   );
 
   const handleRetry = useCallback(
@@ -1957,9 +1963,9 @@ export default function App() {
      action runs. See mobileNavigationRef. */
   const handleDeleteSession = useCallback((id: string) => {
     if (isMobile) ++mobileNavigationRef.current;
-    if (sessions.currentId === id) hummingInput.discard();
+    if (sessions.currentId === id) discardHummingDraft();
     deleteSessionAction(id);
-  }, [deleteSessionAction, hummingInput.discard, isMobile, sessions.currentId]);
+  }, [deleteSessionAction, discardHummingDraft, isMobile, sessions.currentId]);
 
 
   const handleOpenFavoriteInStudio = useCallback((code: string) => {
@@ -2369,6 +2375,7 @@ export default function App() {
                 same as desktop — mobile adopts one by focusing the field rather
                 than with Tab, so no separate chip row. */}
             <ChatInput
+              recordingScope={`${ownerKey}:${sessions.currentId ?? ''}`}
               presetLock={onboardingPresetLock}
               isLoading={isLoading}
               engineReady={strudel.engineReady}

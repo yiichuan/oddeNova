@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { LoaderCircle, Mic, Square, Trash2, X } from 'lucide-react';
+import { ChevronUp, LoaderCircle, Mic, Music2, Square, Trash2, X } from 'lucide-react';
 import { ArrowUpIcon, StopIcon } from '../icons';
 import ThinkingLevelControl from './ThinkingLevelControl';
 import HummingAudioPlayer from './HummingAudioPlayer';
+import HummingNotePlayback from './HummingNotePlayback';
+import HummingUnderstanding from './HummingUnderstanding';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
 import type { AgentEntryPoint } from '../../lib/analytics';
@@ -10,6 +12,8 @@ import type { InputMode } from '../../hooks/useChat';
 import type { HummingInputController } from '../../hooks/useHummingInput';
 import type { HummingAttachment } from '../../types/humming';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useDeepSeekSpeech } from '../../hooks/useDeepSeekSpeech';
+import { zh } from '../../lib/i18n';
 
 type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 
@@ -91,6 +95,7 @@ interface ChatInputProps {
    */
   presetLock?: PresetLock;
   humming?: HummingInputController;
+  recordingScope?: string;
 }
 
 export interface PresetLock {
@@ -117,8 +122,26 @@ export default function ChatInput({
   onMoodGenerate,
   presetLock,
   humming,
+  recordingScope,
 }: ChatInputProps) {
   const [text, setText] = useState('');
+  const [recordingMenuOpen, setRecordingMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const voiceSpeech = useDeepSeekSpeech((spoken) => {
+    if (spoken.trim()) setText(current => current.trim() ? `${current.trimEnd()} ${spoken.trim()}` : spoken.trim());
+  });
+  const cancelVoice = voiceSpeech.cancel;
+  useEffect(() => () => cancelVoice(), [recordingScope, cancelVoice]);
+  useEffect(() => {
+    if (!recordingMenuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setRecordingMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setRecordingMenuOpen(false); };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape); };
+  }, [recordingMenuOpen]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const adoptedSuggestionRef = useRef<string | null>(null);
   // Mobile has no Tab key, so the return key adopts the suggestion instead
@@ -269,6 +292,7 @@ export default function ChatInput({
     if (
       isLoading
       || moodPending
+      || voiceSpeech.mode !== 'idle' || voiceSpeech.isStarting
       || humming?.isRecording
       || humming?.isStarting
       || humming?.isFinalizingRecording
@@ -535,6 +559,14 @@ export default function ChatInput({
             )}
           </div>
 
+          {(voiceSpeech.mode !== 'idle' || voiceSpeech.isStarting) && (
+            <div className="mx-4 mb-2 flex items-center gap-3 text-xs text-text-secondary" role="status">
+              <span>{voiceSpeech.isStarting ? (zh ? '正在启动录音…' : 'Starting…') : voiceSpeech.mode === 'recording' ? (zh ? `语音录音中 ${voiceSpeech.elapsedSeconds} 秒` : `Recording ${voiceSpeech.elapsedSeconds}s`) : (zh ? '正在识别语音…' : 'Transcribing…')}</span>
+              {voiceSpeech.mode === 'recording' && <button type="button" className="underline" onClick={voiceSpeech.stop}>{zh ? '停止' : 'Stop'}</button>}
+              <button type="button" className="underline" onClick={voiceSpeech.cancel}>{zh ? '取消' : 'Cancel'}</button>
+            </div>
+          )}
+          {voiceSpeech.error && <p role="alert" className="mx-4 mb-2 text-xs text-error">{zh ? '语音输入失败，请检查麦克风及服务配置' : 'Voice input failed. Check microphone and service settings.'}</p>}
           {hummingEnabled && humming?.draft && (
             <div
               data-chat-input-focus-ignore
@@ -558,6 +590,15 @@ export default function ChatInput({
                 durationSeconds={humming.draft.durationSeconds}
                 disabled={humming.isTranscribing || humming.isRerecording || humming.isFinalizingRecording}
               />
+              <div className="flex items-start gap-2">
+                <button type="button" onClick={() => { void humming.analyze(); }} disabled={humming.isTranscribing || humming.isRerecording || humming.isSavingDraft || Boolean(humming.replacementCandidate)} className="shrink-0 rounded-md px-2 py-1 text-xs text-text-secondary underline hover:text-text-primary disabled:opacity-50">
+                  {zh ? '解析' : 'Analyze'}
+                </button>
+                {!humming.isRerecording && !humming.isStarting && !humming.isFinalizingRecording && !humming.replacementCandidate && (
+                  <HummingUnderstanding key={`${recordingScope ?? ''}:${humming.draft.id}`} draft={humming.draft} />
+                )}
+              </div>
+              {humming.analysis && <HummingNotePlayback draft={humming.draft} analysis={humming.analysis} disabled={humming.isTranscribing || humming.isRerecording || humming.isFinalizingRecording} />}
               {!humming.isPersistent && (
                 <div className="flex items-center justify-between gap-2 text-[11px] text-error">
                   <span>{t('hummingStorageUnavailable')}</span>
@@ -743,30 +784,6 @@ export default function ChatInput({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {hummingEnabled && humming && !humming.draft
-                && !humming.isStarting && !humming.isRecording && !humming.isFinalizingRecording && (
-                <button
-                  type="button"
-                  onClick={humming.startRecording}
-                  disabled={
-                    isLoading
-                    || moodPending
-                    || humming.isStarting
-                    || humming.isRecording
-                    || humming.isFinalizingRecording
-                    || humming.isTranscribing
-                    || !humming.canRecord
-                  }
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                  title={t(humming.isStarting ? 'hummingStarting' : 'hummingStart')}
-                  aria-label={t(humming.isStarting ? 'hummingStarting' : 'hummingStart')}
-                  data-chat-input-focus-ignore
-                >
-                  {humming.isStarting
-                    ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={16} />
-                    : <Mic size={17} />}
-                </button>
-              )}
               {replayValue === undefined && !presetLock && (
                 <ThinkingLevelControl
                   disabled={inputDisabled}
@@ -776,6 +793,25 @@ export default function ChatInput({
                   // ThinkingLevelControl's pointerdown protection).
                   shouldPreserveInputFocus={() => document.activeElement === textareaRef.current}
                 />
+              )}
+              {hummingEnabled && humming && (
+                <div ref={menuRef} className="relative" data-chat-input-focus-ignore>
+                  <button type="button" aria-label={zh ? '选择录音方式' : 'Choose recording mode'} aria-expanded={recordingMenuOpen} aria-haspopup="menu"
+                    disabled={isLoading || moodPending || voiceSpeech.mode !== 'idle' || voiceSpeech.isStarting || humming.isRecording || humming.isStarting || humming.isFinalizingRecording || humming.isTranscribing || Boolean(humming.draft)}
+                    onClick={() => setRecordingMenuOpen(open => !open)}
+                    className="inline-flex h-11 items-center justify-center gap-0.5 rounded-full px-2 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:opacity-40">
+                    <Mic size={17} /><ChevronUp size={13} />
+                  </button>
+                  {recordingMenuOpen && <div role="menu" className="absolute bottom-full right-0 z-30 mb-2 w-40 rounded-xl border border-border bg-conversation-surface p-1 shadow-lg">
+                    <button type="button" role="menuitem" className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-text-primary hover:bg-surface-hover" disabled={!voiceSpeech.supported} onClick={() => {
+                      setRecordingMenuOpen(false);
+                      let key = '';
+                      try { if (localStorage.getItem('vibe_provider') === 'deepseek') key = localStorage.getItem('vibe_api_key') ?? ''; } catch { /* use official proxy */ }
+                      void voiceSpeech.start(key);
+                    }}><Mic size={16} />{zh ? '语音输入' : 'Voice input'}</button>
+                    <button type="button" role="menuitem" className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-text-primary hover:bg-surface-hover" disabled={!humming.canRecord} onClick={() => { setRecordingMenuOpen(false); humming.startRecording(); }}><Music2 size={16} />{zh ? '哼唱输入' : 'Humming input'}</button>
+                  </div>}
+                </div>
               )}
               {replayValue !== undefined ? (
                 <button
@@ -805,6 +841,7 @@ export default function ChatInput({
                   data-onboarding-target="send"
                   disabled={presetLock ? presetLock.busy : (
                     (!text.trim() && !humming?.draft)
+                    || voiceSpeech.mode !== 'idle' || voiceSpeech.isStarting
                     || Boolean(humming?.isStarting)
                     || Boolean(humming?.isRecording)
                     || Boolean(humming?.isFinalizingRecording)

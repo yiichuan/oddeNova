@@ -49,28 +49,25 @@ function getSupabaseClient(token: string) {
   });
 }
 
-function getBearerToken(req: VercelRequest): string | null {
+function getBearerToken(req: Pick<VercelRequest, 'headers'>): string | null {
   const raw = req.headers.authorization;
   if (!raw || Array.isArray(raw)) return null;
   const match = raw.match(/^Bearer\s+(.+)$/i);
   return match?.[1] ?? null;
 }
 
-export async function requireUser(req: VercelRequest, res: VercelResponse): Promise<{ user: User; supabase: ReturnType<typeof getSupabaseClient> } | null> {
+export async function authenticateUser(req: Pick<VercelRequest, 'headers'>) {
   const token = getBearerToken(req);
-  if (!token) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return null;
-  }
-
+  if (!token) return null;
   const supabase = getSupabaseClient(token);
   const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return null;
-  }
+  return error || !data.user ? null : { user: data.user, supabase };
+}
 
-  return { user: data.user, supabase };
+export async function requireUser(req: VercelRequest, res: VercelResponse): Promise<{ user: User; supabase: ReturnType<typeof getSupabaseClient> } | null> {
+  const auth = await authenticateUser(req);
+  if (!auth) res.status(401).json({ error: 'Unauthorized' });
+  return auth;
 }
 
 export function rowToSession(row: SessionRow): ApiSession {

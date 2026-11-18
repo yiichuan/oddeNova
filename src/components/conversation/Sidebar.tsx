@@ -264,7 +264,7 @@ export default function Sidebar({
       </div>
 
       <div className="-mt-px w-full shrink-0">
-        <ChatInput isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} />
+        <ChatInput recordingScope={`${ownerKey ?? ''}:${currentId ?? ''}`} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} />
       </div>
     </aside>
   );

@@ -7,6 +7,9 @@ import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
 import sessionsHandler from './api/sessions'
+import asrHandler from './api/official/v1/tools/asr'
+import musicUnderstandingHandler from './api/official/v1/tools/music-understanding'
+import { MUSIC_UNDERSTANDING_PATH } from './shared/music-understanding'
 import { privacyRouteMiddleware } from './server/privacy-route'
 
 interface AirJellyRuntime {
@@ -118,6 +121,12 @@ function officialApiDevMiddleware(): Plugin {
   return {
     name: 'official-api-dev-middleware',
     configureServer(server) {
+      server.middlewares.use(MUSIC_UNDERSTANDING_PATH, (req, res) => {
+        void musicUnderstandingHandler(req, res)
+      })
+      server.middlewares.use('/api/official/v1/tools/asr', (req, res) => {
+        void asrHandler(req, res)
+      })
       server.middlewares.use(
         '/api/official/v1/chat/completions',
         async (req: IncomingMessage, res: ServerResponse) => {
@@ -540,7 +549,7 @@ export default defineConfig(({ mode }) => {
   // (officialApiDevMiddleware) read server-side keys from process.env, so
   // load the full .env here and merge any missing keys in (shell env wins).
   const env = loadEnv(mode, process.cwd(), '')
-  for (const key of ['OFFICIAL_API_KEY', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+  for (const key of ['OFFICIAL_API_KEY', 'VITE_API_KEY', 'QWEN_OMNI_API_KEY', 'QWEN_OMNI_BASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
     if (!process.env[key] && env[key]) process.env[key] = env[key]
   }
 
