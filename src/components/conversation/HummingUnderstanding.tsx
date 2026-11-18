@@ -75,7 +75,12 @@ export default function HummingUnderstanding({ draft }: { draft: LocalHummingDra
         ) : <span className="text-text-muted">{t('hummingUnderstandingUpload')}</span>}
       </div>
       {error && <p role="alert" className="mt-1 text-error">{t(error)}</p>}
-      {result && (
+      {result && 'summary' in result && (
+        <p aria-label={t('hummingUnderstandingResult')} className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap break-words border-t border-border pt-2">
+          {result.summary}
+        </p>
+      )}
+      {result && 'melody' in result && (
         <dl aria-label={t('hummingUnderstandingResult')} className="mt-2 max-h-44 space-y-2 overflow-y-auto break-words border-t border-border pt-2">
           <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingMelody')}</dt><dd>{result.melody}</dd></div>
           <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingRhythm')}</dt><dd>{result.rhythm}</dd></div>

@@ -97,10 +97,38 @@ describe('music understanding route', () => {
     expect(fetchUpstream).not.toHaveBeenCalled();
   });
 
-  it.each(['not JSON', '{"melody":"humming"}'])('rejects invalid model output %s', async (content) => {
+  it('uses a complete JSON result even when the provider reports the token limit', async () => {
     fetchUpstream.mockResolvedValueOnce(Response.json({
-      choices: [{ message: { content }, finish_reason: 'stop' }],
+      choices: [{ message: { content: '```json\n' + JSON.stringify(analysis) + '\n```' }, finish_reason: 'length' }],
     }));
+    expect(await post(wav())).toEqual({ status: 200, data: analysis });
+    expect(fetchUpstream).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to a plain-text analysis when the structured result is incomplete', async () => {
+    fetchUpstream
+      .mockResolvedValueOnce(Response.json({
+        choices: [{ message: { content: '{"melody":"humming"}' }, finish_reason: 'stop' }],
+      }))
+      .mockResolvedValueOnce(Response.json({
+        choices: [{ message: { content: 'The melody rises and ends on a held note.' }, finish_reason: 'stop' }],
+      }));
+    expect(await post(wav())).toEqual({ status: 200, data: { summary: 'The melody rises and ends on a held note.' } });
+    expect(fetchUpstream).toHaveBeenCalledTimes(2);
+    const first = JSON.parse(String(fetchUpstream.mock.calls[0][1]?.body));
+    const second = JSON.parse(String(fetchUpstream.mock.calls[1][1]?.body));
+    expect(second.response_format).toBeUndefined();
+    expect(second.messages[0].content[0]).toEqual(first.messages[0].content[0]);
+    expect(fetchUpstream.mock.calls[1][1]?.signal).toBe(fetchUpstream.mock.calls[0][1]?.signal);
+  });
+
+  it('reports an invalid result when the fallback also returns no usable text', async () => {
+    fetchUpstream
+      .mockResolvedValueOnce(Response.json({ choices: [] }))
+      .mockResolvedValueOnce(Response.json({
+        choices: [{ message: { content: '   ' }, finish_reason: 'stop' }],
+      }));
     expect(await post(wav())).toEqual({ status: 502, data: { code: 'invalid_result' } });
+    expect(fetchUpstream).toHaveBeenCalledTimes(2);
   });
 });
