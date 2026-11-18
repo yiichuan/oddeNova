@@ -3,6 +3,10 @@ export const MUSIC_ANALYSIS_SAMPLE_RATE = 22_050;
 
 interface StructuredMusicUnderstanding {
   melody: string;
+  notes?: string;
+  bpm?: string;
+  timeSignature?: string;
+  harmony?: string;
   rhythm: string;
   suggestions: string;
   uncertainty?: string;
@@ -12,7 +16,17 @@ export type MusicUnderstanding = StructuredMusicUnderstanding | { summary: strin
 
 export function parseMusicUnderstanding(value: unknown): MusicUnderstanding | null {
   if (!value || typeof value !== 'object') return null;
-  const { melody, rhythm, suggestions, uncertainty, summary } = value as Record<string, unknown>;
+  const {
+    melody,
+    notes,
+    bpm,
+    time_signature: timeSignature,
+    harmony,
+    rhythm,
+    suggestions,
+    uncertainty,
+    summary,
+  } = value as Record<string, unknown>;
   if (typeof summary === 'string' && summary.trim() && summary.length <= 2400) {
     return { summary: summary.trim() };
   }
@@ -21,6 +35,10 @@ export function parseMusicUnderstanding(value: unknown): MusicUnderstanding | nu
   if (!validText(melody) || !validText(rhythm) || !validText(suggestions)) return null;
   return {
     melody: melody.trim(),
+    ...(validText(notes) ? { notes: notes.trim() } : {}),
+    ...(validText(bpm) ? { bpm: bpm.trim() } : {}),
+    ...(validText(timeSignature) ? { timeSignature: timeSignature.trim() } : {}),
+    ...(validText(harmony) ? { harmony: harmony.trim() } : {}),
     rhythm: rhythm.trim(),
     suggestions: suggestions.trim(),
     ...(validText(uncertainty) ? { uncertainty: uncertainty.trim() } : {}),

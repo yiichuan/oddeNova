@@ -10,9 +10,18 @@ vi.mock('../../server/session-utils', () => ({ authenticateUser: vi.fn() }));
 
 const analysis = {
   melody: 'One held note rises at the end.',
+  notes: 'C4, D4, then a held E4.',
+  bpm: '96 BPM, uncertain.',
+  time_signature: '4/4, uncertain.',
+  harmony: 'C major tonal center, uncertain.',
   rhythm: 'Two short phrases separated by a pause.',
   suggestions: 'Keep the final note long.',
 };
+const normalizedAnalysis = {
+  ...analysis,
+  timeSignature: analysis.time_signature,
+};
+delete (normalizedAnalysis as { time_signature?: string }).time_signature;
 const fetchUpstream = vi.fn<typeof fetch>();
 
 async function post(audio: Buffer) {
@@ -56,7 +65,7 @@ describe('music understanding route', () => {
 
   it('sends the exact WAV to Qwen and returns the validated analysis', async () => {
     const audio = wav();
-    expect(await post(audio)).toEqual({ status: 200, data: analysis });
+    expect(await post(audio)).toEqual({ status: 200, data: normalizedAnalysis });
     const [url, init] = fetchUpstream.mock.calls[0];
     expect(String(url)).toBe('https://qwen.example/compatible-mode/v1/chat/completions');
     expect(JSON.parse(String(init?.body))).toMatchObject({
@@ -101,7 +110,7 @@ describe('music understanding route', () => {
     fetchUpstream.mockResolvedValueOnce(Response.json({
       choices: [{ message: { content: '```json\n' + JSON.stringify(analysis) + '\n```' }, finish_reason: 'length' }],
     }));
-    expect(await post(wav())).toEqual({ status: 200, data: analysis });
+    expect(await post(wav())).toEqual({ status: 200, data: normalizedAnalysis });
     expect(fetchUpstream).toHaveBeenCalledOnce();
   });
 

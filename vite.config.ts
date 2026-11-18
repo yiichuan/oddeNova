@@ -551,8 +551,8 @@ function useEnvProxyForDevFetch() {
   setGlobalDispatcher(new EnvHttpProxyAgent({ noProxy }))
 }
 
-export default defineConfig(({ command, mode }) => {
-  if (command === 'serve' && !process.env.VITEST) useEnvProxyForDevFetch()
+export default defineConfig(({ command, isPreview, mode }) => {
+  if (command === 'serve' && !isPreview && !process.env.VITEST) useEnvProxyForDevFetch()
   // Vite hashes the patches directory mtime, not the contents of existing
   // patch files. Key the cache by their contents so patched package exports
   // cannot be served from an older prebundle. Keep build-mode caches separate.

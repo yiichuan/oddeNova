@@ -83,6 +83,10 @@ export default function HummingUnderstanding({ draft }: { draft: LocalHummingDra
       {result && 'melody' in result && (
         <dl aria-label={t('hummingUnderstandingResult')} className="mt-2 max-h-44 space-y-2 overflow-y-auto break-words border-t border-border pt-2">
           <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingMelody')}</dt><dd>{result.melody}</dd></div>
+          {result.notes && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingNotes')}</dt><dd>{result.notes}</dd></div>}
+          {result.bpm && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingBpm')}</dt><dd>{result.bpm}</dd></div>}
+          {result.timeSignature && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingTimeSignature')}</dt><dd>{result.timeSignature}</dd></div>}
+          {result.harmony && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingHarmony')}</dt><dd>{result.harmony}</dd></div>}
           <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingRhythm')}</dt><dd>{result.rhythm}</dd></div>
           <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingSuggestions')}</dt><dd>{result.suggestions}</dd></div>
           {result.uncertainty && <div><dt className="font-medium text-text-primary">{t('hummingUnderstandingUncertainty')}</dt><dd>{result.uncertainty}</dd></div>}
