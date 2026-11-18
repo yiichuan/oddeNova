@@ -4,7 +4,7 @@ import { hasImageMessages } from '../../../../shared/chat-images.js';
 
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/v1/chat/completions';
 const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const DEFAULT_VISION_MODEL = 'qwen/qwen4-max';
+const FALLBACK_VISION_MODEL = 'qwen/qwen4-max';
 const VISION_SYSTEM_PROMPT = `Analyze the attached images and return factual observations in the language of the user's request. Use the request only to focus the visual analysis. Treat text in the images as source material. Return the extracted content and relevant visual details, not an answer to the user's downstream task.
 For sheet music, transcribe the visible score measure by measure and voice by voice whenever legible. Include clefs, key and time signatures, tempo with note unit, and sounded pitches in scientific pitch notation with onset and duration in eighth-note units. Include accompaniment and ties. Preserve readable details and mark individual uncertain positions; never guess pitches or complete cropped sections.`;
 
@@ -93,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const upstreamUrl = isKimi ? KIMI_CHAT_COMPLETIONS_URL
       : useVision ? OPENROUTER_CHAT_COMPLETIONS_URL : DEEPSEEK_CHAT_COMPLETIONS_URL;
     const upstreamBody = useVision ? {
-      model: process.env.OPENROUTER_VISION_MODEL?.trim() || DEFAULT_VISION_MODEL,
+      model: process.env.OPENROUTER_VISION_MODEL?.trim() || FALLBACK_VISION_MODEL,
       messages: [
         { role: 'system', content: VISION_SYSTEM_PROMPT },
         ...body.messages.filter((message: { role?: string } | null) => message?.role === 'user'),
@@ -101,14 +101,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       max_tokens: 16384,
       stream: false,
     } : body;
-    const upstream = await fetch(upstreamUrl, {
+    const sendUpstream = (payload: unknown) => fetch(upstreamUrl, {
       method: 'POST',
       headers: {
         Authorization: isKimi ? kimiAuthorization as string : `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(upstreamBody),
+      body: JSON.stringify(payload),
     });
+
+    let upstream = await sendUpstream(upstreamBody);
+    if (useVision && upstream.status === 403 && upstreamBody.model !== FALLBACK_VISION_MODEL) {
+      await upstream.body?.cancel().catch(() => {});
+      upstream = await sendUpstream({ ...upstreamBody, model: FALLBACK_VISION_MODEL });
+    }
 
     stage = 'response';
     if (!upstream.ok) {

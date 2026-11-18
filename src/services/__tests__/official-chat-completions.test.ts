@@ -165,6 +165,44 @@ describe('/api/official/v1/chat/completions', () => {
     expect(res.chunks.join('')).toBe(upstream);
   });
 
+  it.each([
+    { primary: 'openai/gpt-6.2-sol', status: 403, fallbackStatus: 200, expectedStatus: 200 },
+    { primary: 'openai/gpt-6.2-sol', status: 403, fallbackStatus: 403, expectedStatus: 403 },
+    { primary: 'openai/gpt-6.2-sol', status: 429, fallbackStatus: null, expectedStatus: 429 },
+    { primary: 'qwen/qwen4-max', status: 403, fallbackStatus: null, expectedStatus: 403 },
+  ])('handles $status from $primary with fallback status $fallbackStatus', async ({ primary, status, fallbackStatus, expectedStatus }) => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'sk-vision');
+    vi.stubEnv('OPENROUTER_VISION_MODEL', primary);
+    vi.stubEnv('SUPABASE_URL', 'https://auth.test');
+    vi.stubEnv('SUPABASE_ANON_KEY', 'anon-test');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ id: 'user-id' }))
+      .mockResolvedValueOnce(Response.json({ error: { code: status } }, { status }));
+    if (fallbackStatus !== null) {
+      fetchMock.mockResolvedValueOnce(Response.json(
+        fallbackStatus === 200 ? { choices: [{ message: { content: 'A sheet score' } }] } : { error: { code: fallbackStatus } },
+        { status: fallbackStatus },
+      ));
+    }
+    vi.stubGlobal('fetch', fetchMock);
+    const res = makeRes();
+
+    await handler(makeReq('POST', imageRequest, {}, { authorization: 'Bearer user-token' }),
+      res as unknown as VercelResponse);
+
+    expect(res.statusCodeValue).toBe(expectedStatus);
+    expect(fetchMock).toHaveBeenCalledTimes(fallbackStatus === null ? 2 : 3);
+    const primaryBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(primaryBody.model).toBe(primary);
+    if (fallbackStatus !== null) {
+      const [url, request] = fetchMock.mock.calls[2];
+      expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+      expect(JSON.parse(request.body)).toEqual({ ...primaryBody, model: 'qwen/qwen4-max' });
+    }
+    if (expectedStatus === 200) expect(res.chunks.join('')).toContain('A sheet score');
+  });
+
   it('reports the OpenRouter failure stage without logging signed image URLs', async () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'sk-vision');
     vi.stubEnv('SUPABASE_URL', 'https://auth.test');
