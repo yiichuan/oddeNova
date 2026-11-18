@@ -1382,7 +1382,25 @@ export default function ConversationView({
         }
 
         if (msg.role === 'user') {
-          const rollbackButtonEnabled = !isMobile || longPressedId === msg.id;
+          const hasText = Boolean(msg.content.trim());
+          const imageOnly = !hasText && Boolean(msg.images?.length);
+          const rollbackButtonEnabled = !isMobile || imageOnly || longPressedId === msg.id;
+          const rollbackButton = (
+            <div className={`absolute -top-2.5 -right-2.5 transition-opacity ${
+              isMobile
+                ? (rollbackButtonEnabled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none')
+                : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
+            }`}>
+              <button
+                onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
+                disabled={!rollbackButtonEnabled}
+                className="conversation-rollback-button w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
+                title={t('rollbackHere')}
+              >
+                <Undo2 size={12} />
+              </button>
+            </div>
+          );
           return (
             <div
               key={msg.id}
@@ -1396,25 +1414,8 @@ export default function ConversationView({
                 onCopy={handleUserBubbleCopy}
                 {...getMobileRollbackBubbleProps(msg.id)}
               >
-                {Boolean(msg.images?.length) && <div className="max-w-full [&>div]:justify-end [&>div]:py-0"><MessageImages images={msg.images} /></div>}
-                <div className={`relative max-w-full ${msg.content.trim() ? 'rounded-[6px] bg-message-user px-3 py-2' : 'h-6 w-6'}`}>
-                  {msg.content.trim() && <UserMessageBubble content={msg.content} />}
-                  {/* Rollback button — top-right of bubble. Desktop: visible on group-hover. Mobile: visible on long-press (no real hover state on touch). */}
-                  <div className={`${msg.content.trim() ? 'absolute -top-2.5 -right-2.5' : ''} transition-opacity ${
-                    isMobile
-                      ? (rollbackButtonEnabled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none')
-                      : 'opacity-0 group-hover:opacity-100'
-                  }`}>
-                    <button
-                      onClick={() => { onRollback(msg.id); setLongPressedId(null); }}
-                      disabled={!rollbackButtonEnabled}
-                      className="conversation-rollback-button w-6 h-6 rounded-full border border-border bg-bg-primary text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors flex items-center justify-center"
-                      title={t('rollbackHere')}
-                    >
-                      <Undo2 size={12} />
-                    </button>
-                  </div>
-                </div>
+                {Boolean(msg.images?.length) && <div className="relative max-w-full"><div className="[&>div]:justify-end [&>div]:py-0"><MessageImages images={msg.images} /></div>{imageOnly && rollbackButton}</div>}
+                {hasText && <div className="relative max-w-full rounded-[6px] bg-message-user px-3 py-2"><UserMessageBubble content={msg.content} />{rollbackButton}</div>}
               </div>
             </div>
           );

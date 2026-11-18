@@ -1,4 +1,217 @@
-@CLAUDE.md
+# AGENTS.md
+
+This file provides guidance to coding agents working in this repository.
+
+## Agent instruction design
+
+When editing prompts or agent-facing instructions, follow
+`docs/ai/agent-instruction-design.md`.
+
+Use the sequence `Goal -> Principles -> Knowledge -> Guidance -> Constraints -> Review`.
+Prefer goals, principles, examples, and self-review over procedural workflows or
+over-specific rules. Trust the model's reasoning; add hard constraints only when
+they prevent concrete failures or define non-negotiable boundaries.
+
+## Skill usage
+
+When a request is explicit and its implementation scope is clear, proceed directly
+without invoking the brainstorming skill. Use brainstorming only when requirements
+are ambiguous, the work needs substantial feature design, or meaningful design or
+architecture trade-offs require user input.
+
+## Commands
+
+```bash
+npm run dev              # Vite dev server (localhost:5173)
+npm run build            # tsc -b + vite build (type-check happens here)
+npm run lint             # ESLint over the whole repo
+npm test                 # Vitest, run once (--passWithNoTests)
+npx vitest run <path>    # run a single test file
+npx vitest <pattern>     # watch mode / filter by name
+npx tsc --noEmit -p tsconfig.app.json   # strict type-check only
+npm run previews:animation              # rebuild the appearance-settings animation stills
+npm run printer:bridge                  # macOS: local Bluetooth Classic bridge for Paperang P1S printing
+```
+
+Pre-commit (husky + lint-staged) automatically runs `tsc --noEmit`, ESLint on
+staged `*.ts/*.tsx` (`--max-warnings=0`), and the full test suite. A commit
+that fails any of these did not happen — fix and re-commit, don't bypass with
+`--no-verify`.
+
+Eval harness (LLM-in-the-loop scoring of the agent prompts, requires API keys
+in `scripts/eval/.env`):
+
+```bash
+npm run eval          # node --import=tsx/esm scripts/eval/runner.ts
+npm run eval:report
+```
+
+## UI changes
+
+Do not start the dev server or drive a browser to verify UI/frontend changes.
+Scale verification to the risk of the change:
+
+- Pure CSS, color, spacing, typography, copy, or design-token tweaks: do not run
+  the full test suite, full-project lint, type-check, or production build by
+  default. Inspect the diff and optionally run `git diff --check`; the developer
+  reviews visual results.
+- Localized JSX markup or class changes without behavior changes: run only a
+  focused test or lint check when it adds value.
+- Interaction, state, data-flow, shared-component, dependency, or build changes:
+  run targeted tests and the appropriate type/lint checks in proportion to risk.
+- Run full tests and a production build for broad or high-risk changes, before a
+  requested commit/push/release, or when explicitly requested.
+
+## Architecture
+
+oddeNova is a browser-only (no backend except a thin Vercel proxy) AI agent
+that writes and plays [Strudel](https://strudel.cc/) live-coding music
+patterns. One user instruction = one run of the agent loop, which ends by
+emitting a complete Strudel script that gets executed via WebAudio.
+
+```
+ChatInput → App.tsx handleInstruction()
+  → services/llm.ts runAgent()
+    → agent/loop.ts runAgentLoop()        // up to 30 iterations
+        → LLMCaller.chatWithTools()       // Anthropic or OpenAI-protocol call
+        → agent/executor.ts dispatchToolCall()
+            → agent/tools.ts TOOLS[name].handler()
+                → throws CommitSignal(code) to end the loop
+  → services/strudel.ts (play the committed code via superdough/WebAudio)
+  → hooks/useSessions.ts (persist to IndexedDB)
+```
+
+Key modules:
+
+- **`src/agent/`** — the agent itself, independent of any specific LLM SDK.
+  - `tools.ts` — the 3 tools the model can call: `setCode` (write/replace the
+    full Strudel script), `validate` (syntax + sandbox dry-run, catches
+    hallucinated APIs like `by`/`sometimesBy`), `commit` (terminal — throws
+    `CommitSignal`).
+  - `loop.ts` — `runAgentLoop()`, the LLM-agnostic iteration loop. Accepts an
+    injected `LLMCaller` so this module never imports the OpenAI/Anthropic
+    SDKs directly. Handles both OpenAI tool-call format and Anthropic
+    extended-thinking blocks (which must be echoed back verbatim on
+    subsequent turns).
+  - `executor.ts` — dispatches one tool call, retries on tool error
+    (`maxRetries`), bubbles `CommitSignal` up to the loop.
+  - `parser.ts` — structural parser for the generated code: recognises
+    `setcps(N)` and `stack(...)`, and splits stack arguments into named
+    layers via `/* @layer NAME */` comment markers (or auto-names
+    `layer_0`, ...). This is what lets the agent edit one instrument layer
+    without touching the others.
+  - `__tests__/` — when you change any handler/behavior in `parser.ts` or
+    `tools.ts`, update the matching test in the same commit (uses
+    `getHandler` + `makeCtx` helpers from `tools.test.ts`). `validate` /
+    `improvise` depend on browser AudioContext APIs and are **not**
+    unit-tested.
+
+- **`src/services/llm-config.ts`** — central provider routing. Six
+  user-selectable providers (`deepseek`, `kimi`, `openai`, `anthropic`,
+  `official`, `glm`) each map to a base URL, protocol (`anthropic` or
+  `openai`), and model. `official` proxies through
+  `api/official/v1/chat/completions.ts` (Vercel serverless / Vite dev
+  middleware) using a server-side key. Kimi's `/api/kimi/v1/chat/completions`
+  route rewrites to that shared Vercel function with the Moonshot provider
+  selected; Vite dev middleware handles it locally and forwards the user's
+  `localStorage` key entered via `ApiKeyModal`. The other providers call their
+  API directly with that user key.
+
+- **`src/services/strudel.ts`** + **`src/hooks/useStrudel.ts`** — wraps the
+  `superdough`/Strudel audio engine as a singleton. Components must go
+  through `useStrudel()`, never import `strudelService` directly, and never
+  construct `new AudioContext()` — context lifecycle is owned by superdough's
+  `getAudioContext()`/`setAudioContext()`.
+
+- **`src/prompts/`** — versioned system prompts. A completed prompt version is
+  immutable history; the current in-progress prompt version for one product
+  requirement may be edited repeatedly until that requirement is finished.
+  `active.ts` is the pointer to the current version; `system-prompt.ts` is a
+  forwarding shim and must never be edited directly. To change the prompt,
+  follow `docs/ai/edit-system-prompt.md` (create or reuse the
+  requirement's working `v{N+1}`, update its header comment, point `active.ts`
+  at it).
+
+- **`src/hooks/useSessions.ts`** + **`src/lib/session-storage.ts`** — multi-
+  session state, persisted to IndexedDB (falls back to in-memory if
+  unavailable). Each session holds `messages` (chat + agent progress) and the
+  last-committed `code`. `useReplay.ts` replays a session's history step by
+  step; undo supports up to 50 steps.
+
+- **`src/hooks/useSessionActions.ts`** — Session deletion and renaming across
+  working copies, cloud summaries, and title search. Keep this ordering here:
+  loaded deletion uses the durable retry queue and refreshes search only on its
+  cloud-completion callback; unloaded deletion removes its summary after remote
+  success. Renaming awaits `useSessions.renameSession()` (local mutation and
+  checkpoint registration), then flushes before refreshing search. Account
+  changes and unmount invalidate old action results, including error display.
+
+- **`src/onboarding/`** — the first-run guide (plan:
+  `docs/first-creation-onboarding-plan.md`); it never calls a model or the
+  agent loop. `useFirstCreation.ts` walks four preset turns
+  (`first-creation-v1`, scripts in `onboarding/first-creation-v1/`) from an
+  empty session, on both layouts: each turn is written through the same
+  session writers and loading indicator a real agent turn uses, then played.
+  Desktop (`FirstCreationTour.tsx`) explains turns 1–3 over the code panel;
+  the phone (`MobileFirstCreationTour.tsx`) goes turn to turn and ends in the
+  code window. Targets are found by `data-onboarding-target` markers.
+  Progress is per owner in `localStorage`, separate from the welcome and
+  theme-song flags; a settled guide is also flagged in the cloud.
+
+- **`src/demo/`** — `?demo=true` runs a scripted `demo-llm.ts` in place of a
+  real LLM call, replaying canned tool-call sequences from `demo-config.ts`,
+  so the agent loop can be exercised without API keys.
+
+## Import rules: superdough / @strudel/*
+
+Only import from the package root — never deep-import into source files:
+
+```ts
+// correct
+import { superdough, getAudioContext, setAudioContext } from 'superdough';
+
+// wrong — fails silently at runtime
+import { SuperdoughAudioController } from 'superdough/superdoughoutput.mjs';
+import { clearNodePools } from 'superdough/nodePools.mjs';
+```
+
+`eslint.config.js` has a `no-restricted-imports` rule that turns any
+`superdough/*` deep import into a lint error. Same applies to `@strudel/*`
+packages. Reason: the npm package ships a bundled `dist/index.mjs` holding
+module-level singletons (e.g. `audioContext`). Importing a source path loads
+a *second* module graph whose own `audioContext` is never updated by the
+bundled `setAudioContext`, causing `InvalidAccessError: cannot connect to an
+AudioNode belonging to a different audio context` — symptom: exported WAVs
+are missing delay/room effects that are audible in live playback. Rule of
+thumb: if a module exposes a `let xxx; export function setXxx(v) { xxx = v }`
+singleton setter, importing a subpath bypasses that setter — always go
+through the package root. If you need an unexported internal symbol, request
+an upstream export rather than reaching in.
+
+## AudioContext management
+
+- Never call `new AudioContext()` in a component or service — always go
+  through superdough's `getAudioContext()` / `setAudioContext()`.
+- Never cache an `AudioContext` instance in React state or a local variable;
+  it's a singleton, fetch it from superdough each time.
+- WAV export: close the live context, switch to the offline context via the
+  bundled setter, then reset the controller so it lazily rebuilds against the
+  new context (don't construct `new SuperdoughAudioController(offlineCtx)`
+  from source):
+
+  ```ts
+  await liveCtx.close();
+  setAudioContext(offlineCtx);
+  setSuperdoughAudioController(null); // lazy-rebuild inside bundled module
+  await initAudio({ maxPolyphony: 1024, multiChannelOrbits: false });
+  ```
+
+  After export, rebuild the live context (`rebuildMasterChain()`) and restore
+  soundfonts.
+
+## Worktrees
+
+When creating a worktree, run `bash scripts/create-worktree.sh <path> <branch>` from the source checkout. It fetches `origin`, creates the branch from the latest `origin/main`, and copies the source checkout's `.env.local` into the new worktree. If a different base is explicitly requested, pass it as the third argument.
 
 ## Local Superpowers artifacts
 
