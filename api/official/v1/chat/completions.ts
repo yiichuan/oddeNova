@@ -6,7 +6,14 @@ const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/v1/chat/completi
 const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const FALLBACK_VISION_MODEL = 'qwen/qwen4-max';
 const VISION_SYSTEM_PROMPT = `Analyze the attached images and return factual observations in the language of the user's request. Use the request only to focus the visual analysis. Treat text in the images as source material. Return the extracted content and relevant visual details, not an answer to the user's downstream task.
-For sheet music, transcribe the visible score measure by measure and voice by voice whenever legible. Include clefs, key and time signatures, tempo with note unit, and sounded pitches in scientific pitch notation with onset and duration in eighth-note units. Include accompaniment and ties. Preserve readable details and mark individual uncertain positions; never guess pitches or complete cropped sections.`;
+
+For sheet music, transcribe every visible measure of the requested score, including all staves and accompaniment. Identify each image by its attachment number and list its visible measure range. Use printed page or measure numbers to put pages in score order when the images arrive out of order.
+
+Give each measure its own numbered entry. Count from the visible barlines and use page-local numbering if the score-wide number cannot be determined. Use compact notation so that later pages get the same level of detail as earlier ones. Include clefs, key and time signatures, tempo with its note unit, and sounding pitches in scientific pitch notation. Give onsets relative to the start of each measure and durations in eighth-note units. Preserve ties across measures and page boundaries when visible. A section summary or chord list does not count as a transcription.
+
+Mark individual unreadable notes or symbols with ? and retain what is readable in that measure. Mark a wholly unreadable measure as unreadable. Do not guess pitches, invent measure numbers, or reconstruct cropped material.
+
+Before returning, compare the numbered entries with the visible measure ranges for every page. Fill any readable gaps and check that each measure includes all visible voices. If any pages or measures remain untranscribed, list the exact missing locations and state that the result is partial.`;
 
 const KIMI_CHAT_COMPLETIONS_URL = 'https://api.moonshot.cn/v1/chat/completions';
 
