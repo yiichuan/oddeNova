@@ -1,16 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 const signed = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.test/signed' }, error: null }));
 vi.mock('../../services/auth-service', () => ({ requireSupabase: () => ({ storage: { from: () => ({ createSignedUrl: signed }) } }) }));
-vi.mock('../../services/llm-config', () => ({ getActiveModelConfig: () => ({ provider: 'deepseek', model: 'deepseek-flash' }) }));
-import { imageUrl, supportsImages, userContent, type ImageAttachment } from '../image-attachments';
+import { imageUrl, userContent, type ImageAttachment } from '../image-attachments';
 const image: ImageAttachment = { id: 'one', name: 'score.png', path: 'owner/one.jpg', width: 100, height: 100, size: 100, mimeType: 'image/jpeg' };
 describe('image attachments', () => {
-  it('gates models individually', () => {
-    expect(supportsImages('deepseek', 'deepseek-flash')).toBe(true);
-    expect(supportsImages('deepseek', 'deepseek-v4-pro')).toBe(false);
-    expect(supportsImages('glm', 'glm-5.3')).toBe(false);
-    expect(supportsImages('kimi', 'kimi-k2.7-code')).toBe(true);
-  });
   it('preserves text-only requests and serializes pictures as user content blocks', async () => {
     expect(await userContent('hello')).toBe('hello');
     expect(await userContent('score', [image])).toEqual([{ type: 'text', text: 'score' }, { type: 'image_url', image_url: { url: 'https://storage.test/signed' } }]);

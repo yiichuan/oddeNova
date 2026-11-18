@@ -1,15 +1,8 @@
 import { requireSupabase } from '../services/auth-service';
-import { getActiveModelConfig } from '../services/llm-config';
 
 import type { ImageAttachment, UserContent } from './image-types';
 export type { ImageAttachment, UserContent } from './image-types';
 const BUCKET = 'chat-images';
-export function supportsImages(provider: string, model: string): boolean {
-  return provider === 'official' || (provider === 'deepseek' && model === 'deepseek-flash') ||
-    (provider === 'openai' && model.startsWith('gpt-')) ||
-    (provider === 'anthropic' && model.startsWith('claude-')) ||
-    (provider === 'kimi' && ['kimi-k2.6', 'kimi-k3', 'kimi-k2.7-code'].includes(model));
-}
 export async function imageUrl(image: ImageAttachment): Promise<string> {
   if (image.publicUrl) return image.publicUrl;
   const { data, error } = await requireSupabase().storage.from(BUCKET).createSignedUrl(image.path, 3600);
@@ -18,8 +11,6 @@ export async function imageUrl(image: ImageAttachment): Promise<string> {
 }
 export async function userContent(text: string, images?: ImageAttachment[]): Promise<UserContent> {
   if (!images?.length) return text;
-  const config = getActiveModelConfig();
-  if (!supportsImages(config.provider, config.model)) throw new Error('当前模型不支持图片，请切换视觉模型');
   return [{ type: 'text', text }, ...await Promise.all(images.map(async image => {
     try {
       return { type: 'image_url' as const, image_url: { url: await imageUrl(image) } };

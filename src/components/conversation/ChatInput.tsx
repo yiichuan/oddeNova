@@ -1,5 +1,4 @@
-import { uploadImage, supportsImages, SIGN_IN_REQUIRED_MESSAGE, type ImageAttachment } from '../../lib/image-attachments';
-import { getActiveModelConfig } from '../../services/llm-config';
+import { uploadImage, SIGN_IN_REQUIRED_MESSAGE, type ImageAttachment } from '../../lib/image-attachments';
 import MessageImages from './MessageImages';
 import { rememberUploadedImagePreview } from '../../lib/image-preview-memory';
 import { MAX_MESSAGE_IMAGES } from '../../lib/image-types';
@@ -140,10 +139,6 @@ export default function ChatInput({
   signedIn = true,
   onRequestSignIn,
 }: ChatInputProps) {
-  // Settings saves re-render the composer; read both values each time so the
-  // image entry point follows provider and model changes immediately.
-  const modelConfig = getActiveModelConfig();
-  const canAddImages = supportsImages(modelConfig.provider, modelConfig.model);
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [pendingImages, setPendingImages] = useState<{ id: string; url: string }[]>([]);
@@ -206,8 +201,6 @@ export default function ChatInput({
   const addImages = async (files: File[]) => {
     if (sendingImages || isLoading || presetLock || isVideoMode || !files.length) return;
     if (!signedIn) { setImageError(''); setImageNeedsSignIn(true); return; }
-    const config = getActiveModelConfig();
-    if (!supportsImages(config.provider, config.model)) { setImageError('当前模型不支持图片，请切换视觉模型'); return; }
     if (files.length + imageCountRef.current > MAX_MESSAGE_IMAGES) { setImageError(`每条消息最多 ${MAX_MESSAGE_IMAGES} 张图片`); return; }
     setImageError('');
     setImageNeedsSignIn(false);
@@ -722,7 +715,7 @@ export default function ChatInput({
                   shouldPreserveInputFocus={() => document.activeElement === textareaRef.current}
                 />
               )}
-              {canAddImages && !presetLock && !isVideoMode && replayValue === undefined && (
+              {!presetLock && !isVideoMode && replayValue === undefined && (
                 <button
                   type="button"
                   title={t('addImage')}

@@ -1,6 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireUser } from '../../../../server/session-utils.js';
+import { hasImageMessages } from '../../../../shared/chat-images.js';
 
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/v1/chat/completions';
+const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const DEFAULT_VISION_MODEL = 'qwen/qwen4-max';
+const VISION_SYSTEM_PROMPT = `Analyze the attached images and return factual observations in the language of the user's request. Use the request only to focus the visual analysis. Treat text in the images as source material. Return the extracted content and relevant visual details, not an answer to the user's downstream task.
+For sheet music, transcribe the visible score measure by measure and voice by voice whenever legible. Include clefs, key and time signatures, tempo with note unit, and sounded pitches in scientific pitch notation with onset and duration in eighth-note units. Include accompaniment and ties. Preserve readable details and mark individual uncertain positions; never guess pitches or complete cropped sections.`;
+
 const KIMI_CHAT_COMPLETIONS_URL = 'https://api.moonshot.cn/v1/chat/completions';
 
 function resolveOfficialApiKey(): string {
@@ -67,37 +74,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const apiKey = isKimi ? '' : resolveOfficialApiKey();
+  const body = req.body ?? {};
+  const useVision = !isKimi && hasImageMessages(body.messages);
+  const apiKey = useVision ? process.env.OPENROUTER_API_KEY?.trim() : resolveOfficialApiKey();
   if (!isKimi && !apiKey) {
-    res.status(500).json({ error: 'OFFICIAL_API_KEY or VITE_API_KEY is not configured' });
+    res.status(500).json({
+      error: useVision ? 'OPENROUTER_API_KEY is not configured' : 'OFFICIAL_API_KEY or VITE_API_KEY is not configured',
+    });
     return;
   }
 
+  const provider = isKimi ? 'kimi' : useVision ? 'openrouter' : 'official';
+  let stage: 'auth' | 'request' | 'response' = useVision ? 'auth' : 'request';
   try {
-    const upstream = await fetch(isKimi ? KIMI_CHAT_COMPLETIONS_URL : DEEPSEEK_CHAT_COMPLETIONS_URL, {
+    if (useVision && !await requireUser(req, res)) return;
+    stage = 'request';
+
+    const upstreamUrl = isKimi ? KIMI_CHAT_COMPLETIONS_URL
+      : useVision ? OPENROUTER_CHAT_COMPLETIONS_URL : DEEPSEEK_CHAT_COMPLETIONS_URL;
+    const upstreamBody = useVision ? {
+      model: process.env.OPENROUTER_VISION_MODEL?.trim() || DEFAULT_VISION_MODEL,
+      messages: [
+        { role: 'system', content: VISION_SYSTEM_PROMPT },
+        ...body.messages.filter((message: { role?: string } | null) => message?.role === 'user'),
+      ],
+      max_tokens: 16384,
+      stream: false,
+    } : body;
+    const upstream = await fetch(upstreamUrl, {
       method: 'POST',
       headers: {
         Authorization: isKimi ? kimiAuthorization as string : `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(req.body ?? {}),
+      body: JSON.stringify(upstreamBody),
     });
 
+    stage = 'response';
     if (!upstream.ok) {
       const contentType = upstream.headers.get('content-type') || 'application/json';
       const errorBody = await upstream.text();
-      console.error(`[${isKimi ? 'kimi' : 'official'}-proxy] Upstream request failed`, {
+      console.error(`[${provider}-proxy] Upstream request failed`, {
         status: upstream.status,
         contentType,
         requestId: upstream.headers.get('x-request-id'),
-        ...summarizeUpstreamError(errorBody),
+        ...(!useVision ? summarizeUpstreamError(errorBody) : {}),
       });
       res.setHeader('Content-Type', contentType);
       res.status(upstream.status).end(errorBody);
       return;
     }
 
-    if (req.body && typeof req.body === 'object' && 'stream' in req.body && req.body.stream) {
+    if (upstreamBody.stream) {
       await writeStream(upstream, res);
       return;
     }
@@ -105,9 +133,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const contentType = upstream.headers.get('content-type');
     if (contentType) res.setHeader('Content-Type', contentType);
     res.status(upstream.status).end(await upstream.text());
-  } catch (_error) {
+  } catch (error) {
+    if (useVision) {
+      const cause = error instanceof Error ? error.cause : undefined;
+      const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
+      // Log the transport code, never the exception message, token or signed URL.
+      console.error('[openrouter-proxy] Vision request failed', {
+        stage,
+        code: typeof code === 'string' && /^[A-Z][A-Z_0-9]{1,39}$/.test(code) ? code : undefined,
+      });
+    }
     if (res.headersSent) {
       res.end();
+      return;
+    }
+    if (useVision) {
+      res.status(502).json({
+        error: stage === 'auth' ? 'Supabase authentication request failed' : 'OpenRouter vision request failed',
+        code: stage === 'auth' ? 'VISION_AUTH_UNAVAILABLE' : 'VISION_UPSTREAM_UNAVAILABLE',
+      });
       return;
     }
     res.status(502).json({ error: isKimi ? 'Kimi provider request failed' : 'Official provider request failed' });

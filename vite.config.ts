@@ -7,6 +7,7 @@ import { resolve, join } from 'path'
 import { homedir } from 'os'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { Plugin } from 'vite'
+import officialChatHandler from './api/official/v1/chat/completions'
 import sessionsHandler from './api/sessions'
 import onboardingHandler from './api/onboarding'
 import { privacyRouteMiddleware } from './server/privacy-route'
@@ -113,69 +114,21 @@ function airjellyProxy(): Plugin {
   }
 }
 
-// Local dev proxy for /api/official — mirrors the Vercel serverless function at
-// api/official/v1/chat/completions.ts so the 'official' provider works locally.
-// Reads OFFICIAL_API_KEY (or VITE_API_KEY as fallback) from the process env.
+// Use the same official chat routing and streaming in Vite and on Vercel.
 function officialApiDevMiddleware(): Plugin {
-  const UPSTREAM = 'https://api.deepseek.com/v1/chat/completions'
-
   return {
     name: 'official-api-dev-middleware',
     configureServer(server) {
-      server.middlewares.use(
-        '/api/official/v1/chat/completions',
-        async (req: IncomingMessage, res: ServerResponse) => {
-          if (req.method !== 'POST') {
-            res.statusCode = 405
-            res.end(JSON.stringify({ error: 'Method not allowed' }))
-            return
-          }
-
-          const apiKey = process.env.OFFICIAL_API_KEY || process.env.VITE_API_KEY || ''
-          if (!apiKey) {
-            res.statusCode = 500
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ error: 'OFFICIAL_API_KEY or VITE_API_KEY is not set in your .env file' }))
-            return
-          }
-
-          let body = ''
-          req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-          req.on('end', async () => {
-            try {
-              const upstream = await fetch(UPSTREAM, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${apiKey}`,
-                  'Content-Type': 'application/json',
-                },
-                body,
-              })
-
-              const contentType = upstream.headers.get('content-type') || 'application/json'
-              res.setHeader('Content-Type', contentType)
-              res.setHeader('Cache-Control', 'no-cache, no-transform')
-              res.statusCode = upstream.status
-
-              if (upstream.body) {
-                const reader = upstream.body.getReader()
-                const decoder = new TextDecoder()
-                while (true) {
-                  const { done, value } = await reader.read()
-                  if (done) break
-                  res.write(decoder.decode(value, { stream: true }))
-                }
-                res.end(decoder.decode())
-              } else {
-                res.end()
-              }
-            } catch (_err) {
-              res.statusCode = 502
-              res.end(JSON.stringify({ error: 'Official provider proxy failed' }))
-            }
-          })
+      server.middlewares.use('/api/official/v1/chat/completions', async (req, res) => {
+        try {
+          const body = req.method === 'POST' ? await readJsonBody(req) : undefined
+          await runVercelHandler(officialChatHandler, req, res, {}, body)
+        } catch {
+          res.statusCode = 400
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: 'Invalid JSON body' }))
         }
-      )
+      })
     },
   }
 }
@@ -356,7 +309,8 @@ function shareDevMiddleware(): Plugin {
 function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let body = ''
-    req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+    req.setEncoding('utf8')
+    req.on('data', (chunk: string) => { body += chunk })
     req.on('error', reject)
     req.on('end', () => {
       if (!body) {
@@ -373,7 +327,7 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 }
 
 function runVercelHandler(
-  handler: typeof sessionsHandler | typeof onboardingHandler,
+  handler: typeof sessionsHandler | typeof onboardingHandler | typeof officialChatHandler,
   req: IncomingMessage,
   res: ServerResponse,
   query: Record<string, string> = {},
@@ -381,6 +335,13 @@ function runVercelHandler(
 ): Promise<void> {
   return new Promise((resolve) => {
     const response = {
+      get headersSent() { return res.headersSent },
+      write(chunk: string) { return res.write(chunk) },
+      end(chunk?: string) {
+        res.end(chunk)
+        resolve()
+        return response
+      },
       status(code: number) {
         res.statusCode = code
         return response
@@ -538,7 +499,7 @@ export default defineConfig(({ command, mode }) => {
   // (officialApiDevMiddleware) read server-side keys from process.env, so
   // load the full .env here and merge any missing keys in (shell env wins).
   const env = loadEnv(mode, process.cwd(), '')
-  for (const key of ['OFFICIAL_API_KEY', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+  for (const key of ['OFFICIAL_API_KEY', 'OPENROUTER_API_KEY', 'OPENROUTER_VISION_MODEL', 'VITE_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
     if (!process.env[key] && env[key]) process.env[key] = env[key]
   }
 

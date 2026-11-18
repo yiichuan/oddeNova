@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import handler from '../../../api/official/v1/chat/completions';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
@@ -52,6 +52,7 @@ function makeRes(): TestResponse {
 }
 
 describe('/api/official/v1/chat/completions', () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -114,6 +115,79 @@ describe('/api/official/v1/chat/completions', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer sk-vite' }),
       }),
     );
+  });
+
+  const imageRequest = {
+    model: 'deepseek-flash',
+    messages: [
+      { role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://storage.test/signed' } }] },
+      { role: 'user', content: 'Read this score' },
+    ],
+    thinking: { type: 'enabled' },
+    tools: [{ type: 'function', function: { name: 'commit' } }],
+    stream: true,
+  };
+
+  it('runs image requests as a standalone OpenRouter analysis with a server key', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'sk-vision');
+    vi.stubEnv('OPENROUTER_VISION_MODEL', 'qwen/vision-test');
+    vi.stubEnv('SUPABASE_URL', 'https://auth.test');
+    vi.stubEnv('SUPABASE_ANON_KEY', 'anon-test');
+    const upstream = JSON.stringify({ choices: [{ message: { content: 'A sheet score' } }] });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ id: 'user-id' }))
+      .mockResolvedValueOnce(new Response(upstream, { headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = makeRes();
+
+    await handler(makeReq('POST', imageRequest, {}, { authorization: 'Bearer user-token' }),
+      res as unknown as VercelResponse);
+
+    expect(fetchMock.mock.calls[0][0]).toBe('https://auth.test/auth/v1/user');
+    const [url, request] = fetchMock.mock.calls[1];
+    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(request.headers.Authorization).toBe('Bearer sk-vision');
+    expect(JSON.parse(request.body)).toEqual({
+      model: 'qwen/vision-test',
+      messages: [
+        { role: 'system', content: expect.stringContaining('For sheet music') },
+        ...imageRequest.messages,
+      ],
+      max_tokens: 16384,
+      stream: false,
+    });
+    expect(res.chunks.join('')).toBe(upstream);
+  });
+
+  it('reports the OpenRouter failure stage without logging signed image URLs', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'sk-vision');
+    vi.stubEnv('SUPABASE_URL', 'https://auth.test');
+    vi.stubEnv('SUPABASE_ANON_KEY', 'anon-test');
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(Response.json({ id: 'user-id' }))
+      .mockRejectedValueOnce(new Error('https://storage.test/signed', { cause: { code: 'ECONNRESET' } })));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = makeRes();
+
+    await handler(makeReq('POST', imageRequest, {}, { authorization: 'Bearer user-token' }),
+      res as unknown as VercelResponse);
+
+    expect(res.statusCodeValue).toBe(502);
+    expect(res.jsonBody).toMatchObject({ code: 'VISION_UPSTREAM_UNAVAILABLE' });
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith('[openrouter-proxy] Vision request failed', {
+      stage: 'request', code: 'ECONNRESET',
+    });
+  });
+
+  it('does not spend the OpenRouter key on unsigned requests', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'sk-vision');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const res = makeRes();
+    await handler(makeReq('POST', imageRequest), res as unknown as VercelResponse);
+    expect(res.statusCodeValue).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('routes Kimi requests to Moonshot with the user Bearer token', async () => {

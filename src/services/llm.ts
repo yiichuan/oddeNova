@@ -1,4 +1,5 @@
-import { userContent, type ImageAttachment } from '../lib/image-attachments';
+import type { ImageAttachment } from '../lib/image-attachments';
+import { prepareUserText } from './image-understanding';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { buildSystemPrompt } from '../prompts/build-system-prompt';
@@ -469,8 +470,8 @@ export async function classifyIntent(
     : typeof latest === 'string' ? `${codeNote}\nuser latest message / 用户最新消息: ${latest}` : undefined;
   const messages: ChatMsg[] = [
     { role: 'system', content: INTENT_CLASSIFIER_PROMPT },
-    ...(opts.preparedHistory ?? await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await userContent(turn.content, turn.images) : turn.content })))),
-    { role: 'user', content: preparedLatest ?? await userContent(`${codeNote}\nuser latest message / 用户最新消息: ${instruction}`, opts.images) },
+    ...(opts.preparedHistory ?? await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await prepareUserText(turn.content, turn.images, signal) : turn.content })))),
+    { role: 'user', content: preparedLatest ?? await prepareUserText(`${codeNote}\nuser latest message / 用户最新消息: ${instruction}`, opts.images, signal) },
   ];
   try {
     const resp = await llm.chatWithTools(messages, [], undefined, undefined, signal, false);
@@ -491,8 +492,8 @@ export async function runAgent(
   conversationHistory?: ConversationTurn[],
   images?: ImageAttachment[],
 ): Promise<RunAgentResult> {
-  const preparedUserContent = await userContent(instruction, images);
-  const preparedHistory: ChatMsg[] = await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await userContent(turn.content, turn.images) : turn.content })));
+  const preparedUserContent = await prepareUserText(instruction, images, signal);
+  const preparedHistory: ChatMsg[] = await Promise.all((conversationHistory ?? []).map(async turn => ({ role: turn.role, content: turn.role === 'user' ? await prepareUserText(turn.content, turn.images, signal) : turn.content })));
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   const locale = isZh() ? 'zh' : 'en';
   const systemPrompt = buildSystemPrompt({

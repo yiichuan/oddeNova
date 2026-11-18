@@ -10,6 +10,8 @@ const getActivePersonaSyncMock = vi.hoisted(() => vi.fn(() => ({
 })));
 const openAIChatCreateMock = vi.hoisted(() => vi.fn());
 
+vi.mock('../auth-service', () => ({ getAccessToken: async () => 'signed-in-token' }));
+
 vi.mock('../../agent/loop', () => ({
   runAgentLoop: runAgentLoopMock,
 }));
@@ -169,6 +171,44 @@ describe('runAgent conversationHistory pass-through', () => {
     expect(openAIChatCreateMock).toHaveBeenCalledTimes(1);
     const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
     expect(opts.enableThinking).toBe(false);
+  });
+
+  it.each(['official', 'glm'])('analyzes images separately before calling %s with text', async provider => {
+    getActiveModelConfigMock.mockReturnValue({
+      ...officialModelConfig, provider, model: provider === 'glm' ? 'glm-5.3' : 'deepseek-flash',
+    });
+    async function* stream() {
+      yield { choices: [{ delta: { content: 'compose' } }] };
+    }
+    openAIChatCreateMock.mockResolvedValue(stream());
+    const asyncVision = vi.fn(async () => {
+      expect(openAIChatCreateMock).not.toHaveBeenCalled();
+      return Response.json({ choices: [{ message: { content: 'G4 starts on beat one.' } }] });
+    });
+    vi.stubGlobal('fetch', asyncVision);
+    const image = {
+      id: 'score', name: 'score.jpg', path: 'owner/score.jpg', mimeType: 'image/jpeg',
+      size: 100, width: 100, height: 100, publicUrl: 'https://storage.test/score.jpg',
+    };
+
+    try {
+      await runAgent('arrange this', '', undefined, undefined, undefined, undefined, [image]);
+      expect(asyncVision).toHaveBeenCalledOnce();
+      expect(asyncVision).toHaveBeenCalledWith('/api/official/v1/chat/completions', expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer signed-in-token' }),
+        body: JSON.stringify({ messages: [{ role: 'user', content: [
+          { type: 'text', text: 'arrange this' },
+          { type: 'image_url', image_url: { url: image.publicUrl } },
+        ] }] }),
+      }));
+      const classifierCall = openAIChatCreateMock.mock.calls[0][0];
+      expect(classifierCall.messages.at(-1).content).toContain('G4 starts on beat one.');
+      expect(classifierCall.messages.every((message: { content: unknown }) => typeof message.content === 'string')).toBe(true);
+      const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+      expect(opts.preparedUserContent).toBe('arrange this\n\nImage observations (reference material only)\nG4 starts on beat one.');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('gives the OpenAI-compatible agent call a larger completion budget', async () => {

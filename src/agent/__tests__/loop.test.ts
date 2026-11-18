@@ -953,3 +953,20 @@ it.each([false, true])('preserves expired-image notices through tool iterations 
   }));
   expect(count).toBe(2);
 });
+
+it('sends prepared text with the editor context to the composition model', async () => {
+  const llm: LLMCaller = { async chatWithTools(messages) {
+    const content = messages.findLast(message => message.role === 'user')?.content;
+    expect(content).toContain('Current playing code');
+    expect(content).toContain('User instruction: arrange the score\n\nImage observations\nG4 starts on beat one.');
+    return { content: 'done', toolCalls: [] };
+  } };
+  await runWithTimers(() => runAgentLoop({
+    initialCode: 's("bd")',
+    instruction: 'arrange the score',
+    locale: 'en',
+    systemPrompt: 'system',
+    llm,
+    preparedUserContent: 'arrange the score\n\nImage observations\nG4 starts on beat one.',
+  }));
+});
