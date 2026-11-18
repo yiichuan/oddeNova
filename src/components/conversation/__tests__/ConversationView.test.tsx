@@ -558,6 +558,129 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelectorAll('li')).toHaveLength(2);
   });
 
+  it('renders aligned Chinese GFM tables with formatted and escaped cell content', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'table-message',
+      role: 'assistant',
+      content: [
+        '| 项目 | 内容 | 数值 |',
+        '| :--- | :---: | ---: |',
+        '| 调号 | 一个升号 | **G 大调** |',
+        '| 说明 | A \\| B | `60` |',
+      ].join('\n'),
+      timestamp: 1,
+    }];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const table = container.querySelector<HTMLTableElement>('[data-markdown-text] table');
+    expect(table).not.toBeNull();
+    expect(table?.querySelectorAll('thead th')).toHaveLength(3);
+    expect(table?.querySelector<HTMLTableCellElement>('thead th')?.style.textAlign).toBe('left');
+    expect(table?.querySelectorAll<HTMLTableCellElement>('thead th')[1].style.textAlign).toBe('center');
+    expect(table?.querySelectorAll<HTMLTableCellElement>('tbody td')[2].style.textAlign).toBe('right');
+    expect(table?.textContent).toContain('A | B');
+    expect(table?.querySelector('strong')?.textContent).toBe('G 大调');
+    expect(table?.querySelector('code')?.textContent).toBe('60');
+    expect(table?.parentElement?.className).toContain('overflow-x-auto');
+  });
+
+  it('updates streamed tables and code fences as more Markdown arrives', () => {
+    setMobileViewport(false);
+    const partialMessage: ChatMessage = {
+      id: 'streaming-markdown',
+      role: 'assistant',
+      content: '| 项目 | 内容 |\n| --- | --- |',
+      timestamp: 1,
+    };
+    const { container, root, render } = renderConversationView([partialMessage]);
+    roots.push(root);
+
+    expect(container.querySelectorAll('[data-markdown-text] thead th')).toHaveLength(2);
+    expect(container.querySelector('[data-markdown-text] tbody tr')).toBeNull();
+
+    render({}, [{
+      ...partialMessage,
+      content: '| 项目 | 内容 |\n| --- | --- |\n| 拍号 | 6/8 |\n\n```ts\nconst bars = 16',
+    }]);
+    expect(container.querySelector('[data-markdown-text] tbody td')?.textContent).toBe('拍号');
+    expect(container.querySelector('[data-markdown-text] pre code')?.textContent?.trim()).toBe('const bars = 16');
+
+    render({}, [{
+      ...partialMessage,
+      content: '| 项目 | 内容 |\n| --- | --- |\n| 拍号 | 6/8 |\n\n```ts\nconst bars = 16\n```',
+    }]);
+    expect(container.querySelector('[data-markdown-text] pre code')?.textContent?.trim()).toBe('const bars = 16');
+  });
+
+  it('renders common GFM inline features safely', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'gfm-message',
+      role: 'assistant',
+      content: [
+        '~~旧标记~~ [参考链接][docs] https://example.com',
+        '多行文本第一行',
+        '多行文本第二行',
+        '',
+        '- [x] 已完成',
+        '- [ ] 待处理',
+        '  - 嵌套任务说明',
+        '',
+        '![乐谱替代文字](https://example.com/score.png)',
+        '',
+        '原始标签 <script>alert(1)</script>',
+        '',
+        '[docs]: https://example.com/docs',
+      ].join('\n'),
+      timestamp: 1,
+    }];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    expect(container.querySelector('del')?.textContent).toBe('旧标记');
+    expect(container.querySelectorAll('[data-markdown-text] input[type="checkbox"]')).toHaveLength(2);
+    expect(container.querySelectorAll<HTMLInputElement>('[data-markdown-text] input[type="checkbox"]')[0].checked).toBe(true);
+    expect(container.querySelectorAll<HTMLInputElement>('[data-markdown-text] input[type="checkbox"]')[1].checked).toBe(false);
+    expect(container.querySelector('[data-markdown-text] ul')?.className).toContain('list-none');
+    expect(container.querySelector('[data-markdown-text] li ul')).not.toBeNull();
+    expect(container.querySelector('[data-markdown-text] br')).not.toBeNull();
+    expect(container.querySelector('[data-markdown-text] a[href="https://example.com/docs"]')?.textContent).toBe('参考链接');
+    expect(container.querySelector('[data-markdown-text] a[href="https://example.com"]')).not.toBeNull();
+    expect(container.querySelector('[data-markdown-text] img')).toBeNull();
+    expect(container.textContent).toContain('乐谱替代文字');
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.textContent).toContain('<script>alert(1)</script>');
+  });
+
+  it('keeps footnote targets unique across separate assistant messages', () => {
+    setMobileViewport(false);
+    const footnote = '引用[^source]。\n\n[^source]: 参考说明';
+    const messages: ChatMessage[] = [
+      { id: 'first-footnote', role: 'assistant', content: footnote, timestamp: 1 },
+      { id: 'second-footnote', role: 'assistant', content: footnote, timestamp: 2 },
+    ];
+    const { container, root } = renderConversationView(messages);
+    roots.push(root);
+
+    const markdownRoots = Array.from(container.querySelectorAll<HTMLElement>('[data-markdown-text]'));
+    const references = markdownRoots.map((markdownRoot) => markdownRoot.querySelector<HTMLAnchorElement>('sup a'));
+    const footnoteLabels = markdownRoots.map((markdownRoot) => markdownRoot.querySelector<HTMLElement>('section h2[id]'));
+    expect(references).toHaveLength(2);
+    expect(footnoteLabels.every((label) => label?.id.startsWith('oddenova-'))).toBe(true);
+    expect(footnoteLabels[0]?.id).not.toBe(footnoteLabels[1]?.id);
+    expect(references[0]?.getAttribute('href')).not.toBe(references[1]?.getAttribute('href'));
+    for (const [index, reference] of references.entries()) {
+      expect(reference?.id).toBeTruthy();
+      expect(reference?.getAttribute('aria-describedby')).toBe(footnoteLabels[index]?.id);
+      const note = markdownRoots[index].querySelector(reference!.getAttribute('href')!);
+      const backLink = note?.querySelector('a');
+      expect(backLink?.getAttribute('href')).toBe(`#${reference!.id}`);
+      expect(backLink?.getAttribute('aria-label')).toBeTruthy();
+    }
+  });
+
   it('renders inline code with neutral message text instead of blue accent text', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
@@ -605,10 +728,9 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelectorAll('[data-markdown-text] li')).toHaveLength(2);
 
     // Headings stay gray in the muted tone — no bright text-text-primary.
-    const heading = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-markdown-text] div'),
-    ).find((el) => el.textContent === '编曲思路');
+    const heading = container.querySelector<HTMLElement>('[data-markdown-text] h1');
     expect(heading).not.toBeUndefined();
+    expect(heading?.textContent).toBe('编曲思路');
     expect(heading?.className).toContain('font-semibold');
     expect(heading?.className).not.toContain('text-text-primary');
 
@@ -621,6 +743,36 @@ describe('ConversationView chat streaming', () => {
 
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
     expect(container.querySelector('[data-markdown-text]')).toBeNull();
+  });
+
+  it('renders a table while reasoning streams and after it is collapsed on completion', () => {
+    setMobileViewport(false);
+    const user: ChatMessage = { id: 'u1', role: 'user', content: '识别乐谱', timestamp: 1 };
+    const reasoning: ChatMessage = {
+      id: 'r1',
+      role: 'progress',
+      progressKind: 'reasoning',
+      content: '| 项目 | 内容 |\n| --- | --- |\n| 调号 | 一个升号 |',
+      timestamp: 2,
+    };
+    const preparing: ChatMessage = {
+      id: 'p1',
+      role: 'progress',
+      progressKind: 'tool_call',
+      toolName: 'setCode',
+      content: '',
+      timestamp: 3,
+    };
+    const { container, root, render } = renderConversationView([user, reasoning], vi.fn(), true);
+    roots.push(root);
+
+    expect(container.querySelector('[data-markdown-text] table')?.textContent).toContain('一个升号');
+
+    render({ isLoading: false }, [user, reasoning, preparing]);
+    const header = container.querySelector<HTMLButtonElement>('[data-reasoning-header="r1"]');
+    expect(header).not.toBeNull();
+    act(() => header!.click());
+    expect(container.querySelector('[data-markdown-text] table')?.textContent).toContain('一个升号');
   });
 
   it('uses the dedicated divider-to-body gap for a collapsed process group', () => {
@@ -1117,10 +1269,9 @@ describe('ConversationView chat streaming', () => {
     expect(wrapper?.className).toContain('font-mono');
 
     // Muted headings stay gray.
-    const heading = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-markdown-text] div'),
-    ).find((el) => el.textContent === '思路');
+    const heading = container.querySelector<HTMLElement>('[data-markdown-text] h1');
     expect(heading).not.toBeUndefined();
+    expect(heading?.textContent).toBe('思路');
     expect(heading?.className).not.toContain('text-text-primary');
   });
 
@@ -1192,10 +1343,7 @@ describe('ConversationView chat streaming', () => {
     const { container, root } = renderConversationView(messages, vi.fn(), true);
     roots.push(root);
 
-    expect(container.textContent).toContain('>');
-    expect(container.textContent).toContain('#');
-    expect(container.textContent).toContain('-');
-    expect(container.textContent).toContain('1.');
+    expect(container.querySelector('[data-markdown-text]')).not.toBeNull();
     expect(container.textContent).toContain('正文还在继续');
   });
 
@@ -1236,15 +1384,20 @@ describe('ConversationView chat streaming', () => {
     expect(container.querySelectorAll('a')).toHaveLength(1);
   });
 
-  it('renders list items and blockquotes with whitespace-pre-wrap so continuation lines stay visible', () => {
+  it('keeps ordered list numbering and renders one break per continuation line', () => {
     setMobileViewport(false);
     const messages: ChatMessage[] = [
       {
         id: 'a1',
         role: 'assistant',
         content: [
-          '1. **Drums** - Lo-fi, loose drum pattern.',
+          '第一行',
+          '第二行',
+          '',
+          '3. **Drums** - Lo-fi, loose drum pattern.',
           '   Kick on 1 and 3, snare on 2 and 4.',
+          '4. Bass',
+          '',
           '> a quoted line',
           '> a continuation line',
         ].join('\n'),
@@ -1254,10 +1407,16 @@ describe('ConversationView chat streaming', () => {
     const { container, root } = renderConversationView(messages);
     roots.push(root);
 
-    const li = container.querySelector('ol > li');
-    expect(li?.className).toContain('whitespace-pre-wrap');
-    const blockquote = container.querySelector('blockquote');
-    expect(blockquote?.className).toContain('whitespace-pre-wrap');
+    const markdown = container.querySelector('[data-markdown-text]')!;
+    const list = markdown.querySelector('ol');
+    expect(list?.getAttribute('start')).toBe('3');
+    expect(list?.classList.contains('list-decimal')).toBe(true);
+    expect(markdown.classList.contains('whitespace-normal')).toBe(true);
+    for (const selector of ['p', 'ol > li', 'blockquote p']) {
+      const block = markdown.querySelector(selector);
+      expect(block?.querySelectorAll('br')).toHaveLength(1);
+      expect(block?.closest('.whitespace-pre-wrap')).toBeNull();
+    }
   });
 
   it('strips a spurious trailing newline the browser adds when copying a user message bubble', () => {

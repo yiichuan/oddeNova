@@ -1,5 +1,8 @@
 import MessageImages from './MessageImages';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense, type ClipboardEvent, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import type { ChatMessage } from '../../hooks/useChat';
 import type { CodeRevision } from '../../hooks/useSessions';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -81,22 +84,6 @@ const mobileRollbackBubbleStyle: MobileNoSelectStyle = {
   WebkitTouchCallout: 'none',
 };
 
-const inlineCodeToneClass: Record<MarkdownTone, string> = {
-  default: 'text-text-secondary',
-  muted: 'text-text-secondary/80',
-};
-
-const blockCodeToneClass: Record<MarkdownTone, string> = {
-  default: 'text-code-block',
-  muted: 'text-text-secondary/75',
-};
-
-// Muted headings add no color class so they inherit the surrounding gray.
-const headingToneClass: Record<MarkdownTone, string> = {
-  default: 'text-text-primary',
-  muted: '',
-};
-
 // Thinking duration: "45s" under a minute, "2m 5s" above; whole minutes drop
 // the seconds ("5m" not "5m 0s").
 // eslint-disable-next-line react-refresh/only-export-components -- archive stream shares this formatter.
@@ -132,114 +119,115 @@ function isSafeUrl(url: string): boolean {
   }
 }
 
-function parseInlineMarkdown(text: string, keyPrefix: string, tone: MarkdownTone = 'default'): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  let i = 0;
-  let key = 0;
+function createMarkdownComponents(tone: MarkdownTone, footnotePrefix: string): Components {
+  const headingColor = tone === 'default' ? 'text-text-primary' : '';
+  const inlineCodeColor = tone === 'default' ? 'text-text-secondary' : 'text-text-secondary/80';
+  const tableHeadingColor = tone === 'default' ? 'text-text-primary' : 'text-text-secondary';
+  const footnoteLabelId = `${footnotePrefix}footnote-label`;
 
-  const pushText = (value: string) => {
-    if (value) nodes.push(value);
+  return {
+    a: ({ children, href, id, 'aria-describedby': describedBy, 'aria-label': label }) => {
+      if (typeof href !== 'string' || !isSafeUrl(href)) return <>{children}</>;
+      const isFragment = href.startsWith('#');
+      return (
+        <a
+          href={href}
+          id={id}
+          aria-describedby={describedBy === 'footnote-label' ? footnoteLabelId : describedBy}
+          aria-label={label}
+          {...(isFragment ? {} : { target: '_blank', rel: 'noreferrer' })}
+          className="text-diff-accent underline decoration-diff-accent/40 underline-offset-2 hover:decoration-diff-accent"
+        >
+          {children}
+        </a>
+      );
+    },
+    blockquote: ({ children }) => (
+      <blockquote className="my-1 border-l border-diff-accent/30 pl-3 text-text-secondary">
+        {children}
+      </blockquote>
+    ),
+    code: ({ children, className }) => (
+      <code className={`rounded bg-surface-selected px-1 py-0.5 font-mono text-[0.92em] [overflow-wrap:anywhere] ${inlineCodeColor} ${className ?? ''}`}>
+        {children}
+      </code>
+    ),
+    del: ({ children }) => <del className="opacity-75">{children}</del>,
+    h1: ({ children }) => <h1 className={`mt-1 text-lg font-semibold leading-snug ${headingColor}`.trim()}>{children}</h1>,
+    h2: ({ children, className, id }) => (
+      <h2
+        id={id === 'footnote-label' ? footnoteLabelId : id}
+        className={`${className ?? ''} mt-1 text-base font-semibold leading-snug ${headingColor}`.trim()}
+      >
+        {children}
+      </h2>
+    ),
+    h3: ({ children }) => <h3 className={`mt-1 text-sm font-semibold leading-snug ${headingColor}`.trim()}>{children}</h3>,
+    h4: ({ children }) => <h4 className={`mt-1 text-sm font-semibold leading-snug ${headingColor}`.trim()}>{children}</h4>,
+    h5: ({ children }) => <h5 className={`mt-1 text-sm font-semibold leading-snug ${headingColor}`.trim()}>{children}</h5>,
+    h6: ({ children }) => <h6 className={`mt-1 text-sm font-semibold leading-snug ${headingColor}`.trim()}>{children}</h6>,
+    hr: () => <hr className="my-3 border-0 border-t border-border" />,
+    img: ({ alt }) => <span className="text-text-secondary">{alt ?? ''}</span>,
+    input: ({ checked, type }) => type === 'checkbox'
+      ? <input type="checkbox" checked={Boolean(checked)} disabled aria-label={checked ? 'Completed' : 'Not completed'} className="mr-1 align-middle accent-diff-accent" />
+      : null,
+    li: ({ children, className, node, ...props }) => {
+      const classes = node?.properties.className;
+      const isTask = Array.isArray(classes) && classes.includes('task-list-item');
+      return (
+        <li {...props} className={`${className ?? ''} ${isTask ? 'list-none [&>input]:mr-1' : 'list-item'}`}>
+          {children}
+        </li>
+      );
+    },
+    ol: ({ children, start }) => (
+      <ol start={start} className="my-1 list-decimal space-y-0.5 pl-4">
+        {children}
+      </ol>
+    ),
+    pre: ({ children }) => (
+      <pre className="my-2 overflow-x-auto rounded-md bg-auth-field p-2 font-mono text-[11px] leading-relaxed text-code-block [&>code]:block [&>code]:rounded-none [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-inherit [&>code]:whitespace-pre">
+        {children}
+      </pre>
+    ),
+    section: ({ children, className, node: _node, ...props }) => <section {...props} className={`${className ?? ''} my-2 text-sm text-text-secondary`.trim()}>{children}</section>,
+    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+    table: ({ children }) => (
+      <div className="my-2 w-full max-w-full overflow-x-auto rounded-md border border-border">
+        <table className="w-max min-w-full border-collapse text-left text-sm [overflow-wrap:anywhere]">
+          {children}
+        </table>
+      </div>
+    ),
+    th: ({ children, align, style }) => (
+      <th
+        style={{ ...style, textAlign: style?.textAlign ?? (align as 'left' | 'center' | 'right' | undefined) }}
+        className={`max-w-[min(24rem,70vw)] border-b border-border bg-surface-selected px-2 py-1.5 align-top font-semibold ${tableHeadingColor}`.trim()}
+      >
+        {children}
+      </th>
+    ),
+    td: ({ children, align, style }) => (
+      <td
+        style={{ ...style, textAlign: style?.textAlign ?? (align as 'left' | 'center' | 'right' | undefined) }}
+        className="max-w-[min(24rem,70vw)] border-b border-border/70 px-2 py-1.5 align-top last:border-b-0"
+      >
+        {children}
+      </td>
+    ),
+    ul: ({ children, node }) => {
+      const classes = node?.properties.className;
+      const isTaskList = Array.isArray(classes) && classes.includes('contains-task-list');
+      return (
+        <ul className={`my-1 space-y-0.5 ${isTaskList ? 'list-none pl-0' : 'list-disc pl-4'}`}>
+          {children}
+        </ul>
+      );
+    },
   };
-
-  while (i < text.length) {
-    const codeStart = text.indexOf('`', i);
-    const boldStarStart = text.indexOf('**', i);
-    const boldUnderscoreStart = text.indexOf('__', i);
-    const italicStarStart = text.indexOf('*', i);
-    const italicUnderscoreStart = text.indexOf('_', i);
-    const linkStart = text.indexOf('[', i);
-
-    const candidates = [
-      codeStart,
-      boldStarStart,
-      boldUnderscoreStart,
-      italicStarStart,
-      italicUnderscoreStart,
-      linkStart,
-    ].filter((idx) => idx >= 0);
-
-    const next = candidates.length > 0 ? Math.min(...candidates) : -1;
-    if (next === -1) {
-      pushText(text.slice(i));
-      break;
-    }
-
-    pushText(text.slice(i, next));
-
-    if (next === codeStart) {
-      const end = text.indexOf('`', next + 1);
-      if (end === -1) {
-        pushText(text.slice(next));
-        break;
-      }
-      nodes.push(
-        <code key={`${keyPrefix}-code-${key++}`} className={`rounded bg-surface-selected px-1 py-0.5 font-mono text-[0.92em] [overflow-wrap:anywhere] ${inlineCodeToneClass[tone]}`}>
-          {text.slice(next + 1, end)}
-        </code>,
-      );
-      i = end + 1;
-      continue;
-    }
-
-    if (next === linkStart) {
-      const labelEnd = text.indexOf(']', next + 1);
-      const hrefStart = labelEnd >= 0 ? text.indexOf('(', labelEnd + 1) : -1;
-      const hrefEnd = hrefStart >= 0 ? text.indexOf(')', hrefStart + 1) : -1;
-      if (labelEnd === -1 || hrefStart !== labelEnd + 1 || hrefEnd === -1) {
-        pushText(text[next]);
-        i = next + 1;
-        continue;
-      }
-      const label = text.slice(next + 1, labelEnd);
-      const href = text.slice(hrefStart + 1, hrefEnd).trim();
-      if (!isSafeUrl(href)) {
-        pushText(label);
-      } else {
-        nodes.push(
-          <a
-            key={`${keyPrefix}-link-${key++}`}
-            href={href}
-            target="_blank"
-            rel="noreferrer"
-            className="text-diff-accent underline decoration-diff-accent/40 underline-offset-2 hover:decoration-diff-accent"
-          >
-            {parseInlineMarkdown(label, `${keyPrefix}-link-${key}`, tone)}
-          </a>,
-        );
-      }
-      i = hrefEnd + 1;
-      continue;
-    }
-
-    const marker = text.startsWith('**', next) || text.startsWith('__', next)
-      ? text.slice(next, next + 2)
-      : text[next];
-    const end = text.indexOf(marker, next + marker.length);
-    if (end === -1) {
-      pushText(marker);
-      i = next + marker.length;
-      continue;
-    }
-
-    const inner = text.slice(next + marker.length, end);
-    if (marker === '**' || marker === '__') {
-      nodes.push(
-        <strong key={`${keyPrefix}-strong-${key++}`} className="font-semibold">
-          {parseInlineMarkdown(inner, `${keyPrefix}-strong-${key}`, tone)}
-        </strong>,
-      );
-    } else {
-      nodes.push(
-        <em key={`${keyPrefix}-em-${key++}`} className="italic">
-          {parseInlineMarkdown(inner, `${keyPrefix}-em-${key}`, tone)}
-        </em>,
-      );
-    }
-    i = end + marker.length;
-  }
-
-  return nodes;
 }
+
+const markdownPlugins = [remarkGfm, remarkBreaks];
 
 // ChatInput.doSubmit() always .trim()s before a user message is stored, so a
 // stored user message's content can never legitimately start or end with a
@@ -261,207 +249,26 @@ function handleUserBubbleCopy(e: ClipboardEvent<HTMLElement>) {
 }
 
 /**
- * Memoized on purpose, not out of habit. The whole conversation re-renders on
- * every streamed token — the session object it reads changes once per delta —
- * and re-parsing every finished message's markdown each time is O(messages ×
- * tokens) of regex and element building for output that cannot have changed.
- * Both props are primitives, so the default comparison is the right one: only
- * the message actually being streamed re-parses.
+ * Memoized so completed messages skip parsing during each streamed token.
  */
 export const MarkdownText = memo(function MarkdownText({ content, tone = 'default' }: { content: string; tone?: MarkdownTone }) {
-  const lines = content.split('\n');
-  const blocks: ReactNode[] = [];
-  let i = 0;
-  let key = 0;
-
-  const isBlockStart = (value: string) => (
-    /^```/.test(value.trim()) ||
-    /^\s{0,3}#{1,6}\s+/.test(value) ||
-    /^\s*([-*+])\s+/.test(value) ||
-    /^\s*\d+\.\s+/.test(value) ||
-    /^\s*>\s?/.test(value) ||
-    /^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(value)
-  );
-
-  const collectParagraph = () => {
-    const paragraph: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() !== '' &&
-      !isBlockStart(lines[i])
-    ) {
-      paragraph.push(lines[i]);
-      i += 1;
-    }
-    return paragraph.join('\n');
-  };
-
-  const nextNonBlankLineIndex = (start: number) => {
-    let next = start;
-    while (next < lines.length && lines[next].trim() === '') {
-      next += 1;
-    }
-    return next;
-  };
-
-  while (i < lines.length) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (trimmed === '') {
-      i += 1;
-      continue;
-    }
-
-    if (trimmed.startsWith('```')) {
-      const code: string[] = [];
-      i += 1;
-      while (i < lines.length && !lines[i].trim().startsWith('```')) {
-        code.push(lines[i]);
-        i += 1;
-      }
-      if (i < lines.length) i += 1;
-      blocks.push(
-        <pre key={`md-code-${key++}`} className={`my-2 overflow-x-auto rounded-md bg-auth-field p-2 font-mono text-[11px] leading-relaxed ${blockCodeToneClass[tone]}`}>
-          <code>{code.join('\n')}</code>
-        </pre>,
-      );
-      continue;
-    }
-
-    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
-    if (heading) {
-      blocks.push(
-        <div key={`md-heading-${key++}`} className={`mt-1 font-semibold ${headingToneClass[tone]}`.trim()}>
-          {parseInlineMarkdown(heading[2], `md-heading-${key}`, tone)}
-        </div>,
-      );
-      i += 1;
-      continue;
-    }
-
-    if (/^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/.test(line)) {
-      blocks.push(<hr key={`md-hr-${key++}`} className="my-3 border-0 border-t border-border" />);
-      i += 1;
-      continue;
-    }
-
-    const unordered = line.match(/^\s*([-*+])\s+(.+)$/);
-    if (unordered) {
-      const items: string[] = [];
-      while (i < lines.length) {
-        const item = lines[i].match(/^\s*([-*+])\s+(.+)$/);
-        if (!item) break;
-        const parts = [item[2]];
-        i += 1;
-        while (
-          i < lines.length &&
-          lines[i].trim() !== '' &&
-          !isBlockStart(lines[i])
-        ) {
-          parts.push(lines[i].trim());
-          i += 1;
-        }
-        items.push(parts.join('\n'));
-        if (i < lines.length && lines[i].trim() === '') {
-          const next = nextNonBlankLineIndex(i);
-          if (next < lines.length && /^\s*([-*+])\s+(.+)$/.test(lines[next])) {
-            i = next;
-          }
-        }
-      }
-      blocks.push(
-        <ul key={`md-ul-${key++}`} className="my-1 list-disc space-y-0.5 pl-4">
-          {items.map((item, idx) => (
-            <li key={`md-ul-${key}-${idx}`} className="whitespace-pre-wrap break-words">
-              {parseInlineMarkdown(item, `md-ul-${key}-${idx}`, tone)}
-            </li>
-          ))}
-        </ul>,
-      );
-      continue;
-    }
-
-    const ordered = line.match(/^\s*\d+\.\s+(.+)$/);
-    if (ordered) {
-      const items: string[] = [];
-      while (i < lines.length) {
-        const item = lines[i].match(/^\s*\d+\.\s+(.+)$/);
-        if (!item) break;
-        const parts = [item[1]];
-        i += 1;
-        while (
-          i < lines.length &&
-          lines[i].trim() !== '' &&
-          !isBlockStart(lines[i])
-        ) {
-          parts.push(lines[i].trim());
-          i += 1;
-        }
-        items.push(parts.join('\n'));
-        if (i < lines.length && lines[i].trim() === '') {
-          const next = nextNonBlankLineIndex(i);
-          if (next < lines.length && /^\s*\d+\.\s+(.+)$/.test(lines[next])) {
-            i = next;
-          }
-        }
-      }
-      blocks.push(
-        <ol key={`md-ol-${key++}`} className="my-1 list-decimal space-y-0.5 pl-4">
-          {items.map((item, idx) => (
-            <li key={`md-ol-${key}-${idx}`} className="whitespace-pre-wrap break-words">
-              {parseInlineMarkdown(item, `md-ol-${key}-${idx}`, tone)}
-            </li>
-          ))}
-        </ol>,
-      );
-      continue;
-    }
-
-    const quote = line.match(/^\s*>\s?(.+)$/);
-    if (quote) {
-      const quoted: string[] = [];
-      while (i < lines.length) {
-        const current = lines[i].match(/^\s*>\s?(.*)$/);
-        if (!current) break;
-        quoted.push(current[1]);
-        i += 1;
-      }
-      blocks.push(
-        <blockquote key={`md-quote-${key++}`} className="my-1 whitespace-pre-wrap break-words border-l border-diff-accent/30 pl-3 text-text-secondary">
-          {parseInlineMarkdown(quoted.join('\n'), `md-quote-${key}`, tone)}
-        </blockquote>,
-      );
-      continue;
-    }
-
-    const paragraphStart = i;
-    const paragraph = collectParagraph();
-    if (i === paragraphStart) {
-      // Streaming markdown can pause on an unfinished block marker like "> " or "- ".
-      // Treat it as plain text so the renderer always makes progress.
-      const fallbackKey = key++;
-      blocks.push(
-        <p key={`md-p-${fallbackKey}`} className="whitespace-pre-wrap break-words">
-          {parseInlineMarkdown(line, `md-p-${fallbackKey}`, tone)}
-        </p>,
-      );
-      i += 1;
-      continue;
-    }
-    blocks.push(
-      <p key={`md-p-${key++}`} className="whitespace-pre-wrap break-words">
-        {parseInlineMarkdown(paragraph, `md-p-${key}`, tone)}
-      </p>,
-    );
-  }
-
+  const reactId = useId();
+  const footnotePrefix = `oddenova-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}-`;
+  const remarkRehypeOptions = useMemo(() => ({ clobberPrefix: footnotePrefix }), [footnotePrefix]);
+  const components = useMemo(() => createMarkdownComponents(tone, footnotePrefix), [tone, footnotePrefix]);
   return (
     <div
       data-markdown-text
-      className="min-w-0 max-w-full space-y-2 break-words [overflow-wrap:anywhere]"
+      className="min-w-0 max-w-full space-y-2 whitespace-normal break-words [overflow-wrap:anywhere]"
     >
-      {blocks}
+      <ReactMarkdown
+        remarkPlugins={markdownPlugins}
+        remarkRehypeOptions={remarkRehypeOptions}
+        components={components}
+        urlTransform={(url) => (isSafeUrl(url) ? url : undefined)}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 });
