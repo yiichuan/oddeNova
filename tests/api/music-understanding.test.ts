@@ -68,6 +68,28 @@ describe('music understanding route', () => {
     });
   });
 
+  it('accepts the full compatible endpoint without appending the route twice', async () => {
+    vi.stubEnv('QWEN_OMNI_BASE_URL', 'https://qwen.example/compatible-mode/v1/chat/completions/');
+    expect((await post(wav())).status).toBe(200);
+    expect(String(fetchUpstream.mock.calls[0][0])).toBe('https://qwen.example/compatible-mode/v1/chat/completions');
+  });
+
+  it('rejects a non-compatible provider URL before forwarding audio', async () => {
+    vi.stubEnv('QWEN_OMNI_BASE_URL', 'https://qwen.example/api/v1');
+    expect(await post(wav())).toEqual({ status: 503, data: { code: 'invalid_provider_url' } });
+    expect(fetchUpstream).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, 'provider_auth_failed'],
+    [403, 'provider_auth_failed'],
+    [405, 'provider_endpoint_failed'],
+    [400, 'provider_rejected_audio'],
+  ])('distinguishes Qwen status %i from the studio response', async (status, code) => {
+    fetchUpstream.mockResolvedValueOnce(Response.json({ private: 'upstream details' }, { status }));
+    expect(await post(wav())).toEqual({ status: 502, data: { code } });
+  });
+
   it('checks authentication and audio validity before charging for a request', async () => {
     vi.mocked(authenticateUser).mockResolvedValueOnce(null);
     expect((await post(wav())).status).toBe(401);
@@ -75,9 +97,9 @@ describe('music understanding route', () => {
     expect(fetchUpstream).not.toHaveBeenCalled();
   });
 
-  it('rejects an incomplete model result', async () => {
+  it.each(['not JSON', '{"melody":"humming"}'])('rejects invalid model output %s', async (content) => {
     fetchUpstream.mockResolvedValueOnce(Response.json({
-      choices: [{ message: { content: '{"melody":"humming"}' }, finish_reason: 'stop' }],
+      choices: [{ message: { content }, finish_reason: 'stop' }],
     }));
     expect(await post(wav())).toEqual({ status: 502, data: { code: 'invalid_result' } });
   });
