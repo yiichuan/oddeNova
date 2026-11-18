@@ -865,7 +865,7 @@ export class StrudelService {
     return described;
   };
 
-  /* (name:n) pairs whose audio has been fetched at least once — see previewSound. */
+  /* Sound, variant and pitch combinations whose audio has already been fetched. */
   private warmedPreviews = new Set<string>();
 
   /**
@@ -887,15 +887,13 @@ export class StrudelService {
     await this.prepareAudioForPlayback();
     const { superdough, getAudioContext, getSound } = await import('superdough');
     const info = describeRegisteredSound(getSound(name)?.data);
-    const event = () => buildPreviewEvent(name, info, options);
+    const play = buildPreviewEvent(name, info, options);
 
-    const key = `${name}:${info?.kind === 'sample' ? options.variant ?? 0 : options.note ?? ''}`;
+    const key = `${name}:${play.value.n ?? ''}:${play.value.note ?? ''}`;
     if (!this.warmedPreviews.has(key)) {
-      const warm = event();
-      await superdough({ ...warm.value, gain: 0 }, getAudioContext().currentTime + PREVIEW_LEAD_SECONDS, warm.duration);
+      await superdough({ ...play.value, gain: 0 }, getAudioContext().currentTime + PREVIEW_LEAD_SECONDS, play.duration);
       this.warmedPreviews.add(key);
     }
-    const play = event();
     await superdough(play.value, getAudioContext().currentTime + PREVIEW_LEAD_SECONDS, play.duration);
   };
 

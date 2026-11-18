@@ -18,7 +18,7 @@ export type SoundKind = 'sample' | 'pitched';
 
 export interface SoundInfo {
   kind: SoundKind;
-  /** How many recordings `n` can choose between. 1 for anything pitched. */
+  /** How many recordings or soundfont presets `n` can choose between. */
   variants: number;
 }
 
@@ -26,10 +26,14 @@ export interface SoundInfo {
 export interface RegisteredSoundData {
   type?: string;
   samples?: unknown;
+  fonts?: readonly string[];
 }
 
 export function describeRegisteredSound(data: RegisteredSoundData | undefined): SoundInfo | null {
   if (!data) return null;
+  if (data.type === 'soundfont') {
+    return { kind: 'pitched', variants: Math.max(data.fonts?.length ?? 0, 1) };
+  }
   if (data.type === 'sample') {
     /* A plain list is a folder of hits; a map keyed by note name is one
        instrument recorded across its range. */
@@ -71,22 +75,24 @@ export function buildPreviewEvent(
   info: SoundInfo | null,
   options: { variant?: number; note?: string } = {},
 ): PreviewEvent {
+  const variants = info?.variants ?? 1;
+  const n = ((options.variant ?? 0) % variants + variants) % variants;
   if (info?.kind === 'pitched') {
     return {
       value: {
         s: name,
         note: options.note ?? DEFAULT_NOTE,
+        ...(variants > 1 ? { n } : {}),
         release: PITCHED_RELEASE_SECONDS,
         cut: AUDITION_CUT_GROUP,
       },
       duration: PITCHED_PREVIEW_SECONDS,
     };
   }
-  const variants = info?.variants ?? 1;
   return {
     value: {
       s: name,
-      n: ((options.variant ?? 0) % variants + variants) % variants,
+      n,
       /* Both are needed for the cap to hold: without `clip` (or a release)
          superdough plays a sample for its own full length, whatever the
          event's duration says. */
