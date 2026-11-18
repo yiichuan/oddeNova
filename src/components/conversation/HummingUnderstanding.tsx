@@ -8,6 +8,12 @@ import type { LocalHummingDraft } from '../../types/humming';
 const errorMessages: Partial<Record<string, Parameters<typeof t>[0]>> = {
   sign_in_required: 'hummingUnderstandingSignIn',
   not_configured: 'hummingUnderstandingUnavailable',
+  invalid_provider_url: 'hummingUnderstandingProviderUrl',
+  provider_endpoint_failed: 'hummingUnderstandingProviderUrl',
+  provider_auth_failed: 'hummingUnderstandingProviderAuth',
+  provider_rejected_audio: 'hummingUnderstandingProviderInput',
+  invalid_result: 'hummingUnderstandingInvalidResult',
+  session_check_failed: 'hummingUnderstandingSessionCheck',
   invalid_audio: 'hummingUnderstandingInvalidAudio',
   audio_too_large: 'hummingUnderstandingInvalidAudio',
   rate_limited: 'hummingUnderstandingRateLimited',
