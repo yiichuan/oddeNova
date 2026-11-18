@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import handler from '../../api/official/v1/tools/music-understanding';
 import { authenticateUser } from '../../server/session-utils';
 import { encodeWav16 } from '../../src/lib/wav';
-import { MUSIC_ANALYSIS_SAMPLE_RATE } from '../../shared/music-understanding';
+import { MUSIC_ANALYSIS_SAMPLE_RATE, parseMusicUnderstanding } from '../../shared/music-understanding';
 
 vi.mock('../../server/session-utils', () => ({ authenticateUser: vi.fn() }));
 
@@ -17,11 +17,8 @@ const analysis = {
   rhythm: 'Two short phrases separated by a pause.',
   suggestions: 'Keep the final note long.',
 };
-const normalizedAnalysis = {
-  ...analysis,
-  timeSignature: analysis.time_signature,
-};
-delete (normalizedAnalysis as { time_signature?: string }).time_signature;
+const { time_signature, ...analysisFields } = analysis;
+const normalizedAnalysis = { ...analysisFields, timeSignature: time_signature };
 const fetchUpstream = vi.fn<typeof fetch>();
 
 async function post(audio: Buffer) {
@@ -65,7 +62,11 @@ describe('music understanding route', () => {
 
   it('sends the exact WAV to Qwen and returns the validated analysis', async () => {
     const audio = wav();
-    expect(await post(audio)).toEqual({ status: 200, data: normalizedAnalysis });
+    const { status, data } = await post(audio);
+    expect(status).toBe(200);
+    expect(data).toEqual(normalizedAnalysis);
+    // The browser validates the proxy response again before displaying it.
+    expect(parseMusicUnderstanding(data)).toEqual(normalizedAnalysis);
     const [url, init] = fetchUpstream.mock.calls[0];
     expect(String(url)).toBe('https://qwen.example/compatible-mode/v1/chat/completions');
     expect(JSON.parse(String(init?.body))).toMatchObject({

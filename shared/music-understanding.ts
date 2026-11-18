@@ -20,7 +20,8 @@ export function parseMusicUnderstanding(value: unknown): MusicUnderstanding | nu
     melody,
     notes,
     bpm,
-    time_signature: timeSignature,
+    time_signature: providerTimeSignature,
+    timeSignature: appTimeSignature,
     harmony,
     rhythm,
     suggestions,
@@ -33,6 +34,7 @@ export function parseMusicUnderstanding(value: unknown): MusicUnderstanding | nu
   const validText = (text: unknown): text is string =>
     typeof text === 'string' && text.trim().length > 0 && text.length <= 1200;
   if (!validText(melody) || !validText(rhythm) || !validText(suggestions)) return null;
+  const timeSignature = validText(appTimeSignature) ? appTimeSignature : providerTimeSignature;
   return {
     melody: melody.trim(),
     ...(validText(notes) ? { notes: notes.trim() } : {}),
