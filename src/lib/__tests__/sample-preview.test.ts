@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AUDITION_CUT_GROUP, buildPreviewEvent, describeRegisteredSound } from '../sample-preview';
+// @ts-expect-error The GM registry is a plain JS module.
+import gmFonts from '../gm-fonts.js';
 
 describe('describeRegisteredSound', () => {
   it('采样文件夹：按文件数计版本', () => {
@@ -23,6 +25,16 @@ describe('describeRegisteredSound', () => {
 });
 
 describe('buildPreviewEvent', () => {
+  it('GM halo：八个版本都能用相同的音高单独试听', () => {
+    const name = 'gm_pad_halo';
+    const info = describeRegisteredSound({ type: 'soundfont', fonts: gmFonts[name] });
+    expect(info).toEqual({ kind: 'pitched', variants: 8 });
+    for (let variant = 0; variant < 8; variant++) {
+      expect(buildPreviewEvent(name, info, { variant }).value)
+        .toMatchObject({ s: name, note: 'c4', n: variant });
+    }
+  });
+
   it('采样：带版本号，并截断在固定时长内', () => {
     const { value, duration } = buildPreviewEvent('bd', { kind: 'sample', variants: 4 }, { variant: 2 });
     expect(value).toMatchObject({ s: 'bd', n: 2, clip: 1, cut: AUDITION_CUT_GROUP });
