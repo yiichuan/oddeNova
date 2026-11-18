@@ -20,7 +20,88 @@ describe('humming melody and transfer', () => {
     expect(bends.length).toBeLessThanOrEqual(24);
     expect(bends.length).toBeGreaterThan(0);
     expect(projectHummingAttachment(attachment)).not.toBeNull();
-    expect(formatHummingContext('', attachment)).toContain('pitch_midi');
+    expect(formatHummingContext('', attachment)).toContain('"pitch":"C4"');
+  });
+
+  it('joins weak-onset fragments while preserving deliberate repeated notes', () => {
+    const result = selectHummingMelody([
+      { ...note(0), durationSeconds: 0.25, onsetStrength: 0.8 },
+      { ...note(0.27), durationSeconds: 0.25, onsetStrength: 0.1 },
+      { ...note(0.54), durationSeconds: 0.25, onsetStrength: 0.8 },
+    ], 2);
+    expect(result.notes).toHaveLength(2);
+    expect(result.notes[0].durationSeconds).toBeCloseTo(0.52);
+    expect(result.notes[1].startSeconds).toBeCloseTo(0.54);
+  });
+
+  const heldNote = (start: number, pitch: number, duration: number, evidence: { hasStablePitch?: boolean; hasEnergyBreak?: boolean } = {}) => ({
+    ...note(start, pitch), durationSeconds: duration, onsetStrength: 0.15, ...evidence,
+  });
+
+  it('combines a short semitone excursion within one held note without losing its span', () => {
+    const result = selectHummingMelody([
+      heldNote(0.2, 60, 0.4),
+      heldNote(0.61, 61, 0.09),
+      heldNote(0.71, 60, 0.4),
+    ], 2);
+    expect(result.trimStartSeconds).toBeCloseTo(0.2);
+    expect(result.notes).toHaveLength(1);
+    expect(result.notes[0].pitchMidi).toBe(60);
+    expect(result.notes[0].durationSeconds).toBeCloseTo(0.91);
+  });
+
+  it('preserves stable short notes and legato changes that settle on a new pitch', () => {
+    const result = selectHummingMelody([
+      heldNote(0, 60, 0.4),
+      heldNote(0.4, 61, 0.12, { hasStablePitch: true }),
+      heldNote(0.52, 60, 0.3),
+      heldNote(0.82, 62, 0.4),
+    ], 2);
+    expect(result.notes.map(value => value.pitchMidi)).toEqual([60, 61, 60, 62]);
+  });
+
+  it('keeps weak same-pitch reattacks when the audio falls quiet between them', () => {
+    const result = selectHummingMelody([
+      heldNote(0, 60, 0.4),
+      heldNote(0.42, 60, 0.4, { hasEnergyBreak: true }),
+    ], 2);
+    expect(result.notes).toHaveLength(2);
+  });
+
+  it('estimates the grid from repeated onsets when short articulation makes durations misleading', () => {
+    const attachment = hummingAttachment();
+    attachment.transcription.notes = [0, 0.4, 0.8].map(startSeconds => ({
+      pitchMidi: 60, startSeconds, durationSeconds: 0.22,
+    }));
+    const context = formatHummingContext('', attachment);
+    const data = JSON.parse(context.split('\n').find(line => line.startsWith('{'))!);
+    expect(data.grid_seconds_estimate).toBe(0.2);
+    expect(data.notes.map((value: { start_tick: number }) => value.start_tick)).toEqual([0, 2, 4]);
+  });
+
+  it('preserves a rest even when the following onset is weak', () => {
+    const result = selectHummingMelody([
+      { ...note(0), durationSeconds: 0.2, onsetStrength: 0.7 },
+      { ...note(0.35), durationSeconds: 0.2, onsetStrength: 0.1 },
+    ], 2);
+    expect(result.notes).toHaveLength(2);
+  });
+
+  it('supplies integer beat-grid positions and requests integer Strudel weights', () => {
+    const attachment = hummingAttachment();
+    attachment.transcription.notes = [
+      { pitchMidi: 60, startSeconds: 0, durationSeconds: 0.48 },
+      { pitchMidi: 62, startSeconds: 0.73, durationSeconds: 0.25 },
+    ];
+    attachment.melodyDurationSeconds = 1;
+    const context = formatHummingContext('', attachment);
+    expect(context).toContain('"start_tick":3');
+    expect(context).toContain('"duration_ticks":2');
+    expect(context).toContain('integer @ weights only');
+    expect(context).toContain('"pitch":"C4"');
+    expect(context).toContain('"pitch":"D4"');
+    expect(context).not.toContain('pitch_bends_cents');
+    expect(context).toContain('.s("piano")');
   });
 
   it('retains both phrases and their internal rest', () => {
@@ -43,7 +124,7 @@ describe('humming melody and transfer', () => {
     const restored = JSON.parse(JSON.stringify(projectChatMessageForTransfer(message)));
     expect(isSafeChatMessageTransfer(restored)).toBe(true);
     expect(restored.humming).toEqual(message.humming);
-    expect(conversationHistoryFromMessages([restored])[0].content).toContain('pitch_midi');
+    expect(conversationHistoryFromMessages([restored])[0].content).toContain('"pitch":"C4"');
   });
 
   it.each(['blob', 'pcm', 'audioUrl', 'localPath'])('rejects local-only %s in a melody attachment', (field) => {

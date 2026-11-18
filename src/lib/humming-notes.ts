@@ -12,6 +12,11 @@ export interface BasicPitchNote {
   pitchMidi: number;
   amplitude: number;
   pitchBends?: number[];
+  onsetStrength?: number;
+  /** True when the recording falls quiet and rises again near this onset. */
+  hasEnergyBreak?: boolean;
+  /** True when this pitch dominates the model frames for a sustained run. */
+  hasStablePitch?: boolean;
 }
 
 const MAX_RAW_CANDIDATES = 4096;
@@ -119,6 +124,54 @@ function chooseContinuousTrack(candidates: BasicPitchNote[]): BasicPitchNote[] {
   return track.reverse();
 }
 
+const MAX_SUSTAIN_GAP_SECONDS = 0.04;
+const MAX_PITCH_EXCURSION_SECONDS = 0.16;
+
+function canJoinSustain(previous: BasicPitchNote, next: BasicPitchNote): boolean {
+  const gap = next.startTimeSeconds - (previous.startTimeSeconds + previous.durationSeconds);
+  return gap <= MAX_SUSTAIN_GAP_SECONDS
+    && next.onsetStrength !== undefined
+    && next.onsetStrength < 0.5
+    && !next.hasEnergyBreak;
+}
+
+function extendSustain(previous: BasicPitchNote, next: BasicPitchNote): void {
+  const end = Math.max(previous.startTimeSeconds + previous.durationSeconds, next.startTimeSeconds + next.durationSeconds);
+  previous.durationSeconds = end - previous.startTimeSeconds;
+}
+
+function joinSustainedFragments(track: BasicPitchNote[]): BasicPitchNote[] {
+  const joined: BasicPitchNote[] = [];
+  for (let index = 0; index < track.length; index += 1) {
+    const note = track[index];
+    const previous = joined.at(-1);
+    if (previous && canJoinSustain(previous, note)) {
+      if (previous.pitchMidi === note.pitchMidi) {
+        extendSustain(previous, note);
+        if (previous.pitchBends && note.pitchBends) previous.pitchBends = [...previous.pitchBends, ...note.pitchBends];
+        else if (note.pitchBends) previous.pitchBends = note.pitchBends;
+        continue;
+      }
+
+      // A brief semitone excursion that returns to the held pitch can be drift
+      // or vibrato. Keep stable plateaus, new attacks and one-way pitch changes.
+      const next = track[index + 1];
+      if (next?.pitchMidi === previous.pitchMidi
+        && Math.abs(previous.pitchMidi - note.pitchMidi) === 1
+        && note.durationSeconds <= MAX_PITCH_EXCURSION_SECONDS
+        && note.hasStablePitch !== true
+        && canJoinSustain(note, next)) {
+        extendSustain(previous, note);
+        extendSustain(previous, next);
+        index += 1;
+        continue;
+      }
+    }
+    joined.push({ ...note });
+  }
+  return joined;
+}
+
 function isUncertain(
   note: BasicPitchNote,
   selected: BasicPitchNote[],
@@ -153,14 +206,15 @@ export function selectHummingMelody(
 
   const candidates = normalizeCandidates(rawCandidates, recordingDurationSeconds);
   const selected = chooseContinuousTrack(candidates);
+  const joined = joinSustainedFragments(selected);
   if (selected.length === 0) throw new Error('no_melody_detected');
-  if (selected.length > HUMMING_MAX_NOTES) throw new Error('too_many_notes');
+  if (joined.length > HUMMING_MAX_NOTES) throw new Error('too_many_notes');
 
   const trimStartSeconds = selected[0].startTimeSeconds;
   const melodyEndSeconds = Math.max(
     ...selected.map((note) => note.startTimeSeconds + note.durationSeconds),
   );
-  const notes: HummingNote[] = selected.map((note) => {
+  const notes: HummingNote[] = joined.map((note) => {
     const pitchBendsCents = simplifyPitchBends(note.pitchBends);
     return {
       pitchMidi: Math.round(note.pitchMidi),

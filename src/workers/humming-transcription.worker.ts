@@ -1,12 +1,11 @@
 /// <reference lib="webworker" />
 import {
-  addPitchBendsToNoteEvents,
   BasicPitch,
   noteFramesToTime,
   outputToNotesPoly,
 } from '@spotify/basic-pitch';
 import { selectHummingMelody, type BasicPitchNote } from '../lib/humming-notes';
-import { resampleMono } from '../services/humming-audio';
+import { HUMMING_SAMPLE_RATE, resampleMono } from '../services/humming-audio';
 import {
   BASIC_PITCH_MODEL_VERSION,
   HUMMING_PREPROCESSING_VERSION,
@@ -56,6 +55,28 @@ function post(response: WorkerResponse): void {
   scope.postMessage(response);
 }
 
+function hasEnergyBreak(samples: Float32Array, onsetSeconds: number): boolean {
+  const center = Math.round(onsetSeconds * HUMMING_SAMPLE_RATE);
+  const radius = Math.round(0.006 * HUMMING_SAMPLE_RATE);
+  const step = Math.round(0.01 * HUMMING_SAMPLE_RATE);
+  if (center - 4 * step - radius < 0 || center + 4 * step + radius > samples.length) return false;
+
+  const energyAt = (position: number) => {
+    let energy = 0;
+    for (let index = position - radius; index < position + radius; index += 1) {
+      energy += samples[index] ** 2;
+    }
+    return energy / (2 * radius);
+  };
+
+  const sustainedEnergy = Math.min(energyAt(center - 4 * step), energyAt(center + 4 * step));
+  if (sustainedEnergy < 1e-6) return false;
+  for (let offset = -2; offset <= 2; offset += 1) {
+    if (energyAt(center + offset * step) < sustainedEnergy * 0.16) return true;
+  }
+  return false;
+}
+
 async function inferWithBackend(
   samples: Float32Array,
   jobId: string,
@@ -75,7 +96,6 @@ async function inferWithBackend(
   const model = await pitch.model;
   const frames: number[][] = [];
   const onsets: number[][] = [];
-  const contours: number[][] = [];
 
   // Basic Pitch 1.0.1 does not dispose its per-window input/output tensors.
   // Scope inference allocations so TFJS releases them before the Worker exits.
@@ -84,10 +104,9 @@ async function inferWithBackend(
   try {
     await pitch.evaluateModel(
       samples,
-      (frameChunk, onsetChunk, contourChunk) => {
+      (frameChunk, onsetChunk) => {
         frames.push(...frameChunk);
         onsets.push(...onsetChunk);
-        contours.push(...contourChunk);
       },
       (progress) => {
         const progressOffset = backend === 'webgl' ? 0 : 0.55;
@@ -102,7 +121,26 @@ async function inferWithBackend(
     );
 
     const noteEvents = outputToNotesPoly(frames, onsets, 0.35, 0.3, 5);
-    return noteFramesToTime(addPitchBendsToNoteEvents(contours, noteEvents));
+    return noteFramesToTime(noteEvents).map((note, index) => {
+      const { startFrame, durationFrames } = noteEvents[index];
+      const pitchIndex = note.pitchMidi - 21;
+      const onsetStrength = Math.max(0, ...onsets.slice(Math.max(0, startFrame - 2), startFrame + 3)
+        .map(frame => frame[pitchIndex] ?? 0));
+      let stableFrames = 0;
+      let hasStablePitch = false;
+      for (let frameIndex = startFrame; frameIndex < startFrame + durationFrames; frameIndex += 1) {
+        const frame = frames[frameIndex];
+        const pitchStrength = frame?.[pitchIndex] ?? 0;
+        const neighborStrength = Math.max(frame?.[pitchIndex - 1] ?? 0, frame?.[pitchIndex + 1] ?? 0);
+        stableFrames = pitchStrength >= 0.3 && pitchStrength - neighborStrength >= 0.1 ? stableFrames + 1 : 0;
+        // Nine consecutive Basic Pitch frames span about 100 ms.
+        if (stableFrames >= 9) {
+          hasStablePitch = true;
+          break;
+        }
+      }
+      return { ...note, onsetStrength, hasStablePitch, hasEnergyBreak: hasEnergyBreak(samples, note.startTimeSeconds) };
+    });
   } finally {
     try {
       engine.endScope();
@@ -134,6 +172,7 @@ async function transcribe(request: TranscribeRequest): Promise<void> {
       result,
     });
   } catch (error) {
+    console.error('[humming] transcription failed', error);
     const message = error instanceof Error ? error.message : '';
     const code = [
       'no_melody_detected',

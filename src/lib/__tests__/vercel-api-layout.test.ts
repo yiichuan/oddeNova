@@ -8,11 +8,14 @@ describe('Vercel API layout', () => {
     expect(files.filter((file) => file.endsWith('.test.ts'))).toEqual([]);
   });
 
-  it('stays within the intentional Hobby function budget', async () => {
+  it('includes both audio routes and stays within the Hobby function budget', async () => {
     const files = (await readdir('api', { recursive: true }))
       .filter((file) => file.endsWith('.ts'));
 
-    expect(files.sort()).toHaveLength(9);
+    expect(files).toContain('official/v1/tools/asr.ts');
+    expect(files).toContain('official/v1/tools/music-understanding.ts');
+    // This project uses one function per API file. Keep room below Hobby's 12-function limit.
+    expect(files.length).toBeLessThanOrEqual(12);
   });
 
   it('uses Node ESM-resolvable relative imports in TypeScript functions', async () => {

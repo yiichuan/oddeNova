@@ -51,6 +51,8 @@ export interface HummingInputController {
   replacementCandidate: LocalHummingDraft | null;
   replacementAudioUrl: string | null;
   canRecord: boolean;
+  analysis: HummingAttachment | null;
+  analyze(): Promise<boolean>;
   startRecording(): void;
   cancelRecording(): void;
   stopRecording(): void;
@@ -84,6 +86,7 @@ interface HummingInputState {
   error: string | null;
   replacementCandidate: LocalHummingDraft | null;
   replacementAudioUrl: string | null;
+  analysis: HummingAttachment | null;
 }
 
 function emptyState(scopeKey: string, loaded = false): HummingInputState {
@@ -106,6 +109,7 @@ function emptyState(scopeKey: string, loaded = false): HummingInputState {
     error: null,
     replacementCandidate: null,
     replacementAudioUrl: null,
+    analysis: null,
   };
 }
 
@@ -657,6 +661,7 @@ export function useHummingInput({
   const submit = useCallback(async (
     text: string,
     entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>,
+    preview = false,
   ): Promise<boolean> => {
     const draft = visibleState.draft;
     if (
@@ -690,14 +695,15 @@ export function useHummingInput({
     }));
 
     try {
-      const pcm = await decodeHummingRecording(draft.blob);
+      const cached = visibleState.analysis?.id === draft.id ? visibleState.analysis : null;
+      const pcm = cached && !preview ? null : await decodeHummingRecording(draft.blob);
       if (
         controller.signal.aborted
         || scopeRef.current !== scopeKey
         || transcriptionGenerationRef.current !== generation
       ) return false;
 
-      const transcription = await transcribeHumming(pcm.samples, {
+      const transcription = pcm ? await transcribeHumming(pcm.samples, {
         recordingDurationSeconds: draft.durationSeconds,
         sampleRate: pcm.sampleRate,
         signal: controller.signal,
@@ -708,26 +714,26 @@ export function useHummingInput({
             progress,
           }));
         },
-      });
+      }) : null;
       if (
         controller.signal.aborted
         || scopeRef.current !== scopeKey
         || transcriptionGenerationRef.current !== generation
       ) return false;
 
-      const attachment: HummingAttachment = {
+      const attachment: HummingAttachment = cached && !preview ? cached : {
         kind: 'humming',
         schemaVersion: HUMMING_SCHEMA_VERSION,
         id: draft.id,
         recordingDurationSeconds: draft.durationSeconds,
-        trimStartSeconds: transcription.result.trimStartSeconds,
-        melodyDurationSeconds: transcription.result.melodyDurationSeconds,
+        trimStartSeconds: transcription!.result.trimStartSeconds,
+        melodyDurationSeconds: transcription!.result.melodyDurationSeconds,
         transcription: {
           engine: 'basic-pitch',
           modelVersion: BASIC_PITCH_MODEL_VERSION,
           preprocessingVersion: HUMMING_PREPROCESSING_VERSION,
-          notes: transcription.result.notes,
-          warnings: transcription.result.warnings,
+          notes: transcription!.result.notes,
+          warnings: transcription!.result.warnings,
         },
       };
       if (new Blob([JSON.stringify(attachment)]).size > HUMMING_MAX_ATTACHMENT_BYTES) {
@@ -736,6 +742,10 @@ export function useHummingInput({
 
       const safeAttachment = projectHummingAttachment(attachment);
       if (!safeAttachment) throw new HummingTranscriptionError('invalid_transcription');
+      if (preview) {
+        setForScope(scopeKey, current => current.draft?.id === draft.id ? { ...current, analysis: safeAttachment } : current);
+        return true;
+      }
       const accepted = await onSend(text, entryPoint, safeAttachment);
       if (accepted === false) return false;
       try {
@@ -754,6 +764,7 @@ export function useHummingInput({
       });
       return true;
     } catch (error) {
+      if (!controller.signal.aborted) console.error('[humming] submission failed', error);
       if (scopeRef.current === scopeKey && transcriptionGenerationRef.current === generation) {
         setForScope(scopeKey, (current) => ({
           ...current,
@@ -780,6 +791,7 @@ export function useHummingInput({
     sessionId,
     setForScope,
     visibleState.draft,
+    visibleState.analysis,
     visibleState.isFinalizingRecording,
     visibleState.isRecording,
     visibleState.isRerecording,
@@ -793,6 +805,8 @@ export function useHummingInput({
 
   return {
     ...visibleState,
+    analysis: visibleState.analysis?.id === visibleState.draft?.id ? visibleState.analysis : null,
+    analyze: () => submit('', 'text', true),
     canRecord: Boolean(sessionId) && visibleState.loaded && !busy && !visibleState.draft
       && !visibleState.isStarting && !visibleState.isRecording && !visibleState.isFinalizingRecording
       && !visibleState.isTranscribing,

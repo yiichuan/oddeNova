@@ -288,7 +288,7 @@ export default function Sidebar({
       </div>
 
       <div data-sidebar-composer className="-mt-px w-full shrink-0">
-        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} choiceOptions={choiceOptions} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
+        <ChatInput recordingScope={`${ownerKey ?? ""}:${currentId ?? ""}`} key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} humming={humming} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} choiceOptions={choiceOptions} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
       </div>
     </aside>
   );

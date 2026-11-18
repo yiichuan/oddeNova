@@ -754,6 +754,8 @@ describe('ChatInput humming recording controls', () => {
       replacementCandidate: null,
       replacementAudioUrl: null,
       canRecord: true,
+      analysis: null,
+      analyze: vi.fn(async () => false),
       startRecording: vi.fn(),
       cancelRecording: vi.fn(),
       stopRecording: vi.fn(),
@@ -769,6 +771,21 @@ describe('ChatInput humming recording controls', () => {
       ...patch,
     };
   }
+
+  it('opens the recording menu and starts humming only after selection', () => {
+    const humming = controller();
+    const { container, root } = renderChatInput({ humming });
+    roots.push(root);
+    const button = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+    expect(button).not.toBeNull();
+    act(() => button!.click());
+    const items = container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    expect(items).toHaveLength(2);
+    expect(humming.startRecording).not.toHaveBeenCalled();
+    act(() => items[1].click());
+    expect(humming.startRecording).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
 
   it('shows recording time and an explicit stop action while blocking send', () => {
     const humming = controller({ isRecording: true, recordingElapsedSeconds: 8, canRecord: false });

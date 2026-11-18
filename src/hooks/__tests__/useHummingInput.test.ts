@@ -109,6 +109,16 @@ describe('useHummingInput resets', () => {
     expect(mocks.getHummingDraft).toHaveBeenCalledTimes(1);
   });
 
+  it('analyzes without sending and reuses the result when submitted', async () => {
+    const { getHook, onSend } = await renderHook();
+    await act(async () => { expect(await getHook().analyze()).toBe(true); });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(getHook().analysis?.transcription.notes[0].pitchMidi).toBe(60);
+    await act(async () => { expect(await getHook().submit('', 'text')).toBe(true); });
+    expect(mocks.transcribeHumming).toHaveBeenCalledOnce();
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
   it('can record again after sending a draft in the same session', async () => {
     const { getHook, onSend } = await renderHook();
     await act(async () => { expect(await getHook().submit('', 'text')).toBe(true); });
