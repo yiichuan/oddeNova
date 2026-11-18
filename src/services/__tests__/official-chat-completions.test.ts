@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import handler from '../../../api/official/v1/chat/completions';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+const supabaseGetUser = vi.hoisted(() => vi.fn());
+
+// These HTTP-only tests should not initialize Supabase Realtime on Node 20.
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: () => ({ auth: { getUser: supabaseGetUser } }),
+}));
+
 function makeReq(
   method: string,
   body?: unknown,
@@ -56,6 +63,7 @@ describe('/api/official/v1/chat/completions', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    supabaseGetUser.mockReset();
     delete process.env.OFFICIAL_API_KEY;
     delete process.env.VITE_API_KEY;
   });
@@ -134,8 +142,8 @@ describe('/api/official/v1/chat/completions', () => {
     vi.stubEnv('SUPABASE_URL', 'https://auth.test');
     vi.stubEnv('SUPABASE_ANON_KEY', 'anon-test');
     const upstream = JSON.stringify({ choices: [{ message: { content: 'A sheet score' } }] });
+    supabaseGetUser.mockResolvedValue({ data: { user: { id: 'user-id' } }, error: null });
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ id: 'user-id' }))
       .mockResolvedValueOnce(new Response(upstream, { headers: { 'content-type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
     const res = makeRes();
@@ -143,8 +151,9 @@ describe('/api/official/v1/chat/completions', () => {
     await handler(makeReq('POST', imageRequest, {}, { authorization: 'Bearer user-token' }),
       res as unknown as VercelResponse);
 
-    expect(fetchMock.mock.calls[0][0]).toBe('https://auth.test/auth/v1/user');
-    const [url, request] = fetchMock.mock.calls[1];
+    expect(supabaseGetUser).toHaveBeenCalledWith('user-token');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, request] = fetchMock.mock.calls[0];
     expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
     expect(request.headers.Authorization).toBe('Bearer sk-vision');
     expect(JSON.parse(request.body)).toEqual({
@@ -163,8 +172,8 @@ describe('/api/official/v1/chat/completions', () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'sk-vision');
     vi.stubEnv('SUPABASE_URL', 'https://auth.test');
     vi.stubEnv('SUPABASE_ANON_KEY', 'anon-test');
+    supabaseGetUser.mockResolvedValue({ data: { user: { id: 'user-id' } }, error: null });
     vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce(Response.json({ id: 'user-id' }))
       .mockRejectedValueOnce(new Error('https://storage.test/signed', { cause: { code: 'ECONNRESET' } })));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = makeRes();
