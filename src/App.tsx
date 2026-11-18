@@ -22,6 +22,7 @@ import { useSuggestions } from './hooks/useSuggestions';
 import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
+import { generateConversationTitle } from './services/conversation-title';
 import type { ConversationTurn } from './services/llm-loader';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
 import { createAgentProgressHandler } from './lib/agent-progress-handler';
@@ -56,6 +57,7 @@ import type { AgentEntryPoint } from './lib/analytics';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { sessionAsFavorite } from './lib/session-favorites';
 import { fullSessionTitle } from './lib/full-session-title';
+import { deriveSessionTitle } from './lib/session-title';
 import { useVisualViewport } from './hooks/useVisualViewport';
 import { useBrowserChromeColor } from './hooks/useBrowserChromeColor';
 import { useFeaturedPreview } from './hooks/useFeaturedPreview';
@@ -201,6 +203,7 @@ export default function App() {
     deleteSession: deleteCloudSession,
   }), []);
   const ownerKey = auth.user ? `user:${auth.user.id}` : 'guest';
+  const titleOwnerScope = useMemo(() => Symbol(ownerKey), [ownerKey]);
   const [accountStartToken, setAccountStartToken] = useState(0);
   const lastAuthUserIdRef = useRef<string | null>(null);
   const { isReplaying, replayMessages, replayInputText, startReplay } = useReplay(
@@ -273,6 +276,17 @@ export default function App() {
   const currentIdRef = useRef<string | null>(sessions.currentId);
   const authUserIdRef = useRef<string | null>(auth.user?.id ?? null);
   authUserIdRef.current = auth.user?.id ?? null;
+  const activeTitleOwnerScopeRef = useRef(titleOwnerScope);
+  const requestedTitleSessionIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    activeTitleOwnerScopeRef.current = titleOwnerScope;
+    requestedTitleSessionIdsRef.current.clear();
+    return () => {
+      if (activeTitleOwnerScopeRef.current === titleOwnerScope) {
+        activeTitleOwnerScopeRef.current = Symbol('inactive');
+      }
+    };
+  }, [titleOwnerScope]);
   const skipNextManualSyncSessionRef = useRef<string | null>(null);
   const mobileCodeRestoreRef = useRef<{ id: string; code: string } | null>(null);
   /** Set once the guide is wired up below: shutting the code window can be its next step. */
@@ -350,6 +364,7 @@ export default function App() {
   const favoriteCloudSession = cloudLibrary.favoriteSession;
   const unfavoriteCloudSession = cloudLibrary.unfavoriteSession;
   const upsertCloudHistorySummary = cloudLibrary.upsertHistorySummary;
+  const refreshCloudSearches = cloudLibrary.refreshSearches;
   const retryCloudDetail = cloudLibrary.retryDetail;
   // Use ref to prevent the postMessage handler from capturing a stale strudel closure
   const strudelRef = useRef(strudel);
@@ -1109,6 +1124,57 @@ export default function App() {
   const imageScopeRef = useRef('');
   imageScopeRef.current = `${auth.user?.id ?? 'guest'}:${sessions.currentId ?? ''}`;
 
+  const requestFirstMessageTitle = useCallback(async (
+    sessionId: string,
+    messageId: string,
+    firstMessage: string,
+    fallbackTitle: string,
+    ownerScope: symbol,
+  ): Promise<void> => {
+    if (!hasApiKeyConfigured()) return;
+    const ownerId = auth.user?.id ?? null;
+    const isScopeActive = (): boolean => (
+      activeTitleOwnerScopeRef.current === ownerScope
+      && authUserIdRef.current === ownerId
+    );
+
+    try {
+      const title = await generateConversationTitle(firstMessage, zh ? 'zh-CN' : 'en');
+      if (!isScopeActive()) return;
+
+      const updated = await sessions.renameSessionForFirstMessage(
+        sessionId,
+        messageId,
+        firstMessage,
+        fallbackTitle,
+        title,
+      );
+      if (!updated || !isScopeActive()) return;
+
+      if (!ownerId) return;
+      upsertCloudHistorySummary({
+        id: updated.id,
+        title: updated.title,
+        updatedAt: updated.updatedAt,
+      }, 0);
+      try {
+        await sessions.flushCloudSaves(updated.id);
+        if (isScopeActive()) refreshCloudSearches();
+      } catch (error) {
+        console.warn('[sessions] failed to sync generated conversation title', error);
+      }
+    } catch (error) {
+      if (isScopeActive()) {
+        console.warn('[sessions] failed to generate conversation title', error);
+      }
+    }
+  }, [
+    auth.user?.id,
+    refreshCloudSearches,
+    sessions,
+    upsertCloudHistorySummary,
+  ]);
+
   const handleInstruction = useCallback(
     async (text: string, options?: {
       entryPoint?: AgentEntryPoint;
@@ -1137,6 +1203,16 @@ export default function App() {
       }
       if (scope !== imageScopeRef.current) throw new Error('会话已切换，请重新发送');
       const sessionId = sessions.currentId;
+      const sessionBeforeMessage = sessions.sessions.find((session) => session.id === sessionId);
+      const shouldGenerateTitle = Boolean(
+        sessionId
+        && !options?.skipAddMessage
+        && !isDemoMode()
+        && text.trim()
+        && sessionBeforeMessage?.title === t('newSessionTitle')
+        && !sessionBeforeMessage.messages.some((message) => message.role === 'user'),
+      );
+      const fallbackTitle = deriveSessionTitle(text, t('newSessionTitle'));
       const sharedImages = (sessions.currentSession?.messages ?? []).flatMap(message => message.images ?? []).filter(image => image.publicUrl);
       const replacements = new Map<string, ImageAttachment>();
       for (const image of sharedImages) replacements.set(image.id, await ownImage(image));
@@ -1151,9 +1227,30 @@ export default function App() {
         skipAddMessage: options?.skipAddMessage,
         initialCode: options?.initialCode,
         suppliedHistory: history?.map(turn => ({ ...turn, images: turn.images?.map(image => replacements.get(image.id) ?? image) })),
+        onFirstUserMessage: shouldGenerateTitle && sessionId
+          ? (messageId) => {
+              if (!hasApiKeyConfigured() || requestedTitleSessionIdsRef.current.has(sessionId)) return;
+              requestedTitleSessionIdsRef.current.add(sessionId);
+              void requestFirstMessageTitle(
+                sessionId,
+                messageId,
+                text,
+                fallbackTitle,
+                titleOwnerScope,
+              );
+            }
+          : undefined,
       });
     },
-    [runTurn, demoStep, activeSet, exitPreview, sessions]
+    [
+      runTurn,
+      demoStep,
+      activeSet,
+      exitPreview,
+      sessions,
+      requestFirstMessageTitle,
+      titleOwnerScope,
+    ]
   );
 
   /**
