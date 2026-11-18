@@ -556,7 +556,7 @@ function SampleKey({
   const itemRef = useRef<HTMLLIElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inert = disabled || missing;
-  const takes = info?.kind === 'sample' ? info.variants : 1;
+  const takes = info?.variants ?? 1;
   const label = sample.label ? pick(sample.label) : null;
   const badge = takes > 1 ? `×${takes}` : null;
   /* Lit under the pointer (or keyboard focus), and that is also what opens
