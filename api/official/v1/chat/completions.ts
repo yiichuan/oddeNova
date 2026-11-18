@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { requireUser } from '../../../../server/session-utils.js';
+import { requireAuthUser } from '../../../../server/session-utils.js';
 import { hasImageMessages } from '../../../../shared/chat-images.js';
 
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/v1/chat/completions';
@@ -87,7 +87,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const provider = isKimi ? 'kimi' : useVision ? 'openrouter' : 'official';
   let stage: 'auth' | 'request' | 'response' = useVision ? 'auth' : 'request';
   try {
-    if (useVision && !await requireUser(req, res)) return;
+    if (useVision && !await requireAuthUser(req, res)) return;
     stage = 'request';
 
     const upstreamUrl = isKimi ? KIMI_CHAT_COMPLETIONS_URL
