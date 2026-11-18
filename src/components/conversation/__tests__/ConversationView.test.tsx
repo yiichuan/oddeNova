@@ -495,7 +495,7 @@ describe('ConversationView chat streaming', () => {
     roots.push(root);
 
     const retryButtons = container.querySelectorAll('button[title="Retry"]');
-    const branchButtons = container.querySelectorAll('button[title="Branch conversation from here"]');
+    const branchButtons = container.querySelectorAll('button[title="Create branch conversation"]');
 
     expect(retryButtons).toHaveLength(1);
     expect(branchButtons).toHaveLength(1);
@@ -518,7 +518,7 @@ describe('ConversationView chat streaming', () => {
     roots.push(root);
 
     const retryButtons = container.querySelectorAll('button[title="Retry"]');
-    const branchButtons = container.querySelectorAll('button[title="Branch conversation from here"]');
+    const branchButtons = container.querySelectorAll('button[title="Create branch conversation"]');
 
     expect(retryButtons).toHaveLength(1);
     expect(branchButtons).toHaveLength(1);
@@ -535,7 +535,7 @@ describe('ConversationView chat streaming', () => {
     roots.push(root);
 
     expect(container.querySelectorAll('button[title="Retry"]')).toHaveLength(0);
-    expect(container.querySelectorAll('button[title="Branch conversation from here"]')).toHaveLength(0);
+    expect(container.querySelectorAll('button[title="Create branch conversation"]')).toHaveLength(0);
   });
 
   it('renders assistant markdown without exposing formatting markers', () => {

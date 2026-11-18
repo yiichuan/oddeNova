@@ -405,7 +405,7 @@ const S: Record<string, readonly [string, string]> = {
   // ConversationView
   strudelCode:   ['Strudel 代码', 'Strudel code'],
   lines:         ['行', 'lines'],
-  branchFrom:    ['从此处创建分支对话', 'Branch conversation from here'],
+  branchFrom:    ['创建分支对话', 'Create branch conversation'],
   thinking:      ['思考中...', 'Thinking...'],
   reasoningTitle:['构思', 'Ideation'],
   collapseReasoning: ['收起推理过程', 'Collapse reasoning'],
