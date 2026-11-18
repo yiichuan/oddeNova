@@ -65,10 +65,10 @@ describe('generateSongTitle', () => {
     expect(user).toContain('夜晚 lo-fi');
     expect(user).toContain('setcps(0.5)');
     expect(user).toContain('做一个夜晚感的 lofi');
-    expect(opts).toEqual({ temperature: 0.8, maxTokens: 2000 });
+    expect(opts).toEqual({ temperature: 0.8, maxTokens: 2000, thinking: 'disabled' });
   });
 
-  it('reserves enough completion tokens for reasoning models to still emit a title', async () => {
+  it('reserves enough completion tokens to emit a title', async () => {
     mockedChatOnce.mockResolvedValue('反叛引擎');
 
     await generateSongTitle({
