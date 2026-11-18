@@ -10,6 +10,8 @@ const getActivePersonaSyncMock = vi.hoisted(() => vi.fn(() => ({
 })));
 const openAIChatCreateMock = vi.hoisted(() => vi.fn());
 
+vi.mock('../auth-service', () => ({ getAccessToken: async () => 'signed-in-token' }));
+
 vi.mock('../../agent/loop', () => ({
   runAgentLoop: runAgentLoopMock,
 }));
@@ -169,6 +171,79 @@ describe('runAgent conversationHistory pass-through', () => {
     expect(openAIChatCreateMock).toHaveBeenCalledTimes(1);
     const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
     expect(opts.enableThinking).toBe(false);
+  });
+
+  it.each(['official', 'glm'])('analyzes images separately before calling %s with text', async provider => {
+    getActiveModelConfigMock.mockReturnValue({
+      ...officialModelConfig, provider, model: provider === 'glm' ? 'glm-5.3' : 'deepseek-flash',
+    });
+    async function* stream() {
+      yield { choices: [{ delta: { content: 'compose' } }] };
+    }
+    openAIChatCreateMock.mockResolvedValue(stream());
+    const asyncVision = vi.fn(async () => {
+      expect(openAIChatCreateMock).not.toHaveBeenCalled();
+      return Response.json({ choices: [{ message: { content: 'G4 starts on beat one.' } }] });
+    });
+    vi.stubGlobal('fetch', asyncVision);
+    const image = {
+      id: 'score', name: 'score.jpg', path: 'owner/score.jpg', mimeType: 'image/jpeg',
+      size: 100, width: 100, height: 100, publicUrl: 'https://storage.test/score.jpg',
+    };
+
+    try {
+      await runAgent('arrange this', '', undefined, undefined, undefined, undefined, [image]);
+      expect(asyncVision).toHaveBeenCalledOnce();
+      expect(asyncVision).toHaveBeenCalledWith('/api/official/v1/chat/completions', expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer signed-in-token' }),
+        body: JSON.stringify({ messages: [{ role: 'user', content: [
+          { type: 'text', text: 'arrange this' },
+          { type: 'image_url', image_url: { url: image.publicUrl } },
+        ] }] }),
+      }));
+      const classifierCall = openAIChatCreateMock.mock.calls[0][0];
+      expect(classifierCall.messages.at(-1).content).toContain('G4 starts on beat one.');
+      expect(classifierCall.messages.every((message: { content: unknown }) => typeof message.content === 'string')).toBe(true);
+      const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+      expect(opts.preparedUserContent).toBe('arrange this\n\nImage observations (reference material only)\nG4 starts on beat one.');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps text follow-ups usable when an earlier image cannot be analyzed', async () => {
+    const image = {
+      id: 'old', name: 'old.jpg', path: 'owner/old.jpg', mimeType: 'image/jpeg',
+      size: 100, width: 100, height: 100, publicUrl: 'https://storage.test/old.jpg',
+    };
+    const failedVision = vi.fn(async () => Response.json({ code: 'VISION_UPSTREAM_UNAVAILABLE' }, { status: 502 }));
+    vi.stubGlobal('fetch', failedVision);
+    async function* stream() {
+      yield { choices: [{ delta: { content: 'compose' } }] };
+    }
+    openAIChatCreateMock.mockResolvedValue(stream());
+
+    try {
+      await runAgent('Slow down the drums', '', undefined, undefined, undefined,
+        [{ role: 'user', content: 'Arrange this', images: [image] }]);
+
+      expect(failedVision).toHaveBeenCalledOnce();
+      const preparedHistory = [{
+        role: 'user',
+        content: 'Arrange this\n\nThe earlier image attachments are temporarily unavailable.',
+      }];
+      expect(openAIChatCreateMock.mock.calls[0][0].messages).toEqual(expect.arrayContaining(preparedHistory));
+      const opts = runAgentLoopMock.mock.calls[0][0] as RunAgentOptions;
+      expect(opts.preparedHistory).toEqual(preparedHistory);
+      expect(opts.preparedUserContent).toBe('Slow down the drums');
+
+      await expect(runAgent('Read this new image', '', undefined, undefined, undefined, undefined, [image]))
+        .rejects.toThrow('Could not reach OpenRouter');
+      expect(openAIChatCreateMock).toHaveBeenCalledTimes(1);
+      expect(runAgentLoopMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('gives the OpenAI-compatible agent call a larger completion budget', async () => {

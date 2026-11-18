@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient, type User } from '@supabase/supabase-js';
+import { AuthClient, createClient, isAuthRetryableFetchError, type User } from '@supabase/supabase-js';
 import { normalizeSessionTitle } from '../shared/session-title.js';
 
 export interface ApiSession {
@@ -34,10 +34,15 @@ export interface SessionRow {
   updated_at: string | number;
 }
 
-function getSupabaseClient(token: string) {
+function getSupabaseConfig() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error('Supabase server credentials are not configured');
+  return { url, key };
+}
+
+function getSupabaseClient(token: string) {
+  const { url, key } = getSupabaseConfig();
   return createClient(url, key, {
     global: {
       headers: { Authorization: `Bearer ${token}` },
@@ -54,6 +59,31 @@ function getBearerToken(req: VercelRequest): string | null {
   if (!raw || Array.isArray(raw)) return null;
   const match = raw.match(/^Bearer\s+(.+)$/i);
   return match?.[1] ?? null;
+}
+
+// Endpoints that only verify a token do not need Storage, PostgREST or Realtime.
+export async function requireAuthUser(req: VercelRequest, res: VercelResponse): Promise<User | null> {
+  const token = getBearerToken(req);
+  if (!token) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+
+  const { url, key } = getSupabaseConfig();
+  const auth = new AuthClient({
+    url: new URL('auth/v1', url.endsWith('/') ? url : `${url}/`).href,
+    headers: { apikey: key },
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  });
+  const { data, error } = await auth.getUser(token);
+  if (isAuthRetryableFetchError(error)) throw error;
+  if (error || !data.user) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  return data.user;
 }
 
 export async function requireUser(req: VercelRequest, res: VercelResponse): Promise<{ user: User; supabase: ReturnType<typeof getSupabaseClient> } | null> {

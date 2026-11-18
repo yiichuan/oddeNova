@@ -282,6 +282,7 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
   };
   const isZh = locale === 'zh';
   const ctx: ToolContext = { state, isZh };
+  const userText = typeof opts.preparedUserContent === 'string' ? opts.preparedUserContent : instruction;
   let userTurn: string;
   if (initialCode) {
     const score = parseScore(initialCode);
@@ -294,10 +295,10 @@ export async function runAgentLoop(opts: RunAgentOptions): Promise<RunAgentResul
       : layers.length > 0 ? `Layers: ${layers.map(layerLabel).join(' / ')}` : '(no layers)';
     const meta = [bpmStr, layersStr].filter(Boolean).join(isZh ? '，' : ', ');
     userTurn = isZh
-      ? `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${instruction}`
-      : `Current playing code (${meta}):\n\`\`\`\n${initialCode}\n\`\`\`\n\nUser instruction: ${instruction}`;
+      ? `当前正在播放的代码（${meta}）:\n\`\`\`\n${initialCode}\n\`\`\`\n\n用户指令: ${userText}`
+      : `Current playing code (${meta}):\n\`\`\`\n${initialCode}\n\`\`\`\n\nUser instruction: ${userText}`;
   } else {
-    userTurn = isZh ? `用户指令: ${instruction}` : `User instruction: ${instruction}`;
+    userTurn = isZh ? `用户指令: ${userText}` : `User instruction: ${userText}`;
   }
 
   const messages: ChatMsg[] = [

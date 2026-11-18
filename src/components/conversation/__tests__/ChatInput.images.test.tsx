@@ -47,7 +47,7 @@ async function add(count: number) {
   Object.defineProperty(input, 'files', { configurable: true, value: Array.from({ length: count }, (_, i) => new File(['image'], `${i}.png`, { type: 'image/png' })) });
   await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); });
 }
-it.each([false, true])('updates the image button when provider or model changes (mobile: %s)', mobile => {
+it.each([false, true])('keeps the image button available across providers and models (mobile: %s)', mobile => {
   mobileState.value = mobile;
   const render = () => act(() => root.render(
     <ChatInput isLoading={false} engineReady onSendText={vi.fn()} onReinitEngine={vi.fn()} />,
@@ -55,25 +55,25 @@ it.each([false, true])('updates the image button when provider or model changes 
   const button = () => container.querySelector('button[aria-label="Add image"]');
   localStorage.setItem('vibe_provider', 'glm');
   render();
-  expect(button()).toBeNull();
+  expect(button()).not.toBeNull();
   localStorage.setItem('vibe_provider', 'deepseek');
   localStorage.setItem('vibe_model_deepseek', 'deepseek-flash');
   render();
   expect(button()).not.toBeNull();
   localStorage.setItem('vibe_model_deepseek', 'deepseek-v4-pro');
   render();
-  expect(button()).toBeNull();
+  expect(button()).not.toBeNull();
   localStorage.setItem('vibe_model_deepseek', 'deepseek-flash');
   render();
   expect(button()).not.toBeNull();
 });
 
-it('keeps existing attachments visible and removable after switching to an unsupported provider', async () => {
+it('keeps existing attachments visible and removable after switching providers', async () => {
   vi.mocked(uploadImage).mockResolvedValue(attachment('existing'));
   await add(1);
   localStorage.setItem('vibe_provider', 'glm');
   act(() => root.render(<ChatInput isLoading={false} engineReady onSendText={vi.fn()} onReinitEngine={vi.fn()} />));
-  expect(container.querySelector('button[aria-label="Add image"]')).toBeNull();
+  expect(container.querySelector('button[aria-label="Add image"]')).not.toBeNull();
   const removeButton = container.querySelector<HTMLButtonElement>('button[title^="Remove"]');
   expect(removeButton).not.toBeNull();
   act(() => removeButton!.click());
