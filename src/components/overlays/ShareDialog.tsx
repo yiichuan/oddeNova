@@ -33,11 +33,6 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     locale: snapshot.locale,
     messages: snapshot.messages,
   }));
-  // A share makes its input images public, so one carrying images asks first —
-  // inside this dialog, centred like the rest of it, rather than through the
-  // browser's own confirm pinned to the top of the window. Nothing uploads
-  // until the reader agrees.
-  const [confirmed, setConfirmed] = useState(() => !snapshot.messages.some(message => message.images?.length));
   const [url, setUrl] = useState('');
   const [uploading, setUploading] = useState(true);
   const [uploadError, setUploadError] = useState(false);
@@ -75,7 +70,6 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
   }, []);
 
   useEffect(() => {
-    if (!confirmed) return;
     let active = true;
     // Reuse the same upload during StrictMode effect replay.
     request.current ??= uploadShare(snapshot);
@@ -84,7 +78,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
     }).catch(() => { if (active) setUploadError(true); })
       .finally(() => { if (active) setUploading(false); });
     return () => { active = false; };
-  }, [snapshot, confirmed]);
+  }, [snapshot]);
 
   const renderReceipt = useCallback(async (number: number) => {
     const result = await renderShareReceipt(
@@ -247,15 +241,7 @@ export default function ShareDialog({ snapshot, onClose }: ShareDialogProps) {
             <button type="button" aria-label={say('关闭分享', 'Close sharing')} className="-mr-2 grid size-9 shrink-0 place-items-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary" onClick={onClose}><XIcon size={18} /></button>
           </div>
         </div>
-        {!confirmed ? (
-          <div className="mt-4">
-            <p className="text-sm leading-relaxed text-text-secondary">{say('分享后，输入图片将随对话公开。是否继续？', 'Once shared, the images you added become public with the conversation. Continue?')}</p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <button className={buttonClass} onClick={onClose}>{say('取消', 'Cancel')}</button>
-              <button className={`${buttonClass} border-transparent bg-text-primary font-medium text-bg-primary hover:bg-text-primary hover:opacity-80`} onClick={() => setConfirmed(true)}>{say('继续分享', 'Continue')}</button>
-            </div>
-          </div>
-        ) : uploading ? <p role="status" className="my-6 text-sm">{t('sharing')}</p> : uploadError ? (
+        {uploading ? <p role="status" className="my-6 text-sm">{t('sharing')}</p> : uploadError ? (
           <div className="my-6"><p role="alert">{t('shareFailedRetry')}</p><button className={buttonClass} onClick={() => void retryUpload()}>{say('重试生成链接', 'Retry creating link')}</button></div>
         ) : (
           <>

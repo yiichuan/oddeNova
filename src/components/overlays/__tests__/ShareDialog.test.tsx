@@ -96,21 +96,11 @@ describe('ShareDialog', () => {
     messages: [{ id: 'u1', role: 'user', content: 'hi', timestamp: 1, images: [{ id: 'i1', path: 'u/i1.jpg', name: 'a.jpg', mimeType: 'image/jpeg', size: 1, width: 1, height: 1 }] }],
   };
 
-  it('asks inside the dialog before sharing images, and uploads only once continued', async () => {
+  it('uploads directly when sharing images without showing a confirmation dialog', async () => {
     await mount(false, withImages);
-    expect(document.body.textContent).toContain('images you added become public');
-    expect(upload).not.toHaveBeenCalled();
-    await press('Continue');
-    expect(upload).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).not.toContain('images you added become public');
-  });
-
-  it('closes without uploading when sharing images is cancelled', async () => {
-    const onClose = vi.fn();
-    await mount(false, withImages, onClose);
-    await press('Cancel');
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(upload).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain('Continue');
+    expect(upload).toHaveBeenCalledTimes(1);
   });
 
   it('uploads straight away when there are no images to ask about', async () => {
