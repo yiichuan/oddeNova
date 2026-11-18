@@ -580,6 +580,8 @@ export function useSessions(options: UseSessionsOptions = {}) {
   // dependency — an identity that changed on every session write would ripple
   // through the cloud library and out to every consumer of a switch handler.
   const sessionsRef = useRef<Session[]>(sessions);
+  // Closes the window before sessionsRef sees a just-queued first user message.
+  const pendingFirstUserMessageSessionIdsRef = useRef(new Set<string>());
   const [currentId, setCurrentId] = useState<string | null>(null);
   const currentIdRef = useRef<string | null>(currentId);
   const ownerKeyRef = useRef(ownerKey);
@@ -609,11 +611,20 @@ export function useSessions(options: UseSessionsOptions = {}) {
 
   useEffect(() => {
     sessionsRef.current = sessions;
+    for (const sessionId of pendingFirstUserMessageSessionIdsRef.current) {
+      const session = sessions.find((item) => item.id === sessionId);
+      if (!session || session.messages.some((message) => message.role === 'user')) {
+        pendingFirstUserMessageSessionIdsRef.current.delete(sessionId);
+      }
+    }
   }, [sessions]);
   useEffect(() => {
     currentIdRef.current = currentId;
   }, [currentId]);
   useEffect(() => {
+    if (ownerKeyRef.current !== ownerKey) {
+      pendingFirstUserMessageSessionIdsRef.current.clear();
+    }
     ownerKeyRef.current = ownerKey;
   }, [ownerKey]);
 
@@ -1129,13 +1140,28 @@ export function useSessions(options: UseSessionsOptions = {}) {
   }, [getApply]);
 
   const addUserMessage = useCallback(
-    (content: string, sessionId?: string, images?: ImageAttachment[]): void => {
+    (content: string, sessionId?: string, images?: ImageAttachment[]): {
+      id: string;
+      isFirstUserMessage: boolean;
+    } => {
+      const messageId = newMessageId();
+      const targetSessionId = sessionId ?? currentIdRef.current ?? sessionsRef.current[0]?.id;
+      const targetSession = sessionsRef.current.find((session) => session.id === targetSessionId);
+      const isFirstUserMessage = Boolean(
+        targetSession
+        && !pendingFirstUserMessageSessionIdsRef.current.has(targetSession.id)
+        && targetSession.title === t('newSessionTitle')
+        && !targetSession.messages.some((message) => message.role === 'user'),
+      );
+      if (isFirstUserMessage && targetSession) {
+        pendingFirstUserMessageSessionIdsRef.current.add(targetSession.id);
+      }
       const apply = getApply(sessionId);
       apply((s) => {
         const messages = [
           ...s.messages,
           {
-            id: newMessageId(),
+            id: messageId,
             role: 'user' as const,
             images,
             content,
@@ -1147,6 +1173,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
         const title = shouldDeriveTitle ? deriveTitle(messages) : s.title;
         return { ...s, messages, title };
       });
+      return { id: messageId, isFirstUserMessage };
     },
     [getApply]
   );
@@ -1409,6 +1436,37 @@ export function useSessions(options: UseSessionsOptions = {}) {
         });
       });
     },
+    [persistSession],
+  );
+
+  const renameSessionForFirstMessage = useCallback(
+    (
+      sessionId: string,
+      firstMessageId: string,
+      firstMessageContent: string,
+      expectedTitle: string,
+      nextTitle: string,
+    ): Promise<Session | undefined> => new Promise<Session | undefined>((resolve) => {
+      setSessions((previous) => {
+        let updatedSession: Session | undefined;
+        const next = previous.map((session) => {
+          if (session.id !== sessionId || session.title !== expectedTitle) return session;
+          const firstUserMessage = session.messages.find((message) => message.role === 'user');
+          if (
+            firstUserMessage?.id !== firstMessageId
+            || firstUserMessage.content !== firstMessageContent
+          ) return session;
+
+          const title = normalizeSessionTitle(nextTitle, session.title);
+          if (title === session.title) return session;
+          updatedSession = { ...session, title, updatedAt: Date.now() };
+          persistSession(updatedSession, 'checkpoint');
+          return updatedSession;
+        });
+        resolve(updatedSession);
+        return next;
+      });
+    }),
     [persistSession],
   );
 
@@ -2081,6 +2139,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
     newSession,
     switchTo,
     renameSession,
+    renameSessionForFirstMessage,
     setSessionFavorite,
     deleteSession,
     importSession,

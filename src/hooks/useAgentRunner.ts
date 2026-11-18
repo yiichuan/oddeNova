@@ -45,6 +45,8 @@ export interface AgentTurnInput {
   initialCode?: string;
   /** Explicit history (resend); overrides the snapshot when includeHistory is true. */
   suppliedHistory?: ConversationTurn[];
+  /** Called for a newly added first user message when it can name the session. */
+  onFirstUserMessage?: (messageId: string) => void;
 }
 
 /**
@@ -68,7 +70,10 @@ export interface AgentTurnDeps {
   isCurrentSession: (sessionId: string) => boolean;
   getCurrentCode: () => string;
   snapshotHistory: () => ConversationTurn[];
-  addUserMessage: (text: string, images?: ImageAttachment[]) => void;
+  addUserMessage: (text: string, images?: ImageAttachment[]) => {
+    id: string;
+    isFirstUserMessage: boolean;
+  } | undefined;
   addAssistantMessage: (
     text: string,
     code: string | undefined,
@@ -132,8 +137,10 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     : undefined;
 
   if (!input.skipAddMessage) {
-    if (input.images?.length) deps.addUserMessage(input.text, input.images);
-    else deps.addUserMessage(input.text);
+    const insertion = input.images?.length
+      ? deps.addUserMessage(input.text, input.images)
+      : deps.addUserMessage(input.text);
+    if (insertion?.isFirstUserMessage) input.onFirstUserMessage?.(insertion.id);
   }
 
   const sessionId = deps.getCurrentId();

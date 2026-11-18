@@ -87,6 +87,7 @@ export async function generateSongTitle(params: GenerateSongTitleParams): Promis
   const raw = await chatOnce(buildSystemPrompt(params.locale), buildUserPrompt(params), {
     temperature: 0.8,
     maxTokens: TITLE_COMPLETION_MAX_TOKENS,
+    thinking: 'disabled',
   });
 
   return sanitizeSongTitle(raw);

@@ -81,7 +81,7 @@ export async function runAgent(
 export async function chatOnce(
   system: string,
   userContent: string,
-  opts: { temperature?: number; maxTokens?: number } = {},
+  opts: { temperature?: number; maxTokens?: number; thinking?: 'disabled' } = {},
 ): Promise<string> {
   const module = await loadRuntime();
   return module.chatOnce(system, userContent, opts);
