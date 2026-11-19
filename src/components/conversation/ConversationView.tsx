@@ -11,6 +11,7 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, 
 import { t, zh } from '../../lib/i18n';
 import { DRAFT_SEGMENT_ID, draftBaseCode } from '../../lib/draft-diff';
 import { CodeDiffView } from './CodeDiffView';
+import { parseStepwiseChoice, stepwiseOptionText } from '../../services/suggestions';
 
 // The lottie player and its JSON stay out of first paint: declared at module
 // scope (never inside render) and mounted only where the thinking indicator
@@ -574,10 +575,11 @@ export default function ConversationView({
   const [longPressedId, setLongPressedId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const lastUserMsgId = useMemo(
-    () => messages.findLast((m) => m.role === 'user')?.id,
+  const lastUserIndex = useMemo(
+    () => messages.findLastIndex((m) => m.role === 'user'),
     [messages],
   );
+  const lastUserMsgId = messages[lastUserIndex]?.id;
   // The greeting bubble only ever occupies a fresh session (one message, the
   // greeting itself) — once a real turn has happened it stays out of the
   // scrollback entirely rather than sitting inline as a normal reply.
@@ -969,16 +971,13 @@ export default function ConversationView({
 
   const loadingTurnAssistantIds = useMemo(() => {
     const ids = new Set<string>();
-    if (!isLoading) return ids;
-
-    const lastUserIndex = messages.findLastIndex((m) => m.role === 'user');
-    if (lastUserIndex === -1) return ids;
+    if (!isLoading || lastUserIndex === -1) return ids;
 
     for (const msg of messages.slice(lastUserIndex + 1)) {
       if (msg.role === 'assistant') ids.add(msg.id);
     }
     return ids;
-  }, [messages, isLoading]);
+  }, [messages, isLoading, lastUserIndex]);
 
   // Which reasoning messages belong to the composition ("编曲") phase: those
   // whose next tool call is `setCode` (writing/replacing the Strudel script).
@@ -1428,6 +1427,7 @@ export default function ConversationView({
         // as a dead gap between paragraphs.
         const showsTurnActions =
           turnFinalAssistantIds.has(msg.id) && !loadingTurnAssistantIds.has(msg.id);
+        const stepwiseChoice = msg.inputMode === 'choice' ? parseStepwiseChoice(msg.content) : null;
         const previousMessage = messages[messageIndex - 1];
         const previousActionGroupId = previousMessage
           ? actionGroupOf.get(previousMessage.id)
@@ -1455,7 +1455,19 @@ export default function ConversationView({
             <div data-message-id={msg.id} className={`relative w-full rounded-xl px-2 pb-2 ${bodyText} bg-transparent text-text-primary ${
               followsCollapsedActionGroup ? 'pt-0' : 'pt-2'
             }`}>
-              <MarkdownText content={msg.content} />
+              <MarkdownText content={stepwiseChoice?.content ?? msg.content} />
+              {stepwiseChoice && messageIndex < lastUserIndex && (
+                <details className="mt-2 text-xs text-text-secondary">
+                  <summary className="w-fit cursor-pointer rounded-sm py-1 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+                    {t('previousChoiceOptions').replace('{count}', String(stepwiseChoice.options.length))}
+                  </summary>
+                  <ol className="my-1 list-decimal space-y-1 pl-5 [overflow-wrap:anywhere]">
+                    {stepwiseChoice.options.map((option, index) => (
+                      <li key={index}>{stepwiseOptionText(option)}</li>
+                    ))}
+                  </ol>
+                </details>
+              )}
               {msg.code && msg.revisionId && revisionsById.has(msg.revisionId) && (
                 <CodeDiffView
                   messageId={msg.id}

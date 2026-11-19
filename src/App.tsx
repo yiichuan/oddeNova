@@ -25,6 +25,7 @@ import { useDailySuggestions } from './hooks/useDailySuggestions';
 import { fetchMoodContext } from './services/airjelly';
 import { generateSongTitle } from './services/song-title';
 import { generateConversationTitle } from './services/conversation-title';
+import { parseStepwiseChoice } from './services/suggestions';
 import type { ConversationTurn } from './services/llm-loader';
 import { conversationHistoryBefore, conversationHistoryFromMessages } from './lib/conversation-history';
 import { createAgentProgressHandler } from './lib/agent-progress-handler';
@@ -56,6 +57,7 @@ import { zh, t } from './lib/i18n';
 import { getEngineUnavailableMessage } from './lib/engine-status';
 import { hasSeenWelcome, markWelcomeSeen, shouldAutoOpenWelcomeModal } from './lib/welcome-modal';
 import type { AgentEntryPoint } from './lib/analytics';
+import type { ChatEntryPoint } from './hooks/useChat';
 import { useAccountActivity } from './hooks/useAccountActivity';
 import { conversationTitle, type FavoriteConversation } from './lib/favorite-conversations';
 import { sessionAsFavorite } from './lib/session-favorites';
@@ -1186,6 +1188,7 @@ export default function App() {
   const handleInstruction = useCallback(
     async (text: string, options?: {
       entryPoint?: AgentEntryPoint;
+      selectedChoice?: true;
       skipAddMessage?: boolean;
       initialCode?: string;
       history?: ConversationTurn[];
@@ -1231,6 +1234,7 @@ export default function App() {
         text,
         images: options?.images,
         entryPoint: options?.entryPoint ?? 'text',
+        selectedChoice: options?.selectedChoice,
         includeHistory: true,
         skipAddMessage: options?.skipAddMessage,
         initialCode: options?.initialCode,
@@ -1295,10 +1299,22 @@ export default function App() {
   // Set once the guide is wired up below; a genuine instruction is what ends
   // a practice left at its last step, and what the funnel counts after it.
   const noteRealInstructionRef = useRef<() => void>(() => {});
+  // Both composer layouts can submit to the same session while image preparation is pending.
+  const pendingComposerSendsRef = useRef(new Set<string>());
   const handleChatInstruction = useCallback(
-    (text: string, entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>, images?: ImageAttachment[]) => {
-      noteRealInstructionRef.current();
-      return handleInstruction(text, { entryPoint, images });
+    async (text: string, entryPoint: ChatEntryPoint, images?: ImageAttachment[]) => {
+      const scope = imageScopeRef.current;
+      const pending = pendingComposerSendsRef.current;
+      if (pending.has(scope)) throw new Error(t('chatSendInProgress'));
+      pending.add(scope);
+      try {
+        noteRealInstructionRef.current();
+        await handleInstruction(text, entryPoint === 'choice'
+          ? { entryPoint: 'suggestion', selectedChoice: true }
+          : { entryPoint, images });
+      } finally {
+        pending.delete(scope);
+      }
     },
     [handleInstruction],
   );
@@ -1307,11 +1323,8 @@ export default function App() {
   // Shared by handleResend (edit + resend) and handleRollback (rewind only);
   // they diverge only in what they do after the rewind (overwrite + resend vs. prefill input).
   const rewindBeforeMessage = useCallback(
-    async (messageId: string) => {
+    (messageId: string) => {
       const currentSessionId = sessions.currentId;
-      if (currentSessionId) {
-        abortControllersRef.current.get(currentSessionId)?.abort();
-      }
       const session = sessions.currentSession;
       const allMessages = session?.messages ?? [];
       const target = allMessages.find((m) => m.id === messageId);
@@ -1319,6 +1332,18 @@ export default function App() {
       // pasted into an empty session, which no message carries.
       const previousCode = codeBeforeMessage(allMessages, session?.revisions, messageId, session?.code ?? '');
       if (!target || previousCode === null) return null;
+
+      const controller = currentSessionId ? abortControllersRef.current.get(currentSessionId) : undefined;
+      if (currentSessionId && controller) {
+        // Rollback discards the turn, so its cancellation cannot finalize a reply.
+        abortControllersRef.current.delete(currentSessionId);
+        controller.abort();
+        setLoadingSessions(previous => {
+          const next = new Set(previous);
+          next.delete(currentSessionId);
+          return next;
+        });
+      }
 
       // Restore the rollback target as the session truth without auto-playing:
       // stop current audio (it belongs to the rolled-away version), put the
@@ -1346,7 +1371,7 @@ export default function App() {
       const allMsgs = sessions.currentSession?.messages ?? [];
       const history = conversationHistoryBefore(allMsgs, messageId);
 
-      const rewound = await rewindBeforeMessage(messageId);
+      const rewound = rewindBeforeMessage(messageId);
       emitTelemetry('creation_action', { action, outcome: rewound ? 'success' : 'invalid_target' }, context);
       if (!rewound) return;
 
@@ -1363,14 +1388,14 @@ export default function App() {
   );
 
   const handleRollback = useCallback(
-    async (messageId: string) => {
+    (messageId: string) => {
       const currentSessionId = sessions.currentId;
       const context = analyticsContext();
       const messages = sessions.currentSession?.messages ?? [];
       const index = messages.findIndex(message => message.id === messageId);
       const followingReply = index < 0 ? undefined : messages[index + 1];
       context.turn_id = analyticsMessageTurn(currentSessionId, followingReply?.id ?? messageId);
-      const rewound = await rewindBeforeMessage(messageId);
+      const rewound = rewindBeforeMessage(messageId);
       emitTelemetry('creation_action', { action: 'rollback', outcome: rewound ? 'success' : 'invalid_target' }, context);
       if (!rewound) return;
 
@@ -1380,7 +1405,7 @@ export default function App() {
       // truncation. This used to sit behind the checkpoint below, which is a
       // cloud round trip: a signed-in user pressed rollback and watched the
       // messages go before their own text arrived to type over.
-      setRollbackPrefill(rewound.target.content);
+      setRollbackPrefill(rewound.target.selectedChoice ? '' : rewound.target.content);
       setRollbackImageDraft({ scope: imageScopeRef.current, images: rewound.target.images ?? [] });
       setInputFocusTrigger((n) => n + 1);
 
@@ -2106,6 +2131,17 @@ export default function App() {
         startTyping: creationCardShown === firstCreation.step,
       }
     : undefined;
+  const lastConversationMessage = current?.messages.findLast((message) => message.role !== 'progress');
+  const pendingStepwiseChoice = !isLoading
+    && !isReplaying
+    && !isVideoMode
+    && !creationGuiding
+    && !onboardingPresetLock
+    && lastConversationMessage?.role === 'assistant'
+    && lastConversationMessage.inputMode === 'choice'
+    ? parseStepwiseChoice(lastConversationMessage.content)
+    : null;
+  const composerInputMode = pendingStepwiseChoice ? 'choice' : 'normal';
 
   /* The phone's lists are reached through a stack this can unwind under the
      reader — a row deleted from the drawer must not leave a detail view open
@@ -2570,7 +2606,8 @@ export default function App() {
               prefillImages={rollbackImageDraft?.scope === imageScopeRef.current ? rollbackImageDraft.images : undefined}
               focusTrigger={inputFocusTrigger}
               onFocusChange={handleChatFocusChange}
-              inputMode={current?.inputMode ?? 'normal'}
+              inputMode={composerInputMode}
+              choiceOptions={pendingStepwiseChoice?.options}
               suggestions={isVideoMode ? [] : visibleSuggestions}
               isVideoMode={isVideoMode}
               signedIn={Boolean(auth.user)}
@@ -2912,7 +2949,8 @@ export default function App() {
               engineStatus={strudel.engineStatus}
               sessions={historyItems}
               currentId={sessions.currentId}
-              inputMode={current?.inputMode ?? 'normal'}
+              inputMode={composerInputMode}
+              choiceOptions={pendingStepwiseChoice?.options}
               suggestions={isVideoMode ? [] : visibleSuggestions}  // [video] Hide suggestion chips in video mode to avoid obscuring the frame
               isVideoMode={isVideoMode}
               scrollBottom={videoConvScrollBottom}  // [video] Forward the scene-change scroll-to-bottom signal

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isStepwiseChoice, parseNextSteps, stripNextSteps } from '../suggestions';
+import { isStepwiseChoice, parseNextSteps, parseStepwiseChoice, stripNextSteps } from '../suggestions';
 
 describe('next-step helpers', () => {
   it('recognizes Chinese stepwise choice mode from consecutive numbered options', () => {
@@ -34,6 +34,28 @@ describe('next-step helpers', () => {
       '3. 就按现在这个完整度直接写完收尾',
       '想继续往饱满里走，还是就在这里收个尾？',
     ].join('\n'))).toBe(true);
+  });
+
+  it('extracts option copy while preserving the assistant message around the list', () => {
+    expect(parseStepwiseChoice([
+      '加了一层轻轻的合唱，压迫里透出一点悲悯。',
+      '',
+      '1. 加定音鼓，让低音处出现心跳一样的心跳',
+      '2. 让合唱在最后两个和弦处稍微走近、变亮一点',
+      '',
+      '想让我先往哪个方向推，还是你心里已经有画面了？',
+    ].join('\n'))).toEqual({
+      content: '加了一层轻轻的合唱，压迫里透出一点悲悯。\n\n想让我先往哪个方向推，还是你心里已经有画面了？',
+      options: [
+        '加定音鼓，让低音处出现心跳一样的心跳',
+        '让合唱在最后两个和弦处稍微走近、变亮一点',
+      ],
+    });
+  });
+
+  it('returns null for ordinary numbered content and final suggestions', () => {
+    expect(parseStepwiseChoice('第一点\n\n1. 收紧底鼓\n2. 降低贝斯\n整体现在更清楚。')).toBeNull();
+    expect(parseStepwiseChoice('完成了整首作品。\n\n接下来可以：\n- 加快速度\n- 减少鼓点')).toBeNull();
   });
 
   it('does not mistake final next-step suggestions for choice mode', () => {

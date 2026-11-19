@@ -290,15 +290,18 @@ describe('Sidebar session title editing layout', () => {
     expect(container.textContent).not.toContain(t('moodGenerate'));
   });
 
-  it('forwards choice input mode to the composer', () => {
+  it('forwards stepwise choices and the free-text placeholder to the composer', () => {
     const { container, root } = renderSidebar({
       inputMode: 'choice',
+      choiceOptions: ['Add timpani', 'Brighten the choir'],
       suggestions: ['Try a sparse jazz groove'],
     });
     roots.push(root);
 
     const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
-    expect(textarea?.placeholder).toBe('Reply with a number or describe your idea...');
+    expect(textarea?.placeholder).toBe(t('choiceInputPlaceholder'));
+    const choices = container.querySelectorAll('[data-chat-choice-options] button');
+    expect(Array.from(choices, (button) => button.textContent)).toEqual(['Add timpani', 'Brighten the choir']);
   });
 
   it('ends the Sidebar outline at the top edge of ChatInput', () => {
