@@ -6,6 +6,7 @@ import type { ImageAttachment } from '../lib/image-attachments';
 
 export type ChatRole = 'user' | 'assistant' | 'progress';
 export type InputMode = 'normal' | 'choice';
+export type ChatEntryPoint = 'text' | 'suggestion' | 'choice';
 
 export type ProgressKind = 'tool_call' | 'tool_result' | 'commit' | 'warn' | 'iteration' | 'thinking' | 'reasoning';
 
@@ -13,6 +14,8 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  /** User message sent directly from a stepwise choice button. */
+  selectedChoice?: true;
   images?: ImageAttachment[];
   code?: string;
   /** Immutable code boundary produced by this assistant turn. */

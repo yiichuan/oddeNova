@@ -424,6 +424,7 @@ export function applyTruncateAndEdit(s: Session, targetMessageId: string, newCon
     ...s.messages[index],
     role: 'user' as const,
     content: newContent,
+    ...(newContent !== s.messages[index].content ? { selectedChoice: undefined } : {}),
   };
   const messages = [...before, newMsg];
   const shouldDeriveTitle = !before.some((m) => m.role === 'user') && s.title === t('newSessionTitle');
@@ -1140,7 +1141,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
   }, [getApply]);
 
   const addUserMessage = useCallback(
-    (content: string, sessionId?: string, images?: ImageAttachment[]): {
+    (content: string, sessionId?: string, images?: ImageAttachment[], selectedChoice?: true): {
       id: string;
       isFirstUserMessage: boolean;
     } => {
@@ -1165,6 +1166,7 @@ export function useSessions(options: UseSessionsOptions = {}) {
             role: 'user' as const,
             images,
             content,
+            ...(selectedChoice ? { selectedChoice } : {}),
             timestamp: Date.now(),
           },
         ];

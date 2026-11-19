@@ -78,6 +78,13 @@ describe('runAgentTurn', () => {
     expect(deps.addUserMessage).toHaveBeenCalledWith('hello');
   });
 
+  it('marks messages sent from a stepwise choice', async () => {
+    const deps = makeDeps();
+    const text = 'Add a bass line';
+    await runAgentTurn(makeInput({ text, selectedChoice: true, entryPoint: 'suggestion' }), deps);
+    expect(deps.addUserMessage).toHaveBeenCalledWith(text, undefined, true);
+  });
+
   it('suppresses the user message when skipAddMessage is set', async () => {
     const deps = makeDeps();
     await runAgentTurn(makeInput({ skipAddMessage: true }), deps);
@@ -209,18 +216,25 @@ describe('runAgentTurn', () => {
     expect(deps.checkpointSession).toHaveBeenCalledOnce();
   });
 
-  it('suppresses the interrupted message when the controller is stale', async () => {
+  it('ignores late progress and cancellation after rollback takes ownership away', async () => {
     const controller = new AbortController();
+    const onProgress = vi.fn();
+    let ownsTurn = true;
     const deps = makeDeps({
       beginLoading: () => controller,
-      isCurrentController: () => false,
-      runAgent: vi.fn(async () => {
+      isCurrentController: () => ownsTurn,
+      makeProgressHandler: () => onProgress,
+      runAgent: vi.fn(async (_text, _code, progress) => {
+        ownsTurn = false;
         controller.abort();
-        return makeResult();
+        progress?.({ kind: 'assistant_reply_delta', delta: 'late reply' });
+        throw new DOMException('Aborted', 'AbortError');
       }),
     });
     await runAgentTurn(makeInput(), deps);
+    expect(onProgress).not.toHaveBeenCalled();
     expect(deps.finalizeLastAssistantMessage).not.toHaveBeenCalled();
+    expect(deps.checkpointSession).not.toHaveBeenCalled();
   });
 
   it('passes undefined history to runAgent when includeHistory is false', async () => {

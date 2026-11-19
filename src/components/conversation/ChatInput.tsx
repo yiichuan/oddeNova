@@ -8,8 +8,8 @@ import { ImagePlus, LoaderCircle, X } from 'lucide-react';
 import ThinkingLevelControl from './ThinkingLevelControl';
 import { t } from '../../lib/i18n';
 import { checkAirJellyAvailable } from '../../services/airjelly';
-import type { AgentEntryPoint } from '../../lib/analytics';
-import type { InputMode } from '../../hooks/useChat';
+import { stepwiseOptionText } from '../../services/suggestions';
+import type { ChatEntryPoint, InputMode } from '../../hooks/useChat';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useTypewriter } from '../../hooks/useTypewriter';
 
@@ -27,7 +27,6 @@ function drainImageUploads(queue: ImageUploadQueue): void {
   }
 }
 
-type ChatEntryPoint = Extract<AgentEntryPoint, 'text' | 'suggestion'>;
 
 // Split text into typewriter units: CJK (and fullwidth punctuation) reveal
 // character by character, latin script word by word (a run of non-CJK,
@@ -40,6 +39,7 @@ function tokenizeForTyping(s: string): string[] {
 // card's top padding and the footer row below it) before it switches to an
 // internal scrollbar instead of pushing the layout further down.
 const MAX_TEXTAREA_HEIGHT = 180;
+type PendingSend = 'message' | 'choice' | 'mood';
 
 /**
  * Grow the field to fit its text, up to the cap.
@@ -81,6 +81,8 @@ interface ChatInputProps {
   onFocusChange?: (focused: boolean) => void;
   /** Normal suggestion carousel, or a stepwise numbered-choice response. */
   inputMode?: InputMode;
+  /** Numbered options from the latest unanswered stepwise-composition reply. */
+  choiceOptions?: string[];
   /** Guidance suggestions, rotated as placeholder text; Tab adopts the current one. */
   suggestions?: string[];
   /**
@@ -132,6 +134,7 @@ export default function ChatInput({
   isVideoMode = false,
   onFocusChange,
   inputMode = 'normal',
+  choiceOptions,
   suggestions,
   onMoodGenerate,
   presetLock,
@@ -140,6 +143,10 @@ export default function ChatInput({
   onRequestSignIn,
 }: ChatInputProps) {
   const [text, setText] = useState('');
+  const [choiceSendError, setChoiceSendError] = useState<{ optionsKey: string; message: string } | null>(null);
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+  const sendInProgressRef = useRef(false);
+  const choiceOptionsKey = JSON.stringify(choiceOptions ?? []);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [pendingImages, setPendingImages] = useState<{ id: string; url: string }[]>([]);
   const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
@@ -165,7 +172,7 @@ export default function ChatInput({
       if (!retained.has(url)) { URL.revokeObjectURL(url); previewUrls.current.delete(url); }
     }
   }, [images, localPreviews, pendingImages]);
-  const [sendingImages, setSendingImages] = useState(false);
+  const sendingImages = pendingSend === 'message';
   const imageBusy = sendingImages || pendingImages.length > 0;
   const [imageError, setImageError] = useState('');
   // Sign-in is one notice for the whole batch, not one per file.
@@ -263,7 +270,13 @@ export default function ChatInput({
   // `runTurn` actually starting (isLoading only flips true once the AirJelly
   // fetch inside onMoodGenerate resolves) — otherwise a fast double-Enter
   // could fire the fetch twice.
-  const [moodPending, setMoodPending] = useState(false);
+  const moodPending = pendingSend === 'mood';
+  const showStepwiseChoices = Boolean(choiceOptions?.length)
+    && !isLoading
+    && replayValue === undefined
+    && !isVideoMode
+    && !presetLock
+    && !guided;
 
   // Placeholder carousel with a typewriter reveal: each suggestion types out
   // (CJK character by character, latin word by word), dwells, then the next
@@ -276,7 +289,7 @@ export default function ChatInput({
   const [typing, setTyping] = useState<{ sug: string | null; count: number }>({ sug: null, count: 0 });
   // Fade-out phase between dwell and the next suggestion (blur + opacity).
   const [suggestionFading, setSuggestionFading] = useState(false);
-  const suggestionList = inputMode === 'choice' || presetLock || guided
+  const suggestionList = showStepwiseChoices || inputMode === 'choice' || presetLock || guided
     ? []
     : moodSuggestionActive
       ? [...(suggestions ?? []), moodSuggestion]
@@ -380,6 +393,18 @@ export default function ChatInput({
     return () => observer.disconnect();
   }, []);
 
+  const beginSend = (kind: PendingSend) => {
+    if (sendInProgressRef.current) return false;
+    sendInProgressRef.current = true;
+    setPendingSend(kind);
+    return true;
+  };
+
+  const finishSend = () => {
+    sendInProgressRef.current = false;
+    setPendingSend(null);
+  };
+
   const doSubmit = () => {
     if (replayValue !== undefined) return;
     if (presetLock) {
@@ -387,21 +412,21 @@ export default function ChatInput({
       return;
     }
     const value = text.trim();
-    if ((!value && !images.length) || isLoading || moodPending || imageBusy) return;
+    if ((!value && !images.length) || isLoading || pendingSend || imageBusy) return;
+    const sendMood = moodSuggestionActive && value === moodSuggestion;
+    if (!beginSend(sendMood ? 'mood' : 'message')) return;
     const entryPoint: ChatEntryPoint =
       adoptedSuggestionRef.current === value ? 'suggestion' : 'text';
     adoptedSuggestionRef.current = null;
     setText('');
-    if (moodSuggestionActive && value === moodSuggestion) {
-      setMoodPending(true);
-      Promise.resolve(onMoodGenerate!()).finally(() => setMoodPending(false));
+    if (sendMood) {
+      void Promise.resolve().then(() => onMoodGenerate!()).finally(finishSend);
       return;
     }
     const sentImages = images;
     imageCountRef.current = 0;
     setImages([]);
     setLocalPreviews({});
-    setSendingImages(true);
     void (async () => {
       try {
         await (sentImages.length ? onSendText(value, entryPoint, sentImages) : onSendText(value, entryPoint));
@@ -411,7 +436,7 @@ export default function ChatInput({
         imageCountRef.current = sentImages.length;
         setImageError(String(error));
       } finally {
-        setSendingImages(false);
+        finishSend();
       }
     })();
   };
@@ -479,14 +504,58 @@ export default function ChatInput({
   };
 
   const inputDisabled = (isLoading || moodPending) && replayValue === undefined;
+  const choiceOptionDisabled = inputDisabled || pendingSend !== null;
   // The waiting fade, applied per part (see the card below): everything that
   // is genuinely out of reach while the agent answers, and nothing else.
   const waitingDim = `transition-opacity duration-200 ${inputDisabled ? 'opacity-50' : ''}`;
+
+  const sendChoice = async (option: string) => {
+    if (
+      !showStepwiseChoices
+      || !choiceOptions?.includes(option)
+      || choiceOptionDisabled
+    ) return;
+    if (!beginSend('choice')) return;
+    setChoiceSendError(null);
+    try {
+      await onSendText(stepwiseOptionText(option), 'choice');
+    } catch (error) {
+      setChoiceSendError({
+        optionsKey: choiceOptionsKey,
+        message: error instanceof Error ? error.message : t('requestFailed'),
+      });
+    } finally {
+      finishSend();
+    }
+  };
 
   return (
     <form onSubmit={handleSubmit} onPaste={e => { const files = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { e.preventDefault(); void addImages(files); } }} onDragEnter={e => { if (!e.dataTransfer.types.includes('Files')) return; fileDragDepth.current += 1; setFileDragActive(true); }} onDragLeave={e => { if (!e.dataTransfer.types.includes('Files')) return; fileDragDepth.current = Math.max(0, fileDragDepth.current - 1); if (!fileDragDepth.current) setFileDragActive(false); }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }} onDrop={e => { endFileDrag(); if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)); } }} onClick={handleCardClick} data-onboarding-target="composer" className="w-full" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
 
 
+      {showStepwiseChoices && (
+        <div
+          role="group"
+          aria-label={t('choiceOptionsLabel')}
+          data-chat-choice-options
+          className="grid min-w-0 justify-items-start gap-1.5 px-4 pt-2 pb-3"
+        >
+          {choiceOptions?.map((option, index) => (
+            <button
+              key={`${index}:${option}`}
+              type="button"
+              disabled={choiceOptionDisabled}
+              onClick={() => { void sendChoice(option); }}
+              className={`min-h-9 max-w-full rounded-[13px] border border-border bg-transparent px-3 py-1.5 text-left ${isMobile ? 'text-base' : 'text-[13px]'} leading-snug text-text-primary [overflow-wrap:anywhere] transition-colors enabled:cursor-pointer enabled:hover:border-text-muted enabled:hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11`}
+            >
+              {stepwiseOptionText(option)}
+            </button>
+          ))}
+          {choiceSendError?.optionsKey === choiceOptionsKey && (
+            <p role="alert" className="px-1 py-1 text-xs leading-relaxed text-error">{choiceSendError.message}</p>
+          )}
+        </div>
+      )}
       {/* Card: textarea on top, footer (hint + send button) below it in normal
           flow — a real layout row, not an overlay, so it always reserves its
           own space regardless of how tall/scrolled the textarea gets. */}
@@ -629,7 +698,7 @@ export default function ChatInput({
               }}
               placeholder={suggestionActive || guided
                 ? ''
-                : t(inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
+                : t(showStepwiseChoices || inputMode === 'choice' ? 'choiceInputPlaceholder' : 'inputPlaceholder')}
               rows={1}
               disabled={inputDisabled}
               // The composer's resting height, and so the whole card's: the
@@ -638,7 +707,7 @@ export default function ChatInput({
               // screen the conversation also has to fit on and that slack is
               // taken out of the reading. The auto-grow cap above is untouched,
               // so typing still opens it exactly as far as it ever did.
-              className={`w-full ${isMobile ? 'min-h-[53px]' : 'min-h-[73px]'} resize-none overflow-hidden bg-transparent pl-4 pr-3 pb-1 text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed`}
+              className={`w-full ${isMobile ? 'min-h-[53px]' : 'min-h-[73px]'} pl-4 pr-3 pb-1 resize-none overflow-hidden bg-transparent text-base md:text-sm text-text-secondary placeholder:text-text-muted outline-none focus:text-text-primary disabled:cursor-not-allowed`}
               style={isVideoMode ? { caretColor: 'transparent' } : undefined}  // [video] Hide cursor blink during video rendering
             />
 
@@ -704,7 +773,7 @@ export default function ChatInput({
               ) : null}
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex shrink-0 items-center gap-2">
               {replayValue === undefined && !presetLock && (
                 <ThinkingLevelControl
                   disabled={inputDisabled}
@@ -762,13 +831,13 @@ export default function ChatInput({
                 <button
                   type="submit"
                   data-onboarding-target="send"
-                  disabled={presetLock ? presetLock.busy : imageBusy || (!text.trim() && !images.length)}
+                  disabled={presetLock ? presetLock.busy : pendingSend !== null || imageBusy || (!text.trim() && !images.length)}
                   /* The guide's send on a phone is pressed with a thumb, so
                      its reach grows to 44px round the 30px disc. Only then:
                      the thinking-level control that sits beside the key
                      otherwise is not drawn while the preset holds the field,
                      so the wider reach covers nothing else. */
-                  className={`inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-50${
+                  className={`inline-flex items-center justify-center rounded-full bg-brand-accent text-on-accent transition duration-200 enabled:hover:bg-brand-accent-hover disabled:cursor-not-allowed size-[30px] disabled:opacity-50${
                     presetLock && isMobile ? " relative before:absolute before:-inset-[7px] before:content-['']" : ''
                   }`}
                   title={t('send')}

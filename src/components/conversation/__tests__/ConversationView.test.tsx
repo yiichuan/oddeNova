@@ -654,6 +654,38 @@ describe('ConversationView chat streaming', () => {
     expect(container.textContent).toContain('<script>alert(1)</script>');
   });
 
+  it('keeps the checkpoint question in the conversation and moves its options to the composer', () => {
+    setMobileViewport(false);
+    const messages: ChatMessage[] = [{
+      id: 'choice-checkpoint',
+      role: 'assistant',
+      inputMode: 'choice',
+      content: [
+        '加了一层轻轻的合唱，压迫里透出一点悲悯。',
+        '',
+        '1. 加定音鼓，让低音处出现心跳一样的心跳',
+        '2. 让合唱在最后两个和弦处稍微走近、变亮一点',
+        '',
+        '想让我先往哪个方向推，还是你心里已经有画面了？',
+      ].join('\n'),
+      timestamp: 1,
+    }];
+    const { container, root, render } = renderConversationView(messages);
+    roots.push(root);
+
+    const rendered = container.querySelector('[data-markdown-text]');
+    expect(rendered?.textContent).toContain('加了一层轻轻的合唱');
+    expect(rendered?.textContent).toContain('想让我先往哪个方向推');
+    expect(rendered?.textContent).not.toContain('加定音鼓');
+    expect(rendered?.querySelector('ol')).toBeNull();
+    expect(container.querySelector('details')).toBeNull();
+
+    render({}, [...messages, { id: 'answer', role: 'user', content: '加定音鼓', timestamp: 2 }]);
+    const history = container.querySelector('details');
+    expect(history?.open).toBe(false);
+    expect(history?.querySelectorAll('li')).toHaveLength(2);
+  });
+
   it('keeps footnote targets unique across separate assistant messages', () => {
     setMobileViewport(false);
     const footnote = '引用[^source]。\n\n[^source]: 参考说明';

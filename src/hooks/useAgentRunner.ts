@@ -33,6 +33,7 @@ export interface AgentTurnInput {
   /** Final instruction text handed to the agent. */
   text: string;
   images?: ImageAttachment[];
+  selectedChoice?: true;
   /** Product surface that initiated this turn. */
   entryPoint: AgentEntryPoint;
   /** Optional mood context appended to the system prompt. */
@@ -70,7 +71,7 @@ export interface AgentTurnDeps {
   isCurrentSession: (sessionId: string) => boolean;
   getCurrentCode: () => string;
   snapshotHistory: () => ConversationTurn[];
-  addUserMessage: (text: string, images?: ImageAttachment[]) => {
+  addUserMessage: (text: string, images?: ImageAttachment[], selectedChoice?: true) => {
     id: string;
     isFirstUserMessage: boolean;
   } | undefined;
@@ -137,9 +138,11 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     : undefined;
 
   if (!input.skipAddMessage) {
-    const insertion = input.images?.length
-      ? deps.addUserMessage(input.text, input.images)
-      : deps.addUserMessage(input.text);
+    const insertion = input.selectedChoice
+      ? deps.addUserMessage(input.text, undefined, true)
+      : input.images?.length
+        ? deps.addUserMessage(input.text, input.images)
+        : deps.addUserMessage(input.text);
     if (insertion?.isFirstUserMessage) input.onFirstUserMessage?.(insertion.id);
   }
 
@@ -148,6 +151,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
 
   const controller = deps.beginLoading(sessionId);
   const signal = controller.signal;
+  const ownsTurn = () => deps.isCurrentController(sessionId, controller);
   const startedAt = Date.now();
   const { provider, model } = deps.getModelConfig();
   const context = { ...analyticsContext(sessionId, deps.analyticsOwnerKey), turn_id: analyticsId() };
@@ -177,6 +181,7 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       input.text,
       beforeCode,
       (event) => {
+        if (!ownsTurn()) return;
         if (event.kind === 'iteration') iterations = event.index;
         if (event.kind === 'request_retry') requestRetryCount++;
         if (event.kind === 'tool_result' && !event.ok) toolFailureCount++;
@@ -192,10 +197,10 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     if (terminationReason === 'validation_failed') failure = { failure_stage: 'validation', error_code: 'validation_failed' };
     if (terminationReason === 'timeout') failure = { failure_stage: 'agent_loop', error_code: 'timeout' };
 
-    if (signal.aborted) {
+    if (signal.aborted || !ownsTurn()) {
       outcome = 'aborted';
       terminationReason = 'aborted';
-      if (deps.isCurrentController(sessionId, controller)) {
+      if (ownsTurn()) {
         deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
       return;
@@ -208,8 +213,16 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
         // Always persist the newest code as the session truth, run or not.
         stage = 'playback';
         const success = await commitPlayback(result.code, sessionId, {
-          ...deps, play: code => deps.play(code, context),
+          play: code => deps.play(code, context),
+          setCurrentCode: (code, id) => {
+            if (ownsTurn()) deps.setCurrentCode(code, id);
+          },
         });
+        if (!ownsTurn()) {
+          outcome = 'aborted';
+          terminationReason = 'aborted';
+          return;
+        }
         if (!success && !failure.error_code) failure = {
           failure_stage: 'playback',
           error_code: deps.engineStatus() === 'ready' ? 'playback_failed' : 'engine_unavailable',
@@ -266,10 +279,10 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
       deps.finalizeLastAssistantMessage(result.explanation || t('agentNoCode'), sessionId);
     }
   } catch (e: unknown) {
-    if (isUserAbort(e, signal)) {
+    if (!ownsTurn() || isUserAbort(e, signal)) {
       outcome = 'aborted';
       terminationReason = 'aborted';
-      if (deps.isCurrentController(sessionId, controller)) {
+      if (ownsTurn()) {
         deps.finalizeLastAssistantMessage(t('interrupted'), sessionId);
       }
     } else {
@@ -304,8 +317,10 @@ export async function runAgentTurn(input: AgentTurnInput, deps: AgentTurnDeps): 
     // above a spinner that then hung there until the network answered.
     // Ordering is unaffected: the checkpoint reads its snapshot inside a state
     // updater queued after every message this turn wrote, whenever it runs.
-    deps.endLoading(sessionId, controller);
-    await deps.checkpointSession(sessionId);
+    if (ownsTurn()) {
+      deps.endLoading(sessionId, controller);
+      await deps.checkpointSession(sessionId);
+    }
   }
 }
 
@@ -349,7 +364,7 @@ export function createAgentTurnDeps(cfg: UseAgentRunnerConfig): AgentTurnDeps {
     isCurrentSession: (id) => id === currentIdRef.current,
     getCurrentCode: () => currentCode,
     snapshotHistory: () => conversationHistoryFromMessages(sessions.currentSession?.messages ?? []),
-    addUserMessage: (text, images) => sessions.addUserMessage(text, undefined, images),
+    addUserMessage: (text, images, selectedChoice) => sessions.addUserMessage(text, undefined, images, selectedChoice),
     addAssistantMessage: (text, code, id, revision, inputMode, layerNotes, turnId) =>
       sessions.addAssistantMessage(text, code, id, revision, inputMode, layerNotes, turnId),
     finalizeLastAssistantMessage: (text, id, turnId) => sessions.finalizeLastAssistantMessage(text, id, turnId),

@@ -1,7 +1,7 @@
 import type { ImageAttachment } from '../../lib/image-attachments';
 import { useEffect, useRef, useState } from 'react';
 import type { SessionSummary } from '../../../shared/session-api';
-import type { ChatMessage, InputMode } from '../../hooks/useChat';
+import type { ChatEntryPoint, ChatMessage, InputMode } from '../../hooks/useChat';
 import { t } from '../../lib/i18n';
 import type { CodeRevision, Session } from '../../hooks/useSessions';
 import { MessageCirclePlusIcon, HistoryIcon, PlayIcon } from '../icons';
@@ -10,7 +10,6 @@ import ChatInput, { type PresetLock } from './ChatInput';
 import { isDemoMode, isPresentationMode } from '../../demo/demo-config';
 import HistoryPanel from './HistoryPanel';
 import EditableSessionTitle from './EditableSessionTitle';
-import type { AgentEntryPoint } from '../../lib/analytics';
 
 interface SidebarProps {
   title: string;
@@ -22,12 +21,13 @@ interface SidebarProps {
   sessions: readonly (Session | SessionSummary)[];
   currentId: string | null;
   inputMode?: InputMode;
+  choiceOptions?: string[];
   suggestions: string[];
   onSendText: (
     text: string,
-    entryPoint: Extract<AgentEntryPoint, 'text' | 'suggestion'>,
+    entryPoint: ChatEntryPoint,
     images?: ImageAttachment[],
-  ) => void;
+  ) => void | Promise<void>;
   onStop?: () => void;
   onNewSession: () => void;
   onMoodGenerate?: () => Promise<void> | void;
@@ -89,6 +89,7 @@ export default function Sidebar({
   sessions,
   currentId,
   inputMode = 'normal',
+  choiceOptions,
   suggestions,
   onSendText,
   onStop,
@@ -278,8 +279,8 @@ export default function Sidebar({
         </div>
       </div>
 
-      <div className="-mt-px w-full shrink-0">
-        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
+      <div data-sidebar-composer className="-mt-px w-full shrink-0">
+        <ChatInput key={currentId} isLoading={isLoading} engineReady={engineReady} engineStatus={engineStatus} onSendText={onSendText} onStop={onStop} onReinitEngine={onReinitEngine} prefill={prefill} prefillImages={prefillImages} focusTrigger={focusTrigger} replayValue={replayInputText} isVideoMode={isVideoMode} inputMode={inputMode} choiceOptions={choiceOptions} suggestions={suggestions} onMoodGenerate={isDemoMode() ? undefined : onMoodGenerate} presetLock={presetLock} guided={guided} signedIn={signedIn} onRequestSignIn={onRequestSignIn} />
       </div>
     </aside>
   );

@@ -28,28 +28,43 @@ const STATIC_SUGGESTIONS_EN = [
 
 export const STATIC_SUGGESTIONS = zh ? STATIC_SUGGESTIONS_ZH : STATIC_SUGGESTIONS_EN;
 
+export interface StepwiseChoice {
+  /** The explanation with its numbered options removed. */
+  content: string;
+  /** Option copy without its display-only number. */
+  options: string[];
+}
+
+/** Convert a numbered option's Markdown emphasis to plain display and message text. */
+export function stepwiseOptionText(option: string): string {
+  return option.replace(/\*\*([^*]+)\*\*/g, '$1');
+}
+
 /**
- * Recognize the numbered option block emitted by stepwise choice mode.
+ * Parse the numbered option block emitted by stepwise choice mode.
  * The surrounding summary/question and reply invitation are required so an
  * incidental numbered list in an ordinary explanation is not enough.
  */
-export function isStepwiseChoice(explanation: string): boolean {
-  if (parseNextSteps(explanation).length > 0) return false;
+export function parseStepwiseChoice(explanation: string): StepwiseChoice | null {
+  if (parseNextSteps(explanation).length > 0) return null;
 
   const lines = explanation.split('\n');
   for (let start = 0; start < lines.length; start += 1) {
     if (!/^\s*1\.\s+\S/.test(lines[start])) continue;
 
-    const optionNumbers: number[] = [];
+    const options: string[] = [];
     let end = start;
     while (end < lines.length) {
-      const match = lines[end].match(/^\s*(\d+)\.\s+\S/);
+      const match = lines[end].match(/^\s*(\d+)\.\s+(.+?)\s*$/);
       if (!match) break;
-      optionNumbers.push(Number(match[1]));
+      options.push(match[2]);
       end += 1;
     }
 
-    const consecutive = optionNumbers.every((number, index) => number === index + 1);
+    const consecutive = lines.slice(start, end).every((line, index) => {
+      const match = line.match(/^\s*(\d+)\.\s+/);
+      return Number(match?.[1]) === index + 1;
+    });
     const leadIn = lines.slice(0, start).filter((line) => line.trim().length > 0);
     const invitation = lines.slice(end).filter((line) => line.trim().length > 0);
     const questionBeforeOptions = /[?？]\s*$/.test(leadIn.at(-1) ?? '');
@@ -60,18 +75,28 @@ export function isStepwiseChoice(explanation: string): boolean {
       && end < lines.length
       && lines[end].trim() === '';
     if (
-      optionNumbers.length >= 2
-      && optionNumbers.length <= 4
+      options.length >= 2
+      && options.length <= 4
       && consecutive
       && leadIn.length > 0
       && invitation.length > 0
       && (questionAfterOptions || structuredQuestionBefore)
     ) {
-      return true;
+      const beforeOptions = lines.slice(0, start).join('\n').trim();
+      const afterOptions = lines.slice(end).join('\n').trim();
+      return {
+        content: [beforeOptions, afterOptions].filter(Boolean).join('\n\n'),
+        options,
+      };
     }
   }
 
-  return false;
+  return null;
+}
+
+/** Recognize a complete numbered checkpoint, excluding ordinary numbered lists. */
+export function isStepwiseChoice(explanation: string): boolean {
+  return parseStepwiseChoice(explanation) !== null;
 }
 
 /**

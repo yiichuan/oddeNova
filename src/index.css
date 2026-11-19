@@ -554,6 +554,15 @@ body {
   overflow-y: auto;
 }
 
+[data-sidebar-message-region]:has(+ [data-sidebar-composer] [data-chat-choice-options]) {
+  border-bottom-color: transparent;
+}
+
+[data-sidebar-composer] [data-chat-choice-options] {
+  border-inline: 1px solid var(--color-border);
+  padding-inline: 15px;
+}
+
 .chat-input-surface {
   --chat-input-glow-angle: -8deg;
   /* Eased trough rather than a flat middle plateau: a dead-flat stretch
